@@ -1,0 +1,6 @@
+# direnv's local nix profile links
+/.direnv/
+
+# build output
+/zig-out/
+/.zig-cache/
