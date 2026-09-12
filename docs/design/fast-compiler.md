@@ -349,6 +349,43 @@ Rules:
 - No `Tuple.first`/`second` in the standard library. That is the point: per-arity accessors are
   precisely what a cap forces and unbounded arity avoids.
 
+### String interpolation: `${expr}`, no nested strings, primitives only
+
+**Syntax.** `"total = ${count} items"`. A literal `${` is escaped as `\$`.
+
+**What may be interpolated.** Without typeclasses there is no `Display`/`Show`, so nothing
+auto-stringifies in general. Interpolation accepts a **fixed set of primitives** — `String`, `Int`,
+`Float`, `Bool`, `Char` — and the compiler inserts the conversion. Anything else is an error that
+names the conversion function, so `${user}` fails with a message pointing at `${user.name}` or an
+explicit call.
+
+Critically, this is **not** a new constraint in the unifier. "This type is interpolatable" is
+collected as an obligation during constraint generation and discharged *after* solving, when the
+type is concrete — the same mechanism as equatability in §3.1, and the same principle as the occurs
+check: make the check rare rather than fast. A flat membership test at one syntactic site, run once.
+
+**Lexing.** A mode flag and a brace-depth counter, no stack:
+
+- `"` enters string mode.
+- `${` switches to expression mode at depth 1; `{` and `}` adjust the depth; the `}` that returns it
+  to 0 switches back to string mode.
+- **A `"` inside an interpolation is a syntax error** — nested strings are what would force a full
+  mode *stack*, and forbidding them removes the recursive case entirely. The diagnostic says to bind
+  the inner string to a name first.
+
+The token stream is `StrStart`, `StrChunk`, `InterpStart`, the expression's ordinary tokens,
+`InterpEnd`, … `StrEnd` — all in the flat SoA array with real source offsets, so §6.1's lossless
+CST and error recovery need nothing special. (The approach that *would* hurt is lexing a string as
+one opaque token and re-lexing its insides later: it breaks the flat-array model and turns every
+error position into offset arithmetic.)
+
+**Codegen** is free: interpolation maps directly onto a JS template literal, which also keeps the
+output readable.
+
+**Open:** whether raw multiline strings admit interpolation. Zig's do not, and keeping them fully
+raw is both cheaper and the better default for embedded code samples — but it is a real choice and
+is not made here.
+
 ### Comments and multiline strings: line-oriented, Zig-style
 
 Both are line-based. Nothing has a closing delimiter, nothing nests, and a newline always ends it.
@@ -377,11 +414,8 @@ What this buys, and it is all lexer cost avoided:
   with one keystroke. With this, the lexer has **no** delimited constructs to track state for
   besides ordinary quoted strings.
 
-One coupling remains open:
-
-- **Interpolation inside multiline strings.** Zig's have no escapes and no interpolation. If
-  interpolation lands, decide then whether raw multiline strings admit it — keeping them fully raw
-  is the cheaper answer.
+One coupling remains open: whether these raw multiline strings admit the interpolation defined
+above. Zig's do not, and staying fully raw is the cheaper answer, but it is not decided here.
 
 Doc comments are trivia: the lossless CST (§6.1) carries them tagged, never discarded.
 
