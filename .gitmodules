@@ -1,0 +1,6 @@
+[submodule "references/zig"]
+	path = references/zig
+	url = https://codeberg.org/ziglang/zig.git
+[submodule "references/elm"]
+	path = references/elm
+	url = https://github.com/elm/compiler.git
