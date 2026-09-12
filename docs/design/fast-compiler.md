@@ -86,6 +86,74 @@ These are decisions about the *source language*, made now because they cannot be
 - **Currying stays** (it's an Elm-like language) — but see §9.3, this is the one place the
   decision is genuinely contested and it must be settled before codegen exists.
 
+## 3.1 Ad-hoc polymorphism: `number` yes, `comparable` no
+
+**The problem.** Without typeclasses, `+` still has to work on `Int` and `Float`, and something has
+to order the keys of a `Dict`. Elm's answer is four magic type variables — `number`, `comparable`,
+`appendable`, `compappend` — each meaning "one of a fixed set of types."
+
+**Why it isn't free.** A unifier asks one question: *are these two types the same?* These variables
+add a second: *is this type in the allowed set?* For `number` that's one comparison. For
+`comparable` the set is defined recursively — a list of comparables is comparable, a tuple of
+comparables is comparable — so answering it means walking the whole type, and because types can be
+cyclic, each walk needs a loop guard. That guard is the **only** place Elm runs an O(term size)
+check inside unification; everywhere else it is batched to once per let-bound name (02 §3). The
+source carries the author's own doubt about it: `-- TODO: is there some way to avoid doing this?
+Do type classes require occurs checks?` (`references/elm/compiler/src/Type/Unify.hs:421-422`).
+
+Reading which branches actually pay is what decides this. In `unifyFlexSuperStructure`
+(`Unify.hs:370-414`), `Number` and `Appendable` resolve with a name comparison or a plain merge;
+only `Comparable` and `CompAppend` call `comparableOccursCheck` and then recurse per element. The
+cost is not "constrained type variables" as a category — it is `comparable` specifically. It is
+also the feature that forces a generic runtime comparator in the emitted JS (`_Utils_cmp`), the
+megamorphic dispatch point V8 cannot inline through (03 §5.7). It taxes both sides.
+
+### Decision
+
+1. **Keep `number`.** `+`, `-`, `*` on `Int` and `Float`. Flat membership test, free.
+2. **Keep `appendable`.** `++` on `String` and `List`. Also free — its branch is a plain merge.
+3. **Drop `comparable` and `compappend`.** `<`, `>`, `<=`, `>=` are **numbers-only**. `"a" < "b"`
+   does not compile; use `String.compare`.
+4. **Ordering is passed explicitly.** `List.sortBy`, `List.sortWith`, and `Dict`/`Set` keyed by a
+   concrete type (`Dict.String`, `Dict.Int`) as sugar over a comparator-taking core.
+5. **`==` stays fully polymorphic, but its check leaves the unifier.** "This type must be
+   equatable" is collected as an obligation during constraint generation and discharged *after*
+   solving, when the type is concrete. Same principle as the occurs check: don't make the check
+   faster, make it rare. This also turns Elm's last runtime crash — `==` on functions — into a
+   compile error, which Elm's own roadmap wants and has never shipped.
+
+### Why, and what it costs
+
+The unifier ends up doing exactly one thing, with no recursive membership walk and no occurs check
+anywhere on its hot path. That is the §7 premise intact rather than punctured.
+
+The price is ergonomic and real: `List.sort` becomes `List.sortBy identity`, dictionaries with
+tuple keys need a comparator, and some ordering code gets longer. Point 3 is the genuine departure
+from Elm; 1, 2 and 5 are close to free wins.
+
+**Roc reached the same place independently** (see [`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md)).
+It has no `comparable`, ships no generic `sort` — `List.sort_with` takes an explicit comparator —
+and deliberately keeps comparison operators numeric, on the grounds that `string1 < string2`
+silently compiling is a footgun. Its uniform mechanism (methods named on types, resolved by static
+dispatch) is *not* copyable here: what makes it cheap at runtime is monomorphisation, and the
+non-specialising path it offers instead passes hidden dictionaries at runtime — the thing §3 rules
+out — and is marked experimental in Roc's own docs.
+
+### Still open
+
+These are language decisions, not implementation ones, and each is cheaper to take now:
+
+| Decision | Why it is load-bearing |
+|---|---|
+| Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. The biggest unclaimed speed lever. |
+| User-defined infix operators? | Arbitrary fixities force post-parse re-association (as in Haskell), which breaks §3's LL(k) guarantee. Lean: fixed operator set. |
+| Are module import cycles forbidden? | Elm forbids them and detects them during crawl. Allowing them collapses the DAG scheduling in §10 and the firewall in §8.1 into per-cycle units. Lean: forbid. |
+| Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic. Lean: pure language, ports-like boundary. |
+| `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics. |
+| Sequence default: cons vs. vector trie | Open question #2; it is a stdlib and literal-syntax decision, not only a representation one. |
+| Shadowing allowed? | Elm forbids it; forbidding simplifies resolution and improves diagnostics. Lean: forbid. |
+| Type alias transparency | Elm expands aliases into every dependent's interface — measured bloat (elm/compiler#1453). Lean: keep them shared. |
+
 ## 4. Process architecture: a daemon, from day one
 
 The CLI is a thin client over a Unix socket; the compiler is a resident process holding the
