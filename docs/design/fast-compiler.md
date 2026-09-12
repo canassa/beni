@@ -282,6 +282,34 @@ inside a `Result`-returning one. No conversion between the two, consistent with 
 `Maybe.andThen` pyramids are as common as `Result` ones in Elm code, so the win is real, and the
 check stays local: two desugaring cases, no inference involvement.
 
+### Tuples: yes, arity 2 or 3
+
+Keep them — `Dict.toList`, `List.zip`, `List.indexedMap` and "return two things" all need a pair,
+and without tuples each of those wants a declared record type, which is the same ceremony problem
+as dropping `Maybe`.
+
+**Cap the arity at 3**, as Elm does, and push wider data to records. Two reasons:
+
+- *Ergonomic, Elm's:* past three elements, positional data stops being readable.
+- *Compiler, and this one is concrete:* a fixed maximum arity lets the tuple type be a fixed-size
+  IR node. Elm encodes exactly this — `Tuple1 Variable Variable (Maybe Variable)`
+  (`references/elm/compiler/src/Type/Type.hs:87`) — so unifying two tuples is two or three field
+  comparisons against a node that needs no allocation. Unbounded arity (Roc's choice) forces a
+  slice into the `extra` array per tuple type, and a loop in the unifier's hot path. §5's whole
+  premise is fixed-size records; this keeps tuples inside it.
+
+**No `.0`/`.1` positional access.** Roc has it; we don't, because `x.0` collides with float literals
+in the lexer (`x.0` versus `0.5`) and resolving it costs lookahead. This is the same reasoning that
+rejected `|x|` lambdas in §3.2: don't buy syntax with parser complexity. Access is by pattern
+destructuring plus `Tuple.first` / `second` / `pair` / `mapFirst` / `mapSecond`, as in Elm.
+
+**Representation:** a fixed-shape object, per §9.4's hidden-class rule. No runtime tag is needed —
+the type is static, and structural equality compares fields regardless — so tuples cost one field
+less than Elm's `{$: '#2', a, b}`.
+
+Note the §3.1 interaction: with `comparable` gone, a tuple-keyed `Dict` takes an explicit
+comparator. That is the intended consequence, not an oversight.
+
 ### Two principles worth stealing
 
 - **Delimiters are for humans, and that is a sufficient reason.** Bullard again: "for machine
