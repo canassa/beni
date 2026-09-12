@@ -392,11 +392,24 @@ interpolation by concatenating, or interpolate an ordinary string into it — ex
 
 Both are line-based. Nothing has a closing delimiter, nothing nests, and a newline always ends it.
 
-- **Doc comments are lines**, merged when consecutive, attached to whatever follows — Zig's rule,
-  including that it is an error to put one where nothing can be documented. A separate marker
-  carries module-level docs. *(Exact spelling still to fix: `---` / `--!` mirrors Zig's "exactly
-  three slashes" mechanic against Elm's `--` line comment; `--|` instead keeps Elm's convention that
-  `|` means "doc". Either works; the mechanics below don't change.)*
+- **`--` is an ordinary comment, `--|` documents what follows, `--!` documents the module.**
+  Consecutive doc lines merge into one block, and it is an error to attach one where nothing can be
+  documented — both Zig's rules.
+
+  ```
+  --! Utilities for working with non-empty lists.
+
+  --| Returns the first element.
+  --| Never fails, unlike `List.head`.
+  first : Nonempty a -> a
+  ```
+
+  The spelling takes **Zig's machinery with Elm's vocabulary**. `|` already means "documentation" to
+  this audience — Elm's `{-|`, Haskell's `-- |` — so `--|` needs no explaining, whereas `---` reads
+  as a divider, and is also a diff marker and a Markdown/YAML separator. It is mechanically cheaper
+  too: Zig needs an "exactly three slashes, not four" carve-out so a row of `////` isn't captured as
+  documentation, and `---` would need the same rule for rows of dashes. `--|` cannot be produced
+  accidentally, so no such rule exists. Lexing stays one byte peeked after `--`.
 - **Multiline strings are line-prefixed**, Zig-style: the marker runs to end of line, a following
   marked line appends a newline, and the final line's newline is not included. **No escape
   processing at all** — they are raw by construction.
