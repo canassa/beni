@@ -81,7 +81,8 @@ These are decisions about the *source language*, made now because they cannot be
   salsa-style query engine — matklad's own stated reason for needing fine-grained tracking in
   rust-analyzer was macro-induced non-laziness (04 §6a).
 - **Explicit imports, no wildcards.** Makes per-module name resolution parallelisable without a
-  global pre-pass (Roc bans wildcards for exactly this reason, 05 §4).
+  global pre-pass. (Roc's FAQ gives this rationale for its own wildcard ban, 05 §4; a direct search
+  of its source and chat could not confirm the link, so treat the parallelism argument as ours.)
 - **Tabs are a syntax error; indentation rules are lexically decidable.** No layout pre-pass.
 - **Currying stays** (it's an Elm-like language) — but see §9.3, this is the one place the
   decision is genuinely contested and it must be settled before codegen exists.
@@ -139,20 +140,37 @@ dispatch) is *not* copyable here: what makes it cheap at runtime is monomorphisa
 non-specialising path it offers instead passes hidden dictionaries at runtime — the thing §3 rules
 out — and is marked experimental in Roc's own docs.
 
+### Settled alongside it
+
+Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md).
+
+- **No user-defined infix operators.** Fixed set, fixed fixities. Arbitrary fixities force
+  post-parse re-association (as in Haskell), which breaks §3's LL(k) guarantee. Roc reached the
+  same answer for a different reason — Feldman: *"Elm used to have custom infix operators and
+  removed them, and I think that decision was for the best in retrospect based on how they were
+  used in practice."* Two independent arguments, same conclusion.
+- **Module import cycles are forbidden**, detected during crawl. Allowing them collapses §10's DAG
+  scheduling and §8.1's firewall into per-cycle units. Roc enforces this with a topological sort
+  and justifies it purely on build times: cycles are *"a footgun for build times... you silently
+  lose a huge amount of caching."*
+- **Type aliases are transparent but interned, never expanded.** Elm expands them into every
+  dependent's interface — measured bloat (elm/compiler#1453). Roc stores a compact alias node
+  pointing at a shared backing type variable, avoiding that by construction. Copy Roc.
+- **Shadowing is an error**, not a warning. Roc allows it with a permanent warning, but Feldman's
+  own reasoning is an argument for banning: if shadowing is banned *"you can look at a local
+  snippet of code, or a diff, and have stronger guarantees about what names mean."* Elm makes it an
+  error; so do we.
+
 ### Still open
 
-These are language decisions, not implementation ones, and each is cheaper to take now:
+Each is cheaper to take now than later:
 
-| Decision | Why it is load-bearing |
-|---|---|
-| Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. The biggest unclaimed speed lever. |
-| User-defined infix operators? | Arbitrary fixities force post-parse re-association (as in Haskell), which breaks §3's LL(k) guarantee. Lean: fixed operator set. |
-| Are module import cycles forbidden? | Elm forbids them and detects them during crawl. Allowing them collapses the DAG scheduling in §10 and the firewall in §8.1 into per-cycle units. Lean: forbid. |
-| Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic. Lean: pure language, ports-like boundary. |
-| `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics. |
-| Sequence default: cons vs. vector trie | Open question #2; it is a stdlib and literal-syntax decision, not only a representation one. |
-| Shadowing allowed? | Elm forbids it; forbidding simplifies resolution and improves diagnostics. Lean: forbid. |
-| Type alias transparency | Elm expands aliases into every dependent's interface — measured bloat (elm/compiler#1453). Lean: keep them shared. |
+| Decision | Why it is load-bearing | State of the evidence |
+|---|---|---|
+| Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. | **Strongest lever left.** Roc doesn't require them, and its cache is consequently *coarser* than §8.1: a content-hash chain over whole checked modules, so any edit to a leaf invalidates every importer. Feldman's "non-global modules" proposal — annotate everything exposed, and importers need no re-check — is exactly this idea, designed and unshipped. Nobody has argued for requiring them, so the ergonomic cost is unmeasured. |
+| Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic | Roc tracks effects **in the type system**: `->` pure vs `=>` effectful, with real `fn_pure`/`fn_effectful` variants in the unifier; the `!` name suffix is only a lint. Purity Inference listed DCE as a benefit, though no pass was found that prunes unused bindings *because* of it. Lean: pure language, effects at a ports-like boundary. |
+| `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
+| Sequence default: cons, vector trie, or flat array | A stdlib and literal-syntax decision, not only a representation one (open question #2) | Roc chose a **flat refcounted array**, explicitly rejecting persistent structures: *"flat data structures are much more cpu friendly than persistent ones."* It mutates in place when uniquely referenced and copies when shared, and pattern-matches with slice patterns rather than cons. That mechanism needs a refcount JS can't cheaply provide — but it argues against cons lists being the automatic choice. |
 
 ## 4. Process architecture: a daemon, from day one
 
