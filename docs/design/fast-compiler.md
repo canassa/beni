@@ -172,6 +172,62 @@ Each is cheaper to take now than later:
 | `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
 | Sequence default: cons, vector trie, or flat array | A stdlib and literal-syntax decision, not only a representation one (open question #2) | Roc chose a **flat refcounted array**, explicitly rejecting persistent structures: *"flat data structures are much more cpu friendly than persistent ones."* It mutates in place when uniquely referenced and copies when shared, and pattern-matches with slice patterns rather than cons. That mechanism needs a refcount JS can't cheaply provide — but it argues against cons lists being the automatic choice. |
 
+## 3.2 Surface syntax
+
+Roc changed most of its syntax just before and during the Zig rewrite, and the reasoning is
+recorded in [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md). Two of
+their findings are about *parsing cost*, which is our constraint too, so the decisions below are
+taken now rather than discovered later.
+
+| Construct | Decision | Why |
+|---|---|---|
+| Function calls | `f a b` (whitespace application) | Elm-like, and safe **because we are indentation-sensitive** (below) |
+| Lambdas | `\x -> …` | `\|x\|` collides with `\|>` and `\|\|` — measured lookahead cost, see below |
+| Pipe | `\|>` stays | Roc dropped it for dot-chaining and had to restore it in 2026-07: chaining doesn't cover piping into a lambda |
+| Case expressions | `case x of` + indentation | Consistent with being indentation-sensitive; no brace/delimiter apparatus needed |
+| Naming | `camelCase` | Matches Elm and the JS target. Roc flip-flopped twice before settling on snake_case for Rust/Python familiarity — a different audience |
+| Operators | fixed set, no fixity declarations | §3.1 |
+| Type application | `List String` (whitespace) | Same reasoning as calls; Roc's equivalent question is still open because it lacks the indentation rules that make it safe |
+
+### The two parser findings this rests on
+
+**Whitespace application is ambiguous *without* indentation rules — not in general.** Roc moved
+calls from `f a b` to `f(a, b)` after Joshua Warner produced token streams with two valid parses,
+noting "with WSA you can continue on the next line with no symbol." But Roc is indentation-
+*insensitive*; Elm keeps whitespace application and is fine precisely because it is not. So the
+lesson is conditional, and it comes with a price we accept knowingly: **whitespace application
+commits us to indentation-sensitivity.** §3 already requires indentation to be lexically decidable
+with no layout pre-pass, and Elm shows the shape that works — thread the ambient indent through the
+combinators (`Parse/Primitives.hs`'s `withIndent`), never a separate layout pass.
+
+**`|x|` lambdas are not free when `|>` exists.** Anthony Bullard, opening #compiler development ›
+"New lambda syntax / BinOp contention", 2025-01-15:
+
+> "The new lambda syntax `|_| ...` has an issue. When parsing a term, we had to peek before trying
+> to parse this to make sure we don't try to consume the `||` and `|>` operators as part of the
+> lambda args."
+
+That is lookahead introduced purely by a syntax choice. It produced fuzzer-caught bugs, and the same
+class of ambiguity was still generating parse errors on `->`-plus-lambda in real user code as late
+as 2026-02. We keep `|>`, so we keep `\x ->`.
+
+### Two principles worth stealing
+
+- **Delimiters are for humans, and that is a sufficient reason.** Bullard again: "for machine
+  parsing there is no need for commas in ANY collection-like syntactic construct... They are there
+  for the humans." Where a delimiter aids reading or editor selection, its parser cost is not an
+  argument against it.
+- **A formatter that auto-migrates makes micro-syntax reversible.** Roc flipped its optional-field
+  marker twice, each time with formatter-driven migration and a did-you-mean diagnostic. That is
+  only cheap if the formatter exists early — so it belongs in **M1**, alongside the parser, not in
+  M5. It is also the same lossless CST the LSP needs (§6.1), so it costs little extra.
+
+### Still open
+
+Effect marking (`!` suffix, or `->` vs `=>`, or nothing) is deferred until the effects model in
+§3.1 is settled — the syntax should follow the semantics, not lead it. Record and optional-field
+syntax details are likewise open; per the formatter principle above, they are cheap to revisit.
+
 ## 4. Process architecture: a daemon, from day one
 
 The CLI is a thin client over a Unix socket; the compiler is a resident process holding the
@@ -562,8 +618,9 @@ Each milestone ends in something measurable.
 
 1. **M0 — Skeleton.** Token SoA, arena infrastructure, intern pool, `--self-profile`, the
    benchmark harness and the determinism test. *Measure: lex throughput in MB/s.*
-2. **M1 — Front end.** Lexer, LL(k) parser with error recovery and a lossless CST, BIR lowering.
-   Parallel per file. *Measure: cold parse of 100k LOC.*
+2. **M1 — Front end.** Lexer, LL(k) parser with error recovery and a lossless CST, BIR lowering,
+   **and the formatter** — it rides the same CST and is what keeps micro-syntax reversible (§3.2).
+   Parallel per file. *Measure: cold parse of 100k LOC; formatter round-trips the corpus unchanged.*
 3. **M2 — Checker.** Constraint generation, union-find with levels, deferred occurs check,
    SCC binding groups, poisoned-error recovery. *Measure: check throughput; error quality on a
    fixture suite.*
