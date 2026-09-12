@@ -434,6 +434,58 @@ switches modes. See the interpolation section above.
 
 Doc comments are trivia: the lossless CST (§6.1) carries them tagged, never discarded.
 
+### Modules: no header, `pub` per declaration
+
+```
+import List exposing (foldr)
+import Dict as D
+import Json.Decode
+
+--| Parse a URL.
+pub parse : String -> Result ParseError Url
+
+normalize : String -> String     -- private: no keyword needed
+```
+
+- **No header line.** The module's name comes from its path, as in Roc. Elm declares the name *and*
+  requires it to match the path — redundancy that buys an entire error class. Path-derived also
+  makes duplicate module names impossible rather than merely diagnosable, and moving a file means
+  updating importers instead of importers *and* the file itself.
+- **Visibility is marked at the declaration with `pub`.** Everything unmarked is private.
+- **`pub opaque type T = …`** exposes the name without its constructors.
+- **Imports are Elm-shaped:** `import Path [as Alias] [exposing (names)]`, parens for the list.
+
+**Why not Roc's type modules.** Roc has no exposing list at all: a capitalised `Url.roc` must define
+a type `Url`, that type is the whole public surface, and public functions are *associated items* on
+it. It is genuinely nicer — nothing to maintain, one edit per new public function — but it is not a
+separate feature. It is a view of static dispatch, which §3.1 rejected: attaching functions to types
+only means something if calls can be resolved *from* a type, and that resolution is the dispatch
+machinery we decided not to build. Roc's own docs also concede the model's costs, and both land
+harder on a language whose stdlib is `List`/`Dict`/`String` modules of free functions: *"the `Util`
+case is nicer in Elm (you don't need the void `Util` type), and it's more obvious how to organize
+mutually recursive types... Roc optimizes for the common case at the expense of these less-common
+ones."*
+
+What we take from it is the part that doesn't need dispatch: *namespacing*. `Url.parse` meaning "the
+`parse` in namespace `Url`" is plain name resolution, which Elm already does. Only `value.method()`
+resolved by the value's type needs a dispatch plan.
+
+**Why not Go's capitalisation rule.** Case is already spoken for: in ML syntax `Url` is a type or
+constructor and `parse` is a value, and the lexer depends on it. If case also meant visibility, every
+type would be forced public and every function private.
+
+**Why not Elm's exposing list.** It is two edits for every new public function and an error class of
+its own ("forgot to expose it"), and it duplicates information the declarations already carry.
+
+**§8.1 is unaffected.** The public surface stays lexically computable — scan for `pub` rather than
+read one line — so the interface hash needs no inference, and parallel name resolution keeps the
+property §3 requires. It also removes the `exposing (Type(..))` problem: a wildcard whose meaning
+depends on reading *another* module is exactly what breaks per-module name resolution, and with
+opacity as a keyword there is no wildcard to ban.
+
+**The cost, stated plainly:** you cannot read a module's whole API on one line; you scan the file or
+ask the tooling. Zig and Rust live with this; generated docs make it moot.
+
 ### Two principles worth stealing
 
 - **Delimiters are for humans, and that is a sufficient reason.** Bullard again: "for machine
