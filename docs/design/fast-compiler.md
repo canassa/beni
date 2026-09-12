@@ -310,6 +310,40 @@ less than Elm's `{$: '#2', a, b}`.
 Note the §3.1 interaction: with `comparable` gone, a tuple-keyed `Dict` takes an explicit
 comparator. That is the intended consequence, not an oversight.
 
+### Comments and multiline strings: line-oriented, Zig-style
+
+Both are line-based. Nothing has a closing delimiter, nothing nests, and a newline always ends it.
+
+- **Doc comments are lines**, merged when consecutive, attached to whatever follows — Zig's rule,
+  including that it is an error to put one where nothing can be documented. A separate marker
+  carries module-level docs. *(Exact spelling still to fix: `---` / `--!` mirrors Zig's "exactly
+  three slashes" mechanic against Elm's `--` line comment; `--|` instead keeps Elm's convention that
+  `|` means "doc". Either works; the mechanics below don't change.)*
+- **Multiline strings are line-prefixed**, Zig-style: the marker runs to end of line, a following
+  marked line appends a newline, and the final line's newline is not included. **No escape
+  processing at all** — they are raw by construction.
+
+What this buys, and it is all lexer cost avoided:
+
+- **No mode stack and no depth counter.** Elm's `{- -}` nests, which means the lexer carries
+  nesting state; a block string needs the same. Line-oriented forms need neither.
+- **A whole error class disappears.** There is no unterminated comment or unterminated multiline
+  string — end of line terminates both. That also means a truncated file cannot swallow the rest of
+  the program, which matters for the error recovery in §6.1.
+- **Raw multiline strings sidestep escaping entirely**, so no escape grammar and no interaction
+  between escapes and whatever interpolation ends up being.
+
+Two couplings, both still open:
+
+- **Block comments.** Zig has none. Keeping Elm's `{- -}` reintroduces exactly the nesting counter
+  this avoids; dropping them means `--` on every line of a commented-out block, which editors do
+  anyway. Not decided here.
+- **Interpolation inside multiline strings.** Zig's have no escapes and no interpolation. If
+  interpolation lands, decide then whether raw multiline strings admit it — keeping them fully raw
+  is the cheaper answer.
+
+Doc comments are trivia: the lossless CST (§6.1) carries them tagged, never discarded.
+
 ### Two principles worth stealing
 
 - **Delimiters are for humans, and that is a sufficient reason.** Bullard again: "for machine
