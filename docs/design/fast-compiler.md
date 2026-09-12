@@ -81,8 +81,10 @@ These are decisions about the *source language*, made now because they cannot be
   salsa-style query engine — matklad's own stated reason for needing fine-grained tracking in
   rust-analyzer was macro-induced non-laziness (04 §6a).
 - **Explicit imports, no wildcards.** Makes per-module name resolution parallelisable without a
-  global pre-pass. (Roc's FAQ gives this rationale for its own wildcard ban, 05 §4; a direct search
-  of its source and chat could not confirm the link, so treat the parallelism argument as ours.)
+  global pre-pass. Roc's FAQ gives exactly this as its *primary* reason: "Module name resolution
+  can be parallelized because errors are detectable within individual modules. Wildcard imports
+  would break this parallelization, requiring all modules to be processed before knowing which
+  names are exposed." Readability is listed as the minor reason.
 - **Tabs are a syntax error; indentation rules are lexically decidable.** No layout pre-pass.
 - **Currying stays** (it's an Elm-like language) — but see §9.3, this is the one place the
   decision is genuinely contested and it must be settled before codegen exists.
@@ -122,6 +124,13 @@ megamorphic dispatch point V8 cannot inline through (03 §5.7). It taxes both si
    solving, when the type is concrete. Same principle as the occurs check: don't make the check
    faster, make it rare. This also turns Elm's last runtime crash — `==` on functions — into a
    compile error, which Elm's own roadmap wants and has never shipped.
+
+   Roc already does this and its FAQ gives the reasoning we'd otherwise have to derive: function
+   equality is undecidable in general (halting problem), and every fallback is worse — source
+   equality makes refactoring `|x| x + 1` into `|x| 1 + x` a breaking change at a distance,
+   reference equality contradicts the rest of the design, always-`False` and always-`True` both
+   make functions unsafe to store in records or collections. Rejecting it at compile time removes
+   the whole class.
 
 ### Why, and what it costs
 
@@ -170,6 +179,9 @@ Each is cheaper to take now than later:
 | Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. | **Strongest lever left.** Roc doesn't require them, and its cache is consequently *coarser* than §8.1: a content-hash chain over whole checked modules, so any edit to a leaf invalidates every importer. Feldman's "non-global modules" proposal — annotate everything exposed, and importers need no re-check — is exactly this idea, designed and unshipped. Nobody has argued for requiring them, so the ergonomic cost is unmeasured. |
 | Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic | Roc tracks effects **in the type system**: `->` pure vs `=>` effectful, with real `fn_pure`/`fn_effectful` variants in the unifier; the `!` name suffix is only a lint. Purity Inference listed DCE as a benefit, though no pass was found that prunes unused bindings *because* of it. Lean: pure language, effects at a ports-like boundary. |
 | `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
+| Does `Maybe` exist, or do tag unions replace it? | Elm has `Maybe`; Roc deliberately has neither it nor `null`, using `Try` with descriptive error tags instead. Its argument is that a tag union says *why*, not just *that*: `[Loading, Loaded(Artist)]` vs `Maybe(Artist)`, and adding `Errored(LoadingErr)` later needs no refactor, whereas `Maybe.is_none` helpers discourage exactly that evolution. A stdlib-shape decision with real ergonomic consequences. |
+| Error handling: `Result` pipelines or a `?`/`try` operator | Roc replaced backpassing with effectful functions plus `?`. Their FAQ has **no** entry on it, so the reasoning lives only in chat (08). Affects the grammar, so it blocks M1. |
+| String representation | Native JS strings are free but give O(n) indexing and a UTF-16/codepoint mismatch. Roc keeps `Str` deliberately minimal and pushes Unicode work to libraries — a stance available to us regardless of representation. |
 | Sequence default: cons, vector trie, or flat array | A stdlib and literal-syntax decision, not only a representation one (open question #2) | Roc chose a **flat refcounted array**, explicitly rejecting persistent structures: *"flat data structures are much more cpu friendly than persistent ones."* It mutates in place when uniquely referenced and copies when shared, and pattern-matches with slice patterns rather than cons. That mechanism needs a refcount JS can't cheaply provide — but it argues against cons lists being the automatic choice. |
 
 ## 3.2 Surface syntax
