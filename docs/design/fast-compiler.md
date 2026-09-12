@@ -179,8 +179,7 @@ Each is cheaper to take now than later:
 | Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. | **Strongest lever left.** Roc doesn't require them, and its cache is consequently *coarser* than §8.1: a content-hash chain over whole checked modules, so any edit to a leaf invalidates every importer. Feldman's "non-global modules" proposal — annotate everything exposed, and importers need no re-check — is exactly this idea, designed and unshipped. Nobody has argued for requiring them, so the ergonomic cost is unmeasured. |
 | Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic | Roc tracks effects **in the type system**: `->` pure vs `=>` effectful, with real `fn_pure`/`fn_effectful` variants in the unifier; the `!` name suffix is only a lint. Purity Inference listed DCE as a benefit, though no pass was found that prunes unused bindings *because* of it. Lean: pure language, effects at a ports-like boundary. |
 | `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
-| Does `Maybe` exist, or do tag unions replace it? | Elm has `Maybe`; Roc deliberately has neither it nor `null`, using `Try` with descriptive error tags instead. Its argument is that a tag union says *why*, not just *that*: `[Loading, Loaded(Artist)]` vs `Maybe(Artist)`, and adding `Errored(LoadingErr)` later needs no refactor, whereas `Maybe.is_none` helpers discourage exactly that evolution. A stdlib-shape decision with real ergonomic consequences. |
-| Error handling: `Result` pipelines or a `?`/`try` operator | Roc replaced backpassing with effectful functions plus `?`. Their FAQ has **no** entry on it, so the reasoning lives only in chat (08). Affects the grammar, so it blocks M1. |
+| Does `Maybe` exist, or do tag unions replace it? | Elm has `Maybe`; Roc deliberately has neither it nor `null`, using `Try` with descriptive error tags instead. Its argument is that a tag union says *why*, not just *that*: `[Loading, Loaded(Artist)]` vs `Maybe(Artist)`, and adding `Errored(LoadingErr)` later needs no refactor, whereas `Maybe.is_none` helpers discourage exactly that evolution. A stdlib-shape decision with real ergonomic consequences, and it settles whether `?` (§3.2) applies to one type or two. |
 | String representation | Native JS strings are free but give O(n) indexing and a UTF-16/codepoint mismatch. Roc keeps `Str` deliberately minimal and pushes Unicode work to libraries — a stance available to us regardless of representation. |
 | Sequence default: cons, vector trie, or flat array | A stdlib and literal-syntax decision, not only a representation one (open question #2) | Roc chose a **flat refcounted array**, explicitly rejecting persistent structures: *"flat data structures are much more cpu friendly than persistent ones."* It mutates in place when uniquely referenced and copies when shared, and pattern-matches with slice patterns rather than cons. That mechanism needs a refcount JS can't cheaply provide — but it argues against cons lists being the automatic choice. |
 
@@ -222,6 +221,35 @@ combinators (`Parse/Primitives.hs`'s `withIndent`), never a separate layout pass
 That is lookahead introduced purely by a syntax choice. It produced fuzzer-caught bugs, and the same
 class of ambiguity was still generating parse errors on `->`-plus-lambda in real user code as late
 as 2026-02. We keep `|>`, so we keep `\x ->`.
+
+### Error handling: `?`
+
+`expr?` on a `Result` evaluates to the `Ok` payload, or returns the `Err` from the enclosing
+function. `Result.andThen` chains remain — `?` is sugar for the common sequential case, not a
+replacement.
+
+Three rules, each chosen to keep the cost at zero:
+
+1. **`?` returns from the nearest enclosing *named* function, and is a compile error inside a
+   lambda.** This is the one real hazard, and Roc found it the hard way: their backpassing removal
+   was driven by early returns landing in a function the reader wasn't looking at. In an Elm-like
+   language lambdas are mostly `List.map (\x -> …)` arguments, where a silent early return from the
+   lambda is almost never intended. Making the ambiguous case illegal is a scope check — free — and
+   it stays reversible, since relaxing a restriction later is easy and tightening one is not.
+2. **No implicit error conversion.** Rust's `?` applies `From::from` to the error, which needs a
+   typeclass we don't have (§3). So the error type must match the enclosing function's error type
+   exactly; otherwise you write `Result.mapErr` before the `?`. Stating this now avoids discovering
+   it when the desugarer is already written.
+3. **It desugars locally to a `case`.** No new constraint kind, no unifier changes, nothing touching
+   inference. Of every ergonomic feature considered here it is the only one that buys its keep
+   entirely in the desugarer — which is exactly what §3's "minimal type-system surface area" premise
+   makes affordable.
+
+The knowing cost: this is the language's only non-local control flow, in a language whose pitch is
+that everything is an expression. Rule 1 is what keeps that bounded.
+
+Open sub-decision: whether `?` also works on `Maybe` depends on whether `Maybe` survives (§3.1). If
+tag unions replace it, `?` operates on exactly one type and the desugaring stays trivial.
 
 ### Two principles worth stealing
 
