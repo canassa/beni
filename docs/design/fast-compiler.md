@@ -1,0 +1,511 @@
+# Beni: design for an extremely fast Elm-like → JavaScript compiler
+
+**Status:** draft design, pre-implementation.
+**Host language:** Zig.
+**Target:** JavaScript (ESM).
+**Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
+modules; no typeclasses, no macros, no type-level computation.
+
+This document synthesises five research reports, each source-verified against primary material
+and the vendored compilers in `references/`. They are kept alongside this doc and are the
+evidence base for every claim here:
+
+| | Report | Covers |
+|---|---|---|
+| 01 | [`research/01-zig-data-oriented.md`](research/01-zig-data-oriented.md) | Why the Zig compiler is fast: SoA IRs, u32 indices, InternPool, ZIR caching, `AnalUnit` incrementality |
+| 02 | [`research/02-type-checking.md`](research/02-type-checking.md) | HM inference at speed: constraint/solve split, union-find + Rémy levels, deferred occurs check |
+| 03 | [`research/03-js-codegen.md`](research/03-js-codegen.md) | esbuild/oxc/SWC techniques, Elm's DCE and A2/F2 scheme, V8 shape discipline, source maps |
+| 04 | [`research/04-architecture.md`](research/04-architecture.md) | Lexing/parsing, interning, arenas, parallelism, incrementality models, daemons, measurement |
+| 05 | [`research/05-elm-roc.md`](research/05-elm-roc.md) | Source-verified map of elm/compiler; what Roc (now Zig) does differently; copy / don't-copy |
+
+---
+
+## 1. The thesis
+
+Compilers in this family are not slow because of clever algorithms done badly. They are slow for
+three reasons, and each has a known fix:
+
+1. **Process and phase overhead dominates small edits.** A fresh process costs tens of
+   milliseconds on dynamic linking and runtime init before a single byte is lexed (04 §8). At a
+   100ms budget that is most of the budget. *Fix: a daemon.*
+2. **Pointer-chasing, per-node allocation and string comparison tax every phase.** oxc measured
+   ~20% from arena allocation alone; Carbon measured 5–12% lex / 4.5% parse / 1–2% total check
+   from packing tokens to 8 bytes; Zig measured −17.5% wall time from refining one intern pool
+   (01 §5, 04 §1). Elm pays a byte-array comparison on *every* identifier lookup through the
+   entire back half of its pipeline because `Name` is never interned (05 §2). *Fix: flat SoA IRs,
+   u32 indices, arenas, intern once at lex time.*
+3. **Invalidation is coarser than the edit.** Elm re-checks whole modules; declaration-level
+   output granularity did not buy it declaration-level *compilation* granularity (03 §7, 05 §3).
+   Zig, tracking a declaration's type separately from its value, re-analyses a single-file edit in
+   a 500k-line project in **63ms** (01 §7). *Fix: a fine-grained dependency graph plus a
+   module-interface firewall.*
+
+The fourth reason is the one you get for free: **the language itself.** Every documented "slow ML
+compiler" traces to a specific nameable mechanism — PureScript's typeclass dictionary resolution,
+its type-level `RowList` blowup, GHC's simplifier and Template Haskell (05 §5). Elm and OCaml are
+fast largely because those mechanisms *do not exist* in them. Beni inherits this by staying
+scope-limited, and that is a language-design commitment, not an implementation detail.
+
+## 2. Performance budget
+
+Targets are per-operation, on a warm daemon, measured on a 100k-line project. These are the
+numbers CI tracks (§12); missing them is a bug report, not a nice-to-have.
+
+| Operation | Target | Evidence it's achievable |
+|---|---|---|
+| Cold full build, 100k LOC | **< 800ms** | Elm does ~120–130k lines/s full-compile in Haskell with no interning and mtime caching (02 §10) |
+| Warm rebuild, one function body edited | **< 15ms** | Zig: 63ms for a 500k-line project with a much heavier type system (01 §7) |
+| Warm rebuild, one exported signature changed | **< 60ms** | bounded by the transitive re-check the interface firewall permits |
+| Warm rebuild, one dependency-free module added | **< 25ms** | one parse + one check + one emit |
+| Daemon cold start (mmap cache hit) | **< 120ms** | zero-parse mmap load of cached artifacts (04 §7) |
+| Type checking throughput (cold, per core) | **> 250k LOC/s** | HM with levels is near-linear; Elm reaches ~130k LOC/s for the *whole* pipeline in GHC |
+| Emit throughput | **> 5 MB/s of JS** | esbuild prints+sourcemaps 547k lines in 390ms including parse and link (03 §1) |
+
+Two non-goals, stated so they don't creep in: Beni does not aim to beat esbuild at bundling
+third-party JavaScript, and it does not aim for sub-millisecond *cold* starts. It aims for edits
+that feel instantaneous inside a running session.
+
+## 3. Language constraints that exist for compiler speed
+
+These are decisions about the *source language*, made now because they cannot be retrofitted.
+
+- **LL(k), no backtracking.** The grammar must be parseable with constant lookahead and committed
+  choice. This is Zig's stated parser invariant (01 §9) and Elm's practical one (its combinators
+  are committed-choice: a failure after consuming input is final, 05 §1.3). It guarantees linear
+  parse time and rules out a whole class of pathological inputs.
+- **No typeclasses / no implicit dictionary passing.** The single most reliable source of
+  superlinear blowup in this family (05 §5).
+- **No type-level computation, no row-polymorphic type functions.** Records get plain extensible
+  rows with structural unification, nothing more.
+- **No macros.** This is what lets a simple module-interface firewall work instead of a
+  salsa-style query engine — matklad's own stated reason for needing fine-grained tracking in
+  rust-analyzer was macro-induced non-laziness (04 §6a).
+- **Explicit imports, no wildcards.** Makes per-module name resolution parallelisable without a
+  global pre-pass (Roc bans wildcards for exactly this reason, 05 §4).
+- **Tabs are a syntax error; indentation rules are lexically decidable.** No layout pre-pass.
+- **Currying stays** (it's an Elm-like language) — but see §9.3, this is the one place the
+  decision is genuinely contested and it must be settled before codegen exists.
+
+## 4. Process architecture: a daemon, from day one
+
+The CLI is a thin client over a Unix socket; the compiler is a resident process holding the
+`Session`. The LSP server and `beni build` are the *same* process type, so every incremental
+investment pays off in both (04 §8; rust-analyzer's `AnalysisHost`/`Analysis` and gopls'
+`cache.Snapshot` are the model).
+
+Consequences that must be designed in, not bolted on:
+
+- No global mutable singletons. Everything hangs off `Session`.
+- Arenas are reusable and resettable per compilation, not per process.
+- Every phase must be able to run against an immutable snapshot while the next edit is ingested.
+- File watching uses `inotify`/`FSEvents` directly. esbuild polls, and it's a documented scaling
+  problem on large trees (03 §1).
+
+```
+beni (CLI, ~5ms)  ─┐
+beni-lsp           ├─► unix socket ─► beni daemon ─► Session
+editor / LSP      ─┘                                 ├─ SourceStore (mmap'd files, content hashes)
+                                                     ├─ InternPool (strings, types, constants)
+                                                     ├─ ModuleGraph + DepGraph (AnalUnits)
+                                                     ├─ Arenas (per phase, per worker)
+                                                     └─ EmitCache (per-decl JS chunks)
+```
+
+## 5. Data representation — the spine of the design
+
+Every IR in Beni is a `MultiArrayList` of fixed-size records with `u32` indices and a shared
+`extra: []u32` sidecar for variable-length payloads. This is Zig's own design (01 §1–3), and
+independently Carbon's, rust-analyzer's and oxc's (04 §2).
+
+```zig
+// Tokens: 5 bytes each, no length field — derivable from tag or re-derived at literal decode.
+pub const Token = struct { tag: Tag, start: u32 };
+pub const TokenList = std.MultiArrayList(Token);
+
+// AST: ~13 bytes/node. data is an UNTAGGED union; `tag` already discriminates.
+pub const Node = struct { tag: Tag, main_token: TokenIndex, data: Data };
+pub const Index = enum(u32) { root = 0, _ };
+pub const OptionalIndex = enum(u32) { none = std.math.maxInt(u32), _ };
+```
+
+Rules, non-negotiable across the codebase:
+
+1. **No pointer inside any IR.** References are `u32` indices into a named array. Halves reference
+   size, survives reallocation, serialises with no fixup pass, and makes equality an integer
+   compare (01 §2).
+2. **No per-node allocation.** One arena per phase; teardown is a handful of bulk frees. oxc
+   measured teardown at ~0.3ms vs ~7ms for an equivalent heap AST (03 §2).
+3. **Per-worker arenas, not a shared one.** Roc wrote `SingleThreadArena` specifically to avoid
+   `std.heap.ArenaAllocator`'s atomic RMW per allocation, since every arena is owned by exactly
+   one thread for its lifetime (05 §4). Copy this.
+4. **Offsets, never slices, into source text.** A slice is 16 bytes; an offset is 4.
+5. **No `HashMap` keyed by a dense id.** Roc enforces this with a CI lint (05 §4); adopt the same
+   lint. Dense ids index parallel arrays.
+
+### 5.1 Interning — with the contention caveat
+
+Identifiers are interned **at lex time** into `Symbol = enum(u32)`, hashing while scanning rather
+than materialising-then-rehashing (04 §3). Types and constants are interned into the same
+`InternPool` so that type identity is `a.index == b.index` — one integer compare, no structural
+walk (01 §5).
+
+But interning has a documented failure mode: **oxc removed a global interner and gained ~30%
+parallel parsing throughput**, because the interner mutex serialised precisely the phase being
+parallelised (03 §2). Zig's answer is sharding — per-thread `locals` arrays with the thread id
+packed into the index's high bits, plus per-shard locks on the dedup tables (01 §5).
+
+**Decision:** per-worker interners during parallel lex/parse, merged at one synchronisation point;
+a sharded global pool thereafter, following Zig's index encoding. Short identifiers use inline
+storage (SSO) in the token payload so the common case never touches the table at all.
+
+This directly fixes Elm's single largest structural cost — un-interned `Name` as a raw byte array,
+compared byte-by-byte on every scope, environment and interface lookup for the entire back half of
+its pipeline (05 §2).
+
+## 6. Pipeline
+
+```
+source bytes
+  │ lex (parallel, per file, zero-alloc)          → TokenList (SoA)
+  │ parse (recursive descent + Pratt, LL(k))      → Ast (SoA, flat, lossless CST)
+  │ lower (per file, NO cross-file knowledge)     → BIR  ◄── content-hashed, disk-cached
+  ├─────────────────────────── firewall ────────────────────────────
+  │ resolve (per module, needs imports' interfaces) → Resolved + Interface
+  │ check (constrain → solve)                       → Typed + Annotations
+  │ optimise (lower to decl graph)                  → OptGraph (whole program)
+  │ emit (reachability DFS → JsIr → bytes)          → ESM output
+```
+
+**BIR is the load-bearing invention here.** Like Zig's ZIR, it is *untyped, unresolved, and purely
+a function of one file's text* — which is what makes it content-addressable and cacheable across
+process restarts, not just within a watch session (01 §6). A file whose bytes haven't changed
+never gets lexed or parsed again, ever, on any machine with a warm cache.
+
+Everything above the firewall is embarrassingly parallel. Everything below is scheduled on the
+module DAG.
+
+### 6.1 Parsing
+
+Recursive descent for declarations, Pratt/precedence-climbing for expressions (04 §2) — ~40 lines,
+no function-per-precedence-level, associativity from asymmetric binding powers.
+
+Two invariants for error recovery, both of which cost nothing on the happy path (04 §2):
+
+- Every loop consumes ≥1 token per iteration and terminates at EOF.
+- On error, emit a structurally valid placeholder node. Downstream passes treat it as another node
+  kind; there is no separate recovery machinery and no early abort.
+
+**Build the lossless CST from day one.** Trivia is just more array entries in a flat design, so
+the runtime cost is near zero, but retrofitting it later is documented as effectively a parser
+rewrite (04 §2). The LSP will need it.
+
+## 7. Type checking
+
+Architecture is Elm's, because Elm's is right: **constraint generation, then solving** (02 §1),
+not Algorithm W. Generation allocates fresh variables and emits a constraint tree; solving does
+all unification in one pass. This avoids W's substitution-composition tax and centralises all
+rank/generalisation bookkeeping in one function.
+
+Five techniques, in leverage order (02 §Top 10):
+
+1. **Union-find with mutation in place.** Type variables *are* graph nodes; "apply the
+   substitution" is a pointer dereference. Path compression on find, union by size.
+2. **Rémy/Kiselyov levels for generalisation.** Each descriptor carries a `rank` = enclosing `let`
+   depth; `rank 0` means generalised. Generalisation scans only the pool of variables allocated at
+   that rank, never the type environment — an asymptotic change, not a constant factor.
+3. **Deferred occurs check.** Not on the unification hot path. Once per let-bound name, after that
+   region has stabilised. Elm's `Unify.hs` calls `occurs` in exactly one narrow place and has a
+   `TODO` wondering whether even that is necessary (02 §3).
+4. **Sharing-preserving instantiation.** A per-copy memo field on the descriptor, cleared after
+   each instantiation. Kills the classic `let x = (y,y)` doubling for any scheme with internal
+   sharing — which real code hits constantly via large record aliases (02 §2.3).
+5. **SCC-decomposed binding groups.** Only genuinely mutually-recursive definitions share a
+   generalisation group; everything else is its own. Bounds both generalisation cost and error
+   blast radius (02 §4).
+
+**Errors never stop the build.** A failed unification merges both variables into a poisoned
+`Error` content; every later unification touching it trivially succeeds. This is Elm's cascade
+suppression, and it is why one mistake yields one message instead of forty (02 §6).
+
+**Good messages must stay off the happy path.** Source spans are two packed 32-bit values (row in
+the high half, column in the low) attached to every node — no allocation, no file path. The entire
+error-rendering subsystem, including fresh-variable naming, runs only on failure (02 §5–6).
+
+In Zig terms: the descriptor store is a `MultiArrayList` with an explicit undo journal (Roc's
+`SlotUndo`/`DescUndo` design, 05 §4), which buys rollback for speculation without cloning.
+
+## 8. Incrementality
+
+Two layers, deliberately. The cheap one does most of the work; the fine one handles the case the
+cheap one handles badly.
+
+### 8.1 Layer 1 — the module interface firewall (primary)
+
+Recompiling a module must **not** recompile its dependents unless its *public interface* changed.
+Elm implements this by comparing the freshly computed `.elmi` against the cached one by value and
+only bumping `lastChange` on a real difference (02 §8, 05 §1.4); GHC does the same with `.hi`;
+OCaml exposes it as `-opaque`.
+
+Beni keys this on **content hashes, not mtimes**. Elm's mtime scheme is the documented cause of
+its cache-desync bugs and CI pathologies (05 §3), and content hashing composes naturally since the
+interface hash *is* a content hash. Cache key = source bytes + module identity + compiler version
++ direct imports' interface hashes (Roc's `cache_key.zig` model, 05 §4). A `stat` fast-path avoids
+hashing files whose size and mtime are both unchanged (04 §7).
+
+**Explicitly rejected: salsa-style fine-grained query memoization.** rustc's own documentation says
+fingerprinting "is the main reason why incremental compilation can be slower than non-incremental";
+there are logged cases of incremental (13.47s) losing to clean (2.74s), and repeated 2–4× memory
+blowups requiring dedicated LRU engineering (04 §6a). The macro-free language design removes the
+reason rust-analyzer needed it.
+
+### 8.2 Layer 2 — declaration-level dependency graph
+
+Zig's `AnalUnit` insight, which is the difference between a 63ms rebuild and a 6-second one: a
+declaration's **type** and its **value** are separate nodes in the dependency graph (01 §7).
+Editing a function body invalidates its value, not its signature — so callers who depend only on
+the signature are untouched, *within* the module as well as across it.
+
+Beni's unit kinds:
+
+| Unit | Invalidated by |
+|---|---|
+| `decl_ty` | a change to the declaration's type signature or inferred scheme |
+| `decl_val` | a change to its body |
+| `ctor` / `type_def` | a change to an ADT's constructors or a record alias's fields |
+| `emit` | a change to `decl_val`, or to any representation decision it depends on |
+
+Propagation is Zig's two-phase mark: a direct dependent becomes `outdated`; its transitive
+dependents become `potentially_outdated` with a counter. A PO unit whose counter reaches zero
+without ever being marked outdated is *proven* unchanged and never re-analysed. This is what stops
+transitive invalidation from degenerating into "recompile everything" (01 §7).
+
+### 8.3 Persisted cache format
+
+Dump the arena's flat arrays as raw byte ranges with a small header; `mmap` on load; validate with
+a format version and content hash. No general serialization library — rkyv-style zero-copy is the
+*idea* to steal, not the dependency (04 §7). Roc calls this "zero-parse deserialization" and loads
+at roughly memcpy speed (05 §4). This is only possible because of the no-pointers rule in §5.
+
+## 9. JavaScript backend
+
+### 9.1 Dead code elimination — copy Elm's mechanism exactly
+
+Every top-level binding becomes a node in one flat whole-program map, keyed by module-qualified
+name, carrying its own set of referenced globals. That dependency set is **a byproduct of ordinary
+lowering** — no separate free-variable pass — because the name-resolution tracker records each
+global reference as it generates the node (03 §5.1, 05 §1.5).
+
+Emission is then a visited-set DFS from `main` and every exposed value. Anything unreachable is
+never even looked up. No separate tree-shaking pass exists, and none is needed.
+
+This is strictly better than what any JS bundler can do, because bundlers must *infer*
+side-effect-freedom heuristically (`sideEffects: false`, `/*#__PURE__*/`) while Beni's type system
+*proves* purity. It is also the same graph Layer-2 incrementality and code splitting use — build it
+once, use it three times.
+
+### 9.2 Two IRs, not one
+
+Lower the typed IR into a small JS-shaped `JsIr` as part of existing lowering, then run one print
+pass straight to a growable byte buffer.
+
+This is a deliberate departure from esbuild's single-AST model, and the evidence is Elm's own
+source: its author tried emitting directly to a byte builder, measured it "neutral for perf," and
+kept the intermediate IR because codegen needs to pattern-match on generated structure to strip
+redundant IIFEs and closures (03 §3). esbuild can skip the second IR only because its input and
+output are both JavaScript; an ML-family source language is structurally far from JS, so the
+peephole layer earns its place.
+
+Output assembly follows esbuild's `Joiner`: accumulate `{data, offset}` pieces and a running
+length, then allocate **exactly once** and blit (03 §3). Never concatenate.
+
+### 9.3 Calling convention — the decision that must be made now
+
+Curried semantics with an A2/F2-style adapter (Elm's scheme): functions are wrapped with an arity
+tag `.a` and the raw n-ary implementation `.f`; saturated call sites emit `A2(f, x, y)`, which
+checks `f.a === 2` and calls `f.f(x, y)` directly, falling back to `f(x)(y)` otherwise (03 §5.2).
+Around 80% of calls in ML-family code are saturated, so the fast path dominates. PureScript's
+measured cost of *not* doing this is 25–35% runtime and 20–25% bundle size.
+
+The contested part: Gleam makes partial application an error unless explicitly requested, so every
+saturated call is a plain JS call with no adapter at all. Hansen's measurements suggest the
+adapter itself costs real performance — rewriting `A2(f,a,b)` to direct `f.f(a,b)` measured +49%
+on Chrome, +109% on Firefox (03 §5.2).
+
+**Resolved: keep currying** — see [`research/06-currying.md`](research/06-currying.md) for the full
+evidence from Roc's FAQ and three years of its Zulip. Three findings decided it:
+
+- **Roc's *particular* performance argument does not transfer** — but a JS-specific one does, and it
+  binds. Roc's closure wins come from lambda sets and are LLVM-specific: stack-allocated closures,
+  seeing through opaque function pointers. JS closures are already heap-allocated and V8 has neither
+  problem. **However**, §9.3's own measurements say currying is only free if the adapter disappears:
+
+  | Tier | Cost |
+  |---|---|
+  | Naive curried closures (PureScript stock) | 25–35% runtime, 20–25% bundle size |
+  | Elm's `A2`/`F2` adapter at saturated sites | **+49% Chrome**, +109% Firefox, +37% Safari vs. direct |
+  | Direct n-ary call at statically-known sites | baseline |
+
+  The adapter costs a property load, an `=== n` comparison and an indirect call at every call site.
+  So keeping currying is only cheap at the third tier, which makes the specializer a **requirement of
+  M3, not a later optimisation**. Roc's FAQ concedes currying's cost is "most likely possible to
+  optimize away" — that concession is the whole plan here, so it has to actually ship.
+  (Caveat: these are `map`/`foldl` microbenchmarks from a community post, browser- and
+  workload-specific. Directionally consistent with the PureScript figure; not a precise budget.)
+- **Dropping currying is not a local change; it rewrites the idiom.** Elm's `|>` *depends on*
+  partial application — `x |> String.split sep` only works because `String.split sep` is a value.
+  Remove currying and you are forced into Roc's pipe-first convention and a standard library whose
+  subject argument comes first, the opposite of `List.map f list`. Every signature flips. That is a
+  far bigger change than the calling convention.
+- **The one argument that does transfer is error quality**, and it is separable. Roc's real prize is
+  a localised `TOO FEW ARGS` diagnostic, which a curried language supposedly cannot produce. But the
+  unifier knows when it expected `a` and found `b -> a` — that *is* the missing-argument shape, and
+  it can be reported as such with the call site underlined.
+
+So: keep currying, and **treat the missing-argument diagnostic as a deliverable of M2, with its own
+fixture suite**. That mitigation is the entire justification for keeping the feature, so it has to
+be proven rather than assumed. If it does not land convincingly on real mistakes, revisit before M3
+— afterwards it is a breaking language change, not a compiler change.
+
+Concretely, that means **two** M3 obligations, not one: emit a direct n-ary call wherever the callee's
+arity is statically known at a saturated call site — which is the overwhelming majority, since the
+DCE graph (§9.1) already resolves every top-level reference — and fall back to the `A2`-style tagged
+adapter only for genuinely higher-order or partially-applied positions. Elm leaves the ~49% on the
+table precisely because it always routes through the adapter; there is no reason to repeat that.
+
+### 9.4 Representation, tuned for V8
+
+- **Records** → plain object literals with a canonical (sorted) key order, so every instance of a
+  record type shares one hidden class (03 §5.3).
+- **Constructors** → `{$: tag, a, b, ...}`, tag as a small integer in release mode, string in dev.
+  Zero-argument constructors become bare integers.
+- **Shape consistency is mandatory.** Elm's own `List` violates it (`Nil` is `{$:0}`, `Cons` is
+  `{$:1,a,b}` — different shapes), and padding them to match measured ~11% on Firefox, ~4% on
+  Chrome (03 §5.3). Beni pads every constructor of a type to a uniform shape.
+- **Lists** → cons cells by default (they match pattern matching), but benchmark a 32-way
+  persistent vector trie before committing; the cache-locality and deep-recursion failure modes are
+  real (03 §5.6).
+- **Tail calls** → direct self-recursion lowers to `label: while(true)` with parameter reassignment
+  through temporaries. **This is mandatory, not an optimisation**: no JS engine reliably provides
+  TCO — V8 shipped and reverted it, SpiderMonkey never shipped it (03 §5.5). Mutual recursion
+  remains a real stack frame; flag it as a known limitation and revisit with a trampoline.
+- **Pattern matching** → decision trees (Scott & Ramsey heuristics), compiled to native `switch`
+  for multi-way tests, with single-use branches inlined and multi-use branches shared via labelled
+  loops (03 §5.4).
+- **Primitive peephole** → recognise core arithmetic/comparison calls at *print* time and emit
+  native operators. Keeps the optimiser generic while avoiding a megamorphic dispatch point on the
+  hottest call sites in the program (03 §5.7).
+
+### 9.5 Output format and minification
+
+**Emit ESM.** Elm's IIFE is universally compatible but opaque: no dev server can compute which
+modules an edit affects, so any change forces a full reload (03 §6). ESM keeps the output
+analysable to bundlers and HMR runtimes, and the decision is unchangeable later without breaking
+every consumer.
+
+**Split the minification work by who has the information.** Beni does whole-program field-name
+shortening ranked by real cross-module usage frequency — a generic minifier structurally cannot see
+this — and hands local-variable mangling and peephole compression to Terser/esbuild, passing
+`pure_funcs` annotations that are safe *only* because purity is guaranteed (03 §6). Elm's TodoMVC:
+122KB → 24KB minified → 9KB gzipped with exactly this split.
+
+**Code splitting is designed in now, not retrofitted.** Per-entry-point reachability sets over the
+§9.1 graph, intersected to find shared chunks. Elm has no chunking concept and adding one means
+reworking its emission core — a documented example of the cost of deferring this.
+
+### 9.6 Source maps
+
+Fused into the print pass (`addMapping` at each emit site, no second traversal), delta-encoded VLQ
+with a 64-byte lookup table and a single-sextet fast path, per-file chunks rebased once at join
+time — all esbuild's techniques (03 §4). **Off by default**, since maps can be 3× the size of the
+output and are among the slowest parts of a production build.
+
+But position tracking must exist in the IR *from the start* even while maps are off: retrofitting
+it means touching every pass, not just the printer. Elm never threaded positions through codegen
+and consequently has no source maps at all (03 §4).
+
+## 10. Parallelism — and where not to use it
+
+**Parallelise:** lexing, parsing, and BIR lowering (per file, no cross-file knowledge, trivially
+parallel); per-module interface extraction; codegen per declaration, as a bounded
+producer/consumer pipeline behind the checker (Zig budgets in-flight bytes rather than spawning a
+task per function, 01 §8).
+
+**Do not parallelise:** the warm single-edit path. At a 15ms budget, thread-pool wake-up and
+synchronisation can exceed the work — exactly what rustc measured, where `-Z threads=8` *regressed*
+small inputs (04 §5). Also not the type checker's core: Zig's multi-year, still-incomplete
+InternPool thread-safety migration initially made things *slower* (01 §5, §8). Module-DAG
+parallelism captures nearly all the available win at a fraction of the risk.
+
+**Determinism is a requirement, not an aspiration.** rustc's project goals call its parallel
+frontend's non-determinism "fundamental," and `codegen-units > 1` still produces non-reproducible
+binaries because merge order follows thread timing (04 §5). Rules: stable input-derived ids
+assigned *before* parallel work starts (module index by sorted path, never completion order);
+results re-keyed by that id before merging; global tables append-then-sort; two-run output diffing
+in CI.
+
+## 11. What we are deliberately not doing
+
+| Not doing | Why |
+|---|---|
+| Salsa/query-based incremental engine | rustc's own docs blame fingerprinting for incremental losing to clean builds; 2–4× memory blowups; the macro-free design removes the motivation (04 §6a) |
+| SIMD lexing (initially) | Real but second-order (~30–50%); a switch-based scalar lexer is within ~2× of the ceiling, and per-ISA intrinsics cost far more than the remaining gap until everything else is tight (04 §1) |
+| Parallel unification | Modest ceiling, real determinism risk, and Zig's own attempt regressed before it improved (01 §5) |
+| A general serialization library | Zero-copy mmap of our own flat arrays is simpler than adopting a schema framework for a format only we read (04 §7) |
+| Reimplementing Terser | Do only what whole-program knowledge uniquely enables; hand off the rest (03 §6) |
+| Perceus / RC-with-reuse | Native-memory techniques from Roc; JS output runs under V8's GC, so the entire class is inapplicable (05 §5) |
+| Content-addressed code (Unison-style) | Eliminates invalidation structurally, but is a whole-system commitment that gives up ordinary git/diff tooling (04 §6c) |
+
+## 12. Measurement discipline
+
+Build this before the optimiser, not after.
+
+- **`--self-profile`** emitting Chrome-trace JSON per phase and per analysis unit, viewable in
+  Perfetto/speedscope. Clang's `-ftime-trace` and rustc's `-Z self-profile` are the models; rustc's
+  captures query cache hits/misses, not just phase time (04 §10).
+- **A permanent pathological corpus.** Every real slow file ever encountered gets frozen into the
+  benchmark set forever. This is exactly how rustc-perf grew (`token-stream-stress`,
+  `tuple-stress`) (04 §10).
+- **The §2 budget tracked per-PR as a visible trend, not a hard gate.** rustc deliberately doesn't
+  gate — some regressions are correct trade-offs — but the number is on every PR, which makes
+  regressions conscious rather than accidental.
+- **Determinism test:** two full builds, byte-diff the output.
+
+## 13. Build order
+
+Each milestone ends in something measurable.
+
+1. **M0 — Skeleton.** Token SoA, arena infrastructure, intern pool, `--self-profile`, the
+   benchmark harness and the determinism test. *Measure: lex throughput in MB/s.*
+2. **M1 — Front end.** Lexer, LL(k) parser with error recovery and a lossless CST, BIR lowering.
+   Parallel per file. *Measure: cold parse of 100k LOC.*
+3. **M2 — Checker.** Constraint generation, union-find with levels, deferred occurs check,
+   SCC binding groups, poisoned-error recovery. *Measure: check throughput; error quality on a
+   fixture suite.*
+4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, **saturated-call specialization
+   with `A2`/`F2` only as fallback** (§9.3), TCO loops, decision trees, ESM output. *Measure: emit
+   throughput; output size vs Elm; and the share of call sites emitted as direct n-ary calls — if
+   that share is low, the currying decision was wrong.*
+5. **M4 — Daemon + incrementality.** Socket protocol, content-hash cache, mmap artifacts, interface
+   firewall, then the declaration-level graph. *Measure: the warm-rebuild budgets in §2.*
+6. **M5 — Polish.** Source maps, code splitting, LSP, field-name shortening, minifier handoff.
+
+The ordering is deliberate: M4's incrementality is the single largest win (63ms vs seconds), but it
+is also the one that needs the data model from M0–M3 to be right first. Zig's own experience is
+that doing this in the wrong order costs a 30,000-line refactor (01 §7).
+
+## 14. Open questions
+
+1. ~~**Currying vs. Gleam-style explicit partial application**~~ — **resolved, see §9.3**: keep
+   currying; recover Roc's `TOO FEW ARGS` diagnostic in the unifier instead. Carries an M2
+   obligation (a missing-argument fixture suite) and a revisit-before-M3 trigger if that fails.
+2. **List representation** — cons cells vs. persistent vector trie (§9.4). Benchmark against real
+   idiomatic code during M3; the answer is workload-dependent and PureScript's experience shows
+   intuition is unreliable here.
+3. **How fine is too fine for Layer 2?** Zig found `AnalUnit` granularity needed a major refactor
+   to avoid over-analysis when a type doubles as a namespace (01 §7). Start at the four kinds in
+   §8.2 and resist adding more without a measurement that demands it.
+4. **Does BIR need to be separate from the resolved IR at all**, given that Beni has no `comptime`
+   and a much simpler semantic model than Zig? The caching argument says yes; the complexity
+   argument says measure it in M1 before committing.
+5. **Mutual-recursion stack safety** (§9.4). Trampolining costs the common case; leaving it
+   unfixed is a real cliff for idiomatic ML code. Defer, but don't forget.
