@@ -282,33 +282,60 @@ inside a `Result`-returning one. No conversion between the two, consistent with 
 `Maybe.andThen` pyramids are as common as `Result` ones in Elm code, so the win is real, and the
 check stays local: two desugaring cases, no inference involvement.
 
-### Tuples: yes, arity 2 or 3
+### Tuples: yes, unbounded arity (minimum 2)
 
 Keep them — `Dict.toList`, `List.zip`, `List.indexedMap` and "return two things" all need a pair,
 and without tuples each of those wants a declared record type, which is the same ceremony problem
 as dropping `Maybe`.
 
-**Cap the arity at 3**, as Elm does, and push wider data to records. Two reasons:
+**No arity cap.** An earlier draft of this section copied Elm's maximum of 3 and justified it on
+compiler grounds: a fixed cap lets the tuple type be a fixed-size IR node
+(`Tuple1 Variable Variable (Maybe Variable)`, `references/elm/compiler/src/Type/Type.hs:87`),
+whereas unbounded arity "forces a slice into the `extra` array and a loop in the unifier's hot
+path." **That argument is wrong, and Roc's compiler shows why: records are already variable-length,
+so the machinery exists regardless — and tuples use strictly less of it.**
 
-- *Ergonomic, Elm's:* past three elements, positional data stops being readable.
-- *Compiler, and this one is concrete:* a fixed maximum arity lets the tuple type be a fixed-size
-  IR node. Elm encodes exactly this — `Tuple1 Variable Variable (Maybe Variable)`
-  (`references/elm/compiler/src/Type/Type.hs:87`) — so unifying two tuples is two or three field
-  comparisons against a node that needs no allocation. Unbounded arity (Roc's choice) forces a
-  slice into the `extra` array per tuple type, and a loop in the unifier's hot path. §5's whole
-  premise is fixed-size records; this keeps tuples inside it.
+```zig
+// references/roc/src/types/types.zig:554 and :743
+pub const Tuple  = struct { elems:  Var.SafeList.Range };
+pub const Record = struct { fields: RecordField.SafeMultiList.Range, ext: Var };
+```
 
-**No `.0`/`.1` positional access.** Roc has it; we don't, because `x.0` collides with float literals
-in the lexer (`x.0` versus `0.5`) and resolving it costs lookahead. This is the same reasoning that
-rejected `|x|` lambdas in §3.2: don't buy syntax with parser complexity. Access is by pattern
-destructuring plus `Tuple.first` / `second` / `pair` / `mapFirst` / `mapSecond`, as in Elm.
+Same `SafeList`/`Range` primitive, same arena, same amortised-growth append. The record carries an
+*extra* field — `ext`, the row-polymorphism extension variable — that tuples don't need. And the
+unifiers are not close: `unifyTuple` (`src/check/unify.zig:1397-1421`) is an arity check plus a
+pairwise loop, about twenty lines; `unifyTwoRecords` (`:2490+`) gathers fields transitively through
+extension chains, partitions them into shared/only-a/only-b, handles four extension cases, and
+allocates fresh ranges and type variables per divergence. The tuple path is a strict, cheap subset
+of code we must write for records anyway.
 
-**Representation:** a fixed-shape object, per §9.4's hidden-class rule. No runtime tag is needed —
-the type is static, and structural equality compares fields regardless — so tuples cost one field
-less than Elm's `{$: '#2', a, b}`.
+The sharing continues at runtime: `pub const tuple = struct_;` and `insertTuple = insertStruct`
+(`src/layout/layout.zig:864`, `src/layout/store.zig:554`) — tuples are an alias into the record
+layout path, not a parallel implementation. Pattern matching rides the same variable-arity
+constructor specialisation that tag unions already require.
+
+**The argument the cap actually loses.** Feldman, #contributing, 2023-03-26, on why Roc has no
+`Tuple` module: *"especially considering you have to implement a separate one for each arity of
+tuple, which means you have to decide where to draw the line on what arity to support."* A cap
+doesn't remove that problem — it relocates it into the standard library, which is exactly the mess
+Elm ends up with: `Tuple.first`/`second` for pairs, and nothing at all for triples.
+
+**Minimum of 2, structurally.** `(42)` is grouping, not a one-tuple. No counting required.
+
+**Representation:** a fixed-shape object per arity, following §9.4's hidden-class rule. No runtime
+tag is needed — the type is static and structural equality compares fields regardless — so tuples
+cost one field less than Elm's `{$: '#2', a, b}`.
 
 Note the §3.1 interaction: with `comparable` gone, a tuple-keyed `Dict` takes an explicit
 comparator. That is the intended consequence, not an oversight.
+
+**Still open: positional access (`.0`/`.1`).** This was rejected above on the grounds that `x.0`
+collides with float literals and costs lookahead. The measured cost is smaller than claimed: Roc's
+tokenizer handles it in one extra branch with a single byte of lookahead
+(`src/parse/tokenize.zig:1412-1442`), inside the `.` case the lexer *already* needs to distinguish
+record field access from a float continuation. It is the same order of cost as `.field`, not a new
+expense. Dropping the arity cap also strengthens the case for it: with unbounded arity there can be
+no per-arity accessor functions, so the choice is `.0` or destructuring-only.
 
 ### Comments and multiline strings: line-oriented, Zig-style
 
@@ -333,11 +360,13 @@ What this buys, and it is all lexer cost avoided:
 - **Raw multiline strings sidestep escaping entirely**, so no escape grammar and no interaction
   between escapes and whatever interpolation ends up being.
 
-Two couplings, both still open:
+- **No block comments at all**, as in Zig. Elm's `{- -}` nests, which is the nesting counter this
+  whole section exists to avoid; commenting out a block is `--` per line, which every editor does
+  with one keystroke. With this, the lexer has **no** delimited constructs to track state for
+  besides ordinary quoted strings.
 
-- **Block comments.** Zig has none. Keeping Elm's `{- -}` reintroduces exactly the nesting counter
-  this avoids; dropping them means `--` on every line of a commented-out block, which editors do
-  anyway. Not decided here.
+One coupling remains open:
+
 - **Interpolation inside multiline strings.** Zig's have no escapes and no interpolation. If
   interpolation lands, decide then whether raw multiline strings admit it — keeping them fully raw
   is the cheaper answer.
