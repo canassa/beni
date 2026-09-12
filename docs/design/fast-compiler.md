@@ -329,13 +329,25 @@ cost one field less than Elm's `{$: '#2', a, b}`.
 Note the §3.1 interaction: with `comparable` gone, a tuple-keyed `Dict` takes an explicit
 comparator. That is the intended consequence, not an oversight.
 
-**Still open: positional access (`.0`/`.1`).** This was rejected above on the grounds that `x.0`
-collides with float literals and costs lookahead. The measured cost is smaller than claimed: Roc's
-tokenizer handles it in one extra branch with a single byte of lookahead
-(`src/parse/tokenize.zig:1412-1442`), inside the `.` case the lexer *already* needs to distinguish
-record field access from a float continuation. It is the same order of cost as `.field`, not a new
-expense. Dropping the arity cap also strengthens the case for it: with unbounded arity there can be
-no per-arity accessor functions, so the choice is `.0` or destructuring-only.
+**Positional access: `.0` / `.1`, zero-based.** An earlier draft rejected this because `x.0`
+collides with float literals and "costs lookahead." The real cost is one extra branch and a single
+byte of lookahead (`references/roc/src/parse/tokenize.zig:1412-1442`), inside the `.` case the lexer
+*already* needs in order to tell record field access from a float continuation — the same order of
+cost as `.field`, not a new expense. The reverse direction is already handled too: numeric lexing
+only continues past `.` into a float when the next character is a digit or `e`/`E`, so `1.` followed
+by anything else stays `Int` then `Dot`.
+
+Dropping the arity cap is what makes this necessary rather than merely nice: with unbounded arity
+there can be no per-arity accessor functions, so the choice is `.0` or destructuring-only.
+
+Rules:
+
+- The index is a **literal integer**, never a variable or computed expression — which is what lets
+  the checker verify it against the tuple's arity at compile time.
+- It applies to any expression of tuple type (`getPoint().0`) and chains (`nested.0.1`).
+- Pattern destructuring stays, and remains the better choice when binding several elements at once.
+- No `Tuple.first`/`second` in the standard library. That is the point: per-arity accessors are
+  precisely what a cap forces and unbounded arity avoids.
 
 ### Comments and multiline strings: line-oriented, Zig-style
 
