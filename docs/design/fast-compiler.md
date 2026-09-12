@@ -382,9 +382,11 @@ error position into offset arithmetic.)
 **Codegen** is free: interpolation maps directly onto a JS template literal, which also keeps the
 output readable.
 
-**Open:** whether raw multiline strings admit interpolation. Zig's do not, and keeping them fully
-raw is both cheaper and the better default for embedded code samples — but it is a real choice and
-is not made here.
+**Multiline strings do not interpolate.** They stay fully raw, as in Zig — no escapes, no `${}`.
+That keeps them dependable for embedded code samples (JSON, shell, generated JS all contain `${`
+and `\` freely), and it means the lexer's line-prefixed path needs no mode switching at all:
+interpolation state exists only inside ordinary quoted strings. Build a multiline string with
+interpolation by concatenating, or interpolate an ordinary string into it — explicitly.
 
 ### Comments and multiline strings: line-oriented, Zig-style
 
@@ -414,8 +416,8 @@ What this buys, and it is all lexer cost avoided:
   with one keystroke. With this, the lexer has **no** delimited constructs to track state for
   besides ordinary quoted strings.
 
-One coupling remains open: whether these raw multiline strings admit the interpolation defined
-above. Zig's do not, and staying fully raw is the cheaper answer, but it is not decided here.
+They are also **fully raw**: no escapes and no interpolation, so the line-prefixed scanner never
+switches modes. See the interpolation section above.
 
 Doc comments are trivia: the lossless CST (§6.1) carries them tagged, never discarded.
 
