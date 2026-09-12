@@ -4,3 +4,6 @@
 [submodule "references/elm"]
 	path = references/elm
 	url = https://github.com/elm/compiler.git
+[submodule "references/roc"]
+	path = references/roc
+	url = https://github.com/roc-lang/roc.git
