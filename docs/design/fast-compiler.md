@@ -179,7 +179,6 @@ Each is cheaper to take now than later:
 | Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. | **Strongest lever left.** Roc doesn't require them, and its cache is consequently *coarser* than §8.1: a content-hash chain over whole checked modules, so any edit to a leaf invalidates every importer. Feldman's "non-global modules" proposal — annotate everything exposed, and importers need no re-check — is exactly this idea, designed and unshipped. Nobody has argued for requiring them, so the ergonomic cost is unmeasured. |
 | Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic | Roc tracks effects **in the type system**: `->` pure vs `=>` effectful, with real `fn_pure`/`fn_effectful` variants in the unifier; the `!` name suffix is only a lint. Purity Inference listed DCE as a benefit, though no pass was found that prunes unused bindings *because* of it. Lean: pure language, effects at a ports-like boundary. |
 | `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
-| Does `Maybe` exist, or do tag unions replace it? | Elm has `Maybe`; Roc deliberately has neither it nor `null`, using `Try` with descriptive error tags instead. Its argument is that a tag union says *why*, not just *that*: `[Loading, Loaded(Artist)]` vs `Maybe(Artist)`, and adding `Errored(LoadingErr)` later needs no refactor, whereas `Maybe.is_none` helpers discourage exactly that evolution. A stdlib-shape decision with real ergonomic consequences, and it settles whether `?` (§3.2) applies to one type or two. |
 | String representation | Native JS strings are free but give O(n) indexing and a UTF-16/codepoint mismatch. Roc keeps `Str` deliberately minimal and pushes Unicode work to libraries — a stance available to us regardless of representation. |
 | Sequence default: cons, vector trie, or flat array | A stdlib and literal-syntax decision, not only a representation one (open question #2) | Roc chose a **flat refcounted array**, explicitly rejecting persistent structures: *"flat data structures are much more cpu friendly than persistent ones."* It mutates in place when uniquely referenced and copies when shared, and pattern-matches with slice patterns rather than cons. That mechanism needs a refcount JS can't cheaply provide — but it argues against cons lists being the automatic choice. |
 
@@ -248,8 +247,40 @@ Three rules, each chosen to keep the cost at zero:
 The knowing cost: this is the language's only non-local control flow, in a language whose pitch is
 that everything is an expression. Rule 1 is what keeps that bounded.
 
-Open sub-decision: whether `?` also works on `Maybe` depends on whether `Maybe` survives (§3.1). If
-tag unions replace it, `?` operates on exactly one type and the desugaring stays trivial.
+`?` applies to both `Maybe` and `Result` — see "`Maybe` stays" below for the rule.
+
+### `Maybe` stays
+
+Roc has no `Maybe`, `Option`, `null` or `nil`. Failure uses `Try` with descriptive error tags, and
+for genuine absence its FAQ argues a tag union says *why* rather than merely *that* —
+`[Loading, Loaded(Artist)]` against `Maybe(Artist)` — adding `Errored(LoadingErr)` later needing no
+refactor, while helpers like `Maybe.is_none` discourage exactly that evolution.
+
+**The argument does not transfer, because Roc's tag unions are structural.**
+`[Loading, Loaded(Artist)]` is a type you write inline, anywhere, with no declaration — which is
+what makes "use a tag union instead" cheap there, and what makes the evolution argument work at
+all: the type was never declared, so there is nothing to refactor.
+
+Beni has **nominal** ADTs, like Elm. Dropping `Maybe` here means every `Dict.get`, `List.head` and
+`String.toInt` either needs a bespoke declared type at each call site, or returns `Result () a` —
+which is `Maybe` with extra ceremony. Sound reasoning in their language; inverted in ours.
+
+Adding structural tag unions to recover it would be the wrong trade. They are row polymorphism for
+sums, carrying exactly the inference costs §3 exists to avoid — OCaml's polymorphic variants are the
+cautionary case, with large inferred types and hard error messages. And `Maybe` itself costs nothing:
+it is an ordinary ADT, `type Maybe a = Nothing | Just a`, with no special machinery anywhere in the
+compiler.
+
+**Take Roc's real insight, which is orthogonal to whether `Maybe` exists:** don't reach for it when a
+domain type says *why*. `[Loading, Loaded Artist]` beats `Maybe Artist` for the same reason `Result`
+beats `Maybe` for failures. That is stdlib and API-design guidance — Elm's community already preaches
+it — not a language decision.
+
+**Resolving the `?` sub-decision:** `?` works on both `Maybe` and `Result`, with the enclosing
+function required to return the *same* shape — `Maybe` inside a `Maybe`-returning function, `Result`
+inside a `Result`-returning one. No conversion between the two, consistent with rule 2 above.
+`Maybe.andThen` pyramids are as common as `Result` ones in Elm code, so the win is real, and the
+check stays local: two desugaring cases, no inference involvement.
 
 ### Two principles worth stealing
 
