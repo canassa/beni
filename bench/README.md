@@ -22,11 +22,9 @@ was saturating the four cores and read 784 ms where the real number was
 ## 2026-09-13 — M2c (DAG-parallel checking, exhaustiveness)
 
 **Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory
-channel, 16 GB RAM, Linux 7.2, Zig 0.16.0, ReleaseFast. **Shared machine,
-and it showed**: another tenant's build ran through most of this session, so
-these are best-of-20 rather than best-of-5 and the absolute numbers are
-1-10 % pessimistic. The RATIOS are what the entry is for, and every number in
-one table was taken in one pass.
+channel, 16 GB RAM, Linux 7.2, Zig 0.16.0, ReleaseFast. Best of 15, load
+average 1.3 (shared machine; an earlier pass at load 12 read 15-20 % high
+across the board, which is the M1d warning above happening again).
 **Corpus:** `bench/gen.zig --generate=100000` — 624 files, 100 159 lines,
 1 840 323 bytes, 635 modules (core included), 3 787 edges. `beni check` on it
 is clean, exhaustiveness included.
@@ -36,62 +34,62 @@ is clean, exhaustiveness included.
 | command | `--jobs=1` | `--jobs=2` | `--jobs=4` | default (4) | speedup at 4 |
 |---|---:|---:|---:|---:|---:|
 | `check`, M2b (checker serial) | 137 ms | 117 ms | 110 ms | 110 ms | 1.25× |
-| `check`, M2c (checker on the DAG) | 141 ms | 92 ms | 78 ms | 80 ms | **1.81×** |
+| `check`, M2c (checker on the DAG) | 136 ms | 86 ms | **70 ms** | 71 ms | **1.94×** |
 
 The M2b row is the same binary one commit earlier, measured the same way, and
-it is the reason M2c did the work: at M2b the checker was **74 of the 137 ms**
-and none of it parallelised, so four workers bought 1.25×. Putting it on the
-module DAG (checker.md §4.4) turns that into 1.81× and takes 32 ms off the
-wall clock of a 100k-line project.
+it is why M2c did the work: at M2b the checker was **74 of the 137 ms** and
+none of it parallelised, so four workers bought 1.25×. On the module DAG
+(checker.md §4.4) it is 1.94×, and 40 ms comes off the wall clock of a
+100k-line project.
 
-`--jobs=1` costs 4 ms more than M2b — that is the exhaustiveness pass
-(checker.md §6.6), 7.1 ms of the profiled span, partly offset elsewhere.
+`--jobs=1` is unchanged at 136 ms: exhaustiveness (checker.md §6.6) adds
+3.4 ms and the rest is noise.
 
 ### Where the time goes (`--self-profile`, same corpus)
 
 | | `check` j=1 | `check` j=4 |
 |---|---:|---:|
-| profiled span | 139.5 ms | 66.4 ms |
-| total worker CPU | 110.9 ms | 175.6 ms |
-| `read` | 4.9 | 8.6 |
-| `lex` | 15.1 | 21.8 |
-| `parse` | 11.6 | 17.5 |
-| `lower` | 15.8 | 24.9 |
-| `constrain` | 17.0 | 26.9 |
-| `solve` | 39.3 | 57.5 |
-| `exhaustive` | 7.1 | 18.4 |
-| `enumerate` + `merge_interners` + `graph` + `resolve` + `render` (serial) | 10.1 | 11.4 |
+| profiled span | 136.0 ms | 61.0 ms |
+| total worker CPU | 106.9 ms | 151.0 ms |
+| `read` | 4.8 | 7.0 |
+| `lex` | 15.1 | 21.5 |
+| `parse` | 11.4 | 16.3 |
+| `lower` | 15.9 | 23.8 |
+| `constrain` | 17.1 | 24.7 |
+| `solve` | 39.2 | 53.2 |
+| `exhaustive` | 3.4 | 4.5 |
+| `enumerate` + `merge_interners` + `graph` + `resolve` + `render` (serial) | 10.1 | 12.1 |
 
-Worker busy time at `--jobs=4` is **44.5 / 44.4 / 43.3 / 43.4 ms** — within
-3 %. The DAG scheduler keeps all four fed for the whole run despite 3 787
-edges and a core package every module depends on; there is no straggler and
-no tail.
+`check` is the parent event of the three checker rows: 73.6 ms at j=1,
+105.7 ms of CPU at j=4. Worker busy time at `--jobs=4` is
+**37.8 / 37.1 / 38.4 / 37.6 ms** — within 3.5 %. The DAG scheduler keeps all
+four fed for the whole run despite 3 787 edges and a core package every module
+depends on; there is no straggler and no tail.
 
-### Why 1.81×, and not more
+### Why 1.94×, and not 4×
 
-Two limits, and both are measured rather than argued.
+Two limits, both measured rather than argued.
 
-1. **The serial tail is 11.4 ms**: enumerate, the interner merge, the graph
-   build and `resolve`, which is still one module at a time. That is 17 % of
+1. **The serial tail is 12.1 ms**: enumerate, the interner merge, the graph
+   build and `resolve`, which is still one module at a time. That is 20 % of
    the `--jobs=4` span and it is the next thing worth parallelising.
-2. **The machine gives about 2.55×, not 4×.** Four independent
-   single-threaded `beni check` processes over the same corpus take **221 ms**
-   wall against **141 ms** for one alone: an aggregate of 4 × 141 / 221 =
-   **2.55×**. The same work costs 58 % more CPU when four workers do it
-   (110.9 → 175.6 ms), and every phase inflates including `read`, which is a
+2. **The machine gives about 2.65×, not 4×.** Four independent
+   single-threaded `beni check` processes over the same corpus take **205 ms**
+   wall against **136 ms** for one alone: an aggregate of 4 × 136 / 205 =
+   **2.65×**. The same work costs 41 % more CPU when four workers do it
+   (106.9 → 151.0 ms) and every phase inflates, `read` included, which is a
    syscall and a memcpy and contends on nothing of ours. This is an N100 —
    four Alder Lake-N E-cores sharing 6 MiB of L3 and one DDR channel — and a
-   checker that allocates a type store per module is memory-bound long before
-   it is core-bound.
+   checker that builds a type store per module is memory-bound long before it
+   is core-bound.
 
-Against those two: the parallel part is 139.5 − 10.1 = 128 ms of work and
-takes 66.4 − 11.4 = 55 ms at four workers, which is **2.33×, or 91 % of the
-2.55× the machine will give**. Amdahl over the measured ceiling predicts a
-span of 128 / 2.55 + 11.4 = 61.7 ms against the 66.4 ms measured, so 93 % of
-the model. **The parallelism is kept**: it is 32 ms of wall time on the
-budget's own corpus, the code it costs is one ready queue and one reverse-edge
-table, and the scaling is as close to the machine's ceiling as the front end's
-is.
+Against those two: the parallel part is 136.0 − 10.1 = 125.9 ms of work and
+takes 61.0 − 12.1 = 48.9 ms at four workers, which is **2.57×, or 97 % of the
+2.65× the machine will give**. Amdahl over the measured ceiling predicts a
+span of 125.9 / 2.65 + 12.1 = 59.6 ms against the 61.0 ms measured, so 98 % of
+the model. **The parallelism is kept**: 40 ms of wall time on the budget's own
+corpus, for one ready queue and one reverse-edge table, scaling as close to
+the machine's ceiling as the front end's does.
 
 ### Type checking throughput (`zig build bench`, single-threaded)
 
@@ -102,20 +100,25 @@ is.
 ```
 
 **1.09 M LOC/s** for checking alone against the §2 target of 250 k LOC/s per
-core, and 78 ms of wall clock for the whole cold pipeline against the 800 ms
+core, and 70 ms of wall clock for the whole cold pipeline against the 800 ms
 budget. `zig build bench` runs the check single-threaded on purpose — the
-target is stated per core — and this line was taken under the neighbour's
-load, so read it as a floor.
+target is stated per core — and this line was taken under a neighbour's load,
+so read it as a floor.
 
 ### Pattern usefulness (checker.md §6.6)
 
-`exhaustive` is **7.1 ms of 139.5**, 5 % of a cold check, over 635 modules.
+`exhaustive` is **3.4 ms of 136**, 2.5 % of a cold check, over 635 modules.
+Its scratch is one arena per WORKER reset per `case`, not one per module: at
+one arena per module the same pass cost 7.1 ms, half of it mapping and
+unmapping a 256 KiB chunk 635 times.
+
 The work budget that bounds the exponential worst case is never approached by
-real code: turning it down until answers change, every `case` in `core/`, in
+real code. Turning it down until answers change: every `case` in `core/`, in
 the `check` corpus and in the generated corpus is decided on a budget of
 **50**, and a deliberately hostile 200-constructor × 200-branch `case` with
 two-deep nests lands between **25 600 and 51 200** — and still finishes in
-**6 ms**. The shipped budget is 200 000.
+**6 ms**. The shipped budget is 200 000, so ~4 000× what real code needs and
+4× what the hostile case needs.
 
 | input | diagnostics | exit | time |
 |---|---:|---:|---:|
@@ -129,16 +132,15 @@ two-deep nests lands between **25 600 and 51 200** — and still finishes in
 `pat_paren` — and `Parse`'s depth guard charged one, so a 4096-charge pattern
 built an 8192-deep tree. Every consumer walks that tree by recursion: 4 000
 levels segfaulted `check`, `dump --stage=ast`, `dump --stage=bir` and `fmt`.
-Two fixes, both narrow: `parsePatAtom` charges the guard as well, so the bound
-is on the TREE and not on the source nesting; and every worker is now spawned
-with an explicit 64 MiB stack (the size M2b measured for the checker),
-`--jobs=1` included, so a crash can no longer depend on the worker count. The
-AST dump runs on such a thread too — 4 090 nested parentheses in an
-*expression* crashed it, which had nothing to do with patterns.
+Two narrow fixes: `parsePatAtom` charges the guard as well, so the bound is on
+the TREE and not on the source nesting; and every worker is now spawned with
+an explicit 64 MiB stack (the size M2b measured for the checker), `--jobs=1`
+included, so a crash can no longer depend on the worker count. The AST dump
+runs on such a thread too — 4 090 nested parentheses in an *expression*
+crashed it, which had nothing to do with patterns.
 
-Cost of always spawning: `beni version` is unchanged at 2 ms, `fmt --check` is
-70 ms at `--jobs=1` and 35 ms at the default, both within noise of M1d's 57/26
-on an idle machine.
+Cost of always spawning: `beni version` is 1-2 ms, unchanged; `fmt --check` is
+70 ms at `--jobs=1` and 35 ms at the default, within noise of M1d's 57/26.
 
 One number in the M1d table below is stale as a result and is left as it was
 taken: 100 000 nested lambdas now produce **4095** diagnostics, not 4096,
