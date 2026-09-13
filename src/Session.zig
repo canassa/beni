@@ -12,7 +12,14 @@
 //!      which file is unobservable: every per-file result lands in a column
 //!      of that file's index, and every per-worker tally is a commutative sum.
 //!   3. Interners are merged in worker index order, never completion order,
-//!      so global symbol numbering does not depend on scheduling.
+//!      so the merge ORDER does not depend on scheduling. Note what this
+//!      does and does not buy: a worker's local pool holds the identifiers
+//!      of the files it happened to take, so the global index a given
+//!      identifier ends up with still varies with `--jobs`. Nothing
+//!      observable depends on it — no `Symbol` is ever printed; the dumps
+//!      and the diagnostics print text — and the moment one reaches an
+//!      artifact that is compared or cached, this becomes a bug and the
+//!      ids have to be assigned by a pass keyed on file index instead.
 //!   4. Diagnostics are gathered in file index order (each file's are
 //!      produced serially by one worker, in source order) and then stably
 //!      sorted by the schema's comparator.
@@ -21,9 +28,13 @@
 //!
 //! The per-file phase is a function pointer (`Phases`): M1a installed
 //! read → tokenize (`lex_phases`), M1b added parse (`parse_phases`), M1c
-//! lower (`lower_phases`), none of them touching the driver. What a phase
-//! produces for a file goes into `artifacts`, keyed by file index and owned
-//! by the session (see `Artifacts.zig` for why they are not arena memory).
+//! lower (`lower_phases`), M1d format (`format_phases`), none of them
+//! touching the driver. What a phase produces for a file goes into
+//! `artifacts`, keyed by file index and owned by the session (see
+//! `Artifacts.zig` for why they are not arena memory). Anything a command
+//! must do in a fixed order — `fmt`'s compare/write/print — is done AFTER
+//! the join, walking files by index, so the per-file work parallelises and
+//! the product still does not depend on `--jobs`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -39,6 +50,7 @@ const LexDiagnostics = @import("lex/Diagnostics.zig");
 const Parse = @import("parse/Parse.zig");
 const ParseDiagnostics = @import("parse/Diagnostics.zig");
 const Lower = @import("bir/Lower.zig");
+const Format = @import("fmt/Format.zig");
 const LowerDiagnostics = @import("bir/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
@@ -102,6 +114,14 @@ pub const parse_phases: Phases = .{ .per_file = parsePhase };
 /// the lowering diagnostics. What `check` and `dump --stage=bir` run.
 pub const lower_phases: Phases = .{ .per_file = lowerPhase };
 
+/// M1d: `parse_phases`, then format into the file's `formatted` column.
+/// What `fmt` runs. Formatting is per-file work with no cross-file
+/// knowledge, so it belongs on a worker like lexing and parsing; the
+/// command that follows only compares, writes and prints, walking files in
+/// index order. Output order and bytes are therefore a function of the
+/// sorted path list alone and not of `--jobs`.
+pub const format_phases: Phases = .{ .per_file = formatPhase };
+
 pub const Worker = struct {
     index: u32,
     arena: Arena,
@@ -113,8 +133,12 @@ pub const Worker = struct {
     diagnostics: std.ArrayList(Pending) = .empty,
     /// Summed into the profile after the join.
     counters: [Profile.Counter.count]u64 = @splat(0),
-    /// The first I/O error this worker hit, and on which file.
-    failure: ?struct { file: SourceStore.Index, err: anyerror } = null,
+    /// The LOWEST-numbered file this worker could not process, and why.
+    /// Lowest, not first: a worker takes files in the order the shared
+    /// counter hands them out, so "first" is a race and "lowest" is not.
+    failure: ?Failure = null,
+
+    pub const Failure = struct { file: SourceStore.Index, err: anyerror };
 
     pub const Pending = struct { file: SourceStore.Index, diagnostic: diagnostic.Diagnostic };
 
@@ -235,11 +259,22 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         }
     }
     session.next_file.store(0, .monotonic);
-    for (session.workers) |worker| {
-        if (worker.failure) |f| {
-            session.io_failure = .{ .path = session.store.path(f.file), .err = f.err };
-            return error.InputPath;
-        }
+    // Which unreadable file gets named must not depend on scheduling
+    // (fast-compiler.md §10): the workers each keep their own
+    // lowest-numbered failure and every one of them finishes its queue, so
+    // the lowest across all of them is the lowest in the project, whatever
+    // `--jobs` was. Reporting the first FAILING WORKER in worker-index
+    // order — which is what this did — named whichever file the
+    // `next_file` race happened to hand to the lowest-numbered worker, and
+    // alternated between runs at the same `--jobs`.
+    var failure: ?Worker.Failure = null;
+    for (session.workers) |*worker| {
+        const f = worker.failure orelse continue;
+        if (failure == null or f.file.int() < failure.?.file.int()) failure = f;
+    }
+    if (failure) |f| {
+        session.io_failure = .{ .path = session.store.path(f.file), .err = f.err };
+        return error.InputPath;
     }
 
     // 3. Merge interners in worker index order, then rewrite every file's
@@ -267,7 +302,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         .warning => summary.warnings += 1,
     };
 
-    for (session.workers) |worker| {
+    for (session.workers) |*worker| {
         inline for (@typeInfo(Profile.Counter).@"enum".fields) |field| {
             session.profile.addCounter(@enumFromInt(field.value), worker.counters[field.value]);
         }
@@ -295,8 +330,13 @@ fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
         if (i >= session.store.count()) return;
         const file: SourceStore.Index = @enumFromInt(i);
         phases.per_file(session, worker, file) catch |err| {
-            if (worker.failure == null) worker.failure = .{ .file = file, .err = err };
-            return;
+            // Keep the lowest-numbered failure and KEEP GOING. Returning
+            // here abandoned the rest of this worker's queue, which is how
+            // a second unreadable file could be found by one run and not
+            // the next; see the pick in `run`.
+            if (worker.failure == null or i < worker.failure.?.file.int()) {
+                worker.failure = .{ .file = file, .err = err };
+            }
         };
         // Each file's artifacts are moved to session storage inside the
         // phase, so the arena is free to be reused for the next one.
@@ -351,6 +391,7 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
         .lex_diagnostics = lex_diagnostics,
         .ast = .empty,
         .bir = .empty,
+        .formatted = null,
         .worker = worker.index,
     });
 }
@@ -431,6 +472,55 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     session.artifacts.files.items(.bir)[file.int()] = bir;
 }
 
+/// The M1d per-file phase: everything `parsePhase` does, then the formatter
+/// over the installed tree, into a session-owned buffer next to it.
+///
+/// A file with any diagnostic has no canonical form and is never written,
+/// printed or listed (`fmt/Command.zig`), so it is not formatted at all —
+/// and the worker can decide that by itself, which is what keeps this phase
+/// free of cross-file knowledge. Every diagnostic a `fmt` run can produce
+/// for a file is already known here: the module-path check is a function of
+/// the path alone (`run` reports it serially before any worker starts), and
+/// the lexer's and the parser's have both finished for this file. Skipped
+/// files leave `formatted` null, which is what the command tests.
+fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
+    try parsePhase(session, worker, file);
+    if (!session.store.modulePathValid(file)) return;
+    if (session.artifacts.lexDiagnostics(file).len != 0) return;
+    const tree = session.artifacts.ast(file);
+    if (tree.errors.len != 0) return;
+
+    const gpa = session.gpa;
+    const text = session.store.bytes(file);
+    const format_token = session.profile.begin();
+    var out: Io.Writer.Allocating = .init(gpa);
+    errdefer out.deinit();
+    Format.format(
+        worker.arena.allocator(),
+        tree,
+        session.artifacts.tokens(file),
+        session.artifacts.comments(file),
+        text,
+        session.store.lineStarts(file),
+        &out.writer,
+    ) catch |err| switch (err) {
+        // Guarded above; belt and braces, and the file is left alone.
+        error.SyntaxErrors => {
+            out.deinit();
+            return;
+        },
+        // An allocating writer fails for one reason only.
+        error.WriteFailed => return error.OutOfMemory,
+        else => |e| return e,
+    };
+    session.profile.end(worker.index, format_token, .format, file.int(), @intCast(text.len));
+    worker.addCounter(.formatted_bytes, out.written().len);
+
+    var list = out.toArrayList();
+    errdefer list.deinit(gpa);
+    session.artifacts.setFormatted(gpa, file, try list.toOwnedSlice(gpa));
+}
+
 fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator.Error!void {
     const p = session.store.path(file);
     const message = try std.fmt.allocPrint(session.gpa,
@@ -459,7 +549,7 @@ fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator
 fn collectDiagnostics(session: *Session) Allocator.Error!void {
     const gpa = session.gpa;
     var total: usize = 0;
-    for (session.workers) |w| total += w.diagnostics.items.len;
+    for (session.workers) |*w| total += w.diagnostics.items.len;
     session.diagnostics.clearRetainingCapacity();
     try session.diagnostics.ensureTotalCapacity(gpa, total);
 
@@ -477,7 +567,7 @@ fn collectDiagnostics(session: *Session) Allocator.Error!void {
     }
     while (true) {
         var best: ?usize = null;
-        for (session.workers, cursors) |w, c| {
+        for (session.workers, cursors) |*w, c| {
             if (c >= w.diagnostics.items.len) continue;
             const file = w.diagnostics.items[c].file.int();
             if (best == null or file < session.workers[best.?].diagnostics.items[cursors[best.?]].file.int()) {

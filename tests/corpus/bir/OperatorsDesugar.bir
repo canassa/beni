@@ -111,7 +111,7 @@ decl 3: value sequences
   %6 = call %5 [%3, %4]
   %7 = local 0 (x)
   %8 = local 1 (xs)
-  %9 = import_value Basics.cons
+  %9 = import_value List.cons
   %10 = call %9 [%7, %8]
   %11 = tuple [%6, %10]
   params [%0, %1, %2]
@@ -122,7 +122,7 @@ decl 3: value sequences
     2 ys param %2
   refs
     import_value Basics.append
-    import_value Basics.cons
+    import_value List.cons
 
 decl 4: value negation
   %0 = pat_var local 0 (x)

@@ -702,6 +702,12 @@ Nesting deeper than 4096 levels of expressions, types or patterns is `nesting_to
 point where the limit is crossed; the file is otherwise parsed. This is the one limit the
 parser imposes and exists so hostile input cannot overflow the stack.
 
+The limit is charged per declaration, and the iteratively built spines — an operator chain, an
+access chain, a `?` chain — hold their charge until the declaration ends. So a declaration whose
+chains total more than 4096 links is refused even when no single path is that deep. Accounting
+each spine exactly would mean carrying a depth per node through the AST, which costs four bytes
+on every node to buy a case no real program reaches; revisit it if one does.
+
 ## Appendix A. The prelude
 
 These names are in scope in every module without an import. The table is a constant inside the

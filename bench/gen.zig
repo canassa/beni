@@ -12,8 +12,11 @@
 //!
 //! Determinism: module `i` is a pure function of `(seed, i)`, so the same
 //! seed and size always produce byte-identical files, and the bench can
-//! regenerate rather than check the tree in. Layout is the formatter's
-//! canonical style (§9) so `fmt` round-trips it unchanged.
+//! regenerate rather than check the tree in. Layout is close to the
+//! formatter's canonical style (§9) but deliberately not identical: `fmt
+//! --check` over the generated tree therefore exercises the compare-and-list
+//! path rather than the all-canonical shortcut, which is the more useful
+//! benchmark. Do not "fix" this without replacing that coverage.
 
 const std = @import("std");
 const Io = std.Io;
@@ -50,6 +53,90 @@ pub fn generate(gpa: Allocator, io: Io, out_dir: []const u8, seed: u64, target_l
         stats.bytes += buffer.written().len;
     }
     return stats;
+}
+
+/// The abuse inputs too big to check into `bench/pathological/`
+/// (the limit there is 256 KB). Each is one file, one line, and is
+/// regenerated on demand by `bench --pathological=<name>` so the repository
+/// does not carry ten megabytes of `1, 1, 1, …` forever.
+///
+/// Only `big-list` is over the 200 ms that earns a permanent place (500 ms,
+/// 228 MB peak at M1d); the other three are here because they are the same
+/// shape one size down and are what the next regression will be measured
+/// against.
+pub const Pathological = enum {
+    /// 10 MB of `[ 1, 1, … ]` on one line. VALID: it must lex, parse and
+    /// lower clean, which is what makes it a throughput case rather than
+    /// an error case. 3.5 M tokens, 3.5 M nodes.
+    @"big-list",
+    /// 10 MB of one string literal: one token, and the case where the
+    /// lexer's inner loop is everything.
+    @"big-string",
+    /// 10 MB of one identifier: one token, interned once, and a hash of
+    /// ten megabytes.
+    @"big-ident",
+    /// 100 000 nested `\x ->`: right-nested, so the parser recurses and
+    /// the depth guard stops it at 4096 — with 4095 `shadowing` errors
+    /// under it, which is the diagnostic-volume case.
+    @"deep-lambdas",
+
+    pub fn parse(name: []const u8) ?Pathological {
+        return std.meta.stringToEnum(Pathological, name);
+    }
+
+    /// Where the case is written under the output directory. Every path
+    /// segment is an upper identifier so the file has a module name
+    /// (language.md §1).
+    pub fn path(which: Pathological) []const u8 {
+        return switch (which) {
+            .@"big-list" => "Gen/BigList.beni",
+            .@"big-string" => "Gen/BigString.beni",
+            .@"big-ident" => "Gen/BigIdent.beni",
+            .@"deep-lambdas" => "Gen/DeepLambdas.beni",
+        };
+    }
+};
+
+/// Write one pathological case under `out_dir`, replacing whatever was
+/// there.
+pub fn generatePathological(gpa: Allocator, io: Io, out_dir: []const u8, which: Pathological) !Stats {
+    var buffer: Io.Writer.Allocating = .init(gpa);
+    defer buffer.deinit();
+    try writePathological(&buffer.writer, which);
+
+    var root = try Io.Dir.cwd().createDirPathOpen(io, out_dir, .{});
+    defer root.close(io);
+    try root.createDirPath(io, "Gen");
+    const text = buffer.written();
+    try root.writeFile(io, .{ .sub_path = which.path(), .data = text });
+    return .{ .files = 1, .lines = std.mem.count(u8, text, "\n"), .bytes = text.len };
+}
+
+const ten_megabytes = 10 * 1024 * 1024;
+
+pub fn writePathological(w: *Io.Writer, which: Pathological) Io.Writer.Error!void {
+    switch (which) {
+        .@"big-list" => {
+            try w.writeAll("main =\n    [ 1");
+            // `, 1` is three bytes; the head and tail are negligible.
+            for (0..ten_megabytes / 3) |_| try w.writeAll(", 1");
+            try w.writeAll(" ]\n");
+        },
+        .@"big-string" => {
+            try w.writeAll("main =\n    \"");
+            try w.splatByteAll('a', ten_megabytes);
+            try w.writeAll("\"\n");
+        },
+        .@"big-ident" => {
+            try w.splatByteAll('a', ten_megabytes);
+            try w.writeByte('\n');
+        },
+        .@"deep-lambdas" => {
+            try w.writeAll("main =\n    ");
+            for (0..100_000) |_| try w.writeAll("\\x -> ");
+            try w.writeAll("1\n");
+        },
+    }
 }
 
 /// `Gen/Page12.beni`, `Gen/Data/Store13.beni`, `Gen/Ui/Widget14.beni`.
@@ -392,10 +479,21 @@ const Module = struct {
         _ = g.push("right");
         try g.line(4, "let", .{});
         const bindings = 1 + g.rng.uintLessThan(u32, 3);
-        var i: u32 = 0;
-        while (i < bindings) : (i += 1) {
+        const with_twice = g.chance(30);
+
+        // A `let` group's bindings are mutually recursive (language.md §6.2):
+        // EVERY name it binds is in scope in EVERY value, including values
+        // written earlier in the block. So all the names are chosen and
+        // pushed here, before the first value is written — otherwise a
+        // lambda parameter picked inside binding 1 only avoids bindings 0..1
+        // and can collide with binding 2, which is a `shadowing` error in
+        // the generator's own output (the bug this loop's shape fixes).
+        var names: [3][]const u8 = undefined;
+        for (names[0..bindings]) |*slot| slot.* = g.bind();
+        if (with_twice) _ = g.push("twice");
+
+        for (names[0..bindings], 0..) |local, i| {
             if (i != 0 and g.chance(50)) try g.blank();
-            const local = g.bind();
             if (g.chance(30)) try g.line(8, "{s} : Int", .{local});
             if (g.chance(50)) {
                 try g.line(8, "{s} =", .{local});
@@ -408,14 +506,14 @@ const Module = struct {
             try g.w.writeByte('\n');
             g.lines += 1;
         }
-        if (g.chance(30)) {
-            // A let-bound function with its own parameter.
+        if (with_twice) {
+            // A let-bound function with its own parameter: fresh against
+            // every sibling binding, which is already in scope.
             const mark = g.scopeMark();
-            const param = g.bind(); // never a sibling binding's name: that would shadow
+            const param = g.bind();
             try g.line(8, "twice {s} =", .{param});
             try g.line(12, "{s} * 2", .{param});
             g.scopeReset(mark);
-            _ = g.push("twice");
         }
         try g.line(4, "in", .{});
         try g.w.splatByteAll(' ', 4);
@@ -720,6 +818,136 @@ test "generated modules respect the lexical rules the lexer enforces" {
         try testing.expect(std.mem.indexOf(u8, text, "\nimport ") != null);
         try testing.expect(std.mem.indexOf(u8, text, "\npub type alias Model") != null);
     }
+}
+
+test "no parameter inside a let block shadows one of the block's bindings" {
+    // The generator's output must be free of `shadowing` (language.md §7.3),
+    // and this is the one shape that ever slipped through: a `let` group is
+    // mutually recursive, so a lambda parameter chosen while writing the
+    // FIRST binding's value is in scope of the LAST binding's name too.
+    // `beni check .zig-cache/bench-gen` is the end-to-end statement of the
+    // same claim; this test makes it fail here, in milliseconds.
+    var out: Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    var blocks: usize = 0;
+    for (0..120) |i| {
+        out.clearRetainingCapacity();
+        _ = try writeModule(&out.writer, default_seed, @intCast(i));
+        blocks += try checkLetBlocks(out.written());
+    }
+    // `let` is one of ten random declaration kinds, so assert the scan
+    // actually found blocks: a test that passes by finding nothing is not
+    // a test.
+    try testing.expect(blocks > 40);
+}
+
+/// Scan every top-level `let` block in `text` (the ones `letFn` writes, at
+/// indent 4 with bindings at indent 8) and fail if any name bound inside it
+/// — a lambda parameter, a let-bound function's parameter — repeats one of
+/// the block's binding names, or if two bindings share a name. Returns the
+/// number of blocks scanned.
+fn checkLetBlocks(text: []const u8) !usize {
+    var blocks: usize = 0;
+    var binding_buf: [8][]const u8 = undefined;
+    var bindings: []const []const u8 = binding_buf[0..0];
+    var param_buf: [64][]const u8 = undefined;
+    var params: []const []const u8 = param_buf[0..0];
+    var in_block = false;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        // A line at column 1 starts the next declaration and ends the block.
+        if (in_block and line.len != 0 and line[0] != ' ') {
+            try expectNoShadowing(bindings, params);
+            in_block = false;
+        }
+        if (std.mem.eql(u8, line, "    let")) {
+            in_block = true;
+            blocks += 1;
+            bindings = binding_buf[0..0];
+            params = param_buf[0..0];
+            continue;
+        }
+        if (!in_block) continue;
+
+        if (std.mem.startsWith(u8, line, "        ") and line.len > 8 and line[8] != ' ') {
+            const body = line[8..];
+            if (std.mem.startsWith(u8, body, "twice ")) {
+                bindings = try append(&binding_buf, bindings, "twice");
+                params = try append(&param_buf, params, identAt(body["twice ".len..]));
+            } else {
+                const bound = identAt(body);
+                const after = body[bound.len..];
+                // ` = ` only: `name : Int` is the annotation of the
+                // binding on the next line, not a second binding.
+                if (bound.len != 0 and std.mem.startsWith(u8, after, " =")) {
+                    bindings = try append(&binding_buf, bindings, bound);
+                }
+            }
+        }
+        var rest = line;
+        while (std.mem.indexOf(u8, rest, "(\\")) |at| {
+            rest = rest[at + 2 ..];
+            params = try append(&param_buf, params, identAt(rest));
+        }
+    }
+    if (in_block) try expectNoShadowing(bindings, params);
+    return blocks;
+}
+
+/// `list` with `name` appended, in `buf`. The buffers are sized for the
+/// shapes `letFn` writes; overflowing one means the generator grew a case
+/// this scan no longer covers, which is a failure, not a silent truncation.
+fn append(buf: [][]const u8, list: []const []const u8, name: []const u8) ![]const []const u8 {
+    if (list.len == buf.len) return error.ScanBufferTooSmall;
+    buf[list.len] = name;
+    return buf[0 .. list.len + 1];
+}
+
+fn expectNoShadowing(bindings: []const []const u8, params: []const []const u8) !void {
+    for (bindings, 0..) |b, i| {
+        for (bindings[i + 1 ..]) |other| if (std.mem.eql(u8, b, other)) {
+            std.debug.print("let block binds `{s}` twice\n", .{b});
+            return error.DuplicateBinding;
+        };
+        for (params) |p| if (std.mem.eql(u8, b, p)) {
+            std.debug.print("parameter `{s}` shadows a sibling let binding\n", .{p});
+            return error.ParameterShadowsBinding;
+        };
+    }
+}
+
+/// The identifier at the start of `s`, empty when there is none.
+fn identAt(s: []const u8) []const u8 {
+    var n: usize = 0;
+    while (n < s.len and (std.ascii.isAlphanumeric(s[n]) or s[n] == '_')) n += 1;
+    return s[0..n];
+}
+
+test "every pathological case is one line, the size it claims, and named by a valid module path" {
+    var out: Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    inline for (@typeInfo(Pathological).@"enum".fields) |field| {
+        const which: Pathological = @enumFromInt(field.value);
+        out.clearRetainingCapacity();
+        try writePathological(&out.writer, which);
+        const text = out.written();
+        // The point of every one of these is that the payload is on ONE
+        // line: a file with a million short lines is a different stress.
+        try testing.expect(std.mem.count(u8, text, "\n") <= 2);
+        try testing.expect(text[text.len - 1] == '\n');
+        try testing.expect(text.len > 500_000);
+        // `Pathological.parse` round-trips the name the flag takes.
+        try testing.expectEqual(@as(?Pathological, which), Pathological.parse(field.name));
+        // Every path segment is an upper identifier (language.md §1), so
+        // the file has a module name and `beni check` on it does not
+        // report `invalid_module_path` instead of what it is here for.
+        var segments = std.mem.splitScalar(u8, which.path(), '/');
+        while (segments.next()) |segment| {
+            const stem = if (std.mem.endsWith(u8, segment, ".beni")) segment[0 .. segment.len - ".beni".len] else segment;
+            try testing.expect(stem.len != 0 and std.ascii.isUpper(stem[0]));
+        }
+    }
+    try testing.expectEqual(@as(?Pathological, null), Pathological.parse("no-such-case"));
 }
 
 test "module paths are valid upper-identifier segments" {

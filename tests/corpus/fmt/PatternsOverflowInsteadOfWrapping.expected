@@ -1,0 +1,17 @@
+-- language.md §9: patterns are never broken across lines. A `case` pattern,
+-- a parameter list or a `let` pattern that does not fit overflows the
+-- 100-column guide rather than wrapping — there is no wrapped form a reader
+-- could tell from the `->` that follows. The parenthesised pattern here used
+-- to come out as a 106-column line plus a lone `) ->` underneath: over the
+-- guide AND unreadable. Every pattern below stays on one line, whatever its
+-- width and whatever the author did.
+f x =
+    case x of
+        Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) ->
+            2
+        ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) ->
+            3
+        [ aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ] ->
+            4
+        _ ->
+            5

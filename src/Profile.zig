@@ -47,6 +47,12 @@ pub const Counter = enum {
     nodes,
     insts,
     diagnostics,
+    /// Bytes the formatter produced, over the files it formatted (a file
+    /// with a diagnostic has no canonical form and is not formatted). It is
+    /// the `fmt` counterpart of `bytes`: the two together say how much of
+    /// the input the formatter actually rewrote, and `fmt` runs that would
+    /// silently stop formatting show up as a zero here.
+    formatted_bytes,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

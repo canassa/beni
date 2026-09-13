@@ -423,11 +423,20 @@ fn importRef(l: *Lower, tag: Inst.Tag, ref_kind: Bir.Ref.Kind, module: Symbol, n
     return l.addInst(tag, @intFromEnum(m), @intFromEnum(n));
 }
 
-/// `import_value(Basics, name)` for the core function an operator or a
-/// negation desugars to. Fixed to `Basics` whatever the file declares:
-/// operators are syntax (§6.5), not names subject to shadowing.
+/// `import_value(Basics, name)` for a core function reached by desugaring
+/// rather than by an operator — negation, `?`. Fixed to `Basics` whatever
+/// the file declares: these are syntax (§6.5), not names subject to
+/// shadowing.
 fn basicsRef(l: *Lower, name: WellKnown) Allocator.Error!Index {
     return l.importRef(.import_value, .import_value, WellKnown.Basics.symbol(), name.symbol());
+}
+
+/// `import_value(home, function)` for the core function an operator
+/// desugars to, with the home module the operator's own (see
+/// `operatorFunction`) rather than `Basics` for all of them.
+fn operatorRef(l: *Lower, op: Token.Tag) Allocator.Error!Index {
+    const f = operatorFunction(op);
+    return l.importRef(.import_value, .import_value, f.module.symbol(), f.function.symbol());
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,7 +1129,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const params = try l.addRangeRecord(try l.addRange(&.{param.int()}));
             return l.addInst(.lambda, @intFromEnum(params), access.int());
         },
-        .op_fn => return l.basicsRef(operatorFunction(l.tags[main_token])),
+        .op_fn => return l.operatorRef(l.tags[main_token]),
         .unit => return l.addInst(.unit, 0, 0),
         .negate => {
             const operand = try l.lowerExpr(l.tree.operand(node));
@@ -1207,7 +1216,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const b = l.tree.fullBinop(node);
             const lhs = try l.lowerExpr(b.lhs);
             const rhs = try l.lowerExpr(b.rhs);
-            const function = try l.basicsRef(operatorFunction(l.tags[b.op_token]));
+            const function = try l.operatorRef(l.tags[b.op_token]);
             return l.call(function, &.{ lhs.int(), rhs.int() });
         },
         else => {
@@ -1222,29 +1231,37 @@ fn call(l: *Lower, callee: Index, args: []const u32) Allocator.Error!Index {
     return l.addInst(.call, callee.int(), @intFromEnum(range));
 }
 
-/// The core function of language.md §6.5's table for an operator token.
-fn operatorFunction(op: Token.Tag) WellKnown {
+/// The core function of language.md §6.5's table for an operator token,
+/// **with the module that defines it**. Almost every operator is a
+/// `Basics` function, but not all of them: `::` is `List.cons` (Elm's
+/// `(::)` is `List.cons`, and core puts it there), so the home module is
+/// per operator rather than assumed — checker.md §4.3. Getting this wrong
+/// is invisible until name resolution looks the function up in the wrong
+/// interface, which is why the corpus goldens print the module.
+const OperatorFunction = struct { module: WellKnown, function: WellKnown };
+
+fn operatorFunction(op: Token.Tag) OperatorFunction {
     return switch (op) {
-        .op_plus => .add,
-        .op_minus => .sub,
-        .op_star => .mul,
-        .op_slash => .fdiv,
-        .op_slash_slash => .idiv,
-        .op_caret => .pow,
-        .op_plus_plus => .append,
-        .op_colon_colon => .cons,
-        .op_eq_eq => .eq,
-        .op_slash_eq => .neq,
-        .op_lt => .lt,
-        .op_gt => .gt,
-        .op_lte => .le,
-        .op_gte => .ge,
-        .op_and_and => .@"and",
-        .op_or_or => .@"or",
-        .op_pipe_left => .apL,
-        .op_pipe_right => .apR,
-        .op_compose_left => .composeL,
-        .op_compose_right => .composeR,
+        .op_plus => .{ .module = .Basics, .function = .add },
+        .op_minus => .{ .module = .Basics, .function = .sub },
+        .op_star => .{ .module = .Basics, .function = .mul },
+        .op_slash => .{ .module = .Basics, .function = .fdiv },
+        .op_slash_slash => .{ .module = .Basics, .function = .idiv },
+        .op_caret => .{ .module = .Basics, .function = .pow },
+        .op_plus_plus => .{ .module = .Basics, .function = .append },
+        .op_colon_colon => .{ .module = .List, .function = .cons },
+        .op_eq_eq => .{ .module = .Basics, .function = .eq },
+        .op_slash_eq => .{ .module = .Basics, .function = .neq },
+        .op_lt => .{ .module = .Basics, .function = .lt },
+        .op_gt => .{ .module = .Basics, .function = .gt },
+        .op_lte => .{ .module = .Basics, .function = .le },
+        .op_gte => .{ .module = .Basics, .function = .ge },
+        .op_and_and => .{ .module = .Basics, .function = .@"and" },
+        .op_or_or => .{ .module = .Basics, .function = .@"or" },
+        .op_pipe_left => .{ .module = .Basics, .function = .apL },
+        .op_pipe_right => .{ .module = .Basics, .function = .apR },
+        .op_compose_left => .{ .module = .Basics, .function = .composeL },
+        .op_compose_right => .{ .module = .Basics, .function = .composeR },
         else => unreachable, // `op_fn` and binop nodes hold operator tokens only
     };
 }
@@ -1945,7 +1962,7 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
 
 // ---- Desugarings (§8.2) ---------------------------------------------------------
 
-test "operators become calls of their Basics functions, `(+)` the function itself, `-x` a negate call" {
+test "operators become calls of their core functions, `(+)` the function itself, `-x` a negate call" {
     try expectDecls(
         \\f a b =
         \\    ( a + b, a // b, a :: [], (+), -a )
@@ -1964,7 +1981,7 @@ test "operators become calls of their Basics functions, `(+)` the function itsel
         \\  %9 = call %8 [%6, %7]
         \\  %10 = local 0 (a)
         \\  %11 = list []
-        \\  %12 = import_value Basics.cons
+        \\  %12 = import_value List.cons
         \\  %13 = call %12 [%10, %11]
         \\  %14 = import_value Basics.add
         \\  %15 = local 0 (a)
@@ -1979,7 +1996,7 @@ test "operators become calls of their Basics functions, `(+)` the function itsel
         \\  refs
         \\    import_value Basics.add
         \\    import_value Basics.idiv
-        \\    import_value Basics.cons
+        \\    import_value List.cons
         \\    import_value Basics.negate
         \\
     , &.{});
@@ -2068,6 +2085,55 @@ test "every binary operator maps to the §6.5 core function" {
         \\    import_value Basics.or
         \\
     , &.{});
+}
+
+test "`::` desugars to List.cons, not Basics.cons" {
+    // checker.md §4.3: `::` is `List.cons` and `++` is `Basics.append`,
+    // matching Elm, where `(::)` is `List.cons`. Assuming `Basics` for
+    // every operator emitted `import_value Basics.cons` — a name no
+    // interface has — and nothing noticed, because name resolution against
+    // interfaces is M2. The home module is per operator for this reason.
+    try expectDecls(
+        \\f x xs =
+        \\    x :: xs
+        \\
+    ,
+        \\decl 0: value f
+        \\  %0 = pat_var local 0 (x)
+        \\  %1 = pat_var local 1 (xs)
+        \\  %2 = local 0 (x)
+        \\  %3 = local 1 (xs)
+        \\  %4 = import_value List.cons
+        \\  %5 = call %4 [%2, %3]
+        \\  params [%0, %1]
+        \\  body %5
+        \\  locals
+        \\    0 x param %0
+        \\    1 xs param %1
+        \\  refs
+        \\    import_value List.cons
+        \\
+    , &.{});
+}
+
+test "the operator table gives every operator a home module, and only `::` leaves Basics" {
+    const ops = [_]Token.Tag{
+        .op_plus,        .op_minus,      .op_star,         .op_slash,
+        .op_slash_slash, .op_caret,      .op_plus_plus,    .op_colon_colon,
+        .op_eq_eq,       .op_slash_eq,   .op_lt,           .op_gt,
+        .op_lte,         .op_gte,        .op_and_and,      .op_or_or,
+        .op_pipe_left,   .op_pipe_right, .op_compose_left, .op_compose_right,
+    };
+    for (ops) |op| {
+        const f = operatorFunction(op);
+        const expected: InternPool.WellKnown = if (op == .op_colon_colon) .List else .Basics;
+        testing.expectEqual(expected, f.module) catch |err| {
+            std.debug.print("operator {t} resolved to module {t}\n", .{ op, f.module });
+            return err;
+        };
+    }
+    try testing.expectEqualDeep(OperatorFunction{ .module = .List, .function = .cons }, operatorFunction(.op_colon_colon));
+    try testing.expectEqualDeep(OperatorFunction{ .module = .Basics, .function = .append }, operatorFunction(.op_plus_plus));
 }
 
 test "`|>` and `<|` flatten into saturated calls, through grouping parentheses" {

@@ -46,10 +46,16 @@ pub const File = struct {
     /// `symbols` hold the producing worker's LOCAL symbols until
     /// `applyRemap`, like the token payloads.
     bir: Bir,
+    /// Owned (M1d). The file's canonical text, produced by the `format`
+    /// phase on a worker. `null` means "not formatted": either the phase
+    /// did not run, or the file has a diagnostic and therefore no canonical
+    /// form. An EMPTY file formats to zero bytes, which is why this is an
+    /// optional and not a length test.
+    formatted: ?[]const u8,
     /// Which worker's interner the token payloads and Bir symbols refer to.
     worker: u32,
 
-    pub const empty: File = .{ .tokens = .empty, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .worker = 0 };
+    pub const empty: File = .{ .tokens = .empty, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = 0 };
 
     fn deinit(file: *File, gpa: Allocator) void {
         file.tokens.deinit(gpa);
@@ -57,6 +63,7 @@ pub const File = struct {
         gpa.free(file.lex_diagnostics);
         file.ast.deinit(gpa);
         file.bir.deinit(gpa);
+        if (file.formatted) |text| gpa.free(text);
         file.* = undefined;
     }
 };
@@ -111,6 +118,20 @@ pub fn bir(a: *const Artifacts, index: SourceStore.Index) *const Bir {
     return &a.files.items(.bir)[index.int()];
 }
 
+/// The file's canonical text, or null when it was not formatted (see
+/// `File.formatted`).
+pub fn formatted(a: *const Artifacts, index: SourceStore.Index) ?[]const u8 {
+    return a.files.items(.formatted)[index.int()];
+}
+
+/// Install `index`'s canonical text, taking ownership. Safe from a worker
+/// for its own index, like `set`.
+pub fn setFormatted(a: *Artifacts, gpa: Allocator, index: SourceStore.Index, text: []const u8) void {
+    const slot = &a.files.items(.formatted)[index.int()];
+    if (slot.*) |old| gpa.free(old);
+    slot.* = text;
+}
+
 pub fn worker(a: *const Artifacts, index: SourceStore.Index) u32 {
     return a.files.items(.worker)[index.int()];
 }
@@ -149,7 +170,7 @@ test "resize, set, applyRemap, and the old entry is freed" {
     const cs = try gpa.dupe(Token.Comment, &.{.{ .kind = .plain, .start = 5, .before_token = 2 }});
     var lowered: Bir = .empty;
     lowered.symbols = try gpa.dupe(InternPool.Symbol, &.{ @enumFromInt(1), @enumFromInt(0) });
-    a.set(gpa, @enumFromInt(1), .{ .tokens = list, .comments = cs, .lex_diagnostics = &.{}, .ast = .empty, .bir = lowered, .worker = 3 });
+    a.set(gpa, @enumFromInt(1), .{ .tokens = list, .comments = cs, .lex_diagnostics = &.{}, .ast = .empty, .bir = lowered, .formatted = null, .worker = 3 });
     try testing.expectEqual(@as(u32, 3), a.worker(@enumFromInt(1)));
     try testing.expectEqual(@as(usize, 1), a.comments(@enumFromInt(1)).len);
 
@@ -162,7 +183,7 @@ test "resize, set, applyRemap, and the old entry is freed" {
     // would report a leak otherwise), and resize frees everything.
     var again: Token.TokenList = .empty;
     try again.append(gpa, .{ .tag = .eof, .start = 0, .line = 0, .payload = 0 });
-    a.set(gpa, @enumFromInt(1), .{ .tokens = again, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .worker = 0 });
+    a.set(gpa, @enumFromInt(1), .{ .tokens = again, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = 0 });
     try a.resize(gpa, 1);
     try testing.expectEqual(@as(usize, 1), a.files.len);
 }

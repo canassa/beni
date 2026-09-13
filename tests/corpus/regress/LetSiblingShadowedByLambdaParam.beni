@@ -1,0 +1,19 @@
+-- Regression: a `let` group's bindings are ALL in scope in EVERY binding's
+-- value, including values written above them, because the group is mutually
+-- recursive (language.md §6.2). A lambda parameter named like a LATER
+-- sibling therefore shadows it.
+--
+-- `bench/gen.zig` got this wrong: it chose each binding's name just before
+-- writing that binding's value, so a parameter picked inside the first
+-- value only avoided the names bound so far. `beni check` on the generated
+-- 100k-line corpus reported five of these. Expected: one `shadowing` at
+-- 14:26, naming `total`, bound on line 16.
+compute left right =
+    let
+        first =
+            List.foldl (\total carry -> carry + total) 0 [ left ]
+
+        total =
+            right + 1
+    in
+    first + total

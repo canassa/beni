@@ -275,14 +275,291 @@ test "--self-profile writes a Chrome trace with a read event per file and the co
     try testing.expectEqual(@as(?u64, 0), counter_diagnostics);
 }
 
-test "output is byte-identical across --jobs=1 and --jobs=4, twice each" {
+test "--self-profile records every phase of every file and every counter, exactly" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The counters are what the M4 incrementality tests will assert
+    // ("dependents were not re-checked"), so they have to be right before
+    // there is anything to be incremental about. Three files, small enough
+    // that every number can be stated and checked from the outside.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const files = [_]struct { path: []const u8, source: []const u8 }{
+        .{ .path = "src/A.beni", .source = "main =\n    1\n" },
+        .{ .path = "src/B.beni", .source = "double x =\n    x * 2\n" },
+        .{ .path = "src/C.beni", .source = "pub type Color\n    = Red\n    | Green\n" },
+    };
+    var total_bytes: u64 = 0;
+    for (files) |f| {
+        try w.write(f.path, f.source);
+        total_bytes += f.source.len;
+    }
+
+    // The token count is not guessed: it is the number of token lines
+    // `dump --stage=tokens` prints, which is the same array the counter
+    // sums. Comments come after a `-- comments` heading and are not
+    // tokens.
+    var total_tokens: u64 = 0;
+    for (files) |f| {
+        const dump = try w.runWith(&.{ "dump", "--stage=tokens", f.path }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const heading = std.mem.indexOf(u8, dump.stdout, "-- comments\n") orelse return error.NoCommentsHeading;
+        total_tokens += std.mem.count(u8, dump.stdout[0..heading], "\n");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--jobs=2", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const Event = struct {
+        name: []const u8,
+        cat: ?[]const u8 = null,
+        ph: []const u8,
+        tid: u32,
+        args: struct {
+            file: ?[]const u8 = null,
+            bytes: ?u64 = null,
+            files: ?u64 = null,
+            tokens: ?u64 = null,
+            nodes: ?u64 = null,
+            insts: ?u64 = null,
+            diagnostics: ?u64 = null,
+            formatted_bytes: ?u64 = null,
+            dropped_events: ?u64 = null,
+        },
+    };
+    const text = try w.read("trace.json");
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, text, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+
+    // Four phase events per file, each naming its own file and carrying
+    // that file's size; three serial steps with no file at all.
+    var seen: [files.len][4]bool = @splat(@splat(false));
+    var serial: [3]bool = @splat(false);
+    const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
+    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "render" };
+    var counters: [6]?u64 = @splat(null);
+    for (parsed.value.traceEvents) |e| {
+        if (std.mem.eql(u8, e.ph, "X")) {
+            try testing.expectEqualStrings("phase", e.cat.?);
+            try testing.expect(e.tid < 2);
+            if (e.args.file) |file| {
+                const f = indexOfPath(&files, file) orelse {
+                    std.debug.print("phase event for an unexpected file: {s}\n", .{file});
+                    return error.UnexpectedPhaseEvent;
+                };
+                const phase = indexOfName(&per_file, e.name) orelse {
+                    std.debug.print("unexpected per-file phase: {s}\n", .{e.name});
+                    return error.UnexpectedPhaseEvent;
+                };
+                try testing.expect(!seen[f][phase]); // exactly one each
+                seen[f][phase] = true;
+                try testing.expectEqual(@as(?u64, files[f].source.len), e.args.bytes);
+            } else {
+                serial[indexOfName(&serial_names, e.name) orelse return error.UnexpectedPhaseEvent] = true;
+            }
+        } else if (std.mem.eql(u8, e.ph, "C")) {
+            if (std.mem.eql(u8, e.name, "files")) counters[0] = e.args.files;
+            if (std.mem.eql(u8, e.name, "bytes")) counters[1] = e.args.bytes;
+            if (std.mem.eql(u8, e.name, "tokens")) counters[2] = e.args.tokens;
+            if (std.mem.eql(u8, e.name, "nodes")) counters[3] = e.args.nodes;
+            if (std.mem.eql(u8, e.name, "insts")) counters[4] = e.args.insts;
+            if (std.mem.eql(u8, e.name, "diagnostics")) counters[5] = e.args.diagnostics;
+        }
+    }
+    try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
+    try testing.expectEqual([3]bool{ true, true, true }, serial);
+
+    // `files`, `bytes` and `tokens` are computed above; `nodes` and
+    // `insts` are the AST and BIR sizes of these three modules, which
+    // nothing outside the compiler can derive — they are literals, and a
+    // change to either IR's shape is meant to show up here as a number to
+    // look at rather than as silence.
+    try testing.expectEqual([6]?u64{ 3, total_bytes, total_tokens, 13, 6, 0 }, counters);
+    try testing.expectEqual(@as(u64, 71), total_bytes);
+    try testing.expectEqual(@as(u64, 19), total_tokens);
+}
+
+/// The index of `path` in `files`, or null.
+fn indexOfPath(files: anytype, path: []const u8) ?usize {
+    for (files, 0..) |f, i| if (std.mem.eql(u8, f.path, path)) return i;
+    return null;
+}
+
+fn indexOfName(names: []const []const u8, name: []const u8) ?usize {
+    for (names, 0..) |n, i| if (std.mem.eql(u8, n, name)) return i;
+    return null;
+}
+
+test "every stream of every command is byte-identical across --jobs=1 and --jobs=8, twice each" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Determinism is a requirement, not an aspiration (fast-compiler.md
+    // §10): two runs must agree byte for byte on every stream whatever the
+    // worker count. Forty modules across four subdirectories, three
+    // quarters of them carrying a diagnostic, and the diagnostics come from
+    // three different phases and from the serial module-path check — so
+    // what is compared is not just "a list came out sorted" but the merge
+    // of four kinds of finding produced on whichever worker happened to
+    // take the file.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var name_buf: [64]u8 = undefined;
+    var body_buf: [128]u8 = undefined;
+    var paths: [40][]const u8 = undefined;
+    for (&paths, 0..) |*path, i| {
+        // Every fifth module has a path no module name can come from; the
+        // rest are ordinary `Sub<n>/Module<i>`.
+        const rel = if (i % 5 == 4)
+            try std.fmt.bufPrint(&name_buf, "src/Sub{d}/bad-{d}.beni", .{ i % 4, i })
+        else
+            try std.fmt.bufPrint(&name_buf, "src/Sub{d}/Module{d}.beni", .{ i % 4, i });
+        const body = switch (i % 4) {
+            0 => try std.fmt.bufPrint(&body_buf, "value{d} =\n    {d}\n", .{ i, i }), // clean
+            1 => try std.fmt.bufPrint(&body_buf, "value{d} =\n    missing{d}\n", .{ i, i }), // lowering
+            2 => try std.fmt.bufPrint(&body_buf, "value{d} =\n\t{d}\n", .{ i, i }), // lexical
+            else => try std.fmt.bufPrint(&body_buf, "value{d} =\n    [ {d}\n", .{ i, i }), // syntax
+        };
+        try w.write(rel, body);
+        path.* = try w.arena.allocator().dupe(u8, rel);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // One transcript per pass: every command's exit code, stdout and
+    // stderr, concatenated with a header naming the command, so a
+    // mismatch points at the command that drifted instead of at a byte
+    // offset in a wall of output.
+    var transcripts: [4][]const u8 = undefined;
+    const jobs = [4][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    for (&transcripts, jobs) |*transcript, j| {
+        var out: std.ArrayList(u8) = .empty;
+        defer out.deinit(testing.allocator);
+        // Whole-project commands.
+        try record(&w, &out, &.{ "check", "--diagnostics=json", j, "src" });
+        try record(&w, &out, &.{ "check", j, "src" });
+        try record(&w, &out, &.{ "fmt", "--check", j, "src" });
+        // Per-file commands, in the order the enumerator would number
+        // them, so the transcript itself has a fixed shape.
+        for (paths) |path| {
+            try record(&w, &out, &.{ "fmt", "--stdout", j, path });
+            try record(&w, &out, &.{ "dump", "--stage=ast", j, path });
+            try record(&w, &out, &.{ "dump", "--stage=bir", j, path });
+        }
+        transcript.* = try w.arena.allocator().dupe(u8, out.items);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (transcripts[1..]) |other| try testing.expectEqualStrings(transcripts[0], other);
+    // And the transcript is not trivially empty: 3 project commands plus
+    // 3 per file, each contributing one header line.
+    try testing.expectEqual(@as(usize, 3 + 3 * 40), std.mem.count(u8, transcripts[0], "\n$ beni "));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Nothing above writes: `fmt --check` and `fmt --stdout` never touch
+    // a file, which is also why the four passes see the same project.
+    for (paths, 0..) |path, i| {
+        const body = switch (i % 4) {
+            0 => try std.fmt.bufPrint(&body_buf, "value{d} =\n    {d}\n", .{ i, i }),
+            1 => try std.fmt.bufPrint(&body_buf, "value{d} =\n    missing{d}\n", .{ i, i }),
+            2 => try std.fmt.bufPrint(&body_buf, "value{d} =\n\t{d}\n", .{ i, i }),
+            else => try std.fmt.bufPrint(&body_buf, "value{d} =\n    [ {d}\n", .{ i, i }),
+        };
+        try testing.expectEqualStrings(body, try w.read(path));
+    }
+}
+
+/// Append one command's whole observable result to `out`: the argv, the
+/// exit code, stdout and stderr. Raw — the point is to compare the bytes
+/// the compiler produced, not a parse of them. `--jobs` is left out of the
+/// header because it is the variable under test: everything else in the
+/// transcript must be the same whatever it was.
+fn record(w: *World, out: *std.ArrayList(u8), args: []const []const u8) !void {
+    const r = try w.runWith(args, .{ .raw_diagnostics = true });
+    try out.appendSlice(testing.allocator, "\n$ beni ");
+    for (args) |a| {
+        if (std.mem.startsWith(u8, a, "--jobs=")) continue;
+        try out.appendSlice(testing.allocator, a);
+        try out.append(testing.allocator, ' ');
+    }
+    var line: [64]u8 = undefined;
+    try out.appendSlice(testing.allocator, try std.fmt.bufPrint(&line, "\n= {d}\n--- stdout\n", .{r.exit_code}));
+    try out.appendSlice(testing.allocator, r.stdout);
+    try out.appendSlice(testing.allocator, "--- stderr\n");
+    try out.appendSlice(testing.allocator, r.stderr);
+}
+
+test "an unreadable file is named identically across --jobs=1 and --jobs=8, twice each" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The determinism requirement covers the failure path too, and that is
+    // where it used to break: each worker recorded only the FIRST file it
+    // could not read and then abandoned its queue, and `run` reported the
+    // first failing worker in worker-index order — so with two unreadable
+    // files, which one got named followed the race for the shared file
+    // counter. Two unreadable files, far apart in sorted order, are what
+    // makes the difference visible.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var name_buf: [64]u8 = undefined;
+    var body_buf: [64]u8 = undefined;
+    for (0..41) |i| {
+        const rel = try std.fmt.bufPrint(&name_buf, "src/M{d:0>3}.beni", .{i});
+        try w.write(rel, try std.fmt.bufPrint(&body_buf, "value{d} =\n    {d}\n", .{ i, i }));
+    }
+    if (!try w.makeUnreadable("src/M003.beni") or !try w.makeUnreadable("src/M037.beni")) {
+        std.debug.print("skipping: chmod 000 did not make the file unreadable (running as root?)\n", .{});
+        return;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const runs = [_]world.Result{
+        try w.runWith(&.{ "check", "--jobs=1", "src" }, .{ .raw_diagnostics = true }),
+        try w.runWith(&.{ "check", "--jobs=8", "src" }, .{ .raw_diagnostics = true }),
+        try w.runWith(&.{ "check", "--jobs=1", "src" }, .{ .raw_diagnostics = true }),
+        try w.runWith(&.{ "check", "--jobs=8", "src" }, .{ .raw_diagnostics = true }),
+    };
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // The LOWEST-numbered unreadable file — sorted path order — is the one
+    // named, at every worker count.
+    try testing.expectEqualStrings("beni: cannot read 'src/M003.beni': AccessDenied\n", runs[0].stderr);
+    for (runs) |r| {
+        try testing.expectEqual(@as(u8, 2), r.exit_code);
+        try testing.expectEqualStrings(runs[0].stderr, r.stderr);
+        try testing.expectEqualStrings("", r.stdout);
+    }
+}
+
+test "diagnostics are sorted by file path whatever the worker count" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    // Twenty files; a third have invalid module paths so stderr carries
-    // several diagnostics whose ORDER is what parallelism could disturb.
     var name_buf: [64]u8 = undefined;
     var body_buf: [64]u8 = undefined;
     for (0..20) |i| {
@@ -296,26 +573,15 @@ test "output is byte-identical across --jobs=1 and --jobs=4, twice each" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const runs = [_]world.Result{
-        try w.run(&.{ "check", "--jobs=1", "src" }),
-        try w.run(&.{ "check", "--jobs=4", "src" }),
-        try w.run(&.{ "check", "--jobs=1", "src" }),
-        try w.run(&.{ "check", "--jobs=4", "src" }),
-    };
+    const r = try w.run(&.{ "check", "--jobs=4", "src" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 1), runs[0].exit_code);
-    try testing.expectEqual(@as(usize, 7), runs[0].diagnostics.len);
-    for (runs[1..]) |r| {
-        try testing.expectEqual(runs[0].exit_code, r.exit_code);
-        try testing.expectEqualStrings(runs[0].stdout, r.stdout);
-        try testing.expectEqualStrings(runs[0].stderr, r.stderr);
-    }
-    // And the order is the documented one: by file path.
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 7), r.diagnostics.len);
     var previous: []const u8 = "";
-    for (runs[0].diagnostics) |d| {
+    for (r.diagnostics) |d| {
         try testing.expect(std.mem.order(u8, previous, d.span.file) == .lt);
         previous = d.span.file;
     }

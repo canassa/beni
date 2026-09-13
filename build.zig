@@ -85,7 +85,11 @@ pub fn build(b: *std.Build) void {
     // relative to it). The blackbox modules import only `diagnostic`: reaching
     // for an internal is a compile error, not a code-review finding.
     const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the installed binary)");
-    for ([_][]const u8{ "tests/blackbox/blackbox_test.zig", "tests/blackbox/corpus_test.zig" }) |root| {
+    for ([_][]const u8{
+        "tests/blackbox/blackbox_test.zig",
+        "tests/blackbox/corpus_test.zig",
+        "tests/blackbox/abuse_test.zig",
+    }) |root| {
         const t = b.addTest(.{
             .root_module = b.createModule(.{
                 .root_source_file = b.path(root),

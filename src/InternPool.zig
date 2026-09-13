@@ -11,8 +11,15 @@
 //! interns into its own `Local`; after the parallel phase the driver calls
 //! `Global.merge` for each worker IN WORKER INDEX ORDER, which returns the
 //! remap table `local symbol → global symbol` the worker then applies to its
-//! token payloads and Bir references. Merging in a fixed order is what makes
-//! global symbol numbering deterministic regardless of scheduling.
+//! token payloads and Bir references. Merging in a fixed order makes the
+//! merge REPRODUCIBLE for a given set of local pools — but the pools
+//! themselves are not: a worker interns the identifiers of the files it
+//! happened to take, in that order, so the global index an identifier gets
+//! still depends on `--jobs`. That is harmless while no `Symbol` reaches
+//! an output — the dumps and diagnostics print text, never ids — and it
+//! becomes a bug the moment one does (a cached artifact, a serialized
+//! interface), at which point global ids must be assigned by a pass keyed
+//! on file index. `Session.run`'s header says the same thing.
 //!
 //! `Global` is thread-confined to that merge step in M1. Sharding it for
 //! concurrent lookups (Zig's `InternPool` encoding with the thread id in the

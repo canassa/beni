@@ -1,0 +1,25 @@
+-- The width band 96..100. `fits` adds the node's whole width to the cursor,
+-- so asking it AFTER the head token is printed charges the head twice; the
+-- last type application of an annotation 96 to 100 columns wide was pushed
+-- onto a continuation line (`... -> Maybe` / `    Int`), a shape §9 does
+-- not describe. Each annotation below is exactly the width its name says
+-- and must come out unchanged; the 101 one breaks at every arrow, which is
+-- the rule for an annotation that does not fit.
+w95 : TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT -> Int -> Maybe Int
+w95 a b =
+    Nothing
+
+
+w96 : TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT -> Int -> Maybe Int
+w96 a b =
+    Nothing
+
+
+w100 : TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT -> Int -> Maybe Int
+w100 a b =
+    Nothing
+
+
+w101 : TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT -> Int -> Maybe Int
+w101 a b =
+    Nothing

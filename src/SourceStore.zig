@@ -169,9 +169,21 @@ pub fn addPending(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start:
     try store.pending.append(gpa, .{ .path = owned, .rel_start = rel_start });
 }
 
-/// Recursive walk in sorted entry order, skipping `.`-prefixed entries. The
-/// order does not affect numbering (`finish` sorts globally) but keeps the
-/// directory reads themselves deterministic.
+/// Recursive walk in sorted entry order, skipping `.`-prefixed entries and
+/// every symlink. The order does not affect numbering (`finish` sorts
+/// globally) but keeps the directory reads themselves deterministic.
+///
+/// **The walk never follows a symlink.** A single `dir/loop -> ..` makes the
+/// tree infinite, and following it either never terminates or — what beni
+/// did before this rule — dies with the OS's `SymLinkLoop` on a path the
+/// user never wrote, failing the whole run with exit 2 because of one link
+/// somewhere in the tree. Cycle *detection* (a device/inode set) would cost
+/// a stat per entry and a growing set for the one case in a thousand where
+/// a symlinked directory is wanted; skipping is O(1), needs no state, and
+/// has an obvious escape hatch — name the target on the command line, where
+/// an argument path IS followed (`addPath` stats with the default
+/// `follow_symlinks`). Symlinked *files* are skipped by the same rule, so
+/// "the walk does not follow symlinks" is one sentence rather than two.
 fn walk(store: *SourceStore, gpa: Allocator, io: Io, dir_path: []const u8, root: []const u8) AddPathError!void {
     var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
     defer dir.close(io);
@@ -186,8 +198,10 @@ fn walk(store: *SourceStore, gpa: Allocator, io: Io, dir_path: []const u8, root:
     while (try it.next(io)) |entry| {
         if (entry.name.len == 0 or entry.name[0] == '.') continue;
         var kind = entry.kind;
-        if (kind == .sym_link or kind == .unknown) {
-            const stat = dir.statFile(io, entry.name, .{}) catch continue;
+        if (kind == .unknown) {
+            // A filesystem without `d_type`. Ask, but do NOT follow: a
+            // symlink must still report as one so the rule above holds.
+            const stat = dir.statFile(io, entry.name, .{ .follow_symlinks = false }) catch continue;
             kind = stat.kind;
         }
         if (kind != .directory and !(kind == .file and std.mem.endsWith(u8, entry.name, extension))) continue;

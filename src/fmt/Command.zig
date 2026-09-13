@@ -1,14 +1,21 @@
 //! `beni fmt [--check] [--stdout] <path>...` (docs/design/frontend.md §1,
 //! language.md §9): the driver around `Format`.
 //!
-//! The session runs the ordinary read → lex → parse phases over every path
-//! and renders whatever diagnostics they produce; formatting happens
-//! afterwards, serially, file by file in index order (sorted paths), so the
-//! `--check` listing and the `--stdout` product are deterministic whatever
-//! `--jobs` is. A file with any diagnostic — lexical, syntactic, or an
-//! invalid module path — has no canonical form and is never written, printed
-//! or listed: its diagnostics are the whole output for it, and the exit code
-//! is 1. Every other file formats totally.
+//! Formatting itself is a per-file worker phase (`Session.format_phases`):
+//! read → tokenize → parse → format, on whichever worker took the file,
+//! into a session-owned buffer in that file's `Artifacts` column. What is
+//! left here is the part that must happen in a fixed order — compare the
+//! canonical text with the source, then write it, print it, or list the
+//! path — and it walks files by index (sorted paths) after the join. The
+//! `--check` listing, the `--stdout` product and the bytes written are
+//! therefore a function of the input alone, not of `--jobs`; the
+//! determinism scenario compares all three across `--jobs=1` and `--jobs=8`.
+//!
+//! A file with any diagnostic — lexical, syntactic, or an invalid module
+//! path — has no canonical form and is never written, printed or listed:
+//! its diagnostics are the whole output for it, and the exit code is 1. The
+//! worker decides that (a file's diagnostics are all known by the end of
+//! its own phase), and leaves `formatted` null; here, null means skip.
 //!
 //! In-place writes go through `Io.Dir.createFileAtomic` + `replace`: the
 //! text lands in a temporary file in the same directory and is renamed over
@@ -24,11 +31,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
-const Arena = @import("../Arena.zig");
 const Cli = @import("../Cli.zig");
 const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
-const Format = @import("Format.zig");
 
 /// Run the command to completion and return the process exit code.
 /// `options` is the session configuration `main` derived from the common
@@ -36,7 +41,7 @@ const Format = @import("Format.zig");
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options: Session.Options, fmt: Cli.Fmt) u8 {
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
-    const summary = session.run(fmt.paths, Session.parse_phases, stderr) catch |err| switch (err) {
+    const summary = session.run(fmt.paths, Session.format_phases, stderr) catch |err| switch (err) {
         error.InputPath => {
             const failure = session.io_failure.?;
             return fail(stderr, "beni: cannot read '{s}': {t}", .{ failure.path, failure.err });
@@ -45,8 +50,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     };
     if (fmt.stdout and session.store.count() != 1) return fail(stderr, "beni: fmt --stdout needs exactly one file", .{});
 
-    return formatAll(&session, stdout, stderr, fmt, summary) catch |err| switch (err) {
-        error.OutOfMemory => fail(stderr, "beni: out of memory", .{}),
+    return emitAll(&session, stdout, stderr, fmt, summary) catch |err| switch (err) {
         error.WriteFailed => 2,
     };
 }
@@ -56,52 +60,20 @@ fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u
     return 2;
 }
 
-fn formatAll(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, fmt: Cli.Fmt, summary: Session.Summary) (Allocator.Error || Io.Writer.Error)!u8 {
-    const gpa = session.gpa;
-    const count = session.store.count();
-
-    // Files with a diagnostic keep their bytes. The diagnostics carry the
-    // store's own path strings, so the lookup is exact.
-    const failed = try gpa.alloc(bool, count);
-    defer gpa.free(failed);
-    @memset(failed, false);
-    for (session.diagnostics.items) |d| {
-        if (session.store.find(d.span.file)) |index| failed[index.int()] = true;
-    }
-
-    var scratch: Arena = .init(std.heap.page_allocator);
-    defer scratch.deinit();
-    var out: Io.Writer.Allocating = .init(gpa);
-    defer out.deinit();
-
+/// Walk the files in index order and act on each one's canonical text.
+/// Nothing here formats: the text is already in `artifacts`, so this loop
+/// is a byte compare plus at most one write or print per file.
+fn emitAll(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, fmt: Cli.Fmt, summary: Session.Summary) Io.Writer.Error!u8 {
     var changed = false;
     var io_failed = false;
-    for (0..count) |i| {
-        if (failed[i]) continue;
+    for (0..session.store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
-        out.clearRetainingCapacity();
-        scratch.reset(.retain_capacity);
-        Format.format(
-            scratch.allocator(),
-            session.artifacts.ast(file),
-            session.artifacts.tokens(file),
-            session.artifacts.comments(file),
-            session.store.bytes(file),
-            session.store.lineStarts(file),
-            &out.writer,
-        ) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            // Every syntax error was reported and flagged above; this is
-            // belt and braces, and the file is simply left alone.
-            error.SyntaxErrors => continue,
-            error.WriteFailed => return error.OutOfMemory, // an allocating writer fails only for memory
-        };
-        const text = out.written();
+        // Null means the file has a diagnostic and no canonical form.
+        const text = session.artifacts.formatted(file) orelse continue;
         const path = session.store.path(file);
 
         if (fmt.stdout) {
             try stdout.writeAll(text);
-            try stdout.flush();
             continue;
         }
         if (std.mem.eql(u8, text, session.store.bytes(file))) continue;

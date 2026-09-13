@@ -91,7 +91,27 @@ context: Context = .module,
 recovering: bool = false,
 /// Offset of the last reported error; a second error there is dropped.
 last_error_start: u32 = std.math.maxInt(u32),
-/// Expression nesting, for the depth guard.
+/// Expression nesting, for the depth guard. Two kinds of charge share it.
+/// `enter`/`leave` bracket a RECURSIVE descent and release on the way out,
+/// so they measure the current path. `enterSpine` charges a node that a
+/// LOOP is about to hang the node it built last iteration under, and does
+/// NOT release: `parseBinop`'s operator loop, `parseAccessChain` and
+/// `parsePostfix`'s `?` loop each build a left-deep chain one node per
+/// iteration without recursing, so the parser frames they save are frames
+/// every CONSUMER — `Lower.lowerExpr`, `dump/ast.zig` — still has to spend
+/// walking the result. (`Format.zig` flattens them on purpose and says so.)
+///
+/// Releasing a spine charge when its loop ends is not enough: the subtree
+/// it built is still an ancestor of whatever comes next, so
+/// `((a.b….c…).d…)` would stack any number of maximum-length spines under
+/// one another with the counter back at zero between them. Holding the
+/// charge until the declaration ends (`resetDepth`) makes `max_depth`
+/// bound the depth of the whole declaration, which is the bound every
+/// consumer's recursion needs. The cost is that a single declaration
+/// containing more than `max_depth` chain links in total — 4096 operators,
+/// field accesses and `?`s added up — is reported as `nesting_too_deep`
+/// even when no one path is that long. Nothing a person writes comes near
+/// it, and what does is a generated file that would otherwise crash us.
 depth: u32 = 0,
 /// Next unprocessed comment, for doc attachment.
 comment_i: u32 = 0,
@@ -583,6 +603,9 @@ fn parseModule(p: *Parse) Allocator.Error!void {
                 p.skipToColumnOne();
             },
         }
+        // Every `enter` this item took has been matched by its `leave`;
+        // what is left is the spine charge, which belongs to the item.
+        p.resetDepth();
         p.assertProgress(before);
     }
     try p.reportPendingAnnotation(&pending);
@@ -1102,6 +1125,29 @@ fn leave(p: *Parse) void {
     p.depth -= 1;
 }
 
+/// Charge one level for a node a loop is about to build on its own spine
+/// (see `depth`). False when there is no room: `nesting_too_deep` has been
+/// reported and the parser has recovered, and the loop must stop and
+/// return the chain it has, which is a structurally valid node.
+fn enterSpine(p: *Parse) Allocator.Error!bool {
+    if (p.depth < max_depth) {
+        p.depth += 1;
+        return true;
+    } else {
+        @branchHint(.cold);
+        _ = try p.report(p.itemAt(.nesting_too_deep));
+        p.recover();
+        return false;
+    }
+}
+
+/// Release every spine charge. Called between top-level items, which is
+/// the scope `enterSpine`'s charges live in.
+fn resetDepth(p: *Parse) void {
+    std.debug.assert(p.depth <= max_depth);
+    p.depth = 0;
+}
+
 fn isBlockStart(tag: Tag) bool {
     return switch (tag) {
         .keyword_let, .keyword_if, .keyword_case, .backslash => true,
@@ -1199,6 +1245,10 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
             _ = try p.report(p.itemAt(.non_associative_chain));
             // Continue as if left-associative so the tree stays complete.
         }
+        // The node this iteration builds becomes the parent of the one it
+        // built last time: one more level of tree, even though the parser
+        // does not recurse for it.
+        if (!try p.enterSpine()) break;
         const op_token = p.next();
         const rhs = if (isBlockStart(p.peek()))
             try p.parseExpr() // the last operand; extends as far as layout allows
@@ -1227,12 +1277,15 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
 fn parsePostfix(p: *Parse) Allocator.Error!Index {
     var node = try p.parseApp();
     while (p.peek() == .question) {
+        if (!try p.enterSpine()) break;
         const q = p.next();
         node = try p.unary(.question, q, node);
         node = try p.parseAccessChain(node);
         if (canStartAtom(p.peek())) {
             @branchHint(.cold);
             _ = try p.report(p.itemAt(.args_after_question));
+            // The `apply` wraps the chain: another level.
+            if (!try p.enterSpine()) break;
             node = try p.parseArgs(node);
         }
     }
@@ -1285,10 +1338,12 @@ fn parseAccessChain(p: *Parse, base: Index) Allocator.Error!Index {
         switch (p.peek()) {
             .dot_lower => {
                 if (!p.adjacent(p.tok_i)) break;
+                if (!try p.enterSpine()) break;
                 node = try p.unary(.field_access, p.next(), node);
             },
             .dot_index => {
                 if (!p.adjacent(p.tok_i)) break;
+                if (!try p.enterSpine()) break;
                 const dot = p.next();
                 const digits = p.tokenText(dot)[1..];
                 if (digits.len > 1 and digits[0] == '0') {
@@ -1709,7 +1764,14 @@ fn parsePattern(p: *Parse) Allocator.Error!Index {
     defer p.context = saved_context;
     const inner = try p.parsePatCons();
     if (p.eat(.keyword_as)) |as_token| {
-        const name = (try p.expectToken(.lower_ident)) orelse return p.addNode(.{ .tag = .pat_as, .main_token = as_token, .data = .{ .lhs = inner.int(), .rhs = as_token } });
+        // No name: the pattern keeps the part it HAS rather than a
+        // `pat_as` whose name token is the `as` keyword. Lowering reads
+        // that token with `tokenSymbol`, which asserts the tag is an
+        // interned one — a keyword is not, so the old placeholder panicked
+        // in Debug and, in ReleaseFast where the assert is gone, bound a
+        // variable named `main` (a keyword's payload is 0, which is
+        // `WellKnown.main`). `expectToken` has already reported.
+        const name = (try p.expectToken(.lower_ident)) orelse return inner;
         return p.addNode(.{ .tag = .pat_as, .main_token = as_token, .data = .{ .lhs = inner.int(), .rhs = name } });
     }
     return inner;

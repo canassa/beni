@@ -62,7 +62,13 @@ fn fail(stderr: *Io.Writer, comptime fmt: []const u8, args: anytype) u8 {
 }
 
 fn sessionOptions(common: Cli.Common) Session.Options {
-    const jobs: u32 = common.jobs orelse @intCast(@min(std.Thread.getCpuCount() catch 1, std.math.maxInt(u32)));
+    const cpus: u32 = @intCast(@min(std.Thread.getCpuCount() catch 1, std.math.maxInt(u32) / 4));
+    // More workers than this cannot help and does hurt: every worker costs
+    // an `Arena`, an interner pre-seeded with the well-known symbols, and a
+    // thread. `--jobs=20000` on a six-byte file spent 7.6 s building them.
+    // Four per CPU leaves room for an oversubscribed build to ask for more
+    // than it has cores without the flag becoming a way to hang the tool.
+    const jobs: u32 = @min(common.jobs orelse cpus, cpus *| 4);
     return .{
         .jobs = @max(jobs, 1),
         .diagnostics = switch (common.diagnostics) {

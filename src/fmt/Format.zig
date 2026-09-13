@@ -103,9 +103,17 @@
 //!   their bytes, like every literal's, are copied verbatim, trailing spaces
 //!   included. Interpolations are copied verbatim too (`"${ a }"` keeps its
 //!   spaces): a string is one literal.
-//! - Patterns are inline: constructor arguments and record patterns never
-//!   break; tuple and list patterns use the vertical collection form when
-//!   they do not fit.
+//! - **Patterns are never broken across lines** (language.md §9). A `case`
+//!   pattern, a definition's parameter list or a `let` pattern that does
+//!   not fit overflows the 100-column guide; it is not wrapped, and a
+//!   pattern the author broke is joined. The reason is that there is no
+//!   wrapped form a reader could tell from the `->` that follows: the
+//!   vertical form this printer used to produce put a lone `) ->` under a
+//!   line that was still over the guide, which is worse on both counts. A
+//!   pattern long enough to overflow is a signal to introduce a name. The
+//!   same holds for the head line of a definition. Both places a pattern
+//!   could break — a parenthesised pattern and a tuple or list pattern —
+//!   therefore force the one-line form rather than consulting the width.
 //! - An empty file formats to an empty file; otherwise the output ends in
 //!   exactly one newline.
 
@@ -1134,8 +1142,12 @@ const Printer = struct {
 
     fn constructor(p: *Printer, n: Index, indent: u32) Error!void {
         const c = p.tree.fullConstructor(n);
+        // Measured BEFORE the name is printed: `widths[n]` spans the whole
+        // node, name included, so asking after printing it charges the name
+        // twice and breaks a construct that fits (see `.type_con`).
+        const one_line = p.fits(n);
         try p.tok(c.name);
-        try p.args(c.name, c.args, .type, p.fits(n), indent);
+        try p.args(c.name, c.args, .type, one_line, indent);
     }
 
     /// Arguments after a head whose last token is `head_last`. All on the
@@ -1188,7 +1200,7 @@ const Printer = struct {
     /// two past that column; their continuation lines four past it.
     fn collection(p: *Printer, n: Index, elems: []const Index, comptime kind: Kind, indent: u32) Error!void {
         const open = p.tree.nodeMainToken(n);
-        const one_line = p.fits(n);
+        const one_line = kind == .pattern or p.fits(n);
         const col = p.curCol();
         try p.tok(open);
         if (elems.len == 0) {
@@ -1239,7 +1251,7 @@ const Printer = struct {
     fn wrapped(p: *Printer, n: Index, comptime kind: Kind, indent: u32) Error!void {
         const inner = p.tree.operand(n);
         const open = p.tree.nodeMainToken(n);
-        const one_line = p.fits(n);
+        const one_line = kind == .pattern or p.fits(n);
         const col = p.curCol();
         try p.tok(open);
         if (one_line) {
@@ -1560,8 +1572,16 @@ const Printer = struct {
             .type_var => try p.tok(main),
             .type_con => {
                 const c = tree.fullTypeCon(n);
+                // `fits` compares `curCol() + widths[n]` against
+                // `max_width`, and `widths[n]` covers the WHOLE node —
+                // `Maybe Int` is 9, not 4. Asking after `Maybe` is printed
+                // charges those 5 bytes twice, which is why an annotation
+                // whose one-line form was 96-100 columns wide had its last
+                // type application pushed onto a continuation line while 95
+                // stayed put. `.apply` already hoists it; so does this.
+                const one_line = p.fits(n);
                 try p.tok(c.name);
-                try p.args(c.name, c.args, .type, p.fits(n), indent);
+                try p.args(c.name, c.args, .type, one_line, indent);
             },
             .type_fn => try p.arrows(n, indent, false),
             .type_unit => {
@@ -2518,6 +2538,71 @@ test "every pattern form with canonical spacing" {
     );
 }
 
+test "a pattern that does not fit overflows the guide instead of wrapping" {
+    // language.md §9: patterns are never broken across lines. Before that
+    // rule the parenthesised pattern below came out as a 106-column line
+    // followed by a lone `) ->` — over the guide AND unreadable, because
+    // nothing tells the reader where the pattern ends and the branch
+    // begins. All three of these are over 100 columns and all three stay
+    // on one line.
+    try check(
+        \\f x = case x of
+        \\  Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) -> 2
+        \\  ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) -> 3
+        \\  [ aLongFieldName
+        \\      , anotherLongFieldName
+        \\      , aThirdLongFieldName
+        \\      , moreStuffHere
+        \\      , extraLongNameHere
+        \\      ] -> 4
+        \\  _ -> 5
+        \\
+    ,
+        \\f x =
+        \\    case x of
+        \\        Other (Wrapped aLongFieldName anotherLongFieldName aThirdLongFieldName moreStuffHere extraLongName) ->
+        \\            2
+        \\        ( aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ) ->
+        \\            3
+        \\        [ aLongFieldName, anotherLongFieldName, aThirdLongFieldName, moreStuffHere, extraLongNameHere ] ->
+        \\            4
+        \\        _ ->
+        \\            5
+        \\
+    );
+}
+
+test "an annotation whose one-line form is 96 to 100 columns wide stays on one line" {
+    // `fits(n)` compares `curCol() + widths[n]` with `max_width`, and
+    // `widths[n]` spans the WHOLE node — `Maybe Int` is 9 bytes, not 4.
+    // Asking it after the head token is printed charged `Maybe` twice, so
+    // an annotation 96..100 columns wide had its last type application
+    // pushed onto a continuation line (`… -> Maybe` / `    Int`), a shape
+    // §9 does not describe. 95 and below were one byte short of the
+    // doubled head mattering; 101 and above break at the arrows, which is
+    // correct. Every width in the band is checked, because a boundary bug
+    // is exactly the kind that one example misses.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const head = "f : ";
+    const tail = " -> Int -> Maybe Int";
+    for (90..105) |target| {
+        const padding = try arena.alloc(u8, target - head.len - tail.len);
+        @memset(padding, 'T');
+        const line = try std.fmt.allocPrint(arena, "{s}{s}{s}", .{ head, padding, tail });
+        try testing.expectEqual(target, line.len);
+        const input = try std.fmt.allocPrintSentinel(arena, "{s}\nf x y =\n    Nothing\n", .{line}, 0);
+        const out = try run(arena, input);
+        const first_line = out.text[0..std.mem.indexOfScalar(u8, out.text, '\n').?];
+        const want: []const u8 = if (target <= max_width) line else "f :";
+        testing.expectEqualStrings(want, first_line) catch |err| {
+            std.debug.print("at width {d}\n", .{target});
+            return err;
+        };
+    }
+}
+
 // ---- Types -------------------------------------------------------------------
 
 test "every type form; annotations broken at every arrow when they do not fit; record types like records" {
@@ -2783,13 +2868,21 @@ test "deep nesting and very long chains format without exhausting the stack" {
         try checkRoundTrip(arena, try arena.dupeZ(u8, src.items));
     }
     // A left-associative chain, an access chain and a question chain, each
-    // 20000 long: none of them is depth-limited by the parser. The AST
-    // dumper recurses per node and cannot check these, so idempotence
+    // as long as the parser will build one. These are the three spines the
+    // parser assembles in a loop; the printer flattens them in a loop too
+    // (`Measurer.chain`, `Measurer.access`), which is why it survives what
+    // the AST dumper cannot. The dump is therefore skipped and idempotence
     // alone is asserted.
+    //
+    // 4000, not 20000: `Parse.max_depth` now bounds these spines as well
+    // (they are real tree depth, and every other consumer recurses along
+    // them), so a 20000-link chain is `nesting_too_deep` and would not
+    // reach the formatter at all. Each `x = a` costs one level before the
+    // chain starts, hence 4000 rather than 4096.
     inline for (.{ " + a", ".a", "?" }) |piece| {
         var src: std.ArrayList(u8) = .empty;
         try src.appendSlice(arena, "x = a");
-        for (0..20000) |_| try src.appendSlice(arena, piece);
+        for (0..4000) |_| try src.appendSlice(arena, piece);
         try src.append(arena, '\n');
         const first = try runWith(arena, try arena.dupeZ(u8, src.items), false);
         const again = try runWith(arena, try arena.dupeZ(u8, first.text), false);

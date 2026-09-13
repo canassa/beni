@@ -107,8 +107,13 @@ fn walk(kind: Kind) !void {
             failures += 1;
         };
     }
-    std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind.dir(), fixtures.items.len, failures });
-    if (failures != 0) return error.CorpusFailures;
+    // Only on failure: anything a passing test writes to stderr makes the
+    // build runner print `failed command` next to a step that succeeded,
+    // which reads as a broken suite to everyone who sees it.
+    if (failures != 0) {
+        std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind.dir(), fixtures.items.len, failures });
+        return error.CorpusFailures;
+    }
 }
 
 /// One `.beni` under a corpus directory.

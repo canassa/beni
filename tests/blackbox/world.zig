@@ -99,6 +99,33 @@ pub const World = struct {
         try world.tmp.dir.writeFile(world.io, .{ .sub_path = rel_path, .data = contents });
     }
 
+    /// Create an empty directory (and its parents). A project shape a
+    /// scenario needs that `write` cannot make, because an empty directory
+    /// holds no file.
+    pub fn createDir(world: *World, rel_path: []const u8) !void {
+        try world.tmp.dir.createDirPath(world.io, rel_path);
+    }
+
+    /// Create a symlink at `rel_path` pointing at `target` exactly as
+    /// written (never resolved). The compiler's walk must not follow it —
+    /// `dir/loop -> ..` is an infinite tree — so the scenarios that pin
+    /// that rule need to be able to build one.
+    pub fn symlink(world: *World, target: []const u8, rel_path: []const u8) !void {
+        if (std.fs.path.dirname(rel_path)) |dir| try world.tmp.dir.createDirPath(world.io, dir);
+        try world.tmp.dir.symLink(world.io, target, rel_path, .{});
+    }
+
+    /// Take away every permission on `rel_path` (chmod 000), so the
+    /// compiler's read of it fails. Returns false when the file is still
+    /// readable afterwards — running as root, or a filesystem that does
+    /// not carry permissions — so a scenario can say so instead of
+    /// asserting something the machine will not do.
+    pub fn makeUnreadable(world: *World, rel_path: []const u8) !bool {
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0), .{});
+        _ = world.tmp.dir.readFileAlloc(world.io, rel_path, world.arena.allocator(), .limited(1)) catch return true;
+        return false;
+    }
+
     /// Read a file from the project. Owned by the world.
     pub fn read(world: *World, rel_path: []const u8) ![]u8 {
         return world.tmp.dir.readFileAlloc(world.io, rel_path, world.arena.allocator(), .limited(max_stream_bytes));

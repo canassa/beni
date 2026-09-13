@@ -1,0 +1,10 @@
+-- `as` with no name after it. The parser's recovery used to build a
+-- `pat_as` whose name token was the `as` KEYWORD; lowering read it with
+-- `tokenSymbol`, which panicked in Debug and, in ReleaseFast, bound a
+-- variable named `main` (a keyword's payload is 0, and symbol 0 is `main`).
+-- Five lines, no phase is slow: it is here because it crashed us.
+f =
+    let
+        (x as) = 1
+    in
+    x
