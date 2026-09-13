@@ -985,15 +985,33 @@ modules an edit affects, so any change forces a full reload (03 §6). ESM keeps 
 analysable to bundlers and HMR runtimes, and the decision is unchangeable later without breaking
 every consumer.
 
-**Split the minification work by who has the information.** Beni does whole-program field-name
-shortening ranked by real cross-module usage frequency — a generic minifier structurally cannot see
-this — and hands local-variable mangling and peephole compression to Terser/esbuild, passing
-`pure_funcs` annotations that are safe *only* because purity is guaranteed (03 §6). Elm's TodoMVC:
-122KB → 24KB minified → 9KB gzipped with exactly this split.
+**Beni is a full-stack solution: no external bundler, no external minifier.** `beni build`
+produces deployable JavaScript on its own. This reverses the earlier decision here, which split
+the work — whole-program field-name shortening for us, local-variable mangling and peephole
+compression handed to Terser or esbuild with `pure_funcs` annotations. That split was a
+reasonable division of labour, and it is given up deliberately: a toolchain a user has to
+assemble is not the product this project is trying to be, and the handoff was the one place
+where the purity proof had to be re-explained to a tool that could not verify it.
+
+What we must now build ourselves, at minimum: local-variable renaming with scope analysis, the
+peephole and constant-folding pass, whitespace and punctuation minimisation, and source maps that
+survive all of it (§9.6) — on top of the field-name shortening and exact dead-code elimination
+(§9.1) that were always ours. The reference point for owning the whole pipeline is Closure
+Compiler's advanced mode, not Terser. Report 12 is the evidence base for what that costs and
+where the bytes actually are; **§9.5 must be re-read against it before M3 begins.**
+
+Elm's TodoMVC is still the size target to beat: 122KB → 24KB minified → 9KB gzipped.
 
 **Code splitting is designed in now, not retrofitted.** Per-entry-point reachability sets over the
 §9.1 graph, intersected to find shared chunks. Elm has no chunking concept and adding one means
-reworking its emission core — a documented example of the cost of deferring this.
+reworking its emission core — a documented example of the cost of deferring this. Large programs
+are expected to need chunks, so this is a requirement of M3 rather than a later nicety.
+
+Two questions this leaves open, both for report 12: whether chunk assignment happens at
+*declaration* granularity — our dead-code graph is per top-level binding, finer than the
+per-module graph every bundler chunks on — and what the **language-level trigger** for a split
+is. A pure language with effects as values (§3.1) has no `import()` and no dynamic loading
+syntax, so the thing a user writes to mean "this route loads later" does not exist yet.
 
 ### 9.6 Source maps
 
