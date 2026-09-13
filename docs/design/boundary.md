@@ -47,9 +47,27 @@ included, since a whitelisted author is a distribution fact wearing a compiler's
 `foreign` in an ordinary module stays `foreign_outside_core`, renamed to `foreign_outside_platform`
 now that core is not the only privileged package.
 
-## 3. Ports: the user-facing boundary
+## 3. Two routes out, and neither is a call
 
-Ports stay, asynchronous, and are the only way user code reaches the outside world.
+User code reaches the outside world two ways, and the distinction is worth stating because Elm has
+only the second and Roc only the first:
+
+- **Calling an effect a platform provides.** `Http.get : Request -> Task Error Response` is an
+  ordinary function the platform declared `foreign` at effect type (§4, shape (b)). This is Roc's
+  shape and it is the ergonomic path: no message plumbing, no correlation, just a `Task`. It is
+  bounded by what the platform author thought to offer.
+- **Declaring a port.** When no platform offers what you need, you declare the port yourself and
+  the compiler generates the codec from the type you wrote. This is Elm's shape and it is the
+  escape hatch — the thing Roc has no equivalent of, where an app whose platform lacks a capability
+  is simply stuck.
+
+Neither is a call into JavaScript. Both produce values, which is what keeps §7.2's purity argument
+intact. The first is bounded by the platform's imagination, the second by the codec generator, and
+having both is why the garden can be richly furnished *and* still have a way out.
+
+### 3.1 Ports
+
+Ports stay, and stay asynchronous.
 
 **The payload widens to any type the compiler can generate a codec for.** This is the change that
 removes the most-cited friction without touching the safety argument, because the safety comes from
@@ -69,6 +87,25 @@ code, which is the one failure class nothing can catch. The ergonomic complaint 
 answer is not synchrony but **correlation**: core ships the request/response layer that three Elm
 community packages each had to rebuild, as a `Task`-shaped API over one port pair. The cost is one
 frame of latency, permanently, and it is worth stating plainly rather than discovering.
+
+### 3.2 What we take from Roc, and what does not transfer
+
+The vocabulary is Roc's and so is the governance idea, but Roc's platform is a *separate program* —
+usually written in Rust, Zig or C — that owns the entry point, the memory allocator and the host
+process, with the Roc code embedded inside it. beni owns none of those; V8 does. So a beni platform
+is a package of beni plus its sibling JavaScript, not a host, and the boundary is far thinner
+because both sides run in one runtime: Roc's platform boundary is a foreign-function interface to
+native code, ours is a module import.
+
+| Roc concept | Here |
+|---|---|
+| Anyone may write a platform | **taken** — §2, and it is the fix for Elm's sparseness |
+| The platform declares `main`'s type | **taken** — §5 |
+| `hosted` declarations legal only in a platform | **taken** as `foreign`, §4 |
+| The app calls platform-provided typed effects | **taken** — §3, the ergonomic path |
+| The platform is a host program in another language | **not applicable** — V8 is the host |
+| The platform owns allocation and the entry point | **not applicable** — same reason |
+| No user-declarable escape hatch | **rejected** — ports are exactly that, §3.1 |
 
 ## 4. `foreign` in a platform package, and the checks Elm lacks
 
