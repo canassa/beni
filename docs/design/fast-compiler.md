@@ -6,7 +6,7 @@
 **Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
 modules; no typeclasses, no macros, no type-level computation.
 
-This document synthesises nine research reports, each source-verified against primary material
+This document synthesises ten research reports, each source-verified against primary material
 and the vendored compilers in `references/`. They are kept alongside this doc and are the
 evidence base for every claim here:
 
@@ -21,6 +21,7 @@ evidence base for every claim here:
 | 07 | [`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md) | How Roc replaced typeclasses with static dispatch, and what doesn't transfer |
 | 08 | [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md) | Roc on annotations, operators, cycles, shadowing, aliases, effects, numbers, lists — and why it changed its syntax |
 | 09 | [`research/09-adhoc-polymorphism-survey.md`](research/09-adhoc-polymorphism-survey.md) | Was Elm's omission deliberate; what dictionary passing costs on JS; what seven languages do instead |
+| 10 | [`research/10-monomorphisation-and-incremental.md`](research/10-monomorphisation-and-incremental.md) | Roc's measured compile times; where its cache boundary sits; how Rust reconciles mono with incremental builds |
 
 ---
 
@@ -79,6 +80,12 @@ numbers CI tracks (§12); missing them is a bug report, not a nice-to-have.
 Two non-goals, stated so they don't creep in: Beni does not aim to beat esbuild at bundling
 third-party JavaScript, and it does not aim for sub-millisecond *cold* starts. It aims for edits
 that feel instantaneous inside a running session.
+
+**These targets are Elm-shaped, not Roc-shaped, and the difference is one phase.** Roc caches
+checking and not specialisation, and its measured times split exactly along that line: `roc check`
+does 58k lines in **0.78s**, while an `--opt=dev` build of 55k lines takes **16.9s** — about 3,400
+lines/s against Elm's ~120–130k for its whole pipeline (10). We are aiming at the first profile, and
+the reason it is reachable is that there is no specialisation phase to pay for.
 
 ## 3. Language constraints that exist for compiler speed
 
@@ -181,7 +188,22 @@ with two changes to the reasoning:
   constraints per call site on `inline` functions — both shipped, both compatible with separate
   compilation, both paying in code duplication rather than a global pass.
 
-That second point is the one to keep. It means the door here is **additive**: `number` and
+A follow-up survey (10) tested the obvious objection — Roc specialises the whole program and is
+reputedly fast, so surely the two are compatible. The result sharpened the claim rather than
+overturning it. Rust proves whole-program work *can* be made incremental, but pays for it with
+256 codegen units instead of 16, explicitly worse codegen ("not recommended for release builds"),
+cross-crate duplication of instantiations, and a labelled memory-blowup bug category — after a
+decade of work its own maintainers still list it as open. Roc simply doesn't cache specialisation at
+all: its `SpecializationCacheFile` format exists with zero call sites, and Feldman's own summary is
+that "the most expensive parts of the compilation are in the backend... and they're also the most
+challenging to cache — the specializations are the hard part."
+
+So the defensible claim is narrower than "whole-program work is incompatible with incremental
+builds": it is that **specialisation is the phase nobody has made cheap to cache**, and the two
+projects that tried both say so.
+
+That, and the earlier point about interface-propagated specialisation, is what to keep. It means the
+door here is **additive**: `number` and
 `appendable` today; call-site-specialised constraints carried through interface files later, if
 ergonomics demand, with no change to the type representation or the §8.1 firewall. Evan's own 2012
 reasoning — choose the interim mechanism that upgrades gracefully — applies unchanged, and the
