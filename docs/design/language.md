@@ -616,7 +616,14 @@ as an output, not an internal.
 - **Total on valid input:** every file that parses formats; a file with syntax errors is
   reported and left untouched (exit 1, no bytes written).
 
-Style, elm-format's with the changes the syntax forces:
+Style, elm-format's with the changes the syntax forces. The governing rule is elm-format's,
+not gofmt's: **the formatter never joins lines the author broke.** For every multi-element
+construct — lists, records, record updates, tuples, record types, applications, constructor
+argument lists, annotation arrow chains, operator chains — the construct is printed on one line
+when it fits in 100 columns *and* the source has no line break between its elements; a source
+break between elements keeps it vertical even when it would fit; a construct that does not fit
+is broken. `if`, `case` and `let` are always vertical. Width decides only what must break, the
+author decides what may.
 
 - 4-space indentation. LF line endings. One trailing newline. No trailing whitespace.
 - Module doc block, blank line, imports sorted by module path with one per line, two blank
@@ -631,13 +638,15 @@ Style, elm-format's with the changes the syntax forces:
 - `let`: `let` alone on a line, bindings indented 4 relative to `let`, `in` aligned with `let`,
   body aligned with `let`.
 - `case x of` alone on a line; branches indented 4; `->` at line end; body indented 4 more.
-- `if c then` / `a` / `else` / `b`, unless it fits on one line.
-- Lists, records and tuples: on one line if they fit in 100 columns, with elm-format's inner
-  spaces — `[ a, b ]`, `{ a = 1, b = 2 }`, `( a, b )`, `{ r | a = 1 }`, empty ones as `[]`,
-  `{}`, `()` — else elm-format's vertical form: `[ a`, `, b`, `]` with the delimiter leading
-  each line. No blank line before `then`, `else`, `in`, or between the last binding and `in`.
-- Binary operator chains that do not fit break before the operator, one operator per line,
-  operands indented 4.
+- `if c then` / `a` / `else` / `b`, always vertical; `else if` chains continue at the same
+  indentation.
+- Lists, records and tuples: on one line when they fit and were written on one line, with
+  elm-format's inner spaces — `[ a, b ]`, `{ a = 1, b = 2 }`, `( a, b )`, `{ r | a = 1 }`,
+  empty ones as `[]`, `{}`, `()` — else elm-format's vertical form: `[ a`, `, b`, `]` with the
+  delimiter leading each line. No blank line before `then`, `else`, `in`, or between the last
+  binding and `in`.
+- Binary operator chains that do not fit, or that the author broke, break before the operator,
+  one operator per line, operands indented 4. A chain flattens one precedence level only.
 - Comments stay attached to the token they precede; a comment on its own line stays on its own
   line; a trailing comment stays at the end of its line. Doc blocks get a space after `--|`.
 - Strings, numbers and chars are printed as written (no escape normalisation) except that the
