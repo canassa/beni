@@ -16,6 +16,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
+| `run/` | `build --platform=node`, then `node out/main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
 The two `check/` kinds also take a **directory** as one fixture: every
@@ -65,8 +66,10 @@ reason this corpus does not rot the way Elm's did:
   changes many goldens, that is information about the change.
 - **Never golden what running would prove.** The AST, diagnostic and BIR
   dumps here are shape claims that cannot be observed by running a program;
-  once codegen exists, semantic claims go in `good/` fixtures with an
-  `.expected` stdout and are run under Node, not compared as text.
+  semantic claims go in `run/`, whose `.expected` is what the emitted program
+  printed under Node and not text the compiler produced. A change that alters
+  emitted SHAPE but not behaviour leaves every `run/` fixture green; a change
+  that alters behaviour fails one, by name.
 - `fmt/` has two extra invariants checked mechanically: formatting an
   `.expected` again is a fixed point, and `parse(fmt(s))` equals `parse(s)`
   modulo positions, with the same comments in the same order.

@@ -88,7 +88,7 @@ pub const Code = enum {
     duplicate_constructor,
     shadows_import,
     duplicate_field,
-    foreign_outside_core,
+    foreign_outside_platform,
     equatable_outside_core,
     equatable_not_first_occurrence,
     unbound_variable,
@@ -137,6 +137,20 @@ pub const Code = enum {
     // known to be well typed.
     missing_patterns,
     redundant_pattern,
+    // M3a / B1 (boundary.md §4, §5): the platform contract. Every one of
+    // these is about privileged code — a `foreign` declaration and the
+    // sibling JavaScript file it binds to — and every one of them is a
+    // check Elm does not perform (§4).
+    foreign_bad_shape,
+    foreign_sibling_missing,
+    foreign_export_mismatch,
+    foreign_unbound_reference,
+    missing_main,
+    main_not_program,
+    /// A construct the code generator does not compile YET. It is a
+    /// diagnostic and not a panic because backend.md §1 ships the language
+    /// in two halves and the half that is missing must say so.
+    not_implemented,
     internal,
 };
 
@@ -180,7 +194,7 @@ pub fn title(code: Code) []const u8 {
         .duplicate_constructor => "DUPLICATE CONSTRUCTOR",
         .shadows_import => "SHADOWS IMPORT",
         .duplicate_field => "DUPLICATE FIELD",
-        .foreign_outside_core => "FOREIGN OUTSIDE CORE",
+        .foreign_outside_platform => "FOREIGN OUTSIDE PLATFORM",
         .equatable_outside_core => "EQUATABLE OUTSIDE CORE",
         .equatable_not_first_occurrence => "EQUATABLE MARKER REPEATED",
         .unbound_variable => "NAMING ERROR",
@@ -220,6 +234,13 @@ pub fn title(code: Code) []const u8 {
         .try_shape => "BAD QUESTION MARK",
         .missing_patterns => "MISSING PATTERNS",
         .redundant_pattern => "REDUNDANT PATTERN",
+        .foreign_bad_shape => "BAD FOREIGN TYPE",
+        .foreign_sibling_missing => "MISSING JAVASCRIPT FILE",
+        .foreign_export_mismatch => "FOREIGN EXPORT MISMATCH",
+        .foreign_unbound_reference => "UNBOUND JAVASCRIPT REFERENCE",
+        .missing_main => "MISSING MAIN",
+        .main_not_program => "MAIN IS NOT A PROGRAM",
+        .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };
 }

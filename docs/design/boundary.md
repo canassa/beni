@@ -291,14 +291,38 @@ not only `.beni` files.
 
 ## 8. Milestones
 
-- **B1 — the platform contract in the compiler.** The manifest key that marks a platform package;
-  `foreign_outside_platform`; the three build-time checks of §4; `Program` as a platform-owned opaque
-  type; `main` resolved per platform. No JavaScript is emitted yet, so this lands with M3's front
-  half and is testable through diagnostics alone.
-- **B2 — the Node platform and core's JavaScript.** The sibling files for core's 65 foreign values,
-  the Node platform, and with them the test suite's second boundary: compile, run under Node, assert
-  what it printed. **This is the milestone that makes M3 testable**, and it should land before the
-  optimiser rather than after.
+- **B1 — the platform contract in the compiler.** *Shipped with M3a.* The manifest key
+  (`beni.json`, `"platform": true`) that marks a platform package; `foreign_outside_platform`; the
+  three build-time checks of §4; `Program` as a platform-owned opaque type; `main` resolved per
+  platform. Two corrections the implementation forced:
+  - **§4's shape rule as written rejects core.** It says "all 65 of core's current foreign values
+    are shape (a)", a total pure function. `Basics.e` and `Basics.pi` are not functions and never
+    were. What the compiler can actually check about a `foreign` is its TYPE, and `pi : Float` is
+    indistinguishable by type from the `now : Float` the rule exists to refuse. The enforced rule is
+    therefore weaker and honest: a function, or a value of a type with no variables in it. That
+    still refuses `foreign anything : a` and `foreign xs : List a`, which are the shapes that would
+    let a `foreign` fabricate a value of a type the caller chose.
+  - **Check 3 is lexical, not a scope analysis.** The scanner skips comments, strings, templates and
+    regular expressions and then classifies identifiers; a name bound anywhere in the file counts as
+    bound everywhere, and a reference inside a template substitution is not seen. Both
+    approximations are permissive, deliberately: the failure the check exists for is a sibling
+    reaching a HOST global it never imported (`process`, `require`, `window`), and no local scoping
+    hides one of those. A precise answer needs a JavaScript parser, which is the dependency the wall
+    exists to avoid.
+
+  And one thing §4 does not say that B1 had to decide: **which globals a sibling may reach without
+  importing anything.** The answer follows from §5.1 rather than from taste — the ECMAScript
+  intrinsics, plus the web-standard capabilities §5.1 says every runtime has (`fetch`, `URL`,
+  `TextEncoder`, `crypto`, the timers, `console`). A HOST global is deliberately not on that list,
+  which is what makes `import process from "node:process"` the fix rather than an allowlist entry.
+- **B2 — the Node platform and core's JavaScript.** *Shipped with M3a.* All 65 of core's foreign
+  values, the Node platform, and with them the test suite's second boundary: compile, run under
+  Node, assert what it printed (`tests/corpus/run/`). **This is the milestone that makes M3
+  testable**, and it landed before the optimiser rather than after. What §4.1's recipe still owes:
+  the "one corpus scenario per capability that forces the failure path" clause is satisfied for the
+  capabilities that HAVE a failure path (`String.toInt` on `"1.3"`, `Char.fromCode` out of range) and
+  is vacuous for the rest, because a `foreign` over `Int` and `String` has no specification-defined
+  failure to force. It becomes load-bearing at B3 and B5, where the capabilities do.
 - **B3 — ports.** The codec generator widened to ADTs and records, the depth bound, the
   request/response correlation layer, and a corpus scenario per port shape.
 - **B4 — the browser platform**, The Elm Architecture over B3's ports.

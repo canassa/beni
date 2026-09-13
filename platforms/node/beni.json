@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "node",
+  "program": "Node.Program",
+  "runtime": "runtime.js"
+}

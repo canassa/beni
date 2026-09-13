@@ -1,0 +1,53 @@
+-- Ordinary recursion, self and mutual. Mutual recursion is a real stack
+-- frame in M3a (`backend.md` §8 keeps it a stated limitation), so the
+-- depths here are small on purpose.
+import Node exposing (Program)
+import String
+
+
+fact : Int -> Int
+fact n =
+    if n <= 1 then
+        1
+    else
+        n * fact (n - 1)
+
+
+fib : Int -> Int
+fib n =
+    if n < 2 then
+        n
+    else
+        fib (n - 1) + fib (n - 2)
+
+
+isEven : Int -> Bool
+isEven n =
+    if n == 0 then
+        True
+    else
+        isOdd (n - 1)
+
+
+isOdd : Int -> Bool
+isOdd n =
+    if n == 0 then
+        False
+    else
+        isEven (n - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (fact 10)
+        , String.fromInt (fib 15)
+        , if isEven 10 then
+            "10 is even"
+          else
+            "10 is odd"
+        , if isOdd 7 then
+            "7 is odd"
+          else
+            "7 is even"
+        ]

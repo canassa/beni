@@ -19,6 +19,42 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-14 — M3a, the emitter's first number
+
+**Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory
+channel, 16 GB RAM, Linux 7.2, Zig 0.16.0, ReleaseFast, load average 1.3.
+
+`zig build bench -- --generate=100000 --iterations=5`, the generated 624-file,
+100 159-line corpus plus core:
+
+| phase | ms | rate |
+|---|---:|---|
+| read | 2.1 | 818 MB/s |
+| lex | 10.3 | 170 MB/s |
+| parse | 7.0 | 251 MB/s |
+| lower | 9.7 | 181 MB/s |
+| resolve | 5.7 | — |
+| check | 76.6 | 1.31 M LOC/s |
+| **emit** | **34.3** | **85.5 MB/s of JavaScript** |
+| total | 145.8 | — |
+
+**`emit` is `backend.md` §13's line and its target is > 5 MB/s.** The
+measured 85.5 MB/s is 17× it, on output that has had no elimination and no
+renaming — 3.08 MB of JavaScript from 1.84 MB of beni, which is the ~1.7×
+expansion development output costs and the number M3c's optimiser is
+measured against.
+
+Two things the figure does and does not say. It DOES say that the two-IR
+design of §9.2 is not the bottleneck anyone feared: building a `JsIr` and
+printing it costs less than half of what type checking the same corpus costs.
+It does NOT say anything about release output, which is a different pass list
+(§9) over the same graph.
+
+`mb_per_s` on this row is measured over the JavaScript **produced**, not the
+beni consumed, because that is how §2 states the budget.
+
+---
+
 ## 2026-09-13 — M2d, **after**: the quadratics are gone
 
 The entry below this one is the BEFORE, taken at `f0314b4` on the same

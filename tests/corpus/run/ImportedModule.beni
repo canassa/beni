@@ -1,0 +1,16 @@
+-- Qualified access, aliases and an `exposing` list all resolving to the
+-- same cross-module reference, which the emitter turns into one ESM import
+-- per module (`backend.md` §5).
+import List as L
+import Node exposing (Program, printLines)
+import String exposing (fromInt, join)
+
+
+main : Program
+main =
+    printLines
+        [ join "," (L.map fromInt (L.range 1 4))
+        , fromInt (L.sum (L.range 1 4))
+        , String.toUpper (join "-" [ "a", "b" ])
+        , fromInt (List.length [ 1, 2, 3 ])
+        ]

@@ -485,7 +485,7 @@ pub foreign type List a
   `foreign` is `unexpected_token`. Both take `pub` like any declaration and may carry a doc comment.
 - **Legal only under the core root.** The core package is embedded in the compiler
   (`fast-compiler.md` §3.1, "Primitives"); a `foreign` declaration in any other module is
-  `foreign_outside_core`, reported by lowering. User code reaches JavaScript through the effects
+  `foreign_outside_platform`, reported by lowering. User code reaches JavaScript through the effects
   model (open), never through `foreign`.
 - Each core module that declares foreigns has a sibling JavaScript file exporting one function
   per foreign value, under the same name, in the emitted calling convention. Binding is by
@@ -701,7 +701,7 @@ args_after_question  non_associative_chain  negation_with_space  invalid_tuple_i
 refutable_let_pattern
 duplicate_import  duplicate_import_alias  duplicate_exposed_name  import_after_declaration  self_import
 duplicate_declaration  duplicate_type  duplicate_constructor  shadows_import  duplicate_field
-foreign_outside_core  equatable_outside_core  equatable_not_first_occurrence
+foreign_outside_platform  equatable_outside_core  equatable_not_first_occurrence
 unbound_variable  unbound_constructor  unbound_type  unknown_module_alias
 question_in_lambda  question_outside_function
 shadowing  duplicate_pattern_variable  duplicate_type_parameter  unbound_type_variable
@@ -713,14 +713,22 @@ missing_field  unknown_field  record_not_closed
 not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
 tuple_index_out_of_range  not_a_tuple  try_shape
 missing_patterns  redundant_pattern
+foreign_bad_shape  foreign_sibling_missing  foreign_export_mismatch  foreign_unbound_reference
+missing_main  main_not_program  not_implemented
 ```
 
 The first three lines after the M1 catalogue are M2a's (the module graph and
-cross-module name resolution); the rest are M2b's type errors, defined in
-[`checker.md`](checker.md) §8. The last line is M2c's: `missing_patterns` is a `case`
+cross-module name resolution); then M2b's type errors, defined in
+[`checker.md`](checker.md) §8, then M2c's: `missing_patterns` is a `case`
 with no branch for some possibility, `redundant_pattern` a branch no value can reach
 ([`checker.md`](checker.md) §6.6). Both are reported only for a declaration that
-type-checked, so the patterns they judge are known to be well typed.
+type-checked, so the patterns they judge are known to be well typed. The last two lines are
+M3a's, and they are about the JavaScript boundary rather than about beni: the four `foreign_*`
+codes are the build-time checks of [`boundary.md`](boundary.md) §4, `missing_main` and
+`main_not_program` are §5's "`main` is a platform-owned opaque `Program`", and `not_implemented`
+is what the code generator says about a construct it does not compile yet — a diagnostic rather
+than a panic, because [`backend.md`](backend.md) §1 ships the language in halves and the half
+that is missing has to say so.
 
 `expected_token` is for the situations where exactly one token can come next (`)`, `]`, `}`,
 `->`, `of`, `then`, `else`, `in`, `=`, `:`); `unexpected_token` is for the situations where the

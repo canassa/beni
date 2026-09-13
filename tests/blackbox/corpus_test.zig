@@ -11,6 +11,8 @@
 //!                                   parse to the same AST
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
 //!   check/args/X.beni + X.diag      the missing-argument suite (checker.md §8.3)
+//!   run/X.beni        + X.expected  `build --platform=node`, then the emitted
+//!                                   program under Node; its stdout is the golden
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
 //!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
@@ -46,6 +48,7 @@ const Kind = enum {
     check_bad,
     check_args,
     check_depth,
+    run,
     regress,
 
     fn dir(kind: Kind) []const u8 {
@@ -58,6 +61,7 @@ const Kind = enum {
             .check_bad => corpus_root ++ "/check/bad",
             .check_args => corpus_root ++ "/check/args",
             .check_depth => corpus_root ++ "/check/depth",
+            .run => corpus_root ++ "/run",
             .regress => corpus_root ++ "/regress",
         };
     }
@@ -115,6 +119,16 @@ test "corpus: check/args" {
 // records the measured boundary of each guard.
 test "corpus: check/depth" {
     try walk(.check_depth);
+}
+
+// The second boundary (backend.md §12, and the whole reason boundary.md §8
+// puts the Node platform before the optimiser): compile the fixture, run the
+// emitted JavaScript under Node, and assert what it PRINTED. This is what
+// Elm's deleted suite never had. A change that alters emitted shape but not
+// behaviour leaves every one of these green; a change that alters behaviour
+// fails one, by name.
+test "corpus: run" {
+    try walk(.run);
 }
 
 test "corpus: regress" {
@@ -248,6 +262,7 @@ const Case = struct {
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
+            .run => try c.runProgram(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
                 const has_ast = c.goldenExists("ast");
@@ -365,6 +380,42 @@ const Case = struct {
             std.debug.print("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
             return error.AstChanged;
         }
+    }
+
+    /// Compile the fixture for the Node platform and run what came out.
+    ///
+    /// The fixture is COPIED into the world's project directory rather than
+    /// compiled in place, for two reasons: the module name comes from the
+    /// path (`tests/corpus/run/Arithmetic.beni` would be the module
+    /// `Tests.Corpus.Run.Arithmetic`, which is not what the fixture writes
+    /// `main` in), and a build writes an `out/` directory that has no
+    /// business appearing in the repository.
+    fn runProgram(c: Case) !void {
+        const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
+        try c.w.write(c.fixture.name, source);
+
+        const built = try c.inProject(&.{ "build", "--platform=node", "--out=out", c.fixture.name });
+        if (built.exit_code != 0) {
+            std.debug.print("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
+            return error.BuildFailed;
+        }
+        if (built.stderr.len != 0) {
+            std.debug.print("{s}: a run fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+
+        const program = c.w.node(world.entry_file) catch |err| {
+            std.debug.print("{s}: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, err });
+            return err;
+        };
+        if (program.exit_code != 0) {
+            std.debug.print(
+                "{s}: the emitted program exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
+                .{ c.fixture.name, program.exit_code, program.stdout, program.stderr },
+            );
+            return error.ProgramFailed;
+        }
+        try c.expectGolden("expected", program.stdout);
     }
 
     fn lowering(c: Case) !void {

@@ -1,0 +1,26 @@
+-- `&&` and `||` must not evaluate their right side when the left decides
+-- the answer. `language.md` §6.5 desugars them into calls of `Basics.and`
+-- and `Basics.or`, and a call would evaluate both — so the code generator
+-- has to recognise them. `boom` diverges, so this program only terminates
+-- if the short circuit is real.
+import Node exposing (Program)
+import String
+
+
+boom : Int -> Bool
+boom n =
+    boom (n + 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ if False && boom 0 then
+            "wrong"
+          else
+            "and short-circuits"
+        , if True || boom 0 then
+            "or short-circuits"
+          else
+            "wrong"
+        ]

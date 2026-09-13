@@ -1,0 +1,21 @@
+-- Arithmetic and operator precedence: `*` binds tighter than `+`, `-` is
+-- left-associative, and unary negation is a subtraction from zero.
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (1 + 2 * 3)
+        , String.fromInt ((1 + 2) * 3)
+        , String.fromInt (10 - 3 - 2)
+        , String.fromInt (10 - (3 - 2))
+        , String.fromInt (2 ^ 3 ^ 2)
+        , String.fromInt (negate 7 + 1)
+        , String.fromInt (abs (0 - 9))
+        , String.fromFloat (7 / 2)
+        , String.fromInt (7 // 2)
+        , String.fromInt (modBy 4 (0 - 1))
+        , String.fromInt (remainderBy 4 (0 - 1))
+        ]

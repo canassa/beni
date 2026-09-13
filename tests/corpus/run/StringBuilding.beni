@@ -1,0 +1,19 @@
+-- Strings are native JavaScript strings (`backend.md` §4); `++` is
+-- `Basics.append` over two representations.
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    Node.printLines
+        [ "butter" ++ "fly"
+        , String.join ", " [ "a", "b", "c" ]
+        , String.repeat 3 "ab"
+        , String.reverse "stressed"
+        , String.toUpper "skinner"
+        , String.slice 7 9 "snakes on a plane!"
+        , String.slice 0 (0 - 7) "snakes on a plane!"
+        , String.fromInt (String.length "innumerable")
+        , String.trim "  hats \n"
+        ]

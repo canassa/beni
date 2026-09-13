@@ -1,0 +1,28 @@
+-- A `Char` is a one-scalar string, so `toCode` is a code point and the
+-- classification functions are written over it in beni.
+import List
+import Node exposing (Program)
+import String
+
+
+show : Bool -> String
+show b =
+    if b then
+        "yes"
+    else
+        "no"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (Char.toCode 'a')
+        , String.fromChar (Char.fromCode 98)
+        , String.fromChar (Char.toUpper 'q')
+        , String.fromChar (Char.toLower 'Q')
+        , show (Char.isDigit '7')
+        , show (Char.isDigit 'x')
+        , show (Char.isAlpha 'x')
+        , show (Char.isHexDigit 'f')
+        , String.join "," (List.map (\c -> String.fromInt (Char.toCode c)) (String.toList "abc"))
+        ]

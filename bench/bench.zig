@@ -17,6 +17,12 @@
 //! lines over hundreds of small files and holds those terms flat),
 //! `--iterations=<n>` (default 5), `--seed=<n>`.
 //!
+//! `emit` is the back end's line (`backend.md` §13, target > 5 MB/s of
+//! JavaScript): `Bir` → `JsIr` → bytes for every module of a project that
+//! has already been checked, with `mb_per_s` measured over the JavaScript
+//! PRODUCED rather than the beni consumed, because that is the number §2
+//! states and the one an output-size budget is compared against.
+//!
 //! Phases so far: `read` (bytes through `SourceStore`), `lex` (the
 //! tokenizer, interning included, into fresh per-file output lists — the
 //! production shape), `parse` (the parser over pre-lexed tokens, nodes
@@ -37,6 +43,10 @@ const Tokenizer = beni.Tokenizer;
 const InternPool = beni.InternPool;
 const Parse = beni.Parse;
 const Lower = beni.Lower;
+const JsLower = beni.js.Lower;
+const JsPrint = beni.js.Print;
+const Bir = beni.Bir;
+const Graph = beni.resolve.Graph;
 const Ast = beni.Ast;
 const Arena = beni.Arena;
 const Session = beni.Session;
@@ -146,6 +156,9 @@ pub fn main(init: std.process.Init) !u8 {
     const checked = try measureCheck(gpa, io, corpus, options.iterations, resolved.total_ns, total.lines);
     try printCheckLine(stdout, checked);
     total.ns += checked.ns;
+    const emitted = try measureEmit(gpa, io, corpus, options.iterations);
+    try printEmitLine(stdout, emitted);
+    total.ns += emitted.ns;
     try printLine(stdout, "total", total);
 
     // One line per pathological file, so a single slow file cannot hide in
@@ -558,6 +571,105 @@ fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32
         counts.diagnostics = session.diagnostics.items.len;
     }
     return if (best == std.math.maxInt(u64)) 0 else best;
+}
+
+/// Code generation (`backend.md` §13): `Bir` → `JsIr` → bytes, over a
+/// project that has already been checked. The session is built once, outside
+/// the timed region, because what this measures is the BACK END and not the
+/// front end that feeds it — the other lines already own that.
+const EmitMeasurement = struct {
+    modules: u64 = 0,
+    /// Bytes of JavaScript produced.
+    bytes: u64 = 0,
+    /// beni lines behind them, for `loc_per_s`.
+    lines: u64 = 0,
+    nodes: u64 = 0,
+    ns: u64 = 0,
+};
+
+fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32) !EmitMeasurement {
+    var sink: Io.Writer.Discarding = .init(&.{});
+    var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+    defer session.deinit();
+    _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch return .{};
+
+    const count = session.graph.count();
+    var arena: Arena = .init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    // Every module's `Bir` and a specifier per module: what `js/Emit.zig`
+    // hands the lowering, computed once so the loop below is emit and
+    // nothing else.
+    const birs = try gpa.alloc(*const Bir, count);
+    defer gpa.free(birs);
+    const specifiers = try gpa.alloc([]const u8, count);
+    defer gpa.free(specifiers);
+    defer for (specifiers) |s| gpa.free(s);
+    var made: usize = 0;
+    errdefer for (specifiers[0..made]) |s| gpa.free(s);
+    for (birs, specifiers, 0..) |*b, *specifier, i| {
+        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        const file = session.graph.moduleFile(m);
+        b.* = session.artifacts.bir(file);
+        specifier.* = try std.fmt.allocPrint(gpa, "./{s}.mjs", .{session.store.moduleName(file)});
+        made += 1;
+    }
+
+    var best: u64 = std.math.maxInt(u64);
+    var m: EmitMeasurement = .{ .modules = count };
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var bytes: u64 = 0;
+        var lines: u64 = 0;
+        var nodes: u64 = 0;
+        const start = Io.Timestamp.now(io, .awake);
+        for (0..count) |i| {
+            const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const file = session.graph.moduleFile(module);
+            const tokens = session.artifacts.tokens(file);
+            var lowered = try JsLower.lower(gpa, arena.allocator(), &session.interner, .{
+                .bir = birs[i],
+                .token_starts = tokens.items(.start),
+                .module = module,
+                .graph = &session.graph,
+                .interfaces = session.resolution.interfaces,
+                .birs = birs,
+                .provenance = session.resolution.provenance,
+                .specifiers = specifiers,
+                .sibling = "./x.js",
+            });
+            defer lowered.ir.deinit(gpa);
+            defer {
+                for (lowered.diagnostics) |d| gpa.free(d.message);
+                gpa.free(lowered.diagnostics);
+            }
+            nodes += lowered.ir.nodes.len;
+            const text = try JsPrint.print(gpa, &lowered.ir, .fromGlobal(&session.interner));
+            defer gpa.free(text);
+            bytes += text.len;
+            arena.reset(.retain_capacity);
+            lines += session.store.lineStarts(file).len;
+        }
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue; // warm-up
+        best = @min(best, ns);
+        m.bytes = bytes;
+        m.lines = lines;
+        m.nodes = nodes;
+    }
+    m.ns = if (best == std.math.maxInt(u64)) 0 else best;
+    return m;
+}
+
+fn printEmitLine(writer: *Io.Writer, m: EmitMeasurement) !void {
+    const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
+    const mb_per_s = @as(f64, @floatFromInt(m.bytes)) / (1024 * 1024) / seconds;
+    const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);
+    try writer.print(
+        "{{\"phase\":\"emit\",\"modules\":{d},\"js_bytes\":{d},\"nodes\":{d},\"lines\":{d}," ++
+            "\"ms\":{d:.2},\"mb_per_s\":{d:.1},\"loc_per_s\":{d}}}\n",
+        .{ m.modules, m.bytes, m.nodes, m.lines, milliseconds(m.ns), mb_per_s, loc_per_s },
+    );
 }
 
 fn printCheckLine(writer: *Io.Writer, m: CheckMeasurement) !void {

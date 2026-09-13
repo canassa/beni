@@ -1,0 +1,24 @@
+-- Lists are cons cells (`backend.md` §4): `[ … ]`, `::` and `++` all build
+-- the same shape, and `==` compares them structurally.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int -> String
+show xs =
+    "[" ++ String.join "," (List.map String.fromInt xs) ++ "]"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show [ 1, 2, 3 ]
+        , show (1 :: [ 2, 3 ])
+        , show ([ 1, 2 ] ++ [ 3, 4 ])
+        , show (List.range 1 5)
+        , show (List.repeat 3 7)
+        , show (List.reverse [ 1, 2, 3 ])
+        , show []
+        , String.fromInt (List.length (List.range 1 100))
+        ]

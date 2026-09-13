@@ -1,0 +1,40 @@
+-- Closures and partial application. Every one of these applies a function
+-- to fewer arguments than it takes, which is the case §9.3 keeps currying
+-- for — and the case that has to go through the curried form rather than a
+-- direct call.
+import List
+import Node exposing (Program)
+import String
+
+
+add3 : Int -> Int -> Int -> Int
+add3 a b c =
+    a + b + c
+
+
+apply : (Int -> Int) -> Int -> Int
+apply f n =
+    f n
+
+
+main : Program
+main =
+    let
+        addOne =
+            add3 1
+
+        addOneTwo =
+            add3 1 2
+
+        counterFrom start =
+            \step -> start + step
+    in
+    Node.printLines
+        [ String.fromInt (add3 1 2 3)
+        , String.fromInt (addOne 2 3)
+        , String.fromInt (addOneTwo 3)
+        , String.fromInt (apply (add3 1 2) 3)
+        , String.fromInt (apply (\n -> n * 2) 21)
+        , String.fromInt (counterFrom 10 5)
+        , String.join "," (List.map String.fromInt (List.map (add3 1 1) [ 1, 2, 3 ]))
+        ]

@@ -4,3 +4,7 @@
 # build output
 /zig-out/
 /.zig-cache/
+
+# `beni build`'s default output directory, when the compiler is run by hand
+# at the repository root (`--out=<dir>` moves it; `out/` is the default).
+/out/

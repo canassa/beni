@@ -1,0 +1,11 @@
+-- A platform declares its output shape (`boundary.md` §5.2). Node's is a
+-- line and an exit code, and `exitWith 0` must leave the same code behind as
+-- `print` does — the corpus asserts the exit code as well as the text, so a
+-- program that printed the right thing and failed is still a failure.
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    Node.exitWith 0 (String.join " " [ "exit", "code", "zero" ])

@@ -12,12 +12,17 @@ be wrong is changed here first, then in the code.
 black-box suite may touch nothing else (see `.claude/skills/write-tests/SKILL.md`).
 
 ```
+beni build  [options] --platform=<name> <path>...      compile to JavaScript (backend.md §2)
 beni check  [options] <path>...                 parse + lower every module; report diagnostics
 beni fmt    [options] [--check] [--stdout] <path>...   format in place / verify / print
 beni dump   [options] --stage=<tokens|ast|bir> <file>  print one file's IR as text
 beni version
 beni help
 ```
+
+`build` arrived with M3a and its flags are `backend.md` §2's; the rest of this document is M0/M1's
+and the common options below apply to it too. Its product on stdout is one summary line naming what
+was written; everything else it has to say is a diagnostic.
 
 Options common to all subcommands:
 

@@ -1,0 +1,20 @@
+-- Folding, mapping and filtering: every one of them passes a FUNCTION as a
+-- value, which the calling convention of §9.3 curries at the point it
+-- escapes.
+import List
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (List.foldl (\x acc -> x + acc) 0 (List.range 1 10))
+        , String.fromInt (List.foldr (\x acc -> x - acc) 0 [ 1, 2, 3 ])
+        , String.fromInt (List.sum (List.map (\n -> n * n) (List.range 1 5)))
+        , String.fromInt (List.product [ 1, 2, 3, 4 ])
+        , String.fromInt (List.length (List.filter (\n -> modBy 2 n == 0) (List.range 1 10)))
+        , String.join "," (List.map String.fromInt (List.sort [ 3, 1, 2 ]))
+        , String.join "," (List.map String.fromInt (List.take 3 (List.range 1 10)))
+        , String.join "," (List.map String.fromInt (List.drop 7 (List.range 1 10)))
+        ]

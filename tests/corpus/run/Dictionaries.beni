@@ -1,0 +1,26 @@
+-- `Dict` is written in beni over an explicit comparator, which is what
+-- dropping `comparable` costs and buys. This exercises a large chunk of
+-- core through one program.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    let
+        empty =
+            Dict.empty String.compare
+
+        counts =
+            Dict.insert "b" 2 (Dict.insert "a" 1 empty)
+    in
+    Node.printLines
+        [ String.fromInt (Dict.size counts)
+        , String.fromInt (Maybe.withDefault 0 (Dict.get "a" counts))
+        , String.fromInt (Maybe.withDefault 0 (Dict.get "z" counts))
+        , String.join "," (Dict.keys counts)
+        , String.join "," (List.map String.fromInt (Dict.values counts))
+        , String.fromInt (Dict.size (Dict.remove "a" counts))
+        ]

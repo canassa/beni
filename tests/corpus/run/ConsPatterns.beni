@@ -1,0 +1,43 @@
+-- Matching on the list spine: `::`, the empty list, and a fixed-length list
+-- pattern. Each is a different test against the cons-cell representation.
+import List
+import Node exposing (Program)
+import String
+
+
+sumOf : List Int -> Int
+sumOf xs =
+    case xs of
+        [] ->
+            0
+
+        first :: rest ->
+            first + sumOf rest
+
+
+shape : List Int -> String
+shape xs =
+    case xs of
+        [] ->
+            "empty"
+
+        [ a ] ->
+            "one: ${String.fromInt a}"
+
+        [ a, b ] ->
+            "two: ${String.fromInt (a + b)}"
+
+        a :: _ :: _ :: _ ->
+            "many, starting ${String.fromInt a}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (sumOf [ 1, 2, 3, 4 ])
+        , String.fromInt (sumOf [])
+        , shape []
+        , shape [ 7 ]
+        , shape [ 3, 4 ]
+        , shape [ 9, 8, 7, 6 ]
+        ]

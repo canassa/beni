@@ -52,6 +52,7 @@ pub fn main(init: std.process.Init) u8 {
             stdout.writeAll(Cli.usage) catch return 2;
             return 0;
         },
+        .build => |build| return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build),
         .check => |check| return runCheck(gpa, io, stderr, check),
         .fmt => |fmt| return beni.fmt.Command.run(gpa, io, stdout, stderr, sessionOptions(fmt.common), fmt),
         .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
@@ -99,6 +100,10 @@ fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8, 
 
 fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check) u8 {
     var options = sessionOptions(check.common);
+    // A package may declare itself a platform (boundary.md §2), and then
+    // `foreign` is legal in it. `check` has to honour that or a platform
+    // package could not be checked at all.
+    options.manifest_root = check.common.root orelse ".";
     // `check` resolves names across modules, and every module resolves
     // against core (checker.md §4): the package is part of the input.
     options.core_package = true;

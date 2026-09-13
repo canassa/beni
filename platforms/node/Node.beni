@@ -1,0 +1,55 @@
+--! The Node platform (`docs/design/boundary.md` §5.2, §8): worker-shaped,
+--! plus an exit code.
+--!
+--! A platform package is an ordinary package that declares itself one in its
+--! manifest (`"platform": true`). What that buys is §2's privilege: it may
+--! write `foreign`, and it owns `Program` — the opaque type `main` must
+--! have. Anyone may publish one; nothing here is special to this repository
+--! except that it ships in the box.
+--!
+--! `Program` is a `foreign type`, so it has no constructors and user code
+--! cannot build one. The only way to get a `Program` is to ask this module
+--! for one, which is the unforgeable-capability shape of §5: a capability is
+--! granted, never fabricated.
+--!
+--! This is the platform the test suite's second boundary runs against —
+--! compile a program, run the emitted JavaScript, assert what it printed —
+--! so it is not a nicety, it is what makes codegen testable at all (§8, B2).
+
+import List
+
+
+--| What `main` is. A program says what to write to standard output and what
+--| exit code to leave behind, and the platform does both.
+pub foreign type Program
+
+
+--| A program that writes one line to standard output and exits 0.
+--|
+--|     main : Program
+--|     main =
+--|         Node.print "hello"
+pub foreign print : String -> Program
+
+
+--| A program that writes each string as its own line and exits 0.
+--|
+--|     main : Program
+--|     main =
+--|         Node.printLines [ "one", "two" ]
+pub foreign printLines : List String -> Program
+
+
+--| A program that writes one line and exits with the code you give it. A
+--| non-zero code is how a command-line program says it failed.
+--|
+--|     main : Program
+--|     main =
+--|         Node.exitWith 1 "could not read the file"
+pub foreign exitWith : Int -> String -> Program
+
+
+--| A program that writes nothing and exits 0.
+pub done : Program
+done =
+    printLines []

@@ -1,0 +1,20 @@
+-- `Debug.log` is boundary.md §4's one deliberate violation of the two-shape
+-- rule: a pure type that writes to the console. It returns its argument
+-- unchanged, so it can be dropped into a pipeline without moving anything.
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    let
+        doubled =
+            Debug.log "input" 21 * 2
+    in
+    Node.printLines
+        [ Debug.toString [ 1, 2, 3 ]
+        , Debug.toString (Just "x")
+        , Debug.toString Nothing
+        , Debug.toString { name = "Ada" }
+        , String.fromInt doubled
+        ]

@@ -1,0 +1,43 @@
+-- `let` becomes `const` in the enclosing statement list (`backend.md` §4),
+-- and a `let` binding WITH parameters becomes a function declaration so two
+-- of them can call each other. Names are distinct at every level: beni
+-- forbids shadowing outright.
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    let
+        outer =
+            1
+
+        middle =
+            let
+                inner =
+                    outer + 1
+            in
+            inner * 10
+
+        double n =
+            n * 2
+
+        quadruple n =
+            double (double n)
+    in
+    Node.printLines
+        [ String.fromInt outer
+        , String.fromInt middle
+        , String.fromInt (double 21)
+        , String.fromInt (quadruple 5)
+        , String.fromInt
+            (let
+                a =
+                    2
+
+                b =
+                    3
+             in
+             a * b
+            )
+        ]

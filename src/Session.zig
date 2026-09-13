@@ -60,6 +60,8 @@ const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
 const core_package = @import("core_package");
+const platform_packages = @import("platform_packages");
+const Manifest = @import("js/Manifest.zig");
 
 const Session = @This();
 
@@ -75,6 +77,19 @@ workers: []Worker,
 /// The module graph of the last run (checker.md §4). Empty unless the
 /// phases included the serial resolve step.
 graph: Graph = .empty,
+/// The app package's manifest said `"platform": true`, so the app's own
+/// modules may write `foreign` (boundary.md §2).
+app_is_platform: bool = false,
+/// Where the resolved platform package's files came from: the store's path
+/// prefix for it, and its manifest bytes. Empty when `--platform` was not
+/// given, or when it named a platform that does not exist — `platform_error`
+/// says which.
+platform_root: []const u8 = &.{},
+platform_manifest: []const u8 = &.{},
+/// `--platform` named something that is neither an embedded platform nor a
+/// readable directory. Kept rather than reported here, because the command
+/// owns the message.
+platform_error: bool = false,
 /// The interfaces and cross-module diagnostics of the last run.
 resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
@@ -113,6 +128,17 @@ pub const Options = struct {
     /// the per-file dumps do not, and adding ~2,800 lines of parsing to
     /// every one of them would be pure cost (see `enumerateCore`).
     core_package: bool = false,
+    /// `--platform=<name>`: a platform package to enumerate alongside the
+    /// app and core (boundary.md §5.3, "a build is per entry point and per
+    /// platform"). Either the name of one that ships in the box, or a
+    /// directory. Null means no platform, which is what `check` and `fmt`
+    /// run with.
+    platform: ?[]const u8 = null,
+    /// Where to read `beni.json` from for the APP package. A manifest that
+    /// says `"platform": true` makes the app's own modules privileged
+    /// (boundary.md §2), which is how someone writes a platform package of
+    /// their own. Null means "do not look".
+    manifest_root: ?[]const u8 = null,
     /// Keep every module's `TypeStore` alive after the check, so
     /// `dump --stage=types` can print local bindings' types (checker.md §2).
     /// Off by default: a store is released the moment its interface has
@@ -294,7 +320,9 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
 
     // 1. Enumerate — serial, sorted, numbered.
     const enumerate_token = session.profile.begin();
+    try session.readAppManifest();
     try session.enumerateCore();
+    try session.enumeratePlatform();
     for (paths) |p| {
         session.store.addPath(gpa, session.io, p, session.options.root, .app) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -416,6 +444,52 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
 /// rodata and `SourceStore.read` hands them straight to the tokenizer —
 /// but it still costs a lex, a parse and a lower per module, which is why
 /// it is opt-in per command rather than unconditional.
+/// The platform package of this build (boundary.md §5.3). Resolved the same
+/// way core is — an embedded copy costs no I/O, a directory is walked —
+/// and given `Package.platform`, which is what puts it in `Graph.lookup`'s
+/// search path and what makes `foreign` legal inside it.
+fn enumeratePlatform(session: *Session) RunError!void {
+    const requested = session.options.platform orelse return;
+    const gpa = session.gpa;
+    for (platform_packages.platforms) |platform| {
+        if (!std.mem.eql(u8, platform.name, requested)) continue;
+        session.platform_root = platform.root;
+        session.platform_manifest = platform.manifest;
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        for (platform.files) |f| {
+            const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ platform.root, f.rel }) catch return error.OutOfMemory;
+            try session.store.addEmbedded(gpa, p, @intCast(platform.root.len + 1), .platform, f.source);
+        }
+        return;
+    }
+    // Not a name in the box: a directory, then. `--platform=./my-platform`
+    // is how someone uses one they wrote, which is the whole point of
+    // making privilege a role rather than an author list (§2).
+    const dir = std.mem.trimEnd(u8, requested, "/");
+    session.store.addPath(gpa, session.io, dir, dir, .platform) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            session.platform_error = true;
+            return;
+        },
+    };
+    session.platform_root = dir;
+}
+
+/// Read the app package's `beni.json`, if the command asked for one. A
+/// missing manifest is the ordinary case and not an error; a malformed one
+/// is reported by the command, which owns the message.
+fn readAppManifest(session: *Session) RunError!void {
+    const root = session.options.manifest_root orelse return;
+    var arena_state: std.heap.ArenaAllocator = .init(session.gpa);
+    defer arena_state.deinit();
+    const manifest = Manifest.read(arena_state.allocator(), session.io, root) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return,
+    } orelse return;
+    session.app_is_platform = manifest.platform;
+}
+
 fn enumerateCore(session: *Session) RunError!void {
     if (!session.options.core_package) return;
     const gpa = session.gpa;
@@ -436,11 +510,29 @@ fn enumerateCore(session: *Session) RunError!void {
     }
 }
 
-/// Whether `file` may write `foreign` and `equatable` (language.md §5.4,
-/// checker.md Appendix A): it is in the core package, or the whole run was
-/// told its inputs are core sources.
+/// Whether `file` may write `equatable` (checker.md Appendix A): it is in
+/// the core package, or the whole run was told its inputs are core sources.
+/// This one stays core's alone — an ordinary annotation gets the mark by
+/// inference.
 pub fn fileIsCore(session: *const Session, file: SourceStore.Index) bool {
     return session.options.core or session.store.package(file) == .core;
+}
+
+/// Whether `file` may write `foreign` (language.md §5.4, boundary.md §2):
+/// it is in core, it is in the platform package of this build, or its own
+/// package's manifest says `"platform": true`.
+///
+/// Split from `fileIsCore` because the two permissions are not one
+/// permission. boundary.md §2 is explicit that privilege is a ROLE with a
+/// checked contract and not an author list: anyone may publish a platform
+/// package and write `foreign` in it, and that is the fix for the sparseness
+/// §1 diagnoses. `equatable` is different — it is a claim about the type
+/// system that core alone makes by hand.
+pub fn fileMayDeclareForeign(session: *const Session, file: SourceStore.Index) bool {
+    return switch (session.store.package(file)) {
+        .core, .platform => true,
+        .app => session.options.core or session.app_is_platform,
+    };
 }
 
 fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
@@ -567,6 +659,7 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     const lower_token = session.profile.begin();
     var bir = try Lower.lower(gpa, worker.arena.allocator(), text, tokens.slice(), tree, &worker.interner, .{
         .core = session.fileIsCore(file),
+        .platform = session.fileMayDeclareForeign(file),
         .module_name = session.store.moduleName(file),
     });
     errdefer bir.deinit(gpa);
@@ -913,6 +1006,53 @@ fn collectDiagnostics(session: *Session) Allocator.Error!void {
         cursors[b] += 1;
     }
     diagnostic.sort(session.diagnostics.items);
+}
+
+/// One diagnostic produced AFTER `run` returned: `beni build`'s emit phase
+/// is not a `Phases.after`, because it must not run at all when the check
+/// failed. `message` is borrowed for the call.
+pub const LateItem = struct {
+    code: diagnostic.Code,
+    file: SourceStore.Index,
+    /// Token index into `file`'s token list.
+    token: u32,
+    message: []const u8,
+};
+
+/// Render `items` on `stderr` in the run's diagnostics format, sorted by
+/// the schema's comparator like every other wave. Returns how many were
+/// errors.
+///
+/// Safe to call exactly once after a `run` that produced nothing, which is
+/// the only way `build` reaches it: two JSON renders on one stream would be
+/// two arrays and not one, and the black-box harness parses the stream as a
+/// whole.
+pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer) RunError!u32 {
+    if (items.len == 0) return 0;
+    const gpa = session.gpa;
+    const rendered = try gpa.alloc(diagnostic.Diagnostic, items.len);
+    defer gpa.free(rendered);
+    for (items, rendered) |item, *slot| {
+        const start, const end = session.tokenSpan(item.file, item.token);
+        slot.* = .{
+            .code = item.code,
+            .severity = .@"error",
+            .span = .{ .file = session.store.path(item.file), .start = start, .end = end },
+            .title = diagnostic.title(item.code),
+            .message = item.message,
+        };
+    }
+    diagnostic.sort(rendered);
+    switch (session.options.diagnostics) {
+        .text => try render_text.render(stderr, rendered, .{ .context = session, .lookup = lookupSource }),
+        .json => try render_json.render(stderr, rendered),
+    }
+    try stderr.flush();
+    var errors: u32 = 0;
+    for (rendered) |d| {
+        if (d.severity == .@"error") errors += 1;
+    }
+    return errors;
 }
 
 fn lookupSource(context: *const anyopaque, file: []const u8) ?[]const u8 {

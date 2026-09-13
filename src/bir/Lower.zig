@@ -10,7 +10,7 @@
 //!   2. Declarations, headers only: one `Decl` per top-level item, the
 //!      value/type/constructor namespace tables (`duplicate_declaration`,
 //!      `duplicate_type`, `duplicate_constructor`, `shadows_import`,
-//!      `foreign_outside_core`), the interface. Top-level names are in scope
+//!      `foreign_outside_platform`), the interface. Top-level names are in scope
 //!      in every body regardless of order (§7), so this must finish before
 //!      any body is lowered — it is a walk over the root items, not over
 //!      bodies, and is the only thing that looks at a declaration twice.
@@ -132,8 +132,16 @@ cur_refs_start: u32 = 0,
 cur_inst_start: u32 = 0,
 
 pub const Options = struct {
-    /// `--core`: `foreign` declarations are legal (language.md §5.4).
+    /// `--core`: the file is core, so `equatable` is legal (checker.md
+    /// Appendix A). Core is also a platform package, so this implies
+    /// `platform`.
     core: bool,
+    /// The file is in a package that may write `foreign` (boundary.md §2):
+    /// core, or a package whose manifest says `"platform": true`. Split
+    /// from `core` because the two permissions are not the same one:
+    /// anyone may publish a platform, and nobody but core may hand out
+    /// `equatable`.
+    platform: bool = false,
     /// The module's own name (`SourceStore.moduleName`), for `self_import`.
     module_name: []const u8,
 };
@@ -769,12 +777,12 @@ fn checkEquatableMarker(l: *Lower, marker: Ast.OptionalTokenIndex) Allocator.Err
     try l.reportToken(.equatable_outside_core, token);
 }
 
-/// `foreign_outside_core` (§5.4), spanning from `pub` (or the `foreign`
+/// `foreign_outside_platform` (§5.4), spanning from `pub` (or the `foreign`
 /// keyword) to the name.
 fn checkForeign(l: *Lower, header: Ast.DeclHeader, name_token: TokenIndex, keyword_token: TokenIndex) Allocator.Error!void {
-    if (l.options.core) return;
+    if (l.options.core or l.options.platform) return;
     const first = header.pub_token.unwrap() orelse keyword_token;
-    try l.report(.foreign_outside_core, l.starts[first], l.tokenEnd(name_token));
+    try l.report(.foreign_outside_platform, l.starts[first], l.tokenEnd(name_token));
 }
 
 // ---------------------------------------------------------------------------
@@ -3025,8 +3033,8 @@ test "foreign declarations are rejected without --core and accepted with it" {
         \\
     ;
     try expectErrors(source, .{}, &.{
-        .{ .code = .foreign_outside_core, .line = 2, .col = 1 },
-        .{ .code = .foreign_outside_core, .line = 5, .col = 1 },
+        .{ .code = .foreign_outside_platform, .line = 2, .col = 1 },
+        .{ .code = .foreign_outside_platform, .line = 5, .col = 1 },
     });
     try expectWholeDump(source, .{ .core = true },
         \\decl 0: pub foreign value add

@@ -33,6 +33,13 @@ const Allocator = std.mem.Allocator;
 /// an absolute path at `init` because the child runs with a different cwd.
 pub const exe_relative = "zig-out/bin/beni";
 
+/// Where the emitted JavaScript goes when a scenario does not say. Relative
+/// to the world's project directory.
+pub const default_out = "out";
+
+/// The entry file `beni build` writes (boundary.md §5.2).
+pub const entry_file = "out/main.mjs";
+
 /// Wall-clock bound on one compiler run. Generous: the point is to turn a
 /// hang into a failure, not to measure.
 pub const timeout_ms: i64 = 60_000;
@@ -71,19 +78,36 @@ pub const World = struct {
     /// Absolute path of the binary under test (sentinel-terminated because
     /// `realPathFileAlloc` returns one, and `free` counts the sentinel).
     exe: [:0]u8,
+    /// Absolute path of the Node binary, resolved from the TEST process's
+    /// `PATH` — which is the dev shell's, because that is what the build
+    /// step inherits. Never a hardcoded `/usr/bin/node`: the flake pins
+    /// Node 24 and the point of pinning it is that CI and a laptop agree.
+    /// Null when nothing on `PATH` is called `node`, which a scenario
+    /// reports rather than silently skipping.
+    node_exe: ?[]const u8,
 
     pub fn init(gpa: Allocator, io: Io) !World {
         var tmp = std.testing.tmpDir(.{});
         errdefer tmp.cleanup();
         const exe = try Io.Dir.cwd().realPathFileAlloc(io, exe_relative, gpa);
-        return .{
+        errdefer gpa.free(exe);
+        var world: World = .{
             .gpa = gpa,
             .io = io,
             .tmp = tmp,
             .arena = .init(gpa),
             .exe = exe,
+            .node_exe = null,
         };
+        world.node_exe = findOnPath(world.arena.allocator(), io, "node");
+        return world;
     }
+
+    pub const BuildAndRun = struct {
+        build: Result,
+        /// Null when the build failed, so nothing was run.
+        program: ?Result,
+    };
 
     /// Remove the project tree and free every result.
     pub fn deinit(world: *World) void {
@@ -137,9 +161,38 @@ pub const World = struct {
     }
 
     /// Run `beni <args>` in the project directory with `--diagnostics=json`
-    /// appended for `check`/`fmt`/`dump`, and parse stderr.
+    /// appended for `build`/`check`/`fmt`/`dump`, and parse stderr.
     pub fn run(world: *World, args: []const []const u8) !Result {
         return world.runWith(args, .{});
+    }
+
+    /// Run `node <script>` in the project directory and capture everything.
+    /// This is the write-tests skill's **second boundary**: the emitted
+    /// program is the thing under test and what it printed is the
+    /// assertion. A bug that changes emitted SHAPE but not behaviour must
+    /// not fail here; a bug that changes behaviour must.
+    pub fn node(world: *World, script: []const u8) !Result {
+        const arena = world.arena.allocator();
+        const exe = world.node_exe orelse return error.NodeNotOnPath;
+        const argv = try arena.dupe([]const u8, &.{ exe, script });
+        return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir });
+    }
+
+    /// `beni build --platform=node --out=out <paths>`, then `node out/main.mjs`.
+    /// The whole second boundary in one call, because every `run/` fixture
+    /// and every codegen scenario wants exactly this pair.
+    ///
+    /// `build` is always returned; `program` is null when the build did not
+    /// exit 0, so a scenario asserts the compile before the run rather than
+    /// reading a stale `out/`.
+    pub fn buildAndRun(world: *World, args: []const []const u8) !BuildAndRun {
+        const arena = world.arena.allocator();
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(arena, &.{ "build", "--platform=node", "--out=" ++ default_out });
+        try argv.appendSlice(arena, args);
+        const built = try world.runWith(argv.items, .{ .raw_diagnostics = true });
+        if (built.exit_code != 0) return .{ .build = built, .program = null };
+        return .{ .build = built, .program = try world.node(entry_file) };
     }
 
     pub fn runWith(world: *World, args: []const []const u8, options: RunOptions) !Result {
@@ -148,7 +201,8 @@ pub const World = struct {
         try argv.append(arena, world.exe);
         try argv.appendSlice(arena, args);
         const wants_json = !options.raw_diagnostics and args.len > 0 and
-            (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "fmt") or std.mem.eql(u8, args[0], "dump"));
+            (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check") or
+                std.mem.eql(u8, args[0], "fmt") or std.mem.eql(u8, args[0], "dump"));
         if (wants_json) try argv.append(arena, "--diagnostics=json");
 
         const cwd = options.cwd orelse std.process.Child.Cwd{ .dir = world.tmp.dir };
@@ -165,6 +219,22 @@ pub const World = struct {
         return result;
     }
 };
+
+/// The absolute path of `name` on the TEST process's `PATH`, or null. The
+/// child sees an empty environment, so a bare `node` would not resolve
+/// there; resolving it here is what makes the pinned toolchain's Node the
+/// one that runs, whatever the child's environment is.
+fn findOnPath(arena: Allocator, io: Io, name: []const u8) ?[]const u8 {
+    const path = std.testing.environ.getAlloc(arena, "PATH") catch return null;
+    var it = std.mem.splitScalar(u8, path, ':');
+    while (it.next()) |dir| {
+        if (dir.len == 0) continue;
+        const candidate = std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, name }) catch return null;
+        Io.Dir.cwd().access(io, candidate, .{}) catch continue;
+        return candidate;
+    }
+    return null;
+}
 
 /// Spawn `argv` with an EMPTY environment, capture both streams to EOF
 /// within `timeout_ms`, reap, and return everything. `arena` owns the

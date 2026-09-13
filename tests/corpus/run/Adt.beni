@@ -1,0 +1,62 @@
+-- Constructors and pattern matching. `Shape` has an argument-taking
+-- constructor, so every one of its constructors is padded to one shape
+-- (`fast-compiler.md` §9.4); `Colour` has none, so each is a bare tag.
+import Node exposing (Program)
+import String
+
+
+type Shape
+    = Circle Float
+    | Rect Float Float
+    | Dot
+
+
+type Colour
+    = Red
+    | Green
+    | Blue
+
+
+area : Shape -> Float
+area shape =
+    case shape of
+        Circle r ->
+            3.0 * r * r
+
+        Rect w h ->
+            w * h
+
+        Dot ->
+            0.0
+
+
+name : Colour -> String
+name colour =
+    case colour of
+        Red ->
+            "red"
+
+        Green ->
+            "green"
+
+        Blue ->
+            "blue"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromFloat (area (Circle 2.0))
+        , String.fromFloat (area (Rect 3.0 4.0))
+        , String.fromFloat (area Dot)
+        , name Red
+        , name Blue
+        , if Red == Red then
+            "same"
+          else
+            "different"
+        , if Circle 1.0 == Circle 1.0 then
+            "same"
+          else
+            "different"
+        ]

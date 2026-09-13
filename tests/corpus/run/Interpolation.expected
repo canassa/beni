@@ -1,0 +1,6 @@
+Ada is 36
+sum = 3
+nested Bob is 7 done
+a backtick ` and a brace {
+a dollar brace ${x} stays literal
+no substitution here

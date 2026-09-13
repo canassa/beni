@@ -1,0 +1,30 @@
+-- Comparison and boolean logic. `<` and friends are numbers only
+-- (`fast-compiler.md` §3.1), `==` is structural, and `&&`/`||`
+-- short-circuit.
+import Node exposing (Program)
+import String
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (1 < 2)
+        , show (2 <= 2)
+        , show (3 > 4)
+        , show (4 >= 4)
+        , show (1 == 1)
+        , show ([ 1, 2 ] == [ 1, 2 ])
+        , show ([ 1, 2 ] /= [ 2, 1 ])
+        , show (True && False)
+        , show (True || False)
+        , show (not True)
+        , show (xor True False)
+        ]

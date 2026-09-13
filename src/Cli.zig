@@ -6,6 +6,7 @@
 //! stderr and exits 2. The wording is part of the black-box contract.
 //!
 //! ```
+//! beni build  [options] --platform=<name> <path>...
 //! beni check  [options] <path>...
 //! beni fmt    [options] [--check] [--stdout] <path>...
 //! beni dump   [options] --stage=<tokens|ast|bir|interface|raw|types> [--positions] <file>
@@ -20,6 +21,7 @@ pub const usage =
     \\usage: beni <command> [options] [<path>...]
     \\
     \\commands:
+    \\  build    compile to JavaScript for a platform
     \\  check    parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
     \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types)
@@ -33,6 +35,12 @@ pub const usage =
     \\  --root=<dir>              the source root module names are derived from
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
     \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
+    \\
+    \\build options:
+    \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
+    \\  --out=<dir>               output directory (default: out)
+    \\  --source-maps             emit .map files (accepted and ignored until M3 grows them)
+    \\  --release                 chunks, elimination, renaming (not implemented until M3c)
     \\
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
@@ -75,6 +83,20 @@ pub const Check = struct {
     paths: []const []const u8,
 };
 
+pub const Build = struct {
+    common: Common = .{},
+    /// `--platform`: an embedded platform's name, or a directory holding a
+    /// package whose manifest says `"platform": true` (boundary.md §2).
+    platform: []const u8,
+    out: []const u8 = default_out,
+    /// Accepted and ignored in M3a (backend.md §2): positions ride in the
+    /// IR from the first milestone (§9.6) but the VLQ encoder is later.
+    source_maps: bool = false,
+    paths: []const []const u8,
+};
+
+pub const default_out = "out";
+
 pub const Fmt = struct {
     common: Common = .{},
     check: bool = false,
@@ -90,6 +112,7 @@ pub const Dump = struct {
 };
 
 pub const Command = union(enum) {
+    build: Build,
     check: Check,
     fmt: Fmt,
     dump: Dump,
@@ -135,6 +158,7 @@ pub fn parse(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         if (rest.len != 0) return .{ .usage = .init("beni: help takes no arguments", .{}) };
         return .{ .command = .help };
     }
+    if (std.mem.eql(u8, sub, "build")) return parseBuild(gpa, rest);
     if (std.mem.eql(u8, sub, "check")) return parseCheck(gpa, rest);
     if (std.mem.eql(u8, sub, "fmt")) return parseFmt(gpa, rest);
     if (std.mem.eql(u8, sub, "dump")) return parseDump(gpa, rest);
@@ -248,6 +272,66 @@ fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     return .{ .command = .{ .check = .{ .common = s.common, .paths = try s.positionals.toOwnedSlice(gpa) } } };
 }
 
+const BuildSpecific = struct {
+    consumed: bool = false,
+    platform: ?[]const u8 = null,
+    out: ?[]const u8 = null,
+    source_maps: bool = false,
+    release: bool = false,
+
+    fn apply(self: *BuildSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--platform")) {
+            const v = value orelse return needsValue(name, "<name>");
+            if (v.len == 0) return needsValue(name, "<name>");
+            self.platform = v;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--out")) {
+            const v = value orelse return needsValue(name, "<dir>");
+            if (v.len == 0) return needsValue(name, "<dir>");
+            self.out = v;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--source-maps")) {
+            if (value != null) return noValue(name);
+            self.source_maps = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--release")) {
+            if (value != null) return noValue(name);
+            self.release = true;
+            self.consumed = true;
+        }
+        return null;
+    }
+};
+
+fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    var s: Scanner(BuildSpecific) = .{};
+    errdefer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| {
+        s.positionals.deinit(gpa);
+        return .{ .usage = u };
+    }
+    defer s.positionals.deinit(gpa);
+    // Rejected, not ignored: silently producing development output for a
+    // `--release` build is how a slow, unminified bundle reaches production
+    // without anyone noticing (backend.md §1 puts the optimiser in M3c).
+    if (s.specific.release) {
+        return .{ .usage = .init("beni: --release is not implemented until M3c; this build would be development output", .{}) };
+    }
+    const platform = s.specific.platform orelse
+        return .{ .usage = .init("beni: build needs --platform=<name>", .{}) };
+    if (s.positionals.items.len == 0) {
+        return .{ .usage = .init("beni: build needs at least one path", .{}) };
+    }
+    const paths = try s.positionals.toOwnedSlice(gpa);
+    return .{ .command = .{ .build = .{
+        .common = s.common,
+        .platform = platform,
+        .out = s.specific.out orelse default_out,
+        .source_maps = s.specific.source_maps,
+        .paths = paths,
+    } } };
+}
+
 const FmtSpecific = struct {
     consumed: bool = false,
     check: bool = false,
@@ -329,6 +413,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
 /// Free what `parse` allocated for `command`.
 pub fn deinitCommand(gpa: Allocator, command: Command) void {
     switch (command) {
+        .build => |c| gpa.free(c.paths),
         .check => |c| gpa.free(c.paths),
         .fmt => |f| gpa.free(f.paths),
         .dump, .version, .help => {},
@@ -441,8 +526,29 @@ test "dump: stage, positions, exactly one file" {
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
 }
 
+test "build: the platform is required and --release is refused" {
+    try expectCommand(.{ .build = .{ .platform = "node", .paths = &.{"src"} } }, &.{ "build", "--platform=node", "src" });
+    try expectCommand(.{ .build = .{
+        .common = .{ .root = "src", .jobs = 2 },
+        .platform = "./platforms/node",
+        .out = "dist",
+        .source_maps = true,
+        .paths = &.{ "src", "vendor" },
+    } }, &.{ "build", "--platform=./platforms/node", "src", "--out=dist", "--source-maps", "--root=src", "--jobs=2", "vendor" });
+    try expectUsage("beni: build needs --platform=<name>", &.{ "build", "src" });
+    try expectUsage("beni: build needs at least one path", &.{ "build", "--platform=node" });
+    try expectUsage("beni: option '--platform' needs a value: --platform=<name>", &.{ "build", "--platform", "src" });
+    try expectUsage("beni: option '--out' needs a value: --out=<dir>", &.{ "build", "--platform=node", "--out=", "src" });
+    try expectUsage(
+        "beni: --release is not implemented until M3c; this build would be development output",
+        &.{ "build", "--platform=node", "--release", "src" },
+    );
+    // `--platform` belongs to build only.
+    try expectUsage("beni: unknown option '--platform'; run 'beni help' for usage", &.{ "check", "--platform=node", "src" });
+}
+
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--stage", "--positions", "interface" }) |word| {
+    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
 }

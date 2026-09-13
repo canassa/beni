@@ -1,0 +1,50 @@
+-- The pattern forms a `case` chain has to test and bind: a record pattern
+-- (no test, one binding per field), an `as` pattern (the sub-pattern's test
+-- plus a binding for the whole), a wildcard, and a nested constructor.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    { x : Int, y : Int }
+
+
+type Wrapped
+    = Wrap (Maybe Int)
+
+
+taxicab : Point -> Int
+taxicab { x, y } =
+    x + y
+
+
+firstOf : List Int -> String
+firstOf xs =
+    case xs of
+        (a :: _) as whole ->
+            "${String.fromInt a} of ${String.fromInt (List.length whole)}"
+
+        [] ->
+            "none"
+
+
+inside : Wrapped -> String
+inside w =
+    case w of
+        Wrap (Just n) ->
+            "just ${String.fromInt n}"
+
+        Wrap Nothing ->
+            "nothing"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (taxicab { x = 3, y = 4 })
+        , firstOf [ 7, 8, 9 ]
+        , firstOf []
+        , inside (Wrap (Just 5))
+        , inside (Wrap Nothing)
+        ]

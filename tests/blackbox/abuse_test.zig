@@ -1190,6 +1190,43 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
     }
 }
 
+test "a pathologically nested expression is EMITTED without a stack overflow" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The parser accepts `Parse.max_depth` levels (language.md §10), and
+    // both halves of codegen — lowering to `JsIr` and printing it — walk
+    // that tree by recursion. 4 000 frames do not fit in the 8 MiB a main
+    // thread gets, so `beni build` runs the emit phase on a thread with the
+    // stack the checker uses. A segfault here would be the one failure mode
+    // the house rules do not permit.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    const depth = 4000;
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(testing.allocator);
+    const gpa = testing.allocator;
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\nf : Int -> Int\nf x =\n    x\n\n\nbig : Int\nbig =\n    ");
+    for (0..depth) |_| try source.appendSlice(gpa, "f (");
+    try source.appendSlice(gpa, "1");
+    for (0..depth) |_| try source.append(gpa, ')');
+    try source.appendSlice(gpa, "\n\n\nmain : Program\nmain =\n    Node.print \"ok\"\n");
+    try w.write("Main.beni", source.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expect(w.exists("out/Main.mjs"));
+}
+
 test "600 modules check identically at every worker count, twice each" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

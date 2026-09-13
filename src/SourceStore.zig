@@ -56,7 +56,13 @@ pub const Index = enum(u32) {
 /// resolves in the importing module's own package first, then `core`.
 /// Dependencies as packages are M4; the column exists now so M4 needs no
 /// retrofit.
-pub const Package = enum(u8) { app, core };
+/// `platform` is a package whose manifest says `"platform": true`
+/// (`docs/design/boundary.md` §2): it may write `foreign`, it owns the
+/// `Program` type and `main`'s shape, and anyone may publish one. It sits
+/// above `core` in this enum because the dedup in `finish` keeps the
+/// strongest package for a path and a platform's own copy of a file must
+/// win over an app's view of it.
+pub const Package = enum(u8) { app, core, platform };
 
 pub const File = struct {
     /// Owned. As enumerated: the argument path joined with what the walk

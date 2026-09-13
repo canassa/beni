@@ -1,0 +1,24 @@
+-- The string primitives that reach into the platform's own string type.
+-- `length`, `slice` and `toList` work in CODE POINTS, so the astral
+-- character at the end counts as one.
+import List
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.join "|" (String.split "," "cat,dog,cow")
+        , String.join "|" (String.words "How are \n you? \t Good?")
+        , String.join "|" (String.lines "one\ntwo\nthree")
+        , String.join "," (List.map String.fromInt (String.indexes "i" "Mississippi"))
+        , String.fromList [ 'a', 'b', 'c' ]
+        , String.join "" (List.map String.fromChar (String.toList "abc"))
+        , String.fromInt (String.length "héllo")
+        , String.replace "," ";" "a,b,c"
+        , String.left 3 "abcdef"
+        , String.right 3 "abcdef"
+        , String.fromFloat 1.5
+        , String.fromFloat 2.0
+        ]

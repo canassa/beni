@@ -1,0 +1,41 @@
+-- A tuple is a fixed-shape object per arity with no runtime tag
+-- (`backend.md` §4). Construction, indexing, destructuring in a pattern and
+-- in a parameter all have to agree on the slot names.
+import List
+import Node exposing (Program)
+import String
+
+
+swap : ( Int, String ) -> ( String, Int )
+swap ( n, s ) =
+    ( s, n )
+
+
+describe : ( Int, Int, Int ) -> String
+describe triple =
+    case triple of
+        ( 0, _, _ ) ->
+            "starts at zero"
+
+        ( a, b, c ) ->
+            String.fromInt (a + b + c)
+
+
+main : Program
+main =
+    let
+        pair =
+            ( 1, "one" )
+
+        ( left, right ) =
+            swap pair
+    in
+    Node.printLines
+        [ left
+        , String.fromInt right
+        , String.fromInt pair.0
+        , pair.1
+        , describe ( 0, 1, 2 )
+        , describe ( 1, 2, 3 )
+        , String.join "," (List.map String.fromInt (List.map (\p -> p.0 + p.1) [ ( 1, 2 ), ( 3, 4 ) ]))
+        ]

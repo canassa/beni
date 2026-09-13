@@ -1,0 +1,60 @@
+-- Literal patterns: integers, strings and characters, each a `===` test in
+-- the emitted chain, with a wildcard last.
+import Node exposing (Program)
+import String
+
+
+roman : Int -> String
+roman n =
+    case n of
+        1 ->
+            "I"
+
+        2 ->
+            "II"
+
+        3 ->
+            "III"
+
+        _ ->
+            "many"
+
+
+kind : String -> String
+kind word =
+    case word of
+        "yes" ->
+            "affirmative"
+
+        "no" ->
+            "negative"
+
+        _ ->
+            "unclear"
+
+
+letter : Char -> String
+letter c =
+    case c of
+        'a' ->
+            "first"
+
+        'z' ->
+            "last"
+
+        _ ->
+            "middle"
+
+
+main : Program
+main =
+    Node.printLines
+        [ roman 1
+        , roman 3
+        , roman 9
+        , kind "yes"
+        , kind "maybe"
+        , letter 'a'
+        , letter 'm'
+        , letter 'z'
+        ]

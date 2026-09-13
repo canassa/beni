@@ -88,11 +88,13 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\Each field of a record is set once. Remove one of the two.
         , .{text}),
-        .foreign_outside_core => try w.writeAll(
-            \\This `foreign` declaration is outside the core package.
+        .foreign_outside_platform => try w.writeAll(
+            \\This `foreign` declaration is outside a platform package.
             \\
-            \\`foreign` declares a value or type implemented in JavaScript and is legal only in
-            \\core, which is built with `--core`. Write the definition in beni instead.
+            \\`foreign` declares a value or type implemented in JavaScript. It is legal in the
+            \\core package and in a package whose manifest says `"platform": true`
+            \\(`docs/design/boundary.md` §2), and nowhere else. Write the definition in beni,
+            \\or move it into a platform package of your own.
         ),
         .equatable_outside_core => try w.writeAll(
             \\The `equatable` marker is core's alone.
@@ -241,8 +243,8 @@ test "message: the payload-free codes" {
         "?",
     );
     try expectMessage(
-        "This `foreign` declaration is outside the core package.\n\n`foreign` declares a value or type implemented in JavaScript and is legal only in\ncore, which is built with `--core`. Write the definition in beni instead.",
-        .{ .code = .foreign_outside_core, .start = 0, .end = 7 },
+        "This `foreign` declaration is outside a platform package.\n\n`foreign` declares a value or type implemented in JavaScript. It is legal in the\ncore package and in a package whose manifest says `\"platform\": true`\n(`docs/design/boundary.md` §2), and nowhere else. Write the definition in beni,\nor move it into a platform package of your own.",
+        .{ .code = .foreign_outside_platform, .start = 0, .end = 7 },
         "foreign",
     );
     try expectMessage(

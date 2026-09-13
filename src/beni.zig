@@ -28,6 +28,17 @@ pub const parse = struct {
     pub const Parse = @import("parse/Parse.zig");
     pub const Diagnostics = @import("parse/Diagnostics.zig");
 };
+pub const js = struct {
+    pub const JsIr = @import("js/JsIr.zig");
+    pub const Lower = @import("js/Lower.zig");
+    pub const Print = @import("js/Print.zig");
+    pub const Emit = @import("js/Emit.zig");
+    pub const Sibling = @import("js/Sibling.zig");
+    pub const Manifest = @import("js/Manifest.zig");
+};
+pub const build = struct {
+    pub const Command = @import("build/Command.zig");
+};
 pub const fmt = struct {
     pub const Format = @import("fmt/Format.zig");
     pub const Command = @import("fmt/Command.zig");
@@ -77,5 +88,7 @@ test {
     std.testing.refAllDecls(check);
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(fmt);
+    std.testing.refAllDecls(js);
+    std.testing.refAllDecls(build);
     std.testing.refAllDecls(render);
 }

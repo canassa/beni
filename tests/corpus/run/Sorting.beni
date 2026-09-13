@@ -1,0 +1,30 @@
+-- There is no `comparable` (`fast-compiler.md` §3.1), so ordering is an
+-- argument: `sort` for numbers, `sortBy` for a numeric key, `sortWith` for
+-- an ordering you write. `String.compare` is the replacement for `"a" < "b"`.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Person =
+    { name : String, age : Int }
+
+
+people : List Person
+people =
+    [ { name = "Bob", age = 7 }, { name = "Ada", age = 36 }, { name = "Cy", age = 21 } ]
+
+
+names : List Person -> String
+names ps =
+    String.join "," (List.map (\p -> p.name) ps)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.join "," (List.map String.fromInt (List.sort [ 3, 1, 2 ]))
+        , names (List.sortBy (\p -> p.age) people)
+        , names (List.sortWith (\a b -> String.compare a.name b.name) people)
+        , names (List.sortWith (\a b -> compare b.age a.age) people)
+        ]

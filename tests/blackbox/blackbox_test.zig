@@ -1536,14 +1536,16 @@ test "check --core accepts a foreign declaration that check without it rejects" 
     try testing.expectEqual(@as(usize, 0), core.diagnostics.len);
     try testing.expectEqual(@as(u8, 1), user.exit_code);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
-        .code = .foreign_outside_core,
+        .code = .foreign_outside_platform,
         .severity = .@"error",
         .span = .{ .file = "Prim.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 16 } },
-        .title = "FOREIGN OUTSIDE CORE",
-        .message = "This `foreign` declaration is outside the core package.\n" ++
+        .title = "FOREIGN OUTSIDE PLATFORM",
+        .message = "This `foreign` declaration is outside a platform package.\n" ++
             "\n" ++
-            "`foreign` declares a value or type implemented in JavaScript and is legal only in\n" ++
-            "core, which is built with `--core`. Write the definition in beni instead.",
+            "`foreign` declares a value or type implemented in JavaScript. It is legal in the\n" ++
+            "core package and in a package whose manifest says `\"platform\": true`\n" ++
+            "(`docs/design/boundary.md` §2), and nowhere else. Write the definition in beni,\n" ++
+            "or move it into a platform package of your own.",
     }}), user.diagnostics);
 }
 

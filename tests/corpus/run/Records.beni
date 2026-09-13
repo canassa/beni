@@ -1,0 +1,37 @@
+-- A record is an object literal with a canonical key order, so every value
+-- of one record type shares a hidden class (`backend.md` §4). Field access
+-- is `.name`; record update spreads and overrides.
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    { x : Int, y : Int }
+
+
+type alias Named =
+    { name : String, point : Point }
+
+
+shift : Int -> Point -> Point
+shift dx p =
+    { p | x = p.x + dx }
+
+
+main : Program
+main =
+    let
+        origin =
+            { x = 0, y = 0 }
+
+        here =
+            { name = "here", point = shift 3 origin }
+    in
+    Node.printLines
+        [ String.fromInt origin.x
+        , String.fromInt (shift 3 origin).x
+        , String.fromInt (shift 3 origin).y
+        , here.name
+        , String.fromInt here.point.x
+        , String.fromInt { x = 1, y = 2 }.y
+        ]

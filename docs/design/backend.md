@@ -16,9 +16,13 @@ The order is not negotiable and one rule sets it: **nothing is optimised before 
 second boundary is compiling a program, running it under Node and asserting what it printed, and a
 backend that cannot be executed is a backend whose bugs survive a green suite.
 
-- **M3a — emit and run.** `JsIr`, the printer, codegen for the pure subset, core's foreign
-  JavaScript for what that subset uses, a minimal Node platform, and the harness boundary that runs
-  emitted code. *Acceptance: a beni program computes something and prints the right answer.*
+- **M3a — emit and run.** *Shipped.* `JsIr`, the printer, codegen for the pure subset, core's
+  foreign JavaScript for what that subset uses, a minimal Node platform, and the harness boundary
+  that runs emitted code. *Acceptance: a beni program computes something and prints the right
+  answer* — `tests/corpus/run/` is 26 programs that do, executed under Node. All 65 of core's
+  foreign values are implemented, not only the ones the subset reaches. `?` is the one construct
+  of §4's table M3a does not compile, and it says so with a diagnostic rather than emitting
+  something wrong.
 - **M3b — the whole language.** Tail-call loops, decision trees, interpolation, `?`, tuples, record
   update, `Int32`, everything remaining. *Acceptance: the corpus compiles and runs.*
 - **M3c — the optimiser.** Reachability elimination, saturated-call specialisation, local
@@ -89,6 +93,39 @@ mapping.
 | `?` | the `case` it desugars to, over the enclosing function's early return |
 | `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4) |
 
+### Corrections from M3a
+
+Three rows of that table did not survive contact with the code. Each is a
+decision the implementation had to make and §4 did not:
+
+1. **`Basics.Bool` is JavaScript's `true`/`false`.** §4 has no row for it and its general rule —
+   a nullary constructor is the bare tag — would make `True` the string `"True"`, so `if` would
+   compare strings and `&&` could not be `&&`. The special case is keyed on core's `Basics.Bool`,
+   not on a name, so a user's own `type Bool = True | False` is an ordinary ADT.
+2. **"Nullary constructor → the bare tag" and "padded to a uniform shape per type" cannot both
+   hold**, and §9.4 states both. For `Maybe`, a bare `"Nothing"` beside `{$:"Just",a}` is exactly
+   the shape inconsistency §9.4 measures 11% on Firefox for. M3a splits on the TYPE: a type whose
+   constructors are *all* nullary is a bare tag string (`Order` is `"LT"`), and a type with any
+   argument-taking constructor pads every constructor (`Nothing` is `{$:"Nothing",a:null}`).
+3. **`&&` and `||` are lowered here, not at print time.** §9.4 files the primitive peephole under
+   optimisation. For these two it is not one: `language.md` §6.5 desugars them into calls of
+   `Basics.and`/`Basics.or`, a call evaluates both arguments, and `Basics.and` is `foreign`
+   precisely so that it does not. A saturated call of either becomes `&&`/`||`, and when the right
+   side needs statements of its own it becomes the `if`/`else` a short circuit really is.
+   Arithmetic and comparison stay calls in M3a; that peephole really is M3c's.
+
+And one thing §4's table is silent on that the emitter had to settle: **where the empty list comes
+from.** "cons cells (`{$:1, a, b}` / the empty singleton)" does not say who owns the singleton, and
+it cannot be a sibling export because `boundary.md` §4's second check forbids a sibling from
+exporting anything that is not a declared `foreign` value. M3a emits `{$:0,a:null,b:null}` inline,
+and `core/List.js` and `core/String.js` build the same shape by contract. That contract is the one
+piece of the representation that is written down in two places.
+
+Two more rows the table states and M3a did not need: a **`Char`** is a one-scalar JavaScript string
+(§4 says strings are native and core's API exposes code points; a `Char` is the one-character case
+of that), and **`()`** is `null`. Neither is contentious; both are recorded because the table did
+not say.
+
 **Lists and strings are the two representation questions §14 left open.** M3a ships cons cells and
 native strings, which are Elm's answers and the ones pattern matching and interop respectively push
 toward. M3c benchmarks a 32-way persistent vector trie against cons cells on real idiomatic code, as
@@ -115,9 +152,22 @@ direct calls. That condition is now a deliverable with a number attached.
 - Everything else — genuinely higher-order positions, partial application — falls back to the tagged
   adapter, which costs a property load, a comparison and an indirect call.
 
+**M3a shipped this and dropped the arity tag**, which the other two bullets turn out not to need.
+The tag exists so that a call site can *ask* a value what arity it has, and the only reason to ask
+is that some function-typed values are n-ary and some are not. Make them all the same and the
+question disappears: **every function-typed value in flight is curried**, and n-ary forms exist only
+where the callee is statically known. A saturated call to a known callee is then `f(a, b)` with no
+adapter at all; everything else applies one argument at a time to something that is always curried.
+The curry wrapper is emitted at the site that needs it — `((x) => (y) => f(x, y))` — so there is no
+runtime library, which matters because `boundary.md`'s wall means the only hand-written JavaScript
+in a build is core's siblings and a codegen helper would be neither that nor beni.
+
 **M3c measures the share of call sites emitted as direct calls and records it here.** §9.3 says
 plainly that if the share is low the currying decision was wrong. The missing-argument diagnostic
-already discharged its half of that bargain at 37 of 38; this is the other half.
+already discharged its half of that bargain at 37 of 38; this is the other half. An indicative count
+over M3a's own output (core plus a small program, counting `name(` against `)(`): 391 direct calls
+against 58 curried applications, so roughly 87%. That is a grep and not the measurement; M3c owns
+the real one.
 
 ## 7. Pattern matching
 
@@ -207,7 +257,7 @@ Zig's standard library has no brotli, so the benchmark shells out to an encoder 
 
 | What | Target |
 |---|---|
-| Emit throughput | > 5 MB/s of JavaScript |
+| Emit throughput | > 5 MB/s of JavaScript — **measured 85.5 MB/s** at M3a (`bench/README.md`) |
 | Whole cold build, 100k lines | < 800 ms including core |
 | Output size | Elm's TodoMVC at 9KB compressed is the number to beat |
 | Own output vs esbuild `--minify` | within ~10%; revisit before M5 if it approaches 1.58× |

@@ -1,0 +1,26 @@
+-- String interpolation lowers to a template literal (`backend.md` §4). The
+-- last two lines pin the escaping: a backtick and a literal `${` inside an
+-- interpolated string must survive.
+import Node exposing (Program)
+import String
+
+
+greet : String -> Int -> String
+greet name age =
+    "${name} is ${String.fromInt age}"
+
+
+main : Program
+main =
+    let
+        inner =
+            greet "Bob" 7
+    in
+    Node.printLines
+        [ greet "Ada" 36
+        , "sum = ${String.fromInt (1 + 2)}"
+        , "nested ${inner} done"
+        , "a backtick ` and a brace {"
+        , "a dollar brace $" ++ "{x} stays literal"
+        , "no substitution here"
+        ]

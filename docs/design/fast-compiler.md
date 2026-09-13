@@ -1,6 +1,6 @@
 # Beni: design for an extremely fast Elm-like → JavaScript compiler
 
-**Status:** implemented through M2b (see §13 for where each milestone stands). The design below
+**Status:** implemented through M3a (see §13 for where each milestone stands). The design below
 is the one the code follows; where a milestone proved part of it wrong, the correction is written
 here and the commit that found it says so.
 **Host language:** Zig.

@@ -1,0 +1,38 @@
+-- Functions stored, passed and returned. Everything here goes through the
+-- curried form, because a function used as a VALUE has no statically known
+-- callee at its use site.
+import List
+import Node exposing (Program)
+import String
+
+
+compose : (b -> c) -> (a -> b) -> a -> c
+compose g f x =
+    g (f x)
+
+
+twice : (a -> a) -> a -> a
+twice f x =
+    f (f x)
+
+
+pick : Bool -> (Int -> Int)
+pick big =
+    if big then
+        \n -> n * 100
+    else
+        \n -> n + 1
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (compose (\n -> n + 1) (\n -> n * 2) 5)
+        , String.fromInt (twice (\n -> n * 3) 2)
+        , String.fromInt (pick True 5)
+        , String.fromInt (pick False 5)
+        , String.join "," (List.map String.fromInt (List.map (pick True) [ 1, 2 ]))
+        , String.fromInt ((identity (\n -> n - 1)) 10)
+        , String.fromInt (4 |> (\n -> n * n) |> (\n -> n + 1))
+        , String.fromInt (((\n -> n * 2) >> (\n -> n + 1)) 5)
+        ]

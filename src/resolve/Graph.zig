@@ -166,11 +166,21 @@ pub fn dependencies(g: *const Graph, i: Index) []const Index {
 }
 
 /// Resolve `name` as seen from a module of `from`: its own package first,
-/// then `core` (checker.md §2). An `app` module named like a core module
-/// therefore shadows it for the whole project, with no diagnostic — the
-/// same rule as a top-level name shadowing a prelude name.
+/// then the platform package of this build, then `core` (checker.md §2,
+/// boundary.md §5.3). An `app` module named like a core module therefore
+/// shadows it for the whole project, with no diagnostic — the same rule as
+/// a top-level name shadowing a prelude name.
+///
+/// The platform sits between the two because `boundary.md` §5.3 makes a
+/// build a PAIR of entry point and platform: a module that names a
+/// capability the chosen platform does not offer must fail to resolve,
+/// which is the diagnostic §5.3 wants instead of a runtime surprise, and
+/// that only works if the platform's modules are in the search path at all.
 pub fn lookup(g: *const Graph, from: Package, name: Symbol) ?Index {
     if (g.by_name.get(.{ .package = from, .name = name })) |i| return i;
+    if (from != .platform) {
+        if (g.by_name.get(.{ .package = .platform, .name = name })) |i| return i;
+    }
     if (from != .core) {
         if (g.by_name.get(.{ .package = .core, .name = name })) |i| return i;
     }

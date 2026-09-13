@@ -1,0 +1,33 @@
+-- `Maybe` and `Result`, the two types every fallible core function returns.
+-- Both have an argument-taking constructor, so `Nothing` is padded to the
+-- same shape as `Just` rather than being a bare tag.
+import List
+import Maybe
+import Node exposing (Program)
+import Result
+import String
+
+
+parse : String -> String
+parse text =
+    case String.toInt text of
+        Just n ->
+            "got ${String.fromInt n}"
+
+        Nothing ->
+            "not a number"
+
+
+main : Program
+main =
+    Node.printLines
+        [ parse "123"
+        , parse "1.3"
+        , String.fromInt (Maybe.withDefault 0 (String.toInt "42"))
+        , String.fromInt (Maybe.withDefault 0 (String.toInt "x"))
+        , String.fromInt (Maybe.withDefault 0 (Maybe.map (\n -> n * 2) (Just 21)))
+        , String.fromInt (Result.withDefault 0 (Ok 7))
+        , String.fromInt (Result.withDefault 0 (Err "nope"))
+        , String.fromInt (Maybe.withDefault 0 (List.head [ 5, 6 ]))
+        , String.fromInt (Maybe.withDefault 0 (List.maximum [ 3, 9, 4 ]))
+        ]
