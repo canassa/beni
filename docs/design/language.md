@@ -647,6 +647,11 @@ author decides what may.
   binding and `in`.
 - Binary operator chains that do not fit, or that the author broke, break before the operator,
   one operator per line, operands indented 4. A chain flattens one precedence level only.
+- Applications: the arguments written on the head line stay there when they fit
+  (`div [ class "app" ]`, `Decode.map4 User`); from the first source line break onward every
+  remaining argument goes on its own line indented 4; an application with no source break that
+  does not fit breaks after the function, every argument on its own line. Constructor argument
+  lists in `type` declarations follow the same rule.
 - Comments stay attached to the token they precede; a comment on its own line stays on its own
   line; a trailing comment stays at the end of its line. Doc blocks get a space after `--|`.
 - Strings, numbers and chars are printed as written (no escape normalisation) except that the
