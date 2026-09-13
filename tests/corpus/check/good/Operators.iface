@@ -1,0 +1,5 @@
+module Operators
+  value arithmetic
+  value logic
+  value pipeline
+  value text

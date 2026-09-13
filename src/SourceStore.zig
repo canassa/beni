@@ -11,6 +11,25 @@
 //!
 //! Reading is per file and may run on a worker: `read(index)` writes only
 //! that file's columns, so workers on disjoint indices never race.
+//!
+//! A file also has a PACKAGE (checker.md §4.1): a module's identity is
+//! `(package, module name)`, not its name alone, so two packages may each
+//! have a `List` and an importer's own package is searched first. M2 has
+//! exactly two — the user's `app` and the embedded `core` — but nothing
+//! here assumes that. The core package's bytes are usually `@embedFile`d
+//! into the binary rather than read, which is what `File.embedded` marks;
+//! `--core-root` reads them from disk instead and they are ordinary files
+//! of package `core`.
+//!
+//! One rule joins the two: **an enumerated `app` file at a `core` file's
+//! path IS that core module.** `beni check core` from the repo root walks
+//! `core/` as app modules and would otherwise compile the standard library
+//! twice — once as `app.Basics`, once as `core.Basics` — with `foreign`
+//! illegal in the first. Instead the path is the identity, the on-disk
+//! bytes win over the embedded ones, and checking core is spelled the same
+//! way as checking anything else. The cost is that `core/` is a reserved
+//! directory name at the source root; the benefit is that developing core
+//! needs no flag.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -32,6 +51,13 @@ pub const Index = enum(u32) {
     }
 };
 
+/// Which package a file belongs to (checker.md §4.1, fast-compiler.md
+/// §3.1 "Project model"). Declaration order is the search order: an import
+/// resolves in the importing module's own package first, then `core`.
+/// Dependencies as packages are M4; the column exists now so M4 needs no
+/// retrofit.
+pub const Package = enum(u8) { app, core };
+
 pub const File = struct {
     /// Owned. As enumerated: the argument path joined with what the walk
     /// found under it.
@@ -40,7 +66,12 @@ pub const File = struct {
     /// path is not a valid module path (see `module_path_valid`).
     module_name: []const u8,
     module_path_valid: bool,
-    /// Owned; empty until `read`. Sentinel-terminated for the tokenizer.
+    package: Package,
+    /// The bytes are `@embedFile`d into the binary and must not be read or
+    /// freed. Only ever true for `core` files.
+    embedded: bool,
+    /// Owned unless `embedded`; empty until `read`. Sentinel-terminated for
+    /// the tokenizer.
     bytes: [:0]const u8,
     /// Owned; empty until the lexer fills it through `setLineStarts`.
     /// `line_starts[l]` is the byte offset of 0-based line `l`; `[0]` is 0.
@@ -52,6 +83,9 @@ const Pending = struct {
     /// Where the module-relative part of `path` begins, or `null` when the
     /// path does not lie under its root.
     rel_start: ?u32,
+    package: Package,
+    /// Embedded bytes, for a `core` file compiled into the binary.
+    source: ?[:0]const u8,
 };
 
 pub const extension = ".beni";
@@ -65,10 +99,10 @@ pub fn deinit(store: *SourceStore, gpa: Allocator) void {
     for (store.pending.items) |p| gpa.free(p.path);
     store.pending.deinit(gpa);
     const s = store.files.slice();
-    for (s.items(.path), s.items(.module_name), s.items(.bytes), s.items(.line_starts)) |p, name, b, lines| {
+    for (s.items(.path), s.items(.module_name), s.items(.bytes), s.items(.embedded), s.items(.line_starts)) |p, name, b, embedded, lines| {
         gpa.free(p);
         gpa.free(name);
-        freeBytes(gpa, b);
+        if (!embedded) freeBytes(gpa, b);
         gpa.free(lines);
     }
     store.files.deinit(gpa);
@@ -89,6 +123,16 @@ pub fn moduleName(store: *const SourceStore, index: Index) []const u8 {
 
 pub fn modulePathValid(store: *const SourceStore, index: Index) bool {
     return store.files.items(.module_path_valid)[index.int()];
+}
+
+pub fn package(store: *const SourceStore, index: Index) Package {
+    return store.files.items(.package)[index.int()];
+}
+
+/// Every file's package, in index order — for the phases that decide by
+/// package without touching the rest of the column set.
+pub fn packages(store: *const SourceStore) []const Package {
+    return store.files.items(.package);
 }
 
 pub fn bytes(store: *const SourceStore, index: Index) [:0]const u8 {
@@ -125,14 +169,14 @@ pub const AddPathError = Allocator.Error || Io.Dir.StatFileError || Io.Dir.OpenE
 /// (hidden entries skipped). `root`, when given, is the `--root` the module
 /// name is relative to; otherwise the directory itself, or the file's own
 /// directory (frontend.md §1). Nothing is numbered until `finish`.
-pub fn addPath(store: *SourceStore, gpa: Allocator, io: Io, arg: []const u8, root: ?[]const u8) AddPathError!void {
+pub fn addPath(store: *SourceStore, gpa: Allocator, io: Io, arg: []const u8, root: ?[]const u8, pkg: Package) AddPathError!void {
     const trimmed = trimSlashes(arg);
     const cwd = Io.Dir.cwd();
     const stat = try cwd.statFile(io, trimmed, .{});
     switch (stat.kind) {
         .directory => {
             const effective_root = if (root) |r| trimSlashes(r) else trimmed;
-            try store.walk(gpa, io, trimmed, effective_root);
+            try store.walk(gpa, io, trimmed, effective_root, pkg);
         },
         else => {
             if (!std.mem.endsWith(u8, trimmed, extension)) return error.NotABeniFile;
@@ -142,7 +186,7 @@ pub fn addPath(store: *SourceStore, gpa: Allocator, io: Io, arg: []const u8, roo
                 @intCast(slash + 1)
             else
                 0;
-            try store.addPending(gpa, trimmed, rel_start);
+            try store.addPending(gpa, trimmed, rel_start, pkg);
         },
     }
 }
@@ -163,10 +207,22 @@ fn relStart(p: []const u8, root: []const u8) ?u32 {
 
 /// Queue one path for `finish`. Public so tests and the session can seed a
 /// store without touching the filesystem.
-pub fn addPending(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32) Allocator.Error!void {
+pub fn addPending(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32, pkg: Package) Allocator.Error!void {
+    try store.addPendingSource(gpa, p, rel_start, pkg, null);
+}
+
+/// Queue a file whose bytes are already in memory: the embedded core
+/// package (checker.md §3), or a module a test writes rather than a file.
+/// `source` must outlive the store — it is `@embedFile` data in the
+/// binary's rodata, or a string literal — and is never freed.
+pub fn addEmbedded(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32, pkg: Package, source: [:0]const u8) Allocator.Error!void {
+    try store.addPendingSource(gpa, p, rel_start, pkg, source);
+}
+
+fn addPendingSource(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32, pkg: Package, source: ?[:0]const u8) Allocator.Error!void {
     const owned = try gpa.dupe(u8, p);
     errdefer gpa.free(owned);
-    try store.pending.append(gpa, .{ .path = owned, .rel_start = rel_start });
+    try store.pending.append(gpa, .{ .path = owned, .rel_start = rel_start, .package = pkg, .source = source });
 }
 
 /// Recursive walk in sorted entry order, skipping `.`-prefixed entries and
@@ -184,7 +240,7 @@ pub fn addPending(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start:
 /// an argument path IS followed (`addPath` stats with the default
 /// `follow_symlinks`). Symlinked *files* are skipped by the same rule, so
 /// "the walk does not follow symlinks" is one sentence rather than two.
-fn walk(store: *SourceStore, gpa: Allocator, io: Io, dir_path: []const u8, root: []const u8) AddPathError!void {
+fn walk(store: *SourceStore, gpa: Allocator, io: Io, dir_path: []const u8, root: []const u8, pkg: Package) AddPathError!void {
     var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
     defer dir.close(io);
 
@@ -219,30 +275,53 @@ fn walk(store: *SourceStore, gpa: Allocator, io: Io, dir_path: []const u8, root:
         const child = try std.fs.path.join(gpa, &.{ dir_path, e.name });
         defer gpa.free(child);
         switch (e.kind) {
-            .directory => try store.walk(gpa, io, child, root),
-            else => try store.addPending(gpa, child, relStart(child, root)),
+            .directory => try store.walk(gpa, io, child, root, pkg),
+            else => try store.addPending(gpa, child, relStart(child, root), pkg),
         }
     }
 }
 
 /// Sort and deduplicate the pending paths, derive module names, and assign
 /// indices. After this, `count()` files exist and `pending` is empty.
+///
+/// The sort key is `(path, package)` rather than the path alone, so entries
+/// for one path are adjacent with `app` first and `find` can still binary
+/// search `paths()`. Adjacent entries with the same path collapse, and the
+/// collapse is what implements the "an app file at a core path IS that core
+/// module" rule of the header: the surviving entry keeps the CORE package
+/// and the APP source of bytes, so the on-disk copy is what gets compiled.
 pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
     std.mem.sort(Pending, store.pending.items, {}, struct {
         fn lessThan(_: void, a: Pending, b: Pending) bool {
-            return std.mem.lessThan(u8, a.path, b.path);
+            return switch (std.mem.order(u8, a.path, b.path)) {
+                .lt => true,
+                .gt => false,
+                .eq => @intFromEnum(a.package) < @intFromEnum(b.package),
+            };
         }
     }.lessThan);
     try store.files.ensureUnusedCapacity(gpa, store.pending.items.len);
-    var previous: ?[]const u8 = null;
-    for (store.pending.items) |*p| {
-        if (previous) |prev| if (std.mem.eql(u8, prev, p.path)) {
-            gpa.free(p.path);
-            p.path = &.{};
-            continue;
-        };
-        previous = p.path;
-        const derived: ModuleName = if (p.rel_start) |start|
+    var i: usize = 0;
+    while (i < store.pending.items.len) {
+        const p = &store.pending.items[i];
+        // Fold every later entry for this path into `p`. The strongest
+        // package wins (core over app) and a non-embedded source wins over
+        // an embedded one, whichever order they arrived in.
+        var pkg = p.package;
+        var source = p.source;
+        var rel_start = p.rel_start;
+        var j = i + 1;
+        while (j < store.pending.items.len and std.mem.eql(u8, store.pending.items[j].path, p.path)) : (j += 1) {
+            const dup = &store.pending.items[j];
+            if (@intFromEnum(dup.package) > @intFromEnum(pkg)) {
+                pkg = dup.package;
+                rel_start = dup.rel_start;
+            }
+            if (dup.source == null) source = null;
+            gpa.free(dup.path);
+            dup.path = &.{};
+        }
+        const derived: ModuleName = if (rel_start) |start|
             try moduleNameFromRelative(gpa, p.path[start..])
         else
             .{ .invalid_segment = p.path };
@@ -254,10 +333,13 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
             .path = p.path,
             .module_name = name,
             .module_path_valid = derived == .valid,
-            .bytes = empty_source,
+            .package = pkg,
+            .embedded = source != null,
+            .bytes = source orelse empty_source,
             .line_starts = &.{},
         });
         p.path = &.{}; // ownership moved
+        i = j;
     }
     store.pending.clearRetainingCapacity();
 }
@@ -292,7 +374,9 @@ fn isUpperIdent(s: []const u8) bool {
 pub const ReadError = Io.Dir.ReadFileAllocError;
 
 /// Read one file's bytes. Safe to call from a worker for its own index.
+/// An embedded file already has its bytes and is not touched.
 pub fn read(store: *SourceStore, gpa: Allocator, io: Io, index: Index) ReadError!void {
+    if (store.files.items(.embedded)[index.int()]) return;
     const p = store.path(index);
     const data = try Io.Dir.cwd().readFileAllocOptions(io, p, gpa, .limited(std.math.maxInt(u32)), .of(u8), 0);
     const slot = &store.files.items(.bytes)[index.int()];
@@ -340,11 +424,11 @@ test "moduleNameFromRelative accepts upper identifiers and rejects the rest" {
 test "finish sorts, deduplicates and derives module names; find is exact" {
     var store: SourceStore = .{};
     defer store.deinit(testing.allocator);
-    try store.addPending(testing.allocator, "src/Page/Home.beni", 4);
-    try store.addPending(testing.allocator, "src/Main.beni", 4);
-    try store.addPending(testing.allocator, "src/Main.beni", 4);
-    try store.addPending(testing.allocator, "src/bad name.beni", 4);
-    try store.addPending(testing.allocator, "elsewhere/X.beni", null);
+    try store.addPending(testing.allocator, "src/Page/Home.beni", 4, .app);
+    try store.addPending(testing.allocator, "src/Main.beni", 4, .app);
+    try store.addPending(testing.allocator, "src/Main.beni", 4, .app);
+    try store.addPending(testing.allocator, "src/bad name.beni", 4, .app);
+    try store.addPending(testing.allocator, "elsewhere/X.beni", null, .app);
     try store.finish(testing.allocator);
 
     try testing.expectEqual(@as(u32, 4), store.count());

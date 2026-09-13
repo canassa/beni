@@ -223,7 +223,7 @@ Exposed     := lower_ident | upper_ident
 
 Decl        := DocComment? Visibility? (TypeAlias | TypeDecl | Annotation | Definition | Foreign)
 Foreign     := 'foreign' lower_ident ':' Type                 -- core root only, §5.4
-             | 'foreign' 'type' upper_ident lower_ident*
+             | 'equatable'? 'foreign' 'type' upper_ident lower_ident*   -- 'equatable' core only
 Visibility  := 'pub' | 'pub' 'opaque'            -- 'opaque' only before 'type'
 TypeAlias   := 'type' 'alias' upper_ident lower_ident* '=' Type
 TypeDecl    := 'type' upper_ident lower_ident* '=' Ctor ('|' Ctor)*
@@ -232,7 +232,9 @@ Annotation  := lower_ident ':' Type
 Definition  := lower_ident PatAtom* '=' Expr
 
 Type        := TypeApp ('->' Type)?                              -- right assoc
-TypeApp     := (upper_ident | qualified_upper) TypeAtom+ | TypeAtom
+TypeApp     := (upper_ident | qualified_upper) TypeAtom+
+             | 'equatable' lower_ident                           -- core only, §3 notes
+             | TypeAtom
 TypeAtom    := lower_ident                                       -- type variable
              | upper_ident | qualified_upper                     -- nullary type
              | '(' ')'                                           -- unit
@@ -305,6 +307,22 @@ Notes:
   (`f <| \x -> x + 1`, `xs |> List.map (\x -> x)`, `text <| if a then b else c`), as in Elm.
   It extends as far as the layout allows, so nothing can follow it in the chain. It may not be
   a bare application argument: `f \x -> x` is an error; write `f (\x -> x)`.
+- **`equatable`** is a contextual word, not a keyword: it is an ordinary identifier
+  everywhere except directly before `foreign` in a declaration, and directly before a
+  type variable where a `Type` starts. Writing it elsewhere in the language — in a
+  module outside the core package — is `equatable_outside_core`, and a second marker on
+  the same variable, or one on a later occurrence of it, is
+  `equatable_not_first_occurrence`. The prefix marks the **variable**, not the argument
+  in front of which it stands: `eq : equatable a -> a -> a -> Bool` is a function of two
+  arguments, and `pub equatable foreign type List a` means "equatable when every
+  parameter is". Because it is recognised only where a whole `Type` starts, an ARGUMENT
+  keeps its old reading: `List equatable` is a list of a variable named `equatable`.
+  User annotations obtain the mark by inference, never by spelling
+  ([`checker.md`](checker.md) Appendix A and B).
+- **Type constructors are fully applied**; there are no higher-kinded types. A type
+  constructor written with too few or too many arguments is `wrong_type_arity`, checked
+  in M2 against the declaring module's interface. A type alias may not refer to itself,
+  directly or through other aliases (`recursive_alias`).
 - `case` needs at least one branch (`case_without_branches`).
 - `lambda`: `\x y -> e` — one or more pattern atoms.
 - Record update: the target is a plain name, as in Elm (`{ r | x = 1 }`). `{ r.a | … }` is not
@@ -678,7 +696,7 @@ args_after_question  non_associative_chain  negation_with_space  invalid_tuple_i
 refutable_let_pattern
 duplicate_import  duplicate_import_alias  duplicate_exposed_name  import_after_declaration  self_import
 duplicate_declaration  duplicate_type  duplicate_constructor  shadows_import  duplicate_field
-foreign_outside_core
+foreign_outside_core  equatable_outside_core  equatable_not_first_occurrence
 unbound_variable  unbound_constructor  unbound_type  unknown_module_alias
 question_in_lambda  question_outside_function
 shadowing  duplicate_pattern_variable  duplicate_type_parameter  unbound_type_variable

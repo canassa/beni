@@ -91,6 +91,7 @@ ctors: std.ArrayList(Bir.Ctor) = .empty,
 locals: std.ArrayList(Bir.Local) = .empty,
 refs: std.ArrayList(Bir.Ref) = .empty,
 imports: std.ArrayList(Bir.Import) = .empty,
+exposed: std.ArrayList(Bir.Exposed) = .empty,
 interface: std.ArrayList(Bir.DeclIndex) = .empty,
 diagnostics: std.ArrayList(Diagnostics.Item) = .empty,
 
@@ -116,7 +117,15 @@ ctor_stamp: []u32 = &.{},
 /// The type parameters of the declaration being lowered (tokens), or
 /// null inside an annotation, where type variables are free (§7).
 type_params: ?[]const TokenIndex = null,
+/// The type variables already seen in the type expression being lowered,
+/// for the "first occurrence" half of the `equatable` rule (checker.md
+/// Appendix A). Cleared by `lowerRootType` per type expression, not per
+/// declaration: two `let` annotations in one body are two annotations, and
+/// each may mark its own `a`.
+type_vars_seen: std.ArrayList(Symbol) = .empty,
 
+/// The token every instruction appended right now is stamped with.
+cur_token: TokenIndex = 0,
 cur_decl: u32 = 0,
 cur_locals_start: u32 = 0,
 cur_refs_start: u32 = 0,
@@ -210,6 +219,7 @@ pub fn lower(
         l.locals.deinit(gpa);
         l.refs.deinit(gpa);
         l.imports.deinit(gpa);
+        l.exposed.deinit(gpa);
         l.interface.deinit(gpa);
         l.diagnostics.deinit(gpa);
     }
@@ -222,6 +232,7 @@ pub fn lower(
         l.frames.deinit(scratch);
         l.list_scratch.deinit(scratch);
         l.decl_sources.deinit(scratch);
+        l.type_vars_seen.deinit(scratch);
         scratch.free(l.decl_stamp);
         scratch.free(l.ctor_stamp);
     }
@@ -247,6 +258,7 @@ pub fn lower(
         .locals = &.{},
         .refs = &.{},
         .imports = &.{},
+        .exposed = &.{},
         .interface = &.{},
         .diagnostics = &.{},
         .module_doc_start = tree.module_doc.start,
@@ -261,6 +273,7 @@ pub fn lower(
     bir.locals = try l.locals.toOwnedSlice(gpa);
     bir.refs = try l.refs.toOwnedSlice(gpa);
     bir.imports = try l.imports.toOwnedSlice(gpa);
+    bir.exposed = try l.exposed.toOwnedSlice(gpa);
     bir.interface = try l.interface.toOwnedSlice(gpa);
     bir.diagnostics = try l.diagnostics.toOwnedSlice(gpa);
     return bir;
@@ -287,10 +300,30 @@ fn tokenSymbol(l: *const Lower, token: TokenIndex) Symbol {
 // Output helpers
 // ---------------------------------------------------------------------------
 
+/// Append an instruction, stamped with `cur_token` — the token the walker
+/// currently stands on. Every `lower*` entry point sets it from the node it
+/// was handed, so no call site has to thread a token through and no
+/// instruction is left without a source position (see `Bir.Inst`).
 fn addInst(l: *Lower, tag: Inst.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
     const i: u32 = @intCast(l.insts.len);
-    try l.insts.append(l.gpa, .{ .tag = tag, .data = .{ .lhs = lhs, .rhs = rhs } });
+    try l.insts.append(l.gpa, .{ .tag = tag, .main_token = l.cur_token, .data = .{ .lhs = lhs, .rhs = rhs } });
     return @enumFromInt(i);
+}
+
+/// Append an instruction stamped with `token` rather than with whatever
+/// the last child left in `cur_token`. Every walker sets `cur_token` on
+/// entry, so a LEAF is stamped right for free; a composite node has to say
+/// so, because by the time it appends its own instruction its children
+/// have moved `cur_token` on.
+///
+/// Why not save and restore around each node instead: the walkers recurse
+/// once per level of nesting and the parser allows 4,096 (language.md
+/// §10), so a `defer` and one extra local in `lowerExpr` is 4,096 of them
+/// on the stack — enough, measured, to turn `r????…` from a diagnostic
+/// into a segfault. `tests/blackbox/abuse_test.zig` holds that case.
+fn addInstAt(l: *Lower, token: TokenIndex, tag: Inst.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
+    l.cur_token = token;
+    return l.addInst(tag, lhs, rhs);
 }
 
 /// An instruction whose data is filled in later (`let_def` needs its index
@@ -455,9 +488,10 @@ fn lowerImports(l: *Lower) Allocator.Error!void {
         const s = try l.addSymbol(w.symbol());
         try l.imports.append(l.gpa, .{
             .module = s,
+            .name_token = 0,
             .alias = s,
-            .exposed_start = @intCast(l.symbols.items.len),
-            .exposed_end = @intCast(l.symbols.items.len),
+            .exposed_start = @intCast(l.exposed.items.len),
+            .exposed_end = @intCast(l.exposed.items.len),
             .prelude = true,
         });
     }
@@ -489,12 +523,12 @@ fn lowerImport(l: *Lower, node: NodeIndex) Allocator.Error!void {
     const import_index: u32 = @intCast(l.imports.items.len);
     const module_index = try l.addSymbol(module);
     const alias_index = if (imp.alias != null) try l.addSymbol(alias) else module_index;
-    const exposed_start: u32 = @intCast(l.symbols.items.len);
+    const exposed_start: u32 = @intCast(l.exposed.items.len);
     for (imp.exposed) |e| {
         if (l.tree.nodeTag(e) != .exposed) continue;
         const token = l.tree.nodeMainToken(e);
         const symbol = l.tokenSymbol(token);
-        _ = try l.addSymbol(symbol);
+        try l.exposed.append(l.gpa, .{ .name = try l.addSymbol(symbol), .token = token });
         const entry: NameEntry = .{ .kind = .exposed, .index = import_index, .token = token };
         switch (l.tags[token]) {
             .lower_ident => try l.expose(&l.values, symbol, entry),
@@ -510,9 +544,10 @@ fn lowerImport(l: *Lower, node: NodeIndex) Allocator.Error!void {
     }
     try l.imports.append(l.gpa, .{
         .module = module_index,
+        .name_token = name_token,
         .alias = alias_index,
         .exposed_start = exposed_start,
-        .exposed_end = @intCast(l.symbols.items.len),
+        .exposed_end = @intCast(l.exposed.items.len),
         .prelude = false,
     });
     try l.pushScratch(node);
@@ -587,8 +622,10 @@ fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.D
     try l.decls.append(l.gpa, .{
         .kind = kind,
         .name = try l.addSymbol(l.tokenSymbol(name_token)),
+        .name_token = name_token,
         .is_pub = header.pub_token != .none,
         .is_opaque = header.opaque_token != .none,
+        .is_equatable = header.equatable_token != .none,
         .doc_start = header.doc_start,
         .doc_end = header.doc_end,
         .params = 0,
@@ -675,6 +712,7 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
             const ctor_index: u32 = @intCast(l.ctors.items.len);
             try l.ctors.append(l.gpa, .{
                 .name = try l.addSymbol(l.tokenSymbol(ctor_token)),
+                .name_token = ctor_token,
                 .decl = @enumFromInt(index),
                 .args_start = @enumFromInt(0),
                 .args_end = @enumFromInt(0),
@@ -698,6 +736,7 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
             const ctor_index: u32 = @intCast(l.ctors.items.len);
             try l.ctors.append(l.gpa, .{
                 .name = try l.addSymbol(l.tokenSymbol(name_token)),
+                .name_token = name_token,
                 .decl = @enumFromInt(index),
                 .args_start = @enumFromInt(0),
                 .args_end = @enumFromInt(0),
@@ -706,7 +745,10 @@ fn declareType(l: *Lower, node: NodeIndex) Allocator.Error!void {
             l.decls.items[index].ctors_end = @intCast(l.ctors.items.len);
         }
     }
-    if (tag == .foreign_type) try l.checkForeign(header, name_token, name_token - 2);
+    if (tag == .foreign_type) {
+        try l.checkForeign(header, name_token, name_token - 2);
+        try l.checkEquatableMarker(header.equatable_token);
+    }
 }
 
 /// True for `{ … }` (grouping parentheses looked through): the alias body
@@ -715,6 +757,16 @@ fn isRecordType(l: *const Lower, node: NodeIndex) bool {
     var n = node;
     while (l.tree.nodeTag(n) == .type_paren) n = l.tree.operand(n);
     return l.tree.nodeTag(n) == .type_record;
+}
+
+/// `equatable_outside_core` (checker.md Appendix A/B): the marker is the
+/// one spelling in the language user code may not write, so outside the
+/// core package it is reported wherever it appears — on a `foreign type`
+/// here, on a type variable in `lowerTypeVar`.
+fn checkEquatableMarker(l: *Lower, marker: Ast.OptionalTokenIndex) Allocator.Error!void {
+    if (l.options.core) return;
+    const token = marker.unwrap() orelse return;
+    try l.reportToken(.equatable_outside_core, token);
 }
 
 /// `foreign_outside_core` (§5.4), spanning from `pub` (or the `foreign`
@@ -743,16 +795,16 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
             .definition => try l.lowerDefinition(src.node, src.annotation),
             .annotation => {
                 const ann = l.tree.fullAnnotation(src.node);
-                l.decls.items[i].annotation = (try l.lowerType(ann.type_expr)).toOptional();
+                l.decls.items[i].annotation = (try l.lowerRootType(ann.type_expr)).toOptional();
             },
             .foreign_value => {
                 const fv = l.tree.fullForeignValue(src.node);
-                l.decls.items[i].annotation = (try l.lowerType(fv.type_expr)).toOptional();
+                l.decls.items[i].annotation = (try l.lowerRootType(fv.type_expr)).toOptional();
             },
             .type_alias => {
                 const ta = l.tree.fullTypeAlias(src.node);
                 try l.lowerTypeParams(ta.params);
-                const body = try l.lowerType(ta.body);
+                const body = try l.lowerRootType(ta.body);
                 l.decls.items[i].annotation = body.toOptional();
                 if (d.ctors_end > d.ctors_start and l.insts.items(.tag)[body.int()] == .type_record) {
                     // The record constructor's arguments are the field
@@ -778,7 +830,7 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
                     const ctor = l.tree.fullConstructor(c);
                     const mark = l.scratchMark();
                     defer l.shrinkScratch(mark);
-                    for (ctor.args) |arg| try l.pushScratch(try l.lowerType(arg));
+                    for (ctor.args) |arg| try l.pushScratch(try l.lowerRootType(arg));
                     const range = try l.addRange(l.scratchSince(mark));
                     l.ctors.items[ctor_index].args_start = range.start;
                     l.ctors.items[ctor_index].args_end = range.end;
@@ -824,7 +876,7 @@ fn lowerDefinition(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) A
     const def = l.tree.fullDefinition(node);
     if (annotation.unwrap()) |ann| {
         const a = l.tree.fullAnnotation(ann);
-        l.decls.items[l.cur_decl].annotation = (try l.lowerType(a.type_expr)).toOptional();
+        l.decls.items[l.cur_decl].annotation = (try l.lowerRootType(a.type_expr)).toOptional();
     }
     const params = try l.lowerParams(def.params);
     try l.frames.append(l.scratch_allocator, Frame.definition(def.params.len > 0, .none));
@@ -918,6 +970,7 @@ fn lookupLocal(l: *const Lower, symbol: Symbol) ?u32 {
 /// An unqualified lower name in expression position (§6.2): local, then
 /// top-level, then `exposing`, then prelude.
 fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
+    l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     if (l.lookupLocal(symbol)) |local| return l.addInst(.local, local, Inst.Data.unused);
     if (l.values.get(symbol)) |entry| switch (entry.kind) {
@@ -936,6 +989,7 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 
 /// An unqualified upper name in expression or pattern position (§6.2).
 fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
+    l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     if (l.ctor_names.get(symbol)) |entry| switch (entry.kind) {
         .top => {
@@ -953,6 +1007,7 @@ fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 
 /// An unqualified upper name in type position (§6.2).
 fn resolveType(l: *Lower, token: TokenIndex) Allocator.Error!Index {
+    l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     if (l.types.get(symbol)) |entry| switch (entry.kind) {
         .top => {
@@ -975,6 +1030,7 @@ fn importModule(l: *const Lower, import_index: u32) Symbol {
 /// `Alias.name` (§6.2): the module part against the import aliases, then
 /// the prelude's module aliases; the name part is interned on its own.
 fn resolveQualified(l: *Lower, token: TokenIndex, tag: Inst.Tag, ref_kind: Bir.Ref.Kind, unbound: diagnostic.Code) Allocator.Error!Index {
+    l.cur_token = token;
     const text = l.tokenText(token);
     const dot = std.mem.lastIndexOfScalar(u8, text, '.') orelse {
         // A `qualified_*` token always has a dot; a placeholder does not.
@@ -1004,10 +1060,22 @@ fn resolveQualified(l: *Lower, token: TokenIndex, tag: Inst.Tag, ref_kind: Bir.R
 // Types
 // ---------------------------------------------------------------------------
 
+/// A type expression the source wrote on its own: an annotation, a
+/// `foreign` value's type, an alias body, one constructor's argument.
+/// Each is a fresh scope for the "first occurrence" half of the
+/// `equatable` rule (checker.md Appendix A) — `lowerType` itself recurses
+/// and must not reset it.
+fn lowerRootType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    l.type_vars_seen.clearRetainingCapacity();
+    return l.lowerType(node);
+}
+
 fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    const main_token = l.tree.nodeMainToken(node);
+    l.cur_token = main_token;
     const data = l.tree.nodeData(node);
     switch (l.tree.nodeTag(node)) {
-        .type_var => return l.lowerTypeVar(l.tree.nodeMainToken(node)),
+        .type_var => return l.lowerTypeVarMarked(l.tree.nodeMainToken(node), @enumFromInt(data.lhs)),
         .type_con => {
             const con = l.tree.fullTypeCon(node);
             const ref = switch (l.tags[con.name]) {
@@ -1019,12 +1087,12 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (con.args) |arg| try l.pushScratch(try l.lowerType(arg));
             const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInst(.type_app, ref.int(), @intFromEnum(range));
+            return l.addInstAt(main_token, .type_app, ref.int(), @intFromEnum(range));
         },
         .type_fn => {
             const param = try l.lowerType(@enumFromInt(data.lhs));
             const result = try l.lowerType(@enumFromInt(data.rhs));
-            return l.addInst(.type_fn, param.int(), result.int());
+            return l.addInstAt(main_token, .type_fn, param.int(), result.int());
         },
         .type_unit => return l.addInst(.type_unit, 0, 0),
         .type_paren => return l.lowerType(l.tree.operand(node)),
@@ -1033,17 +1101,17 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (l.tree.children(node)) |elem| try l.pushScratch(try l.lowerType(elem));
             const range = try l.addRange(l.scratchSince(mark));
-            return l.addInst(.type_tuple, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, .type_tuple, @intFromEnum(range.start), @intFromEnum(range.end));
         },
         .type_record => {
             const range = try l.lowerTypeFields(l.tree.children(node));
-            return l.addInst(.type_record, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, .type_record, @intFromEnum(range.start), @intFromEnum(range.end));
         },
         .type_record_ext => {
             const ext = l.tree.fullTypeRecordExt(node);
             const base = try l.lowerTypeVar(ext.base);
             const range = try l.addRangeRecord(try l.lowerTypeFields(ext.fields));
-            return l.addInst(.type_record_ext, base.int(), @intFromEnum(range));
+            return l.addInstAt(main_token, .type_record_ext, base.int(), @intFromEnum(range));
         },
         else => |tag| {
             std.debug.assert(tag.isError());
@@ -1070,19 +1138,43 @@ fn lowerTypeFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRang
 /// `type alias` (`unbound_type_variable` otherwise, §7), or free in an
 /// annotation.
 fn lowerTypeVar(l: *Lower, token: TokenIndex) Allocator.Error!Index {
+    return l.lowerTypeVarMarked(token, .none);
+}
+
+/// A type variable, with the `equatable` marker written in front of it if
+/// any (checker.md Appendix A). The marker is legal only in the core
+/// package (`equatable_outside_core`) and only on the variable's FIRST
+/// occurrence in this type expression (`equatable_not_first_occurrence`) —
+/// `eq : equatable a -> a -> a -> Bool` marks the variable once and is a
+/// function of two arguments, so a second marker, or one on a later
+/// occurrence, is a mistake about what the prefix means rather than a
+/// harmless repetition.
+fn lowerTypeVarMarked(l: *Lower, token: TokenIndex, marker: Ast.OptionalTokenIndex) Allocator.Error!Index {
+    l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     const name = try l.addSymbol(symbol);
-    var param: u32 = none_u32;
+    var info: Bir.TypeVarInfo = .{ .param = Bir.TypeVarInfo.param_none, .equatable = false };
     if (l.type_params) |params| {
         for (params, 0..) |p, i| {
             if (l.tokenSymbol(p) == symbol) {
-                param = @intCast(i);
+                info.param = @intCast(i);
                 break;
             }
         }
-        if (param == none_u32) try l.reportToken(.unbound_type_variable, token);
+        if (info.param == Bir.TypeVarInfo.param_none) try l.reportToken(.unbound_type_variable, token);
     }
-    return l.addInst(.type_var, @intFromEnum(name), param);
+    const first_occurrence = std.mem.indexOfScalar(Symbol, l.type_vars_seen.items, symbol) == null;
+    if (first_occurrence) try l.type_vars_seen.append(l.scratch_allocator, symbol);
+    if (marker.unwrap()) |marker_token| {
+        if (!l.options.core) {
+            try l.reportToken(.equatable_outside_core, marker_token);
+        } else if (!first_occurrence) {
+            try l.reportToken(.equatable_not_first_occurrence, marker_token);
+        } else {
+            info.equatable = true;
+        }
+    }
+    return l.addInst(.type_var, @intFromEnum(name), info.pack());
 }
 
 // ---------------------------------------------------------------------------
@@ -1092,6 +1184,7 @@ fn lowerTypeVar(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const tag = l.tree.nodeTag(node);
     const main_token = l.tree.nodeMainToken(node);
+    l.cur_token = main_token;
     switch (tag) {
         .int, .float => {
             const text = try l.addBytes(l.tokenText(main_token));
@@ -1142,26 +1235,26 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             defer l.shrinkScratch(mark);
             for (l.tree.children(node)) |elem| try l.pushScratch(try l.lowerExpr(elem));
             const range = try l.addRange(l.scratchSince(mark));
-            return l.addInst(if (tag == .tuple) .tuple else .list, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, if (tag == .tuple) .tuple else .list, @intFromEnum(range.start), @intFromEnum(range.end));
         },
         .record => {
             const range = try l.lowerFields(l.tree.children(node));
-            return l.addInst(.record, @intFromEnum(range.start), @intFromEnum(range.end));
+            return l.addInstAt(main_token, .record, @intFromEnum(range.start), @intFromEnum(range.end));
         },
         .record_update => {
             const upd = l.tree.fullRecordUpdate(node);
             const base = try l.resolveValue(upd.base);
             const range = try l.addRangeRecord(try l.lowerFields(upd.fields));
-            return l.addInst(.record_update, base.int(), @intFromEnum(range));
+            return l.addInstAt(main_token, .record_update, base.int(), @intFromEnum(range));
         },
         .field_access => {
             const target = try l.lowerExpr(l.tree.operand(node));
             const field = try l.addSymbol(l.tokenSymbol(main_token));
-            return l.addInst(.field_access, target.int(), @intFromEnum(field));
+            return l.addInstAt(main_token, .field_access, target.int(), @intFromEnum(field));
         },
         .tuple_index => {
             const target = try l.lowerExpr(l.tree.operand(node));
-            return l.addInst(.tuple_index, target.int(), l.payloads[main_token]);
+            return l.addInstAt(main_token, .tuple_index, target.int(), l.payloads[main_token]);
         },
         .apply => {
             const app = l.tree.fullApply(node);
@@ -1169,6 +1262,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const mark = l.scratchMark();
             defer l.shrinkScratch(mark);
             for (app.args) |arg| try l.pushScratch(try l.lowerExpr(arg));
+            l.cur_token = main_token;
             return l.call(callee, l.scratchSince(mark));
         },
         .question => return l.lowerQuestion(node),
@@ -1194,7 +1288,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             _ = l.frames.pop();
             l.scope.shrinkRetainingCapacity(mark);
             const params_record = try l.addRangeRecord(params);
-            return l.addInst(.lambda, @intFromEnum(params_record), body.int());
+            return l.addInstAt(main_token, .lambda, @intFromEnum(params_record), body.int());
         },
         .@"if" => return l.lowerIf(node),
         .let => return l.lowerLet(node),
@@ -1209,7 +1303,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
                 try l.pushScratch(try l.lowerBranch(b.pattern, b.body));
             }
             const branches = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInst(.case, scrutinee.int(), @intFromEnum(branches));
+            return l.addInstAt(main_token, .case, scrutinee.int(), @intFromEnum(branches));
         },
         // Every other binary operator: a call of its core function.
         .add, .sub, .mul, .div, .int_div, .pow, .append, .cons, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
@@ -1217,6 +1311,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const lhs = try l.lowerExpr(b.lhs);
             const rhs = try l.lowerExpr(b.rhs);
             const function = try l.operatorRef(l.tags[b.op_token]);
+            l.cur_token = b.op_token;
             return l.call(function, &.{ lhs.int(), rhs.int() });
         },
         else => {
@@ -1329,6 +1424,7 @@ fn collectComposeChain(l: *Lower, node: NodeIndex, op: Node.Tag) Allocator.Error
 /// `Bool`.
 fn lowerIf(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const i = l.tree.fullIf(node);
+    const if_token = l.tree.nodeMainToken(node);
     const cond = try l.lowerExpr(i.cond);
     const true_ref = try l.importRef(.import_ctor, .import_ctor, WellKnown.Basics.symbol(), WellKnown.True.symbol());
     const true_pat = try l.addInst(.pat_ctor, true_ref.int(), @intFromEnum(try l.addRangeRecord(SubRange.empty)));
@@ -1339,7 +1435,7 @@ fn lowerIf(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const else_expr = try l.lowerExpr(i.else_expr);
     const else_branch = try l.addInst(.branch, false_pat.int(), else_expr.int());
     const branches = try l.addRangeRecord(try l.addRange(&.{ then_branch.int(), else_branch.int() }));
-    return l.addInst(.case, cond.int(), @intFromEnum(branches));
+    return l.addInstAt(if_token, .case, cond.int(), @intFromEnum(branches));
 }
 
 /// A `case` branch: its pattern's variables are in scope in its body only.
@@ -1356,6 +1452,7 @@ fn lowerBranch(l: *Lower, pattern: NodeIndex, body: NodeIndex) Allocator.Error!I
 fn lowerQuestion(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const operand = try l.lowerExpr(l.tree.operand(node));
     const q_token = l.tree.nodeMainToken(node);
+    l.cur_token = q_token;
     // Reported or not, the instruction stands for the case it desugars to.
     var target: Inst.OptionalIndex = .none;
     var i = l.frames.items.len;
@@ -1413,7 +1510,7 @@ fn lowerLet(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     for (let_node.bindings) |b| {
         switch (l.tree.nodeTag(b)) {
             .let_annotation => {
-                pending_annotation = (try l.lowerType(l.tree.operand(b))).toOptional();
+                pending_annotation = (try l.lowerRootType(l.tree.operand(b))).toOptional();
                 pending_annotation_name = l.tokenSymbol(l.tree.nodeMainToken(b));
             },
             .let_def => {
@@ -1534,6 +1631,7 @@ fn lowerString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
 /// in a destructuring pattern are `pattern` locals). `set_start` marks the
 /// start of the pattern set duplicates are checked against.
 fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Kind) Allocator.Error!Index {
+    l.cur_token = l.tree.nodeMainToken(node);
     const tag = l.tree.nodeTag(node);
     const main_token = l.tree.nodeMainToken(node);
     const data = l.tree.nodeData(node);
@@ -1688,7 +1786,6 @@ fn decodeChar(text: []const u8) u32 {
 
 const testing = std.testing;
 const Parse = @import("../parse/Parse.zig");
-const LexDiagnostics = @import("../lex/Diagnostics.zig");
 const dump_bir = @import("../dump/bir.zig");
 
 const Lowered = struct {
@@ -1736,7 +1833,7 @@ fn expectErrorList(r: *const Lowered, expected: []const ExpectedError) !void {
     }.lessThan);
     var ok = sorted.len == expected.len;
     if (ok) for (sorted, expected) |item, want| {
-        const pos = LexDiagnostics.position(r.out.line_starts.items, item.start);
+        const pos = diagnostic.position(r.out.line_starts.items, item.start);
         if (item.code != want.code or pos.line != want.line or pos.col != want.col) ok = false;
     };
     if (!ok) {
@@ -1744,7 +1841,7 @@ fn expectErrorList(r: *const Lowered, expected: []const ExpectedError) !void {
         for (expected) |want| std.debug.print("  {t} at {d}:{d}\n", .{ want.code, want.line, want.col });
         std.debug.print("found {d}:\n", .{sorted.len});
         for (sorted) |item| {
-            const pos = LexDiagnostics.position(r.out.line_starts.items, item.start);
+            const pos = diagnostic.position(r.out.line_starts.items, item.start);
             std.debug.print("  {t} at {d}:{d}\n", .{ item.code, pos.line, pos.col });
         }
         return error.TestExpectedEqual;
@@ -1898,9 +1995,13 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
         .import_value, .import_ctor, .qualified, .qualified_ctor, .type_import, .type_qualified => {
             try testing.expect(data.lhs < bir.symbols.len and data.rhs < bir.symbols.len);
         },
+        // Lowering never produces these; `resolve/Resolve.zig` rewrites
+        // the forms above into them after the module graph exists.
+        .ext_value, .ext_ctor, .ext_type => return error.TestUnexpectedResult,
         .type_var => {
             try testing.expect(data.lhs < bir.symbols.len);
-            if (data.rhs != none_u32) try testing.expect(data.rhs < d.params);
+            const info = Bir.TypeVarInfo.unpack(data.rhs);
+            if (info.param != Bir.TypeVarInfo.param_none) try testing.expect(info.param < d.params);
         },
         .type_app, .call, .pat_ctor => {
             try checkInDecl(d, @enumFromInt(data.lhs));

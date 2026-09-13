@@ -1,0 +1,9 @@
+-- check/bad: `unknown_module` at the import path. There is no `Json.Decode`
+-- in this project and none in core, and the diagnostic points at the path
+-- token rather than at the `import` keyword.
+import Json.Decode
+
+
+pub x : Int
+x =
+    1

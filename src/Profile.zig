@@ -37,6 +37,12 @@ pub const Phase = enum {
     lower,
     format,
     merge_interners,
+    /// Serial (checker.md §4.2–§4.4): naming every module, building the
+    /// import edges, finding cycles and producing the topological order.
+    graph,
+    /// Serial for now (checker.md §4.4 allows DAG parallelism later):
+    /// cross-module name resolution and interface building, in that order.
+    resolve,
     render,
 };
 
@@ -53,6 +59,12 @@ pub const Counter = enum {
     /// the input the formatter actually rewrote, and `fmt` runs that would
     /// silently stop formatting show up as a zero here.
     formatted_bytes,
+    /// Modules in the graph, edges between them, and interfaces built
+    /// (checker.md §4). M4's incrementality tests assert these did NOT
+    /// move when only a body changed, which is why they exist now.
+    modules,
+    edges,
+    interfaces,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

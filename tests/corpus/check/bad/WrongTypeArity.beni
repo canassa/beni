@@ -1,0 +1,11 @@
+-- check/bad: `wrong_type_arity` in both directions (checker.md Appendix A).
+-- `Maybe` takes one argument and gets none; `Int` takes none and gets one.
+-- Types are always fully applied — there are no higher-kinded types.
+pub bare : Maybe
+bare =
+    Nothing
+
+
+pub over : Int Int
+over =
+    1

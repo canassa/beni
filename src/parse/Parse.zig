@@ -314,6 +314,12 @@ fn leaf(p: *Parse, tag: Node.Tag, main_token: TokenIndex) Allocator.Error!Index 
     return p.addNode(.{ .tag = tag, .main_token = main_token, .data = .{ .lhs = 0, .rhs = 0 } });
 }
 
+/// A `type_var` node. `marker` is the `equatable` token in front of it, or
+/// `.none` — which is NOT zero, so it cannot be spelled with `leaf`.
+fn typeVar(p: *Parse, name: TokenIndex, marker: Ast.OptionalTokenIndex) Allocator.Error!Index {
+    return p.addNode(.{ .tag = .type_var, .main_token = name, .data = .{ .lhs = @intFromEnum(marker), .rhs = 0 } });
+}
+
 fn unary(p: *Parse, tag: Node.Tag, main_token: TokenIndex, operand: Index) Allocator.Error!Index {
     return p.addNode(.{ .tag = tag, .main_token = main_token, .data = .{ .lhs = operand.int(), .rhs = 0 } });
 }
@@ -683,10 +689,17 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
     const saved = p.startBlock(.declaration);
     defer p.endBlock(saved);
 
-    var header: Ast.DeclHeader = .{ .pub_token = .none, .opaque_token = .none, .doc_start = docs.start, .doc_end = docs.end };
+    var header: Ast.DeclHeader = .{ .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .doc_start = docs.start, .doc_end = docs.end };
     if (p.eat(.keyword_pub)) |pub_token| {
         header.pub_token = .fromToken(pub_token);
         if (p.eat(.keyword_opaque)) |opaque_token| header.opaque_token = .fromToken(opaque_token);
+    }
+    // `equatable` is contextual, not a keyword: it is a legal identifier
+    // everywhere else, and making it a keyword would break every program
+    // that already uses the name. Here it is the marker only when the very
+    // next token is `foreign` — two tokens of lookahead, no backtracking.
+    if (p.peek() == .lower_ident and p.peekAt(1) == .keyword_foreign and p.isEquatableToken(p.tok_i)) {
+        header.equatable_token = .fromToken(p.next());
     }
     const opaque_token = header.opaque_token.unwrap();
 
@@ -709,7 +722,16 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
                 _ = try p.report(item);
             }
             try p.reportPendingAnnotation(pending);
-            break :blk if (p.peekAt(1) == .keyword_type) try p.parseForeignType(header) else try p.parseForeignValue(header);
+            if (p.peekAt(1) == .keyword_type) break :blk try p.parseForeignType(header);
+            // `equatable foreign name : T` — the marker says a TYPE is
+            // equatable (checker.md Appendix B), so exactly one token can
+            // come next after it and it is `type`.
+            if (header.equatable_token.unwrap()) |_| {
+                var item = p.itemAt(.expected_token);
+                item.expected = .keyword_type;
+                _ = try p.report(item);
+            }
+            break :blk try p.parseForeignValue(header);
         },
         .lower_ident => blk: {
             if (opaque_token) |t| _ = try p.report(p.itemAtToken(.opaque_not_on_type, t));
@@ -1003,8 +1025,26 @@ fn parseType(p: *Parse) Allocator.Error!Index {
     return lhs;
 }
 
-/// TypeApp := (upper_ident | qualified_upper) TypeAtom+ | TypeAtom
+/// True when token `t` is the contextual word `equatable` (checker.md
+/// Appendix A). Compared by TEXT, not by symbol: the parser has no
+/// interner of its own and the tokenizer already knows the extent.
+fn isEquatableToken(p: *const Parse, t: TokenIndex) bool {
+    return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "equatable");
+}
+
+/// TypeApp := 'equatable'? TypeAtom | (upper_ident | qualified_upper) TypeAtom+ | TypeAtom
+///
+/// The `equatable` marker (checker.md Appendix A) is recognised only where
+/// a whole `Type` starts — so `eq : equatable a -> a -> a -> Bool` marks
+/// the variable `a`, and an ARGUMENT position keeps its old reading:
+/// `List equatable` is a list of a variable named `equatable`, not a marked
+/// nothing. Whether the file may write the marker at all is a package fact
+/// lowering decides (`equatable_outside_core`).
 fn parseTypeApp(p: *Parse) Allocator.Error!Index {
+    if (p.peek() == .lower_ident and p.peekAt(1) == .lower_ident and p.isEquatableToken(p.tok_i)) {
+        const marker = p.next();
+        return p.typeVar(p.next(), .fromToken(marker));
+    }
     switch (p.peek()) {
         .upper_ident, .qualified_upper => {
             const name = p.next();
@@ -1027,7 +1067,7 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.type_expr);
     defer p.context = saved_context;
     switch (p.peek()) {
-        .lower_ident => return p.leaf(.type_var, p.next()),
+        .lower_ident => return p.typeVar(p.next(), .none),
         .upper_ident, .qualified_upper => return p.rangeNode(.type_con, p.next(), try p.listToRange(&.{})),
         .l_paren => {
             if (p.peekAt(1) == .r_paren) {
@@ -1957,13 +1997,13 @@ fn expectTree(source: [:0]const u8, expected: []const u8, expected_errors: []con
 
     var mismatch = r.tree.errors.len != expected_errors.len;
     if (!mismatch) for (r.tree.errors, expected_errors) |got, want| {
-        const pos = LexDiagnostics.position(r.out.line_starts.items, got.start);
+        const pos = diagnostic.position(r.out.line_starts.items, got.start);
         if (got.code != want.code or pos.line != want.line or pos.col != want.col) mismatch = true;
     };
     if (mismatch) {
         std.debug.print("errors differ; got:\n", .{});
         for (r.tree.errors) |got| {
-            const pos = LexDiagnostics.position(r.out.line_starts.items, got.start);
+            const pos = diagnostic.position(r.out.line_starts.items, got.start);
             std.debug.print("  {t} at {d}:{d}\n", .{ got.code, pos.line, pos.col });
         }
         return error.TestExpectedEqual;

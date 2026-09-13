@@ -19,7 +19,7 @@
 //! One node per line, two-space indentation, the closing parenthesis on the
 //! last child's line, tags spelled as in `Ast.Node.Tag`. What is inline
 //! after the tag is the node's own tokens — identifiers and literals as
-//! their source text, `pub`/`opaque`, `as X`, type parameters — never a
+//! their source text, `pub`/`opaque`/`equatable`, `as X`, type parameters — never a
 //! child node. Children follow one per line: a declaration's `(doc "…")`
 //! lines first, then its parts in source order (a definition's parameters,
 //! then its body; an application's function, then its arguments). Error
@@ -29,10 +29,10 @@
 //! reformatted input leaves a golden untouched.
 
 const std = @import("std");
+const diagnostic = @import("diagnostic");
 const Ast = @import("../parse/Ast.zig");
 const Token = @import("../lex/Token.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
-const LexDiagnostics = @import("../lex/Diagnostics.zig");
 const Node = Ast.Node;
 const Index = Node.Index;
 
@@ -90,7 +90,7 @@ const Dumper = struct {
 
     fn position(d: *Dumper, token: Ast.TokenIndex) !void {
         if (!d.positions) return;
-        const pos = LexDiagnostics.position(d.line_starts, d.starts[token]);
+        const pos = diagnostic.position(d.line_starts, d.starts[token]);
         try d.w.print("@{d}:{d}", .{ pos.line, pos.col });
     }
 
@@ -124,6 +124,7 @@ const Dumper = struct {
     fn visibility(d: *Dumper, header: Ast.DeclHeader) !void {
         if (header.pub_token != .none) try d.w.writeAll(" pub");
         if (header.opaque_token != .none) try d.w.writeAll(" opaque");
+        if (header.equatable_token != .none) try d.w.writeAll(" equatable");
     }
 
     fn tokenList(d: *Dumper, tokens: []const Ast.TokenIndex) !void {
@@ -160,7 +161,12 @@ const Dumper = struct {
                 if (i.exposing_token != null) try d.w.writeAll(" exposing");
                 try d.children(i.exposed, inner);
             },
-            .exposed, .type_var, .int, .float, .char, .ident, .ctor, .accessor, .op_fn, .pat_var, .pat_int, .pat_char => {
+            .type_var => {
+                try d.openTag(tag, main);
+                if (tree.typeVarMarker(n) != null) try d.w.writeAll(" equatable");
+                try d.w.print(" {s}", .{d.text(main)});
+            },
+            .exposed, .int, .float, .char, .ident, .ctor, .accessor, .op_fn, .pat_var, .pat_int, .pat_char => {
                 try d.openTag(tag, main);
                 try d.w.print(" {s}", .{d.text(main)});
             },

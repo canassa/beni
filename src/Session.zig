@@ -54,6 +54,11 @@ const Format = @import("fmt/Format.zig");
 const LowerDiagnostics = @import("bir/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
+const Graph = @import("resolve/Graph.zig");
+const Interface = @import("resolve/Interface.zig");
+const Resolve = @import("resolve/Resolve.zig");
+const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
+const core_package = @import("core_package");
 
 const Session = @This();
 
@@ -66,6 +71,11 @@ artifacts: Artifacts = .{},
 interner: InternPool.Global,
 profile: Profile,
 workers: []Worker,
+/// The module graph of the last run (checker.md §4). Empty unless the
+/// phases included the serial resolve step.
+graph: Graph = .empty,
+/// The interfaces and cross-module diagnostics of the last run.
+resolution: Resolve = .empty,
 /// Every diagnostic of the last run, in emission order after `run`.
 /// Messages are gpa-owned; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
@@ -84,9 +94,21 @@ pub const Options = struct {
     self_profile: ?[]const u8 = null,
     /// `--root`: what module names are relative to.
     root: ?[]const u8 = null,
-    /// `--core`: the files are the core package; `foreign` declarations are
-    /// legal (language.md §5.4). Consumed by lowering.
+    /// `--core`: the files named on the command line are core sources, so
+    /// `foreign` and `equatable` are legal in them (language.md §5.4,
+    /// checker.md Appendix A). A file whose PACKAGE is `core` — the
+    /// embedded copy, or anything under `--core-root` — gets the same
+    /// permission without the flag; this is for the corpus fixtures and
+    /// for one-off files that are not in a core tree.
     core: bool = false,
+    /// `--core-root=<dir>` (checker.md §2): read the core package from this
+    /// directory instead of the copy embedded in the binary.
+    core_root: ?[]const u8 = null,
+    /// Whether this run needs the core package at all. `check` and
+    /// `dump --stage=interface` resolve against it and set this; `fmt` and
+    /// the per-file dumps do not, and adding ~2,800 lines of parsing to
+    /// every one of them would be pure cost (see `enumerateCore`).
+    core_package: bool = false,
     /// Capacity of each worker's profile buffer.
     profile_events_per_thread: usize = 4096,
 };
@@ -96,9 +118,15 @@ pub const IoFailure = struct {
     err: anyerror,
 };
 
-/// The per-file work; the driver does not change between them.
+/// The per-file work, plus whatever must happen once, serially, after
+/// every file has been through it. The driver does not change between
+/// them: `after` runs on the calling thread with the interners merged and
+/// every file's artifacts in place, which is exactly the firewall of
+/// `fast-compiler.md` §6 — nothing above it knows another module exists,
+/// nothing below it is per file.
 pub const Phases = struct {
     per_file: *const fn (session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void,
+    after: ?*const fn (session: *Session) RunError!void = null,
 };
 
 /// M1a: read the bytes, tokenize, install the lexical artifacts, report
@@ -113,6 +141,11 @@ pub const parse_phases: Phases = .{ .per_file = parsePhase };
 /// M1c: `parse_phases`, then lower into the file's `bir` column and report
 /// the lowering diagnostics. What `check` and `dump --stage=bir` run.
 pub const lower_phases: Phases = .{ .per_file = lowerPhase };
+
+/// M2a: `lower_phases` per file, then — serially, once — the module graph
+/// and cross-module name resolution (checker.md §4). What `check` and
+/// `dump --stage=interface` run.
+pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveSerial };
 
 /// M1d: `parse_phases`, then format into the file's `formatted` column.
 /// What `fmt` runs. Formatting is per-file work with no cross-file
@@ -198,6 +231,8 @@ pub fn deinit(session: *Session) void {
         worker.arena.deinit();
     }
     gpa.free(session.workers);
+    session.resolution.deinit(gpa);
+    session.graph.deinit(gpa);
     session.diagnostics.deinit(gpa);
     session.profile.deinit(gpa);
     session.interner.deinit(gpa);
@@ -225,8 +260,9 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
 
     // 1. Enumerate — serial, sorted, numbered.
     const enumerate_token = session.profile.begin();
+    try session.enumerateCore();
     for (paths) |p| {
-        session.store.addPath(gpa, session.io, p, session.options.root) catch |err| switch (err) {
+        session.store.addPath(gpa, session.io, p, session.options.root, .app) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
                 session.io_failure = .{ .path = p, .err = err };
@@ -294,6 +330,10 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     }
     session.profile.end(0, merge_token, .merge_interners, Profile.Event.no_file, 0);
 
+    // 3b. Whatever the command needs done once, with every file lowered
+    //     and the symbols global: the module graph and resolution.
+    if (phases.after) |after| try after(session);
+
     // 4. Collect (file order, then stable sort), count, render.
     try session.collectDiagnostics();
     var summary: Summary = .{ .files = session.store.count(), .errors = 0, .warnings = 0 };
@@ -322,6 +362,38 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
 
     if (session.options.self_profile) |profile_path| try session.writeProfile(profile_path);
     return summary;
+}
+
+/// Queue the core package's files (checker.md §3, §4.1) when the run needs
+/// them. The embedded copy costs no I/O — the bytes are in the binary's
+/// rodata and `SourceStore.read` hands them straight to the tokenizer —
+/// but it still costs a lex, a parse and a lower per module, which is why
+/// it is opt-in per command rather than unconditional.
+fn enumerateCore(session: *Session) RunError!void {
+    if (!session.options.core_package) return;
+    const gpa = session.gpa;
+    if (session.options.core_root) |dir| {
+        session.store.addPath(gpa, session.io, dir, dir, .core) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                session.io_failure = .{ .path = dir, .err = err };
+                return error.InputPath;
+            },
+        };
+        return;
+    }
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    for (core_package.files) |f| {
+        const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ core_package.dir, f.rel }) catch return error.OutOfMemory;
+        try session.store.addEmbedded(gpa, p, core_package.dir.len + 1, .core, f.source);
+    }
+}
+
+/// Whether `file` may write `foreign` and `equatable` (language.md §5.4,
+/// checker.md Appendix A): it is in the core package, or the whole run was
+/// told its inputs are core sources.
+pub fn fileIsCore(session: *const Session, file: SourceStore.Index) bool {
+    return session.options.core or session.store.package(file) == .core;
 }
 
 fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
@@ -376,8 +448,8 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
             session,
             file,
             item.code,
-            LexDiagnostics.position(line_starts, item.start),
-            LexDiagnostics.position(line_starts, item.end),
+            diagnostic.position(line_starts, item.start),
+            diagnostic.position(line_starts, item.end),
             message.written(),
         );
     }
@@ -424,8 +496,8 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
             session,
             file,
             item.code,
-            LexDiagnostics.position(line_starts, item.start),
-            LexDiagnostics.position(line_starts, item.end),
+            diagnostic.position(line_starts, item.start),
+            diagnostic.position(line_starts, item.end),
             message.written(),
         );
     }
@@ -447,7 +519,7 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 
     const lower_token = session.profile.begin();
     var bir = try Lower.lower(gpa, worker.arena.allocator(), text, tokens.slice(), tree, &worker.interner, .{
-        .core = session.options.core,
+        .core = session.fileIsCore(file),
         .module_name = session.store.moduleName(file),
     });
     errdefer bir.deinit(gpa);
@@ -463,8 +535,8 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
             session,
             file,
             item.code,
-            LexDiagnostics.position(line_starts, item.start),
-            LexDiagnostics.position(line_starts, item.end),
+            diagnostic.position(line_starts, item.start),
+            diagnostic.position(line_starts, item.end),
             message.written(),
         );
     }
@@ -519,6 +591,114 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     var list = out.toArrayList();
     errdefer list.deinit(gpa);
     session.artifacts.setFormatted(gpa, file, try list.toOwnedSlice(gpa));
+}
+
+/// The serial half of `resolve_phases` (checker.md §4.2–§4.5): build the
+/// module graph from every file's import table, then resolve every
+/// reference against the interfaces in topological order.
+///
+/// It runs on the calling thread, after the join, with the interners
+/// merged — the graph interns module names into the global pool and the
+/// Birs' symbols are already global, so neither step can be done earlier.
+/// Worker 0's arena is the scratch for both, because worker 0 is idle here
+/// and its arena is already warm; it is reset on the way out.
+fn resolveSerial(session: *Session) RunError!void {
+    const gpa = session.gpa;
+    const worker = &session.workers[0];
+    defer worker.arena.reset(.retain_capacity);
+
+    const graph_token = session.profile.begin();
+    session.graph.deinit(gpa);
+    session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner);
+    session.profile.end(0, graph_token, .graph, Profile.Event.no_file, 0);
+    session.profile.addCounter(.modules, session.graph.count());
+    session.profile.addCounter(.edges, session.graph.edgeCount());
+    try session.reportGraphDiagnostics();
+
+    const resolve_token = session.profile.begin();
+    session.resolution.deinit(gpa);
+    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.artifacts, &session.interner);
+    session.profile.end(0, resolve_token, .resolve, Profile.Event.no_file, 0);
+    session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
+    try session.reportResolveDiagnostics();
+}
+
+/// The span of `token` in `file`, from the token list the parser produced.
+/// This is what `Bir.Inst.main_token` buys: a resolution diagnostic points
+/// at an instruction, and an instruction points at the exact bytes.
+fn tokenSpan(session: *const Session, file: SourceStore.Index, token: u32) struct { diagnostic.Position, diagnostic.Position } {
+    const line_starts = session.store.lineStarts(file);
+    if (line_starts.len == 0) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
+    const tokens = session.artifacts.tokens(file);
+    if (token >= tokens.len) return .{ .{ .line = 1, .col = 1 }, .{ .line = 1, .col = 1 } };
+    const tags = tokens.items(.tag);
+    const starts = tokens.items(.start);
+    const source = session.store.bytes(file);
+    const start = starts[token];
+    const end = Tokenizer.tokenEnd(source, tags[token], start);
+    return .{ diagnostic.position(line_starts, start), diagnostic.position(line_starts, end) };
+}
+
+fn reportGraphDiagnostics(session: *Session) RunError!void {
+    const gpa = session.gpa;
+    var message: Io.Writer.Allocating = .init(gpa);
+    defer message.deinit();
+    var cycle_names: std.ArrayList([]const u8) = .empty;
+    defer cycle_names.deinit(gpa);
+    for (session.graph.diagnostics) |item| {
+        message.clearRetainingCapacity();
+        cycle_names.clearRetainingCapacity();
+        var cx: ResolveDiagnostics.Context = .{};
+        switch (item.code) {
+            .import_cycle => {
+                for (session.graph.cycle_members[item.cycle_start..item.cycle_end]) |m| {
+                    try cycle_names.append(gpa, session.interner.slice(session.graph.moduleName(m)));
+                }
+                cx.cycle = cycle_names.items;
+            },
+            .duplicate_module => {
+                cx.name = session.store.moduleName(item.file);
+                cx.other_path = session.store.path(session.graph.moduleFile(@enumFromInt(item.cycle_start)));
+            },
+            else => cx.name = session.moduleNameOfImport(item.file, item.token),
+        }
+        try ResolveDiagnostics.message(item.code, cx, &message.writer);
+        const start, const end = session.tokenSpan(item.file, item.token);
+        try session.workers[0].report(session, item.file, item.code, start, end, message.written());
+    }
+}
+
+/// The module path an import token spells, for `unknown_module`. Taken
+/// from the source rather than from a symbol so a path the interner never
+/// saw still prints.
+fn moduleNameOfImport(session: *const Session, file: SourceStore.Index, token: u32) []const u8 {
+    const tokens = session.artifacts.tokens(file);
+    if (token >= tokens.len) return "";
+    return Tokenizer.slice(session.store.bytes(file), tokens.items(.tag)[token], tokens.items(.start)[token]);
+}
+
+fn reportResolveDiagnostics(session: *Session) RunError!void {
+    const gpa = session.gpa;
+    var message: Io.Writer.Allocating = .init(gpa);
+    defer message.deinit();
+    for (session.resolution.diagnostics) |item| {
+        message.clearRetainingCapacity();
+        const file = session.graph.moduleFile(item.module);
+        const cx: ResolveDiagnostics.Context = .{
+            .name = session.symbolText(item.name),
+            .module = session.symbolText(item.module_name),
+            .owner = session.symbolText(item.owner),
+            .expected = item.expected,
+            .found = item.found,
+        };
+        try ResolveDiagnostics.message(item.code, cx, &message.writer);
+        const start, const end = session.tokenSpan(file, item.token);
+        try session.workers[0].report(session, file, item.code, start, end, message.written());
+    }
+}
+
+fn symbolText(session: *const Session, s: InternPool.Symbol.Optional) []const u8 {
+    return session.interner.slice(s.unwrap() orelse return "");
 }
 
 fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator.Error!void {
@@ -609,8 +789,8 @@ test "collectDiagnostics orders by file then comparator regardless of worker" {
     var session = try Session.init(testing.allocator, testing.io, .{ .jobs = 2, .diagnostics = .json });
     defer session.deinit();
     // Two fake files so the spans have paths to point at.
-    try session.store.addPending(testing.allocator, "a/B.beni", 2);
-    try session.store.addPending(testing.allocator, "a/A.beni", 2);
+    try session.store.addPending(testing.allocator, "a/B.beni", 2, .app);
+    try session.store.addPending(testing.allocator, "a/A.beni", 2, .app);
     try session.store.finish(testing.allocator);
     const file_a: SourceStore.Index = @enumFromInt(0);
     const file_b: SourceStore.Index = @enumFromInt(1);

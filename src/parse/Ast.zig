@@ -196,7 +196,10 @@ pub const Node = struct {
 
         // ---- Types -----------------------------------------------------
 
-        /// A type variable. `main_token` is the lower identifier.
+        /// A type variable. `main_token` is the lower identifier; `lhs` is
+        /// the `OptionalTokenIndex` of an `equatable` marker written in
+        /// front of it (checker.md Appendix A/B, core only), `none`
+        /// otherwise. `rhs` unused.
         type_var,
         /// A named type, applied to zero or more atoms: `Int`, `Maybe a`,
         /// `Dict.Dict k v`. `main_token` is the upper or qualified upper
@@ -480,11 +483,16 @@ pub const DeclHeader = struct {
     /// The `opaque` token, if any (legal only on `type_decl`; kept on the
     /// others so the misuse is visible to the formatter).
     opaque_token: OptionalTokenIndex,
+    /// The `equatable` token, if any: `pub equatable foreign type List a`
+    /// (checker.md Appendix A/B). The grammar allows it only directly
+    /// before `foreign type`; whether the file may write it at all is a
+    /// package fact lowering decides (`equatable_outside_core`).
+    equatable_token: OptionalTokenIndex,
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block.
     doc_start: u32,
     doc_end: u32,
 
-    pub const none: DeclHeader = .{ .pub_token = .none, .opaque_token = .none, .doc_start = 0, .doc_end = 0 };
+    pub const none: DeclHeader = .{ .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .doc_start = 0, .doc_end = 0 };
 
     pub fn docs(h: DeclHeader) CommentRange {
         return .{ .start = h.doc_start, .end = h.doc_end };
@@ -710,7 +718,7 @@ pub fn deinit(tree: *Ast, gpa: Allocator) void {
 
 /// A tree with only a root, for an artifact slot that has not been parsed.
 pub const empty: Ast = .{
-    .nodes = .{ .ptrs = undefined, .len = 0, .capacity = 0 },
+    .nodes = .empty,
     .extra = &.{},
     .errors = &.{},
     .module_doc = .empty,
@@ -801,6 +809,17 @@ pub fn children(tree: *const Ast, node: Node.Index) []const Node.Index {
         else => unreachable, // not a range node; use the tag's view
     }
     return tree.extraSlice(rangeOf(tree.nodeData(node)), Node.Index);
+}
+
+/// The `equatable` marker token in front of a `type_var`, or null
+/// (checker.md Appendix B). Stored in `lhs` rather than as a separate node
+/// so the marker costs nothing on the overwhelmingly common unmarked
+/// variable, and so the formatter still has the TOKEN to print — comments
+/// attach to tokens, and a bool would lose the one in `-- why\nequatable a`.
+pub fn typeVarMarker(tree: *const Ast, node: Node.Index) ?TokenIndex {
+    std.debug.assert(tree.nodeTag(node) == .type_var);
+    const o: OptionalTokenIndex = @enumFromInt(tree.nodeData(node).lhs);
+    return o.unwrap();
 }
 
 /// The visibility and doc range of any declaration tag.
@@ -1047,17 +1066,19 @@ pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
 const testing = std.testing;
 
 test "extraData flattens nested headers and extraLen agrees" {
-    try testing.expectEqual(@as(u32, 4), extraLen(DeclHeader));
-    try testing.expectEqual(@as(u32, 6), extraLen(Definition));
-    try testing.expectEqual(@as(u32, 8), extraLen(TypeDecl));
+    try testing.expectEqual(@as(u32, 5), extraLen(DeclHeader));
+    try testing.expectEqual(@as(u32, 7), extraLen(Definition));
+    try testing.expectEqual(@as(u32, 9), extraLen(TypeDecl));
     try testing.expectEqual(@as(u32, 5), extraLen(Import));
 
-    const words = [_]u32{ 7, std.math.maxInt(u32), 2, 5, 10, 12 };
+    const none_token = std.math.maxInt(u32);
+    const words = [_]u32{ 7, none_token, 3, 2, 5, 10, 12 };
     var tree: Ast = empty;
     tree.extra = &words;
     const d = tree.extraData(@enumFromInt(0), Definition);
     try testing.expectEqual(@as(?TokenIndex, 7), d.header.pub_token.unwrap());
     try testing.expectEqual(@as(?TokenIndex, null), d.header.opaque_token.unwrap());
+    try testing.expectEqual(@as(?TokenIndex, 3), d.header.equatable_token.unwrap());
     try testing.expectEqual(@as(u32, 2), d.header.doc_start);
     try testing.expectEqual(@as(u32, 5), d.header.doc_end);
     try testing.expectEqual(@as(u32, 10), @intFromEnum(d.params_start));

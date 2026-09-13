@@ -34,6 +34,7 @@ const Parse = beni.Parse;
 const Lower = beni.Lower;
 const Ast = beni.Ast;
 const Arena = beni.Arena;
+const Session = beni.Session;
 
 const Options = struct {
     corpus: []const u8 = "bench/corpus",
@@ -93,7 +94,7 @@ pub fn main(init: std.process.Init) !u8 {
     // Enumerate once; every phase runs over the same numbered files.
     var store: SourceStore = .{};
     defer store.deinit(gpa);
-    store.addPath(gpa, io, corpus, null) catch |err| {
+    store.addPath(gpa, io, corpus, null, .app) catch |err| {
         try stderr.print("bench: cannot read corpus '{s}': {t}\n", .{ corpus, err });
         return 2;
     };
@@ -116,6 +117,9 @@ pub fn main(init: std.process.Init) !u8 {
     const lowered = try measureLower(gpa, io, &store, options.iterations);
     try printLine(stdout, "lower", lowered);
     total.add(lowered);
+    const resolved = try measureResolve(gpa, io, corpus, options.iterations);
+    try printResolveLine(stdout, resolved);
+    total.ns += resolved.ns;
     try printLine(stdout, "total", total);
 
     // One line per pathological file, so a single slow file cannot hide in
@@ -419,6 +423,66 @@ fn measureLower(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
     }
     m.ns = best;
     return m;
+}
+
+/// The serial half of `check` (checker.md §4): the module graph and
+/// cross-module resolution, over a project that has ALREADY been lowered.
+/// Measured through a whole `Session` rather than by calling `Graph.build`
+/// directly, because what M2a has to keep honest is the cost `check` pays
+/// — including the core package, which every run now carries.
+const ResolveMeasurement = struct {
+    modules: u64 = 0,
+    edges: u64 = 0,
+    interfaces: u64 = 0,
+    /// The graph + resolve steps alone.
+    ns: u64 = 0,
+    /// The whole cold run, for the share the two steps are.
+    total_ns: u64 = 0,
+};
+
+fn measureResolve(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32) !ResolveMeasurement {
+    // The two steps are not reachable on their own from outside `Session`
+    // — they run after the join, on the session's own state — so they are
+    // measured as a DIFFERENCE: a cold run that stops after lowering, and
+    // a cold run that goes on to resolve. Both include the core package,
+    // because every `check` does.
+    const lower_ns = try coldRun(gpa, io, corpus, iterations, Session.lower_phases, null);
+    var m: ResolveMeasurement = .{};
+    m.total_ns = try coldRun(gpa, io, corpus, iterations, Session.resolve_phases, &m);
+    m.ns = m.total_ns -| lower_ns;
+    return m;
+}
+
+/// One cold `check` over `corpus`, best of `iterations` after a warm-up.
+/// Fills `counts` from the last session when asked.
+fn coldRun(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, phases: Session.Phases, counts: ?*ResolveMeasurement) !u64 {
+    var sink: Io.Writer.Discarding = .init(&.{});
+    var best: u64 = std.math.maxInt(u64);
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+        defer session.deinit();
+        const start = Io.Timestamp.now(io, .awake);
+        _ = session.run(&.{corpus}, phases, &sink.writer) catch continue;
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue; // warm-up
+        best = @min(best, ns);
+        if (counts) |c| {
+            c.modules = session.graph.count();
+            c.edges = session.graph.edgeCount();
+            c.interfaces = session.resolution.interfaces.len;
+        }
+    }
+    return if (best == std.math.maxInt(u64)) 0 else best;
+}
+
+fn printResolveLine(writer: *Io.Writer, m: ResolveMeasurement) !void {
+    const ms = @as(f64, @floatFromInt(m.ns)) / 1e6;
+    const cold_ms = @as(f64, @floatFromInt(m.total_ns)) / 1e6;
+    try writer.print(
+        "{{\"phase\":\"resolve\",\"modules\":{d},\"edges\":{d},\"interfaces\":{d},\"ms\":{d:.2},\"cold_check_ms\":{d:.1}}}\n",
+        .{ m.modules, m.edges, m.interfaces, ms, cold_ms },
+    );
 }
 
 fn printLine(writer: *Io.Writer, phase: []const u8, m: Measurement) !void {

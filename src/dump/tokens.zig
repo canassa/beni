@@ -19,9 +19,9 @@
 //! what this stage is about — so `--positions` changes nothing.
 
 const std = @import("std");
+const diagnostic = @import("diagnostic");
 const Token = @import("../lex/Token.zig");
 const Tokenizer = @import("../lex/Tokenizer.zig");
-const LexDiagnostics = @import("../lex/Diagnostics.zig");
 
 pub fn write(
     w: *std.Io.Writer,
@@ -43,7 +43,7 @@ pub fn write(
     }
     try w.writeAll("-- comments\n");
     for (comments) |comment| {
-        const pos = LexDiagnostics.position(line_starts, comment.start);
+        const pos = diagnostic.position(line_starts, comment.start);
         const end = Tokenizer.tokenEnd(source, .multiline_line, comment.start); // to end of line, like a raw line
         try w.print("{d}:{d} {t} {s}\n", .{ pos.line, pos.col, comment.kind, source[comment.start..end] });
     }

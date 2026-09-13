@@ -15,7 +15,6 @@
 
 const std = @import("std");
 const diagnostic = @import("diagnostic");
-const LexDiagnostics = @import("../lex/Diagnostics.zig");
 
 /// One lowering error. `[start, end)` is the name or token reported;
 /// `[other_start, other_end)` is the earlier declaration, binding or
@@ -35,7 +34,7 @@ pub const Item = struct {
 /// Write the Elm-style prose for `item`. No trailing newline.
 pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
     const text = source[item.start..item.end];
-    const other_line = LexDiagnostics.position(line_starts, item.other_start).line;
+    const other_line = diagnostic.position(line_starts, item.other_start).line;
     switch (item.code) {
         .duplicate_import => try w.print(
             \\The module `{s}` is imported twice; the first import is on line {d}.
@@ -94,6 +93,20 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\`foreign` declares a value or type implemented in JavaScript and is legal only in
             \\core, which is built with `--core`. Write the definition in beni instead.
+        ),
+        .equatable_outside_core => try w.writeAll(
+            \\The `equatable` marker is core's alone.
+            \\
+            \\It says that a type may be compared with `==`, and only the core package
+            \\states that by hand; your own annotations get the mark by inference. Delete
+            \\it — `a` on its own means the same thing here.
+        ),
+        .equatable_not_first_occurrence => try w.writeAll(
+            \\This type variable is already marked `equatable`.
+            \\
+            \\The prefix marks the VARIABLE, at its first occurrence, not the argument it
+            \\stands in front of: `eq : equatable a -> a -> a -> Bool` is a function of two
+            \\arguments whose type is one marked `a`. Write the marker once.
         ),
         .unbound_variable => try w.print(
             \\I cannot find a `{s}` variable.
@@ -231,5 +244,15 @@ test "message: the payload-free codes" {
         "This `foreign` declaration is outside the core package.\n\n`foreign` declares a value or type implemented in JavaScript and is legal only in\ncore, which is built with `--core`. Write the definition in beni instead.",
         .{ .code = .foreign_outside_core, .start = 0, .end = 7 },
         "foreign",
+    );
+    try expectMessage(
+        "The `equatable` marker is core's alone.\n\nIt says that a type may be compared with `==`, and only the core package\nstates that by hand; your own annotations get the mark by inference. Delete\nit — `a` on its own means the same thing here.",
+        .{ .code = .equatable_outside_core, .start = 0, .end = 9 },
+        "equatable",
+    );
+    try expectMessage(
+        "This type variable is already marked `equatable`.\n\nThe prefix marks the VARIABLE, at its first occurrence, not the argument it\nstands in front of: `eq : equatable a -> a -> a -> Bool` is a function of two\narguments whose type is one marked `a`. Write the marker once.",
+        .{ .code = .equatable_not_first_occurrence, .start = 0, .end = 9 },
+        "equatable",
     );
 }

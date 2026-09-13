@@ -1,0 +1,5 @@
+module RecordAlias
+  alias User
+    User/2
+  value make
+  value rename

@@ -118,6 +118,14 @@ pub fn bir(a: *const Artifacts, index: SourceStore.Index) *const Bir {
     return &a.files.items(.bir)[index.int()];
 }
 
+/// The file's Bir for in-place rewriting. `resolve/Resolve.zig` uses it to
+/// replace each name reference with the dense pair it resolved to
+/// (checker.md §4.5), which is a write to that file's instruction column
+/// and nothing else — the same one-index-one-writer discipline as `set`.
+pub fn birMut(a: *Artifacts, index: SourceStore.Index) *Bir {
+    return &a.files.items(.bir)[index.int()];
+}
+
 /// The file's canonical text, or null when it was not formatted (see
 /// `File.formatted`).
 pub fn formatted(a: *const Artifacts, index: SourceStore.Index) ?[]const u8 {

@@ -52,22 +52,6 @@ pub fn toOwnedSlice(d: *Diagnostics, gpa: Allocator) Allocator.Error![]Item {
     return d.list.toOwnedSlice(gpa);
 }
 
-/// 1-based line and byte column of `offset` (frontend.md §3.1: column is
-/// `offset - line_starts[line] + 1`). `line_starts` is the tokenizer's table:
-/// `line_starts[0] == 0`, one entry per newline, ascending. An offset at or
-/// past the end of the file lands on the last line.
-pub fn position(line_starts: []const u32, offset: u32) diagnostic.Position {
-    std.debug.assert(line_starts.len > 0);
-    // Largest `l` with `line_starts[l] <= offset`.
-    var lo: usize = 0;
-    var hi: usize = line_starts.len;
-    while (hi - lo > 1) {
-        const mid = lo + (hi - lo) / 2;
-        if (line_starts[mid] <= offset) lo = mid else hi = mid;
-    }
-    return .{ .line = @intCast(lo + 1), .col = offset - line_starts[lo] + 1 };
-}
-
 /// Write the Elm-style prose for `item`. `source` is the whole file; the
 /// item's bytes are quoted where that helps. No trailing newline.
 pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -212,18 +196,6 @@ pub fn message(item: Item, source: []const u8, w: *std.Io.Writer) std.Io.Writer.
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
-
-test "position: binary search over the line table, including the last line" {
-    const starts = [_]u32{ 0, 3, 4, 10 };
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 1, .col = 1 }, position(&starts, 0));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 1, .col = 3 }, position(&starts, 2));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 2, .col = 1 }, position(&starts, 3));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 3, .col = 1 }, position(&starts, 4));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 3, .col = 6 }, position(&starts, 9));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 4, .col = 1 }, position(&starts, 10));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 4, .col = 91 }, position(&starts, 100));
-    try testing.expectEqualDeep(diagnostic.Position{ .line = 1, .col = 8 }, position(&.{0}, 7));
-}
 
 fn expectMessage(expected: []const u8, code: diagnostic.Code, source: []const u8, start: u32, end: u32) !void {
     var out: std.Io.Writer.Allocating = .init(testing.allocator);

@@ -1,0 +1,9 @@
+-- check/bad (project): `unknown_import_name`, from the `exposing` list and
+-- from a qualified use. `Util` has no `absent` at all, which is what makes
+-- this a different message from `private_name`.
+import Util exposing (absent)
+
+
+pub main : Int
+main =
+    Util.alsoAbsent

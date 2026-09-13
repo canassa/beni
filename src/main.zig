@@ -8,9 +8,10 @@
 //! errors and nothing else. `dump` exits 0 even when the file has lexical,
 //! syntax or lowering errors: its product is the token stream, the tree or
 //! the lowered file, placeholders and all, and the diagnostics still go to
-//! stderr. `check` and `dump --stage=bir` run the lowering phases;
-//! `--stage=tokens|ast` stop after the parser, so those dumps carry only
-//! the diagnostics of the stages they show.
+//! stderr. `check` and `dump --stage=interface` run the resolve phases and
+//! therefore load the core package; `--stage=bir` stops after lowering and
+//! `--stage=tokens|ast` after the parser, so those dumps carry only the
+//! diagnostics of the stages they show and pay none of core's cost.
 
 const std = @import("std");
 const Io = std.Io;
@@ -78,6 +79,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .self_profile = common.self_profile,
         .root = common.root,
         .core = common.core,
+        .core_root = common.core_root,
     };
 }
 
@@ -95,9 +97,13 @@ fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8, 
 }
 
 fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check) u8 {
-    var session = Session.init(gpa, io, sessionOptions(check.common)) catch return fail(stderr, "beni: out of memory", .{});
+    var options = sessionOptions(check.common);
+    // `check` resolves names across modules, and every module resolves
+    // against core (checker.md §4): the package is part of the input.
+    options.core_package = true;
+    var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
-    const summary = switch (runSession(&session, stderr, check.paths, Session.lower_phases)) {
+    const summary = switch (runSession(&session, stderr, check.paths, Session.resolve_phases)) {
         .summary => |s| s,
         .exit => |code| return code,
     };
@@ -105,19 +111,32 @@ fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check
 }
 
 fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
-    var session = Session.init(gpa, io, sessionOptions(dump.common)) catch return fail(stderr, "beni: out of memory", .{});
+    var options = sessionOptions(dump.common);
+    // Only the interface dump resolves names, and only it needs core
+    // alongside the file (checker.md §4). The other three stages are a
+    // function of the file's own bytes, and loading ~2,800 lines of core
+    // into every one of them would be pure cost.
+    options.core_package = dump.stage == .interface;
+    var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
     const phases: Session.Phases = switch (dump.stage) {
         .tokens, .ast => Session.parse_phases,
         .bir => Session.lower_phases,
+        .interface => Session.resolve_phases,
     };
     switch (runSession(&session, stderr, &.{dump.file}, phases)) {
         .summary => {},
         .exit => |code| return code,
     }
-    // A directory argument would enumerate many files; the dump is of one.
-    if (session.store.count() != 1) return fail(stderr, "beni: dump needs exactly one file", .{});
-    const file: SourceStore.Index = @enumFromInt(0);
+    // `--stage=interface` takes a directory as well as a file: a project's
+    // interfaces in path order are exactly what a `check/good` corpus
+    // golden is (checker.md §3), and unlike the other three stages an
+    // interface is a per-MODULE product that only exists once the whole
+    // project has resolved.
+    const file = dumpTarget(&session, dump.file) orelse {
+        if (dump.stage != .interface) return fail(stderr, "beni: dump needs exactly one file", .{});
+        return dumpProjectInterfaces(&session, stdout, stderr, dump.file);
+    };
     switch (dump.stage) {
         .tokens => beni.dump.tokens.write(
             stdout,
@@ -142,6 +161,50 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
             session.artifacts.bir(file),
             .fromGlobal(&session.interner),
         ) catch return 2,
+        .interface => {
+            const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
+            beni.dump.interface.write(
+                stdout,
+                session.store.moduleName(file),
+                &session.resolution.interfaces[m.int()],
+                &session.interner,
+            ) catch return 2;
+        },
     }
     return 0;
+}
+
+/// The file the dump is of: the one the argument named. Every other file in
+/// the store is a core module the run pulled in, and naming one of those is
+/// still legal — `dump --stage=interface core/List.beni` dumps `List`.
+/// Null when the argument was a directory (or is not in the store at all).
+fn dumpTarget(session: *const Session, arg: []const u8) ?SourceStore.Index {
+    if (session.store.find(std.mem.trimEnd(u8, arg, "/"))) |file| return file;
+    return if (session.store.count() == 1) @enumFromInt(0) else null;
+}
+
+/// Every module under the directory `arg`, in path order: the interface
+/// golden of a whole project. Modules the run pulled in from elsewhere —
+/// the core package — are not under it and are not printed.
+fn dumpProjectInterfaces(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+    const dir = std.mem.trimEnd(u8, arg, "/");
+    var printed: u32 = 0;
+    for (0..session.store.count()) |i| {
+        const f: SourceStore.Index = @enumFromInt(i);
+        const p = session.store.path(f);
+        if (!(p.len > dir.len and std.mem.startsWith(u8, p, dir) and p[dir.len] == '/')) continue;
+        const m = moduleOf(session, f) orelse continue;
+        beni.dump.interface.write(stdout, session.store.moduleName(f), &session.resolution.interfaces[m.int()], &session.interner) catch return 2;
+        printed += 1;
+    }
+    if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    return 0;
+}
+
+fn moduleOf(session: *const Session, file: SourceStore.Index) ?beni.resolve.Graph.Index {
+    for (0..session.graph.count()) |i| {
+        const m: beni.resolve.Graph.Index = @enumFromInt(i);
+        if (session.graph.moduleFile(m) == file) return m;
+    }
+    return null;
 }

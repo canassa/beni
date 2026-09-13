@@ -1,0 +1,8 @@
+secret : Int
+secret =
+    1
+
+
+internal : Int
+internal =
+    2

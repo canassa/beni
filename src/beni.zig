@@ -40,10 +40,17 @@ pub const bir = struct {
     pub const Diagnostics = @import("bir/Diagnostics.zig");
     pub const prelude = @import("bir/prelude.zig");
 };
+pub const resolve = struct {
+    pub const Graph = @import("resolve/Graph.zig");
+    pub const Interface = @import("resolve/Interface.zig");
+    pub const Resolve = @import("resolve/Resolve.zig");
+    pub const Diagnostics = @import("resolve/Diagnostics.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
     pub const bir = @import("dump/bir.zig");
+    pub const interface = @import("dump/interface.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");
@@ -55,6 +62,7 @@ test {
     std.testing.refAllDecls(lex);
     std.testing.refAllDecls(parse);
     std.testing.refAllDecls(bir);
+    std.testing.refAllDecls(resolve);
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(render);

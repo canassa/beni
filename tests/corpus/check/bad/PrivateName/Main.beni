@@ -1,0 +1,10 @@
+-- check/bad (project): `private_name` twice — once from the `exposing`
+-- list, where an unused entry is still a lie about the import, and once
+-- from a qualified use. The name IS declared in `Util`; it just has no
+-- `pub`, which is the difference from `unknown_import_name`.
+import Util exposing (secret)
+
+
+pub main : Int
+main =
+    Util.internal

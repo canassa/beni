@@ -70,6 +70,12 @@ refs: []const Ref,
 /// Owned. Explicit imports in source order, then the prelude modules
 /// (flagged), so the table lists every module this file resolves against.
 imports: []const Import,
+/// Owned. The `exposing` names of every explicit import, in source order
+/// (`Import.exposed_start..exposed_end`). A table of its own rather than a
+/// range of `symbols` because each entry needs its TOKEN too: whether the
+/// named module really exposes the name is `Resolve`'s to decide, and the
+/// diagnostic has to point at the name in the list, not at the import.
+exposed: []const Exposed,
 /// Owned. The interface skeleton: the indices of the `pub` declarations
 /// (values, foreign values, types, opaque types, aliases, foreign types) in
 /// source order. Everything an interface needs is on the `Decl`.
@@ -86,6 +92,15 @@ pub const InstList = std.MultiArrayList(Inst);
 
 pub const Inst = struct {
     tag: Tag,
+    /// The token this instruction came from, into the file's token list.
+    /// Every diagnostic after lowering — the resolver's, the checker's —
+    /// points at an INSTRUCTION (checker.md §6.1: "regions are the Bir
+    /// instruction index"), and a token index is the cheapest thing that
+    /// turns one back into a span: four bytes, and the exact extent comes
+    /// from `Tokenizer.tokenEnd` on the token the parser already produced.
+    /// Storing the two offsets instead would cost twice as much on the most
+    /// numerous record in the IR to buy nothing the token does not give.
+    main_token: u32,
     data: Data,
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
@@ -151,12 +166,31 @@ pub const Inst = struct {
         /// `rhs` name.
         qualified_ctor,
 
+        // ---- Resolved references (checker.md §4.5) ---------------------
+        //
+        // What `resolve/Resolve.zig` REWRITES the four `import_*` /
+        // `qualified*` forms into once the module graph exists: a name is
+        // looked up once, in topological order, and every later phase
+        // reads a pair of dense indices instead of two symbols. A
+        // reference to the module's OWN declarations becomes `top`,
+        // `ctor` or `type_top` instead, and one that does not resolve
+        // becomes `error` — so after resolution no name lookup remains.
+
+        /// A value of another module. `lhs` is the `resolve.Graph`
+        /// module index, `rhs` the index into that module's interface
+        /// `values`.
+        ext_value,
+        /// A constructor of another module. `lhs` module index, `rhs`
+        /// index into its interface `ctors`.
+        ext_ctor,
+
         // ---- Types -----------------------------------------------------
 
-        /// A type variable. `lhs` is its `SymbolIndex`; `rhs` is the index
-        /// of the declaring type parameter in a `type`/`type alias`/
-        /// `foreign type` body, or `maxInt(u32)` in an annotation, where
-        /// variables are implicitly quantified (§7).
+        /// A type variable. `lhs` is its `SymbolIndex`; `rhs` is a
+        /// `TypeVarInfo` — the index of the declaring type parameter in a
+        /// `type`/`type alias`/`foreign type` body (or `param_none` in an
+        /// annotation, where variables are implicitly quantified, §7) plus
+        /// the `equatable` marker of checker.md Appendix B.
         type_var,
         /// A type or alias of this module. `lhs` is the `DeclIndex`.
         type_top,
@@ -165,6 +199,9 @@ pub const Inst = struct {
         type_import,
         /// `Alias.Type`. `lhs` module, `rhs` name.
         type_qualified,
+        /// A type of another module, resolved (see `ext_value`). `lhs`
+        /// module index, `rhs` index into its interface `types`.
+        ext_type,
         /// A type applied to arguments, `Maybe a`. `lhs` is the type
         /// reference; `rhs` is extra `SubRange` of argument type insts.
         type_app,
@@ -295,7 +332,39 @@ pub const Inst = struct {
         pub fn isType(tag: Tag) bool {
             return @intFromEnum(tag) >= @intFromEnum(Tag.type_var) and @intFromEnum(tag) <= @intFromEnum(Tag.type_record_ext);
         }
+
+        /// The unresolved `(module symbol, name symbol)` forms lowering
+        /// produces, which `Resolve` rewrites and nothing after it sees.
+        pub fn isUnresolved(tag: Tag) bool {
+            return switch (tag) {
+                .import_value, .import_ctor, .qualified, .qualified_ctor, .type_import, .type_qualified => true,
+                else => false,
+            };
+        }
     };
+};
+
+/// The `rhs` of a `type_var`. The marker rides in the top bit rather than
+/// in a tag or a column of its own: it is one bit on a node kind that is
+/// among the most numerous in any annotation, and every consumer already
+/// reads `rhs` to ask which parameter the variable is.
+pub const TypeVarInfo = packed struct(u32) {
+    /// The declaring type parameter's index, or `param_none`.
+    param: u31,
+    /// `equatable a` at this occurrence (checker.md Appendix A, core only).
+    equatable: bool,
+
+    /// Not a parameter of an enclosing type declaration: an annotation's
+    /// implicitly quantified variable (language.md §7).
+    pub const param_none: u31 = std.math.maxInt(u31);
+
+    pub fn pack(info: TypeVarInfo) u32 {
+        return @bitCast(info);
+    }
+
+    pub fn unpack(rhs: u32) TypeVarInfo {
+        return @bitCast(rhs);
+    }
 };
 
 /// Index into `extra`.
@@ -362,9 +431,17 @@ pub const LetDef = struct {
 pub const Decl = struct {
     kind: Kind,
     name: SymbolIndex,
+    /// The declared name's token, for diagnostics about the declaration
+    /// itself (`recursive_alias`, `duplicate_module`).
+    name_token: u32,
     is_pub: bool,
     /// `pub opaque type`: the constructors are hidden from the interface.
     is_opaque: bool,
+    /// `equatable foreign type T`: values of this type may be compared with
+    /// `==` (checker.md Appendix B). Only ever true on `foreign_type`; an
+    /// ordinary `type` is equatable when its fields are, which is M2b's
+    /// question, not a lexical one.
+    is_equatable: bool,
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block
     /// (plain comments inside the range are trivia).
     doc_start: u32,
@@ -431,6 +508,8 @@ pub const Decl = struct {
 
 pub const Ctor = struct {
     name: SymbolIndex,
+    /// The constructor name's token.
+    name_token: u32,
     /// The `type` declaring it.
     decl: DeclIndex,
     /// `SubRange` of argument type instructions; its length is the arity.
@@ -484,11 +563,22 @@ pub const Ref = struct {
     };
 };
 
+/// One name in an `exposing` list (language.md §5.2).
+pub const Exposed = struct {
+    name: SymbolIndex,
+    /// The name's token. Lower names are values; upper names are a type
+    /// OR a constructor and the file cannot tell which.
+    token: u32,
+};
+
 pub const Import = struct {
     module: SymbolIndex,
+    /// The module path token, for `unknown_module` and `import_cycle`.
+    /// Meaningless on a prelude row, which no source wrote.
+    name_token: u32,
     /// The `as` alias, or the module itself when there is none (§5.2).
     alias: SymbolIndex,
-    /// `symbols[exposed_start..exposed_end]` are the `exposing` names.
+    /// `exposed[exposed_start..exposed_end]` are the `exposing` names.
     exposed_start: u32,
     exposed_end: u32,
     /// One of the prelude rows (Appendix A) rather than a written import.
@@ -497,7 +587,7 @@ pub const Import = struct {
 
 /// A file that has not been lowered.
 pub const empty: Bir = .{
-    .insts = .{ .ptrs = undefined, .len = 0, .capacity = 0 },
+    .insts = .empty,
     .extra = &.{},
     .string_bytes = &.{},
     .symbols = &.{},
@@ -506,6 +596,7 @@ pub const empty: Bir = .{
     .locals = &.{},
     .refs = &.{},
     .imports = &.{},
+    .exposed = &.{},
     .interface = &.{},
     .diagnostics = &.{},
     .module_doc_start = 0,
@@ -522,6 +613,7 @@ pub fn deinit(bir: *Bir, gpa: Allocator) void {
     gpa.free(bir.locals);
     gpa.free(bir.refs);
     gpa.free(bir.imports);
+    gpa.free(bir.exposed);
     gpa.free(bir.interface);
     gpa.free(bir.diagnostics);
     bir.* = undefined;
@@ -612,8 +704,8 @@ pub fn declTypeParams(bir: *const Bir, d: Decl) []const Symbol {
     return bir.symbols[d.type_params_start..d.type_params_end];
 }
 
-pub fn importExposed(bir: *const Bir, imp: Import) []const Symbol {
-    return bir.symbols[imp.exposed_start..imp.exposed_end];
+pub fn importExposed(bir: *const Bir, imp: Import) []const Exposed {
+    return bir.exposed[imp.exposed_start..imp.exposed_end];
 }
 
 // ---------------------------------------------------------------------------

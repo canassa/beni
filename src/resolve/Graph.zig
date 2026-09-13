@@ -1,0 +1,695 @@
+//! The module graph (docs/design/checker.md §4.1–§4.4): which modules exist,
+//! what each imports, and the order they may be checked in.
+//!
+//! A module's identity is `(package, module name)`, not the name alone
+//! (`fast-compiler.md` §3.1, "Project model"): the user's package and core
+//! may each have a `List`, and an import resolves in the importing module's
+//! own package first, then `core`. That lookup is the only thing the rest
+//! of the compiler asks this structure, and it is why the index is keyed by
+//! the pair. A `Symbol` is a SPARSE key — a project mentions a few dozen of
+//! the interner's tens of thousands — so a hash map is the right structure
+//! here and the house rule against maps keyed by a dense id does not apply.
+//!
+//! Three things come out of one pass:
+//!
+//!   - **Edges.** One per explicit import and one per prelude row, because
+//!     the prelude IS an import of core (language.md Appendix A) and the
+//!     schedule has to know it. Deduplicated per module, in import order.
+//!   - **Cycles.** Tarjan's SCC over the edges. Every non-trivial component
+//!     is one `import_cycle`, reported once, on the lexically first module
+//!     of the cycle, naming the whole cycle in the order the imports run —
+//!     `A → B → C → A`, found by walking the component from that first
+//!     module. The members are POISONED: their declarations get error types
+//!     and no further diagnostic (checker.md §4.3), which is what stops one
+//!     bad edge from producing a diagnostic per module in the loop.
+//!   - **Order.** The stable topological order of §4.4: Kahn over the
+//!     CONDENSATION, picking the ready component whose first member is
+//!     lexically smallest, then its members in `(package, path)` order. The
+//!     condensation is what makes this total even with cycles present, and
+//!     picking by name rather than by discovery makes it a function of the
+//!     input rather than of the traversal.
+//!
+//! **A module never imports itself.** Every operator inside `Basics`
+//! desugars to a reference to `Basics` (language.md §6.5), so `Basics`'s Bir
+//! is full of references to `Basics`. Those resolve to its OWN declarations,
+//! add no edge and are never a cycle (checker.md §4.3). The prelude rows are
+//! filtered the same way, so `List` does not depend on `List`.
+//!
+//! **A prelude row is an edge only when the module uses a name from it.**
+//! checker.md §4.3 says "prelude imports are edges to core", and taken
+//! literally that makes the standard library cyclic with itself: lowering
+//! gives EVERY file all seven prelude rows (language.md Appendix A), so
+//! `Basics` would depend on `List` and `List` on `Basics` before a line of
+//! either was read. The prelude is not an import anyone wrote — it is a
+//! fallback name table inside the compiler — so what makes it a dependency
+//! is a name actually resolved through it, which is exactly what lowering
+//! already recorded in `refs` (the dead-code-elimination edges of
+//! `fast-compiler.md` §9.1). An import the author DID write is always an
+//! edge, used or not: it is a statement about the project, and reporting
+//! `unknown_module` for it is the point.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const diagnostic = @import("diagnostic");
+const Artifacts = @import("../Artifacts.zig");
+const Bir = @import("../bir/Bir.zig");
+const InternPool = @import("../InternPool.zig");
+const SourceStore = @import("../SourceStore.zig");
+
+const Graph = @This();
+
+pub const Symbol = InternPool.Symbol;
+pub const Package = SourceStore.Package;
+
+/// A module of the graph. Dense, assigned in file-index order, so every
+/// per-module array is indexed by this and nothing is keyed by a name.
+pub const Index = enum(u32) {
+    _,
+
+    pub fn int(i: Index) u32 {
+        return @intFromEnum(i);
+    }
+};
+
+/// Owned. One per module, in file-index order.
+modules: std.MultiArrayList(Module).Slice,
+/// Owned. `modules[m].deps_start..deps_end` are `m`'s dependencies, each
+/// once, in the order its import table lists them.
+deps: []const Index,
+/// Owned. Every module exactly once, dependencies before dependents
+/// (§4.4). Members of a cycle keep a position so every module is visited.
+order: []const Index,
+/// Owned. Graph-level diagnostics, each pointing at a file and a token.
+diagnostics: []const Item,
+/// The `(package, name)` index. Owned; lives as long as the graph because
+/// `Resolve` looks modules up through it.
+by_name: std.AutoHashMapUnmanaged(Key, Index),
+/// Owned. The members named by every `import_cycle` item, in cycle order,
+/// back to back; an item's `cycle_start..cycle_end` slices this.
+cycle_members: []const Index,
+
+pub const Module = struct {
+    file: SourceStore.Index,
+    package: Package,
+    /// The module's name, interned: `Json.Decode` for
+    /// `src/Json/Decode.beni`.
+    name: Symbol,
+    /// A member of an import cycle, or a module that failed to be named.
+    /// Its declarations are error types and it produces no further
+    /// diagnostics (checker.md §4.3).
+    poisoned: bool,
+    deps_start: u32,
+    deps_end: u32,
+};
+
+pub const Key = struct {
+    package: Package,
+    name: Symbol,
+};
+
+/// A graph diagnostic before it is rendered: which file, which token, and
+/// for `import_cycle` the modules of the cycle in order.
+pub const Item = struct {
+    code: diagnostic.Code,
+    file: SourceStore.Index,
+    /// Token index into `file`'s token list.
+    token: u32,
+    /// `import_cycle`: `cycle_start..cycle_end` into `cycle_members`.
+    /// `duplicate_module`: `cycle_start` is the module that already had
+    /// the name, `cycle_end` is `cycle_start + 1`.
+    cycle_start: u32 = 0,
+    cycle_end: u32 = 0,
+};
+
+pub const empty: Graph = .{
+    .modules = .empty,
+    .deps = &.{},
+    .order = &.{},
+    .diagnostics = &.{},
+    .by_name = .empty,
+    .cycle_members = &.{},
+};
+
+pub fn deinit(g: *Graph, gpa: Allocator) void {
+    g.modules.deinit(gpa);
+    gpa.free(g.deps);
+    gpa.free(g.order);
+    gpa.free(g.diagnostics);
+    gpa.free(g.cycle_members);
+    g.by_name.deinit(gpa);
+    g.* = undefined;
+}
+
+pub fn count(g: *const Graph) u32 {
+    return @intCast(g.modules.len);
+}
+
+pub fn module(g: *const Graph, i: Index) Module {
+    return g.modules.get(i.int());
+}
+
+pub fn moduleFile(g: *const Graph, i: Index) SourceStore.Index {
+    return g.modules.items(.file)[i.int()];
+}
+
+pub fn moduleName(g: *const Graph, i: Index) Symbol {
+    return g.modules.items(.name)[i.int()];
+}
+
+pub fn isPoisoned(g: *const Graph, i: Index) bool {
+    return g.modules.items(.poisoned)[i.int()];
+}
+
+pub fn dependencies(g: *const Graph, i: Index) []const Index {
+    const m = g.modules.get(i.int());
+    return g.deps[m.deps_start..m.deps_end];
+}
+
+/// Resolve `name` as seen from a module of `from`: its own package first,
+/// then `core` (checker.md §2). An `app` module named like a core module
+/// therefore shadows it for the whole project, with no diagnostic — the
+/// same rule as a top-level name shadowing a prelude name.
+pub fn lookup(g: *const Graph, from: Package, name: Symbol) ?Index {
+    if (g.by_name.get(.{ .package = from, .name = name })) |i| return i;
+    if (from != .core) {
+        if (g.by_name.get(.{ .package = .core, .name = name })) |i| return i;
+    }
+    return null;
+}
+
+/// The number of edges, for the profile counter.
+pub fn edgeCount(g: *const Graph) u32 {
+    return @intCast(g.deps.len);
+}
+
+// ---------------------------------------------------------------------------
+// Building
+// ---------------------------------------------------------------------------
+
+/// Build the graph from every lowered file. Serial, after the interner
+/// merge, so the module names can be interned into the global pool and the
+/// Birs' symbols are already global.
+///
+/// Files with an invalid module path (language.md §1) are not modules: they
+/// have been reported already and nothing can import them.
+pub fn build(
+    gpa: Allocator,
+    scratch: Allocator,
+    store: *const SourceStore,
+    artifacts: *const Artifacts,
+    interner: *InternPool.Global,
+) Allocator.Error!Graph {
+    var g: Graph = .empty;
+    errdefer g.deinit(gpa);
+    var modules: std.MultiArrayList(Module) = .empty;
+    errdefer modules.deinit(gpa);
+
+    var deps: std.ArrayList(Index) = .empty;
+    errdefer deps.deinit(gpa);
+    var diagnostics: std.ArrayList(Item) = .empty;
+    errdefer diagnostics.deinit(gpa);
+    var cycle_members: std.ArrayList(Index) = .empty;
+    errdefer cycle_members.deinit(gpa);
+
+    // 1. Name every module and index it. File order is path order, so the
+    //    FIRST file to claim a `(package, name)` keeps it and any later one
+    //    is `duplicate_module` — deterministic without a tie-break rule.
+    for (0..store.count()) |i| {
+        const file: SourceStore.Index = @enumFromInt(i);
+        if (!store.modulePathValid(file)) continue;
+        const name = try interner.getOrPut(gpa, store.moduleName(file));
+        const pkg = store.package(file);
+        const index: Index = @enumFromInt(modules.len);
+        try modules.append(gpa, .{
+            .file = file,
+            .package = pkg,
+            .name = name,
+            .poisoned = false,
+            .deps_start = 0,
+            .deps_end = 0,
+        });
+        const gop = try g.by_name.getOrPut(gpa, .{ .package = pkg, .name = name });
+        if (gop.found_existing) {
+            const first = gop.value_ptr.*;
+            try diagnostics.append(gpa, .{
+                .code = .duplicate_module,
+                .file = file,
+                .token = 0,
+                .cycle_start = first.int(),
+                .cycle_end = first.int() + 1,
+            });
+            modules.items(.poisoned)[index.int()] = true;
+        } else {
+            gop.value_ptr.* = index;
+        }
+    }
+    g.modules = modules.toOwnedSlice();
+
+    // 2. Edges, from each module's import table. A module's references to
+    //    ITSELF add no edge (see the header).
+    const packages = g.modules.items(.package);
+    for (0..g.modules.len) |i| {
+        const index: Index = @enumFromInt(i);
+        const start: u32 = @intCast(deps.items.len);
+        const file = g.modules.items(.file)[i];
+        const bir = artifacts.bir(file);
+        const used = try referencedModules(scratch, bir);
+        for (bir.imports) |imp| {
+            const module_name = bir.symbol(imp.module);
+            if (imp.prelude and std.mem.indexOfScalar(Symbol, used, module_name) == null) continue;
+            const target = g.lookup(packages[i], module_name) orelse {
+                // The prelude names modules the compiler guarantees; a
+                // missing one means core itself is missing or broken, and
+                // that is not the importer's fault to report here. The
+                // reference sites get `unknown_module_alias` from
+                // `Resolve` instead (checker.md §4.5).
+                if (!imp.prelude) {
+                    try diagnostics.append(gpa, .{ .code = .unknown_module, .file = file, .token = imp.name_token });
+                }
+                continue;
+            };
+            // A module's references to ITSELF add no edge and are never a
+            // cycle (checker.md §4.3): every operator inside `Basics`
+            // produces one.
+            if (target == index) continue;
+            if (std.mem.indexOfScalar(Index, deps.items[start..], target) != null) continue;
+            try deps.append(gpa, target);
+        }
+        g.modules.items(.deps_start)[i] = start;
+        g.modules.items(.deps_end)[i] = @intCast(deps.items.len);
+    }
+    g.deps = try deps.toOwnedSlice(gpa);
+
+    // 3. Components, cycles and the order.
+    try g.scheduleAndReportCycles(gpa, scratch, artifacts, &diagnostics, &cycle_members);
+
+    g.diagnostics = try diagnostics.toOwnedSlice(gpa);
+    g.cycle_members = try cycle_members.toOwnedSlice(gpa);
+    return g;
+}
+
+/// The modules a file actually names something from, from its `refs`
+/// table. Deduplicated; the count is the handful of modules one file
+/// mentions, so a linear set beats a hash map here.
+fn referencedModules(scratch: Allocator, bir: *const Bir) Allocator.Error![]const Symbol {
+    var out: std.ArrayList(Symbol) = .empty;
+    for (bir.refs) |ref| {
+        switch (ref.kind) {
+            .import_value, .import_ctor, .import_type => {},
+            .top_value, .top_ctor, .top_type => continue,
+        }
+        const module_name = bir.symbol(@enumFromInt(ref.a));
+        if (std.mem.indexOfScalar(Symbol, out.items, module_name) != null) continue;
+        try out.append(scratch, module_name);
+    }
+    return out.items;
+}
+
+/// Tarjan's SCC, then Kahn over the condensation. Both are iterative: a
+/// project is allowed to be 100k lines deep in imports and the compiler may
+/// not put that on the C stack.
+fn scheduleAndReportCycles(
+    g: *Graph,
+    gpa: Allocator,
+    scratch: Allocator,
+    artifacts: *const Artifacts,
+    diagnostics: *std.ArrayList(Item),
+    cycle_members: *std.ArrayList(Index),
+) Allocator.Error!void {
+    const n = g.modules.len;
+    var t: Tarjan = try .init(scratch, n);
+    try t.run(scratch, g);
+    const component = t.component;
+    const component_count = t.component_count;
+
+    // Members of each component, grouped: the condensation's node `c` owns
+    // `members[starts[c]..starts[c + 1]]`, filled in module-index order,
+    // which is `(package, path)` order because that is how files are
+    // numbered.
+    const starts = try scratch.alloc(u32, component_count + 1);
+    @memset(starts, 0);
+    for (component) |c| starts[c + 1] += 1;
+    for (1..component_count + 1) |c| starts[c] += starts[c - 1];
+    const members = try scratch.alloc(Index, n);
+    const cursor = try scratch.alloc(u32, component_count);
+    @memcpy(cursor, starts[0..component_count]);
+    for (0..n) |i| {
+        const c = component[i];
+        members[cursor[c]] = @enumFromInt(i);
+        cursor[c] += 1;
+    }
+
+    // Report each cycle once and poison its members.
+    for (0..component_count) |c| {
+        const group = members[starts[c]..starts[c + 1]];
+        if (group.len < 2) continue;
+        for (group) |m| g.modules.items(.poisoned)[m.int()] = true;
+        const first = group[0]; // lexically first: module order is path order
+        const cycle_start: u32 = @intCast(cycle_members.items.len);
+        try g.appendCyclePath(gpa, scratch, component, group, first, cycle_members);
+        try diagnostics.append(gpa, .{
+            .code = .import_cycle,
+            .file = g.moduleFile(first),
+            .token = g.cycleImportToken(artifacts, first, cycle_members.items[cycle_start + 1]),
+            .cycle_start = cycle_start,
+            .cycle_end = @intCast(cycle_members.items.len),
+        });
+    }
+
+    // Kahn over the condensation. `in_degree` counts edges between
+    // DIFFERENT components; a ready component is one whose dependencies
+    // have all been emitted, and of those the one with the smallest first
+    // member wins, so the order depends on names and not on traversal.
+    const in_degree = try scratch.alloc(u32, component_count);
+    @memset(in_degree, 0);
+    for (0..n) |i| {
+        for (g.dependencies(@enumFromInt(i))) |d| {
+            const from = component[i];
+            const to = component[d.int()];
+            if (from != to) in_degree[from] += 1;
+        }
+    }
+    const emitted = try scratch.alloc(bool, component_count);
+    @memset(emitted, false);
+    var order: std.ArrayList(Index) = .empty;
+    errdefer order.deinit(gpa);
+    try order.ensureTotalCapacity(gpa, n);
+    var remaining = component_count;
+    while (remaining > 0) : (remaining -= 1) {
+        var best: ?usize = null;
+        for (0..component_count) |c| {
+            if (emitted[c] or in_degree[c] != 0) continue;
+            if (best == null or members[starts[c]].int() < members[starts[best.?]].int()) best = c;
+        }
+        // Cannot happen: a condensation is acyclic, so some component is
+        // always ready. If it ever did, emitting the remaining components
+        // in index order keeps the compiler running.
+        const c = best orelse {
+            for (0..component_count) |rest| {
+                if (emitted[rest]) continue;
+                emitted[rest] = true;
+                order.appendSliceAssumeCapacity(members[starts[rest]..starts[rest + 1]]);
+            }
+            break;
+        };
+        emitted[c] = true;
+        order.appendSliceAssumeCapacity(members[starts[c]..starts[c + 1]]);
+        // Every module OUTSIDE this component that depended on it loses one.
+        for (0..n) |i| {
+            if (component[i] == c) continue;
+            for (g.dependencies(@enumFromInt(i))) |d| {
+                if (component[d.int()] == c) in_degree[component[i]] -= 1;
+            }
+        }
+    }
+    g.order = try order.toOwnedSlice(gpa);
+}
+
+/// Append one concrete cycle starting and ending at `from`: a depth-first
+/// walk restricted to `from`'s component, taking edges in import order,
+/// which terminates because a component is strongly connected. The result
+/// is what the diagnostic names — `A → B → C` — with the closing edge back
+/// to `A` left implicit. `group` is the component's members, used only as
+/// the fallback below.
+fn appendCyclePath(
+    g: *const Graph,
+    gpa: Allocator,
+    scratch: Allocator,
+    component: []const u32,
+    group: []const Index,
+    from: Index,
+    out: *std.ArrayList(Index),
+) Allocator.Error!void {
+    const c = component[from.int()];
+    const on_path = try scratch.alloc(bool, g.modules.len);
+    @memset(on_path, false);
+    var path: std.ArrayList(Index) = .empty;
+    defer path.deinit(scratch);
+    try path.append(scratch, from);
+    on_path[from.int()] = true;
+    // Iterative DFS with an explicit cursor per frame.
+    var cursors: std.ArrayList(u32) = .empty;
+    defer cursors.deinit(scratch);
+    try cursors.append(scratch, 0);
+    while (path.items.len > 0) {
+        const node = path.items[path.items.len - 1];
+        const edges = g.dependencies(node);
+        const cursor = &cursors.items[cursors.items.len - 1];
+        if (cursor.* >= edges.len) {
+            on_path[node.int()] = false;
+            _ = path.pop();
+            _ = cursors.pop();
+            continue;
+        }
+        const next = edges[cursor.*];
+        cursor.* += 1;
+        if (component[next.int()] != c) continue;
+        if (next == from) {
+            try out.appendSlice(gpa, path.items);
+            return;
+        }
+        if (on_path[next.int()]) continue;
+        on_path[next.int()] = true;
+        try path.append(scratch, next);
+        try cursors.append(scratch, 0);
+    }
+    // Strong connectivity guarantees a path back; if one is somehow not
+    // found, naming the component's members is still a true statement.
+    try out.appendSlice(gpa, group);
+}
+
+/// The token in `from`'s source that imports `to`, so the cycle is reported
+/// at the import that closes it rather than at line 1.
+fn cycleImportToken(g: *const Graph, artifacts: *const Artifacts, from: Index, to: Index) u32 {
+    const bir = artifacts.bir(g.moduleFile(from));
+    const wanted = g.moduleName(to);
+    for (bir.imports) |imp| {
+        if (!imp.prelude and bir.symbol(imp.module) == wanted) return imp.name_token;
+    }
+    return 0;
+}
+
+/// Tarjan's strongly connected components, iterative. Components come out
+/// in reverse topological order; the numbering is not used for ordering
+/// (see `scheduleAndReportCycles`), only for grouping.
+const Tarjan = struct {
+    index: []u32,
+    low: []u32,
+    on_stack: []bool,
+    component: []u32,
+    stack: std.ArrayList(Index),
+    next_index: u32 = 0,
+    component_count: u32 = 0,
+
+    const unvisited = std.math.maxInt(u32);
+
+    fn init(scratch: Allocator, n: usize) Allocator.Error!Tarjan {
+        const t: Tarjan = .{
+            .index = try scratch.alloc(u32, n),
+            .low = try scratch.alloc(u32, n),
+            .on_stack = try scratch.alloc(bool, n),
+            .component = try scratch.alloc(u32, n),
+            .stack = .empty,
+        };
+        @memset(t.index, unvisited);
+        @memset(t.on_stack, false);
+        @memset(t.component, 0);
+        return t;
+    }
+
+    fn run(t: *Tarjan, scratch: Allocator, g: *const Graph) Allocator.Error!void {
+        var frames: std.ArrayList(Frame) = .empty;
+        defer frames.deinit(scratch);
+        for (0..g.modules.len) |root| {
+            if (t.index[root] != unvisited) continue;
+            try frames.append(scratch, .{ .node = @enumFromInt(root), .cursor = 0 });
+            try t.visit(scratch, g, &frames);
+        }
+    }
+
+    const Frame = struct { node: Index, cursor: u32 };
+
+    fn visit(t: *Tarjan, scratch: Allocator, g: *const Graph, frames: *std.ArrayList(Frame)) Allocator.Error!void {
+        while (frames.items.len > 0) {
+            const frame = &frames.items[frames.items.len - 1];
+            const v = frame.node.int();
+            if (frame.cursor == 0) {
+                t.index[v] = t.next_index;
+                t.low[v] = t.next_index;
+                t.next_index += 1;
+                try t.stack.append(scratch, frame.node);
+                t.on_stack[v] = true;
+            }
+            const edges = g.dependencies(frame.node);
+            if (frame.cursor < edges.len) {
+                const w = edges[frame.cursor];
+                frame.cursor += 1;
+                if (t.index[w.int()] == unvisited) {
+                    try frames.append(scratch, .{ .node = w, .cursor = 0 });
+                } else if (t.on_stack[w.int()]) {
+                    t.low[v] = @min(t.low[v], t.index[w.int()]);
+                }
+                continue;
+            }
+            // Done with `v`: close a component, then fold into the parent.
+            if (t.low[v] == t.index[v]) {
+                while (true) {
+                    const w = t.stack.pop().?;
+                    t.on_stack[w.int()] = false;
+                    t.component[w.int()] = t.component_count;
+                    if (w.int() == v) break;
+                }
+                t.component_count += 1;
+            }
+            _ = frames.pop();
+            if (frames.items.len > 0) {
+                const parent = frames.items[frames.items.len - 1].node.int();
+                t.low[parent] = @min(t.low[parent], t.low[v]);
+            }
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "a chain of imports is a stable topological order and nothing is poisoned" {
+    const TestProject = @import("TestProject.zig");
+    var p = try TestProject.init(testing.allocator, &.{
+        .{ .path = "A.beni", .source = "import B exposing (b)\n\n\npub a : Int\na =\n    b\n" },
+        .{ .path = "B.beni", .source = "import C exposing (c)\n\n\npub b : Int\nb =\n    c\n" },
+        .{ .path = "C.beni", .source = "pub c : Int\nc =\n    1\n" },
+    });
+    defer p.deinit();
+
+    const order = try p.order(testing.allocator);
+    defer testing.allocator.free(order);
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "C", "B", "A" }), order);
+    try testing.expectEqual(@as(u32, 3), p.graph().count());
+    try testing.expectEqual(@as(u32, 2), p.graph().edgeCount());
+    for (0..3) |i| try testing.expect(!p.graph().isPoisoned(@enumFromInt(i)));
+
+    const a = p.module("A").?;
+    try testing.expectEqualSlices(Index, &.{p.module("B").?}, p.graph().dependencies(a));
+    try testing.expectEqualSlices(Index, &.{}, p.graph().dependencies(p.module("C").?));
+}
+
+test "independent modules are ordered by path, not by traversal" {
+    const TestProject = @import("TestProject.zig");
+    // `Z` imports nothing and `A` imports nothing; a depth-first schedule
+    // would emit them in discovery order, which is not a property of the
+    // source. The order is the file order, which IS.
+    var p = try TestProject.init(testing.allocator, &.{
+        .{ .path = "Z.beni", .source = "pub z : Int\nz =\n    1\n" },
+        .{ .path = "A.beni", .source = "pub a : Int\na =\n    1\n" },
+        .{ .path = "M.beni", .source = "pub m : Int\nm =\n    1\n" },
+    });
+    defer p.deinit();
+    const order = try p.order(testing.allocator);
+    defer testing.allocator.free(order);
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "A", "M", "Z" }), order);
+    try testing.expectEqual(@as(u32, 0), p.graph().edgeCount());
+}
+
+test "a three-module cycle is one diagnostic on its first module, and every member is poisoned" {
+    const TestProject = @import("TestProject.zig");
+    var p = try TestProject.init(testing.allocator, &.{
+        .{ .path = "A.beni", .source = "import B exposing (b)\n\n\npub a : Int\na =\n    b\n" },
+        .{ .path = "B.beni", .source = "import C exposing (c)\n\n\npub b : Int\nb =\n    c\n" },
+        .{ .path = "C.beni", .source = "import A exposing (a)\n\n\npub c : Int\nc =\n    a\n" },
+    });
+    defer p.deinit();
+
+    try testing.expectEqual(@as(usize, 1), p.graph().diagnostics.len);
+    const item = p.graph().diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.import_cycle, item.code);
+    try testing.expectEqual(p.module("A").?, @as(Index, @enumFromInt(0)));
+    try testing.expectEqualSlices(Index, &.{ p.module("A").?, p.module("B").?, p.module("C").? }, p.graph().cycle_members[item.cycle_start..item.cycle_end]);
+    for (0..3) |i| try testing.expect(p.graph().isPoisoned(@enumFromInt(i)));
+
+    // Every module still gets a place in the schedule, so nothing is
+    // silently skipped; and the cycle is the ONLY thing reported.
+    const order = try p.order(testing.allocator);
+    defer testing.allocator.free(order);
+    try testing.expectEqual(@as(usize, 3), order.len);
+    const codes = try p.codes(testing.allocator);
+    defer testing.allocator.free(codes);
+    try testing.expectEqualSlices(diagnostic.Code, &.{.import_cycle}, codes);
+}
+
+test "a module's references to itself are not a self-loop" {
+    const TestProject = @import("TestProject.zig");
+    // Every operator desugars to a reference to the module that defines
+    // its function (language.md §6.5), so a `Basics` that uses `+` refers
+    // to `Basics`. That must resolve to its own declaration and add no
+    // edge, or the standard library would be a cycle of one.
+    var p = try TestProject.init(testing.allocator, &.{
+        .{
+            .path = "Basics.beni",
+            .source =
+            \\pub foreign type Int
+            \\
+            \\
+            \\pub foreign add : Int -> Int -> Int
+            \\
+            \\
+            \\pub twice : Int -> Int
+            \\twice n =
+            \\    n + n
+            \\
+            ,
+            .package = .core,
+        },
+    });
+    defer p.deinit();
+
+    try testing.expectEqual(@as(u32, 1), p.graph().count());
+    try testing.expectEqual(@as(u32, 0), p.graph().edgeCount());
+    try testing.expect(!p.graph().isPoisoned(p.module("Basics").?));
+    const codes = try p.codes(testing.allocator);
+    defer testing.allocator.free(codes);
+    try testing.expectEqualSlices(diagnostic.Code, &.{}, codes);
+}
+
+test "two files claiming one module name is duplicate_module on the second" {
+    const TestProject = @import("TestProject.zig");
+    // Both paths end in `M.beni` but sit under different roots, so both
+    // are the module `M` of the app package. The FIRST path keeps the
+    // name (file order is path order), so the report lands on `b/M.beni`.
+    var p = try TestProject.init(testing.allocator, &.{
+        .{ .path = "a/M.beni", .source = "pub x : Int\nx =\n    1\n", .rel_start = 2 },
+        .{ .path = "b/M.beni", .source = "pub y : Int\ny =\n    2\n", .rel_start = 2 },
+    });
+    defer p.deinit();
+
+    try testing.expectEqual(@as(usize, 1), p.graph().diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.duplicate_module, p.graph().diagnostics[0].code);
+    try testing.expectEqualStrings("b/M.beni", p.session.store.path(p.graph().diagnostics[0].file));
+    try testing.expect(p.graph().isPoisoned(@enumFromInt(1)));
+    try testing.expect(!p.graph().isPoisoned(@enumFromInt(0)));
+}
+
+test "lookup searches the importing package first, then core" {
+    const TestProject = @import("TestProject.zig");
+    var p = try TestProject.init(testing.allocator, &.{
+        .{ .path = "app/List.beni", .source = "pub mine : Int\nmine =\n    1\n", .rel_start = 4 },
+        .{ .path = "core/List.beni", .source = "pub theirs : Int\ntheirs =\n    1\n", .package = .core, .rel_start = 5 },
+        .{ .path = "core/Other.beni", .source = "pub x : Int\nx =\n    1\n", .package = .core, .rel_start = 5 },
+    });
+    defer p.deinit();
+
+    const list = p.session.interner.getOrPut(testing.allocator, "List") catch unreachable;
+    const other = p.session.interner.getOrPut(testing.allocator, "Other") catch unreachable;
+    const app_list = p.graph().lookup(.app, list).?;
+    const core_list = p.graph().lookup(.core, list).?;
+    try testing.expect(app_list != core_list);
+    try testing.expectEqual(SourceStore.Package.app, p.graph().module(app_list).package);
+    try testing.expectEqual(SourceStore.Package.core, p.graph().module(core_list).package);
+    // An app module falls through to core for a name its own package has
+    // not got; a core module never looks in app.
+    try testing.expect(p.graph().lookup(.app, other) != null);
+    try testing.expect(p.graph().lookup(.core, other) != null);
+}

@@ -1,0 +1,22 @@
+-- check/good: a module that names nothing but prelude values, types and
+-- constructors resolves against the embedded core package with no import
+-- at all (language.md Appendix A). Proves the prelude rows reach `Basics`,
+-- `Maybe` and `List` and that none of them is an import cycle.
+pub biggest : Int -> Int -> Int
+biggest a b =
+    max a b
+
+
+pub firstOrZero : Maybe Int -> Int
+firstOrZero m =
+    case m of
+        Just n ->
+            n
+
+        Nothing ->
+            0
+
+
+pub lengths : List String -> List Int
+lengths xs =
+    List.map String.length xs

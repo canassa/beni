@@ -1,0 +1,17 @@
+-- check/good: `pub opaque type` puts the NAME in the interface and keeps
+-- the constructors out of it (language.md §5.1), which the `.iface` golden
+-- shows as an `opaque type` line with nothing under it.
+pub opaque type Counter
+    = Counter Int
+
+
+pub zero : Counter
+zero =
+    Counter 0
+
+
+pub bump : Counter -> Counter
+bump counter =
+    case counter of
+        Counter n ->
+            Counter (n + 1)

@@ -317,6 +317,7 @@ const Dumper = struct {
     fn header(d: *Dumper, decl_: Bir.Decl) !void {
         if (decl_.is_pub) try d.w.writeAll("pub ");
         if (decl_.is_opaque) try d.w.writeAll("opaque ");
+        if (decl_.is_equatable) try d.w.writeAll("equatable ");
         try d.w.print("{s} {s}", .{ kindText(decl_.kind), d.sym(decl_.name) });
         if (decl_.kind == .value and decl_.annotation != .none) try d.w.writeAll(" (annotated)");
     }
@@ -343,7 +344,10 @@ const Dumper = struct {
                 try d.w.print("alias {s}", .{d.sym(decl_.name)});
                 if (decl_.ctors_end > decl_.ctors_start) try d.w.writeAll(" (record constructor)");
             },
-            .foreign_type => try d.w.print("foreign type {s}", .{d.sym(decl_.name)}),
+            .foreign_type => {
+                try d.w.print("foreign type {s}", .{d.sym(decl_.name)});
+                if (decl_.is_equatable) try d.w.writeAll(" (equatable)");
+            },
         }
     }
 
@@ -368,9 +372,9 @@ const Dumper = struct {
             const exposed = d.bir.importExposed(imp);
             if (exposed.len != 0) {
                 try d.w.writeAll(" exposing (");
-                for (exposed, 0..) |s, i| {
+                for (exposed, 0..) |e, i| {
                     if (i != 0) try d.w.writeAll(", ");
-                    try d.w.writeAll(d.names.text(s));
+                    try d.w.writeAll(d.sym(e.name));
                 }
                 try d.w.writeByte(')');
             }
@@ -394,13 +398,19 @@ const Dumper = struct {
                 try d.w.writeByte(' ');
                 try d.moduleName(data.lhs, data.rhs, false);
             },
+            // `dump --stage=bir` runs before resolution, so these never
+            // appear in its output; printed as the pair of indices they
+            // are so a future dump of a resolved module is still legible.
+            .ext_value, .ext_ctor, .ext_type => try d.w.print(" module {d} #{d}", .{ data.lhs, data.rhs }),
             .qualified, .qualified_ctor, .type_qualified => {
                 try d.w.writeByte(' ');
                 try d.moduleName(data.lhs, data.rhs, true);
             },
             .type_var => {
+                const info = Bir.TypeVarInfo.unpack(data.rhs);
                 try d.w.print(" {s}", .{d.symRaw(data.lhs)});
-                if (data.rhs != std.math.maxInt(u32)) try d.w.print(" (param {d})", .{data.rhs});
+                if (info.param != Bir.TypeVarInfo.param_none) try d.w.print(" (param {d})", .{info.param});
+                if (info.equatable) try d.w.writeAll(" (equatable)");
             },
             .type_app => {
                 try d.w.writeByte(' ');

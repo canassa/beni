@@ -1,0 +1,13 @@
+-- check/bad: `recursive_alias`, directly and through a second alias. An
+-- alias is a spelling for the type it names, so a cycle has no expansion;
+-- one diagnostic per cycle, on the alias that starts it.
+pub type alias Direct =
+    Direct
+
+
+pub type alias Ping =
+    Pong
+
+
+pub type alias Pong =
+    Ping

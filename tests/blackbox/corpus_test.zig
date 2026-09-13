@@ -39,6 +39,8 @@ const Kind = enum {
     parse_bad,
     fmt,
     bir,
+    check_good,
+    check_bad,
     regress,
 
     fn dir(kind: Kind) []const u8 {
@@ -47,8 +49,16 @@ const Kind = enum {
             .parse_bad => corpus_root ++ "/parse/bad",
             .fmt => corpus_root ++ "/fmt",
             .bir => corpus_root ++ "/bir",
+            .check_good => corpus_root ++ "/check/good",
+            .check_bad => corpus_root ++ "/check/bad",
             .regress => corpus_root ++ "/regress",
         };
+    }
+
+    /// Whether a subdirectory of the kind is a PROJECT fixture rather than
+    /// the `core/` flag directory every kind has.
+    fn hasProjects(kind: Kind) bool {
+        return kind == .check_good or kind == .check_bad;
     }
 };
 
@@ -68,6 +78,14 @@ test "corpus: bir" {
     try walk(.bir);
 }
 
+test "corpus: check/good" {
+    try walk(.check_good);
+}
+
+test "corpus: check/bad" {
+    try walk(.check_bad);
+}
+
 test "corpus: regress" {
     try walk(.regress);
 }
@@ -84,8 +102,8 @@ fn walk(kind: Kind) !void {
 
     const core_dir = try std.fs.path.join(arena, &.{ kind.dir(), "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
-    try collect(arena, kind.dir(), false, true, &fixtures);
-    try collect(arena, core_dir, true, false, &fixtures);
+    try collect(arena, kind.dir(), false, true, &fixtures, kind.hasProjects());
+    try collect(arena, core_dir, true, false, &fixtures, false);
 
     if (fixtures.items.len == 0) {
         std.debug.print("corpus {s} is empty (M1 fills it)\n", .{kind.dir()});
@@ -116,16 +134,20 @@ fn walk(kind: Kind) !void {
     }
 }
 
-/// One `.beni` under a corpus directory.
+/// One fixture under a corpus directory: a `.beni` file, or — for the
+/// `check` kinds — a directory that is a whole project.
 const Fixture = struct {
     dir: []const u8,
     name: []const u8,
     /// Under `<kind>/core/`: run with `--core`.
     core: bool,
+    /// `name` is a directory holding a multi-module project (checker.md §3).
+    project: bool = false,
 };
 
-/// Append the `.beni` files directly under `dir`, sorted by name.
-fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required: bool, out: *std.ArrayList(Fixture)) !void {
+/// Append the `.beni` files directly under `dir`, sorted by name — plus,
+/// for a kind that has them, the project subdirectories.
+fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required: bool, out: *std.ArrayList(Fixture), projects: bool) !void {
     const io = testing.io;
     var dir = Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch |err| {
         if (!required and err == error.FileNotFound) return;
@@ -137,6 +159,10 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core")) {
+            try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
+            continue;
+        }
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
         try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core });
     }
@@ -166,12 +192,18 @@ const Case = struct {
     fixture: Fixture,
     bless: bool,
 
+    /// The path the compiler is pointed at: the `.beni` file, or the
+    /// project directory.
     fn fixturePath(c: Case) ![]const u8 {
         return std.fs.path.join(c.arena, &.{ c.fixture.dir, c.fixture.name });
     }
 
-    /// `<dir>/<stem>.<ext>`, next to the fixture.
+    /// `<dir>/<stem>.<ext>` next to the fixture, or
+    /// `<dir>/<project>/_expected.<ext>` inside a project (checker.md §3).
     fn goldenPath(c: Case, ext: []const u8) ![]const u8 {
+        if (c.fixture.project) {
+            return std.fmt.allocPrint(c.arena, "{s}/{s}/_expected.{s}", .{ c.fixture.dir, c.fixture.name, ext });
+        }
         const stem = c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
         return std.fmt.allocPrint(c.arena, "{s}/{s}.{s}", .{ c.fixture.dir, stem, ext });
     }
@@ -182,6 +214,8 @@ const Case = struct {
             .parse_bad => try c.bad(),
             .fmt => try c.format(),
             .bir => try c.lowering(),
+            .check_good => try c.checkGood(),
+            .check_bad => try c.bad(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
                 const has_ast = c.goldenExists("ast");
@@ -275,6 +309,23 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=bir", try c.fixturePath() });
         try expectExit(0, r);
         try c.expectGolden("bir", r.stdout);
+    }
+
+    /// A module — or a project — that resolves clean: no diagnostic at
+    /// all, and its interface(s) are the golden (checker.md §3). Both
+    /// halves matter: the exit code says the names resolved, the golden
+    /// says what the module now offers its dependents.
+    fn checkGood(c: Case) !void {
+        const path = try c.fixturePath();
+        const checked = try c.compiler(&.{ "check", path });
+        try expectExit(0, checked);
+        if (checked.stderr.len != 0) {
+            std.debug.print("{s}: a check/good fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        const r = try c.compiler(&.{ "dump", "--stage=interface", path });
+        try expectExit(0, r);
+        try c.expectGolden("iface", r.stdout);
     }
 
     /// Compare `actual` (fully materialised by the caller) with the golden,

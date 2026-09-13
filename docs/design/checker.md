@@ -37,7 +37,10 @@ beni dump --stage=types <file>           every top-level declaration with its in
 | `--core-root=<dir>` | use this directory as the core package instead of the embedded one; for developing core | embedded |
 
 `check` on a directory is the project: every `.beni` under it is a module of the package
-`app`; core is the package `core`. Imports resolve in `app` first, then `core`. A module of
+`app`; core is the package `core`. **A source file at a core module's path is that core
+module** — the bytes on disk win and the package stays `core`, so `beni check core` compiles the
+library as itself with no flag. `core/` is therefore a reserved directory name at the source
+root. Imports resolve in `app` first, then `core`. A module of
 `app` named like a core module shadows it for the whole project — no diagnostic, same as a
 top-level name shadowing a prelude name. Exit codes and streams are unchanged.
 
@@ -81,8 +84,18 @@ until M4 caches it. `--core-root` reads the directory instead.
 2. **Lower** every module per file on the workers (existing). Each Bir's import table names
    modules by symbol.
 3. **Build the graph** serially: for each module, for each explicit import, look up
-   `(app, name)` then `(core, name)`. Missing → `unknown_module` at the import. Prelude imports
-   are edges to core. Import cycles → `import_cycle` reported once per cycle on the lexically
+   `(app, name)` then `(core, name)`. Missing → `unknown_module` at the import. A **prelude row
+   is an edge only when the module actually resolves a name through it** — lowering records that
+   in `refs`, so the information is already there. Giving every file all seven prelude rows
+   unconditionally makes the standard library cyclic with itself before either module is read
+   (`Basics → List → Basics`), which is why the edge is conditional; an explicit `import` is
+   always an edge, whether or not anything uses it.
+
+   **The prelude always targets package `core`**, never an app module of the same name. The
+   prelude is a constant inside the compiler (`language.md` Appendix A), so an app module called
+   `Basics.beni` shadows core's `Basics` for *explicit* imports only and leaves `Int`, `True` and
+   the rest resolving as always. Without this rule a user file with an unlucky name silently
+   disables the whole prelude. Import cycles → `import_cycle` reported once per cycle on the lexically
    first module of the cycle, naming the whole cycle in order; the modules of a cycle are
    marked poisoned: their declarations get `error` types and no further diagnostics.
    A module resolves against **itself** like any other: the operators of `language.md` §6.5

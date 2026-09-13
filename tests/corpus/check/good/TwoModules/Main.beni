@@ -1,0 +1,9 @@
+-- check/good (project): a two-module project that resolves cleanly, both
+-- ways of naming an imported value — through `exposing` and qualified.
+-- The golden is both interfaces, in path order, so `Main` comes first.
+import Util exposing (helper)
+
+
+pub main : Int
+main =
+    helper (Util.helper 1)

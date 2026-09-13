@@ -209,11 +209,14 @@ test "--self-profile writes a Chrome trace with a read event per file and the co
     defer w.deinit();
     try w.write("src/Main.beni", "main = 1\n"); // 9 bytes
     try w.write("src/Util.beni", "helper x = x\n"); // 13 bytes
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--jobs=2", "src" });
+    // `check` resolves against the core package, so core's modules would
+    // be files of this run too and every count below would include them.
+    // `--core-root` points it at an empty directory instead: these two
+    // modules name nothing from core, so they check clean without it and
+    // the numbers are exactly the project's. (The directory has to exist,
+    // hence the placeholder; the walk only ever picks up `.beni` files.)
+    try w.write("nocore/PLACEHOLDER", "");
+    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--core-root=nocore", "--jobs=2", "src" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -287,7 +290,11 @@ test "--self-profile records every phase of every file and every counter, exactl
     defer w.deinit();
     const files = [_]struct { path: []const u8, source: []const u8 }{
         .{ .path = "src/A.beni", .source = "main =\n    1\n" },
-        .{ .path = "src/B.beni", .source = "double x =\n    x * 2\n" },
+        // No operator and no prelude name anywhere in these three: `x * 2`
+        // would be a reference to `Basics.mul`, and the point of this
+        // scenario is to state the project's numbers with no core package
+        // mixed into them (see `--core-root=nocore` below).
+        .{ .path = "src/B.beni", .source = "double x =\n    x\n" },
         .{ .path = "src/C.beni", .source = "pub type Color\n    = Red\n    | Green\n" },
     };
     var total_bytes: u64 = 0;
@@ -311,7 +318,8 @@ test "--self-profile records every phase of every file and every counter, exactl
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--jobs=2", "src" });
+    try w.write("nocore/PLACEHOLDER", "");
+    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--core-root=nocore", "--jobs=2", "src" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -337,6 +345,9 @@ test "--self-profile records every phase of every file and every counter, exactl
             insts: ?u64 = null,
             diagnostics: ?u64 = null,
             formatted_bytes: ?u64 = null,
+            modules: ?u64 = null,
+            edges: ?u64 = null,
+            interfaces: ?u64 = null,
             dropped_events: ?u64 = null,
         },
     };
@@ -347,10 +358,10 @@ test "--self-profile records every phase of every file and every counter, exactl
     // Four phase events per file, each naming its own file and carrying
     // that file's size; three serial steps with no file at all.
     var seen: [files.len][4]bool = @splat(@splat(false));
-    var serial: [3]bool = @splat(false);
+    var serial: [5]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
-    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "render" };
-    var counters: [6]?u64 = @splat(null);
+    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "resolve", "render" };
+    var counters: [9]?u64 = @splat(null);
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
             try testing.expectEqualStrings("phase", e.cat.?);
@@ -377,19 +388,24 @@ test "--self-profile records every phase of every file and every counter, exactl
             if (std.mem.eql(u8, e.name, "nodes")) counters[3] = e.args.nodes;
             if (std.mem.eql(u8, e.name, "insts")) counters[4] = e.args.insts;
             if (std.mem.eql(u8, e.name, "diagnostics")) counters[5] = e.args.diagnostics;
+            if (std.mem.eql(u8, e.name, "modules")) counters[6] = e.args.modules;
+            if (std.mem.eql(u8, e.name, "edges")) counters[7] = e.args.edges;
+            if (std.mem.eql(u8, e.name, "interfaces")) counters[8] = e.args.interfaces;
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([3]bool{ true, true, true }, serial);
+    try testing.expectEqual([5]bool{ true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
     // `insts` are the AST and BIR sizes of these three modules, which
     // nothing outside the compiler can derive — they are literals, and a
     // change to either IR's shape is meant to show up here as a number to
     // look at rather than as silence.
-    try testing.expectEqual([6]?u64{ 3, total_bytes, total_tokens, 13, 6, 0 }, counters);
-    try testing.expectEqual(@as(u64, 71), total_bytes);
-    try testing.expectEqual(@as(u64, 19), total_tokens);
+    // `modules`, `edges` and `interfaces` are the M2a additions: three
+    // modules that import nothing, so no edge, and one interface each.
+    try testing.expectEqual([9]?u64{ 3, total_bytes, total_tokens, 11, 3, 0, 3, 0, 3 }, counters);
+    try testing.expectEqual(@as(u64, 67), total_bytes);
+    try testing.expectEqual(@as(u64, 17), total_tokens);
 }
 
 /// The index of `path` in `files`, or null.
@@ -690,7 +706,7 @@ test "dump without a stage is a usage error and does nothing" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
-    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir\n", dump_bad.stderr);
+    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface\n", dump_bad.stderr);
     try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐
@@ -1465,13 +1481,17 @@ test "check --core accepts a foreign declaration that check without it rejects" 
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Basics.beni", "pub foreign add : Int -> Int -> Int\n");
+    // NOT named `Basics`: a module of the app package named like a core
+    // module shadows it for the whole project (checker.md §2), and a file
+    // called `Basics.beni` would therefore shadow the prelude's own home
+    // and make `Int` unresolvable. That rule has its own scenario below.
+    try w.write("Prim.beni", "pub foreign add : Int -> Int -> Int\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const core = try w.run(&.{ "check", "--core", "Basics.beni" });
-    const user = try w.run(&.{ "check", "Basics.beni" });
+    const core = try w.run(&.{ "check", "--core", "Prim.beni" });
+    const user = try w.run(&.{ "check", "Prim.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1483,7 +1503,7 @@ test "check --core accepts a foreign declaration that check without it rejects" 
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
         .code = .foreign_outside_core,
         .severity = .@"error",
-        .span = .{ .file = "Basics.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 16 } },
+        .span = .{ .file = "Prim.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 16 } },
         .title = "FOREIGN OUTSIDE CORE",
         .message = "This `foreign` declaration is outside the core package.\n" ++
             "\n" ++
@@ -1528,4 +1548,390 @@ test "check reports a syntax error and a lowering error from one file in positio
                 "`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
         },
     }), r.diagnostics);
+}
+
+// ---------------------------------------------------------------------------
+// M2a: the module graph, the core package, and cross-module resolution
+// (docs/design/checker.md §4).
+// ---------------------------------------------------------------------------
+
+test "a two-module project resolves cleanly and writes nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Util.beni",
+        \\pub double : Int -> Int
+        \\double n =
+        \\    n * 2
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Util exposing (double)
+        \\
+        \\
+        \\pub main : Int
+        \\main =
+        \\    double (Util.double 21)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // `check` produces no artifact: the sources are exactly as written.
+    try testing.expectEqualStrings("pub double : Int -> Int\ndouble n =\n    n * 2\n", try w.read("src/Util.beni"));
+}
+
+test "unknown_module names the import that cannot be found" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", "import Json.Decode\n\n\npub x : Int\nx =\n    1\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unknown_module,
+        .severity = .@"error",
+        .span = .{ .file = "src/Main.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 19 } },
+        .title = "UNKNOWN MODULE",
+        .message = "I cannot find a module named `Json.Decode`.\n" ++
+            "\n" ++
+            "I looked in this project and in the core package. Check the spelling, or check\n" ++
+            "that a file named `Json.Decode.beni` exists under the source root.",
+    }}), r.diagnostics);
+}
+
+test "import_cycle is one diagnostic on the first module, naming the whole cycle" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/A.beni", "import B exposing (b)\n\n\npub a : Int\na =\n    b\n");
+    try w.write("src/B.beni", "import C exposing (c)\n\n\npub b : Int\nb =\n    c\n");
+    try w.write("src/C.beni", "import A exposing (a)\n\n\npub c : Int\nc =\n    a\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .import_cycle,
+        .severity = .@"error",
+        .span = .{ .file = "src/A.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 9 } },
+        .title = "IMPORT CYCLE",
+        .message = "These modules import each other in a circle:\n" ++
+            "\n" ++
+            "    A → B → C → A\n" ++
+            "\n" ++
+            "Beni compiles modules in dependency order, so a circle has no place to start.\n" ++
+            "Move what they share into a module of its own and have both import that.",
+    }}), r.diagnostics);
+}
+
+test "unknown_import_name and private_name are different messages for different causes" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Util.beni", "secret : Int\nsecret =\n    1\n");
+    try w.write("src/Main.beni", "import Util\n\n\npub a : Int\na =\n    Util.secret\n\n\npub b : Int\nb =\n    Util.absent\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .private_name,
+            .severity = .@"error",
+            .span = .{ .file = "src/Main.beni", .start = .{ .line = 6, .col = 5 }, .end = .{ .line = 6, .col = 16 } },
+            .title = "PRIVATE NAME",
+            .message = "`secret` is not public in `Util`.\n" ++
+                "\n" ++
+                "It is declared there, but without `pub`, so only that module can use it. Add\n" ++
+                "`pub` to its declaration if it is meant to be part of the interface.",
+        },
+        .{
+            .code = .unknown_import_name,
+            .severity = .@"error",
+            .span = .{ .file = "src/Main.beni", .start = .{ .line = 11, .col = 5 }, .end = .{ .line = 11, .col = 16 } },
+            .title = "UNKNOWN IMPORT NAME",
+            .message = "`Util` does not expose `absent`.\n" ++
+                "\n" ++
+                "Check the spelling, or check that the declaration in `Util` is marked `pub`.",
+        },
+    }), r.diagnostics);
+}
+
+test "opaque_constructor: the type resolves and its constructor does not" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Tree.beni", "pub opaque type Tree\n    = Leaf\n");
+    try w.write("src/Main.beni", "import Tree exposing (Tree)\n\n\npub mine : Tree\nmine =\n    Tree.Leaf\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .opaque_constructor,
+        .severity = .@"error",
+        .span = .{ .file = "src/Main.beni", .start = .{ .line = 6, .col = 5 }, .end = .{ .line = 6, .col = 14 } },
+        .title = "OPAQUE CONSTRUCTOR",
+        .message = "`Leaf` is a constructor of `Tree.Tree`, which is opaque.\n" ++
+            "\n" ++
+            "`pub opaque type` exposes the type's NAME and hides how it is built, so only\n" ++
+            "`Tree` may write its constructors. Use the functions it exposes instead.",
+    }}), r.diagnostics);
+}
+
+test "wrong_type_arity counts the arguments a type constructor was given" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", "pub x : Maybe\nx =\n    Nothing\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .wrong_type_arity,
+        .severity = .@"error",
+        .span = .{ .file = "src/Main.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 14 } },
+        .title = "WRONG TYPE ARITY",
+        .message = "`Maybe` takes 1 type argument, but here it has 0.\n" ++
+            "\n" ++
+            "Every type constructor is fully applied — beni has no higher-kinded types — so\n" ++
+            "the number has to match the declaration exactly.",
+    }}), r.diagnostics);
+}
+
+test "recursive_alias points at the alias that starts the cycle" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", "pub type alias Ping =\n    Pong\n\n\npub type alias Pong =\n    Ping\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .recursive_alias,
+        .severity = .@"error",
+        .span = .{ .file = "src/Main.beni", .start = .{ .line = 1, .col = 16 }, .end = .{ .line = 1, .col = 20 } },
+        .title = "RECURSIVE ALIAS",
+        .message = "The type alias `Ping` refers to itself.\n" ++
+            "\n" ++
+            "An alias is a spelling for the type it names, so one that mentions itself —\n" ++
+            "directly, or through other aliases — has no expansion. Make it a `type` with a\n" ++
+            "constructor instead; that is what gives recursion somewhere to stop.",
+    }}), r.diagnostics);
+}
+
+test "duplicate_module: two roots, one module name, reported on the second path" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("a/M.beni", "pub x : Int\nx =\n    1\n");
+    try w.write("b/M.beni", "pub y : Int\ny =\n    2\n");
+
+    const r = try w.run(&.{ "check", "a", "b" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .duplicate_module,
+        .severity = .@"error",
+        .span = .{ .file = "b/M.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 4 } },
+        .title = "DUPLICATE MODULE",
+        .message = "Two files claim the module name `M`.\n" ++
+            "\n" ++
+            "The other one is `a/M.beni`. A module's name comes from its path, so two paths that\n" ++
+            "differ only outside the source root collide. Move or rename one of them.",
+    }}), r.diagnostics);
+}
+
+test "equatable is core's alone: the marker and the modifier outside core" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", "pub eq : equatable a -> a -> Bool\neq x y =\n    True\n");
+
+    const r = try w.run(&.{ "check", "src" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .equatable_outside_core,
+        .severity = .@"error",
+        .span = .{ .file = "src/Main.beni", .start = .{ .line = 1, .col = 10 }, .end = .{ .line = 1, .col = 19 } },
+        .title = "EQUATABLE OUTSIDE CORE",
+        .message = "The `equatable` marker is core's alone.\n" ++
+            "\n" ++
+            "It says that a type may be compared with `==`, and only the core package\n" ++
+            "states that by hand; your own annotations get the mark by inference. Delete\n" ++
+            "it — `a` on its own means the same thing here.",
+    }}), r.diagnostics);
+}
+
+test "equatable_not_first_occurrence: the prefix marks the variable, once" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // Not `Basics.beni`: a module of the app package named like a core
+    // module shadows it (checker.md §2), and `Bool` would then be
+    // unresolvable. The declared `Verdict` keeps this about the marker.
+    try w.write("Eq.beni", "pub type Verdict\n    = Yes\n\n\npub foreign eq : equatable a -> equatable a -> Verdict\n");
+
+    const r = try w.run(&.{ "check", "--core", "Eq.beni" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .equatable_not_first_occurrence,
+        .severity = .@"error",
+        .span = .{ .file = "Eq.beni", .start = .{ .line = 5, .col = 33 }, .end = .{ .line = 5, .col = 42 } },
+        .title = "EQUATABLE MARKER REPEATED",
+        .message = "This type variable is already marked `equatable`.\n" ++
+            "\n" ++
+            "The prefix marks the VARIABLE, at its first occurrence, not the argument it\n" ++
+            "stands in front of: `eq : equatable a -> a -> a -> Bool` is a function of two\n" ++
+            "arguments whose type is one marked `a`. Write the marker once.",
+    }, r.diagnostics[0]);
+}
+
+test "dump --stage=interface prints a module's public face, exactly" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Shapes.beni",
+        \\pub type alias Point =
+        \\    { x : Int, y : Int }
+        \\
+        \\
+        \\pub opaque type Handle
+        \\    = Handle Int
+        \\
+        \\
+        \\pub type Shape a
+        \\    = Circle a
+        \\    | Rect a a
+        \\    | Empty
+        \\
+        \\
+        \\pub area : Shape Int -> Int
+        \\area shape =
+        \\    0
+        \\
+        \\
+        \\hidden : Int
+        \\hidden =
+        \\    1
+        \\
+    );
+
+    const r = try w.runWith(&.{ "dump", "--stage=interface", "src/Shapes.beni" }, .{ .raw_diagnostics = true });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings(
+        \\module Shapes
+        \\  opaque type Handle
+        \\  alias Point
+        \\    Point/2
+        \\  type Shape a
+        \\    Circle/1
+        \\    Rect/2
+        \\    Empty
+        \\  value area
+        \\
+    , r.stdout);
+}
+
+test "dump --stage=interface on a directory prints every module in path order" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Util.beni", "pub helper : Int -> Int\nhelper n =\n    n\n");
+    try w.write("src/Main.beni", "import Util exposing (helper)\n\n\npub main : Int\nmain =\n    helper 1\n");
+
+    const r = try w.runWith(&.{ "dump", "--stage=interface", "src" }, .{ .raw_diagnostics = true });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings("module Main\n  value main\nmodule Util\n  value helper\n", r.stdout);
+}
+
+test "--core-root replaces the embedded core package" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A core of one module that has `Int` but not `String`: a project that
+    // names `Int` checks, and one that names `String` cannot — which is
+    // only true if the flag really replaced the embedded copy rather than
+    // adding to it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("mycore/Basics.beni", "pub foreign type Int\n");
+    try w.write("src/Main.beni", "pub x : Int\nx =\n    1\n");
+    try w.write("other/Main.beni", "pub s : String\ns =\n    \"hi\"\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const ok = try w.run(&.{ "check", "--core-root=mycore", "src" });
+    const missing = try w.run(&.{ "check", "--core-root=mycore", "other" });
+    const embedded = try w.run(&.{ "check", "other" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), ok.exit_code);
+    try testing.expectEqualStrings("", ok.stderr);
+    try testing.expectEqual(@as(u8, 1), missing.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unknown_import_name,
+        .severity = .@"error",
+        .span = .{ .file = "other/Main.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 15 } },
+        .title = "UNKNOWN IMPORT NAME",
+        .message = "`Basics` does not expose `String`.\n" ++
+            "\n" ++
+            "Check the spelling, or check that the declaration in `Basics` is marked `pub`.",
+    }}), missing.diagnostics);
+    // The same project against the real core package is clean, so the
+    // difference above is the flag and nothing else.
+    try testing.expectEqual(@as(u8, 0), embedded.exit_code);
+    try testing.expectEqualStrings("", embedded.stderr);
+}
+
+test "a file under --core-root may use foreign without --core" {
+    // `--core` says "the files I named are core sources"; the PACKAGE says
+    // the same thing for everything the core root holds, which is why
+    // `beni check core` needs no flag (checker.md §3).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("mycore/Basics.beni", "pub foreign type Int\n\n\npub equatable foreign type Float\n");
+    try w.write("src/Main.beni", "pub x : Int\nx =\n    1\n");
+
+    const r = try w.run(&.{ "check", "--core-root=mycore", "src" });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+}
+
+test "resolution is identical at --jobs=1 and --jobs=8, on both streams" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Util.beni", "pub helper : Int -> Int\nhelper n =\n    n\n");
+    try w.write("src/Broken.beni", "import Nope\n\n\npub x : Int\nx =\n    Util.absent\n");
+    try w.write("src/Main.beni", "import Util exposing (helper)\n\n\npub main : Int\nmain =\n    helper 1\n");
+
+    const one = try w.run(&.{ "check", "--jobs=1", "src" });
+    const eight = try w.run(&.{ "check", "--jobs=8", "src" });
+
+    try testing.expectEqual(one.exit_code, eight.exit_code);
+    try testing.expectEqualStrings(one.stdout, eight.stdout);
+    try testing.expectEqualStrings(one.stderr, eight.stderr);
+    try testing.expectEqual(@as(usize, 2), one.diagnostics.len);
 }

@@ -1,0 +1,6 @@
+import C exposing (c)
+
+
+pub b : Int
+b =
+    c + 1

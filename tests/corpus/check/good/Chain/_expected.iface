@@ -1,0 +1,6 @@
+module A
+  value a
+module B
+  value b
+module C
+  value c

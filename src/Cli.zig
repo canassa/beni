@@ -8,7 +8,7 @@
 //! ```
 //! beni check  [options] <path>...
 //! beni fmt    [options] [--check] [--stdout] <path>...
-//! beni dump   [options] --stage=<tokens|ast|bir> [--positions] <file>
+//! beni dump   [options] --stage=<tokens|ast|bir|interface> [--positions] <file>
 //! beni version
 //! beni help
 //! ```
@@ -20,9 +20,9 @@ pub const usage =
     \\usage: beni <command> [options] [<path>...]
     \\
     \\commands:
-    \\  check    parse and lower every module; report diagnostics
+    \\  check    parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
-    \\  dump     print one file's IR as text (--stage=tokens|ast|bir)
+    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface)
     \\  version  print the version
     \\  help     print this text
     \\
@@ -32,13 +32,15 @@ pub const usage =
     \\  --jobs=<n>                worker threads (default: logical CPUs, capped at 4x that); output is identical for every n
     \\  --root=<dir>              the source root module names are derived from
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
+    \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
     \\
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
     \\  --stdout                  print the formatted text instead of writing it
     \\
     \\dump options:
-    \\  --stage=tokens|ast|bir    which representation to print (required)
+    \\  --stage=tokens|ast|bir|interface
+    \\                            which representation to print (required)
     \\  --positions               include source positions
     \\
     \\exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O failure
@@ -46,7 +48,7 @@ pub const usage =
 ;
 
 pub const DiagnosticsFormat = enum { text, json };
-pub const Stage = enum { tokens, ast, bir };
+pub const Stage = enum { tokens, ast, bir, interface };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -57,6 +59,9 @@ pub const Common = struct {
     root: ?[]const u8 = null,
     /// `--core`: the files are the core package, where `foreign` is legal.
     core: bool = false,
+    /// `--core-root=<dir>`: read core from there instead of the embedded
+    /// copy (checker.md §2).
+    core_root: ?[]const u8 = null,
 };
 
 pub const Check = struct {
@@ -199,6 +204,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
         common.core = true;
         return null;
     }
+    if (std.mem.eql(u8, name, "--core-root")) {
+        const v = value orelse return needsValue(name, "<dir>");
+        if (v.len == 0) return needsValue(name, "<dir>");
+        common.core_root = v;
+        return null;
+    }
     return Usage.init("beni: unknown option '{s}'; run 'beni help' for usage", .{name});
 }
 
@@ -280,9 +291,9 @@ const DumpSpecific = struct {
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--stage")) {
-            const v = value orelse return needsValue(name, "tokens|ast|bir");
+            const v = value orelse return needsValue(name, "tokens|ast|bir|interface");
             self.stage = std.meta.stringToEnum(Stage, v) orelse
-                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast or bir)", .{v});
+                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir or interface)", .{v});
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--positions")) {
             if (value != null) return noValue(name);
@@ -297,7 +308,9 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     var s: Scanner(DumpSpecific) = .{};
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
-    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir", .{}) };
+    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface", .{}) };
+    // `--stage=interface` also takes a directory (the whole project's
+    // interfaces, checker.md §3); either way it is one path.
     if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
@@ -364,9 +377,9 @@ test "missing and unknown subcommand" {
 test "check: paths and every common option" {
     try expectCommand(.{ .check = .{ .paths = &.{"src"} } }, &.{ "check", "src" });
     try expectCommand(.{ .check = .{
-        .common = .{ .diagnostics = .json, .self_profile = "trace.json", .jobs = 4, .root = "src", .core = true },
+        .common = .{ .diagnostics = .json, .self_profile = "trace.json", .jobs = 4, .root = "src", .core = true, .core_root = "core" },
         .paths = &.{ "src", "tests/Main.beni" },
-    } }, &.{ "check", "--diagnostics=json", "src", "--self-profile=trace.json", "--jobs=4", "--root=src", "--core", "tests/Main.beni" });
+    } }, &.{ "check", "--diagnostics=json", "src", "--self-profile=trace.json", "--jobs=4", "--root=src", "--core", "--core-root=core", "tests/Main.beni" });
     // `--` ends options; a lone `-` is a path.
     try expectCommand(.{ .check = .{ .paths = &.{ "--jobs=9", "-" } } }, &.{ "check", "--", "--jobs=9", "-" });
 }
@@ -384,6 +397,7 @@ test "check: usage errors" {
     try expectUsage("beni: option '--root' needs a value: --root=<dir>", &.{ "check", "--root=", "src" });
     try expectUsage("beni: option '--self-profile' needs a value: --self-profile=<path>", &.{ "check", "--self-profile", "src" });
     try expectUsage("beni: option '--core' does not take a value", &.{ "check", "--core=1", "src" });
+    try expectUsage("beni: option '--core-root' needs a value: --core-root=<dir>", &.{ "check", "--core-root=", "src" });
     // `--check` belongs to fmt only.
     try expectUsage("beni: unknown option '--check'; run 'beni help' for usage", &.{ "check", "--check", "src" });
 }
@@ -411,16 +425,17 @@ test "dump: stage, positions, exactly one file" {
         .file = "src/Main.beni",
     } }, &.{ "dump", "src/Main.beni", "--positions", "--core", "--root=src", "--stage=tokens" });
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
-    try expectUsage("beni: dump needs --stage=tokens|ast|bir", &.{ "dump", "Main.beni" });
-    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir", &.{ "dump", "--stage", "Main.beni" });
-    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast or bir)", &.{ "dump", "--stage=cst", "Main.beni" });
+    try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
+    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface", &.{ "dump", "Main.beni" });
+    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface", &.{ "dump", "--stage", "Main.beni" });
+    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir or interface)", &.{ "dump", "--stage=cst", "Main.beni" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast", "A.beni", "B.beni" });
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
 }
 
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--stage", "--positions" }) |word| {
+    for ([_][]const u8{ "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--stage", "--positions", "interface" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
 }

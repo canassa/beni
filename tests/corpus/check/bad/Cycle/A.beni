@@ -1,0 +1,10 @@
+-- check/bad (project): `import_cycle`. Three modules in a ring produce ONE
+-- diagnostic, on the lexically first module of the cycle, naming the whole
+-- cycle in order — not one per module and not one per edge. The members
+-- are poisoned, so nothing else in them is reported either.
+import B exposing (b)
+
+
+pub a : Int
+a =
+    b

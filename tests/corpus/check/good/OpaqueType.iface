@@ -1,0 +1,4 @@
+module OpaqueType
+  opaque type Counter
+  value bump
+  value zero

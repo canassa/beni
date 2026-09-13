@@ -14,7 +14,15 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `parse/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail; the **whole** diagnostic list is the golden |
 | `fmt/` | `fmt --stdout` | `<name>.expected` | formatter output; `.expected` must be a fixed point and parse to the same AST as the input |
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
+| `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
+| `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
+
+The two `check/` kinds also take a **directory** as one fixture: every
+`.beni` under it is a module of one project, and the golden is
+`<name>/_expected.iface` or `<name>/_expected.diag`. Cross-module
+resolution needs more than one module to exist, so that is where imports,
+cycles and interfaces are actually tested (`docs/design/checker.md` §3).
 
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).

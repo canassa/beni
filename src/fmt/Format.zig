@@ -283,6 +283,12 @@ const Measurer = struct {
     /// stack on top and shrink back).
     stack: std.ArrayList(u32) = .empty,
 
+    /// The first token a declaration occupies: its visibility words in
+    /// source order, else `fallback` (the keyword before the name).
+    fn headerFirst(_: *const Measurer, h: Ast.DeclHeader, fallback: TokenIndex) TokenIndex {
+        return h.pub_token.unwrap() orelse h.opaque_token.unwrap() orelse h.equatable_token.unwrap() orelse fallback;
+    }
+
     fn tokenWidth(m: *const Measurer, t: TokenIndex) u32 {
         return Tokenizer.tokenEnd(m.source, m.tags[t], m.starts[t]) - m.starts[t];
     }
@@ -424,7 +430,14 @@ const Measurer = struct {
                 }
                 m.set(n, no_fit, main, last_tok);
             },
-            .exposed, .type_var, .int, .float, .char, .ident, .ctor, .accessor, .pat_var, .pat_int, .pat_char, .chunk => m.leaf(n),
+            .type_var => {
+                // `equatable a` is two tokens and a space (checker.md
+                // Appendix A); an unmarked variable is the bare leaf.
+                if (tree.typeVarMarker(n)) |marker| {
+                    m.set(n, m.tokenWidth(marker) + 1 + m.tokenWidth(main), marker, main);
+                } else m.leaf(n);
+            },
+            .exposed, .int, .float, .char, .ident, .ctor, .accessor, .pat_var, .pat_int, .pat_char, .chunk => m.leaf(n),
             .annotation => {
                 const a = tree.fullAnnotation(n);
                 try m.measure(a.type_expr);
@@ -457,12 +470,12 @@ const Measurer = struct {
                 const f = tree.fullForeignValue(n);
                 try m.measure(f.type_expr);
                 const pub_width: u32 = if (f.header.pub_token != .none) 4 else 0;
-                m.set(n, pub_width + 8 + m.tokenWidth(f.name) + 3 +| m.w(f.type_expr), f.header.pub_token.unwrap() orelse main - 1, m.last(f.type_expr));
+                m.set(n, pub_width + 8 + m.tokenWidth(f.name) + 3 +| m.w(f.type_expr), m.headerFirst(f.header, main - 1), m.last(f.type_expr));
             },
             .foreign_type => {
                 const f = tree.fullForeignType(n);
                 const last_tok = if (f.params.len == 0) main else f.params[f.params.len - 1];
-                m.set(n, no_fit, f.header.pub_token.unwrap() orelse main - 2, last_tok);
+                m.set(n, no_fit, m.headerFirst(f.header, main - 2), last_tok);
             },
             .type_con => try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
             .type_fn => {
@@ -1019,6 +1032,10 @@ const Printer = struct {
             try p.tok(t);
             try p.space();
         }
+        if (h.equatable_token.unwrap()) |t| {
+            try p.tok(t);
+            try p.space();
+        }
     }
 
     fn decl(p: *Printer, n: Index) Error!void {
@@ -1569,7 +1586,13 @@ const Printer = struct {
         const tree = p.tree;
         const main = tree.nodeMainToken(n);
         switch (tree.nodeTag(n)) {
-            .type_var => try p.tok(main),
+            .type_var => {
+                if (p.tree.typeVarMarker(n)) |marker| {
+                    try p.tok(marker);
+                    try p.space();
+                }
+                try p.tok(main);
+            },
             .type_con => {
                 const c = tree.fullTypeCon(n);
                 // `fits` compares `curCol() + widths[n]` against

@@ -1,0 +1,17 @@
+-- check/good (core): under `--core`, `foreign` and the `equatable` marker
+-- are legal (language.md §5.4, checker.md Appendix A/B). The interface
+-- records which names are foreign and which types are equatable, so a
+-- `foreign type` with the marker prints `(equatable)` and one without does
+-- not.
+pub equatable foreign type Handle
+
+
+pub foreign type Opaque a
+
+
+pub foreign make : Int -> Handle
+
+
+pub same : Handle -> Handle -> Bool
+same a b =
+    a == b

@@ -1,0 +1,9 @@
+-- check/good (project): A → B → C is a chain, not a cycle. The
+-- topological order is C, B, A, and each module's interface is complete
+-- before the next reads it.
+import B exposing (b)
+
+
+pub a : Int
+a =
+    b + 1

@@ -1,0 +1,8 @@
+-- check/bad (project): a module of the app package named like a core
+-- module SHADOWS it for the whole project, with no diagnostic (checker.md
+-- §2) — and this one does not declare `Int` or `add`, so the prelude names
+-- that live in `Basics` stop resolving. The rule is deliberate; the cost
+-- of it is what this fixture pins.
+pub something : Bool
+something =
+    True

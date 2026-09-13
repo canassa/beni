@@ -1,0 +1,10 @@
+-- check/bad (project): `opaque_constructor`. `pub opaque type` exposes the
+-- type's name and hides how it is built (language.md §5.1), so the TYPE
+-- resolves and the constructor does not — the two lines below are the two
+-- halves of that rule.
+import Tree exposing (Tree, Leaf)
+
+
+pub mine : Tree
+mine =
+    Leaf

@@ -89,6 +89,8 @@ pub const Code = enum {
     shadows_import,
     duplicate_field,
     foreign_outside_core,
+    equatable_outside_core,
+    equatable_not_first_occurrence,
     unbound_variable,
     unbound_constructor,
     unbound_type,
@@ -99,6 +101,15 @@ pub const Code = enum {
     duplicate_pattern_variable,
     duplicate_type_parameter,
     unbound_type_variable,
+    // M2a (checker.md §8.1): the module graph and cross-module resolution.
+    unknown_module,
+    duplicate_module,
+    import_cycle,
+    unknown_import_name,
+    private_name,
+    opaque_constructor,
+    wrong_type_arity,
+    recursive_alias,
     internal,
 };
 
@@ -143,6 +154,8 @@ pub fn title(code: Code) []const u8 {
         .shadows_import => "SHADOWS IMPORT",
         .duplicate_field => "DUPLICATE FIELD",
         .foreign_outside_core => "FOREIGN OUTSIDE CORE",
+        .equatable_outside_core => "EQUATABLE OUTSIDE CORE",
+        .equatable_not_first_occurrence => "EQUATABLE MARKER REPEATED",
         .unbound_variable => "NAMING ERROR",
         .unbound_constructor => "UNKNOWN CONSTRUCTOR",
         .unbound_type => "UNKNOWN TYPE",
@@ -153,6 +166,14 @@ pub fn title(code: Code) []const u8 {
         .duplicate_pattern_variable => "DUPLICATE PATTERN VARIABLE",
         .duplicate_type_parameter => "DUPLICATE TYPE PARAMETER",
         .unbound_type_variable => "UNBOUND TYPE VARIABLE",
+        .unknown_module => "UNKNOWN MODULE",
+        .duplicate_module => "DUPLICATE MODULE",
+        .import_cycle => "IMPORT CYCLE",
+        .unknown_import_name => "UNKNOWN IMPORT NAME",
+        .private_name => "PRIVATE NAME",
+        .opaque_constructor => "OPAQUE CONSTRUCTOR",
+        .wrong_type_arity => "WRONG TYPE ARITY",
+        .recursive_alias => "RECURSIVE ALIAS",
         .internal => "INTERNAL ERROR",
     };
 }
@@ -178,6 +199,22 @@ pub fn lessThan(_: void, a: Diagnostic, b: Diagnostic) bool {
 /// Sort into emission order. Stable, so equal keys keep production order.
 pub fn sort(diagnostics: []Diagnostic) void {
     std.mem.sort(Diagnostic, diagnostics, {}, lessThan);
+}
+
+/// 1-based line and byte column of `offset` (frontend.md §3.1: column is
+/// `offset - line_starts[line] + 1`). `line_starts` is the tokenizer's table:
+/// `line_starts[0] == 0`, one entry per newline, ascending. An offset at or
+/// past the end of the file lands on the last line.
+pub fn position(line_starts: []const u32, offset: u32) Position {
+    std.debug.assert(line_starts.len > 0);
+    // Largest `l` with `line_starts[l] <= offset`.
+    var lo: usize = 0;
+    var hi: usize = line_starts.len;
+    while (hi - lo > 1) {
+        const mid = lo + (hi - lo) / 2;
+        if (line_starts[mid] <= offset) lo = mid else hi = mid;
+    }
+    return .{ .line = @intCast(lo + 1), .col = offset - line_starts[lo] + 1 };
 }
 
 test "every code has a non-empty title" {
@@ -214,4 +251,16 @@ test "JSON round trip preserves the whole struct" {
     const parsed = try std.json.parseFromSlice(Diagnostic, gpa, text, .{});
     defer parsed.deinit();
     try std.testing.expectEqualDeep(original, parsed.value);
+}
+
+test "position: binary search over the line table, including the last line" {
+    const starts = [_]u32{ 0, 3, 4, 10 };
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 1 }, position(&starts, 0));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 3 }, position(&starts, 2));
+    try std.testing.expectEqualDeep(Position{ .line = 2, .col = 1 }, position(&starts, 3));
+    try std.testing.expectEqualDeep(Position{ .line = 3, .col = 1 }, position(&starts, 4));
+    try std.testing.expectEqualDeep(Position{ .line = 3, .col = 6 }, position(&starts, 9));
+    try std.testing.expectEqualDeep(Position{ .line = 4, .col = 1 }, position(&starts, 10));
+    try std.testing.expectEqualDeep(Position{ .line = 4, .col = 91 }, position(&starts, 100));
+    try std.testing.expectEqualDeep(Position{ .line = 1, .col = 8 }, position(&.{0}, 7));
 }

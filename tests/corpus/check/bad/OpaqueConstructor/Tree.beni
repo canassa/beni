@@ -1,0 +1,8 @@
+pub opaque type Tree
+    = Leaf
+    | Branch Tree Tree
+
+
+pub leaf : Tree
+leaf =
+    Leaf

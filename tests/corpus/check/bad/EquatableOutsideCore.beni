@@ -1,0 +1,10 @@
+-- check/bad: `equatable_outside_core`. The marker is the one spelling in
+-- the language user code may not write (checker.md Appendix B): once on a
+-- type variable, once as a declaration modifier. Note the `foreign` error
+-- rides along, which is the same rule from the other side.
+pub eq : equatable a -> a -> a -> Bool
+eq a b =
+    True
+
+
+pub equatable foreign type Handle
