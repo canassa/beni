@@ -115,16 +115,26 @@ same name — already specified in `language.md` §5.4 and load-bearing for §7 
 Three checks run at build time, and all three are things Elm does not do:
 
 1. **The type must be one of exactly two shapes.** Either (a) a total pure function over
-   already-admitted types, or (b) an effect value — `Task e a`, `Cmd msg`, `Sub msg`. Nothing else.
-   The dangerous shape is a `foreign` that is neither: `foreign now : Float` would break dead-code
-   elimination, common-subexpression reasoning, `lazy` chunk assignment and M4's split between a
-   declaration's type and its value. The compiler cannot verify *which* it is, but it can verify the
-   type, and the type is what the rest of the pipeline reasons from. All 65 of core's current
-   foreign values are shape (a); every capability in §6 is shape (b). `Debug.log` is the one
-   deliberate violation, as it is in Elm.
+   already-admitted types, or (b) an effect value — `Task e a`, `Cmd msg`, `Sub msg`. The dangerous
+   shape is a `foreign` that is neither: `foreign now : Float` would break dead-code elimination,
+   common-subexpression reasoning, `lazy` chunk assignment and M4's split between a declaration's
+   type and its value.
+
+   **Corrected in M3a, twice.** An earlier draft said "all 65 of core's foreign values are shape
+   (a)", which is false: `Basics.pi` and `Basics.e` are constants, not functions, and the rule as
+   written rejected core itself. Worse, the rule is **unenforceable as stated** — `pi : Float` is
+   indistinguishable by type from the `now : Float` it exists to refuse, and the type is all the
+   compiler has. What the compiler actually checks is the property it *can*: a function, or a value
+   of a variable-free type. That still refuses `foreign anything : a` and `foreign xs : List a`,
+   and it is weaker than this section originally advertised. The rest is the recipe in §4.1 and
+   review, not a check. `Debug.log` is the one deliberate violation, as it is in Elm.
 2. **The sibling file must export exactly the declared names** — no more, no fewer.
 3. **The sibling file's references must be covered by its own imports.** §7.1 explains why this is
-   what keeps elimination declaration-granular.
+   what keeps elimination declaration-granular. **This check is lexical and deliberately
+   approximate**: doing it exactly needs a JavaScript parser, which is the dependency the wall
+   exists to avoid. It catches what it exists for — a sibling reaching for a host global — and
+   nothing finer. The free set is ECMAScript's intrinsics plus the web-standard common set of
+   §5.1, derived from that section rather than from taste.
 
 ### 4.1 The recipe for privileged code, written down and tested
 
@@ -154,6 +164,17 @@ absence produced the bug above, in the codebase that invented the wall.
 
 **`main` is a platform-owned opaque `Program`.** Its type is a platform fact, so M3 resolves it per
 platform rather than hardcoding one, and a platform may offer more than one entry point.
+
+**`main` must carry an annotation** — a language rule M3a had to introduce. Without one the checker
+infers something and the build cannot tell whether it is this platform's `Program`; with one, the
+checker has already proved the body matches, so comparing the annotation is a complete check that
+costs no inference.
+
+**A platform declares its output shape with two manifest keys**: `program`, the module-qualified
+opaque type `main` must have, and `runtime`, the JavaScript file whose `run` export receives
+`main`'s value. That is the smallest thing that is a real declaration rather than a hardcoded
+special case, and it is why a Bun or Deno platform needs no compiler change. Pin any addition here
+before B4 invents a second mechanism.
 
 Anything the platform manages is handed to `init` as a value **no other code can construct** — the
 unforgeable-capability trick. A user cannot fabricate a database handle or a socket; they can only

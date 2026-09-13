@@ -173,12 +173,21 @@ A platform declares its output shape (`boundary.md` §5.2) — what the artifact
 §9.3 keeps currying **on the condition** that saturated calls at statically known arity become
 direct calls. That condition is now a deliverable with a number attached.
 
-- Every function of arity *n* carries its arity so higher-order code can check it.
+**M3a found a better scheme than §9.3 specified, and it removes the adapter entirely.** The arity
+tag exists so a call site can *ask* a value its arity. Make every function-typed value that is in
+flight curried, and the question never arises:
+
 - A call site whose callee's arity is statically known and whose argument count matches emits a
-  **direct n-ary call**. The declaration graph already resolves every top-level reference, so this
+  **direct n-ary call** `f(a, b)`. The declaration graph resolves every top-level reference, so this
   is the overwhelming majority.
-- Everything else — genuinely higher-order positions, partial application — falls back to the tagged
-  adapter, which costs a property load, a comparison and an indirect call.
+- Everything else applies one argument at a time to something that is always curried, with the
+  curry wrapper emitted at the site.
+
+So there is **no arity tag and no `A2`/`F2` adapter** — and therefore no runtime library, which
+matters beyond size: the only hand-written JavaScript in a build stays core's siblings, and a
+codegen helper would have been neither that nor beni. Elm pays roughly 49% on Chrome for routing
+saturated calls through its adapter; we pay nothing, because there is no adapter to route through.
+Indicative direct-call share on the compiler's own output at M3a: about 87%.
 
 **M3a shipped this and dropped the arity tag**, which the other two bullets turn out not to need.
 The tag exists so that a call site can *ask* a value what arity it has, and the only reason to ask
