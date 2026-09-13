@@ -1,0 +1,216 @@
+decl 0: value largest (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  %3 = type_fn %1 -> %2
+  %4 = type_fn %0 -> %3
+  %5 = pat_var local 0 (a)
+  %6 = pat_var local 1 (b)
+  %7 = import_value Basics.max
+  %8 = local 0 (a)
+  %9 = local 1 (b)
+  %10 = call %7 [%8, %9]
+  annotation %4
+  params [%5, %6]
+  body %10
+  locals
+    0 a param %5
+    1 b param %6
+  refs
+    import_type Basics.Int
+    import_value Basics.max
+
+decl 1: value wrap (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Maybe.Maybe
+  %2 = type_import Basics.Int
+  %3 = type_app %1 [%2]
+  %4 = type_fn %0 -> %3
+  %5 = pat_var local 0 (n)
+  %6 = local 0 (n)
+  %7 = int 0
+  %8 = import_value Basics.gt
+  %9 = call %8 [%6, %7]
+  %10 = import_ctor Basics.True
+  %11 = pat_ctor %10 []
+  %12 = import_ctor Maybe.Just
+  %13 = local 0 (n)
+  %14 = call %12 [%13]
+  %15 = branch %11 -> %14
+  %16 = import_ctor Basics.False
+  %17 = pat_ctor %16 []
+  %18 = import_ctor Maybe.Nothing
+  %19 = branch %17 -> %18
+  %20 = case %9 [%15, %19]
+  annotation %4
+  params [%5]
+  body %20
+  locals
+    0 n param %5
+  refs
+    import_type Basics.Int
+    import_type Maybe.Maybe
+    import_value Basics.gt
+    import_ctor Basics.True
+    import_ctor Maybe.Just
+    import_ctor Basics.False
+    import_ctor Maybe.Nothing
+
+decl 2: value describe (annotated)
+  %0 = type_import Result.Result
+  %1 = type_import Basics.String
+  %2 = type_import Basics.Int
+  %3 = type_app %0 [%1, %2]
+  %4 = type_import Basics.String
+  %5 = type_fn %3 -> %4
+  %6 = pat_var local 0 (r)
+  %7 = local 0 (r)
+  %8 = import_ctor Result.Ok
+  %9 = pat_var local 1 (n)
+  %10 = pat_ctor %8 [%9]
+  %11 = qualified String.fromInt
+  %12 = local 1 (n)
+  %13 = call %11 [%12]
+  %14 = branch %10 -> %13
+  %15 = import_ctor Result.Err
+  %16 = pat_var local 2 (message)
+  %17 = pat_ctor %15 [%16]
+  %18 = local 2 (message)
+  %19 = branch %17 -> %18
+  %20 = case %7 [%14, %19]
+  annotation %5
+  params [%6]
+  body %20
+  locals
+    0 r param %6
+    1 n pattern %9
+    2 message pattern %16
+  refs
+    import_type Result.Result
+    import_type Basics.String
+    import_type Basics.Int
+    import_ctor Result.Ok
+    import_value String.fromInt
+    import_ctor Result.Err
+
+decl 3: value ordering (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Order
+  %3 = type_fn %1 -> %2
+  %4 = type_fn %0 -> %3
+  %5 = pat_var local 0 (a)
+  %6 = pat_var local 1 (b)
+  %7 = import_value Basics.compare
+  %8 = local 0 (a)
+  %9 = local 1 (b)
+  %10 = call %7 [%8, %9]
+  %11 = import_ctor Basics.LT
+  %12 = pat_ctor %11 []
+  %13 = import_ctor Basics.LT
+  %14 = branch %12 -> %13
+  %15 = import_ctor Basics.EQ
+  %16 = pat_ctor %15 []
+  %17 = import_ctor Basics.EQ
+  %18 = branch %16 -> %17
+  %19 = import_ctor Basics.GT
+  %20 = pat_ctor %19 []
+  %21 = import_ctor Basics.GT
+  %22 = branch %20 -> %21
+  %23 = case %10 [%14, %18, %22]
+  annotation %4
+  params [%5, %6]
+  body %23
+  locals
+    0 a param %5
+    1 b param %6
+  refs
+    import_type Basics.Int
+    import_type Basics.Order
+    import_value Basics.compare
+    import_ctor Basics.LT
+    import_ctor Basics.EQ
+    import_ctor Basics.GT
+
+decl 4: value qualified (annotated)
+  %0 = type_import List.List
+  %1 = type_import Basics.Int
+  %2 = type_app %0 [%1]
+  %3 = type_import Basics.Int
+  %4 = type_fn %2 -> %3
+  %5 = pat_var local 0 (xs)
+  %6 = qualified List.length
+  %7 = local 0 (xs)
+  %8 = call %6 [%7]
+  %9 = qualified Basics.round
+  %10 = float 1.5
+  %11 = call %9 [%10]
+  %12 = import_value Basics.add
+  %13 = call %12 [%8, %11]
+  %14 = qualified Char.toCode
+  %15 = char 'a'
+  %16 = call %14 [%15]
+  %17 = import_value Basics.add
+  %18 = call %17 [%13, %16]
+  %19 = qualified Debug.log
+  %20 = string "n"
+  %21 = int 0
+  %22 = call %19 [%20, %21]
+  %23 = import_value Basics.add
+  %24 = call %23 [%18, %22]
+  annotation %4
+  params [%5]
+  body %24
+  locals
+    0 xs param %5
+  refs
+    import_type List.List
+    import_type Basics.Int
+    import_value List.length
+    import_value Basics.round
+    import_value Basics.add
+    import_value Char.toCode
+    import_value Debug.log
+
+decl 5: value cached (annotated)
+  %0 = type_import Maybe.Maybe
+  %1 = type_import Basics.Int
+  %2 = type_app %0 [%1]
+  %3 = type_import Basics.Int
+  %4 = type_fn %2 -> %3
+  %5 = pat_var local 0 (m)
+  %6 = qualified Maybe.withDefault
+  %7 = int 0
+  %8 = local 0 (m)
+  %9 = call %6 [%7, %8]
+  %10 = qualified Result.withDefault
+  %11 = int 0
+  %12 = import_ctor Result.Ok
+  %13 = int 1
+  %14 = call %12 [%13]
+  %15 = call %10 [%11, %14]
+  %16 = import_value Basics.add
+  %17 = call %16 [%9, %15]
+  annotation %4
+  params [%5]
+  body %17
+  locals
+    0 m param %5
+  refs
+    import_type Maybe.Maybe
+    import_type Basics.Int
+    import_value Maybe.withDefault
+    import_value Result.withDefault
+    import_ctor Result.Ok
+    import_value Basics.add
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

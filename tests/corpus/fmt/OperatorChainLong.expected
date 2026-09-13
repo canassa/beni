@@ -1,0 +1,15 @@
+-- Formatter: a long boolean chain and a long arithmetic chain on one line
+-- that exceed 100 columns; expected: broken before each operator, one per
+-- line, operands indented 4 under the first.
+valid r =
+    String.length r.name > 0
+        && String.length r.name < 100
+        && r.age >= 0
+        && r.age < 150
+        && not (String.isEmpty r.email)
+
+
+area r =
+    r.width * r.height
+        + r.padding * 2 * (r.width + r.height)
+        + r.margin * 2 * (r.width + r.height + r.padding * 4)

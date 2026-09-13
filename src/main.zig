@@ -5,9 +5,12 @@
 //!
 //! Exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O
 //! failure. stdout carries the product; stderr carries diagnostics and usage
-//! errors and nothing else. `dump` exits 0 even when the file has lexical or
-//! syntax errors: its product is the token stream or the tree, placeholders
-//! and all, and the diagnostics still go to stderr.
+//! errors and nothing else. `dump` exits 0 even when the file has lexical,
+//! syntax or lowering errors: its product is the token stream, the tree or
+//! the lowered file, placeholders and all, and the diagnostics still go to
+//! stderr. `check` and `dump --stage=bir` run the lowering phases;
+//! `--stage=tokens|ast` stop after the parser, so those dumps carry only
+//! the diagnostics of the stages they show.
 
 const std = @import("std");
 const Io = std.Io;
@@ -48,7 +51,7 @@ pub fn main(init: std.process.Init) u8 {
             return 0;
         },
         .check => |check| return runCheck(gpa, io, stderr, check),
-        .fmt => return fail(stderr, "beni: fmt is not implemented yet", .{}),
+        .fmt => |fmt| return beni.fmt.Command.run(gpa, io, stdout, stderr, sessionOptions(fmt.common), fmt),
         .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
     }
 }
@@ -72,10 +75,10 @@ fn sessionOptions(common: Cli.Common) Session.Options {
     };
 }
 
-/// Run the per-file phases over `paths`, mapping the driver's failure to
-/// the exit-2 message. Returns the summary, or the exit code to return.
-fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8) union(enum) { summary: Session.Summary, exit: u8 } {
-    const summary = session.run(paths, Session.parse_phases, stderr) catch |err| switch (err) {
+/// Run `phases` over `paths`, mapping the driver's failure to the exit-2
+/// message. Returns the summary, or the exit code to return.
+fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8, phases: Session.Phases) union(enum) { summary: Session.Summary, exit: u8 } {
+    const summary = session.run(paths, phases, stderr) catch |err| switch (err) {
         error.InputPath => {
             const failure = session.io_failure.?;
             return .{ .exit = fail(stderr, "beni: cannot read '{s}': {t}", .{ failure.path, failure.err }) };
@@ -88,7 +91,7 @@ fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8) 
 fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check) u8 {
     var session = Session.init(gpa, io, sessionOptions(check.common)) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
-    const summary = switch (runSession(&session, stderr, check.paths)) {
+    const summary = switch (runSession(&session, stderr, check.paths, Session.lower_phases)) {
         .summary => |s| s,
         .exit => |code| return code,
     };
@@ -96,13 +99,13 @@ fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check
 }
 
 fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
-    switch (dump.stage) {
-        .tokens, .ast => {},
-        .bir => return fail(stderr, "beni: dump --stage={t} is not implemented yet", .{dump.stage}),
-    }
     var session = Session.init(gpa, io, sessionOptions(dump.common)) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
-    switch (runSession(&session, stderr, &.{dump.file})) {
+    const phases: Session.Phases = switch (dump.stage) {
+        .tokens, .ast => Session.parse_phases,
+        .bir => Session.lower_phases,
+    };
+    switch (runSession(&session, stderr, &.{dump.file}, phases)) {
         .summary => {},
         .exit => |code| return code,
     }
@@ -126,7 +129,13 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
             session.artifacts.ast(file),
             .{ .positions = dump.positions },
         ) catch return 2,
-        .bir => unreachable, // rejected above
+        .bir => beni.dump.bir.write(
+            stdout,
+            session.store.bytes(file),
+            session.artifacts.comments(file),
+            session.artifacts.bir(file),
+            .fromGlobal(&session.interner),
+        ) catch return 2,
     }
     return 0;
 }

@@ -1,0 +1,15 @@
+-- Formatter: `foreign` declarations with odd spacing, a doc block without
+-- a space, an annotation type spread over lines, and missing blank lines;
+-- expected: `pub foreign name : Type` on one line when it fits, doc space
+-- inserted, two blank lines between declarations.
+--| Add two numbers.
+pub foreign add :
+    number
+    -> number
+    -> number
+
+
+foreign type Table k v
+
+
+pub foreign type List a

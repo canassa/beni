@@ -1,0 +1,163 @@
+decl 0: value arith
+  %0 = pat_var local 0 (a)
+  %1 = pat_var local 1 (b)
+  %2 = local 0 (a)
+  %3 = local 1 (b)
+  %4 = import_value Basics.add
+  %5 = call %4 [%2, %3]
+  %6 = local 0 (a)
+  %7 = local 1 (b)
+  %8 = import_value Basics.sub
+  %9 = call %8 [%6, %7]
+  %10 = local 0 (a)
+  %11 = local 1 (b)
+  %12 = import_value Basics.mul
+  %13 = call %12 [%10, %11]
+  %14 = local 0 (a)
+  %15 = local 1 (b)
+  %16 = import_value Basics.fdiv
+  %17 = call %16 [%14, %15]
+  %18 = local 0 (a)
+  %19 = local 1 (b)
+  %20 = import_value Basics.idiv
+  %21 = call %20 [%18, %19]
+  %22 = local 0 (a)
+  %23 = local 1 (b)
+  %24 = import_value Basics.pow
+  %25 = call %24 [%22, %23]
+  %26 = tuple [%5, %9, %13, %17, %21, %25]
+  params [%0, %1]
+  body %26
+  locals
+    0 a param %0
+    1 b param %1
+  refs
+    import_value Basics.add
+    import_value Basics.sub
+    import_value Basics.mul
+    import_value Basics.fdiv
+    import_value Basics.idiv
+    import_value Basics.pow
+
+decl 1: value comparisons
+  %0 = pat_var local 0 (a)
+  %1 = pat_var local 1 (b)
+  %2 = local 0 (a)
+  %3 = local 1 (b)
+  %4 = import_value Basics.eq
+  %5 = call %4 [%2, %3]
+  %6 = local 0 (a)
+  %7 = local 1 (b)
+  %8 = import_value Basics.neq
+  %9 = call %8 [%6, %7]
+  %10 = local 0 (a)
+  %11 = local 1 (b)
+  %12 = import_value Basics.lt
+  %13 = call %12 [%10, %11]
+  %14 = local 0 (a)
+  %15 = local 1 (b)
+  %16 = import_value Basics.gt
+  %17 = call %16 [%14, %15]
+  %18 = local 0 (a)
+  %19 = local 1 (b)
+  %20 = import_value Basics.le
+  %21 = call %20 [%18, %19]
+  %22 = local 0 (a)
+  %23 = local 1 (b)
+  %24 = import_value Basics.ge
+  %25 = call %24 [%22, %23]
+  %26 = tuple [%5, %9, %13, %17, %21, %25]
+  params [%0, %1]
+  body %26
+  locals
+    0 a param %0
+    1 b param %1
+  refs
+    import_value Basics.eq
+    import_value Basics.neq
+    import_value Basics.lt
+    import_value Basics.gt
+    import_value Basics.le
+    import_value Basics.ge
+
+decl 2: value logic
+  %0 = pat_var local 0 (a)
+  %1 = pat_var local 1 (b)
+  %2 = local 0 (a)
+  %3 = local 1 (b)
+  %4 = import_value Basics.and
+  %5 = call %4 [%2, %3]
+  %6 = local 0 (a)
+  %7 = local 1 (b)
+  %8 = import_value Basics.or
+  %9 = call %8 [%6, %7]
+  %10 = tuple [%5, %9]
+  params [%0, %1]
+  body %10
+  locals
+    0 a param %0
+    1 b param %1
+  refs
+    import_value Basics.and
+    import_value Basics.or
+
+decl 3: value sequences
+  %0 = pat_var local 0 (x)
+  %1 = pat_var local 1 (xs)
+  %2 = pat_var local 2 (ys)
+  %3 = local 1 (xs)
+  %4 = local 2 (ys)
+  %5 = import_value Basics.append
+  %6 = call %5 [%3, %4]
+  %7 = local 0 (x)
+  %8 = local 1 (xs)
+  %9 = import_value Basics.cons
+  %10 = call %9 [%7, %8]
+  %11 = tuple [%6, %10]
+  params [%0, %1, %2]
+  body %11
+  locals
+    0 x param %0
+    1 xs param %1
+    2 ys param %2
+  refs
+    import_value Basics.append
+    import_value Basics.cons
+
+decl 4: value negation
+  %0 = pat_var local 0 (x)
+  %1 = local 0 (x)
+  %2 = import_value Basics.negate
+  %3 = call %2 [%1]
+  params [%0]
+  body %3
+  locals
+    0 x param %0
+  refs
+    import_value Basics.negate
+
+decl 5: value asFunction
+  %0 = pat_var local 0 (xs)
+  %1 = qualified List.foldl
+  %2 = import_value Basics.add
+  %3 = int 0
+  %4 = local 0 (xs)
+  %5 = call %1 [%2, %3, %4]
+  params [%0]
+  body %5
+  locals
+    0 xs param %0
+  refs
+    import_value List.foldl
+    import_value Basics.add
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

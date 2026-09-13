@@ -407,7 +407,7 @@ test "check on a file without the .beni extension exits 2" {
     try testing.expectEqualStrings("beni: cannot read 'notes.txt': NotABeniFile\n", r.stderr);
 }
 
-test "fmt and the bir dump parse their arguments but are not implemented yet" {
+test "dump without a stage is a usage error and does nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -418,22 +418,14 @@ test "fmt and the bir dump parse their arguments but are not implemented yet" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const fmt = try w.runWith(&.{ "fmt", "--check", "Main.beni" }, .{ .raw_diagnostics = true });
-    const dump = try w.runWith(&.{ "dump", "--stage=bir", "Main.beni" }, .{ .raw_diagnostics = true });
     const dump_bad = try w.runWith(&.{ "dump", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 2), fmt.exit_code);
-    try testing.expectEqualStrings("beni: fmt is not implemented yet\n", fmt.stderr);
-    try testing.expectEqual(@as(u8, 2), dump.exit_code);
-    try testing.expectEqualStrings("beni: dump --stage=bir is not implemented yet\n", dump.stderr);
-    // Argument validation runs first: a usage error, not "not implemented".
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
     try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir\n", dump_bad.stderr);
-    try testing.expectEqualStrings("", fmt.stdout);
-    try testing.expectEqualStrings("", dump.stdout);
+    try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -841,4 +833,433 @@ test "dump --stage=ast on a broken file exits 0 with placeholders in the tree an
     , r.stdout);
     try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.unexpected_token, r.diagnostics[0].code);
+}
+
+// ---------------------------------------------------------------------------
+// M1c: the formatter (language.md §9, frontend.md §1)
+// ---------------------------------------------------------------------------
+
+const ugly_module =
+    "import Set\n" ++
+    "import Dict\n" ++
+    "x   =   [1,2]\n" ++
+    "y = if x then 1 else 2\n";
+
+const canonical_module =
+    "import Dict\n" ++
+    "import Set\n" ++
+    "\n" ++
+    "\n" ++
+    "x =\n" ++
+    "    [ 1, 2 ]\n" ++
+    "\n" ++
+    "\n" ++
+    "y =\n" ++
+    "    if x then\n" ++
+    "        1\n" ++
+    "    else\n" ++
+    "        2\n";
+
+test "fmt --stdout prints the canonical form of an ugly module and writes nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", ugly_module);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--stdout", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(canonical_module, r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), r.diagnostics);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(ugly_module, try w.read("Main.beni"));
+}
+
+test "fmt --check on a canonical file exits 0 with nothing on either stream" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", canonical_module);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(canonical_module, try w.read("src/Main.beni"));
+}
+
+test "fmt --check on a non-canonical file exits 1, lists exactly that file, and writes nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", ugly_module);
+    try w.write("src/Page/Fine.beni", canonical_module);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "--check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("src/Main.beni\n", r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(ugly_module, try w.read("src/Main.beni"));
+    try testing.expectEqualStrings(canonical_module, try w.read("src/Page/Fine.beni"));
+}
+
+test "fmt in place rewrites the file to its canonical form, and a second run changes nothing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", ugly_module);
+    try w.write("src/Page/Fine.beni", canonical_module);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const first = try w.run(&.{ "fmt", "src" });
+    const after_first = try w.read("src/Main.beni");
+    const second = try w.run(&.{ "fmt", "src" });
+    const after_second = try w.read("src/Main.beni");
+    const check = try w.run(&.{ "fmt", "--check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    try testing.expectEqualStrings("", first.stdout);
+    try testing.expectEqualStrings("", first.stderr);
+    try testing.expectEqual(@as(u8, 0), second.exit_code);
+    try testing.expectEqualStrings("", second.stdout);
+    try testing.expectEqualStrings("", second.stderr);
+    try testing.expectEqual(@as(u8, 0), check.exit_code);
+    try testing.expectEqualStrings("", check.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(canonical_module, after_first);
+    try testing.expectEqualStrings(canonical_module, after_second);
+    try testing.expectEqualStrings(canonical_module, try w.read("src/Page/Fine.beni"));
+    // The atomic write leaves no temporary file behind: only Main.beni and Page/.
+    var count: usize = 0;
+    var dir = try w.tmp.dir.openDir(w.io, "src", .{ .iterate = true });
+    defer dir.close(w.io);
+    var it = dir.iterate();
+    while (try it.next(w.io)) |_| count += 1;
+    try testing.expectEqual(@as(usize, 2), count);
+}
+
+test "fmt on a file with a syntax error reports the whole diagnostic, prints nothing, and leaves every byte alone" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const broken = "x = [ 1, , 2 ]\ny =   2\n";
+    try w.write("src/Broken.beni", broken);
+    try w.write("src/Main.beni", ugly_module);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const in_place = try w.run(&.{ "fmt", "src" });
+    const after_in_place = try w.read("src/Broken.beni");
+    const to_stdout = try w.run(&.{ "fmt", "--stdout", "src/Broken.beni" });
+    const check = try w.run(&.{ "fmt", "--check", "src/Broken.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const expected_diagnostic: diagnostic.Diagnostic = .{
+        .code = .unexpected_token,
+        .severity = .@"error",
+        .span = .{ .file = "src/Broken.beni", .start = .{ .line = 1, .col = 10 }, .end = .{ .line = 1, .col = 11 } },
+        .title = "UNEXPECTED TOKEN",
+        .message = "I was parsing a list and ran into `,`. I was expecting an expression.",
+    };
+    try testing.expectEqual(@as(u8, 1), in_place.exit_code);
+    try testing.expectEqualStrings("", in_place.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{expected_diagnostic}), in_place.diagnostics);
+    try testing.expectEqual(@as(u8, 1), to_stdout.exit_code);
+    try testing.expectEqualStrings("", to_stdout.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{expected_diagnostic}), to_stdout.diagnostics);
+    try testing.expectEqual(@as(u8, 1), check.exit_code);
+    try testing.expectEqualStrings("", check.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{expected_diagnostic}), check.diagnostics);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(broken, after_in_place);
+    try testing.expectEqualStrings(broken, try w.read("src/Broken.beni"));
+    // The healthy sibling was still formatted by the in-place run.
+    try testing.expectEqualStrings(canonical_module, try w.read("src/Main.beni"));
+}
+
+test "fmt --stdout needs exactly one file" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/A.beni", canonical_module);
+    try w.write("src/B.beni", canonical_module);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "fmt", "--stdout", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("beni: fmt --stdout needs exactly one file\n", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(canonical_module, try w.read("src/A.beni"));
+    try testing.expectEqualStrings(canonical_module, try w.read("src/B.beni"));
+}
+
+// ---------------------------------------------------------------------------
+// M1c: lowering (docs/design/language.md §5–§8, frontend.md §1.2, §8).
+// ---------------------------------------------------------------------------
+
+test "dump --stage=bir shows a pipeline as saturated calls and an operator as a core call" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\total xs =
+        \\    xs |> List.map (\x -> x * 2) |> List.sum
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=bir", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\decl 0: value total
+        \\  %0 = pat_var local 0 (xs)
+        \\  %1 = local 0 (xs)
+        \\  %2 = qualified List.map
+        \\  %3 = pat_var local 1 (x)
+        \\  %4 = local 1 (x)
+        \\  %5 = int 2
+        \\  %6 = import_value Basics.mul
+        \\  %7 = call %6 [%4, %5]
+        \\  %8 = lambda [%3] -> %7
+        \\  %9 = call %2 [%8, %1]
+        \\  %10 = qualified List.sum
+        \\  %11 = call %10 [%9]
+        \\  params [%0]
+        \\  body %11
+        \\  locals
+        \\    0 xs param %0
+        \\    1 x param %3
+        \\  refs
+        \\    import_value List.map
+        \\    import_value Basics.mul
+        \\    import_value List.sum
+        \\
+        \\interface
+        \\
+        \\imports
+        \\  prelude Basics
+        \\  prelude List
+        \\  prelude Maybe
+        \\  prelude Result
+        \\  prelude String
+        \\  prelude Char
+        \\  prelude Debug
+        \\
+    , r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+}
+
+test "check reports an unbound variable with the whole diagnostic" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "x =\n    nowhere\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unbound_variable,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 12 } },
+        .title = "NAMING ERROR",
+        .message = "I cannot find a `nowhere` variable.\n" ++
+            "\n" ++
+            "It is not a local binding, a top-level value of this module, a name from an\n" ++
+            "`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
+    }}), r.diagnostics);
+}
+
+test "check reports a let binding that shadows a parameter" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\f x =
+        \\    let
+        \\        x =
+        \\            1
+        \\    in
+        \\    x
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .shadowing,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 9 }, .end = .{ .line = 3, .col = 10 } },
+        .title = "SHADOWING",
+        .message = "The name `x` is already bound on line 1.\n" ++
+            "\n" ++
+            "Shadowing is not allowed: a binding cannot reuse a name that is in scope, whether\n" ++
+            "from an enclosing binding, a top-level declaration, an `exposing` list or the\n" ++
+            "prelude. Rename one of them.",
+    }}), r.diagnostics);
+}
+
+test "check --core accepts a foreign declaration that check without it rejects" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Basics.beni", "pub foreign add : Int -> Int -> Int\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const core = try w.run(&.{ "check", "--core", "Basics.beni" });
+    const user = try w.run(&.{ "check", "Basics.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), core.exit_code);
+    try testing.expectEqualStrings("", core.stderr);
+    try testing.expectEqual(@as(usize, 0), core.diagnostics.len);
+    try testing.expectEqual(@as(u8, 1), user.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .foreign_outside_core,
+        .severity = .@"error",
+        .span = .{ .file = "Basics.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 16 } },
+        .title = "FOREIGN OUTSIDE CORE",
+        .message = "This `foreign` declaration is outside the core package.\n" ++
+            "\n" ++
+            "`foreign` declares a value or type implemented in JavaScript and is legal only in\n" ++
+            "core, which is built with `--core`. Write the definition in beni instead.",
+    }}), user.diagnostics);
+}
+
+test "check reports a syntax error and a lowering error from one file in position order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "x =\n    [ 1, , 2 ]\n\n\ny =\n    nowhere\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .unexpected_token,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 10 }, .end = .{ .line = 2, .col = 11 } },
+            .title = "UNEXPECTED TOKEN",
+            .message = "I was parsing a list and ran into `,`. I was expecting an expression.",
+        },
+        .{
+            .code = .unbound_variable,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 6, .col = 5 }, .end = .{ .line = 6, .col = 12 } },
+            .title = "NAMING ERROR",
+            .message = "I cannot find a `nowhere` variable.\n" ++
+                "\n" ++
+                "It is not a local binding, a top-level value of this module, a name from an\n" ++
+                "`exposing` list, or a prelude value. Check the spelling, or add it to an import.",
+        },
+    }), r.diagnostics);
 }

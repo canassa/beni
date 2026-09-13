@@ -1,0 +1,141 @@
+decl 0: value parse (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Result.Result
+  %2 = type_import Basics.String
+  %3 = type_import Basics.Int
+  %4 = type_app %1 [%2, %3]
+  %5 = type_fn %0 -> %4
+  %6 = pat_var local 0 (s)
+  %7 = qualified Result.fromMaybe
+  %8 = string "nan"
+  %9 = qualified String.toInt
+  %10 = local 0 (s)
+  %11 = call %9 [%10]
+  %12 = call %7 [%8, %11]
+  annotation %5
+  params [%6]
+  body %12
+  locals
+    0 s param %6
+  refs
+    import_type Basics.String
+    import_type Result.Result
+    import_type Basics.Int
+    import_value Result.fromMaybe
+    import_value String.toInt
+
+decl 1: value both (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Basics.String
+  %2 = type_import Result.Result
+  %3 = type_import Basics.String
+  %4 = type_import Basics.Int
+  %5 = type_app %2 [%3, %4]
+  %6 = type_fn %1 -> %5
+  %7 = type_fn %0 -> %6
+  %8 = pat_var local 0 (a)
+  %9 = pat_var local 1 (b)
+  %10 = import_ctor Result.Ok
+  %11 = top 0 (parse)
+  %12 = local 0 (a)
+  %13 = call %11 [%12]
+  %14 = try %13 (returns from the declaration)
+  %15 = top 0 (parse)
+  %16 = local 1 (b)
+  %17 = call %15 [%16]
+  %18 = try %17 (returns from the declaration)
+  %19 = import_value Basics.add
+  %20 = call %19 [%14, %18]
+  %21 = call %10 [%20]
+  annotation %7
+  params [%8, %9]
+  body %21
+  locals
+    0 a param %8
+    1 b param %9
+  refs
+    import_type Basics.String
+    import_type Result.Result
+    import_type Basics.Int
+    import_ctor Result.Ok
+    top 0 (parse)
+    import_value Basics.add
+
+decl 2: value nested (annotated)
+  %0 = type_import Result.Result
+  %1 = type_import Basics.String
+  %2 = type_import Result.Result
+  %3 = type_import Basics.String
+  %4 = type_import Basics.Int
+  %5 = type_app %2 [%3, %4]
+  %6 = type_app %0 [%1, %5]
+  %7 = type_import Result.Result
+  %8 = type_import Basics.String
+  %9 = type_import Basics.Int
+  %10 = type_app %7 [%8, %9]
+  %11 = type_fn %6 -> %10
+  %12 = pat_var local 0 (r)
+  %13 = import_ctor Result.Ok
+  %14 = local 0 (r)
+  %15 = try %14 (returns from the declaration)
+  %16 = try %15 (returns from the declaration)
+  %17 = call %13 [%16]
+  annotation %11
+  params [%12]
+  body %17
+  locals
+    0 r param %12
+  refs
+    import_type Result.Result
+    import_type Basics.String
+    import_type Basics.Int
+    import_ctor Result.Ok
+
+decl 3: value inLet (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Result.Result
+  %2 = type_import Basics.String
+  %3 = type_import Basics.Int
+  %4 = type_app %1 [%2, %3]
+  %5 = type_fn %0 -> %4
+  %6 = pat_var local 0 (s)
+  %7 = let_def local 1 (twice) [%8] = %17
+  %8 = pat_var local 2 (t)
+  %9 = import_ctor Result.Ok
+  %10 = top 0 (parse)
+  %11 = local 2 (t)
+  %12 = call %10 [%11]
+  %13 = try %12 (returns from let_def %7)
+  %14 = int 2
+  %15 = import_value Basics.mul
+  %16 = call %15 [%13, %14]
+  %17 = call %9 [%16]
+  %18 = local 1 (twice)
+  %19 = local 0 (s)
+  %20 = call %18 [%19]
+  %21 = let [%7] in %20
+  annotation %5
+  params [%6]
+  body %21
+  locals
+    0 s param %6
+    1 twice let %7
+    2 t param %8
+  refs
+    import_type Basics.String
+    import_type Result.Result
+    import_type Basics.Int
+    import_ctor Result.Ok
+    top 0 (parse)
+    import_value Basics.mul
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

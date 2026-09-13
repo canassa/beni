@@ -1,0 +1,24 @@
+-- Formatter: records with no spaces, trailing-delimiter vertical style, a
+-- record update with odd alignment, an empty record with inner spaces;
+-- expected: `{ a = 1, b = 2 }` spacing, leading-delimiter vertical form
+-- when too long, `{}`.
+r =
+    { a = 1, b = 2 }
+
+
+s =
+    { name = "x"
+    , done = False
+    , tags = [ "a", "b" ]
+    }
+
+
+u m =
+    { m
+        | count = m.count + 1
+        , name = ""
+    }
+
+
+emptyRecord =
+    {}

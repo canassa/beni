@@ -1,0 +1,28 @@
+-- Formatter: lists with no spaces, trailing-comma-style line breaks, a long
+-- list of records, an empty list with inner spaces; expected: `[ a, b ]`
+-- when it fits, vertical leading-delimiter form otherwise, `[]`.
+xs =
+    [ 1, 2, 3 ]
+
+
+ys =
+    [ 1
+    , 2
+    , 3
+    ]
+
+
+zs =
+    []
+
+
+rows =
+    [ { a = 1, b = 2 }
+    , { a = 3, b = 4 }
+    , { a = 5, b = 6 }
+    , { a = 7, b = 8 }
+    , { a = 9, b = 10 }
+    , { a = 11, b = 12 }
+    , { a = 13, b = 14 }
+    , { a = 15, b = 16 }
+    ]

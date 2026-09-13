@@ -1,0 +1,30 @@
+-- Already canonical (§9): `let` alone on a line, bindings indented 4
+-- relative to `let`, `in` aligned with `let`, body aligned with `let`, one
+-- blank line between bindings, an annotated binding, a pattern binding, and
+-- a nested `let`.
+total : List Int -> Int
+total xs =
+    let
+        count : Int
+        count =
+            List.length xs
+
+        ( low, high ) =
+            ( List.minimum xs, List.maximum xs )
+
+        spread =
+            case ( low, high ) of
+                ( Just l, Just h ) ->
+                    h - l
+
+                _ ->
+                    0
+
+        scaled =
+            let
+                factor =
+                    2
+            in
+            spread * factor
+    in
+    count + scaled

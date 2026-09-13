@@ -1,0 +1,27 @@
+-- Formatter: string, char and number literals with unusual but valid
+-- spellings — escapes, `\u{…}` with leading zeros, hex with mixed case, an
+-- exponent with `+`, a multiline string with trailing spaces — must be
+-- printed exactly as written (§9: bytes inside a literal never change).
+a =
+    "tab\there \u{0041} \$ \' \"q\""
+
+
+b =
+    '\u{00041}'
+
+
+c =
+    0xDeadBEEF
+
+
+d =
+    1.50e+03
+
+
+e2 =
+    "${ a }${b}"
+
+
+f =
+    \\raw \n ${x}   
+    \\second

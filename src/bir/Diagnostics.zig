@@ -1,0 +1,235 @@
+//! Lowering diagnostics as `Lower` records them (docs/design/language.md
+//! §5.3, §6.2, §6.6, §7, §10), the third twin of `lex/Diagnostics.zig` and
+//! `parse/Diagnostics.zig`.
+//!
+//! An item is a code and two byte ranges: the offending name (`start..end`)
+//! and, for the "already declared / already bound / already imported"
+//! codes, the earlier occurrence (`other_start..other_end`) so the message
+//! can point at both. Lowering formats nothing while it runs; `message`
+//! renders the prose later from `(item, source bytes, line table)`, which
+//! keeps the lowering loop free of text work and lets a cached file's
+//! errors be re-reported without lowering again.
+//!
+//! Register: Elm's — what I found, why it is a problem, what to write
+//! instead. The excerpt with the caret is the renderer's job.
+
+const std = @import("std");
+const diagnostic = @import("diagnostic");
+const LexDiagnostics = @import("../lex/Diagnostics.zig");
+
+/// One lowering error. `[start, end)` is the name or token reported;
+/// `[other_start, other_end)` is the earlier declaration, binding or
+/// import for the duplicate/shadowing codes, and empty otherwise.
+pub const Item = struct {
+    code: diagnostic.Code,
+    start: u32,
+    end: u32,
+    other_start: u32 = 0,
+    other_end: u32 = 0,
+
+    pub fn hasOther(item: Item) bool {
+        return item.other_end > item.other_start;
+    }
+};
+
+/// Write the Elm-style prose for `item`. No trailing newline.
+pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    const text = source[item.start..item.end];
+    const other_line = LexDiagnostics.position(line_starts, item.other_start).line;
+    switch (item.code) {
+        .duplicate_import => try w.print(
+            \\The module `{s}` is imported twice; the first import is on line {d}.
+            \\
+            \\A module is imported once per file. Merge the two imports into one, keeping the
+            \\alias and the `exposing` list you want.
+        , .{ text, other_line }),
+        .duplicate_import_alias => try w.print(
+            \\The alias `{s}` is already used by the import on line {d}.
+            \\
+            \\Two imports cannot share an alias, because `{s}.name` would be ambiguous. Give one
+            \\of them a different name with `as`.
+        , .{ text, other_line, text }),
+        .duplicate_exposed_name => try w.print(
+            \\`{s}` is already exposed by the import on line {d}.
+            \\
+            \\A name can be exposed once per file, or `{s}` would be ambiguous. Remove one of
+            \\the two, or qualify the name where it is used instead.
+        , .{ text, other_line, text }),
+        .self_import => try w.print(
+            \\This module imports itself: it is `{s}`.
+            \\
+            \\A module's own declarations are already in scope, so remove the import.
+        , .{text}),
+        .duplicate_declaration => try w.print(
+            \\`{s}` is declared twice in this module; the first declaration is on line {d}.
+            \\
+            \\Each top-level name is declared once. Rename one of them, or delete the one you
+            \\do not need.
+        , .{ text, other_line }),
+        .duplicate_type => try w.print(
+            \\The type `{s}` is declared twice in this module; the first is on line {d}.
+            \\
+            \\Custom types and type aliases share one namespace, so each type name is declared
+            \\once. Rename one of them.
+        , .{ text, other_line }),
+        .duplicate_constructor => try w.print(
+            \\The constructor `{s}` is declared twice in this module; the first is on line {d}.
+            \\
+            \\All constructors of a module share one namespace, whatever type they belong to,
+            \\so `{s}` in an expression would be ambiguous. Rename one of them.
+        , .{ text, other_line, text }),
+        .shadows_import => try w.print(
+            \\`{s}` is declared here, but it is also exposed by the import on line {d}.
+            \\
+            \\A declaration cannot reuse a name from an `exposing` list. Either rename the
+            \\declaration, or drop `{s}` from the import and qualify it where it is used.
+        , .{ text, other_line, text }),
+        .duplicate_field => try w.print(
+            \\The field `{s}` appears twice in this record.
+            \\
+            \\Each field of a record is set once. Remove one of the two.
+        , .{text}),
+        .foreign_outside_core => try w.writeAll(
+            \\This `foreign` declaration is outside the core package.
+            \\
+            \\`foreign` declares a value or type implemented in JavaScript and is legal only in
+            \\core, which is built with `--core`. Write the definition in beni instead.
+        ),
+        .unbound_variable => try w.print(
+            \\I cannot find a `{s}` variable.
+            \\
+            \\It is not a local binding, a top-level value of this module, a name from an
+            \\`exposing` list, or a prelude value. Check the spelling, or add it to an import.
+        , .{text}),
+        .unbound_constructor => try w.print(
+            \\I cannot find a `{s}` constructor.
+            \\
+            \\It is not declared by a `type` in this module, listed in an `exposing` list, or
+            \\part of the prelude. Check the spelling, or expose it from an import.
+        , .{text}),
+        .unbound_type => try w.print(
+            \\I cannot find a `{s}` type.
+            \\
+            \\It is not declared in this module, listed in an `exposing` list, or part of the
+            \\prelude. Check the spelling, or expose it from an import.
+        , .{text}),
+        .unknown_module_alias => {
+            const dot = std.mem.lastIndexOfScalar(u8, text, '.') orelse text.len;
+            try w.print(
+                \\I cannot find a module named `{s}` for `{s}`.
+                \\
+                \\A qualified name starts with an import's alias (`import Json.Decode as D` makes
+                \\`D`, and `import Json.Decode` alone makes `Json.Decode`) or with one of the
+                \\prelude modules: Basics, List, Maybe, Result, String, Char, Debug.
+            , .{ text[0..dot], text });
+        },
+        .question_in_lambda => try w.writeAll(
+            \\This `?` is inside a lambda.
+            \\
+            \\`?` returns early from the nearest enclosing definition that has parameters, and
+            \\a lambda in between would have to return instead. Move the `?` out of the lambda,
+            \\or turn the lambda into a named `let` function.
+        ),
+        .question_outside_function => try w.writeAll(
+            \\This `?` is not inside a function.
+            \\
+            \\`?` returns early from the nearest enclosing definition that has parameters, and
+            \\there is none here: a constant has nothing to return from. Use `case` on the
+            \\value, or give the definition a parameter.
+        ),
+        .shadowing => {
+            if (item.hasOther()) {
+                try w.print("The name `{s}` is already bound on line {d}.", .{ text, other_line });
+            } else {
+                try w.print("The name `{s}` is already bound: it is a prelude value.", .{text});
+            }
+            try w.writeAll(
+                \\
+                \\
+                \\Shadowing is not allowed: a binding cannot reuse a name that is in scope, whether
+                \\from an enclosing binding, a top-level declaration, an `exposing` list or the
+                \\prelude. Rename one of them.
+            );
+        },
+        .duplicate_pattern_variable => try w.print(
+            \\The pattern variable `{s}` is bound twice in this pattern.
+            \\
+            \\Each variable can appear once in a pattern. Rename the second `{s}`, or use `_` if
+            \\you do not need it.
+        , .{ text, text }),
+        .duplicate_type_parameter => try w.print(
+            \\The type parameter `{s}` is declared twice.
+            \\
+            \\Each type parameter is declared once. Remove the duplicate.
+        , .{text}),
+        .unbound_type_variable => try w.print(
+            \\The type variable `{s}` is not a parameter of this type.
+            \\
+            \\Every type variable used in a `type` or `type alias` body must be declared as a
+            \\parameter: `type alias Wrapper {s} = ...`.
+        , .{ text, text }),
+        // Only the codes above are lowering errors; anything else means a
+        // caller reused this record for another phase's code.
+        else => try w.writeAll(diagnostic.title(item.code)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: `Lower.zig` pins codes and positions; here the prose of each
+// payload shape is checked once from a hand-built item.
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+fn expectMessage(expected: []const u8, item: Item, source: []const u8) !void {
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    var starts: std.ArrayList(u32) = .empty;
+    defer starts.deinit(testing.allocator);
+    try starts.append(testing.allocator, 0);
+    for (source, 0..) |c, i| if (c == '\n') try starts.append(testing.allocator, @intCast(i + 1));
+    try message(item, source, starts.items, &out.writer);
+    try testing.expectEqualStrings(expected, out.written());
+}
+
+test "message: a name with an earlier occurrence quotes its line" {
+    try expectMessage(
+        "`x` is declared twice in this module; the first declaration is on line 1.\n\nEach top-level name is declared once. Rename one of them, or delete the one you\ndo not need.",
+        .{ .code = .duplicate_declaration, .start = 6, .end = 7, .other_start = 0, .other_end = 1 },
+        "x = 1\nx = 2\n",
+    );
+    try expectMessage(
+        "The name `k` is already bound on line 1.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope, whether\nfrom an enclosing binding, a top-level declaration, an `exposing` list or the\nprelude. Rename one of them.",
+        .{ .code = .shadowing, .start = 7, .end = 8, .other_start = 2, .other_end = 3 },
+        "f k = \\k -> k\n",
+    );
+}
+
+test "message: duplicate exposed name points at the earlier import" {
+    try expectMessage(
+        "`empty` is already exposed by the import on line 1.\n\nA name can be exposed once per file, or `empty` would be ambiguous. Remove one of\nthe two, or qualify the name where it is used instead.",
+        .{ .code = .duplicate_exposed_name, .start = 50, .end = 55, .other_start = 22, .other_end = 27 },
+        "import Dict exposing (empty)\nimport Set exposing (empty)\n",
+    );
+}
+
+test "message: unknown module alias splits the alias from the name" {
+    try expectMessage(
+        "I cannot find a module named `Dict` for `Dict.empty`.\n\nA qualified name starts with an import's alias (`import Json.Decode as D` makes\n`D`, and `import Json.Decode` alone makes `Json.Decode`) or with one of the\nprelude modules: Basics, List, Maybe, Result, String, Char, Debug.",
+        .{ .code = .unknown_module_alias, .start = 4, .end = 14 },
+        "x = Dict.empty\n",
+    );
+}
+
+test "message: the payload-free codes" {
+    try expectMessage(
+        "This `?` is inside a lambda.\n\n`?` returns early from the nearest enclosing definition that has parameters, and\na lambda in between would have to return instead. Move the `?` out of the lambda,\nor turn the lambda into a named `let` function.",
+        .{ .code = .question_in_lambda, .start = 0, .end = 1 },
+        "?",
+    );
+    try expectMessage(
+        "This `foreign` declaration is outside the core package.\n\n`foreign` declares a value or type implemented in JavaScript and is legal only in\ncore, which is built with `--core`. Write the definition in beni instead.",
+        .{ .code = .foreign_outside_core, .start = 0, .end = 7 },
+        "foreign",
+    );
+}

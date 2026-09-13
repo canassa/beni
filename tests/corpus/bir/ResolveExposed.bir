@@ -1,0 +1,75 @@
+decl 0: value table (annotated)
+  %0 = type_import Dict.Dict
+  %1 = type_import Basics.String
+  %2 = type_import Basics.Int
+  %3 = type_app %0 [%1, %2]
+  %4 = import_value Dict.insert
+  %5 = string "a"
+  %6 = int 1
+  %7 = import_value Dict.empty
+  %8 = call %4 [%5, %6, %7]
+  annotation %3
+  params []
+  body %8
+  refs
+    import_type Dict.Dict
+    import_type Basics.String
+    import_type Basics.Int
+    import_value Dict.insert
+    import_value Dict.empty
+
+decl 1: value describe (annotated)
+  %0 = type_import Http.Error
+  %1 = type_import Basics.String
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (err)
+  %4 = local 0 (err)
+  %5 = import_ctor Http.Timeout
+  %6 = pat_ctor %5 []
+  %7 = string "timeout"
+  %8 = branch %6 -> %7
+  %9 = import_ctor Http.BadStatus
+  %10 = pat_var local 1 (code)
+  %11 = pat_ctor %9 [%10]
+  %12 = chunk "status "
+  %13 = local 1 (code)
+  %14 = interp [%12, %13]
+  %15 = branch %11 -> %14
+  %16 = pat_wild
+  %17 = string "other"
+  %18 = branch %16 -> %17
+  %19 = case %4 [%8, %15, %18]
+  annotation %2
+  params [%3]
+  body %19
+  locals
+    0 err param %3
+    1 code pattern %10
+  refs
+    import_type Http.Error
+    import_type Basics.String
+    import_ctor Http.Timeout
+    import_ctor Http.BadStatus
+
+decl 2: value retry (annotated)
+  %0 = type_import Http.Error
+  %1 = import_ctor Http.Timeout
+  annotation %0
+  params []
+  body %1
+  refs
+    import_type Http.Error
+    import_ctor Http.Timeout
+
+interface
+
+imports
+  import Dict exposing (Dict, empty, insert)
+  import Http exposing (Error, Timeout, BadStatus)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

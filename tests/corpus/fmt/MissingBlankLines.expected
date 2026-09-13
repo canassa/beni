@@ -1,0 +1,28 @@
+-- Formatter: declarations with zero and one blank line between them, an
+-- annotation separated from its definition by a blank line and a comment,
+-- and imports separated by blank lines; expected: two blank lines between
+-- declarations, annotation directly above its definition, imports adjacent.
+import Dict
+import Set
+
+
+type alias A =
+    Int
+
+
+type B
+    = B
+
+
+f : Int -> Int
+-- between annotation and definition
+f x =
+    x
+
+
+g =
+    1
+
+
+h =
+    2

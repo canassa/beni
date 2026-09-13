@@ -1,0 +1,45 @@
+-- Already canonical (§9): a doc block with a space after the marker;
+-- own-line comments indented to their block; trailing comments at line
+-- end; comments between let bindings, before `in`, between case branches
+-- and inside a vertical list.
+import Dict
+
+
+-- an own-line comment between imports and declarations
+--| Documents `total`.
+total : List Int -> Int
+total xs =
+    let
+        -- before the first binding
+        a =
+            List.sum xs
+
+        -- between bindings
+        b =
+            List.length xs -- trailing on a body
+
+        -- before `in`
+    in
+    a + b
+
+
+pick : Bool -> Int
+pick flag =
+    -- before case
+    case flag of
+        -- before the first branch
+        True ->
+            1
+
+        -- between branches
+        False ->
+            2
+
+
+items =
+    [ 1 -- trailing on an element
+    , 2
+
+    -- before an element
+    , 3
+    ]

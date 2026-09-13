@@ -1,0 +1,1 @@
+[{"code":"self_import","severity":"error","span":{"file":"tests/corpus/parse/bad/SelfImport.beni","start":{"line":3,"col":8},"end":{"line":3,"col":18}},"title":"SELF IMPORT","message":"This module imports itself: it is `SelfImport`.\n\nA module's own declarations are already in scope, so remove the import."}]

@@ -5,7 +5,7 @@
 //! times after a warm-up, and prints one JSON line per phase plus a `total`:
 //!
 //! ```
-//! {"phase":"read","files":312,"bytes":4194304,"tokens":0,"nodes":0,"ms":41.2,"mb_per_s":101.8,"loc_per_s":2431000}
+//! {"phase":"read","files":312,"bytes":4194304,"tokens":0,"nodes":0,"insts":0,"ms":41.2,"mb_per_s":101.8,"loc_per_s":2431000}
 //! ```
 //!
 //! Options: `--corpus=<dir>` (default `bench/corpus`), `--generate=<lines>`
@@ -14,13 +14,14 @@
 //!
 //! Phases so far: `read` (bytes through `SourceStore`), `lex` (the
 //! tokenizer, interning included, into fresh per-file output lists — the
-//! production shape) and `parse` (the parser over pre-lexed tokens, nodes
+//! production shape), `parse` (the parser over pre-lexed tokens, nodes
 //! and extra to a fresh gpa-owned tree per file, scratch from one arena
-//! reset between files, as a worker does). The phases are timed
-//! single-threaded and serially so the figure is per-core throughput, which
-//! is what the §2 budget is stated in. `lines` is the newline count,
-//! `tokens` includes each file's `eof`; the `parse` line reports the node
-//! count in the `tokens` field's neighbour, `nodes`.
+//! reset between files, as a worker does) and `lower` (Ast → Bir over
+//! pre-parsed trees, same memory shape, `insts` counted). The phases are
+//! timed single-threaded and serially so the figure is per-core
+//! throughput, which is what the §2 budget is stated in. `lines` is the
+//! newline count, `tokens` includes each file's `eof`; `nodes` and `insts`
+//! are the parse and lower outputs.
 
 const std = @import("std");
 const Io = std.Io;
@@ -30,6 +31,8 @@ const SourceStore = beni.SourceStore;
 const Tokenizer = beni.Tokenizer;
 const InternPool = beni.InternPool;
 const Parse = beni.Parse;
+const Lower = beni.Lower;
+const Ast = beni.Ast;
 const Arena = beni.Arena;
 
 const Options = struct {
@@ -94,6 +97,9 @@ pub fn main(init: std.process.Init) !u8 {
     const parsed = try measureParse(gpa, io, &store, options.iterations);
     try printLine(stdout, "parse", parsed);
     total.add(parsed);
+    const lowered = try measureLower(gpa, io, &store, options.iterations);
+    try printLine(stdout, "lower", lowered);
+    total.add(lowered);
     try printLine(stdout, "total", total);
     return 0;
 }
@@ -122,6 +128,7 @@ const Measurement = struct {
     bytes: u64 = 0,
     tokens: u64 = 0,
     nodes: u64 = 0,
+    insts: u64 = 0,
     lines: u64 = 0,
     /// Wall time of one iteration over the whole corpus (the best of the
     /// timed iterations), in nanoseconds.
@@ -133,6 +140,7 @@ const Measurement = struct {
         total.lines = @max(total.lines, m.lines);
         total.tokens = @max(total.tokens, m.tokens);
         total.nodes = @max(total.nodes, m.nodes);
+        total.insts = @max(total.insts, m.insts);
         total.ns += m.ns;
     }
 };
@@ -250,13 +258,79 @@ fn measureParse(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations:
     return m;
 }
 
+/// Lower every file from trees parsed once outside the timed region (the
+/// parser has its own line). The interner is the one that lexed the
+/// tokens, made by `Local.init` as a worker's is; lowering adds the name
+/// parts of qualified references to it on the first iteration only, which
+/// is why the warm-up is not counted. The Bir goes to `gpa` like production.
+fn measureLower(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: u32) !Measurement {
+    var interner = try InternPool.Local.init(gpa);
+    defer interner.deinit(gpa);
+    const outputs = try gpa.alloc(Tokenizer.Output, store.count());
+    defer gpa.free(outputs);
+    const trees = try gpa.alloc(Ast, store.count());
+    defer gpa.free(trees);
+    var lexed: usize = 0;
+    defer for (outputs[0..lexed]) |*out| out.deinit(gpa);
+    var parsed: usize = 0;
+    defer for (trees[0..parsed]) |*tree| tree.deinit(gpa);
+    var arena: Arena = .init(std.heap.page_allocator);
+    defer arena.deinit();
+    for (outputs, trees, 0..) |*out, *tree, i| {
+        const text = store.bytes(@enumFromInt(i));
+        out.* = .empty;
+        try Tokenizer.tokenize(gpa, text, &interner, out);
+        lexed += 1;
+        tree.* = try Parse.parse(gpa, arena.allocator(), text, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
+        parsed += 1;
+        arena.reset(.retain_capacity);
+    }
+
+    var best: u64 = std.math.maxInt(u64);
+    var m: Measurement = .{ .files = store.count() };
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var bytes: u64 = 0;
+        var lines: u64 = 0;
+        var tokens: u64 = 0;
+        var nodes: u64 = 0;
+        var insts: u64 = 0;
+        const start = Io.Timestamp.now(io, .awake);
+        for (outputs, trees, 0..) |*out, *tree, i| {
+            const file: SourceStore.Index = @enumFromInt(i);
+            const text = store.bytes(file);
+            var bir = try Lower.lower(gpa, arena.allocator(), text, out.tokens.slice(), tree, &interner, .{
+                .core = false,
+                .module_name = store.moduleName(file),
+            });
+            defer bir.deinit(gpa);
+            arena.reset(.retain_capacity);
+            bytes += text.len;
+            lines += out.line_starts.items.len - 1;
+            tokens += out.tokens.len;
+            nodes += tree.nodes.len;
+            insts += bir.insts.len;
+        }
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue; // warm-up
+        best = @min(best, ns);
+        m.bytes = bytes;
+        m.lines = lines;
+        m.tokens = tokens;
+        m.nodes = nodes;
+        m.insts = insts;
+    }
+    m.ns = best;
+    return m;
+}
+
 fn printLine(writer: *Io.Writer, phase: []const u8, m: Measurement) !void {
     const ms = @as(f64, @floatFromInt(m.ns)) / 1e6;
     const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
     const mb_per_s = @as(f64, @floatFromInt(m.bytes)) / (1024 * 1024) / seconds;
     const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);
     try writer.print(
-        "{{\"phase\":\"{s}\",\"files\":{d},\"bytes\":{d},\"tokens\":{d},\"nodes\":{d},\"ms\":{d:.1},\"mb_per_s\":{d:.1},\"loc_per_s\":{d}}}\n",
-        .{ phase, m.files, m.bytes, m.tokens, m.nodes, ms, mb_per_s, loc_per_s },
+        "{{\"phase\":\"{s}\",\"files\":{d},\"bytes\":{d},\"tokens\":{d},\"nodes\":{d},\"insts\":{d},\"ms\":{d:.1},\"mb_per_s\":{d:.1},\"loc_per_s\":{d}}}\n",
+        .{ phase, m.files, m.bytes, m.tokens, m.nodes, m.insts, ms, mb_per_s, loc_per_s },
     );
 }

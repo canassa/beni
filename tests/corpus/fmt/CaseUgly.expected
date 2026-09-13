@@ -1,0 +1,18 @@
+-- Formatter: `case` branches on the `of` line, `->` on its own line, bodies
+-- on the `->` line, uneven blank lines (0 and 2) between branches, a `let`
+-- inside a branch at a strange column; expected: `case x of` alone,
+-- branches indented 4, `->` at line end, body indented 4 more, at most one
+-- blank line between branches.
+describe x =
+    case x of
+        0 ->
+            "zero"
+        1 ->
+            "one"
+
+        _ ->
+            let
+                y =
+                    x
+            in
+            "many ${y}"

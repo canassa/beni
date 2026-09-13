@@ -1,0 +1,9 @@
+-- duplicate_exposed_name at 5:27: `empty` exposed by two imports (§5.2).
+-- Second at 5:34: `Dict` exposed by both too (an upper name). Third at
+-- 5:46: `size` twice in one `exposing` list. `x` on line 8 uses the first.
+import Dict exposing (Dict, empty)
+import Set exposing (Set, empty, Dict, size, size)
+
+
+x =
+    empty

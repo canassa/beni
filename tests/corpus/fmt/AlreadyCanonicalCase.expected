@@ -1,0 +1,38 @@
+-- Already canonical (§9): `case x of` alone on a line, branches indented 4,
+-- `->` at line end, bodies indented 4 more, one blank line between
+-- branches, a nested `case`, and every pattern kind with canonical spacing.
+describe : Maybe (List Int) -> String
+describe m =
+    case m of
+        Nothing ->
+            "nothing"
+
+        Just [] ->
+            "empty"
+
+        Just [ x ] ->
+            "one: ${x}"
+
+        Just (x :: y :: rest) ->
+            case rest of
+                [] ->
+                    "two: ${x} ${y}"
+
+                _ ->
+                    "many"
+
+        Just ((first :: _) as whole) ->
+            "first ${first} of ${List.length whole}"
+
+
+sign : Int -> Int
+sign n =
+    case compare n 0 of
+        LT ->
+            -1
+
+        EQ ->
+            0
+
+        GT ->
+            1

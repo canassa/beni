@@ -1,0 +1,84 @@
+decl 0: alias Model
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.String
+  %2 = type_record { count : %0, name : %1 }
+  body %2
+  ctor 0 Model [%0, %1]
+  refs
+    import_type Basics.Int
+    import_type Basics.String
+
+decl 1: value initial (annotated)
+  %0 = type_top 0 (Model)
+  %1 = int 0
+  %2 = string ""
+  %3 = record { count = %1, name = %2 }
+  annotation %0
+  params []
+  body %3
+  refs
+    type_top 0 (Model)
+
+decl 2: value bumpLocal (annotated)
+  %0 = type_top 0 (Model)
+  %1 = type_top 0 (Model)
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (model)
+  %4 = local 0 (model)
+  %5 = local 0 (model)
+  %6 = field_access %5 .count
+  %7 = int 1
+  %8 = import_value Basics.add
+  %9 = call %8 [%6, %7]
+  %10 = record_update %4 { count = %9 }
+  annotation %2
+  params [%3]
+  body %10
+  locals
+    0 model param %3
+  refs
+    type_top 0 (Model)
+    import_value Basics.add
+
+decl 3: value bumpTop (annotated)
+  %0 = type_top 0 (Model)
+  %1 = top 1 (initial)
+  %2 = int 1
+  %3 = string "one"
+  %4 = record_update %1 { count = %2, name = %3 }
+  annotation %0
+  params []
+  body %4
+  refs
+    type_top 0 (Model)
+    top 1 (initial)
+
+decl 4: value bumpImport (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_record { timeout : %1 }
+  %3 = type_fn %0 -> %2
+  %4 = pat_var local 0 (t)
+  %5 = import_value Defaults.config
+  %6 = local 0 (t)
+  %7 = record_update %5 { timeout = %6 }
+  annotation %3
+  params [%4]
+  body %7
+  locals
+    0 t param %4
+  refs
+    import_type Basics.Int
+    import_value Defaults.config
+
+interface
+
+imports
+  import Defaults exposing (config)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

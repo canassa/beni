@@ -1,0 +1,32 @@
+-- Formatter: short constructs spread over many lines — a two-element list,
+-- a one-field record, a pair, an application, a short `if`; expected: each
+-- collapses onto one line because it fits (the exact "fits" rule is pinned
+-- by the blessed output).
+xs =
+    [ 1
+    , 2
+    ]
+
+
+r =
+    { a = 1
+    }
+
+
+p =
+    ( 1
+    , 2
+    )
+
+
+call =
+    max
+        1
+        2
+
+
+cond b =
+    if b then
+        1
+    else
+        2

@@ -57,6 +57,14 @@ pub fn build(b: *std.Build) void {
     // `diagnostic` is its own module and therefore its own test artifact.
     // The generator is tested here too (same output for the same seed) so the
     // bench corpus can be trusted to be stable.
+    // Fixture corpora reach the hermetic suite as embedded bytes (frontend.md
+    // §2, tests/fixtures): a generated manifest module per directory, so a
+    // test walks `@import("corpus_parse_good").fixtures` without touching
+    // the filesystem. Only test blocks import them, so the binary does not
+    // carry the bytes.
+    beni_mod.addImport("corpus_parse_good", embedCorpus(b, "tests/corpus/parse/good"));
+    beni_mod.addImport("corpus_bir", embedCorpus(b, "tests/corpus/bir"));
+
     const beni_tests = b.addTest(.{ .root_module = beni_mod });
     const diagnostic_tests = b.addTest(.{ .root_module = diagnostic_mod });
     const gen_tests = b.addTest(.{
@@ -128,4 +136,39 @@ pub fn build(b: *std.Build) void {
         .paths = &.{ "src", "build.zig", "tests", "bench" },
         .check = true,
     }).step);
+}
+
+/// A module whose root exports `fixtures`, one `{ name, source }` per
+/// `.beni` file directly under `dir` (sorted by name), each embedded. The
+/// files are copied next to a generated manifest so `@embedFile` resolves
+/// them inside that module's root; the directory is enumerated at
+/// configure time, so adding a fixture is dropping in a file.
+fn embedCorpus(b: *std.Build, dir: []const u8) *std.Build.Module {
+    const io = b.graph.io;
+    var names: std.ArrayList([]const u8) = .empty;
+    var handle = b.build_root.handle.openDir(io, dir, .{ .iterate = true }) catch |err| {
+        std.debug.panic("cannot open corpus directory {s}: {t}", .{ dir, err });
+    };
+    defer handle.close(io);
+    var it = handle.iterate();
+    while (it.next(io) catch |err| std.debug.panic("cannot read corpus directory {s}: {t}", .{ dir, err })) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        names.append(b.allocator, b.dupe(entry.name)) catch @panic("OOM");
+    }
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lessThan(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.lessThan(u8, x, y);
+        }
+    }.lessThan);
+
+    const wf = b.addWriteFiles();
+    var manifest: std.ArrayList(u8) = .empty;
+    manifest.appendSlice(b.allocator, "pub const Fixture = struct { name: []const u8, source: [:0]const u8 };\npub const fixtures = [_]Fixture{\n") catch @panic("OOM");
+    for (names.items) |name| {
+        _ = wf.addCopyFile(b.path(b.pathJoin(&.{ dir, name })), name);
+        manifest.appendSlice(b.allocator, b.fmt("    .{{ .name = \"{s}\", .source = @embedFile(\"{s}\") }},\n", .{ name, name })) catch @panic("OOM");
+    }
+    manifest.appendSlice(b.allocator, "};\n") catch @panic("OOM");
+    const root = wf.add("manifest.zig", manifest.items);
+    return b.createModule(.{ .root_source_file = root });
 }

@@ -1,0 +1,84 @@
+decl 0: value f (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  %3 = type_tuple [%1, %2]
+  %4 = type_import Maybe.Maybe
+  %5 = type_import Basics.Int
+  %6 = type_app %4 [%5]
+  %7 = type_import Basics.Int
+  %8 = type_fn %6 -> %7
+  %9 = type_fn %3 -> %8
+  %10 = type_fn %0 -> %9
+  %11 = pat_var local 0 (a)
+  %12 = pat_var local 1 (b)
+  %13 = pat_var local 2 (c)
+  %14 = pat_tuple [%12, %13]
+  %15 = pat_var local 3 (m)
+  %16 = let_def local 4 (d) [] = %23
+  %17 = pat_var local 5 (g)
+  %18 = pat_var local 6 (h)
+  %19 = pat_tuple [%17, %18]
+  %20 = local 0 (a)
+  %21 = local 1 (b)
+  %22 = import_value Basics.add
+  %23 = call %22 [%20, %21]
+  %24 = local 2 (c)
+  %25 = local 4 (d)
+  %26 = tuple [%24, %25]
+  %27 = let_pattern %19 = %26
+  %28 = local 3 (m)
+  %29 = import_ctor Maybe.Just
+  %30 = pat_var local 7 (n)
+  %31 = pat_ctor %29 [%30]
+  %32 = pat_var local 8 (k)
+  %33 = local 8 (k)
+  %34 = local 7 (n)
+  %35 = import_value Basics.add
+  %36 = call %35 [%33, %34]
+  %37 = local 5 (g)
+  %38 = import_value Basics.add
+  %39 = call %38 [%36, %37]
+  %40 = local 6 (h)
+  %41 = import_value Basics.add
+  %42 = call %41 [%39, %40]
+  %43 = lambda [%32] -> %42
+  %44 = local 4 (d)
+  %45 = call %43 [%44]
+  %46 = branch %31 -> %45
+  %47 = import_ctor Maybe.Nothing
+  %48 = pat_ctor %47 []
+  %49 = int 0
+  %50 = branch %48 -> %49
+  %51 = case %28 [%46, %50]
+  %52 = let [%16, %27] in %51
+  annotation %10
+  params [%11, %14, %15]
+  body %52
+  locals
+    0 a param %11
+    1 b pattern %12
+    2 c pattern %13
+    3 m param %15
+    4 d let %16
+    5 g pattern %17
+    6 h pattern %18
+    7 n pattern %30
+    8 k param %32
+  refs
+    import_type Basics.Int
+    import_type Maybe.Maybe
+    import_value Basics.add
+    import_ctor Maybe.Just
+    import_ctor Maybe.Nothing
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

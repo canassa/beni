@@ -128,11 +128,14 @@ const WyhashHasher = struct {
     }
 };
 
-/// Well-known symbols with fixed indices in `Global` (frontend.md §3.3): the
-/// names the checker and the backend refer to without a lookup. Declaration
-/// order IS the index; append only. The set is `main`, the prelude module
-/// names (language.md Appendix A), and the core function each operator of
-/// language.md §6.5 desugars to.
+/// Well-known symbols with fixed indices in `Global` AND in every `Local`
+/// made by `Local.init` (frontend.md §3.3): the names the checker and the
+/// backend refer to without a lookup. Declaration order IS the index; append
+/// only. The set is `main`, the prelude module names (language.md Appendix
+/// A), the core function each operator of language.md §6.5 desugars to, and
+/// every name the prelude exposes (types, constructors, values), so that
+/// lowering decides "is this symbol a prelude name?" by comparing its index
+/// against `count` and never touches a table (`bir/prelude.zig`).
 pub const WellKnown = enum(u32) {
     main,
     // Prelude modules.
@@ -164,6 +167,59 @@ pub const WellKnown = enum(u32) {
     apR,
     composeL,
     composeR,
+    // Prelude types not already listed as modules (Appendix A).
+    Int,
+    Float,
+    Bool,
+    Order,
+    Never,
+    // Prelude constructors.
+    True,
+    False,
+    Just,
+    Nothing,
+    Ok,
+    Err,
+    LT,
+    EQ,
+    GT,
+    // Prelude values, all from `Basics`, in Appendix A's order.
+    toFloat,
+    round,
+    floor,
+    ceiling,
+    truncate,
+    max,
+    min,
+    compare,
+    not,
+    xor,
+    modBy,
+    remainderBy,
+    negate,
+    abs,
+    clamp,
+    sqrt,
+    logBase,
+    e,
+    pi,
+    cos,
+    sin,
+    tan,
+    acos,
+    asin,
+    atan,
+    atan2,
+    degrees,
+    radians,
+    turns,
+    toPolar,
+    fromPolar,
+    isNaN,
+    isInfinite,
+    identity,
+    always,
+    never,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @enumFromInt(@intFromEnum(w));
@@ -259,7 +315,26 @@ const Pool = struct {
 pub const Local = struct {
     pool: Pool = .{},
 
+    /// No symbols at all. Enough for the lexer and the parser; lowering
+    /// needs `init`, which fixes the well-known indices first.
     pub const empty: Local = .{};
+
+    /// A pool whose first `WellKnown.count` symbols are the well-known names
+    /// at their `WellKnown` indices — the same prefix `Global.init` has, so
+    /// `Global.merge` maps them to themselves and lowering can classify a
+    /// symbol as a prelude name by its index alone.
+    pub fn init(gpa: Allocator) Allocator.Error!Local {
+        var local: Local = .{};
+        errdefer local.deinit(gpa);
+        try registerWellKnown(&local.pool, gpa);
+        return local;
+    }
+
+    /// True when `init` (not `empty`) made this pool: the well-known prefix
+    /// is in place. Lowering asserts it.
+    pub fn hasWellKnown(local: *const Local) bool {
+        return local.pool.entries.len >= WellKnown.count;
+    }
 
     pub fn deinit(local: *Local, gpa: Allocator) void {
         local.pool.deinit(gpa);
@@ -294,10 +369,7 @@ pub const Global = struct {
     pub fn init(gpa: Allocator) Allocator.Error!Global {
         var global: Global = .{};
         errdefer global.deinit(gpa);
-        inline for (@typeInfo(WellKnown).@"enum".fields) |field| {
-            const symbol = try global.pool.getOrPut(gpa, field.name);
-            std.debug.assert(@intFromEnum(symbol) == field.value);
-        }
+        try registerWellKnown(&global.pool, gpa);
         return global;
     }
 
@@ -334,11 +406,35 @@ pub const Global = struct {
     }
 };
 
+/// Intern every `WellKnown` name, in declaration order, into an empty pool.
+fn registerWellKnown(pool: *Pool, gpa: Allocator) Allocator.Error!void {
+    std.debug.assert(pool.entries.len == 0);
+    inline for (@typeInfo(WellKnown).@"enum".fields) |field| {
+        const symbol = try pool.getOrPut(gpa, field.name);
+        std.debug.assert(@intFromEnum(symbol) == field.value);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+
+test "Local.init shares the well-known prefix with Global, so merge is the identity there" {
+    var global = try Global.init(testing.allocator);
+    defer global.deinit(testing.allocator);
+    var local = try Local.init(testing.allocator);
+    defer local.deinit(testing.allocator);
+    try testing.expect(local.hasWellKnown());
+    try testing.expect(!Local.empty.hasWellKnown());
+    try testing.expectEqual(WellKnown.Just.symbol(), try local.getOrPut(testing.allocator, "Just"));
+    const view = try local.getOrPut(testing.allocator, "view");
+    const remap = try global.merge(testing.allocator, &local);
+    defer testing.allocator.free(remap);
+    for (remap[0..WellKnown.count], 0..) |g, i| try testing.expectEqual(@as(u32, @intCast(i)), @intFromEnum(g));
+    try testing.expectEqual(@as(Symbol, @enumFromInt(WellKnown.count)), remap[@intFromEnum(view)]);
+}
 
 test "Local dedups equal bytes and distinguishes different ones" {
     var local: Local = .empty;

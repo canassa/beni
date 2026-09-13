@@ -1,0 +1,20 @@
+-- Formatter: tuples without spaces, spread across lines with the comma at
+-- line end, unit with inner spaces, and a nested tuple; expected: `( a, b )`
+-- and `()`.
+p =
+    ( 1, 2 )
+
+
+q =
+    ( 1
+    , 2
+    , 3
+    )
+
+
+u =
+    ()
+
+
+n =
+    ( ( 1, 2 ), ( 3, ( 4, 5 ) ) )

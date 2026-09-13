@@ -1,0 +1,14 @@
+-- Formatter: a leading `|` before the first constructor, constructors on one
+-- line, and a type spread with odd indentation and an argument on its own
+-- line; expected: `=` then each `|` on its own line indented 4, leading `|`
+-- removed.
+type Msg
+    = Inc
+    | Dec
+    | Reset
+
+
+type Shape
+    = Circle Float
+    | Rect Float
+        Float

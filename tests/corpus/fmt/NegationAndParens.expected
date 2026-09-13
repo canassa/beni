@@ -1,0 +1,26 @@
+-- Formatter: redundant spaces inside parentheses and brackets, negation of
+-- parenthesised expressions, `a - -b`, and grouping parentheses that must
+-- be preserved because removing them changes the AST; expected: spaces
+-- normalised, parentheses kept.
+a x =
+    (x)
+
+
+b x y =
+    -(x + y)
+
+
+c x y =
+    x - -y
+
+
+d x =
+    (x + 1) * 2
+
+
+e2 fn x =
+    fn (-x)
+
+
+g x =
+    [ (x) ]

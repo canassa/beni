@@ -1,0 +1,28 @@
+-- Already canonical (§9): short operator expressions on one line; chains
+-- that do not fit broken before the operator, one per line, operands
+-- indented 4; a pipeline; negation glued to its operand.
+area w h =
+    w * h
+
+
+valid r =
+    String.length r.name > 0
+        && String.length r.name < 100
+        && r.age >= 0
+        && r.age < 150
+        && not (String.isEmpty r.email)
+
+
+process xs =
+    xs
+        |> List.map (\x -> x * 2)
+        |> List.filter (\x -> x > 10)
+        |> List.sum
+
+
+negated x y =
+    -x - -y
+
+
+composed =
+    String.trim >> String.toUpper >> String.reverse

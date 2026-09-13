@@ -1,0 +1,59 @@
+-- Already canonical (§9): lists, records and tuples on one line when they
+-- fit in 100 columns, otherwise the vertical form with the delimiter
+-- leading each line; empty `[]`, `{}`, `()`; a record update; nested
+-- collections in vertical form.
+short =
+    [ 1, 2, 3 ]
+
+
+empty =
+    ( [], {}, () )
+
+
+point =
+    { x = 1.5, y = -2.0 }
+
+
+names =
+    [ "alpha"
+    , "bravo"
+    , "charlie"
+    , "delta"
+    , "echo"
+    , "foxtrot"
+    , "golf"
+    , "hotel"
+    , "india"
+    , "juliet"
+    , "kilo"
+    ]
+
+
+config =
+    { host = "localhost"
+    , port = 8080
+    , user = "admin"
+    , password = "secret"
+    , timeout = 30
+    , retries = 5
+    , verbose = True
+    }
+
+
+bump model =
+    { model | count = model.count + 1, touched = True }
+
+
+rows =
+    [ { id = 1, name = "one" }
+    , { id = 2, name = "two" }
+    , { id = 3, name = "three" }
+    , { id = 4, name = "four" }
+    , { id = 5, name = "five" }
+    ]
+
+
+pair =
+    ( "a very long first element of a tuple that does not fit"
+    , "a very long second element of a tuple that does not fit"
+    )

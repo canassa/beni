@@ -1,6 +1,6 @@
 //! Per-file front-end artifacts (docs/design/frontend.md §3, §4): what each
 //! per-file phase produced, in one `MultiArrayList` column set keyed by file
-//! index. M1a fills the lexical columns, M1b the AST; M1c adds the BIR.
+//! index. M1a fills the lexical columns, M1b the AST, M1c the BIR.
 //!
 //! Ownership: a file's artifacts are the FILE's, not the worker's. They are
 //! allocated from the session allocator, pre-sized from the byte count
@@ -25,6 +25,7 @@ const InternPool = @import("InternPool.zig");
 const Token = @import("lex/Token.zig");
 const LexDiagnostics = @import("lex/Diagnostics.zig");
 const Ast = @import("parse/Ast.zig");
+const Bir = @import("bir/Bir.zig");
 const SourceStore = @import("SourceStore.zig");
 
 const Artifacts = @This();
@@ -41,16 +42,21 @@ pub const File = struct {
     lex_diagnostics: []const LexDiagnostics.Item,
     /// Owned (M1b). `Ast.empty` until the parse phase has run.
     ast: Ast,
-    /// Which worker's interner the token payloads refer to.
+    /// Owned (M1c). `Bir.empty` until the lower phase has run. Its
+    /// `symbols` hold the producing worker's LOCAL symbols until
+    /// `applyRemap`, like the token payloads.
+    bir: Bir,
+    /// Which worker's interner the token payloads and Bir symbols refer to.
     worker: u32,
 
-    pub const empty: File = .{ .tokens = .empty, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .worker = 0 };
+    pub const empty: File = .{ .tokens = .empty, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .worker = 0 };
 
     fn deinit(file: *File, gpa: Allocator) void {
         file.tokens.deinit(gpa);
         gpa.free(file.comments);
         gpa.free(file.lex_diagnostics);
         file.ast.deinit(gpa);
+        file.bir.deinit(gpa);
         file.* = undefined;
     }
 };
@@ -101,13 +107,18 @@ pub fn ast(a: *const Artifacts, index: SourceStore.Index) *const Ast {
     return &a.files.items(.ast)[index.int()];
 }
 
+pub fn bir(a: *const Artifacts, index: SourceStore.Index) *const Bir {
+    return &a.files.items(.bir)[index.int()];
+}
+
 pub fn worker(a: *const Artifacts, index: SourceStore.Index) u32 {
     return a.files.items(.worker)[index.int()];
 }
 
-/// Rewrite the interned payloads of `index`'s tokens from local to global
-/// symbols (frontend.md §3.3, the M1 plug point). `remap` is the table
-/// `Global.merge` returned for the worker that lexed this file.
+/// Rewrite the interned payloads of `index`'s tokens and the symbol column
+/// of its Bir from local to global symbols (frontend.md §3.3). `remap` is
+/// the table `Global.merge` returned for the worker that lexed and lowered
+/// this file.
 pub fn applyRemap(a: *Artifacts, index: SourceStore.Index, remap: []const InternPool.Symbol) void {
     const list = &a.files.items(.tokens)[index.int()];
     const tags = list.items(.tag);
@@ -115,6 +126,7 @@ pub fn applyRemap(a: *Artifacts, index: SourceStore.Index, remap: []const Intern
     for (tags, payloads) |tag, *payload| {
         if (tag.isInterned()) payload.* = @intFromEnum(remap[payload.*]);
     }
+    a.files.items(.bir)[index.int()].applyRemap(remap);
 }
 
 // ---------------------------------------------------------------------------
@@ -135,19 +147,22 @@ test "resize, set, applyRemap, and the old entry is freed" {
     try list.append(gpa, .{ .tag = .dot_index, .start = 2, .line = 0, .payload = 1 });
     try list.append(gpa, .{ .tag = .eof, .start = 4, .line = 0, .payload = 0 });
     const cs = try gpa.dupe(Token.Comment, &.{.{ .kind = .plain, .start = 5, .before_token = 2 }});
-    a.set(gpa, @enumFromInt(1), .{ .tokens = list, .comments = cs, .lex_diagnostics = &.{}, .ast = .empty, .worker = 3 });
+    var lowered: Bir = .empty;
+    lowered.symbols = try gpa.dupe(InternPool.Symbol, &.{ @enumFromInt(1), @enumFromInt(0) });
+    a.set(gpa, @enumFromInt(1), .{ .tokens = list, .comments = cs, .lex_diagnostics = &.{}, .ast = .empty, .bir = lowered, .worker = 3 });
     try testing.expectEqual(@as(u32, 3), a.worker(@enumFromInt(1)));
     try testing.expectEqual(@as(usize, 1), a.comments(@enumFromInt(1)).len);
 
     // Only interned tags are remapped; the tuple index keeps its value.
     a.applyRemap(@enumFromInt(1), &.{ @enumFromInt(10), @enumFromInt(11) });
     try testing.expectEqualSlices(u32, &.{ 11, 1, 0 }, a.tokens(@enumFromInt(1)).items(.payload));
+    try testing.expectEqualSlices(InternPool.Symbol, &.{ @enumFromInt(11), @enumFromInt(10) }, a.bir(@enumFromInt(1)).symbols);
 
     // Setting again frees the previous columns (the testing allocator
     // would report a leak otherwise), and resize frees everything.
     var again: Token.TokenList = .empty;
     try again.append(gpa, .{ .tag = .eof, .start = 0, .line = 0, .payload = 0 });
-    a.set(gpa, @enumFromInt(1), .{ .tokens = again, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .worker = 0 });
+    a.set(gpa, @enumFromInt(1), .{ .tokens = again, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .worker = 0 });
     try a.resize(gpa, 1);
     try testing.expectEqual(@as(usize, 1), a.files.len);
 }

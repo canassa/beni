@@ -253,12 +253,14 @@ const Case = struct {
             return error.NotAFixedPoint;
         }
 
-        // Structure-preserving: both parse to the same AST.
+        // Structure-preserving: both parse to the same AST. The formatter
+        // sorts imports (language.md §9), so the dumps are compared with
+        // their import entries in sorted order.
         const before = try c.compiler(&.{ "dump", "--stage=ast", fixture });
         const after = try c.inProject(&.{ "dump", "--stage=ast", "Fixed.beni" });
         try expectExit(0, before);
         try expectExit(0, after);
-        if (!std.mem.eql(u8, before.stdout, after.stdout)) {
+        if (!std.mem.eql(u8, try sortImports(c.arena, before.stdout), try sortImports(c.arena, after.stdout))) {
             std.debug.print("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
             return error.AstChanged;
         }
@@ -289,6 +291,44 @@ const Case = struct {
         }
     }
 };
+
+/// An AST dump with its top-level `(import …)` entries (each with the
+/// `(exposed …)` lines under it) reordered by their text.
+fn sortImports(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
+    // Each import block as `[start, end)` offsets into `dump`.
+    var blocks: std.ArrayList([2]usize) = .empty;
+    var out: std.ArrayList(u8) = .empty;
+    var first_import: ?usize = null;
+    var in_import = false;
+    var pos: usize = 0;
+    while (pos < dump.len) {
+        const nl = std.mem.indexOfScalarPos(u8, dump, pos, '\n') orelse dump.len;
+        const line_end = @min(nl + 1, dump.len);
+        const line = dump[pos..nl];
+        if (std.mem.startsWith(u8, line, "  (import")) {
+            if (first_import == null) first_import = out.items.len;
+            try blocks.append(arena, .{ pos, line_end });
+            in_import = true;
+        } else if (in_import and std.mem.startsWith(u8, line, "    ")) {
+            blocks.items[blocks.items.len - 1][1] = line_end; // a continuation of the import above
+        } else {
+            try out.appendSlice(arena, dump[pos..line_end]);
+            in_import = false;
+        }
+        pos = line_end;
+    }
+    const at = first_import orelse return dump;
+    std.mem.sort([2]usize, blocks.items, dump, struct {
+        fn lessThan(d: []const u8, a: [2]usize, b: [2]usize) bool {
+            return std.mem.lessThan(u8, d[a[0]..a[1]], d[b[0]..b[1]]);
+        }
+    }.lessThan);
+    var sorted: std.ArrayList(u8) = .empty;
+    try sorted.appendSlice(arena, out.items[0..at]);
+    for (blocks.items) |b| try sorted.appendSlice(arena, dump[b[0]..b[1]]);
+    try sorted.appendSlice(arena, out.items[at..]);
+    return sorted.items;
+}
 
 fn expectExit(expected: u8, r: world.Result) !void {
     if (r.exit_code != expected) {

@@ -1,0 +1,87 @@
+decl 0: value forward (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Basics.String
+  %2 = type_fn %0 -> %1
+  %3 = qualified String.trim
+  %4 = qualified String.toUpper
+  %5 = qualified String.reverse
+  %6 = pat_var local 0
+  %7 = local 0
+  %8 = call %3 [%7]
+  %9 = call %4 [%8]
+  %10 = call %5 [%9]
+  %11 = lambda [%6] -> %10
+  annotation %2
+  params []
+  body %11
+  locals
+    0 _ fresh %6
+  refs
+    import_type Basics.String
+    import_value String.trim
+    import_value String.toUpper
+    import_value String.reverse
+
+decl 1: value backward (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Basics.String
+  %2 = type_fn %0 -> %1
+  %3 = qualified String.reverse
+  %4 = qualified String.toUpper
+  %5 = qualified String.trim
+  %6 = pat_var local 0
+  %7 = local 0
+  %8 = call %5 [%7]
+  %9 = call %4 [%8]
+  %10 = call %3 [%9]
+  %11 = lambda [%6] -> %10
+  annotation %2
+  params []
+  body %11
+  locals
+    0 _ fresh %6
+  refs
+    import_type Basics.String
+    import_value String.reverse
+    import_value String.toUpper
+    import_value String.trim
+
+decl 2: value applied (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (n)
+  %4 = import_value Basics.add
+  %5 = int 1
+  %6 = call %4 [%5]
+  %7 = import_value Basics.mul
+  %8 = int 2
+  %9 = call %7 [%8]
+  %10 = pat_var local 1
+  %11 = local 1
+  %12 = call %6 [%11]
+  %13 = call %9 [%12]
+  %14 = lambda [%10] -> %13
+  %15 = local 0 (n)
+  %16 = call %14 [%15]
+  annotation %2
+  params [%3]
+  body %16
+  locals
+    0 n param %3
+    1 _ fresh %10
+  refs
+    import_type Basics.Int
+    import_value Basics.add
+    import_value Basics.mul
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

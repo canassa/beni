@@ -20,10 +20,10 @@
 //! every stream; the black-box determinism scenario checks exactly that.
 //!
 //! The per-file phase is a function pointer (`Phases`): M1a installed
-//! read → tokenize (`lex_phases`), M1b adds parse (`parse_phases`); M1c
-//! extends it to lower without touching the driver. What a phase produces for a file goes into
-//! `artifacts`, keyed by file index and owned by the session (see
-//! `Artifacts.zig` for why they are not arena memory).
+//! read → tokenize (`lex_phases`), M1b added parse (`parse_phases`), M1c
+//! lower (`lower_phases`), none of them touching the driver. What a phase
+//! produces for a file goes into `artifacts`, keyed by file index and owned
+//! by the session (see `Artifacts.zig` for why they are not arena memory).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -38,6 +38,8 @@ const Tokenizer = @import("lex/Tokenizer.zig");
 const LexDiagnostics = @import("lex/Diagnostics.zig");
 const Parse = @import("parse/Parse.zig");
 const ParseDiagnostics = @import("parse/Diagnostics.zig");
+const Lower = @import("bir/Lower.zig");
+const LowerDiagnostics = @import("bir/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
 
@@ -71,7 +73,7 @@ pub const Options = struct {
     /// `--root`: what module names are relative to.
     root: ?[]const u8 = null,
     /// `--core`: the files are the core package; `foreign` declarations are
-    /// legal (language.md §5.4). Consumed by lowering in M1c.
+    /// legal (language.md §5.4). Consumed by lowering.
     core: bool = false,
     /// Capacity of each worker's profile buffer.
     profile_events_per_thread: usize = 4096,
@@ -82,8 +84,7 @@ pub const IoFailure = struct {
     err: anyerror,
 };
 
-/// The per-file work. M1c PLUG POINT: extend `per_file` with lower; the
-/// driver does not change.
+/// The per-file work; the driver does not change between them.
 pub const Phases = struct {
     per_file: *const fn (session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void,
 };
@@ -93,13 +94,20 @@ pub const Phases = struct {
 pub const lex_phases: Phases = .{ .per_file = lexPhase };
 
 /// M1b: `lex_phases`, then parse into the file's `ast` column and report the
-/// syntax diagnostics.
+/// syntax diagnostics. What `dump --stage=tokens|ast` runs: those stages
+/// show a file the lowering rules have not judged.
 pub const parse_phases: Phases = .{ .per_file = parsePhase };
+
+/// M1c: `parse_phases`, then lower into the file's `bir` column and report
+/// the lowering diagnostics. What `check` and `dump --stage=bir` run.
+pub const lower_phases: Phases = .{ .per_file = lowerPhase };
 
 pub const Worker = struct {
     index: u32,
     arena: Arena,
-    interner: InternPool.Local = .empty,
+    /// Made by `InternPool.Local.init`, so the well-known prefix is in place
+    /// and lowering recognises prelude names by index.
+    interner: InternPool.Local,
     /// This worker's diagnostics, each tagged with its file. Appended in
     /// source order per file; files in the order the worker took them.
     diagnostics: std.ArrayList(Pending) = .empty,
@@ -147,8 +155,12 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
     });
     errdefer session.profile.deinit(gpa);
     session.workers = try gpa.alloc(Worker, options.jobs);
+    errdefer gpa.free(session.workers);
+    var made: usize = 0;
+    errdefer for (session.workers[0..made]) |*worker| worker.interner.deinit(gpa);
     for (session.workers, 0..) |*worker, i| {
-        worker.* = .{ .index = @intCast(i), .arena = .init(std.heap.page_allocator) };
+        worker.* = .{ .index = @intCast(i), .arena = .init(std.heap.page_allocator), .interner = try InternPool.Local.init(gpa) };
+        made += 1;
     }
     return session;
 }
@@ -231,8 +243,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     }
 
     // 3. Merge interners in worker index order, then rewrite every file's
-    //    interned payloads through its worker's remap table. (M1c PLUG
-    //    POINT: Bir symbol references are remapped here too.)
+    //    interned payloads and Bir symbols through its worker's remap table.
     const merge_token = session.profile.begin();
     const remaps = try gpa.alloc([]InternPool.Symbol, session.workers.len);
     defer gpa.free(remaps);
@@ -339,6 +350,7 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
         .comments = comments,
         .lex_diagnostics = lex_diagnostics,
         .ast = .empty,
+        .bir = .empty,
         .worker = worker.index,
     });
 }
@@ -378,6 +390,45 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     }
 
     session.artifacts.files.items(.ast)[file.int()] = tree;
+}
+
+/// The M1c per-file phase: everything `parsePhase` does, then lowering
+/// over the installed tree. Scratch from the worker's arena; the Bir goes
+/// to session storage next to the tree, its symbols local to the worker
+/// until the merge.
+fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
+    try parsePhase(session, worker, file);
+    const gpa = session.gpa;
+    const text = session.store.bytes(file);
+    const line_starts = session.store.lineStarts(file);
+    const tokens = session.artifacts.tokens(file);
+    const tree = session.artifacts.ast(file);
+
+    const lower_token = session.profile.begin();
+    var bir = try Lower.lower(gpa, worker.arena.allocator(), text, tokens.slice(), tree, &worker.interner, .{
+        .core = session.options.core,
+        .module_name = session.store.moduleName(file),
+    });
+    errdefer bir.deinit(gpa);
+    session.profile.end(worker.index, lower_token, .lower, file.int(), @intCast(text.len));
+    worker.addCounter(.insts, bir.insts.len);
+
+    var message: Io.Writer.Allocating = .init(gpa);
+    defer message.deinit();
+    for (bir.diagnostics) |item| {
+        message.clearRetainingCapacity();
+        try LowerDiagnostics.message(item, text, line_starts, &message.writer);
+        try worker.report(
+            session,
+            file,
+            item.code,
+            LexDiagnostics.position(line_starts, item.start),
+            LexDiagnostics.position(line_starts, item.end),
+            message.written(),
+        );
+    }
+
+    session.artifacts.files.items(.bir)[file.int()] = bir;
 }
 
 fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator.Error!void {

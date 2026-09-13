@@ -90,14 +90,14 @@ type alias Item =
 
 
 pub render : Int -> Doc -> String
-render width doc =
-    layout width 0 [ { indent = 0, mode = Break, doc = doc } ] []
+render w doc =
+    layout w 0 [ { indent = 0, mode = Break, doc = doc } ] []
         |> List.reverse
         |> String.concat
 
 
 layout : Int -> Int -> List Item -> List String -> List String
-layout width column items acc =
+layout w column items acc =
     case items of
         [] ->
             acc
@@ -105,37 +105,37 @@ layout width column items acc =
         item :: rest ->
             case item.doc of
                 Empty ->
-                    layout width column rest acc
+                    layout w column rest acc
 
                 Text s ->
-                    layout width (column + String.length s) rest (s :: acc)
+                    layout w (column + String.length s) rest (s :: acc)
 
                 Line ->
-                    layout width item.indent rest (newline item.indent :: acc)
+                    layout w item.indent rest (newline item.indent :: acc)
 
                 SoftLine ->
                     case item.mode of
                         Flat ->
-                            layout width (column + 1) rest (" " :: acc)
+                            layout w (column + 1) rest (" " :: acc)
 
                         Break ->
-                            layout width item.indent rest (newline item.indent :: acc)
+                            layout w item.indent rest (newline item.indent :: acc)
 
                 Nest n inner ->
-                    layout width column ({ item | indent = item.indent + n, doc = inner } :: rest) acc
+                    layout w column ({ item | indent = item.indent + n, doc = inner } :: rest) acc
 
                 Concat left right ->
-                    layout width column ({ item | doc = left } :: { item | doc = right } :: rest) acc
+                    layout w column ({ item | doc = left } :: { item | doc = right } :: rest) acc
 
                 Group inner ->
                     let
                         flat =
                             { item | mode = Flat, doc = inner }
                     in
-                    if fits (width - column) (flat :: rest) then
-                        layout width column (flat :: rest) acc
+                    if fits (w - column) (flat :: rest) then
+                        layout w column (flat :: rest) acc
                     else
-                        layout width column ({ item | mode = Break, doc = inner } :: rest) acc
+                        layout w column ({ item | mode = Break, doc = inner } :: rest) acc
 
 
 fits : Int -> List Item -> Bool
@@ -242,8 +242,8 @@ escape s =
 
 
 pub printValue : Int -> Value -> String
-printValue width value =
-    render width (valueDoc value)
+printValue w value =
+    render w (valueDoc value)
 
 
 pub sample : Value

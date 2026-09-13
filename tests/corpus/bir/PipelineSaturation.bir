@@ -1,0 +1,134 @@
+decl 0: value process (annotated)
+  %0 = type_import List.List
+  %1 = type_import Basics.Int
+  %2 = type_app %0 [%1]
+  %3 = type_import Basics.Int
+  %4 = type_fn %2 -> %3
+  %5 = pat_var local 0 (xs)
+  %6 = local 0 (xs)
+  %7 = qualified List.map
+  %8 = pat_var local 1 (x)
+  %9 = local 1 (x)
+  %10 = int 2
+  %11 = import_value Basics.mul
+  %12 = call %11 [%9, %10]
+  %13 = lambda [%8] -> %12
+  %14 = call %7 [%13, %6]
+  %15 = qualified List.filter
+  %16 = pat_var local 2 (x)
+  %17 = local 2 (x)
+  %18 = int 10
+  %19 = import_value Basics.gt
+  %20 = call %19 [%17, %18]
+  %21 = lambda [%16] -> %20
+  %22 = call %15 [%21, %14]
+  %23 = qualified List.sum
+  %24 = call %23 [%22]
+  annotation %4
+  params [%5]
+  body %24
+  locals
+    0 xs param %5
+    1 x param %8
+    2 x param %16
+  refs
+    import_type List.List
+    import_type Basics.Int
+    import_value List.map
+    import_value Basics.mul
+    import_value List.filter
+    import_value Basics.gt
+    import_value List.sum
+
+decl 1: value applyRight (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = type_import Basics.Int
+  %4 = type_import Basics.Int
+  %5 = type_fn %3 -> %4
+  %6 = type_fn %2 -> %5
+  %7 = pat_var local 0 (f)
+  %8 = pat_var local 1 (x)
+  %9 = local 1 (x)
+  %10 = local 0 (f)
+  %11 = call %10 [%9]
+  %12 = local 0 (f)
+  %13 = call %12 [%11]
+  annotation %6
+  params [%7, %8]
+  body %13
+  locals
+    0 f param %7
+    1 x param %8
+  refs
+    import_type Basics.Int
+
+decl 2: value mixedAtom (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.String
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (n)
+  %4 = local 0 (n)
+  %5 = int 1
+  %6 = import_value Basics.add
+  %7 = call %6 [%4, %5]
+  %8 = qualified String.fromInt
+  %9 = call %8 [%7]
+  annotation %2
+  params [%3]
+  body %9
+  locals
+    0 n param %3
+  refs
+    import_type Basics.Int
+    import_type Basics.String
+    import_value Basics.add
+    import_value String.fromInt
+
+decl 3: value partial (annotated)
+  %0 = type_import List.List
+  %1 = type_import Basics.Int
+  %2 = type_app %0 [%1]
+  %3 = type_import List.List
+  %4 = type_import Basics.Int
+  %5 = type_app %3 [%4]
+  %6 = type_fn %2 -> %5
+  %7 = qualified List.map
+  %8 = import_value Basics.add
+  %9 = int 1
+  %10 = call %8 [%9]
+  %11 = call %7 [%10]
+  %12 = qualified List.filter
+  %13 = import_value Basics.lt
+  %14 = int 2
+  %15 = call %13 [%14]
+  %16 = call %12 [%15]
+  %17 = pat_var local 0
+  %18 = local 0
+  %19 = call %11 [%18]
+  %20 = call %16 [%19]
+  %21 = lambda [%17] -> %20
+  annotation %6
+  params []
+  body %21
+  locals
+    0 _ fresh %17
+  refs
+    import_type List.List
+    import_type Basics.Int
+    import_value List.map
+    import_value Basics.add
+    import_value List.filter
+    import_value Basics.lt
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

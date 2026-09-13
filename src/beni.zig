@@ -28,9 +28,22 @@ pub const parse = struct {
     pub const Parse = @import("parse/Parse.zig");
     pub const Diagnostics = @import("parse/Diagnostics.zig");
 };
+pub const fmt = struct {
+    pub const Format = @import("fmt/Format.zig");
+    pub const Command = @import("fmt/Command.zig");
+};
+pub const Bir = @import("bir/Bir.zig");
+pub const Lower = @import("bir/Lower.zig");
+pub const bir = struct {
+    pub const Bir = @import("bir/Bir.zig");
+    pub const Lower = @import("bir/Lower.zig");
+    pub const Diagnostics = @import("bir/Diagnostics.zig");
+    pub const prelude = @import("bir/prelude.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
+    pub const bir = @import("dump/bir.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");
@@ -41,6 +54,8 @@ test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(lex);
     std.testing.refAllDecls(parse);
+    std.testing.refAllDecls(bir);
     std.testing.refAllDecls(dump);
+    std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(render);
 }

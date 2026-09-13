@@ -1,0 +1,17 @@
+-- Formatter: imports unsorted, module doc glued to the imports, three blank
+-- lines between declarations, none elsewhere; expected: imports sorted by
+-- path, one blank line after the module doc, two between declarations.
+--! Board module.
+
+import Dict exposing (Dict)
+import Html
+import Html.Attributes exposing (class)
+import Set
+
+
+x =
+    1
+
+
+y =
+    2

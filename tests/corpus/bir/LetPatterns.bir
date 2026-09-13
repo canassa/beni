@@ -1,0 +1,88 @@
+decl 0: value split (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.String
+  %2 = type_import Basics.Bool
+  %3 = type_tuple [%1, %2]
+  %4 = type_tuple [%0, %3]
+  %5 = type_import Basics.String
+  %6 = type_import Basics.Int
+  %7 = type_record { name : %5, age : %6 }
+  %8 = type_import Basics.String
+  %9 = type_fn %7 -> %8
+  %10 = type_fn %4 -> %9
+  %11 = pat_var local 0 (input)
+  %12 = pat_var local 1 (person)
+  %13 = pat_var local 2 (n)
+  %14 = pat_var local 3 (s)
+  %15 = pat_var local 4 (flag)
+  %16 = pat_tuple [%14, %15]
+  %17 = pat_tuple [%13, %16]
+  %18 = pat_record [local 5 (name), local 6 (age)]
+  %19 = pat_unit
+  %20 = pat_var local 7 (a)
+  %21 = pat_var local 8 (b)
+  %22 = pat_tuple [%20, %21]
+  %23 = pat_as %22 as local 9 (pair)
+  %24 = let_def local 10 (total) : %35 [] = %46
+  %25 = local 0 (input)
+  %26 = let_pattern %17 = %25
+  %27 = local 1 (person)
+  %28 = let_pattern %18 = %27
+  %29 = unit
+  %30 = let_pattern %19 = %29
+  %31 = local 2 (n)
+  %32 = local 6 (age)
+  %33 = tuple [%31, %32]
+  %34 = let_pattern %23 = %33
+  %35 = type_import Basics.Int
+  %36 = local 2 (n)
+  %37 = local 7 (a)
+  %38 = import_value Basics.add
+  %39 = call %38 [%36, %37]
+  %40 = local 8 (b)
+  %41 = import_value Basics.add
+  %42 = call %41 [%39, %40]
+  %43 = local 9 (pair)
+  %44 = tuple_index %43 .0
+  %45 = import_value Basics.add
+  %46 = call %45 [%42, %44]
+  %47 = local 5 (name)
+  %48 = chunk ":"
+  %49 = local 3 (s)
+  %50 = chunk ":"
+  %51 = local 10 (total)
+  %52 = chunk ":"
+  %53 = local 4 (flag)
+  %54 = interp [%47, %48, %49, %50, %51, %52, %53]
+  %55 = let [%26, %28, %30, %34, %24] in %54
+  annotation %10
+  params [%11, %12]
+  body %55
+  locals
+    0 input param %11
+    1 person param %12
+    2 n pattern %13
+    3 s pattern %14
+    4 flag pattern %15
+    5 name pattern %18
+    6 age pattern %18
+    7 a pattern %20
+    8 b pattern %21
+    9 pair pattern %23
+    10 total let %24
+  refs
+    import_type Basics.Int
+    import_type Basics.String
+    import_type Basics.Bool
+    import_value Basics.add
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

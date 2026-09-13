@@ -1,0 +1,29 @@
+--! Already canonical (§9): module doc, blank line, imports sorted by path
+--! one per line, two blank lines, declarations separated by two blank lines,
+--! annotation directly above its definition, `pub` on the annotation.
+
+import Dict exposing (Dict)
+import Html exposing (Html, div, text)
+import Json.Decode as Decode
+import Set
+
+
+type alias Model =
+    { items : Dict String Int
+    , selected : Set.Set String
+    }
+
+
+pub init : Model
+init =
+    { items = Dict.empty, selected = Set.empty }
+
+
+pub view : Model -> Html msg
+view model =
+    div [] [ text (String.fromInt (Dict.size model.items)) ]
+
+
+decoder : Decode.Decoder Int
+decoder =
+    Decode.int

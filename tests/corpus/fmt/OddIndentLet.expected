@@ -1,0 +1,10 @@
+-- Formatter: `let` with 2- and 6-space indents, `in` misaligned, a binding
+-- body on the head line; expected: canonical 4-space let/in layout.
+total xs =
+    let
+        a =
+            List.sum xs
+        b =
+            a * 2
+    in
+    a + b

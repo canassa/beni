@@ -1,0 +1,95 @@
+decl 0: pub alias Id
+  %0 = type_import Basics.Int
+  body %0
+  refs
+    import_type Basics.Int
+  interface alias Id
+
+decl 1: pub type Color
+  ctor 0 Red []
+  ctor 1 Green []
+  ctor 2 Blue []
+  interface type Color = Red | Green | Blue
+
+decl 2: pub opaque type Token
+  %0 = type_import Basics.String
+  ctor 3 Token [%0]
+  refs
+    import_type Basics.String
+  interface opaque type Token
+
+decl 3: type Hidden
+  %0 = type_import Basics.Int
+  ctor 4 Hidden [%0]
+  refs
+    import_type Basics.Int
+
+decl 4: alias PrivateAlias
+  %0 = type_top 0 (Id)
+  %1 = type_record { id : %0 }
+  body %1
+  ctor 5 PrivateAlias [%0]
+  refs
+    type_top 0 (Id)
+
+decl 5: pub value annotated (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (n)
+  %4 = local 0 (n)
+  %5 = top 7 (secret)
+  %6 = import_value Basics.add
+  %7 = call %6 [%4, %5]
+  annotation %2
+  params [%3]
+  body %7
+  locals
+    0 n param %3
+  refs
+    import_type Basics.Int
+    top 7 (secret)
+    import_value Basics.add
+  interface value annotated (annotated)
+
+decl 6: pub value bare
+  %0 = ctor 0 (Red)
+  params []
+  body %0
+  refs
+    ctor 0 (Red)
+  interface value bare
+
+decl 7: value secret (annotated)
+  %0 = type_import Basics.Int
+  %1 = int 1
+  annotation %0
+  params []
+  body %1
+  refs
+    import_type Basics.Int
+
+decl 8: value unannotatedPrivate
+  %0 = ctor 4 (Hidden)
+  %1 = int 1
+  %2 = call %0 [%1]
+  params []
+  body %2
+  refs
+    ctor 4 (Hidden)
+
+interface
+  alias Id
+  type Color = Red | Green | Blue
+  opaque type Token
+  value annotated (annotated)
+  value bare
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
