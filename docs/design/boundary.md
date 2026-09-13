@@ -160,12 +160,52 @@ unforgeable-capability trick. A user cannot fabricate a database handle or a soc
 use the one they were given, which is what makes a capability grantable and revocable rather than
 ambient.
 
+### 5.1 Many runtimes, few platforms
+
+**The compiler knows nothing about runtimes.** It knows about platform packages, so supporting Bun,
+Deno, Cloudflare Workers or Electron is a package someone publishes, not a compiler change. That
+falls out of §2's governance decision rather than needing anything new, and it is the main practical
+dividend of making privilege a role.
+
+Where the runtimes have converged, the capability is **platform-independent and lives in core**:
+`fetch`, `URL`, `TextEncoder`, `crypto.getRandomValues`, timers, streams and structured clone are
+common to browsers, Node, Bun, Deno and the edge runtimes, and there is a standards body whose
+purpose is keeping that set common. A module using only those compiles anywhere.
+
+Where they genuinely differ — filesystem, process arguments and environment, servers, the DOM —
+that difference *is* what a platform is for.
+
+**Node, Bun and Deno are expected to be one platform, not three**, because all three implement
+Node's API surface through `node:` specifiers. If that holds, Bun support is a compatibility claim
+to test rather than a package to write. **This needs verifying before we rely on it**; the fallback
+is three thin platforms sharing most of their beni code, which is unpleasant but not structural.
+
+### 5.2 A platform declares its output shape
+
+`main`'s type is a platform fact, and so is the shape of the artifact. A browser platform wants a
+module a `<script type="module">` can load; a Node platform wants an entry file; a Workers runtime
+wants a specific export. The platform declares this, the same way it declares `main`, so §9.5's
+emitter is parameterised by it rather than hardcoding one.
+
+### 5.3 One project, several platforms
+
+The full-stack case is a first-class requirement, not an afterthought: a browser client and a server
+in one repository, sharing modules. **A build is per entry point and per platform**, so shared code
+is compiled twice under different platforms and each compilation sees only the capabilities its
+platform offers. A module that uses a browser-only capability simply fails to resolve when compiled
+for the server, which is the diagnostic you want rather than a runtime surprise.
+
+This is also why `--platform` cannot be a global flag with one value per invocation forever; the
+build contract needs to express "this entry point, that platform" as a pair. M3 may ship one pair
+per invocation, but the manifest concept M4 introduces should carry the set.
+
 Two platforms ship with the compiler:
 
 - **Browser**: The Elm Architecture. `init`, `update`, `view`, `subscriptions`, ports.
-- **Node**: worker-shaped, plus an exit code. This is the platform the test suite's second boundary
-  runs against — compile a program, run the emitted JavaScript, assert what it printed — so it is
-  not a nicety, it is what makes codegen testable at all.
+- **Server** (Node-compatible, expected to cover Bun and Deno per §5.1): worker-shaped, plus an
+  exit code. This is the platform the test suite's second boundary runs against — compile a program,
+  run the emitted JavaScript, assert what it printed — so it is not a nicety, it is what makes
+  codegen testable at all.
 
 ## 6. The capability roadmap
 
