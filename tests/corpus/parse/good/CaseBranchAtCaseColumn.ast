@@ -6,4 +6,7 @@
       (branch
         (pat_ctor Just
           (pat_var n))
-        (ident n)))))
+        (ident n))
+      (branch
+        (pat_ctor Nothing)
+        (int 0)))))

@@ -13,16 +13,13 @@ describe m =
         Just [ x ] ->
             "one: ${x}"
 
-        Just (x :: y :: rest) ->
+        Just ((first :: _ :: rest) as whole) ->
             case rest of
                 [] ->
-                    "two: ${x} ${y}"
+                    "two starting ${first}"
 
                 _ ->
-                    "many"
-
-        Just ((first :: _) as whole) ->
-            "first ${first} of ${List.length whole}"
+                    "many from ${first} of ${List.length whole}"
 
 
 sign : Int -> Int

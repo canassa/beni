@@ -1,0 +1,7 @@
+-- check/good (project): one side of the diamond.
+import Base exposing (Unit, factor)
+
+
+pub scaleUp : Unit -> Int -> Int
+scaleUp u n =
+    n * factor u

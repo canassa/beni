@@ -19,6 +19,134 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-13 — M2c (DAG-parallel checking, exhaustiveness)
+
+**Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory
+channel, 16 GB RAM, Linux 7.2, Zig 0.16.0, ReleaseFast. **Shared machine,
+and it showed**: another tenant's build ran through most of this session, so
+these are best-of-20 rather than best-of-5 and the absolute numbers are
+1-10 % pessimistic. The RATIOS are what the entry is for, and every number in
+one table was taken in one pass.
+**Corpus:** `bench/gen.zig --generate=100000` — 624 files, 100 159 lines,
+1 840 323 bytes, 635 modules (core included), 3 787 edges. `beni check` on it
+is clean, exhaustiveness included.
+
+### Wall time by worker count
+
+| command | `--jobs=1` | `--jobs=2` | `--jobs=4` | default (4) | speedup at 4 |
+|---|---:|---:|---:|---:|---:|
+| `check`, M2b (checker serial) | 137 ms | 117 ms | 110 ms | 110 ms | 1.25× |
+| `check`, M2c (checker on the DAG) | 141 ms | 92 ms | 78 ms | 80 ms | **1.81×** |
+
+The M2b row is the same binary one commit earlier, measured the same way, and
+it is the reason M2c did the work: at M2b the checker was **74 of the 137 ms**
+and none of it parallelised, so four workers bought 1.25×. Putting it on the
+module DAG (checker.md §4.4) turns that into 1.81× and takes 32 ms off the
+wall clock of a 100k-line project.
+
+`--jobs=1` costs 4 ms more than M2b — that is the exhaustiveness pass
+(checker.md §6.6), 7.1 ms of the profiled span, partly offset elsewhere.
+
+### Where the time goes (`--self-profile`, same corpus)
+
+| | `check` j=1 | `check` j=4 |
+|---|---:|---:|
+| profiled span | 139.5 ms | 66.4 ms |
+| total worker CPU | 110.9 ms | 175.6 ms |
+| `read` | 4.9 | 8.6 |
+| `lex` | 15.1 | 21.8 |
+| `parse` | 11.6 | 17.5 |
+| `lower` | 15.8 | 24.9 |
+| `constrain` | 17.0 | 26.9 |
+| `solve` | 39.3 | 57.5 |
+| `exhaustive` | 7.1 | 18.4 |
+| `enumerate` + `merge_interners` + `graph` + `resolve` + `render` (serial) | 10.1 | 11.4 |
+
+Worker busy time at `--jobs=4` is **44.5 / 44.4 / 43.3 / 43.4 ms** — within
+3 %. The DAG scheduler keeps all four fed for the whole run despite 3 787
+edges and a core package every module depends on; there is no straggler and
+no tail.
+
+### Why 1.81×, and not more
+
+Two limits, and both are measured rather than argued.
+
+1. **The serial tail is 11.4 ms**: enumerate, the interner merge, the graph
+   build and `resolve`, which is still one module at a time. That is 17 % of
+   the `--jobs=4` span and it is the next thing worth parallelising.
+2. **The machine gives about 2.55×, not 4×.** Four independent
+   single-threaded `beni check` processes over the same corpus take **221 ms**
+   wall against **141 ms** for one alone: an aggregate of 4 × 141 / 221 =
+   **2.55×**. The same work costs 58 % more CPU when four workers do it
+   (110.9 → 175.6 ms), and every phase inflates including `read`, which is a
+   syscall and a memcpy and contends on nothing of ours. This is an N100 —
+   four Alder Lake-N E-cores sharing 6 MiB of L3 and one DDR channel — and a
+   checker that allocates a type store per module is memory-bound long before
+   it is core-bound.
+
+Against those two: the parallel part is 139.5 − 10.1 = 128 ms of work and
+takes 66.4 − 11.4 = 55 ms at four workers, which is **2.33×, or 91 % of the
+2.55× the machine will give**. Amdahl over the measured ceiling predicts a
+span of 128 / 2.55 + 11.4 = 61.7 ms against the 66.4 ms measured, so 93 % of
+the model. **The parallelism is kept**: it is 32 ms of wall time on the
+budget's own corpus, the code it costs is one ready queue and one reverse-edge
+table, and the scaling is as close to the machine's ceiling as the front end's
+is.
+
+### Type checking throughput (`zig build bench`, single-threaded)
+
+```
+{"phase":"resolve","modules":635,"edges":3787,"interfaces":635,"ms":8.37,"cold_check_ms":44.3}
+{"phase":"check","modules":635,"lines":100159,"unifications":234875,"generalisations":121908,"instantiations":73934,"obligations":3151,"diagnostics":0,"ms":92.18,"loc_per_s":1086516,"cold_check_ms":136.5}
+{"phase":"total","files":624,"bytes":1840323,"tokens":302615,"nodes":223928,"insts":207449,"ms":130.4,"mb_per_s":13.5,"loc_per_s":768270}
+```
+
+**1.09 M LOC/s** for checking alone against the §2 target of 250 k LOC/s per
+core, and 78 ms of wall clock for the whole cold pipeline against the 800 ms
+budget. `zig build bench` runs the check single-threaded on purpose — the
+target is stated per core — and this line was taken under the neighbour's
+load, so read it as a floor.
+
+### Pattern usefulness (checker.md §6.6)
+
+`exhaustive` is **7.1 ms of 139.5**, 5 % of a cold check, over 635 modules.
+The work budget that bounds the exponential worst case is never approached by
+real code: turning it down until answers change, every `case` in `core/`, in
+the `check` corpus and in the generated corpus is decided on a budget of
+**50**, and a deliberately hostile 200-constructor × 200-branch `case` with
+two-deep nests lands between **25 600 and 51 200** — and still finishes in
+**6 ms**. The shipped budget is 200 000.
+
+| input | diagnostics | exit | time |
+|---|---:|---:|---:|
+| 200 constructors × 200 branches, two-deep nests | 1 | 1 | **6 ms** |
+| 2 000-deep `Just (Just (…))` pattern (a legal tree) | 0 | 0 | 9 ms |
+| 8 000-deep `Just (Just (…))` pattern (past the limit) | 2 | 1 | 10 ms |
+
+### A segfault the M2c abuse scenarios found
+
+`Just (Just (…))` is **two** tree levels per source level — `pat_ctor` over
+`pat_paren` — and `Parse`'s depth guard charged one, so a 4096-charge pattern
+built an 8192-deep tree. Every consumer walks that tree by recursion: 4 000
+levels segfaulted `check`, `dump --stage=ast`, `dump --stage=bir` and `fmt`.
+Two fixes, both narrow: `parsePatAtom` charges the guard as well, so the bound
+is on the TREE and not on the source nesting; and every worker is now spawned
+with an explicit 64 MiB stack (the size M2b measured for the checker),
+`--jobs=1` included, so a crash can no longer depend on the worker count. The
+AST dump runs on such a thread too — 4 090 nested parentheses in an
+*expression* crashed it, which had nothing to do with patterns.
+
+Cost of always spawning: `beni version` is unchanged at 2 ms, `fmt --check` is
+70 ms at `--jobs=1` and 35 ms at the default, both within noise of M1d's 57/26
+on an idle machine.
+
+One number in the M1d table below is stale as a result and is left as it was
+taken: 100 000 nested lambdas now produce **4095** diagnostics, not 4096,
+because a lambda's parameter is a pattern atom and the depth guard charges one
+for it. The bound moved by one level; nothing else about that input changed.
+
+---
+
 ## 2026-09-13 — M1d (parallel driver, formatter on the workers)
 
 **Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory

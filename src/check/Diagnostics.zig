@@ -787,6 +787,57 @@ pub const Reporter = struct {
         try r.emit(.try_shape, region, &out);
     }
 
+    // ---- Patterns (checker.md §6.6) --------------------------------------
+
+    /// A `case` with no branch for some possibility. `examples` are
+    /// counterexample patterns already rendered as source syntax by
+    /// `Render.allocPattern` — at most three of them, because a list of
+    /// twenty is a wall and the first three say the same thing.
+    ///
+    /// The patterns arrive rendered rather than as a structure because the
+    /// store they name constructors from is the module's, and this message
+    /// is the last thing that will ever read it.
+    pub fn missingPatterns(r: *Reporter, region: Bir.Inst.Index, examples: []const []const u8) Error!void {
+        if (r.quiet) return;
+        if (examples.len == 0) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        w.writeAll(
+            \\This `case` does not have branches for all possibilities:
+            \\
+            \\Missing possibilities include:
+            \\
+            \\
+        ) catch return error.OutOfMemory;
+        for (examples) |e| w.print("    {s}\n", .{e}) catch return error.OutOfMemory;
+        w.writeAll(
+            \\
+            \\I would have to crash if I saw one of those. Add branches for them!
+            \\
+            \\Hint: if you want to write a branch's code later, `Debug.todo "…"` holds the
+            \\place and has whatever type the branch needs.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emit(.missing_patterns, region, &out);
+    }
+
+    /// A branch no value can reach: every shape it matches is taken by a
+    /// branch above it. `index` is 1-based, as the reader counts them.
+    pub fn redundantPattern(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        out.writer.print(
+            \\The {d}{s} pattern is redundant:
+            \\
+            \\Any value with this shape is matched by a branch above it, so this branch
+            \\never runs. Remove it, or make it more specific than the one that shadows it.
+            \\
+        , .{ index, ordinalSuffix(index) }) catch return error.OutOfMemory;
+        try r.emit(.redundant_pattern, region, &out);
+    }
+
     // ---- Records ---------------------------------------------------------
 
     pub fn missingField(r: *Reporter, region: Bir.Inst.Index, missing: []const Symbol, actual: Var, expected: Var) Error!void {
@@ -1056,6 +1107,18 @@ fn editDistance(scratch: Allocator, a: []const u8, b: []const u8) Allocator.Erro
         @memcpy(previous, current);
     }
     return previous[b.len];
+}
+
+/// `1st`, `2nd`, `3rd`, `4th` … — English, including the teens, which are
+/// all `th` however they end.
+fn ordinalSuffix(n: u32) []const u8 {
+    if (n % 100 >= 11 and n % 100 <= 13) return "th";
+    return switch (n % 10) {
+        1 => "st",
+        2 => "nd",
+        3 => "rd",
+        else => "th",
+    };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,9 @@
+module Colors
+  type Color
+    Red
+    Green
+    Blue
+  value next : Color -> Color
+module Paint
+  value name : Color -> String
+  value warmest : Color

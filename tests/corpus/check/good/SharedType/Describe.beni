@@ -1,0 +1,11 @@
+-- check/good (project): the third user of `Shape`, and the one that ties
+-- the other two together — its type comes out of `Area` and `Perimeter`,
+-- whose interfaces were built by two different module checks.
+import Area exposing (area)
+import Perimeter exposing (perimeter)
+import Shape exposing (Shape)
+
+
+pub describe : Shape -> String
+describe s =
+    "area ${area s}, perimeter ${perimeter s}"

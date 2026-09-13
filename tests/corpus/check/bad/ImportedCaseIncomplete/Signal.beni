@@ -1,0 +1,6 @@
+-- check/bad (project): the declaring module. Its constructors are public,
+-- so its dependents can both build and match them.
+pub type Signal
+    = Red
+    | Amber
+    | Green

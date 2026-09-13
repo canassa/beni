@@ -1,0 +1,9 @@
+-- check/bad (project): the importer instantiates that INFERRED scheme and
+-- is held to it. The message is about a type nobody wrote down, which is
+-- the thing cross-module inference has to get right.
+import Helpers exposing (double)
+
+
+pub wrong : String
+wrong =
+    double "not a number"

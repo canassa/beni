@@ -1,0 +1,26 @@
+-- check/good (project): a `pub opaque type`. The name crosses the module
+-- boundary and the constructors do not (language.md §5.1), so the importer
+-- can hold a `Counter` and pass it around but cannot take it apart — and a
+-- `case` on one there can only use a variable, which is exhaustive
+-- (checker.md §6.6).
+pub opaque type Counter
+    = Counter Int
+
+
+pub zero : Counter
+zero =
+    Counter 0
+
+
+pub bump : Counter -> Counter
+bump counter =
+    case counter of
+        Counter n ->
+            Counter (n + 1)
+
+
+pub value : Counter -> Int
+value counter =
+    case counter of
+        Counter n ->
+            n

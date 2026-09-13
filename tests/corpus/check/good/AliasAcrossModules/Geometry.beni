@@ -1,0 +1,11 @@
+-- check/good (project): a `type alias` crossing a module boundary. The
+-- alias is interned and never expanded (checker.md §5), so the importer's
+-- interface prints `Point` and not the record behind it — which is the
+-- whole reason aliases are interned rather than substituted away.
+pub type alias Point =
+    { x : Int, y : Int }
+
+
+pub origin : Point
+origin =
+    { x = 0, y = 0 }

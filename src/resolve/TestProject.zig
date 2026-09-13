@@ -37,6 +37,13 @@ pub const Module = struct {
 pub const Options = struct {
     phases: Session.Phases = Session.resolve_phases,
     keep_type_stores: bool = false,
+    /// How many workers check modules (checker.md §4.4). One by default, so
+    /// a hermetic test spawns nothing; a scenario that is ABOUT the DAG
+    /// scheduling asks for more.
+    jobs: u32 = 1,
+    /// The pattern-usefulness budget (checker.md §6.6), for the test that
+    /// proves a `case` too expensive to analyse falls silent.
+    pattern_budget: u32 = Session.default_pattern_budget,
 };
 
 session: Session,
@@ -51,9 +58,10 @@ pub fn init(gpa: Allocator, modules: []const Module) !TestProject {
 pub fn initWith(gpa: Allocator, modules: []const Module, options: Options) !TestProject {
     var p: TestProject = .{
         .session = try Session.init(gpa, std.testing.io, .{
-            .jobs = 1,
+            .jobs = options.jobs,
             .diagnostics = .json,
             .keep_type_stores = options.keep_type_stores,
+            .pattern_budget = options.pattern_budget,
         }),
         .stderr = .init(gpa),
     };

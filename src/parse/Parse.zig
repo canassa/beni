@@ -1856,6 +1856,16 @@ fn parseNegIntPattern(p: *Parse) Allocator.Error!Index {
 ///          | '(' ')' | '(' Pattern ')' | '(' Pattern (',' Pattern)+ ')'
 ///          | '[' ']' | '[' Pattern (',' Pattern)* ']' | '{' lower (',' lower)* '}'
 fn parsePatAtom(p: *Parse) Allocator.Error!Index {
+    // Charged as well as `parsePattern`, because a bracketed atom is a
+    // NODE of its own: `Just (Just (…))` is `pat_ctor` over `pat_paren`
+    // over `pat_ctor`, two tree levels per source level, and one charge
+    // apiece would let a 4096-charge pattern build an 8192-deep tree. Every
+    // consumer walks that tree by recursion — `dump --stage=ast` and the
+    // formatter over the AST, lowering over it again — so the guard has to
+    // bound the TREE and not the source nesting. Before this, 4000 levels
+    // of `Just (` segfaulted `check`, both dumps and `fmt`.
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
     const saved_context = p.setContext(.pattern);
     defer p.context = saved_context;
     switch (p.peek()) {

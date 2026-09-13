@@ -111,6 +111,31 @@ fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check
     return if (summary.errors > 0) 1 else 0;
 }
 
+/// Run `function` on a thread with the stack a deep tree walk needs. The
+/// same shape `Session` uses for the checker, and for the same reason: the
+/// parser's nesting limit bounds the tree at `Parse.max_depth` levels, every
+/// consumer walks it by recursion, and a main thread does not have room for
+/// that many frames.
+fn onBigStack(comptime function: anytype, args: anytype) anyerror!void {
+    const Runner = struct {
+        args: @TypeOf(args),
+        result: anyerror!void = {},
+
+        fn go(r: *@This()) void {
+            r.result = @call(.auto, function, r.args);
+        }
+    };
+    var runner: Runner = .{ .args = args };
+    const thread = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, Runner.go, .{&runner}) catch |err| {
+        // No thread to be had: do it here and hope the tree is shallow,
+        // which it is for everything but the pathological inputs.
+        if (err == error.OutOfMemory) return err;
+        return @call(.auto, function, args);
+    };
+    thread.join();
+    return runner.result;
+}
+
 fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
     var options = sessionOptions(dump.common);
     // Only the interface dump resolves names, and only it needs core
@@ -149,15 +174,25 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
             session.artifacts.comments(file),
             session.store.lineStarts(file),
         ) catch return 2,
-        .ast => beni.dump.ast.write(
-            stdout,
-            session.store.bytes(file),
-            session.artifacts.tokens(file),
-            session.artifacts.comments(file),
-            session.store.lineStarts(file),
-            session.artifacts.ast(file),
-            .{ .positions = dump.positions },
-        ) catch return 2,
+        // The AST dump recurses once per NODE, and the parser will hand it
+        // a tree `Parse.max_depth` levels deep on purpose
+        // (`bench/pathological/`). That does not fit in the 8 MiB a main
+        // thread gets — 4090 nested parentheses segfaulted it — so it runs
+        // where every other tree walk in the compiler runs: on a thread
+        // with an explicit stack (Session's `check_stack_size`).
+        .ast => onBigStack(struct {
+            fn go(w: *Io.Writer, sess: *Session, f: SourceStore.Index, positions: bool) anyerror!void {
+                return beni.dump.ast.write(
+                    w,
+                    sess.store.bytes(f),
+                    sess.artifacts.tokens(f),
+                    sess.artifacts.comments(f),
+                    sess.store.lineStarts(f),
+                    sess.artifacts.ast(f),
+                    .{ .positions = positions },
+                );
+            }
+        }.go, .{ stdout, &session, file, dump.positions }) catch return 2,
         .bir => beni.dump.bir.write(
             stdout,
             session.store.bytes(file),

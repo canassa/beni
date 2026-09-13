@@ -1,0 +1,4 @@
+-- check/bad (project): a `pub` value with no annotation. Its scheme is
+-- inferred, `Int -> Int` and not `a -> a`, because `+` pins it.
+pub double n =
+    n + n

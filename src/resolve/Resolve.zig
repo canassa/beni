@@ -46,6 +46,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Graph = @import("Graph.zig");
+const Profile = @import("../Profile.zig");
 const Interface = @import("Interface.zig");
 
 const Resolve = @This();
@@ -85,12 +86,17 @@ pub fn deinit(r: *Resolve, gpa: Allocator) void {
 /// Resolve every module of `graph`, in its topological order. `scratch` is
 /// one worker's arena and holds nothing after the call; the interfaces and
 /// the diagnostics are `gpa`-owned and belong to the session.
+/// Resolve every module in the graph's order. `profile` gets one `resolve`
+/// event per MODULE (checker.md §9) — the per-module granularity is what
+/// M4's incrementality tests read, since "this module was not re-resolved"
+/// is only visible if the trace has a row per module.
 pub fn run(
     gpa: Allocator,
     scratch: Allocator,
     graph: *const Graph,
     artifacts: *Artifacts,
     interner: *const InternPool.Global,
+    profile: ?*Profile,
 ) Allocator.Error!Resolve {
     var r: Resolve = .empty;
     errdefer r.deinit(gpa);
@@ -109,7 +115,11 @@ pub fn run(
         .interfaces = r.interfaces,
         .diagnostics = &diagnostics,
     };
-    for (graph.order) |m| try pass.module(m);
+    for (graph.order) |m| {
+        const token = if (profile) |p| p.begin() else null;
+        try pass.module(m);
+        if (profile) |p| p.end(0, token.?, .resolve, graph.moduleFile(m).int(), 0);
+    }
     r.diagnostics = try diagnostics.toOwnedSlice(gpa);
     return r;
 }

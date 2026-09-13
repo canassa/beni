@@ -1,0 +1,24 @@
+-- check/good (project): constructors imported by name, used in expression
+-- AND pattern position. The exhaustiveness check reaches `Color`'s full
+-- constructor list through `Colors`' interface (checker.md §6.6), so this
+-- `case` is complete even though the importer only named three of the names
+-- in its own file.
+import Colors exposing (Blue, Color, Green, Red)
+
+
+pub name : Color -> String
+name c =
+    case c of
+        Red ->
+            "red"
+
+        Green ->
+            "green"
+
+        Blue ->
+            "blue"
+
+
+pub warmest : Color
+warmest =
+    Red

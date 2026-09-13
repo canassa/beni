@@ -1,0 +1,13 @@
+-- check/good (project): the importer. `shift` is ANNOTATED with the
+-- imported alias and `right` is not, so the golden shows the alias surviving
+-- both an annotation and an inference.
+import Geometry exposing (Point, origin)
+
+
+pub shift : Point -> Int -> Point
+shift p dx =
+    { p | x = p.x + dx }
+
+
+pub right =
+    shift origin 1

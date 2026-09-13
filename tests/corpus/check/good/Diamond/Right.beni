@@ -1,0 +1,8 @@
+-- check/good (project): the other side. It has no edge to `Left`, so the
+-- two may run at once and the diagnostics still come out in one order.
+import Base exposing (Unit, factor)
+
+
+pub scaleDown : Unit -> Int -> Int
+scaleDown u n =
+    n // factor u

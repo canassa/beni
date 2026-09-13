@@ -1,0 +1,19 @@
+-- check/good (project): a nested module path, so the project has a module
+-- whose name has a dot in it.
+pub type Value
+    = Text String
+    | Number Int
+    | Items (List Value)
+
+
+pub size : Value -> Int
+size v =
+    case v of
+        Text s ->
+            String.length s
+
+        Number n ->
+            n
+
+        Items xs ->
+            List.length xs

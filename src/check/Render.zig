@@ -27,10 +27,19 @@
 //! Parentheses are minimal: `a -> b -> c` right-associates so only a
 //! function in ARGUMENT position needs them, and an application needs them
 //! only when it is itself an argument and takes arguments of its own.
+//!
+//! **Patterns are rendered here too** (`writePattern`), for
+//! `missing_patterns`' counterexamples (checker.md §6.6). They live next to
+//! the type renderer for the same reason the type renderer exists once: a
+//! message and a dump must spell the same value the same way, and the only
+//! way to keep two printers agreeing is not to have two. The output is
+//! SOURCE SYNTAX — `Just _`, `[]`, `( Nothing, _ )`, `x :: xs` — so an
+//! example can be pasted into the `case` as a branch.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
+const Exhaustive = @import("Exhaustive.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 
@@ -293,6 +302,184 @@ fn writeRecord(
         try write(w, cx, namer, f.value, .top, depth + 1);
     }
     try w.writeAll(" }");
+}
+
+// ---------------------------------------------------------------------------
+// Patterns (checker.md §6.6)
+// ---------------------------------------------------------------------------
+
+/// Where a pattern sits, so parentheses appear only where they change the
+/// reading — Elm's three `Reporting/Error/Pattern.hs` contexts.
+pub const PatPrec = enum {
+    /// A whole branch pattern: nothing needs wrapping.
+    top,
+    /// An argument of a constructor: `Just (Node a b)`, `Just (x :: xs)`.
+    arg,
+    /// Left of a `::`: `(a :: b) :: c`.
+    head,
+};
+
+/// A counterexample pattern rendered into a freshly allocated string, for
+/// `missing_patterns`' list.
+pub fn allocPattern(
+    gpa: Allocator,
+    pats: *const Exhaustive.Patterns,
+    interner: *const InternPool.Global,
+    p: Exhaustive.PatIndex,
+) Allocator.Error![]u8 {
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    errdefer out.deinit();
+    writePattern(&out.writer, pats, interner, p, .top) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        else => |e| return e,
+    };
+    return out.toOwnedSlice();
+}
+
+/// Write one simplified pattern as source syntax.
+pub fn writePattern(
+    w: *std.Io.Writer,
+    pats: *const Exhaustive.Patterns,
+    interner: *const InternPool.Global,
+    p: Exhaustive.PatIndex,
+    prec: PatPrec,
+) (std.Io.Writer.Error || Allocator.Error)!void {
+    return writePat(w, pats, interner, p, prec, 0);
+}
+
+fn writePat(
+    w: *std.Io.Writer,
+    pats: *const Exhaustive.Patterns,
+    interner: *const InternPool.Global,
+    p: Exhaustive.PatIndex,
+    prec: PatPrec,
+    depth: u32,
+) (std.Io.Writer.Error || Allocator.Error)!void {
+    if (depth > max_depth) return w.writeAll("…");
+    switch (pats.tag(p)) {
+        .anything => return w.writeAll("_"),
+        .literal => return writeLiteral(w, pats, pats.literal(p)),
+        .ctor => {},
+    }
+    const c = pats.ctor(p);
+    const args = pats.args(c);
+    const un = pats.unionAt(c.un);
+    switch (un.shape) {
+        .unit => return w.writeAll("()"),
+        .tuple => {
+            try w.writeAll("( ");
+            for (args, 0..) |arg, i| {
+                if (i != 0) try w.writeAll(", ");
+                try writePat(w, pats, interner, arg, .top, depth + 1);
+            }
+            return w.writeAll(" )");
+        },
+        // A list is `[]`/`::` in the algorithm and two different things on
+        // the page: a spine that ends in `[]` is a literal list, one that
+        // ends in anything else is a `::` chain (Elm's `delist`).
+        .list => return writeList(w, pats, interner, p, prec, depth),
+        .adt => {
+            const name = if (c.alt < pats.alts.items.len) pats.alt(c.alt).name.unwrap() else null;
+            const text = if (name) |sym| interner.slice(sym) else "?";
+            if (args.len == 0) return w.writeAll(text);
+            // An argument-taking constructor needs parentheses anywhere but
+            // at the top: `Just (Node a b)`.
+            const wrap = prec != .top;
+            if (wrap) try w.writeByte('(');
+            try w.writeAll(text);
+            for (args) |arg| {
+                try w.writeByte(' ');
+                try writePat(w, pats, interner, arg, .arg, depth + 1);
+            }
+            if (wrap) try w.writeByte(')');
+        },
+    }
+}
+
+/// `[]`, `[ a, b ]` or `a :: rest`, walking the cons spine iteratively —
+/// the spine of a missing-pattern example is as long as the source's
+/// longest list pattern and does not belong on the stack.
+fn writeList(
+    w: *std.Io.Writer,
+    pats: *const Exhaustive.Patterns,
+    interner: *const InternPool.Global,
+    p: Exhaustive.PatIndex,
+    prec: PatPrec,
+    depth: u32,
+) (std.Io.Writer.Error || Allocator.Error)!void {
+    // Collect the heads; `tail` ends on `[]` (a finite list) or on anything
+    // else (a `::` chain).
+    var heads: [max_depth]Exhaustive.PatIndex = undefined;
+    var count: usize = 0;
+    var tail = p;
+    while (count < heads.len) {
+        if (pats.tag(tail) != .ctor) break;
+        const c = pats.ctor(tail);
+        if (pats.unionAt(c.un).shape != .list) break;
+        if (c.args_len != 2) break; // `[]`
+        const cons = pats.args(c);
+        heads[count] = cons[0];
+        count += 1;
+        tail = cons[1];
+    }
+    const finite = pats.tag(tail) == .ctor and
+        pats.unionAt(pats.ctor(tail).un).shape == .list and
+        pats.ctor(tail).args_len == 0;
+
+    if (finite) {
+        if (count == 0) return w.writeAll("[]");
+        try w.writeAll("[ ");
+        for (heads[0..count], 0..) |h, i| {
+            if (i != 0) try w.writeAll(", ");
+            try writePat(w, pats, interner, h, .top, depth + 1);
+        }
+        return w.writeAll(" ]");
+    }
+    const wrap = prec != .top;
+    if (wrap) try w.writeByte('(');
+    for (heads[0..count]) |h| {
+        try writePat(w, pats, interner, h, .head, depth + 1);
+        try w.writeAll(" :: ");
+    }
+    try writePat(w, pats, interner, tail, .top, depth + 1);
+    if (wrap) try w.writeByte(')');
+}
+
+fn writeLiteral(
+    w: *std.Io.Writer,
+    pats: *const Exhaustive.Patterns,
+    lit: Exhaustive.Literal,
+) std.Io.Writer.Error!void {
+    switch (lit.kind) {
+        .int => if (lit.parsed) try w.print("{d}", .{lit.value}) else try w.writeAll(pats.bytesOf(lit)),
+        .char => {
+            try w.writeByte('\'');
+            try writeEscaped(w, @intCast(lit.value), '\'');
+            try w.writeByte('\'');
+        },
+        .string => {
+            try w.writeByte('"');
+            var it = std.unicode.Utf8View.initUnchecked(pats.bytesOf(lit)).iterator();
+            while (it.nextCodepoint()) |cp| try writeEscaped(w, cp, '"');
+            try w.writeByte('"');
+        },
+    }
+}
+
+/// One scalar, re-escaped the way the lexer would accept it back
+/// (language.md §2.6). `quote` is the delimiter that has to be escaped.
+fn writeEscaped(w: *std.Io.Writer, cp: u21, quote: u8) std.Io.Writer.Error!void {
+    if (cp < 0x20 or cp == 0x7f) return switch (cp) {
+        '\t' => w.writeAll("\\t"),
+        '\n' => w.writeAll("\\n"),
+        '\r' => w.writeAll("\\r"),
+        else => w.print("\\u{{{x:0>4}}}", .{cp}),
+    };
+    if (cp == quote) return w.print("\\{c}", .{quote});
+    if (cp == '\\') return w.writeAll("\\\\");
+    var buffer: [4]u8 = undefined;
+    const len = std.unicode.utf8Encode(cp, &buffer) catch return w.writeAll("?");
+    return w.writeAll(buffer[0..len]);
 }
 
 // ---------------------------------------------------------------------------

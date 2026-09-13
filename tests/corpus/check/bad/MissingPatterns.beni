@@ -1,0 +1,13 @@
+-- check/bad: a `case` with no branch for one of the type's constructors
+-- (checker.md §6.6). The message names what is missing, in source syntax.
+pub type Weekday
+    = Mon
+    | Tue
+    | Wed
+
+
+pub short : Weekday -> String
+short d =
+    case d of
+        Mon ->
+            "mon"

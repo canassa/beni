@@ -1,0 +1,13 @@
+-- check/good (project): the second user of `Shape`, reaching the
+-- constructors through the module alias rather than an `exposing` list.
+import Shape
+
+
+pub perimeter : Shape.Shape -> Int
+perimeter s =
+    case s of
+        Shape.Circle r ->
+            6 * r
+
+        Shape.Rect w h ->
+            2 * (w + h)

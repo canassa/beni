@@ -719,7 +719,12 @@ const Module = struct {
             if (i == 0) {
                 try g.line(8, "-1 ->", .{});
             } else if (g.chance(20)) {
-                try g.line(8, "0x{X} ->", .{i * 16});
+                // The same VALUE as the decimal arm would have been, spelled
+                // in hex: the point is to exercise the lexer's hex path, and
+                // `i * 16` made arm 1 (`0x10`) and arm 16 collide, which is
+                // a `redundant_pattern` in generated code — a generator bug
+                // (checker.md §9).
+                try g.line(8, "0x{X} ->", .{i});
             } else {
                 try g.line(8, "{d} ->", .{i});
             }

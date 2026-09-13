@@ -114,6 +114,18 @@ until M4 caches it. `--core-root` reads the directory instead.
    immutable by construction once produced. M2 may ship the serial order first and add DAG
    parallelism last, but the data must be laid out for it from the start: a module's check
    reads only its own Bir, the interfaces of its imports, and the `TypeStore` it owns.
+
+   M2c's scheduler (`check/Check.zig`'s `Driver`) is a ready queue over that order: a module
+   is ready when every dependency of it that comes EARLIER in the order has finished, results
+   land in the slot of a module index assigned before any thread started, diagnostics are
+   collected per module and concatenated in the graph's order afterwards, and the counters are
+   a commutative sum — so nothing is keyed by completion (§10's rule). **A project with an
+   import cycle runs serially**: a cycle has no topological order, so a member could read a
+   co-member's interface while it is being written, which is a data race and not merely a
+   wrong answer. The members are poisoned and report nothing anyway (§4.3), so the fallback
+   costs nothing worth a second scheduling rule. Every worker is spawned with an explicit
+   64 MiB stack: constraint generation walks an expression tree and the parser will hand it
+   one `Parse.max_depth` levels deep, which does not fit in a default thread stack.
 5. **Resolve** each module's references against the interfaces: `import_value(M, x)` must be a
    `pub` value of `M` (`unknown_import_name` / `private_name`), `import_ctor(M, C)` a
    constructor of a non-opaque `pub` type (`opaque_constructor` when the type is `pub opaque`),
@@ -270,6 +282,33 @@ required), lists are `[]`/`::`, tuples and records are products. Missing pattern
 never match → `redundant_pattern` at the branch. `let` patterns are irrefutable by grammar.
 This runs only on modules with no type errors in that declaration, so it never sees `err`.
 
+What M2c built (`check/Exhaustive.zig`), and where it reads this paragraph more narrowly than
+it is written:
+
+- The gate is per **declaration**, not per module: a module with one bad function still has
+  good ones worth checking.
+- Nothing reads a solved `Var`. The only question the algorithm asks about a column is "what is
+  the full set of alternatives here?", and it asks it only of a column that already contains a
+  constructor pattern — from which the union is known exactly, through the declaring `type`'s
+  constructor list (its own module's Bir, or an imported module's interface). A column of
+  wildcards is exhaustive whatever its type is and a column of literals is not, so the
+  scrutinee's type changes no answer, and reading it would mean instantiating every
+  constructor's argument types at every nested position for nothing. The solved types are the
+  *precondition* — they are why a column is one type's constructors — and that is what the
+  per-declaration gate buys.
+- An opaque imported type needs no special case: its constructors cannot be named by the
+  importer at all, so the only patterns it can write are variables and wildcards, and those are
+  exhaustive.
+- The search stops at three counterexamples, and — as in Elm — when some constructors of the
+  first column are missing it names those and does not also recurse into the ones that are
+  present. So a `case` can need two rounds to be made exhaustive. That is Elm's behaviour and
+  the message is honest about being a sample ("Missing possibilities include:").
+- **The algorithm is exponential in the worst case** (Maranget §3.3), so every recursive step
+  and every specialised row spends from a fixed budget and a `case` that exhausts it reports
+  NOTHING. A missed warning is a far smaller bug than a compiler that does not terminate.
+  `Session.Options.pattern_budget` sets it, so the bound has a test rather than an absence of
+  one.
+
 ## 7. The interface record
 
 Per module, flat, index-based, session-owned, immutable once built — designed so M4 can hash
@@ -358,7 +397,9 @@ review, the currying decision is revisited before M3 (design §9.3).
   incrementality tests will assert did *not* move. `check` is split into `constrain` and
   `solve` events, one pair per module, because the constraint/solve separation is the
   architecture (research/02 §1) and a trace that could not tell the halves apart would hide
-  which one a regression is in.
+  which one a regression is in. All five are per module and none is per run: "this module was
+  not re-checked" is only visible in a trace that has a row per module. `check` is recorded on
+  the worker that took the module, so a trace also shows the DAG schedule of §4.4.
 
 ## 10. Milestones
 

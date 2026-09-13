@@ -1,0 +1,19 @@
+-- check/good (project): the declaring module of a type whose constructors
+-- are imported BY NAME by its dependent.
+pub type Color
+    = Red
+    | Green
+    | Blue
+
+
+pub next : Color -> Color
+next c =
+    case c of
+        Red ->
+            Green
+
+        Green ->
+            Blue
+
+        Blue ->
+            Red

@@ -1,0 +1,15 @@
+-- check/bad (project): a `case` over an IMPORTED type that misses a
+-- constructor the importer never named. The union comes from `Signal`'s
+-- interface and not from this file's `exposing` list (checker.md §6.6), so
+-- `Amber` is what is missing even though nothing here mentions it.
+import Signal exposing (Green, Red, Signal)
+
+
+pub go : Signal -> Bool
+go s =
+    case s of
+        Green ->
+            True
+
+        Red ->
+            False

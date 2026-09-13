@@ -231,11 +231,15 @@ test "100 000 nested lambdas report every shadowed parameter, then stop nesting"
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // 4095 shadowings (every parameter but the outermost) and the single
+    // 4094 shadowings (every parameter but the outermost) and the single
     // nesting error that ended the parse: count, then first and last in
-    // full, because 4096 whole structs is not an assertion anyone reads.
+    // full, because 4095 whole structs is not an assertion anyone reads.
+    // One level fewer fits than before M2c, because the depth guard now
+    // charges a pattern ATOM too — a lambda's parameter is one — so that
+    // the guard bounds the TREE every consumer walks and not just the
+    // source nesting (see the deep-constructor-pattern scenario).
     try expectExited(r, 1);
-    try testing.expectEqual(@as(usize, 4096), r.diagnostics.len);
+    try testing.expectEqual(@as(usize, 4095), r.diagnostics.len);
     try testing.expectEqualDeep(diagnostic.Diagnostic{
         .code = .shadowing,
         .severity = .@"error",
@@ -243,12 +247,12 @@ test "100 000 nested lambdas report every shadowed parameter, then stop nesting"
         .title = "SHADOWING",
         .message = "The name `x` is already bound on line 2.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope, whether\nfrom an enclosing binding, a top-level declaration, an `exposing` list or the\nprelude. Rename one of them.",
     }, r.diagnostics[0]);
-    try testing.expectEqualDeep(nestingTooDeep("Lambdas.beni", 2, 24581, 1), r.diagnostics[r.diagnostics.len - 1]);
+    try testing.expectEqualDeep(nestingTooDeep("Lambdas.beni", 2, 24576, 1), r.diagnostics[r.diagnostics.len - 1]);
     var shadowings: usize = 0;
     for (r.diagnostics) |d| {
         if (d.code == .shadowing) shadowings += 1;
     }
-    try testing.expectEqual(@as(usize, 4095), shadowings);
+    try testing.expectEqual(@as(usize, 4094), shadowings);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -1047,4 +1051,225 @@ fn nested(gpa: Allocator, open: []const u8, middle: []const u8, close: []const u
     for (0..depth) |_| out.appendSliceAssumeCapacity(close);
     out.appendSliceAssumeCapacity("\n");
     return out.toOwnedSlice(gpa);
+}
+
+// ---------------------------------------------------------------------------
+// Pattern usefulness (checker.md §6.6): the algorithm is exponential in the
+// worst case, so the inputs that reach for the exponent get their own
+// scenarios.
+// ---------------------------------------------------------------------------
+
+test "a case with 200 constructors and 200 branches finishes and says one thing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Maranget's usefulness relation branches once per alternative whenever
+    // a column is COMPLETE, so the cost of one `case` grows with
+    // constructors × branches × nesting. 200 × 200, each branch a two-deep
+    // nest, is far past anything a person writes and is what the work
+    // budget of `check/Exhaustive.zig` exists for: past it the `case`
+    // reports nothing rather than hanging.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const ctors = 200;
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("pub type T\n");
+    for (0..ctors) |i| try out.print("    {s} C{d} T\n", .{ if (i == 0) "=" else "|", i });
+    try out.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
+    for (0..ctors) |i| {
+        if (i != 0) try out.writeAll("\n");
+        try out.print("        C{d} (C{d} rest{d}) ->\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
+    }
+    try w.write("Wide.beni", source.written());
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Wide.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // It finished — `World.run` would have returned `error.CompilerTimeout`
+    // otherwise — it exited rather than dying from a signal, and it has
+    // either exactly one thing to say or nothing at all. Which of the two
+    // depends on the budget, and neither is a bug; a second message, a
+    // signal or a hang would be.
+    if (r.term != .exited) {
+        std.debug.print("did not exit normally: {any}\n", .{r.term});
+        return error.CompilerDiedFromSignal;
+    }
+    try testing.expect(r.diagnostics.len <= 1);
+    if (r.diagnostics.len == 1) {
+        try testing.expectEqual(diagnostic.Code.missing_patterns, r.diagnostics[0].code);
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+    } else {
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", r.stdout);
+}
+
+test "a deeply nested constructor pattern is bounded in every consumer of the tree" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The regression, found writing this file: `Just (Just (…))` is TWO
+    // tree levels per source level — `pat_ctor` over `pat_paren` — and the
+    // parser charged its depth guard once, so a 4096-charge pattern built
+    // an 8192-deep tree and segfaulted `check`, both dumps and `fmt`.
+    // `parsePatAtom` now charges too, so the guard bounds the tree, and
+    // every consumer runs on a thread with room for `max_depth` frames.
+    //
+    // 2000 levels is a legal tree the whole pipeline must survive; 8000 is
+    // past the limit and must be exactly one `nesting_too_deep`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_]struct { depth: usize, path: []const u8, bounded: bool }{
+        .{ .depth = 2000, .path = "Legal.beni", .bounded = false },
+        .{ .depth = 8000, .path = "Deep.beni", .bounded = true },
+    }) |case| {
+        var source: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer source.deinit();
+        const out = &source.writer;
+        try out.writeAll("f m =\n    case m of\n        ");
+        for (0..case.depth) |_| try out.writeAll("Just (");
+        try out.writeAll("x");
+        for (0..case.depth) |_| try out.writeAll(")");
+        try out.writeAll(" ->\n            x\n");
+        try w.write(case.path, source.written());
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const checked = try w.run(&.{ "check", case.path });
+        const ast = try w.runWith(&.{ "dump", "--stage=ast", case.path }, .{ .raw_diagnostics = true });
+        const bir = try w.runWith(&.{ "dump", "--stage=bir", case.path }, .{ .raw_diagnostics = true });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for ([_]world.Result{ ast, bir }) |r| {
+            if (r.term != .exited) {
+                std.debug.print("{s}: dump did not exit normally: {any}\n", .{ case.path, r.term });
+                return error.CompilerDiedFromSignal;
+            }
+            try testing.expectEqual(@as(u8, 0), r.exit_code);
+            try testing.expect(r.stdout.len != 0);
+        }
+        if (checked.term != .exited) {
+            std.debug.print("{s}: check did not exit normally: {any}\n", .{ case.path, checked.term });
+            return error.CompilerDiedFromSignal;
+        }
+        if (case.bounded) {
+            // The nesting error, and the consequence of the recovery it
+            // did: the truncated pattern never binds `x`, so the branch
+            // body cannot find it. Two messages about one mistake, which
+            // is what a pattern the parser had to abandon looks like.
+            try testing.expectEqual(@as(u8, 1), checked.exit_code);
+            try testing.expectEqual(@as(usize, 2), checked.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.nesting_too_deep, checked.diagnostics[0].code);
+            try testing.expectEqual(diagnostic.Code.unbound_variable, checked.diagnostics[1].code);
+        } else {
+            // A legal tree: the `case` is not exhaustive, but analysing a
+            // 2000-deep pattern is past `Exhaustive`'s own depth guard, so
+            // it says nothing rather than working for a week.
+            try testing.expectEqual(@as(u8, 0), checked.exit_code);
+            try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+        }
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                     │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqualStrings("", checked.stdout);
+    }
+}
+
+test "600 modules check identically at every worker count, twice each" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The DAG-parallel checker (checker.md §4.4) is where determinism can
+    // break: modules finish in whatever order the scheduler hands them out,
+    // and anything keyed by completion would reorder here. A wide project
+    // with a deep spine through it, half of whose modules have an error, is
+    // the shape that would show it — 200 leaves that may all run at once,
+    // and a 200-long chain that may not.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const leaves = 200;
+    const chain_len = 200;
+    var buffer: [256]u8 = undefined;
+    for (0..leaves) |i| {
+        const path = try std.fmt.bufPrint(&buffer, "src/Leaf/M{d}.beni", .{i});
+        var body: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer body.deinit();
+        // Every third module has a type error, so the diagnostic ORDER is
+        // observable and not just the exit code.
+        if (i % 3 == 0) {
+            try body.writer.print("pub v{d} : Int\nv{d} =\n    \"not an int\"\n", .{ i, i });
+        } else {
+            try body.writer.print("pub v{d} : Int\nv{d} =\n    {d}\n", .{ i, i, i });
+        }
+        try w.write(path, body.written());
+    }
+    for (0..chain_len) |i| {
+        const path = try std.fmt.bufPrint(&buffer, "src/Chain/C{d}.beni", .{i});
+        var body: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer body.deinit();
+        if (i == 0) {
+            try body.writer.writeAll("pub step0 : Int -> Int\nstep0 n =\n    n + 1\n");
+        } else {
+            try body.writer.print(
+                "import Chain.C{d} exposing (step{d})\n\n\npub step{d} : Int -> Int\nstep{d} n =\n    step{d} n\n",
+                .{ i - 1, i - 1, i, i, i - 1 },
+            );
+        }
+        try w.write(path, body.written());
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const jobs = [_][]const u8{ "--jobs=1", "--jobs=2", "--jobs=4", "--jobs=8" };
+    var first_stderr: ?[]const u8 = null;
+    var first_count: usize = 0;
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (jobs) |j| {
+        for (0..2) |_| {
+            const r = try w.runWith(&.{ "check", "--diagnostics=json", j, "src" }, .{ .raw_diagnostics = true });
+            if (r.term != .exited) {
+                std.debug.print("{s} did not exit normally: {any}\n", .{ j, r.term });
+                return error.CompilerDiedFromSignal;
+            }
+            try testing.expectEqual(@as(u8, 1), r.exit_code);
+            try testing.expectEqualStrings("", r.stdout);
+            if (first_stderr) |expected| {
+                testing.expectEqualStrings(expected, r.stderr) catch |err| {
+                    std.debug.print("{s} differs from --jobs=1\n", .{j});
+                    return err;
+                };
+            } else {
+                first_stderr = try testing.allocator.dupe(u8, r.stderr);
+                first_count = std.mem.count(u8, r.stderr, "\"code\"");
+            }
+        }
+    }
+    defer if (first_stderr) |s| testing.allocator.free(s);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Every third leaf, and nothing else: the chain checks clean, so a
+    // scheduler that skipped or double-counted a module would show up as a
+    // different number here and not merely as a different order.
+    try testing.expectEqual(@as(usize, (leaves + 2) / 3), first_count);
 }

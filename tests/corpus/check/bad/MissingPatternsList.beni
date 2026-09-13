@@ -1,0 +1,9 @@
+-- check/bad: a list is `[]` and `::` (checker.md §6.6), so a `case` that
+-- names only the empty list is missing every non-empty one — and the
+-- example is spelled with `::`, not with the invented constructor name the
+-- algorithm uses internally.
+pub headOr : List Int -> Int
+headOr xs =
+    case xs of
+        [] ->
+            0

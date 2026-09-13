@@ -1,0 +1,17 @@
+-- check/good (project): the point of a diamond. `Base` is a dependency of
+-- both `Left` and `Right`, and is checked exactly once — its interface is
+-- immutable by the time either of them reads it, which is what lets the two
+-- be checked CONCURRENTLY on the DAG scheduler (checker.md §4.4).
+pub type Unit
+    = Metres
+    | Feet
+
+
+pub factor : Unit -> Int
+factor u =
+    case u of
+        Metres ->
+            1
+
+        Feet ->
+            3

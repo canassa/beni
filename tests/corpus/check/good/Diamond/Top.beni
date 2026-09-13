@@ -1,0 +1,15 @@
+-- check/good (project): the apex. It joins the two sides, so it may not
+-- start until both have finished and both interfaces are complete.
+import Base exposing (Metres, Unit)
+import Left exposing (scaleUp)
+import Right exposing (scaleDown)
+
+
+pub round : Unit -> Int -> Int
+round u n =
+    scaleDown u (scaleUp u n)
+
+
+pub metres : Int
+metres =
+    round Metres 12

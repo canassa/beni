@@ -362,14 +362,16 @@ test "--self-profile records every phase of every file and every counter, exactl
     // Four phase events per file, each naming its own file and carrying
     // that file's size; three serial steps with no file at all.
     var seen: [files.len][4]bool = @splat(@splat(false));
-    // The checker's two halves are per MODULE, not per file: they name the
-    // module's file but carry no byte count, because what they measure is
-    // a constraint tree and not a span of source.
-    var per_module_seen: [files.len][2]bool = @splat(@splat(false));
-    var serial: [6]bool = @splat(false);
+    // `resolve`, `check` and its three halves are per MODULE, not per file
+    // (checker.md §9): they name the module's file but carry no byte count,
+    // because what they measure is a graph and a constraint tree, not a
+    // span of source. Per module and not per run, because "this module was
+    // not re-checked" is what M4's incrementality tests have to see.
+    var per_module_seen: [files.len][5]bool = @splat(@splat(false));
+    var serial: [4]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
-    const per_module = [_][]const u8{ "constrain", "solve" };
-    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "resolve", "check", "render" };
+    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive" };
+    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "render" };
     var counters: [13]?u64 = @splat(null);
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
@@ -412,8 +414,8 @@ test "--self-profile records every phase of every file and every counter, exactl
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([files.len][2]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
-    try testing.expectEqual([6]bool{ true, true, true, true, true, true }, serial);
+    try testing.expectEqual([files.len][5]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
+    try testing.expectEqual([4]bool{ true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
     // `insts` are the AST and BIR sizes of these three modules, which

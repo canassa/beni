@@ -1,0 +1,10 @@
+module Area
+  value area : Shape -> Int
+module Describe
+  value describe : Shape -> String
+module Perimeter
+  value perimeter : Shape -> Int
+module Shape
+  type Shape
+    Circle/1
+    Rect/2

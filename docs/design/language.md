@@ -712,12 +712,15 @@ too_few_args  too_many_args  not_a_function
 missing_field  unknown_field  record_not_closed
 not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
 tuple_index_out_of_range  not_a_tuple  try_shape
+missing_patterns  redundant_pattern
 ```
 
 The first three lines after the M1 catalogue are M2a's (the module graph and
 cross-module name resolution); the rest are M2b's type errors, defined in
-[`checker.md`](checker.md) §8. Two exhaustiveness codes — `missing_patterns` and
-`redundant_pattern` — join them in M2c.
+[`checker.md`](checker.md) §8. The last line is M2c's: `missing_patterns` is a `case`
+with no branch for some possibility, `redundant_pattern` a branch no value can reach
+([`checker.md`](checker.md) §6.6). Both are reported only for a declaration that
+type-checked, so the patterns they judge are known to be well typed.
 
 `expected_token` is for the situations where exactly one token can come next (`)`, `]`, `}`,
 `->`, `of`, `then`, `else`, `in`, `=`, `:`); `unexpected_token` is for the situations where the

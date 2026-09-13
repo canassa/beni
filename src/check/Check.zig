@@ -3,13 +3,17 @@
 //! and for each group constrain → solve → generalise, followed by the
 //! schemes going into the interface (§7).
 //!
-//! **Order.** Modules are checked in the graph's topological order, so every
-//! import's interface is complete — and immutable — before anything reads
-//! it. M2b runs that order serially; the data is laid out for the DAG
-//! parallelism of §4.4 (a module's check reads only its own Bir, the
-//! interfaces of its imports, and the store it owns), and nothing here is
-//! shared between two modules' checks except the session-wide `Types`
-//! table, which is read-only by then.
+//! **Order.** Modules are checked over the graph's topological order, so
+//! every import's interface is complete — and immutable — before anything
+//! reads it. `Driver` walks that order as a DAG (§4.4): a module whose
+//! dependencies have all finished may start, on any worker, and the bound
+//! that makes it safe is the interface firewall — a module's check reads
+//! only its own Bir, the interfaces of its imports, and the store it owns,
+//! and the one thing it shares with another module's check is the
+//! session-wide `Types` table, which is built before any thread starts and
+//! read-only afterwards. Nothing is keyed by completion order; see
+//! `Driver`'s header for what makes the output identical at every
+//! `--jobs`.
 //!
 //! **Binding groups.** Top-level values are SCC-decomposed over the
 //! module's `refs`, and an edge exists only to an UNANNOTATED value: a
@@ -29,9 +33,14 @@
 //! **The store dies with the module** unless `keep_stores` is set, which
 //! `dump --stage=types` does: the dump prints every local binding's type,
 //! and a `Var` means nothing once its store is gone.
+//!
+//! **Then exhaustiveness** (§6.6), over the declarations that solved clean:
+//! `Exhaustive.zig` has the algorithm and `exhaustive` is what it costs in a
+//! trace.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const diagnostic = @import("diagnostic");
 const Arena = @import("../Arena.zig");
 const Artifacts = @import("../Artifacts.zig");
@@ -50,6 +59,9 @@ const Types = @import("Types.zig");
 
 const Check = @This();
 
+/// Re-exported so `Session` can name the pattern-usefulness budget without
+/// reaching past the checker's driver into its internals.
+pub const Exhaustive = @import("Exhaustive.zig");
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
@@ -119,11 +131,25 @@ pub const Options = struct {
     /// is unknowable, so every type error found in either is a consequence
     /// of the message the author already has.
     quiet: []const bool = &.{},
+    /// How many workers may check modules at once (checker.md §4.4). One
+    /// runs everything on the calling thread and spawns nothing, which is
+    /// what every hermetic test and every small project wants.
+    jobs: u32 = 1,
+    /// Work one `case` may spend on pattern usefulness before it is
+    /// abandoned and reports nothing (`Exhaustive.default_budget`).
+    /// Settable so a test can prove the bound is what makes it fall silent,
+    /// rather than asserting the absence of a hang.
+    pattern_budget: u32 = Exhaustive.default_budget,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
+///
+/// `scratch` is the caller's arena, used for the serial path and by worker
+/// zero; every other worker gets one of its own, reset after each module so
+/// the peak is one module's constraints per worker and not the project's.
 pub fn run(
     gpa: Allocator,
+    io: Io,
     scratch: *Arena,
     graph: *const Graph,
     artifacts: *const Artifacts,
@@ -135,16 +161,28 @@ pub fn run(
     errdefer check.deinit(gpa);
     check.types = try Types.build(gpa, graph, artifacts, interfaces, interner);
 
-    var diagnostics: std.ArrayList(Diagnostics.Item) = .empty;
-    errdefer {
-        for (diagnostics.items) |d| gpa.free(d.message);
-        diagnostics.deinit(gpa);
-    }
-    var modules: std.ArrayList(Module) = .empty;
-    errdefer modules.deinit(gpa);
+    const modules = graph.count();
+    // One diagnostics list per module rather than one shared list: a shared
+    // one would need a lock on the hot path AND would order messages by
+    // completion, which `fast-compiler.md` §10 forbids. Concatenating them
+    // in the graph's order afterwards is what makes the output identical at
+    // every `--jobs`.
+    const per_module = try gpa.alloc(std.ArrayList(Diagnostics.Item), modules);
+    defer gpa.free(per_module);
+    @memset(per_module, .empty);
+    errdefer for (per_module) |*list| {
+        for (list.items) |d| gpa.free(d.message);
+        list.deinit(gpa);
+    };
+    const counters = try gpa.alloc(Solve.Counters, modules);
+    defer gpa.free(counters);
+    @memset(counters, .{});
+
+    var kept: std.ArrayList(Module) = .empty;
+    errdefer kept.deinit(gpa);
     if (options.keep_stores) {
-        try modules.ensureTotalCapacity(gpa, graph.count());
-        for (0..graph.count()) |_| modules.appendAssumeCapacity(.{
+        try kept.ensureTotalCapacity(gpa, modules);
+        for (0..modules) |_| kept.appendAssumeCapacity(.{
             .store = .init(std.heap.page_allocator),
             .decl_scheme = &.{},
             .decl_display = &.{},
@@ -152,35 +190,297 @@ pub fn run(
         });
     }
 
-    for (graph.order) |m| {
-        var one: ModuleCheck = .{
-            .gpa = gpa,
-            .scratch = scratch,
-            .graph = graph,
-            .artifacts = artifacts,
-            .interfaces = interfaces,
-            .interner = interner,
-            .types = &check.types,
-            .module = m,
-            .diagnostics = &diagnostics,
-            .quiet = m.int() < options.quiet.len and options.quiet[m.int()],
-            .profile = options.profile,
-        };
-        const kept = try one.run(if (options.keep_stores) &modules.items[m.int()] else null);
-        check.counters.unifications += kept.unifications;
-        check.counters.generalisations += kept.generalisations;
-        check.counters.instantiations += kept.instantiations;
-        check.counters.obligations += kept.obligations;
+    var driver: Driver = .{
+        .gpa = gpa,
+        .io = io,
+        .graph = graph,
+        .artifacts = artifacts,
+        .interfaces = interfaces,
+        .interner = interner,
+        .types = &check.types,
+        .options = options,
+        .per_module = per_module,
+        .counters = counters,
+        .kept = if (options.keep_stores) kept.items else &.{},
+    };
+    try driver.go(scratch);
+    if (driver.failure) |err| return err;
+
+    // Merge in the graph's order — the order the serial path produced them
+    // in, and a function of the input alone.
+    var diagnostics: std.ArrayList(Diagnostics.Item) = .empty;
+    errdefer diagnostics.deinit(gpa);
+    for (graph.order) |m| try diagnostics.appendSlice(gpa, per_module[m.int()].items);
+    for (per_module) |*list| list.deinit(gpa);
+    for (counters) |c| {
+        check.counters.unifications += c.unifications;
+        check.counters.generalisations += c.generalisations;
+        check.counters.instantiations += c.instantiations;
+        check.counters.obligations += c.obligations;
     }
 
     check.diagnostics = try diagnostics.toOwnedSlice(gpa);
-    check.modules = try modules.toOwnedSlice(gpa);
+    check.modules = try kept.toOwnedSlice(gpa);
     return check;
 }
+
+/// Constraint generation and solving walk an expression TREE, and the parser
+/// accepts 4096 levels of nesting (language.md §10). 4096 frames do not fit
+/// in a default thread stack: M2b measured `bench/pathological/
+/// PlusChain8000.beni` overflowing at 16 MiB and surviving at 32, and
+/// `Session` runs the whole check on a 64 MiB thread for that reason. Every
+/// worker here needs the same room, so the size is stated at every spawn —
+/// `std.Thread.SpawnConfig`'s default is nowhere near it.
+pub const stack_size = 64 * 1024 * 1024;
+
+/// Schedules modules over the graph's DAG (checker.md §4.4).
+///
+/// **What makes this safe** is the interface firewall: a module's check
+/// reads its own Bir, the session-wide `Types` table (built before any
+/// thread starts and read-only afterwards), and the INTERFACES of its
+/// dependencies — and every reference to another module was rewritten by
+/// `Resolve` into `(module index, interface index)`, so a module can only
+/// ever read an interface it has an edge to. It writes its own interface,
+/// its own slot of every per-module array, and nothing else.
+///
+/// **What makes it deterministic** is that nothing is keyed by completion:
+/// results land in the slot of a module index assigned before any thread
+/// started, diagnostics are per module and concatenated in the graph's
+/// order afterwards, and the counters are a commutative sum
+/// (`fast-compiler.md` §10).
+///
+/// **A cyclic project runs serially.** A cycle has no topological order, so
+/// a member may read a co-member's interface that is still being written —
+/// a data race, not merely a wrong answer. The members are poisoned and
+/// report nothing anyway (checker.md §4.3), so the whole run falls back to
+/// one thread rather than growing a second scheduling rule for the case
+/// where the answer is already "this project does not compile".
+const Driver = struct {
+    gpa: Allocator,
+    io: Io,
+    graph: *const Graph,
+    artifacts: *const Artifacts,
+    interfaces: []Interface,
+    interner: *const InternPool.Global,
+    types: *const Types,
+    options: Options,
+    per_module: []std.ArrayList(Diagnostics.Item),
+    counters: []Solve.Counters,
+    kept: []Module,
+
+    mutex: Io.Mutex = .init,
+    /// A worker waits here for a module to become ready.
+    wake: Io.Condition = .init,
+    /// Modules ready to check, claimed from the front.
+    queue: []Graph.Index = &.{},
+    queue_len: usize = 0,
+    queue_head: usize = 0,
+    /// Dependencies of each module that are earlier in the graph's order and
+    /// have not finished yet. A module is ready at zero.
+    blockers: []u32 = &.{},
+    /// Reverse edges: `dependents[dependent_start[m]..dependent_start[m+1]]`
+    /// are the modules whose `blockers` count drops when `m` finishes.
+    dependents: []Graph.Index = &.{},
+    dependent_start: []u32 = &.{},
+    /// Modules finished, so the workers know when to stop.
+    finished: usize = 0,
+    /// The first allocation failure any worker hit. One flag for all of
+    /// them: the run is over either way.
+    failure: ?Error = null,
+
+    fn go(d: *Driver, scratch: *Arena) Error!void {
+        const jobs = if (d.parallelisable()) @min(d.options.jobs, d.graph.count()) else 1;
+        if (jobs <= 1) return d.serial(scratch);
+        try d.buildSchedule();
+        defer d.freeSchedule();
+
+        const threads = try d.gpa.alloc(std.Thread, jobs - 1);
+        defer d.gpa.free(threads);
+        var spawned: usize = 0;
+        // The joins must happen even if a spawn fails halfway, or a live
+        // thread would outlive the `Driver` on this stack.
+        defer for (threads[0..spawned]) |t| t.join();
+        while (spawned < threads.len) : (spawned += 1) {
+            threads[spawned] = std.Thread.spawn(
+                .{ .stack_size = stack_size },
+                worker,
+                .{ d, @as(u32, @intCast(spawned + 1)), null },
+            ) catch |err| switch (err) {
+                // Fewer threads than asked for is a slower run, not a
+                // failed one; the caller's thread finishes the queue.
+                error.ThreadQuotaExceeded, error.SystemResources, error.LockedMemoryLimitExceeded => break,
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return error.OutOfMemory,
+            };
+        }
+        // The calling thread is worker zero: it already has the 64 MiB
+        // stack `Session` gave it, and one fewer spawn is one fewer join.
+        d.worker(0, scratch);
+    }
+
+    /// Whether the DAG can be walked concurrently at all: more than one
+    /// module, more than one worker, and no import cycle (see the header).
+    fn parallelisable(d: *const Driver) bool {
+        if (d.options.jobs <= 1 or d.graph.count() <= 1) return false;
+        for (0..d.graph.count()) |i| {
+            if (d.graph.isPoisoned(@enumFromInt(i))) return false;
+        }
+        return true;
+    }
+
+    fn serial(d: *Driver, scratch: *Arena) Error!void {
+        var patterns: Arena = .init(std.heap.page_allocator);
+        defer patterns.deinit();
+        for (d.graph.order) |m| {
+            try d.check(m, scratch, &patterns, 0);
+            scratch.reset(.retain_capacity);
+        }
+    }
+
+    /// The ready queue and the reverse edges, built once before any thread
+    /// starts. A dependency that comes LATER in the graph's order is not a
+    /// blocker: the serial path would not have had its interface either, and
+    /// only a cycle can produce one — which `parallelisable` has already
+    /// ruled out.
+    fn buildSchedule(d: *Driver) Error!void {
+        const gpa = d.gpa;
+        const n = d.graph.count();
+        const position = try gpa.alloc(u32, n);
+        defer gpa.free(position);
+        for (d.graph.order, 0..) |m, i| position[m.int()] = @intCast(i);
+
+        d.blockers = try gpa.alloc(u32, n);
+        @memset(d.blockers, 0);
+        d.dependent_start = try gpa.alloc(u32, n + 1);
+        @memset(d.dependent_start, 0);
+
+        var edges: u32 = 0;
+        for (0..n) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            for (d.graph.dependencies(m)) |dep| {
+                if (dep == m or position[dep.int()] >= position[i]) continue;
+                d.blockers[i] += 1;
+                d.dependent_start[dep.int() + 1] += 1;
+                edges += 1;
+            }
+        }
+        for (1..n + 1) |i| d.dependent_start[i] += d.dependent_start[i - 1];
+        d.dependents = try gpa.alloc(Graph.Index, edges);
+        const cursor = try gpa.alloc(u32, n);
+        defer gpa.free(cursor);
+        @memcpy(cursor, d.dependent_start[0..n]);
+        for (0..n) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            for (d.graph.dependencies(m)) |dep| {
+                if (dep == m or position[dep.int()] >= position[i]) continue;
+                d.dependents[cursor[dep.int()]] = m;
+                cursor[dep.int()] += 1;
+            }
+        }
+
+        d.queue = try gpa.alloc(Graph.Index, n);
+        // Seeded in the graph's order, so the first modules claimed are the
+        // ones the serial path would have taken first.
+        for (d.graph.order) |m| {
+            if (d.blockers[m.int()] != 0) continue;
+            d.queue[d.queue_len] = m;
+            d.queue_len += 1;
+        }
+    }
+
+    fn freeSchedule(d: *Driver) void {
+        d.gpa.free(d.blockers);
+        d.gpa.free(d.dependents);
+        d.gpa.free(d.dependent_start);
+        d.gpa.free(d.queue);
+        d.blockers = &.{};
+        d.dependents = &.{};
+        d.dependent_start = &.{};
+        d.queue = &.{};
+    }
+
+    /// Claim ready modules until every module is done. `own` is worker
+    /// zero's arena, handed in so the caller's warm one is reused; every
+    /// other worker makes its own and drops it on the way out.
+    fn worker(d: *Driver, tid: u32, own: ?*Arena) void {
+        var arena: Arena = .init(std.heap.page_allocator);
+        defer if (own == null) arena.deinit();
+        const scratch = own orelse &arena;
+        // A SECOND arena, reset per `case` rather than per module, so the
+        // usefulness check's matrices never pile up — and one per worker
+        // rather than one per module, because an arena's first allocation
+        // maps a chunk and a module that has one `case` should not pay a
+        // map and an unmap for it.
+        var patterns: Arena = .init(std.heap.page_allocator);
+        defer patterns.deinit();
+
+        while (true) {
+            d.mutex.lockUncancelable(d.io);
+            while (d.queue_head == d.queue_len and d.finished < d.graph.count() and d.failure == null) {
+                d.wake.waitUncancelable(d.io, &d.mutex);
+            }
+            if (d.failure != null or d.queue_head == d.queue_len) {
+                d.mutex.unlock(d.io);
+                // Everything is done, or somebody failed: wake the rest so
+                // they see it too and do not wait forever.
+                d.wake.broadcast(d.io);
+                return;
+            }
+            const m = d.queue[d.queue_head];
+            d.queue_head += 1;
+            d.mutex.unlock(d.io);
+
+            const result = d.check(m, scratch, &patterns, tid);
+            scratch.reset(.retain_capacity);
+            d.finish(m, result);
+        }
+    }
+
+    /// Record `m` as done, release whatever it was blocking, and wake
+    /// anybody waiting.
+    fn finish(d: *Driver, m: Graph.Index, result: Error!void) void {
+        d.mutex.lockUncancelable(d.io);
+        defer d.mutex.unlock(d.io);
+        d.finished += 1;
+        if (result) |_| {} else |err| {
+            if (d.failure == null) d.failure = err;
+        }
+        for (d.dependents[d.dependent_start[m.int()]..d.dependent_start[m.int() + 1]]) |dependent| {
+            d.blockers[dependent.int()] -= 1;
+            if (d.blockers[dependent.int()] != 0) continue;
+            d.queue[d.queue_len] = dependent;
+            d.queue_len += 1;
+        }
+        d.wake.broadcast(d.io);
+    }
+
+    fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
+        var one: ModuleCheck = .{
+            .gpa = d.gpa,
+            .scratch = scratch,
+            .patterns = patterns,
+            .graph = d.graph,
+            .artifacts = d.artifacts,
+            .interfaces = d.interfaces,
+            .interner = d.interner,
+            .types = d.types,
+            .module = m,
+            .diagnostics = &d.per_module[m.int()],
+            .quiet = m.int() < d.options.quiet.len and d.options.quiet[m.int()],
+            .profile = d.options.profile,
+            .tid = tid,
+            .pattern_budget = d.options.pattern_budget,
+        };
+        d.counters[m.int()] = try one.run(if (d.kept.len != 0) &d.kept[m.int()] else null);
+    }
+};
 
 const ModuleCheck = struct {
     gpa: Allocator,
     scratch: *Arena,
+    /// The pattern-usefulness scratch (checker.md §6.6), owned by the worker
+    /// and reset per `case` rather than per module.
+    patterns: *Arena,
     graph: *const Graph,
     artifacts: *const Artifacts,
     interfaces: []Interface,
@@ -190,6 +490,11 @@ const ModuleCheck = struct {
     diagnostics: *std.ArrayList(Diagnostics.Item),
     quiet: bool,
     profile: ?*Profile,
+    /// Which profile thread buffer this module's events go in: the worker
+    /// checking it. Only that worker writes it, which is what makes the
+    /// buffers lock-free.
+    tid: u32 = 0,
+    pattern_budget: u32 = Exhaustive.default_budget,
     /// Nanoseconds this module spent in each half, summed over its binding
     /// groups and emitted as one event each when the module is done.
     constrain_ns: u64 = 0,
@@ -197,7 +502,13 @@ const ModuleCheck = struct {
 
     fn run(mc: *ModuleCheck, keep: ?*Module) Error!Solve.Counters {
         const gpa = mc.gpa;
-        const bir = mc.artifacts.bir(mc.graph.moduleFile(mc.module));
+        const file = mc.graph.moduleFile(mc.module);
+        const bir = mc.artifacts.bir(file);
+        // One `check` event per module (checker.md §9), with `constrain`,
+        // `solve` and `exhaustive` nested inside it. Per module and not per
+        // run, because "this module was not re-checked" is the thing M4's
+        // incrementality tests have to be able to see.
+        const check_token = if (mc.profile) |p| p.begin() else null;
 
         var owned_store: TypeStore = .init(std.heap.page_allocator);
         const store = if (keep) |k| &k.store else &owned_store;
@@ -261,13 +572,19 @@ const ModuleCheck = struct {
             counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
         }
 
+        // 3. Pattern usefulness, over the declarations that solved clean
+        //    (checker.md §6.6). It runs here rather than inside the group
+        //    loop because "did THIS declaration produce a diagnostic?" is
+        //    only settled once every group is done.
+        const exhaustive_token = if (mc.profile) |p| p.begin() else null;
+        try mc.exhaustive(bir, &reporter);
         if (mc.profile) |profile| {
-            const file = mc.graph.moduleFile(mc.module).int();
-            profile.record(0, .constrain, file, 0, mc.constrain_ns);
-            profile.record(0, .solve, file, 0, mc.solve_ns);
+            profile.record(mc.tid, .constrain, file.int(), 0, mc.constrain_ns);
+            profile.record(mc.tid, .solve, file.int(), 0, mc.solve_ns);
+            profile.end(mc.tid, exhaustive_token.?, .exhaustive, file.int(), 0);
         }
 
-        // 3. The interface gains its schemes (checker.md §7).
+        // 4. The interface gains its schemes (checker.md §7).
         try mc.fillInterface(bir, store, decl_scheme);
 
         // A declaration with no body — a `foreign` value, an annotation the
@@ -285,6 +602,7 @@ const ModuleCheck = struct {
             gpa.free(decl_display);
             gpa.free(local_type);
         }
+        if (mc.profile) |profile| profile.end(mc.tid, check_token.?, .check, file.int(), 0);
         return counters;
     }
 
@@ -407,6 +725,41 @@ const ModuleCheck = struct {
             mc.solve_ns += p.since(solve_token.?);
         }
         return solver.counters;
+    }
+
+    /// Check every `case` of every declaration that has no type error of
+    /// its own (checker.md §6.6).
+    ///
+    /// The gate is per DECLARATION and not per module: a module with one bad
+    /// function still has good ones, and their `case`s are worth checking.
+    /// What it buys is the algorithm's precondition — a column of a matrix
+    /// holds one type's constructors — which only holds where unification
+    /// succeeded. A declaration that failed has patterns the checker already
+    /// complained about, and a second message about them would be noise.
+    fn exhaustive(mc: *ModuleCheck, bir: *const Bir, reporter: *Diagnostics.Reporter) Error!void {
+        if (reporter.quiet) return;
+        const gpa = mc.gpa;
+        const skip = try gpa.alloc(bool, bir.decls.len);
+        defer gpa.free(skip);
+        @memset(skip, false);
+        for (mc.diagnostics.items) |item| {
+            const at = item.region.int();
+            for (bir.decls, 0..) |d, i| {
+                if (at >= d.inst_start.int() and at < d.inst_end.int()) {
+                    skip[i] = true;
+                    break;
+                }
+            }
+        }
+        try Exhaustive.run(gpa, mc.patterns, .{
+            .graph = mc.graph,
+            .artifacts = mc.artifacts,
+            .interfaces = mc.interfaces,
+            .types = mc.types,
+            .interner = mc.interner,
+            .module = mc.module,
+            .bir = bir,
+        }, reporter, skip, mc.pattern_budget);
     }
 
     /// Write every `pub` value's scheme into the interface (checker.md §7).
@@ -668,6 +1021,43 @@ fn expectCodes(expected: []const diagnostic.Code, source: [:0]const u8) !void {
     defer codes.deinit(gpa);
     try checkCodes(gpa, source, &codes);
     try testing.expectEqualSlices(diagnostic.Code, expected, codes.items);
+}
+
+/// Every diagnostic code of a WHOLE project — `modules` on top of the test
+/// core — for the scenarios that are about crossing a module boundary.
+fn expectProjectCodes(expected: []const diagnostic.Code, extra: []const TestProject.Module) !void {
+    const gpa = testing.allocator;
+    var modules: std.ArrayList(TestProject.Module) = .empty;
+    defer modules.deinit(gpa);
+    try modules.appendSlice(gpa, &test_core);
+    try modules.appendSlice(gpa, extra);
+    var p = try TestProject.initWith(gpa, modules.items, .{ .phases = Session.check_phases });
+    defer p.deinit();
+    const got = try p.codes(gpa);
+    defer gpa.free(got);
+    try testing.expectEqualSlices(diagnostic.Code, expected, got);
+}
+
+/// One module checked with a chosen pattern-usefulness budget
+/// (checker.md §6.6).
+fn budgetedCodes(gpa: Allocator, source: [:0]const u8, budget: u32) ![]diagnostic.Code {
+    var modules: std.ArrayList(TestProject.Module) = .empty;
+    defer modules.deinit(gpa);
+    try modules.appendSlice(gpa, &test_core);
+    try modules.append(gpa, .{ .path = "M.beni", .source = source });
+    var p = try TestProject.initWith(gpa, modules.items, .{
+        .phases = Session.check_phases,
+        .pattern_budget = budget,
+    });
+    defer p.deinit();
+    return p.codes(gpa);
+}
+
+fn expectBudgetedCodes(expected: []const diagnostic.Code, source: [:0]const u8, budget: u32) !void {
+    const gpa = testing.allocator;
+    const got = try budgetedCodes(gpa, source, budget);
+    defer gpa.free(got);
+    try testing.expectEqualSlices(diagnostic.Code, expected, got);
 }
 
 test "inference: the principal type of an unannotated definition" {
@@ -1203,6 +1593,467 @@ test "a local index is relative to its declaration, in every consumer" {
         \\    name
         \\
     );
+}
+
+// ---------------------------------------------------------------------------
+// Pattern usefulness (checker.md §6.6)
+// ---------------------------------------------------------------------------
+
+test "exhaustiveness: a constructor with no branch is reported, one with a branch is not" {
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+    );
+    try expectCodes(&.{},
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+        \\        Nothing ->
+        \\            0
+        \\
+    );
+    // A variable covers the rest, exactly as a wildcard does.
+    try expectCodes(&.{},
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+        \\        other ->
+        \\            0
+        \\
+    );
+}
+
+test "exhaustiveness: `if` lowers to a `case` on Bool and must not be reported" {
+    // `if` becomes `case c of True -> …; False -> …` (Bir's `case` tag), and
+    // those two ARE every constructor of `Bool`. A spurious `missing_patterns`
+    // on every `if` in the language is the failure mode this test exists for.
+    try expectCodes(&.{},
+        \\pub sign : Int -> Int
+        \\sign n =
+        \\    if n < 0 then
+        \\        0 - 1
+        \\    else
+        \\        1
+        \\
+    );
+    // And a written `case` on `Bool` behaves the same way.
+    try expectCodes(&.{.missing_patterns},
+        \\pub yes : Bool -> Int
+        \\yes b =
+        \\    case b of
+        \\        True ->
+        \\            1
+        \\
+    );
+}
+
+test "exhaustiveness: literals are infinite, so a wildcard is the only way to cover them" {
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : Int -> Int
+        \\f n =
+        \\    case n of
+        \\        1 ->
+        \\            1
+        \\
+        \\        2 ->
+        \\            2
+        \\
+    );
+    try expectCodes(&.{},
+        \\pub f : Int -> Int
+        \\f n =
+        \\    case n of
+        \\        1 ->
+        \\            1
+        \\
+        \\        _ ->
+        \\            0
+        \\
+    );
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : String -> Int
+        \\f s =
+        \\    case s of
+        \\        "a" ->
+        \\            1
+        \\
+    );
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : Char -> Int
+        \\f c =
+        \\    case c of
+        \\        'a' ->
+        \\            1
+        \\
+    );
+    // The same VALUE spelled two ways is one pattern, so the second branch
+    // is dead: `0x10` and `16` are the same integer.
+    try expectCodes(&.{.redundant_pattern},
+        \\pub f : Int -> Int
+        \\f n =
+        \\    case n of
+        \\        0x10 ->
+        \\            1
+        \\
+        \\        16 ->
+        \\            2
+        \\
+        \\        _ ->
+        \\            0
+        \\
+    );
+}
+
+test "exhaustiveness: a list is `[]` and `::`, in both spellings" {
+    try expectCodes(&.{}, listCase("[]", "x :: rest"));
+    try expectCodes(&.{.missing_patterns}, listCase("[]", "[ x ]"));
+    try expectCodes(&.{.missing_patterns}, listCase("[ x ]", "[ x2, y ]"));
+    // `[]`, `[ x ]` and `x :: y :: rest` between them are every list.
+    try expectCodes(&.{},
+        \\pub f : List Int -> Int
+        \\f xs =
+        \\    case xs of
+        \\        [] ->
+        \\            0
+        \\
+        \\        [ x ] ->
+        \\            x
+        \\
+        \\        x2 :: y :: rest ->
+        \\            y
+        \\
+    );
+    // …and a fourth branch for a non-empty list is therefore dead.
+    try expectCodes(&.{.redundant_pattern},
+        \\pub f : List Int -> Int
+        \\f xs =
+        \\    case xs of
+        \\        [] ->
+        \\            0
+        \\
+        \\        [ x ] ->
+        \\            x
+        \\
+        \\        x2 :: y :: rest ->
+        \\            y
+        \\
+        \\        z :: more ->
+        \\            z
+        \\
+    );
+}
+
+/// A `case` over `List Int` with two branch patterns, for the list cases
+/// above. The bodies are constants so nothing but the patterns is in play.
+fn listCase(comptime a: []const u8, comptime b: []const u8) [:0]const u8 {
+    return "pub f : List Int -> Int\nf xs =\n    case xs of\n        " ++ a ++
+        " ->\n            0\n\n        " ++ b ++ " ->\n            1\n";
+}
+
+test "exhaustiveness: tuples, unit and records are products with one shape" {
+    // A tuple has one constructor, so what is missing is a COMBINATION —
+    // and the example names it in source syntax.
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : ( Bool, Bool ) -> Int
+        \\f p =
+        \\    case p of
+        \\        ( True, True ) ->
+        \\            1
+        \\
+        \\        ( False, False ) ->
+        \\            2
+        \\
+    );
+    try expectCodes(&.{},
+        \\pub f : ( Bool, Bool ) -> Int
+        \\f p =
+        \\    case p of
+        \\        ( True, b ) ->
+        \\            1
+        \\
+        \\        ( False, b2 ) ->
+        \\            2
+        \\
+    );
+    // `()` has exactly one value, and a record pattern always matches.
+    try expectCodes(&.{},
+        \\pub f : () -> Int
+        \\f u =
+        \\    case u of
+        \\        () ->
+        \\            1
+        \\
+    );
+    try expectCodes(&.{},
+        \\pub f : { name : Int } -> Int
+        \\f r =
+        \\    case r of
+        \\        { name } ->
+        \\            name
+        \\
+    );
+}
+
+test "exhaustiveness: nesting" {
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : Maybe (Maybe Int) -> Int
+        \\f m =
+        \\    case m of
+        \\        Just (Just n) ->
+        \\            n
+        \\
+        \\        Nothing ->
+        \\            0
+        \\
+    );
+    try expectCodes(&.{},
+        \\pub f : Maybe (Maybe Int) -> Int
+        \\f m =
+        \\    case m of
+        \\        Just (Just n) ->
+        \\            n
+        \\
+        \\        Just Nothing ->
+        \\            1
+        \\
+        \\        Nothing ->
+        \\            0
+        \\
+    );
+    // A `Result` of a `Maybe`, with three of the four combinations missing.
+    try expectCodes(&.{.missing_patterns},
+        \\pub f : Result String (Maybe Int) -> Int
+        \\f r =
+        \\    case r of
+        \\        Ok (Just n) ->
+        \\            n
+        \\
+    );
+}
+
+test "exhaustiveness: a branch under a wildcard can never run" {
+    try expectCodes(&.{.redundant_pattern},
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        other ->
+        \\            0
+        \\
+        \\        Nothing ->
+        \\            1
+        \\
+    );
+    // The FIRST redundant branch is the one reported, and the missing-
+    // pattern search does not also run: the matrix past a dead row is not
+    // what the author meant (Elm's `toNonRedundantRows` stops the same way).
+    try expectCodes(&.{.redundant_pattern},
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+        \\        Just q ->
+        \\            q
+        \\
+        \\        Just z ->
+        \\            z
+        \\
+    );
+}
+
+test "exhaustiveness: a declaration with a type error is not judged twice" {
+    // One mistake, one message: the `case` below is also non-exhaustive,
+    // and saying so would be a second complaint about a declaration whose
+    // types are already unknown (checker.md §6.6).
+    try expectCodes(&.{.type_mismatch},
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            "not an int"
+        \\
+    );
+    // A GOOD declaration in the same module is still checked, though.
+    try expectCodes(&.{ .type_mismatch, .missing_patterns },
+        \\pub bad : Maybe Int -> Int
+        \\bad m =
+        \\    case m of
+        \\        Just n ->
+        \\            "not an int"
+        \\
+        \\
+        \\pub good : Maybe Int -> Int
+        \\good m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+    );
+}
+
+test "exhaustiveness: a case on an opaque imported type needs a variable, and that is enough" {
+    // The importer cannot name the constructors at all (`opaque_constructor`
+    // refuses them), so a variable is the only pattern it can write — and a
+    // variable is exhaustive. The point is that nothing is reported: an
+    // opaque type must not look non-exhaustive from outside.
+    try expectProjectCodes(&.{}, &.{
+        .{ .path = "Token.beni", .source =
+        \\pub opaque type Token
+        \\    = Word String
+        \\    | Number Int
+        \\
+        \\
+        \\pub make : Token
+        \\make =
+        \\    Number 1
+        \\
+        },
+        .{ .path = "M.beni", .source =
+        \\import Token exposing (Token, make)
+        \\
+        \\
+        \\pub size : Token -> Int
+        \\size t =
+        \\    case t of
+        \\        anything ->
+        \\            1
+        \\
+        },
+    });
+}
+
+test "exhaustiveness: an imported type's constructors come from its interface" {
+    // `Tri` is not even imported, and it is still what is missing: the union
+    // comes from the TYPE's declaration, reached through `Shape`'s
+    // interface, not from what the importer happened to name.
+    try expectProjectCodes(&.{.missing_patterns}, &.{
+        .{ .path = "Shape.beni", .source =
+        \\pub type Shape
+        \\    = Circle Int
+        \\    | Square Int
+        \\    | Tri Int Int
+        \\
+        },
+        .{ .path = "M.beni", .source =
+        \\import Shape exposing (Shape, Circle, Square)
+        \\
+        \\
+        \\pub area : Shape -> Int
+        \\area s =
+        \\    case s of
+        \\        Circle r ->
+        \\            r
+        \\
+        \\        Square w ->
+        \\            w
+        \\
+        },
+    });
+}
+
+test "the usefulness budget: an analysis that would cost too much reports nothing" {
+    // The algorithm is exponential in the worst case (Maranget §3.3), so a
+    // `case` that exceeds a fixed work budget is abandoned. Proving that
+    // with a hang is not a test; proving it by turning the budget down to
+    // where an ordinary `case` cannot be analysed is.
+    const source =
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+    ;
+    try expectBudgetedCodes(&.{.missing_patterns}, source, Session.default_pattern_budget);
+    try expectBudgetedCodes(&.{}, source, 1);
+}
+
+test "the usefulness budget: many constructors times many branches terminates" {
+    // Forty constructors and forty branches, each branch a two-deep nest of
+    // them: the shape that makes every column of the matrix complete, which
+    // is where the exponent lives. The contract is that this FINISHES —
+    // with the default budget it is analysed, with a small one it is
+    // abandoned, and neither answer is a hang or a crash.
+    const gpa = testing.allocator;
+    const ctors = 40;
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    const w = &out.writer;
+    try w.writeAll("pub type T\n");
+    for (0..ctors) |i| try w.print("    {s} C{d} T\n", .{ if (i == 0) "=" else "|", i });
+    try w.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
+    for (0..ctors) |i| {
+        if (i != 0) try w.writeAll("\n");
+        try w.print("        C{d} (C{d} rest{d}) ->\n            {d}\n", .{ i, (i + 1) % ctors, i, i });
+    }
+    const text = try gpa.dupeZ(u8, out.written());
+    defer gpa.free(text);
+
+    for ([_]u32{ Session.default_pattern_budget, 64 }) |budget| {
+        const codes = try budgetedCodes(gpa, text, budget);
+        defer gpa.free(codes);
+        // Whatever it decides, it decides: either the one message or
+        // silence, never a crash and never a second message.
+        try testing.expect(codes.len <= 1);
+        if (codes.len == 1) try testing.expectEqual(diagnostic.Code.missing_patterns, codes[0]);
+    }
+}
+
+test "fuzz: arbitrary bytes as the patterns of a `case` never panic the usefulness check" {
+    // The general pipeline fuzz below reaches `Exhaustive` only when random
+    // bytes happen to make a declaration that type-checks, which is almost
+    // never. This one puts the fuzzed bytes where the patterns of a `case`
+    // over a real ADT go, so whatever the parser makes of them is what the
+    // matrix is built from — mixed columns, poisoned references, nesting,
+    // arities that do not match. Contract: no panic, and no diagnostic is
+    // required.
+    try testing.fuzz({}, struct {
+        fn testOne(_: void, smith: *std.testing.Smith) anyerror!void {
+            var buf: [512]u8 = undefined;
+            const len = smith.sliceWithHash(&buf, 0x5E6A2);
+            const gpa = testing.allocator;
+            var out: std.Io.Writer.Allocating = .init(gpa);
+            defer out.deinit();
+            out.writer.writeAll(
+                \\pub type T
+                \\    = A Int
+                \\    | B
+                \\    | C T T
+                \\
+                \\
+                \\pub f : T -> Int
+                \\f t =
+                \\    case t of
+                \\
+            ) catch return;
+            // One branch per line of the fuzzed bytes, each at the branch
+            // indent, so a line that happens to be a pattern becomes one.
+            var it = std.mem.splitScalar(u8, buf[0..len], '\n');
+            while (it.next()) |line| {
+                out.writer.print("        {s} ->\n            0\n\n", .{line}) catch return;
+            }
+            out.writer.writeAll("        _ ->\n            1\n") catch return;
+            const source = gpa.dupeZ(u8, out.written()) catch return;
+            defer gpa.free(source);
+            var codes: std.ArrayList(diagnostic.Code) = .empty;
+            defer codes.deinit(gpa);
+            checkCodes(gpa, source, &codes) catch |err| switch (err) {
+                error.OutOfMemory => return,
+                else => return err,
+            };
+        }
+    }.testOne, .{});
 }
 
 test "fuzz: the whole pipeline through the checker never panics" {

@@ -1,0 +1,7 @@
+-- check/good (project): one type declared in one module and used in three.
+-- Proves the `TypeId` a dependent instantiates is the SAME dense id in every
+-- one of them (checker.md §5), so `Shape` unifies with `Shape` across three
+-- separate stores and three separate interfaces.
+pub type Shape
+    = Circle Int
+    | Rect Int Int

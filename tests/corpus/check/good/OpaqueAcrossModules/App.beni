@@ -1,0 +1,15 @@
+-- check/good (project): the importer of an opaque type. It never names a
+-- constructor; the only pattern it can write for a `Counter` is a variable.
+import Counter exposing (Counter, bump, value, zero)
+
+
+pub twice : Counter
+twice =
+    bump (bump zero)
+
+
+pub label : Counter -> String
+label c =
+    case c of
+        anything ->
+            "count ${value anything}"

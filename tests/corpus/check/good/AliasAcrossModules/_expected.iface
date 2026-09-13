@@ -1,0 +1,7 @@
+module Geometry
+  alias Point
+    Point/2
+  value origin : Point
+module Move
+  value right : Point
+  value shift : Point -> Int -> Point

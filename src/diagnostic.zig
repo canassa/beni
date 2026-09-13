@@ -132,6 +132,11 @@ pub const Code = enum {
     tuple_index_out_of_range,
     not_a_tuple,
     try_shape,
+    // M2c (checker.md §6.6, §8.1): pattern usefulness. Both are reported
+    // after a declaration solves cleanly, so the patterns they judge are
+    // known to be well typed.
+    missing_patterns,
+    redundant_pattern,
     internal,
 };
 
@@ -213,6 +218,8 @@ pub fn title(code: Code) []const u8 {
         .tuple_index_out_of_range => "TUPLE INDEX OUT OF RANGE",
         .not_a_tuple => "NOT A TUPLE",
         .try_shape => "BAD QUESTION MARK",
+        .missing_patterns => "MISSING PATTERNS",
+        .redundant_pattern => "REDUNDANT PATTERN",
         .internal => "INTERNAL ERROR",
     };
 }

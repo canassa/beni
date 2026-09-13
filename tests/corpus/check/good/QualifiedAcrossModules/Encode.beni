@@ -1,0 +1,14 @@
+-- check/good (project): `import … as` plus qualified names for a type, a
+-- constructor and a value — the three `qualified*` forms of language.md
+-- §8.1, all resolved against one interface.
+import Json.Value as J
+
+
+pub text : String -> J.Value
+text s =
+    J.Text s
+
+
+pub total : List J.Value -> Int
+total vs =
+    List.foldl (\v acc -> acc + J.size v) 0 vs

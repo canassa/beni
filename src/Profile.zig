@@ -49,6 +49,11 @@ pub const Phase = enum {
     check,
     constrain,
     solve,
+    /// Pattern usefulness, per module (checker.md §6.6, §9). Separate from
+    /// `solve` because it runs after it, over the declarations that solved
+    /// clean, and a regression in one must not be read as a regression in
+    /// the other.
+    exhaustive,
     render,
 };
 

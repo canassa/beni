@@ -1653,7 +1653,12 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             defer l.shrinkScratch(mark);
             for (pc.args) |arg| try l.pushScratch(try l.lowerPattern(arg, set_start, .pattern));
             const args = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
-            return l.addInst(.pat_ctor, ref.int(), @intFromEnum(args));
+            // Stamped with the CONSTRUCTOR's token, not with whatever the
+            // last argument left in `cur_token`: every diagnostic about a
+            // constructor pattern — its arity (checker.md §8.3), its type,
+            // its redundancy (§6.6) — is about the pattern as a whole, and
+            // its name is where a reader looks for it.
+            return l.addInstAt(pc.name, .pat_ctor, ref.int(), @intFromEnum(args));
         },
         .pat_int => {
             const text = try l.addBytes(l.tokenText(main_token));

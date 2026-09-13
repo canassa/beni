@@ -1,0 +1,12 @@
+-- check/bad: the counterexample is built by the same search that found it,
+-- so a nested `case` gets a nested example. Both `Result` constructors ARE
+-- named here, so the search goes INTO them and finds the `Maybe` inside
+-- `Ok` incomplete — Maranget's `I(P, n)` recursing on a complete column.
+pub check : Result String (Maybe Int) -> Int
+check r =
+    case r of
+        Ok (Just n) ->
+            n
+
+        Err msg ->
+            0

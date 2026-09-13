@@ -21,7 +21,15 @@ Two shapes:
 A directory is a **project**: every `.beni` under it is a module of the
 package `app`, and the golden is every module's interface concatenated in
 path order. That is where cross-module resolution — imports, `exposing`
-lists, qualified names, the topological order — is actually exercised.
+lists, qualified names, the topological order — is actually exercised, and
+where cross-module INFERENCE is: `SharedType` puts one type in three
+dependents, `InferredExport` makes the importer instantiate a scheme nobody
+wrote down, `AliasAcrossModules` carries an alias over a boundary without
+expanding it, `Diamond` gives the DAG scheduler (checker.md §4.4) two
+modules that may run at once, `CtorByName` imports constructors by name and
+matches on them exhaustively, `OpaqueAcrossModules` hides constructors from
+an importer, and `QualifiedAcrossModules` reaches a dotted module through an
+`as` alias.
 
 A fixture under `core/` is run with `--core`, so `foreign` and the
 `equatable` marker are legal (`language.md` §5.4, checker.md Appendix B).

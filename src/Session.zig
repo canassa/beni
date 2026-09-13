@@ -119,9 +119,26 @@ pub const Options = struct {
     /// been extracted (§5), and keeping them costs memory proportional to
     /// the whole project rather than to one module.
     keep_type_stores: bool = false,
-    /// Capacity of each worker's profile buffer.
-    profile_events_per_thread: usize = 4096,
+    /// Work one `case` may spend on pattern usefulness (checker.md §6.6)
+    /// before it is abandoned and reports nothing. A knob for the tests
+    /// that prove the bound, not a flag.
+    pattern_budget: u32 = default_pattern_budget,
+    /// Capacity of each worker's profile buffer. Allocated once at session
+    /// start and never grown, so a worker records without allocating; a full
+    /// buffer counts the drop and the trace says `dropped_events`.
+    ///
+    /// M2c's per-module events (checker.md §9: `resolve`, `check`,
+    /// `constrain`, `solve` and `exhaustive` for every module) put five rows
+    /// per module on top of four per file, so the old 4096 truncated the
+    /// trace of the 100k-line corpus at `--jobs=1` — the run whose trace one
+    /// most wants to read. 64 Ki events is 2 MiB per thread, paid only when
+    /// `--self-profile` is on.
+    profile_events_per_thread: usize = 64 * 1024,
 };
+
+/// The pattern-usefulness budget of checker.md §6.6, re-exported so the
+/// tests can name it without reaching into the checker.
+pub const default_pattern_budget = Check.Exhaustive.default_budget;
 
 pub const IoFailure = struct {
     path: []const u8,
@@ -300,15 +317,28 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     }
 
     // 2. Per-file phases on workers.
-    if (session.workers.len == 1) {
-        session.workerMain(&session.workers[0], phases);
-    } else {
+    //
+    // Every worker is spawned with an EXPLICIT stack, the calling thread's
+    // included, and that is not a detail: the parser bounds a tree at
+    // `Parse.max_depth` levels and every consumer of that tree — the AST
+    // dump, the formatter, lowering — walks it by recursion, so a
+    // legitimately deep tree needs `check_stack_size` frames of room.
+    // `std.Thread.SpawnConfig`'s default does not have it, and neither does
+    // the 8 MiB a main thread gets, which is why `--jobs=1` no longer runs
+    // the phases inline: a crash that depends on the worker count is worse
+    // than the thread it costs to avoid, and one spawn is microseconds
+    // against a 2 ms process start.
+    {
         var threads: std.ArrayList(std.Thread) = .empty;
         defer threads.deinit(gpa);
         try threads.ensureTotalCapacity(gpa, session.workers.len);
         defer for (threads.items) |t| t.join();
         for (session.workers) |*worker| {
-            threads.appendAssumeCapacity(try std.Thread.spawn(.{}, workerMain, .{ session, worker, phases }));
+            threads.appendAssumeCapacity(try std.Thread.spawn(
+                .{ .stack_size = check_stack_size },
+                workerMain,
+                .{ session, worker, phases },
+            ));
         }
     }
     session.next_file.store(0, .monotonic);
@@ -632,10 +662,11 @@ fn resolveSerial(session: *Session) RunError!void {
     session.profile.addCounter(.edges, session.graph.edgeCount());
     try session.reportGraphDiagnostics();
 
-    const resolve_token = session.profile.begin();
     session.resolution.deinit(gpa);
-    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.artifacts, &session.interner);
-    session.profile.end(0, resolve_token, .resolve, Profile.Event.no_file, 0);
+    // One `resolve` event per module (checker.md §9), emitted inside, not
+    // one for the whole step: the per-module rows are what M4's
+    // incrementality tests read.
+    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.artifacts, &session.interner, &session.profile);
     session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
     try session.reportResolveDiagnostics();
 }
@@ -665,10 +696,11 @@ fn checkSerial(session: *Session) RunError!void {
         }
     }
 
-    const token = session.profile.begin();
     session.checked.deinit(gpa);
+    // `check` is one event per MODULE (checker.md §9), emitted by the
+    // checker itself on the worker that took the module, with `constrain`,
+    // `solve` and `exhaustive` nested inside each.
     session.checked = try runCheckOnBigStack(session, quiet);
-    session.profile.end(0, token, .check, Profile.Event.no_file, 0);
     session.profile.addCounter(.unifications, session.checked.counters.unifications);
     session.profile.addCounter(.generalisations, session.checked.counters.generalisations);
     session.profile.addCounter(.instantiations, session.checked.counters.instantiations);
@@ -691,10 +723,10 @@ fn checkSerial(session: *Session) RunError!void {
 /// gains a field and the failure mode is a segfault rather than a
 /// diagnostic.
 ///
-/// This is also the shape M2c needs: §4.4 puts each module's check on a
-/// worker, and `std.Thread.spawn`'s DEFAULT stack is not enough — that is
-/// what the 16 MiB measurement says.
-const check_stack_size = 64 * 1024 * 1024;
+/// M2c's DAG-parallel checking (checker.md §4.4) needs the same room on
+/// every worker, which is why the number lives in `Check` and is stated at
+/// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
+pub const check_stack_size = Check.stack_size;
 
 fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
     const Runner = struct {
@@ -705,6 +737,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
         fn go(r: *@This()) void {
             r.result = Check.run(
                 r.session.gpa,
+                r.session.io,
                 &r.session.workers[0].arena,
                 &r.session.graph,
                 &r.session.artifacts,
@@ -714,6 +747,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                     .profile = &r.session.profile,
                     .keep_stores = r.session.options.keep_type_stores,
                     .quiet = r.quiet,
+                    .jobs = @intCast(r.session.workers.len),
+                    .pattern_budget = r.session.options.pattern_budget,
                 },
             );
         }
