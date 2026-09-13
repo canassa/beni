@@ -419,8 +419,10 @@ import Dict as D exposing (Dict)
 - `as` gives the alias used for qualification in this file. Without `as`, the alias is the full
   path (`Json.Decode.string`). Two imports may not share an alias (`duplicate_import_alias`),
   and the same module may not be imported twice (`duplicate_import`).
-- `exposing` lists names, each exactly once. Lower names are values; upper names are types **or
-  constructors** — the file cannot tell which, and does not need to: in a type position an upper
+- `exposing` lists names, each exactly once across the whole file: a name exposed twice in one
+  list, or by two different imports, is `duplicate_exposed_name` at the second occurrence — an
+  unqualified use would otherwise be ambiguous, and the file can decide this alone. Lower names
+  are values; upper names are types **or constructors** — the file cannot tell which, and does not need to: in a type position an upper
   name is a type, in an expression or pattern it is a constructor. Whether the imported module
   actually exposes it is checked in M2.
 - Order: all imports precede all declarations. An import after a declaration is
@@ -655,7 +657,7 @@ expected_declaration  expected_token  unexpected_token  unclosed_delimiter
 annotation_without_definition  pub_on_definition  opaque_not_on_type  case_without_branches
 args_after_question  non_associative_chain  negation_with_space  invalid_tuple_index
 refutable_let_pattern
-duplicate_import  duplicate_import_alias  import_after_declaration  self_import
+duplicate_import  duplicate_import_alias  duplicate_exposed_name  import_after_declaration  self_import
 duplicate_declaration  duplicate_type  duplicate_constructor  shadows_import  duplicate_field
 foreign_outside_core
 unbound_variable  unbound_constructor  unbound_type  unknown_module_alias
