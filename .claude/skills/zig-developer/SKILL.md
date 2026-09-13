@@ -46,7 +46,11 @@ corresponding Zig file first — the design doc cites these by name:
 | Typed IR consumed by the backend | `src/Air.zig` |
 
 `references/elm/` is the language reference (Haskell): its parser, constraint
-solver and JS backend are what beni's semantics follow. See
+solver and JS backend are what beni's semantics follow. `references/elm-core/`
+is the `elm/core` package — the half the compiler repo does not contain, and
+the one that matters for M3 and the boundary: `src/Elm/Kernel/*.js` is every
+piece of privileged JavaScript Elm ships, including `Scheduler.js`, which is
+how `Task` actually runs. See
 `docs/design/research/05-elm-roc.md` for the phase-by-phase map.
 
 ## beni house rules (see docs/design/fast-compiler.md §5)

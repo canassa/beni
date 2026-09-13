@@ -7,3 +7,6 @@
 [submodule "references/roc"]
 	path = references/roc
 	url = https://github.com/roc-lang/roc.git
+[submodule "references/elm-core"]
+	path = references/elm-core
+	url = https://github.com/elm/core.git
