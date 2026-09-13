@@ -1036,9 +1036,22 @@ output *larger*), not `if_return` or `collapse_vars` (negative under brotli), an
 `evaluate`, `reduce_vars`, `sequences`, `comparisons`, `switches` or `typeofs`, all of which
 measured approximately zero.
 
+**Two build modes, one graph.** `beni build` is development output: one ESM file per source
+module, mirroring the source tree, no dead-code elimination, string constructor tags, source maps
+on. It optimises for rebuild latency and debuggability, and it is what the §2 warm-rebuild budget
+of 15ms is measured against — one edit rewrites one small file. `beni build --release` is
+deployment output: reachability chunks, exact elimination, integer tags, whole-program renaming and
+field ambiguation, maps off. Both read the same declaration graph, so nothing is built twice, and
+§9.4's "tag as a small integer in release mode, string in dev" already assumed this split existed.
+
 **Code splitting is designed in now, not retrofitted.** Elm has no chunking concept and adding one
 means reworking its emission core. Large programs are expected to need chunks, so this is an M3
 requirement. Three decisions, all from report 12:
+
+**Chunking is opt-in per program, and release-only.** The entry points are `main` plus every
+`lazy` declaration, so a program with no `lazy` colours every reachable declaration identically and
+emits exactly one file. Nothing is split because a program got large; a program is split where its
+author said to split it.
 
 - **Chunk assignment is per declaration**, by entry-set colouring over the §9.1 graph, with the
   colour **hash-consed from the start** — dart2js's `ImportSetLattice`. Both GWT and Rollup
