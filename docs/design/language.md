@@ -107,7 +107,8 @@ Attachment rules, taken from Zig:
   between the doc block and its declaration are allowed.
 - `--!` lines must appear before the first import or declaration. A `--!` anywhere else is
   `module_doc_not_at_top`. Consecutive lines form one block; a second block after a blank line is
-  merged with the first.
+  merged with the first. Ordinary `--` comments and blank lines may appear before, between and
+  after `--!` lines freely — they are trivia and attach to nothing.
 - An ordinary `--` comment between a doc block and its declaration splits the block from its
   target and is `doc_comment_unattached`. One rule, no exceptions.
 - `--|x` and `--!x` with no space are still doc comments; the formatter inserts the space.
@@ -147,10 +148,11 @@ exponent := [eE] [+-]? [0-9]+
 ```
 
 - Numeric lexing continues past `.` into a float **only if the next byte is a digit**. So `1.`
-  followed by anything else is `int` then whatever follows, and `1.e5` is `int` `dot`… → a
-  syntax error, not a float. (`fast-compiler.md` §3.2 mentions `e`/`E` after the dot as well;
-  the grammar above has no such form, so the lexer does not take it.) `x.0` never starts a float
-  because it starts with a lower identifier (§2.4).
+  followed by anything else is `int` then whatever follows: `1.e5` lexes as `int` `dot_lower`
+  (a field access on a literal, rejected by the checker), not as a float. (`fast-compiler.md`
+  §3.2 mentions `e`/`E` after the dot as well; the grammar above has no such form, so the lexer
+  does not take it.) `x.0` never starts a float because it starts with a lower identifier
+  (§2.4).
 - No underscores, no leading `+`, no octal/binary, no trailing `.`. An identifier character
   immediately after a number (`12abc`, `0x1G`) is `invalid_number`.
 - A `-` is never part of a literal (§6.5, negation).
@@ -244,10 +246,11 @@ Expr        := 'let' LetBinding+ 'in' Expr
              | 'case' Expr 'of' Branch+
              | '\' PatAtom+ '->' Expr
              | BinOp
-LetBinding  := Annotation? Definition | Pattern '=' Expr         -- pattern binds have no args
+LetBinding  := Annotation? Definition | LetPattern '=' Expr      -- pattern binds have no args
 Branch      := Pattern '->' Expr
 
-BinOp       := Postfix (operator Postfix)*                       -- Pratt, table in §6.5
+BinOp       := Postfix (operator Postfix)* (operator Block)?     -- Pratt, table in §6.5
+Block       := 'let' … | 'if' … | 'case' … | '\' …               -- the four Expr forms above
 Postfix     := App '?'*
 App         := Atom Atom*
 Atom        := literal                                           -- int float char string
@@ -266,14 +269,19 @@ Atom        := literal                                           -- int float ch
              | Atom dot_index                                    -- tuple access, no space
 Field       := lower_ident '=' Expr
 
-Pattern     := PatCtor ('::' Pattern)?                           -- right assoc
-PatCtor     := (upper_ident | qualified_upper) PatAtom* | PatAtom
+Pattern     := PatCons ('as' lower_ident)?                       -- `as` binds loosest
+PatCons     := PatCtor ('::' PatCons)?                           -- right assoc
+PatCtor     := (upper_ident | qualified_upper) PatAtom+ | PatAtom
 PatAtom     := '_' | lower_ident
+             | upper_ident | qualified_upper                     -- nullary constructor
              | int | char | string-without-interpolation | '-' int
              | '(' ')' | '(' Pattern ')' | '(' Pattern (',' Pattern)+ ')'
              | '[' ']' | '[' Pattern (',' Pattern)* ']'
              | '{' lower_ident (',' lower_ident)* '}'            -- record pattern
-             | PatAtom 'as' lower_ident
+LetPattern  := '_' | lower_ident | '(' ')' | '(' LetPattern ')'  -- irrefutable only (§7)
+             | '(' LetPattern (',' LetPattern)+ ')'
+             | '{' lower_ident (',' lower_ident)* '}'
+             | LetPattern 'as' lower_ident
 ```
 
 Notes:
@@ -291,12 +299,17 @@ Notes:
   allowed (`type T = | A | B`) and the formatter removes it.
 - Trailing commas are not allowed anywhere. Empty `( )`, `[ ]`, `{ }` may contain whitespace.
 - An expression may not begin with an operator, except `-` for negation (§6.5).
+- A `let`, `if`, `case` or lambda may be the **last** operand of an operator chain
+  (`f <| \x -> x + 1`, `xs |> List.map (\x -> x)`, `text <| if a then b else c`), as in Elm.
+  It extends as far as the layout allows, so nothing can follow it in the chain. It may not be
+  a bare application argument: `f \x -> x` is an error; write `f (\x -> x)`.
 - `case` needs at least one branch (`case_without_branches`).
 - `lambda`: `\x y -> e` — one or more pattern atoms.
 - Record update: the target is a plain name, as in Elm (`{ r | x = 1 }`). `{ r.a | … }` is not
   allowed.
-- Parenthesised operators: `(+)`, `(::)`, `(|>)` etc. — any operator from §6.5. Sections such
-  as `(+ 1)` do not exist. Negation `(-)` is the binary minus function; there is no negation
+- Parenthesised operators: `(+)`, `(::)`, `(|>)` etc. — any operator from §6.5; whitespace
+  inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do
+  not exist. Negation `(-)` is the binary minus function; there is no negation
   function.
 - Field access chains on any atom: `(f x).name`, `r.a.b`, `t.0.1`, `xs.0` — the `dot_lower` /
   `dot_index` token must start at the byte right after the atom's last byte (no whitespace).
@@ -315,10 +328,10 @@ only if its **column is greater than the indent**. Blocks are:
 | Block | Its indent is the column of… | Sibling starts at | Ends when |
 |---|---|---|---|
 | top-level declaration | the declaration's first token, which **must be column 1** | column 1 | a token at column 1, or EOF |
-| `let` binding list | the first binding's first token | exactly that column | `in`, or a token left of that column |
-| a `let` binding's body | the binding's first token | — | a token at column ≤ that |
-| `case` branch list | the first branch's pattern | exactly that column | a token left of that column |
-| a branch's body | the branch's pattern | — | a token at column ≤ that |
+| `let` binding list | the first binding's first token | exactly that column | `in`, or any token not at that column that the current binding could not consume |
+| a `let` binding's body | the binding's first token | — | a token at column ≤ that, or one the expression cannot continue with |
+| `case` branch list | the first branch's pattern | exactly that column | any token not at that column that the current branch could not consume |
+| a branch's body | the branch's pattern | — | a token at column ≤ that, or one the expression cannot continue with |
 
 Rules:
 
@@ -334,7 +347,11 @@ Rules:
    *enclosing* block's indent (so `in` aligned with `let` is fine, and so is `in` on the same
    line).
 4. **`case` branches are aligned** the same way. The first branch may be on the same line as
-   `of`; then its column is wherever it is, and later branches must match it.
+   `of`; then its column is wherever it is, and later branches must match it. When a branch
+   body's expression stops at a token it cannot continue with — a `)` closing an enclosing
+   group, a `,`, an `in` — the branch list ends there too, whatever that token's column, and the
+   enclosing construct decides whether the token is legal. So `(case x of A -> y)` on one
+   line is fine, and so is `[ case x of A -> y, 2 ]`.
 5. **`then`, `else`, `of`, `->`, `in`, operators, arguments, `|` in a type declaration** —
    all follow rule 2 and nothing more. Any of them may start a line as long as it is right of
    the enclosing block's indent.
@@ -433,8 +450,8 @@ pub foreign type List a
 ```
 
 - `foreign name : Type` declares a value with that type and no definition. `foreign type T a…`
-  declares a type with no constructors, so it is opaque by construction; no `opaque` keyword
-  is needed or allowed on it. Both take `pub` like any declaration and may carry a doc comment.
+  declares a type with no constructors, so it is opaque by construction; `opaque` before
+  `foreign` is `unexpected_token`. Both take `pub` like any declaration and may carry a doc comment.
 - **Legal only under the core root.** The core package is embedded in the compiler
   (`fast-compiler.md` §3.1, "Primitives"); a `foreign` declaration in any other module is
   `foreign_outside_core`, reported by lowering. User code reaches JavaScript through the effects
@@ -525,16 +542,21 @@ argument or an operator may follow, and **it is the binary operator**, as in Elm
 `e?` where `e : Result x a` yields `a` or returns `Err x` from the enclosing function; where
 `e : Maybe a`, yields `a` or returns `Nothing`. The front end enforces the scope rules:
 
-- `?` must be inside a named function's body — a top-level definition with ≥ 1 parameter or a
-  `let` definition with ≥ 1 parameter. Inside a lambda it is `question_in_lambda`; in a
-  parameterless definition (a constant) it is `question_outside_function`. The "nearest enclosing
-  named function" is the innermost such definition, so a `let f x = g x?` inside `view` returns
-  from `f`.
+- `?` returns from the **nearest enclosing definition that has parameters**, top-level or `let`.
+  A `let f x = g x?` inside `view` returns from `f`; a `let y = g x?` (no parameters) inside
+  `view model` returns from `view`, as `let y = g(x)?;` does in Rust. If no enclosing definition
+  has parameters — a top-level constant, or constants all the way up — it is
+  `question_outside_function`. If a lambda sits between the `?` and that definition it is
+  `question_in_lambda`.
 - Lowering desugars each `e?` to a `case` on a fresh local (§8); the Maybe/Result choice and the
   "same shape as the enclosing function" rule are M2, checked on the lowered form.
 
 ## 7. Scoping and shadowing
 
+- A `let` pattern binding must be irrefutable: a name, `_`, unit, a tuple or record of
+  irrefutable patterns, or one of those with `as` (`LetPattern` in §3). A constructor, literal
+  or `::` pattern there is a syntax error (`refutable_let_pattern`); use `case`. This is Elm's
+  rule and it keeps exhaustiveness out of `let`.
 - Every binding introduces a name into a lexical scope: function parameters, lambda parameters,
   `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression —
   mutual recursion is allowed), pattern variables in `case` branches and destructuring.
@@ -590,16 +612,19 @@ Style, elm-format's with the changes the syntax forces:
   lines, declarations separated by two blank lines. Blank lines between `let` bindings and
   between `case` branches: at most one, kept if present.
 - Annotation on its own line directly above its definition. `pub` on the annotation line.
-- `=` at the end of the head line; the body on the next line indented 4, **unless** the whole
-  declaration fits on one line and the body is a single literal, name, or application without
-  nested blocks — then one line. (The precise "fits" rule is the implementation's, must be
-  deterministic, and is pinned by the corpus.)
+- `=` at the end of the head line and the body on the next line indented 4 — always, for
+  top-level definitions and `let` bindings alike, as elm-format does. Annotations and
+  `type alias` follow the same rule: `name :` … on one line if the type fits in 100 columns,
+  otherwise broken at `->` with the arrows leading continuation lines. `type` declarations put
+  `=` and each `|` at the start of their own lines, indented 4.
 - `let`: `let` alone on a line, bindings indented 4 relative to `let`, `in` aligned with `let`,
   body aligned with `let`.
 - `case x of` alone on a line; branches indented 4; `->` at line end; body indented 4 more.
 - `if c then` / `a` / `else` / `b`, unless it fits on one line.
-- Lists, records and tuples: on one line if they fit in 100 columns, else elm-format's
-  vertical form: `[ a`, `, b`, `]` with the delimiter leading each line.
+- Lists, records and tuples: on one line if they fit in 100 columns, with elm-format's inner
+  spaces — `[ a, b ]`, `{ a = 1, b = 2 }`, `( a, b )`, `{ r | a = 1 }`, empty ones as `[]`,
+  `{}`, `()` — else elm-format's vertical form: `[ a`, `, b`, `]` with the delimiter leading
+  each line. No blank line before `then`, `else`, `in`, or between the last binding and `in`.
 - Binary operator chains that do not fit break before the operator, one operator per line,
   operands indented 4.
 - Comments stay attached to the token they precede; a comment on its own line stays on its own
@@ -620,6 +645,7 @@ invalid_char_literal  doc_comment_unattached  module_doc_not_at_top
 expected_declaration  expected_token  unexpected_token  unclosed_delimiter
 annotation_without_definition  pub_on_definition  opaque_not_on_type  case_without_branches
 args_after_question  non_associative_chain  negation_with_space  invalid_tuple_index
+refutable_let_pattern
 duplicate_import  duplicate_import_alias  import_after_declaration  self_import
 duplicate_declaration  duplicate_type  duplicate_constructor  shadows_import  duplicate_field
 foreign_outside_core
@@ -627,6 +653,11 @@ unbound_variable  unbound_constructor  unbound_type  unknown_module_alias
 question_in_lambda  question_outside_function
 shadowing  duplicate_pattern_variable  duplicate_type_parameter  unbound_type_variable
 ```
+
+`expected_token` is for the situations where exactly one token can come next (`)`, `]`, `}`,
+`->`, `of`, `then`, `else`, `in`, `=`, `:`); `unexpected_token` is for the situations where the
+start of a construct — an expression, a pattern, a type, an exposing entry — was needed and the
+token cannot start one. `expected_declaration` is the top-level form of the latter.
 
 Syntax errors carry Elm-style prose: what the parser was in the middle of, what it saw, and what
 it expected — e.g. *I was parsing the branches of this `case` and ran into `else`, which is

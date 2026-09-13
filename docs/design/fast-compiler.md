@@ -300,6 +300,19 @@ Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-
   fact checked in M3; the effect-marking syntax question in §3.2 closes as "none". Open for M3:
   the platform interface, the shape of ports, the runtime. Decided 2026-09-13, before M2.
 
+- **Project model for M2: one source root plus embedded core, no manifest; module identity is
+  package-qualified from day one.** Internally a module is `(package, path)` — the user's project
+  is one package, core is another, dependencies later are more — so M4 needs no retrofit when
+  packages arrive; Elm's flat global namespace has to error when two packages define the same
+  module, a friction its users know. Import syntax stays Elm's: `import Json.Decode` names a
+  module, never a package; resolution looks in the importing package, then its dependencies; a
+  name found in two dependencies is an error at the import site, fixed Zig's way by renaming one
+  in the manifest. Everything a manifest answers — dependency names, versions, hashes, lockfiles
+  — is M4, where the cache key has to hold exactly that information anyway. The one piece of M2
+  built for M4 is the **interface record**: flat and index-based per §5, holding public names,
+  types, constructors, opacity and inferred schemes; M2 compares it by value, M4 hashes and mmaps
+  it unchanged. Decided 2026-09-13, before M2.
+
 ### Still open
 
 Each is cheaper to take now than later:
