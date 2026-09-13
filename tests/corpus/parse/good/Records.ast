@@ -1,0 +1,74 @@
+(module
+  (definition empty
+    (record))
+  (definition single
+    (record
+      (field name
+        (string
+          (chunk "x")))))
+  (definition nested
+    (record
+      (field pos
+        (record
+          (field x
+            (int 1))
+          (field y
+            (int 2))))
+      (field tags
+        (list
+          (string
+            (chunk "a"))
+          (string
+            (chunk "b"))))
+      (field flag
+        (ctor True))))
+  (definition multiLine
+    (record
+      (field name
+        (string
+          (chunk "todo")))
+      (field done
+        (ctor False))
+      (field id
+        (int 7))))
+  (definition bump
+    (pat_var model)
+    (record_update model
+      (field count
+        (add
+          (field_access .count
+            (ident model))
+          (int 1)))))
+  (definition rename
+    (pat_var model)
+    (pat_var newName)
+    (pat_var newDone)
+    (record_update model
+      (field name
+        (ident newName))
+      (field done
+        (ident newDone))))
+  (definition fieldsAreExprs
+    (pat_var f)
+    (record
+      (field result
+        (apply
+          (ident f)
+          (int 1)))
+      (field pair
+        (tuple
+          (int 1)
+          (int 2)))
+      (field inner
+        (record
+          (field a
+            (ident f))))
+      (field cond
+        (if
+          (apply
+            (ident f)
+            (int 0))
+          (int 1)
+          (int 2)))))
+  (definition emptyWithSpace
+    (record)))

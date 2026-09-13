@@ -1,0 +1,1 @@
+[{"code":"import_after_declaration","severity":"error","span":{"file":"tests/corpus/parse/bad/ImportAfterDeclaration.beni","start":{"line":6,"col":1},"end":{"line":6,"col":7}},"title":"IMPORT AFTER DECLARATION","message":"This `import` comes after a declaration.\n\nAll imports must come before the first declaration. Move it to the top of the file."}]

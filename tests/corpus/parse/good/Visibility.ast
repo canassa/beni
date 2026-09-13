@@ -1,0 +1,31 @@
+(module
+  (type_alias pub Id
+    (type_con Int))
+  (type_decl pub Color
+    (constructor Red)
+    (constructor Green))
+  (type_decl pub opaque Token
+    (constructor Token
+      (type_con String)))
+  (type_decl Hidden
+    (constructor Hidden))
+  (annotation pub greeting
+    (type_con String))
+  (definition greeting
+    (string
+      (chunk "hi")))
+  (definition pub answer
+    (int 42))
+  (annotation helper
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition helper
+    (pat_var n)
+    (add
+      (ident n)
+      (int 1)))
+  (definition private
+    (apply
+      (ident helper)
+      (int 1))))

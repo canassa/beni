@@ -1,0 +1,184 @@
+(module
+  (import Dict exposing
+    (exposed Dict))
+  (type_alias Cache
+    (type_record
+      (record_type_field hits
+        (type_con Int))
+      (record_type_field misses
+        (type_con Int))
+      (record_type_field table
+        (type_con Dict
+          (type_con Int)
+          (type_con Int)))))
+  (annotation pub empty
+    (type_con Cache))
+  (definition empty
+    (record
+      (field hits
+        (int 0))
+      (field misses
+        (int 0))
+      (field table
+        (ident Dict.empty))))
+  (annotation pub fib
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_con Cache)
+        (type_tuple
+          (type_con Int)
+          (type_con Cache)))))
+  (definition fib
+    (pat_var n)
+    (pat_var cache)
+    (case
+      (apply
+        (ident Dict.get)
+        (ident n)
+        (field_access .table
+          (ident cache)))
+      (branch
+        (pat_ctor Just
+          (pat_var value))
+        (tuple
+          (ident value)
+          (record_update cache
+            (field hits
+              (add
+                (field_access .hits
+                  (ident cache))
+                (int 1))))))
+      (branch
+        (pat_ctor Nothing)
+        (if
+          (lt
+            (ident n)
+            (int 2))
+          (tuple
+            (ident n)
+            (record_update cache
+              (field misses
+                (add
+                  (field_access .misses
+                    (ident cache))
+                  (int 1)))))
+          (let
+            (let_pattern
+              (pat_tuple
+                (pat_var a)
+                (pat_var cache1))
+              (apply
+                (ident fib)
+                (paren
+                  (sub
+                    (ident n)
+                    (int 1)))
+                (ident cache)))
+            (let_pattern
+              (pat_tuple
+                (pat_var b)
+                (pat_var cache2))
+              (apply
+                (ident fib)
+                (paren
+                  (sub
+                    (ident n)
+                    (int 2)))
+                (ident cache1)))
+            (let_def result
+              (add
+                (ident a)
+                (ident b)))
+            (tuple
+              (ident result)
+              (record_update cache2
+                (field misses
+                  (add
+                    (field_access .misses
+                      (ident cache2))
+                    (int 1)))
+                (field table
+                  (apply
+                    (ident Dict.insert)
+                    (ident n)
+                    (ident result)
+                    (field_access .table
+                      (ident cache2)))))))))))
+  (annotation pub fibAll
+    (type_fn
+      (type_con List
+        (type_con Int))
+      (type_fn
+        (type_con Cache)
+        (type_tuple
+          (type_con List
+            (type_con Int))
+          (type_con Cache)))))
+  (definition fibAll
+    (pat_var ns)
+    (pat_var cache)
+    (let
+      (let_def step
+        (pat_var n)
+        (pat_tuple
+          (pat_var acc)
+          (pat_var c))
+        (let
+          (let_pattern
+            (pat_tuple
+              (pat_var value)
+              (pat_var c1))
+            (apply
+              (ident fib)
+              (ident n)
+              (ident c)))
+          (tuple
+            (cons
+              (ident value)
+              (ident acc))
+            (ident c1))))
+      (pipe_right
+        (apply
+          (ident List.foldl)
+          (ident step)
+          (tuple
+            (list)
+            (ident cache))
+          (ident ns))
+        (paren
+          (lambda
+            (pat_tuple
+              (pat_var values)
+              (pat_var final))
+            (tuple
+              (apply
+                (ident List.reverse)
+                (ident values))
+              (ident final)))))))
+  (annotation pub hitRate
+    (type_fn
+      (type_con Cache)
+      (type_con Float)))
+  (definition hitRate
+    (pat_var cache)
+    (let
+      (let_def total
+        (add
+          (field_access .hits
+            (ident cache))
+          (field_access .misses
+            (ident cache))))
+      (if
+        (eq
+          (ident total)
+          (int 0))
+        (int 0)
+        (div
+          (apply
+            (ident toFloat)
+            (field_access .hits
+              (ident cache)))
+          (apply
+            (ident toFloat)
+            (ident total)))))))

@@ -1,0 +1,1 @@
+[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/ExpectedToken.beni","start":{"line":5,"col":12},"end":{"line":5,"col":16}},"title":"EXPECTED TOKEN","message":"I was parsing this `if` and ran into `else`, but I was expecting `then` here."}]

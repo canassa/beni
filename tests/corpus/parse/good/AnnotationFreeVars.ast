@@ -1,0 +1,51 @@
+(module
+  (annotation identity2
+    (type_fn
+      (type_var a)
+      (type_var a)))
+  (definition identity2
+    (pat_var x)
+    (ident x))
+  (annotation const
+    (type_fn
+      (type_var a)
+      (type_fn
+        (type_var b)
+        (type_var a))))
+  (definition const
+    (pat_var x)
+    (pat_wild)
+    (ident x))
+  (annotation mapPair
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_var a)
+          (type_var b)))
+      (type_fn
+        (type_tuple
+          (type_var a)
+          (type_var a))
+        (type_tuple
+          (type_var b)
+          (type_var b)))))
+  (definition mapPair
+    (pat_var f)
+    (pat_tuple
+      (pat_var x)
+      (pat_var y))
+    (tuple
+      (apply
+        (ident f)
+        (ident x))
+      (apply
+        (ident f)
+        (ident y))))
+  (annotation phantom
+    (type_fn
+      (type_var a)
+      (type_con List
+        (type_var b))))
+  (definition phantom
+    (pat_wild)
+    (list)))

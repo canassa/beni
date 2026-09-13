@@ -1,0 +1,9 @@
+(module
+  (definition f
+    (pat_var x)
+    (case
+      (ident x)
+      (branch
+        (pat_ctor Just
+          (pat_var n))
+        (ident n)))))

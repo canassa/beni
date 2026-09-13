@@ -1,0 +1,1 @@
+[{"code":"nesting_too_deep","severity":"error","span":{"file":"tests/corpus/parse/bad/NestingTooDeep.beni","start":{"line":6,"col":4101},"end":{"line":6,"col":4102}},"title":"NESTING TOO DEEP","message":"This expression is nested more than 4096 levels deep, which is more than I can\nhandle.\n\nSplit it into smaller pieces with `let`, or remove some of the nesting."}]

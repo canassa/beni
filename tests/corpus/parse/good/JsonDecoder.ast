@@ -1,0 +1,111 @@
+(module
+  (import Json.Decode as Decode exposing
+    (exposed Decoder))
+  (type_alias User
+    (type_record
+      (record_type_field id
+        (type_con Int))
+      (record_type_field name
+        (type_con String))
+      (record_type_field email
+        (type_con Maybe
+          (type_con String)))
+      (record_type_field role
+        (type_con Role))))
+  (type_decl Role
+    (constructor Admin)
+    (constructor Member)
+    (constructor Guest))
+  (annotation pub user
+    (type_con Decoder
+      (type_con User)))
+  (definition user
+    (apply
+      (ident Decode.map4)
+      (ctor User)
+      (paren
+        (apply
+          (ident Decode.field)
+          (string
+            (chunk "id"))
+          (ident Decode.int)))
+      (paren
+        (apply
+          (ident Decode.field)
+          (string
+            (chunk "name"))
+          (ident Decode.string)))
+      (paren
+        (apply
+          (ident Decode.maybe)
+          (paren
+            (apply
+              (ident Decode.field)
+              (string
+                (chunk "email"))
+              (ident Decode.string)))))
+      (paren
+        (apply
+          (ident Decode.field)
+          (string
+            (chunk "role"))
+          (ident role)))))
+  (annotation role
+    (type_con Decoder
+      (type_con Role)))
+  (definition role
+    (pipe_right
+      (ident Decode.string)
+      (apply
+        (ident Decode.andThen)
+        (paren
+          (lambda
+            (pat_var s)
+            (case
+              (ident s)
+              (branch
+                (pat_string "admin")
+                (apply
+                  (ident Decode.succeed)
+                  (ctor Admin)))
+              (branch
+                (pat_string "member")
+                (apply
+                  (ident Decode.succeed)
+                  (ctor Member)))
+              (branch
+                (pat_string "guest")
+                (apply
+                  (ident Decode.succeed)
+                  (ctor Guest)))
+              (branch
+                (pat_var other)
+                (apply
+                  (ident Decode.fail)
+                  (string
+                    (chunk "unknown role: ")
+                    (interp
+                      (ident other)))))))))))
+  (annotation pub users
+    (type_con Decoder
+      (type_paren
+        (type_con List
+          (type_con User)))))
+  (definition users
+    (apply
+      (ident Decode.list)
+      (ident user)))
+  (annotation pub decodeUsers
+    (type_fn
+      (type_con String)
+      (type_con Result
+        (type_con Decode.Error)
+        (type_paren
+          (type_con List
+            (type_con User))))))
+  (definition decodeUsers
+    (pat_var json)
+    (apply
+      (ident Decode.decodeString)
+      (ident users)
+      (ident json))))

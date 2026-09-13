@@ -1,0 +1,38 @@
+(module
+  (definition plain
+    (char 'a'))
+  (definition digit
+    (char '0'))
+  (definition newline
+    (char '\n'))
+  (definition tabChar
+    (char '\t'))
+  (definition backslash
+    (char '\\'))
+  (definition singleQuote
+    (char '\''))
+  (definition doubleQuote
+    (char '"'))
+  (definition escapedDouble
+    (char '\"'))
+  (definition unicode
+    (char '\u{1F600}'))
+  (definition unicodeShort
+    (char '\u{41}'))
+  (definition nonAscii
+    (char 'é'))
+  (definition space
+    (char ' '))
+  (definition dollar
+    (char '$'))
+  (definition isVowel
+    (pat_var c)
+    (apply
+      (ident List.member)
+      (ident c)
+      (list
+        (char 'a')
+        (char 'e')
+        (char 'i')
+        (char 'o')
+        (char 'u')))))

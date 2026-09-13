@@ -1,0 +1,97 @@
+(module
+  (import Dict exposing
+    (exposed Dict))
+  (type_alias Callbacks msg
+    (type_record
+      (record_type_field onClick
+        (type_fn
+          (type_var msg)
+          (type_var msg)))
+      (record_type_field onInput
+        (type_fn
+          (type_con String)
+          (type_var msg)))
+      (record_type_field order
+        (type_fn
+          (type_con Int)
+          (type_fn
+            (type_con Int)
+            (type_con Order))))))
+  (type_alias Step a
+    (type_tuple
+      (type_fn
+        (type_var a)
+        (type_var a))
+      (type_var a)))
+  (type_alias Chain
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_con Int)
+        (type_fn
+          (type_con Int)
+          (type_con Int)))))
+  (annotation apply
+    (type_fn
+      (type_tuple
+        (type_fn
+          (type_con Int)
+          (type_con Int))
+        (type_con Int))
+      (type_con Int)))
+  (definition apply
+    (pat_tuple
+      (pat_var fn)
+      (pat_var x))
+    (apply
+      (ident fn)
+      (ident x)))
+  (annotation compose2
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_var b)
+          (type_var c)))
+      (type_fn
+        (type_paren
+          (type_fn
+            (type_var a)
+            (type_var b)))
+        (type_fn
+          (type_var a)
+          (type_var c)))))
+  (definition compose2
+    (pat_var f)
+    (pat_var g)
+    (pat_var x)
+    (apply
+      (ident f)
+      (paren
+        (apply
+          (ident g)
+          (ident x)))))
+  (annotation table
+    (type_fn
+      (type_con Dict
+        (type_con String)
+        (type_paren
+          (type_con List
+            (type_paren
+              (type_fn
+                (type_con Int)
+                (type_con Int))))))
+      (type_con Dict.Dict
+        (type_con String)
+        (type_con Int))))
+  (definition table
+    (pat_var d)
+    (apply
+      (ident Dict.map)
+      (paren
+        (lambda
+          (pat_wild)
+          (pat_var fs)
+          (apply
+            (ident List.length)
+            (ident fs))))
+      (ident d))))

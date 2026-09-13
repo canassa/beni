@@ -1,0 +1,119 @@
+(module
+  (annotation process
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_fn
+        (type_con Bool)
+        (type_con Int))))
+  (definition process
+    (pat_var m)
+    (pat_var flag)
+    (if
+      (ident flag)
+      (let
+        (let_def base
+          (case
+            (ident m)
+            (branch
+              (pat_ctor Just
+                (pat_var n))
+              (ident n))
+            (branch
+              (pat_ctor Nothing)
+              (int 0))))
+        (mul
+          (ident base)
+          (int 2)))
+      (case
+        (ident m)
+        (branch
+          (pat_ctor Just
+            (pat_var n))
+          (if
+            (gt
+              (ident n)
+              (int 0))
+            (ident n)
+            (negate
+              (ident n))))
+        (branch
+          (pat_ctor Nothing)
+          (negate
+            (int 1))))))
+  (annotation handler
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_fn
+        (type_con Int)
+        (type_con Int))))
+  (definition handler
+    (pat_var m)
+    (pat_var x)
+    (apply
+      (paren
+        (lambda
+          (pat_var y)
+          (let
+            (let_def z
+              (case
+                (ident m)
+                (branch
+                  (pat_ctor Just
+                    (pat_var n))
+                  (add
+                    (ident n)
+                    (ident y)))
+                (branch
+                  (pat_ctor Nothing)
+                  (ident y))))
+            (ident z))))
+      (ident x)))
+  (annotation sumWithDefault
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_fn
+        (type_con Int)
+        (type_con Int))))
+  (definition sumWithDefault
+    (pat_var m)
+    (pat_var d)
+    (apply
+      (ident max)
+      (paren
+        (case
+          (ident m)
+          (branch
+            (pat_ctor Just
+              (pat_var n))
+            (ident n))
+          (branch
+            (pat_ctor Nothing)
+            (ident d))))
+      (ident d)))
+  (annotation ifInList
+    (type_fn
+      (type_con Bool)
+      (type_con List
+        (type_con Int))))
+  (definition ifInList
+    (pat_var flag)
+    (list
+      (if
+        (ident flag)
+        (int 1)
+        (int 0))
+      (let
+        (let_def one
+          (int 1))
+        (ident one))
+      (case
+        (ident flag)
+        (branch
+          (pat_ctor True)
+          (int 1))
+        (branch
+          (pat_ctor False)
+          (int 0))))))

@@ -1,0 +1,49 @@
+(module
+  (type_alias Named r
+    (type_record_ext r
+      (record_type_field name
+        (type_con String))))
+  (type_alias Positioned r
+    (type_record_ext r
+      (record_type_field x
+        (type_con Float))
+      (record_type_field y
+        (type_con Float))))
+  (type_alias Empty
+    (type_record))
+  (annotation describe
+    (type_fn
+      (type_record_ext a
+        (record_type_field name
+          (type_con String))
+        (record_type_field age
+          (type_con Int)))
+      (type_con String)))
+  (definition describe
+    (pat_var person)
+    (string
+      (interp
+        (field_access .name
+          (ident person)))
+      (chunk " is ")
+      (interp
+        (field_access .age
+          (ident person)))))
+  (annotation move
+    (type_fn
+      (type_con Positioned
+        (type_paren
+          (type_con Named
+            (type_record))))
+      (type_con Positioned
+        (type_paren
+          (type_con Named
+            (type_record))))))
+  (definition move
+    (pat_var p)
+    (record_update p
+      (field x
+        (add
+          (field_access .x
+            (ident p))
+          (int 1))))))

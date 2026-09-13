@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/UnexpectedToken.beni","start":{"line":4,"col":10},"end":{"line":4,"col":11}},"title":"UNEXPECTED TOKEN","message":"I was parsing a list and ran into `,`. I was expecting an expression."}]

@@ -1,0 +1,83 @@
+(module
+  (type_decl Msg
+    (constructor Inc)
+    (constructor Dec)
+    (constructor Reset))
+  (definition total
+    (pat_var xs)
+    (pipe_right
+      (pipe_right
+        (pipe_right
+          (ident xs)
+          (apply
+            (ident List.map)
+            (paren
+              (lambda
+                (pat_var x)
+                (mul
+                  (ident x)
+                  (int 2))))))
+        (apply
+          (ident List.filter)
+          (paren
+            (lambda
+              (pat_var x)
+              (gt
+                (ident x)
+                (int 2))))))
+      (ident List.sum)))
+  (definition longSum
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (pat_var d)
+    (add
+      (add
+        (add
+          (ident a)
+          (ident b))
+        (ident c))
+      (ident d)))
+  (definition split
+    (pat_var a)
+    (pat_var b)
+    (sub
+      (sub
+        (sub
+          (ident a)
+          (ident b))
+        (ident a))
+      (ident b)))
+  (definition pick
+    (pat_var flag)
+    (pat_var a)
+    (pat_var b)
+    (if
+      (ident flag)
+      (ident a)
+      (ident b)))
+  (definition branch
+    (pat_var m)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Just
+          (pat_var x))
+        (ident x))
+      (branch
+        (pat_ctor Nothing)
+        (int 0))))
+  (definition lets
+    (let
+      (let_def a
+        (int 1))
+      (ident a)))
+  (definition args
+    (apply
+      (ident max)
+      (int 1)
+      (int 2)))
+  (annotation annotated
+    (type_con Int))
+  (definition annotated
+    (int 3)))

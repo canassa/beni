@@ -1,4 +1,4 @@
--- unclosed_delimiter at 5:5 (the opening `[`) and 12:5 (the opening `{`):
+-- unclosed_delimiter at 5:5 (the opening `[`) and 13:5 (the opening `{`):
 -- two unclosed brackets in two declarations, each cut off by the next
 -- column-1 token; `y` on line 8 is valid.
 x =

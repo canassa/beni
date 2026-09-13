@@ -1,0 +1,1 @@
+[{"code":"invalid_escape","severity":"error","span":{"file":"tests/corpus/parse/bad/InvalidEscapeInChar.beni","start":{"line":4,"col":6},"end":{"line":4,"col":8}},"title":"INVALID ESCAPE","message":"I found the escape `\\z`, which is not valid.\n\nThe escapes are \\n \\r \\t \\\\ \\\" \\$ \\' and \\u{…}. To write a backslash,\nuse `\\\\`."}]

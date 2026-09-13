@@ -1,5 +1,5 @@
-//! Black-box scenarios for the M0 CLI and the M1a lexer (docs/design/frontend.md
-//! §1, §1.2, §8).
+//! Black-box scenarios for the M0 CLI, the M1a lexer and the M1b parser
+//! (docs/design/frontend.md §1, §1.2, §8).
 //!
 //! Every scenario spawns the installed binary through `world.zig` and
 //! asserts whole objects: the exact stdout, the exact stderr or the entire
@@ -407,7 +407,7 @@ test "check on a file without the .beni extension exits 2" {
     try testing.expectEqualStrings("beni: cannot read 'notes.txt': NotABeniFile\n", r.stderr);
 }
 
-test "fmt and the ast/bir dumps parse their arguments but are not implemented yet" {
+test "fmt and the bir dump parse their arguments but are not implemented yet" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -419,7 +419,7 @@ test "fmt and the ast/bir dumps parse their arguments but are not implemented ye
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const fmt = try w.runWith(&.{ "fmt", "--check", "Main.beni" }, .{ .raw_diagnostics = true });
-    const dump = try w.runWith(&.{ "dump", "--stage=ast", "Main.beni" }, .{ .raw_diagnostics = true });
+    const dump = try w.runWith(&.{ "dump", "--stage=bir", "Main.beni" }, .{ .raw_diagnostics = true });
     const dump_bad = try w.runWith(&.{ "dump", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
@@ -428,7 +428,7 @@ test "fmt and the ast/bir dumps parse their arguments but are not implemented ye
     try testing.expectEqual(@as(u8, 2), fmt.exit_code);
     try testing.expectEqualStrings("beni: fmt is not implemented yet\n", fmt.stderr);
     try testing.expectEqual(@as(u8, 2), dump.exit_code);
-    try testing.expectEqualStrings("beni: dump --stage=ast is not implemented yet\n", dump.stderr);
+    try testing.expectEqualStrings("beni: dump --stage=bir is not implemented yet\n", dump.stderr);
     // Argument validation runs first: a usage error, not "not implemented".
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
     try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir\n", dump_bad.stderr);
@@ -608,4 +608,237 @@ test "a lexical error does not stop the file: later lines still lex, and dump ex
             "    \\\\first line\n" ++
             "    \\\\second line",
     }}), r.diagnostics);
+}
+
+test "dump --stage=ast prints the tree as an S-expression with docs, imports and every part" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\--! A tiny module.
+        \\import Json.Decode as D exposing (Decoder)
+        \\
+        \\
+        \\--| Greets.
+        \\pub greet : String -> String
+        \\greet name =
+        \\    "hi ${name}" -- trailing
+        \\
+        \\
+        \\sign n =
+        \\    case n of
+        \\        0 ->
+        \\            -1
+        \\
+        \\        _ ->
+        \\            n |> abs
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=ast", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\(module
+        \\  (module_doc "A tiny module.")
+        \\  (import Json.Decode as D exposing
+        \\    (exposed Decoder))
+        \\  (annotation pub greet
+        \\    (doc "Greets.")
+        \\    (type_fn
+        \\      (type_con String)
+        \\      (type_con String)))
+        \\  (definition greet
+        \\    (pat_var name)
+        \\    (string
+        \\      (chunk "hi ")
+        \\      (interp
+        \\        (ident name))))
+        \\  (definition sign
+        \\    (pat_var n)
+        \\    (case
+        \\      (ident n)
+        \\      (branch
+        \\        (pat_int 0)
+        \\        (negate
+        \\          (int 1)))
+        \\      (branch
+        \\        (pat_wild)
+        \\        (pipe_right
+        \\          (ident n)
+        \\          (ident abs))))))
+        \\
+    , r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), r.diagnostics);
+}
+
+test "check with one syntax error reports the whole Elm-style diagnostic" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "f x =\n    if x 1 else 2\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .expected_token,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 12 }, .end = .{ .line = 2, .col = 16 } },
+        .title = "EXPECTED TOKEN",
+        .message = "I was parsing this `if` and ran into `else`, but I was expecting `then` here.",
+    }}), r.diagnostics);
+}
+
+test "check with two syntax errors in different declarations reports both, in order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\x =
+        \\    ( 1 + 2
+        \\
+        \\
+        \\g =
+        \\    3
+        \\
+        \\
+        \\h =
+        \\    [ 1, , 2 ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .unclosed_delimiter,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 6 } },
+            .title = "UNCLOSED DELIMITER",
+            .message = "I was parsing a parenthesised expression and ran into `g` on column 1 before finding the `)` that\n" ++
+                "closes this `(`.\n" ++
+                "\n" ++
+                "Everything inside the brackets must be indented more than column 1, the column\n" ++
+                "of the block they are in. `g` is not, so the block ended there and the `)` is\n" ++
+                "missing.",
+        },
+        .{
+            .code = .unexpected_token,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 10, .col = 10 }, .end = .{ .line = 10, .col = 11 } },
+            .title = "UNEXPECTED TOKEN",
+            .message = "I was parsing a list and ran into `,`. I was expecting an expression.",
+        },
+    }), r.diagnostics);
+}
+
+test "a layout error quotes both columns, and the text renderer shows the excerpt" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\x =
+        \\    let
+        \\        a = 1
+        \\      b = 2
+        \\    in
+        \\    a + b
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const json = try w.run(&.{ "check", "Main.beni" });
+    const text = try w.runWith(&.{ "check", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), json.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unexpected_token,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 7 }, .end = .{ .line = 4, .col = 8 } },
+        .title = "UNEXPECTED TOKEN",
+        .message = "I was parsing the bindings of this `let` and ran into `b` on column 7.\n" ++
+            "\n" ++
+            "Every binding must start on the same column as the first one, `a` on column 9,\n" ++
+            "and `in` ends the list.",
+    }}), json.diagnostics);
+    try testing.expectEqual(@as(u8, 1), text.exit_code);
+    try testing.expectEqualStrings(
+        "-- UNEXPECTED TOKEN ---------------------------------------------- Main.beni:4:7\n" ++
+            "\n" ++
+            "I was parsing the bindings of this `let` and ran into `b` on column 7.\n" ++
+            "\n" ++
+            "Every binding must start on the same column as the first one, `a` on column 9,\n" ++
+            "and `in` ends the list.\n" ++
+            "\n" ++
+            "4|      b = 2\n" ++
+            "        ^\n",
+        text.stderr,
+    );
+}
+
+test "dump --stage=ast on a broken file exits 0 with placeholders in the tree and the errors on stderr" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "x = [ 1, , 2 ]\ny = 2\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=ast", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\(module
+        \\  (definition x
+        \\    (list
+        \\      (int 1)
+        \\      (error unexpected_token)
+        \\      (int 2)))
+        \\  (definition y
+        \\    (int 2)))
+        \\
+    , r.stdout);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.unexpected_token, r.diagnostics[0].code);
 }

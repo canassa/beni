@@ -2,7 +2,8 @@
 //! assertion. One case per `.beni` under `tests/corpus/`, named by its path,
 //! so adding a test is dropping in a file.
 //!
-//!   parse/good/X.beni + X.ast       `dump --stage=ast` equals the golden
+//!   parse/good/X.beni + X.ast       `dump --stage=ast` equals the golden and
+//!                                   stderr is empty (no diagnostic at all)
 //!   parse/bad/X.beni  + X.diag      `check --diagnostics=json` equals the golden;
 //!                                   a `.beni` WITHOUT `.diag` is a failure
 //!   fmt/X.beni        + X.expected  `fmt --stdout` equals the golden, formatting
@@ -17,7 +18,10 @@
 //!
 //! `BENI_WRITE_EXPECTED=1` blesses: goldens are (re)written from the actual
 //! output, which is fully materialised before any file is touched. The
-//! failure message says so. Exit codes are asserted exactly and never
+//! failure message says so. `BENI_BLESS_ONLY=<substring>` limits blessing to
+//! the fixtures whose repo-relative path contains the substring (the rest
+//! are compared as usual), so one kind — or one file — can be pinned while
+//! the goldens a later milestone owns stay unwritten. Exit codes are asserted exactly and never
 //! special-cased: while `dump` and `fmt` return 2 (M1 lands them), any
 //! fixture in those kinds fails — which is correct, and why the directories
 //! are empty except for their READMEs until then.
@@ -89,12 +93,15 @@ fn walk(kind: Kind) !void {
     }
 
     const bless = blessing(gpa);
+    const bless_only = blessOnly(arena);
     var w = try World.init(gpa, io);
     defer w.deinit();
 
     var failures: usize = 0;
     for (fixtures.items) |fixture| {
-        const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless };
+        const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
+        const bless_this = bless and (bless_only == null or std.mem.indexOf(u8, path, bless_only.?) != null);
+        const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless_this };
         case.run() catch |err| {
             std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
             failures += 1;
@@ -133,6 +140,12 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
             return std.mem.lessThan(u8, a.name, b.name);
         }
     }.lessThan);
+}
+
+/// The `BENI_BLESS_ONLY` substring, if set and non-empty.
+fn blessOnly(arena: std.mem.Allocator) ?[]const u8 {
+    const value = testing.environ.getAlloc(arena, "BENI_BLESS_ONLY") catch return null;
+    return if (value.len == 0) null else value;
 }
 
 fn blessing(gpa: std.mem.Allocator) bool {
@@ -205,6 +218,12 @@ const Case = struct {
     fn good(c: Case) !void {
         const r = try c.compiler(&.{ "dump", "--stage=ast", try c.fixturePath() });
         try expectExit(0, r);
+        // `dump` exits 0 even with syntax errors (the tree is its product);
+        // "parses clean" means no diagnostic at all.
+        if (r.stderr.len != 0) {
+            std.debug.print("{s}: a good fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
         try c.expectGolden("ast", r.stdout);
     }
 

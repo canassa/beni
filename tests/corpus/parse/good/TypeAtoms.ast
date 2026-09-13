@@ -1,0 +1,147 @@
+(module
+  (import Dict)
+  (annotation a
+    (type_fn
+      (type_var b)
+      (type_var b)))
+  (definition a
+    (pat_var x)
+    (ident x))
+  (annotation b
+    (type_con Int))
+  (definition b
+    (int 1))
+  (annotation c
+    (type_con Dict.Dict
+      (type_con Int)
+      (type_con String)))
+  (definition c
+    (ident Dict.empty))
+  (annotation d
+    (type_unit))
+  (definition d
+    (unit))
+  (annotation e2
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_con Int)
+          (type_con Int)))
+      (type_con Int)))
+  (definition e2
+    (pat_var fn)
+    (apply
+      (ident fn)
+      (int 1)))
+  (annotation f
+    (type_tuple
+      (type_con Int)
+      (type_con String)))
+  (definition f
+    (tuple
+      (int 1)
+      (string)))
+  (annotation g
+    (type_tuple
+      (type_con Int)
+      (type_con String)
+      (type_con Char)))
+  (definition g
+    (tuple
+      (int 1)
+      (string)
+      (char 'c')))
+  (annotation h
+    (type_record))
+  (definition h
+    (record))
+  (annotation i
+    (type_record
+      (record_type_field x
+        (type_con Int))
+      (record_type_field y
+        (type_con Int))))
+  (definition i
+    (record
+      (field x
+        (int 1))
+      (field y
+        (int 2))))
+  (annotation j
+    (type_fn
+      (type_record_ext r
+        (record_type_field x
+          (type_con Int)))
+      (type_con Int)))
+  (definition j
+    (pat_var r)
+    (field_access .x
+      (ident r)))
+  (annotation k
+    (type_fn
+      (type_con Dict.Dict
+        (type_con String)
+        (type_paren
+          (type_con List
+            (type_tuple
+              (type_con Int)
+              (type_con Maybe
+                (type_var b))))))
+      (type_con List
+        (type_var b))))
+  (definition k
+    (pat_wild)
+    (list))
+  (annotation l
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_con Int)
+          (type_con Int)))
+      (type_fn
+        (type_paren
+          (type_fn
+            (type_con Int)
+            (type_con Int)))
+        (type_fn
+          (type_con Int)
+          (type_con Int)))))
+  (definition l
+    (pat_var p)
+    (pat_var q)
+    (pat_var x)
+    (apply
+      (ident p)
+      (paren
+        (apply
+          (ident q)
+          (ident x)))))
+  (annotation m
+    (type_con List
+      (type_paren
+        (type_con Maybe
+          (type_paren
+            (type_con Result
+              (type_con String)
+              (type_tuple
+                (type_con Int)
+                (type_con Int))))))))
+  (definition m
+    (list))
+  (annotation n
+    (type_fn
+      (type_record_ext rec
+        (record_type_field items
+          (type_con List
+            (type_tuple
+              (type_con Int)
+              (type_record
+                (record_type_field name
+                  (type_con String)))))))
+      (type_con Int)))
+  (definition n
+    (pat_var rec)
+    (apply
+      (ident List.length)
+      (field_access .items
+        (ident rec)))))

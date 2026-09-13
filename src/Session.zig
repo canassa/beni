@@ -19,9 +19,9 @@
 //! Two runs with different `--jobs` therefore produce identical bytes on
 //! every stream; the black-box determinism scenario checks exactly that.
 //!
-//! The per-file phase is a function pointer (`Phases`): M1a installs
-//! read → tokenize (`lex_phases`); M1b/M1c extend it to parse and lower
-//! without touching the driver. What a phase produces for a file goes into
+//! The per-file phase is a function pointer (`Phases`): M1a installed
+//! read → tokenize (`lex_phases`), M1b adds parse (`parse_phases`); M1c
+//! extends it to lower without touching the driver. What a phase produces for a file goes into
 //! `artifacts`, keyed by file index and owned by the session (see
 //! `Artifacts.zig` for why they are not arena memory).
 
@@ -36,6 +36,8 @@ const Profile = @import("Profile.zig");
 const SourceStore = @import("SourceStore.zig");
 const Tokenizer = @import("lex/Tokenizer.zig");
 const LexDiagnostics = @import("lex/Diagnostics.zig");
+const Parse = @import("parse/Parse.zig");
+const ParseDiagnostics = @import("parse/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
 
@@ -80,8 +82,8 @@ pub const IoFailure = struct {
     err: anyerror,
 };
 
-/// The per-file work. M1b/M1c PLUG POINT: extend `per_file` with parse and
-/// lower; the driver does not change.
+/// The per-file work. M1c PLUG POINT: extend `per_file` with lower; the
+/// driver does not change.
 pub const Phases = struct {
     per_file: *const fn (session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void,
 };
@@ -89,6 +91,10 @@ pub const Phases = struct {
 /// M1a: read the bytes, tokenize, install the lexical artifacts, report
 /// the lexical diagnostics.
 pub const lex_phases: Phases = .{ .per_file = lexPhase };
+
+/// M1b: `lex_phases`, then parse into the file's `ast` column and report the
+/// syntax diagnostics.
+pub const parse_phases: Phases = .{ .per_file = parsePhase };
 
 pub const Worker = struct {
     index: u32,
@@ -332,8 +338,46 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
         .tokens = out.tokens,
         .comments = comments,
         .lex_diagnostics = lex_diagnostics,
+        .ast = .empty,
         .worker = worker.index,
     });
+}
+
+/// The M1b per-file phase: everything `lexPhase` does, then the parser over
+/// the installed tokens. Scratch comes from the worker's arena (reset by
+/// the driver after the file); the tree goes to session storage next to
+/// the tokens it indexes.
+fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
+    try lexPhase(session, worker, file);
+    const gpa = session.gpa;
+    const text = session.store.bytes(file);
+    const line_starts = session.store.lineStarts(file);
+    const tokens = session.artifacts.tokens(file);
+    const comments = session.artifacts.comments(file);
+    const lex_diagnostics = session.artifacts.lexDiagnostics(file);
+
+    const parse_token = session.profile.begin();
+    var tree = try Parse.parse(gpa, worker.arena.allocator(), text, tokens.slice(), comments, line_starts, lex_diagnostics);
+    errdefer tree.deinit(gpa);
+    session.profile.end(worker.index, parse_token, .parse, file.int(), @intCast(text.len));
+    worker.addCounter(.nodes, tree.nodes.len);
+
+    var message: Io.Writer.Allocating = .init(gpa);
+    defer message.deinit();
+    for (tree.errors) |item| {
+        message.clearRetainingCapacity();
+        try ParseDiagnostics.message(item, text, line_starts, &message.writer);
+        try worker.report(
+            session,
+            file,
+            item.code,
+            LexDiagnostics.position(line_starts, item.start),
+            LexDiagnostics.position(line_starts, item.end),
+            message.written(),
+        );
+    }
+
+    session.artifacts.files.items(.ast)[file.int()] = tree;
 }
 
 fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator.Error!void {

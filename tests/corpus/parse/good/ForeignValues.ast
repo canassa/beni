@@ -1,0 +1,33 @@
+(module
+  (foreign_value pub add
+    (doc "Add two numbers.")
+    (type_fn
+      (type_var number)
+      (type_fn
+        (type_var number)
+        (type_var number))))
+  (foreign_value pub length
+    (type_fn
+      (type_con String)
+      (type_con Int)))
+  (foreign_value unsafeCoerce
+    (type_fn
+      (type_var a)
+      (type_var b)))
+  (foreign_value origin
+    (doc "Private, documented, record-typed.")
+    (type_record
+      (record_type_field x
+        (type_con Float))
+      (record_type_field y
+        (type_con Float))))
+  (annotation double
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition double
+    (pat_var n)
+    (apply
+      (ident add)
+      (ident n)
+      (ident n))))

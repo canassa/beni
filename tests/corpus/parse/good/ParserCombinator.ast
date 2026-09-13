@@ -1,0 +1,391 @@
+(module
+  (type_decl pub opaque Parser a
+    (constructor Parser
+      (type_paren
+        (type_fn
+          (type_con String)
+          (type_con Result
+            (type_con String)
+            (type_tuple
+              (type_var a)
+              (type_con String)))))))
+  (annotation pub run
+    (type_fn
+      (type_con Parser
+        (type_var a))
+      (type_fn
+        (type_con String)
+        (type_con Result
+          (type_con String)
+          (type_var a)))))
+  (definition run
+    (pat_paren
+      (pat_ctor Parser
+        (pat_var p)))
+    (pat_var input)
+    (case
+      (apply
+        (ident p)
+        (ident input))
+      (branch
+        (pat_ctor Ok
+          (pat_tuple
+            (pat_var value)
+            (pat_string "")))
+        (apply
+          (ctor Ok)
+          (ident value)))
+      (branch
+        (pat_ctor Ok
+          (pat_tuple
+            (pat_wild)
+            (pat_var rest)))
+        (apply
+          (ctor Err)
+          (string
+            (chunk "unconsumed input: ")
+            (interp
+              (ident rest)))))
+      (branch
+        (pat_ctor Err
+          (pat_var message))
+        (apply
+          (ctor Err)
+          (ident message)))))
+  (annotation pub succeed
+    (type_fn
+      (type_var a)
+      (type_con Parser
+        (type_var a))))
+  (definition succeed
+    (pat_var value)
+    (apply
+      (ctor Parser)
+      (paren
+        (lambda
+          (pat_var input)
+          (apply
+            (ctor Ok)
+            (tuple
+              (ident value)
+              (ident input)))))))
+  (annotation pub fail
+    (type_fn
+      (type_con String)
+      (type_con Parser
+        (type_var a))))
+  (definition fail
+    (pat_var message)
+    (apply
+      (ctor Parser)
+      (paren
+        (lambda
+          (pat_wild)
+          (apply
+            (ctor Err)
+            (ident message))))))
+  (annotation pub char
+    (type_fn
+      (type_con Char)
+      (type_con Parser
+        (type_con Char))))
+  (definition char
+    (pat_var expected)
+    (apply
+      (ctor Parser)
+      (paren
+        (lambda
+          (pat_var input)
+          (case
+            (apply
+              (ident String.uncons)
+              (ident input))
+            (branch
+              (pat_ctor Just
+                (pat_tuple
+                  (pat_var c)
+                  (pat_var rest)))
+              (if
+                (eq
+                  (ident c)
+                  (ident expected))
+                (apply
+                  (ctor Ok)
+                  (tuple
+                    (ident c)
+                    (ident rest)))
+                (apply
+                  (ctor Err)
+                  (string
+                    (chunk "expected ")
+                    (interp
+                      (ident expected))
+                    (chunk " but got ")
+                    (interp
+                      (ident c))))))
+            (branch
+              (pat_ctor Nothing)
+              (apply
+                (ctor Err)
+                (string
+                  (chunk "unexpected end of input")))))))))
+  (annotation pub map
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_var a)
+          (type_var b)))
+      (type_fn
+        (type_con Parser
+          (type_var a))
+        (type_con Parser
+          (type_var b)))))
+  (definition map
+    (pat_var f)
+    (pat_paren
+      (pat_ctor Parser
+        (pat_var p)))
+    (apply
+      (ctor Parser)
+      (paren
+        (lambda
+          (pat_var input)
+          (case
+            (apply
+              (ident p)
+              (ident input))
+            (branch
+              (pat_ctor Ok
+                (pat_tuple
+                  (pat_var value)
+                  (pat_var rest)))
+              (apply
+                (ctor Ok)
+                (tuple
+                  (apply
+                    (ident f)
+                    (ident value))
+                  (ident rest))))
+            (branch
+              (pat_ctor Err
+                (pat_var message))
+              (apply
+                (ctor Err)
+                (ident message))))))))
+  (annotation pub andThen
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_var a)
+          (type_con Parser
+            (type_var b))))
+      (type_fn
+        (type_con Parser
+          (type_var a))
+        (type_con Parser
+          (type_var b)))))
+  (definition andThen
+    (pat_var f)
+    (pat_paren
+      (pat_ctor Parser
+        (pat_var p)))
+    (apply
+      (ctor Parser)
+      (paren
+        (lambda
+          (pat_var input)
+          (let
+            (let_def step
+              (pat_tuple
+                (pat_var value)
+                (pat_var rest))
+              (case
+                (apply
+                  (ident f)
+                  (ident value))
+                (branch
+                  (pat_ctor Parser
+                    (pat_var q))
+                  (apply
+                    (ident q)
+                    (ident rest)))))
+            (pipe_right
+              (apply
+                (ident p)
+                (ident input))
+              (apply
+                (ident Result.andThen)
+                (ident step))))))))
+  (annotation pub many
+    (type_fn
+      (type_con Parser
+        (type_var a))
+      (type_con Parser
+        (type_paren
+          (type_con List
+            (type_var a))))))
+  (definition many
+    (pat_paren
+      (pat_ctor Parser
+        (pat_var p)))
+    (let
+      (let_def go
+        (pat_var acc)
+        (pat_var input)
+        (case
+          (apply
+            (ident p)
+            (ident input))
+          (branch
+            (pat_ctor Ok
+              (pat_tuple
+                (pat_var value)
+                (pat_var rest)))
+            (apply
+              (ident go)
+              (paren
+                (cons
+                  (ident value)
+                  (ident acc)))
+              (ident rest)))
+          (branch
+            (pat_ctor Err
+              (pat_wild))
+            (apply
+              (ctor Ok)
+              (tuple
+                (apply
+                  (ident List.reverse)
+                  (ident acc))
+                (ident input))))))
+      (apply
+        (ctor Parser)
+        (paren
+          (apply
+            (ident go)
+            (list))))))
+  (annotation pub oneOf
+    (type_fn
+      (type_con List
+        (type_paren
+          (type_con Parser
+            (type_var a))))
+      (type_con Parser
+        (type_var a))))
+  (definition oneOf
+    (pat_var parsers)
+    (apply
+      (ctor Parser)
+      (paren
+        (lambda
+          (pat_var input)
+          (let
+            (let_def try
+              (pat_var remaining)
+              (case
+                (ident remaining)
+                (branch
+                  (pat_list)
+                  (apply
+                    (ctor Err)
+                    (string
+                      (chunk "no parser matched"))))
+                (branch
+                  (pat_cons
+                    (pat_paren
+                      (pat_ctor Parser
+                        (pat_var p)))
+                    (pat_var rest))
+                  (case
+                    (apply
+                      (ident p)
+                      (ident input))
+                    (branch
+                      (pat_ctor Ok
+                        (pat_var result))
+                      (apply
+                        (ctor Ok)
+                        (ident result)))
+                    (branch
+                      (pat_ctor Err
+                        (pat_wild))
+                      (apply
+                        (ident try)
+                        (ident rest)))))))
+            (apply
+              (ident try)
+              (ident parsers)))))))
+  (annotation pub digits
+    (type_con Parser
+      (type_con Int)))
+  (definition digits
+    (pipe_right
+      (apply
+        (ident many)
+        (paren
+          (apply
+            (ident oneOf)
+            (paren
+              (apply
+                (ident List.map)
+                (ident char)
+                (list
+                  (char '0')
+                  (char '1')
+                  (char '2')
+                  (char '3')
+                  (char '4')
+                  (char '5')
+                  (char '6')
+                  (char '7')
+                  (char '8')
+                  (char '9')))))))
+      (apply
+        (ident andThen)
+        (paren
+          (lambda
+            (pat_var cs)
+            (case
+              (apply
+                (ident String.toInt)
+                (paren
+                  (apply
+                    (ident String.fromList)
+                    (ident cs))))
+              (branch
+                (pat_ctor Just
+                  (pat_var n))
+                (apply
+                  (ident succeed)
+                  (ident n)))
+              (branch
+                (pat_ctor Nothing)
+                (apply
+                  (ident fail)
+                  (string
+                    (chunk "expected digits"))))))))))
+  (annotation sumOf
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con String)
+        (type_con Result
+          (type_con String)
+          (type_con Int)))))
+  (definition sumOf
+    (pat_var a)
+    (pat_var b)
+    (apply
+      (ctor Ok)
+      (paren
+        (add
+          (question
+            (apply
+              (ident run)
+              (ident digits)
+              (ident a)))
+          (question
+            (apply
+              (ident run)
+              (ident digits)
+              (ident b))))))))

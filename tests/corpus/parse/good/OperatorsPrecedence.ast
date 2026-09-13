@@ -1,0 +1,200 @@
+(module
+  (definition leftMinus
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (sub
+      (sub
+        (ident a)
+        (ident b))
+      (ident c)))
+  (definition rightCons
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (cons
+      (ident a)
+      (cons
+        (ident b)
+        (ident c))))
+  (definition rightApply
+    (pat_var f)
+    (pat_var g)
+    (pat_var x)
+    (pipe_left
+      (ident f)
+      (pipe_left
+        (ident g)
+        (ident x))))
+  (definition leftPipe
+    (pat_var f)
+    (pat_var g)
+    (pat_var x)
+    (pipe_right
+      (pipe_right
+        (ident x)
+        (ident f))
+      (ident g)))
+  (definition rightPow
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (pow
+      (ident a)
+      (pow
+        (ident b)
+        (ident c))))
+  (definition rightCompose
+    (pat_var f)
+    (pat_var g)
+    (pat_var h)
+    (compose_left
+      (ident f)
+      (compose_left
+        (ident g)
+        (ident h))))
+  (definition leftCompose
+    (pat_var f)
+    (pat_var g)
+    (pat_var h)
+    (compose_right
+      (compose_right
+        (ident f)
+        (ident g))
+      (ident h)))
+  (definition notAnd
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (bool_and
+      (apply
+        (ident not)
+        (paren
+          (eq
+            (ident a)
+            (ident b))))
+      (ident c)))
+  (definition mulOverAdd
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (add
+      (ident a)
+      (mul
+        (ident b)
+        (ident c))))
+  (definition appendAndConsSameLevel
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (append
+      (ident a)
+      (cons
+        (ident b)
+        (ident c))))
+  (definition orOverAnd
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (bool_or
+      (ident a)
+      (bool_and
+        (ident b)
+        (ident c))))
+  (definition comparisonOverAppend
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (pat_var d)
+    (eq
+      (append
+        (ident a)
+        (ident b))
+      (append
+        (ident c)
+        (ident d))))
+  (definition pipeLowest
+    (pat_var f)
+    (pat_var x)
+    (pat_var y)
+    (pipe_right
+      (add
+        (ident x)
+        (ident y))
+      (ident f)))
+  (definition powOverMul
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (mul
+      (ident a)
+      (pow
+        (ident b)
+        (ident c))))
+  (definition divisionsLeft
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (int_div
+      (div
+        (ident a)
+        (ident b))
+      (ident c)))
+  (definition appTighter
+    (pat_var f)
+    (pat_var x)
+    (pat_var y)
+    (add
+      (apply
+        (ident f)
+        (ident x))
+      (apply
+        (ident f)
+        (ident y))))
+  (definition accessTighter
+    (pat_var f)
+    (pat_var r)
+    (apply
+      (ident f)
+      (field_access .b
+        (field_access .a
+          (ident r)))))
+  (definition questionTighter
+    (pat_var f)
+    (pat_var r)
+    (add
+      (question
+        (apply
+          (ident f)
+          (ident r)))
+      (int 1)))
+  (definition mixedRight
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (pat_var d)
+    (bool_or
+      (ident a)
+      (bool_or
+        (ident b)
+        (bool_and
+          (ident c)
+          (ident d)))))
+  (definition composeThenApply
+    (pat_var f)
+    (pat_var g)
+    (pat_var x)
+    (pipe_left
+      (compose_left
+        (ident f)
+        (ident g))
+      (ident x)))
+  (definition andChainRight
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (bool_and
+      (ident a)
+      (bool_and
+        (ident b)
+        (ident c)))))

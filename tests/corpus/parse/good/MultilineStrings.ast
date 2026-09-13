@@ -1,0 +1,20 @@
+(module
+  (definition oneLine
+    (multiline_string "just one line"))
+  (definition sql
+    (multiline_string "SELECT *" "FROM users" "WHERE id = 1"))
+  (definition rawStuff
+    (multiline_string "no ${interpolation} here" "and a \ backslash and \n is two chars" ""))
+  (definition emptyLineInside
+    (multiline_string "first" "" "third"))
+  (definition asArgument
+    (apply
+      (ident String.lines)
+      (multiline_string "a" "b")))
+  (definition inLet
+    (let
+      (let_def text
+        (multiline_string "x" "y"))
+      (ident text)))
+  (definition withTrailingSpaces
+    (multiline_string "keeps trailing spaces   " "  and leading ones")))

@@ -1,0 +1,53 @@
+(module
+  (module_doc "Core-style module mixing foreign primitives with beni definitions.")
+  (import Basics exposing
+    (exposed Bool))
+  (foreign_type pub Char
+    (doc "The primitive character type."))
+  (foreign_value pub toCode
+    (doc "Code point of a character.")
+    (type_fn
+      (type_con Char)
+      (type_con Int)))
+  (foreign_value pub fromCode
+    (doc "Build a character from a code point.")
+    (type_fn
+      (type_con Int)
+      (type_con Char)))
+  (annotation pub isUpper
+    (type_fn
+      (type_con Char)
+      (type_con Bool)))
+  (definition isUpper
+    (pat_var c)
+    (let
+      (let_def code
+        (apply
+          (ident toCode)
+          (ident c)))
+      (bool_and
+        (gte
+          (ident code)
+          (int 65))
+        (lte
+          (ident code)
+          (int 90)))))
+  (annotation pub toUpper
+    (type_fn
+      (type_con Char)
+      (type_con Char)))
+  (definition toUpper
+    (pat_var c)
+    (if
+      (apply
+        (ident isUpper)
+        (ident c))
+      (ident c)
+      (apply
+        (ident fromCode)
+        (paren
+          (sub
+            (apply
+              (ident toCode)
+              (ident c))
+            (int 32)))))))

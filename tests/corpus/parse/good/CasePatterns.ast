@@ -1,0 +1,241 @@
+(module
+  (import Http exposing
+    (exposed Error)
+    (exposed BadUrl)
+    (exposed Timeout))
+  (annotation describe
+    (type_fn
+      (type_con Int)
+      (type_con String)))
+  (definition describe
+    (pat_var n)
+    (case
+      (ident n)
+      (branch
+        (pat_int 0)
+        (string
+          (chunk "zero")))
+      (branch
+        (pat_neg_int -1)
+        (string
+          (chunk "minus one")))
+      (branch
+        (pat_int 1)
+        (string
+          (chunk "one")))
+      (branch
+        (pat_wild)
+        (string
+          (chunk "many")))))
+  (annotation classify
+    (type_fn
+      (type_con Char)
+      (type_con Int)))
+  (definition classify
+    (pat_var c)
+    (case
+      (ident c)
+      (branch
+        (pat_char 'a')
+        (int 1))
+      (branch
+        (pat_char '\n')
+        (int 2))
+      (branch
+        (pat_var other)
+        (apply
+          (ident Char.toCode)
+          (ident other)))))
+  (annotation greet
+    (type_fn
+      (type_con String)
+      (type_con String)))
+  (definition greet
+    (pat_var s)
+    (case
+      (ident s)
+      (branch
+        (pat_string "hello")
+        (string
+          (chunk "hi")))
+      (branch
+        (pat_string "")
+        (string
+          (chunk "...")))
+      (branch
+        (pat_var name)
+        (ident name))))
+  (annotation sumList
+    (type_fn
+      (type_con List
+        (type_con Int))
+      (type_con Int)))
+  (definition sumList
+    (pat_var xs)
+    (case
+      (ident xs)
+      (branch
+        (pat_list)
+        (int 0))
+      (branch
+        (pat_list
+          (pat_var single))
+        (ident single))
+      (branch
+        (pat_list
+          (pat_var a)
+          (pat_var b))
+        (add
+          (ident a)
+          (ident b)))
+      (branch
+        (pat_cons
+          (pat_var first)
+          (pat_cons
+            (pat_var second)
+            (pat_var rest)))
+        (add
+          (add
+            (ident first)
+            (ident second))
+          (apply
+            (ident sumList)
+            (ident rest))))))
+  (annotation heads
+    (type_fn
+      (type_con List
+        (type_paren
+          (type_con Maybe
+            (type_con Int))))
+      (type_con Int)))
+  (definition heads
+    (pat_var ms)
+    (case
+      (ident ms)
+      (branch
+        (pat_cons
+          (pat_ctor Just
+            (pat_var x))
+          (pat_wild))
+        (ident x))
+      (branch
+        (pat_cons
+          (pat_ctor Nothing)
+          (pat_cons
+            (pat_ctor Just
+              (pat_var y))
+            (pat_wild)))
+        (ident y))
+      (branch
+        (pat_cons
+          (pat_paren
+            (pat_as whole
+              (pat_paren
+                (pat_ctor Just
+                  (pat_var z)))))
+          (pat_wild))
+        (add
+          (ident z)
+          (apply
+            (ident List.length)
+            (list
+              (ident whole)))))
+      (branch
+        (pat_wild)
+        (int 0))))
+  (annotation unwrap
+    (type_fn
+      (type_tuple
+        (type_unit)
+        (type_tuple
+          (type_con Int)
+          (type_con Int)))
+      (type_con Int)))
+  (definition unwrap
+    (pat_var pair)
+    (case
+      (ident pair)
+      (branch
+        (pat_tuple
+          (pat_unit)
+          (pat_tuple
+            (pat_var a)
+            (pat_var b)))
+        (add
+          (ident a)
+          (ident b)))))
+  (annotation status
+    (type_fn
+      (type_con Error)
+      (type_con String)))
+  (definition status
+    (pat_var err)
+    (case
+      (ident err)
+      (branch
+        (pat_ctor BadUrl
+          (pat_var url))
+        (ident url))
+      (branch
+        (pat_ctor Timeout)
+        (string
+          (chunk "timeout")))
+      (branch
+        (pat_ctor Http.NetworkError)
+        (string
+          (chunk "network")))
+      (branch
+        (pat_ctor Http.BadStatus
+          (pat_var code))
+        (string
+          (chunk "status ")
+          (interp
+            (ident code))))
+      (branch
+        (pat_wild)
+        (string
+          (chunk "?")))))
+  (annotation fullName
+    (type_fn
+      (type_record_ext a
+        (record_type_field first
+          (type_con String))
+        (record_type_field last
+          (type_con String)))
+      (type_con String)))
+  (definition fullName
+    (pat_var person)
+    (case
+      (ident person)
+      (branch
+        (pat_record first last)
+        (append
+          (ident first)
+          (ident last)))))
+  (annotation both
+    (type_fn
+      (type_con Maybe
+        (type_tuple
+          (type_con Int)
+          (type_con Int)))
+      (type_con Int)))
+  (definition both
+    (pat_var m)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Just
+          (pat_paren
+            (pat_as pair
+              (pat_tuple
+                (pat_var a)
+                (pat_var b)))))
+        (add
+          (add
+            (ident a)
+            (ident b))
+          (tuple_index .0
+            (ident pair))))
+      (branch
+        (pat_ctor Maybe.Nothing)
+        (int 0)))))

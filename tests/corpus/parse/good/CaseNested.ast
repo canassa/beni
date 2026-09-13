@@ -1,0 +1,94 @@
+(module
+  (annotation combine
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_fn
+        (type_con Maybe
+          (type_con Int))
+        (type_con Int))))
+  (definition combine
+    (pat_var a)
+    (pat_var b)
+    (case
+      (ident a)
+      (branch
+        (pat_ctor Just
+          (pat_var x))
+        (case
+          (ident b)
+          (branch
+            (pat_ctor Just
+              (pat_var y))
+            (add
+              (ident x)
+              (ident y)))
+          (branch
+            (pat_ctor Nothing)
+            (ident x))))
+      (branch
+        (pat_ctor Nothing)
+        (int 0))))
+  (annotation combineLet
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_fn
+        (type_con Maybe
+          (type_con Int))
+        (type_con Int))))
+  (definition combineLet
+    (pat_var a)
+    (pat_var b)
+    (case
+      (ident a)
+      (branch
+        (pat_ctor Just
+          (pat_var x))
+        (let
+          (let_def y
+            (case
+              (ident b)
+              (branch
+                (pat_ctor Just
+                  (pat_var z))
+                (ident z))
+              (branch
+                (pat_ctor Nothing)
+                (int 0))))
+          (add
+            (ident x)
+            (ident y))))
+      (branch
+        (pat_ctor Nothing)
+        (int 0))))
+  (annotation tight
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_fn
+        (type_con Maybe
+          (type_con Int))
+        (type_con Int))))
+  (definition tight
+    (pat_var a)
+    (pat_var b)
+    (case
+      (ident a)
+      (branch
+        (pat_ctor Just
+          (pat_var x))
+        (case
+          (ident b)
+          (branch
+            (pat_ctor Just
+              (pat_var y))
+            (add
+              (ident x)
+              (ident y)))
+          (branch
+            (pat_ctor Nothing)
+            (ident x))))
+      (branch
+        (pat_ctor Nothing)
+        (int 0)))))

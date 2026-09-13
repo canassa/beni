@@ -1,0 +1,1 @@
+[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/ExpectedTokenTypeAlias.beni","start":{"line":4,"col":18},"end":{"line":4,"col":21}},"title":"EXPECTED TOKEN","message":"I was parsing a `type alias` and ran into `Int`, but I was expecting `=` here."}]

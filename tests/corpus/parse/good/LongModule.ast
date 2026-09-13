@@ -1,0 +1,2116 @@
+(module
+  (module_doc "Kanban board: model, update and view for a three-column task board.")
+  (module_doc "Cards move between columns, can be edited inline, and persist as JSON.")
+  (import Dict exposing
+    (exposed Dict))
+  (import Html exposing
+    (exposed Html)
+    (exposed button)
+    (exposed div)
+    (exposed h1)
+    (exposed h2)
+    (exposed input)
+    (exposed li)
+    (exposed span)
+    (exposed text)
+    (exposed ul))
+  (import Html.Attributes exposing
+    (exposed class)
+    (exposed classList)
+    (exposed placeholder)
+    (exposed value))
+  (import Html.Events exposing
+    (exposed onClick)
+    (exposed onInput))
+  (import Json.Decode as Decode exposing
+    (exposed Decoder))
+  (import Json.Encode as Encode)
+  (import Set exposing
+    (exposed Set))
+  (type_alias pub Card
+    (doc "A single card on the board.")
+    (type_record
+      (record_type_field id
+        (type_con Int))
+      (record_type_field title
+        (type_con String))
+      (record_type_field description
+        (type_con String))
+      (record_type_field labels
+        (type_con List
+          (type_con String)))
+      (record_type_field column
+        (type_con Column))
+      (record_type_field order
+        (type_con Int))))
+  (type_decl pub Column
+    (doc "The three fixed columns.")
+    (constructor Backlog)
+    (constructor InProgress)
+    (constructor Done))
+  (type_decl Editing
+    (doc "What the user is currently editing, if anything.")
+    (constructor NotEditing)
+    (constructor EditingTitle
+      (type_con Int)
+      (type_con String))
+    (constructor EditingDescription
+      (type_con Int)
+      (type_con String)))
+  (type_alias Drag
+    (doc "Drag state: which card is being dragged and which column is hovered.")
+    (type_record
+      (record_type_field cardId
+        (type_con Int))
+      (record_type_field over
+        (type_con Maybe
+          (type_con Column)))))
+  (type_alias pub Model
+    (type_record
+      (record_type_field cards
+        (type_con Dict
+          (type_con Int)
+          (type_con Card)))
+      (record_type_field nextId
+        (type_con Int))
+      (record_type_field editing
+        (type_con Editing))
+      (record_type_field drag
+        (type_con Maybe
+          (type_con Drag)))
+      (record_type_field filter
+        (type_con String))
+      (record_type_field collapsed
+        (type_con Set
+          (type_con String)))
+      (record_type_field newCardTitle
+        (type_con String))
+      (record_type_field errors
+        (type_con List
+          (type_con String)))))
+  (type_decl pub Msg
+    (constructor NoOp)
+    (constructor SetNewCardTitle
+      (type_con String))
+    (constructor AddCard)
+    (constructor DeleteCard
+      (type_con Int))
+    (constructor MoveCard
+      (type_con Int)
+      (type_con Column))
+    (constructor StartEditTitle
+      (type_con Int))
+    (constructor StartEditDescription
+      (type_con Int))
+    (constructor EditInput
+      (type_con String))
+    (constructor CommitEdit)
+    (constructor CancelEdit)
+    (constructor DragStart
+      (type_con Int))
+    (constructor DragOver
+      (type_con Column))
+    (constructor DragEnd)
+    (constructor Drop)
+    (constructor SetFilter
+      (type_con String))
+    (constructor ToggleCollapse
+      (type_con String))
+    (constructor ToggleLabel
+      (type_con Int)
+      (type_con String))
+    (constructor Loaded
+      (type_paren
+        (type_con Result
+          (type_con Decode.Error)
+          (type_paren
+            (type_con List
+              (type_con Card))))))
+    (constructor KeyDown
+      (type_con String)))
+  (annotation pub init
+    (type_con Model))
+  (definition init
+    (record
+      (field cards
+        (ident Dict.empty))
+      (field nextId
+        (int 1))
+      (field editing
+        (ctor NotEditing))
+      (field drag
+        (ctor Nothing))
+      (field filter
+        (string))
+      (field collapsed
+        (ident Set.empty))
+      (field newCardTitle
+        (string))
+      (field errors
+        (list))))
+  (annotation pub columns
+    (type_con List
+      (type_con Column)))
+  (definition columns
+    (list
+      (ctor Backlog)
+      (ctor InProgress)
+      (ctor Done)))
+  (annotation pub columnName
+    (type_fn
+      (type_con Column)
+      (type_con String)))
+  (definition columnName
+    (pat_var column)
+    (case
+      (ident column)
+      (branch
+        (pat_ctor Backlog)
+        (string
+          (chunk "Backlog")))
+      (branch
+        (pat_ctor InProgress)
+        (string
+          (chunk "In progress")))
+      (branch
+        (pat_ctor Done)
+        (string
+          (chunk "Done")))))
+  (annotation columnKey
+    (type_fn
+      (type_con Column)
+      (type_con String)))
+  (definition columnKey
+    (pat_var column)
+    (case
+      (ident column)
+      (branch
+        (pat_ctor Backlog)
+        (string
+          (chunk "backlog")))
+      (branch
+        (pat_ctor InProgress)
+        (string
+          (chunk "in_progress")))
+      (branch
+        (pat_ctor Done)
+        (string
+          (chunk "done")))))
+  (annotation columnFromKey
+    (type_fn
+      (type_con String)
+      (type_con Maybe
+        (type_con Column))))
+  (definition columnFromKey
+    (pat_var key)
+    (case
+      (ident key)
+      (branch
+        (pat_string "backlog")
+        (apply
+          (ctor Just)
+          (ctor Backlog)))
+      (branch
+        (pat_string "in_progress")
+        (apply
+          (ctor Just)
+          (ctor InProgress)))
+      (branch
+        (pat_string "done")
+        (apply
+          (ctor Just)
+          (ctor Done)))
+      (branch
+        (pat_wild)
+        (ctor Nothing))))
+  (annotation nextColumn
+    (type_fn
+      (type_con Column)
+      (type_con Maybe
+        (type_con Column))))
+  (definition nextColumn
+    (pat_var column)
+    (case
+      (ident column)
+      (branch
+        (pat_ctor Backlog)
+        (apply
+          (ctor Just)
+          (ctor InProgress)))
+      (branch
+        (pat_ctor InProgress)
+        (apply
+          (ctor Just)
+          (ctor Done)))
+      (branch
+        (pat_ctor Done)
+        (ctor Nothing))))
+  (annotation previousColumn
+    (type_fn
+      (type_con Column)
+      (type_con Maybe
+        (type_con Column))))
+  (definition previousColumn
+    (pat_var column)
+    (case
+      (ident column)
+      (branch
+        (pat_ctor Backlog)
+        (ctor Nothing))
+      (branch
+        (pat_ctor InProgress)
+        (apply
+          (ctor Just)
+          (ctor Backlog)))
+      (branch
+        (pat_ctor Done)
+        (apply
+          (ctor Just)
+          (ctor InProgress)))))
+  (annotation pub update
+    (type_fn
+      (type_con Msg)
+      (type_fn
+        (type_con Model)
+        (type_con Model))))
+  (definition update
+    (pat_var msg)
+    (pat_var model)
+    (case
+      (ident msg)
+      (branch
+        (pat_ctor NoOp)
+        (ident model))
+      (branch
+        (pat_ctor SetNewCardTitle
+          (pat_var title))
+        (record_update model
+          (field newCardTitle
+            (ident title))))
+      (branch
+        (pat_ctor AddCard)
+        (let
+          (let_def title
+            (apply
+              (ident String.trim)
+              (field_access .newCardTitle
+                (ident model))))
+          (if
+            (apply
+              (ident String.isEmpty)
+              (ident title))
+            (apply
+              (ident addError)
+              (string
+                (chunk "A card needs a title."))
+              (ident model))
+            (let
+              (let_def card
+                (record
+                  (field id
+                    (field_access .nextId
+                      (ident model)))
+                  (field title
+                    (ident title))
+                  (field description
+                    (string))
+                  (field labels
+                    (list))
+                  (field column
+                    (ctor Backlog))
+                  (field order
+                    (pipe_right
+                      (apply
+                        (ident cardsIn)
+                        (ctor Backlog)
+                        (ident model))
+                      (ident List.length)))))
+              (record_update model
+                (field cards
+                  (apply
+                    (ident Dict.insert)
+                    (field_access .id
+                      (ident card))
+                    (ident card)
+                    (field_access .cards
+                      (ident model))))
+                (field nextId
+                  (add
+                    (field_access .nextId
+                      (ident model))
+                    (int 1)))
+                (field newCardTitle
+                  (string)))))))
+      (branch
+        (pat_ctor DeleteCard
+          (pat_var id))
+        (pipe_right
+          (record_update model
+            (field cards
+              (apply
+                (ident Dict.remove)
+                (ident id)
+                (field_access .cards
+                  (ident model)))))
+          (ident renumber)))
+      (branch
+        (pat_ctor MoveCard
+          (pat_var id)
+          (pat_var column))
+        (apply
+          (ident moveCard)
+          (ident id)
+          (ident column)
+          (ident model)))
+      (branch
+        (pat_ctor StartEditTitle
+          (pat_var id))
+        (case
+          (apply
+            (ident Dict.get)
+            (ident id)
+            (field_access .cards
+              (ident model)))
+          (branch
+            (pat_ctor Just
+              (pat_var card))
+            (record_update model
+              (field editing
+                (apply
+                  (ctor EditingTitle)
+                  (ident id)
+                  (field_access .title
+                    (ident card))))))
+          (branch
+            (pat_ctor Nothing)
+            (ident model))))
+      (branch
+        (pat_ctor StartEditDescription
+          (pat_var id))
+        (case
+          (apply
+            (ident Dict.get)
+            (ident id)
+            (field_access .cards
+              (ident model)))
+          (branch
+            (pat_ctor Just
+              (pat_var card))
+            (record_update model
+              (field editing
+                (apply
+                  (ctor EditingDescription)
+                  (ident id)
+                  (field_access .description
+                    (ident card))))))
+          (branch
+            (pat_ctor Nothing)
+            (ident model))))
+      (branch
+        (pat_ctor EditInput
+          (pat_var str))
+        (case
+          (field_access .editing
+            (ident model))
+          (branch
+            (pat_ctor NotEditing)
+            (ident model))
+          (branch
+            (pat_ctor EditingTitle
+              (pat_var id)
+              (pat_wild))
+            (record_update model
+              (field editing
+                (apply
+                  (ctor EditingTitle)
+                  (ident id)
+                  (ident str)))))
+          (branch
+            (pat_ctor EditingDescription
+              (pat_var id)
+              (pat_wild))
+            (record_update model
+              (field editing
+                (apply
+                  (ctor EditingDescription)
+                  (ident id)
+                  (ident str)))))))
+      (branch
+        (pat_ctor CommitEdit)
+        (apply
+          (ident commitEdit)
+          (ident model)))
+      (branch
+        (pat_ctor CancelEdit)
+        (record_update model
+          (field editing
+            (ctor NotEditing))))
+      (branch
+        (pat_ctor DragStart
+          (pat_var id))
+        (record_update model
+          (field drag
+            (apply
+              (ctor Just)
+              (record
+                (field cardId
+                  (ident id))
+                (field over
+                  (ctor Nothing)))))))
+      (branch
+        (pat_ctor DragOver
+          (pat_var column))
+        (case
+          (field_access .drag
+            (ident model))
+          (branch
+            (pat_ctor Just
+              (pat_var drag))
+            (record_update model
+              (field drag
+                (apply
+                  (ctor Just)
+                  (record_update drag
+                    (field over
+                      (apply
+                        (ctor Just)
+                        (ident column))))))))
+          (branch
+            (pat_ctor Nothing)
+            (ident model))))
+      (branch
+        (pat_ctor DragEnd)
+        (record_update model
+          (field drag
+            (ctor Nothing))))
+      (branch
+        (pat_ctor Drop)
+        (case
+          (field_access .drag
+            (ident model))
+          (branch
+            (pat_ctor Just
+              (pat_record cardId over))
+            (case
+              (ident over)
+              (branch
+                (pat_ctor Just
+                  (pat_var column))
+                (apply
+                  (ident moveCard)
+                  (ident cardId)
+                  (ident column)
+                  (record_update model
+                    (field drag
+                      (ctor Nothing)))))
+              (branch
+                (pat_ctor Nothing)
+                (record_update model
+                  (field drag
+                    (ctor Nothing))))))
+          (branch
+            (pat_ctor Nothing)
+            (ident model))))
+      (branch
+        (pat_ctor SetFilter
+          (pat_var str))
+        (record_update model
+          (field filter
+            (apply
+              (ident String.toLower)
+              (ident str)))))
+      (branch
+        (pat_ctor ToggleCollapse
+          (pat_var key))
+        (if
+          (apply
+            (ident Set.member)
+            (ident key)
+            (field_access .collapsed
+              (ident model)))
+          (record_update model
+            (field collapsed
+              (apply
+                (ident Set.remove)
+                (ident key)
+                (field_access .collapsed
+                  (ident model)))))
+          (record_update model
+            (field collapsed
+              (apply
+                (ident Set.insert)
+                (ident key)
+                (field_access .collapsed
+                  (ident model)))))))
+      (branch
+        (pat_ctor ToggleLabel
+          (pat_var id)
+          (pat_var label))
+        (apply
+          (ident updateCard)
+          (ident id)
+          (paren
+            (apply
+              (ident toggleLabel)
+              (ident label)))
+          (ident model)))
+      (branch
+        (pat_ctor Loaded
+          (pat_var result))
+        (case
+          (ident result)
+          (branch
+            (pat_ctor Ok
+              (pat_var cards))
+            (record_update model
+              (field cards
+                (pipe_right
+                  (pipe_right
+                    (ident cards)
+                    (apply
+                      (ident List.map)
+                      (paren
+                        (lambda
+                          (pat_var c)
+                          (tuple
+                            (field_access .id
+                              (ident c))
+                            (ident c))))))
+                  (ident Dict.fromList)))
+              (field nextId
+                (add
+                  (int 1)
+                  (apply
+                    (ident List.foldl)
+                    (paren
+                      (lambda
+                        (pat_var c)
+                        (pat_var acc)
+                        (apply
+                          (ident max)
+                          (ident acc)
+                          (field_access .id
+                            (ident c)))))
+                    (int 0)
+                    (ident cards))))))
+          (branch
+            (pat_ctor Err
+              (pat_var error))
+            (apply
+              (ident addError)
+              (paren
+                (apply
+                  (ident Decode.errorToString)
+                  (ident error)))
+              (ident model)))))
+      (branch
+        (pat_ctor KeyDown
+          (pat_var key))
+        (apply
+          (ident handleKey)
+          (ident key)
+          (ident model)))))
+  (annotation addError
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con Model)
+        (type_con Model))))
+  (definition addError
+    (pat_var message)
+    (pat_var model)
+    (record_update model
+      (field errors
+        (cons
+          (ident message)
+          (apply
+            (ident List.take)
+            (int 4)
+            (field_access .errors
+              (ident model)))))))
+  (annotation updateCard
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_paren
+          (type_fn
+            (type_con Card)
+            (type_con Card)))
+        (type_fn
+          (type_con Model)
+          (type_con Model)))))
+  (definition updateCard
+    (pat_var id)
+    (pat_var f)
+    (pat_var model)
+    (case
+      (apply
+        (ident Dict.get)
+        (ident id)
+        (field_access .cards
+          (ident model)))
+      (branch
+        (pat_ctor Just
+          (pat_var card))
+        (record_update model
+          (field cards
+            (apply
+              (ident Dict.insert)
+              (ident id)
+              (paren
+                (apply
+                  (ident f)
+                  (ident card)))
+              (field_access .cards
+                (ident model))))))
+      (branch
+        (pat_ctor Nothing)
+        (ident model))))
+  (annotation toggleLabel
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con Card)
+        (type_con Card))))
+  (definition toggleLabel
+    (pat_var label)
+    (pat_var card)
+    (if
+      (apply
+        (ident List.member)
+        (ident label)
+        (field_access .labels
+          (ident card)))
+      (record_update card
+        (field labels
+          (apply
+            (ident List.filter)
+            (paren
+              (lambda
+                (pat_var l)
+                (neq
+                  (ident l)
+                  (ident label))))
+            (field_access .labels
+              (ident card)))))
+      (record_update card
+        (field labels
+          (cons
+            (ident label)
+            (field_access .labels
+              (ident card)))))))
+  (annotation commitEdit
+    (type_fn
+      (type_con Model)
+      (type_con Model)))
+  (definition commitEdit
+    (pat_var model)
+    (let
+      (let_def finished
+        (record_update model
+          (field editing
+            (ctor NotEditing))))
+      (case
+        (field_access .editing
+          (ident model))
+        (branch
+          (pat_ctor NotEditing)
+          (ident model))
+        (branch
+          (pat_ctor EditingTitle
+            (pat_var id)
+            (pat_var title))
+          (if
+            (apply
+              (ident String.isEmpty)
+              (paren
+                (apply
+                  (ident String.trim)
+                  (ident title))))
+            (apply
+              (ident addError)
+              (string
+                (chunk "Title cannot be empty."))
+              (ident finished))
+            (apply
+              (ident updateCard)
+              (ident id)
+              (paren
+                (lambda
+                  (pat_var card)
+                  (record_update card
+                    (field title
+                      (apply
+                        (ident String.trim)
+                        (ident title))))))
+              (ident finished))))
+        (branch
+          (pat_ctor EditingDescription
+            (pat_var id)
+            (pat_var description))
+          (apply
+            (ident updateCard)
+            (ident id)
+            (paren
+              (lambda
+                (pat_var card)
+                (record_update card
+                  (field description
+                    (ident description)))))
+            (ident finished))))))
+  (annotation moveCard
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_con Column)
+        (type_fn
+          (type_con Model)
+          (type_con Model)))))
+  (definition moveCard
+    (pat_var id)
+    (pat_var column)
+    (pat_var model)
+    (case
+      (apply
+        (ident Dict.get)
+        (ident id)
+        (field_access .cards
+          (ident model)))
+      (branch
+        (pat_ctor Just
+          (pat_var card))
+        (if
+          (eq
+            (field_access .column
+              (ident card))
+            (ident column))
+          (ident model)
+          (let
+            (let_def moved
+              (record_update card
+                (field column
+                  (ident column))
+                (field order
+                  (apply
+                    (ident List.length)
+                    (paren
+                      (apply
+                        (ident cardsIn)
+                        (ident column)
+                        (ident model)))))))
+            (pipe_right
+              (record_update model
+                (field cards
+                  (apply
+                    (ident Dict.insert)
+                    (ident id)
+                    (ident moved)
+                    (field_access .cards
+                      (ident model)))))
+              (ident renumber)))))
+      (branch
+        (pat_ctor Nothing)
+        (ident model))))
+  (annotation renumber
+    (type_fn
+      (type_con Model)
+      (type_con Model)))
+  (definition renumber
+    (pat_var model)
+    (let
+      (let_def renumberColumn
+        (pat_var column)
+        (pat_var cards)
+        (pipe_right
+          (pipe_right
+            (apply
+              (ident cardsIn)
+              (ident column)
+              (ident model))
+            (apply
+              (ident List.indexedMap)
+              (paren
+                (lambda
+                  (pat_var index)
+                  (pat_var card)
+                  (record_update card
+                    (field order
+                      (ident index)))))))
+          (apply
+            (ident List.foldl)
+            (paren
+              (lambda
+                (pat_var card)
+                (pat_var acc)
+                (apply
+                  (ident Dict.insert)
+                  (field_access .id
+                    (ident card))
+                  (ident card)
+                  (ident acc))))
+            (ident cards))))
+      (record_update model
+        (field cards
+          (apply
+            (ident List.foldl)
+            (ident renumberColumn)
+            (field_access .cards
+              (ident model))
+            (ident columns))))))
+  (annotation cardsIn
+    (type_fn
+      (type_con Column)
+      (type_fn
+        (type_con Model)
+        (type_con List
+          (type_con Card)))))
+  (definition cardsIn
+    (pat_var column)
+    (pat_var model)
+    (pipe_right
+      (pipe_right
+        (pipe_right
+          (field_access .cards
+            (ident model))
+          (ident Dict.values))
+        (apply
+          (ident List.filter)
+          (paren
+            (lambda
+              (pat_var card)
+              (eq
+                (field_access .column
+                  (ident card))
+                (ident column))))))
+      (apply
+        (ident List.sortBy)
+        (accessor .order))))
+  (annotation visibleCardsIn
+    (type_fn
+      (type_con Column)
+      (type_fn
+        (type_con Model)
+        (type_con List
+          (type_con Card)))))
+  (definition visibleCardsIn
+    (pat_var column)
+    (pat_var model)
+    (pipe_right
+      (apply
+        (ident cardsIn)
+        (ident column)
+        (ident model))
+      (apply
+        (ident List.filter)
+        (paren
+          (apply
+            (ident matchesFilter)
+            (field_access .filter
+              (ident model)))))))
+  (annotation matchesFilter
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con Card)
+        (type_con Bool))))
+  (definition matchesFilter
+    (pat_var filter)
+    (pat_var card)
+    (bool_or
+      (apply
+        (ident String.isEmpty)
+        (ident filter))
+      (bool_or
+        (apply
+          (ident String.contains)
+          (ident filter)
+          (paren
+            (apply
+              (ident String.toLower)
+              (field_access .title
+                (ident card)))))
+        (bool_or
+          (apply
+            (ident String.contains)
+            (ident filter)
+            (paren
+              (apply
+                (ident String.toLower)
+                (field_access .description
+                  (ident card)))))
+          (apply
+            (ident List.any)
+            (paren
+              (lambda
+                (pat_var label)
+                (apply
+                  (ident String.contains)
+                  (ident filter)
+                  (paren
+                    (apply
+                      (ident String.toLower)
+                      (ident label))))))
+            (field_access .labels
+              (ident card)))))))
+  (annotation handleKey
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con Model)
+        (type_con Model))))
+  (definition handleKey
+    (pat_var key)
+    (pat_var model)
+    (case
+      (tuple
+        (ident key)
+        (field_access .editing
+          (ident model)))
+      (branch
+        (pat_tuple
+          (pat_string "Escape")
+          (pat_wild))
+        (record_update model
+          (field editing
+            (ctor NotEditing))
+          (field drag
+            (ctor Nothing))))
+      (branch
+        (pat_tuple
+          (pat_string "Enter")
+          (pat_ctor EditingTitle
+            (pat_wild)
+            (pat_wild)))
+        (apply
+          (ident commitEdit)
+          (ident model)))
+      (branch
+        (pat_tuple
+          (pat_string "Enter")
+          (pat_ctor NotEditing))
+        (apply
+          (ident update)
+          (ctor AddCard)
+          (ident model)))
+      (branch
+        (pat_tuple
+          (pat_string "ArrowRight")
+          (pat_ctor NotEditing))
+        (apply
+          (ident shiftSelected)
+          (ident nextColumn)
+          (ident model)))
+      (branch
+        (pat_tuple
+          (pat_string "ArrowLeft")
+          (pat_ctor NotEditing))
+        (apply
+          (ident shiftSelected)
+          (ident previousColumn)
+          (ident model)))
+      (branch
+        (pat_wild)
+        (ident model))))
+  (annotation shiftSelected
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_con Column)
+          (type_con Maybe
+            (type_con Column))))
+      (type_fn
+        (type_con Model)
+        (type_con Model))))
+  (definition shiftSelected
+    (pat_var direction)
+    (pat_var model)
+    (case
+      (field_access .drag
+        (ident model))
+      (branch
+        (pat_ctor Just
+          (pat_record cardId))
+        (case
+          (apply
+            (ident Dict.get)
+            (ident cardId)
+            (field_access .cards
+              (ident model)))
+          (branch
+            (pat_ctor Just
+              (pat_var card))
+            (case
+              (apply
+                (ident direction)
+                (field_access .column
+                  (ident card)))
+              (branch
+                (pat_ctor Just
+                  (pat_var target))
+                (apply
+                  (ident moveCard)
+                  (ident cardId)
+                  (ident target)
+                  (ident model)))
+              (branch
+                (pat_ctor Nothing)
+                (ident model))))
+          (branch
+            (pat_ctor Nothing)
+            (ident model))))
+      (branch
+        (pat_ctor Nothing)
+        (ident model))))
+  (annotation pub view
+    (type_fn
+      (type_con Model)
+      (type_con Html
+        (type_con Msg))))
+  (definition view
+    (pat_var model)
+    (apply
+      (ident div)
+      (list
+        (apply
+          (ident class)
+          (string
+            (chunk "board"))))
+      (list
+        (apply
+          (ident viewHeader)
+          (ident model))
+        (apply
+          (ident viewErrors)
+          (field_access .errors
+            (ident model)))
+        (apply
+          (ident div)
+          (list
+            (apply
+              (ident class)
+              (string
+                (chunk "columns"))))
+          (paren
+            (apply
+              (ident List.map)
+              (paren
+                (apply
+                  (ident viewColumn)
+                  (ident model)))
+              (ident columns)))))))
+  (annotation viewHeader
+    (type_fn
+      (type_con Model)
+      (type_con Html
+        (type_con Msg))))
+  (definition viewHeader
+    (pat_var model)
+    (apply
+      (ident div)
+      (list
+        (apply
+          (ident class)
+          (string
+            (chunk "header"))))
+      (list
+        (apply
+          (ident h1)
+          (list)
+          (list
+            (apply
+              (ident text)
+              (string
+                (chunk "Kanban")))))
+        (apply
+          (ident input)
+          (list
+            (apply
+              (ident placeholder)
+              (string
+                (chunk "New card title")))
+            (apply
+              (ident value)
+              (field_access .newCardTitle
+                (ident model)))
+            (apply
+              (ident onInput)
+              (ctor SetNewCardTitle)))
+          (list))
+        (apply
+          (ident button)
+          (list
+            (apply
+              (ident onClick)
+              (ctor AddCard)))
+          (list
+            (apply
+              (ident text)
+              (string
+                (chunk "Add")))))
+        (apply
+          (ident input)
+          (list
+            (apply
+              (ident placeholder)
+              (string
+                (chunk "Filter")))
+            (apply
+              (ident value)
+              (field_access .filter
+                (ident model)))
+            (apply
+              (ident onInput)
+              (ctor SetFilter)))
+          (list))
+        (apply
+          (ident span)
+          (list
+            (apply
+              (ident class)
+              (string
+                (chunk "count"))))
+          (list
+            (apply
+              (ident text)
+              (paren
+                (apply
+                  (ident countLabel)
+                  (ident model)))))))))
+  (annotation countLabel
+    (type_fn
+      (type_con Model)
+      (type_con String)))
+  (definition countLabel
+    (pat_var model)
+    (let
+      (let_def total
+        (apply
+          (ident Dict.size)
+          (field_access .cards
+            (ident model))))
+      (let_def done
+        (pipe_right
+          (apply
+            (ident cardsIn)
+            (ctor Done)
+            (ident model))
+          (ident List.length)))
+      (if
+        (eq
+          (ident total)
+          (int 0))
+        (string
+          (chunk "no cards"))
+        (string
+          (interp
+            (ident done))
+          (chunk " of ")
+          (interp
+            (ident total))
+          (chunk " done (")
+          (interp
+            (apply
+              (ident percent)
+              (ident done)
+              (ident total)))
+          (chunk "%)")))))
+  (annotation percent
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_con Int)
+        (type_con Int))))
+  (definition percent
+    (pat_var part)
+    (pat_var whole)
+    (if
+      (eq
+        (ident whole)
+        (int 0))
+      (int 0)
+      (int_div
+        (mul
+          (ident part)
+          (int 100))
+        (ident whole))))
+  (annotation viewErrors
+    (type_fn
+      (type_con List
+        (type_con String))
+      (type_con Html
+        (type_con Msg))))
+  (definition viewErrors
+    (pat_var errors)
+    (case
+      (ident errors)
+      (branch
+        (pat_list)
+        (apply
+          (ident text)
+          (string)))
+      (branch
+        (pat_wild)
+        (apply
+          (ident ul)
+          (list
+            (apply
+              (ident class)
+              (string
+                (chunk "errors"))))
+          (paren
+            (apply
+              (ident List.map)
+              (paren
+                (lambda
+                  (pat_var err)
+                  (apply
+                    (ident li)
+                    (list)
+                    (list
+                      (apply
+                        (ident text)
+                        (ident err))))))
+              (ident errors)))))))
+  (annotation viewColumn
+    (type_fn
+      (type_con Model)
+      (type_fn
+        (type_con Column)
+        (type_con Html
+          (type_con Msg)))))
+  (definition viewColumn
+    (pat_var model)
+    (pat_var column)
+    (let
+      (let_def key
+        (apply
+          (ident columnKey)
+          (ident column)))
+      (let_def collapsed
+        (apply
+          (ident Set.member)
+          (ident key)
+          (field_access .collapsed
+            (ident model))))
+      (let_def cards
+        (apply
+          (ident visibleCardsIn)
+          (ident column)
+          (ident model)))
+      (let_def hovered
+        (case
+          (field_access .drag
+            (ident model))
+          (branch
+            (pat_ctor Just
+              (pat_record over))
+            (eq
+              (ident over)
+              (apply
+                (ctor Just)
+                (ident column))))
+          (branch
+            (pat_ctor Nothing)
+            (ctor False))))
+      (apply
+        (ident div)
+        (list
+          (apply
+            (ident classList)
+            (list
+              (tuple
+                (string
+                  (chunk "column"))
+                (ctor True))
+              (tuple
+                (string
+                  (chunk "column-")
+                  (interp
+                    (ident key)))
+                (ctor True))
+              (tuple
+                (string
+                  (chunk "collapsed"))
+                (ident collapsed))
+              (tuple
+                (string
+                  (chunk "hovered"))
+                (ident hovered)))))
+        (list
+          (apply
+            (ident h2)
+            (list
+              (apply
+                (ident onClick)
+                (paren
+                  (apply
+                    (ctor ToggleCollapse)
+                    (ident key)))))
+            (list
+              (apply
+                (ident text)
+                (paren
+                  (apply
+                    (ident columnName)
+                    (ident column))))
+              (apply
+                (ident span)
+                (list
+                  (apply
+                    (ident class)
+                    (string
+                      (chunk "badge"))))
+                (list
+                  (apply
+                    (ident text)
+                    (paren
+                      (apply
+                        (ident String.fromInt)
+                        (paren
+                          (apply
+                            (ident List.length)
+                            (ident cards))))))))))
+          (if
+            (ident collapsed)
+            (apply
+              (ident text)
+              (string))
+            (apply
+              (ident ul)
+              (list
+                (apply
+                  (ident class)
+                  (string
+                    (chunk "cards"))))
+              (paren
+                (apply
+                  (ident List.map)
+                  (paren
+                    (apply
+                      (ident viewCard)
+                      (ident model)))
+                  (ident cards)))))
+          (apply
+            (ident viewDropZone)
+            (ident column))))))
+  (annotation viewDropZone
+    (type_fn
+      (type_con Column)
+      (type_con Html
+        (type_con Msg))))
+  (definition viewDropZone
+    (pat_var column)
+    (apply
+      (ident div)
+      (list
+        (apply
+          (ident class)
+          (string
+            (chunk "dropzone")))
+        (apply
+          (ident onClick)
+          (ctor Drop)))
+      (list
+        (apply
+          (ident text)
+          (string
+            (chunk "Drop here to move to ")
+            (interp
+              (apply
+                (ident columnName)
+                (ident column))))))))
+  (annotation viewCard
+    (type_fn
+      (type_con Model)
+      (type_fn
+        (type_con Card)
+        (type_con Html
+          (type_con Msg)))))
+  (definition viewCard
+    (pat_var model)
+    (pat_var card)
+    (let
+      (let_def dragging
+        (case
+          (field_access .drag
+            (ident model))
+          (branch
+            (pat_ctor Just
+              (pat_record cardId))
+            (eq
+              (ident cardId)
+              (field_access .id
+                (ident card))))
+          (branch
+            (pat_ctor Nothing)
+            (ctor False))))
+      (apply
+        (ident li)
+        (list
+          (apply
+            (ident classList)
+            (list
+              (tuple
+                (string
+                  (chunk "card"))
+                (ctor True))
+              (tuple
+                (string
+                  (chunk "dragging"))
+                (ident dragging))
+              (tuple
+                (string
+                  (chunk "has-labels"))
+                (apply
+                  (ident not)
+                  (paren
+                    (apply
+                      (ident List.isEmpty)
+                      (field_access .labels
+                        (ident card)))))))))
+        (list
+          (apply
+            (ident viewCardTitle)
+            (field_access .editing
+              (ident model))
+            (ident card))
+          (apply
+            (ident viewCardDescription)
+            (field_access .editing
+              (ident model))
+            (ident card))
+          (apply
+            (ident viewLabels)
+            (ident card))
+          (apply
+            (ident viewCardActions)
+            (ident card))))))
+  (annotation viewCardTitle
+    (type_fn
+      (type_con Editing)
+      (type_fn
+        (type_con Card)
+        (type_con Html
+          (type_con Msg)))))
+  (definition viewCardTitle
+    (pat_var editing)
+    (pat_var card)
+    (case
+      (ident editing)
+      (branch
+        (pat_ctor EditingTitle
+          (pat_var id)
+          (pat_var draft))
+        (if
+          (eq
+            (ident id)
+            (field_access .id
+              (ident card)))
+          (apply
+            (ident input)
+            (list
+              (apply
+                (ident class)
+                (string
+                  (chunk "title-input")))
+              (apply
+                (ident value)
+                (ident draft))
+              (apply
+                (ident onInput)
+                (ctor EditInput)))
+            (list))
+          (apply
+            (ident staticTitle)
+            (ident card))))
+      (branch
+        (pat_wild)
+        (apply
+          (ident staticTitle)
+          (ident card)))))
+  (annotation staticTitle
+    (type_fn
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
+  (definition staticTitle
+    (pat_var card)
+    (apply
+      (ident span)
+      (list
+        (apply
+          (ident class)
+          (string
+            (chunk "title")))
+        (apply
+          (ident onClick)
+          (paren
+            (apply
+              (ctor StartEditTitle)
+              (field_access .id
+                (ident card))))))
+      (list
+        (apply
+          (ident text)
+          (string
+            (chunk "#")
+            (interp
+              (field_access .id
+                (ident card)))
+            (chunk " ")
+            (interp
+              (field_access .title
+                (ident card))))))))
+  (annotation viewCardDescription
+    (type_fn
+      (type_con Editing)
+      (type_fn
+        (type_con Card)
+        (type_con Html
+          (type_con Msg)))))
+  (definition viewCardDescription
+    (pat_var editing)
+    (pat_var card)
+    (case
+      (ident editing)
+      (branch
+        (pat_ctor EditingDescription
+          (pat_var id)
+          (pat_var draft))
+        (if
+          (eq
+            (ident id)
+            (field_access .id
+              (ident card)))
+          (apply
+            (ident div)
+            (list)
+            (list
+              (apply
+                (ident input)
+                (list
+                  (apply
+                    (ident value)
+                    (ident draft))
+                  (apply
+                    (ident onInput)
+                    (ctor EditInput)))
+                (list))
+              (apply
+                (ident button)
+                (list
+                  (apply
+                    (ident onClick)
+                    (ctor CommitEdit)))
+                (list
+                  (apply
+                    (ident text)
+                    (string
+                      (chunk "Save")))))
+              (apply
+                (ident button)
+                (list
+                  (apply
+                    (ident onClick)
+                    (ctor CancelEdit)))
+                (list
+                  (apply
+                    (ident text)
+                    (string
+                      (chunk "Cancel")))))))
+          (apply
+            (ident staticDescription)
+            (ident card))))
+      (branch
+        (pat_wild)
+        (apply
+          (ident staticDescription)
+          (ident card)))))
+  (annotation staticDescription
+    (type_fn
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
+  (definition staticDescription
+    (pat_var card)
+    (apply
+      (ident div)
+      (list
+        (apply
+          (ident class)
+          (string
+            (chunk "description")))
+        (apply
+          (ident onClick)
+          (paren
+            (apply
+              (ctor StartEditDescription)
+              (field_access .id
+                (ident card))))))
+      (list
+        (apply
+          (ident text)
+          (paren
+            (if
+              (apply
+                (ident String.isEmpty)
+                (field_access .description
+                  (ident card)))
+              (string
+                (chunk "(no description)"))
+              (apply
+                (ident truncate80)
+                (field_access .description
+                  (ident card)))))))))
+  (annotation truncate80
+    (type_fn
+      (type_con String)
+      (type_con String)))
+  (definition truncate80
+    (pat_var s)
+    (if
+      (lte
+        (apply
+          (ident String.length)
+          (ident s))
+        (int 80))
+      (ident s)
+      (append
+        (apply
+          (ident String.left)
+          (int 77)
+          (ident s))
+        (string
+          (chunk "...")))))
+  (annotation viewLabels
+    (type_fn
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
+  (definition viewLabels
+    (pat_var card)
+    (apply
+      (ident ul)
+      (list
+        (apply
+          (ident class)
+          (string
+            (chunk "labels"))))
+      (paren
+        (apply
+          (ident List.map)
+          (paren
+            (lambda
+              (pat_var label)
+              (apply
+                (ident li)
+                (list
+                  (apply
+                    (ident class)
+                    (string
+                      (chunk "label label-")
+                      (interp
+                        (ident label))))
+                  (apply
+                    (ident onClick)
+                    (paren
+                      (apply
+                        (ctor ToggleLabel)
+                        (field_access .id
+                          (ident card))
+                        (ident label)))))
+                (list
+                  (apply
+                    (ident text)
+                    (ident label))))))
+          (paren
+            (apply
+              (ident List.sortBy)
+              (ident identity)
+              (field_access .labels
+                (ident card))))))))
+  (annotation viewCardActions
+    (type_fn
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
+  (definition viewCardActions
+    (pat_var card)
+    (let
+      (let_def moveButton
+        (pat_var direction)
+        (pat_var label)
+        (case
+          (apply
+            (ident direction)
+            (field_access .column
+              (ident card)))
+          (branch
+            (pat_ctor Just
+              (pat_var target))
+            (apply
+              (ident button)
+              (list
+                (apply
+                  (ident onClick)
+                  (paren
+                    (apply
+                      (ctor MoveCard)
+                      (field_access .id
+                        (ident card))
+                      (ident target)))))
+              (list
+                (apply
+                  (ident text)
+                  (ident label)))))
+          (branch
+            (pat_ctor Nothing)
+            (apply
+              (ident text)
+              (string)))))
+      (apply
+        (ident div)
+        (list
+          (apply
+            (ident class)
+            (string
+              (chunk "actions"))))
+        (list
+          (apply
+            (ident moveButton)
+            (ident previousColumn)
+            (string
+              (chunk "<")))
+          (apply
+            (ident moveButton)
+            (ident nextColumn)
+            (string
+              (chunk ">")))
+          (apply
+            (ident button)
+            (list
+              (apply
+                (ident onClick)
+                (paren
+                  (apply
+                    (ctor DragStart)
+                    (field_access .id
+                      (ident card))))))
+            (list
+              (apply
+                (ident text)
+                (string
+                  (chunk "grab")))))
+          (apply
+            (ident button)
+            (list
+              (apply
+                (ident class)
+                (string
+                  (chunk "danger")))
+              (apply
+                (ident onClick)
+                (paren
+                  (apply
+                    (ctor DeleteCard)
+                    (field_access .id
+                      (ident card))))))
+            (list
+              (apply
+                (ident text)
+                (string
+                  (chunk "delete")))))))))
+  (annotation pub encodeModel
+    (type_fn
+      (type_con Model)
+      (type_con Encode.Value)))
+  (definition encodeModel
+    (pat_var model)
+    (apply
+      (ident Encode.object)
+      (list
+        (tuple
+          (string
+            (chunk "cards"))
+          (apply
+            (ident Encode.list)
+            (ident encodeCard)
+            (paren
+              (apply
+                (ident Dict.values)
+                (field_access .cards
+                  (ident model))))))
+        (tuple
+          (string
+            (chunk "nextId"))
+          (apply
+            (ident Encode.int)
+            (field_access .nextId
+              (ident model))))
+        (tuple
+          (string
+            (chunk "collapsed"))
+          (apply
+            (ident Encode.list)
+            (ident Encode.string)
+            (paren
+              (apply
+                (ident Set.toList)
+                (field_access .collapsed
+                  (ident model)))))))))
+  (annotation encodeCard
+    (type_fn
+      (type_con Card)
+      (type_con Encode.Value)))
+  (definition encodeCard
+    (pat_var card)
+    (apply
+      (ident Encode.object)
+      (list
+        (tuple
+          (string
+            (chunk "id"))
+          (apply
+            (ident Encode.int)
+            (field_access .id
+              (ident card))))
+        (tuple
+          (string
+            (chunk "title"))
+          (apply
+            (ident Encode.string)
+            (field_access .title
+              (ident card))))
+        (tuple
+          (string
+            (chunk "description"))
+          (apply
+            (ident Encode.string)
+            (field_access .description
+              (ident card))))
+        (tuple
+          (string
+            (chunk "labels"))
+          (apply
+            (ident Encode.list)
+            (ident Encode.string)
+            (field_access .labels
+              (ident card))))
+        (tuple
+          (string
+            (chunk "column"))
+          (apply
+            (ident Encode.string)
+            (paren
+              (apply
+                (ident columnKey)
+                (field_access .column
+                  (ident card))))))
+        (tuple
+          (string
+            (chunk "order"))
+          (apply
+            (ident Encode.int)
+            (field_access .order
+              (ident card)))))))
+  (annotation pub cardsDecoder
+    (type_con Decoder
+      (type_paren
+        (type_con List
+          (type_con Card)))))
+  (definition cardsDecoder
+    (apply
+      (ident Decode.field)
+      (string
+        (chunk "cards"))
+      (paren
+        (apply
+          (ident Decode.list)
+          (ident cardDecoder)))))
+  (annotation cardDecoder
+    (type_con Decoder
+      (type_con Card)))
+  (definition cardDecoder
+    (apply
+      (ident Decode.map6)
+      (ctor Card)
+      (paren
+        (apply
+          (ident Decode.field)
+          (string
+            (chunk "id"))
+          (ident Decode.int)))
+      (paren
+        (apply
+          (ident Decode.field)
+          (string
+            (chunk "title"))
+          (ident Decode.string)))
+      (paren
+        (apply
+          (ident Decode.oneOf)
+          (list
+            (apply
+              (ident Decode.field)
+              (string
+                (chunk "description"))
+              (ident Decode.string))
+            (apply
+              (ident Decode.succeed)
+              (string)))))
+      (paren
+        (apply
+          (ident Decode.oneOf)
+          (list
+            (apply
+              (ident Decode.field)
+              (string
+                (chunk "labels"))
+              (paren
+                (apply
+                  (ident Decode.list)
+                  (ident Decode.string))))
+            (apply
+              (ident Decode.succeed)
+              (list)))))
+      (paren
+        (apply
+          (ident Decode.field)
+          (string
+            (chunk "column"))
+          (ident columnDecoder)))
+      (paren
+        (apply
+          (ident Decode.oneOf)
+          (list
+            (apply
+              (ident Decode.field)
+              (string
+                (chunk "order"))
+              (ident Decode.int))
+            (apply
+              (ident Decode.succeed)
+              (int 0)))))))
+  (annotation columnDecoder
+    (type_con Decoder
+      (type_con Column)))
+  (definition columnDecoder
+    (pipe_right
+      (ident Decode.string)
+      (apply
+        (ident Decode.andThen)
+        (paren
+          (lambda
+            (pat_var key)
+            (case
+              (apply
+                (ident columnFromKey)
+                (ident key))
+              (branch
+                (pat_ctor Just
+                  (pat_var column))
+                (apply
+                  (ident Decode.succeed)
+                  (ident column)))
+              (branch
+                (pat_ctor Nothing)
+                (apply
+                  (ident Decode.fail)
+                  (string
+                    (chunk "unknown column: ")
+                    (interp
+                      (ident key)))))))))))
+  (annotation pub load
+    (type_fn
+      (type_con String)
+      (type_con Result
+        (type_con String)
+        (type_con Model))))
+  (definition load
+    (pat_var json)
+    (let
+      (let_def cards
+        (pipe_right
+          (apply
+            (ident Decode.decodeString)
+            (ident cardsDecoder)
+            (ident json))
+          (apply
+            (ident Result.mapError)
+            (ident Decode.errorToString))))
+      (apply
+        (ctor Ok)
+        (paren
+          (apply
+            (ident update)
+            (paren
+              (apply
+                (ctor Loaded)
+                (paren
+                  (question
+                    (apply
+                      (ctor Ok)
+                      (ident cards))))))
+            (ident init))))))
+  (annotation pub summary
+    (type_fn
+      (type_con Model)
+      (type_con List
+        (type_tuple
+          (type_con String)
+          (type_con Int)))))
+  (definition summary
+    (pat_var model)
+    (apply
+      (ident List.map)
+      (paren
+        (lambda
+          (pat_var column)
+          (tuple
+            (apply
+              (ident columnName)
+              (ident column))
+            (apply
+              (ident List.length)
+              (paren
+                (apply
+                  (ident cardsIn)
+                  (ident column)
+                  (ident model)))))))
+      (ident columns)))
+  (annotation pub labelsInUse
+    (type_fn
+      (type_con Model)
+      (type_con List
+        (type_con String))))
+  (definition labelsInUse
+    (pat_var model)
+    (pipe_right
+      (pipe_right
+        (pipe_right
+          (pipe_right
+            (field_access .cards
+              (ident model))
+            (ident Dict.values))
+          (apply
+            (ident List.concatMap)
+            (accessor .labels)))
+        (ident Set.fromList))
+      (ident Set.toList)))
+  (annotation pub oldestCard
+    (type_fn
+      (type_con Model)
+      (type_con Maybe
+        (type_con Card))))
+  (definition oldestCard
+    (pat_var model)
+    (pipe_right
+      (pipe_right
+        (apply
+          (ident Dict.values)
+          (field_access .cards
+            (ident model)))
+        (apply
+          (ident List.sortBy)
+          (accessor .id)))
+      (ident List.head))))

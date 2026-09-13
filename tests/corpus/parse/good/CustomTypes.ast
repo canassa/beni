@@ -1,0 +1,51 @@
+(module
+  (type_decl Unit1
+    (constructor Only))
+  (type_decl Bool2
+    (constructor Yes)
+    (constructor No))
+  (type_decl Shape
+    (constructor Circle
+      (type_con Float))
+    (constructor Rect
+      (type_con Float)
+      (type_con Float))
+    (constructor Poly
+      (type_paren
+        (type_con List
+          (type_tuple
+            (type_con Float)
+            (type_con Float)))))
+    (constructor Labeled
+      (type_con String)
+      (type_con Shape))
+    (constructor Empty))
+  (type_decl Tree a
+    (constructor Leaf)
+    (constructor Node
+      (type_paren
+        (type_con Tree
+          (type_var a)))
+      (type_var a)
+      (type_paren
+        (type_con Tree
+          (type_var a)))))
+  (type_decl Either a b
+    (constructor Left
+      (type_var a))
+    (constructor Right
+      (type_var b)))
+  (type_decl Wrapped
+    (constructor Wrapped
+      (type_record
+        (record_type_field name
+          (type_con String))
+        (record_type_field value
+          (type_con Int)))))
+  (type_decl OneLine
+    (constructor A)
+    (constructor B)
+    (constructor C))
+  (type_decl LeadingBarOneLine
+    (constructor D)
+    (constructor E)))

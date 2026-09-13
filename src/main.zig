@@ -5,9 +5,9 @@
 //!
 //! Exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O
 //! failure. stdout carries the product; stderr carries diagnostics and usage
-//! errors and nothing else. `dump` exits 0 even when the file has lexical
-//! errors: its product is the token stream, errors and all, and the
-//! diagnostics still go to stderr.
+//! errors and nothing else. `dump` exits 0 even when the file has lexical or
+//! syntax errors: its product is the token stream or the tree, placeholders
+//! and all, and the diagnostics still go to stderr.
 
 const std = @import("std");
 const Io = std.Io;
@@ -75,7 +75,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
 /// Run the per-file phases over `paths`, mapping the driver's failure to
 /// the exit-2 message. Returns the summary, or the exit code to return.
 fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8) union(enum) { summary: Session.Summary, exit: u8 } {
-    const summary = session.run(paths, Session.lex_phases, stderr) catch |err| switch (err) {
+    const summary = session.run(paths, Session.parse_phases, stderr) catch |err| switch (err) {
         error.InputPath => {
             const failure = session.io_failure.?;
             return .{ .exit = fail(stderr, "beni: cannot read '{s}': {t}", .{ failure.path, failure.err }) };
@@ -97,8 +97,8 @@ fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check
 
 fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
     switch (dump.stage) {
-        .tokens => {},
-        .ast, .bir => return fail(stderr, "beni: dump --stage={t} is not implemented yet", .{dump.stage}),
+        .tokens, .ast => {},
+        .bir => return fail(stderr, "beni: dump --stage={t} is not implemented yet", .{dump.stage}),
     }
     var session = Session.init(gpa, io, sessionOptions(dump.common)) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
@@ -109,12 +109,24 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // A directory argument would enumerate many files; the dump is of one.
     if (session.store.count() != 1) return fail(stderr, "beni: dump needs exactly one file", .{});
     const file: SourceStore.Index = @enumFromInt(0);
-    beni.dump.tokens.write(
-        stdout,
-        session.store.bytes(file),
-        session.artifacts.tokens(file),
-        session.artifacts.comments(file),
-        session.store.lineStarts(file),
-    ) catch return 2;
+    switch (dump.stage) {
+        .tokens => beni.dump.tokens.write(
+            stdout,
+            session.store.bytes(file),
+            session.artifacts.tokens(file),
+            session.artifacts.comments(file),
+            session.store.lineStarts(file),
+        ) catch return 2,
+        .ast => beni.dump.ast.write(
+            stdout,
+            session.store.bytes(file),
+            session.artifacts.tokens(file),
+            session.artifacts.comments(file),
+            session.store.lineStarts(file),
+            session.artifacts.ast(file),
+            .{ .positions = dump.positions },
+        ) catch return 2,
+        .bir => unreachable, // rejected above
+    }
     return 0;
 }

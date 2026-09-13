@@ -1,0 +1,37 @@
+(module
+  (annotation isEven
+    (type_fn
+      (type_con Int)
+      (type_con Bool)))
+  (definition isEven
+    (pat_var n)
+    (let
+      (let_def even
+        (pat_var k)
+        (if
+          (eq
+            (ident k)
+            (int 0))
+          (ctor True)
+          (apply
+            (ident odd)
+            (paren
+              (sub
+                (ident k)
+                (int 1))))))
+      (let_def odd
+        (pat_var k)
+        (if
+          (eq
+            (ident k)
+            (int 0))
+          (ctor False)
+          (apply
+            (ident even)
+            (paren
+              (sub
+                (ident k)
+                (int 1))))))
+      (apply
+        (ident even)
+        (ident n)))))

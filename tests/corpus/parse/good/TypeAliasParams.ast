@@ -1,0 +1,33 @@
+(module
+  (import Dict)
+  (type_alias Name
+    (type_con String))
+  (type_alias Pair a
+    (type_tuple
+      (type_var a)
+      (type_var a)))
+  (type_alias Handler model msg
+    (type_fn
+      (type_var msg)
+      (type_fn
+        (type_var model)
+        (type_tuple
+          (type_var model)
+          (type_con List
+            (type_var msg))))))
+  (type_alias Entry k v
+    (type_record
+      (record_type_field key
+        (type_var k))
+      (record_type_field value
+        (type_var v))))
+  (type_alias Table k v
+    (type_con List
+      (type_paren
+        (type_con Entry
+          (type_var k)
+          (type_var v)))))
+  (type_alias Lookup
+    (type_con Dict.Dict
+      (type_con String)
+      (type_con Int))))

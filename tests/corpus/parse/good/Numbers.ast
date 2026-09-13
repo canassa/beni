@@ -1,0 +1,38 @@
+(module
+  (definition ints
+    (list
+      (int 0)
+      (int 7)
+      (int 42)
+      (int 1000000)))
+  (definition hex
+    (list
+      (int 0x0)
+      (int 0xFF)
+      (int 0xff)
+      (int 0xDeadBeef)
+      (int 0x1F)))
+  (definition floats
+    (list
+      (float 0.5)
+      (float 1.0)
+      (float 3.14159)
+      (float 100.001)))
+  (definition exponents
+    (list
+      (float 1e10)
+      (float 1E10)
+      (float 1.5e-3)
+      (float 2.0E+5)
+      (float 6e0)
+      (float 3.25e10)))
+  (definition big
+    (int 12345678901234567890))
+  (definition mixed
+    (sub
+      (add
+        (int 1)
+        (mul
+          (float 2.5)
+          (float 1e2)))
+      (int 0x10))))

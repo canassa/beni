@@ -1,7 +1,0 @@
--- case_without_branches (or expected_token) at 6:5: the only "branch" is at
--- column 5, equal to the `case` keyword's column, so per §4 it is not inside
--- the case. Whatever follows (`Just` at 7:5) is then a stray token in the
--- body of `f`, so a second syntax error near 7:5 is expected.
-f x =
-    case x of
-    Just n -> n

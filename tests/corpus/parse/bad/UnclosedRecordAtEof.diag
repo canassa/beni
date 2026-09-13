@@ -1,0 +1,1 @@
+[{"code":"unclosed_delimiter","severity":"error","span":{"file":"tests/corpus/parse/bad/UnclosedRecordAtEof.beni","start":{"line":3,"col":5},"end":{"line":3,"col":6}},"title":"UNCLOSED DELIMITER","message":"I was parsing a record and got to the end of the file without finding the `}` that\ncloses this `{`."}]

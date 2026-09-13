@@ -1,0 +1,77 @@
+(module
+  (definition chain
+    (pat_var r)
+    (field_access .c
+      (field_access .b
+        (field_access .a
+          (ident r)))))
+  (definition tupleChain
+    (pat_var t)
+    (tuple_index .1
+      (tuple_index .0
+        (ident t))))
+  (definition tupleThenField
+    (pat_var t)
+    (tuple_index .0
+      (field_access .name
+        (tuple_index .1
+          (ident t)))))
+  (definition accessorArg
+    (pat_var people)
+    (apply
+      (ident List.map)
+      (accessor .name)
+      (ident people)))
+  (definition accessorApplied
+    (pat_var f)
+    (apply
+      (ident f)
+      (accessor .name)))
+  (definition fieldOnCall
+    (pat_var f)
+    (pat_var x)
+    (field_access .y
+      (paren
+        (apply
+          (ident f)
+          (ident x)))))
+  (definition fieldOnLiteral
+    (field_access .b
+      (field_access .a
+        (record
+          (field a
+            (record
+              (field b
+                (int 2))))))))
+  (definition fieldOnTuple
+    (tuple_index .1
+      (tuple
+        (int 1)
+        (int 2))))
+  (definition composedAccessors
+    (compose_right
+      (accessor .address)
+      (accessor .city)))
+  (definition accessorPipe
+    (pat_var person)
+    (pipe_right
+      (pipe_right
+        (ident person)
+        (accessor .name))
+      (ident String.toUpper)))
+  (definition bigIndex
+    (pat_var t)
+    (tuple_index .12
+      (ident t)))
+  (definition accessInInterpolation
+    (pat_var r)
+    (string
+      (interp
+        (field_access .first
+          (field_access .name
+            (ident r))))
+      (chunk " ")
+      (interp
+        (tuple_index .1
+          (field_access .pair
+            (ident r)))))))

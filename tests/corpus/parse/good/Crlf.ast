@@ -1,0 +1,34 @@
+(module
+  (import Dict)
+  (type_decl Msg
+    (constructor Inc)
+    (constructor Dec))
+  (annotation update
+    (type_fn
+      (type_con Msg)
+      (type_fn
+        (type_con Int)
+        (type_con Int))))
+  (definition update
+    (pat_var msg)
+    (pat_var n)
+    (case
+      (ident msg)
+      (branch
+        (pat_ctor Inc)
+        (add
+          (ident n)
+          (int 1)))
+      (branch
+        (pat_ctor Dec)
+        (sub
+          (ident n)
+          (int 1)))))
+  (definition label
+    (string
+      (chunk "count: ")
+      (interp
+        (apply
+          (ident update)
+          (ctor Inc)
+          (int 1))))))

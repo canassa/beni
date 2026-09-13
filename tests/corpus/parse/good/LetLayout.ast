@@ -1,0 +1,30 @@
+(module
+  (definition a
+    (let
+      (let_def x
+        (int 1))
+      (ident x)))
+  (definition b
+    (let
+      (let_def x
+        (int 1))
+      (let_def y
+        (int 2))
+      (add
+        (ident x)
+        (ident y))))
+  (definition c
+    (let
+      (let_def x
+        (int 1))
+      (let_def y
+        (ident x))
+      (ident y)))
+  (definition d
+    (let
+      (let_def outer
+        (let
+          (let_def inner
+            (int 3))
+          (ident inner)))
+      (ident outer))))

@@ -1,0 +1,46 @@
+(module
+  (definition newline
+    (string
+      (chunk "a\nb")))
+  (definition carriage
+    (string
+      (chunk "a\rb")))
+  (definition tabEscape
+    (string
+      (chunk "a\tb")))
+  (definition backslash
+    (string
+      (chunk "a\\b")))
+  (definition quote
+    (string
+      (chunk "say \"hi\"")))
+  (definition dollar
+    (string
+      (chunk "\$")))
+  (definition apostrophe
+    (string
+      (chunk "it\'s")))
+  (definition unicode1
+    (string
+      (chunk "\u{A}")))
+  (definition unicode4
+    (string
+      (chunk "\u{00E9}")))
+  (definition unicode5
+    (string
+      (chunk "\u{1F600}")))
+  (definition unicode6
+    (string
+      (chunk "\u{10FFFF}")))
+  (definition allTogether
+    (string
+      (chunk "\n\r\t\\\"\$\'\u{41}")))
+  (definition bareApostrophe
+    (string
+      (chunk "it's")))
+  (definition bareBraces
+    (string
+      (chunk "{ not interpolation }")))
+  (definition nonAsciiInside
+    (string
+      (chunk "café — naïve"))))

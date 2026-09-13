@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/UnexpectedTokenInType.beni","start":{"line":3,"col":12},"end":{"line":3,"col":15}},"title":"UNEXPECTED TOKEN","message":"I was parsing a `type` declaration and ran into `bar`. I was expecting a constructor, which starts with a capital letter."}]

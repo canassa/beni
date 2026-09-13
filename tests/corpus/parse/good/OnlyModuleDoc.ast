@@ -1,0 +1,3 @@
+(module
+  (module_doc "Intent: a file consisting only of a module doc parses to an empty module")
+  (module_doc "whose doc block is these two lines (no imports, no declarations)."))

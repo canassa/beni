@@ -1,0 +1,7 @@
+-- Branches may sit at the `case` keyword's own column (§4): the branch
+-- list's indent is the first branch's column, constrained only by the
+-- enclosing block (the declaration, column 1), not by the `case` keyword.
+-- Elm accepts the same layout.
+f x =
+    case x of
+    Just n -> n

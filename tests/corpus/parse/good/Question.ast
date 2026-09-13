@@ -1,0 +1,166 @@
+(module
+  (annotation parseAge
+    (type_fn
+      (type_con String)
+      (type_con Result
+        (type_con String)
+        (type_con Int))))
+  (definition parseAge
+    (pat_var s)
+    (pipe_right
+      (apply
+        (ident String.toInt)
+        (ident s))
+      (apply
+        (ident Result.fromMaybe)
+        (string
+          (chunk "not a number")))))
+  (annotation both
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con String)
+        (type_con Result
+          (type_con String)
+          (type_con Int)))))
+  (definition both
+    (pat_var a)
+    (pat_var b)
+    (apply
+      (ctor Ok)
+      (paren
+        (add
+          (question
+            (apply
+              (ident parseAge)
+              (ident a)))
+          (question
+            (apply
+              (ident parseAge)
+              (ident b)))))))
+  (annotation chained
+    (type_fn
+      (type_con Result
+        (type_con String)
+        (type_paren
+          (type_con Result
+            (type_con String)
+            (type_con Int))))
+      (type_con Result
+        (type_con String)
+        (type_con Int))))
+  (definition chained
+    (pat_var r)
+    (apply
+      (ctor Ok)
+      (paren
+        (question
+          (question
+            (ident r))))))
+  (annotation piped
+    (type_fn
+      (type_con String)
+      (type_con Result
+        (type_con String)
+        (type_con Int))))
+  (definition piped
+    (pat_var s)
+    (pipe_right
+      (pipe_right
+        (question
+          (apply
+            (ident parseAge)
+            (ident s)))
+        (paren
+          (lambda
+            (pat_var n)
+            (mul
+              (ident n)
+              (int 2)))))
+      (ctor Ok)))
+  (annotation inLet
+    (type_fn
+      (type_con List
+        (type_con String))
+      (type_con Result
+        (type_con String)
+        (type_con Int))))
+  (definition inLet
+    (pat_var items)
+    (let
+      (let_def parseOne
+        (pat_var item)
+        (pipe_right
+          (add
+            (question
+              (apply
+                (ident parseAge)
+                (ident item)))
+            (int 1))
+          (ctor Ok)))
+      (let_def step
+        (pat_var item)
+        (pat_var acc)
+        (apply
+          (ctor Ok)
+          (paren
+            (add
+              (question
+                (apply
+                  (ident parseOne)
+                  (ident item)))
+              (question
+                (ident acc))))))
+      (apply
+        (ident List.foldl)
+        (ident step)
+        (paren
+          (apply
+            (ctor Ok)
+            (int 0)))
+        (ident items))))
+  (annotation inBranch
+    (type_fn
+      (type_con Maybe
+        (type_con String))
+      (type_con Maybe
+        (type_con Int))))
+  (definition inBranch
+    (pat_var m)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Just
+          (pat_var s))
+        (apply
+          (ctor Just)
+          (paren
+            (add
+              (question
+                (apply
+                  (ident String.toInt)
+                  (ident s)))
+              (int 1)))))
+      (branch
+        (pat_ctor Nothing)
+        (ctor Nothing))))
+  (annotation onArgument
+    (type_fn
+      (type_con String)
+      (type_con Result
+        (type_con String)
+        (type_con Int))))
+  (definition onArgument
+    (pat_var s)
+    (apply
+      (ctor Ok)
+      (paren
+        (apply
+          (ident String.length)
+          (paren
+            (pipe_right
+              (question
+                (apply
+                  (ident parseAge)
+                  (ident s)))
+              (ident String.fromInt))))))))

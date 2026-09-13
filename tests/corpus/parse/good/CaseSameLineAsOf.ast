@@ -1,0 +1,54 @@
+(module
+  (annotation sign
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition sign
+    (pat_var n)
+    (case
+      (apply
+        (ident compare)
+        (ident n)
+        (int 0))
+      (branch
+        (pat_ctor LT)
+        (negate
+          (int 1)))
+      (branch
+        (pat_ctor EQ)
+        (int 0))
+      (branch
+        (pat_ctor GT)
+        (int 1))))
+  (annotation isNothing
+    (type_fn
+      (type_con Maybe
+        (type_var a))
+      (type_con Bool)))
+  (definition isNothing
+    (pat_var m)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Nothing)
+        (ctor True))
+      (branch
+        (pat_ctor Just
+          (pat_wild))
+        (ctor False))))
+  (annotation single
+    (type_fn
+      (type_con Maybe
+        (type_con Int))
+      (type_con Int)))
+  (definition single
+    (pat_var m)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Just
+          (pat_var n))
+        (ident n))
+      (branch
+        (pat_ctor Nothing)
+        (int 0)))))

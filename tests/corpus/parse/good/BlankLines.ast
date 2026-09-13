@@ -1,0 +1,28 @@
+(module
+  (import Dict)
+  (import Set)
+  (definition first
+    (int 1))
+  (definition second
+    (let
+      (let_def a
+        (int 1))
+      (let_def b
+        (int 2))
+      (add
+        (ident a)
+        (ident b))))
+  (definition third
+    (pat_var x)
+    (case
+      (ident x)
+      (branch
+        (pat_int 1)
+        (int 1))
+      (branch
+        (pat_wild)
+        (int 2))))
+  (definition fourth
+    (list
+      (int 1)
+      (int 2))))

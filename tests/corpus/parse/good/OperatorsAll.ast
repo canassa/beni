@@ -1,0 +1,131 @@
+(module
+  (definition arith
+    (pat_var a)
+    (pat_var b)
+    (tuple
+      (add
+        (ident a)
+        (ident b))
+      (sub
+        (ident a)
+        (ident b))
+      (mul
+        (ident a)
+        (ident b))
+      (div
+        (ident a)
+        (ident b))
+      (int_div
+        (ident a)
+        (ident b))
+      (pow
+        (ident a)
+        (ident b))))
+  (definition comparisons
+    (pat_var a)
+    (pat_var b)
+    (tuple
+      (eq
+        (ident a)
+        (ident b))
+      (neq
+        (ident a)
+        (ident b))
+      (lt
+        (ident a)
+        (ident b))
+      (gt
+        (ident a)
+        (ident b))
+      (lte
+        (ident a)
+        (ident b))
+      (gte
+        (ident a)
+        (ident b))))
+  (definition logic
+    (pat_var a)
+    (pat_var b)
+    (tuple
+      (bool_and
+        (ident a)
+        (ident b))
+      (bool_or
+        (ident a)
+        (ident b))))
+  (definition sequences
+    (pat_var x)
+    (pat_var xs)
+    (pat_var ys)
+    (tuple
+      (append
+        (ident xs)
+        (ident ys))
+      (cons
+        (ident x)
+        (ident xs))))
+  (definition pipes
+    (pat_var f)
+    (pat_var g)
+    (pat_var x)
+    (tuple
+      (pipe_right
+        (ident x)
+        (ident f))
+      (pipe_left
+        (ident f)
+        (ident x))
+      (apply
+        (paren
+          (compose_left
+            (ident f)
+            (ident g)))
+        (ident x))
+      (apply
+        (paren
+          (compose_right
+            (ident f)
+            (ident g)))
+        (ident x))))
+  (definition asFunctions
+    (list
+      (op_fn +)
+      (op_fn -)
+      (op_fn *)
+      (op_fn /)
+      (op_fn //)
+      (op_fn ^)))
+  (definition asPredicates
+    (list
+      (op_fn ==)
+      (op_fn /=)
+      (op_fn <)
+      (op_fn >)
+      (op_fn <=)
+      (op_fn >=)))
+  (definition asLogic
+    (list
+      (op_fn &&)
+      (op_fn ||)))
+  (definition asRest
+    (tuple
+      (op_fn ++)
+      (op_fn ::)
+      (op_fn |>)
+      (op_fn <|)
+      (op_fn <<)
+      (op_fn >>)))
+  (definition folded
+    (pat_var xs)
+    (apply
+      (ident List.foldl)
+      (op_fn +)
+      (int 0)
+      (ident xs)))
+  (definition consed
+    (pat_var xs)
+    (apply
+      (ident List.foldr)
+      (op_fn ::)
+      (list)
+      (ident xs))))

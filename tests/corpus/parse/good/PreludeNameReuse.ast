@@ -1,0 +1,41 @@
+(module
+  (annotation max
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_con Int)
+        (type_con Int))))
+  (definition max
+    (pat_var a)
+    (pat_var b)
+    (if
+      (gt
+        (ident a)
+        (ident b))
+      (ident a)
+      (ident b)))
+  (definition identity
+    (pat_var x)
+    (ident x))
+  (type_decl Maybe a
+    (constructor Some
+      (type_var a))
+    (constructor None))
+  (type_decl Order
+    (constructor Asc)
+    (constructor Desc))
+  (type_decl pub Result
+    (constructor Ok)
+    (constructor Err))
+  (definition smallest
+    (apply
+      (ident max)
+      (int 1)
+      (int 2)))
+  (definition wrapped
+    (apply
+      (ctor Some)
+      (paren
+        (apply
+          (ident identity)
+          (ctor Asc))))))

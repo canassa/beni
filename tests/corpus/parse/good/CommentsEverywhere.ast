@@ -1,0 +1,62 @@
+(module
+  (module_doc "Module doc line one.")
+  (module_doc "Module doc line two.")
+  (module_doc "A second module-doc block after a blank line merges with the first.")
+  (import Dict)
+  (type_decl pub Color
+    (doc "Documents a public type.")
+    (constructor Red)
+    (constructor Green)
+    (constructor Blue))
+  (annotation pub palette
+    (doc "Documents a public value; the doc precedes `pub`.")
+    (type_con List
+      (type_con Color)))
+  (definition palette
+    (list
+      (ctor Red)
+      (ctor Green)
+      (ctor Blue)))
+  (annotation count
+    (doc "Documents a private value.")
+    (doc "Doc blocks may span lines.")
+    (type_con Int))
+  (definition count
+    (let
+      (let_def a
+        (int 1))
+      (let_def b
+        (int 2))
+      (add
+        (ident a)
+        (ident b))))
+  (annotation pick
+    (type_fn
+      (type_con Bool)
+      (type_con Int)))
+  (definition pick
+    (pat_var flag)
+    (if
+      (ident flag)
+      (int 1)
+      (int 2)))
+  (annotation choose
+    (type_fn
+      (type_con Color)
+      (type_con Int)))
+  (definition choose
+    (pat_var color)
+    (case
+      (ident color)
+      (branch
+        (pat_ctor Red)
+        (int 1))
+      (branch
+        (pat_ctor Green)
+        (int 2))
+      (branch
+        (pat_ctor Blue)
+        (int 3))))
+  (definition last
+    (doc "doc without a space is still a doc comment, attached to `last`")
+    (int 0)))

@@ -1,6 +1,7 @@
 -- BIR: pattern bindings in `let` introduce locals for every variable in the
--- pattern (§7, §8.1): tuple, nested tuple, record, list and `as` patterns,
+-- pattern (§7, §8.1): tuple, nested tuple, record, unit and `as` patterns,
 -- plus an annotated definition; later bindings and the body see them all.
+-- (A list pattern is refutable and may not be bound in a `let`, §7.)
 split : ( Int, ( String, Bool ) ) -> { name : String, age : Int } -> String
 split input person =
     let
@@ -10,14 +11,14 @@ split input person =
         { name, age } =
             person
 
-        [ first, second ] =
-            [ n, n + 1 ]
+        () =
+            ()
 
         (( a, b ) as pair) =
             ( n, age )
 
         total : Int
         total =
-            first + second + a + b + pair.0
+            n + a + b + pair.0
     in
     "${name}:${s}:${total}:${flag}"

@@ -1,0 +1,39 @@
+(module
+  (definition zero
+    (int 0))
+  (definition one
+    (pat_var x)
+    (ident x))
+  (definition many
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (pat_var d)
+    (add
+      (add
+        (add
+          (ident a)
+          (ident b))
+        (ident c))
+      (ident d)))
+  (definition ignore
+    (pat_wild)
+    (pat_wild)
+    (unit))
+  (definition unpack
+    (pat_tuple
+      (pat_var a)
+      (pat_var b))
+    (pat_record name)
+    (pat_list
+      (pat_var first))
+    (tuple
+      (ident a)
+      (ident b)
+      (ident name)
+      (ident first)))
+  (definition inline
+    (pat_var x)
+    (mul
+      (ident x)
+      (int 2))))

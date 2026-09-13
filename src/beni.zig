@@ -21,8 +21,16 @@ pub const lex = struct {
     pub const Tokenizer = @import("lex/Tokenizer.zig");
     pub const Diagnostics = @import("lex/Diagnostics.zig");
 };
+pub const Ast = @import("parse/Ast.zig");
+pub const Parse = @import("parse/Parse.zig");
+pub const parse = struct {
+    pub const Ast = @import("parse/Ast.zig");
+    pub const Parse = @import("parse/Parse.zig");
+    pub const Diagnostics = @import("parse/Diagnostics.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
+    pub const ast = @import("dump/ast.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");
@@ -32,6 +40,7 @@ pub const render = struct {
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(lex);
+    std.testing.refAllDecls(parse);
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(render);
 }

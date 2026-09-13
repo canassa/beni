@@ -1,0 +1,45 @@
+(module
+  (annotation pub greet
+    (doc "Documented public function.")
+    (type_fn
+      (type_con String)
+      (type_con String)))
+  (definition greet
+    (pat_var name)
+    (string
+      (chunk "hi ")
+      (interp
+        (ident name))))
+  (annotation helper
+    (doc "Private helper, documented.")
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition helper
+    (pat_var n)
+    (ident n))
+  (definition answer
+    (doc "A bare definition with a doc.")
+    (int 42))
+  (type_decl pub Shape
+    (doc "A public type.")
+    (doc "With a second doc line.")
+    (constructor Circle)
+    (constructor Square))
+  (type_alias Point
+    (doc "A private alias.")
+    (type_record
+      (record_type_field x
+        (type_con Int))
+      (record_type_field y
+        (type_con Int))))
+  (type_decl pub opaque Id
+    (doc "An opaque type.")
+    (constructor Id
+      (type_con Int)))
+  (definition spaced
+    (doc "Blank lines between the doc block and its declaration are allowed.")
+    (int 1))
+  (definition tight
+    (doc "no space after the marker")
+    (int 2)))

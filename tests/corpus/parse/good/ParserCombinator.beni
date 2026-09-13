@@ -1,5 +1,6 @@
 -- A small parser-combinator module: a `pub opaque` type wrapping a function,
--- constructor patterns in parameters and in `let`, lambdas returning tuples,
+-- constructor patterns in parameters and in `case` (a `let` pattern must be
+-- irrefutable, §7), lambdas returning tuples,
 -- recursion through a local `go`, nested `case` in a `let` inside a lambda,
 -- and `?` on applications.
 pub opaque type Parser a =
@@ -64,11 +65,9 @@ andThen f (Parser p) =
         (\input ->
             let
                 step ( value, rest ) =
-                    let
-                        (Parser q) =
-                            f value
-                    in
-                    q rest
+                    case f value of
+                        Parser q ->
+                            q rest
             in
             p input |> Result.andThen step
         )

@@ -1,0 +1,413 @@
+(module
+  (annotation name
+    (type_fn
+      (type_con Int)
+      (type_con String)))
+  (definition name
+    (pat_var n)
+    (case
+      (ident n)
+      (branch
+        (pat_int 0)
+        (string
+          (chunk "n0")))
+      (branch
+        (pat_int 1)
+        (string
+          (chunk "n1")))
+      (branch
+        (pat_int 2)
+        (string
+          (chunk "n2")))
+      (branch
+        (pat_int 3)
+        (string
+          (chunk "n3")))
+      (branch
+        (pat_int 4)
+        (string
+          (chunk "n4")))
+      (branch
+        (pat_int 5)
+        (string
+          (chunk "n5")))
+      (branch
+        (pat_int 6)
+        (string
+          (chunk "n6")))
+      (branch
+        (pat_int 7)
+        (string
+          (chunk "n7")))
+      (branch
+        (pat_int 8)
+        (string
+          (chunk "n8")))
+      (branch
+        (pat_int 9)
+        (string
+          (chunk "n9")))
+      (branch
+        (pat_int 10)
+        (string
+          (chunk "n10")))
+      (branch
+        (pat_int 11)
+        (string
+          (chunk "n11")))
+      (branch
+        (pat_int 12)
+        (string
+          (chunk "n12")))
+      (branch
+        (pat_int 13)
+        (string
+          (chunk "n13")))
+      (branch
+        (pat_int 14)
+        (string
+          (chunk "n14")))
+      (branch
+        (pat_int 15)
+        (string
+          (chunk "n15")))
+      (branch
+        (pat_int 16)
+        (string
+          (chunk "n16")))
+      (branch
+        (pat_int 17)
+        (string
+          (chunk "n17")))
+      (branch
+        (pat_int 18)
+        (string
+          (chunk "n18")))
+      (branch
+        (pat_int 19)
+        (string
+          (chunk "n19")))
+      (branch
+        (pat_int 20)
+        (string
+          (chunk "n20")))
+      (branch
+        (pat_int 21)
+        (string
+          (chunk "n21")))
+      (branch
+        (pat_int 22)
+        (string
+          (chunk "n22")))
+      (branch
+        (pat_int 23)
+        (string
+          (chunk "n23")))
+      (branch
+        (pat_int 24)
+        (string
+          (chunk "n24")))
+      (branch
+        (pat_int 25)
+        (string
+          (chunk "n25")))
+      (branch
+        (pat_int 26)
+        (string
+          (chunk "n26")))
+      (branch
+        (pat_int 27)
+        (string
+          (chunk "n27")))
+      (branch
+        (pat_int 28)
+        (string
+          (chunk "n28")))
+      (branch
+        (pat_int 29)
+        (string
+          (chunk "n29")))
+      (branch
+        (pat_int 30)
+        (string
+          (chunk "n30")))
+      (branch
+        (pat_int 31)
+        (string
+          (chunk "n31")))
+      (branch
+        (pat_int 32)
+        (string
+          (chunk "n32")))
+      (branch
+        (pat_int 33)
+        (string
+          (chunk "n33")))
+      (branch
+        (pat_int 34)
+        (string
+          (chunk "n34")))
+      (branch
+        (pat_int 35)
+        (string
+          (chunk "n35")))
+      (branch
+        (pat_int 36)
+        (string
+          (chunk "n36")))
+      (branch
+        (pat_int 37)
+        (string
+          (chunk "n37")))
+      (branch
+        (pat_int 38)
+        (string
+          (chunk "n38")))
+      (branch
+        (pat_int 39)
+        (string
+          (chunk "n39")))
+      (branch
+        (pat_int 40)
+        (string
+          (chunk "n40")))
+      (branch
+        (pat_int 41)
+        (string
+          (chunk "n41")))
+      (branch
+        (pat_int 42)
+        (string
+          (chunk "n42")))
+      (branch
+        (pat_int 43)
+        (string
+          (chunk "n43")))
+      (branch
+        (pat_int 44)
+        (string
+          (chunk "n44")))
+      (branch
+        (pat_int 45)
+        (string
+          (chunk "n45")))
+      (branch
+        (pat_int 46)
+        (string
+          (chunk "n46")))
+      (branch
+        (pat_int 47)
+        (string
+          (chunk "n47")))
+      (branch
+        (pat_int 48)
+        (string
+          (chunk "n48")))
+      (branch
+        (pat_int 49)
+        (string
+          (chunk "n49")))
+      (branch
+        (pat_int 50)
+        (string
+          (chunk "n50")))
+      (branch
+        (pat_int 51)
+        (string
+          (chunk "n51")))
+      (branch
+        (pat_int 52)
+        (string
+          (chunk "n52")))
+      (branch
+        (pat_int 53)
+        (string
+          (chunk "n53")))
+      (branch
+        (pat_int 54)
+        (string
+          (chunk "n54")))
+      (branch
+        (pat_int 55)
+        (string
+          (chunk "n55")))
+      (branch
+        (pat_int 56)
+        (string
+          (chunk "n56")))
+      (branch
+        (pat_int 57)
+        (string
+          (chunk "n57")))
+      (branch
+        (pat_int 58)
+        (string
+          (chunk "n58")))
+      (branch
+        (pat_int 59)
+        (string
+          (chunk "n59")))
+      (branch
+        (pat_int 60)
+        (string
+          (chunk "n60")))
+      (branch
+        (pat_int 61)
+        (string
+          (chunk "n61")))
+      (branch
+        (pat_int 62)
+        (string
+          (chunk "n62")))
+      (branch
+        (pat_int 63)
+        (string
+          (chunk "n63")))
+      (branch
+        (pat_int 64)
+        (string
+          (chunk "n64")))
+      (branch
+        (pat_int 65)
+        (string
+          (chunk "n65")))
+      (branch
+        (pat_int 66)
+        (string
+          (chunk "n66")))
+      (branch
+        (pat_int 67)
+        (string
+          (chunk "n67")))
+      (branch
+        (pat_int 68)
+        (string
+          (chunk "n68")))
+      (branch
+        (pat_int 69)
+        (string
+          (chunk "n69")))
+      (branch
+        (pat_int 70)
+        (string
+          (chunk "n70")))
+      (branch
+        (pat_int 71)
+        (string
+          (chunk "n71")))
+      (branch
+        (pat_int 72)
+        (string
+          (chunk "n72")))
+      (branch
+        (pat_int 73)
+        (string
+          (chunk "n73")))
+      (branch
+        (pat_int 74)
+        (string
+          (chunk "n74")))
+      (branch
+        (pat_int 75)
+        (string
+          (chunk "n75")))
+      (branch
+        (pat_int 76)
+        (string
+          (chunk "n76")))
+      (branch
+        (pat_int 77)
+        (string
+          (chunk "n77")))
+      (branch
+        (pat_int 78)
+        (string
+          (chunk "n78")))
+      (branch
+        (pat_int 79)
+        (string
+          (chunk "n79")))
+      (branch
+        (pat_int 80)
+        (string
+          (chunk "n80")))
+      (branch
+        (pat_int 81)
+        (string
+          (chunk "n81")))
+      (branch
+        (pat_int 82)
+        (string
+          (chunk "n82")))
+      (branch
+        (pat_int 83)
+        (string
+          (chunk "n83")))
+      (branch
+        (pat_int 84)
+        (string
+          (chunk "n84")))
+      (branch
+        (pat_int 85)
+        (string
+          (chunk "n85")))
+      (branch
+        (pat_int 86)
+        (string
+          (chunk "n86")))
+      (branch
+        (pat_int 87)
+        (string
+          (chunk "n87")))
+      (branch
+        (pat_int 88)
+        (string
+          (chunk "n88")))
+      (branch
+        (pat_int 89)
+        (string
+          (chunk "n89")))
+      (branch
+        (pat_int 90)
+        (string
+          (chunk "n90")))
+      (branch
+        (pat_int 91)
+        (string
+          (chunk "n91")))
+      (branch
+        (pat_int 92)
+        (string
+          (chunk "n92")))
+      (branch
+        (pat_int 93)
+        (string
+          (chunk "n93")))
+      (branch
+        (pat_int 94)
+        (string
+          (chunk "n94")))
+      (branch
+        (pat_int 95)
+        (string
+          (chunk "n95")))
+      (branch
+        (pat_int 96)
+        (string
+          (chunk "n96")))
+      (branch
+        (pat_int 97)
+        (string
+          (chunk "n97")))
+      (branch
+        (pat_int 98)
+        (string
+          (chunk "n98")))
+      (branch
+        (pat_int 99)
+        (string
+          (chunk "n99")))
+      (branch
+        (pat_wild)
+        (string
+          (chunk "other"))))))

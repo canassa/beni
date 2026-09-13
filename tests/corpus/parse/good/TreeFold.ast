@@ -1,0 +1,184 @@
+(module
+  (type_decl pub Tree a
+    (constructor Leaf)
+    (constructor Node
+      (type_paren
+        (type_con Tree
+          (type_var a)))
+      (type_var a)
+      (type_paren
+        (type_con Tree
+          (type_var a)))))
+  (annotation pub fold
+    (type_fn
+      (type_paren
+        (type_fn
+          (type_var a)
+          (type_fn
+            (type_var b)
+            (type_var b))))
+      (type_fn
+        (type_var b)
+        (type_fn
+          (type_con Tree
+            (type_var a))
+          (type_var b)))))
+  (definition fold
+    (pat_var f)
+    (pat_var acc)
+    (pat_var tree)
+    (case
+      (ident tree)
+      (branch
+        (pat_ctor Leaf)
+        (ident acc))
+      (branch
+        (pat_ctor Node
+          (pat_var left)
+          (pat_var value)
+          (pat_var right))
+        (apply
+          (ident fold)
+          (ident f)
+          (paren
+            (apply
+              (ident f)
+              (ident value)
+              (paren
+                (apply
+                  (ident fold)
+                  (ident f)
+                  (ident acc)
+                  (ident left)))))
+          (ident right)))))
+  (annotation pub insert
+    (type_fn
+      (type_con Int)
+      (type_fn
+        (type_con Tree
+          (type_con Int))
+        (type_con Tree
+          (type_con Int)))))
+  (definition insert
+    (pat_var x)
+    (pat_var tree)
+    (case
+      (ident tree)
+      (branch
+        (pat_ctor Leaf)
+        (apply
+          (ctor Node)
+          (ctor Leaf)
+          (ident x)
+          (ctor Leaf)))
+      (branch
+        (pat_ctor Node
+          (pat_var left)
+          (pat_var value)
+          (pat_var right))
+        (if
+          (lt
+            (ident x)
+            (ident value))
+          (apply
+            (ctor Node)
+            (paren
+              (apply
+                (ident insert)
+                (ident x)
+                (ident left)))
+            (ident value)
+            (ident right))
+          (if
+            (gt
+              (ident x)
+              (ident value))
+            (apply
+              (ctor Node)
+              (ident left)
+              (ident value)
+              (paren
+                (apply
+                  (ident insert)
+                  (ident x)
+                  (ident right))))
+            (ident tree))))))
+  (annotation pub fromList
+    (type_fn
+      (type_con List
+        (type_con Int))
+      (type_con Tree
+        (type_con Int))))
+  (definition fromList
+    (apply
+      (ident List.foldl)
+      (ident insert)
+      (ctor Leaf)))
+  (annotation pub toList
+    (type_fn
+      (type_con Tree
+        (type_var a))
+      (type_con List
+        (type_var a))))
+  (definition toList
+    (pat_var tree)
+    (pipe_right
+      (apply
+        (ident fold)
+        (op_fn ::)
+        (list)
+        (ident tree))
+      (ident List.reverse)))
+  (annotation pub size
+    (type_fn
+      (type_con Tree
+        (type_var a))
+      (type_con Int)))
+  (definition size
+    (apply
+      (ident fold)
+      (paren
+        (lambda
+          (pat_wild)
+          (pat_var n)
+          (add
+            (ident n)
+            (int 1))))
+      (int 0)))
+  (annotation pub depth
+    (type_fn
+      (type_con Tree
+        (type_var a))
+      (type_con Int)))
+  (definition depth
+    (pat_var tree)
+    (case
+      (ident tree)
+      (branch
+        (pat_ctor Leaf)
+        (int 0))
+      (branch
+        (pat_ctor Node
+          (pat_paren
+            (pat_ctor Leaf))
+          (pat_wild)
+          (pat_paren
+            (pat_ctor Leaf)))
+        (int 1))
+      (branch
+        (pat_ctor Node
+          (pat_var left)
+          (pat_wild)
+          (pat_var right))
+        (add
+          (int 1)
+          (apply
+            (ident max)
+            (paren
+              (apply
+                (ident depth)
+                (ident left)))
+            (paren
+              (apply
+                (ident depth)
+                (ident right)))))))))

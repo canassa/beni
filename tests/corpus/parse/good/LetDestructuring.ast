@@ -1,0 +1,67 @@
+(module
+  (annotation split
+    (type_fn
+      (type_tuple
+        (type_con Int)
+        (type_tuple
+          (type_con String)
+          (type_con Bool)))
+      (type_con String)))
+  (definition split
+    (pat_var input)
+    (let
+      (let_pattern
+        (pat_tuple
+          (pat_var n)
+          (pat_tuple
+            (pat_var s)
+            (pat_var flag)))
+        (ident input))
+      (let_pattern
+        (pat_record name age)
+        (ident person))
+      (let_pattern
+        (pat_tuple
+          (pat_var first)
+          (pat_var second))
+        (case
+          (list
+            (ident n)
+            (add
+              (ident n)
+              (int 1)))
+          (branch
+            (pat_list
+              (pat_var a)
+              (pat_var b))
+            (tuple
+              (ident a)
+              (ident b)))
+          (branch
+            (pat_wild)
+            (tuple
+              (ident n)
+              (ident n)))))
+      (let_pattern
+        (pat_wild)
+        (ident flag))
+      (let_def person
+        (record
+          (field name
+            (ident s))
+          (field age
+            (ident n))))
+      (let_annotation total
+        (type_con Int))
+      (let_def total
+        (add
+          (add
+            (ident first)
+            (ident second))
+          (ident age)))
+      (string
+        (interp
+          (ident name))
+        (chunk ":")
+        (interp
+          (ident total))))))

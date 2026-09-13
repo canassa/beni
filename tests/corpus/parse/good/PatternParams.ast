@@ -1,0 +1,80 @@
+(module
+  (definition first
+    (pat_tuple
+      (pat_var a)
+      (pat_wild))
+    (ident a))
+  (definition fullName
+    (pat_record firstName lastName)
+    (string
+      (interp
+        (ident firstName))
+      (chunk " ")
+      (interp
+        (ident lastName))))
+  (definition constant
+    (pat_wild)
+    (int 0))
+  (definition fromUnit
+    (pat_unit)
+    (int 1))
+  (definition unbox
+    (pat_paren
+      (pat_ctor Box
+        (pat_var inner)))
+    (ident inner))
+  (type_decl Box
+    (constructor Box
+      (type_con Int)))
+  (definition keep
+    (pat_paren
+      (pat_as pair
+        (pat_tuple
+          (pat_var a)
+          (pat_var b))))
+    (tuple
+      (ident pair)
+      (ident a)
+      (ident b)))
+  (definition deep
+    (pat_tuple
+      (pat_tuple
+        (pat_var a)
+        (pat_var b))
+      (pat_record c))
+    (add
+      (add
+        (ident a)
+        (ident b))
+      (ident c)))
+  (definition lambdaParams
+    (lambda
+      (pat_tuple
+        (pat_var a)
+        (pat_var b))
+      (pat_record c)
+      (pat_paren
+        (pat_ctor Box
+          (pat_var d)))
+      (add
+        (add
+          (add
+            (ident a)
+            (ident b))
+          (ident c))
+        (ident d))))
+  (definition listParam
+    (pat_list
+      (pat_var x)
+      (pat_var y))
+    (add
+      (ident x)
+      (ident y)))
+  (definition consParam
+    (pat_paren
+      (pat_cons
+        (pat_var x)
+        (pat_var rest)))
+    (tuple
+      (ident x)
+      (ident rest))))

@@ -1,0 +1,13 @@
+(module
+  (foreign_type pub List a
+    (doc "The primitive list."))
+  (foreign_type pub String)
+  (foreign_type Table k v)
+  (annotation length
+    (type_fn
+      (type_con List
+        (type_var a))
+      (type_con Int)))
+  (definition length
+    (pat_wild)
+    (int 0)))

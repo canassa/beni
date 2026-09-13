@@ -1,0 +1,24 @@
+(module
+  (import Dict)
+  (import Html as H)
+  (import Html.Attributes exposing
+    (exposed class)
+    (exposed href))
+  (import Http exposing
+    (exposed Error)
+    (exposed BadUrl)
+    (exposed Timeout)
+    (exposed NetworkError))
+  (import Json.Decode as D exposing
+    (exposed Decoder)
+    (exposed string)
+    (exposed int))
+  (import Json.Decode.Pipeline exposing
+    (exposed required))
+  (import Set exposing
+    (exposed Set))
+  (annotation example
+    (type_con Set
+      (type_con Int)))
+  (definition example
+    (ident Set.empty)))

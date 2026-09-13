@@ -1,0 +1,90 @@
+(module
+  (definition negName
+    (pat_var x)
+    (negate
+      (ident x)))
+  (definition negParen
+    (pat_var a)
+    (pat_var b)
+    (negate
+      (paren
+        (add
+          (ident a)
+          (ident b)))))
+  (definition negList
+    (list
+      (negate
+        (int 1))
+      (negate
+        (float 2.5))
+      (negate
+        (int 0x10))))
+  (definition negArg
+    (pat_var f)
+    (apply
+      (ident f)
+      (paren
+        (negate
+          (int 1)))))
+  (definition doubleMinus
+    (pat_var a)
+    (pat_var b)
+    (sub
+      (ident a)
+      (negate
+        (ident b))))
+  (definition subtraction
+    (pat_var f)
+    (sub
+      (ident f)
+      (int 1)))
+  (definition negInPipe
+    (pat_var x)
+    (pipe_right
+      (negate
+        (ident x))
+      (ident abs)))
+  (definition negField
+    (pat_var r)
+    (negate
+      (field_access .value
+        (ident r))))
+  (definition negTuple
+    (tuple
+      (negate
+        (int 1))
+      (negate
+        (int 2))))
+  (definition negRecord
+    (record
+      (field a
+        (negate
+          (int 1)))))
+  (definition negAfterOps
+    (pat_var a)
+    (pat_var b)
+    (add
+      (mul
+        (ident a)
+        (negate
+          (ident b)))
+      (negate
+        (ident a))))
+  (definition negCall
+    (pat_var f)
+    (pat_var x)
+    (negate
+      (paren
+        (apply
+          (ident f)
+          (ident x)))))
+  (definition negLiteralPattern
+    (pat_var n)
+    (case
+      (ident n)
+      (branch
+        (pat_neg_int -1)
+        (ctor True))
+      (branch
+        (pat_wild)
+        (ctor False)))))

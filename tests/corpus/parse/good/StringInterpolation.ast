@@ -1,0 +1,93 @@
+(module
+  (definition hello
+    (pat_var name)
+    (string
+      (chunk "hello ")
+      (interp
+        (ident name))))
+  (definition two
+    (pat_var a)
+    (pat_var b)
+    (string
+      (interp
+        (ident a))
+      (chunk " and ")
+      (interp
+        (ident b))
+      (chunk "!")))
+  (definition nestedBraces
+    (string
+      (interp
+        (field_access .a
+          (record
+            (field a
+              (int 1)))))))
+  (definition nestedRecordUpdate
+    (pat_var r)
+    (string
+      (interp
+        (field_access .a
+          (record_update r
+            (field a
+              (int 2)))))
+      (chunk " done")))
+  (definition adjacent
+    (pat_var a)
+    (pat_var b)
+    (string
+      (interp
+        (ident a))
+      (interp
+        (ident b))))
+  (definition atEnds
+    (pat_var x)
+    (string
+      (interp
+        (ident x))
+      (chunk " middle ")
+      (interp
+        (ident x))))
+  (definition escapedDollar
+    (string
+      (chunk "\${notInterpolated}")))
+  (definition literalDollar
+    (string
+      (chunk "cost: $5")))
+  (definition emptyString
+    (string))
+  (definition exprInside
+    (pat_var xs)
+    (string
+      (chunk "count: ")
+      (interp
+        (add
+          (apply
+            (ident List.length)
+            (ident xs))
+          (int 1)))))
+  (definition callInside
+    (pat_var n)
+    (string
+      (interp
+        (apply
+          (ident String.fromInt)
+          (paren
+            (mul
+              (ident n)
+              (int 2)))))))
+  (definition listInside
+    (string
+      (interp
+        (apply
+          (ident List.length)
+          (list
+            (int 1)
+            (int 2)
+            (int 3))))))
+  (definition escapesAroundInterpolation
+    (pat_var n)
+    (string
+      (chunk "\t")
+      (interp
+        (ident n))
+      (chunk "\n"))))

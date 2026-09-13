@@ -1,0 +1,232 @@
+(module
+  (type_alias Todo
+    (type_record
+      (record_type_field id
+        (type_con Int))
+      (record_type_field title
+        (type_con String))
+      (record_type_field done
+        (type_con Bool))))
+  (type_alias Model
+    (type_record
+      (record_type_field todos
+        (type_con List
+          (type_con Todo)))
+      (record_type_field field
+        (type_con String))
+      (record_type_field nextId
+        (type_con Int))
+      (record_type_field visibility
+        (type_con Visibility))))
+  (type_decl Visibility
+    (constructor All)
+    (constructor Active)
+    (constructor Completed))
+  (type_decl Msg
+    (constructor NoOp)
+    (constructor UpdateField
+      (type_con String))
+    (constructor Add)
+    (constructor Delete
+      (type_con Int))
+    (constructor Check
+      (type_con Int)
+      (type_con Bool))
+    (constructor CheckAll
+      (type_con Bool))
+    (constructor DeleteComplete)
+    (constructor ChangeVisibility
+      (type_con Visibility)))
+  (annotation pub update
+    (type_fn
+      (type_con Msg)
+      (type_fn
+        (type_con Model)
+        (type_tuple
+          (type_con Model)
+          (type_con List
+            (type_con String))))))
+  (definition update
+    (pat_var msg)
+    (pat_var model)
+    (case
+      (ident msg)
+      (branch
+        (pat_ctor NoOp)
+        (tuple
+          (ident model)
+          (list)))
+      (branch
+        (pat_ctor UpdateField
+          (pat_var str))
+        (tuple
+          (record_update model
+            (field field
+              (ident str)))
+          (list)))
+      (branch
+        (pat_ctor Add)
+        (let
+          (let_def title
+            (apply
+              (ident String.trim)
+              (field_access .field
+                (ident model))))
+          (if
+            (apply
+              (ident String.isEmpty)
+              (ident title))
+            (tuple
+              (ident model)
+              (list))
+            (tuple
+              (record_update model
+                (field nextId
+                  (add
+                    (field_access .nextId
+                      (ident model))
+                    (int 1)))
+                (field field
+                  (string))
+                (field todos
+                  (append
+                    (field_access .todos
+                      (ident model))
+                    (list
+                      (apply
+                        (ident newTodo)
+                        (ident title)
+                        (field_access .nextId
+                          (ident model)))))))
+              (list
+                (string
+                  (chunk "added ")
+                  (interp
+                    (ident title))))))))
+      (branch
+        (pat_ctor Delete
+          (pat_var id))
+        (tuple
+          (record_update model
+            (field todos
+              (apply
+                (ident List.filter)
+                (paren
+                  (lambda
+                    (pat_var t)
+                    (neq
+                      (field_access .id
+                        (ident t))
+                      (ident id))))
+                (field_access .todos
+                  (ident model)))))
+          (list)))
+      (branch
+        (pat_ctor Check
+          (pat_var id)
+          (pat_var isDone))
+        (let
+          (let_def updateTodo
+            (pat_var t)
+            (if
+              (eq
+                (field_access .id
+                  (ident t))
+                (ident id))
+              (record_update t
+                (field done
+                  (ident isDone)))
+              (ident t)))
+          (tuple
+            (record_update model
+              (field todos
+                (apply
+                  (ident List.map)
+                  (ident updateTodo)
+                  (field_access .todos
+                    (ident model)))))
+            (list))))
+      (branch
+        (pat_ctor CheckAll
+          (pat_var isDone))
+        (tuple
+          (record_update model
+            (field todos
+              (apply
+                (ident List.map)
+                (paren
+                  (lambda
+                    (pat_var t)
+                    (record_update t
+                      (field done
+                        (ident isDone)))))
+                (field_access .todos
+                  (ident model)))))
+          (list)))
+      (branch
+        (pat_ctor DeleteComplete)
+        (tuple
+          (record_update model
+            (field todos
+              (apply
+                (ident List.filter)
+                (paren
+                  (lambda
+                    (pat_var t)
+                    (apply
+                      (ident not)
+                      (field_access .done
+                        (ident t)))))
+                (field_access .todos
+                  (ident model)))))
+          (list)))
+      (branch
+        (pat_ctor ChangeVisibility
+          (pat_var visibility))
+        (tuple
+          (record_update model
+            (field visibility
+              (ident visibility)))
+          (list
+            (string
+              (chunk "now showing ")
+              (interp
+                (apply
+                  (ident visibilityName)
+                  (ident visibility)))))))))
+  (annotation newTodo
+    (type_fn
+      (type_con String)
+      (type_fn
+        (type_con Int)
+        (type_con Todo))))
+  (definition newTodo
+    (pat_var title)
+    (pat_var id)
+    (record
+      (field id
+        (ident id))
+      (field title
+        (ident title))
+      (field done
+        (ctor False))))
+  (annotation visibilityName
+    (type_fn
+      (type_con Visibility)
+      (type_con String)))
+  (definition visibilityName
+    (pat_var v)
+    (case
+      (ident v)
+      (branch
+        (pat_ctor All)
+        (string
+          (chunk "all")))
+      (branch
+        (pat_ctor Active)
+        (string
+          (chunk "active")))
+      (branch
+        (pat_ctor Completed)
+        (string
+          (chunk "completed"))))))

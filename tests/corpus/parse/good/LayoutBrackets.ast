@@ -1,0 +1,48 @@
+(module
+  (definition list
+    (list
+      (int 1)
+      (int 2)
+      (int 3)))
+  (definition record
+    (record
+      (field a
+        (int 1))
+      (field b
+        (int 2))
+      (field c
+        (int 3))))
+  (definition call
+    (apply
+      (ident List.map)
+      (paren
+        (lambda
+          (pat_var x)
+          (ident x)))
+      (list
+        (int 1))))
+  (definition inLet
+    (let
+      (let_def xs
+        (list
+          (int 1)
+          (int 2)))
+      (ident xs)))
+  (definition inBranch
+    (pat_var n)
+    (case
+      (ident n)
+      (branch
+        (pat_int 1)
+        (tuple
+          (int 1)
+          (int 2)))
+      (branch
+        (pat_wild)
+        (tuple
+          (int 0)
+          (int 0)))))
+  (definition closingAtColumnTwo
+    (list
+      (int 1)
+      (int 2))))

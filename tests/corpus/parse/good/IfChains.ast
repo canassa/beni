@@ -1,0 +1,63 @@
+(module
+  (annotation grade
+    (type_fn
+      (type_con Int)
+      (type_con String)))
+  (definition grade
+    (pat_var score)
+    (if
+      (gte
+        (ident score)
+        (int 90))
+      (string
+        (chunk "A"))
+      (if
+        (gte
+          (ident score)
+          (int 80))
+        (string
+          (chunk "B"))
+        (if
+          (gte
+            (ident score)
+            (int 70))
+          (string
+            (chunk "C"))
+          (string
+            (chunk "F"))))))
+  (annotation clampSign
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition clampSign
+    (pat_var n)
+    (if
+      (lt
+        (ident n)
+        (int 0))
+      (if
+        (lt
+          (ident n)
+          (negate
+            (int 10)))
+        (negate
+          (int 10))
+        (negate
+          (int 1)))
+      (if
+        (eq
+          (ident n)
+          (int 0))
+        (int 0)
+        (if
+          (gt
+            (ident n)
+            (int 10))
+          (int 10)
+          (int 1)))))
+  (definition oneLine
+    (pat_var b)
+    (if
+      (ident b)
+      (int 1)
+      (int 0))))

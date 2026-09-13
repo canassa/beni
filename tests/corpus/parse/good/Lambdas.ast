@@ -1,0 +1,83 @@
+(module
+  (definition inc
+    (lambda
+      (pat_var n)
+      (add
+        (ident n)
+        (int 1))))
+  (definition add
+    (lambda
+      (pat_var a)
+      (pat_var b)
+      (add
+        (ident a)
+        (ident b))))
+  (definition swap
+    (lambda
+      (pat_tuple
+        (pat_var a)
+        (pat_var b))
+      (tuple
+        (ident b)
+        (ident a))))
+  (definition nameOf
+    (lambda
+      (pat_record name)
+      (pat_wild)
+      (ident name)))
+  (definition curried
+    (lambda
+      (pat_var a)
+      (lambda
+        (pat_var b)
+        (lambda
+          (pat_var c)
+          (add
+            (add
+              (ident a)
+              (ident b))
+            (ident c))))))
+  (definition applyTwice
+    (pat_var f)
+    (pat_var x)
+    (apply
+      (paren
+        (lambda
+          (pat_var g)
+          (pat_var y)
+          (apply
+            (ident g)
+            (paren
+              (apply
+                (ident g)
+                (ident y))))))
+      (ident f)
+      (ident x)))
+  (definition sumPairs
+    (apply
+      (ident List.map)
+      (paren
+        (lambda
+          (pat_tuple
+            (pat_var a)
+            (pat_var b))
+          (add
+            (ident a)
+            (ident b))))))
+  (definition ignoreAll
+    (lambda
+      (pat_wild)
+      (pat_wild)
+      (pat_wild)
+      (unit)))
+  (definition multiLine
+    (lambda
+      (pat_var x)
+      (let
+        (let_def y
+          (add
+            (ident x)
+            (int 1)))
+        (mul
+          (ident y)
+          (int 2))))))

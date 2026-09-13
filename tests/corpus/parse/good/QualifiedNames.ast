@@ -1,0 +1,114 @@
+(module
+  (import Json.Decode)
+  (import Json.Encode as E)
+  (import Http)
+  (annotation decoder
+    (type_con Json.Decode.Decoder
+      (type_con Int)))
+  (definition decoder
+    (ident Json.Decode.int))
+  (annotation encode
+    (type_fn
+      (type_con Int)
+      (type_con E.Value)))
+  (definition encode
+    (pat_var n)
+    (apply
+      (ident E.int)
+      (ident n)))
+  (annotation describe
+    (type_fn
+      (type_con Http.Error)
+      (type_con String)))
+  (definition describe
+    (pat_var err)
+    (case
+      (ident err)
+      (branch
+        (pat_ctor Http.Timeout)
+        (string
+          (chunk "timeout")))
+      (branch
+        (pat_ctor Http.BadStatus
+          (pat_var code))
+        (string
+          (chunk "bad status ")
+          (interp
+            (ident code))))
+      (branch
+        (pat_wild)
+        (string
+          (chunk "other")))))
+  (annotation wrap
+    (type_fn
+      (type_con Int)
+      (type_con Maybe.Maybe
+        (type_con Int))))
+  (definition wrap
+    (pat_var n)
+    (apply
+      (ctor Maybe.Just)
+      (ident n)))
+  (annotation unwrap
+    (type_fn
+      (type_con Result.Result
+        (type_con String)
+        (type_con Int))
+      (type_con Int)))
+  (definition unwrap
+    (pat_var r)
+    (case
+      (ident r)
+      (branch
+        (pat_ctor Result.Ok
+          (pat_var n))
+        (ident n))
+      (branch
+        (pat_ctor Result.Err
+          (pat_wild))
+        (int 0))))
+  (annotation upper
+    (type_fn
+      (type_con String)
+      (type_con String)))
+  (definition upper
+    (ident String.toUpper))
+  (annotation chars
+    (type_fn
+      (type_con String)
+      (type_con List
+        (type_con Char))))
+  (definition chars
+    (pat_var s)
+    (pipe_right
+      (apply
+        (ident String.toList)
+        (ident s))
+      (apply
+        (ident List.map)
+        (ident Char.toUpper))))
+  (annotation nested
+    (type_con Json.Decode.Decoder
+      (type_paren
+        (type_con List
+          (type_paren
+            (type_con Maybe.Maybe
+              (type_con Int)))))))
+  (definition nested
+    (apply
+      (ident Json.Decode.list)
+      (paren
+        (apply
+          (ident Json.Decode.maybe)
+          (ident Json.Decode.int)))))
+  (annotation logged
+    (type_fn
+      (type_con Int)
+      (type_con Int)))
+  (definition logged
+    (pat_var n)
+    (apply
+      (ident Debug.log)
+      (string
+        (chunk "n"))
+      (ident n))))
