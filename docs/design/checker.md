@@ -540,6 +540,11 @@ Written in beni, `pub` per declaration, doc comments on everything public. The s
 Elm 0.19's `elm/core` minus `comparable`, `compappend` and the effect modules, plus the
 explicit-ordering replacements (`fast-compiler.md` §3.1):
 
+- `Int32` (its own module): `pub opaque type Int32`, with total wrapping arithmetic — `mul` bound
+  to `Math.imul`, `add`/`sub` to the truncating form, `and`/`or`/`xor`/shifts to the native
+  operators, plus `fromInt` (truncating) and `toInt` (identity). The escape hatch of
+  `fast-compiler.md` §3.1: `Int` is a double, and exact 32-bit work has a type that says so. `*` is
+  deliberately unavailable on it, which is what makes mask-after-multiply unreachable.
 - `Basics`: `foreign type Int`, `Float`, `Char`, `String` (declared here so the prelude's types
   have one home); `type Bool = True | False`; `type Order = LT | EQ | GT`; `type Never =
   JustOneMore Never`; the arithmetic, comparison and logic foreigns with `number` annotations

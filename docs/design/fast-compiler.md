@@ -8,6 +8,24 @@ here and the commit that found it says so.
 **Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
 modules; no typeclasses, no macros, no type-level computation.
 
+**Stance: Elm's guarantees, without Elm's walls.** The guarantees are not negotiable — well-typed
+code does not throw at runtime, functions are pure, matches are exhaustive, there is no null. What
+*is* negotiable is everything Elm walled off in order to protect them. Elm's instinct when a
+platform capability threatened a guarantee was to remove the capability; ours is to find the typing
+under which it cannot threaten one, and only remove it if there isn't one.
+
+The test is mechanical, and it is worth stating because it decides arguments before they start:
+**a capability is admitted when it can be typed such that well-typed code still cannot crash.**
+Exact 32-bit arithmetic passes — wrapping is total (§3.3). Code splitting passes — a `lazy`
+declaration is a `Task`, and a failed load is a value (§9.5). ES modules and source maps pass
+trivially. Arbitrary synchronous FFI does not pass, and no amount of wanting it changes that. The
+interesting cases are the ones in between, and they are why the JavaScript-boundary contract is
+written before M3 rather than discovered during it.
+
+This is what "opinionated but powerful" has to mean for a language in this family. Opinionated is
+the guarantee list, which is short and fixed. Powerful is refusing to pay for it twice — a
+guarantee costs a restriction only where the restriction is what buys it.
+
 This document synthesises eleven research reports, each source-verified against primary material
 and the vendored compilers in `references/`. They are kept alongside this doc and are the
 evidence base for every claim here:
@@ -315,13 +333,44 @@ Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-
   types, constructors, opacity and inferred schemes; M2 compares it by value, M4 hashes and mmaps
   it unchanged. Decided 2026-09-13, before M2.
 
+- **`Int` is a double; exact 32-bit work has its own type.** JavaScript has no integer type, so
+  `Int` must be represented by something it does have, and every option costs something:
+
+  | | Exact to | Cost per operation | Overflow |
+  |---|---|---|---|
+  | double | 9,007,199,254,740,991 | none, `+` is `+` | **silently inexact** |
+  | 32-bit | 2,147,483,647 | a truncation on every result | wraps, defined |
+  | BigInt | unbounded | boxed, ~an order of magnitude slower | never |
+
+  BigInt is disqualified as a default: it would make the most common type in every program the
+  slowest one. Between the other two, **double is the default**, as in Elm, which has shipped it for
+  a decade without the ceiling being what bit people. Its failure mode is the worse one and that is
+  stated rather than hidden — past 2⁵³ addition stops working and says nothing.
+
+  What makes that acceptable is the escape hatch, and **bit operations alone are not one.** The work
+  that needs 32-bit semantics — hashing, checksums, PRNGs, binary formats — needs wrapping
+  *multiply*, which is the one operation that cannot be faked: a 32-bit product can exceed 2⁵³, so
+  masking after multiplying returns confident garbage. Elm's own random and hashing libraries split
+  each multiply into 16-bit halves by hand, which is the evidence that `Bitwise` is insufficient.
+
+  So core ships an **opaque `Int32`** with its own total arithmetic — multiply to `Math.imul`, add
+  and subtract to the truncating form, shifts and masks to the native operators — all free at
+  runtime, since underneath it is an ordinary number (`toInt` is identity, `fromInt` truncates). A
+  distinct type rather than Elm's module over plain `Int`, for the same reason `comparable` was
+  dropped: if arithmetic wraps, the type says so, and the bug above becomes unreachable because `*`
+  is not available on it. `Int64` over BigInt can follow the same shape when a binary format needs
+  it; not now, but the convention should not have to be invented twice.
+
+  Note the reframing, which came out of asking what the escape hatch is: with `Int32` available, the
+  people most exposed to double's silent ceiling are exactly the people who should have been using
+  `Int32` anyway. Decided 2026-09-13, before M3.
+
 ### Still open
 
 Each is cheaper to take now than later:
 
 | Decision | Why it is load-bearing | State of the evidence |
 |---|---|---|
-| `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
 | String representation | Native JS strings are free but give O(n) indexing and a UTF-16/codepoint mismatch. Roc keeps `Str` deliberately minimal and pushes Unicode work to libraries — a stance available to us regardless of representation. |
 | Sequence default: cons, vector trie, or flat array | A stdlib and literal-syntax decision, not only a representation one (open question #2) | Roc chose a **flat refcounted array**, explicitly rejecting persistent structures: *"flat data structures are much more cpu friendly than persistent ones."* It mutates in place when uniquely referenced and copies when shared, and pattern-matches with slice patterns rather than cons. That mechanism needs a refcount JS can't cheaply provide — but it argues against cons lists being the automatic choice. |
 
