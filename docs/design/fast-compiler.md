@@ -1000,7 +1000,22 @@ survive all of it (§9.6) — on top of the field-name shortening and exact dead
 Compiler's advanced mode, not Terser. Report 12 is the evidence base for what that costs and
 where the bytes actually are; **§9.5 must be re-read against it before M3 begins.**
 
-Elm's TodoMVC is still the size target to beat: 122KB → 24KB minified → 9KB gzipped.
+**The objective function is compressed size, not raw size.** The deployed artifact is always
+gzipped or brotli'd, so the `.js` byte count matters only as a proxy, and it is a poor one:
+compression pays for repetition, and a transform that shortens text while destroying repetition
+can lose after compression even when it wins before. That inverts some standard minifier advice.
+Reusing one short name consistently across many scopes may beat giving every scope the globally
+shortest name; inlining removes a call site but duplicates a body; grouping structurally similar
+declarations lengthens matches. Report 12 is establishing which of these is measured and which is
+only plausible, and whether brotli's static dictionary of common web fragments argues for
+emitting conventional token sequences rather than cleverer short ones.
+
+This also bears on chunking: each chunk starts a fresh compression window with no shared
+dictionary, so many small chunks compress worse than one large one. How finely to split is
+partly a compression question, not only a loading one.
+
+Elm's TodoMVC is still the size target to beat: 122KB → 24KB minified → 9KB gzipped. The number
+that counts there is the 9KB.
 
 **Code splitting is designed in now, not retrofitted.** Per-entry-point reachability sets over the
 §9.1 graph, intersected to find shared chunks. Elm has no chunking concept and adding one means
