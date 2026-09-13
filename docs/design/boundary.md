@@ -175,10 +175,32 @@ purpose is keeping that set common. A module using only those compiles anywhere.
 Where they genuinely differ — filesystem, process arguments and environment, servers, the DOM —
 that difference *is* what a platform is for.
 
-**Node, Bun and Deno are expected to be one platform, not three**, because all three implement
-Node's API surface through `node:` specifiers. If that holds, Bun support is a compatibility claim
-to test rather than a package to write. **This needs verifying before we rely on it**; the fallback
-is three thin platforms sharing most of their beni code, which is unpleasant but not structural.
+**Each runtime gets its own platform.** An earlier draft of this section said Node, Bun and Deno
+could be one platform because all three implement Node's API surface through `node:` specifiers.
+That is true and it is the wrong conclusion: **Node is the lowest common denominator**, so targeting
+it universally would cap a Bun user at Node's capabilities and hide everything Bun adds — its
+server, its file API, its shell, its bundled SQLite, its foreign-function interface. That is the
+sparse-garden mistake of §1 repeated one level up, and this document exists to avoid it.
+
+So a Bun platform exposes what Bun offers, a Deno platform what Deno offers, and neither pretends to
+be Node. Code written against the Bun platform does not run on Node — which is honest, and which
+§5.3's per-platform compilation already reports as a resolution failure rather than a runtime
+surprise.
+
+The duplication this implies is smaller than it looks, and needs no compiler feature: **platforms
+are packages and packages depend on packages**, so runtime platforms share their beni code through
+an ordinary dependency and differ only in their foreigns.
+
+That gives two portability tiers, and saying which one you are in is a design decision a library
+author should make deliberately:
+
+| Tier | Written against | Runs on |
+|---|---|---|
+| **Portable** | core and the web-standard capabilities of §5.1 | every runtime |
+| **Runtime-specific** | a platform's own capabilities | that runtime |
+
+Portability comes from writing against the genuinely common set, not from pretending the runtimes
+are the same.
 
 ### 5.2 A platform declares its output shape
 
@@ -202,8 +224,9 @@ per invocation, but the manifest concept M4 introduces should carry the set.
 Two platforms ship with the compiler:
 
 - **Browser**: The Elm Architecture. `init`, `update`, `view`, `subscriptions`, ports.
-- **Server** (Node-compatible, expected to cover Bun and Deno per §5.1): worker-shaped, plus an
-  exit code. This is the platform the test suite's second boundary runs against — compile a program,
+- **Node**: worker-shaped, plus an exit code. Node rather than Bun or Deno because it is what the
+  toolchain already pins and what CI runs; Bun and Deno platforms are natural early additions, and
+  per §5.1 they are packages rather than compiler work. This is the platform the test suite's second boundary runs against — compile a program,
   run the emitted JavaScript, assert what it printed — so it is not a nicety, it is what makes
   codegen testable at all.
 
