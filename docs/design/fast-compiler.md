@@ -1081,9 +1081,26 @@ problem. First-class `LazyRef a` values were rejected as the one candidate with 
 precedent anywhere, and the design that maximally creates references reachability cannot see
 through.
 
+**Where the marker goes: on a top-level declaration, never on a file, a local or an import.**
+`pub lazy adminDashboard : Model -> Html Msg`, with the body written at the declared type and the
+rewritten type being what everyone else sees. Not per file, because in release mode files are not
+output units at all and the marker should sit at the granularity of the graph it controls, which is
+per declaration. Not on a local, because a `let` binding is not a node in the declaration graph.
+Not on the import, which is the one arguable alternative and is where Dart and PureScript's proposal
+put it: consumer-side marking would make a module's interface differ per importer, and the interface
+being a single fact is what §8.1's firewall rests on. Producer-side also matches `pub`, already a
+per-declaration marker on the same line. A private declaration may be `lazy`: it still creates an
+entry point, which is what you want for one large helper behind one route.
+
+**A `lazy` declaration is an entry point, not a chunk.** Its chunk is everything reachable from it
+that no other entry point needs, so marking one function moves its whole private subtree. The
+corollary is worth stating because it is how the feature reports its own futility: if almost
+everything is shared, the chunk holds only that one function, and the merge pass folds it back
+rather than paying a compression window and a round trip for nothing.
+
 Two constraints come with it. dart2js's rule binds: **anything reachable from a pure position goes
-in the main chunk**, so `view` cannot await, and a diagnostic naming the stray reference is part of
-the feature rather than an extra. And the interaction with §9.3's saturated-call specialization
+in the main chunk**, so `view` cannot await — though here the type rewrite makes that a type error
+rather than a dedicated check, which is the benefit of doing it in the type system. And the interaction with §9.3's saturated-call specialization
 **must be designed rather than discovered** — whole-program optimisation silently defeating split
 points is the single most common entry in GWT's issue tracker.
 
