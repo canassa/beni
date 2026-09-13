@@ -12,16 +12,19 @@
 //! (write a synthetic project of that size under `.zig-cache/bench-gen` and
 //! measure that instead), `--iterations=<n>` (default 5), `--seed=<n>`.
 //!
-//! M0 measures only `read` — bytes through `SourceStore` — so the number the
-//! lexer is compared against in M1a exists before the lexer does. The phases
-//! are timed single-threaded and serially so the figure is per-core
-//! throughput, which is what the §2 budget is stated in.
+//! Phases so far: `read` (bytes through `SourceStore`) and `lex` (the
+//! tokenizer, interning included, into fresh per-file output lists — the
+//! production shape). The phases are timed single-threaded and serially so
+//! the figure is per-core throughput, which is what the §2 budget is stated
+//! in. `lines` is the newline count, `tokens` includes each file's `eof`.
 
 const std = @import("std");
 const Io = std.Io;
 const beni = @import("beni");
 const gen = @import("gen.zig");
 const SourceStore = beni.SourceStore;
+const Tokenizer = beni.Tokenizer;
+const InternPool = beni.InternPool;
 
 const Options = struct {
     corpus: []const u8 = "bench/corpus",
@@ -79,6 +82,9 @@ pub fn main(init: std.process.Init) !u8 {
     const read = try measureRead(gpa, io, &store, options.iterations);
     try printLine(stdout, "read", read);
     total.add(read);
+    const lex = try measureLex(gpa, io, &store, options.iterations);
+    try printLine(stdout, "lex", lex);
+    total.add(lex);
     try printLine(stdout, "total", total);
     return 0;
 }
@@ -120,8 +126,8 @@ const Measurement = struct {
     }
 };
 
-/// The M0 phase: read every file's bytes through the store and count lines.
-/// One warm-up iteration, then the best of `iterations`.
+/// Read every file's bytes through the store. One warm-up iteration, then
+/// the best of `iterations`. Leaves the bytes in the store for `measureLex`.
 fn measureRead(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: u32) !Measurement {
     var best: u64 = std.math.maxInt(u64);
     var m: Measurement = .{ .files = store.count() };
@@ -134,16 +140,50 @@ fn measureRead(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: 
             const file: SourceStore.Index = @enumFromInt(i);
             try store.read(gpa, io, file);
             const text = store.bytes(file);
-            const starts = try SourceStore.scanLineStarts(gpa, text);
-            store.setLineStarts(gpa, file, starts);
             bytes += text.len;
-            lines += starts.len - 1;
+            lines += std.mem.count(u8, text, "\n");
         }
         const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
         if (iteration == 0) continue; // warm-up
         best = @min(best, ns);
         m.bytes = bytes;
         m.lines = lines;
+    }
+    m.ns = best;
+    return m;
+}
+
+/// Tokenize every file (already read) into fresh output lists with a fresh
+/// per-iteration interner, the way one worker would see a cold session.
+/// Freeing the outputs is inside the timed region, which is conservative:
+/// production keeps them.
+fn measureLex(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: u32) !Measurement {
+    var best: u64 = std.math.maxInt(u64);
+    var m: Measurement = .{ .files = store.count() };
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var interner: InternPool.Local = .empty;
+        defer interner.deinit(gpa);
+        var bytes: u64 = 0;
+        var lines: u64 = 0;
+        var tokens: u64 = 0;
+        const start = Io.Timestamp.now(io, .awake);
+        for (0..store.count()) |i| {
+            const file: SourceStore.Index = @enumFromInt(i);
+            const text = store.bytes(file);
+            var out: Tokenizer.Output = .empty;
+            defer out.deinit(gpa);
+            try Tokenizer.tokenize(gpa, text, &interner, &out);
+            bytes += text.len;
+            lines += out.line_starts.items.len - 1;
+            tokens += out.tokens.len;
+        }
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue; // warm-up
+        best = @min(best, ns);
+        m.bytes = bytes;
+        m.lines = lines;
+        m.tokens = tokens;
     }
     m.ns = best;
     return m;

@@ -18,13 +18,16 @@
 //! concurrent lookups (Zig's `InternPool` encoding with the thread id in the
 //! high bits) is M4 work and is deliberately not started here.
 //!
-//! Hash: `std.hash.Wyhash`, seed 0, because it has a streaming form (`update`
-//! byte-by-byte is what the tokenizer needs) and is what `std` uses for
-//! string keys. The design asks for this to be measured, not guessed; that
-//! measurement is M1a's, once there is a tokenizer to drive it. Switching to
-//! an FxHash-style multiply-xor is a one-line change confined to `Hasher`.
+//! Hash: an FxHash-style multiply-xor, one multiply per byte, because the
+//! tokenizer feeds bytes one at a time as it scans and identifiers are short.
+//! Measured in M1a against `std.hash.Wyhash` streamed byte by byte, on the
+//! generated 100k-line corpus (ReleaseFast, best of 5, single thread, lex
+//! phase including interning): see `hasher_kind` for the numbers. Both forms
+//! are kept behind that comptime switch so the measurement can be repeated
+//! when the identifier mix changes.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 
 pub const Symbol = enum(u32) {
@@ -44,29 +47,82 @@ pub const Symbol = enum(u32) {
     };
 };
 
-/// Streaming hash over the bytes of one identifier.
-pub const Hasher = struct {
+/// Which streaming hash `Hasher` is. Measured in M1a on the generated
+/// 100k-line corpus (`zig build bench -- --generate=100000`: 626 files,
+/// 1.82 MB, 299k tokens; lex phase including interning, ReleaseFast, best
+/// of 5, three runs each):
+///
+///   fx      9.6 / 9.6 / 9.7 ms   179–182 MB/s   10.3–10.5 M lines/s
+///   wyhash  10.7 / 11.4 / 10.8 ms  153–162 MB/s   8.8–9.3 M lines/s
+///
+/// Wyhash's streaming form buffers 48 bytes and pays a call per `update`,
+/// which is the wrong shape for one byte at a time; Fx is one multiply.
+pub const hasher_kind: enum { fx, wyhash } = .fx;
+
+/// Streaming hash over the bytes of one identifier. The tokenizer calls
+/// `updateByte` per byte while scanning and `final` once; `hash` is the
+/// one-shot form and must agree with the streamed one byte for byte.
+pub const Hasher = switch (hasher_kind) {
+    .fx => FxHasher,
+    .wyhash => WyhashHasher,
+};
+
+/// rustc's FxHash step, `(rotl(h, 5) ^ byte) * K`, on 64 bits. The final
+/// state is folded once so the low bits — what the open-addressed table
+/// indexes with — depend on every byte, which a bare multiply chain does
+/// not guarantee for the last few bytes.
+const FxHasher = struct {
+    state: u64,
+
+    pub const seed: u64 = 0;
+    const k: u64 = 0x517cc1b727220a95;
+
+    pub fn init() FxHasher {
+        return .{ .state = seed };
+    }
+
+    pub fn update(h: *FxHasher, bytes: []const u8) void {
+        for (bytes) |byte| h.updateByte(byte);
+    }
+
+    pub inline fn updateByte(h: *FxHasher, byte: u8) void {
+        h.state = (std.math.rotl(u64, h.state, 5) ^ byte) *% k;
+    }
+
+    pub fn final(h: *FxHasher) u64 {
+        return h.state ^ (h.state >> 32);
+    }
+
+    pub fn hash(bytes: []const u8) u64 {
+        var h: FxHasher = .init();
+        h.update(bytes);
+        return h.final();
+    }
+};
+
+/// `std.hash.Wyhash` streamed one byte at a time — what `std` uses for
+/// string keys, kept for re-measurement.
+const WyhashHasher = struct {
     state: std.hash.Wyhash,
 
     pub const seed: u64 = 0;
 
-    pub fn init() Hasher {
+    pub fn init() WyhashHasher {
         return .{ .state = .init(seed) };
     }
 
-    pub fn update(h: *Hasher, bytes: []const u8) void {
+    pub fn update(h: *WyhashHasher, bytes: []const u8) void {
         h.state.update(bytes);
     }
 
-    pub fn updateByte(h: *Hasher, byte: u8) void {
+    pub inline fn updateByte(h: *WyhashHasher, byte: u8) void {
         h.state.update(&.{byte});
     }
 
-    pub fn final(h: *Hasher) u64 {
+    pub fn final(h: *WyhashHasher) u64 {
         return h.state.final();
     }
 
-    /// One-shot form, identical to streaming the same bytes.
     pub fn hash(bytes: []const u8) u64 {
         return std.hash.Wyhash.hash(seed, bytes);
     }
@@ -152,9 +208,11 @@ const Pool = struct {
         return pool.getOrPutHashed(gpa, Hasher.hash(bytes), bytes);
     }
 
-    /// `hash` must be `Hasher.hash(bytes)`; checked in safe builds.
+    /// `hash` must be `Hasher.hash(bytes)`. Checked in Debug only: the
+    /// check rehashes every identifier, which would double the interning
+    /// cost of ReleaseSafe builds for a bug that the hermetic suite catches.
     fn getOrPutHashed(pool: *Pool, gpa: Allocator, hash: u64, bytes: []const u8) Allocator.Error!Symbol {
-        std.debug.assert(hash == Hasher.hash(bytes));
+        if (builtin.mode == .Debug) std.debug.assert(hash == Hasher.hash(bytes));
         if (pool.slots.len == 0 or (pool.entries.len + 1) * 4 > pool.slots.len * 3) {
             try pool.grow(gpa);
         }

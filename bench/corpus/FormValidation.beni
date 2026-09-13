@@ -97,7 +97,11 @@ oneOfSet allowed field value =
     if Set.member value allowed then
         Valid value
     else
-        fail field "must be one of: ${String.join ", " (Set.toList allowed)}"
+        let
+            choices =
+                String.join ", " (Set.toList allowed)
+        in
+        fail field "must be one of: ${choices}"
 
 
 pub intBetween : Int -> Int -> Validator Int

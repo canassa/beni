@@ -19,18 +19,23 @@
 //! Two runs with different `--jobs` therefore produce identical bytes on
 //! every stream; the black-box determinism scenario checks exactly that.
 //!
-//! The per-file phase is a function pointer (`Phases`): M0 installs a stub
-//! that reads the file; M1 installs lex → parse → lower without touching the
-//! driver.
+//! The per-file phase is a function pointer (`Phases`): M1a installs
+//! read → tokenize (`lex_phases`); M1b/M1c extend it to parse and lower
+//! without touching the driver. What a phase produces for a file goes into
+//! `artifacts`, keyed by file index and owned by the session (see
+//! `Artifacts.zig` for why they are not arena memory).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const diagnostic = @import("diagnostic");
 const Arena = @import("Arena.zig");
+const Artifacts = @import("Artifacts.zig");
 const InternPool = @import("InternPool.zig");
 const Profile = @import("Profile.zig");
 const SourceStore = @import("SourceStore.zig");
+const Tokenizer = @import("lex/Tokenizer.zig");
+const LexDiagnostics = @import("lex/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
 
@@ -40,6 +45,8 @@ gpa: Allocator,
 io: Io,
 options: Options,
 store: SourceStore = .{},
+/// Per-file phase outputs, sized by `run` before the workers start.
+artifacts: Artifacts = .{},
 interner: InternPool.Global,
 profile: Profile,
 workers: []Worker,
@@ -73,14 +80,15 @@ pub const IoFailure = struct {
     err: anyerror,
 };
 
-/// The per-file work. M1 PLUG POINT: replace `per_file` with the
-/// lex → parse → lower pipeline; the driver does not change.
+/// The per-file work. M1b/M1c PLUG POINT: extend `per_file` with parse and
+/// lower; the driver does not change.
 pub const Phases = struct {
     per_file: *const fn (session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void,
 };
 
-/// M0: read the bytes, count them, build the line table.
-pub const read_phases: Phases = .{ .per_file = readPhase };
+/// M1a: read the bytes, tokenize, install the lexical artifacts, report
+/// the lexical diagnostics.
+pub const lex_phases: Phases = .{ .per_file = lexPhase };
 
 pub const Worker = struct {
     index: u32,
@@ -151,6 +159,7 @@ pub fn deinit(session: *Session) void {
     session.diagnostics.deinit(gpa);
     session.profile.deinit(gpa);
     session.interner.deinit(gpa);
+    session.artifacts.deinit(gpa);
     session.store.deinit(gpa);
     session.* = undefined;
 }
@@ -184,6 +193,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         };
     }
     try session.store.finish(gpa);
+    try session.artifacts.resize(gpa, session.store.count());
     session.profile.end(0, enumerate_token, .enumerate, Profile.Event.no_file, 0);
 
     // Module-path validation is decided by the path alone, so it is
@@ -214,13 +224,21 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         }
     }
 
-    // 3. Merge interners in worker index order.
+    // 3. Merge interners in worker index order, then rewrite every file's
+    //    interned payloads through its worker's remap table. (M1c PLUG
+    //    POINT: Bir symbol references are remapped here too.)
     const merge_token = session.profile.begin();
-    for (session.workers) |*worker| {
-        const remap = try session.interner.merge(gpa, &worker.interner);
-        // M1 PLUG POINT: apply `remap` to the worker's token payloads and
-        // Bir symbol references. M0 has no tokens, so the table is dropped.
-        gpa.free(remap);
+    const remaps = try gpa.alloc([]InternPool.Symbol, session.workers.len);
+    defer gpa.free(remaps);
+    var merged: usize = 0;
+    defer for (remaps[0..merged]) |remap| gpa.free(remap);
+    for (session.workers, remaps) |*worker, *remap| {
+        remap.* = try session.interner.merge(gpa, &worker.interner);
+        merged += 1;
+    }
+    for (0..session.store.count()) |i| {
+        const file: SourceStore.Index = @enumFromInt(i);
+        session.artifacts.applyRemap(file, remaps[session.artifacts.worker(file)]);
     }
     session.profile.end(0, merge_token, .merge_interners, Profile.Event.no_file, 0);
 
@@ -269,17 +287,53 @@ fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
     }
 }
 
-/// The M0 per-file phase: read the bytes into the store, count them, and
-/// build the line table the text renderer needs. `readPhase` allocates the
-/// table from the gpa because it outlives the phase (session storage).
-fn readPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
-    const token = session.profile.begin();
-    try session.store.read(session.gpa, session.io, file);
+/// The M1a per-file phase: read the bytes into the store, tokenize them into
+/// session-owned artifacts (tokens, comments; the line table goes to the
+/// store), and turn the lexical diagnostics into reported ones with
+/// positions from that table. Two profile events, `read` and `lex`, so the
+/// I/O and the scanning are visible separately in a trace.
+fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
+    const gpa = session.gpa;
+    const read_token = session.profile.begin();
+    try session.store.read(gpa, session.io, file);
     const text = session.store.bytes(file);
-    const line_starts = try SourceStore.scanLineStarts(session.gpa, text);
-    session.store.setLineStarts(session.gpa, file, line_starts);
+    session.profile.end(worker.index, read_token, .read, file.int(), @intCast(text.len));
     worker.addCounter(.bytes, text.len);
-    session.profile.end(worker.index, token, .read, file.int(), @intCast(text.len));
+
+    const lex_token = session.profile.begin();
+    var out: Tokenizer.Output = .empty;
+    errdefer out.deinit(gpa);
+    try Tokenizer.tokenize(gpa, text, &worker.interner, &out);
+    session.profile.end(worker.index, lex_token, .lex, file.int(), @intCast(text.len));
+    worker.addCounter(.tokens, out.tokens.len);
+
+    const line_starts = try out.line_starts.toOwnedSlice(gpa);
+    session.store.setLineStarts(gpa, file, line_starts);
+
+    var message: Io.Writer.Allocating = .init(gpa);
+    defer message.deinit();
+    for (out.diagnostics.items()) |item| {
+        message.clearRetainingCapacity();
+        try LexDiagnostics.message(item, text, &message.writer);
+        try worker.report(
+            session,
+            file,
+            item.code,
+            LexDiagnostics.position(line_starts, item.start),
+            LexDiagnostics.position(line_starts, item.end),
+            message.written(),
+        );
+    }
+
+    const comments = try out.comments.toOwnedSlice(gpa);
+    errdefer gpa.free(comments);
+    const lex_diagnostics = try out.diagnostics.toOwnedSlice(gpa);
+    session.artifacts.set(gpa, file, .{
+        .tokens = out.tokens,
+        .comments = comments,
+        .lex_diagnostics = lex_diagnostics,
+        .worker = worker.index,
+    });
 }
 
 fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator.Error!void {

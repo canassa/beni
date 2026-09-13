@@ -1,5 +1,5 @@
--- unterminated_string at 4:13: a newline inside a string (§2.6); strings are
--- single-line. `y` on line 7 must still parse.
+-- unterminated_string at 4:5 (the opening quote), ending at the newline (§2.6);
+-- strings are single-line. `y` on line 7 must still parse.
 x =
     "abc def
 

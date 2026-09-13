@@ -5,13 +5,16 @@
 //!
 //! Exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O
 //! failure. stdout carries the product; stderr carries diagnostics and usage
-//! errors and nothing else.
+//! errors and nothing else. `dump` exits 0 even when the file has lexical
+//! errors: its product is the token stream, errors and all, and the
+//! diagnostics still go to stderr.
 
 const std = @import("std");
 const Io = std.Io;
 const beni = @import("beni");
 const Cli = beni.Cli;
 const Session = beni.Session;
+const SourceStore = beni.SourceStore;
 
 pub fn main(init: std.process.Init) u8 {
     const gpa = init.gpa;
@@ -45,8 +48,8 @@ pub fn main(init: std.process.Init) u8 {
             return 0;
         },
         .check => |check| return runCheck(gpa, io, stderr, check),
-        .fmt => return fail(stderr, "beni: fmt is not implemented in M0", .{}),
-        .dump => return fail(stderr, "beni: dump is not implemented in M0", .{}),
+        .fmt => return fail(stderr, "beni: fmt is not implemented yet", .{}),
+        .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
     }
 }
 
@@ -55,26 +58,63 @@ fn fail(stderr: *Io.Writer, comptime fmt: []const u8, args: anytype) u8 {
     return 2;
 }
 
-fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check) u8 {
-    const jobs: u32 = check.common.jobs orelse @intCast(@min(std.Thread.getCpuCount() catch 1, std.math.maxInt(u32)));
-    var session = Session.init(gpa, io, .{
+fn sessionOptions(common: Cli.Common) Session.Options {
+    const jobs: u32 = common.jobs orelse @intCast(@min(std.Thread.getCpuCount() catch 1, std.math.maxInt(u32)));
+    return .{
         .jobs = @max(jobs, 1),
-        .diagnostics = switch (check.common.diagnostics) {
+        .diagnostics = switch (common.diagnostics) {
             .text => .text,
             .json => .json,
         },
-        .self_profile = check.common.self_profile,
-        .root = check.common.root,
-        .core = check.common.core,
-    }) catch return fail(stderr, "beni: out of memory", .{});
-    defer session.deinit();
+        .self_profile = common.self_profile,
+        .root = common.root,
+        .core = common.core,
+    };
+}
 
-    const summary = session.run(check.paths, Session.read_phases, stderr) catch |err| switch (err) {
+/// Run the per-file phases over `paths`, mapping the driver's failure to
+/// the exit-2 message. Returns the summary, or the exit code to return.
+fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8) union(enum) { summary: Session.Summary, exit: u8 } {
+    const summary = session.run(paths, Session.lex_phases, stderr) catch |err| switch (err) {
         error.InputPath => {
             const failure = session.io_failure.?;
-            return fail(stderr, "beni: cannot read '{s}': {t}", .{ failure.path, failure.err });
+            return .{ .exit = fail(stderr, "beni: cannot read '{s}': {t}", .{ failure.path, failure.err }) };
         },
-        else => |e| return fail(stderr, "beni: {t}", .{e}),
+        else => |e| return .{ .exit = fail(stderr, "beni: {t}", .{e}) },
+    };
+    return .{ .summary = summary };
+}
+
+fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check) u8 {
+    var session = Session.init(gpa, io, sessionOptions(check.common)) catch return fail(stderr, "beni: out of memory", .{});
+    defer session.deinit();
+    const summary = switch (runSession(&session, stderr, check.paths)) {
+        .summary => |s| s,
+        .exit => |code| return code,
     };
     return if (summary.errors > 0) 1 else 0;
+}
+
+fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
+    switch (dump.stage) {
+        .tokens => {},
+        .ast, .bir => return fail(stderr, "beni: dump --stage={t} is not implemented yet", .{dump.stage}),
+    }
+    var session = Session.init(gpa, io, sessionOptions(dump.common)) catch return fail(stderr, "beni: out of memory", .{});
+    defer session.deinit();
+    switch (runSession(&session, stderr, &.{dump.file})) {
+        .summary => {},
+        .exit => |code| return code,
+    }
+    // A directory argument would enumerate many files; the dump is of one.
+    if (session.store.count() != 1) return fail(stderr, "beni: dump needs exactly one file", .{});
+    const file: SourceStore.Index = @enumFromInt(0);
+    beni.dump.tokens.write(
+        stdout,
+        session.store.bytes(file),
+        session.artifacts.tokens(file),
+        session.artifacts.comments(file),
+        session.store.lineStarts(file),
+    ) catch return 2;
+    return 0;
 }

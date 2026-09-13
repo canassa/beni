@@ -20,9 +20,11 @@ pub const Token = struct {
     start: u32,
     /// 0-based line index; column is `start - line_starts[line] + 1`.
     line: u32,
-    /// `@intFromEnum(Symbol)` for identifier-like tokens (lower, upper,
-    /// qualified, dot_lower, dot_index's digits); 0 otherwise. Kept as `u32`
-    /// rather than `Symbol` so the record has no dependency on the interner.
+    /// `@intFromEnum(Symbol)` for the identifier-like tags (`isInterned`:
+    /// lower, upper, qualified, and dot_lower, whose field name is interned
+    /// without the dot); the index value for `dot_index` (saturated at
+    /// `maxInt(u32)`); 0 otherwise. Kept as `u32` rather than `Symbol` so
+    /// the record has no dependency on the interner.
     payload: u32,
 };
 
@@ -51,8 +53,8 @@ pub const Comment = struct {
     kind: Kind,
     /// Byte offset of the first `-`. Length is to end of line.
     start: u32,
-    /// The significant token this comment precedes; `tokens.len` for a
-    /// trailing comment at EOF.
+    /// Index of the significant token this comment precedes. The final
+    /// `eof` token counts, so a trailing comment precedes `eof`.
     before_token: u32,
 
     pub const Kind = enum(u8) {
@@ -139,10 +141,11 @@ pub const Tag = enum(u8) {
     eof,
     invalid,
 
-    /// True for the identifier-like tags whose `payload` is a `Symbol`.
+    /// True for the identifier-like tags whose `payload` is a `Symbol`
+    /// (`dot_index` is not one: its payload is the index itself).
     pub fn isInterned(tag: Tag) bool {
         return switch (tag) {
-            .lower_ident, .upper_ident, .qualified_lower, .qualified_upper, .dot_lower, .dot_index => true,
+            .lower_ident, .upper_ident, .qualified_lower, .qualified_upper, .dot_lower => true,
             else => false,
         };
     }

@@ -42,8 +42,8 @@ pub const File = struct {
     module_path_valid: bool,
     /// Owned; empty until `read`. Sentinel-terminated for the tokenizer.
     bytes: [:0]const u8,
-    /// Owned; empty until the lexer (M1a) — or, in M0, `scanLineStarts` —
-    /// fills it. `line_starts[l]` is the byte offset of 0-based line `l`.
+    /// Owned; empty until the lexer fills it through `setLineStarts`.
+    /// `line_starts[l]` is the byte offset of 0-based line `l`; `[0]` is 0.
     line_starts: []const u32,
 };
 
@@ -298,18 +298,6 @@ pub fn setLineStarts(store: *SourceStore, gpa: Allocator, index: Index, line_sta
     slot.* = line_starts;
 }
 
-/// The line-start table of `text`: offset 0, then the byte after every
-/// `\n`. The M0 stand-in for what the tokenizer computes as it scans.
-pub fn scanLineStarts(gpa: Allocator, text: []const u8) Allocator.Error![]u32 {
-    var starts: std.ArrayList(u32) = .empty;
-    errdefer starts.deinit(gpa);
-    try starts.append(gpa, 0);
-    for (text, 0..) |c, i| {
-        if (c == '\n') try starts.append(gpa, @intCast(i + 1));
-    }
-    return starts.toOwnedSlice(gpa);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -333,16 +321,6 @@ test "moduleNameFromRelative accepts upper identifiers and rejects the rest" {
         defer if (got == .valid) testing.allocator.free(got.valid);
         try testing.expectEqualDeep(case.want, got);
     }
-}
-
-test "scanLineStarts" {
-    const starts = try scanLineStarts(testing.allocator, "ab\n\ncd\n");
-    defer testing.allocator.free(starts);
-    try testing.expectEqualSlices(u32, &.{ 0, 3, 4, 7 }, starts);
-
-    const empty = try scanLineStarts(testing.allocator, "");
-    defer testing.allocator.free(empty);
-    try testing.expectEqualSlices(u32, &.{0}, empty);
 }
 
 test "finish sorts, deduplicates and derives module names; find is exact" {

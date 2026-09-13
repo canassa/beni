@@ -1,4 +1,5 @@
-//! Black-box scenarios for the M0 CLI (docs/design/frontend.md §1, §8).
+//! Black-box scenarios for the M0 CLI and the M1a lexer (docs/design/frontend.md
+//! §1, §1.2, §8).
 //!
 //! Every scenario spawns the installed binary through `world.zig` and
 //! asserts whole objects: the exact stdout, the exact stderr or the entire
@@ -406,7 +407,7 @@ test "check on a file without the .beni extension exits 2" {
     try testing.expectEqualStrings("beni: cannot read 'notes.txt': NotABeniFile\n", r.stderr);
 }
 
-test "fmt and dump parse their arguments but are not implemented in M0" {
+test "fmt and the ast/bir dumps parse their arguments but are not implemented yet" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -425,9 +426,9 @@ test "fmt and dump parse their arguments but are not implemented in M0" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), fmt.exit_code);
-    try testing.expectEqualStrings("beni: fmt is not implemented in M0\n", fmt.stderr);
+    try testing.expectEqualStrings("beni: fmt is not implemented yet\n", fmt.stderr);
     try testing.expectEqual(@as(u8, 2), dump.exit_code);
-    try testing.expectEqualStrings("beni: dump is not implemented in M0\n", dump.stderr);
+    try testing.expectEqualStrings("beni: dump --stage=ast is not implemented yet\n", dump.stderr);
     // Argument validation runs first: a usage error, not "not implemented".
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
     try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir\n", dump_bad.stderr);
@@ -438,4 +439,173 @@ test "fmt and dump parse their arguments but are not implemented in M0" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings("main = 1\n", try w.read("Main.beni"));
+}
+
+test "dump --stage=tokens prints every token with its position, then the comments" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\--! Doc
+        \\main =
+        \\    "a${ x.0 }" -- hi
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=tokens", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\2:1 lower_ident main
+        \\2:6 equal =
+        \\3:5 str_start "
+        \\3:6 str_chunk a
+        \\3:7 interp_start ${
+        \\3:10 lower_ident x
+        \\3:11 dot_index .0
+        \\3:14 interp_end }
+        \\3:15 str_end "
+        \\4:1 eof
+        \\-- comments
+        \\1:1 module_doc --! Doc
+        \\3:17 plain -- hi
+        \\
+    , r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), r.diagnostics);
+}
+
+test "check on a file with a tab yields exactly one tab_in_source diagnostic" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", "x =\n\t1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .tab_in_source,
+        .severity = .@"error",
+        .span = .{ .file = "src/Main.beni", .start = .{ .line = 2, .col = 1 }, .end = .{ .line = 2, .col = 2 } },
+        .title = "TAB CHARACTER",
+        .message = "I found a tab character. Beni does not allow tabs anywhere in a file.\n" ++
+            "\n" ++
+            "Use spaces for indentation. Inside a string, write \\t.",
+    }}), r.diagnostics);
+}
+
+test "three lexical errors in one file yield exactly three diagnostics in position order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "x = 12abc\ny = 'ab'\nz = @\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .invalid_number,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 1, .col = 5 }, .end = .{ .line = 1, .col = 10 } },
+            .title = "INVALID NUMBER",
+            .message = "I ran into `12abc` while reading a number.\n" ++
+                "\n" ++
+                "A number is decimal digits (`42`), a hex literal (`0x1F`), or a float with a\n" ++
+                "fraction and/or an exponent (`1.5`, `1e10`, `1.5e-3`). Letters and underscores\n" ++
+                "cannot follow a number directly; put a space between the number and the name.",
+        },
+        .{
+            .code = .invalid_char_literal,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 9 } },
+            .title = "INVALID CHAR LITERAL",
+            .message = "I found the character literal `'ab'`, which holds more than one character.\n" ++
+                "\n" ++
+                "A character literal holds exactly one character: `'a'`, `'\\n'`, `'\\u{1F600}'`.\n" ++
+                "For text, use a string: `\"…\"`.",
+        },
+        .{
+            .code = .invalid_character,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 5 }, .end = .{ .line = 3, .col = 6 } },
+            .title = "INVALID CHARACTER",
+            .message = "I found `@`, which is not part of the language's syntax.\n" ++
+                "\n" ++
+                "The symbols are ( ) [ ] { } , : = -> \\ | _ ? and the operators are\n" ++
+                "+ - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>.",
+        },
+    }), r.diagnostics);
+}
+
+test "a lexical error does not stop the file: later lines still lex, and dump exits 0 with the diagnostic on stderr" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "x = \"open\ny = 1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=tokens", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\1:1 lower_ident x
+        \\1:3 equal =
+        \\1:5 str_start "
+        \\1:6 str_chunk open
+        \\1:10 invalid
+        \\2:1 lower_ident y
+        \\2:3 equal =
+        \\2:5 int 1
+        \\3:1 eof
+        \\-- comments
+        \\
+    , r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unterminated_string,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 1, .col = 5 }, .end = .{ .line = 1, .col = 10 } },
+        .title = "UNTERMINATED STRING",
+        .message = "I got to the end of the line without seeing the closing `\"` of this string.\n" ++
+            "\n" ++
+            "Strings are single-line. For text that spans several lines, use a multiline\n" ++
+            "string, one `\\\\` per line:\n" ++
+            "\n" ++
+            "    \\\\first line\n" ++
+            "    \\\\second line",
+    }}), r.diagnostics);
 }
