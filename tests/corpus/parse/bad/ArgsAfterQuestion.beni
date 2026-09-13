@@ -1,0 +1,8 @@
+-- args_after_question at 8:10: an argument (`b`) after a `?` postfix; after
+-- `?` no further arguments may follow (§3 notes). `g` on line 3 is valid.
+g x y =
+    Ok x
+
+
+f a b =
+    g a? b

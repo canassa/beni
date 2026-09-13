@@ -1,0 +1,13 @@
+-- invalid_utf8 at 5:8: the byte 0xFF inside a string literal; the whole
+-- file must be UTF-8 (Â§1). Second at 9:10: a truncated 2-byte sequence
+-- (0xC3 followed by a space) inside a comment. `z` on line 12 is valid.
+x =
+    "abÿcd"
+
+
+y =
+    1 -- Ã broken
+
+
+z =
+    2

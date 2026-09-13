@@ -1,0 +1,34 @@
+-- Function types nested inside tuples and records, right-associative arrows,
+-- parenthesised arrows as arguments, and a qualified type head applied to
+-- several atoms.
+import Dict exposing (Dict)
+
+
+type alias Callbacks msg =
+    { onClick : msg -> msg
+    , onInput : String -> msg
+    , order : Int -> Int -> Order
+    }
+
+
+type alias Step a =
+    ( a -> a, a )
+
+
+type alias Chain =
+    Int -> Int -> Int -> Int
+
+
+apply : ( Int -> Int, Int ) -> Int
+apply ( fn, x ) =
+    fn x
+
+
+compose2 : (b -> c) -> (a -> b) -> a -> c
+compose2 f g x =
+    f (g x)
+
+
+table : Dict String (List (Int -> Int)) -> Dict.Dict String Int
+table d =
+    Dict.map (\_ fs -> List.length fs) d

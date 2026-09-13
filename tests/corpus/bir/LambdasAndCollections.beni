@@ -1,0 +1,16 @@
+-- BIR: multi-parameter lambdas stay n-ary (§8.2), tuples and lists stay
+-- nodes, unit stays a literal, and a lambda with destructuring parameters
+-- binds its pattern variables as locals.
+adder : Int -> Int -> Int
+adder =
+    \a b -> a + b
+
+
+pairs : List ( Int, Int ) -> List Int
+pairs =
+    List.map (\( a, b ) -> a + b)
+
+
+collections : ( List Int, ( Int, Int, Int ), () )
+collections =
+    ( [ 1, 2, 3 ], ( 1, 2, 3 ), () )

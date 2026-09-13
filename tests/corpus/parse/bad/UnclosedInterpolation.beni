@@ -1,0 +1,9 @@
+-- unterminated_string or unclosed_delimiter (whichever the lexer assigns) at
+-- 5:5 (the string) or 5:8 (the `${`): an interpolation opened and never
+-- closed before the end of the line. `y` on line 8 is valid.
+x =
+    "a ${ b
+
+
+y =
+    1

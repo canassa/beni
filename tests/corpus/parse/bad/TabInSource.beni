@@ -1,0 +1,8 @@
+-- tab_in_source at 4:1: a tab byte used as indentation (§2.1). Second at
+-- 8:9: a tab inside a comment. Both are errors; `y` is otherwise valid.
+x =
+	1
+
+
+y =
+    2 --	comment with a tab

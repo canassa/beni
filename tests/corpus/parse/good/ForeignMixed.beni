@@ -1,0 +1,35 @@
+-- `foreign` values and types interleaved with ordinary declarations, doc
+-- blocks and imports, in the shape of a core module (§5.4): the foreign
+-- keyword may follow `pub`, and a doc block attaches to a foreign
+-- declaration like any other.
+--! Core-style module mixing foreign primitives with beni definitions.
+import Basics exposing (Bool)
+
+
+--| The primitive character type.
+pub foreign type Char
+
+
+--| Code point of a character.
+pub foreign toCode : Char -> Int
+
+
+--| Build a character from a code point.
+pub foreign fromCode : Int -> Char
+
+
+pub isUpper : Char -> Bool
+isUpper c =
+    let
+        code =
+            toCode c
+    in
+    code >= 65 && code <= 90
+
+
+pub toUpper : Char -> Char
+toUpper c =
+    if isUpper c then
+        c
+    else
+        fromCode (toCode c - 32)

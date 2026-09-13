@@ -1,0 +1,39 @@
+-- Custom types with one, two and many constructors, with and without a
+-- leading `|`, nullary and n-ary constructors, type parameters, parenthesised
+-- applied types as constructor arguments, a record argument, and a one-line
+-- type.
+type Unit1
+    = Only
+
+
+type Bool2
+    = Yes
+    | No
+
+
+type Shape
+    = Circle Float
+    | Rect Float Float
+    | Poly (List ( Float, Float ))
+    | Labeled String Shape
+    | Empty
+
+
+type Tree a
+    = Leaf
+    | Node (Tree a) a (Tree a)
+
+
+type Either a b =
+    | Left a
+    | Right b
+
+
+type Wrapped
+    = Wrapped { name : String, value : Int }
+
+
+type OneLine = A | B | C
+
+
+type LeadingBarOneLine = | D | E

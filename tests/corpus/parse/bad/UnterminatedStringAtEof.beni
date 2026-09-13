@@ -1,0 +1,3 @@
+-- unterminated_string at 3:5: the string runs into end of file with no
+-- closing quote and no trailing newline.
+x = "abc

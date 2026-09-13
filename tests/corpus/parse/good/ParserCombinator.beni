@@ -1,0 +1,129 @@
+-- A small parser-combinator module: a `pub opaque` type wrapping a function,
+-- constructor patterns in parameters and in `let`, lambdas returning tuples,
+-- recursion through a local `go`, nested `case` in a `let` inside a lambda,
+-- and `?` on applications.
+pub opaque type Parser a =
+    Parser (String -> Result String ( a, String ))
+
+
+pub run : Parser a -> String -> Result String a
+run (Parser p) input =
+    case p input of
+        Ok ( value, "" ) ->
+            Ok value
+
+        Ok ( _, rest ) ->
+            Err "unconsumed input: ${rest}"
+
+        Err message ->
+            Err message
+
+
+pub succeed : a -> Parser a
+succeed value =
+    Parser (\input -> Ok ( value, input ))
+
+
+pub fail : String -> Parser a
+fail message =
+    Parser (\_ -> Err message)
+
+
+pub char : Char -> Parser Char
+char expected =
+    Parser
+        (\input ->
+            case String.uncons input of
+                Just ( c, rest ) ->
+                    if c == expected then
+                        Ok ( c, rest )
+                    else
+                        Err "expected ${expected} but got ${c}"
+
+                Nothing ->
+                    Err "unexpected end of input"
+        )
+
+
+pub map : (a -> b) -> Parser a -> Parser b
+map f (Parser p) =
+    Parser
+        (\input ->
+            case p input of
+                Ok ( value, rest ) ->
+                    Ok ( f value, rest )
+
+                Err message ->
+                    Err message
+        )
+
+
+pub andThen : (a -> Parser b) -> Parser a -> Parser b
+andThen f (Parser p) =
+    Parser
+        (\input ->
+            let
+                step ( value, rest ) =
+                    let
+                        (Parser q) =
+                            f value
+                    in
+                    q rest
+            in
+            p input |> Result.andThen step
+        )
+
+
+pub many : Parser a -> Parser (List a)
+many (Parser p) =
+    let
+        go acc input =
+            case p input of
+                Ok ( value, rest ) ->
+                    go (value :: acc) rest
+
+                Err _ ->
+                    Ok ( List.reverse acc, input )
+    in
+    Parser (go [])
+
+
+pub oneOf : List (Parser a) -> Parser a
+oneOf parsers =
+    Parser
+        (\input ->
+            let
+                try remaining =
+                    case remaining of
+                        [] ->
+                            Err "no parser matched"
+
+                        (Parser p) :: rest ->
+                            case p input of
+                                Ok result ->
+                                    Ok result
+
+                                Err _ ->
+                                    try rest
+            in
+            try parsers
+        )
+
+
+pub digits : Parser Int
+digits =
+    many (oneOf (List.map char [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ]))
+        |> andThen
+            (\cs ->
+                case String.toInt (String.fromList cs) of
+                    Just n ->
+                        succeed n
+
+                    Nothing ->
+                        fail "expected digits"
+            )
+
+
+sumOf : String -> String -> Result String Int
+sumOf a b =
+    Ok (run digits a? + run digits b?)

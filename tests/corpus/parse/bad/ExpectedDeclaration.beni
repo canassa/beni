@@ -1,0 +1,13 @@
+-- expected_declaration at 4:1: a token at column 1 that cannot start an
+-- import or a declaration (§4 rule 1). A second one at 9:1 (`)`). The
+-- declarations `x` and `y` are valid.
+1 + 2
+
+
+x =
+    1
+)
+
+
+y =
+    2

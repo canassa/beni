@@ -1,0 +1,13 @@
+-- non_associative_chain at 5:12 (the second `==`): comparison operators are
+-- non-associative (§6.5). Second at 9:11: `<` then `>=` at the same level.
+-- `ok` on line 12 is valid because it is parenthesised.
+f a b c =
+    a == b == c
+
+
+g a b c =
+    a < b >= c
+
+
+ok a b c =
+    (a == b) == c

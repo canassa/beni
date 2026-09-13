@@ -1,0 +1,11 @@
+-- annotation_without_definition at 4:1: `f : Int` followed by a definition
+-- of a different name (`g`). Second at 11:1: an annotation at end of file.
+-- `g` is valid.
+f : Int
+
+
+g =
+    1
+
+
+h : Int

@@ -1,0 +1,48 @@
+-- `?` postfix (§6.6) on a name, on applications, twice in a row, inside a
+-- pipeline, in a `case` branch, and inside a `let f x = …` in another
+-- function, whose `?` returns from `f`.
+parseAge : String -> Result String Int
+parseAge s =
+    String.toInt s |> Result.fromMaybe "not a number"
+
+
+both : String -> String -> Result String Int
+both a b =
+    Ok (parseAge a? + parseAge b?)
+
+
+chained : Result String (Result String Int) -> Result String Int
+chained r =
+    Ok (r??)
+
+
+piped : String -> Result String Int
+piped s =
+    parseAge s? |> (\n -> n * 2) |> Ok
+
+
+inLet : List String -> Result String Int
+inLet items =
+    let
+        parseOne item =
+            parseAge item? + 1 |> Ok
+
+        step item acc =
+            Ok (parseOne item? + acc?)
+    in
+    List.foldl step (Ok 0) items
+
+
+inBranch : Maybe String -> Maybe Int
+inBranch m =
+    case m of
+        Just s ->
+            Just (String.toInt s? + 1)
+
+        Nothing ->
+            Nothing
+
+
+onArgument : String -> Result String Int
+onArgument s =
+    Ok (String.length (parseAge s? |> String.fromInt))

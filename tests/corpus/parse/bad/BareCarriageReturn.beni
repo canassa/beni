@@ -1,0 +1,7 @@
+-- bare_carriage_return at 3:4: a `\r` not followed by `\n` (§2.1). The next
+-- line uses CRLF, which is fine, and `y` is valid.
+x =    1
+
+
+y =
+    2

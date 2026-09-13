@@ -1,0 +1,15 @@
+-- Formatter: applications with arguments one per line at odd columns when
+-- they fit on one line, one that does not fit, and nested calls broken
+-- mid-argument; expected: the short ones collapse, the long one keeps one
+-- argument per line indented 4.
+short =
+  max
+      1
+   2
+long =
+        List.foldl (\item acc -> acc + String.length item) 0 [ "a very long string literal", "another very long string literal", "and one more" ]
+nestedCall = f (g (h 1
+  2) 3)
+f a = a
+g a b = a
+h a b = a

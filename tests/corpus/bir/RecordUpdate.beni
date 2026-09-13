@@ -1,0 +1,28 @@
+-- BIR: record update stays a node whose target is a resolved name — a
+-- local, a top-level, and an exposed import — with the field list in
+-- source order; record literals and nested updates stay nodes too (§8.2).
+import Defaults exposing (config)
+
+
+type alias Model =
+    { count : Int, name : String }
+
+
+initial : Model
+initial =
+    { count = 0, name = "" }
+
+
+bumpLocal : Model -> Model
+bumpLocal model =
+    { model | count = model.count + 1 }
+
+
+bumpTop : Model
+bumpTop =
+    { initial | count = 1, name = "one" }
+
+
+bumpImport : Int -> { timeout : Int }
+bumpImport t =
+    { config | timeout = t }

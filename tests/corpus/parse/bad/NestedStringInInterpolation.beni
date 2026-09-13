@@ -1,0 +1,9 @@
+-- nested_string_in_interpolation at 5:28: a `"` inside `${…}` (§2.6). The
+-- message says to bind the inner string to a name. Second error at 9:9: a
+-- multiline-string marker inside an interpolation is the same error.
+x =
+    "len: ${ String.length "abc" }"
+
+
+y =
+    "${ \\raw }"

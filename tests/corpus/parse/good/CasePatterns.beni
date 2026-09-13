@@ -1,0 +1,122 @@
+-- Every pattern kind of §3 in `case` branches: wildcard, variable, int,
+-- negative int, char, string, constructor with arguments, qualified
+-- constructor, nested constructors, cons chains, list literals, unit, tuples,
+-- record patterns and `as`.
+import Http exposing (Error, BadUrl, Timeout)
+
+
+describe : Int -> String
+describe n =
+    case n of
+        0 ->
+            "zero"
+
+        -1 ->
+            "minus one"
+
+        1 ->
+            "one"
+
+        _ ->
+            "many"
+
+
+classify : Char -> Int
+classify c =
+    case c of
+        'a' ->
+            1
+
+        '\n' ->
+            2
+
+        other ->
+            Char.toCode other
+
+
+greet : String -> String
+greet s =
+    case s of
+        "hello" ->
+            "hi"
+
+        "" ->
+            "..."
+
+        name ->
+            name
+
+
+sumList : List Int -> Int
+sumList xs =
+    case xs of
+        [] ->
+            0
+
+        [ single ] ->
+            single
+
+        [ a, b ] ->
+            a + b
+
+        first :: second :: rest ->
+            first + second + sumList rest
+
+
+heads : List (Maybe Int) -> Int
+heads ms =
+    case ms of
+        Just x :: _ ->
+            x
+
+        Nothing :: Just y :: _ ->
+            y
+
+        ((Just z) as whole) :: _ ->
+            z + List.length [ whole ]
+
+        _ ->
+            0
+
+
+unwrap : ( (), ( Int, Int ) ) -> Int
+unwrap pair =
+    case pair of
+        ( (), ( a, b ) ) ->
+            a + b
+
+
+status : Error -> String
+status err =
+    case err of
+        BadUrl url ->
+            url
+
+        Timeout ->
+            "timeout"
+
+        Http.NetworkError ->
+            "network"
+
+        Http.BadStatus code ->
+            "status ${code}"
+
+        _ ->
+            "?"
+
+
+fullName : { a | first : String, last : String } -> String
+fullName person =
+    case person of
+        { first, last } ->
+            first ++ last
+
+
+both : Maybe ( Int, Int ) -> Int
+both m =
+    case m of
+        Just (( a, b ) as pair) ->
+            a + b + pair.0
+
+        Maybe.Nothing ->
+            0

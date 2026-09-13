@@ -1,0 +1,74 @@
+-- Blocks nested in every combination: `let` in `if`, `case` in `let`, `if`
+-- in `case`, a lambda whose body holds a `let` holding a `case`, applied to an
+-- argument after the closing paren, and a `case` as a parenthesised argument
+-- with the enclosing application continuing after it.
+process : Maybe Int -> Bool -> Int
+process m flag =
+    if flag then
+        let
+            base =
+                case m of
+                    Just n ->
+                        n
+
+                    Nothing ->
+                        0
+        in
+        base * 2
+    else
+        case m of
+            Just n ->
+                if n > 0 then
+                    n
+                else
+                    -n
+
+            Nothing ->
+                -1
+
+
+handler : Maybe Int -> Int -> Int
+handler m x =
+    (\y ->
+        let
+            z =
+                case m of
+                    Just n ->
+                        n + y
+
+                    Nothing ->
+                        y
+        in
+        z
+    )
+        x
+
+
+sumWithDefault : Maybe Int -> Int -> Int
+sumWithDefault m d =
+    max
+        (case m of
+            Just n ->
+                n
+
+            Nothing ->
+                d
+        )
+        d
+
+
+ifInList : Bool -> List Int
+ifInList flag =
+    [ if flag then 1 else 0
+    , let
+        one =
+            1
+      in
+      one
+    , case flag of
+        True ->
+            1
+
+        False ->
+            0
+    ]

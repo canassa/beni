@@ -1,0 +1,23 @@
+-- BIR: pattern bindings in `let` introduce locals for every variable in the
+-- pattern (§7, §8.1): tuple, nested tuple, record, list and `as` patterns,
+-- plus an annotated definition; later bindings and the body see them all.
+split : ( Int, ( String, Bool ) ) -> { name : String, age : Int } -> String
+split input person =
+    let
+        ( n, ( s, flag ) ) =
+            input
+
+        { name, age } =
+            person
+
+        [ first, second ] =
+            [ n, n + 1 ]
+
+        (( a, b ) as pair) =
+            ( n, age )
+
+        total : Int
+        total =
+            first + second + a + b + pair.0
+    in
+    "${name}:${s}:${total}:${flag}"

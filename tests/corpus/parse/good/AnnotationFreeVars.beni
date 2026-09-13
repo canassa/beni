@@ -1,0 +1,21 @@
+-- Annotations with free type variables, implicitly quantified (§7), including
+-- variables that appear once, variables shared across arguments, and a
+-- variable that appears only in the result.
+identity2 : a -> a
+identity2 x =
+    x
+
+
+const : a -> b -> a
+const x _ =
+    x
+
+
+mapPair : (a -> b) -> ( a, a ) -> ( b, b )
+mapPair f ( x, y ) =
+    ( f x, f y )
+
+
+phantom : a -> List b
+phantom _ =
+    []

@@ -1,0 +1,27 @@
+-- Type aliases with zero, one and two parameters, and alias bodies of every
+-- shape: a name, a tuple, a function, a record, an applied type, a qualified
+-- type, and a one-line alias.
+import Dict
+
+
+type alias Name =
+    String
+
+
+type alias Pair a =
+    ( a, a )
+
+
+type alias Handler model msg =
+    msg -> model -> ( model, List msg )
+
+
+type alias Entry k v =
+    { key : k, value : v }
+
+
+type alias Table k v =
+    List (Entry k v)
+
+
+type alias Lookup = Dict.Dict String Int

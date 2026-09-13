@@ -1,0 +1,8 @@
+-- duplicate_import at 4:8: the same module imported twice (§5.2), even with
+-- a different alias.
+import Dict
+import Dict as D
+
+
+x =
+    1

@@ -1,0 +1,12 @@
+-- invalid_tuple_index twice: 4:6 (`.00`) and 8:6 (`.01`): a tuple index may
+-- not have leading zeros beyond `0` itself (§6.4). `ok` on line 11 is valid.
+f t =
+    t.00
+
+
+g t =
+    t.01
+
+
+ok t =
+    t.0

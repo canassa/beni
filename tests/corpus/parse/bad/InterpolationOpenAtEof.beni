@@ -1,0 +1,3 @@
+-- unterminated_string or unclosed_delimiter at 3:5 / 3:8: `${` opened
+-- and the file ends inside the interpolation, no closing `}` or `"`.
+x = "a ${ b

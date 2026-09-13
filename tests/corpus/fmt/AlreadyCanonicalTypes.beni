@@ -1,0 +1,39 @@
+-- Already canonical (§9): `type` with `=` and each `|` on its own line
+-- indented 4, a single-constructor type, `pub opaque`, a doc block with a
+-- space after the marker, a record alias that fits on one line, a vertical
+-- record alias with leading delimiters, and an annotation too long for one
+-- line broken with `->` leading each line.
+--| The message type.
+pub type Msg
+    = Increment
+    | Decrement
+    | Set Int
+    | Batch (List Msg)
+
+
+pub opaque type Id
+    = Id Int
+
+
+type alias Point =
+    { x : Float, y : Float }
+
+
+type alias Config =
+    { host : String
+    , port : Int
+    , retries : Int
+    , onError : String -> Msg
+    }
+
+
+pub type alias Handler model msg =
+    msg -> model -> ( model, List msg )
+
+
+pub update :
+    Msg
+    -> { host : String, port : Int, retries : Int, onError : String -> Msg }
+    -> ( { host : String, port : Int, retries : Int, onError : String -> Msg }, List String )
+update msg config =
+    ( config, [] )

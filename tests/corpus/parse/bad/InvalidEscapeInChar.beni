@@ -1,0 +1,4 @@
+-- invalid_escape at 4:6: an invalid escape inside a character literal, which
+-- shares the escape set of strings (§2.8).
+x =
+    '\z'

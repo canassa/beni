@@ -1,0 +1,6 @@
+-- doc_comment_unattached at 6:1: a doc block at the end of the file with no
+-- declaration after it.
+x =
+    1
+
+--| Dangling.

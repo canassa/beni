@@ -1,0 +1,64 @@
+-- Qualified names as single tokens (§2.4): qualified values, qualified
+-- constructors in expressions and patterns, qualified types, a two-segment
+-- module path, an alias, and prelude module aliases without an import.
+import Json.Decode
+import Json.Encode as E
+import Http
+
+
+decoder : Json.Decode.Decoder Int
+decoder =
+    Json.Decode.int
+
+
+encode : Int -> E.Value
+encode n =
+    E.int n
+
+
+describe : Http.Error -> String
+describe err =
+    case err of
+        Http.Timeout ->
+            "timeout"
+
+        Http.BadStatus code ->
+            "bad status ${code}"
+
+        _ ->
+            "other"
+
+
+wrap : Int -> Maybe.Maybe Int
+wrap n =
+    Maybe.Just n
+
+
+unwrap : Result.Result String Int -> Int
+unwrap r =
+    case r of
+        Result.Ok n ->
+            n
+
+        Result.Err _ ->
+            0
+
+
+upper : String -> String
+upper =
+    String.toUpper
+
+
+chars : String -> List Char
+chars s =
+    String.toList s |> List.map Char.toUpper
+
+
+nested : Json.Decode.Decoder (List (Maybe.Maybe Int))
+nested =
+    Json.Decode.list (Json.Decode.maybe Json.Decode.int)
+
+
+logged : Int -> Int
+logged n =
+    Debug.log "n" n

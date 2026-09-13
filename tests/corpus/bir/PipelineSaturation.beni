@@ -1,0 +1,25 @@
+-- BIR: `|>` and `<|` lower to direct application, so a pipeline becomes
+-- saturated calls: `x |> f a` -> `f a x`, `f <| x` -> `f x` (§8.2, the one
+-- place the front end changes call arity). Chains of three, a chain whose
+-- stages are partial applications, and `<|` nesting.
+process : List Int -> Int
+process xs =
+    xs
+        |> List.map (\x -> x * 2)
+        |> List.filter (\x -> x > 10)
+        |> List.sum
+
+
+applyRight : (Int -> Int) -> Int -> Int
+applyRight f x =
+    f <| f <| x
+
+
+mixedAtom : Int -> String
+mixedAtom n =
+    String.fromInt <| n + 1
+
+
+partial : List Int -> List Int
+partial =
+    List.map ((+) 1) >> List.filter ((<) 2)

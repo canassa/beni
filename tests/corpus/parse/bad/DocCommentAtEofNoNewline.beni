@@ -1,0 +1,4 @@
+-- doc_comment_unattached at 4:1: the file ends in `--|` with no newline
+-- and no declaration after it.
+x = 1
+--|

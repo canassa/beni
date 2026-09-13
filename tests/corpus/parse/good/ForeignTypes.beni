@@ -1,0 +1,16 @@
+-- `foreign type T a…` declarations (§5.4): with zero, one and two type
+-- parameters, `pub` and private, with a doc comment, used in an annotation
+-- and reusing a prelude type name (`List`), which is allowed.
+--| The primitive list.
+pub foreign type List a
+
+
+pub foreign type String
+
+
+foreign type Table k v
+
+
+length : List a -> Int
+length _ =
+    0

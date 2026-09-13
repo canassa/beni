@@ -1,0 +1,9 @@
+-- module_doc_not_at_top at 4:1: a `--!` line after an import (§2.3). A
+-- second one at 9:1 after a declaration.
+import Dict
+--! Too late for a module doc.
+
+
+x =
+    1
+--! Also too late.

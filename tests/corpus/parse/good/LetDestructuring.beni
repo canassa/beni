@@ -1,0 +1,26 @@
+-- Pattern bindings in `let` (§3, LetBinding): tuple, nested tuple, record,
+-- list and wildcard patterns, mixed with ordinary definitions, an annotated
+-- binding, and a binding used before its textual position.
+split : ( Int, ( String, Bool ) ) -> String
+split input =
+    let
+        ( n, ( s, flag ) ) =
+            input
+
+        { name, age } =
+            person
+
+        [ first, second ] =
+            [ n, n + 1 ]
+
+        _ =
+            flag
+
+        person =
+            { name = s, age = n }
+
+        total : Int
+        total =
+            first + second + age
+    in
+    "${name}:${total}"

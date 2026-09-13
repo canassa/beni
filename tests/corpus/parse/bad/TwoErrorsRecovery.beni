@@ -1,0 +1,17 @@
+-- Two syntax errors with a valid declaration between them, proving recovery
+-- continues: unclosed_delimiter at 5:5 (the `(`), then `g` at line 8 is
+-- valid, then invalid_char_literal at 12:5. `k` on line 15 is valid.
+f =
+    ( 1 + 2
+
+
+g =
+    3
+
+
+h =
+    ''
+
+
+k =
+    4

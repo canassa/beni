@@ -1,0 +1,8 @@
+-- opaque_not_on_type twice: 3:5 (`pub opaque type alias`) and 7:5
+-- (`pub opaque` on a value). The alias and the value are otherwise valid.
+pub opaque type alias Id =
+    Int
+
+
+pub opaque answer =
+    42

@@ -1,0 +1,29 @@
+-- BIR: names from `exposing` lists resolve to `import_value(module, name)`
+-- and `import_ctor(module, name)`; the exposing list decides, never the
+-- other module's contents (§6.2). Upper names are constructors in
+-- expressions and patterns and types in annotations.
+import Dict exposing (Dict, empty, insert)
+import Http exposing (Error, Timeout, BadStatus)
+
+
+table : Dict String Int
+table =
+    insert "a" 1 empty
+
+
+describe : Error -> String
+describe err =
+    case err of
+        Timeout ->
+            "timeout"
+
+        BadStatus code ->
+            "status ${code}"
+
+        _ ->
+            "other"
+
+
+retry : Error
+retry =
+    Timeout

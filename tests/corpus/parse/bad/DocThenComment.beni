@@ -1,0 +1,6 @@
+-- doc_comment_unattached at 3:1: an ordinary comment between a doc block and
+-- its declaration splits them (§2.3, "one rule, no exceptions").
+--| Meant for x.
+-- an ordinary comment in between
+x =
+    1

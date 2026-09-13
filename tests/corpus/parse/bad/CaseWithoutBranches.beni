@@ -1,0 +1,8 @@
+-- case_without_branches at 4:5: a `case … of` with no branch before the next
+-- column-1 token (§3 notes). `g` on line 7 is valid.
+f x =
+    case x of
+
+
+g =
+    1

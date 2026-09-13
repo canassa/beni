@@ -1,0 +1,8 @@
+-- expected_token at 4:18 (the `Int` where `=` was expected; or 5:1 if the
+-- parser reports at the next token): `type alias` without `=` before its
+-- body, followed by a valid declaration on line 7.
+type alias Point Int
+
+
+x =
+    1

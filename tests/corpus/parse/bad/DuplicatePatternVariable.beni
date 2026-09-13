@@ -1,0 +1,10 @@
+-- duplicate_pattern_variable at 5:14: `a` bound twice in one tuple pattern
+-- (§7). Second at 9:5: a function whose two parameters share a name.
+f p =
+    case p of
+        ( a, a ) ->
+            a
+
+
+g a a =
+    a

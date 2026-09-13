@@ -1,0 +1,10 @@
+-- duplicate_constructor at 10:7: two constructors named `None` across two
+-- types in one file (§5.3, one constructor namespace per file).
+type OptionA
+    = SomeA Int
+    | None
+
+
+type OptionB
+    = SomeB String
+    | None

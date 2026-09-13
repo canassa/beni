@@ -1,0 +1,9 @@
+-- expected_token (or unexpected_token, whichever the parser assigns) at 5:12:
+-- `if` without `then` — the parser expected `then` and found `else`. `y` on
+-- line 8 is valid.
+f x =
+    if x 1 else 2
+
+
+y =
+    1

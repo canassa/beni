@@ -1,0 +1,39 @@
+-- Record literals with one and many fields, the empty record, nested records,
+-- record update with one and several fields, records spanning lines, and
+-- fields whose values are arbitrary expressions.
+empty =
+    {}
+
+
+single =
+    { name = "x" }
+
+
+nested =
+    { pos = { x = 1, y = 2 }, tags = [ "a", "b" ], flag = True }
+
+
+multiLine =
+    { name = "todo"
+    , done = False
+    , id = 7
+    }
+
+
+bump model =
+    { model | count = model.count + 1 }
+
+
+rename model newName newDone =
+    { model
+        | name = newName
+        , done = newDone
+    }
+
+
+fieldsAreExprs f =
+    { result = f 1, pair = ( 1, 2 ), inner = { a = f }, cond = if f 0 then 1 else 2 }
+
+
+emptyWithSpace =
+    {   }

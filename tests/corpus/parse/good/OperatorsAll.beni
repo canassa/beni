@@ -1,0 +1,44 @@
+-- Every operator of §6.5 used infix once, and every operator as a
+-- parenthesised function value, including ones passed to folds.
+arith a b =
+    ( a + b, a - b, a * b, a / b, a // b, a ^ b )
+
+
+comparisons a b =
+    ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+
+
+logic a b =
+    ( a && b, a || b )
+
+
+sequences x xs ys =
+    ( xs ++ ys, x :: xs )
+
+
+pipes f g x =
+    ( x |> f, f <| x, (f << g) x, (f >> g) x )
+
+
+asFunctions =
+    [ (+), (-), (*), (/), (//), (^) ]
+
+
+asPredicates =
+    [ (==), (/=), (<), (>), (<=), (>=) ]
+
+
+asLogic =
+    [ (&&), (||) ]
+
+
+asRest =
+    ( (++), (::), (|>), (<|), (<<), (>>) )
+
+
+folded xs =
+    List.foldl (+) 0 xs
+
+
+consed xs =
+    List.foldr (::) [] xs

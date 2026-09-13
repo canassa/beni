@@ -1,0 +1,13 @@
+-- unbound_constructor at 4:5 (`Foo` in expression position) and 9:9 (`Bar`
+-- in pattern position); neither is declared, exposed or prelude (§6.2).
+x =
+    Foo
+
+
+f m =
+    case m of
+        Bar ->
+            1
+
+        _ ->
+            2

@@ -1,0 +1,7 @@
+-- unexpected_token (or expected_token) at 3:12: a lower identifier where a
+-- constructor is expected in a `type` declaration. `x` on line 6 is valid.
+type Foo = bar
+
+
+x =
+    1

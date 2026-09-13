@@ -1,0 +1,33 @@
+-- Formatter: comments in every position at odd indentation — before/after
+-- imports, between constructors, inside lists, after `=`, before `in`,
+-- before `else`, between branches, trailing everywhere; expected: every
+-- comment kept, in order, own-line comments re-indented to their block,
+-- trailing comments kept at the end of their line.
+   -- indented comment before imports
+import Set
+       -- comment after imports
+import Dict
+--| doc for T
+type T = A -- after A
+   -- between ctors
+  | B
+f x = -- after equals
+  let
+        -- before binding
+     y = 1 -- after body
+        -- before in
+  in
+        -- before in-expression
+  if x then -- after then
+      y
+         -- before else
+  else
+      -- in else
+      case x of
+             -- before branch
+          True -> 1 -- after branch
+                -- between branches
+          False -> [ 1 -- in list
+                   , 2
+                   -- before close
+                   ]

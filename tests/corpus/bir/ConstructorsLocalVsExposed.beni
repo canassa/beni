@@ -1,0 +1,41 @@
+-- BIR: a constructor declared in this file resolves to `ctor(index)`; one
+-- from an `exposing` list to `import_ctor(module, name)`; one from the
+-- prelude to `import_ctor` of its prelude module; in both expression and
+-- pattern position (§6.2). A local constructor named like a prelude one
+-- hides the prelude one.
+import Http exposing (Error, Timeout)
+
+
+type Shape
+    = Circle Float
+    | Square Float
+
+
+type Order
+    = Asc
+    | Desc
+
+
+area : Shape -> Float
+area shape =
+    case shape of
+        Circle r ->
+            3 * r * r
+
+        Square s ->
+            s * s
+
+
+isTimeout : Error -> Bool
+isTimeout err =
+    case err of
+        Timeout ->
+            True
+
+        _ ->
+            False
+
+
+values : ( Shape, Error, Maybe Int, Order )
+values =
+    ( Circle 1, Timeout, Just 1, Asc )

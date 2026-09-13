@@ -1,0 +1,1 @@
+x = 1 -- a one-line file with no trailing newline; this trailing comment runs to EOF

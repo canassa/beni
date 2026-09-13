@@ -1,0 +1,82 @@
+-- Comments of all three kinds (§2.3) in every allowed position: module doc
+-- (two blocks merged across a blank line), doc on a pub declaration, on a
+-- private one, on a type, trailing comments after imports / `=` / `of` /
+-- constructors / bodies, between let bindings, before `in`, inside `then`,
+-- before `else`, between case branches, inside a list, between an annotation
+-- and its definition, `---` dashes, and `--|x` without a space.
+--! Module doc line one.
+--! Module doc line two.
+
+--! A second module-doc block after a blank line merges with the first.
+import Dict -- trailing comment after an import
+
+
+--| Documents a public type.
+pub type Color
+    = Red -- trailing on a constructor
+    | Green
+    -- ordinary comment between constructors
+    | Blue
+
+
+--| Documents a public value; the doc precedes `pub`.
+pub palette : List Color
+-- an ordinary comment between annotation and definition is allowed
+palette =
+    [ Red -- inside a list
+    , Green
+    -- between list elements
+    , Blue
+    ]
+
+
+--| Documents a private value.
+--| Doc blocks may span lines.
+count : Int
+count = -- trailing after `=`
+    let
+        -- before the first binding
+        a =
+            1 -- trailing on a body
+
+        -- between bindings
+        b =
+            2
+        -- before `in`
+    in
+    a + b -- trailing on the in-expression
+
+
+pick : Bool -> Int
+pick flag =
+    if flag then
+        -- inside then
+        1
+        -- before else
+    else
+        2
+
+
+choose : Color -> Int
+choose color =
+    -- before case
+    case color of -- trailing after `of`
+        -- before the first branch
+        Red ->
+            1
+
+        -- between branches
+        Green ->
+            2 -- trailing on a branch body
+
+        Blue ->
+            -- inside a branch body
+            3
+
+
+---------------------------------------------------------------- a separator
+--- three dashes is an ordinary comment, not a doc comment
+--|doc without a space is still a doc comment, attached to `last`
+last =
+    0
+-- a comment on the last line of the file

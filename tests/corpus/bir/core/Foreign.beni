@@ -1,0 +1,18 @@
+-- BIR (run with --core, by the `core_` name convention): `foreign` values
+-- and types enter the interface skeleton like other `pub` names, marked
+-- foreign (§5.4, §8.3); a foreign value referenced from a definition
+-- resolves to `top(index)` like any top-level name; private foreigns are
+-- absent from the interface.
+--| Add two numbers.
+pub foreign add : number -> number -> number
+
+
+pub foreign type List a
+
+
+foreign unsafeLength : List a -> Int
+
+
+pub length : List a -> Int
+length xs =
+    add (unsafeLength xs) 0

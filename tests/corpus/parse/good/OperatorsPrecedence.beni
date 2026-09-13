@@ -1,0 +1,84 @@
+-- Operator associativity and precedence subtleties of §6.5: each expression
+-- here produces a different AST if a fixity were wrong.
+leftMinus a b c =
+    a - b - c
+
+
+rightCons a b c =
+    a :: b :: c
+
+
+rightApply f g x =
+    f <| g <| x
+
+
+leftPipe f g x =
+    x |> f |> g
+
+
+rightPow a b c =
+    a ^ b ^ c
+
+
+rightCompose f g h =
+    f << g << h
+
+
+leftCompose f g h =
+    f >> g >> h
+
+
+notAnd a b c =
+    not (a == b) && c
+
+
+mulOverAdd a b c =
+    a + b * c
+
+
+appendAndConsSameLevel a b c =
+    a ++ b :: c
+
+
+orOverAnd a b c =
+    a || b && c
+
+
+comparisonOverAppend a b c d =
+    a ++ b == c ++ d
+
+
+pipeLowest f x y =
+    x + y |> f
+
+
+powOverMul a b c =
+    a * b ^ c
+
+
+divisionsLeft a b c =
+    a / b // c
+
+
+appTighter f x y =
+    f x + f y
+
+
+accessTighter f r =
+    f r.a.b
+
+
+questionTighter f r =
+    f r? + 1
+
+
+mixedRight a b c d =
+    a || b || c && d
+
+
+composeThenApply f g x =
+    f << g <| x
+
+
+andChainRight a b c =
+    a && b && c

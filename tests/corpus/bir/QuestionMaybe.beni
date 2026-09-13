@@ -1,0 +1,16 @@
+-- BIR: `e?` in Maybe position lowers to the same `case` shape as in Result
+-- position (§6.6); the Maybe/Result choice is M2's. The `case` returns
+-- from the enclosing named function, here `firstTwo`, not from the `let`
+-- helper.
+firstTwo : List Int -> Maybe ( Int, Int )
+firstTwo xs =
+    Just ( List.head xs?, List.head (List.drop 1 xs)? )
+
+
+viaHelper : List Int -> Maybe Int
+viaHelper xs =
+    let
+        headPlus n =
+            Just (List.head xs? + n)
+    in
+    headPlus 1

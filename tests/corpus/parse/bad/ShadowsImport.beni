@@ -1,0 +1,12 @@
+-- shadows_import at 7:1: a top-level value named like an `exposing` entry
+-- (§5.3). Second at 11:6: a type named like an exposed upper name.
+import Dict exposing (Dict, empty)
+import Set exposing (Set)
+
+
+empty =
+    1
+
+
+type Set
+    = Set

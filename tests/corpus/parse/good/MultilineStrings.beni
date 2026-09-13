@@ -1,0 +1,43 @@
+-- Multiline strings (§2.7): one line, several lines, one containing `${` and
+-- `\` literally, an empty line inside via a bare `\\`, a multiline string as a
+-- function argument, one inside a `let`, and one ending in a bare marker.
+oneLine =
+    \\just one line
+
+
+sql =
+    \\SELECT *
+    \\FROM users
+    \\WHERE id = 1
+
+
+rawStuff =
+    \\no ${interpolation} here
+    \\and a \ backslash and \n is two chars
+    \\
+
+
+emptyLineInside =
+    \\first
+    \\
+    \\third
+
+
+asArgument =
+    String.lines
+        \\a
+        \\b
+
+
+inLet =
+    let
+        text =
+            \\x
+            \\y
+    in
+    text
+
+
+withTrailingSpaces =
+    \\keeps trailing spaces   
+    \\  and leading ones

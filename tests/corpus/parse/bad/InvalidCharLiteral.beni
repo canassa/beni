@@ -1,0 +1,12 @@
+-- invalid_char_literal twice: 4:5 (`''`, empty) and 8:5 (`'ab'`, two scalar
+-- values). `z` on line 11 is valid.
+x =
+    ''
+
+
+y =
+    'ab'
+
+
+z =
+    'c'

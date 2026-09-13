@@ -1,0 +1,8 @@
+-- duplicate_type at 7:12: an alias and a custom type with the same name
+-- share the type namespace (§5.3).
+type Shape
+    = Circle
+
+
+type alias Shape =
+    Int

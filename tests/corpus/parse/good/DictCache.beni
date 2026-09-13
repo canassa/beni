@@ -1,0 +1,71 @@
+-- A Dict-based memo cache: `Dict` imported with an exposed type, qualified
+-- functions, a record holding the cache, `case` on `Dict.get`, tuple pattern
+-- bindings in `let`, a multi-field record update spanning lines, and a
+-- tuple-returning step threaded through `List.foldl`.
+import Dict exposing (Dict)
+
+
+type alias Cache =
+    { hits : Int
+    , misses : Int
+    , table : Dict Int Int
+    }
+
+
+pub empty : Cache
+empty =
+    { hits = 0, misses = 0, table = Dict.empty }
+
+
+pub fib : Int -> Cache -> ( Int, Cache )
+fib n cache =
+    case Dict.get n cache.table of
+        Just value ->
+            ( value, { cache | hits = cache.hits + 1 } )
+
+        Nothing ->
+            if n < 2 then
+                ( n, { cache | misses = cache.misses + 1 } )
+            else
+                let
+                    ( a, cache1 ) =
+                        fib (n - 1) cache
+
+                    ( b, cache2 ) =
+                        fib (n - 2) cache1
+
+                    result =
+                        a + b
+                in
+                ( result
+                , { cache2
+                    | misses = cache2.misses + 1
+                    , table = Dict.insert n result cache2.table
+                  }
+                )
+
+
+pub fibAll : List Int -> Cache -> ( List Int, Cache )
+fibAll ns cache =
+    let
+        step n ( acc, c ) =
+            let
+                ( value, c1 ) =
+                    fib n c
+            in
+            ( value :: acc, c1 )
+    in
+    List.foldl step ( [], cache ) ns
+        |> (\( values, final ) -> ( List.reverse values, final ))
+
+
+pub hitRate : Cache -> Float
+hitRate cache =
+    let
+        total =
+            cache.hits + cache.misses
+    in
+    if total == 0 then
+        0
+    else
+        toFloat cache.hits / toFloat total

@@ -1,0 +1,7 @@
+-- self_import at 3:8: this file is module `SelfImport` and imports itself, a
+-- cycle of length one detectable per file (§5.2).
+import SelfImport
+
+
+x =
+    1

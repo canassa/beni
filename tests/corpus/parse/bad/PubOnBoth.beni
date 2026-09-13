@@ -1,0 +1,4 @@
+-- pub_on_definition at 3:1: `pub` on both the annotation and the definition.
+pub f : Int
+pub f =
+    1

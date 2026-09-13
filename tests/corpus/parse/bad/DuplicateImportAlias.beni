@@ -1,0 +1,7 @@
+-- duplicate_import_alias at 3:23: two imports sharing the alias `D` (§5.2).
+import Json.Decode as D
+import Json.Encode as D
+
+
+x =
+    1

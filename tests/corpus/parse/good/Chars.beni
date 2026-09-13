@@ -1,0 +1,56 @@
+-- Character literals (§2.8): plain, digit, escaped, unicode escape, both quote
+-- characters, a non-ASCII char, space, dollar, and chars in a list argument.
+plain =
+    'a'
+
+
+digit =
+    '0'
+
+
+newline =
+    '\n'
+
+
+tabChar =
+    '\t'
+
+
+backslash =
+    '\\'
+
+
+singleQuote =
+    '\''
+
+
+doubleQuote =
+    '"'
+
+
+escapedDouble =
+    '\"'
+
+
+unicode =
+    '\u{1F600}'
+
+
+unicodeShort =
+    '\u{41}'
+
+
+nonAscii =
+    'é'
+
+
+space =
+    ' '
+
+
+dollar =
+    '$'
+
+
+isVowel c =
+    List.member c [ 'a', 'e', 'i', 'o', 'u' ]

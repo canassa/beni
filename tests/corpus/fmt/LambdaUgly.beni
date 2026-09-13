@@ -1,0 +1,10 @@
+-- Formatter: lambdas without spaces, a lambda body on the next line at an
+-- odd column, a lambda with destructuring parameters, a lambda argument
+-- broken mid-body; expected: `\x -> x` spacing and canonical body placement.
+f=\x->x+1
+g = \a b ->
+      a+b
+h = \(a,b) {c} _->
+  a+b+c
+k = List.map (\x->
+  x*2)

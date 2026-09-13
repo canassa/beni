@@ -1,0 +1,15 @@
+-- unbound_type at 4:5 (`Foo` in an annotation) and 10:10 (`Bar` in a type
+-- alias body): upper names in type position that are neither declared,
+-- exposed nor prelude (§6.2). The prelude type `Int` on line 13 is fine.
+x : Foo
+x =
+    1
+
+
+type alias T =
+    List Bar
+
+
+y : Int
+y =
+    1

@@ -1,0 +1,8 @@
+-- duplicate_type_parameter at 3:13: `a` declared twice on a custom type
+-- (§7). Second at 7:19: on a type alias.
+type Pair a a
+    = Pair a a
+
+
+type alias Same a a =
+    a

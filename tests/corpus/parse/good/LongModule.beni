@@ -1,0 +1,751 @@
+-- A long (~600 line) realistic module: a Kanban board application with
+-- Model/Msg/update/view, JSON encoding and decoding, drag-and-drop state,
+-- filtering, keyboard handling and small utilities. It exercises nothing new;
+-- it exists so the parser is proven on real-code density and length.
+--! Kanban board: model, update and view for a three-column task board.
+--! Cards move between columns, can be edited inline, and persist as JSON.
+import Dict exposing (Dict)
+import Html exposing (Html, button, div, h1, h2, input, li, span, text, ul)
+import Html.Attributes exposing (class, classList, placeholder, value)
+import Html.Events exposing (onClick, onInput)
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
+import Set exposing (Set)
+
+
+--| A single card on the board.
+pub type alias Card =
+    { id : Int
+    , title : String
+    , description : String
+    , labels : List String
+    , column : Column
+    , order : Int
+    }
+
+
+--| The three fixed columns.
+pub type Column
+    = Backlog
+    | InProgress
+    | Done
+
+
+--| What the user is currently editing, if anything.
+type Editing
+    = NotEditing
+    | EditingTitle Int String
+    | EditingDescription Int String
+
+
+--| Drag state: which card is being dragged and which column is hovered.
+type alias Drag =
+    { cardId : Int
+    , over : Maybe Column
+    }
+
+
+pub type alias Model =
+    { cards : Dict Int Card
+    , nextId : Int
+    , editing : Editing
+    , drag : Maybe Drag
+    , filter : String
+    , collapsed : Set String
+    , newCardTitle : String
+    , errors : List String
+    }
+
+
+pub type Msg
+    = NoOp
+    | SetNewCardTitle String
+    | AddCard
+    | DeleteCard Int
+    | MoveCard Int Column
+    | StartEditTitle Int
+    | StartEditDescription Int
+    | EditInput String
+    | CommitEdit
+    | CancelEdit
+    | DragStart Int
+    | DragOver Column
+    | DragEnd
+    | Drop
+    | SetFilter String
+    | ToggleCollapse String
+    | ToggleLabel Int String
+    | Loaded (Result Decode.Error (List Card))
+    | KeyDown String
+
+
+pub init : Model
+init =
+    { cards = Dict.empty
+    , nextId = 1
+    , editing = NotEditing
+    , drag = Nothing
+    , filter = ""
+    , collapsed = Set.empty
+    , newCardTitle = ""
+    , errors = []
+    }
+
+
+pub columns : List Column
+columns =
+    [ Backlog, InProgress, Done ]
+
+
+pub columnName : Column -> String
+columnName column =
+    case column of
+        Backlog ->
+            "Backlog"
+
+        InProgress ->
+            "In progress"
+
+        Done ->
+            "Done"
+
+
+columnKey : Column -> String
+columnKey column =
+    case column of
+        Backlog ->
+            "backlog"
+
+        InProgress ->
+            "in_progress"
+
+        Done ->
+            "done"
+
+
+columnFromKey : String -> Maybe Column
+columnFromKey key =
+    case key of
+        "backlog" ->
+            Just Backlog
+
+        "in_progress" ->
+            Just InProgress
+
+        "done" ->
+            Just Done
+
+        _ ->
+            Nothing
+
+
+nextColumn : Column -> Maybe Column
+nextColumn column =
+    case column of
+        Backlog ->
+            Just InProgress
+
+        InProgress ->
+            Just Done
+
+        Done ->
+            Nothing
+
+
+previousColumn : Column -> Maybe Column
+previousColumn column =
+    case column of
+        Backlog ->
+            Nothing
+
+        InProgress ->
+            Just Backlog
+
+        Done ->
+            Just InProgress
+
+
+pub update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        NoOp ->
+            model
+
+        SetNewCardTitle title ->
+            { model | newCardTitle = title }
+
+        AddCard ->
+            let
+                title =
+                    String.trim model.newCardTitle
+            in
+            if String.isEmpty title then
+                addError "A card needs a title." model
+            else
+                let
+                    card =
+                        { id = model.nextId
+                        , title = title
+                        , description = ""
+                        , labels = []
+                        , column = Backlog
+                        , order = cardsIn Backlog model |> List.length
+                        }
+                in
+                { model
+                    | cards = Dict.insert card.id card model.cards
+                    , nextId = model.nextId + 1
+                    , newCardTitle = ""
+                }
+
+        DeleteCard id ->
+            { model | cards = Dict.remove id model.cards }
+                |> renumber
+
+        MoveCard id column ->
+            moveCard id column model
+
+        StartEditTitle id ->
+            case Dict.get id model.cards of
+                Just card ->
+                    { model | editing = EditingTitle id card.title }
+
+                Nothing ->
+                    model
+
+        StartEditDescription id ->
+            case Dict.get id model.cards of
+                Just card ->
+                    { model | editing = EditingDescription id card.description }
+
+                Nothing ->
+                    model
+
+        EditInput str ->
+            case model.editing of
+                NotEditing ->
+                    model
+
+                EditingTitle id _ ->
+                    { model | editing = EditingTitle id str }
+
+                EditingDescription id _ ->
+                    { model | editing = EditingDescription id str }
+
+        CommitEdit ->
+            commitEdit model
+
+        CancelEdit ->
+            { model | editing = NotEditing }
+
+        DragStart id ->
+            { model | drag = Just { cardId = id, over = Nothing } }
+
+        DragOver column ->
+            case model.drag of
+                Just drag ->
+                    { model | drag = Just { drag | over = Just column } }
+
+                Nothing ->
+                    model
+
+        DragEnd ->
+            { model | drag = Nothing }
+
+        Drop ->
+            case model.drag of
+                Just { cardId, over } ->
+                    case over of
+                        Just column ->
+                            moveCard cardId column { model | drag = Nothing }
+
+                        Nothing ->
+                            { model | drag = Nothing }
+
+                Nothing ->
+                    model
+
+        SetFilter str ->
+            { model | filter = String.toLower str }
+
+        ToggleCollapse key ->
+            if Set.member key model.collapsed then
+                { model | collapsed = Set.remove key model.collapsed }
+            else
+                { model | collapsed = Set.insert key model.collapsed }
+
+        ToggleLabel id label ->
+            updateCard id (toggleLabel label) model
+
+        Loaded result ->
+            case result of
+                Ok cards ->
+                    { model
+                        | cards = cards |> List.map (\c -> ( c.id, c )) |> Dict.fromList
+                        , nextId = 1 + List.foldl (\c acc -> max acc c.id) 0 cards
+                    }
+
+                Err error ->
+                    addError (Decode.errorToString error) model
+
+        KeyDown key ->
+            handleKey key model
+
+
+addError : String -> Model -> Model
+addError message model =
+    { model | errors = message :: List.take 4 model.errors }
+
+
+updateCard : Int -> (Card -> Card) -> Model -> Model
+updateCard id f model =
+    case Dict.get id model.cards of
+        Just card ->
+            { model | cards = Dict.insert id (f card) model.cards }
+
+        Nothing ->
+            model
+
+
+toggleLabel : String -> Card -> Card
+toggleLabel label card =
+    if List.member label card.labels then
+        { card | labels = List.filter (\l -> l /= label) card.labels }
+    else
+        { card | labels = label :: card.labels }
+
+
+commitEdit : Model -> Model
+commitEdit model =
+    let
+        finished =
+            { model | editing = NotEditing }
+    in
+    case model.editing of
+        NotEditing ->
+            model
+
+        EditingTitle id title ->
+            if String.isEmpty (String.trim title) then
+                addError "Title cannot be empty." finished
+            else
+                updateCard id (\card -> { card | title = String.trim title }) finished
+
+        EditingDescription id description ->
+            updateCard id (\card -> { card | description = description }) finished
+
+
+moveCard : Int -> Column -> Model -> Model
+moveCard id column model =
+    case Dict.get id model.cards of
+        Just card ->
+            if card.column == column then
+                model
+            else
+                let
+                    moved =
+                        { card
+                            | column = column
+                            , order = List.length (cardsIn column model)
+                        }
+                in
+                { model | cards = Dict.insert id moved model.cards }
+                    |> renumber
+
+        Nothing ->
+            model
+
+
+renumber : Model -> Model
+renumber model =
+    let
+        renumberColumn column cards =
+            cardsIn column model
+                |> List.indexedMap (\index card -> { card | order = index })
+                |> List.foldl (\card acc -> Dict.insert card.id card acc) cards
+    in
+    { model | cards = List.foldl renumberColumn model.cards columns }
+
+
+cardsIn : Column -> Model -> List Card
+cardsIn column model =
+    model.cards
+        |> Dict.values
+        |> List.filter (\card -> card.column == column)
+        |> List.sortBy .order
+
+
+visibleCardsIn : Column -> Model -> List Card
+visibleCardsIn column model =
+    cardsIn column model
+        |> List.filter (matchesFilter model.filter)
+
+
+matchesFilter : String -> Card -> Bool
+matchesFilter filter card =
+    String.isEmpty filter
+        || String.contains filter (String.toLower card.title)
+        || String.contains filter (String.toLower card.description)
+        || List.any (\label -> String.contains filter (String.toLower label)) card.labels
+
+
+handleKey : String -> Model -> Model
+handleKey key model =
+    case ( key, model.editing ) of
+        ( "Escape", _ ) ->
+            { model | editing = NotEditing, drag = Nothing }
+
+        ( "Enter", EditingTitle _ _ ) ->
+            commitEdit model
+
+        ( "Enter", NotEditing ) ->
+            update AddCard model
+
+        ( "ArrowRight", NotEditing ) ->
+            shiftSelected nextColumn model
+
+        ( "ArrowLeft", NotEditing ) ->
+            shiftSelected previousColumn model
+
+        _ ->
+            model
+
+
+shiftSelected : (Column -> Maybe Column) -> Model -> Model
+shiftSelected direction model =
+    case model.drag of
+        Just { cardId } ->
+            case Dict.get cardId model.cards of
+                Just card ->
+                    case direction card.column of
+                        Just target ->
+                            moveCard cardId target model
+
+                        Nothing ->
+                            model
+
+                Nothing ->
+                    model
+
+        Nothing ->
+            model
+
+
+pub view : Model -> Html Msg
+view model =
+    div [ class "board" ]
+        [ viewHeader model
+        , viewErrors model.errors
+        , div [ class "columns" ] (List.map (viewColumn model) columns)
+        ]
+
+
+viewHeader : Model -> Html Msg
+viewHeader model =
+    div [ class "header" ]
+        [ h1 [] [ text "Kanban" ]
+        , input
+            [ placeholder "New card title"
+            , value model.newCardTitle
+            , onInput SetNewCardTitle
+            ]
+            []
+        , button [ onClick AddCard ] [ text "Add" ]
+        , input
+            [ placeholder "Filter"
+            , value model.filter
+            , onInput SetFilter
+            ]
+            []
+        , span [ class "count" ] [ text (countLabel model) ]
+        ]
+
+
+countLabel : Model -> String
+countLabel model =
+    let
+        total =
+            Dict.size model.cards
+
+        done =
+            cardsIn Done model |> List.length
+    in
+    if total == 0 then
+        "no cards"
+    else
+        "${done} of ${total} done (${percent done total}%)"
+
+
+percent : Int -> Int -> Int
+percent part whole =
+    if whole == 0 then
+        0
+    else
+        part * 100 // whole
+
+
+viewErrors : List String -> Html Msg
+viewErrors errors =
+    case errors of
+        [] ->
+            text ""
+
+        _ ->
+            ul [ class "errors" ] (List.map (\err -> li [] [ text err ]) errors)
+
+
+viewColumn : Model -> Column -> Html Msg
+viewColumn model column =
+    let
+        key =
+            columnKey column
+
+        collapsed =
+            Set.member key model.collapsed
+
+        cards =
+            visibleCardsIn column model
+
+        hovered =
+            case model.drag of
+                Just { over } ->
+                    over == Just column
+
+                Nothing ->
+                    False
+    in
+    div
+        [ classList
+            [ ( "column", True )
+            , ( "column-${key}", True )
+            , ( "collapsed", collapsed )
+            , ( "hovered", hovered )
+            ]
+        ]
+        [ h2 [ onClick (ToggleCollapse key) ]
+            [ text (columnName column)
+            , span [ class "badge" ] [ text (String.fromInt (List.length cards)) ]
+            ]
+        , if collapsed then
+            text ""
+          else
+            ul [ class "cards" ] (List.map (viewCard model) cards)
+        , viewDropZone column
+        ]
+
+
+viewDropZone : Column -> Html Msg
+viewDropZone column =
+    div
+        [ class "dropzone"
+        , onClick Drop
+        ]
+        [ text "Drop here to move to ${columnName column}" ]
+
+
+viewCard : Model -> Card -> Html Msg
+viewCard model card =
+    let
+        dragging =
+            case model.drag of
+                Just { cardId } ->
+                    cardId == card.id
+
+                Nothing ->
+                    False
+    in
+    li
+        [ classList
+            [ ( "card", True )
+            , ( "dragging", dragging )
+            , ( "has-labels", not (List.isEmpty card.labels) )
+            ]
+        ]
+        [ viewCardTitle model.editing card
+        , viewCardDescription model.editing card
+        , viewLabels card
+        , viewCardActions card
+        ]
+
+
+viewCardTitle : Editing -> Card -> Html Msg
+viewCardTitle editing card =
+    case editing of
+        EditingTitle id draft ->
+            if id == card.id then
+                input
+                    [ class "title-input"
+                    , value draft
+                    , onInput EditInput
+                    ]
+                    []
+            else
+                staticTitle card
+
+        _ ->
+            staticTitle card
+
+
+staticTitle : Card -> Html Msg
+staticTitle card =
+    span
+        [ class "title"
+        , onClick (StartEditTitle card.id)
+        ]
+        [ text "#${card.id} ${card.title}" ]
+
+
+viewCardDescription : Editing -> Card -> Html Msg
+viewCardDescription editing card =
+    case editing of
+        EditingDescription id draft ->
+            if id == card.id then
+                div []
+                    [ input [ value draft, onInput EditInput ] []
+                    , button [ onClick CommitEdit ] [ text "Save" ]
+                    , button [ onClick CancelEdit ] [ text "Cancel" ]
+                    ]
+            else
+                staticDescription card
+
+        _ ->
+            staticDescription card
+
+
+staticDescription : Card -> Html Msg
+staticDescription card =
+    div
+        [ class "description"
+        , onClick (StartEditDescription card.id)
+        ]
+        [ text
+            (if String.isEmpty card.description then
+                "(no description)"
+             else
+                truncate80 card.description
+            )
+        ]
+
+
+truncate80 : String -> String
+truncate80 s =
+    if String.length s <= 80 then
+        s
+    else
+        String.left 77 s ++ "..."
+
+
+viewLabels : Card -> Html Msg
+viewLabels card =
+    ul [ class "labels" ]
+        (List.map
+            (\label ->
+                li
+                    [ class "label label-${label}"
+                    , onClick (ToggleLabel card.id label)
+                    ]
+                    [ text label ]
+            )
+            (List.sortBy identity card.labels)
+        )
+
+
+viewCardActions : Card -> Html Msg
+viewCardActions card =
+    let
+        moveButton direction label =
+            case direction card.column of
+                Just target ->
+                    button [ onClick (MoveCard card.id target) ] [ text label ]
+
+                Nothing ->
+                    text ""
+    in
+    div [ class "actions" ]
+        [ moveButton previousColumn "<"
+        , moveButton nextColumn ">"
+        , button [ onClick (DragStart card.id) ] [ text "grab" ]
+        , button [ class "danger", onClick (DeleteCard card.id) ] [ text "delete" ]
+        ]
+
+
+pub encodeModel : Model -> Encode.Value
+encodeModel model =
+    Encode.object
+        [ ( "cards", Encode.list encodeCard (Dict.values model.cards) )
+        , ( "nextId", Encode.int model.nextId )
+        , ( "collapsed", Encode.list Encode.string (Set.toList model.collapsed) )
+        ]
+
+
+encodeCard : Card -> Encode.Value
+encodeCard card =
+    Encode.object
+        [ ( "id", Encode.int card.id )
+        , ( "title", Encode.string card.title )
+        , ( "description", Encode.string card.description )
+        , ( "labels", Encode.list Encode.string card.labels )
+        , ( "column", Encode.string (columnKey card.column) )
+        , ( "order", Encode.int card.order )
+        ]
+
+
+pub cardsDecoder : Decoder (List Card)
+cardsDecoder =
+    Decode.field "cards" (Decode.list cardDecoder)
+
+
+cardDecoder : Decoder Card
+cardDecoder =
+    Decode.map6 Card
+        (Decode.field "id" Decode.int)
+        (Decode.field "title" Decode.string)
+        (Decode.oneOf [ Decode.field "description" Decode.string, Decode.succeed "" ])
+        (Decode.oneOf [ Decode.field "labels" (Decode.list Decode.string), Decode.succeed [] ])
+        (Decode.field "column" columnDecoder)
+        (Decode.oneOf [ Decode.field "order" Decode.int, Decode.succeed 0 ])
+
+
+columnDecoder : Decoder Column
+columnDecoder =
+    Decode.string
+        |> Decode.andThen
+            (\key ->
+                case columnFromKey key of
+                    Just column ->
+                        Decode.succeed column
+
+                    Nothing ->
+                        Decode.fail "unknown column: ${key}"
+            )
+
+
+pub load : String -> Result String Model
+load json =
+    let
+        cards =
+            Decode.decodeString cardsDecoder json
+                |> Result.mapError Decode.errorToString
+    in
+    Ok (update (Loaded (Ok cards?)) init)
+
+
+pub summary : Model -> List ( String, Int )
+summary model =
+    List.map (\column -> ( columnName column, List.length (cardsIn column model) )) columns
+
+
+pub labelsInUse : Model -> List String
+labelsInUse model =
+    model.cards
+        |> Dict.values
+        |> List.concatMap .labels
+        |> Set.fromList
+        |> Set.toList
+
+
+pub oldestCard : Model -> Maybe Card
+oldestCard model =
+    Dict.values model.cards
+        |> List.sortBy .id
+        |> List.head

@@ -1,0 +1,4 @@
+-- A file with only imports and no declarations parses to a module with an
+-- empty declaration list.
+import Dict
+import Set

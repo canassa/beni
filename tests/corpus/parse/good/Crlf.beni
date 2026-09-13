@@ -1,0 +1,22 @@
+-- Every line of this file ends in CRLF (\r\n), which is a single newline (§2.1);
+-- columns and the AST are identical to the LF version.
+import Dict
+
+
+type Msg
+    = Inc
+    | Dec
+
+
+update : Msg -> Int -> Int
+update msg n =
+    case msg of
+        Inc ->
+            n + 1
+
+        Dec ->
+            n - 1
+
+
+label =
+    "count: ${update Inc 1}"

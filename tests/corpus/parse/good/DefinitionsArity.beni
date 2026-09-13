@@ -1,0 +1,23 @@
+-- Definitions with zero, one and many parameters, wildcard and destructuring
+-- parameters (PatAtom), and a one-line definition.
+zero =
+    0
+
+
+one x =
+    x
+
+
+many a b c d =
+    a + b + c + d
+
+
+ignore _ _ =
+    ()
+
+
+unpack ( a, b ) { name } [ first ] =
+    ( a, b, name, first )
+
+
+inline x = x * 2

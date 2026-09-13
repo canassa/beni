@@ -1,0 +1,13 @@
+-- unknown_module_alias at 5:5: `Dict.empty` with no import of `Dict`, which
+-- is not a prelude alias (§6.2). Second at 9:5: a qualified constructor
+-- `Http.Timeout` with no import. `ok` on line 12 uses a prelude alias.
+x =
+    Dict.empty
+
+
+y =
+    Http.Timeout
+
+
+ok =
+    List.length []

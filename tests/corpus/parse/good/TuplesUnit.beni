@@ -1,0 +1,40 @@
+-- Tuples of arity 2, 3 and 5, nested tuples, unit as a value and as a
+-- parameter pattern, `(a)` as grouping rather than a tuple, and a tuple
+-- spread over lines.
+pair =
+    ( 1, "one" )
+
+
+triple =
+    ( 1, 2.0, 'c' )
+
+
+five =
+    ( 1, 2, 3, 4, 5 )
+
+
+nestedTuple =
+    ( ( 1, 2 ), ( 3, ( 4, 5 ) ) )
+
+
+unit =
+    ()
+
+
+unitWithSpace =
+    (  )
+
+
+grouping x =
+    (x)
+
+
+unitParam () =
+    ()
+
+
+spread =
+    ( 1
+    , 2
+    , 3
+    )

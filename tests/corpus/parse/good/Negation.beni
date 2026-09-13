@@ -1,0 +1,59 @@
+-- Negation in every position of §6.5: prefix on a name, on a parenthesised
+-- expression, inside a list, as a parenthesised argument, after a binary
+-- minus, after other operators, on a field access, in a tuple and a record,
+-- as a literal pattern, and `f -1`, which is binary subtraction.
+negName x =
+    -x
+
+
+negParen a b =
+    -(a + b)
+
+
+negList =
+    [ -1, -2.5, -0x10 ]
+
+
+negArg f =
+    f (-1)
+
+
+doubleMinus a b =
+    a - -b
+
+
+subtraction f =
+    f -1
+
+
+negInPipe x =
+    -x |> abs
+
+
+negField r =
+    -r.value
+
+
+negTuple =
+    ( -1, -2 )
+
+
+negRecord =
+    { a = -1 }
+
+
+negAfterOps a b =
+    a * -b + -a
+
+
+negCall f x =
+    -(f x)
+
+
+negLiteralPattern n =
+    case n of
+        -1 ->
+            True
+
+        _ ->
+            False

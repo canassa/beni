@@ -1,0 +1,12 @@
+-- negation_with_space at 4:5: `- x` with a space in prefix position (§6.5).
+-- Second at 8:7: inside a list. `ok` on line 11 (`a - b`, binary) is valid.
+f x =
+    - x
+
+
+g x =
+    [ - x ]
+
+
+ok a b =
+    a - b

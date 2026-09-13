@@ -1,0 +1,8 @@
+-- unexpected_token (or expected_token) at 4:10: a stray `,` where an
+-- expression was expected inside a list. `y` on line 7 is valid.
+x =
+    [ 1, , 2 ]
+
+
+y =
+    1

@@ -1,0 +1,22 @@
+-- Extensible record types `{ r | field : T }` in aliases and annotations,
+-- alongside closed and empty record types and an alias applied to `{}`.
+type alias Named r =
+    { r | name : String }
+
+
+type alias Positioned r =
+    { r | x : Float, y : Float }
+
+
+type alias Empty =
+    {}
+
+
+describe : { a | name : String, age : Int } -> String
+describe person =
+    "${person.name} is ${person.age}"
+
+
+move : Positioned (Named {}) -> Positioned (Named {})
+move p =
+    { p | x = p.x + 1 }

@@ -1,0 +1,10 @@
+-- Formatter: module doc lines with extra and missing spaces after `--!`, and
+-- a second module-doc block after a blank line (merged per §2.3), then a
+-- doc block directly on the first declaration; expected: one module doc
+-- block with a space after each marker, blank line, then the declaration.
+--!   Module doc with extra leading spaces
+--!and one without a space.
+
+--! A second block after a blank line.
+--| Doc on the first declaration, directly after the module doc.
+x = 1

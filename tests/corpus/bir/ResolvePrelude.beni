@@ -1,0 +1,45 @@
+-- BIR: prelude names (Appendix A) resolve without an import to the same
+-- forms an explicit import would give: `import_value(Basics, max)`,
+-- `import_ctor(Maybe, Just)`, and the module aliases `List`, `String`,
+-- `Maybe`, `Result`, `Char`, `Basics` and `Debug` for qualified names.
+largest : Int -> Int -> Int
+largest a b =
+    max a b
+
+
+wrap : Int -> Maybe Int
+wrap n =
+    if n > 0 then Just n else Nothing
+
+
+describe : Result String Int -> String
+describe r =
+    case r of
+        Ok n ->
+            String.fromInt n
+
+        Err message ->
+            message
+
+
+ordering : Int -> Int -> Order
+ordering a b =
+    case compare a b of
+        LT ->
+            LT
+
+        EQ ->
+            EQ
+
+        GT ->
+            GT
+
+
+qualified : List Int -> Int
+qualified xs =
+    List.length xs + Basics.round 1.5 + Char.toCode 'a' + Debug.log "n" 0
+
+
+cached : Maybe Int -> Int
+cached m =
+    Maybe.withDefault 0 m + Result.withDefault 0 (Ok 1)

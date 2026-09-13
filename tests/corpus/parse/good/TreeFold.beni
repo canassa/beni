@@ -1,0 +1,61 @@
+-- A binary tree with a fold: a recursive parameterised custom type, nested
+-- constructor patterns, an accumulator threaded through recursion, point-free
+-- definitions built from the fold, and an operator passed as a function.
+-- Nullary constructors as pattern arguments are parenthesised because §3's
+-- PatAtom has no bare upper_ident form.
+pub type Tree a
+    = Leaf
+    | Node (Tree a) a (Tree a)
+
+
+pub fold : (a -> b -> b) -> b -> Tree a -> b
+fold f acc tree =
+    case tree of
+        Leaf ->
+            acc
+
+        Node left value right ->
+            fold f (f value (fold f acc left)) right
+
+
+pub insert : Int -> Tree Int -> Tree Int
+insert x tree =
+    case tree of
+        Leaf ->
+            Node Leaf x Leaf
+
+        Node left value right ->
+            if x < value then
+                Node (insert x left) value right
+            else if x > value then
+                Node left value (insert x right)
+            else
+                tree
+
+
+pub fromList : List Int -> Tree Int
+fromList =
+    List.foldl insert Leaf
+
+
+pub toList : Tree a -> List a
+toList tree =
+    fold (::) [] tree |> List.reverse
+
+
+pub size : Tree a -> Int
+size =
+    fold (\_ n -> n + 1) 0
+
+
+pub depth : Tree a -> Int
+depth tree =
+    case tree of
+        Leaf ->
+            0
+
+        Node (Leaf) _ (Leaf) ->
+            1
+
+        Node left _ right ->
+            1 + max (depth left) (depth right)

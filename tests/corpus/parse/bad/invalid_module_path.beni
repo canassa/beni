@@ -1,0 +1,6 @@
+-- invalid_module_path: this file's name is snake_case, so the module name
+-- derived from the path is not a valid upper identifier (§1). The file is
+-- rejected before parsing; the contents are otherwise valid. Expected span:
+-- the file itself (1:1 is the only sensible position).
+x =
+    1

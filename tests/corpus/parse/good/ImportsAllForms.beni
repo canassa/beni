@@ -1,0 +1,15 @@
+-- Every import form of §5.2: bare, `as`, `exposing`, `as` + `exposing`, an
+-- unqualified module name, a two- and a three-segment path, and exposing lists
+-- mixing lower names (values) and upper names (types or constructors).
+import Dict
+import Html as H
+import Html.Attributes exposing (class, href)
+import Http exposing (Error, BadUrl, Timeout, NetworkError)
+import Json.Decode as D exposing (Decoder, string, int)
+import Json.Decode.Pipeline exposing (required)
+import Set exposing (Set)
+
+
+example : Set Int
+example =
+    Set.empty

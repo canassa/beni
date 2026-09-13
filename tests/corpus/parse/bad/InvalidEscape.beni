@@ -1,0 +1,12 @@
+-- invalid_escape at 4:7: `\q` is not one of \n \r \t \\ \" \$ \' \u{…}.
+-- Second error at 8:8: `\u` without braces. `z` on line 11 is valid.
+x =
+    "a\qb"
+
+
+y =
+    "ab\uA"
+
+
+z =
+    1

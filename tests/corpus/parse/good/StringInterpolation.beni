@@ -1,0 +1,55 @@
+-- String interpolation (§2.6): one and several `${…}` segments, nested braces
+-- in the expression (a record literal and a record update, each followed by a
+-- field access), interpolation at both ends of a string, adjacent
+-- interpolations, an empty string, `\$` as a literal dollar, and a `$` not
+-- followed by `{`, which is also literal.
+hello name =
+    "hello ${name}"
+
+
+two a b =
+    "${a} and ${b}!"
+
+
+nestedBraces =
+    "${ { a = 1 }.a }"
+
+
+nestedRecordUpdate r =
+    "${ { r | a = 2 }.a } done"
+
+
+adjacent a b =
+    "${a}${b}"
+
+
+atEnds x =
+    "${x} middle ${x}"
+
+
+escapedDollar =
+    "\${notInterpolated}"
+
+
+literalDollar =
+    "cost: $5"
+
+
+emptyString =
+    ""
+
+
+exprInside xs =
+    "count: ${List.length xs + 1}"
+
+
+callInside n =
+    "${String.fromInt (n * 2)}"
+
+
+listInside =
+    "${ List.length [ 1, 2, 3 ] }"
+
+
+escapesAroundInterpolation n =
+    "\t${n}\n"

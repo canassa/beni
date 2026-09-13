@@ -1,0 +1,8 @@
+-- invalid_character at 4:5: a non-ASCII byte outside a string, char or
+-- comment (§2.4). Recovery: `y` on line 7 is a valid declaration.
+x =
+    é
+
+
+y =
+    1

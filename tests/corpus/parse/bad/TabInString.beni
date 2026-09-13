@@ -1,0 +1,9 @@
+-- tab_in_source at 5:8: a raw tab byte inside a string literal (§2.1 says
+-- everywhere, including strings); write \t instead. Second at 9:8: a tab
+-- inside a multiline string, which cannot contain one at all.
+x =
+    "ab	cd"
+
+
+y =
+    \\a	b

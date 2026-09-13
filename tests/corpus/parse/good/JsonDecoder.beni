@@ -1,0 +1,58 @@
+-- A realistic JSON decoding module: an aliased import with an exposed type,
+-- qualified names, an application spanning lines with parenthesised
+-- arguments, and a custom type decoded through `andThen` with a lambda whose
+-- body is a `case` on strings, closed by `)` left of the branch column.
+import Json.Decode as Decode exposing (Decoder)
+
+
+type alias User =
+    { id : Int
+    , name : String
+    , email : Maybe String
+    , role : Role
+    }
+
+
+type Role
+    = Admin
+    | Member
+    | Guest
+
+
+pub user : Decoder User
+user =
+    Decode.map4 User
+        (Decode.field "id" Decode.int)
+        (Decode.field "name" Decode.string)
+        (Decode.maybe (Decode.field "email" Decode.string))
+        (Decode.field "role" role)
+
+
+role : Decoder Role
+role =
+    Decode.string
+        |> Decode.andThen
+            (\s ->
+                case s of
+                    "admin" ->
+                        Decode.succeed Admin
+
+                    "member" ->
+                        Decode.succeed Member
+
+                    "guest" ->
+                        Decode.succeed Guest
+
+                    other ->
+                        Decode.fail "unknown role: ${other}"
+            )
+
+
+pub users : Decoder (List User)
+users =
+    Decode.list user
+
+
+pub decodeUsers : String -> Result Decode.Error (List User)
+decodeUsers json =
+    Decode.decodeString users json

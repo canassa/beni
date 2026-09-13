@@ -1,0 +1,6 @@
+-- shadowing at 5:3: a parameter named like an `exposing` entry (§7).
+import Dict exposing (empty)
+
+
+f empty =
+    empty

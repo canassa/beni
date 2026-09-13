@@ -1,0 +1,99 @@
+-- A TodoMVC-style Msg/Model/update: a many-constructor Msg, record update in
+-- every branch, a `let` helper inside a branch, `List.map`/`List.filter` with
+-- lambdas over records, string interpolation and a tuple result.
+type alias Todo =
+    { id : Int
+    , title : String
+    , done : Bool
+    }
+
+
+type alias Model =
+    { todos : List Todo
+    , field : String
+    , nextId : Int
+    , visibility : Visibility
+    }
+
+
+type Visibility
+    = All
+    | Active
+    | Completed
+
+
+type Msg
+    = NoOp
+    | UpdateField String
+    | Add
+    | Delete Int
+    | Check Int Bool
+    | CheckAll Bool
+    | DeleteComplete
+    | ChangeVisibility Visibility
+
+
+pub update : Msg -> Model -> ( Model, List String )
+update msg model =
+    case msg of
+        NoOp ->
+            ( model, [] )
+
+        UpdateField str ->
+            ( { model | field = str }, [] )
+
+        Add ->
+            let
+                title =
+                    String.trim model.field
+            in
+            if String.isEmpty title then
+                ( model, [] )
+            else
+                ( { model
+                    | nextId = model.nextId + 1
+                    , field = ""
+                    , todos = model.todos ++ [ newTodo title model.nextId ]
+                  }
+                , [ "added ${title}" ]
+                )
+
+        Delete id ->
+            ( { model | todos = List.filter (\t -> t.id /= id) model.todos }, [] )
+
+        Check id isDone ->
+            let
+                updateTodo t =
+                    if t.id == id then
+                        { t | done = isDone }
+                    else
+                        t
+            in
+            ( { model | todos = List.map updateTodo model.todos }, [] )
+
+        CheckAll isDone ->
+            ( { model | todos = List.map (\t -> { t | done = isDone }) model.todos }, [] )
+
+        DeleteComplete ->
+            ( { model | todos = List.filter (\t -> not t.done) model.todos }, [] )
+
+        ChangeVisibility visibility ->
+            ( { model | visibility = visibility }, [ "now showing ${visibilityName visibility}" ] )
+
+
+newTodo : String -> Int -> Todo
+newTodo title id =
+    { id = id, title = title, done = False }
+
+
+visibilityName : Visibility -> String
+visibilityName v =
+    case v of
+        All ->
+            "all"
+
+        Active ->
+            "active"
+
+        Completed ->
+            "completed"

@@ -1,0 +1,12 @@
+-- Formatter: `then`/`else` on odd lines and columns, an `else if` chain
+-- written with odd breaks, and a short `if` split over two lines; expected:
+-- `if c then` / body / `else` / body; the short one on one line if it fits.
+sign n = if n < 0
+  then -1
+     else if n == 0 then
+   0 else
+    1
+
+
+tiny b = if b then 1
+  else 0

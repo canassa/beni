@@ -1,0 +1,8 @@
+-- doc_comment_unattached at 3:1: a `--|` block followed by an import instead
+-- of a declaration (§2.3).
+--| This documents nothing.
+import Dict
+
+
+x =
+    1

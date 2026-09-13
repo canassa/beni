@@ -1,0 +1,42 @@
+-- BIR: the interface skeleton (§8.3) lists the `pub` names with annotation
+-- presence, `pub` types with their constructor lists, a `pub opaque` type
+-- with constructors hidden, a `pub alias`; private declarations and private
+-- types are absent from it.
+pub type alias Id =
+    Int
+
+
+pub type Color
+    = Red
+    | Green
+    | Blue
+
+
+pub opaque type Token
+    = Token String
+
+
+type Hidden
+    = Hidden Int
+
+
+type alias PrivateAlias =
+    { id : Id }
+
+
+pub annotated : Int -> Int
+annotated n =
+    n + secret
+
+
+pub bare =
+    Red
+
+
+secret : Int
+secret =
+    1
+
+
+unannotatedPrivate =
+    Hidden 1

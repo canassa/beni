@@ -1,0 +1,35 @@
+-- pub, pub opaque and private declarations of every kind (§5.1): pub goes on
+-- the annotation when there is one and on the definition when there is not.
+pub type alias Id =
+    Int
+
+
+pub type Color
+    = Red
+    | Green
+
+
+pub opaque type Token =
+    Token String
+
+
+type Hidden
+    = Hidden
+
+
+pub greeting : String
+greeting =
+    "hi"
+
+
+pub answer =
+    42
+
+
+helper : Int -> Int
+helper n =
+    n + 1
+
+
+private =
+    helper 1

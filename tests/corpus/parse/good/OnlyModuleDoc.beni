@@ -1,0 +1,2 @@
+--! Intent: a file consisting only of a module doc parses to an empty module
+--! whose doc block is these two lines (no imports, no declarations).

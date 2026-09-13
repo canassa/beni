@@ -1,0 +1,29 @@
+-- BIR: the refs set of a declaration lists the top-level names it
+-- references (§8.1, the DCE graph): `report` references `format`, `total`
+-- and `limit` (three top-level names) and `Dict.size` (one import); `unused`
+-- is referenced by nothing; `format` references only an exposed import.
+import Dict exposing (Dict, size)
+import String.Extra exposing (padLeft)
+
+
+report : Dict String Int -> String
+report d =
+    format (total d + limit) ++ " of ${Dict.size d}"
+
+
+format : Int -> String
+format n =
+    padLeft 4 (String.fromInt n)
+
+
+total : Dict String Int -> Int
+total d =
+    size d
+
+
+limit =
+    10
+
+
+unused =
+    limit + 1

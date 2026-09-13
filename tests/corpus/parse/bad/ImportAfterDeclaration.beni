@@ -1,0 +1,10 @@
+-- import_after_declaration at 6:1: an import after a declaration (§5.2).
+-- Both the declaration and the later `y` are valid.
+x =
+    1
+
+import Dict
+
+
+y =
+    2

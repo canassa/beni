@@ -1,0 +1,25 @@
+-- BIR: every binary operator desugars into a call of the corresponding core
+-- function (§8.2): `a + b` -> `add a b` and so on, marked as builtins;
+-- `::` and `++` too. `<| |> << >>` have their own fixtures.
+arith a b =
+    ( a + b, a - b, a * b, a / b, a // b, a ^ b )
+
+
+comparisons a b =
+    ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+
+
+logic a b =
+    ( a && b, a || b )
+
+
+sequences x xs ys =
+    ( xs ++ ys, x :: xs )
+
+
+negation x =
+    -x
+
+
+asFunction xs =
+    List.foldl (+) 0 xs

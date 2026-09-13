@@ -1,0 +1,45 @@
+-- Destructuring in function and lambda parameters (PatAtom only): tuples,
+-- records, wildcards, unit, a parenthesised constructor pattern, `as`, and
+-- nesting; the type used is declared after its first use.
+first ( a, _ ) =
+    a
+
+
+fullName { firstName, lastName } =
+    "${firstName} ${lastName}"
+
+
+constant _ =
+    0
+
+
+fromUnit () =
+    1
+
+
+unbox (Box inner) =
+    inner
+
+
+type Box
+    = Box Int
+
+
+keep (( a, b ) as pair) =
+    ( pair, a, b )
+
+
+deep ( ( a, b ), { c } ) =
+    a + b + c
+
+
+lambdaParams =
+    \( a, b ) { c } (Box d) -> a + b + c + d
+
+
+listParam [ x, y ] =
+    x + y
+
+
+consParam (x :: rest) =
+    ( x, rest )

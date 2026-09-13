@@ -1,0 +1,4 @@
+-- expected_declaration at 4:1: a lone `\\` multiline-string line at
+-- column 1 at EOF (no trailing newline) cannot start a declaration.
+x = 1
+\\

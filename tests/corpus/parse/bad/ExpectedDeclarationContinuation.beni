@@ -1,0 +1,7 @@
+-- expected_declaration at 7:1: a continuation line of a declaration written
+-- at column 1, where only a new declaration may begin. The parser must not
+-- treat `+ 1` as part of `x`. Expected: the error at 7:1 (and possibly an
+-- error for `x`'s incomplete body, depending on recovery).
+x =
+    1
++ 1

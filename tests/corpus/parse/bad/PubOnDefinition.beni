@@ -1,0 +1,5 @@
+-- pub_on_definition at 4:1: the definition carries `pub` although it has an
+-- annotation; `pub` belongs on the annotation (§3 notes).
+f : Int
+pub f =
+    1

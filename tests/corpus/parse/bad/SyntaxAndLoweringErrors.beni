@@ -1,0 +1,10 @@
+-- A syntax error and a lowering error in the same file: unexpected/expected
+-- token at 6:10 (stray `,`), and unbound_variable at 10:5 (`nowhere`). Both
+-- are expected: the AST is structurally complete after recovery, so lowering
+-- runs and reports its own diagnostics.
+x =
+    [ 1, , 2 ]
+
+
+y =
+    nowhere

@@ -1,0 +1,50 @@
+-- Brackets do not suspend layout (§4 rule 6): inside `( [ {` a token only
+-- needs column > the enclosing block's indent, so continuation lines of a
+-- top-level list may sit at column 2, arguments may dedent below the head,
+-- and inside `let` and `case` bodies the same rule applies against the
+-- binding's or branch's column.
+list =
+ [ 1
+ , 2
+ , 3
+ ]
+
+
+record =
+  { a = 1
+   , b = 2
+    , c = 3
+  }
+
+
+call =
+        List.map
+  (\x -> x)
+     [ 1 ]
+
+
+inLet =
+    let
+        xs =
+            [ 1
+             , 2
+             ]
+    in
+    xs
+
+
+inBranch n =
+    case n of
+        1 ->
+            ( 1
+             , 2
+             )
+
+        _ ->
+            ( 0, 0 )
+
+
+closingAtColumnTwo =
+    [ 1
+    , 2
+ ]

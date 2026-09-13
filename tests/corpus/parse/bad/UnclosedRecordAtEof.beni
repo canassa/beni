@@ -1,0 +1,3 @@
+-- unclosed_delimiter at 3:5: `{` opened, one field written, file ends
+-- without a newline. Reported at the opening brace.
+x = { a = 1

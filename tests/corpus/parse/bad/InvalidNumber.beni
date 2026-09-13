@@ -1,0 +1,13 @@
+-- invalid_number twice, proving recovery: 5:5 (`12abc`, identifier character
+-- right after a decimal) and 9:5 (`0x1G`, after a hex literal). `y` on line
+-- 12 is valid and must not be reported.
+x =
+    12abc
+
+
+z =
+    0x1G
+
+
+y =
+    1

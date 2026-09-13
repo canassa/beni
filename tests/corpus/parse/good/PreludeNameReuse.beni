@@ -1,0 +1,33 @@
+-- A top-level declaration may reuse a prelude name (§6.2, Appendix A): the
+-- prelude entry is simply hidden in this file and no diagnostic is issued.
+-- Values, types and constructors are all reused here.
+max : Int -> Int -> Int
+max a b =
+    if a > b then a else b
+
+
+identity x =
+    x
+
+
+type Maybe a
+    = Some a
+    | None
+
+
+type Order
+    = Asc
+    | Desc
+
+
+pub type Result
+    = Ok
+    | Err
+
+
+smallest =
+    max 1 2
+
+
+wrapped =
+    Some (identity Asc)

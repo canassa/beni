@@ -1,0 +1,48 @@
+-- Doc comments (§2.3) attached to: a pub annotation, a private annotation, a
+-- bare definition, a pub type, a private alias, a `pub opaque` type; a
+-- multi-line doc block; a doc block separated from its declaration by blank
+-- lines; and `--|x` with no space.
+--| Documented public function.
+pub greet : String -> String
+greet name =
+    "hi ${name}"
+
+
+--| Private helper, documented.
+helper : Int -> Int
+helper n =
+    n
+
+
+--| A bare definition with a doc.
+answer =
+    42
+
+
+--| A public type.
+--| With a second doc line.
+pub type Shape
+    = Circle
+    | Square
+
+
+--| A private alias.
+type alias Point =
+    { x : Int, y : Int }
+
+
+--| An opaque type.
+pub opaque type Id =
+    Id Int
+
+
+--| Blank lines between the doc block and its declaration are allowed.
+
+
+spaced =
+    1
+
+
+--|no space after the marker
+tight =
+    2

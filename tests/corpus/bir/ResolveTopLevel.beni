@@ -1,0 +1,18 @@
+-- BIR: unqualified names that are not local resolve to `top(index)` of this
+-- module, regardless of declaration order (§6.2, §7); recursion resolves
+-- to the declaration itself.
+double : Int -> Int
+double n =
+    scale n factor
+
+
+factor =
+    2
+
+
+scale : Int -> Int -> Int
+scale n k =
+    if k == 0 then
+        0
+    else
+        n + scale n (k - 1)

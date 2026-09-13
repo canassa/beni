@@ -1,0 +1,75 @@
+-- Every TypeAtom of §3 across annotations: type variable, nullary upper,
+-- qualified upper, unit, parenthesised function, tuples of arity 2 and 3,
+-- empty record, record, extensible record, and applications with several
+-- atoms nested three deep.
+import Dict
+
+
+a : b -> b
+a x =
+    x
+
+
+b : Int
+b =
+    1
+
+
+c : Dict.Dict Int String
+c =
+    Dict.empty
+
+
+d : ()
+d =
+    ()
+
+
+e2 : (Int -> Int) -> Int
+e2 fn =
+    fn 1
+
+
+f : ( Int, String )
+f =
+    ( 1, "" )
+
+
+g : ( Int, String, Char )
+g =
+    ( 1, "", 'c' )
+
+
+h : {}
+h =
+    {}
+
+
+i : { x : Int, y : Int }
+i =
+    { x = 1, y = 2 }
+
+
+j : { r | x : Int } -> Int
+j r =
+    r.x
+
+
+k : Dict.Dict String (List ( Int, Maybe b )) -> List b
+k _ =
+    []
+
+
+l : (Int -> Int) -> (Int -> Int) -> Int -> Int
+l p q x =
+    p (q x)
+
+
+m : List (Maybe (Result String ( Int, Int )))
+m =
+    []
+
+
+n : { rec | items : List ( Int, { name : String } ) } -> Int
+n rec =
+    List.length rec.items

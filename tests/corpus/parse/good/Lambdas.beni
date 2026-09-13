@@ -1,0 +1,42 @@
+-- Lambdas with one, two and many parameters, destructuring parameters,
+-- wildcards, a lambda applied directly, a lambda as an argument, and lambdas
+-- returning lambdas.
+inc =
+    \n -> n + 1
+
+
+add =
+    \a b -> a + b
+
+
+swap =
+    \( a, b ) -> ( b, a )
+
+
+nameOf =
+    \{ name } _ -> name
+
+
+curried =
+    \a -> \b -> \c -> a + b + c
+
+
+applyTwice f x =
+    (\g y -> g (g y)) f x
+
+
+sumPairs =
+    List.map (\( a, b ) -> a + b)
+
+
+ignoreAll =
+    \_ _ _ -> ()
+
+
+multiLine =
+    \x ->
+        let
+            y =
+                x + 1
+        in
+        y * 2

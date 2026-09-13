@@ -1,0 +1,8 @@
+-- Formatter: CRLF line endings, trailing whitespace and no trailing newline;
+-- expected: LF endings, no trailing whitespace, exactly one trailing newline
+-- (§9).
+x =   
+    1  
+
+
+y = 2

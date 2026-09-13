@@ -1,0 +1,68 @@
+-- Operators, `then`, `else`, `of`, `->`, `in`, `=`, `:`, `|` and arguments
+-- may all begin a line (§4 rule 5) as long as they sit right of the enclosing
+-- block's indent.
+type Msg
+  = Inc
+  | Dec
+  |
+    Reset
+
+
+total xs =
+    xs
+        |> List.map (\x -> x * 2)
+        |> List.filter (\x -> x > 2)
+        |> List.sum
+
+
+longSum a b c d =
+    a
+        + b
+        + c
+        + d
+
+
+split a b =
+    a
+        - b - a
+    - b
+
+
+pick flag a b =
+    if flag
+    then a
+    else b
+
+
+branch m =
+    case
+        m
+    of
+        Just x
+            ->
+                x
+
+        Nothing
+            -> 0
+
+
+lets =
+    let
+        a
+            =
+                1
+    in
+    a
+
+
+args =
+    max
+        1
+        2
+
+
+annotated
+    : Int
+annotated
+    =
+    3

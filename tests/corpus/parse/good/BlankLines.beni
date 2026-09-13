@@ -1,0 +1,50 @@
+-- Blank lines are trivia: several between imports and declarations, between
+-- let bindings, between case branches, inside a list, at the start of a
+-- block, and at the end of the file.
+
+import Dict
+
+
+
+import Set
+
+first =
+    1
+
+
+
+second =
+    let
+
+        a =
+            1
+
+
+        b =
+            2
+
+    in
+
+    a + b
+
+
+third x =
+    case x of
+
+        1 ->
+            1
+
+
+
+        _ ->
+
+            2
+
+
+fourth =
+    [ 1
+
+    , 2
+    ]
+
+

@@ -1,0 +1,9 @@
+-- unclosed_delimiter at 5:5 (the opening `(`): a token at column 1 (`g` on
+-- line 8) ends every open construct and the bracket is reported at its
+-- opening position (§4 rule 6). `g` is valid.
+x =
+    ( 1 + 2
+
+
+g =
+    3

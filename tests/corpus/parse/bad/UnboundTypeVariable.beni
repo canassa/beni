@@ -1,0 +1,14 @@
+-- unbound_type_variable at 5:11: `a` used in a `type` body but not declared
+-- as a parameter (§7). Second at 10:10: in an alias body. Annotations (line
+-- 13) may mention free variables and are fine.
+type Box
+    = Box a
+
+
+type alias Wrapper =
+    List b
+
+
+f : c -> c
+f x =
+    x
