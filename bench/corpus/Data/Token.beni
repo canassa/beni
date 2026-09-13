@@ -1,0 +1,42 @@
+--! Helpers for Data.Parser: a module that is mostly one-line functions,
+--! which is what most real modules look like.
+
+
+pub afterFirst : String -> String
+afterFirst input =
+    String.dropLeft 1 input
+
+
+pub isDigit : Char -> Bool
+isDigit c =
+    Char.isDigit c
+
+
+pub isSpace : Char -> Bool
+isSpace c =
+    c == ' ' || c == '\n' || c == '\r'
+
+
+pub hexValue : Int
+hexValue =
+    0x1F
+
+
+pub ratio : Float
+ratio =
+    1.5e-3
+
+
+pub negativeExample : List Int
+negativeExample =
+    [ -1, 0, 1 ]
+
+
+pub clampIndex : Int -> Int -> Int
+clampIndex limit index =
+    clamp 0 (limit - 1) index
+
+
+pub pairUp : a -> b -> ( a, b )
+pairUp left right =
+    ( left, right )

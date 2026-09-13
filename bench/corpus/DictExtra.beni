@@ -1,0 +1,233 @@
+--! Dict and Set utilities of the kind every application accumulates:
+--! grouping, counting, inverting, merging with a combining function, and
+--! ordered views. Comparators are explicit (no `comparable`).
+import Dict exposing (Dict)
+import Set exposing (Set)
+
+
+--| Group a list by a key function; keys keep first-seen order in `groupOrder`.
+pub groupBy : (a -> String) -> List a -> Dict String (List a)
+groupBy key items =
+    let
+        step item groups =
+            Dict.update (key item)
+                (\existing ->
+                    case existing of
+                        Just group ->
+                            Just (item :: group)
+
+                        Nothing ->
+                            Just [ item ]
+                )
+                groups
+    in
+    List.foldl step Dict.empty items
+        |> Dict.map (\_ group -> List.reverse group)
+
+
+--| The order in which keys were first seen.
+pub groupOrder : (a -> String) -> List a -> List String
+groupOrder key items =
+    let
+        step item ( seen, order ) =
+            let
+                k =
+                    key item
+            in
+            if Set.member k seen then
+                ( seen, order )
+            else
+                ( Set.insert k seen, k :: order )
+    in
+    List.foldl step ( Set.empty, [] ) items
+        |> (\( _, order ) -> List.reverse order)
+
+
+pub frequencies : List String -> Dict String Int
+frequencies items =
+    List.foldl (\item counts -> insertWith (+) item 1 counts) Dict.empty items
+
+
+pub insertWith : (v -> v -> v) -> String -> v -> Dict String v -> Dict String v
+insertWith combine key value dict =
+    Dict.update key
+        (\existing ->
+            case existing of
+                Just old ->
+                    Just (combine value old)
+
+                Nothing ->
+                    Just value
+        )
+        dict
+
+
+pub fromListWith : (v -> v -> v) -> List ( String, v ) -> Dict String v
+fromListWith combine pairs =
+    List.foldl (\( k, v ) acc -> insertWith combine k v acc) Dict.empty pairs
+
+
+pub unionWith : (v -> v -> v) -> Dict String v -> Dict String v -> Dict String v
+unionWith combine left right =
+    Dict.foldl (\k v acc -> insertWith combine k v acc) right left
+
+
+pub invert : Dict String String -> Dict String (List String)
+invert dict =
+    Dict.foldl (\k v acc -> insertWith (++) v [ k ] acc) Dict.empty dict
+
+
+pub filterMap : (String -> a -> Maybe b) -> Dict String a -> Dict String b
+filterMap f dict =
+    Dict.foldl
+        (\k v acc ->
+            case f k v of
+                Just w ->
+                    Dict.insert k w acc
+
+                Nothing ->
+                    acc
+        )
+        Dict.empty
+        dict
+
+
+pub mapKeys : (String -> String) -> Dict String v -> Dict String v
+mapKeys f dict =
+    Dict.foldl (\k v acc -> Dict.insert (f k) v acc) Dict.empty dict
+
+
+pub partition : (String -> v -> Bool) -> Dict String v -> ( Dict String v, Dict String v )
+partition predicate dict =
+    Dict.foldl
+        (\k v ( yes, no ) ->
+            if predicate k v then
+                ( Dict.insert k v yes, no )
+            else
+                ( yes, Dict.insert k v no )
+        )
+        ( Dict.empty, Dict.empty )
+        dict
+
+
+pub find : (String -> v -> Bool) -> Dict String v -> Maybe ( String, v )
+find predicate dict =
+    Dict.foldl
+        (\k v found ->
+            case found of
+                Just _ ->
+                    found
+
+                Nothing ->
+                    if predicate k v then
+                        Just ( k, v )
+                    else
+                        Nothing
+        )
+        Nothing
+        dict
+
+
+pub any : (String -> v -> Bool) -> Dict String v -> Bool
+any predicate dict =
+    find predicate dict /= Nothing
+
+
+pub all : (String -> v -> Bool) -> Dict String v -> Bool
+all predicate dict =
+    not (any (\k v -> not (predicate k v)) dict)
+
+
+pub toSortedList : (v -> v -> Order) -> Dict String v -> List ( String, v )
+toSortedList ordering dict =
+    Dict.toList dict
+        |> List.sortWith (\( _, a ) ( _, b ) -> ordering a b)
+
+
+pub topN : Int -> Dict String Int -> List ( String, Int )
+topN n counts =
+    toSortedList (\a b -> compare b a) counts
+        |> List.take n
+
+
+pub keysWhere : (v -> Bool) -> Dict String v -> Set String
+keysWhere predicate dict =
+    Dict.foldl
+        (\k v acc ->
+            if predicate v then
+                Set.insert k acc
+            else
+                acc
+        )
+        Set.empty
+        dict
+
+
+pub restrict : Set String -> Dict String v -> Dict String v
+restrict keys dict =
+    Dict.filter (\k _ -> Set.member k keys) dict
+
+
+pub without : Set String -> Dict String v -> Dict String v
+without keys dict =
+    Dict.filter (\k _ -> not (Set.member k keys)) dict
+
+
+pub symmetricDifference : Set String -> Set String -> Set String
+symmetricDifference a b =
+    Set.union (Set.diff a b) (Set.diff b a)
+
+
+pub powerSetSize : Set String -> Int
+powerSetSize set =
+    2 ^ Set.size set
+
+
+pub renameKey : String -> String -> Dict String v -> Dict String v
+renameKey from to dict =
+    case Dict.get from dict of
+        Just value ->
+            dict |> Dict.remove from |> Dict.insert to value
+
+        Nothing ->
+            dict
+
+
+pub updateAll : (v -> v) -> List String -> Dict String v -> Dict String v
+updateAll f keys dict =
+    List.foldl (\k acc -> Dict.update k (Maybe.map f) acc) dict keys
+
+
+pub getOrInsert : String -> v -> Dict String v -> ( v, Dict String v )
+getOrInsert key default dict =
+    case Dict.get key dict of
+        Just value ->
+            ( value, dict )
+
+        Nothing ->
+            ( default, Dict.insert key default dict )
+
+
+pub nested : Dict String (Dict String Int) -> List ( String, String, Int )
+nested outer =
+    Dict.foldl
+        (\a inner acc ->
+            Dict.foldl (\b n acc2 -> ( a, b, n ) :: acc2) acc inner
+        )
+        []
+        outer
+        |> List.reverse
+
+
+pub describe : Dict String Int -> String
+describe counts =
+    let
+        total =
+            Dict.foldl (\_ n acc -> acc + n) 0 counts
+
+        entries =
+            topN 3 counts
+                |> List.map (\( k, n ) -> "${k}=${n}")
+                |> String.join ", "
+    in
+    "${Dict.size counts} keys, ${total} total; top: ${entries}"

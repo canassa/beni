@@ -1,0 +1,374 @@
+--! A notes application: model, messages, update with undo history, search,
+--! tagging, and a view. Real-application shape for the benchmark corpus.
+import Dict exposing (Dict)
+import Html exposing (Html, button, div, h1, input, li, span, text, textarea, ul)
+import Html.Attributes exposing (class, classList, placeholder, value)
+import Html.Events exposing (onClick, onInput)
+import Set exposing (Set)
+
+
+pub type alias Note =
+    { id : Int
+    , title : String
+    , body : String
+    , tags : Set String
+    , pinned : Bool
+    , updatedAt : Int
+    }
+
+
+pub type alias Model =
+    { notes : Dict Int Note
+    , nextId : Int
+    , selected : Maybe Int
+    , query : String
+    , activeTag : Maybe String
+    , history : List (Dict Int Note)
+    , future : List (Dict Int Note)
+    , now : Int
+    , status : Status
+    }
+
+
+pub type Status
+    = Idle
+    | Saving
+    | Saved Int
+    | Failed String
+
+
+pub type Msg
+    = NewNote
+    | Select Int
+    | Deselect
+    | SetTitle String
+    | SetBody String
+    | AddTag String
+    | RemoveTag String
+    | TogglePin Int
+    | Delete Int
+    | SetQuery String
+    | FilterTag (Maybe String)
+    | Undo
+    | Redo
+    | Tick Int
+    | SaveResult (Result String Int)
+
+
+pub init : Int -> Model
+init now =
+    { notes = Dict.empty
+    , nextId = 1
+    , selected = Nothing
+    , query = ""
+    , activeTag = Nothing
+    , history = []
+    , future = []
+    , now = now
+    , status = Idle
+    }
+
+
+pub update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        NewNote ->
+            let
+                note =
+                    { id = model.nextId
+                    , title = "Untitled"
+                    , body = ""
+                    , tags = Set.empty
+                    , pinned = False
+                    , updatedAt = model.now
+                    }
+            in
+            model
+                |> pushHistory
+                |> setNotes (Dict.insert note.id note model.notes)
+                |> select (Just note.id)
+                |> bumpId
+
+        Select id ->
+            select (Just id) model
+
+        Deselect ->
+            select Nothing model
+
+        SetTitle title ->
+            editSelected (\note -> { note | title = title }) model
+
+        SetBody body ->
+            editSelected (\note -> { note | body = body }) model
+
+        AddTag tag ->
+            let
+                clean =
+                    String.trim (String.toLower tag)
+            in
+            if String.isEmpty clean then
+                model
+            else
+                editSelected (\note -> { note | tags = Set.insert clean note.tags }) model
+
+        RemoveTag tag ->
+            editSelected (\note -> { note | tags = Set.remove tag note.tags }) model
+
+        TogglePin id ->
+            model
+                |> pushHistory
+                |> editNote id (\note -> { note | pinned = not note.pinned })
+
+        Delete id ->
+            let
+                remaining =
+                    Dict.remove id model.notes
+
+                selected =
+                    if model.selected == Just id then
+                        Nothing
+                    else
+                        model.selected
+            in
+            model
+                |> pushHistory
+                |> setNotes remaining
+                |> select selected
+
+        SetQuery query ->
+            { model | query = query }
+
+        FilterTag tag ->
+            { model | activeTag = tag }
+
+        Undo ->
+            case model.history of
+                previous :: rest ->
+                    { model
+                        | notes = previous
+                        , history = rest
+                        , future = model.notes :: model.future
+                    }
+
+                [] ->
+                    model
+
+        Redo ->
+            case model.future of
+                next :: rest ->
+                    { model
+                        | notes = next
+                        , future = rest
+                        , history = model.notes :: model.history
+                    }
+
+                [] ->
+                    model
+
+        Tick now ->
+            { model | now = now }
+
+        SaveResult result ->
+            case result of
+                Ok at ->
+                    { model | status = Saved at }
+
+                Err reason ->
+                    { model | status = Failed reason }
+
+
+pushHistory : Model -> Model
+pushHistory model =
+    { model
+        | history = List.take 50 (model.notes :: model.history)
+        , future = []
+    }
+
+
+setNotes : Dict Int Note -> Model -> Model
+setNotes notes model =
+    { model | notes = notes }
+
+
+select : Maybe Int -> Model -> Model
+select id model =
+    { model | selected = id }
+
+
+bumpId : Model -> Model
+bumpId model =
+    { model | nextId = model.nextId + 1 }
+
+
+editNote : Int -> (Note -> Note) -> Model -> Model
+editNote id f model =
+    case Dict.get id model.notes of
+        Just note ->
+            let
+                edited =
+                    f note
+            in
+            { model | notes = Dict.insert id { edited | updatedAt = model.now } model.notes }
+
+        Nothing ->
+            model
+
+
+editSelected : (Note -> Note) -> Model -> Model
+editSelected f model =
+    case model.selected of
+        Just id ->
+            editNote id f model
+
+        Nothing ->
+            model
+
+
+pub visibleNotes : Model -> List Note
+visibleNotes model =
+    let
+        query =
+            String.toLower (String.trim model.query)
+
+        matchesQuery note =
+            String.isEmpty query
+                || String.contains query (String.toLower note.title)
+                || String.contains query (String.toLower note.body)
+
+        matchesTag note =
+            case model.activeTag of
+                Just tag ->
+                    Set.member tag note.tags
+
+                Nothing ->
+                    True
+
+        rank note =
+            if note.pinned then
+                0
+            else
+                1
+    in
+    Dict.values model.notes
+        |> List.filter matchesQuery
+        |> List.filter matchesTag
+        |> List.sortBy (\note -> ( rank note, -note.updatedAt ))
+
+
+pub allTags : Model -> List ( String, Int )
+allTags model =
+    let
+        count tag counts =
+            Dict.update tag (\existing -> Just (Maybe.withDefault 0 existing + 1)) counts
+
+        countNote note counts =
+            Set.foldl count counts note.tags
+    in
+    Dict.values model.notes
+        |> List.foldl countNote Dict.empty
+        |> Dict.toList
+        |> List.sortBy (\( tag, n ) -> ( -n, tag ))
+
+
+pub view : Model -> Html Msg
+view model =
+    div [ class "app" ]
+        [ viewSidebar model
+        , viewEditor model
+        , viewStatus model.status
+        ]
+
+
+viewSidebar : Model -> Html Msg
+viewSidebar model =
+    div [ class "sidebar" ]
+        [ h1 [] [ text "Notes" ]
+        , input [ placeholder "Search", value model.query, onInput SetQuery ] []
+        , button [ onClick NewNote ] [ text "New" ]
+        , button [ onClick Undo ] [ text "Undo" ]
+        , button [ onClick Redo ] [ text "Redo" ]
+        , viewTags model
+        , ul [ class "notes" ] (List.map (viewNoteItem model.selected) (visibleNotes model))
+        ]
+
+
+viewTags : Model -> Html Msg
+viewTags model =
+    ul [ class "tags" ]
+        (li [ onClick (FilterTag Nothing) ] [ text "all" ]
+            :: List.map
+                (\( tag, n ) ->
+                    li
+                        [ classList [ ( "active", model.activeTag == Just tag ) ]
+                        , onClick (FilterTag (Just tag))
+                        ]
+                        [ text "${tag} (${n})" ]
+                )
+                (allTags model)
+        )
+
+
+viewNoteItem : Maybe Int -> Note -> Html Msg
+viewNoteItem selected note =
+    li
+        [ classList
+            [ ( "note", True )
+            , ( "selected", selected == Just note.id )
+            , ( "pinned", note.pinned )
+            ]
+        , onClick (Select note.id)
+        ]
+        [ span [ class "title" ] [ text note.title ]
+        , span [ class "preview" ] [ text (preview note.body) ]
+        , button [ onClick (TogglePin note.id) ] [ text (if note.pinned then "unpin" else "pin") ]
+        , button [ onClick (Delete note.id) ] [ text "delete" ]
+        ]
+
+
+preview : String -> String
+preview body =
+    let
+        firstLine =
+            body |> String.lines |> List.head |> Maybe.withDefault ""
+    in
+    if String.length firstLine > 40 then
+        String.left 37 firstLine ++ "..."
+    else
+        firstLine
+
+
+viewEditor : Model -> Html Msg
+viewEditor model =
+    case model.selected |> Maybe.andThen (\id -> Dict.get id model.notes) of
+        Just note ->
+            div [ class "editor" ]
+                [ input [ value note.title, onInput SetTitle ] []
+                , textarea [ value note.body, onInput SetBody ] []
+                , ul [ class "note-tags" ]
+                    (List.map
+                        (\tag -> li [ onClick (RemoveTag tag) ] [ text tag ])
+                        (Set.toList note.tags)
+                    )
+                , input [ placeholder "Add tag", onInput AddTag ] []
+                , span [ class "meta" ] [ text "updated ${note.updatedAt}" ]
+                , button [ onClick Deselect ] [ text "Close" ]
+                ]
+
+        Nothing ->
+            div [ class "editor empty" ] [ text "Select or create a note" ]
+
+
+viewStatus : Status -> Html Msg
+viewStatus status =
+    case status of
+        Idle ->
+            text ""
+
+        Saving ->
+            span [ class "status" ] [ text "Saving..." ]
+
+        Saved at ->
+            span [ class "status" ] [ text "Saved at ${at}" ]
+
+        Failed reason ->
+            span [ class "status error" ] [ text "Save failed: ${reason}" ]

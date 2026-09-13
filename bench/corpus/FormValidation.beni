@@ -1,0 +1,315 @@
+--! Form validation: an accumulating `Validation` type, field validators
+--! combined applicatively, a sign-up form model, and error rendering.
+--! Typical business-logic shape: many small functions, some long records.
+import Dict exposing (Dict)
+import Set exposing (Set)
+
+
+pub type Validation a
+    = Valid a
+    | Invalid (List ( String, String ))
+
+
+pub type alias Validator a =
+    String -> a -> Validation a
+
+
+pub map : (a -> b) -> Validation a -> Validation b
+map f validation =
+    case validation of
+        Valid a ->
+            Valid (f a)
+
+        Invalid errors ->
+            Invalid errors
+
+
+pub andMap : Validation a -> Validation (a -> b) -> Validation b
+andMap value function =
+    case ( function, value ) of
+        ( Valid f, Valid a ) ->
+            Valid (f a)
+
+        ( Invalid errors, Valid _ ) ->
+            Invalid errors
+
+        ( Valid _, Invalid errors ) ->
+            Invalid errors
+
+        ( Invalid left, Invalid right ) ->
+            Invalid (left ++ right)
+
+
+pub andThen : (a -> Validation b) -> Validation a -> Validation b
+andThen f validation =
+    case validation of
+        Valid a ->
+            f a
+
+        Invalid errors ->
+            Invalid errors
+
+
+pub fail : String -> String -> Validation a
+fail field message =
+    Invalid [ ( field, message ) ]
+
+
+pub required : Validator String
+required field value =
+    if String.isEmpty (String.trim value) then
+        fail field "is required"
+    else
+        Valid value
+
+
+pub minLength : Int -> Validator String
+minLength n field value =
+    if String.length value < n then
+        fail field "must be at least ${n} characters"
+    else
+        Valid value
+
+
+pub maxLength : Int -> Validator String
+maxLength n field value =
+    if String.length value > n then
+        fail field "must be at most ${n} characters"
+    else
+        Valid value
+
+
+pub email : Validator String
+email field value =
+    case String.split "@" value of
+        [ local, domain ] ->
+            if String.isEmpty local || not (String.contains "." domain) then
+                fail field "must be a valid email address"
+            else
+                Valid value
+
+        _ ->
+            fail field "must be a valid email address"
+
+
+pub oneOfSet : Set String -> Validator String
+oneOfSet allowed field value =
+    if Set.member value allowed then
+        Valid value
+    else
+        fail field "must be one of: ${String.join ", " (Set.toList allowed)}"
+
+
+pub intBetween : Int -> Int -> Validator Int
+intBetween low high field value =
+    if value < low || value > high then
+        fail field "must be between ${low} and ${high}"
+    else
+        Valid value
+
+
+pub matches : String -> String -> Validator String
+matches otherName other field value =
+    if value == other then
+        Valid value
+    else
+        fail field "must match ${otherName}"
+
+
+pub all : List (Validator a) -> Validator a
+all validators field value =
+    List.foldl
+        (\validator acc ->
+            case ( acc, validator field value ) of
+                ( Valid _, Valid v ) ->
+                    Valid v
+
+                ( Valid _, Invalid errors ) ->
+                    Invalid errors
+
+                ( Invalid errors, Valid _ ) ->
+                    Invalid errors
+
+                ( Invalid left, Invalid right ) ->
+                    Invalid (left ++ right)
+        )
+        (Valid value)
+        validators
+
+
+pub firstOf : List (Validator a) -> Validator a
+firstOf validators field value =
+    case validators of
+        [] ->
+            Valid value
+
+        validator :: rest ->
+            case validator field value of
+                Valid v ->
+                    firstOf rest field v
+
+                invalid ->
+                    invalid
+
+
+pub type alias SignUpForm =
+    { username : String
+    , email : String
+    , password : String
+    , passwordConfirm : String
+    , age : String
+    , country : String
+    , newsletter : Bool
+    , terms : Bool
+    }
+
+
+pub type alias SignUp =
+    { username : String
+    , email : String
+    , password : String
+    , age : Int
+    , country : String
+    , newsletter : Bool
+    }
+
+
+pub emptyForm : SignUpForm
+emptyForm =
+    { username = ""
+    , email = ""
+    , password = ""
+    , passwordConfirm = ""
+    , age = ""
+    , country = ""
+    , newsletter = False
+    , terms = False
+    }
+
+
+countries : Set String
+countries =
+    Set.fromList [ "BR", "DE", "FR", "GB", "JP", "US" ]
+
+
+pub validateSignUp : SignUpForm -> Validation SignUp
+validateSignUp form =
+    Valid SignUp
+        |> andMap (firstOf [ required, minLength 3, maxLength 20, usernameChars ] "username" form.username)
+        |> andMap (firstOf [ required, email ] "email" form.email)
+        |> andMap (firstOf [ required, minLength 8, strongPassword ] "password" form.password)
+        |> andMap (parseAge "age" form.age |> andThen (intBetween 13 120 "age"))
+        |> andMap (firstOf [ required, oneOfSet countries ] "country" form.country)
+        |> andMap (Valid form.newsletter)
+        |> andThen (checkConfirm form)
+        |> andThen (checkTerms form)
+
+
+usernameChars : Validator String
+usernameChars field value =
+    if String.all (\c -> Char.isAlphaNum c || c == '_') value then
+        Valid value
+    else
+        fail field "may only contain letters, digits and underscores"
+
+
+strongPassword : Validator String
+strongPassword field value =
+    let
+        hasDigit =
+            String.any Char.isDigit value
+
+        hasUpper =
+            String.any Char.isUpper value
+
+        hasLower =
+            String.any Char.isLower value
+    in
+    if hasDigit && hasUpper && hasLower then
+        Valid value
+    else
+        fail field "must contain upper and lower case letters and a digit"
+
+
+parseAge : String -> String -> Validation Int
+parseAge field value =
+    case String.toInt (String.trim value) of
+        Just n ->
+            Valid n
+
+        Nothing ->
+            fail field "must be a whole number"
+
+
+checkConfirm : SignUpForm -> SignUp -> Validation SignUp
+checkConfirm form signUp =
+    case matches "password" form.password "passwordConfirm" form.passwordConfirm of
+        Valid _ ->
+            Valid signUp
+
+        Invalid errors ->
+            Invalid errors
+
+
+checkTerms : SignUpForm -> SignUp -> Validation SignUp
+checkTerms form signUp =
+    if form.terms then
+        Valid signUp
+    else
+        fail "terms" "must be accepted"
+
+
+pub errorsByField : Validation a -> Dict String (List String)
+errorsByField validation =
+    case validation of
+        Valid _ ->
+            Dict.empty
+
+        Invalid errors ->
+            List.foldl
+                (\( field, message ) acc ->
+                    Dict.update field
+                        (\existing -> Just (Maybe.withDefault [] existing ++ [ message ]))
+                        acc
+                )
+                Dict.empty
+                errors
+
+
+pub errorSummary : Validation a -> String
+errorSummary validation =
+    case validation of
+        Valid _ ->
+            "ok"
+
+        Invalid errors ->
+            errors
+                |> List.map (\( field, message ) -> "${field} ${message}")
+                |> String.join "; "
+
+
+pub fieldError : String -> Validation a -> Maybe String
+fieldError field validation =
+    errorsByField validation
+        |> Dict.get field
+        |> Maybe.andThen List.head
+
+
+pub isValid : Validation a -> Bool
+isValid validation =
+    case validation of
+        Valid _ ->
+            True
+
+        Invalid _ ->
+            False
+
+
+pub toResult : Validation a -> Result (List ( String, String )) a
+toResult validation =
+    case validation of
+        Valid a ->
+            Ok a
+
+        Invalid errors ->
+            Err errors

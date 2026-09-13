@@ -1,0 +1,128 @@
+--! A small hand-rolled parser combinator set: the kind of module that stresses
+--! nested case, tuples, records with functions, `?`, and multiline strings.
+
+import Data.Token as T
+
+
+pub type alias Parser a =
+    { run : String -> Result String ( a, String ) }
+
+
+pub type Json
+    = JNull
+    | JBool Bool
+    | JNumber Float
+    | JString String
+    | JList (List Json)
+
+
+pub succeed : a -> Parser a
+succeed value =
+    { run = \input -> Ok ( value, input ) }
+
+
+pub fail : String -> Parser a
+fail reason =
+    { run = \_ -> Err reason }
+
+
+pub map : (a -> b) -> Parser a -> Parser b
+map f parser =
+    { run =
+        \input ->
+            case parser.run input of
+                Ok ( value, rest ) ->
+                    Ok ( f value, rest )
+
+                Err reason ->
+                    Err reason
+    }
+
+
+pub andThen : (a -> Parser b) -> Parser a -> Parser b
+andThen next parser =
+    { run =
+        \input ->
+            case parser.run input of
+                Ok ( value, rest ) ->
+                    (next value).run rest
+
+                Err reason ->
+                    Err reason
+    }
+
+
+pub keyword : String -> Parser ()
+keyword word =
+    { run =
+        \input ->
+            if String.startsWith word input then
+                Ok ( (), String.dropLeft (String.length word) input )
+            else
+                Err "expected `${word}`"
+    }
+
+
+pub oneOf : List (Parser a) -> Parser a
+oneOf parsers =
+    { run =
+        \input ->
+            case parsers of
+                [] ->
+                    Err "no alternative matched"
+
+                first :: rest ->
+                    case first.run input of
+                        Ok result ->
+                            Ok result
+
+                        Err _ ->
+                            (oneOf rest).run input
+    }
+
+
+pub literal : Parser Json
+literal =
+    oneOf
+        [ map (\_ -> JNull) (keyword "null")
+        , map (\_ -> JBool True) (keyword "true")
+        , map (\_ -> JBool False) (keyword "false")
+        ]
+
+
+pub parseTwice : String -> Result String ( Json, Json )
+parseTwice input =
+    let
+        second =
+            literal.run (String.trimLeft (T.afterFirst input))?
+    in
+    Ok ( second.0, second.0 )
+
+
+pub describe : Json -> String
+describe json =
+    case json of
+        JNull ->
+            "null"
+
+        JBool True ->
+            "true"
+
+        JBool False ->
+            "false"
+
+        JNumber n ->
+            "number ${n}"
+
+        JString s ->
+            "string \"${s}\""
+
+        JList items ->
+            "list of ${List.length items}"
+
+
+pub grammar : String
+grammar =
+    \\value  := null | true | false | number | string | list
+    \\list   := "[" (value ("," value)*)? "]"
+    \\string := "\"" chars "\""

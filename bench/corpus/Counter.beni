@@ -1,0 +1,64 @@
+--! A counter, the smallest real-shaped module: a model, messages, update, view.
+--! Hand-written in the language of docs/design/language.md; part of the
+--! permanent bench corpus (frontend.md §5). Shape follows Elm's counter example.
+
+import Ui.View exposing (button, column, text)
+
+
+--| What the counter remembers.
+pub type alias Model =
+    { count : Int
+    , history : List Int
+    }
+
+
+pub type Msg
+    = Increment
+    | Decrement
+    | Reset
+
+
+pub init : Model
+init =
+    { count = 0, history = [] }
+
+
+pub update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        Increment ->
+            step 1 model
+
+        Decrement ->
+            step (-1) model
+
+        Reset ->
+            init
+
+
+step : Int -> Model -> Model
+step delta model =
+    { model
+        | count = model.count + delta
+        , history = model.count :: model.history
+    }
+
+
+pub view : Model -> String
+view model =
+    let
+        label =
+            "Count: ${model.count}"
+
+        recent =
+            model.history
+                |> List.take 5
+                |> List.map String.fromInt
+                |> String.join ", "
+    in
+    column
+        [ button "-" Decrement
+        , text label
+        , button "+" Increment
+        , text "Recent: ${recent}"
+        ]

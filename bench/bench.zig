@@ -1,0 +1,161 @@
+//! Throughput harness, `zig build bench` (docs/design/frontend.md §5,
+//! fast-compiler.md §12).
+//!
+//! Runs each front-end phase over every file of a corpus, `iterations`
+//! times after a warm-up, and prints one JSON line per phase plus a `total`:
+//!
+//! ```
+//! {"phase":"read","files":312,"bytes":4194304,"tokens":0,"ms":41.2,"mb_per_s":101.8,"loc_per_s":2431000}
+//! ```
+//!
+//! Options: `--corpus=<dir>` (default `bench/corpus`), `--generate=<lines>`
+//! (write a synthetic project of that size under `.zig-cache/bench-gen` and
+//! measure that instead), `--iterations=<n>` (default 5), `--seed=<n>`.
+//!
+//! M0 measures only `read` — bytes through `SourceStore` — so the number the
+//! lexer is compared against in M1a exists before the lexer does. The phases
+//! are timed single-threaded and serially so the figure is per-core
+//! throughput, which is what the §2 budget is stated in.
+
+const std = @import("std");
+const Io = std.Io;
+const beni = @import("beni");
+const gen = @import("gen.zig");
+const SourceStore = beni.SourceStore;
+
+const Options = struct {
+    corpus: []const u8 = "bench/corpus",
+    generate: ?u64 = null,
+    iterations: u32 = 5,
+    seed: u64 = gen.default_seed,
+};
+
+const generated_dir = ".zig-cache/bench-gen";
+
+pub fn main(init: std.process.Init) !u8 {
+    const gpa = init.gpa;
+    const io = init.io;
+    const arena = init.arena.allocator();
+
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_writer = Io.File.stdout().writer(io, &stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
+    var stderr_buffer: [512]u8 = undefined;
+    var stderr_writer = Io.File.stderr().writer(io, &stderr_buffer);
+    const stderr = &stderr_writer.interface;
+    defer stderr.flush() catch {};
+
+    const args = try init.minimal.args.toSlice(arena);
+    const options = parseArgs(args[1..]) catch |err| {
+        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--iterations=<n>] [--seed=<n>]\n", .{err});
+        return 2;
+    };
+
+    var corpus = options.corpus;
+    if (options.generate) |lines| {
+        // Regenerated every run: it is cheap, it is deterministic, and it
+        // keeps the generated tree out of the repository.
+        Io.Dir.cwd().deleteTree(io, generated_dir) catch {};
+        const stats = try gen.generate(gpa, io, generated_dir, options.seed, lines);
+        try stderr.print("bench: generated {d} files, {d} lines, {d} bytes under {s}\n", .{ stats.files, stats.lines, stats.bytes, generated_dir });
+        corpus = generated_dir;
+    }
+
+    // Enumerate once; every phase runs over the same numbered files.
+    var store: SourceStore = .{};
+    defer store.deinit(gpa);
+    store.addPath(gpa, io, corpus, null) catch |err| {
+        try stderr.print("bench: cannot read corpus '{s}': {t}\n", .{ corpus, err });
+        return 2;
+    };
+    try store.finish(gpa);
+    if (store.count() == 0) {
+        try stderr.print("bench: corpus '{s}' has no .beni files\n", .{corpus});
+        return 2;
+    }
+
+    var total: Measurement = .{};
+    const read = try measureRead(gpa, io, &store, options.iterations);
+    try printLine(stdout, "read", read);
+    total.add(read);
+    try printLine(stdout, "total", total);
+    return 0;
+}
+
+fn parseArgs(args: []const [:0]const u8) !Options {
+    var options: Options = .{};
+    for (args) |arg| {
+        if (std.mem.startsWith(u8, arg, "--corpus=")) {
+            options.corpus = arg["--corpus=".len..];
+        } else if (std.mem.startsWith(u8, arg, "--generate=")) {
+            options.generate = try std.fmt.parseInt(u64, arg["--generate=".len..], 10);
+        } else if (std.mem.startsWith(u8, arg, "--iterations=")) {
+            options.iterations = try std.fmt.parseInt(u32, arg["--iterations=".len..], 10);
+            if (options.iterations == 0) return error.ZeroIterations;
+        } else if (std.mem.startsWith(u8, arg, "--seed=")) {
+            options.seed = try std.fmt.parseInt(u64, arg["--seed=".len..], 0);
+        } else {
+            return error.UnknownArgument;
+        }
+    }
+    return options;
+}
+
+const Measurement = struct {
+    files: u64 = 0,
+    bytes: u64 = 0,
+    tokens: u64 = 0,
+    lines: u64 = 0,
+    /// Wall time of one iteration over the whole corpus (the best of the
+    /// timed iterations), in nanoseconds.
+    ns: u64 = 0,
+
+    fn add(total: *Measurement, m: Measurement) void {
+        total.files = @max(total.files, m.files);
+        total.bytes = @max(total.bytes, m.bytes);
+        total.lines = @max(total.lines, m.lines);
+        total.tokens += m.tokens;
+        total.ns += m.ns;
+    }
+};
+
+/// The M0 phase: read every file's bytes through the store and count lines.
+/// One warm-up iteration, then the best of `iterations`.
+fn measureRead(gpa: std.mem.Allocator, io: Io, store: *SourceStore, iterations: u32) !Measurement {
+    var best: u64 = std.math.maxInt(u64);
+    var m: Measurement = .{ .files = store.count() };
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var bytes: u64 = 0;
+        var lines: u64 = 0;
+        const start = Io.Timestamp.now(io, .awake);
+        for (0..store.count()) |i| {
+            const file: SourceStore.Index = @enumFromInt(i);
+            try store.read(gpa, io, file);
+            const text = store.bytes(file);
+            const starts = try SourceStore.scanLineStarts(gpa, text);
+            store.setLineStarts(gpa, file, starts);
+            bytes += text.len;
+            lines += starts.len - 1;
+        }
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue; // warm-up
+        best = @min(best, ns);
+        m.bytes = bytes;
+        m.lines = lines;
+    }
+    m.ns = best;
+    return m;
+}
+
+fn printLine(writer: *Io.Writer, phase: []const u8, m: Measurement) !void {
+    const ms = @as(f64, @floatFromInt(m.ns)) / 1e6;
+    const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
+    const mb_per_s = @as(f64, @floatFromInt(m.bytes)) / (1024 * 1024) / seconds;
+    const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);
+    try writer.print(
+        "{{\"phase\":\"{s}\",\"files\":{d},\"bytes\":{d},\"tokens\":{d},\"ms\":{d:.1},\"mb_per_s\":{d:.1},\"loc_per_s\":{d}}}\n",
+        .{ phase, m.files, m.bytes, m.tokens, ms, mb_per_s, loc_per_s },
+    );
+}

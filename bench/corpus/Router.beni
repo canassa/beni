@@ -1,0 +1,374 @@
+--! URL routing: a route type, parsing a path plus query string into it,
+--! printing a route back to a URL, breadcrumbs and navigation guards.
+import Dict exposing (Dict)
+
+
+pub type Route
+    = Home
+    | About
+    | Users UsersQuery
+    | User Int
+    | UserEdit Int
+    | Post String
+    | Search String Int
+    | Settings SettingsTab
+    | NotFound String
+
+
+pub type alias UsersQuery =
+    { page : Int
+    , perPage : Int
+    , sort : Sort
+    , filter : Maybe String
+    }
+
+
+pub type Sort
+    = ByName
+    | ByCreated
+    | ByActivity
+
+
+pub type SettingsTab
+    = Profile
+    | Security
+    | Billing
+
+
+pub type alias Url =
+    { path : String
+    , query : String
+    }
+
+
+pub fromUrl : Url -> Route
+fromUrl url =
+    let
+        segments =
+            url.path
+                |> String.split "/"
+                |> List.filter (\s -> not (String.isEmpty s))
+                |> List.map decodeSegment
+
+        params =
+            parseQuery url.query
+    in
+    case segments of
+        [] ->
+            Home
+
+        [ "about" ] ->
+            About
+
+        [ "users" ] ->
+            Users (usersQuery params)
+
+        [ "users", idText ] ->
+            case String.toInt idText of
+                Just id ->
+                    User id
+
+                Nothing ->
+                    NotFound url.path
+
+        [ "users", idText, "edit" ] ->
+            case String.toInt idText of
+                Just id ->
+                    UserEdit id
+
+                Nothing ->
+                    NotFound url.path
+
+        [ "posts", slug ] ->
+            Post slug
+
+        [ "search" ] ->
+            Search
+                (Dict.get "q" params |> Maybe.withDefault "")
+                (Dict.get "page" params |> Maybe.andThen String.toInt |> Maybe.withDefault 1)
+
+        [ "settings" ] ->
+            Settings Profile
+
+        [ "settings", tab ] ->
+            case tab of
+                "profile" ->
+                    Settings Profile
+
+                "security" ->
+                    Settings Security
+
+                "billing" ->
+                    Settings Billing
+
+                _ ->
+                    NotFound url.path
+
+        _ ->
+            NotFound url.path
+
+
+usersQuery : Dict String String -> UsersQuery
+usersQuery params =
+    let
+        intParam name default =
+            Dict.get name params
+                |> Maybe.andThen String.toInt
+                |> Maybe.withDefault default
+    in
+    { page = intParam "page" 1 |> clampPage
+    , perPage = intParam "per_page" 20 |> clamp 1 100
+    , sort =
+        case Dict.get "sort" params of
+            Just "created" ->
+                ByCreated
+
+            Just "activity" ->
+                ByActivity
+
+            _ ->
+                ByName
+    , filter = Dict.get "filter" params |> Maybe.andThen nonEmpty
+    }
+
+
+clampPage : Int -> Int
+clampPage page =
+    if page < 1 then
+        1
+    else
+        page
+
+
+nonEmpty : String -> Maybe String
+nonEmpty s =
+    if String.isEmpty (String.trim s) then
+        Nothing
+    else
+        Just s
+
+
+pub parseQuery : String -> Dict String String
+parseQuery query =
+    query
+        |> String.split "&"
+        |> List.filterMap parsePair
+        |> Dict.fromList
+
+
+parsePair : String -> Maybe ( String, String )
+parsePair pair =
+    case String.split "=" pair of
+        [ key ] ->
+            if String.isEmpty key then
+                Nothing
+            else
+                Just ( decodeSegment key, "" )
+
+        key :: rest ->
+            Just ( decodeSegment key, decodeSegment (String.join "=" rest) )
+
+        [] ->
+            Nothing
+
+
+decodeSegment : String -> String
+decodeSegment segment =
+    segment
+        |> String.replace "+" " "
+        |> String.replace "%20" " "
+        |> String.replace "%2F" "/"
+        |> String.replace "%3D" "="
+        |> String.replace "%26" "&"
+
+
+encodeSegment : String -> String
+encodeSegment segment =
+    segment
+        |> String.replace "&" "%26"
+        |> String.replace "=" "%3D"
+        |> String.replace "/" "%2F"
+        |> String.replace " " "%20"
+
+
+pub toUrl : Route -> String
+toUrl route =
+    case route of
+        Home ->
+            "/"
+
+        About ->
+            "/about"
+
+        Users query ->
+            "/users" ++ usersQueryString query
+
+        User id ->
+            "/users/${id}"
+
+        UserEdit id ->
+            "/users/${id}/edit"
+
+        Post slug ->
+            "/posts/" ++ encodeSegment slug
+
+        Search q page ->
+            "/search?q=${encodeSegment q}&page=${page}"
+
+        Settings tab ->
+            "/settings/" ++ tabName tab
+
+        NotFound path ->
+            path
+
+
+usersQueryString : UsersQuery -> String
+usersQueryString query =
+    let
+        pairs =
+            [ if query.page /= 1 then
+                Just ( "page", String.fromInt query.page )
+              else
+                Nothing
+            , if query.perPage /= 20 then
+                Just ( "per_page", String.fromInt query.perPage )
+              else
+                Nothing
+            , case query.sort of
+                ByName ->
+                    Nothing
+
+                ByCreated ->
+                    Just ( "sort", "created" )
+
+                ByActivity ->
+                    Just ( "sort", "activity" )
+            , Maybe.map (\f -> ( "filter", encodeSegment f )) query.filter
+            ]
+                |> List.filterMap identity
+    in
+    case pairs of
+        [] ->
+            ""
+
+        _ ->
+            "?" ++ String.join "&" (List.map (\( k, v ) -> "${k}=${v}") pairs)
+
+
+tabName : SettingsTab -> String
+tabName tab =
+    case tab of
+        Profile ->
+            "profile"
+
+        Security ->
+            "security"
+
+        Billing ->
+            "billing"
+
+
+pub title : Route -> String
+title route =
+    case route of
+        Home ->
+            "Home"
+
+        About ->
+            "About"
+
+        Users query ->
+            "Users (page ${query.page})"
+
+        User id ->
+            "User #${id}"
+
+        UserEdit id ->
+            "Edit user #${id}"
+
+        Post slug ->
+            "Post: ${slug}"
+
+        Search q _ ->
+            "Search: ${q}"
+
+        Settings tab ->
+            "Settings: ${tabName tab}"
+
+        NotFound _ ->
+            "Not found"
+
+
+pub breadcrumbs : Route -> List ( String, Route )
+breadcrumbs route =
+    let
+        root =
+            ( "Home", Home )
+    in
+    case route of
+        Home ->
+            [ root ]
+
+        User id ->
+            [ root, ( "Users", Users defaultUsersQuery ), ( "User #${id}", route ) ]
+
+        UserEdit id ->
+            [ root
+            , ( "Users", Users defaultUsersQuery )
+            , ( "User #${id}", User id )
+            , ( "Edit", route )
+            ]
+
+        Settings tab ->
+            [ root, ( "Settings", Settings Profile ), ( tabName tab, route ) ]
+
+        _ ->
+            [ root, ( title route, route ) ]
+
+
+pub defaultUsersQuery : UsersQuery
+defaultUsersQuery =
+    { page = 1, perPage = 20, sort = ByName, filter = Nothing }
+
+
+pub requiresAuth : Route -> Bool
+requiresAuth route =
+    case route of
+        UserEdit _ ->
+            True
+
+        Settings _ ->
+            True
+
+        _ ->
+            False
+
+
+pub redirect : { loggedIn : Bool } -> Route -> Route
+redirect session route =
+    if requiresAuth route && not session.loggedIn then
+        Search "login" 1
+    else
+        route
+
+
+pub isSameSection : Route -> Route -> Bool
+isSameSection a b =
+    case ( a, b ) of
+        ( Users _, Users _ ) ->
+            True
+
+        ( Users _, User _ ) ->
+            True
+
+        ( User _, Users _ ) ->
+            True
+
+        ( User _, User _ ) ->
+            True
+
+        ( Settings _, Settings _ ) ->
+            True
+
+        _ ->
+            a == b

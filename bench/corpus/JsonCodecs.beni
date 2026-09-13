@@ -1,0 +1,305 @@
+--! JSON encoders and decoders for an order-processing domain: nested
+--! records, enums decoded via `andThen`, optional fields with defaults,
+--! `oneOf` fallbacks, and round-trip helpers.
+import Dict exposing (Dict)
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
+
+
+pub type alias Customer =
+    { id : Int
+    , name : String
+    , email : String
+    , tier : Tier
+    , address : Maybe Address
+    }
+
+
+pub type Tier
+    = Free
+    | Pro
+    | Enterprise
+
+
+pub type alias Address =
+    { street : String
+    , city : String
+    , postcode : String
+    , country : String
+    }
+
+
+pub type alias LineItem =
+    { sku : String
+    , quantity : Int
+    , unitPrice : Float
+    }
+
+
+pub type alias Order =
+    { id : Int
+    , customer : Customer
+    , items : List LineItem
+    , status : Status
+    , notes : Dict String String
+    , placedAt : Int
+    }
+
+
+pub type Status
+    = Pending
+    | Paid Int
+    | Shipped String
+    | Cancelled String
+
+
+pub tierDecoder : Decoder Tier
+tierDecoder =
+    Decode.string
+        |> Decode.andThen
+            (\s ->
+                case String.toLower s of
+                    "free" ->
+                        Decode.succeed Free
+
+                    "pro" ->
+                        Decode.succeed Pro
+
+                    "enterprise" ->
+                        Decode.succeed Enterprise
+
+                    other ->
+                        Decode.fail "unknown tier: ${other}"
+            )
+
+
+pub tierToString : Tier -> String
+tierToString tier =
+    case tier of
+        Free ->
+            "free"
+
+        Pro ->
+            "pro"
+
+        Enterprise ->
+            "enterprise"
+
+
+pub addressDecoder : Decoder Address
+addressDecoder =
+    Decode.map4 Address
+        (Decode.field "street" Decode.string)
+        (Decode.field "city" Decode.string)
+        (Decode.oneOf [ Decode.field "postcode" Decode.string, Decode.field "zip" Decode.string ])
+        (optionalField "country" Decode.string "US")
+
+
+optionalField : String -> Decoder a -> a -> Decoder a
+optionalField name decoder default =
+    Decode.oneOf
+        [ Decode.field name decoder
+        , Decode.succeed default
+        ]
+
+
+pub customerDecoder : Decoder Customer
+customerDecoder =
+    Decode.map5 Customer
+        (Decode.field "id" Decode.int)
+        (Decode.field "name" Decode.string)
+        (Decode.field "email" Decode.string)
+        (optionalField "tier" tierDecoder Free)
+        (Decode.maybe (Decode.field "address" addressDecoder))
+
+
+pub lineItemDecoder : Decoder LineItem
+lineItemDecoder =
+    Decode.map3 LineItem
+        (Decode.field "sku" Decode.string)
+        (Decode.field "quantity" Decode.int)
+        (Decode.field "unit_price" Decode.float)
+
+
+pub statusDecoder : Decoder Status
+statusDecoder =
+    Decode.field "kind" Decode.string
+        |> Decode.andThen
+            (\kind ->
+                case kind of
+                    "pending" ->
+                        Decode.succeed Pending
+
+                    "paid" ->
+                        Decode.map Paid (Decode.field "at" Decode.int)
+
+                    "shipped" ->
+                        Decode.map Shipped (Decode.field "tracking" Decode.string)
+
+                    "cancelled" ->
+                        Decode.map Cancelled (optionalField "reason" Decode.string "")
+
+                    other ->
+                        Decode.fail "unknown status kind: ${other}"
+            )
+
+
+pub orderDecoder : Decoder Order
+orderDecoder =
+    Decode.map6 Order
+        (Decode.field "id" Decode.int)
+        (Decode.field "customer" customerDecoder)
+        (Decode.field "items" (Decode.list lineItemDecoder))
+        (Decode.field "status" statusDecoder)
+        (optionalField "notes" (Decode.dict Decode.string) Dict.empty)
+        (Decode.field "placed_at" Decode.int)
+
+
+pub ordersDecoder : Decoder (List Order)
+ordersDecoder =
+    Decode.oneOf
+        [ Decode.list orderDecoder
+        , Decode.field "orders" (Decode.list orderDecoder)
+        , Decode.field "data" (Decode.field "orders" (Decode.list orderDecoder))
+        ]
+
+
+pub encodeTier : Tier -> Encode.Value
+encodeTier tier =
+    Encode.string (tierToString tier)
+
+
+pub encodeAddress : Address -> Encode.Value
+encodeAddress address =
+    Encode.object
+        [ ( "street", Encode.string address.street )
+        , ( "city", Encode.string address.city )
+        , ( "postcode", Encode.string address.postcode )
+        , ( "country", Encode.string address.country )
+        ]
+
+
+pub encodeCustomer : Customer -> Encode.Value
+encodeCustomer customer =
+    Encode.object
+        ([ ( "id", Encode.int customer.id )
+         , ( "name", Encode.string customer.name )
+         , ( "email", Encode.string customer.email )
+         , ( "tier", encodeTier customer.tier )
+         ]
+            ++ (case customer.address of
+                    Just address ->
+                        [ ( "address", encodeAddress address ) ]
+
+                    Nothing ->
+                        []
+               )
+        )
+
+
+pub encodeLineItem : LineItem -> Encode.Value
+encodeLineItem item =
+    Encode.object
+        [ ( "sku", Encode.string item.sku )
+        , ( "quantity", Encode.int item.quantity )
+        , ( "unit_price", Encode.float item.unitPrice )
+        ]
+
+
+pub encodeStatus : Status -> Encode.Value
+encodeStatus status =
+    case status of
+        Pending ->
+            Encode.object [ ( "kind", Encode.string "pending" ) ]
+
+        Paid at ->
+            Encode.object [ ( "kind", Encode.string "paid" ), ( "at", Encode.int at ) ]
+
+        Shipped tracking ->
+            Encode.object [ ( "kind", Encode.string "shipped" ), ( "tracking", Encode.string tracking ) ]
+
+        Cancelled reason ->
+            Encode.object [ ( "kind", Encode.string "cancelled" ), ( "reason", Encode.string reason ) ]
+
+
+pub encodeOrder : Order -> Encode.Value
+encodeOrder order =
+    Encode.object
+        [ ( "id", Encode.int order.id )
+        , ( "customer", encodeCustomer order.customer )
+        , ( "items", Encode.list encodeLineItem order.items )
+        , ( "status", encodeStatus order.status )
+        , ( "notes", Encode.dict identity Encode.string order.notes )
+        , ( "placed_at", Encode.int order.placedAt )
+        ]
+
+
+pub orderTotal : Order -> Float
+orderTotal order =
+    order.items
+        |> List.map (\item -> toFloat item.quantity * item.unitPrice)
+        |> List.sum
+
+
+pub discount : Order -> Float
+discount order =
+    let
+        total =
+            orderTotal order
+
+        rate =
+            case order.customer.tier of
+                Free ->
+                    0
+
+                Pro ->
+                    0.1
+
+                Enterprise ->
+                    if total > 1000 then
+                        0.25
+                    else
+                        0.2
+    in
+    total * rate
+
+
+pub parseOrders : String -> Result String (List Order)
+parseOrders json =
+    Decode.decodeString ordersDecoder json
+        |> Result.mapError Decode.errorToString
+
+
+pub roundTrip : String -> Result String String
+roundTrip json =
+    let
+        orders =
+            parseOrders json?
+    in
+    Ok (Encode.encode 2 (Encode.list encodeOrder orders))
+
+
+pub summarize : String -> Result String (Dict String Int)
+summarize json =
+    let
+        orders =
+            parseOrders json?
+
+        bump key counts =
+            Dict.update key (\existing -> Just (Maybe.withDefault 0 existing + 1)) counts
+
+        statusKey order =
+            case order.status of
+                Pending ->
+                    "pending"
+
+                Paid _ ->
+                    "paid"
+
+                Shipped _ ->
+                    "shipped"
+
+                Cancelled _ ->
+                    "cancelled"
+    in
+    Ok (List.foldl (\order counts -> bump (statusKey order) counts) Dict.empty orders)

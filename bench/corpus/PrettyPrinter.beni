@@ -1,0 +1,300 @@
+--! A Wadler-style pretty printer: a document algebra, a width-aware
+--! layout algorithm, and a printer for a JSON-like value type built on it.
+--! Deep recursion and many small functions, as in real library code.
+import Dict exposing (Dict)
+
+
+pub type Doc
+    = Empty
+    | Text String
+    | Line
+    | SoftLine
+    | Nest Int Doc
+    | Concat Doc Doc
+    | Group Doc
+
+
+pub empty : Doc
+empty =
+    Empty
+
+
+pub text : String -> Doc
+text =
+    Text
+
+
+pub line : Doc
+line =
+    Line
+
+
+pub softline : Doc
+softline =
+    SoftLine
+
+
+pub nest : Int -> Doc -> Doc
+nest =
+    Nest
+
+
+pub group : Doc -> Doc
+group =
+    Group
+
+
+pub append : Doc -> Doc -> Doc
+append =
+    Concat
+
+
+pub concat : List Doc -> Doc
+concat docs =
+    List.foldr Concat Empty docs
+
+
+pub join : Doc -> List Doc -> Doc
+join separator docs =
+    case docs of
+        [] ->
+            Empty
+
+        [ only ] ->
+            only
+
+        first :: rest ->
+            Concat first (Concat separator (join separator rest))
+
+
+pub bracket : String -> Doc -> String -> Doc
+bracket open inner close =
+    Group (Concat (Text open) (Concat (Nest 4 (Concat SoftLine inner)) (Concat SoftLine (Text close))))
+
+
+pub hang : Int -> Doc -> Doc
+hang indent doc =
+    Group (Nest indent doc)
+
+
+type Mode
+    = Flat
+    | Break
+
+
+type alias Item =
+    { indent : Int
+    , mode : Mode
+    , doc : Doc
+    }
+
+
+pub render : Int -> Doc -> String
+render width doc =
+    layout width 0 [ { indent = 0, mode = Break, doc = doc } ] []
+        |> List.reverse
+        |> String.concat
+
+
+layout : Int -> Int -> List Item -> List String -> List String
+layout width column items acc =
+    case items of
+        [] ->
+            acc
+
+        item :: rest ->
+            case item.doc of
+                Empty ->
+                    layout width column rest acc
+
+                Text s ->
+                    layout width (column + String.length s) rest (s :: acc)
+
+                Line ->
+                    layout width item.indent rest (newline item.indent :: acc)
+
+                SoftLine ->
+                    case item.mode of
+                        Flat ->
+                            layout width (column + 1) rest (" " :: acc)
+
+                        Break ->
+                            layout width item.indent rest (newline item.indent :: acc)
+
+                Nest n inner ->
+                    layout width column ({ item | indent = item.indent + n, doc = inner } :: rest) acc
+
+                Concat left right ->
+                    layout width column ({ item | doc = left } :: { item | doc = right } :: rest) acc
+
+                Group inner ->
+                    let
+                        flat =
+                            { item | mode = Flat, doc = inner }
+                    in
+                    if fits (width - column) (flat :: rest) then
+                        layout width column (flat :: rest) acc
+                    else
+                        layout width column ({ item | mode = Break, doc = inner } :: rest) acc
+
+
+fits : Int -> List Item -> Bool
+fits remaining items =
+    if remaining < 0 then
+        False
+    else
+        case items of
+            [] ->
+                True
+
+            item :: rest ->
+                case item.doc of
+                    Empty ->
+                        fits remaining rest
+
+                    Text s ->
+                        fits (remaining - String.length s) rest
+
+                    Line ->
+                        True
+
+                    SoftLine ->
+                        case item.mode of
+                            Flat ->
+                                fits (remaining - 1) rest
+
+                            Break ->
+                                True
+
+                    Nest n inner ->
+                        fits remaining ({ item | indent = item.indent + n, doc = inner } :: rest)
+
+                    Concat left right ->
+                        fits remaining ({ item | doc = left } :: { item | doc = right } :: rest)
+
+                    Group inner ->
+                        fits remaining ({ item | mode = Flat, doc = inner } :: rest)
+
+
+newline : Int -> String
+newline indent =
+    "\n" ++ String.repeat indent " "
+
+
+pub type Value
+    = Null
+    | Bool Bool
+    | Number Float
+    | String String
+    | Array (List Value)
+    | Object (Dict String Value)
+
+
+pub valueDoc : Value -> Doc
+valueDoc value =
+    case value of
+        Null ->
+            Text "null"
+
+        Bool b ->
+            Text (if b then "true" else "false")
+
+        Number n ->
+            Text (String.fromFloat n)
+
+        String s ->
+            Text (quote s)
+
+        Array [] ->
+            Text "[]"
+
+        Array items ->
+            bracket "[" (join (Concat (Text ",") SoftLine) (List.map valueDoc items)) "]"
+
+        Object fields ->
+            if Dict.isEmpty fields then
+                Text "{}"
+            else
+                bracket "{"
+                    (join (Concat (Text ",") SoftLine)
+                        (List.map fieldDoc (Dict.toList fields))
+                    )
+                    "}"
+
+
+fieldDoc : ( String, Value ) -> Doc
+fieldDoc ( key, value ) =
+    Concat (Text (quote key)) (Concat (Text ": ") (valueDoc value))
+
+
+quote : String -> String
+quote s =
+    "\"" ++ escape s ++ "\""
+
+
+escape : String -> String
+escape s =
+    s
+        |> String.replace "\\" "\\\\"
+        |> String.replace "\"" "\\\""
+        |> String.replace "\n" "\\n"
+        |> String.replace "\t" "\\t"
+
+
+pub printValue : Int -> Value -> String
+printValue width value =
+    render width (valueDoc value)
+
+
+pub sample : Value
+sample =
+    Object
+        (Dict.fromList
+            [ ( "name", String "beni" )
+            , ( "version", Number 0.1 )
+            , ( "stable", Bool False )
+            , ( "tags", Array [ String "elm", String "javascript", String "compiler" ] )
+            , ( "author", Object (Dict.fromList [ ( "name", String "anon" ), ( "email", Null ) ]) )
+            ]
+        )
+
+
+pub depth : Doc -> Int
+depth doc =
+    case doc of
+        Nest _ inner ->
+            1 + depth inner
+
+        Concat left right ->
+            max (depth left) (depth right)
+
+        Group inner ->
+            depth inner
+
+        _ ->
+            0
+
+
+pub width : Doc -> Int
+width doc =
+    case doc of
+        Empty ->
+            0
+
+        Text s ->
+            String.length s
+
+        Line ->
+            0
+
+        SoftLine ->
+            1
+
+        Nest _ inner ->
+            width inner
+
+        Concat left right ->
+            width left + width right
+
+        Group inner ->
+            width inner

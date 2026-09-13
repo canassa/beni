@@ -1,0 +1,64 @@
+--! A toy view layer so Counter has something to import. Constructors with
+--! payloads, an opaque type, record update, pipelines and composition.
+
+
+pub opaque type Element msg
+    = Text String
+    | Button String msg
+    | Column (List (Element msg))
+
+
+pub type alias Style =
+    { padding : Int
+    , bold : Bool
+    }
+
+
+defaultStyle : Style
+defaultStyle =
+    { padding = 4, bold = False }
+
+
+emphasised : Style
+emphasised =
+    { defaultStyle | bold = True }
+
+
+pub text : String -> Element msg
+text content =
+    Text content
+
+
+pub button : String -> msg -> Element msg
+button label onPress =
+    Button label onPress
+
+
+pub column : List (Element msg) -> Element msg
+column children =
+    Column children
+
+
+pub render : Element msg -> String
+render element =
+    case element of
+        Text content ->
+            content
+
+        Button label _ ->
+            "[${label}]"
+
+        Column children ->
+            children
+                |> List.map render
+                |> String.join "\n"
+
+
+pub shout : Element msg -> String
+shout =
+    render >> String.toUpper
+
+
+pub indent : Style -> String -> String
+indent style line =
+    String.repeat style.padding " " ++ line

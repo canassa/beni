@@ -1,0 +1,324 @@
+//! `--self-profile` (docs/design/frontend.md §6, fast-compiler.md §12).
+//!
+//! Records one complete (`X`) event per phase per file and per serial step,
+//! plus counters at exit, and writes Chrome trace-event JSON
+//! (`{"traceEvents":[...]}`) that Perfetto and speedscope open directly.
+//!
+//! Recording is per thread into a buffer preallocated at session start, so a
+//! worker never allocates or synchronises to record: `end` is a bounds check
+//! and a store. A full buffer counts the drop instead of growing — the count
+//! is written as a `dropped_events` counter so a truncated trace says so.
+//! With the flag off, every entry point is one `enabled` check and a return.
+//!
+//! Counters are what the M4 incrementality tests assert ("dependents were not
+//! re-checked"), which is why they exist before there is anything to count.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
+
+const Profile = @This();
+
+enabled: bool,
+io: Io,
+/// The origin every timestamp is measured from.
+origin: Io.Timestamp,
+/// One buffer per thread id, index = worker index (`tid` in the trace).
+threads: []ThreadBuffer,
+/// Written once, serially, at exit — never from a worker.
+counters: [Counter.count]u64 = @splat(0),
+
+/// A phase or serial step. Emitted as the event's `name`.
+pub const Phase = enum {
+    enumerate,
+    read,
+    lex,
+    parse,
+    lower,
+    format,
+    merge_interners,
+    render,
+};
+
+pub const Counter = enum {
+    files,
+    bytes,
+    tokens,
+    nodes,
+    insts,
+    diagnostics,
+
+    pub const count = @typeInfo(Counter).@"enum".fields.len;
+};
+
+/// A complete event. `file` is a file index (or `no_file` for serial steps)
+/// resolved to a path only at write time, so a worker stores 32 bytes and
+/// no pointer.
+pub const Event = struct {
+    phase: Phase,
+    file: u32,
+    bytes: u32,
+    start_ns: u64,
+    duration_ns: u64,
+
+    pub const no_file = std.math.maxInt(u32);
+};
+
+pub const ThreadBuffer = struct {
+    events: []Event,
+    len: usize = 0,
+    dropped: u64 = 0,
+};
+
+/// Handed back by `begin`, consumed by `end`.
+pub const Token = struct { start_ns: u64 };
+
+pub const Options = struct {
+    enabled: bool,
+    /// Number of thread buffers: one per worker.
+    threads: u32,
+    /// Fixed capacity of each buffer, in events. Overflow is counted.
+    events_per_thread: usize = 4096,
+};
+
+pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Profile {
+    var profile: Profile = .{
+        .enabled = options.enabled,
+        .io = io,
+        .origin = if (options.enabled) Io.Timestamp.now(io, .awake) else .zero,
+        .threads = &.{},
+    };
+    if (!options.enabled) return profile;
+
+    profile.threads = try gpa.alloc(ThreadBuffer, options.threads);
+    errdefer gpa.free(profile.threads);
+    var allocated: usize = 0;
+    errdefer for (profile.threads[0..allocated]) |buffer| gpa.free(buffer.events);
+    for (profile.threads) |*buffer| {
+        buffer.* = .{ .events = try gpa.alloc(Event, options.events_per_thread) };
+        allocated += 1;
+    }
+    return profile;
+}
+
+pub fn deinit(profile: *Profile, gpa: Allocator) void {
+    for (profile.threads) |buffer| gpa.free(buffer.events);
+    gpa.free(profile.threads);
+    profile.* = undefined;
+}
+
+fn nowNs(profile: *const Profile) u64 {
+    const now = Io.Timestamp.now(profile.io, .awake);
+    return @intCast(profile.origin.durationTo(now).nanoseconds);
+}
+
+/// Start timing. Cheap enough to call unconditionally; returns a dummy when
+/// disabled.
+pub fn begin(profile: *const Profile) Token {
+    if (!profile.enabled) return .{ .start_ns = 0 };
+    return .{ .start_ns = profile.nowNs() };
+}
+
+/// Record the event started by `token` on thread `tid`. Only that thread may
+/// call this with that `tid`.
+pub fn end(profile: *Profile, tid: u32, token: Token, phase: Phase, file: u32, bytes: u32) void {
+    if (!profile.enabled) return;
+    const end_ns = profile.nowNs();
+    const buffer = &profile.threads[tid];
+    if (buffer.len == buffer.events.len) {
+        buffer.dropped += 1;
+        return;
+    }
+    buffer.events[buffer.len] = .{
+        .phase = phase,
+        .file = file,
+        .bytes = bytes,
+        .start_ns = token.start_ns,
+        .duration_ns = end_ns - token.start_ns,
+    };
+    buffer.len += 1;
+}
+
+/// Add to a counter. Serial use only (the driver sums per-worker tallies
+/// after the join and calls this once per counter).
+pub fn addCounter(profile: *Profile, c: Counter, value: u64) void {
+    if (!profile.enabled) return;
+    profile.counters[@intFromEnum(c)] += value;
+}
+
+pub fn counter(profile: *const Profile, c: Counter) u64 {
+    return profile.counters[@intFromEnum(c)];
+}
+
+/// Total events recorded across all threads (not counting dropped ones).
+pub fn eventCount(profile: *const Profile) usize {
+    var n: usize = 0;
+    for (profile.threads) |buffer| n += buffer.len;
+    return n;
+}
+
+/// Write the trace. `file_paths[i]` names file index `i` in `args.file`.
+/// Timestamps are microseconds (Chrome's unit) with three decimals so
+/// nanosecond phases stay visible.
+pub fn write(profile: *const Profile, writer: *Io.Writer, file_paths: []const []const u8) Io.Writer.Error!void {
+    var json: std.json.Stringify = .{ .writer = writer, .options = .{} };
+    try json.beginObject();
+    try json.objectField("traceEvents");
+    try json.beginArray();
+    for (profile.threads, 0..) |buffer, tid| {
+        for (buffer.events[0..buffer.len]) |event| {
+            try json.beginObject();
+            try json.objectField("name");
+            try json.write(@tagName(event.phase));
+            try json.objectField("cat");
+            try json.write("phase");
+            try json.objectField("ph");
+            try json.write("X");
+            try json.objectField("ts");
+            try writeMicros(&json, event.start_ns);
+            try json.objectField("dur");
+            try writeMicros(&json, event.duration_ns);
+            try json.objectField("pid");
+            try json.write(1);
+            try json.objectField("tid");
+            try json.write(tid);
+            try json.objectField("args");
+            try json.beginObject();
+            if (event.file != Event.no_file) {
+                try json.objectField("file");
+                try json.write(if (event.file < file_paths.len) file_paths[event.file] else "?");
+            }
+            try json.objectField("bytes");
+            try json.write(event.bytes);
+            try json.endObject();
+            try json.endObject();
+        }
+    }
+    const end_ns = profile.nowNs();
+    inline for (@typeInfo(Counter).@"enum".fields) |field| {
+        try writeCounter(&json, field.name, end_ns, profile.counters[field.value]);
+    }
+    var dropped: u64 = 0;
+    for (profile.threads) |buffer| dropped += buffer.dropped;
+    try writeCounter(&json, "dropped_events", end_ns, dropped);
+    try json.endArray();
+    try json.endObject();
+    try writer.writeByte('\n');
+}
+
+fn writeMicros(json: *std.json.Stringify, ns: u64) Io.Writer.Error!void {
+    try json.print("{d}.{d:0>3}", .{ ns / 1000, ns % 1000 });
+}
+
+fn writeCounter(json: *std.json.Stringify, name: []const u8, ts_ns: u64, value: u64) Io.Writer.Error!void {
+    try json.beginObject();
+    try json.objectField("name");
+    try json.write(name);
+    try json.objectField("ph");
+    try json.write("C");
+    try json.objectField("ts");
+    try writeMicros(json, ts_ns);
+    try json.objectField("pid");
+    try json.write(1);
+    try json.objectField("tid");
+    try json.write(0);
+    try json.objectField("args");
+    try json.beginObject();
+    try json.objectField(name);
+    try json.write(value);
+    try json.endObject();
+    try json.endObject();
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+/// The trace shape the tests parse back. Mirrors what `write` emits.
+const TraceEvent = struct {
+    name: []const u8,
+    cat: ?[]const u8 = null,
+    ph: []const u8,
+    ts: f64,
+    dur: ?f64 = null,
+    pid: u32,
+    tid: u32,
+    args: struct { file: ?[]const u8 = null, bytes: ?u32 = null, files: ?u64 = null, bytes_total: ?u64 = null },
+};
+
+test "write emits valid Chrome trace JSON with events and counters" {
+    var profile = try Profile.init(testing.allocator, testing.io, .{ .enabled = true, .threads = 2, .events_per_thread = 8 });
+    defer profile.deinit(testing.allocator);
+
+    const t0 = profile.begin();
+    profile.end(0, t0, .read, 0, 120);
+    const t1 = profile.begin();
+    profile.end(1, t1, .read, 1, 7);
+    const t2 = profile.begin();
+    profile.end(0, t2, .merge_interners, Event.no_file, 0);
+    profile.addCounter(.files, 2);
+    profile.addCounter(.bytes, 127);
+    try testing.expectEqual(@as(usize, 3), profile.eventCount());
+
+    var out: Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    try profile.write(&out.writer, &.{ "A.beni", "B.beni" });
+
+    // Parse it back with std.json: the file is valid JSON of the expected
+    // shape, and the events are the ones recorded.
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []TraceEvent }, testing.allocator, out.written(), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    const events = parsed.value.traceEvents;
+    try testing.expectEqual(@as(usize, 3 + Counter.count + 1), events.len);
+
+    try testing.expectEqualStrings("read", events[0].name);
+    try testing.expectEqualStrings("X", events[0].ph);
+    try testing.expectEqualStrings("phase", events[0].cat.?);
+    try testing.expectEqual(@as(u32, 0), events[0].tid);
+    try testing.expectEqualStrings("A.beni", events[0].args.file.?);
+    try testing.expectEqual(@as(u32, 120), events[0].args.bytes.?);
+    try testing.expect(events[0].dur.? >= 0);
+
+    try testing.expectEqualStrings("merge_interners", events[1].name);
+    try testing.expectEqual(@as(?[]const u8, null), events[1].args.file);
+
+    try testing.expectEqualStrings("read", events[2].name);
+    try testing.expectEqual(@as(u32, 1), events[2].tid);
+    try testing.expectEqualStrings("B.beni", events[2].args.file.?);
+
+    // Counters, in enum order, then dropped_events.
+    const files = events[3];
+    try testing.expectEqualStrings("files", files.name);
+    try testing.expectEqualStrings("C", files.ph);
+    try testing.expectEqual(@as(u64, 2), files.args.files.?);
+    try testing.expectEqualStrings("dropped_events", events[events.len - 1].name);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "\"dropped_events\":0") != null);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "\"bytes\":127") != null);
+}
+
+test "a full buffer counts drops instead of growing" {
+    var profile = try Profile.init(testing.allocator, testing.io, .{ .enabled = true, .threads = 1, .events_per_thread = 2 });
+    defer profile.deinit(testing.allocator);
+    for (0..5) |i| profile.end(0, profile.begin(), .lex, @intCast(i), 0);
+    try testing.expectEqual(@as(usize, 2), profile.eventCount());
+    try testing.expectEqual(@as(u64, 3), profile.threads[0].dropped);
+
+    var out: Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    try profile.write(&out.writer, &.{});
+    try testing.expect(std.mem.indexOf(u8, out.written(), "\"dropped_events\":3") != null);
+    // A file index without a path is written as "?" rather than crashing.
+    try testing.expect(std.mem.indexOf(u8, out.written(), "\"file\":\"?\"") != null);
+}
+
+test "a disabled profile records nothing and allocates nothing" {
+    var profile = try Profile.init(testing.allocator, testing.io, .{ .enabled = false, .threads = 4 });
+    defer profile.deinit(testing.allocator);
+    profile.end(0, profile.begin(), .read, 0, 1);
+    profile.addCounter(.files, 1);
+    try testing.expectEqual(@as(usize, 0), profile.threads.len);
+    try testing.expectEqual(@as(usize, 0), profile.eventCount());
+    try testing.expectEqual(@as(u64, 0), profile.counter(.files));
+}

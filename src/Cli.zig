@@ -1,0 +1,426 @@
+//! Command-line parsing (docs/design/frontend.md §1).
+//!
+//! Pure: bytes in, a `Command` or a usage message out, no I/O — so the whole
+//! surface is covered by the hermetic suite, and `main.zig` is only the
+//! dispatch. Every usage error is a one-line message; `main` prints it to
+//! stderr and exits 2. The wording is part of the black-box contract.
+//!
+//! ```
+//! beni check  [options] <path>...
+//! beni fmt    [options] [--check] [--stdout] <path>...
+//! beni dump   [options] --stage=<tokens|ast|bir> [--positions] <file>
+//! beni version
+//! beni help
+//! ```
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
+pub const usage =
+    \\usage: beni <command> [options] [<path>...]
+    \\
+    \\commands:
+    \\  check    parse and lower every module; report diagnostics
+    \\  fmt      format in place, or --check to verify, or --stdout to print
+    \\  dump     print one file's IR as text (--stage=tokens|ast|bir)
+    \\  version  print the version
+    \\  help     print this text
+    \\
+    \\options (all commands):
+    \\  --diagnostics=text|json   diagnostics on stderr as prose (default) or one JSON array
+    \\  --self-profile=<path>     write a Chrome trace-event JSON file at exit
+    \\  --jobs=<n>                worker threads (default: logical CPUs); output is identical for every n
+    \\  --root=<dir>              the source root module names are derived from
+    \\  --core                    treat the files as the core package (`foreign` declarations are legal)
+    \\
+    \\fmt options:
+    \\  --check                   exit 1 if any file would change; write nothing
+    \\  --stdout                  print the formatted text instead of writing it
+    \\
+    \\dump options:
+    \\  --stage=tokens|ast|bir    which representation to print (required)
+    \\  --positions               include source positions
+    \\
+    \\exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O failure
+    \\
+;
+
+pub const DiagnosticsFormat = enum { text, json };
+pub const Stage = enum { tokens, ast, bir };
+
+/// Options every subcommand accepts.
+pub const Common = struct {
+    diagnostics: DiagnosticsFormat = .text,
+    self_profile: ?[]const u8 = null,
+    /// null means "logical CPUs", decided by `main`.
+    jobs: ?u32 = null,
+    root: ?[]const u8 = null,
+    /// `--core`: the files are the core package, where `foreign` is legal.
+    core: bool = false,
+};
+
+pub const Check = struct {
+    common: Common = .{},
+    paths: []const []const u8,
+};
+
+pub const Fmt = struct {
+    common: Common = .{},
+    check: bool = false,
+    stdout: bool = false,
+    paths: []const []const u8,
+};
+
+pub const Dump = struct {
+    common: Common = .{},
+    stage: Stage,
+    positions: bool = false,
+    file: []const u8,
+};
+
+pub const Command = union(enum) {
+    check: Check,
+    fmt: Fmt,
+    dump: Dump,
+    version,
+    help,
+};
+
+/// A usage error's one-line message, without the trailing newline. Carried
+/// by value so `parse` needs no allocator for the failure path.
+pub const Usage = struct {
+    buf: [256]u8 = undefined,
+    len: usize = 0,
+
+    pub fn message(u: *const Usage) []const u8 {
+        return u.buf[0..u.len];
+    }
+
+    fn init(comptime fmt: []const u8, args: anytype) Usage {
+        var u: Usage = .{};
+        const written = std.fmt.bufPrint(&u.buf, fmt, args) catch &u.buf; // truncated is still a message
+        u.len = written.len;
+        return u;
+    }
+};
+
+pub const Result = union(enum) {
+    command: Command,
+    usage: Usage,
+};
+
+/// Parse `args` (without the program name). Path lists are allocated from
+/// `gpa`; option values are slices of `args`.
+pub fn parse(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    if (args.len == 0) return .{ .usage = .init("beni: missing subcommand; run 'beni help' for usage", .{}) };
+    const sub = args[0];
+    const rest = args[1..];
+
+    if (std.mem.eql(u8, sub, "version")) {
+        if (rest.len != 0) return .{ .usage = .init("beni: version takes no arguments", .{}) };
+        return .{ .command = .version };
+    }
+    if (std.mem.eql(u8, sub, "help") or std.mem.eql(u8, sub, "--help") or std.mem.eql(u8, sub, "-h")) {
+        if (rest.len != 0) return .{ .usage = .init("beni: help takes no arguments", .{}) };
+        return .{ .command = .help };
+    }
+    if (std.mem.eql(u8, sub, "check")) return parseCheck(gpa, rest);
+    if (std.mem.eql(u8, sub, "fmt")) return parseFmt(gpa, rest);
+    if (std.mem.eql(u8, sub, "dump")) return parseDump(gpa, rest);
+    return .{ .usage = .init("beni: unknown subcommand '{s}'; run 'beni help' for usage", .{sub}) };
+}
+
+/// One pass over the arguments after the subcommand. Flags known to every
+/// command are applied to `common`; command-specific flags are matched by
+/// `Specific`; everything else is a positional (after `--`, everything is).
+fn Scanner(comptime Specific: type) type {
+    return struct {
+        common: Common = .{},
+        specific: Specific = .{},
+        positionals: std.ArrayList([]const u8) = .empty,
+
+        const Self = @This();
+
+        fn scan(self: *Self, gpa: Allocator, args: []const [:0]const u8) Allocator.Error!?Usage {
+            var only_positionals = false;
+            for (args) |arg| {
+                if (only_positionals or arg.len < 2 or arg[0] != '-') {
+                    try self.positionals.append(gpa, arg);
+                    continue;
+                }
+                if (std.mem.eql(u8, arg, "--")) {
+                    only_positionals = true;
+                    continue;
+                }
+                const eq = std.mem.indexOfScalar(u8, arg, '=');
+                const name = if (eq) |i| arg[0..i] else arg;
+                const value: ?[]const u8 = if (eq) |i| arg[i + 1 ..] else null;
+                if (try self.specific.apply(name, value)) |u| return u;
+                if (self.specific.consumed) {
+                    self.specific.consumed = false;
+                    continue;
+                }
+                if (try applyCommon(&self.common, name, value)) |u| return u;
+            }
+            return null;
+        }
+    };
+}
+
+/// Returns a usage error, or null when `name` was handled or is not common.
+fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+    if (std.mem.eql(u8, name, "--diagnostics")) {
+        const v = value orelse return needsValue(name, "text|json");
+        common.diagnostics = std.meta.stringToEnum(DiagnosticsFormat, v) orelse
+            return Usage.init("beni: invalid value '{s}' for --diagnostics (expected text or json)", .{v});
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--self-profile")) {
+        const v = value orelse return needsValue(name, "<path>");
+        if (v.len == 0) return needsValue(name, "<path>");
+        common.self_profile = v;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--jobs")) {
+        const v = value orelse return needsValue(name, "<n>");
+        const n = std.fmt.parseInt(u32, v, 10) catch 0;
+        if (n == 0) return Usage.init("beni: invalid value '{s}' for --jobs (expected a positive integer)", .{v});
+        common.jobs = n;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--root")) {
+        const v = value orelse return needsValue(name, "<dir>");
+        if (v.len == 0) return needsValue(name, "<dir>");
+        common.root = v;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--core")) {
+        if (value != null) return noValue(name);
+        common.core = true;
+        return null;
+    }
+    return Usage.init("beni: unknown option '{s}'; run 'beni help' for usage", .{name});
+}
+
+fn needsValue(name: []const u8, what: []const u8) Usage {
+    return Usage.init("beni: option '{s}' needs a value: {s}={s}", .{ name, name, what });
+}
+
+fn noValue(name: []const u8) Usage {
+    return Usage.init("beni: option '{s}' does not take a value", .{name});
+}
+
+const NoSpecific = struct {
+    consumed: bool = false,
+    fn apply(_: *NoSpecific, _: []const u8, _: ?[]const u8) Allocator.Error!?Usage {
+        return null;
+    }
+};
+
+fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    var s: Scanner(NoSpecific) = .{};
+    errdefer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| {
+        s.positionals.deinit(gpa);
+        return .{ .usage = u };
+    }
+    if (s.positionals.items.len == 0) {
+        s.positionals.deinit(gpa);
+        return .{ .usage = .init("beni: check needs at least one path", .{}) };
+    }
+    return .{ .command = .{ .check = .{ .common = s.common, .paths = try s.positionals.toOwnedSlice(gpa) } } };
+}
+
+const FmtSpecific = struct {
+    consumed: bool = false,
+    check: bool = false,
+    stdout: bool = false,
+
+    fn apply(self: *FmtSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--check")) {
+            if (value != null) return noValue(name);
+            self.check = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--stdout")) {
+            if (value != null) return noValue(name);
+            self.stdout = true;
+            self.consumed = true;
+        }
+        return null;
+    }
+};
+
+fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    var s: Scanner(FmtSpecific) = .{};
+    errdefer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| {
+        s.positionals.deinit(gpa);
+        return .{ .usage = u };
+    }
+    if (s.positionals.items.len == 0) {
+        s.positionals.deinit(gpa);
+        return .{ .usage = .init("beni: fmt needs at least one path", .{}) };
+    }
+    if (s.specific.check and s.specific.stdout) {
+        s.positionals.deinit(gpa);
+        return .{ .usage = .init("beni: fmt --check and --stdout are mutually exclusive", .{}) };
+    }
+    return .{ .command = .{ .fmt = .{
+        .common = s.common,
+        .check = s.specific.check,
+        .stdout = s.specific.stdout,
+        .paths = try s.positionals.toOwnedSlice(gpa),
+    } } };
+}
+
+const DumpSpecific = struct {
+    consumed: bool = false,
+    stage: ?Stage = null,
+    positions: bool = false,
+
+    fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--stage")) {
+            const v = value orelse return needsValue(name, "tokens|ast|bir");
+            self.stage = std.meta.stringToEnum(Stage, v) orelse
+                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast or bir)", .{v});
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--positions")) {
+            if (value != null) return noValue(name);
+            self.positions = true;
+            self.consumed = true;
+        }
+        return null;
+    }
+};
+
+fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
+    var s: Scanner(DumpSpecific) = .{};
+    defer s.positionals.deinit(gpa);
+    if (try s.scan(gpa, args)) |u| return .{ .usage = u };
+    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir", .{}) };
+    if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
+    return .{ .command = .{ .dump = .{
+        .common = s.common,
+        .stage = stage,
+        .positions = s.specific.positions,
+        .file = s.positionals.items[0],
+    } } };
+}
+
+/// Free what `parse` allocated for `command`.
+pub fn deinitCommand(gpa: Allocator, command: Command) void {
+    switch (command) {
+        .check => |c| gpa.free(c.paths),
+        .fmt => |f| gpa.free(f.paths),
+        .dump, .version, .help => {},
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+fn expectCommand(expected: Command, args: []const [:0]const u8) !void {
+    const result = try parse(testing.allocator, args);
+    switch (result) {
+        .command => |c| {
+            defer deinitCommand(testing.allocator, c);
+            try testing.expectEqualDeep(expected, c);
+        },
+        .usage => |u| {
+            std.debug.print("unexpected usage error: {s}\n", .{u.message()});
+            return error.TestUnexpectedResult;
+        },
+    }
+}
+
+fn expectUsage(expected: []const u8, args: []const [:0]const u8) !void {
+    const result = try parse(testing.allocator, args);
+    switch (result) {
+        .command => |c| {
+            deinitCommand(testing.allocator, c);
+            return error.TestUnexpectedResult;
+        },
+        .usage => |u| try testing.expectEqualStrings(expected, u.message()),
+    }
+}
+
+test "version and help" {
+    try expectCommand(.version, &.{"version"});
+    try expectCommand(.help, &.{"help"});
+    try expectCommand(.help, &.{"--help"});
+    try expectUsage("beni: version takes no arguments", &.{ "version", "x" });
+    try expectUsage("beni: help takes no arguments", &.{ "help", "check" });
+}
+
+test "missing and unknown subcommand" {
+    try expectUsage("beni: missing subcommand; run 'beni help' for usage", &.{});
+    try expectUsage("beni: unknown subcommand 'frobnicate'; run 'beni help' for usage", &.{"frobnicate"});
+    try expectUsage("beni: unknown subcommand '--jobs=2'; run 'beni help' for usage", &.{ "--jobs=2", "check" });
+}
+
+test "check: paths and every common option" {
+    try expectCommand(.{ .check = .{ .paths = &.{"src"} } }, &.{ "check", "src" });
+    try expectCommand(.{ .check = .{
+        .common = .{ .diagnostics = .json, .self_profile = "trace.json", .jobs = 4, .root = "src", .core = true },
+        .paths = &.{ "src", "tests/Main.beni" },
+    } }, &.{ "check", "--diagnostics=json", "src", "--self-profile=trace.json", "--jobs=4", "--root=src", "--core", "tests/Main.beni" });
+    // `--` ends options; a lone `-` is a path.
+    try expectCommand(.{ .check = .{ .paths = &.{ "--jobs=9", "-" } } }, &.{ "check", "--", "--jobs=9", "-" });
+}
+
+test "check: usage errors" {
+    try expectUsage("beni: check needs at least one path", &.{"check"});
+    try expectUsage("beni: check needs at least one path", &.{ "check", "--jobs=2" });
+    try expectUsage("beni: unknown option '--frob'; run 'beni help' for usage", &.{ "check", "--frob", "src" });
+    try expectUsage("beni: unknown option '--frob'; run 'beni help' for usage", &.{ "check", "--frob=1", "src" });
+    try expectUsage("beni: invalid value 'xml' for --diagnostics (expected text or json)", &.{ "check", "--diagnostics=xml", "src" });
+    try expectUsage("beni: option '--diagnostics' needs a value: --diagnostics=text|json", &.{ "check", "--diagnostics", "src" });
+    try expectUsage("beni: invalid value '0' for --jobs (expected a positive integer)", &.{ "check", "--jobs=0", "src" });
+    try expectUsage("beni: invalid value 'many' for --jobs (expected a positive integer)", &.{ "check", "--jobs=many", "src" });
+    try expectUsage("beni: option '--jobs' needs a value: --jobs=<n>", &.{ "check", "--jobs", "src" });
+    try expectUsage("beni: option '--root' needs a value: --root=<dir>", &.{ "check", "--root=", "src" });
+    try expectUsage("beni: option '--self-profile' needs a value: --self-profile=<path>", &.{ "check", "--self-profile", "src" });
+    try expectUsage("beni: option '--core' does not take a value", &.{ "check", "--core=1", "src" });
+    // `--check` belongs to fmt only.
+    try expectUsage("beni: unknown option '--check'; run 'beni help' for usage", &.{ "check", "--check", "src" });
+}
+
+test "fmt: flags in any order" {
+    try expectCommand(.{ .fmt = .{ .paths = &.{"src"} } }, &.{ "fmt", "src" });
+    try expectCommand(.{ .fmt = .{ .check = true, .paths = &.{ "a.beni", "b.beni" } } }, &.{ "fmt", "a.beni", "--check", "b.beni" });
+    try expectCommand(.{ .fmt = .{
+        .common = .{ .diagnostics = .json, .jobs = 1, .core = true },
+        .stdout = true,
+        .paths = &.{"a.beni"},
+    } }, &.{ "fmt", "--stdout", "--jobs=1", "--core", "--diagnostics=json", "a.beni" });
+    try expectUsage("beni: fmt needs at least one path", &.{ "fmt", "--check" });
+    try expectUsage("beni: fmt --check and --stdout are mutually exclusive", &.{ "fmt", "--check", "--stdout", "a.beni" });
+    try expectUsage("beni: option '--check' does not take a value", &.{ "fmt", "--check=yes", "a.beni" });
+    try expectUsage("beni: unknown option '--stage'; run 'beni help' for usage", &.{ "fmt", "--stage=ast", "a.beni" });
+}
+
+test "dump: stage, positions, exactly one file" {
+    try expectCommand(.{ .dump = .{ .stage = .ast, .file = "Main.beni" } }, &.{ "dump", "--stage=ast", "Main.beni" });
+    try expectCommand(.{ .dump = .{
+        .common = .{ .root = "src", .core = true },
+        .stage = .tokens,
+        .positions = true,
+        .file = "src/Main.beni",
+    } }, &.{ "dump", "src/Main.beni", "--positions", "--core", "--root=src", "--stage=tokens" });
+    try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
+    try expectUsage("beni: dump needs --stage=tokens|ast|bir", &.{ "dump", "Main.beni" });
+    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir", &.{ "dump", "--stage", "Main.beni" });
+    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast or bir)", &.{ "dump", "--stage=cst", "Main.beni" });
+    try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast" });
+    try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast", "A.beni", "B.beni" });
+    try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
+}
+
+test "usage text mentions every subcommand" {
+    for ([_][]const u8{ "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--stage", "--positions" }) |word| {
+        try testing.expect(std.mem.indexOf(u8, usage, word) != null);
+    }
+}
