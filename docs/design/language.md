@@ -101,8 +101,9 @@ Three line comments. All run to the end of the line; nothing nests; there is no 
 
 Attachment rules, taken from Zig:
 
-- Consecutive `--|` lines form one doc block. The block must be followed on the next non-blank
-  line by a declaration (§5.3) or by the `pub` that starts one. Anything else — an import, an
+- Consecutive `--|` lines form one doc block; two runs separated only by blank lines are one
+  block too (blank lines are invisible to attachment, as in Zig). The block must be followed on
+  the next non-blank line by a declaration (§5.3) or by the `pub` that starts one. Anything else — an import, an
   ordinary comment, another construct, end of file — is `doc_comment_unattached`. Blank lines
   between the doc block and its declaration are allowed.
 - `--!` lines must appear before the first import or declaration. A `--!` anywhere else is
@@ -319,6 +320,8 @@ Notes:
 - Application binds tighter than `?`, which binds tighter than every binary operator. So
   `parse s? |> f` is `((parse s)?) |> f`, and `f (a?) b` is how `?` is applied to one argument.
   `f a? b` is a syntax error (`args_after_question`): after `?` no further arguments may follow.
+  An adjacent access chain may follow it: `x?.field` is `(x?).field`, `x.field?` is
+  `(x.field)?`, and `r??` applies `?` twice.
 
 ## 4. Layout: indentation is the block structure
 
@@ -348,7 +351,9 @@ Rules:
    *enclosing* block's indent (so `in` aligned with `let` is fine, and so is `in` on the same
    line).
 4. **`case` branches are aligned** the same way. The first branch may be on the same line as
-   `of`; then its column is wherever it is, and later branches must match it. When a branch
+   `of`; then its column is wherever it is, and later branches must match it. The branch column
+   is constrained only by the enclosing block, not by the `case` keyword: branches at the same
+   column as `case` are legal, as in Elm (the formatter indents them). When a branch
    body's expression stops at a token it cannot continue with — a `)` closing an enclosing
    group, a `,`, an `in` — the branch list ends there too, whatever that token's column, and the
    enclosing construct decides whether the token is legal. So `(case x of A -> y)` on one
@@ -528,15 +533,18 @@ non-associative operators reject a second operator of the same precedence withou
 | 9 | `>>` | left |
 | — | `?` postfix, application, `.field`, `.0` | tighter than all of the above, in that order (tightest last) |
 
-Mixing `<|` and `|>` at precedence 0 without parentheses is `non_associative_chain`.
+Mixing `<|` and `|>` at precedence 0, or `<<` and `>>` at precedence 9, without parentheses is
+`non_associative_chain` — the two operators of each pair associate in opposite directions, so a
+mixed chain has no reading a reader could predict. Elm rejects both pairs.
 
 **Negation.** `-` directly followed (no whitespace) by an atom, in a position where the parser
 expects the *start* of an operand, is negation: `-x`, `-(a + b)`, `-1`, `[ -1, -2 ]`. In
 argument position it is not: in `f -1` the parser has parsed `f` and sees `-` where either an
 argument or an operator may follow, and **it is the binary operator**, as in Elm, so `f -1` is
 `f - 1`; write `f (-1)`. `- x` with a space in prefix position is `negation_with_space`.
-`a - -b` is allowed. Negation of an integer literal in a *pattern* is a literal pattern
-(`-1 ->`).
+`a - -b` is allowed. The operand of negation is one atom with its access chain: `-r.value` is
+`-(r.value)`, and `-f x` is `(-f) x`, as in Elm. Negation of an integer literal in a *pattern*
+is a literal pattern (`-1 ->`).
 
 ### 6.6 `?`
 
@@ -556,7 +564,7 @@ argument or an operator may follow, and **it is the binary operator**, as in Elm
 
 - A `let` pattern binding must be irrefutable: a name, `_`, unit, a tuple or record of
   irrefutable patterns, or one of those with `as` (`LetPattern` in §3). A constructor, literal
-  or `::` pattern there is a syntax error (`refutable_let_pattern`); use `case`. This is Elm's
+  or `::` pattern there is a syntax error (`refutable_let_pattern  nesting_too_deep`); use `case`. This is Elm's
   rule and it keeps exhaustiveness out of `let`.
 - Every binding introduces a name into a lexical scope: function parameters, lambda parameters,
   `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression —
@@ -661,8 +669,17 @@ start of a construct — an expression, a pattern, a type, an exposing entry —
 token cannot start one. `expected_declaration` is the top-level form of the latter.
 
 Syntax errors carry Elm-style prose: what the parser was in the middle of, what it saw, and what
-it expected — e.g. *I was parsing the branches of this `case` and ran into `else`, which is
-indented to column 9. Branches must be indented more than the `case` on column 5.*
+it expected — e.g. *I was parsing the branches of this `case` and ran into `else` at column 9,
+but the branches of this `case` start at column 13.*
+
+A misaligned `let` binding or `case` branch — a token inside the block, at a column other than
+the first sibling's, that could start a binding or branch — is reported (`unexpected_token`,
+quoting both columns) and then parsed as a sibling, so one misalignment yields one message. A
+token that cannot start a sibling ends the list silently and the enclosing construct decides.
+
+Nesting deeper than 4096 levels of expressions, types or patterns is `nesting_too_deep` at the
+point where the limit is crossed; the file is otherwise parsed. This is the one limit the
+parser imposes and exists so hostile input cannot overflow the stack.
 
 ## Appendix A. The prelude
 
