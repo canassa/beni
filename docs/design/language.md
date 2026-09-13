@@ -652,6 +652,11 @@ author decides what may.
   remaining argument goes on its own line indented 4; an application with no source break that
   does not fit breaks after the function, every argument on its own line. Constructor argument
   lists in `type` declarations follow the same rule.
+- **Patterns are never broken across lines.** A `case` pattern, a definition's parameter list
+  or a `let` pattern that does not fit overflows the 100-column guide rather than wrapping:
+  there is no wrapped form a reader could tell from the `->` that follows, and a pattern long
+  enough to overflow is a signal to introduce a name, not to reformat. The same holds for the
+  head line of a definition.
 - Comments stay attached to the token they precede; a comment on its own line stays on its own
   line; a trailing comment stays at the end of its line. Doc blocks get a space after `--|`.
 - Strings, numbers and chars are printed as written (no escape normalisation) except that the

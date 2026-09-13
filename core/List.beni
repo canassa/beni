@@ -1,0 +1,551 @@
+--! You can create a list in beni with the `[ 1, 2, 3 ]` syntax, so lists are
+--! used all over the place. This module has a bunch of functions to help you
+--! work with them.
+--!
+--! Three declarations here are `foreign`, and nothing else is:
+--!
+--!   - `cons` — `::` desugars to a call of this function, so a beni
+--!     definition of it would call itself.
+--!   - `foldl` — the loop every other function here is built from. Written in
+--!     beni it is a self tail call, which the code generator is not yet
+--!     required to turn into a loop.
+--!   - `foldr` — the same, and it recurses to the depth of the list, which
+--!     the JavaScript stack cannot take for a long one.
+--!
+--! `List a` is equatable exactly when `a` is: two lists are equal when they
+--! have the same elements in the same order.
+--!
+--! There is no `comparable` (`fast-compiler.md` §3.1), so the ordering
+--! functions come in three flavours: `sort` for numbers, `sortBy` for
+--! anything with a numeric key, and `sortWith` for an ordering you write.
+
+--| A list of values, all of the same type. `[]` is the empty list and `::`
+--| puts one more value on the front.
+--|
+--|     [ 1, 2, 3 ]
+--|     1 :: [ 2, 3 ]
+--|
+--| Equatable when the element type is.
+pub equatable foreign type List a
+
+
+--| Add an element to the front of a list.
+--|
+--|     cons 1 [ 2, 3 ] == [ 1, 2, 3 ]
+--|
+--| This is what `::` desugars to.
+pub foreign cons : a -> List a -> List a
+
+
+--| Reduce a list from the left.
+--|
+--|     foldl cons [] [ 1, 2, 3 ] == [ 3, 2, 1 ]
+pub foreign foldl : (a -> b -> b) -> b -> List a -> b
+
+
+--| Reduce a list from the right.
+--|
+--|     foldr cons [] [ 1, 2, 3 ] == [ 1, 2, 3 ]
+pub foreign foldr : (a -> b -> b) -> b -> List a -> b
+
+
+--| Create a list with only one element.
+--|
+--|     singleton 1234 == [ 1234 ]
+pub singleton : a -> List a
+singleton value =
+    [ value ]
+
+
+--| Create a list with `n` copies of a value.
+--|
+--|     repeat 3 0 == [ 0, 0, 0 ]
+pub repeat : Int -> a -> List a
+repeat n value =
+    repeatHelp [] n value
+
+
+repeatHelp : List a -> Int -> a -> List a
+repeatHelp result n value =
+    if n <= 0 then
+        result
+    else
+        repeatHelp (value :: result) (n - 1) value
+
+
+--| Create a list of numbers, every element increasing by one. You give the
+--| lowest and the highest number that should be in the list.
+--|
+--|     range 3 6 == [ 3, 4, 5, 6 ]
+--|     range 3 3 == [ 3 ]
+--|     range 6 3 == []
+pub range : Int -> Int -> List Int
+range lo hi =
+    rangeHelp lo hi []
+
+
+rangeHelp : Int -> Int -> List Int -> List Int
+rangeHelp lo hi list =
+    if lo <= hi then
+        rangeHelp lo (hi - 1) (hi :: list)
+    else
+        list
+
+
+--| Apply a function to every element of a list.
+--|
+--|     map negate [ 1, 4, 9 ] == [ -1, -4, -9 ]
+pub map : (a -> b) -> List a -> List b
+map func xs =
+    foldr (\x acc -> func x :: acc) [] xs
+
+
+--| Same as `map` but the function is also given the index of each element,
+--| starting at zero.
+--|
+--|     indexedMap Tuple2 [ "a", "b" ] == [ Tuple2 0 "a", Tuple2 1 "b" ]
+pub indexedMap : (Int -> a -> b) -> List a -> List b
+indexedMap func xs =
+    map2 func (range 0 (length xs - 1)) xs
+
+
+--| Keep the elements that pass the test.
+--|
+--|     filter isEven [ 1, 2, 3, 4 ] == [ 2, 4 ]
+pub filter : (a -> Bool) -> List a -> List a
+filter isGood list =
+    foldr
+        (\x xs ->
+            if isGood x then
+                x :: xs
+            else
+                xs
+        )
+        []
+        list
+
+
+--| Filter out certain values. For example, to get all the heads of a list of
+--| lists, filter out the empty ones in the same pass that unwraps the rest.
+--|
+--|     filterMap head [ [ 1, 2 ], [], [ 3 ] ] == [ 1, 3 ]
+pub filterMap : (a -> Maybe b) -> List a -> List b
+filterMap func xs =
+    foldr (maybeCons func) [] xs
+
+
+maybeCons : (a -> Maybe b) -> a -> List b -> List b
+maybeCons func value xs =
+    case func value of
+        Just result ->
+            result :: xs
+
+        Nothing ->
+            xs
+
+
+--| Determine the length of a list.
+--|
+--|     length [ 1, 2, 3 ] == 3
+pub length : List a -> Int
+length xs =
+    foldl (\_ n -> n + 1) 0 xs
+
+
+--| Reverse a list.
+--|
+--|     reverse [ 1, 2, 3 ] == [ 3, 2, 1 ]
+pub reverse : List a -> List a
+reverse list =
+    foldl cons [] list
+
+
+--| Figure out whether a list contains a value. The element type has to be
+--| equatable, which rules out lists of functions.
+--|
+--|     member 9 [ 1, 2, 3 ] == False
+--|     member 4 [ 1, 4, 9 ] == True
+pub member : equatable a -> a -> List a -> Bool
+member value xs =
+    any (\x -> x == value) xs
+
+
+--| Determine if all elements satisfy some test.
+--|
+--|     all isEven [ 2, 4 ] == True
+--|     all isEven [] == True
+pub all : (a -> Bool) -> List a -> Bool
+all isOkay list =
+    not (any (not << isOkay) list)
+
+
+--| Determine if any elements satisfy some test.
+--|
+--|     any isEven [ 2, 3 ] == True
+--|     any isEven [] == False
+pub any : (a -> Bool) -> List a -> Bool
+any isOkay list =
+    case list of
+        [] ->
+            False
+
+        x :: rest ->
+            if isOkay x then
+                True
+            else
+                any isOkay rest
+
+
+--| Find the maximum element in a non-empty list of numbers. Elm's version
+--| takes any `comparable`; this one takes numbers, and `foldl max` over a
+--| key function covers the rest.
+--|
+--|     maximum [ 1, 4, 2 ] == Just 4
+--|     maximum [] == Nothing
+pub maximum : List number -> Maybe number
+maximum list =
+    case list of
+        x :: rest ->
+            Just (foldl max x rest)
+
+        [] ->
+            Nothing
+
+
+--| Find the minimum element in a non-empty list of numbers.
+--|
+--|     minimum [ 3, 2, 1 ] == Just 1
+--|     minimum [] == Nothing
+pub minimum : List number -> Maybe number
+minimum list =
+    case list of
+        x :: rest ->
+            Just (foldl min x rest)
+
+        [] ->
+            Nothing
+
+
+--| Get the sum of the list elements.
+--|
+--|     sum [ 1, 2, 3 ] == 6
+pub sum : List number -> number
+sum xs =
+    foldl (+) 0 xs
+
+
+--| Get the product of the list elements.
+--|
+--|     product [ 2, 2, 2 ] == 8
+pub product : List number -> number
+product xs =
+    foldl (*) 1 xs
+
+
+--| Put two lists together. `++` does the same thing.
+--|
+--|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
+pub append : List a -> List a -> List a
+append xs ys =
+    case ys of
+        [] ->
+            xs
+
+        _ ->
+            foldr cons ys xs
+
+
+--| Concatenate a bunch of lists into a single list.
+--|
+--|     concat [ [ 1, 2 ], [ 3 ], [] ] == [ 1, 2, 3 ]
+pub concat : List (List a) -> List a
+concat lists =
+    foldr append [] lists
+
+
+--| Map a given function onto a list and flatten the resulting lists.
+--|
+--|     concatMap (\x -> [ x, x ]) [ 1, 2 ] == [ 1, 1, 2, 2 ]
+pub concatMap : (a -> List b) -> List a -> List b
+concatMap func list =
+    concat (map func list)
+
+
+--| Places the given value between all members of the given list.
+--|
+--|     intersperse "on" [ "turtles", "turtles" ] == [ "turtles", "on", "turtles" ]
+pub intersperse : a -> List a -> List a
+intersperse sep xs =
+    case xs of
+        [] ->
+            []
+
+        hd :: tl ->
+            let
+                step x rest =
+                    sep :: x :: rest
+
+                spersed =
+                    foldr step [] tl
+            in
+            hd :: spersed
+
+
+--| Combine two lists, combining them with the given function. If one list is
+--| longer, the extra elements are dropped.
+--|
+--|     map2 (+) [ 1, 2, 3 ] [ 10, 20 ] == [ 11, 22 ]
+pub map2 : (a -> b -> result) -> List a -> List b -> List result
+map2 func xs ys =
+    case ( xs, ys ) of
+        ( x :: xrest, y :: yrest ) ->
+            func x y :: map2 func xrest yrest
+
+        _ ->
+            []
+
+
+--| Combine three lists, combining them with the given function.
+pub map3 : (a -> b -> c -> result) -> List a -> List b -> List c -> List result
+map3 func xs ys zs =
+    case ( xs, ys, zs ) of
+        ( x :: xrest, y :: yrest, z :: zrest ) ->
+            func x y z :: map3 func xrest yrest zrest
+
+        _ ->
+            []
+
+
+--| Combine four lists, combining them with the given function.
+pub map4 : (a -> b -> c -> d -> result) -> List a -> List b -> List c -> List d -> List result
+map4 func xs ys zs ws =
+    case ( xs, ys, zs, ws ) of
+        ( x :: xrest, y :: yrest, z :: zrest, w :: wrest ) ->
+            func x y z w :: map4 func xrest yrest zrest wrest
+
+        _ ->
+            []
+
+
+--| Combine five lists, combining them with the given function.
+pub map5 :
+    (a -> b -> c -> d -> e -> result)
+    -> List a
+    -> List b
+    -> List c
+    -> List d
+    -> List e
+    -> List result
+map5 func xs ys zs ws vs =
+    case ( xs, ys, zs, ws, vs ) of
+        ( x :: xrest, y :: yrest, z :: zrest, w :: wrest, v :: vrest ) ->
+            func x y z w v :: map5 func xrest yrest zrest wrest vrest
+
+        _ ->
+            []
+
+
+--| Sort a list of numbers from lowest to highest.
+--|
+--|     sort [ 3, 1, 5 ] == [ 1, 3, 5 ]
+--|
+--| Elm sorts any `comparable`; beni has none, so this one is numbers and the
+--| other two take the ordering as an argument.
+pub sort : List number -> List number
+sort xs =
+    sortWith compare xs
+
+
+--| Sort values by a derived number.
+--|
+--|     sortBy .age [ { age = 30 }, { age = 20 } ] == [ { age = 20 }, { age = 30 } ]
+pub sortBy : (a -> number) -> List a -> List a
+sortBy toKey xs =
+    sortWith (\x y -> compare (toKey x) (toKey y)) xs
+
+
+--| Sort values with a custom ordering function.
+--|
+--|     sortWith (\x y -> compare y x) [ 1, 2, 3 ] == [ 3, 2, 1 ]
+--|
+--| The sort is a stable merge sort: equal elements keep the order they were
+--| given in.
+pub sortWith : (a -> a -> Order) -> List a -> List a
+sortWith cmp list =
+    case list of
+        [] ->
+            []
+
+        [ _ ] ->
+            list
+
+        _ ->
+            let
+                ( front, back ) =
+                    splitHalf list
+            in
+            mergeWith cmp (sortWith cmp front) (sortWith cmp back)
+
+
+--| Split a list into two halves whose lengths differ by at most one, with a
+--| slow pointer walking one step for every two of the fast one.
+splitHalf : List a -> ( List a, List a )
+splitHalf list =
+    splitHalfHelp list list []
+
+
+splitHalfHelp : List a -> List a -> List a -> ( List a, List a )
+splitHalfHelp slow fast acc =
+    case fast of
+        [] ->
+            ( reverse acc, slow )
+
+        [ _ ] ->
+            ( reverse acc, slow )
+
+        _ :: _ :: fastRest ->
+            case slow of
+                [] ->
+                    ( reverse acc, slow )
+
+                x :: slowRest ->
+                    splitHalfHelp slowRest fastRest (x :: acc)
+
+
+--| Merge two sorted lists into one. On `EQ` the left element wins, which is
+--| what makes `sortWith` stable.
+mergeWith : (a -> a -> Order) -> List a -> List a -> List a
+mergeWith cmp left right =
+    mergeWithHelp cmp left right []
+
+
+mergeWithHelp : (a -> a -> Order) -> List a -> List a -> List a -> List a
+mergeWithHelp cmp left right acc =
+    case left of
+        [] ->
+            reverseAppend acc right
+
+        x :: xrest ->
+            case right of
+                [] ->
+                    reverseAppend acc left
+
+                y :: yrest ->
+                    case cmp x y of
+                        GT ->
+                            mergeWithHelp cmp left yrest (y :: acc)
+
+                        _ ->
+                            mergeWithHelp cmp xrest right (x :: acc)
+
+
+reverseAppend : List a -> List a -> List a
+reverseAppend acc rest =
+    foldl cons rest acc
+
+
+--| Determine if a list is empty.
+--|
+--|     isEmpty [] == True
+pub isEmpty : List a -> Bool
+isEmpty xs =
+    case xs of
+        [] ->
+            True
+
+        _ ->
+            False
+
+
+--| Extract the first element of a list.
+--|
+--|     head [ 1, 2, 3 ] == Just 1
+--|     head [] == Nothing
+pub head : List a -> Maybe a
+head list =
+    case list of
+        x :: _ ->
+            Just x
+
+        [] ->
+            Nothing
+
+
+--| Extract the rest of the list.
+--|
+--|     tail [ 1, 2, 3 ] == Just [ 2, 3 ]
+--|     tail [] == Nothing
+pub tail : List a -> Maybe (List a)
+tail list =
+    case list of
+        _ :: xs ->
+            Just xs
+
+        [] ->
+            Nothing
+
+
+--| Take the first `n` members of a list.
+--|
+--|     take 2 [ 1, 2, 3 ] == [ 1, 2 ]
+pub take : Int -> List a -> List a
+take n list =
+    reverse (takeHelp n list [])
+
+
+takeHelp : Int -> List a -> List a -> List a
+takeHelp n list acc =
+    if n <= 0 then
+        acc
+    else
+        case list of
+            [] ->
+                acc
+
+            x :: xs ->
+                takeHelp (n - 1) xs (x :: acc)
+
+
+--| Drop the first `n` members of a list.
+--|
+--|     drop 2 [ 1, 2, 3 ] == [ 3 ]
+pub drop : Int -> List a -> List a
+drop n list =
+    if n <= 0 then
+        list
+    else
+        case list of
+            [] ->
+                list
+
+            _ :: xs ->
+                drop (n - 1) xs
+
+
+--| Partition a list based on some test. The first list contains all values
+--| that satisfy the test, and the second list contains all the value that do
+--| not.
+--|
+--|     partition isEven [ 1, 2, 3, 4 ] == ( [ 2, 4 ], [ 1, 3 ] )
+pub partition : (a -> Bool) -> List a -> ( List a, List a )
+partition pred list =
+    let
+        step x ( trues, falses ) =
+            if pred x then
+                ( x :: trues, falses )
+            else
+                ( trues, x :: falses )
+    in
+    foldr step ( [], [] ) list
+
+
+--| Decompose a list of tuples into a tuple of lists.
+--|
+--|     unzip [ ( 0, True ), ( 17, False ) ] == ( [ 0, 17 ], [ True, False ] )
+pub unzip : List ( a, b ) -> ( List a, List b )
+unzip pairs =
+    let
+        step ( x, y ) ( xs, ys ) =
+            ( x :: xs, y :: ys )
+    in
+    foldr step ( [], [] ) pairs

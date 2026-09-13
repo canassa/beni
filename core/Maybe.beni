@@ -1,0 +1,173 @@
+--! This module is for values that may or may not exist. `Maybe` is how beni
+--! says "this might be missing" in a type, so it is checked rather than
+--! discovered at run time; there is no null.
+--!
+--! Everything here is ordinary beni — no `foreign` declarations.
+
+--| Represent values that may or may not exist. It can be useful if you have a
+--| record field that is only filled in sometimes, or if a function takes a
+--| value sometimes but does not absolutely need it.
+--|
+--|     type alias Person =
+--|         { name : String, age : Maybe Int }
+pub type Maybe a
+    = Just a
+    | Nothing
+
+
+--| Provide a default value, turning an optional value into a normal value.
+--|
+--|     withDefault 100 (Just 42) == 42
+--|     withDefault 100 Nothing == 100
+--|
+--| It is best to pattern match when you can, so a missing value is handled
+--| where it happens rather than papered over here.
+pub withDefault : a -> Maybe a -> a
+withDefault default maybe =
+    case maybe of
+        Just value ->
+            value
+
+        Nothing ->
+            default
+
+
+--| Transform a `Maybe` value with a given function.
+--|
+--|     map sqrt (Just 9) == Just 3
+--|     map sqrt Nothing == Nothing
+pub map : (a -> b) -> Maybe a -> Maybe b
+map func maybe =
+    case maybe of
+        Just value ->
+            Just (func value)
+
+        Nothing ->
+            Nothing
+
+
+--| Apply a function if both arguments are `Just` a value.
+--|
+--|     map2 (+) (Just 3) (Just 4) == Just 7
+--|     map2 (+) (Just 3) Nothing == Nothing
+pub map2 : (a -> b -> value) -> Maybe a -> Maybe b -> Maybe value
+map2 func ma mb =
+    case ma of
+        Nothing ->
+            Nothing
+
+        Just a ->
+            case mb of
+                Nothing ->
+                    Nothing
+
+                Just b ->
+                    Just (func a b)
+
+
+--| Apply a function if all three arguments are `Just` a value.
+pub map3 : (a -> b -> c -> value) -> Maybe a -> Maybe b -> Maybe c -> Maybe value
+map3 func ma mb mc =
+    case ma of
+        Nothing ->
+            Nothing
+
+        Just a ->
+            case mb of
+                Nothing ->
+                    Nothing
+
+                Just b ->
+                    case mc of
+                        Nothing ->
+                            Nothing
+
+                        Just c ->
+                            Just (func a b c)
+
+
+--| Apply a function if all four arguments are `Just` a value.
+pub map4 :
+    (a -> b -> c -> d -> value)
+    -> Maybe a
+    -> Maybe b
+    -> Maybe c
+    -> Maybe d
+    -> Maybe value
+map4 func ma mb mc md =
+    case ma of
+        Nothing ->
+            Nothing
+
+        Just a ->
+            case mb of
+                Nothing ->
+                    Nothing
+
+                Just b ->
+                    case mc of
+                        Nothing ->
+                            Nothing
+
+                        Just c ->
+                            case md of
+                                Nothing ->
+                                    Nothing
+
+                                Just d ->
+                                    Just (func a b c d)
+
+
+--| Apply a function if all five arguments are `Just` a value.
+pub map5 :
+    (a -> b -> c -> d -> e -> value)
+    -> Maybe a
+    -> Maybe b
+    -> Maybe c
+    -> Maybe d
+    -> Maybe e
+    -> Maybe value
+map5 func ma mb mc md me =
+    case ma of
+        Nothing ->
+            Nothing
+
+        Just a ->
+            case mb of
+                Nothing ->
+                    Nothing
+
+                Just b ->
+                    case mc of
+                        Nothing ->
+                            Nothing
+
+                        Just c ->
+                            case md of
+                                Nothing ->
+                                    Nothing
+
+                                Just d ->
+                                    case me of
+                                        Nothing ->
+                                            Nothing
+
+                                        Just value ->
+                                            Just (func a b c d value)
+
+
+--| Chain together many computations that may fail.
+--|
+--|     andThen (\x -> Just (x + 1)) (Just 1) == Just 2
+--|     andThen (\x -> Just (x + 1)) Nothing == Nothing
+--|
+--| The `?` operator does the same thing with less punctuation: `head xs?` is
+--| the value, or an early return of `Nothing` from the enclosing function.
+pub andThen : (a -> Maybe b) -> Maybe a -> Maybe b
+andThen callback maybe =
+    case maybe of
+        Just value ->
+            callback value
+
+        Nothing ->
+            Nothing

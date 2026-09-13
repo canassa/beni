@@ -1,0 +1,32 @@
+--! This module can be useful while *developing* an application. It is not
+--! meant for shipping code: a release build should not be printing to the
+--! console or crashing on a `todo`.
+--!
+--! All three declarations are `foreign`, because all three do something the
+--! language itself cannot: write to the outside world, stop the program, and
+--! look at a value's representation without knowing its type.
+
+--| Print a value to the console, prefixed with a tag, and return it
+--| unchanged. Because the value comes back out, a `log` can be dropped into
+--| the middle of a pipeline without moving any other code.
+--|
+--|     total = List.sum (Debug.log "prices" prices)
+pub foreign log : String -> a -> a
+
+
+--| Say that some code is not done yet, with a message about what is missing.
+--| It type-checks as anything at all, so the rest of the module still
+--| compiles, and it crashes with the message if it is ever reached.
+--|
+--|     view model =
+--|         Debug.todo "render the settings page"
+pub foreign todo : String -> a
+
+
+--| Turn any value into a string for debugging.
+--|
+--|     Debug.toString [ 1, 2 ] == "[1,2]"
+--|
+--| The exact text is not a promise and will change. For output a user reads,
+--| write the conversion yourself.
+pub foreign toString : a -> String

@@ -85,6 +85,16 @@ until M4 caches it. `--core-root` reads the directory instead.
    are edges to core. Import cycles → `import_cycle` reported once per cycle on the lexically
    first module of the cycle, naming the whole cycle in order; the modules of a cycle are
    marked poisoned: their declarations get `error` types and no further diagnostics.
+   A module resolves against **itself** like any other: the operators of `language.md` §6.5
+   desugar to core functions, so `core/Basics.beni`'s own `negate` contains a reference to
+   `Basics.sub`. Such a self-reference resolves to the module's own declaration (`top`, not an
+   import), contributes no graph edge, and is never an `import_cycle`. `Resolve` rewrites it
+   before anything else looks at the reference, so no later phase sees a module importing
+   itself.
+
+   `::` desugars to `List.cons` and `++` to `Basics.append`, matching Elm; every other operator
+   maps to `Basics`. Lowering emits the home module per operator rather than assuming `Basics`.
+
 4. **Topological order**, stable (ties by `(package, path)`), gives the check order. Modules
    whose imports are all checked are checked in parallel — one worker per module, a bounded
    pool, the DAG scheduling of `fast-compiler.md` §10 — with the interface of every dependency
@@ -355,6 +365,11 @@ review, the currying decision is revisited before M3 (design §9.3).
 - A type alias may not refer to itself, directly or through other aliases (`recursive_alias`).
 - An annotation's type variable may be marked for equality with the `equatable` prefix, in
   core only (Appendix B); user annotations obtain the mark by inference, never by spelling.
+  The prefix marks the **variable at its first occurrence**, not an argument: `eq : equatable a
+  -> a -> a -> Bool` is a function of two arguments, and `pub equatable foreign type List a`
+  means "equatable when every parameter is". The parser accepts the prefix only before a type
+  variable's first occurrence in an annotation, and only before `foreign type` in a declaration
+  (`equatable_outside_core` elsewhere).
 
 ## Appendix B — the core package
 

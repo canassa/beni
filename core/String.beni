@@ -1,0 +1,391 @@
+--! A built-in representation for efficient string manipulation. String
+--! literals are enclosed in double quotes, and `"a ${n}"` interpolates a
+--! primitive value into one.
+--!
+--! Strings are not ordered by `<` (`fast-compiler.md` §3.1); `compare` below
+--! is the replacement, and it is what you hand to `Dict.String` or
+--! `List.sortWith`.
+--!
+--! The `foreign` declarations here are the ones that reach into the
+--! platform's own string type, and nothing more:
+--!
+--!   - `length` `slice` `append` — indexing and concatenation.
+--!   - `compare` — lexicographic order.
+--!   - `toUpper` `toLower` — Unicode case mapping.
+--!   - `trim` `trimLeft` `trimRight` `words` `lines` — the Unicode
+--!     whitespace and line-terminator classes.
+--!   - `split` `indexes` — substring search.
+--!   - `toInt` `fromInt` `toFloat` `fromFloat` — number parsing and printing.
+--!   - `fromChar` `toList` `fromList` — the character/string boundary.
+--!
+--! Everything else is written over those.
+
+import List
+
+
+--| Get the length of a string.
+--|
+--|     length "innumerable" == 11
+--|     length "" == 0
+pub foreign length : String -> Int
+
+
+--| Take a substring given a start and end index. Negative indexes are taken
+--| starting from the *end* of the list.
+--|
+--|     slice 7 9 "snakes on a plane!" == "on"
+--|     slice 0 -7 "snakes on a plane!" == "snakes on a"
+pub foreign slice : Int -> Int -> String -> String
+
+
+--| Append two strings. `++` does the same thing.
+--|
+--|     append "butter" "fly" == "butterfly"
+pub foreign append : String -> String -> String
+
+
+--| Compare two strings lexicographically, by Unicode scalar value.
+--|
+--|     compare "a" "b" == LT
+--|     compare "b" "b" == EQ
+--|
+--| This is the replacement for Elm's `"a" < "b"`, which does not compile in
+--| beni: comparison operators are numbers only.
+pub foreign compare : String -> String -> Order
+
+
+--| Convert a string to all upper case. Useful for case-insensitive
+--| comparisons and VIRTUAL YELLING.
+--|
+--|     toUpper "skinner" == "SKINNER"
+pub foreign toUpper : String -> String
+
+
+--| Convert a string to all lower case.
+--|
+--|     toLower "X" == "x"
+pub foreign toLower : String -> String
+
+
+--| Get rid of whitespace on both sides of a string.
+--|
+--|     trim "  hats \n" == "hats"
+pub foreign trim : String -> String
+
+
+--| Get rid of whitespace on the left of a string.
+--|
+--|     trimLeft "  hats \n" == "hats \n"
+pub foreign trimLeft : String -> String
+
+
+--| Get rid of whitespace on the right of a string.
+--|
+--|     trimRight "  hats \n" == "  hats"
+pub foreign trimRight : String -> String
+
+
+--| Break a string into words, splitting on chunks of whitespace.
+--|
+--|     words "How are \n you? \t Good?" == [ "How", "are", "you?", "Good?" ]
+pub foreign words : String -> List String
+
+
+--| Break a string into lines, splitting on newlines.
+--|
+--|     lines "How are you?\nGood?" == [ "How are you?", "Good?" ]
+pub foreign lines : String -> List String
+
+
+--| Split a string using a given separator.
+--|
+--|     split "," "cat,dog,cow" == [ "cat", "dog", "cow" ]
+pub foreign split : String -> String -> List String
+
+
+--| Get all of the indexes for a substring in another string.
+--|
+--|     indexes "i" "Mississippi" == [ 1, 4, 7, 10 ]
+--|     indexes "needle" "haystack" == []
+pub foreign indexes : String -> String -> List Int
+
+
+--| Try to convert a string into an int, failing on improperly formatted
+--| strings.
+--|
+--|     toInt "123" == Just 123
+--|     toInt "1.3" == Nothing
+pub foreign toInt : String -> Maybe Int
+
+
+--| Convert an `Int` to a `String`.
+--|
+--|     fromInt 123 == "123"
+pub foreign fromInt : Int -> String
+
+
+--| Try to convert a string into a float, failing on improperly formatted
+--| strings.
+--|
+--|     toFloat "123" == Just 123.0
+--|     toFloat "abc" == Nothing
+pub foreign toFloat : String -> Maybe Float
+
+
+--| Convert a `Float` to a `String`.
+--|
+--|     fromFloat 1.5 == "1.5"
+pub foreign fromFloat : Float -> String
+
+
+--| Create a string from a given character.
+--|
+--|     fromChar 'a' == "a"
+pub foreign fromChar : Char -> String
+
+
+--| Convert a string to a list of characters.
+--|
+--|     toList "abc" == [ 'a', 'b', 'c' ]
+pub foreign toList : String -> List Char
+
+
+--| Convert a list of characters into a string.
+--|
+--|     fromList [ 'a', 'b', 'c' ] == "abc"
+pub foreign fromList : List Char -> String
+
+
+--| Determine if a string is empty.
+--|
+--|     isEmpty "" == True
+--|     isEmpty "the world" == False
+pub isEmpty : String -> Bool
+isEmpty str =
+    str == ""
+
+
+--| Reverse a string.
+--|
+--|     reverse "stressed" == "desserts"
+pub reverse : String -> String
+reverse str =
+    fromList (List.reverse (toList str))
+
+
+--| Repeat a string `n` times.
+--|
+--|     repeat 3 "ha" == "hahaha"
+pub repeat : Int -> String -> String
+repeat n chunk =
+    concat (List.repeat n chunk)
+
+
+--| Replace all occurrences of some substring.
+--|
+--|     replace "," "/" "a,b,c" == "a/b/c"
+pub replace : String -> String -> String -> String
+replace before after str =
+    join after (split before str)
+
+
+--| Concatenate many strings into one.
+--|
+--|     concat [ "never", "the", "less" ] == "nevertheless"
+pub concat : List String -> String
+concat strings =
+    join "" strings
+
+
+--| Put many strings together with a given separator.
+--|
+--|     join ", " [ "cat", "dog" ] == "cat, dog"
+pub join : String -> List String -> String
+join sep chunks =
+    case chunks of
+        [] ->
+            ""
+
+        first :: rest ->
+            List.foldl (\chunk acc -> append (append acc sep) chunk) first rest
+
+
+--| Take `n` characters from the left side of a string.
+--|
+--|     left 2 "Mulder" == "Mu"
+pub left : Int -> String -> String
+left n str =
+    if n < 1 then
+        ""
+    else
+        slice 0 n str
+
+
+--| Take `n` characters from the right side of a string.
+--|
+--|     right 2 "Scully" == "ly"
+pub right : Int -> String -> String
+right n str =
+    if n < 1 then
+        ""
+    else
+        slice (negate n) (length str) str
+
+
+--| Drop `n` characters from the left side of a string.
+--|
+--|     dropLeft 2 "The Lone Gunmen" == "e Lone Gunmen"
+pub dropLeft : Int -> String -> String
+dropLeft n str =
+    if n < 1 then
+        str
+    else
+        slice n (length str) str
+
+
+--| Drop `n` characters from the right side of a string.
+--|
+--|     dropRight 2 "Cigarette Smoking Man" == "Cigarette Smoking M"
+pub dropRight : Int -> String -> String
+dropRight n str =
+    if n < 1 then
+        str
+    else
+        slice 0 (negate n) str
+
+
+--| See if the second string contains the first one.
+--|
+--|     contains "the" "theory" == True
+--|     contains "hat" "theory" == False
+pub contains : String -> String -> Bool
+contains sub str =
+    case indexes sub str of
+        [] ->
+            False
+
+        _ ->
+            True
+
+
+--| See if the second string starts with the first one.
+--|
+--|     startsWith "the" "theory" == True
+pub startsWith : String -> String -> Bool
+startsWith prefix str =
+    left (length prefix) str == prefix
+
+
+--| See if the second string ends with the first one.
+--|
+--|     endsWith "ory" "theory" == True
+pub endsWith : String -> String -> Bool
+endsWith suffix str =
+    right (length suffix) str == suffix
+
+
+--| Get all of the indexes for a substring. An alias of `indexes`, kept
+--| because Elm has both spellings.
+--|
+--|     indices "i" "Mississippi" == [ 1, 4, 7, 10 ]
+pub indices : String -> String -> List Int
+indices sub str =
+    indexes sub str
+
+
+--| Add a character to the beginning of a string.
+--|
+--|     cons 'T' "he truth is out there" == "The truth is out there"
+pub cons : Char -> String -> String
+cons char str =
+    append (fromChar char) str
+
+
+--| Split a non-empty string into its first character and the rest.
+--|
+--|     uncons "abc" == Just ( 'a', "bc" )
+--|     uncons "" == Nothing
+pub uncons : String -> Maybe ( Char, String )
+uncons str =
+    case toList str of
+        char :: rest ->
+            Just ( char, fromList rest )
+
+        [] ->
+            Nothing
+
+
+--| Pad a string on both sides until it has a given length.
+--|
+--|     pad 5 ' ' "1" == "  1  "
+pub pad : Int -> Char -> String -> String
+pad n char str =
+    let
+        half =
+            Basics.toFloat (n - length str) / 2
+    in
+    repeat (ceiling half) (fromChar char) ++ str ++ repeat (floor half) (fromChar char)
+
+
+--| Pad a string on the left until it has a given length.
+--|
+--|     padLeft 5 '.' "1" == "....1"
+pub padLeft : Int -> Char -> String -> String
+padLeft n char str =
+    repeat (n - length str) (fromChar char) ++ str
+
+
+--| Pad a string on the right until it has a given length.
+--|
+--|     padRight 5 '.' "1" == "1...."
+pub padRight : Int -> Char -> String -> String
+padRight n char str =
+    str ++ repeat (n - length str) (fromChar char)
+
+
+--| Transform every character in a string.
+--|
+--|     map (\char -> if char == '/' then '.' else char) "a/b/c" == "a.b.c"
+pub map : (Char -> Char) -> String -> String
+map func str =
+    fromList (List.map func (toList str))
+
+
+--| Keep only the characters that pass the test.
+--|
+--|     filter Char.isDigit "R2-D2" == "22"
+pub filter : (Char -> Bool) -> String -> String
+filter isGood str =
+    fromList (List.filter isGood (toList str))
+
+
+--| Reduce a string from the left.
+--|
+--|     foldl cons "" "time" == "emit"
+pub foldl : (Char -> b -> b) -> b -> String -> b
+foldl func acc str =
+    List.foldl func acc (toList str)
+
+
+--| Reduce a string from the right.
+--|
+--|     foldr cons "" "time" == "time"
+pub foldr : (Char -> b -> b) -> b -> String -> b
+foldr func acc str =
+    List.foldr func acc (toList str)
+
+
+--| Determine whether any characters pass the test.
+--|
+--|     any Char.isDigit "R2-D2" == True
+pub any : (Char -> Bool) -> String -> Bool
+any isGood str =
+    List.any isGood (toList str)
+
+
+--| Determine whether all characters pass the test.
+--|
+--|     all Char.isDigit "2D2" == False
+pub all : (Char -> Bool) -> String -> Bool
+all isGood str =
+    List.all isGood (toList str)

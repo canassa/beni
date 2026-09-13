@@ -1,0 +1,214 @@
+--! A `Result` is the value of a computation that may fail, carrying the
+--! reason when it does. Use it to manage errors from functions like
+--! `String.toInt`, where the failure has something to say.
+--!
+--! Everything here is ordinary beni — no `foreign` declarations.
+
+--| A `Result` is either `Ok`, meaning the computation succeeded, or it is an
+--| `Err`, meaning there was some failure.
+--|
+--|     toValidMonth : Int -> Result String Int
+--|     toValidMonth month =
+--|         if month >= 1 && month <= 12 then
+--|             Ok month
+--|         else
+--|             Err "months must be between 1 and 12"
+pub type Result e a
+    = Ok a
+    | Err e
+
+
+--| If the result is `Ok`, return the value, but if the result is an `Err`,
+--| return a given default value.
+--|
+--|     withDefault 0 (Ok 123) == 123
+--|     withDefault 0 (Err "no") == 0
+pub withDefault : a -> Result x a -> a
+withDefault default result =
+    case result of
+        Ok value ->
+            value
+
+        Err _ ->
+            default
+
+
+--| Apply a function to a result. If the result is `Ok`, it will be converted.
+--| If the result is an `Err`, the same error value will propagate through.
+--|
+--|     map sqrt (Ok 4.0) == Ok 2.0
+--|     map sqrt (Err "bad input") == Err "bad input"
+pub map : (a -> value) -> Result x a -> Result x value
+map func result =
+    case result of
+        Ok value ->
+            Ok (func value)
+
+        Err x ->
+            Err x
+
+
+--| Apply a function if both results are `Ok`. If not, the first `Err` will
+--| propagate through.
+pub map2 : (a -> b -> value) -> Result x a -> Result x b -> Result x value
+map2 func ra rb =
+    case ra of
+        Err x ->
+            Err x
+
+        Ok a ->
+            case rb of
+                Err x ->
+                    Err x
+
+                Ok b ->
+                    Ok (func a b)
+
+
+--| Apply a function if all three results are `Ok`.
+pub map3 : (a -> b -> c -> value) -> Result x a -> Result x b -> Result x c -> Result x value
+map3 func ra rb rc =
+    case ra of
+        Err x ->
+            Err x
+
+        Ok a ->
+            case rb of
+                Err x ->
+                    Err x
+
+                Ok b ->
+                    case rc of
+                        Err x ->
+                            Err x
+
+                        Ok c ->
+                            Ok (func a b c)
+
+
+--| Apply a function if all four results are `Ok`.
+pub map4 :
+    (a -> b -> c -> d -> value)
+    -> Result x a
+    -> Result x b
+    -> Result x c
+    -> Result x d
+    -> Result x value
+map4 func ra rb rc rd =
+    case ra of
+        Err x ->
+            Err x
+
+        Ok a ->
+            case rb of
+                Err x ->
+                    Err x
+
+                Ok b ->
+                    case rc of
+                        Err x ->
+                            Err x
+
+                        Ok c ->
+                            case rd of
+                                Err x ->
+                                    Err x
+
+                                Ok d ->
+                                    Ok (func a b c d)
+
+
+--| Apply a function if all five results are `Ok`.
+pub map5 :
+    (a -> b -> c -> d -> e -> value)
+    -> Result x a
+    -> Result x b
+    -> Result x c
+    -> Result x d
+    -> Result x e
+    -> Result x value
+map5 func ra rb rc rd re =
+    case ra of
+        Err x ->
+            Err x
+
+        Ok a ->
+            case rb of
+                Err x ->
+                    Err x
+
+                Ok b ->
+                    case rc of
+                        Err x ->
+                            Err x
+
+                        Ok c ->
+                            case rd of
+                                Err x ->
+                                    Err x
+
+                                Ok d ->
+                                    case re of
+                                        Err x ->
+                                            Err x
+
+                                        Ok value ->
+                                            Ok (func a b c d value)
+
+
+--| Chain together a sequence of computations that may fail.
+--|
+--|     andThen (\x -> Ok (x + 1)) (Ok 1) == Ok 2
+--|     andThen (\x -> Ok (x + 1)) (Err "no") == Err "no"
+--|
+--| The `?` operator does the same thing with less punctuation: `toInt s?` is
+--| the number, or an early return of the `Err` from the enclosing function.
+pub andThen : (a -> Result x b) -> Result x a -> Result x b
+andThen callback result =
+    case result of
+        Ok value ->
+            callback value
+
+        Err x ->
+            Err x
+
+
+--| Transform an `Err` value, leaving an `Ok` alone.
+--|
+--|     mapError toString (Err 42) == Err "42"
+pub mapError : (x -> y) -> Result x a -> Result y a
+mapError func result =
+    case result of
+        Ok value ->
+            Ok value
+
+        Err x ->
+            Err (func x)
+
+
+--| Convert to a `Maybe`, throwing the error away.
+--|
+--|     toMaybe (Ok 42) == Just 42
+--|     toMaybe (Err "no") == Nothing
+pub toMaybe : Result x a -> Maybe a
+toMaybe result =
+    case result of
+        Ok value ->
+            Just value
+
+        Err _ ->
+            Nothing
+
+
+--| Convert from a `Maybe`, giving the error to use when it is `Nothing`.
+--|
+--|     fromMaybe "lost" (Just 42) == Ok 42
+--|     fromMaybe "lost" Nothing == Err "lost"
+pub fromMaybe : x -> Maybe a -> Result x a
+fromMaybe err maybe =
+    case maybe of
+        Just value ->
+            Ok value
+
+        Nothing ->
+            Err err

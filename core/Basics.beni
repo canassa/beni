@@ -1,0 +1,507 @@
+--! Tons of useful functions that get imported by default.
+--!
+--! This module is the home of the prelude (`language.md` Appendix A): every
+--! name listed there is declared here, so a module that imports nothing still
+--! sees `Int`, `Bool`, `max` and the rest. It is also where the functions the
+--! operators of §6.5 desugar to live: `a + b` is `add a b`, `a == b` is
+--! `eq a b`, `x |> f` is `apR x f`. The operators are syntax, so these names
+--! are never written by hand — but they are what the checker types and what
+--! the code generator emits.
+--!
+--! Two things Elm has are gone (`fast-compiler.md` §3.1): `comparable` and
+--! `compappend`. `<`, `>`, `<=` and `>=` are numbers only; to order anything
+--! else, pass an ordering function, or use `String.compare`.
+--!
+--! The `foreign` declarations here, and why each one cannot be beni:
+--!
+--!   - `add` `sub` `mul` `fdiv` `idiv` `pow` — machine arithmetic.
+--!   - `lt` `gt` `le` `ge` — machine comparison.
+--!   - `eq` `neq` — structural equality, decided by the emitted JavaScript.
+--!   - `and` `or` — short-circuiting: a beni definition takes both sides as
+--!     arguments, so both would be evaluated.
+--!   - `append` — concatenation, one definition over two representations.
+--!   - `toFloat` `round` `floor` `ceiling` `truncate` `modBy` `remainderBy`
+--!     — conversion between the two numeric representations.
+--!   - `sqrt` `logBase` `e` `pi` `cos` `sin` `tan` `acos` `asin` `atan`
+--!     `atan2` `isNaN` `isInfinite` — the platform's floating-point library.
+--!
+--! Everything else is ordinary beni.
+
+--| An integer.
+--|
+--|     42
+--|     -7
+--|
+--| Two integers are equal when they are the same number.
+pub equatable foreign type Int
+
+
+--| A double-precision floating-point number.
+--|
+--|     3.14
+--|     1.0e9
+--|
+--| Two floats are equal when they are the same number.
+pub equatable foreign type Float
+
+
+--| A single Unicode scalar value, written between single quotes.
+--|
+--|     'a'
+--|     '\n'
+--|
+--| Two characters are equal when they are the same scalar value.
+pub equatable foreign type Char
+
+
+--| A chunk of text, written between double quotes.
+--|
+--|     "hello"
+--|     "a ${n}"
+--|
+--| Two strings are equal when they are the same sequence of characters.
+--| Strings are not ordered by `<`; use `String.compare`.
+pub equatable foreign type String
+
+
+--| A value that is either `True` or `False`. It is what `if` branches on and
+--| what `&&`, `||` and `not` work with.
+pub type Bool
+    = True
+    | False
+
+
+--| The result of comparing two values: less than, equal to, or greater than.
+--| Every ordering in beni is a function returning one of these, because there
+--| is no `comparable` to make it implicit.
+--|
+--|     compare 1 2 == LT
+pub type Order
+    = LT
+    | EQ
+    | GT
+
+
+--| A type with no values at all. It is impossible to build one — the only
+--| constructor demands one to begin with — so a `Never` in a type says that
+--| branch of the program cannot happen, and `never` turns that promise into
+--| whatever value you need.
+pub type Never
+    = JustOneMore Never
+
+
+--| Add two numbers. The `number` type variable means both `Int` and `Float`
+--| work, as long as both sides agree.
+--|
+--|     add 3 4 == 7
+--|
+--| This is what `+` desugars to.
+pub foreign add : number -> number -> number
+
+
+--| Subtract the second number from the first. What `-` desugars to.
+--|
+--|     sub 4 3 == 1
+pub foreign sub : number -> number -> number
+
+
+--| Multiply two numbers. What `*` desugars to.
+--|
+--|     mul 2 3 == 6
+pub foreign mul : number -> number -> number
+
+
+--| Floating-point division. What `/` desugars to.
+--|
+--|     fdiv 3 2 == 1.5
+pub foreign fdiv : Float -> Float -> Float
+
+
+--| Integer division, truncated towards zero. What `//` desugars to.
+--|
+--|     idiv 3 2 == 1
+--|     idiv -3 2 == -1
+pub foreign idiv : Int -> Int -> Int
+
+
+--| Exponentiation. What `^` desugars to.
+--|
+--|     pow 3 2 == 9
+pub foreign pow : number -> number -> number
+
+
+--| Check if two values are equal. Equality is structural: two values of the
+--| same type are equal when they are built the same way.
+--|
+--|     eq 1 1 == True
+--|     eq [ 1, 2 ] [ 1, 2 ] == True
+--|
+--| The `equatable` marker rules out the one case that cannot be decided:
+--| comparing functions is a compile error, not a crash. What `==` desugars to.
+pub foreign eq : equatable a -> a -> a -> Bool
+
+
+--| Check if two values are not equal. What `/=` desugars to.
+--|
+--|     neq 1 2 == True
+pub foreign neq : equatable a -> a -> a -> Bool
+
+
+--| Check if the first number is less than the second. What `<` desugars to.
+--|
+--|     lt 1 2 == True
+--|
+--| Numbers only. `String.compare` orders text.
+pub foreign lt : number -> number -> Bool
+
+
+--| Check if the first number is greater than the second. What `>` desugars to.
+--|
+--|     gt 2 1 == True
+pub foreign gt : number -> number -> Bool
+
+
+--| Check if the first number is less than or equal to the second. What `<=`
+--| desugars to.
+--|
+--|     le 1 1 == True
+pub foreign le : number -> number -> Bool
+
+
+--| Check if the first number is greater than or equal to the second. What `>=`
+--| desugars to.
+--|
+--|     ge 1 1 == True
+pub foreign ge : number -> number -> Bool
+
+
+--| The logical AND, short-circuiting: the second argument is evaluated only
+--| when the first is `True`. What `&&` desugars to.
+--|
+--|     and True False == False
+pub foreign and : Bool -> Bool -> Bool
+
+
+--| The logical OR, short-circuiting: the second argument is evaluated only
+--| when the first is `False`. What `||` desugars to.
+--|
+--|     or True False == True
+pub foreign or : Bool -> Bool -> Bool
+
+
+--| Put two appendable values together. `appendable` is `String` or `List a`.
+--|
+--|     append "butter" "fly" == "butterfly"
+--|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
+--|
+--| What `++` desugars to.
+pub foreign append : appendable -> appendable -> appendable
+
+
+--| Convert an integer into a float.
+--|
+--|     toFloat 5 == 5.0
+pub foreign toFloat : Int -> Float
+
+
+--| Round a number to the nearest integer.
+--|
+--|     round 1.5 == 2
+--|     round -1.5 == -1
+pub foreign round : Float -> Int
+
+
+--| Floor a number, rounding down.
+--|
+--|     floor 1.9 == 1
+pub foreign floor : Float -> Int
+
+
+--| Ceiling a number, rounding up.
+--|
+--|     ceiling 1.1 == 2
+pub foreign ceiling : Float -> Int
+
+
+--| Truncate a number, dropping the decimal part.
+--|
+--|     truncate 1.9 == 1
+--|     truncate -1.9 == -1
+pub foreign truncate : Float -> Int
+
+
+--| Perform modular arithmetic. The result has the sign of the modulus.
+--|
+--|     modBy 4 (-1) == 3
+--|     modBy 4 11 == 3
+--|
+--| The modulus comes first so `modBy 2` reads as a function on its own.
+pub foreign modBy : Int -> Int -> Int
+
+
+--| Get the remainder after division. The result has the sign of the dividend.
+--|
+--|     remainderBy 4 (-1) == -1
+--|     remainderBy 4 11 == 3
+pub foreign remainderBy : Int -> Int -> Int
+
+
+--| Take the square root of a number.
+--|
+--|     sqrt 9 == 3
+pub foreign sqrt : Float -> Float
+
+
+--| Calculate the logarithm of a number with a given base.
+--|
+--|     logBase 10 100 == 2
+pub foreign logBase : Float -> Float -> Float
+
+
+--| An approximation of Euler's constant.
+pub foreign e : Float
+
+
+--| An approximation of pi.
+pub foreign pi : Float
+
+
+--| Figure out the cosine of an angle in radians.
+pub foreign cos : Float -> Float
+
+
+--| Figure out the sine of an angle in radians.
+pub foreign sin : Float -> Float
+
+
+--| Figure out the tangent of an angle in radians.
+pub foreign tan : Float -> Float
+
+
+--| Figure out the arccosine of a number, in radians.
+pub foreign acos : Float -> Float
+
+
+--| Figure out the arcsine of a number, in radians.
+pub foreign asin : Float -> Float
+
+
+--| Figure out the arctangent of a number, in radians. Prefer `atan2` when you
+--| have both sides of the triangle: it can tell the quadrants apart.
+pub foreign atan : Float -> Float
+
+
+--| Figure out the arctangent of `y / x` in radians, keeping the signs of both
+--| arguments so the answer lands in the right quadrant.
+pub foreign atan2 : Float -> Float -> Float
+
+
+--| Determine whether a float is an undefined or unrepresentable number.
+--|
+--|     isNaN (0 / 0) == True
+--|     isNaN (sqrt -1) == True
+pub foreign isNaN : Float -> Bool
+
+
+--| Determine whether a float is positive or negative infinity.
+--|
+--|     isInfinite (1 / 0) == True
+pub foreign isInfinite : Float -> Bool
+
+
+--| Negate a number.
+--|
+--|     negate 42 == -42
+--|
+--| This is what the prefix `-` desugars to, which is why it is written as a
+--| subtraction from zero rather than as `-n`.
+pub negate : number -> number
+negate n =
+    0 - n
+
+
+--| Get the absolute value of a number.
+--|
+--|     abs -25 == 25
+pub abs : number -> number
+abs n =
+    if n < 0 then
+        negate n
+    else
+        n
+
+
+--| Find the larger of two numbers.
+--|
+--|     max 42 12345678 == 12345678
+pub max : number -> number -> number
+max x y =
+    if x > y then
+        x
+    else
+        y
+
+
+--| Find the smaller of two numbers.
+--|
+--|     min 42 12345678 == 42
+pub min : number -> number -> number
+min x y =
+    if x < y then
+        x
+    else
+        y
+
+
+--| Clamp a number between a lower and an upper bound.
+--|
+--|     clamp 100 200 42 == 100
+--|     clamp 100 200 178 == 178
+pub clamp : number -> number -> number -> number
+clamp low high n =
+    if n < low then
+        low
+    else if n > high then
+        high
+    else
+        n
+
+
+--| Compare two numbers.
+--|
+--|     compare 3 4 == LT
+--|     compare 4 4 == EQ
+--|
+--| Only numbers. Ordering anything else is an explicit function you pass in,
+--| such as `String.compare` or a lambda over a record field.
+pub compare : number -> number -> Order
+compare x y =
+    if x < y then
+        LT
+    else if x > y then
+        GT
+    else
+        EQ
+
+
+--| Negate a boolean value.
+--|
+--|     not True == False
+pub not : Bool -> Bool
+not b =
+    if b then
+        False
+    else
+        True
+
+
+--| The exclusive-or of two booleans: `True` when exactly one of them is.
+--|
+--|     xor True False == True
+--|     xor True True == False
+pub xor : Bool -> Bool -> Bool
+xor a b =
+    if a then
+        not b
+    else
+        b
+
+
+--| Given a value, return exactly the same value. Useful as the "do nothing"
+--| argument to a higher-order function.
+--|
+--|     identity 42 == 42
+pub identity : a -> a
+identity a =
+    a
+
+
+--| Create a function that always returns the same value, whatever it is given.
+--|
+--|     List.map (always 0) [ 1, 2, 3 ] == [ 0, 0, 0 ]
+pub always : a -> b -> a
+always a _ =
+    a
+
+
+--| A function that can never be called, turned into any type you like. If you
+--| hold a `Never` you are in a branch that cannot happen, and this is how you
+--| tell the type checker so.
+pub never : Never -> a
+never (JustOneMore nvr) =
+    never nvr
+
+
+--| Convert degrees to the standard angle unit, radians.
+--|
+--|     degrees 180 == 3.141592653589793
+pub degrees : Float -> Float
+degrees angle =
+    angle * pi / 180
+
+
+--| Convert radians to the standard angle unit, radians. This is `identity`,
+--| and exists so an angle's unit is written down at the point it is chosen.
+--|
+--|     radians pi == 3.141592653589793
+pub radians : Float -> Float
+radians angle =
+    angle
+
+
+--| Convert turns to the standard angle unit, radians. One turn is 360 degrees.
+--|
+--|     turns 0.5 == 3.141592653589793
+pub turns : Float -> Float
+turns angle =
+    2 * pi * angle
+
+
+--| Convert Cartesian coordinates to polar coordinates.
+--|
+--|     toPolar ( 0, 1 ) == ( 1, 1.5707963267948966 )
+pub toPolar : ( Float, Float ) -> ( Float, Float )
+toPolar ( x, y ) =
+    ( sqrt (x * x + y * y), atan2 y x )
+
+
+--| Convert polar coordinates to Cartesian coordinates.
+--|
+--|     fromPolar ( 1, 0 ) == ( 1, 0 )
+pub fromPolar : ( Float, Float ) -> ( Float, Float )
+fromPolar ( radius, theta ) =
+    ( radius * cos theta, radius * sin theta )
+
+
+--| Apply a function to a value. `f <| x` is `f x` with the argument written
+--| last, which saves a pair of parentheses around a long final argument.
+--|
+--|     apL sqrt 4 == 2
+pub apL : (a -> b) -> a -> b
+apL f x =
+    f x
+
+
+--| Apply a function to a value, value first. `x |> f` is `f x`, and a chain of
+--| them reads as a pipeline.
+--|
+--|     apR 4 sqrt == 2
+pub apR : a -> (a -> b) -> b
+apR x f =
+    f x
+
+
+--| Compose two functions, right to left. `g << f` is "do `f`, then `g`".
+--|
+--|     apL (composeL not isNaN) 1 == True
+pub composeL : (b -> c) -> (a -> b) -> a -> c
+composeL g f x =
+    g (f x)
+
+
+--| Compose two functions, left to right. `f >> g` is "do `f`, then `g`".
+--|
+--|     apL (composeR isNaN not) 1 == True
+pub composeR : (a -> b) -> (b -> c) -> a -> c
+composeR f g x =
+    g (f x)
