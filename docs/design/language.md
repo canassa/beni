@@ -25,6 +25,7 @@ and the indentation rules in §4.
 | shadowing is an error | same | §7 |
 | `comparable`, `<` on strings | numbers only; not a front-end concern | M2 |
 | tabs | syntax error everywhere | §2.1 |
+| Kernel modules | `foreign` declarations, core root only | §5.4 |
 
 Everything else — application by juxtaposition, `\x ->` lambdas, `case … of`, `let … in`,
 `if … then … else`, records, record update, lists, tuples, type aliases, custom types, `as`
@@ -76,7 +77,7 @@ float              1.5  1e10  1.5e-3
 str_start str_chunk interp_start interp_end str_end   (§2.6)
 multiline_line     \\ …to end of line                 (§2.7)
 char               'a'  '\n'  '\u{1F600}'
-keywords           if then else case of let in type alias pub opaque import as exposing
+keywords           if then else case of let in type alias pub opaque import as exposing foreign
 symbols            ( ) [ ] { } , : = -> \ | _ ?
 operators          + - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>
 eof
@@ -126,7 +127,7 @@ upper_ident := [A-Z] [A-Za-z0-9_]*
 ASCII only. A non-ASCII byte outside a string, char or comment is `invalid_character`.
 
 Keywords (never identifiers): `if then else case of let in type alias pub opaque import as
-exposing`. `_` alone is the wildcard symbol; `_foo` is a lower identifier (the formatter and
+exposing foreign`. `_` alone is the wildcard symbol; `_foo` is a lower identifier (the formatter and
 checker may warn later; the lexer does not care).
 
 **Qualified names** are single tokens: `Upper(.Upper)*.lower` is `qualified_lower`,
@@ -216,7 +217,9 @@ Import      := 'import' qualified_upper_or_upper ('as' upper_ident)? Exposing?
 Exposing    := 'exposing' '(' Exposed (',' Exposed)* ')'
 Exposed     := lower_ident | upper_ident
 
-Decl        := DocComment? Visibility? (TypeAlias | TypeDecl | Annotation | Definition)
+Decl        := DocComment? Visibility? (TypeAlias | TypeDecl | Annotation | Definition | Foreign)
+Foreign     := 'foreign' lower_ident ':' Type                 -- core root only, §5.4
+             | 'foreign' 'type' upper_ident lower_ident*
 Visibility  := 'pub' | 'pub' 'opaque'            -- 'opaque' only before 'type'
 TypeAlias   := 'type' 'alias' upper_ident lower_ident* '=' Type
 TypeDecl    := 'type' upper_ident lower_ident* '=' Ctor ('|' Ctor)*
@@ -416,6 +419,36 @@ A declared name may not collide with an `exposing` import of the same namespace
 (`shadows_import`). Note `Dict` the type and `Dict` the module alias live in different
 namespaces and may coexist, as in Elm.
 
+### 5.4 Foreign declarations (core only)
+
+The standard library is written in beni. The handful of functions and types that cannot be —
+arithmetic, string primitives, the list representation — are declared without a body and
+implemented in JavaScript:
+
+```
+--| Add two numbers.
+pub foreign add : number -> number -> number
+
+pub foreign type List a
+```
+
+- `foreign name : Type` declares a value with that type and no definition. `foreign type T a…`
+  declares a type with no constructors, so it is opaque by construction; no `opaque` keyword
+  is needed or allowed on it. Both take `pub` like any declaration and may carry a doc comment.
+- **Legal only under the core root.** The core package is embedded in the compiler
+  (`fast-compiler.md` §3.1, "Primitives"); a `foreign` declaration in any other module is
+  `foreign_outside_core`, reported by lowering. User code reaches JavaScript through the effects
+  model (open), never through `foreign`.
+- Each core module that declares foreigns has a sibling JavaScript file exporting one function
+  per foreign value, under the same name, in the emitted calling convention. Binding is by
+  name; a missing export is a build error of the core package, not a user diagnostic.
+- The primitive types are foreign: `Int`, `Float`, `Char`, `String`, `List a`. `Bool`, `Maybe`,
+  `Result` and `Order` are ordinary declared types in core.
+
+Lowering emits a `foreign` declaration into the interface skeleton like any other `pub` name;
+the interface records that it is foreign so M3's printer can key its peephole on the
+module-qualified name.
+
 ## 6. Expression details
 
 ### 6.1 Literals
@@ -589,6 +622,7 @@ annotation_without_definition  pub_on_definition  opaque_not_on_type  case_witho
 args_after_question  non_associative_chain  negation_with_space  invalid_tuple_index
 duplicate_import  duplicate_import_alias  import_after_declaration  self_import
 duplicate_declaration  duplicate_type  duplicate_constructor  shadows_import  duplicate_field
+foreign_outside_core
 unbound_variable  unbound_constructor  unbound_type  unknown_module_alias
 question_in_lambda  question_outside_function
 shadowing  duplicate_pattern_variable  duplicate_type_parameter  unbound_type_variable

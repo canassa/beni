@@ -271,6 +271,21 @@ Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-
   matching the two languages this one is modelled on was judged worth more than the unmeasured
   win. Decided 2026-09-13, before M2.
 
+- **Primitives: core is written in beni, embedded in the compiler, with `foreign`
+  declarations for what cannot be.** Elm's Kernel modules and Roc's embedded builtin `.roc`
+  files are the precedents. Most of core (`Maybe`, `Result`, `Bool`, `Order`, nearly all of
+  `List` and `Dict`) is ordinary beni, so §9.1's DCE graph and §9.3's direct-call specialisation
+  apply to the standard library — where most calls in real programs go — and core is tested
+  through the same corpus and Node boundary as user code. Only arithmetic, string primitives and
+  the list representation are `foreign name : Type`, bound by name to a sibling JavaScript file;
+  `Int`, `Float`, `Char`, `String` and `List a` are `foreign type`, which keeps the list
+  representation question (#2 below) out of the source until M3. `foreign` is legal only under
+  the core root; user JavaScript is reached through the effects model, not through this. The
+  alternative — signatures hardcoded in the compiler — parses nothing at startup but puts the
+  standard library outside the language, untested by its own tools. The cold-start parse of core
+  is under a millisecond per thousand lines at §2's targets and disappears under §8.3's cache.
+  Syntax in [`language.md`](language.md) §5.4. Decided 2026-09-13, before M2.
+
 ### Still open
 
 Each is cheaper to take now than later:
