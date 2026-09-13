@@ -8,43 +8,25 @@ here and the commit that found it says so.
 **Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
 modules; no typeclasses, no macros, no type-level computation.
 
-**Stance: Elm's guarantees, without Elm's walls.** The guarantees are not negotiable — well-typed
-code does not throw at runtime, functions are pure, matches are exhaustive, there is no null. What
-*is* negotiable is everything Elm walled off in order to protect them. Elm's instinct when a
-platform capability threatened a guarantee was to remove the capability; ours is to find the typing
-under which it cannot threaten one, and only remove it if there isn't one.
+**Stance: Elm's walled garden, better equipped.** The wall stays and is not up for negotiation:
+user code does not reach arbitrary JavaScript, effects cross a controlled boundary, matches are
+exhaustive, there is no null, and well-typed code does not throw at runtime. What was wrong with
+Elm was never the wall. It was how sparsely the garden inside it was furnished — no exact 32-bit
+arithmetic, no code splitting, no source maps, a deliberately small standard library, and a
+privileged kernel only the core team could extend, so the garden grew only as fast as one person
+planted it.
 
-The test is mechanical, and it is worth stating because it decides arguments before they start:
-**a capability is admitted when it can be typed such that well-typed code still cannot crash.**
-Exact 32-bit arithmetic passes — wrapping is total (§3.3). Code splitting passes — a `lazy`
-declaration is a `Task`, and a failed load is a value (§9.5). ES modules and source maps pass
-trivially. Arbitrary synchronous FFI does not pass, and no amount of wanting it changes that. The
-interesting cases are the ones in between, and they are why the JavaScript-boundary contract is
-written before M3 rather than discovered during it.
+So the question a proposed capability faces is not "can user code reach this" — the answer to that
+stays no. It is: **what would it take to offer this inside the wall, typed so that well-typed code
+still cannot crash?** Exact 32-bit arithmetic needed a type, not a hole (§3.3). Code splitting
+needed a declaration marker and an effect type (§9.5). Both are now in, and neither cost a
+guarantee. The interesting cases are the ones where the answer turns out to be a *platform*
+capability rather than a language one, and that is why the JavaScript-boundary contract is written
+before M3 rather than discovered during it.
 
-This is what "opinionated but powerful" has to mean for a language in this family. Opinionated is
-the guarantee list, which is short and fixed. Powerful is refusing to pay for it twice — a
-guarantee costs a restriction only where the restriction is what buys it.
-
-This document synthesises eleven research reports, each source-verified against primary material
-and the vendored compilers in `references/`. They are kept alongside this doc and are the
-evidence base for every claim here:
-
-| | Report | Covers |
-|---|---|---|
-| 01 | [`research/01-zig-data-oriented.md`](research/01-zig-data-oriented.md) | Why the Zig compiler is fast: SoA IRs, u32 indices, InternPool, ZIR caching, `AnalUnit` incrementality |
-| 02 | [`research/02-type-checking.md`](research/02-type-checking.md) | HM inference at speed: constraint/solve split, union-find + Rémy levels, deferred occurs check |
-| 03 | [`research/03-js-codegen.md`](research/03-js-codegen.md) | esbuild/oxc/SWC techniques, Elm's DCE and A2/F2 scheme, V8 shape discipline, source maps |
-| 04 | [`research/04-architecture.md`](research/04-architecture.md) | Lexing/parsing, interning, arenas, parallelism, incrementality models, daemons, measurement |
-| 05 | [`research/05-elm-roc.md`](research/05-elm-roc.md) | Source-verified map of elm/compiler; what Roc (now Zig) does differently; copy / don't-copy |
-| 06 | [`research/06-currying.md`](research/06-currying.md) | Roc's case against currying, and why keeping it costs little on a JS target |
-| 07 | [`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md) | How Roc replaced typeclasses with static dispatch, and what doesn't transfer |
-| 08 | [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md) | Roc on annotations, operators, cycles, shadowing, aliases, effects, numbers, lists — and why it changed its syntax |
-| 09 | [`research/09-adhoc-polymorphism-survey.md`](research/09-adhoc-polymorphism-survey.md) | Was Elm's omission deliberate; what dictionary passing costs on JS; what seven languages do instead |
-| 10 | [`research/10-monomorphisation-and-incremental.md`](research/10-monomorphisation-and-incremental.md) | Roc's measured compile times; where its cache boundary sits; how Rust reconciles mono with incremental builds |
-| 11 | [`research/11-elm-testing.md`](research/11-elm-testing.md) | Elm's deleted test suite, how it was structured, and how it decayed — the basis for §12 and the `write-tests` skill |
-
----
+This is what "opinionated but powerful" means here. Opinionated is the guarantee list, which is
+short and fixed. Powerful is refusing to accept that a guarantee must also mean an impoverished
+language — which is the inference Elm drew and we do not.
 
 ## 1. The thesis
 
@@ -363,7 +345,8 @@ Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-
 
   Note the reframing, which came out of asking what the escape hatch is: with `Int32` available, the
   people most exposed to double's silent ceiling are exactly the people who should have been using
-  `Int32` anyway. Decided 2026-09-13, before M3.
+  `Int32` anyway. This is the stance's exemplar — a capability Elm lacks, added entirely inside the
+  wall, total, with no hole cut anywhere. Decided 2026-09-13, before M3.
 
 ### Still open
 
