@@ -88,19 +88,68 @@ test "a program computes something and prints the right answer" {
         "out/Main.mjs",
         "out/main.mjs",
         "out/core/Basics.mjs",
-        "out/core/Basics.js",
+        "out/core/Basics.foreign.mjs",
         "out/core/List.mjs",
-        "out/core/List.js",
+        "out/core/List.foreign.mjs",
         "out/core/Dict/Int.mjs",
         "out/platform/Node.mjs",
-        "out/platform/Node.js",
-        "out/platform/runtime.js",
+        "out/platform/Node.foreign.mjs",
+        "out/platform/runtime.foreign.mjs",
     }) |path| {
         if (!w.exists(path)) {
             std.debug.print("expected {s} to exist\n", .{path});
             return error.MissingOutput;
         }
     }
+    try expectEveryFileIsEsm(&w, "out");
+}
+
+test "every emitted file is .mjs, the hand-written ones included" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // backend.md §2: "File extension is `.mjs`, so nothing depends on a
+    // `package.json` the user owns." A sibling copied out as `.js` is an ES
+    // module with no module type declared, so Node reparses it and warns —
+    // MODULE_TYPELESS_PACKAGE_JSON, whose own remedy is "add `type: module`
+    // to package.json", which is exactly the dependency the rule forbids.
+    // The claim is about the WHOLE tree, so the assertion walks it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("Main.beni",
+        \\import List
+        \\import Prog exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say (String.fromInt (List.sum (List.range 1 4)))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Node warns on stderr, it does not fail — so a stray `.js` would pass
+    // an exit-code assertion. Both halves are checked: the tree has no `.js`
+    // in it, and running the program says nothing at all.
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("10!\n", program.stdout);
+    try testing.expectEqualStrings("", program.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectEveryFileIsEsm(&w, "out");
 }
 
 test "a non-zero exit code from the platform reaches the process" {
@@ -181,7 +230,6 @@ test "a build is byte-identical at every --jobs" {
     // └─────────────────────────────────────────┘
     try expectBuilt(one);
     try expectBuilt(many);
-    // The summary names the out directory, so only the bytes are compared.
     for ([_][]const u8{ "Main.mjs", "main.mjs", "core/List.mjs", "platform/Node.mjs" }) |name| {
         const a = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "one/{s}", .{name}));
         const b = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "many/{s}", .{name}));
@@ -421,6 +469,94 @@ test "check 3: a sibling file may not reach a name it never imported" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expect(!w.exists("out"));
+}
+
+test "a sibling that imports another file is refused, not silently broken" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A sibling is renamed as it is copied out (backend.md §2 wants every
+    // emitted file to be `.mjs`), so `./Other.js` written against the source
+    // name would point at nothing once copied. A build that succeeded and
+    // produced a program that cannot load is the worst of both.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.js",
+        \\import { helper } from "./helper.js";
+        \\
+        \\export const say = (line) => ({ text: helper(line) });
+        \\
+    );
+    try w.write("myplat/helper.js", "export const helper = (s) => s;\n");
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, r.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "\"./helper.js\"") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+}
+
+test "a sibling may import a package, because the copy does not touch a bare specifier" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // This is also boundary.md §4's check 3 working as designed: the
+    // platform's runtime reaches `process` and says where it comes from.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.js",
+        \\import process from "node:process";
+        \\
+        \\export const say = (line) => ({ text: `${line} on ${process.platform.length > 0 ? "a host" : "nothing"}` });
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("hello on a host!\n", program.stdout);
+    try testing.expectEqualStrings("", program.stderr);
+    try expectEveryFileIsEsm(&w, "out");
 }
 
 test "the sibling file must exist at all" {
@@ -788,16 +924,33 @@ test "a directory that is not a platform package says so" {
     try testing.expect(!w.exists("out"));
 }
 
-/// A build that succeeded: exit 0, nothing on stderr, and the one summary
-/// line on stdout.
+/// A build that succeeded: exit 0 and NOTHING on either stream.
+///
+/// `frontend.md` §1 gives stdout to the product and stderr to diagnostics
+/// and nothing else. A build's product is the files it wrote, so there is no
+/// stream left for a summary line — `check` sets the same precedent, and
+/// what was written is a `--self-profile` counter instead.
 fn expectBuilt(r: world.Result) !void {
     if (r.exit_code != 0) {
         std.debug.print("build failed ({d})\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ r.exit_code, r.stdout, r.stderr });
         return error.BuildFailed;
     }
+    try testing.expectEqualStrings("", r.stdout);
     try testing.expectEqualStrings("", r.stderr);
-    if (std.mem.indexOf(u8, r.stdout, "files, ") == null) {
-        std.debug.print("expected a summary line, got: {s}\n", .{r.stdout});
-        return error.NoSummary;
+}
+
+/// Every file under `dir` is an ES module by extension. The whole tree, not
+/// a list a test happens to name: the rule is about what a build may write
+/// at all, so a new kind of output file has to satisfy it too.
+fn expectEveryFileIsEsm(w: *World, dir: []const u8) !void {
+    const files = try w.listFiles(dir);
+    if (files.len == 0) {
+        std.debug.print("{s} is empty, so the rule was checked against nothing\n", .{dir});
+        return error.NoOutput;
+    }
+    for (files) |path| {
+        if (std.mem.endsWith(u8, path, ".mjs")) continue;
+        std.debug.print("{s}/{s} is not a .mjs file (backend.md §2)\n", .{ dir, path });
+        return error.NotAnEsModule;
     }
 }

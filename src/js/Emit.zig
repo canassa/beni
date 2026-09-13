@@ -12,15 +12,33 @@
 //! Layout under `--out`:
 //!
 //! ```
-//! out/Main.mjs            the app's modules, mirroring their module names
-//! out/core/List.mjs       core, and `out/core/List.js` beside it
-//! out/platform/Node.mjs   the platform, its sibling, and its runtime
-//! out/main.mjs            the entry file: imports `main`, hands it to `run`
+//! out/Main.mjs                       the app's modules, mirroring their names
+//! out/core/List.mjs                  core, and its hand-written half beside it
+//! out/core/List.foreign.mjs
+//! out/platform/Node.mjs              the platform, its sibling, and its runtime
+//! out/platform/Node.foreign.mjs
+//! out/platform/runtime.foreign.mjs
+//! out/main.mjs                       the entry file: imports `main`, hands it to `run`
 //! ```
 //!
 //! Packages get a directory each because a module's identity is
 //! `(package, name)` (checker.md §4.1) and an app may perfectly well have
 //! its own `List`.
+//!
+//! **Every emitted file is `.mjs`, the hand-written ones included** (§2:
+//! "so nothing depends on a `package.json` the user owns"). A sibling that
+//! landed as `.js` would be an ES module with no module type declared, and
+//! Node reparses it and warns on every start — which is exactly the
+//! dependency on a user-owned `package.json` the rule exists to avoid. The
+//! source keeps its `.js` name, because that is what a hand-written
+//! JavaScript file is called and `language.md` §5.4 fixes the sibling's NAME
+//! and not its extension; only the copy is renamed.
+//!
+//! The copy cannot simply keep its stem — `out/core/List.mjs` is already the
+//! generated module — so it gains `.foreign.mjs`, which reads as what it is
+//! and can never collide: a generated module's file name is its module name
+//! with `.` turned into `/`, and every segment of a module name is an upper
+//! identifier, so no generated file has two dots in its base name.
 //!
 //! **The three checks of boundary.md §4 run before a byte is written**, and
 //! all three are things Elm does not do. Check 1 (the two-shape type rule)
@@ -272,6 +290,23 @@ const Emitter = struct {
 
             const found = try Sibling.scan(e.scratch, bytes);
             try e.compareExports(file, first_token, sibling_path, declared.items, found.exports);
+            for (found.relative_imports) |specifier| {
+                try e.report(
+                    .not_implemented,
+                    file,
+                    first_token,
+                    \\`{s}` imports {s}, and I cannot relocate that yet.
+                    \\
+                    \\A sibling file is RENAMED as it is copied into the output — `{s}` becomes
+                    \\`<Module>{s}`, so that every emitted file is an ES module by extension
+                    \\(`docs/design/backend.md` §2). A specifier that names a file would then point
+                    \\at a name that no longer exists, and the build would succeed while the program
+                    \\failed to load. Rewriting them is M3b's; for now, import a package
+                    \\(`node:process`, a dependency) or inline the helper.
+                ,
+                    .{ sibling_path, specifier, std.fs.path.basename(sibling_path), foreign_extension },
+                );
+            }
             for (found.unbound) |reference| {
                 try e.report(
                     .foreign_unbound_reference,
@@ -565,8 +600,7 @@ const Emitter = struct {
             );
             return;
         };
-        const out = try std.fmt.allocPrint(e.scratch, "platform/{s}", .{e.options.platform.runtime});
-        try e.produce(out, bytes);
+        try e.produce(try e.runtimeOutputPath(), bytes);
     }
 
     /// The entry file. A platform declares how `main` is invoked (§5.2) and
@@ -574,7 +608,7 @@ const Emitter = struct {
     /// import `main`, apply one to the other.
     fn emitEntry(e: *Emitter, entry: Entry) !void {
         const module_path = try e.outputPath(entry.module);
-        const runtime_path = try std.fmt.allocPrint(e.scratch, "platform/{s}", .{e.options.platform.runtime});
+        const runtime_path = try e.runtimeOutputPath();
         const module_name = e.session.store.moduleName(e.graph().moduleFile(entry.module));
         var qualified: std.ArrayList(u8) = .empty;
         for (module_name) |c| try qualified.append(e.scratch, if (c == '.') '$' else c);
@@ -610,29 +644,33 @@ const Emitter = struct {
         return out.items;
     }
 
+    /// Where a module's sibling JavaScript is WRITTEN: beside the module,
+    /// under `.foreign.mjs`. See the header for why it is not `.js`.
     fn siblingOutputPath(e: *Emitter, m: Graph.Index) ![]const u8 {
         const mjs = try e.outputPath(m);
-        return std.fmt.allocPrint(e.scratch, "{s}.js", .{mjs[0 .. mjs.len - ".mjs".len]});
+        return std.fmt.allocPrint(e.scratch, "{s}{s}", .{ mjs[0 .. mjs.len - ".mjs".len], foreign_extension });
     }
 
-    /// `core/Basics.beni` becomes `core/Basics.js`.
+    /// Where a module's sibling JavaScript is READ from: next to the source,
+    /// under its own name. `core/Basics.beni` becomes `core/Basics.js`.
     fn siblingPath(e: *Emitter, source_path: []const u8) ![]const u8 {
-        const stem = if (std.mem.endsWith(u8, source_path, SourceStore.extension))
-            source_path[0 .. source_path.len - SourceStore.extension.len]
-        else
-            source_path;
-        return std.fmt.allocPrint(e.scratch, "{s}.js", .{stem});
+        return std.fmt.allocPrint(e.scratch, "{s}.js", .{stripExtension(source_path, SourceStore.extension)});
     }
 
     /// What the emitted module writes in its `import`: the sibling sits in
-    /// the same output directory, so it is `./Name.js`.
+    /// the same output directory, so it is `./Name.foreign.mjs`.
     fn siblingSpecifier(e: *Emitter, source_path: []const u8) ![]const u8 {
         const base = std.fs.path.basename(source_path);
-        const stem = if (std.mem.endsWith(u8, base, SourceStore.extension))
-            base[0 .. base.len - SourceStore.extension.len]
-        else
-            base;
-        return std.fmt.allocPrint(e.scratch, "./{s}.js", .{stem});
+        return std.fmt.allocPrint(e.scratch, "./{s}{s}", .{ stripExtension(base, SourceStore.extension), foreign_extension });
+    }
+
+    /// Where the platform's runtime is written. It is not a sibling of any
+    /// module, but it is hand-written JavaScript all the same, so it takes
+    /// the same extension — and that is also what keeps a platform whose
+    /// runtime is called `Node.js` from overwriting the module `Node`.
+    fn runtimeOutputPath(e: *Emitter) ![]const u8 {
+        const base = std.fs.path.basename(e.options.platform.runtime);
+        return std.fmt.allocPrint(e.scratch, "platform/{s}{s}", .{ stripExtension(base, ".js"), foreign_extension });
     }
 
     /// The bytes of an asset: the embedded copy when the compiler carries
@@ -675,6 +713,20 @@ const Emitter = struct {
         }
     }
 };
+
+/// What a hand-written JavaScript file is called once the build has copied
+/// it into the output tree. `backend.md` §2 requires every emitted file to be
+/// `.mjs`; the `.foreign` part keeps the copy from colliding with the
+/// generated module of the same name and says which half of the module it is.
+pub const foreign_extension = ".foreign.mjs";
+
+/// `name` without `extension`, or `name` when it does not end in one.
+fn stripExtension(name: []const u8, extension: []const u8) []const u8 {
+    return if (std.mem.endsWith(u8, name, extension))
+        name[0 .. name.len - extension.len]
+    else
+        name;
+}
 
 /// Largest sibling or runtime file read. Privileged JavaScript is small by
 /// construction — one export per foreign value — and a file past this is a

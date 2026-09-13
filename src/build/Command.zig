@@ -28,6 +28,7 @@ const Cli = @import("../Cli.zig");
 const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Emit = @import("../js/Emit.zig");
+const beni_profile = @import("../Profile.zig");
 const Manifest = @import("../js/Manifest.zig");
 const core_package = @import("core_package");
 const platform_packages = @import("platform_packages");
@@ -98,6 +99,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
 
     const embedded = collectEmbedded(arena, &session) catch return fail(stderr, "beni: out of memory", .{});
 
+    const emit_token = session.profile.begin();
     var result = emitOnBigStack(gpa, arena, &session, .{
         .out_dir = build.out,
         .platform = platform,
@@ -111,6 +113,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         },
     };
     defer result.deinit(gpa);
+    session.profile.end(0, emit_token, .emit, beni_profile.Event.no_file, @intCast(result.bytes_written));
 
     if (result.diagnostics.len != 0) {
         const late = gpa.alloc(Session.LateItem, result.diagnostics.len) catch
@@ -123,7 +126,15 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         if (errors > 0) return 1;
     }
 
-    stdout.print("{d} files, {d} bytes written to {s}/\n", .{ result.files_written, result.bytes_written, build.out }) catch return 2;
+    // A successful build prints NOTHING, on either stream. `frontend.md` §1
+    // gives stdout to the product and stderr to diagnostics and nothing
+    // else, and a build's product is the files it wrote — so there is no
+    // stream left for a summary line, and `check` already sets the
+    // precedent. How much was written is a `--self-profile` counter, which
+    // is also where M4's incrementality tests will read it.
+    session.profile.addCounter(.emitted_files, result.files_written);
+    session.profile.addCounter(.emitted_bytes, result.bytes_written);
+    if (options.self_profile) |path| session.writeProfile(path) catch {};
     stdout.flush() catch return 2;
     return 0;
 }

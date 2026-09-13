@@ -155,6 +155,45 @@ pub const World = struct {
         return world.tmp.dir.readFileAlloc(world.io, rel_path, world.arena.allocator(), .limited(max_stream_bytes));
     }
 
+    /// Every file under `rel_path`, recursively, as paths relative to it,
+    /// sorted. Owned by the world. Empty when the directory does not exist,
+    /// so a scenario asserting "nothing was written" reads the same as one
+    /// asserting "these files were written".
+    ///
+    /// This is how a scenario makes a claim about the WHOLE output tree —
+    /// "every emitted file is `.mjs`" is not a claim about any one file, and
+    /// checking the files a test happens to name would let a new one slip
+    /// through.
+    pub fn listFiles(world: *World, rel_path: []const u8) ![]const []const u8 {
+        var out: std.ArrayList([]const u8) = .empty;
+        try world.collectFiles(rel_path, "", &out);
+        std.mem.sort([]const u8, out.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+        return out.items;
+    }
+
+    fn collectFiles(world: *World, root: []const u8, prefix: []const u8, out: *std.ArrayList([]const u8)) !void {
+        const arena = world.arena.allocator();
+        const full = if (prefix.len == 0) root else try std.fs.path.join(arena, &.{ root, prefix });
+        var dir = world.tmp.dir.openDir(world.io, full, .{ .iterate = true }) catch return;
+        defer dir.close(world.io);
+        var it = dir.iterate();
+        while (try it.next(world.io)) |entry| {
+            const rel = if (prefix.len == 0)
+                try arena.dupe(u8, entry.name)
+            else
+                try std.fmt.allocPrint(arena, "{s}/{s}", .{ prefix, entry.name });
+            switch (entry.kind) {
+                .directory => try world.collectFiles(root, rel, out),
+                .file => try out.append(arena, rel),
+                else => {},
+            }
+        }
+    }
+
     pub fn exists(world: *World, rel_path: []const u8) bool {
         world.tmp.dir.access(world.io, rel_path, .{}) catch return false;
         return true;

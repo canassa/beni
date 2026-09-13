@@ -1061,7 +1061,10 @@ fn lookupSource(context: *const anyopaque, file: []const u8) ?[]const u8 {
     return session.store.bytes(index);
 }
 
-fn writeProfile(session: *Session, profile_path: []const u8) RunError!void {
+/// Write the Chrome trace. `run` calls this at its end; `beni build` calls
+/// it AGAIN afterwards, because the emit phase runs after `run` has
+/// returned and its counters would otherwise never reach the file.
+pub fn writeProfile(session: *Session, profile_path: []const u8) RunError!void {
     var file = Io.Dir.cwd().createFile(session.io, profile_path, .{}) catch |err| {
         session.io_failure = .{ .path = profile_path, .err = err };
         return error.InputPath;

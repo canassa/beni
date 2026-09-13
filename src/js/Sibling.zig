@@ -42,6 +42,16 @@ pub const Scan = struct {
     /// Identifiers referenced that are neither bound in the file, nor
     /// imported by it, nor a standard global.
     unbound: []const []const u8,
+    /// Module specifiers that name a FILE rather than a package — `./x.js`,
+    /// `../y.mjs` — with their quotes, in source order.
+    ///
+    /// They are collected because the build RENAMES a sibling as it copies
+    /// it out (`js/Emit.zig`: `<Module>.foreign.mjs`, so that every emitted
+    /// file is `.mjs` per backend.md §2), and a relative specifier written
+    /// against the source names would then point at nothing. Rewriting them
+    /// is M3b's; refusing them is M3a's, because the alternative is a build
+    /// that succeeds and a program that cannot load.
+    relative_imports: []const []const u8,
 };
 
 /// Scan `source`. Everything returned is owned by `arena`.
@@ -52,6 +62,7 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
     var exports: std.ArrayList([]const u8) = .empty;
     var bound: std.StringHashMapUnmanaged(void) = .empty;
     var referenced: std.ArrayList([]const u8) = .empty;
+    var relative: std.ArrayList([]const u8) = .empty;
 
     const items = tokens.items;
     var i: usize = 0;
@@ -60,7 +71,11 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
         if (token.kind != .ident) continue;
 
         if (eql(token.text, "import")) {
-            i = try collectImport(arena, items, i, &bound);
+            const end = try collectImport(arena, items, i, &bound);
+            if (end < items.len and items[end].kind == .string and isRelative(items[end].text)) {
+                try relative.append(arena, items[end].text);
+            }
+            i = end;
             continue;
         }
         if (eql(token.text, "export")) {
@@ -110,7 +125,17 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
         try seen.put(arena, reference, {});
         try unbound.append(arena, reference);
     }
-    return .{ .exports = exports.items, .unbound = unbound.items };
+    return .{ .exports = exports.items, .unbound = unbound.items, .relative_imports = relative.items };
+}
+
+/// A specifier that names a file relative to this one. A BARE specifier —
+/// `node:process`, a package name — is untouched by the copy and needs no
+/// rewriting; only a path does.
+fn isRelative(quoted: []const u8) bool {
+    if (quoted.len < 2) return false;
+    const inner = quoted[1 .. quoted.len - 1];
+    return std.mem.startsWith(u8, inner, "./") or std.mem.startsWith(u8, inner, "../") or
+        std.mem.startsWith(u8, inner, "/");
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +529,25 @@ test "check 3: named and namespace imports bind too" {
         \\import * as fs from "node:fs";
         \\export const one = () => makeCell(1, fs.nothing);
     );
+    try testing.expectEqual(@as(usize, 0), result.unbound.len);
+}
+
+test "a specifier naming a file is reported; a bare one is not" {
+    // The build renames a sibling as it copies it out, so a specifier
+    // written against the source name would point at nothing. A package
+    // specifier survives the copy untouched.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const result = try scanOnce(a.allocator(),
+        \\import process from "node:process";
+        \\import { cons } from "./List.js";
+        \\import helper from "../shared/helper.mjs";
+        \\import lodash from "lodash";
+        \\export const one = () => cons(1, helper(process, lodash));
+    );
+    try testing.expectEqual(@as(usize, 2), result.relative_imports.len);
+    try testing.expectEqualStrings("\"./List.js\"", result.relative_imports[0]);
+    try testing.expectEqualStrings("\"../shared/helper.mjs\"", result.relative_imports[1]);
     try testing.expectEqual(@as(usize, 0), result.unbound.len);
 }
 

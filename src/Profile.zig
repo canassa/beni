@@ -61,6 +61,10 @@ pub const Phase = enum {
     /// clean, and a regression in one must not be read as a regression in
     /// the other.
     exhaustive,
+    /// Code generation, once per build (`backend.md` §13): `Bir` → `JsIr` →
+    /// bytes for every module, plus the platform checks and the writes.
+    /// `bench`'s `emit` line measures the same work without the I/O.
+    emit,
     render,
 };
 
@@ -83,6 +87,14 @@ pub const Counter = enum {
     modules,
     edges,
     interfaces,
+    /// Code generation (`backend.md` §13): files and bytes of JavaScript
+    /// `beni build` wrote. They are counters and not a line on stdout
+    /// because `frontend.md` §1 gives stdout to the product and stderr to
+    /// diagnostics, and a build's product is the files themselves — so
+    /// "how much did it write" belongs in the trace, where M4's
+    /// incrementality tests can assert that an edit rewrote ONE file.
+    emitted_files,
+    emitted_bytes,
     /// The checker's work (checker.md §9). M4's incrementality tests assert
     /// these did NOT move when only a body changed.
     unifications,

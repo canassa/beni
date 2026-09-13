@@ -1654,7 +1654,7 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
         .birs = birs,
         .provenance = session.resolution.provenance,
         .specifiers = specifiers,
-        .sibling = "./M.js",
+        .sibling = "./M.foreign.mjs",
     });
     defer result.deinit(gpa);
     // The in-bounds invariants of `JsIr`, on every tree the tests build.
@@ -1961,7 +1961,7 @@ test "a foreign value is imported from the sibling file under its bare name" {
     const text = try emitModule(gpa, &p, "M");
     defer gpa.free(text);
     try testing.expectEqualStrings(
-        \\import { now as M$now, twice as M$twice } from "./M.js";
+        \\import { now as M$now, twice as M$twice } from "./M.foreign.mjs";
         \\export { M$now, M$twice };
         \\
     , text);

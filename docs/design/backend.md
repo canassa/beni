@@ -51,7 +51,34 @@ elimination and readable names. Release output is **reachability chunks**. Both 
 graph (§9.1 of the design doc); nothing is built twice. §5.3 of `boundary.md` makes a build a pair of
 entry point and platform, so a project with a client and a server runs `build` twice.
 
-File extension is `.mjs`, so nothing depends on a `package.json` the user owns.
+A successful build prints **nothing, on either stream**. `frontend.md` §1 gives stdout to the product
+and stderr to diagnostics and nothing else; a build's product is the files it wrote, so there is no
+stream left for a summary line, and `check` already sets the precedent. How much was written is a
+`--self-profile` counter (`emitted_files`, `emitted_bytes`), which is also where M4's incrementality
+tests read "this edit rewrote one file".
+
+File extension is `.mjs`, so nothing depends on a `package.json` the user owns. **That applies to
+every file a build writes, the hand-written ones included** — M3a shipped copying core's siblings
+and the platform's runtime out as `.js`, and Node then reparsed each one and warned
+`MODULE_TYPELESS_PACKAGE_JSON` on every start, whose own suggested remedy is adding `"type":
+"module"` to a `package.json`. That is the dependency this rule exists to avoid, arriving through
+the back door. A copied file cannot simply keep its stem, because `out/core/List.mjs` is already the
+generated module, so it takes **`.foreign.mjs`**: it says which half of the module it is, and it
+cannot collide — a generated file is named for its module, every segment of a module name is an
+upper identifier, so no generated file has two dots in its base name. The `.js` names in `core/` and
+`platforms/` on disk are unchanged; `language.md` §5.4 fixes the sibling's NAME and not its
+extension, and only the copy is executed.
+
+The rename has one consequence M3a refuses rather than gets wrong: **a sibling may not import
+another FILE.** `import { cons } from "./List.js"` is written against a name the copy no longer has,
+and rewriting the specifier is M3b's. A bare specifier — `node:process`, a package — survives the
+copy untouched and is what `boundary.md` §4's third check is really about, so nothing that check
+blesses is lost today except sharing a helper file between two siblings.
+
+**No `package.json` is written into the output, and that is deliberate.** `.mjs` already makes every
+file an ES module whatever any `package.json` says, so one would add nothing — and it would put back
+exactly the file the extension was chosen to avoid, inside a directory the user chose (`--out` may
+well point at something they own). A build writes only files it named itself.
 
 ## 3. `JsIr` — the second IR
 
@@ -134,7 +161,8 @@ open question 2 requires, and records the result here either way.
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
-trace is readable. Release: chunks (§8), every surviving declaration emitted into its chunk with a
+trace is readable; each module's sibling JavaScript beside it as `<Module>.foreign.mjs`, and the
+platform's runtime as `platform/<name>.foreign.mjs` (§2). Release: chunks (§8), every surviving declaration emitted into its chunk with a
 short name, and the cross-chunk bindings synthesised by the assigner.
 
 A platform declares its output shape (`boundary.md` §5.2) — what the artifact looks like and how
