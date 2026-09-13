@@ -1,6 +1,8 @@
 # Beni: design for an extremely fast Elm-like → JavaScript compiler
 
-**Status:** draft design, pre-implementation.
+**Status:** implemented through M2b (see §13 for where each milestone stands). The design below
+is the one the code follows; where a milestone proved part of it wrong, the correction is written
+here and the commit that found it says so.
 **Host language:** Zig.
 **Target:** JavaScript (ESM).
 **Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
@@ -1055,14 +1057,19 @@ Build this before the optimiser, not after.
 
 Each milestone ends in something measurable.
 
-1. **M0 — Skeleton.** Token SoA, arena infrastructure, intern pool, `--self-profile`, the
-   benchmark harness and the determinism test. *Measure: lex throughput in MB/s.*
-2. **M1 — Front end.** Lexer, LL(k) parser with error recovery and a lossless CST, BIR lowering,
-   **and the formatter** — it rides the same CST and is what keeps micro-syntax reversible (§3.2).
-   Parallel per file. *Measure: cold parse of 100k LOC; formatter round-trips the corpus unchanged.*
-3. **M2 — Checker.** Constraint generation, union-find with levels, deferred occurs check,
-   SCC binding groups, poisoned-error recovery. *Measure: check throughput; error quality on a
-   fixture suite.*
+1. ~~**M0 — Skeleton.**~~ **Done.** Token SoA, arena infrastructure, intern pool,
+   `--self-profile`, the benchmark harness and the determinism test. *Measured: read 780 MB/s.*
+2. ~~**M1 — Front end.**~~ **Done.** Lexer, LL(k) parser with error recovery and a lossless CST,
+   BIR lowering, and the formatter. Parallel per file. *Measured on 100k LOC: lex 9 ms
+   (185 MB/s), parse 6 ms, lower 9 ms, `fmt --check` 26 ms on four cores; the formatter round-trips
+   the corpus and every `.expected` is a fixed point.* Milestone detail is in
+   [`frontend.md`](frontend.md) §8.
+3. **M2 — Checker.** Contract in [`checker.md`](checker.md). M2a (packages, module graph,
+   interfaces, cross-module resolution) and M2b (type store, constrain/solve, the ad-hoc
+   obligations, the missing-argument suite) are **done**; M2c (exhaustiveness, DAG-parallel
+   checking) and M2d (measurement and review) remain. *Measured: 1.33M LOC/s for checking alone
+   against the >250k target, and 118 ms for the whole cold pipeline including core against the
+   800 ms budget. The missing-argument suite scored 37/38, discharging §9.3's revisit trigger.*
 4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, **saturated-call specialization
    with `A2`/`F2` only as fallback** (§9.3), TCO loops, decision trees, ESM output. *Measure: emit
    throughput; output size vs Elm; and the share of call sites emitted as direct n-ary calls — if
