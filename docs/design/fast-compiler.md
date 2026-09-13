@@ -261,13 +261,22 @@ Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-
   snippet of code, or a diff, and have stronger guarantees about what names mean."* Elm makes it an
   error; so do we.
 
+- **Top-level annotations are optional**, as in Elm and Roc. A module's interface is therefore
+  the *inferred* scheme of each `pub` declaration, not a lexical fact. The cost lands in §8.1:
+  the interface hash can only be computed after checking, so an importer is re-checked whenever
+  a dependency's inferred interface changes by value — Elm's `.elmi` comparison, Roc's
+  content-hash chain. What stays lexical is the *set* of `pub` names, which is all per-module
+  name resolution (§3) needs. The ergonomic alternative — requiring annotations on `pub`
+  declarations — would have made interfaces free to compute; nobody has measured its cost, and
+  matching the two languages this one is modelled on was judged worth more than the unmeasured
+  win. Decided 2026-09-13, before M2.
+
 ### Still open
 
 Each is cheaper to take now than later:
 
 | Decision | Why it is load-bearing | State of the evidence |
 |---|---|---|
-| Are top-level annotations required? | If yes, a module's interface is a lexical fact and §8's invalidation gets much cheaper — no inference needed to compute an interface. | **Strongest lever left.** Roc doesn't require them, and its cache is consequently *coarser* than §8.1: a content-hash chain over whole checked modules, so any edit to a leaf invalidates every importer. Feldman's "non-global modules" proposal — annotate everything exposed, and importers need no re-check — is exactly this idea, designed and unshipped. Nobody has argued for requiring them, so the ergonomic cost is unmeasured. |
 | Effects model (ports vs. platforms) | Purity is what makes §9.1's DCE exact rather than heuristic | Roc tracks effects **in the type system**: `->` pure vs `=>` effectful, with real `fn_pure`/`fn_effectful` variants in the unifier; the `!` name suffix is only a lint. Purity Inference listed DCE as a benefit, though no pass was found that prunes unused bindings *because* of it. Lean: pure language, effects at a ports-like boundary. |
 | `Int` representation (double, int32, BigInt) | Codegen shape, V8 elements kinds (§9.4), overflow semantics | Roc traps on overflow by default, with opt-in `wrap`/`saturate`/`try`, and defaults unpinned literals to a 128-bit fixed-point `Dec`. All native-only affordances — JS has no exact integer past 2⁵³ without BigInt, which is boxed. Roc has never targeted JS, so this one is genuinely ours to decide. |
 | String representation | Native JS strings are free but give O(n) indexing and a UTF-16/codepoint mismatch. Roc keeps `Str` deliberately minimal and pushes Unicode work to libraries — a stance available to us regardless of representation. |
