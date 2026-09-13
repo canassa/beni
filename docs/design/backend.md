@@ -104,7 +104,7 @@ mapping.
 | beni | JavaScript |
 |---|---|
 | top-level value | one `const` per declaration, module-qualified name in dev, short name in release |
-| function of *n* parameters | one function expression of arity *n*, plus its arity tag (§6) |
+| function of *n* parameters | one function expression of arity *n*; no arity tag (§6) |
 | saturated call at known arity | direct call `f(a, b)` (§6) |
 | record | object literal, keys in a canonical sorted order so one hidden class per record type |
 | constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |
@@ -173,23 +173,7 @@ A platform declares its output shape (`boundary.md` §5.2) — what the artifact
 §9.3 keeps currying **on the condition** that saturated calls at statically known arity become
 direct calls. That condition is now a deliverable with a number attached.
 
-**M3a found a better scheme than §9.3 specified, and it removes the adapter entirely.** The arity
-tag exists so a call site can *ask* a value its arity. Make every function-typed value that is in
-flight curried, and the question never arises:
-
-- A call site whose callee's arity is statically known and whose argument count matches emits a
-  **direct n-ary call** `f(a, b)`. The declaration graph resolves every top-level reference, so this
-  is the overwhelming majority.
-- Everything else applies one argument at a time to something that is always curried, with the
-  curry wrapper emitted at the site.
-
-So there is **no arity tag and no `A2`/`F2` adapter** — and therefore no runtime library, which
-matters beyond size: the only hand-written JavaScript in a build stays core's siblings, and a
-codegen helper would have been neither that nor beni. Elm pays roughly 49% on Chrome for routing
-saturated calls through its adapter; we pay nothing, because there is no adapter to route through.
-Indicative direct-call share on the compiler's own output at M3a: about 87%.
-
-**M3a shipped this and dropped the arity tag**, which the other two bullets turn out not to need.
+**M3a shipped a better scheme than this section specified, and dropped the arity tag**, which the other two bullets turn out not to need.
 The tag exists so that a call site can *ask* a value what arity it has, and the only reason to ask
 is that some function-typed values are n-ary and some are not. Make them all the same and the
 question disappears: **every function-typed value in flight is curried**, and n-ary forms exist only
@@ -197,7 +181,10 @@ where the callee is statically known. A saturated call to a known callee is then
 adapter at all; everything else applies one argument at a time to something that is always curried.
 The curry wrapper is emitted at the site that needs it — `((x) => (y) => f(x, y))` — so there is no
 runtime library, which matters because `boundary.md`'s wall means the only hand-written JavaScript
-in a build is core's siblings and a codegen helper would be neither that nor beni.
+in a build is core's siblings and a codegen helper would be neither that nor beni. Elm pays roughly
+49% on Chrome for routing saturated calls through its adapter; we pay nothing, because there is no
+adapter to route through. Indicative direct-call share on the compiler's own output at M3a: **about
+87%**, which is the number §9.3 said would decide whether keeping currying was right.
 
 **M3c measures the share of call sites emitted as direct calls and records it here.** §9.3 says
 plainly that if the share is low the currying decision was wrong. The missing-argument diagnostic
