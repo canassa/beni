@@ -1010,9 +1010,21 @@ declarations lengthens matches. Report 12 is establishing which of these is meas
 only plausible, and whether brotli's static dictionary of common web fragments argues for
 emitting conventional token sequences rather than cleverer short ones.
 
-This also bears on chunking: each chunk starts a fresh compression window with no shared
-dictionary, so many small chunks compress worse than one large one. How finely to split is
-partly a compression question, not only a loading one.
+**Brotli is the assumed encoding**, with gzip tracked as a secondary. The reason is the sliding
+window, not the static dictionary: gzip matches repetition only within 32KB, brotli within
+megabytes. If that holds under measurement, then in a bundle of any real size gzip cannot see
+repetition across the file at all — which would mean whole-program naming consistency, precisely
+the thing beni can do that a per-file minifier cannot, largely does not pay under gzip and does
+under brotli. Assuming brotli is what makes our best lever real in deployment, so report 12 is
+verifying that claim rather than taking it.
+
+Two consequences. Chunking is where the two compressors may genuinely disagree rather than differ
+in degree: each chunk starts a fresh window, so many small chunks compress worse than one large
+one, and brotli's larger window raises that cost. How finely to split is partly a compression
+question, not only a loading one. And tooling: Zig's standard library has flate, lzma, xz and
+zstd but **no brotli**, so measuring it means pinning the system encoder in the flake or vendoring
+one. Whether `beni build` should ever emit pre-compressed artifacts itself is left open; a
+full-stack tool arguably should, and the cost is on the record rather than decided.
 
 Elm's TodoMVC is still the size target to beat: 122KB → 24KB minified → 9KB gzipped. The number
 that counts there is the 9KB.
