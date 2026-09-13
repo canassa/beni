@@ -27,6 +27,7 @@ Options common to all subcommands:
 | `--self-profile=<path>` | write a Chrome trace-event JSON file at exit (§6) | off |
 | `--jobs=<n>` | worker threads for per-file phases; output is identical for every `n` | logical CPUs |
 | `--root=<dir>` | the source root that module names are derived from | see below |
+| `--core` | treat the files as the core package: `foreign` declarations are legal (language.md §5.4). Used only to build and test core; never by user projects | off |
 
 Paths: a `<path>` is a `.beni` file or a directory. A directory is walked recursively; every
 `.beni` file under it is a module; hidden entries (`.` prefix) are skipped. Files are processed
