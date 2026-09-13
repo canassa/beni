@@ -80,6 +80,7 @@ missing. Re-run `roc-zulip-channels.fish` rather than trusting these ids forever
   feature level 511, well past the 9.0 rename. (Permalink *URLs* still use either.)
 - **`apply_markdown=false`** returns raw Markdown instead of rendered HTML — the scripts always
   set this, which is what you want for terminal reading and quoting.
+- **Resolved topics are renamed with a `✔ ` prefix.** `roc-zulip-read.fish ideas --topic 'insignificant whitespace'` finds nothing; the real name is `'✔ insignificant whitespace'`. Find the exact name with `roc-zulip-topics.fish <channel> --grep <word>` first.
 - **1000 messages max per request.** `found_oldest` in the response tells you whether more exist.
 - **Timestamps are epoch seconds, UTC.** Scripts render them as `YYYY-MM-DD HH:MM`Z.
 - **`/json/streams` needs auth** — that's why channel discovery works by aggregating

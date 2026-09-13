@@ -78,7 +78,7 @@ step and spawns processes.
 
 ## Why this shape — the lesson from Elm's deleted suite
 
-`docs/design/research/` records what happened to elm/compiler's tests: deleted in
+`docs/design/research/11-elm-testing.md` records what happened to elm/compiler's tests: deleted in
 2018, never restored, 1,252 commits later there is still no suite and the only CI
 builds a binary on tagged releases. Three failure modes to design against:
 

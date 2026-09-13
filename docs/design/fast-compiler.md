@@ -6,7 +6,7 @@
 **Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
 modules; no typeclasses, no macros, no type-level computation.
 
-This document synthesises ten research reports, each source-verified against primary material
+This document synthesises eleven research reports, each source-verified against primary material
 and the vendored compilers in `references/`. They are kept alongside this doc and are the
 evidence base for every claim here:
 
@@ -22,6 +22,7 @@ evidence base for every claim here:
 | 08 | [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md) | Roc on annotations, operators, cycles, shadowing, aliases, effects, numbers, lists — and why it changed its syntax |
 | 09 | [`research/09-adhoc-polymorphism-survey.md`](research/09-adhoc-polymorphism-survey.md) | Was Elm's omission deliberate; what dictionary passing costs on JS; what seven languages do instead |
 | 10 | [`research/10-monomorphisation-and-incremental.md`](research/10-monomorphisation-and-incremental.md) | Roc's measured compile times; where its cache boundary sits; how Rust reconciles mono with incremental builds |
+| 11 | [`research/11-elm-testing.md`](research/11-elm-testing.md) | Elm's deleted test suite, how it was structured, and how it decayed — the basis for §12 and the `write-tests` skill |
 
 ---
 
