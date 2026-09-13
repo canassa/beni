@@ -95,10 +95,10 @@ These are decisions about the *source language*, made now because they cannot be
   choice. This is Zig's stated parser invariant (01 §9) and Elm's practical one (its combinators
   are committed-choice: a failure after consuming input is final, 05 §1.3). It guarantees linear
   parse time and rules out a whole class of pathological inputs.
-- **No typeclasses / no implicit dictionary passing.** Costs compile time and output size, and the
-  effective fix — whole-program specialisation — conflicts with separate compilation. PureScript's
-  creator declined to build it for that reason (09 §2). *Not* because of the `RowList` incident,
-  which was a parser bug.
+- **No typeclasses, no dictionary passing, and no static dispatch.** Settled — see §3.1 and
+  reports 09 and 10. Dictionaries cost runtime and bundle size, and the effective fix is global;
+  whole-program specialisation is the one phase nobody has made cheap to cache. *Not* because of the
+  `RowList` incident, which was a parser bug.
 - **No type-level computation, no row-polymorphic type functions.** Records get plain extensible
   rows with structural unification, nothing more.
 - **No macros.** This is what lets a simple module-interface firewall work instead of a
@@ -202,18 +202,42 @@ So the defensible claim is narrower than "whole-program work is incompatible wit
 builds": it is that **specialisation is the phase nobody has made cheap to cache**, and the two
 projects that tried both say so.
 
-That, and the earlier point about interface-propagated specialisation, is what to keep. It means the
-door here is **additive**: `number` and
-`appendable` today; call-site-specialised constraints carried through interface files later, if
-ergonomics demand, with no change to the type representation or the §8.1 firewall. Evan's own 2012
-reasoning — choose the interim mechanism that upgrades gracefully — applies unchanged, and the
-decision above is deliberately of that shape.
+### Decision: no static dispatch
 
-What the survey also settles: across seven JS-targeting languages, type-directed dispatch *with no
-value to dispatch on* always reduces to either an explicit value threaded by the caller (a
-dictionary by another name — ReScript's docs call functors "dependency injection") or whole-program
-specialisation. There is no third option. Value-directed dispatch, `x.method()`, is free everywhere
-because JS prototypes do it natively — that half never needed typeclasses.
+**Settled. Beni has no typeclasses, no dictionary passing, and no static dispatch.** Ad-hoc
+polymorphism is limited to `number` and `appendable` (above); ordering, equality on user types and
+stringification are explicit.
+
+What was ruled out, and on what evidence:
+
+| Ruled out | Why |
+|---|---|
+| **Dictionary passing** | Runtime cost and bundle size. The effective fix is whole-program specialisation, and PureScript's creator declined to build it into the standard compiler because "being global, it doesn't always play nicely with separate compilation." Their separate optimizer recovers 25–35% runtime and 20–25% bundle size, and is explicitly non-incremental (09 §2). |
+| **Whole-program specialisation** (Roc's model) | Specialisation is the one phase nobody has made cheap to cache. Roc caches checking but not mono; its `SpecializationCacheFile` has zero call sites. Measured: 0.78s to *check* 58k lines, 16.9s to *build* 55k — ~3,400 lines/s against Elm's ~120–130k for a whole pipeline. Feldman: "the specializations are the hard part" (10). |
+| **JS prototype dispatch** (`x.method()`) | Free at runtime — the engine does it — but methods on prototypes defeat the precise whole-program tree-shaking §9.1 depends on. Rejected on output size, not compile time. |
+| **Interface-propagated call-site specialisation** (GHC `SPECIALIZE`, F# SRTP) | The one incremental-compatible route, and genuinely viable — but it pays in code duplication, which is what §9 optimises hardest, and it would have to be opt-in per function. Putting a body into its interface file means body edits change the interface, which is exactly what §8.1 exists to prevent; GHC keeps the firewall intact only because `INLINABLE` is an explicit annotation. Not worth the language surface for what it buys. |
+
+Two things this decision is **not** based on, both corrected in 09 §2: PureScript's `RowList` blowup
+(a parser bug, not dictionaries) and the unsourceable "476 million dictionary comparisons" figure.
+Nor is it based on Elm — Evan deferred typeclasses deliberately since 2012, but never argued it on
+compile-speed grounds, and Elm's own performance writing credits parser allocation and GC.
+
+The sourced version of the argument is Gleam's, which rejects typeclasses because they "have a high
+compile time cost, and have a runtime cost unless the compiler performs full-program compilation and
+expensive monomorphisation" — a modern language, compiling to JS among other targets, stating our
+reasoning outright.
+
+**What the survey establishes beyond this project:** across seven JS-targeting languages,
+type-directed dispatch *with no value to dispatch on* always reduces to either a caller-threaded
+dictionary or whole-program specialisation. There is no third option. Value-directed dispatch is
+free everywhere because JS prototypes do it natively — that half never needed typeclasses (09 §3).
+
+**If this is ever revisited**, the entry point is the last row of the table, and the reason the door
+is not welded shut is that §3.1's mechanism is additive: `number` and `appendable` are a closed set
+resolved post-solve, so adding opt-in call-site constraints later would change no existing type
+representation and no part of the firewall. That is deliberately the shape Evan chose in 2012 —
+"the current solution is best in my opinion until I add something better", picked *because* it
+upgrades gracefully. It stayed upgradeable for thirteen years.
 
 ### Settled alongside it
 
