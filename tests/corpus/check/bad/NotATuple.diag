@@ -1,0 +1,1 @@
+[{"code":"not_a_tuple","severity":"error","span":{"file":"tests/corpus/check/bad/NotATuple.beni","start":{"line":8,"col":6},"end":{"line":8,"col":8}},"title":"NOT A TUPLE","message":"I cannot take `.0` of this, because it is not a tuple:\n\n    Point\n\nHint: `.0`, `.1`, … work on tuples. Records are indexed by field name.\n"}]

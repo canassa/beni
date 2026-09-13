@@ -1,0 +1,4 @@
+-- check/args: `>>` builds a function, and the result was used as a value.
+pub shout : String -> String
+shout s =
+    String.toUpper >> String.trim

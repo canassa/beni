@@ -1,0 +1,32 @@
+-- check/good: `?` (checker.md §6.5) picks its shape from the enclosing
+-- definition's result type — `Result` here, `Maybe` there — and the two are
+-- never converted into each other.
+pub parseBoth : String -> String -> Result String Int
+parseBoth a b =
+    let
+        left =
+            parseOne a?
+
+        right =
+            parseOne b?
+    in
+    Ok (left + right)
+
+
+parseOne : String -> Result String Int
+parseOne s =
+    case String.toInt s of
+        Just value ->
+            Ok value
+
+        Nothing ->
+            Err "not a number: ${s}"
+
+
+pub firstTwo : List Int -> Maybe Int
+firstTwo xs =
+    let
+        head =
+            List.head xs?
+    in
+    Just (head + 1)

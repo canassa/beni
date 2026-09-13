@@ -1,0 +1,8 @@
+-- check/args: a constructor applied to more arguments than it declares.
+pub type Point
+    = Point Int Int
+
+
+pub origin : Point
+origin =
+    Point 0 0 0

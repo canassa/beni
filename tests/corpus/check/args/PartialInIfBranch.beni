@@ -1,0 +1,7 @@
+-- check/args: the `else` branch is a partial application.
+pub clampLow : Int -> Int
+clampLow n =
+    if n < 0 then
+        0
+    else
+        min n

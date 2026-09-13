@@ -1,0 +1,4 @@
+-- check/bad: `.0` on something whose type is still a variable. A tuple
+-- index needs a tuple whose size is already known.
+pub firstOf t =
+    t.0

@@ -1,0 +1,18 @@
+-- check/args: the same mistake one layer up — `view` is called with the
+-- configuration and not the model.
+pub type alias Config =
+    { title : String }
+
+
+pub type alias Model =
+    { count : Int }
+
+
+pub view : Config -> Model -> String
+view config model =
+    "${config.title}: ${model.count}"
+
+
+pub render : Config -> Model -> String
+render config model =
+    view config

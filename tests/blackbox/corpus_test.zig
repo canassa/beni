@@ -10,6 +10,7 @@
 //!                                   the golden again is a fixed point, and both
 //!                                   parse to the same AST
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
+//!   check/args/X.beni + X.diag      the missing-argument suite (checker.md §8.3)
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
 //!
 //! A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`)
@@ -41,6 +42,7 @@ const Kind = enum {
     bir,
     check_good,
     check_bad,
+    check_args,
     regress,
 
     fn dir(kind: Kind) []const u8 {
@@ -51,6 +53,7 @@ const Kind = enum {
             .bir => corpus_root ++ "/bir",
             .check_good => corpus_root ++ "/check/good",
             .check_bad => corpus_root ++ "/check/bad",
+            .check_args => corpus_root ++ "/check/args",
             .regress => corpus_root ++ "/regress",
         };
     }
@@ -84,6 +87,14 @@ test "corpus: check/good" {
 
 test "corpus: check/bad" {
     try walk(.check_bad);
+}
+
+// The missing-argument suite (checker.md §8.3). Its own kind so its size
+// and its pass rate are visible on their own: `fast-compiler.md` §9.3 keeps
+// currying on the condition that these read as THE right message, and a
+// number that is buried in `check/bad` is a number nobody looks at.
+test "corpus: check/args" {
+    try walk(.check_args);
 }
 
 test "corpus: regress" {
@@ -215,7 +226,7 @@ const Case = struct {
             .fmt => try c.format(),
             .bir => try c.lowering(),
             .check_good => try c.checkGood(),
-            .check_bad => try c.bad(),
+            .check_bad, .check_args => try c.bad(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
                 const has_ast = c.goldenExists("ast");

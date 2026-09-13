@@ -6,7 +6,10 @@ produces (`docs/design/checker.md` §3, §7). Two claims per fixture:
 - `beni check <fixture>` exits 0 with **no diagnostic at all** — the names
   resolved against this project and against the embedded core package;
 - `beni dump --stage=interface <fixture>` equals the `.iface` golden — what
-  the module now offers its dependents.
+  the module now offers its dependents, INCLUDING every value's inferred or
+  annotated scheme (checker.md §7). The schemes are rendered by
+  `check/Render.zig`, the same code every diagnostic prints types with, so
+  these goldens are also the test for the type text in every message.
 
 Two shapes:
 

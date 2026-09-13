@@ -1,0 +1,4 @@
+-- check/args: `Nothing` takes no arguments, and it was given one.
+pub empty : Maybe Int
+empty =
+    Nothing 0

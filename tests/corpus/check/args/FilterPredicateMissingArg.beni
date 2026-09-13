@@ -1,0 +1,5 @@
+-- check/args: `List.filter` wants a predicate returning `Bool`, and the
+-- lambda's body forgot an argument, so it returns a function instead.
+pub capped : List Int -> List Int
+capped xs =
+    List.filter (\n -> max n) xs

@@ -1,0 +1,4 @@
+-- check/bad: a tuple of two elements has `.0` and `.1`, and nothing else.
+pub third : ( Int, String ) -> Int
+third t =
+    t.2

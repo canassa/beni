@@ -1,5 +1,5 @@
 module Operators
-  value arithmetic
-  value logic
-  value pipeline
-  value text
+  value arithmetic : Int -> Int -> Int
+  value logic : Int -> Int -> Bool
+  value pipeline : List Int -> List Int
+  value text : String -> String

@@ -1,0 +1,5 @@
+-- check/args: `Maybe.withDefault` takes the fallback AND the maybe, and the
+-- maybe was piped in without the fallback being given.
+pub orZero : Maybe Int -> Int
+orZero m =
+    Maybe.withDefault m

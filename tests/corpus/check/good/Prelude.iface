@@ -1,4 +1,4 @@
 module Prelude
-  value biggest
-  value firstOrZero
-  value lengths
+  value biggest : Int -> Int -> Int
+  value firstOrZero : Maybe Int -> Int
+  value lengths : List String -> List Int

@@ -1,0 +1,4 @@
+-- check/args: `List.concatMap` given its function and nothing else.
+pub spread : List Int -> List Int
+spread xs =
+    List.concatMap (\n -> [ n, n ])

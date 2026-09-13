@@ -8,13 +8,19 @@
 //! pointers, no slices into the Bir — rather than a view onto the module:
 //! M2 compares it by value, M4 hashes it and maps it from disk unchanged.
 //!
-//! M2a builds the SKELETON: which names are public, what kind each is, how
+//! M2a built the SKELETON: which names are public, what kind each is, how
 //! many arguments each constructor takes, which types are opaque, foreign
-//! or equatable. That is everything cross-module NAME resolution needs and
-//! it is a lexical fact — no inference has run yet. M2b adds `schemes` and
-//! `terms` next to these tables and fills the `scheme` slot each value
-//! already carries; nothing here moves when it does, which is the point of
-//! reserving the slot now.
+//! or equatable — everything cross-module NAME resolution needs, and a
+//! lexical fact needing no inference. M2b adds the TYPES: `schemes` and
+//! `terms` (checker.md §7), filled from the solved store once a module is
+//! checked, and the `scheme` slot each value already carried. The tables
+//! are a flat term language rather than store variables because a store is
+//! per module and dies with it, while an interface outlives every store and
+//! in M4 is mapped from disk.
+//!
+//! `check/Schemes.zig` is the only thing that writes or reads them: it
+//! turns a solved `Var` into terms and instantiates terms back into another
+//! module's store. Nothing in `resolve/` depends on the checker.
 //!
 //! **Order is by name text, not by symbol.** A `Symbol` is an index into a
 //! pool whose numbering depends on which worker interned which file first
@@ -39,6 +45,12 @@ types: []const Type,
 /// Owned. Every visible constructor, grouped by owning type
 /// (`Type.ctors_start..ctors_end`) and in declaration order within a type.
 ctors: []const Ctor,
+/// Owned. Generalised types, one per value that has one (checker.md §7).
+schemes: []const Scheme,
+/// Owned. The flat type term language every scheme's body is written in.
+terms: std.MultiArrayList(Term).Slice,
+/// Owned. Ranges and record fields the terms point at.
+extra: []const u32,
 /// Owned. The one symbol column; every name above is an index into it,
 /// exactly as `Bir` does it, so a remap is one loop and M4 can map the
 /// whole record without a fixup pass.
@@ -60,6 +72,83 @@ pub const SchemeIndex = enum(u32) {
 
 /// Index into `symbols`.
 pub const SymbolIndex = enum(u32) { _ };
+
+/// Index into `terms`.
+pub const TermIndex = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
+
+    pub fn int(t: TermIndex) u32 {
+        return @intFromEnum(t);
+    }
+};
+
+/// A generalised type: how many variables it quantifies and its body. The
+/// quantified list lives in `extra` as TWO words each — see `Quantified` —
+/// rather than in a table of its own, so §7's table list stays exactly
+/// `values, types, ctors, schemes, terms, extra, symbols`.
+pub const Scheme = struct {
+    /// `extra[quantified_start..][0 .. 2 * quantified_count]`.
+    quantified_start: u32,
+    quantified_count: u32,
+    body: TermIndex,
+};
+
+/// One quantified variable: its ad-hoc constraint (the closed set of
+/// `fast-compiler.md` §3.1 and nothing else) and the name the annotation
+/// gave it, so `dump --stage=interface` prints `a -> a` and not `a -> b`.
+pub const Quantified = struct {
+    /// `@intFromEnum` of a `TypeStore.Kind`.
+    kind: u8,
+    equatable: bool,
+    name: Symbol.Optional,
+
+    pub const words = 2;
+
+    pub fn flags(q: Quantified) u32 {
+        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8);
+    }
+
+    pub fn unpack(flag_word: u32, name_word: u32) Quantified {
+        return .{
+            .kind = @truncate(flag_word),
+            .equatable = (flag_word >> 8) & 1 == 1,
+            .name = @enumFromInt(name_word),
+        };
+    }
+};
+
+/// The flat type term language of checker.md §7. `lhs` and `rhs` mean what
+/// each tag's comment says; ranges live in `extra` as a length followed by
+/// that many words, so a term is three fixed-size columns and nothing else.
+pub const Term = struct {
+    tag: Tag,
+    lhs: u32,
+    rhs: u32,
+
+    pub const Tag = enum(u8) {
+        /// `lhs` is the index into the scheme's quantified list.
+        @"var",
+        /// `lhs` parameter term, `rhs` result term.
+        func,
+        /// `lhs` is a `TypeStore.TypeId`; `rhs` an `extra` range of terms.
+        app,
+        /// `lhs` is an `extra` range of terms.
+        tuple,
+        /// `lhs` is an `extra` range of `(SymbolIndex, TermIndex)` pairs;
+        /// `rhs` is the extension term.
+        record,
+        /// `()`.
+        unit,
+        /// The closed end of a record.
+        empty_record,
+        /// `lhs` is a `TypeStore.TypeId`; `rhs` an `extra` range whose last
+        /// word is the expansion and whose earlier words are the arguments.
+        alias,
+        /// A declaration that failed to check (checker.md §7).
+        err,
+    };
+};
 
 pub const Value = struct {
     name: SymbolIndex,
@@ -112,14 +201,59 @@ pub const Ctor = struct {
 
 /// A module with nothing public, and what a module that failed to lower
 /// contributes to its dependents.
-pub const empty: Interface = .{ .values = &.{}, .types = &.{}, .ctors = &.{}, .symbols = &.{} };
+pub const empty: Interface = .{
+    .values = &.{},
+    .types = &.{},
+    .ctors = &.{},
+    .schemes = &.{},
+    .terms = .empty,
+    .extra = &.{},
+    .symbols = &.{},
+};
 
 pub fn deinit(iface: *Interface, gpa: Allocator) void {
     gpa.free(iface.values);
     gpa.free(iface.types);
     gpa.free(iface.ctors);
+    gpa.free(iface.schemes);
+    iface.terms.deinit(gpa);
+    gpa.free(iface.extra);
     gpa.free(iface.symbols);
     iface.* = undefined;
+}
+
+/// `extra[start..][0..len]`, the shape every range in `terms` uses. A
+/// malformed header yields an empty range instead of trapping: M4 maps this
+/// record from disk, and a record that does not describe itself must not be
+/// able to crash the compiler.
+pub fn range(iface: *const Interface, start: u32) []const u32 {
+    if (start >= iface.extra.len) return &.{};
+    const len = iface.extra[start];
+    const rest = iface.extra[start + 1 ..];
+    if (len > rest.len) return &.{};
+    return rest[0..len];
+}
+
+pub fn term(iface: *const Interface, index: TermIndex) Term {
+    return iface.terms.get(index.int());
+}
+
+pub fn scheme(iface: *const Interface, index: SchemeIndex) Scheme {
+    return iface.schemes[@intFromEnum(index)];
+}
+
+/// The `i`th quantified variable of `s`.
+pub fn quantified(iface: *const Interface, s: Scheme, i: u32) Quantified {
+    const at = s.quantified_start + i * Quantified.words;
+    return Quantified.unpack(iface.extra[at], iface.extra[at + 1]);
+}
+
+/// The scheme of `value`, or null when it has none — a declaration that
+/// failed to check, or a module that was never checked.
+pub fn valueScheme(iface: *const Interface, value: ValueIndex) ?Scheme {
+    const s = iface.values[@intFromEnum(value)].scheme;
+    if (s == .none) return null;
+    return iface.scheme(s);
 }
 
 pub fn symbol(iface: *const Interface, index: SymbolIndex) Symbol {
@@ -326,7 +460,7 @@ fn expectInterface(expected: []const u8, source: [:0]const u8) !void {
     const m = p.module("M").?;
     var out: std.Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
-    try dump.write(&out.writer, "M", &p.session.resolution.interfaces[m.int()], &p.session.interner);
+    try dump.write(&out.writer, testing.allocator, "M", &p.session.resolution.interfaces[m.int()], &p.session.checked.types, &p.session.interner);
     try testing.expectEqualStrings(expected, out.written());
 }
 

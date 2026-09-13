@@ -355,7 +355,10 @@ review, the currying decision is revisited before M3 (design §9.3).
   for 100k lines under 800 ms including core.
 - `--self-profile` gains `resolve`, `check` and `exhaustive` events per module and counters
   `unifications`, `generalisations`, `instantiations`, `obligations` — the numbers M4's
-  incrementality tests will assert did *not* move.
+  incrementality tests will assert did *not* move. `check` is split into `constrain` and
+  `solve` events, one pair per module, because the constraint/solve separation is the
+  architecture (research/02 §1) and a trace that could not tell the halves apart would hide
+  which one a regression is in.
 
 ## 10. Milestones
 
@@ -379,7 +382,7 @@ review, the currying decision is revisited before M3 (design §9.3).
 - An annotation's type variable may be marked for equality with the `equatable` prefix, in
   core only (Appendix B); user annotations obtain the mark by inference, never by spelling.
   The prefix marks the **variable at its first occurrence**, not an argument: `eq : equatable a
-  -> a -> a -> Bool` is a function of two arguments, and `pub equatable foreign type List a`
+  -> a -> Bool` is a function of two arguments, and `pub equatable foreign type List a`
   means "equatable when every parameter is". The parser accepts the prefix only before a type
   variable's first occurrence in an annotation, and only before `foreign type` in a declaration
   (`equatable_outside_core` elsewhere).
@@ -394,14 +397,14 @@ explicit-ordering replacements (`fast-compiler.md` §3.1):
   have one home); `type Bool = True | False`; `type Order = LT | EQ | GT`; `type Never =
   JustOneMore Never`; the arithmetic, comparison and logic foreigns with `number` annotations
   (`add : number -> number -> number`, `lt : number -> number -> Bool`, …); `eq : equatable a
-  -> a -> a -> Bool`; `append : appendable -> appendable -> appendable`; `compare : number ->
+  -> a -> Bool`; `append : appendable -> appendable -> appendable`; `compare : number ->
   number -> Order`; `max`, `min`, `clamp` on `number`; the numeric functions; `identity`,
   `always`, `never`, `not`, `xor`, `modBy`, `remainderBy`, `negate`, `abs`, `toFloat`, `round`,
   `floor`, `ceiling`, `truncate`, `isNaN`, `isInfinite`, `e`, `pi`, trigonometry.
 - `List`: `foreign type List a`; `foreign` only for `cons`, `head`/`tail`-free primitives and
   `foldr`/`foldl` if the representation needs it — everything else in beni; `sortWith : (a ->
   a -> Order) -> List a -> List a`, `sortBy : (a -> number) -> List a -> List a`, `sort :
-  List number -> List number`; `member : equatable a -> a -> List a -> Bool`.
+  List number -> List number`; `member : equatable a -> List a -> Bool`.
 - `Maybe`, `Result`: entirely beni.
 - `String`: `foreign` primitives (`length`, `slice`, `fromInt`, `toInt`, `fromFloat`,
   `toFloat`, `fromChar`, `toList`, `fromList`, `append`, `compare : String -> String ->

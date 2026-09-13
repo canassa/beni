@@ -165,7 +165,7 @@ reverse list =
 --|
 --|     member 9 [ 1, 2, 3 ] == False
 --|     member 4 [ 1, 4, 9 ] == True
-pub member : equatable a -> a -> List a -> Bool
+pub member : equatable a -> List a -> Bool
 member value xs =
     any (\x -> x == value) xs
 

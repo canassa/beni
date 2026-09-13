@@ -1,0 +1,10 @@
+-- check/args: `.name` is a function of ONE argument, and `List.foldl` needs
+-- one of two. A record accessor is the easiest one-argument function to
+-- reach for and the easiest place to make this mistake.
+pub type alias Person =
+    { name : String }
+
+
+pub joined : List Person -> String
+joined people =
+    List.foldl .name "" people

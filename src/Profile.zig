@@ -43,6 +43,12 @@ pub const Phase = enum {
     /// Serial for now (checker.md §4.4 allows DAG parallelism later):
     /// cross-module name resolution and interface building, in that order.
     resolve,
+    /// Type checking, per module (checker.md §9). `constrain` and `solve`
+    /// are the two halves of `check` so the constraint/solve split of
+    /// research/02 §1 is visible in a trace, not just in the source.
+    check,
+    constrain,
+    solve,
     render,
 };
 
@@ -65,6 +71,12 @@ pub const Counter = enum {
     modules,
     edges,
     interfaces,
+    /// The checker's work (checker.md §9). M4's incrementality tests assert
+    /// these did NOT move when only a body changed.
+    unifications,
+    generalisations,
+    instantiations,
+    obligations,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };
@@ -135,6 +147,34 @@ fn nowNs(profile: *const Profile) u64 {
 pub fn begin(profile: *const Profile) Token {
     if (!profile.enabled) return .{ .start_ns = 0 };
     return .{ .start_ns = profile.nowNs() };
+}
+
+/// How long ago `token` was taken, in nanoseconds. For a caller that sums
+/// several disjoint stretches into one event (the checker's `constrain` and
+/// `solve`, which interleave per binding group) and records the total with
+/// `record`.
+pub fn since(profile: *const Profile, token: Token) u64 {
+    if (!profile.enabled) return 0;
+    return profile.nowNs() - token.start_ns;
+}
+
+/// Record an event whose duration the caller measured itself. Same
+/// thread-confinement rule as `end`.
+pub fn record(profile: *Profile, tid: u32, phase: Phase, file: u32, bytes: u32, duration_ns: u64) void {
+    if (!profile.enabled) return;
+    const buffer = &profile.threads[tid];
+    if (buffer.len == buffer.events.len) {
+        buffer.dropped += 1;
+        return;
+    }
+    buffer.events[buffer.len] = .{
+        .phase = phase,
+        .file = file,
+        .bytes = bytes,
+        .start_ns = profile.nowNs() -| duration_ns,
+        .duration_ns = duration_ns,
+    };
+    buffer.len += 1;
 }
 
 /// Record the event started by `token` on thread `tid`. Only that thread may

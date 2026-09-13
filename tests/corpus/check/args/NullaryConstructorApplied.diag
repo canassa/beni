@@ -1,0 +1,1 @@
+[{"code":"not_a_function","severity":"error","span":{"file":"tests/corpus/check/args/NullaryConstructorApplied.beni","start":{"line":4,"col":5},"end":{"line":4,"col":12}},"title":"NOT A FUNCTION","message":"The `Nothing` constructor is not a function, but it was given 1 argument:\n\n    Maybe a\n\nAre there any missing commas? Or missing parentheses?\n"}]

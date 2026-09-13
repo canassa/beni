@@ -31,20 +31,36 @@ pub const Module = struct {
     rel_start: u32 = 0,
 };
 
+/// What the project runs. `resolve_phases` stops at names (M2a); the
+/// checker's tests pass `check_phases` and ask for the stores to be kept so
+/// they can look at the types afterwards.
+pub const Options = struct {
+    phases: Session.Phases = Session.resolve_phases,
+    keep_type_stores: bool = false,
+};
+
 session: Session,
 /// Everything the run wrote to stderr — empty unless a scenario wants the
 /// rendered prose.
 stderr: Io.Writer.Allocating,
 
 pub fn init(gpa: Allocator, modules: []const Module) !TestProject {
+    return initWith(gpa, modules, .{});
+}
+
+pub fn initWith(gpa: Allocator, modules: []const Module, options: Options) !TestProject {
     var p: TestProject = .{
-        .session = try Session.init(gpa, std.testing.io, .{ .jobs = 1, .diagnostics = .json }),
+        .session = try Session.init(gpa, std.testing.io, .{
+            .jobs = 1,
+            .diagnostics = .json,
+            .keep_type_stores = options.keep_type_stores,
+        }),
         .stderr = .init(gpa),
     };
     errdefer p.deinit();
     for (modules) |m| try p.session.store.addEmbedded(gpa, m.path, m.rel_start, m.package, m.source);
     // No argument paths: every file is one of the seeded ones.
-    _ = try p.session.run(&.{}, Session.resolve_phases, &p.stderr.writer);
+    _ = try p.session.run(&.{}, options.phases, &p.stderr.writer);
     return p;
 }
 

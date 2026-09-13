@@ -1,0 +1,9 @@
+-- check/bad: the function is buried inside a record, and the obligation
+-- walk finds it there too.
+pub type alias Handler =
+    { name : String, run : Int -> Int }
+
+
+pub same : Handler -> Handler -> Bool
+same a b =
+    a == b

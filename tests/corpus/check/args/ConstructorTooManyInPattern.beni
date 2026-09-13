@@ -1,0 +1,15 @@
+-- check/args: the mirror — a nullary constructor given an argument in a
+-- pattern.
+pub type Flag
+    = On
+    | Off
+
+
+pub toInt : Flag -> Int
+toInt f =
+    case f of
+        On x ->
+            x
+
+        Off ->
+            0

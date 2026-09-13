@@ -1,0 +1,1112 @@
+//! The checker's prose (docs/design/checker.md §8).
+//!
+//! Register and structure follow Elm's `Reporting/Error/Type.hs`: a title,
+//! what the compiler was looking at, the two types one under the other, and
+//! a hint where there is a known one. The hints are Elm's, minus the ones
+//! for features beni does not have: `number` against `String`, the missing
+//! `toFloat`, function equality (a compile error here rather than a runtime
+//! crash, `fast-compiler.md` §3.1 point 5), ordering text with
+//! `String.compare`, and record field typos by edit distance.
+//!
+//! **A message is built when it is reported, not later.** The types are
+//! rendered out of the store into a string here and now, because the store
+//! is released as soon as the module's interface has been extracted and a
+//! `Var` means nothing afterwards. That keeps the whole rendering
+//! subsystem — including fresh-variable naming — off the happy path, which
+//! is the property research/02 §6 says Elm's good messages cost nothing for.
+//!
+//! A diagnostic carries a Bir instruction as its region and nothing else; a
+//! line and column are looked up by `Session` at report time from the token
+//! that instruction came from (checker.md §6.1).
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const diagnostic = @import("diagnostic");
+const Bir = @import("../bir/Bir.zig");
+const InternPool = @import("../InternPool.zig");
+const Graph = @import("../resolve/Graph.zig");
+const Constrain = @import("Constrain.zig");
+const Render = @import("Render.zig");
+const TypeStore = @import("TypeStore.zig");
+const Types = @import("Types.zig");
+
+const Diagnostics = @This();
+
+pub const Var = TypeStore.Var;
+pub const Symbol = InternPool.Symbol;
+const Category = Constrain.Category;
+
+/// A checker diagnostic, message already rendered.
+pub const Item = struct {
+    code: diagnostic.Code,
+    module: Graph.Index,
+    /// The instruction to point at; `Session` turns it into a span.
+    region: Bir.Inst.Index,
+    /// Owned by the session allocator.
+    message: []const u8,
+};
+
+/// What a call's callee is, for the sentence that names it.
+pub const Callee = struct {
+    kind: Kind,
+    name: []const u8,
+
+    pub const Kind = enum { function, value, ctor, operator, anonymous };
+
+    pub const anonymous: Callee = .{ .kind = .anonymous, .name = "" };
+};
+
+/// A lambda argument that takes fewer parameters than its position wants.
+/// Not an error on its own — currying makes it legal — but when another
+/// argument of the same call fails, this is nearly always why.
+pub const SuspectLambda = struct {
+    /// 1-based argument position.
+    index: u32,
+    /// Parameters the lambda names.
+    written: u32,
+    /// Arrows the callee's parameter type has.
+    wanted: u32,
+};
+
+pub const Reporter = struct {
+    gpa: Allocator,
+    env: *Constrain.Env,
+    items: *std.ArrayList(Item),
+    /// Set by the solver for the duration of one `call_arg` report.
+    suspect_lambda: ?SuspectLambda = null,
+    /// A module in an import cycle reports nothing (checker.md §4.3), and
+    /// so does a declaration that has already failed: one mistake, one
+    /// message.
+    quiet: bool = false,
+
+    pub const Error = Allocator.Error;
+
+    fn cx(r: *const Reporter) Render.Context {
+        return .{ .store = r.env.store, .types = r.env.types, .interner = r.env.interner };
+    }
+
+    fn emit(r: *Reporter, code: diagnostic.Code, region: Bir.Inst.Index, out: *std.Io.Writer.Allocating) Error!void {
+        const message = try out.toOwnedSlice();
+        errdefer r.gpa.free(message);
+        try r.items.append(r.gpa, .{ .code = code, .module = r.env.module, .region = region, .message = message });
+    }
+
+    fn writer(r: *Reporter) std.Io.Writer.Allocating {
+        return .init(r.gpa);
+    }
+
+    // ---- The two-types layout -------------------------------------------
+
+    /// `type_mismatch` and its rigid twin: the sentence the category picks,
+    /// then the two types, then a hint if there is a known one.
+    pub fn mismatch(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        category: Category,
+        expected: Var,
+        actual: Var,
+        rigid: ?Rigid,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+
+        const lines = r.categoryLines(category, region);
+        w.print("{s}\n\n", .{lines.intro}) catch return error.OutOfMemory;
+        w.print("{s}\n\n    ", .{lines.found}) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+        w.print("\n\n{s}\n\n    ", .{lines.wanted}) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+        w.writeByte('\n') catch return error.OutOfMemory;
+
+        if (rigid) |rg| {
+            try r.rigidHint(w, &namer, rg);
+            try r.emit(.rigid_mismatch, region, &out);
+            return;
+        }
+        try r.typeHint(w, &namer, category, expected, actual);
+        try r.emit(.type_mismatch, region, &out);
+    }
+
+    /// Which side of a failed unification was the annotation's promise.
+    pub const Rigid = struct {
+        /// The rigid variable, for its name.
+        v: Var,
+        /// What the code wanted it to be instead.
+        against: Var,
+    };
+
+    fn rigidHint(r: *Reporter, w: *std.Io.Writer, namer: *Render.Namer, rg: Rigid) Error!void {
+        const root = r.env.store.find(rg.v);
+        const name: []const u8 = switch (r.env.store.content(root)) {
+            .rigid => |flags| if (flags.name.unwrap()) |s| r.env.interner.slice(s) else "a",
+            else => "a",
+        };
+        var buffer: std.Io.Writer.Allocating = .init(r.gpa);
+        defer buffer.deinit();
+        Render.writeVar(&buffer.writer, r.cx(), namer, rg.against, .top) catch return error.OutOfMemory;
+        w.print(
+            \\
+            \\Hint: your annotation uses the type variable `{s}`, which means ANY type can
+            \\flow through, but the code specifically wants `{s}`. Maybe the annotation
+            \\should be more specific, or maybe the code should be more general?
+            \\
+        , .{ name, buffer.written() }) catch return error.OutOfMemory;
+    }
+
+    const Lines = struct { intro: []const u8, found: []const u8, wanted: []const u8 };
+
+    /// What the compiler was looking at, in Elm's words. The strings are
+    /// built into `scratch` because several of them name something.
+    fn categoryLines(r: *Reporter, category: Category, region: Bir.Inst.Index) Lines {
+        const scratch = r.env.scratch;
+        switch (category.tag) {
+            .annotation => return .{
+                .intro = "Something is off with the body of this definition:",
+                .found = "The body is:",
+                .wanted = "But the type annotation says it should be:",
+            },
+            .let_annotation => return .{
+                .intro = "Something is off with the body of this `let` definition:",
+                .found = "The body is:",
+                .wanted = "But its type annotation says it should be:",
+            },
+            .call_arg => {
+                const callee = r.calleeOf(category.owner.unwrap() orelse region);
+                return .{
+                    .intro = std.fmt.allocPrint(scratch, "The {s} argument to {s} is not what I expect:", .{
+                        ordinal(scratch, category.index),
+                        calleeReference(scratch, callee),
+                    }) catch "This argument is not what I expect:",
+                    .found = "This argument is:",
+                    .wanted = std.fmt.allocPrint(scratch, "But {s} needs the {s} argument to be:", .{
+                        calleeReference(scratch, callee),
+                        ordinal(scratch, category.index),
+                    }) catch "But it needs it to be:",
+                };
+            },
+            .list_entry => return .{
+                .intro = std.fmt.allocPrint(scratch, "The {s} element of this list does not match all the previous elements:", .{ordinal(scratch, category.index)}) catch "This list is not consistent:",
+                .found = std.fmt.allocPrint(scratch, "The {s} element is:", .{ordinal(scratch, category.index)}) catch "This element is:",
+                .wanted = "But all the previous elements in the list are:",
+            },
+            .case_branch => return .{
+                .intro = std.fmt.allocPrint(scratch, "The {s} branch of this `case` does not match all the previous branches:", .{ordinal(scratch, category.index)}) catch "This `case` is not consistent:",
+                .found = std.fmt.allocPrint(scratch, "The {s} branch is:", .{ordinal(scratch, category.index)}) catch "This branch is:",
+                .wanted = "But all the previous branches result in:",
+            },
+            .case_pattern => return .{
+                .intro = "This pattern cannot match the value this `case` is looking at:",
+                .found = "The pattern matches values of type:",
+                .wanted = "But the value being matched is:",
+            },
+            .record_field => return .{
+                .intro = std.fmt.allocPrint(scratch, "The `{s}` field of this record is not what I expect:", .{r.fieldText(category.index)}) catch "This record field is not what I expect:",
+                .found = "The value is:",
+                .wanted = "But it needs to be:",
+            },
+            .record_update => return .{
+                .intro = if (category.index == 0)
+                    "This record does not have the fields this update is changing:"
+                else
+                    std.fmt.allocPrint(scratch, "The `{s}` field of this update is not what I expect:", .{r.fieldText(category.index)}) catch "This update is not what I expect:",
+                .found = if (category.index == 0) "The record is:" else "The new value is:",
+                .wanted = if (category.index == 0) "But the update needs it to have:" else "But the field holds:",
+            },
+            .field_access => return .{
+                .intro = std.fmt.allocPrint(scratch, "This is not a record with a `{s}` field:", .{r.fieldText(category.index)}) catch "This is not a record with that field:",
+                .found = "It is:",
+                .wanted = "But I need a record like:",
+            },
+            .interp_part => return .{
+                .intro = "This interpolated value cannot be put into a string:",
+                .found = "It is:",
+                .wanted = "But I need:",
+            },
+            .tuple_element => return .{
+                .intro = std.fmt.allocPrint(scratch, "The {s} element of this tuple is not what I expect:", .{ordinal(scratch, category.index)}) catch "This tuple element is not what I expect:",
+                .found = "It is:",
+                .wanted = "But I need:",
+            },
+            .try_value, .pattern, .ctor_arg, .destructure, .general => return .{
+                .intro = "Something is off here:",
+                .found = "This is:",
+                .wanted = "But I need:",
+            },
+        }
+    }
+
+    fn fieldText(r: *const Reporter, packed_symbol: u32) []const u8 {
+        if (packed_symbol == 0) return "";
+        return r.env.interner.slice(@enumFromInt(packed_symbol));
+    }
+
+    // ---- Hints -----------------------------------------------------------
+
+    /// The known hints of checker.md §8, chosen from the pair of types and
+    /// from what the compiler was looking at.
+    fn typeHint(r: *Reporter, w: *std.Io.Writer, namer: *Render.Namer, category: Category, expected: Var, actual: Var) Error!void {
+        _ = namer;
+        // Two functions of different arity where one was wanted is the
+        // missing-argument shape again, one level in: §8.3 catches it at a
+        // CALL, and this is the same mistake passed as an argument.
+        const wanted_arrows = r.arrowCount(expected);
+        const found_arrows = r.arrowCount(actual);
+        if (wanted_arrows > 0 and found_arrows > 0 and wanted_arrows != found_arrows) {
+            w.print(
+                \\
+                \\Hint: I need a function of {s}, and this one takes {s}.
+                \\
+            , .{ plural(r.env.scratch, wanted_arrows, "argument"), plural(r.env.scratch, found_arrows, "argument") }) catch return error.OutOfMemory;
+            try r.leftToRightHint(w, category);
+            return;
+        }
+        const wk = r.env.types.well_known;
+        const e = r.primitiveOf(expected);
+        const a = r.primitiveOf(actual);
+        const e_kind = r.kindOf(expected);
+        const a_kind = r.kindOf(actual);
+
+        // Int vs Float, in either direction: Elm's implicit-casts note.
+        if ((e == wk.int and a == wk.float) or (e == wk.float and a == wk.int)) {
+            w.writeAll(
+                \\
+                \\Hint: beni does not implicitly convert `Int` to `Float`. Use `toFloat` to go
+                \\one way and `round`, `floor`, `ceiling` or `truncate` to go the other.
+                \\
+            ) catch return error.OutOfMemory;
+            return;
+        }
+        // A number where a String was wanted, or the reverse.
+        if (e == wk.string and (a == wk.int or a_kind == .number)) {
+            w.writeAll(
+                \\
+                \\Hint: want to turn a number into a `String`? Use `String.fromInt` or
+                \\`String.fromFloat`.
+                \\
+            ) catch return error.OutOfMemory;
+            return;
+        }
+        if (a == wk.string and (e == wk.int or e_kind == .number)) {
+            w.writeAll(
+                \\
+                \\Hint: `<`, `>`, `<=`, `>=` and the arithmetic operators work on numbers only.
+                \\To order text use `String.compare`; to read a number out of text use
+                \\`String.toInt` or `String.toFloat`.
+                \\
+            ) catch return error.OutOfMemory;
+            return;
+        }
+        if (e == wk.bool or a == wk.bool) {
+            if (e != a and (e != .none or a != .none)) {
+                w.writeAll(
+                    \\
+                    \\Hint: beni has no "truthiness" — numbers, strings and lists are never
+                    \\automatically a `Bool`. Do the conversion explicitly.
+                    \\
+                ) catch return error.OutOfMemory;
+                return;
+            }
+        }
+        // A function where a value was wanted is nearly always a missing
+        // argument; §8.3 catches it at a call, and this is the rest.
+        if (r.isFunction(actual) and !r.isFunction(expected) and !r.isFlex(expected)) {
+            w.writeAll(
+                \\
+                \\Hint: this is a function, so it may be missing an argument.
+                \\
+            ) catch return error.OutOfMemory;
+        }
+        try r.leftToRightHint(w, category);
+    }
+
+    /// Elm's hint for an argument after the first: the types of a call's
+    /// arguments are decided left to right, so a mismatch on the third can
+    /// be the consequence of a mistake in the first.
+    fn leftToRightHint(r: *Reporter, w: *std.Io.Writer, category: Category) Error!void {
+        if (category.tag != .call_arg) return;
+        if (r.suspect_lambda) |suspect| {
+            if (suspect.index != category.index) {
+                const scratch = r.env.scratch;
+                w.print(
+                    \\
+                    \\Hint: the {s} argument is a function of {s}, and this call needs one of
+                    \\{s} there. That is the likelier mistake: I work out a call's argument
+                    \\types from left to right, so a function that is too small in an earlier
+                    \\position shows up as a mismatch in a later one.
+                    \\
+                , .{
+                    ordinal(scratch, suspect.index),
+                    plural(scratch, suspect.written, "argument"),
+                    plural(scratch, suspect.wanted, "argument"),
+                }) catch return error.OutOfMemory;
+                return;
+            }
+        }
+        if (category.index <= 1) return;
+        w.writeAll(
+            \\
+            \\Hint: I work out a call's argument types from left to right, and once an
+            \\argument fits I move on. So the mistake may be in one of the earlier
+            \\arguments rather than in this one.
+            \\
+        ) catch return error.OutOfMemory;
+    }
+
+    /// How many arrows `v` has at the top level, following aliases.
+    fn arrowCount(r: *const Reporter, v: Var) u32 {
+        var count: u32 = 0;
+        var current = v;
+        while (count < 64) {
+            const _root, const c = r.env.store.resolved(current);
+            _ = _root;
+            const f = switch (c) {
+                .structure => |flat| switch (flat) {
+                    .func => |func| func,
+                    else => return count,
+                },
+                else => return count,
+            };
+            count += 1;
+            current = f.result;
+        }
+        return count;
+    }
+
+    fn primitiveOf(r: *const Reporter, v: Var) Types.TypeId {
+        const _root, const c = r.env.store.resolved(v);
+        _ = _root;
+        return switch (c) {
+            .structure => |s| switch (s) {
+                .app => |a| if (a.args.len == 0) a.type else .none,
+                else => .none,
+            },
+            else => .none,
+        };
+    }
+
+    fn kindOf(r: *const Reporter, v: Var) TypeStore.Kind {
+        const _root, const c = r.env.store.resolved(v);
+        _ = _root;
+        return switch (c) {
+            .flex, .rigid => |flags| flags.kind,
+            else => .any,
+        };
+    }
+
+    fn isFunction(r: *const Reporter, v: Var) bool {
+        const _root, const c = r.env.store.resolved(v);
+        _ = _root;
+        return switch (c) {
+            .structure => |s| s == .func,
+            else => false,
+        };
+    }
+
+    fn isFlex(r: *const Reporter, v: Var) bool {
+        const _root, const c = r.env.store.resolved(v);
+        _ = _root;
+        return c == .flex;
+    }
+
+    // ---- Arity (checker.md §8.3) ----------------------------------------
+
+    /// `too_few_args`: the callee has more arrows than the call supplied and
+    /// the result was wanted as something that is not a function. THE
+    /// load-bearing diagnostic — `fast-compiler.md` §9.3 keeps currying on
+    /// the condition that this reads right.
+    pub fn tooFewArgs(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        callee: Callee,
+        arity: u32,
+        given: u32,
+        missing: []const Var,
+        result: Var,
+        expected: Var,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        const scratch = r.env.scratch;
+
+        w.print("{s} expects {s}, but it got only {d}.\n\n", .{
+            calleeSubject(scratch, asFunction(callee), true),
+            plural(scratch, arity, "argument"),
+            given,
+        }) catch return error.OutOfMemory;
+        w.print("The missing {s}:\n\n", .{
+            if (missing.len == 1) "argument is" else "arguments are",
+        }) catch return error.OutOfMemory;
+        for (missing) |m| {
+            w.writeAll("    ") catch return error.OutOfMemory;
+            Render.writeVar(w, r.cx(), &namer, m, .top) catch return error.OutOfMemory;
+            w.writeByte('\n') catch return error.OutOfMemory;
+        }
+        w.writeAll("\nSo this call produces a function:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, result, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nBut I needed a value of type:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+        w.writeAll(
+            \\
+            \\
+            \\Hint: a call with too few arguments is a function, not a value. Give it the
+            \\remaining ones, or check whether an argument was dropped by mistake.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emit(.too_few_args, region, &out);
+    }
+
+    /// `too_many_args`. Deliberately Elm's short form: the types of the
+    /// EXTRA arguments say nothing useful — a call's arguments are
+    /// constrained after the call itself, so at this point they are still
+    /// variables — and the count plus the callee's name is the whole
+    /// message.
+    pub fn tooManyArgs(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        callee: Callee,
+        arity: u32,
+        given: u32,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        const scratch = r.env.scratch;
+
+        w.print("{s} expects {s}, but it got {d}.\n\n", .{
+            calleeSubject(scratch, asFunction(callee), true),
+            plural(scratch, arity, "argument"),
+            given,
+        }) catch return error.OutOfMemory;
+        w.writeAll("Are there any missing commas? Or missing parentheses?\n") catch return error.OutOfMemory;
+        try r.emit(.too_many_args, region, &out);
+    }
+
+    pub fn notAFunction(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        callee: Callee,
+        given: u32,
+        actual: Var,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        const scratch = r.env.scratch;
+
+        // Never "the `x` function is not a function": whatever the Bir
+        // calls it, in THIS message it is a value.
+        const as_value: Callee = .{
+            .kind = if (callee.kind == .function) .value else callee.kind,
+            .name = callee.name,
+        };
+        w.print("{s} is not a function, but it was given {s}:\n\n    ", .{
+            calleeSubject(scratch, as_value, true),
+            plural(scratch, given, "argument"),
+        }) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nAre there any missing commas? Or missing parentheses?\n") catch return error.OutOfMemory;
+        try r.emit(.not_a_function, region, &out);
+    }
+
+    /// The pattern twin of the two arity messages. A pattern does not
+    /// "produce a function", so it gets its own sentence rather than a
+    /// confusing reuse of the call one.
+    pub fn ctorPatternArity(r: *Reporter, region: Bir.Inst.Index, callee: Callee, arity: u32, given: u32) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        const scratch = r.env.scratch;
+        w.print("{s} takes {s}, but this pattern gives it {d}.\n\n", .{
+            calleeSubject(scratch, callee, true),
+            plural(scratch, arity, "argument"),
+            given,
+        }) catch return error.OutOfMemory;
+        w.writeAll("Hint: a constructor pattern has to name every argument the constructor takes.\n") catch return error.OutOfMemory;
+        try r.emit(if (given < arity) .too_few_args else .too_many_args, region, &out);
+    }
+
+    // ---- Kinds, cycles, obligations --------------------------------------
+
+    pub fn kindMismatch(r: *Reporter, region: Bir.Inst.Index, left: TypeStore.Kind, right: TypeStore.Kind) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        w.print(
+            \\This value has to be `{s}` and `{s}` at the same time, and nothing is both.
+            \\
+            \\`number` is `Int` or `Float`; `appendable` is `String` or `List a`.
+            \\
+        , .{ left.text(), right.text() }) catch return error.OutOfMemory;
+        try r.emit(.kind_mismatch, region, &out);
+    }
+
+    /// A kind that met a structure it is not a member of: `appendable`
+    /// against `Int`, `number` against `String`.
+    pub fn kindNotSatisfied(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        category: Category,
+        kind: TypeStore.Kind,
+        expected: Var,
+        actual: Var,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        // The same opening sentence and the same two-types layout an
+        // ordinary mismatch gets — "the 2nd branch of this `case`" must not
+        // be lost just because the reason turned out to be a kind, and the
+        // reader still needs to see which side is which.
+        const lines = r.categoryLines(category, region);
+        w.print("{s}\n\n{s}\n\n    ", .{ lines.intro, lines.found }) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+        w.print("\n\n{s}\n\n    ", .{lines.wanted}) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+        switch (kind) {
+            .number => w.writeAll(
+                \\
+                \\
+                \\One of those has to be a number — an `Int` or a `Float` — and it is not.
+                \\
+                \\Hint: `+`, `-`, `*`, `<`, `>`, `<=` and `>=` work on numbers only. To join
+                \\text use `++`, and to order it use `String.compare`.
+                \\
+            ) catch return error.OutOfMemory,
+            .appendable => w.writeAll(
+                \\
+                \\
+                \\One of those has to be appendable — a `String` or a `List a` — and it is
+                \\not.
+                \\
+                \\Hint: `++` joins two strings or two lists. To add numbers use `+`.
+                \\
+            ) catch return error.OutOfMemory,
+            .any => w.writeByte('\n') catch return error.OutOfMemory,
+        }
+        try r.emit(.kind_mismatch, region, &out);
+    }
+
+    pub fn infiniteType(r: *Reporter, region: Bir.Inst.Index, name: Symbol.Optional) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        if (name.unwrap()) |s| {
+            w.print("I am inferring a weird self-referential type for `{s}`:\n\n", .{r.env.interner.slice(s)}) catch return error.OutOfMemory;
+        } else {
+            w.writeAll("I am inferring a weird self-referential type here:\n\n") catch return error.OutOfMemory;
+        }
+        w.writeAll(
+            \\Here is my best effort at writing it down:
+            \\
+            \\    a  =  … a …
+            \\
+            \\Hint: the type would go on forever, so I gave up. This usually means a
+            \\definition is missing an argument, or is being used with one argument too
+            \\many, somewhere inside itself.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emit(.infinite_type, region, &out);
+    }
+
+    pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        w.writeAll("I cannot compare these values with `==`:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
+        switch (reason) {
+            .function => w.writeAll(
+                \\
+                \\
+                \\There is a function in there, and comparing functions is not decidable:
+                \\deciding whether two functions agree on every input is the halting problem.
+                \\
+                \\Hint: compare the values the functions produce, or store something you can
+                \\compare — a name, an id — next to the function.
+                \\
+            ) catch return error.OutOfMemory,
+            .opaque_type => w.writeAll(
+                \\
+                \\
+                \\That type does not support `==`.
+                \\
+                \\Hint: a `type` is comparable exactly when everything it can hold is, so a
+                \\function anywhere inside it rules the whole type out. A `foreign type` is
+                \\comparable only when it is declared `equatable`.
+                \\
+            ) catch return error.OutOfMemory,
+            .rigid_variable => w.writeAll(
+                \\
+                \\
+                \\The annotation says ANY type can flow through here, and not every type can
+                \\be compared — a function cannot.
+                \\
+                \\Hint: make the annotation concrete, or take an equality function as an
+                \\argument instead of using `==`.
+                \\
+            ) catch return error.OutOfMemory,
+        }
+        try r.emit(.not_equatable, region, &out);
+    }
+
+    pub const EquatableReason = enum { function, opaque_type, rigid_variable };
+
+    pub fn notInterpolatable(r: *Reporter, region: Bir.Inst.Index, v: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        w.writeAll("I cannot put this value into a string:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\n`${…}` takes a `String`, `Int`, `Float`, `Bool` or `Char`.\n") catch return error.OutOfMemory;
+        if (r.isFunction(v)) {
+            // A function in an interpolation is a missing argument nine
+            // times out of ten, and telling someone who wrote
+            // `${String.fromInt}` to "use String.fromInt" is no help at all.
+            w.writeAll(
+                \\
+                \\Hint: this is a FUNCTION, so it is probably missing an argument — did you
+                \\mean to apply it to something?
+                \\
+            ) catch return error.OutOfMemory;
+        } else {
+            w.writeAll(
+                \\
+                \\Hint: convert it first — `String.fromInt`, `String.fromFloat`, or a function
+                \\of your own that produces a `String`.
+                \\
+            ) catch return error.OutOfMemory;
+        }
+        try r.emit(.not_interpolatable, region, &out);
+    }
+
+    pub fn ambiguousInterpolation(r: *Reporter, region: Bir.Inst.Index) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        out.writer.writeAll(
+            \\I cannot tell what type this interpolated value has.
+            \\
+            \\`${…}` only accepts `String`, `Int`, `Float`, `Bool` and `Char`, and I have to
+            \\know which one it is here — the choice cannot be left to the caller.
+            \\
+            \\Hint: add a type annotation that pins it down.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emit(.ambiguous_interpolation, region, &out);
+    }
+
+    pub fn ambiguousTuple(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        out.writer.print(
+            \\I cannot tell what this `.{d}` is indexing into.
+            \\
+            \\A tuple index needs a tuple whose size I already know, and a type variable
+            \\could still turn out to be anything.
+            \\
+            \\Hint: add a type annotation that says which tuple this is.
+            \\
+        , .{index}) catch return error.OutOfMemory;
+        try r.emit(.ambiguous_tuple, region, &out);
+    }
+
+    pub fn tupleIndexOutOfRange(r: *Reporter, region: Bir.Inst.Index, index: u32, arity: u32, v: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        w.print("This tuple has {d} elements, so there is no `.{d}`:\n\n    ", .{ arity, index }) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
+        if (arity == 0) {
+            w.writeAll("\n\nIt has no elements to index at all.\n") catch return error.OutOfMemory;
+        } else {
+            w.print("\n\nThe elements are `.0` through `.{d}`.\n", .{arity - 1}) catch return error.OutOfMemory;
+        }
+        try r.emit(.tuple_index_out_of_range, region, &out);
+    }
+
+    pub fn notATuple(r: *Reporter, region: Bir.Inst.Index, index: u32, v: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        w.print("I cannot take `.{d}` of this, because it is not a tuple:\n\n    ", .{index}) catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nHint: `.0`, `.1`, … work on tuples. Records are indexed by field name.\n") catch return error.OutOfMemory;
+        try r.emit(.not_a_tuple, region, &out);
+    }
+
+    pub fn tryShape(r: *Reporter, region: Bir.Inst.Index, scrutinee: Var, enclosing: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        w.writeAll("`?` needs a `Result` or a `Maybe`, and this is neither:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, scrutinee, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nThe enclosing definition returns:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, enclosing, .top) catch return error.OutOfMemory;
+        w.writeAll(
+            \\
+            \\
+            \\Hint: `e?` unwraps an `Ok`/`Just` and returns the `Err`/`Nothing` from the
+            \\enclosing definition, so both have to be the same shape. There is no
+            \\conversion between `Result` and `Maybe`.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emit(.try_shape, region, &out);
+    }
+
+    // ---- Records ---------------------------------------------------------
+
+    pub fn missingField(r: *Reporter, region: Bir.Inst.Index, missing: []const Symbol, actual: Var, expected: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        if (missing.len == 1) {
+            w.print("This record does not have a `{s}` field:\n\n    ", .{r.env.interner.slice(missing[0])}) catch return error.OutOfMemory;
+        } else {
+            w.writeAll("This record is missing some fields:\n\n    ") catch return error.OutOfMemory;
+        }
+        Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nBut I need a record like:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+        w.writeByte('\n') catch return error.OutOfMemory;
+        if (missing.len == 1) {
+            if (r.nearestField(missing[0], actual)) |near| {
+                w.print(
+                    \\
+                    \\Hint: this looks like a typo. Maybe `{s}` should be `{s}`?
+                    \\
+                , .{ r.env.interner.slice(missing[0]), r.env.interner.slice(near) }) catch return error.OutOfMemory;
+            }
+        } else {
+            w.writeAll("\nHint: the fields I could not find are:\n") catch return error.OutOfMemory;
+            for (missing) |m| w.print("    {s}\n", .{r.env.interner.slice(m)}) catch return error.OutOfMemory;
+        }
+        try r.emit(.missing_field, region, &out);
+    }
+
+    pub fn unknownField(r: *Reporter, region: Bir.Inst.Index, extra: []const Symbol, actual: Var, expected: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        if (extra.len == 1) {
+            w.print("This record has a `{s}` field I did not expect:\n\n    ", .{r.env.interner.slice(extra[0])}) catch return error.OutOfMemory;
+        } else {
+            w.writeAll("This record has fields I did not expect:\n\n    ") catch return error.OutOfMemory;
+        }
+        Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nBut I need a record like:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+        w.writeByte('\n') catch return error.OutOfMemory;
+        if (extra.len == 1) {
+            if (r.nearestField(extra[0], expected)) |near| {
+                w.print(
+                    \\
+                    \\Hint: this looks like a typo. Maybe `{s}` should be `{s}`?
+                    \\
+                , .{ r.env.interner.slice(extra[0]), r.env.interner.slice(near) }) catch return error.OutOfMemory;
+            }
+        }
+        try r.emit(.unknown_field, region, &out);
+    }
+
+    pub fn recordNotClosed(r: *Reporter, region: Bir.Inst.Index, actual: Var, expected: Var) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        var namer: Render.Namer = .init(r.gpa);
+        defer namer.deinit();
+        const w = &out.writer;
+        w.writeAll("This has to work with ANY record that has these fields:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
+        w.writeAll("\n\nBut the value here is one specific record:\n\n    ") catch return error.OutOfMemory;
+        Render.writeVar(w, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+        w.writeAll(
+            \\
+            \\
+            \\Hint: `{ r | … }` means "any record with at least these fields", so a
+            \\caller may pass one with more. A record literal and a record alias are
+            \\closed, so neither can stand in for one.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emit(.record_not_closed, region, &out);
+    }
+
+    /// The field of `v`'s record type closest to `name` by edit distance,
+    /// for the typo hint of §8.
+    fn nearestField(r: *Reporter, name: Symbol, v: Var) ?Symbol {
+        const target = r.env.interner.slice(name);
+        var best: ?Symbol = null;
+        var best_distance: usize = std.math.maxInt(usize);
+        var tail = v;
+        var guard: u32 = 0;
+        while (guard < 64) : (guard += 1) {
+            const _root, const c = r.env.store.resolved(tail);
+            _ = _root;
+            const record = switch (c) {
+                .structure => |s| switch (s) {
+                    .record => |rec| rec,
+                    else => break,
+                },
+                else => break,
+            };
+            for (r.env.store.fields(record.fields)) |f| {
+                const candidate = r.env.interner.slice(f.name);
+                const d = editDistance(r.env.scratch, target, candidate) catch continue;
+                if (d < best_distance) {
+                    best_distance = d;
+                    best = f.name;
+                }
+            }
+            tail = record.ext;
+        }
+        // A suggestion is only useful when it is close AND when the name is
+        // long enough for closeness to mean anything: every one-letter name
+        // is one edit from every other, so `z` must not be "a typo for `x`".
+        if (target.len < 3) return null;
+        const limit = @max(target.len / 3, 1) + 1;
+        if (best_distance > limit) return null;
+        return best;
+    }
+
+    // ---- Callees ---------------------------------------------------------
+
+    /// What the callee of the call at `region` is, for the sentence that
+    /// names it. Read straight off the Bir: after resolution a reference is
+    /// a pair of dense indices, so this is two array lookups.
+    pub fn calleeOf(r: *const Reporter, region: Bir.Inst.Index) Callee {
+        const bir = r.env.bir;
+        if (region.int() >= bir.insts.len) return .anonymous;
+        const tag = bir.instTag(region);
+        const reference: Bir.Inst.Index = switch (tag) {
+            .call, .pat_ctor => @enumFromInt(bir.instData(region).lhs),
+            else => region,
+        };
+        return r.describe(reference);
+    }
+
+    fn describe(r: *const Reporter, reference: Bir.Inst.Index) Callee {
+        const bir = r.env.bir;
+        if (reference.int() >= bir.insts.len) return .anonymous;
+        const data = bir.instData(reference);
+        switch (bir.instTag(reference)) {
+            .local => {
+                // A local index is relative to the declaration being
+                // checked; `locals_base` is where that declaration's run
+                // starts in the module-wide table.
+                const at = r.env.locals_base + data.lhs;
+                if (data.lhs >= r.env.local_var.len or at >= bir.locals.len) return .anonymous;
+                const name = bir.locals[at].name.unwrap() orelse return .anonymous;
+                return .{ .kind = .value, .name = r.env.interner.slice(bir.symbols[name]) };
+            },
+            .top => {
+                if (data.lhs >= bir.decls.len) return .anonymous;
+                return .{ .kind = .function, .name = r.env.interner.slice(bir.symbol(bir.decls[data.lhs].name)) };
+            },
+            .ctor => {
+                if (data.lhs >= bir.ctors.len) return .anonymous;
+                return .{ .kind = .ctor, .name = r.env.interner.slice(bir.symbol(bir.ctors[data.lhs].name)) };
+            },
+            .ext_value => {
+                if (data.lhs >= r.env.interfaces.len) return .anonymous;
+                const iface = &r.env.interfaces[data.lhs];
+                if (data.rhs >= iface.values.len) return .anonymous;
+                const symbol = iface.valueName(@enumFromInt(data.rhs));
+                // Every operator of language.md §6.5 desugars to a call of
+                // a core function nobody writes by hand, so naming the
+                // function would name something the author never typed.
+                if (operatorSpelling(symbol)) |op| return .{ .kind = .operator, .name = op };
+                return .{ .kind = .function, .name = r.env.interner.slice(symbol) };
+            },
+            .ext_ctor => {
+                if (data.lhs >= r.env.interfaces.len) return .anonymous;
+                const iface = &r.env.interfaces[data.lhs];
+                if (data.rhs >= iface.ctors.len) return .anonymous;
+                return .{ .kind = .ctor, .name = r.env.interner.slice(iface.ctorName(@enumFromInt(data.rhs))) };
+            },
+            // `s.retries 2`: the field is what the author wrote, so it is
+            // what the message names.
+            .field_access => return .{ .kind = .value, .name = r.env.interner.slice(bir.symbols[data.rhs]) },
+            else => return .anonymous,
+        }
+    }
+};
+
+/// The operator a core function is the desugaring of (language.md §6.5), or
+/// null for an ordinary name. The symbols are the well-known prefix of the
+/// intern pool, so this is a switch on an integer.
+pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
+    const wk = InternPool.WellKnown;
+    const pairs = .{
+        .{ wk.add, "+" },       .{ wk.sub, "-" },       .{ wk.mul, "*" },
+        .{ wk.fdiv, "/" },      .{ wk.idiv, "//" },     .{ wk.pow, "^" },
+        .{ wk.append, "++" },   .{ wk.cons, "::" },     .{ wk.eq, "==" },
+        .{ wk.neq, "/=" },      .{ wk.lt, "<" },        .{ wk.gt, ">" },
+        .{ wk.le, "<=" },       .{ wk.ge, ">=" },       .{ wk.@"and", "&&" },
+        .{ wk.@"or", "||" },    .{ wk.apL, "<|" },      .{ wk.apR, "|>" },
+        .{ wk.composeL, "<<" }, .{ wk.composeR, ">>" },
+    };
+    inline for (pairs) |pair| {
+        if (symbol == pair[0].symbol()) return pair[1];
+    }
+    return null;
+}
+
+/// Whatever the Bir calls it, something that takes arguments is a function
+/// in an arity message: "the `scale` value expects 2 arguments" reads wrong
+/// for a `let`-bound helper.
+fn asFunction(callee: Callee) Callee {
+    return .{ .kind = if (callee.kind == .value) .function else callee.kind, .name = callee.name };
+}
+
+/// "The `f` function", "The (+) operator", "This value".
+fn calleeSubject(scratch: Allocator, callee: Callee, comptime capital: bool) []const u8 {
+    const the = if (capital) "The" else "the";
+    return switch (callee.kind) {
+        .anonymous => if (capital) "This value" else "this value",
+        .function => std.fmt.allocPrint(scratch, "{s} `{s}` function", .{ the, callee.name }) catch "This function",
+        .value => std.fmt.allocPrint(scratch, "{s} `{s}` value", .{ the, callee.name }) catch "This value",
+        .ctor => std.fmt.allocPrint(scratch, "{s} `{s}` constructor", .{ the, callee.name }) catch "This constructor",
+        .operator => std.fmt.allocPrint(scratch, "{s} ({s}) operator", .{ the, callee.name }) catch "This operator",
+    };
+}
+
+/// "`f`", "(+)", "this function" — the short form, for mid-sentence use.
+fn calleeReference(scratch: Allocator, callee: Callee) []const u8 {
+    return switch (callee.kind) {
+        .anonymous => "this function",
+        .operator => std.fmt.allocPrint(scratch, "({s})", .{callee.name}) catch "this operator",
+        else => std.fmt.allocPrint(scratch, "`{s}`", .{callee.name}) catch "this function",
+    };
+}
+
+fn plural(scratch: Allocator, n: u32, comptime noun: []const u8) []const u8 {
+    if (n == 1) return "1 " ++ noun;
+    return std.fmt.allocPrint(scratch, "{d} " ++ noun ++ "s", .{n}) catch "several " ++ noun ++ "s";
+}
+
+/// "1st", "2nd", "3rd", "4th", … — Elm's `D.ordinal`.
+fn ordinal(scratch: Allocator, n: u32) []const u8 {
+    const suffix: []const u8 = switch (n % 100) {
+        11, 12, 13 => "th",
+        else => switch (n % 10) {
+            1 => "st",
+            2 => "nd",
+            3 => "rd",
+            else => "th",
+        },
+    };
+    return std.fmt.allocPrint(scratch, "{d}{s}", .{ n, suffix }) catch "next";
+}
+
+/// Levenshtein distance, for the field-typo hint. Two rows rather than a
+/// matrix: field names are short and this runs only on the error path.
+fn editDistance(scratch: Allocator, a: []const u8, b: []const u8) Allocator.Error!usize {
+    if (a.len == 0) return b.len;
+    if (b.len == 0) return a.len;
+    const previous = try scratch.alloc(usize, b.len + 1);
+    defer scratch.free(previous);
+    const current = try scratch.alloc(usize, b.len + 1);
+    defer scratch.free(current);
+    for (previous, 0..) |*p, i| p.* = i;
+    for (a, 0..) |ca, i| {
+        current[0] = i + 1;
+        for (b, 0..) |cb, j| {
+            const cost: usize = if (ca == cb) 0 else 1;
+            current[j + 1] = @min(@min(current[j] + 1, previous[j + 1] + 1), previous[j] + cost);
+        }
+        @memcpy(previous, current);
+    }
+    return previous[b.len];
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "ordinals follow English, teens included" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try testing.expectEqualStrings("1st", ordinal(a, 1));
+    try testing.expectEqualStrings("2nd", ordinal(a, 2));
+    try testing.expectEqualStrings("3rd", ordinal(a, 3));
+    try testing.expectEqualStrings("4th", ordinal(a, 4));
+    try testing.expectEqualStrings("11th", ordinal(a, 11));
+    try testing.expectEqualStrings("12th", ordinal(a, 12));
+    try testing.expectEqualStrings("13th", ordinal(a, 13));
+    try testing.expectEqualStrings("21st", ordinal(a, 21));
+    try testing.expectEqualStrings("22nd", ordinal(a, 22));
+    try testing.expectEqualStrings("101st", ordinal(a, 101));
+}
+
+test "plural says 1 argument and 2 arguments" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try testing.expectEqualStrings("1 argument", plural(a, 1, "argument"));
+    try testing.expectEqualStrings("2 arguments", plural(a, 2, "argument"));
+    try testing.expectEqualStrings("0 arguments", plural(a, 0, "argument"));
+}
+
+test "edit distance is what the field-typo hint needs" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try testing.expectEqual(@as(usize, 0), try editDistance(a, "name", "name"));
+    try testing.expectEqual(@as(usize, 1), try editDistance(a, "nme", "name"));
+    try testing.expectEqual(@as(usize, 1), try editDistance(a, "namee", "name"));
+    try testing.expectEqual(@as(usize, 1), try editDistance(a, "nane", "name"));
+    try testing.expectEqual(@as(usize, 4), try editDistance(a, "", "name"));
+    try testing.expectEqual(@as(usize, 5), try editDistance(a, "count", ""));
+}
+
+test "operator spellings cover the desugarings of language.md §6.5" {
+    try testing.expectEqualStrings("+", operatorSpelling(InternPool.WellKnown.add.symbol()).?);
+    try testing.expectEqualStrings("==", operatorSpelling(InternPool.WellKnown.eq.symbol()).?);
+    try testing.expectEqualStrings("::", operatorSpelling(InternPool.WellKnown.cons.symbol()).?);
+    try testing.expectEqualStrings(">>", operatorSpelling(InternPool.WellKnown.composeR.symbol()).?);
+    // A prelude value the author DOES write by hand keeps its own name.
+    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.negate.symbol()));
+    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.max.symbol()));
+}

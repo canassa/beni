@@ -1,0 +1,5 @@
+-- check/bad: a self-application, which needs a type that mentions itself.
+-- The occurs check is deferred to the end of the binding group, so the
+-- report lands on the definition rather than inside a unification.
+apply f =
+    f f

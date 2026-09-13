@@ -1,0 +1,5 @@
+-- check/bad: the `?` unwraps a `Maybe` and the enclosing definition returns
+-- a `Result`. There is no conversion between the two (language.md §6.6).
+pub head : List Int -> Result String Int
+head xs =
+    Ok (List.head xs? + 1)

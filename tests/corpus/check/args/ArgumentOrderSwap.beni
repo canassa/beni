@@ -1,0 +1,6 @@
+-- check/args: the arguments to `List.foldl` are in the wrong order. Nothing
+-- about the TYPES is obviously wrong at a glance — the mistake only shows
+-- up as the wrong thing arriving in the first position.
+pub concatAll : List String -> String
+concatAll parts =
+    List.foldl "" (\part acc -> acc ++ part) parts

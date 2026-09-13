@@ -1,0 +1,4 @@
+-- check/args: a tuple whose second element forgot its argument.
+pub pair : ( Int, Int )
+pair =
+    ( 1, max 2 )

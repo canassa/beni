@@ -1,0 +1,8 @@
+-- check/args: a record field holding a partial application.
+pub type alias Counter =
+    { value : Int }
+
+
+pub start : Counter
+start =
+    { value = max 0 }

@@ -1,0 +1,4 @@
+-- check/bad: `${…}` takes one of five primitives, and a list is not one.
+pub show : List Int -> String
+show xs =
+    "items: ${xs}"

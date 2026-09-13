@@ -1,0 +1,1 @@
+[{"code":"not_a_function","severity":"error","span":{"file":"tests/corpus/check/args/AppliedRecordField.beni","start":{"line":9,"col":6},"end":{"line":9,"col":14}},"title":"NOT A FUNCTION","message":"The `retries` value is not a function, but it was given 1 argument:\n\n    Int\n\nAre there any missing commas? Or missing parentheses?\n"}]

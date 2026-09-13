@@ -1,0 +1,6 @@
+-- check/bad: an annotation that says ANY type flows through, and a body
+-- that compares two of them. Only core may spell the `equatable` marker, so
+-- the fix is a concrete annotation or an equality function passed in.
+pub contains : a -> List a -> Bool
+contains needle xs =
+    List.any (\x -> x == needle) xs

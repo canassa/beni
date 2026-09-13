@@ -1,0 +1,9 @@
+-- check/bad: accessing a field that does not exist, one letter away from
+-- one that does.
+pub type alias Person =
+    { name : String, age : Int }
+
+
+pub who : Person -> String
+who p =
+    p.nme

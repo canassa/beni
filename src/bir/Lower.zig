@@ -1145,7 +1145,7 @@ fn lowerTypeVar(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 /// any (checker.md Appendix A). The marker is legal only in the core
 /// package (`equatable_outside_core`) and only on the variable's FIRST
 /// occurrence in this type expression (`equatable_not_first_occurrence`) —
-/// `eq : equatable a -> a -> a -> Bool` marks the variable once and is a
+/// `eq : equatable a -> a -> Bool` marks the variable once and is a
 /// function of two arguments, so a second marker, or one on a later
 /// occurrence, is a mistake about what the prefix means rather than a
 /// harmless repetition.

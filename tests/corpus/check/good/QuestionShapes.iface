@@ -1,0 +1,3 @@
+module QuestionShapes
+  value firstTwo : List Int -> Maybe Int
+  value parseBoth : String -> String -> Result String Int

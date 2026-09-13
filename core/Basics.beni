@@ -138,13 +138,13 @@ pub foreign pow : number -> number -> number
 --|
 --| The `equatable` marker rules out the one case that cannot be decided:
 --| comparing functions is a compile error, not a crash. What `==` desugars to.
-pub foreign eq : equatable a -> a -> a -> Bool
+pub foreign eq : equatable a -> a -> Bool
 
 
 --| Check if two values are not equal. What `/=` desugars to.
 --|
 --|     neq 1 2 == True
-pub foreign neq : equatable a -> a -> a -> Bool
+pub foreign neq : equatable a -> a -> Bool
 
 
 --| Check if the first number is less than the second. What `<` desugars to.

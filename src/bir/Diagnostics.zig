@@ -105,7 +105,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\This type variable is already marked `equatable`.
             \\
             \\The prefix marks the VARIABLE, at its first occurrence, not the argument it
-            \\stands in front of: `eq : equatable a -> a -> a -> Bool` is a function of two
+            \\stands in front of: `eq : equatable a -> a -> Bool` is a function of two
             \\arguments whose type is one marked `a`. Write the marker once.
         ),
         .unbound_variable => try w.print(
@@ -251,7 +251,7 @@ test "message: the payload-free codes" {
         "equatable",
     );
     try expectMessage(
-        "This type variable is already marked `equatable`.\n\nThe prefix marks the VARIABLE, at its first occurrence, not the argument it\nstands in front of: `eq : equatable a -> a -> a -> Bool` is a function of two\narguments whose type is one marked `a`. Write the marker once.",
+        "This type variable is already marked `equatable`.\n\nThe prefix marks the VARIABLE, at its first occurrence, not the argument it\nstands in front of: `eq : equatable a -> a -> Bool` is a function of two\narguments whose type is one marked `a`. Write the marker once.",
         .{ .code = .equatable_not_first_occurrence, .start = 0, .end = 9 },
         "equatable",
     );

@@ -348,6 +348,10 @@ test "--self-profile records every phase of every file and every counter, exactl
             modules: ?u64 = null,
             edges: ?u64 = null,
             interfaces: ?u64 = null,
+            unifications: ?u64 = null,
+            generalisations: ?u64 = null,
+            instantiations: ?u64 = null,
+            obligations: ?u64 = null,
             dropped_events: ?u64 = null,
         },
     };
@@ -358,10 +362,15 @@ test "--self-profile records every phase of every file and every counter, exactl
     // Four phase events per file, each naming its own file and carrying
     // that file's size; three serial steps with no file at all.
     var seen: [files.len][4]bool = @splat(@splat(false));
-    var serial: [5]bool = @splat(false);
+    // The checker's two halves are per MODULE, not per file: they name the
+    // module's file but carry no byte count, because what they measure is
+    // a constraint tree and not a span of source.
+    var per_module_seen: [files.len][2]bool = @splat(@splat(false));
+    var serial: [6]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
-    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "resolve", "render" };
-    var counters: [9]?u64 = @splat(null);
+    const per_module = [_][]const u8{ "constrain", "solve" };
+    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "resolve", "check", "render" };
+    var counters: [13]?u64 = @splat(null);
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
             try testing.expectEqualStrings("phase", e.cat.?);
@@ -371,6 +380,11 @@ test "--self-profile records every phase of every file and every counter, exactl
                     std.debug.print("phase event for an unexpected file: {s}\n", .{file});
                     return error.UnexpectedPhaseEvent;
                 };
+                if (indexOfName(&per_module, e.name)) |half| {
+                    try testing.expect(!per_module_seen[f][half]); // exactly one each
+                    per_module_seen[f][half] = true;
+                    continue;
+                }
                 const phase = indexOfName(&per_file, e.name) orelse {
                     std.debug.print("unexpected per-file phase: {s}\n", .{e.name});
                     return error.UnexpectedPhaseEvent;
@@ -391,10 +405,15 @@ test "--self-profile records every phase of every file and every counter, exactl
             if (std.mem.eql(u8, e.name, "modules")) counters[6] = e.args.modules;
             if (std.mem.eql(u8, e.name, "edges")) counters[7] = e.args.edges;
             if (std.mem.eql(u8, e.name, "interfaces")) counters[8] = e.args.interfaces;
+            if (std.mem.eql(u8, e.name, "unifications")) counters[9] = e.args.unifications;
+            if (std.mem.eql(u8, e.name, "generalisations")) counters[10] = e.args.generalisations;
+            if (std.mem.eql(u8, e.name, "instantiations")) counters[11] = e.args.instantiations;
+            if (std.mem.eql(u8, e.name, "obligations")) counters[12] = e.args.obligations;
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([5]bool{ true, true, true, true, true }, serial);
+    try testing.expectEqual([files.len][2]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
+    try testing.expectEqual([6]bool{ true, true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
     // `insts` are the AST and BIR sizes of these three modules, which
@@ -403,7 +422,16 @@ test "--self-profile records every phase of every file and every counter, exactl
     // look at rather than as silence.
     // `modules`, `edges` and `interfaces` are the M2a additions: three
     // modules that import nothing, so no edge, and one interface each.
-    try testing.expectEqual([9]?u64{ 3, total_bytes, total_tokens, 11, 3, 0, 3, 0, 3 }, counters);
+    // The four checker counters are M2b's (checker.md §9). `main = 1` is
+    // one unification (the literal against the declaration's variable) and
+    // one generalisation; `double x = x` is two more unifications (the
+    // declaration against `p -> r`, then `r` against `p`), one
+    // instantiation (the reference to `x`) and two generalisations (the
+    // arrow and the variable under it). `type Color` declares no value and
+    // contributes nothing to any of them. No obligation: `==`, `${…}` and
+    // `.0` are the only things that make one, and `--core-root=nocore`
+    // means there is no core package to name anyway.
+    try testing.expectEqual([13]?u64{ 3, total_bytes, total_tokens, 11, 3, 0, 3, 0, 3, 3, 3, 1, 0 }, counters);
     try testing.expectEqual(@as(u64, 67), total_bytes);
     try testing.expectEqual(@as(u64, 17), total_tokens);
 }
@@ -706,7 +734,7 @@ test "dump without a stage is a usage error and does nothing" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
-    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface\n", dump_bad.stderr);
+    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|types\n", dump_bad.stderr);
     try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐
@@ -1797,7 +1825,7 @@ test "equatable_not_first_occurrence: the prefix marks the variable, once" {
         .message = "This type variable is already marked `equatable`.\n" ++
             "\n" ++
             "The prefix marks the VARIABLE, at its first occurrence, not the argument it\n" ++
-            "stands in front of: `eq : equatable a -> a -> a -> Bool` is a function of two\n" ++
+            "stands in front of: `eq : equatable a -> a -> Bool` is a function of two\n" ++
             "arguments whose type is one marked `a`. Write the marker once.",
     }, r.diagnostics[0]);
 }
@@ -1844,7 +1872,7 @@ test "dump --stage=interface prints a module's public face, exactly" {
         \\    Circle/1
         \\    Rect/2
         \\    Empty
-        \\  value area
+        \\  value area : Shape Int -> Int
         \\
     , r.stdout);
 }
@@ -1859,7 +1887,7 @@ test "dump --stage=interface on a directory prints every module in path order" {
 
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     try testing.expectEqualStrings("", r.stderr);
-    try testing.expectEqualStrings("module Main\n  value main\nmodule Util\n  value helper\n", r.stdout);
+    try testing.expectEqualStrings("module Main\n  value main : Int\nmodule Util\n  value helper : Int -> Int\n", r.stdout);
 }
 
 test "--core-root replaces the embedded core package" {
@@ -1934,4 +1962,335 @@ test "resolution is identical at --jobs=1 and --jobs=8, on both streams" {
     try testing.expectEqualStrings(one.stdout, eight.stdout);
     try testing.expectEqualStrings(one.stderr, eight.stderr);
     try testing.expectEqual(@as(usize, 2), one.diagnostics.len);
+}
+
+// ---------------------------------------------------------------------------
+// M2b — the type checker (checker.md §6, §8)
+// ---------------------------------------------------------------------------
+
+test "a type mismatch names the definition, shows both types and hints" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub label : Int -> String
+        \\label n =
+        \\    n
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .type_mismatch,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 5 }, .end = .{ .line = 3, .col = 6 } },
+        .title = "TYPE MISMATCH",
+        .message = "Something is off with the body of this definition:\n" ++
+            "\n" ++
+            "The body is:\n" ++
+            "\n" ++
+            "    Int\n" ++
+            "\n" ++
+            "But the type annotation says it should be:\n" ++
+            "\n" ++
+            "    String\n" ++
+            "\n" ++
+            "Hint: want to turn a number into a `String`? Use `String.fromInt` or\n" ++
+            "`String.fromFloat`.\n",
+    }, r.diagnostics[0]);
+}
+
+test "TOO FEW ARGS names the function, its arity, and the missing argument" {
+    // This is the diagnostic fast-compiler.md §9.3 keeps currying on the
+    // strength of, so it is asserted whole rather than by its code.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub type alias Model =
+        \\    { count : Int }
+        \\
+        \\
+        \\pub update : Int -> Model -> Model
+        \\update n model =
+        \\    { model | count = model.count + n }
+        \\
+        \\
+        \\pub step : Model -> Model
+        \\step model =
+        \\    update 1
+        \\
+    );
+
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .too_few_args,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 12, .col = 5 }, .end = .{ .line = 12, .col = 11 } },
+        .title = "TOO FEW ARGS",
+        .message = "The `update` function expects 2 arguments, but it got only 1.\n" ++
+            "\n" ++
+            "The missing argument is:\n" ++
+            "\n" ++
+            "    Model\n" ++
+            "\n" ++
+            "So this call produces a function:\n" ++
+            "\n" ++
+            "    Model -> Model\n" ++
+            "\n" ++
+            "But I needed a value of type:\n" ++
+            "\n" ++
+            "    Model\n" ++
+            "\n" ++
+            "Hint: a call with too few arguments is a function, not a value. Give it the\n" ++
+            "remaining ones, or check whether an argument was dropped by mistake.\n",
+    }, r.diagnostics[0]);
+}
+
+test "`==` on functions is a compile error, not a runtime crash" {
+    // fast-compiler.md §3.1 point 5: dropping `comparable` turns Elm's last
+    // runtime crash into this.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub same : (Int -> Int) -> (Int -> Int) -> Bool
+        \\same f g =
+        \\    f == g
+        \\
+    );
+
+    const r = try w.run(&.{ "check", "Main.beni" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .not_equatable,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 5 }, .end = .{ .line = 3, .col = 6 } },
+        .title = "NOT EQUATABLE",
+        .message = "I cannot compare these values with `==`:\n" ++
+            "\n" ++
+            "    Int -> Int\n" ++
+            "\n" ++
+            "There is a function in there, and comparing functions is not decidable:\n" ++
+            "deciding whether two functions agree on every input is the halting problem.\n" ++
+            "\n" ++
+            "Hint: compare the values the functions produce, or store something you can\n" ++
+            "compare — a name, an id — next to the function.\n",
+    }, r.diagnostics[0]);
+}
+
+test "a dozen checker diagnostics, each by code and span" {
+    // One file per case so the spans are stated exactly, and a single sweep
+    // so the catalogue of checker.md §8.1 is covered in one place. The prose
+    // of each is asserted whole by its `check/bad` fixture; what this adds
+    // is that the CODE and the SPAN are what the schema promises.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    const Case = struct {
+        path: []const u8,
+        source: []const u8,
+        code: diagnostic.Code,
+        start: diagnostic.Position,
+    };
+    const cases = [_]Case{
+        .{
+            .path = "A.beni",
+            .source = "pub wrong : a -> Int\nwrong value =\n    value\n",
+            .code = .rigid_mismatch,
+            .start = .{ .line = 3, .col = 5 },
+        },
+        .{
+            .path = "B.beni",
+            .source = "selfApply f =\n    f f\n",
+            .code = .infinite_type,
+            .start = .{ .line = 2, .col = 5 },
+        },
+        .{
+            .path = "C.beni",
+            .source = "both x =\n    x + x ++ x\n",
+            .code = .kind_mismatch,
+            .start = .{ .line = 2, .col = 7 },
+        },
+        .{
+            .path = "D.beni",
+            .source = "pub best : Int\nbest =\n    max 1 2 3\n",
+            .code = .too_many_args,
+            .start = .{ .line = 3, .col = 5 },
+        },
+        .{
+            .path = "E.beni",
+            .source = "pub limit : Int\nlimit =\n    1\n\n\npub best : Int\nbest =\n    limit 2\n",
+            .code = .not_a_function,
+            .start = .{ .line = 8, .col = 5 },
+        },
+        .{
+            .path = "F.beni",
+            .source = "pub type alias P =\n    { x : Int, y : Int }\n\n\npub p : P\np =\n    { x = 1 }\n",
+            .code = .missing_field,
+            .start = .{ .line = 7, .col = 5 },
+        },
+        .{
+            .path = "G.beni",
+            .source = "pub type alias P =\n    { x : Int }\n\n\npub p : P\np =\n    { x = 1, y = 2 }\n",
+            .code = .unknown_field,
+            .start = .{ .line = 7, .col = 5 },
+        },
+        .{
+            .path = "H.beni",
+            .source = "pub coords : { r | x : Int } -> { r | x : Int }\ncoords point =\n    { x = point.x }\n",
+            .code = .record_not_closed,
+            .start = .{ .line = 3, .col = 5 },
+        },
+        .{
+            .path = "I.beni",
+            .source = "pub show : List Int -> String\nshow xs =\n    \"xs: ${xs}\"\n",
+            .code = .not_interpolatable,
+            .start = .{ .line = 3, .col = 12 },
+        },
+        .{
+            .path = "J.beni",
+            .source = "show value =\n    \"v: ${value}\"\n",
+            .code = .ambiguous_interpolation,
+            .start = .{ .line = 2, .col = 11 },
+        },
+        .{
+            .path = "K.beni",
+            .source = "firstOf t =\n    t.0\n",
+            .code = .ambiguous_tuple,
+            .start = .{ .line = 2, .col = 6 },
+        },
+        .{
+            .path = "L.beni",
+            .source = "pub third : ( Int, Int ) -> Int\nthird t =\n    t.2\n",
+            .code = .tuple_index_out_of_range,
+            .start = .{ .line = 3, .col = 6 },
+        },
+        .{
+            .path = "M.beni",
+            .source = "pub type alias P =\n    { x : Int }\n\n\npub firstOf : P -> Int\nfirstOf p =\n    p.0\n",
+            .code = .not_a_tuple,
+            .start = .{ .line = 7, .col = 6 },
+        },
+        .{
+            .path = "N.beni",
+            .source = "pub step : Int -> Result String Int\nstep n =\n    Ok (n? + 1)\n",
+            .code = .try_shape,
+            .start = .{ .line = 3, .col = 10 },
+        },
+    };
+
+    for (cases) |case| {
+        try w.write(case.path, case.source);
+        const r = try w.run(&.{ "check", case.path });
+        if (r.exit_code != 1 or r.diagnostics.len != 1) {
+            std.debug.print("{s}: expected exactly one diagnostic, got {d} (exit {d})\n{s}\n", .{ case.path, r.diagnostics.len, r.exit_code, r.stderr });
+            return error.WrongDiagnosticCount;
+        }
+        try testing.expectEqualDeep(diagnostic.Span{
+            .file = case.path,
+            .start = case.start,
+            .end = r.diagnostics[0].span.end,
+        }, r.diagnostics[0].span);
+        try testing.expectEqual(case.code, r.diagnostics[0].code);
+        try testing.expectEqualStrings(diagnostic.title(case.code), r.diagnostics[0].title);
+        try testing.expect(r.diagnostics[0].message.len > 0);
+    }
+}
+
+test "dump --stage=types prints every declaration's scheme and every local's type" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\pub type alias Point =
+        \\    { x : Int, y : Int }
+        \\
+        \\
+        \\pub shift : Point -> Point
+        \\shift p =
+        \\    { p | x = p.x + 1 }
+        \\
+        \\
+        \\apply f x =
+        \\    f x
+        \\
+        \\
+        \\total xs =
+        \\    let
+        \\        step a b =
+        \\            a + b
+        \\    in
+        \\    List.foldl step 0 xs
+        \\
+    );
+
+    const r = try w.runWith(&.{ "dump", "--stage=types", "src/Main.beni" }, .{ .raw_diagnostics = true });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    // `step` is let-bound and therefore GENERALISED, so its scheme's
+    // variable is not the one `total`'s type ended up with — the use site
+    // instantiated a copy. `number2` says exactly that, and it would be a
+    // lie to print `number` twice.
+    try testing.expectEqualStrings(
+        \\module Main
+        \\  shift : Point -> Point
+        \\    p : Point
+        \\  apply : (a -> b) -> a -> b
+        \\    f : a -> b
+        \\    x : a
+        \\  total : List number -> number
+        \\    xs : List number
+        \\    step : number2 -> number2 -> number2
+        \\    a : number2
+        \\    b : number2
+        \\
+    , r.stdout);
+}
+
+test "dump --stage=interface prints each value's scheme, and <error> for one that failed" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\pub good : Int -> Int
+        \\good n =
+        \\    n
+        \\
+        \\
+        \\pub bad =
+        \\    "no" + 1
+        \\
+        \\
+        \\pub poly x =
+        \\    ( x, x )
+        \\
+    );
+
+    const r = try w.runWith(&.{ "dump", "--stage=interface", "src/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // `dump` exits 0 even when the file has errors: the interface is its
+    // product, and a module with type errors still has one (checker.md §7).
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings(
+        \\module Main
+        \\  value bad : <error>
+        \\  value good : Int -> Int
+        \\  value poly : a -> ( a, a )
+        \\
+    , r.stdout);
 }

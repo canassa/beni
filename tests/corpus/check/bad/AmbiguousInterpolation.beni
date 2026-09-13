@@ -1,0 +1,5 @@
+-- check/bad: the interpolated value's type is still a variable, and the
+-- choice cannot be left to the caller — the emitted code has to know which
+-- conversion to make (checker.md §6.4).
+pub show value =
+    "value: ${value}"

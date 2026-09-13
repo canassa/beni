@@ -1,0 +1,8 @@
+-- check/args: a `|>` pipeline whose last stage still needs its subject.
+-- `String.join` takes a separator and a list, and only the separator is
+-- there, so the pipeline produces a function instead of a `String`.
+pub names : List String -> String
+names parts =
+    parts
+        |> List.map String.toUpper
+        |> String.join

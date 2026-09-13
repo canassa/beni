@@ -8,7 +8,7 @@
 //! ```
 //! beni check  [options] <path>...
 //! beni fmt    [options] [--check] [--stdout] <path>...
-//! beni dump   [options] --stage=<tokens|ast|bir|interface> [--positions] <file>
+//! beni dump   [options] --stage=<tokens|ast|bir|interface|types> [--positions] <file>
 //! beni version
 //! beni help
 //! ```
@@ -22,7 +22,7 @@ pub const usage =
     \\commands:
     \\  check    parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
-    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface)
+    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|types)
     \\  version  print the version
     \\  help     print this text
     \\
@@ -39,7 +39,7 @@ pub const usage =
     \\  --stdout                  print the formatted text instead of writing it
     \\
     \\dump options:
-    \\  --stage=tokens|ast|bir|interface
+    \\  --stage=tokens|ast|bir|interface|types
     \\                            which representation to print (required)
     \\  --positions               include source positions
     \\
@@ -48,7 +48,7 @@ pub const usage =
 ;
 
 pub const DiagnosticsFormat = enum { text, json };
-pub const Stage = enum { tokens, ast, bir, interface };
+pub const Stage = enum { tokens, ast, bir, interface, types };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -291,9 +291,9 @@ const DumpSpecific = struct {
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--stage")) {
-            const v = value orelse return needsValue(name, "tokens|ast|bir|interface");
+            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|types");
             self.stage = std.meta.stringToEnum(Stage, v) orelse
-                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir or interface)", .{v});
+                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface or types)", .{v});
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--positions")) {
             if (value != null) return noValue(name);
@@ -308,7 +308,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     var s: Scanner(DumpSpecific) = .{};
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
-    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface", .{}) };
+    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|types", .{}) };
     // `--stage=interface` also takes a directory (the whole project's
     // interfaces, checker.md §3); either way it is one path.
     if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
@@ -426,9 +426,10 @@ test "dump: stage, positions, exactly one file" {
     } }, &.{ "dump", "src/Main.beni", "--positions", "--core", "--root=src", "--stage=tokens" });
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
-    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface", &.{ "dump", "Main.beni" });
-    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface", &.{ "dump", "--stage", "Main.beni" });
-    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir or interface)", &.{ "dump", "--stage=cst", "Main.beni" });
+    try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
+    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|types", &.{ "dump", "Main.beni" });
+    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|types", &.{ "dump", "--stage", "Main.beni" });
+    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir, interface or types)", &.{ "dump", "--stage=cst", "Main.beni" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast", "A.beni", "B.beni" });
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });

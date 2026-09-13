@@ -120,6 +120,9 @@ pub fn main(init: std.process.Init) !u8 {
     const resolved = try measureResolve(gpa, io, corpus, options.iterations);
     try printResolveLine(stdout, resolved);
     total.ns += resolved.ns;
+    const checked = try measureCheck(gpa, io, corpus, options.iterations, resolved.total_ns, total.lines);
+    try printCheckLine(stdout, checked);
+    total.ns += checked.ns;
     try printLine(stdout, "total", total);
 
     // One line per pathological file, so a single slow file cannot hide in
@@ -474,6 +477,75 @@ fn coldRun(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, 
         }
     }
     return if (best == std.math.maxInt(u64)) 0 else best;
+}
+
+/// Type checking alone (checker.md §9): constrain → solve → generalise over
+/// a project that has already been lowered and resolved. Measured as a
+/// DIFFERENCE, like `resolve`, because the step runs inside `Session` after
+/// the join and is not reachable on its own — a cold run through
+/// `resolve_phases` against a cold run through `check_phases`. Both include
+/// core, because every `check` does.
+///
+/// `loc_per_s` is the figure §2's "> 250k LOC/s cold per core for checking
+/// alone" is stated in, and it counts the CORPUS's lines, not core's: core
+/// is a fixed 2,776-line cost every project pays once, and folding it into
+/// the rate would flatter a big corpus and punish a small one.
+const CheckMeasurement = struct {
+    modules: u64 = 0,
+    lines: u64 = 0,
+    unifications: u64 = 0,
+    generalisations: u64 = 0,
+    instantiations: u64 = 0,
+    obligations: u64 = 0,
+    diagnostics: u64 = 0,
+    /// The check step alone.
+    ns: u64 = 0,
+    /// The whole cold `check`, core included.
+    total_ns: u64 = 0,
+};
+
+fn measureCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, resolve_total_ns: u64, lines: u64) !CheckMeasurement {
+    var m: CheckMeasurement = .{ .lines = lines };
+    m.total_ns = try coldCheck(gpa, io, corpus, iterations, &m);
+    m.ns = m.total_ns -| resolve_total_ns;
+    return m;
+}
+
+fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, counts: *CheckMeasurement) !u64 {
+    var sink: Io.Writer.Discarding = .init(&.{});
+    var best: u64 = std.math.maxInt(u64);
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+        defer session.deinit();
+        const start = Io.Timestamp.now(io, .awake);
+        _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch continue;
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue; // warm-up
+        best = @min(best, ns);
+        counts.modules = session.graph.count();
+        counts.unifications = session.checked.counters.unifications;
+        counts.generalisations = session.checked.counters.generalisations;
+        counts.instantiations = session.checked.counters.instantiations;
+        counts.obligations = session.checked.counters.obligations;
+        counts.diagnostics = session.diagnostics.items.len;
+    }
+    return if (best == std.math.maxInt(u64)) 0 else best;
+}
+
+fn printCheckLine(writer: *Io.Writer, m: CheckMeasurement) !void {
+    const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
+    const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);
+    try writer.print(
+        "{{\"phase\":\"check\",\"modules\":{d},\"lines\":{d},\"unifications\":{d},\"generalisations\":{d}," ++
+            "\"instantiations\":{d},\"obligations\":{d},\"diagnostics\":{d},\"ms\":{d:.2}," ++
+            "\"loc_per_s\":{d},\"cold_check_ms\":{d:.1}}}\n",
+        .{
+            m.modules,        m.lines,                  m.unifications, m.generalisations,
+            m.instantiations, m.obligations,            m.diagnostics,  milliseconds(m.ns),
+            loc_per_s,        milliseconds(m.total_ns),
+        },
+    );
 }
 
 fn printResolveLine(writer: *Io.Writer, m: ResolveMeasurement) !void {

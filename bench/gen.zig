@@ -10,6 +10,13 @@
 //! layout rules (§4) accept, and nothing here shadows, duplicates or leaves a
 //! name unbound (§5–§7).
 //!
+//! **Type-correct by construction** (checker.md §9): the `check` line of the
+//! benchmark measures inference, and a generated corpus full of type errors
+//! would measure the error path instead. Every random expression this
+//! produces has type `Int`, every call is saturated, every `if` condition is
+//! a comparison, and every record literal sets exactly the fields its alias
+//! declares. A type error in the generated corpus is a generator bug.
+//!
 //! Determinism: module `i` is a pure function of `(seed, i)`, so the same
 //! seed and size always produce byte-identical files, and the bench can
 //! regenerate rather than check the tree in. Layout is close to the
@@ -174,6 +181,11 @@ const Module = struct {
     lines: u64 = 0,
     /// Locals in scope in the function being generated, innermost last.
     locals: [24][]const u8 = undefined,
+    /// Whether `locals[i]` holds an `Int`. A let-bound FUNCTION is in scope
+    /// — a name chosen next to it must not collide with it — but it is not
+    /// an `Int` and must never be written where one belongs, or the corpus
+    /// stops type-checking (checker.md §9).
+    local_is_int: [24]bool = undefined,
     local_count: usize = 0,
     /// Next fresh suffix when the realistic name pool is exhausted.
     fresh: u32 = 0,
@@ -183,6 +195,10 @@ const Module = struct {
     /// Earlier modules imported with `as PK`.
     aliased: [4]u32 = undefined,
     aliased_count: usize = 0,
+    /// Which optional fields this module's `Model` alias declares. A record
+    /// literal is closed, so `init` must set exactly these.
+    has_ratio: bool = false,
+    has_selected: bool = false,
 
     const local_pool = [_][]const u8{
         "acc",   "item",  "total",  "count",  "first", "rest",  "key",   "value",
@@ -193,6 +209,20 @@ const Module = struct {
     const words = [_][]const u8{
         "alpha", "beta",   "gamma", "delta", "report", "user",  "order", "item",
         "total", "status", "ready", "done",  "north",  "south", "east",  "west",
+    };
+
+    /// A prelude function on `Int`, with the number of atoms that saturate
+    /// it. Every call the generator writes is saturated: an accidental
+    /// partial application is exactly the `too_few_args` of checker.md §8.3,
+    /// and a corpus full of them would measure the error path.
+    const PreludeCall = struct { prefix: []const u8, arity: u8 };
+
+    const prelude_calls = [_]PreludeCall{
+        .{ .prefix = "max", .arity = 2 },
+        .{ .prefix = "min", .arity = 2 },
+        .{ .prefix = "clamp 0 10", .arity = 1 },
+        .{ .prefix = "modBy 3", .arity = 1 },
+        .{ .prefix = "always 1", .arity = 1 },
     };
 
     // ---- output helpers ------------------------------------------------
@@ -241,8 +271,18 @@ const Module = struct {
     const fresh_names = [_][]const u8{ "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8" };
 
     fn push(g: *Module, name: []const u8) []const u8 {
+        return g.pushTyped(name, true);
+    }
+
+    /// In scope for name choice, never used as a value.
+    fn pushFunction(g: *Module, name: []const u8) []const u8 {
+        return g.pushTyped(name, false);
+    }
+
+    fn pushTyped(g: *Module, name: []const u8, is_int: bool) []const u8 {
         std.debug.assert(g.local_count < g.locals.len);
         g.locals[g.local_count] = name;
+        g.local_is_int[g.local_count] = is_int;
         g.local_count += 1;
         return name;
     }
@@ -260,9 +300,21 @@ const Module = struct {
         g.local_count = mark;
     }
 
+    /// An `Int`-valued local, or null when there is none: a scan over at
+    /// most 24 entries, once per atom.
     fn anyLocal(g: *Module) ?[]const u8 {
-        if (g.local_count == 0) return null;
-        return g.locals[g.rng.uintLessThan(usize, g.local_count)];
+        var count: usize = 0;
+        for (g.local_is_int[0..g.local_count]) |is_int| {
+            if (is_int) count += 1;
+        }
+        if (count == 0) return null;
+        var wanted = g.rng.uintLessThan(usize, count);
+        for (g.locals[0..g.local_count], g.local_is_int[0..g.local_count]) |name, is_int| {
+            if (!is_int) continue;
+            if (wanted == 0) return name;
+            wanted -= 1;
+        }
+        return null;
     }
 
     // ---- module ---------------------------------------------------------
@@ -348,8 +400,13 @@ const Module = struct {
         try g.line(4, "{{ count : Int", .{});
         try g.line(4, ", name : String", .{});
         try g.line(4, ", items : List Int", .{});
-        if (g.chance(50)) try g.line(4, ", ratio : Float", .{});
-        if (g.chance(30)) try g.line(4, ", selected : Maybe Int", .{});
+        // Which optional fields exist is remembered, because a record
+        // literal is CLOSED: `init` has to set exactly these and no others
+        // or the corpus does not type-check.
+        g.has_ratio = g.chance(50);
+        g.has_selected = g.chance(30);
+        if (g.has_ratio) try g.line(4, ", ratio : Float", .{});
+        if (g.has_selected) try g.line(4, ", selected : Maybe Int", .{});
         try g.line(4, "}}", .{});
     }
 
@@ -372,9 +429,14 @@ const Module = struct {
     fn initFn(g: *Module) Io.Writer.Error!void {
         try g.line(0, "pub init{d} : Model{d}", .{ g.index, g.index });
         try g.line(0, "init{d} =", .{g.index});
-        try g.line(4, "{{ count = {d}, name = \"{s}\", items = [ {d}, {d}, {d} ] }}", .{
+        try g.w.splatByteAll(' ', 4);
+        try g.w.print("{{ count = {d}, name = \"{s}\", items = [ {d}, {d}, {d} ]", .{
             g.rng.uintLessThan(u32, 10), g.pick([]const u8, &words), g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 99), g.rng.uintLessThan(u32, 999),
         });
+        if (g.has_ratio) try g.w.print(", ratio = {d}.{d}", .{ g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 99) });
+        if (g.has_selected) try g.w.print(", selected = Just {d}", .{g.rng.uintLessThan(u32, 9)});
+        try g.w.writeAll(" }\n");
+        g.lines += 1;
     }
 
     fn updateFn(g: *Module) Io.Writer.Error!void {
@@ -490,7 +552,7 @@ const Module = struct {
         // the generator's own output (the bug this loop's shape fixes).
         var names: [3][]const u8 = undefined;
         for (names[0..bindings]) |*slot| slot.* = g.bind();
-        if (with_twice) _ = g.push("twice");
+        if (with_twice) _ = g.pushFunction("twice");
 
         for (names[0..bindings], 0..) |local, i| {
             if (i != 0 and g.chance(50)) try g.blank();
@@ -689,8 +751,10 @@ const Module = struct {
         if (depth == 0) return g.atom();
         switch (g.rng.uintLessThan(u8, 9)) {
             0, 1 => {
+                // Arithmetic only: a comparison or a logical operator would
+                // produce a `Bool` where the caller wants an `Int`.
                 try g.operand(depth - 1);
-                try g.w.print(" {s} ", .{g.pick([]const u8, &.{ "+", "-", "*", "//", "==", "/=", "<", ">=", "&&", "||", "^" })});
+                try g.w.print(" {s} ", .{g.pick([]const u8, &.{ "+", "-", "*", "//", "^" })});
                 try g.operand(depth - 1);
             },
             2 => {
@@ -698,9 +762,12 @@ const Module = struct {
                 try g.atom();
             },
             3 => {
-                try g.w.print("{s} ", .{g.pick([]const u8, &.{ "max", "min", "clamp 0 10", "modBy 3", "always 1" })});
+                // Saturated, always: a partial application here is the
+                // TOO FEW ARGS the checker is right to complain about.
+                const call = g.pick(PreludeCall, &prelude_calls);
+                try g.w.print("{s} ", .{call.prefix});
                 try g.atom();
-                if (g.chance(50)) {
+                if (call.arity == 2) {
                     try g.w.writeByte(' ');
                     try g.atom();
                 }
@@ -727,7 +794,10 @@ const Module = struct {
                 try g.operand(depth - 1);
             },
             else => {
+                // The condition is a comparison, so it really is a `Bool`.
                 try g.w.writeAll("if ");
+                try g.operand(depth - 1);
+                try g.w.print(" {s} ", .{g.pick([]const u8, &.{ "==", "/=", "<", ">", "<=", ">=" })});
                 try g.operand(depth - 1);
                 try g.w.writeAll(" then ");
                 try g.atom();
@@ -761,15 +831,16 @@ const Module = struct {
         return g.atom();
     }
 
+    /// An `Int`-typed atom. Every local in scope is one — the generator
+    /// only ever binds `Int`s — so the whole expression language is closed
+    /// under `Int`, which is what makes the corpus type-correct without a
+    /// type checker inside the generator.
     fn atom(g: *Module) Io.Writer.Error!void {
-        switch (g.rng.uintLessThan(u8, 10)) {
+        switch (g.rng.uintLessThan(u8, 8)) {
             0, 1, 2 => if (g.anyLocal()) |l| try g.w.writeAll(l) else try g.w.print("{d}", .{g.rng.uintLessThan(u32, 100)}),
-            3 => try g.w.print("{d}", .{g.rng.uintLessThan(u32, 1000)}),
-            4 => try g.w.print("0x{X}", .{g.rng.uintLessThan(u32, 4096)}),
-            5 => try g.w.print("{d}.{d}", .{ g.rng.uintLessThan(u32, 100), g.rng.uintLessThan(u32, 100) }),
-            6 => try g.w.print("{d}e{d}", .{ 1 + g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 6) }),
-            7 => try g.w.print("[ {d}, -{d}, {d} ]", .{ g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 9) }),
-            8 => try g.w.print("( {d}, \"{s}\" ).0", .{ g.rng.uintLessThan(u32, 9), g.pick([]const u8, &words) }),
+            3, 4 => try g.w.print("{d}", .{g.rng.uintLessThan(u32, 1000)}),
+            5 => try g.w.print("0x{X}", .{g.rng.uintLessThan(u32, 4096)}),
+            6 => try g.w.print("( {d}, \"{s}\" ).0", .{ g.rng.uintLessThan(u32, 9), g.pick([]const u8, &words) }),
             else => try g.w.print("init{d}.count", .{g.index}),
         }
     }

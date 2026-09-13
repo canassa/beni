@@ -8,10 +8,11 @@
 //! errors and nothing else. `dump` exits 0 even when the file has lexical,
 //! syntax or lowering errors: its product is the token stream, the tree or
 //! the lowered file, placeholders and all, and the diagnostics still go to
-//! stderr. `check` and `dump --stage=interface` run the resolve phases and
-//! therefore load the core package; `--stage=bir` stops after lowering and
-//! `--stage=tokens|ast` after the parser, so those dumps carry only the
-//! diagnostics of the stages they show and pay none of core's cost.
+//! stderr. `check` and `dump --stage=interface|types` run the check phases
+//! and therefore load AND type-check the core package; `--stage=bir` stops
+//! after lowering and `--stage=tokens|ast` after the parser, so those dumps
+//! carry only the diagnostics of the stages they show and pay none of
+//! core's cost.
 
 const std = @import("std");
 const Io = std.Io;
@@ -103,7 +104,7 @@ fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check
     options.core_package = true;
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
-    const summary = switch (runSession(&session, stderr, check.paths, Session.resolve_phases)) {
+    const summary = switch (runSession(&session, stderr, check.paths, Session.check_phases)) {
         .summary => |s| s,
         .exit => |code| return code,
     };
@@ -116,13 +117,16 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // alongside the file (checker.md §4). The other three stages are a
     // function of the file's own bytes, and loading ~2,800 lines of core
     // into every one of them would be pure cost.
-    options.core_package = dump.stage == .interface;
+    options.core_package = dump.stage == .interface or dump.stage == .types;
+    // `--stage=types` prints local bindings' types, and a `Var` means
+    // nothing once its store is gone (checker.md §5).
+    options.keep_type_stores = dump.stage == .types;
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
     const phases: Session.Phases = switch (dump.stage) {
         .tokens, .ast => Session.parse_phases,
         .bir => Session.lower_phases,
-        .interface => Session.resolve_phases,
+        .interface, .types => Session.check_phases,
     };
     switch (runSession(&session, stderr, &.{dump.file}, phases)) {
         .summary => {},
@@ -135,7 +139,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // project has resolved.
     const file = dumpTarget(&session, dump.file) orelse {
         if (dump.stage != .interface) return fail(stderr, "beni: dump needs exactly one file", .{});
-        return dumpProjectInterfaces(&session, stdout, stderr, dump.file);
+        return dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file);
     };
     switch (dump.stage) {
         .tokens => beni.dump.tokens.write(
@@ -165,8 +169,23 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             beni.dump.interface.write(
                 stdout,
+                gpa,
                 session.store.moduleName(file),
                 &session.resolution.interfaces[m.int()],
+                &session.checked.types,
+                &session.interner,
+            ) catch return 2;
+        },
+        .types => {
+            const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
+            if (m.int() >= session.checked.modules.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
+            beni.dump.types.write(
+                stdout,
+                gpa,
+                session.store.moduleName(file),
+                session.artifacts.bir(file),
+                &session.checked.modules[m.int()],
+                &session.checked.types,
                 &session.interner,
             ) catch return 2;
         },
@@ -186,7 +205,7 @@ fn dumpTarget(session: *const Session, arg: []const u8) ?SourceStore.Index {
 /// Every module under the directory `arg`, in path order: the interface
 /// golden of a whole project. Modules the run pulled in from elsewhere —
 /// the core package — are not under it and are not printed.
-fn dumpProjectInterfaces(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
     const dir = std.mem.trimEnd(u8, arg, "/");
     var printed: u32 = 0;
     for (0..session.store.count()) |i| {
@@ -194,7 +213,7 @@ fn dumpProjectInterfaces(session: *Session, stdout: *Io.Writer, stderr: *Io.Writ
         const p = session.store.path(f);
         if (!(p.len > dir.len and std.mem.startsWith(u8, p, dir) and p[dir.len] == '/')) continue;
         const m = moduleOf(session, f) orelse continue;
-        beni.dump.interface.write(stdout, session.store.moduleName(f), &session.resolution.interfaces[m.int()], &session.interner) catch return 2;
+        beni.dump.interface.write(stdout, gpa, session.store.moduleName(f), &session.resolution.interfaces[m.int()], &session.checked.types, &session.interner) catch return 2;
         printed += 1;
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});

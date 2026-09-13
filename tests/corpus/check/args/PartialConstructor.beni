@@ -1,0 +1,10 @@
+-- check/args: a record alias is also a constructor of its fields, and this
+-- one is applied to the first of two. The result is stored where a `Person`
+-- is wanted, so the partial application cannot have been meant.
+pub type alias Person =
+    { name : String, age : Int }
+
+
+pub anonymous : Person
+anonymous =
+    Person "unknown"

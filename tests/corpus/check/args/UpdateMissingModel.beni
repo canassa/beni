@@ -1,0 +1,25 @@
+-- check/args: the classic TEA mistake — `update` takes a message AND the
+-- model, and the call passes only the message. The result is used where a
+-- `Model` is wanted, so the partial application cannot be right.
+pub type alias Model =
+    { count : Int }
+
+
+pub type Msg
+    = Increment
+    | Decrement
+
+
+pub update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        Increment ->
+            { model | count = model.count + 1 }
+
+        Decrement ->
+            { model | count = model.count - 1 }
+
+
+pub step : Model -> Model
+step model =
+    update Increment

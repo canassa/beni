@@ -1,0 +1,10 @@
+-- check/args: a `let` binding with an annotation that says it is a value
+-- and a body that is still a function.
+pub biggest : Int -> Int
+biggest n =
+    let
+        m : Int
+        m =
+            max n
+    in
+    m

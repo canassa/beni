@@ -1,6 +1,6 @@
 module A
-  value a
+  value a : Int
 module B
-  value b
+  value b : Int
 module C
-  value c
+  value c : Int

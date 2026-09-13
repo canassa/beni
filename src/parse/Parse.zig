@@ -1035,7 +1035,7 @@ fn isEquatableToken(p: *const Parse, t: TokenIndex) bool {
 /// TypeApp := 'equatable'? TypeAtom | (upper_ident | qualified_upper) TypeAtom+ | TypeAtom
 ///
 /// The `equatable` marker (checker.md Appendix A) is recognised only where
-/// a whole `Type` starts — so `eq : equatable a -> a -> a -> Bool` marks
+/// a whole `Type` starts — so `eq : equatable a -> a -> Bool` marks
 /// the variable `a`, and an ARGUMENT position keeps its old reading:
 /// `List equatable` is a list of a variable named `equatable`, not a marked
 /// nothing. Whether the file may write the marker at all is a package fact

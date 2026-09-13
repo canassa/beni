@@ -1,0 +1,9 @@
+-- check/bad: two branches of a `case` produce different types.
+pub describe : Bool -> String
+describe flag =
+    case flag of
+        True ->
+            "yes"
+
+        False ->
+            0

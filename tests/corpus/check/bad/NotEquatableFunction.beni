@@ -1,0 +1,5 @@
+-- check/bad: `==` on functions. Elm crashes at runtime; beni refuses at
+-- compile time (fast-compiler.md §3.1 point 5).
+pub same : (Int -> Int) -> (Int -> Int) -> Bool
+same f g =
+    f == g

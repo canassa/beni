@@ -1,0 +1,7 @@
+-- check/args: a recursive call that drops one of its own arguments.
+pub countDown : Int -> Int -> Int
+countDown n acc =
+    if n < 1 then
+        acc
+    else
+        countDown (n - 1)

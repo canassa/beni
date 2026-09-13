@@ -58,6 +58,7 @@ const Graph = @import("resolve/Graph.zig");
 const Interface = @import("resolve/Interface.zig");
 const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
+const Check = @import("check/Check.zig");
 const core_package = @import("core_package");
 
 const Session = @This();
@@ -76,6 +77,9 @@ workers: []Worker,
 graph: Graph = .empty,
 /// The interfaces and cross-module diagnostics of the last run.
 resolution: Resolve = .empty,
+/// The type-check of the last run (checker.md §6). Empty unless the phases
+/// included the check step.
+checked: Check = .empty,
 /// Every diagnostic of the last run, in emission order after `run`.
 /// Messages are gpa-owned; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
@@ -109,6 +113,12 @@ pub const Options = struct {
     /// the per-file dumps do not, and adding ~2,800 lines of parsing to
     /// every one of them would be pure cost (see `enumerateCore`).
     core_package: bool = false,
+    /// Keep every module's `TypeStore` alive after the check, so
+    /// `dump --stage=types` can print local bindings' types (checker.md §2).
+    /// Off by default: a store is released the moment its interface has
+    /// been extracted (§5), and keeping them costs memory proportional to
+    /// the whole project rather than to one module.
+    keep_type_stores: bool = false,
     /// Capacity of each worker's profile buffer.
     profile_events_per_thread: usize = 4096,
 };
@@ -146,6 +156,12 @@ pub const lower_phases: Phases = .{ .per_file = lowerPhase };
 /// and cross-module name resolution (checker.md §4). What `check` and
 /// `dump --stage=interface` run.
 pub const resolve_phases: Phases = .{ .per_file = lowerPhase, .after = resolveSerial };
+
+/// M2b: `resolve_phases`, then type-check every module in the graph's
+/// topological order (checker.md §6). What `check` and the two typed dumps
+/// run. Serial for now; §4.4 allows DAG parallelism and the data is laid
+/// out for it.
+pub const check_phases: Phases = .{ .per_file = lowerPhase, .after = checkSerial };
 
 /// M1d: `parse_phases`, then format into the file's `formatted` column.
 /// What `fmt` runs. Formatting is per-file work with no cross-file
@@ -231,6 +247,7 @@ pub fn deinit(session: *Session) void {
         worker.arena.deinit();
     }
     gpa.free(session.workers);
+    session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
     session.graph.deinit(gpa);
     session.diagnostics.deinit(gpa);
@@ -621,6 +638,107 @@ fn resolveSerial(session: *Session) RunError!void {
     session.profile.end(0, resolve_token, .resolve, Profile.Event.no_file, 0);
     session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
     try session.reportResolveDiagnostics();
+}
+
+/// The type checker (checker.md §6), after the graph and resolution: one
+/// `TypeStore` per module, in topological order, each reading only its own
+/// Bir and the interfaces of its imports.
+fn checkSerial(session: *Session) RunError!void {
+    try resolveSerial(session);
+    const gpa = session.gpa;
+    const worker = &session.workers[0];
+    defer worker.arena.reset(.retain_capacity);
+
+    // A module an earlier phase already reported on is checked silently:
+    // see `Check.Options.quiet` for why, and note this has to be computed
+    // BEFORE the check runs, while the pending lists hold only the earlier
+    // phases' items.
+    const quiet = try gpa.alloc(bool, session.graph.count());
+    defer gpa.free(quiet);
+    @memset(quiet, false);
+    for (session.workers) |*w| {
+        for (w.diagnostics.items) |pending| {
+            for (0..session.graph.count()) |i| {
+                const m: Graph.Index = @enumFromInt(i);
+                if (session.graph.moduleFile(m) == pending.file) quiet[i] = true;
+            }
+        }
+    }
+
+    const token = session.profile.begin();
+    session.checked.deinit(gpa);
+    session.checked = try runCheckOnBigStack(session, quiet);
+    session.profile.end(0, token, .check, Profile.Event.no_file, 0);
+    session.profile.addCounter(.unifications, session.checked.counters.unifications);
+    session.profile.addCounter(.generalisations, session.checked.counters.generalisations);
+    session.profile.addCounter(.instantiations, session.checked.counters.instantiations);
+    session.profile.addCounter(.obligations, session.checked.counters.obligations);
+    try session.reportCheckDiagnostics();
+}
+
+/// Constraint generation and solving walk an expression TREE, and the
+/// parser accepts 4096 levels of nesting (language.md §10) — a chain of
+/// 8000 `+` is one of the pathological inputs `bench/pathological/` keeps
+/// on purpose. The parser survives those because it builds an operator
+/// chain iteratively; the checker cannot, because a constraint for `a + b`
+/// is a constraint about `a`. 4096 frames do not fit in the 8 MiB the main
+/// thread gets, so the check runs on a thread with room for them.
+///
+/// The size is MEASURED, not guessed, against `bench/pathological`'s three
+/// 8000-link spines (`tests/blackbox/abuse_test.zig` runs the same shapes):
+/// 512 KiB and 16 MiB both overflow, 32 MiB does not. 64 MiB is that with a
+/// factor of two of headroom, because the frames grow whenever the solver
+/// gains a field and the failure mode is a segfault rather than a
+/// diagnostic.
+///
+/// This is also the shape M2c needs: §4.4 puts each module's check on a
+/// worker, and `std.Thread.spawn`'s DEFAULT stack is not enough — that is
+/// what the 16 MiB measurement says.
+const check_stack_size = 64 * 1024 * 1024;
+
+fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
+    const Runner = struct {
+        session: *Session,
+        quiet: []const bool,
+        result: Check.Error!Check = undefined,
+
+        fn go(r: *@This()) void {
+            r.result = Check.run(
+                r.session.gpa,
+                &r.session.workers[0].arena,
+                &r.session.graph,
+                &r.session.artifacts,
+                r.session.resolution.interfaces,
+                &r.session.interner,
+                .{
+                    .profile = &r.session.profile,
+                    .keep_stores = r.session.options.keep_type_stores,
+                    .quiet = r.quiet,
+                },
+            );
+        }
+    };
+    var runner: Runner = .{ .session = session, .quiet = quiet };
+    const thread = try std.Thread.spawn(.{ .stack_size = check_stack_size }, Runner.go, .{&runner});
+    thread.join();
+    return runner.result;
+}
+
+/// Turn each checker item into a reported diagnostic. The message was
+/// rendered when the item was made — the store it names variables from is
+/// gone by now — so this only has to find the span, which is the token the
+/// item's Bir instruction came from (checker.md §6.1).
+fn reportCheckDiagnostics(session: *Session) RunError!void {
+    for (session.checked.diagnostics) |item| {
+        const file = session.graph.moduleFile(item.module);
+        const bir = session.artifacts.bir(file);
+        const token = if (item.region.int() < bir.insts.len)
+            bir.insts.items(.main_token)[item.region.int()]
+        else
+            0;
+        const start, const end = session.tokenSpan(file, token);
+        try session.workers[0].report(session, file, item.code, start, end, item.message);
+    }
 }
 
 /// The span of `token` in `file`, from the token list the parser produced.

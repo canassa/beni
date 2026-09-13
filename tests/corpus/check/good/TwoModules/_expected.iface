@@ -1,4 +1,4 @@
 module Main
-  value main
+  value main : Int
 module Util
-  value helper
+  value helper : Int -> Int

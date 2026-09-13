@@ -1,0 +1,5 @@
+-- check/args: `List.map f` is a perfectly good value, but here it is handed
+-- to `List.length`, which wants an actual list.
+pub sizes : List Int -> Int
+sizes xs =
+    List.length (List.map negate)

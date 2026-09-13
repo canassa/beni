@@ -1,0 +1,5 @@
+-- check/bad: an annotation promises ANY type and the body only works for
+-- one. The hint names the variable the annotation used.
+pub firstOrZero : a -> Int
+firstOrZero value =
+    value

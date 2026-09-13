@@ -298,7 +298,10 @@ asserts the whole diagnostic list with `expectEqualDeep` against literals.
 `parse/good` → `dump --stage=ast` equals the `.ast`; `parse/bad` → `check --diagnostics=json`
 equals the `.diag` (a `.beni` without `.diag` fails); `fmt` → `fmt --stdout` equals `.expected`
 and formatting `.expected` again is a fixed point and parses to the same `.ast`; `bir` → `dump
---stage=bir` equals `.bir`. A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`) is run with
+--stage=bir` equals `.bir`; `check/good` → `check` is clean and `dump --stage=interface` equals
+the `.iface`; `check/bad` and `check/args` → `check --diagnostics=json` equals the `.diag`
+(checker.md §3; `check/args` is the missing-argument suite of §8.3, kept apart so its size and
+pass rate are visible on their own). A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`) is run with
 `--core` (language.md §5.4); the module name is still derived from the file's own directory.
 `BENI_WRITE_EXPECTED=1` blesses; the failure message says so; the
 value is fully materialised before any golden is written.

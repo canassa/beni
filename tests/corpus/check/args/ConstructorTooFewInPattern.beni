@@ -1,0 +1,11 @@
+-- check/args: a constructor pattern that names fewer arguments than the
+-- constructor takes.
+pub type Pair
+    = Pair Int Int
+
+
+pub first : Pair -> Int
+first p =
+    case p of
+        Pair a ->
+            a

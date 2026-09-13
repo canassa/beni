@@ -1,0 +1,4 @@
+-- check/bad: a list whose elements are not all the same type.
+pub mixed : List Int
+mixed =
+    [ 1, 2, "three" ]

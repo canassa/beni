@@ -1,0 +1,4 @@
+-- check/args: the separator is there and the list is not.
+pub commas : String
+commas =
+    String.join ", "

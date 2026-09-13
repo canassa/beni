@@ -1,0 +1,15 @@
+-- check/args: a tail-recursive helper called without its accumulator — the
+-- single most common mistake when refactoring a loop into a helper.
+pub sumHelp : List Int -> Int -> Int
+sumHelp xs acc =
+    case xs of
+        [] ->
+            acc
+
+        x :: rest ->
+            sumHelp rest (acc + x)
+
+
+pub sum : List Int -> Int
+sum xs =
+    sumHelp xs

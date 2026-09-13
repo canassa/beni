@@ -110,6 +110,28 @@ pub const Code = enum {
     opaque_constructor,
     wrong_type_arity,
     recursive_alias,
+    // M2b (checker.md §8.1): inference. `rigid_mismatch` is the case where
+    // one side was an annotation's promise about ALL types, which needs a
+    // different hint from an ordinary mismatch; the three arity codes are
+    // §8.3's, and `fast-compiler.md` §9.3 keeps currying on the strength of
+    // them.
+    type_mismatch,
+    rigid_mismatch,
+    infinite_type,
+    kind_mismatch,
+    too_few_args,
+    too_many_args,
+    not_a_function,
+    missing_field,
+    unknown_field,
+    record_not_closed,
+    not_equatable,
+    not_interpolatable,
+    ambiguous_interpolation,
+    ambiguous_tuple,
+    tuple_index_out_of_range,
+    not_a_tuple,
+    try_shape,
     internal,
 };
 
@@ -174,6 +196,23 @@ pub fn title(code: Code) []const u8 {
         .opaque_constructor => "OPAQUE CONSTRUCTOR",
         .wrong_type_arity => "WRONG TYPE ARITY",
         .recursive_alias => "RECURSIVE ALIAS",
+        .type_mismatch => "TYPE MISMATCH",
+        .rigid_mismatch => "TYPE MISMATCH",
+        .infinite_type => "INFINITE TYPE",
+        .kind_mismatch => "TYPE MISMATCH",
+        .too_few_args => "TOO FEW ARGS",
+        .too_many_args => "TOO MANY ARGS",
+        .not_a_function => "NOT A FUNCTION",
+        .missing_field => "MISSING FIELD",
+        .unknown_field => "UNKNOWN FIELD",
+        .record_not_closed => "RECORD NOT CLOSED",
+        .not_equatable => "NOT EQUATABLE",
+        .not_interpolatable => "NOT INTERPOLATABLE",
+        .ambiguous_interpolation => "AMBIGUOUS INTERPOLATION",
+        .ambiguous_tuple => "AMBIGUOUS TUPLE",
+        .tuple_index_out_of_range => "TUPLE INDEX OUT OF RANGE",
+        .not_a_tuple => "NOT A TUPLE",
+        .try_shape => "BAD QUESTION MARK",
         .internal => "INTERNAL ERROR",
     };
 }

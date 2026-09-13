@@ -46,11 +46,22 @@ pub const resolve = struct {
     pub const Resolve = @import("resolve/Resolve.zig");
     pub const Diagnostics = @import("resolve/Diagnostics.zig");
 };
+pub const check = struct {
+    pub const TypeStore = @import("check/TypeStore.zig");
+    pub const Types = @import("check/Types.zig");
+    pub const Constrain = @import("check/Constrain.zig");
+    pub const Solve = @import("check/Solve.zig");
+    pub const Schemes = @import("check/Schemes.zig");
+    pub const Render = @import("check/Render.zig");
+    pub const Diagnostics = @import("check/Diagnostics.zig");
+    pub const Check = @import("check/Check.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
     pub const bir = @import("dump/bir.zig");
     pub const interface = @import("dump/interface.zig");
+    pub const types = @import("dump/types.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");
@@ -63,6 +74,7 @@ test {
     std.testing.refAllDecls(parse);
     std.testing.refAllDecls(bir);
     std.testing.refAllDecls(resolve);
+    std.testing.refAllDecls(check);
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(render);

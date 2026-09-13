@@ -183,6 +183,11 @@ exponent := [eE] [+-]? [0-9]+
 - Only expressions of type `String`, `Int`, `Float`, `Bool`, `Char` may be interpolated. That is
   checked in M2, not here; the front end lowers `${e}` to an explicit `interp` node so the
   obligation is visible.
+- **The type must be known.** The compiler inserts the conversion, so it has to know which one:
+  `f name = "${name}"` with `name` used nowhere else is `ambiguous_interpolation`, fixed by an
+  annotation. A `number`-typed expression is accepted without resolving to `Int` or `Float`,
+  because both stringify identically on the JavaScript target — that relaxation is a property of
+  the target, not of the type system, and it is what lets `f n = "n: ${n}"` compile.
 
 ### 2.7 Multiline strings
 
@@ -313,7 +318,7 @@ Notes:
   module outside the core package — is `equatable_outside_core`, and a second marker on
   the same variable, or one on a later occurrence of it, is
   `equatable_not_first_occurrence`. The prefix marks the **variable**, not the argument
-  in front of which it stands: `eq : equatable a -> a -> a -> Bool` is a function of two
+  in front of which it stands: `eq : equatable a -> a -> Bool` is a function of two
   arguments, and `pub equatable foreign type List a` means "equatable when every
   parameter is". Because it is recognised only where a whole `Type` starts, an ARGUMENT
   keeps its old reading: `List equatable` is a list of a variable named `equatable`.
@@ -700,7 +705,19 @@ foreign_outside_core  equatable_outside_core  equatable_not_first_occurrence
 unbound_variable  unbound_constructor  unbound_type  unknown_module_alias
 question_in_lambda  question_outside_function
 shadowing  duplicate_pattern_variable  duplicate_type_parameter  unbound_type_variable
+unknown_module  duplicate_module  import_cycle  unknown_import_name  private_name
+opaque_constructor  wrong_type_arity  recursive_alias
+type_mismatch  rigid_mismatch  infinite_type  kind_mismatch
+too_few_args  too_many_args  not_a_function
+missing_field  unknown_field  record_not_closed
+not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
+tuple_index_out_of_range  not_a_tuple  try_shape
 ```
+
+The first three lines after the M1 catalogue are M2a's (the module graph and
+cross-module name resolution); the rest are M2b's type errors, defined in
+[`checker.md`](checker.md) §8. Two exhaustiveness codes — `missing_patterns` and
+`redundant_pattern` — join them in M2c.
 
 `expected_token` is for the situations where exactly one token can come next (`)`, `]`, `}`,
 `->`, `of`, `then`, `else`, `in`, `=`, `:`); `unexpected_token` is for the situations where the

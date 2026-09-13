@@ -1,2 +1,2 @@
 module PrivateAndPublic
-  value visible
+  value visible : Int -> Int

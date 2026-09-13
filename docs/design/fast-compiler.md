@@ -924,6 +924,29 @@ fixture suite**. That mitigation is the entire justification for keeping the fea
 be proven rather than assumed. If it does not land convincingly on real mistakes, revisit before M3
 — afterwards it is a breaking language change, not a compiler change.
 
+### Settled in M2b: the condition is met, currying stays
+
+`tests/corpus/check/args/` holds 38 fixtures taken from real mistakes, each asserting a whole
+diagnostic and each producing exactly one. On review, **37 of 38 read as the right message** —
+above the 90% bar this section set. They name the function, its arity, what it got, the type of
+the missing argument, and why the result could not be the value that was wanted:
+
+```
+The `update` function expects 2 arguments, but it got only 1.
+The missing argument is:      Model
+So this call produces a function:      Model -> Model
+But I needed a value of type:      Model
+```
+
+The single failure is a composition (`f = String.toUpper >> String.trim`) where the message and
+hint are right but the types shown are two unresolved variables: a lambda's equality is solved
+before its body, so nothing has been learned yet at the point of report. Fixing it means
+constraining a lambda's body before its type, which costs precision everywhere else. Three more
+are right-message-but-imperfect-underline and pass on the strength of a dedicated hint.
+
+The revisit trigger is therefore **discharged**: currying stays, and §9.3's two M3 obligations
+below are what it now costs.
+
 Concretely, that means **two** M3 obligations, not one: emit a direct n-ary call wherever the callee's
 arity is statically known at a saturated call site — which is the overwhelming majority, since the
 DCE graph (§9.1) already resolves every top-level reference — and fall back to the `A2`-style tagged

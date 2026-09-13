@@ -1,0 +1,5 @@
+-- check/args: `Result.map` takes the function and the result; only the
+-- function is there.
+pub bumped : Result String Int -> Result String Int
+bumped r =
+    Result.map (\n -> n + 1)

@@ -1,0 +1,1 @@
+[{"code":"too_many_args","severity":"error","span":{"file":"tests/corpus/check/args/TooManyArgsToOperatorFunction.beni","start":{"line":5,"col":6},"end":{"line":5,"col":7}},"title":"TOO MANY ARGS","message":"The (+) operator expects 2 arguments, but it got 3.\n\nAre there any missing commas? Or missing parentheses?\n"}]

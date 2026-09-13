@@ -1,0 +1,1 @@
+[{"code":"too_many_args","severity":"error","span":{"file":"tests/corpus/check/args/TooManyArgsToConstructor.beni","start":{"line":8,"col":5},"end":{"line":8,"col":10}},"title":"TOO MANY ARGS","message":"The `Point` constructor expects 2 arguments, but it got 3.\n\nAre there any missing commas? Or missing parentheses?\n"}]
