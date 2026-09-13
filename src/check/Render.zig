@@ -117,10 +117,11 @@ pub const Namer = struct {
     }
 };
 
-/// `a`, `b`, … `z`, then `a2`, `b2`, … — the same scheme
-/// `dump/interface.zig` uses for a type's parameters, so the two dumps read
-/// alike.
-fn generatedName(gpa: Allocator, i: u32) Allocator.Error![]const u8 {
+/// `a`, `b`, … `z`, then `a2`, `b2`, … — the names an unnamed variable gets.
+/// `pub` because `dump/interface.zig` spells a type's parameters with it:
+/// there is ONE generated-name scheme in the compiler, so the two dumps
+/// cannot drift apart the way a second copy of this would.
+pub fn generatedName(gpa: Allocator, i: u32) Allocator.Error![]const u8 {
     const letters = "abcdefghijklmnopqrstuvwxyz";
     const letter = letters[i % letters.len];
     const round = i / letters.len;
@@ -167,6 +168,13 @@ pub fn allocType(gpa: Allocator, cx: Context, namer: *Namer, v: Var) Allocator.E
 /// The depth at which a type stops being readable anyway. An `infinite_type`
 /// is reported separately; this is what keeps a poisoned cycle from filling
 /// stderr.
+///
+/// Reaching it TRUNCATES the printed type to `…` and reports nothing extra,
+/// which is right for a printer: the diagnostic that asked for this text
+/// has already been decided, and the guard changes only how much of one
+/// type the reader sees. A type 24 constructors deep is past the point
+/// where more text helps, and a message that stopped short is strictly
+/// better than one that scrolls a cycle off the screen.
 const max_depth = 24;
 
 fn write(
@@ -177,6 +185,8 @@ fn write(
     prec: Prec,
     depth: u32,
 ) (std.Io.Writer.Error || Allocator.Error)!void {
+    // Truncation, not an error: the diagnostic stands, only this type's
+    // tail is elided. See `max_depth`.
     if (depth > max_depth) return w.writeAll("…");
     const root = cx.store.find(v);
     switch (cx.store.content(root)) {
@@ -320,7 +330,8 @@ pub const PatPrec = enum {
 };
 
 /// A counterexample pattern rendered into a freshly allocated string, for
-/// `missing_patterns`' list.
+/// `missing_patterns`' list. See `writePattern` for what such a row can and
+/// cannot contain.
 pub fn allocPattern(
     gpa: Allocator,
     pats: *const Exhaustive.Patterns,
@@ -337,6 +348,17 @@ pub fn allocPattern(
 }
 
 /// Write one simplified pattern as source syntax.
+///
+/// **The rows this is called on are COUNTEREXAMPLES, never source
+/// patterns.** The only caller is `allocPattern`, and the only caller of
+/// that is `Exhaustive.one` on the rows `Exhaustive.isExhaustive` returned.
+/// Those rows are built from `anythings()` and `makeCtor()` alone: every
+/// row `isExhaustive` returns is either a fresh row of wildcards, or a
+/// wildcard prepended to a row it built recursively, or a constructor made
+/// here and prepended to one. A node of the input matrix — which is where a
+/// `.literal` from `simplify` lives — is never carried into the result. So
+/// `.literal` is a shape this printer cannot be handed, and it prints `_`
+/// rather than a value it has no business decoding.
 pub fn writePattern(
     w: *std.Io.Writer,
     pats: *const Exhaustive.Patterns,
@@ -355,10 +377,19 @@ fn writePat(
     prec: PatPrec,
     depth: u32,
 ) (std.Io.Writer.Error || Allocator.Error)!void {
+    // Truncation, not an error: `missing_patterns` still names the `case`
+    // and still lists its examples, one of which is elided past this depth.
+    // `writeList`'s `heads` buffer is sized by the same constant, so the
+    // two agree on where an example stops.
     if (depth > max_depth) return w.writeAll("…");
     switch (pats.tag(p)) {
         .anything => return w.writeAll("_"),
-        .literal => return writeLiteral(w, pats, pats.literal(p)),
+        // Unreachable by the argument on `writePattern`. `_` rather than
+        // `unreachable`, and rather than a literal printer that would have
+        // to decode arbitrary bytes: a counterexample with `_` where a
+        // literal would go is still a pattern that covers the missing case,
+        // which is the one property the reader acts on.
+        .literal => return w.writeAll("_"),
         .ctor => {},
     }
     const c = pats.ctor(p);
@@ -443,43 +474,6 @@ fn writeList(
     }
     try writePat(w, pats, interner, tail, .top, depth + 1);
     if (wrap) try w.writeByte(')');
-}
-
-fn writeLiteral(
-    w: *std.Io.Writer,
-    pats: *const Exhaustive.Patterns,
-    lit: Exhaustive.Literal,
-) std.Io.Writer.Error!void {
-    switch (lit.kind) {
-        .int => if (lit.parsed) try w.print("{d}", .{lit.value}) else try w.writeAll(pats.bytesOf(lit)),
-        .char => {
-            try w.writeByte('\'');
-            try writeEscaped(w, @intCast(lit.value), '\'');
-            try w.writeByte('\'');
-        },
-        .string => {
-            try w.writeByte('"');
-            var it = std.unicode.Utf8View.initUnchecked(pats.bytesOf(lit)).iterator();
-            while (it.nextCodepoint()) |cp| try writeEscaped(w, cp, '"');
-            try w.writeByte('"');
-        },
-    }
-}
-
-/// One scalar, re-escaped the way the lexer would accept it back
-/// (language.md §2.6). `quote` is the delimiter that has to be escaped.
-fn writeEscaped(w: *std.Io.Writer, cp: u21, quote: u8) std.Io.Writer.Error!void {
-    if (cp < 0x20 or cp == 0x7f) return switch (cp) {
-        '\t' => w.writeAll("\\t"),
-        '\n' => w.writeAll("\\n"),
-        '\r' => w.writeAll("\\r"),
-        else => w.print("\\u{{{x:0>4}}}", .{cp}),
-    };
-    if (cp == quote) return w.print("\\{c}", .{quote});
-    if (cp == '\\') return w.writeAll("\\\\");
-    var buffer: [4]u8 = undefined;
-    const len = std.unicode.utf8Encode(cp, &buffer) catch return w.writeAll("?");
-    return w.writeAll(buffer[0..len]);
 }
 
 // ---------------------------------------------------------------------------

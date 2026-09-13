@@ -43,6 +43,7 @@ const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
+const Parse = @import("../parse/Parse.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Schemes = @import("Schemes.zig");
 const Constrain = @import("Constrain.zig");
@@ -103,7 +104,7 @@ pub const Problem = union(enum) {
     unknown_field: Fields,
     record_not_closed: struct { actual: Var, expected: Var },
 
-    pub const Fields = struct { names: []const Symbol, actual: Var, expected: Var };
+    pub const Fields = struct { names: []Symbol, actual: Var, expected: Var };
 };
 
 pub const Solver = struct {
@@ -149,15 +150,34 @@ pub const Solver = struct {
     /// computed from a type the author did not mean.
     last_bad_call: Bir.Inst.OptionalIndex = .none,
 
-    /// Deep enough for anything the parser accepts (language.md §10 caps
-    /// nesting at 4096) and shallow enough not to overflow a worker stack.
-    const max_depth = 4200;
+    /// The occurs check's stack, reused across every generalised binding of
+    /// the group; see `occurs`.
+    occurs_frames: OccursFrames = .empty,
+
+    /// Deep enough for anything the parser accepts, and shallow enough not
+    /// to overflow a worker's 64 MiB stack (`Check.stack_size`).
+    ///
+    /// **Silence at this guard is correct, and only because of the `+`.**
+    /// The parser bounds a whole declaration at `Parse.max_depth` levels
+    /// (language.md §10, and `Parse.depth`'s comment explains why the
+    /// charge is held for the declaration and not the subtree), and every
+    /// walk guarded by this number spends at most one frame per level of
+    /// that tree — so a file the front end accepted cannot reach it, and a
+    /// file that could was reported as `nesting_too_deep` before the
+    /// checker saw it. Derived from the parser's number rather than written
+    /// as a constant, so the argument cannot rot when either moves.
+    ///
+    /// The guards that DO poison a type reachable from an accepted file are
+    /// `Types.Builder.max_depth` and `Schemes.Writer.max_depth`, and both
+    /// report.
+    const max_depth = Parse.max_depth + 104;
 
     pub fn init(gpa: Allocator, env: *Constrain.Env, tree: *const Constrain.Tree, reporter: *Diagnostics.Reporter) Solver {
         return .{ .gpa = gpa, .env = env, .tree = tree, .reporter = reporter };
     }
 
     pub fn deinit(s: *Solver) void {
+        s.occurs_frames.deinit(s.gpa);
         for (s.pools.items) |*p| p.deinit(s.gpa);
         s.pools.deinit(s.gpa);
         for (s.obligations.items) |*o| o.deinit(s.gpa);
@@ -205,6 +225,9 @@ pub const Solver = struct {
         if (c == .none) return;
         s.depth += 1;
         defer s.depth -= 1;
+        // Unreachable from an accepted file — see `max_depth`. Silence is
+        // the right answer here because the input that could get past the
+        // parser's own bound has a diagnostic already.
         if (s.depth > max_depth) return;
 
         const node = s.tree.node(c);
@@ -254,7 +277,7 @@ pub const Solver = struct {
         // The deferred occurs check, once per generalised binding — not
         // inside unification (design §7 #3).
         for (s.tree.headers(info.header_start, info.header_len)) |h| {
-            if (occurs(s.store(), h.v)) {
+            if (try occurs(&s.occurs_frames, s.gpa, s.store(), h.v)) {
                 s.store().setContent(s.store().find(h.v), .err);
                 try s.reporter.infiniteType(h.region, h.name);
             }
@@ -329,6 +352,9 @@ pub const Solver = struct {
     pub fn unifyQuiet(s: *Solver, a: Var, b: Var) Error!bool {
         s.depth += 1;
         defer s.depth -= 1;
+        // See `max_depth`: unreachable from a file the parser accepted.
+        // "True" rather than "false" so a guard that somehow trips cannot
+        // invent a mismatch out of its own exhaustion.
         if (s.depth > max_depth) return true;
 
         const st = s.store();
@@ -393,8 +419,7 @@ pub const Solver = struct {
     /// occurs check, which is exactly what dropping `comparable` bought.
     fn kindAccepts(s: *Solver, kind: TypeStore.Kind, v: Var) bool {
         const wk = s.env.types.well_known;
-        const _root, const c = s.store().resolved(v);
-        _ = _root;
+        const c = s.store().resolvedContent(v);
         const app = switch (c) {
             .structure => |st| switch (st) {
                 .app => |a| a,
@@ -452,7 +477,7 @@ pub const Solver = struct {
                 if (aa.type != ab.type or aa.args.len != ab.args.len) {
                     return s.unifyQuiet(aa.actual, ab.actual);
                 }
-                if (!try s.unifyPairs(st.vars(aa.args), st.vars(ab.args))) return false;
+                if (!try s.unifyPairs(aa.args, ab.args)) return false;
                 _ = st.merge(st.find(ra), st.find(rb), .{ .alias = ab });
                 return true;
             },
@@ -466,14 +491,20 @@ pub const Solver = struct {
         return s.env.scratch.dupe(Var, items);
     }
 
-    /// Unify two argument lists elementwise. Both are copied out of `extra`
-    /// first, because unifying grows it and would move the views.
-    fn unifyPairs(s: *Solver, left_view: []const Var, right_view: []const Var) Error!bool {
-        const left = try s.copyVars(left_view);
-        defer s.env.scratch.free(left);
-        const right = try s.copyVars(right_view);
-        defer s.env.scratch.free(right);
-        for (left, right) |x, y| {
+    /// Unify two argument lists elementwise.
+    ///
+    /// Takes RANGES, not views. `store.vars` hands back a slice of `extra`,
+    /// and unifying appends to `extra` — so a view taken once would dangle
+    /// the moment the first element unified. Copying both lists out was the
+    /// obvious fix and was two scratch allocations per `app`/`tuple`
+    /// unification on the hot path, which §5's "no per-node allocation"
+    /// rules out; re-slicing the range each iteration costs an add and
+    /// cannot go stale.
+    fn unifyPairs(s: *Solver, left: TypeStore.Range, right: TypeStore.Range) Error!bool {
+        const n = @min(left.len, right.len);
+        for (0..n) |i| {
+            const x = s.store().vars(left)[i];
+            const y = s.store().vars(right)[i];
             if (!try s.unifyQuiet(x, y)) return false;
         }
         return true;
@@ -535,7 +566,7 @@ pub const Solver = struct {
                     else => return false,
                 };
                 if (aa.type != ab.type or aa.args.len != ab.args.len) return false;
-                if (!try s.unifyPairs(st.vars(aa.args), st.vars(ab.args))) return false;
+                if (!try s.unifyPairs(aa.args, ab.args)) return false;
                 _ = st.merge(st.find(ra), st.find(rb), .{ .structure = .{ .app = aa } });
                 return true;
             },
@@ -545,7 +576,7 @@ pub const Solver = struct {
                     else => return false,
                 };
                 if (ta.len != tb.len) return false;
-                if (!try s.unifyPairs(st.vars(ta), st.vars(tb))) return false;
+                if (!try s.unifyPairs(ta, tb)) return false;
                 _ = st.merge(st.find(ra), st.find(rb), .{ .structure = .{ .tuple = ta } });
                 return true;
             },
@@ -569,9 +600,28 @@ pub const Solver = struct {
         closed: bool,
     };
 
+    /// Flatten a record's extension chain into one field list, sorted by
+    /// symbol id.
+    ///
+    /// The SORT is what makes `unifyRecord` a merge-join, which is what the
+    /// `TypeStore` header promises: the store keeps each record's own
+    /// fields sorted, but flattening `{ a | … }` where the extension is
+    /// another record concatenates two sorted runs, and a concatenation of
+    /// sorted runs is not sorted. Without it the partition below was a
+    /// linear `findField` in both directions — O(n·m) per record
+    /// unification, under a comment claiming one pass.
+    ///
+    /// Duplicate names cannot appear: `duplicate_field` refuses them in a
+    /// literal and in a type, and a record variable is only ever extended
+    /// with fields the other side did not have.
     fn gatherFields(s: *Solver, record: TypeStore.Structure.Record) Error!Gathered {
         var out: Gathered = .{ .fields = .empty, .ext = record.ext, .closed = false };
         try out.fields.appendSlice(s.env.scratch, s.store().fields(record.fields));
+        // The store keeps ONE record's fields sorted, so a record that is
+        // not extended by another is already in merge order and pays
+        // nothing here. Only a flattened chain — two sorted runs
+        // concatenated — needs the sort.
+        var concatenated = false;
         var guard: u32 = 0;
         while (guard < 1024) : (guard += 1) {
             const root, const c = s.store().resolved(out.ext);
@@ -580,25 +630,31 @@ pub const Solver = struct {
                     .record => |r| {
                         try out.fields.appendSlice(s.env.scratch, s.store().fields(r.fields));
                         out.ext = r.ext;
+                        concatenated = true;
                         continue;
                     },
                     .empty_record => {
                         out.ext = root;
                         out.closed = true;
-                        return out;
+                        break;
                     },
                     else => {
                         out.ext = root;
-                        return out;
+                        break;
                     },
                 },
                 else => {
                     out.ext = root;
-                    return out;
+                    break;
                 },
             }
         }
+        if (concatenated) std.mem.sort(TypeStore.Field, out.fields.items, {}, fieldLessThan);
         return out;
+    }
+
+    fn fieldLessThan(_: void, a: TypeStore.Field, b: TypeStore.Field) bool {
+        return @intFromEnum(a.name) < @intFromEnum(b.name);
     }
 
     fn unifyRecord(s: *Solver, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b: TypeStore.Structure.Record) Error!bool {
@@ -615,16 +671,30 @@ pub const Solver = struct {
         var shared: std.ArrayList([2]Var) = .empty;
         defer shared.deinit(s.env.scratch);
 
-        for (a.fields.items) |fa| {
-            if (findField(b.fields.items, fa.name)) |fb| {
-                try shared.append(s.env.scratch, .{ fa.value, fb });
-            } else {
+        // Elm's four-way partition as ONE merge-join over two sorted runs
+        // (`gatherFields` sorts), rather than a linear scan of each side
+        // per field of the other.
+        var i: usize = 0;
+        var j: usize = 0;
+        while (i < a.fields.items.len and j < b.fields.items.len) {
+            const fa = a.fields.items[i];
+            const fb = b.fields.items[j];
+            const na = @intFromEnum(fa.name);
+            const nb = @intFromEnum(fb.name);
+            if (na < nb) {
                 try only_a.append(s.env.scratch, fa);
+                i += 1;
+            } else if (na > nb) {
+                try only_b.append(s.env.scratch, fb);
+                j += 1;
+            } else {
+                try shared.append(s.env.scratch, .{ fa.value, fb.value });
+                i += 1;
+                j += 1;
             }
         }
-        for (b.fields.items) |fb| {
-            if (findField(a.fields.items, fb.name) == null) try only_b.append(s.env.scratch, fb);
-        }
+        try only_a.appendSlice(s.env.scratch, a.fields.items[i..]);
+        try only_b.appendSlice(s.env.scratch, b.fields.items[j..]);
 
         // A field one side requires and the other cannot grow is the
         // interesting failure. Which code it is depends on WHICH side could
@@ -679,7 +749,7 @@ pub const Solver = struct {
         return s.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
     }
 
-    fn fieldNames(s: *Solver, fields: []const TypeStore.Field) Error![]const Symbol {
+    fn fieldNames(s: *Solver, fields: []const TypeStore.Field) Error![]Symbol {
         const out = try s.env.scratch.alloc(Symbol, fields.len);
         for (fields, out) |f, *n| n.* = f.name;
         return out;
@@ -694,13 +764,6 @@ pub const Solver = struct {
             .flex, .rigid, .err => true,
             else => false,
         };
-    }
-
-    fn findField(fields: []const TypeStore.Field, name: Symbol) ?Var {
-        for (fields) |f| {
-            if (f.name == name) return f.value;
-        }
-        return null;
     }
 
     // ---- Calls: checker.md §8.3 ------------------------------------------
@@ -718,12 +781,13 @@ pub const Solver = struct {
         // Peel arrows, but keep the TAIL as the variable the author would
         // recognise: `resolved` looks through an alias, and stopping on the
         // expansion would make the message say `{ count : Int }` where the
-        // annotation said `Model`.
+        // annotation said `Model`. The `max_depth` bound is the arrow COUNT
+        // of one type, which is bounded by the same declaration nesting the
+        // parser caps — see `max_depth`.
         var tail = st.find(info.callee);
         var guard: u32 = 0;
         while (guard < max_depth) : (guard += 1) {
-            const _root, const c = st.resolved(tail);
-            _ = _root;
+            const c = st.resolvedContent(tail);
             const f = switch (c) {
                 .structure => |flat| switch (flat) {
                     .func => |func| func,
@@ -736,8 +800,7 @@ pub const Solver = struct {
         }
         const arrows: u32 = @intCast(params.items.len);
         const given: u32 = @intCast(args.len);
-        const _tail_root, const tail_content = st.resolved(tail);
-        _ = _tail_root;
+        const tail_content = st.resolvedContent(tail);
         if (tail_content == .err) return;
 
         const arg_regions = s.argRegions(node.region);
@@ -819,7 +882,7 @@ pub const Solver = struct {
             const inst = arg_regions[i];
             if (inst.int() >= bir.insts.len or bir.instTag(inst) != .lambda) continue;
             const written: u32 = bir.subRange(@enumFromInt(bir.instData(inst).lhs)).len();
-            const wanted = s.arrowCount(params[i]);
+            const wanted = s.store().arrowCount(params[i]);
             if (wanted > written) {
                 return .{ .index = @intCast(i + 1), .written = written, .wanted = wanted };
             }
@@ -828,25 +891,6 @@ pub const Solver = struct {
     }
 
     /// How many arrows `v` has at the top level, following aliases.
-    fn arrowCount(s: *Solver, v: Var) u32 {
-        var count: u32 = 0;
-        var current = v;
-        while (count < 64) {
-            const _root, const c = s.store().resolved(current);
-            _ = _root;
-            const f = switch (c) {
-                .structure => |flat| switch (flat) {
-                    .func => |func| func,
-                    else => return count,
-                },
-                else => return count,
-            };
-            count += 1;
-            current = f.result;
-        }
-        return count;
-    }
-
     /// Unify the first `count` arguments against the callee's parameters,
     /// STOPPING at the first failure. One mistake yields one message: once
     /// an argument is wrong every later parameter was computed from a type
@@ -860,14 +904,18 @@ pub const Solver = struct {
         arg_regions: []const Bir.Inst.Index,
         count: u32,
     ) Error!bool {
-        const before = s.reporter.items.items.len;
+        // The flag is scoped to this loop, so anything the caller had
+        // already reported has to survive it.
+        const outer = s.reporter.didReport();
+        defer if (outer) s.reporter.markReported();
         for (args[0..count], 0..) |arg, i| {
+            s.reporter.clearReported();
             try s.unify(params[i], arg, argRegion(arg_regions, node.region, i), .{
                 .tag = .call_arg,
                 .index = @intCast(i + 1),
                 .owner = node.region.toOptional(),
             });
-            if (s.reporter.items.items.len != before) return true;
+            if (s.reporter.didReport()) return true;
         }
         return false;
     }
@@ -898,8 +946,7 @@ pub const Solver = struct {
     /// function. A flex variable has decided nothing, and a partial
     /// application flowing into one is perfectly ordinary.
     fn wantsNonFunction(s: *Solver, v: Var) bool {
-        const _root, const c = s.store().resolved(v);
-        _ = _root;
+        const c = s.store().resolvedContent(v);
         return switch (c) {
             .flex, .err => false,
             .rigid => true,
@@ -923,6 +970,13 @@ pub const Solver = struct {
     /// The scheme the reference at `region` names. After resolution every
     /// reference is a pair of dense indices, so this is array lookups and
     /// no name is compared (checker.md §4.5).
+    ///
+    /// Every arm reads this module's own Bir or a dependency's INTERFACE,
+    /// and nothing reads a dependency's Bir — the firewall of
+    /// `fast-compiler.md` §8.1, which M2 broke here: the `.ext_ctor` arm
+    /// used to open the declaring module's Bir and scan its constructor
+    /// table by NAME, under this very comment. `Interface.Ctor.arg_terms`
+    /// is what makes the comment true.
     fn schemeOf(s: *Solver, region: Bir.Inst.Index) Error!?Var {
         const bir = s.env.bir;
         const data = bir.instData(region);
@@ -932,28 +986,21 @@ pub const Solver = struct {
                 if (data.lhs >= s.env.decl_scheme.len) return null;
                 return s.env.decl_scheme[data.lhs].unwrap();
             },
-            .ctor => return try s.ctorType(s.env.module, bir, data.lhs),
+            .ctor => return try s.ctorType(data.lhs),
             .ext_value => return try s.importedValue(@enumFromInt(data.lhs), data.rhs),
-            .ext_ctor => {
-                if (data.lhs >= s.env.interfaces.len) return null;
-                const module: Graph.Index = @enumFromInt(data.lhs);
-                const iface = &s.env.interfaces[module.int()];
-                if (data.rhs >= iface.ctors.len) return null;
-                const target_bir = s.env.artifacts.bir(s.env.graph.moduleFile(module));
-                const name = iface.ctorName(@enumFromInt(data.rhs));
-                for (target_bir.ctors, 0..) |c, i| {
-                    if (target_bir.symbol(c.name) == name) return try s.ctorType(module, target_bir, @intCast(i));
-                }
-                return null;
-            },
+            .ext_ctor => return try s.importedCtor(@enumFromInt(data.lhs), data.rhs),
             else => return null,
         }
     }
 
-    /// A constructor's type, `arg1 -> … -> argN -> T p1 … pk`, built FRESH
-    /// at the current rank. Building it fresh is the instantiation: nothing
-    /// is shared with another use site, so there is nothing to copy.
-    fn ctorType(s: *Solver, module: Graph.Index, bir: *const Bir, index: u32) Error!?Var {
+    /// A constructor of THIS module: `arg1 -> … -> argN -> T p1 … pk`, built
+    /// FRESH at the current rank. Building it fresh is the instantiation:
+    /// nothing is shared with another use site, so there is nothing to
+    /// copy. An imported constructor goes through `importedCtor` instead —
+    /// this reads the module's own Bir, which only its own check may do.
+    fn ctorType(s: *Solver, index: u32) Error!?Var {
+        const module = s.env.module;
+        const bir = s.env.bir;
         if (index >= bir.ctors.len) return null;
         const c = bir.ctors[index];
         const owner = bir.decl(c.decl);
@@ -985,6 +1032,9 @@ pub const Solver = struct {
         const arg_vars = try s.env.scratch.alloc(Var, args.len);
         defer s.env.scratch.free(arg_vars);
         for (args, arg_vars) |arg, *v| v.* = try b.read(arg);
+        // The guard poisoned an argument, so the constructor's type is a
+        // hole; a message has to go with it (`Env.too_deep`).
+        if (b.too_deep) try s.env.noteTooDeep(s.region);
         const result = try b.apply(id, param_vars);
         // Everything the BUILDER made has to join the pool; `chain` goes
         // through `fresh`, which pools as it goes, so it runs after —
@@ -994,9 +1044,35 @@ pub const Solver = struct {
         return try s.chain(arg_vars, result);
     }
 
+    /// A constructor of another module, instantiated from that module's
+    /// interface (checker.md §7's `arg_terms`) — never from its `Bir`.
+    ///
+    /// This is the firewall of `fast-compiler.md` §8.1 for constructors: in
+    /// M4 a dependency's Bir may not be in memory, only this record. It is
+    /// also §4.5: `data.rhs` is the dense `CtorIndex` resolution already
+    /// produced, so no name is compared. The version this replaced opened
+    /// the dependency's Bir and scanned its constructor table by name.
+    fn importedCtor(s: *Solver, module: Graph.Index, index: u32) Error!?Var {
+        if (module.int() >= s.env.interfaces.len) return null;
+        const iface = &s.env.interfaces[module.int()];
+        if (index >= iface.ctors.len) return null;
+        const type_id = s.env.types.ofInterface(module, iface.ctors[index].type);
+        if (type_id == .none) return null;
+        const mark = s.store().count();
+        const v = try Schemes.instantiateCtor(iface, s.store(), index, type_id, s.rank, s.env.scratch) orelse return null;
+        try s.adoptSince(mark);
+        return v;
+    }
+
     /// A value of another module, instantiated from that module's interface
     /// (checker.md §7): the flat term language, copied into this store with
     /// one fresh variable per quantifier.
+    ///
+    /// The `instantiations` counter is NOT bumped here. Every scheme this
+    /// returns goes through `makeCopy`, which counts it — counting again
+    /// would make one imported call read as two, and checker.md §9 has M4's
+    /// incrementality tests asserting this counter did not move, so it has
+    /// to mean exactly one thing.
     fn importedValue(s: *Solver, module: Graph.Index, index: u32) Error!?Var {
         if (module.int() >= s.env.interfaces.len) return null;
         const iface = &s.env.interfaces[module.int()];
@@ -1006,7 +1082,6 @@ pub const Solver = struct {
         const mark = s.store().count();
         const v = try Schemes.instantiate(iface, s.store(), @intFromEnum(scheme_index), s.rank, s.env.scratch);
         try s.adoptSince(mark);
-        s.counters.instantiations += 1;
         return v;
     }
 
@@ -1026,6 +1101,10 @@ pub const Solver = struct {
     fn copyHelp(s: *Solver, v: Var) Error!Var {
         s.depth += 1;
         defer s.depth -= 1;
+        // See `max_depth`: unreachable from a file the parser accepted.
+        // Returning the original variable shares it with the copy, which is
+        // wrong but monotone — it can only make a type LESS general, never
+        // silently accept more.
         if (s.depth > max_depth) return v;
 
         const st = s.store();
@@ -1054,6 +1133,10 @@ pub const Solver = struct {
                     .app => |a| .{ .app = .{ .type = a.type, .args = try s.copyRange(st.vars(a.args)) } },
                     .tuple => |t| .{ .tuple = try s.copyRange(st.vars(t)) },
                     .record => |r| blk: {
+                        // Copied, not viewed: `st.fields` is a view into
+                        // `extra`, copying a child appends to `extra` and
+                        // moves it, and `addFields` sorts its input in
+                        // place. Both rule out working on the view.
                         const source = try s.env.scratch.dupe(TypeStore.Field, st.fields(r.fields));
                         defer s.env.scratch.free(source);
                         for (source) |*f| f.value = try s.copyHelp(f.value);
@@ -1072,6 +1155,9 @@ pub const Solver = struct {
         return copy;
     }
 
+    /// Copy a range of variables. The dupe is unavoidable for the same
+    /// reason as `copyHelp`'s record arm: `st.vars` is a view into `extra`
+    /// and copying a child appends to it.
     fn copyRange(s: *Solver, vars: []const Var) Error!TypeStore.Range {
         const source = try s.env.scratch.dupe(Var, vars);
         defer s.env.scratch.free(source);
@@ -1172,8 +1258,11 @@ pub const Solver = struct {
             for (bucket.items) |v| _ = adjustRank(st, young_mark, visit_mark, @intCast(r), v, 0);
         }
 
-        for (table.items[0..young_rank], 0..) |bucket, r| {
-            _ = r;
+        // Everything BELOW the young rank escaped this `let` and goes back
+        // into the pool of whatever rank `adjustRank` settled on — which is
+        // why the bucket's own index is not needed here, only the
+        // variable's new rank.
+        for (table.items[0..young_rank]) |bucket| {
             for (bucket.items) |v| {
                 if (st.find(v) != v) continue; // redundant: merged away
                 try (try s.pool(st.rank(v))).append(s.gpa, v);
@@ -1303,8 +1392,7 @@ pub const Solver = struct {
 
     fn dischargeInterpolatable(s: *Solver, o: Obligation) Error!void {
         const st = s.store();
-        const _root, const c = st.resolved(o.v);
-        _ = _root;
+        const c = st.resolvedContent(o.v);
         const wk = s.env.types.well_known;
         switch (c) {
             .err => {},
@@ -1332,8 +1420,7 @@ pub const Solver = struct {
 
     fn dischargeTupleIndex(s: *Solver, o: Obligation) Error!void {
         const st = s.store();
-        const _root, const c = st.resolved(o.v);
-        _ = _root;
+        const c = st.resolvedContent(o.v);
         const result = o.result.unwrap() orelse return;
         switch (c) {
             .err => s.poison(result),
@@ -1374,7 +1461,7 @@ pub const Solver = struct {
         try s.dischargeObligations(s.rank);
         try s.generalize(s.rank);
         for (headers) |h| {
-            if (!occurs(s.store(), h.v)) continue;
+            if (!try occurs(&s.occurs_frames, s.gpa, s.store(), h.v)) continue;
             s.store().setContent(s.store().find(h.v), .err);
             try s.reporter.infiniteType(h.region, h.name);
         }
@@ -1394,7 +1481,11 @@ fn adjustRank(st: *TypeStore, young_mark: u32, visit_mark: u32, group_rank: u32,
     const root = st.find(v);
     const rank = st.rank(root);
     const mark = st.mark(root);
-    if (depth > 4200) return rank;
+    // Unreachable from an accepted file (`Solver.max_depth`). Returning the
+    // variable's own rank is the conservative answer: it can only keep a
+    // variable OUT of a generalisation, never let one in that should have
+    // stayed at an outer rank.
+    if (depth > Solver.max_depth) return rank;
     if (mark == young_mark) {
         st.setMark(root, visit_mark);
         const max = adjustRankContent(st, young_mark, visit_mark, group_rank, st.content(root), depth);
@@ -1445,24 +1536,31 @@ fn adjustRankContent(st: *TypeStore, young_mark: u32, visit_mark: u32, group_ran
 /// The deferred occurs check (design §7 #3): is `v` reachable from its own
 /// structure? Run once per generalised binding, never inside unification.
 /// Iterative, three-colour, so a 4096-deep type cannot overflow the stack.
-pub fn occurs(st: *TypeStore, v: Var) bool {
+///
+/// **No depth guard, deliberately.** This is the only walk in the checker
+/// that answers a yes/no question whose "no" is a *silently accepted
+/// program*: a missed cycle is a missed `infinite_type` and a type the
+/// backend would then try to emit. A fixed frame array meant answering "no
+/// cycle" for a type merely too deep to finish, so the frames grow instead.
+/// The stack is bounded anyway — every frame holds a distinct GREY node, so
+/// it can never exceed the store's variable count.
+///
+/// `frames` is the caller's, cleared here and kept between calls: this runs
+/// once per generalised binding — 122 000 times on the 100k-line corpus —
+/// and a list allocated per call would put an allocation on a path that had
+/// none.
+pub fn occurs(frames: *OccursFrames, gpa: Allocator, st: *TypeStore, v: Var) Allocator.Error!bool {
     const grey = st.nextMark();
     const black = st.nextMark();
-    const Frame = struct { v: Var, cursor: u32 };
-    // A type deeper than this is not something a person wrote, and a CYCLE
-    // is found long before the depth matters: a cycle closes as soon as the
-    // walk revisits a grey node.
-    var frames: [1024]Frame = undefined;
-    var len: usize = 0;
-    frames[0] = .{ .v = st.find(v), .cursor = 0 };
-    len = 1;
-    while (len > 0) {
-        const frame = &frames[len - 1];
+    frames.clearRetainingCapacity();
+    try frames.append(gpa, .{ .v = st.find(v), .cursor = 0 });
+    while (frames.items.len > 0) {
+        const frame = &frames.items[frames.items.len - 1];
         const root = st.find(frame.v);
         if (frame.cursor == 0) {
             if (st.mark(root) == grey) return true;
             if (st.mark(root) == black) {
-                len -= 1;
+                _ = frames.pop();
                 continue;
             }
             st.setMark(root, grey);
@@ -1470,16 +1568,18 @@ pub fn occurs(st: *TypeStore, v: Var) bool {
         const child = nthChild(st, root, frame.cursor);
         frame.cursor += 1;
         if (child) |c| {
-            if (len >= frames.len) return false; // deeper than anything real
-            frames[len] = .{ .v = c, .cursor = 0 };
-            len += 1;
+            try frames.append(gpa, .{ .v = c, .cursor = 0 });
             continue;
         }
         st.setMark(root, black);
-        len -= 1;
+        _ = frames.pop();
     }
     return false;
 }
+
+/// The occurs check's explicit stack. One per solver, reused.
+pub const OccursFrames = std.ArrayList(OccursFrame);
+pub const OccursFrame = struct { v: Var, cursor: u32 };
 
 /// The `n`th child of a descriptor's content, or null past the end. One
 /// place that knows the shape of every `Content`, so a new one is a compile
@@ -1525,15 +1625,17 @@ const testing = std.testing;
 test "occurs finds a variable inside its own structure and nothing else" {
     var store: TypeStore = .init(testing.allocator);
     defer store.deinit();
+    var frames: OccursFrames = .empty;
+    defer frames.deinit(testing.allocator);
     const a = try store.freshFlex(1);
     const b = try store.freshFlex(1);
     const pair = try store.fresh(.{ .structure = .{ .func = .{ .param = a, .result = b } } }, 1);
-    try testing.expect(!occurs(&store, pair));
-    try testing.expect(!occurs(&store, a));
+    try testing.expect(!try occurs(&frames, testing.allocator, &store, pair));
+    try testing.expect(!try occurs(&frames, testing.allocator, &store, a));
 
     // Tie `a` to a function that mentions `a`: `a = a -> b`.
     _ = store.merge(a, try store.freshFlex(1), .{ .structure = .{ .func = .{ .param = pair, .result = b } } });
-    try testing.expect(occurs(&store, a));
+    try testing.expect(try occurs(&frames, testing.allocator, &store, a));
 }
 
 test "adjustRank pulls a structure's rank down to the outermost it reaches" {

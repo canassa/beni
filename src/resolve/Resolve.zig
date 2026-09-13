@@ -56,6 +56,11 @@ pub const Symbol = InternPool.Symbol;
 /// Owned. One per module, indexed by `Graph.Index`; `Interface.empty` for
 /// a module that could not be built.
 interfaces: []Interface,
+/// Owned. One per module, in lockstep with `interfaces`: which `Bir`
+/// declaration each interface entry came from. Kept OUT of the interface
+/// itself because it is meaningless once the Bir is gone and must never be
+/// hashed with the record M4 caches (`Interface.Provenance`).
+provenance: []Interface.Provenance,
 /// Owned. In the order the modules were resolved, which is topological and
 /// therefore stable; the session sorts them with everything else.
 diagnostics: []const Item,
@@ -74,11 +79,13 @@ pub const Item = struct {
     found: u32 = 0,
 };
 
-pub const empty: Resolve = .{ .interfaces = &.{}, .diagnostics = &.{} };
+pub const empty: Resolve = .{ .interfaces = &.{}, .provenance = &.{}, .diagnostics = &.{} };
 
 pub fn deinit(r: *Resolve, gpa: Allocator) void {
     for (r.interfaces) |*iface| iface.deinit(gpa);
     gpa.free(r.interfaces);
+    for (r.provenance) |*p| p.deinit(gpa);
+    gpa.free(r.provenance);
     gpa.free(r.diagnostics);
     r.* = undefined;
 }
@@ -102,6 +109,8 @@ pub fn run(
     errdefer r.deinit(gpa);
     r.interfaces = try gpa.alloc(Interface, graph.count());
     @memset(r.interfaces, Interface.empty);
+    r.provenance = try gpa.alloc(Interface.Provenance, graph.count());
+    @memset(r.provenance, Interface.Provenance.empty);
 
     var diagnostics: std.ArrayList(Item) = .empty;
     errdefer diagnostics.deinit(gpa);
@@ -113,6 +122,7 @@ pub fn run(
         .artifacts = artifacts,
         .interner = interner,
         .interfaces = r.interfaces,
+        .provenance = r.provenance,
         .diagnostics = &diagnostics,
     };
     for (graph.order) |m| {
@@ -131,6 +141,7 @@ const Pass = struct {
     artifacts: *Artifacts,
     interner: *const InternPool.Global,
     interfaces: []Interface,
+    provenance: []Interface.Provenance,
     diagnostics: *std.ArrayList(Item),
 
     /// The module being resolved, and the things every helper needs.
@@ -151,7 +162,9 @@ const Pass = struct {
         try p.rewriteReferences(m, bir);
         try p.checkTypeArity(bir);
         try p.checkRecursiveAliases(bir);
-        p.interfaces[m.int()] = try Interface.build(p.gpa, bir, p.interner);
+        const built = try Interface.build(p.gpa, bir, p.interner);
+        p.interfaces[m.int()] = built.iface;
+        p.provenance[m.int()] = built.provenance;
     }
 
     // ---- `exposing` lists ------------------------------------------------
@@ -389,9 +402,16 @@ const Pass = struct {
     // ---- Recursive aliases ----------------------------------------------
 
     /// An alias that can reach itself through alias references inside its
-    /// body. One report per cycle, on the alias that starts it in
-    /// declaration order; the rest of the cycle is marked done so a loop of
-    /// three aliases is one message and not three.
+    /// body. One report per cycle, on the alias the cycle CLOSES on; the
+    /// rest of the cycle is marked done so a loop of three aliases is one
+    /// message and not three.
+    ///
+    /// Blaming the node the back-edge closes on is what makes the message
+    /// true. Attributing it to the depth-first ROOT instead reported
+    /// `A refers to itself` for `type alias A = B`, `B = C`, `C = B` — `A`
+    /// does not refer to itself, `B` and `C` do — and the aliases that
+    /// actually were recursive got no message at all, because the walk had
+    /// already marked them finished.
     fn checkRecursiveAliases(p: *Pass, bir: *const Bir) Allocator.Error!void {
         if (p.quiet or bir.decls.len == 0) return;
         var any = false;
@@ -405,50 +425,63 @@ const Pass = struct {
         @memset(state, 0); // 0 unvisited, 1 on the current path, 2 finished
         for (bir.decls, 0..) |d, i| {
             if (d.kind != .type_alias or state[i] != 0) continue;
-            if (try p.aliasReaches(bir, state, @intCast(i))) {
-                try p.report(.{
-                    .code = .recursive_alias,
-                    .module = p.current,
-                    .token = d.name_token,
-                    .name = bir.symbol(d.name).toOptional(),
-                });
-            }
+            const closes_on = try p.aliasReaches(bir, state, @intCast(i)) orelse continue;
+            const culprit = bir.decl(@enumFromInt(closes_on));
+            try p.report(.{
+                .code = .recursive_alias,
+                .module = p.current,
+                .token = culprit.name_token,
+                .name = bir.symbol(culprit.name).toOptional(),
+            });
         }
     }
 
     /// Depth-first over `type_top` references inside alias bodies. Returns
-    /// true when the walk came back to a declaration already on the path.
+    /// the declaration the first back-edge closed on — a member of the
+    /// cycle, and therefore an alias that really does refer to itself —
+    /// or null when nothing on the path was reached again.
+    ///
+    /// The walk continues past the first back-edge rather than returning
+    /// there: every node it put on the path has to come back off it, or a
+    /// later root would read a stale `1` as "on my path" and invent a cycle.
+    ///
     /// Recursion depth is the number of aliases in one module, which the
-    /// parser's nesting limit does not bound — so this is iterative.
-    fn aliasReaches(p: *Pass, bir: *const Bir, state: []u8, start: u32) Allocator.Error!bool {
+    /// parser's nesting limit does not bound — so this is iterative. The
+    /// cursor per frame is what keeps it linear in the bodies it scans:
+    /// restarting each frame's scan at `inst_start` would re-read the body
+    /// once per child.
+    fn aliasReaches(p: *Pass, bir: *const Bir, state: []u8, start: u32) Allocator.Error!?u32 {
         const tags = bir.insts.items(.tag);
         const data = bir.insts.items(.data);
-        var stack: std.ArrayList(u32) = .empty;
+        const Frame = struct { decl: u32, cursor: u32 };
+        var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(p.scratch);
-        try stack.append(p.scratch, start);
+        try stack.append(p.scratch, .{ .decl = start, .cursor = bir.decls[start].inst_start.int() });
         state[start] = 1;
-        var found = false;
+        var found: ?u32 = null;
         while (stack.items.len > 0) {
-            const current = stack.items[stack.items.len - 1];
-            const d = bir.decls[current];
-            var progressed = false;
-            var i = d.inst_start.int();
-            while (i < d.inst_end.int()) : (i += 1) {
+            const frame = &stack.items[stack.items.len - 1];
+            const d = bir.decls[frame.decl];
+            var descended = false;
+            while (frame.cursor < d.inst_end.int()) {
+                const i = frame.cursor;
+                frame.cursor += 1;
                 if (tags[i] != .type_top) continue;
                 const target = data[i].lhs;
+                if (target >= bir.decls.len) continue;
                 if (bir.decls[target].kind != .type_alias) continue;
                 if (state[target] == 1) {
-                    found = true;
+                    if (found == null) found = target;
                     continue;
                 }
                 if (state[target] != 0) continue;
                 state[target] = 1;
-                try stack.append(p.scratch, target);
-                progressed = true;
+                try stack.append(p.scratch, .{ .decl = target, .cursor = bir.decls[target].inst_start.int() });
+                descended = true;
                 break;
             }
-            if (progressed) continue;
-            state[current] = 2;
+            if (descended) continue;
+            state[frame.decl] = 2;
             _ = stack.pop();
         }
         return found;

@@ -43,6 +43,13 @@ pub const Phase = enum {
     /// Serial for now (checker.md §4.4 allows DAG parallelism later):
     /// cross-module name resolution and interface building, in that order.
     resolve,
+    /// Serial, once per run: numbering every declared type of every module
+    /// and settling equatability (checker.md §5). It has its own row
+    /// because it can DOMINATE a build — a project of long alias chains
+    /// spent 1.3 s of a 1.35 s compile here — and a phase that can dominate
+    /// and does not appear in the trace defeats the instrument
+    /// (`fast-compiler.md` §12).
+    types,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.
@@ -99,11 +106,25 @@ pub const Event = struct {
     pub const no_file = std.math.maxInt(u32);
 };
 
+/// One worker's event buffer. Only that worker writes it, which is what
+/// makes recording lock-free — but "no lock" is not "no contention": at 32
+/// bytes two workers' buffers shared a cache line, so every `record` on one
+/// core invalidated the other's line. Padded to a whole line so the
+/// independence is real and not just formal.
 pub const ThreadBuffer = struct {
     events: []Event,
     len: usize = 0,
     dropped: u64 = 0,
+    _pad: [cache_line - (@sizeOf([]Event) + 2 * @sizeOf(usize)) % cache_line]u8 = undefined,
 };
+
+/// `std.atomic.cache_line` is the target's line size; naming it here keeps
+/// the padding expression readable.
+const cache_line = std.atomic.cache_line;
+
+comptime {
+    std.debug.assert(@sizeOf(ThreadBuffer) % cache_line == 0);
+}
 
 /// Handed back by `begin`, consumed by `end`.
 pub const Token = struct { start_ns: u64 };

@@ -742,6 +742,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                 &r.session.graph,
                 &r.session.artifacts,
                 r.session.resolution.interfaces,
+                r.session.resolution.provenance,
                 &r.session.interner,
                 .{
                     .profile = &r.session.profile,

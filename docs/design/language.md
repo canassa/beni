@@ -740,6 +740,13 @@ Nesting deeper than 4096 levels of expressions, types or patterns is `nesting_to
 point where the limit is crossed; the file is otherwise parsed. This is the one limit the
 parser imposes and exists so hostile input cannot overflow the stack.
 
+The **type checker reads a type 512 levels deep** and reports the same code past that, at the
+declaration (`checker.md` §5). It is a lower limit than the parser's on purpose — an annotation
+is one tree among many and reading it also spends a level per alias expansion — so a file the
+parser accepts can still be refused here. What the checker may not do is refuse it silently:
+past the limit the type is poisoned, and a poisoned type unifies with anything, so a
+declaration truncated without a message would be a hole that a caller's mistake falls through.
+
 The limit is charged per declaration, and the iteratively built spines — an operator chain, an
 access chain, a `?` chain — hold their charge until the declaration ends. So a declaration whose
 chains total more than 4096 links is refused even when no single path is that deep. Accounting

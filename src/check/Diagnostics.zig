@@ -78,6 +78,13 @@ pub const Reporter = struct {
     /// so does a declaration that has already failed: one mistake, one
     /// message.
     quiet: bool = false,
+    /// Whether anything has been reported since `reported` was last
+    /// cleared. The solver asks "did that sub-unification produce a
+    /// message?" and used to answer it by comparing `items.len` before and
+    /// after, which coupled it to a list's internals and would have gone
+    /// quietly wrong the day a reporter stopped appending one item per
+    /// message. A flag says what is meant.
+    reported: bool = false,
 
     pub const Error = Allocator.Error;
 
@@ -89,6 +96,21 @@ pub const Reporter = struct {
         const message = try out.toOwnedSlice();
         errdefer r.gpa.free(message);
         try r.items.append(r.gpa, .{ .code = code, .module = r.env.module, .region = region, .message = message });
+        r.reported = true;
+    }
+
+    /// Arm the flag `didReport` reads. Every path that emits goes through
+    /// `emit`, so nothing else has to remember to set it.
+    pub fn clearReported(r: *Reporter) void {
+        r.reported = false;
+    }
+
+    pub fn didReport(r: *const Reporter) bool {
+        return r.reported;
+    }
+
+    pub fn markReported(r: *Reporter) void {
+        r.reported = true;
     }
 
     fn writer(r: *Reporter) std.Io.Writer.Allocating {
@@ -209,12 +231,12 @@ pub const Reporter = struct {
                 .wanted = "But it needs to be:",
             },
             .record_update => return .{
-                .intro = if (category.index == 0)
+                .intro = if (category.index == Category.no_field)
                     "This record does not have the fields this update is changing:"
                 else
                     std.fmt.allocPrint(scratch, "The `{s}` field of this update is not what I expect:", .{r.fieldText(category.index)}) catch "This update is not what I expect:",
-                .found = if (category.index == 0) "The record is:" else "The new value is:",
-                .wanted = if (category.index == 0) "But the update needs it to have:" else "But the field holds:",
+                .found = if (category.index == Category.no_field) "The record is:" else "The new value is:",
+                .wanted = if (category.index == Category.no_field) "But the update needs it to have:" else "But the field holds:",
             },
             .field_access => return .{
                 .intro = std.fmt.allocPrint(scratch, "This is not a record with a `{s}` field:", .{r.fieldText(category.index)}) catch "This is not a record with that field:",
@@ -239,8 +261,18 @@ pub const Reporter = struct {
         }
     }
 
+    /// The field name a `record_field`/`record_update`/`field_access`
+    /// category carries, or "" when the category is about the record as a
+    /// whole. The sentinel is `Category.no_field` and NOT zero: `Symbol` 0
+    /// is `InternPool.WellKnown`'s first entry, which is `main` — so a
+    /// record field actually named `main`, the likeliest field name there
+    /// is in an Elm-like program, used to render as an empty name.
+    fn symbolTextLessThan(interner: *const InternPool.Global, a: Symbol, b: Symbol) bool {
+        return std.mem.lessThan(u8, interner.slice(a), interner.slice(b));
+    }
+
     fn fieldText(r: *const Reporter, packed_symbol: u32) []const u8 {
-        if (packed_symbol == 0) return "";
+        if (packed_symbol == Category.no_field) return "";
         return r.env.interner.slice(@enumFromInt(packed_symbol));
     }
 
@@ -357,28 +389,15 @@ pub const Reporter = struct {
     }
 
     /// How many arrows `v` has at the top level, following aliases.
+    /// `TypeStore` owns the rule: the solver counts arrows to decide which
+    /// argument to blame and this writes the sentence about it, so the two
+    /// must agree, and they did so by holding the same code twice.
     fn arrowCount(r: *const Reporter, v: Var) u32 {
-        var count: u32 = 0;
-        var current = v;
-        while (count < 64) {
-            const _root, const c = r.env.store.resolved(current);
-            _ = _root;
-            const f = switch (c) {
-                .structure => |flat| switch (flat) {
-                    .func => |func| func,
-                    else => return count,
-                },
-                else => return count,
-            };
-            count += 1;
-            current = f.result;
-        }
-        return count;
+        return r.env.store.arrowCount(v);
     }
 
     fn primitiveOf(r: *const Reporter, v: Var) Types.TypeId {
-        const _root, const c = r.env.store.resolved(v);
-        _ = _root;
+        const c = r.env.store.resolvedContent(v);
         return switch (c) {
             .structure => |s| switch (s) {
                 .app => |a| if (a.args.len == 0) a.type else .none,
@@ -389,8 +408,7 @@ pub const Reporter = struct {
     }
 
     fn kindOf(r: *const Reporter, v: Var) TypeStore.Kind {
-        const _root, const c = r.env.store.resolved(v);
-        _ = _root;
+        const c = r.env.store.resolvedContent(v);
         return switch (c) {
             .flex, .rigid => |flags| flags.kind,
             else => .any,
@@ -398,8 +416,7 @@ pub const Reporter = struct {
     }
 
     fn isFunction(r: *const Reporter, v: Var) bool {
-        const _root, const c = r.env.store.resolved(v);
-        _ = _root;
+        const c = r.env.store.resolvedContent(v);
         return switch (c) {
             .structure => |s| s == .func,
             else => false,
@@ -407,8 +424,7 @@ pub const Reporter = struct {
     }
 
     fn isFlex(r: *const Reporter, v: Var) bool {
-        const _root, const c = r.env.store.resolved(v);
-        _ = _root;
+        const c = r.env.store.resolvedContent(v);
         return c == .flex;
     }
 
@@ -626,6 +642,40 @@ pub const Reporter = struct {
         try r.emit(.infinite_type, region, &out);
     }
 
+    /// A written or inferred type the checker could not read to the bottom
+    /// (`Types.Builder.max_depth`, `Schemes.Writer.max_depth`).
+    ///
+    /// **This message is what keeps a silent wrong answer out of the
+    /// compiler.** The reader poisons what it could not finish, and a
+    /// poisoned variable unifies with anything — so without a message the
+    /// declaration becomes a hole and a caller's mistake against it
+    /// compiles clean. The parser accepts eight times this much nesting
+    /// (`Parse.max_depth` is 4096), so the band between the two limits is
+    /// reachable from a file the front end took happily, which is exactly
+    /// how it was found. `fast-compiler.md` §5's "errors never stop the
+    /// build" means a poisoned variable AFTER a message, never instead of
+    /// one.
+    ///
+    /// It shares `nesting_too_deep` with the parser deliberately: it is the
+    /// same problem — this file nests further than the compiler reads — and
+    /// an author who splits the type up fixes both.
+    pub fn nestingTooDeep(r: *Reporter, region: Bir.Inst.Index, limit: u32) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        w.print(
+            \\This type is nested more than {d} levels deep, which is more than I can
+            \\read.
+            \\
+            \\I gave up part way down, so I cannot check this declaration or anything
+            \\that uses it. Give the inner part a `type alias` of its own and write
+            \\that name here instead.
+            \\
+        , .{limit}) catch return error.OutOfMemory;
+        try r.emit(.nesting_too_deep, region, &out);
+    }
+
     pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
         if (r.quiet) return;
         var out = r.writer();
@@ -840,8 +890,16 @@ pub const Reporter = struct {
 
     // ---- Records ---------------------------------------------------------
 
-    pub fn missingField(r: *Reporter, region: Bir.Inst.Index, missing: []const Symbol, actual: Var, expected: Var) Error!void {
+    /// `missing` is sorted by NAME TEXT here, not taken as given: the
+    /// solver partitions a record's fields in symbol-id order, and a symbol
+    /// id depends on which worker interned which file (`InternPool`'s
+    /// header) — so listing them as the partition produced them made the
+    /// message depend on `--jobs`, which `fast-compiler.md` §10 forbids of
+    /// everything a build prints. The slice is the solver's scratch and is
+    /// discarded straight after, so sorting it in place costs nothing.
+    pub fn missingField(r: *Reporter, region: Bir.Inst.Index, missing: []Symbol, actual: Var, expected: Var) Error!void {
         if (r.quiet) return;
+        std.mem.sort(Symbol, missing, r.env.interner, symbolTextLessThan);
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -871,8 +929,10 @@ pub const Reporter = struct {
         try r.emit(.missing_field, region, &out);
     }
 
-    pub fn unknownField(r: *Reporter, region: Bir.Inst.Index, extra: []const Symbol, actual: Var, expected: Var) Error!void {
+    /// Sorted by name text for the same reason as `missingField`.
+    pub fn unknownField(r: *Reporter, region: Bir.Inst.Index, extra: []Symbol, actual: Var, expected: Var) Error!void {
         if (r.quiet) return;
+        std.mem.sort(Symbol, extra, r.env.interner, symbolTextLessThan);
         var out = r.writer();
         defer out.deinit();
         var namer: Render.Namer = .init(r.gpa);
@@ -930,8 +990,7 @@ pub const Reporter = struct {
         var tail = v;
         var guard: u32 = 0;
         while (guard < 64) : (guard += 1) {
-            const _root, const c = r.env.store.resolved(tail);
-            _ = _root;
+            const c = r.env.store.resolvedContent(tail);
             const record = switch (c) {
                 .structure => |s| switch (s) {
                     .record => |rec| rec,

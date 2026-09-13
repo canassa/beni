@@ -1,0 +1,7 @@
+import B exposing (b)
+import A exposing (a)
+
+
+pub e : Int
+e =
+    a + b

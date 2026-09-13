@@ -356,61 +356,125 @@ fn scheduleAndReportCycles(
         });
     }
 
-    // Kahn over the condensation. `in_degree` counts edges between
-    // DIFFERENT components; a ready component is one whose dependencies
-    // have all been emitted, and of those the one with the smallest first
-    // member wins, so the order depends on names and not on traversal.
+    // Kahn over the condensation. `in_degree[c]` counts the module-level
+    // edges out of `c` that land in a DIFFERENT component, and `rdeps` is
+    // that same edge set reversed — `c`'s dependents — so emitting `c`
+    // decrements exactly the components that were waiting on it instead of
+    // rescanning every module. Both sides are MULTISETS: a component that
+    // reaches another through three modules is counted three times on each,
+    // so the decrements cancel the increments exactly.
+    //
+    // The ready set is a min-heap keyed by a component's FIRST MEMBER,
+    // which is its lexically smallest module — `members` is filled in
+    // file-index order and files are numbered in `(package, path)` order.
+    // A module belongs to exactly one component, so the key is unique and
+    // the heap has no tie to break: the order is a function of the names
+    // and never of the traversal (`fast-compiler.md` §10), which is the
+    // same rule the previous linear scan for the smallest first member
+    // implemented, and the emitted order is identical.
+    //
+    // Together this is O((n + E) log C) rather than the O(C × (n + E)) a
+    // rescan per emitted component costs.
     const in_degree = try scratch.alloc(u32, component_count);
     @memset(in_degree, 0);
+    // The reverse edges as a CSR: `rdeps[rstarts[c]..rstarts[c + 1]]` are
+    // the components that depend on `c`, one entry per module-level edge.
+    const rstarts = try scratch.alloc(u32, component_count + 1);
+    @memset(rstarts, 0);
+    var cross_edges: u32 = 0;
     for (0..n) |i| {
+        const from = component[i];
         for (g.dependencies(@enumFromInt(i))) |d| {
-            const from = component[i];
             const to = component[d.int()];
-            if (from != to) in_degree[from] += 1;
+            if (from == to) continue;
+            in_degree[from] += 1;
+            rstarts[to + 1] += 1;
+            cross_edges += 1;
         }
     }
+    for (1..component_count + 1) |c| rstarts[c] += rstarts[c - 1];
+    const rdeps = try scratch.alloc(u32, cross_edges);
+    const rcursor = try scratch.alloc(u32, component_count);
+    @memcpy(rcursor, rstarts[0..component_count]);
+    for (0..n) |i| {
+        const from = component[i];
+        for (g.dependencies(@enumFromInt(i))) |d| {
+            const to = component[d.int()];
+            if (from == to) continue;
+            rdeps[rcursor[to]] = from;
+            rcursor[to] += 1;
+        }
+    }
+
     const emitted = try scratch.alloc(bool, component_count);
     @memset(emitted, false);
     var order: std.ArrayList(Index) = .empty;
     errdefer order.deinit(gpa);
     try order.ensureTotalCapacity(gpa, n);
+
+    // The heap holds first MEMBERS rather than component ids, so the key is
+    // the element itself and `component[first]` recovers the component.
+    var ready: ReadyQueue = .initContext({});
+    defer ready.deinit(scratch);
+    try ready.ensureTotalCapacity(scratch, component_count);
+    for (0..component_count) |c| {
+        if (in_degree[c] == 0) try ready.push(scratch, members[starts[c]].int());
+    }
     var remaining = component_count;
-    while (remaining > 0) : (remaining -= 1) {
-        var best: ?usize = null;
-        for (0..component_count) |c| {
-            if (emitted[c] or in_degree[c] != 0) continue;
-            if (best == null or members[starts[c]].int() < members[starts[best.?]].int()) best = c;
-        }
-        // Cannot happen: a condensation is acyclic, so some component is
-        // always ready. If it ever did, emitting the remaining components
-        // in index order keeps the compiler running.
-        const c = best orelse {
-            for (0..component_count) |rest| {
-                if (emitted[rest]) continue;
-                emitted[rest] = true;
-                order.appendSliceAssumeCapacity(members[starts[rest]..starts[rest + 1]]);
-            }
-            break;
-        };
+    while (remaining > 0) {
+        const first = ready.pop() orelse break;
+        const c = component[first];
         emitted[c] = true;
+        remaining -= 1;
         order.appendSliceAssumeCapacity(members[starts[c]..starts[c + 1]]);
-        // Every module OUTSIDE this component that depended on it loses one.
-        for (0..n) |i| {
-            if (component[i] == c) continue;
-            for (g.dependencies(@enumFromInt(i))) |d| {
-                if (component[d.int()] == c) in_degree[component[i]] -= 1;
-            }
+        for (rdeps[rstarts[c]..rstarts[c + 1]]) |dependent| {
+            in_degree[dependent] -= 1;
+            if (in_degree[dependent] == 0) try ready.push(scratch, members[starts[dependent]].int());
+        }
+    }
+    // Cannot happen: a condensation is acyclic, so as long as a component
+    // is left, one of the remaining ones has in-degree zero and is in the
+    // heap. If the heap ever did run dry early, emitting the rest in index
+    // order keeps the compiler running rather than losing modules.
+    if (remaining > 0) {
+        for (0..component_count) |rest| {
+            if (emitted[rest]) continue;
+            emitted[rest] = true;
+            order.appendSliceAssumeCapacity(members[starts[rest]..starts[rest + 1]]);
         }
     }
     g.order = try order.toOwnedSlice(gpa);
 }
 
+/// The ready set of the Kahn loop: a min-heap of module indices, each the
+/// first member of a component whose dependencies have all been emitted.
+const ReadyQueue = std.PriorityQueue(u32, void, orderByFirstMember);
+
+fn orderByFirstMember(_: void, a: u32, b: u32) std.math.Order {
+    return std.math.order(a, b);
+}
+
 /// Append one concrete cycle starting and ending at `from`: a depth-first
-/// walk restricted to `from`'s component, taking edges in import order,
-/// which terminates because a component is strongly connected. The result
-/// is what the diagnostic names — `A → B → C` — with the closing edge back
-/// to `A` left implicit. `group` is the component's members, used only as
-/// the fallback below.
+/// walk restricted to `from`'s component, taking edges in import order.
+/// The result is what the diagnostic names — `A → B → C` — with the closing
+/// edge back to `A` left implicit. `group` is the component's members, used
+/// for the budget and for the fallback below.
+///
+/// **The walk is bounded.** `on_path` restricts it to SIMPLE paths, but a
+/// node popped off the path may be entered again down another branch, so on
+/// its own it enumerates simple paths and is worst-case exponential in the
+/// size of a strongly connected component. The budget is therefore stated
+/// in the input rather than as a constant: the walk may examine
+/// `max_edge_visits` times as many edges as its component's members have
+/// between them. A walk that finds the closing edge on its first descent —
+/// which is every cycle anyone writes, since `A`'s import of `B` is
+/// normally answered by `B`'s import of `A` — examines each of those edges
+/// at most once, so the multiplier is room for a handful of dead ends and
+/// nothing more, and the pass stays linear in the graph. Every push follows
+/// an edge examination and every pop follows a push, so bounding the edge
+/// examinations bounds the whole loop. On exhaustion nothing has been
+/// appended and the fallback below names the component's members instead,
+/// which is a weaker message but a true one.
 fn appendCyclePath(
     g: *const Graph,
     gpa: Allocator,
@@ -421,6 +485,12 @@ fn appendCyclePath(
     out: *std.ArrayList(Index),
 ) Allocator.Error!void {
     const c = component[from.int()];
+    // How many times over the component's own edges the walk may look; see
+    // the budget paragraph above.
+    const max_edge_visits = 4;
+    var budget: usize = 0;
+    for (group) |m| budget += g.dependencies(m).len;
+    budget *= max_edge_visits;
     const on_path = try scratch.alloc(bool, g.modules.len);
     @memset(on_path, false);
     var path: std.ArrayList(Index) = .empty;
@@ -441,6 +511,8 @@ fn appendCyclePath(
             _ = cursors.pop();
             continue;
         }
+        if (budget == 0) break; // out of steps: fall through to `group`
+        budget -= 1;
         const next = edges[cursor.*];
         cursor.* += 1;
         if (component[next.int()] != c) continue;
@@ -453,8 +525,9 @@ fn appendCyclePath(
         try path.append(scratch, next);
         try cursors.append(scratch, 0);
     }
-    // Strong connectivity guarantees a path back; if one is somehow not
-    // found, naming the component's members is still a true statement.
+    // Strong connectivity guarantees a path back, so only the budget above
+    // can land here; naming the component's members is still a true
+    // statement about which modules are in the circle.
     try out.appendSlice(gpa, group);
 }
 

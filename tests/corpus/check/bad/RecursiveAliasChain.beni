@@ -1,0 +1,14 @@
+-- check/bad: `recursive_alias` is reported on the alias the cycle CLOSES
+-- on, not on whatever the walk happened to start from. `Start` is not
+-- recursive — it names `Loop`, which is — and blaming the walk's root said
+-- `Start refers to itself` while `Loop` and `Back` got no message at all.
+pub type alias Start =
+    Loop
+
+
+pub type alias Loop =
+    Back
+
+
+pub type alias Back =
+    Loop

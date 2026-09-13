@@ -62,6 +62,310 @@ pub fn generate(gpa: Allocator, io: Io, out_dir: []const u8, seed: u64, target_l
     return stats;
 }
 
+// ---------------------------------------------------------------------------
+// The wide shape: one very large module
+// ---------------------------------------------------------------------------
+
+/// How `generateWide` spends a declaration budget. Every field is a pure
+/// function of `declarations`, so the proportions are fixed and the
+/// README's trend line compares like with like across sizes.
+///
+/// The split exists because the costs it is aimed at are *per module*,
+/// and each needs a different quantity to be large. Each part below names
+/// the pass whose cost it drives and the quantity that drives it; the
+/// point is to make every one of these a term the trend line can see, so
+/// that a pass which is linear in it today and quadratic in it tomorrow
+/// shows up as a bend rather than as a bug report.
+///
+///   - `simple` — many `pub` VALUES in one module, which is what
+///     `Check.fillInterface` pays per exported value against the module's
+///     declaration list. Every declaration the shape writes is `pub`: the
+///     same module without `pub` was two orders of magnitude cheaper.
+///   - `simple` again — many INDEPENDENT declarations, which is what
+///     `Check.bindingGroups` → `Constrain.sccGroups` pays per component.
+///     Nothing here is mutually recursive, so the component count IS the
+///     declaration count, which is the worst case for that pass.
+///   - `chain` — a long DEPENDENCY CHAIN between types, whose last link is
+///     a function type (the one thing that makes an alias not equatable).
+///     A chain is what separates a worklist from a re-scanning fixpoint in
+///     `Types.settleEquatable`: with it, "settled" has to travel `chain`
+///     steps.
+///   - `width` — WIDE records rather than many of them, because the
+///     record-literal and record-update field lookups in `Constrain` cost
+///     per field of the same literal. `width` grows with the budget and
+///     `builders` does not, so the record term moves with `width` alone.
+pub const WideShape = struct {
+    /// Fields in the `Wide` alias, and so in every literal and update over
+    /// it. Floored at the 100 the review asked for and capped at 800,
+    /// which is the widest record the quadratic was ever measured at;
+    /// past that the file is mostly one record.
+    width: u32,
+    /// How many functions build a `Wide`, and how many update one. Fixed,
+    /// so that the record line of the trend moves with `width` alone.
+    builders: u32,
+    /// Links in the `type alias` chain.
+    chain: u32,
+    /// Plain `pub` one-liners: whatever is left of the budget.
+    simple: u32,
+
+    pub const builder_count: u32 = 20;
+    pub const min_width: u32 = 100;
+    pub const max_width: u32 = 800;
+    pub const min_chain: u32 = 8;
+    pub const max_chain: u32 = 2000;
+
+    /// Declarations that are neither `simple` nor builders nor chain
+    /// links: the `Wide` alias and the `apply` that keeps the chain from
+    /// being dead code.
+    const fixed: u32 = 2;
+
+    pub fn init(declarations: u32) WideShape {
+        const width = std.math.clamp(declarations / 20, min_width, max_width);
+        const chain = std.math.clamp(declarations / 10, min_chain, max_chain);
+        const spoken_for = 2 * builder_count + chain + fixed;
+        return .{
+            .width = width,
+            .builders = builder_count,
+            .chain = chain,
+            .simple = declarations -| spoken_for,
+        };
+    }
+
+    /// The smallest module the shape can write: the builders, the
+    /// shortest chain and the two fixed declarations. A `--wide=` below
+    /// this gets this.
+    pub const floor: u32 = 2 * builder_count + min_chain + fixed;
+
+    /// Total `pub` declarations the shape actually writes: `declarations`
+    /// once the budget covers `floor`, and `floor` below that.
+    pub fn total(shape: WideShape) u32 {
+        return shape.simple + 2 * shape.builders + shape.chain + fixed;
+    }
+};
+
+/// Generate the wide corpus under `out_dir` (created if missing): one
+/// module of `declarations` `pub` declarations, plus a small consumer so
+/// the interface that module exports is one somebody actually pays for.
+///
+/// This is the second shape, and it exists because the first one cannot
+/// see what it is for. `generate` writes hundreds of ~160-line modules,
+/// which is the right shape for throughput per byte and the wrong one for
+/// anything quadratic in a single module's declaration count: 624 small
+/// files hold the per-module terms flat no matter how big the project
+/// gets. See `WideShape` for which cost each part of the budget is aimed
+/// at.
+///
+/// Type-correct by construction, like `generate`: every value here is an
+/// `Int`, every call is saturated, every record literal sets exactly the
+/// `width` fields `Wide` declares, and every update names only fields the
+/// base has. `beni check` on the output must exit 0 with no diagnostics; a
+/// diagnostic is a generator bug.
+/// The one big module, and the small consumer that imports it. Both path
+/// segments are upper identifiers, so both files have a module name
+/// (language.md §1).
+pub const wide_bulk_path = "Wide/Bulk.beni";
+pub const wide_main_path = "Wide/Main.beni";
+
+pub fn generateWide(gpa: Allocator, io: Io, out_dir: []const u8, seed: u64, declarations: u32) !Stats {
+    var root = try Io.Dir.cwd().createDirPathOpen(io, out_dir, .{});
+    defer root.close(io);
+    try root.createDirPath(io, "Wide");
+
+    var buffer: Io.Writer.Allocating = .init(gpa);
+    defer buffer.deinit();
+    var stats: Stats = .{ .files = 0, .lines = 0, .bytes = 0 };
+    const shape: WideShape = .init(declarations);
+
+    // Mixed with a constant of its own so `--wide` and `--generate` at the
+    // same seed do not draw the same stream; the two corpora are unrelated.
+    var prng: std.Random.DefaultPrng = .init(seed ^ 0x5749_4445_0000_0001);
+    var g: Wide = .{ .w = &buffer.writer, .rng = prng.random(), .shape = shape };
+    try g.bulk();
+    try root.writeFile(io, .{ .sub_path = wide_bulk_path, .data = buffer.written() });
+    stats.files += 1;
+    stats.lines += g.lines;
+    stats.bytes += buffer.written().len;
+
+    buffer.clearRetainingCapacity();
+    var m: Wide = .{ .w = &buffer.writer, .rng = prng.random(), .shape = shape };
+    try m.main();
+    try root.writeFile(io, .{ .sub_path = wide_main_path, .data = buffer.written() });
+    stats.files += 1;
+    stats.lines += m.lines;
+    stats.bytes += buffer.written().len;
+    return stats;
+}
+
+/// The wide module's generator. It keeps none of `Module`'s scope
+/// bookkeeping — nothing here binds a local whose name could collide with
+/// a sibling — so it is its own struct rather than a mode of that one; all
+/// it needs is the writer, the line count the bench reports, and the
+/// shape.
+const Wide = struct {
+    w: *Io.Writer,
+    rng: std.Random,
+    shape: WideShape,
+    lines: u64 = 0,
+
+    fn line(g: *Wide, indent: usize, comptime fmt: []const u8, args: anytype) Io.Writer.Error!void {
+        try g.w.splatByteAll(' ', indent);
+        try g.w.print(fmt, args);
+        try g.w.writeByte('\n');
+        g.lines += 1;
+    }
+
+    fn blank(g: *Wide) Io.Writer.Error!void {
+        try g.w.writeByte('\n');
+        g.lines += 1;
+    }
+
+    fn declGap(g: *Wide) Io.Writer.Error!void {
+        try g.blank();
+        try g.blank();
+    }
+
+    /// A small constant, so two runs at the same seed and size are
+    /// byte-identical but the literals are not all the same digit.
+    fn konst(g: *Wide) u32 {
+        return g.rng.uintLessThan(u32, 100);
+    }
+
+    // ---- Wide.Bulk ------------------------------------------------------
+
+    fn bulk(g: *Wide) Io.Writer.Error!void {
+        try g.line(0, "--! Wide.Bulk: {d} pub declarations and {d}-field records in ONE module.", .{ g.shape.total(), g.shape.width });
+        try g.line(0, "--! Generated by bench/gen.zig; the per-module costs the many-small-files", .{});
+        try g.line(0, "--! corpus cannot see. See `WideShape` for which cost each part is aimed at.", .{});
+        try g.declGap();
+
+        try g.wideAlias();
+        try g.declGap();
+        try g.aliasChain();
+        try g.declGap();
+        try g.applyFn();
+        var i: u32 = 0;
+        while (i < g.shape.builders) : (i += 1) {
+            try g.declGap();
+            try g.builderFn(i);
+            try g.declGap();
+            try g.updateFn(i);
+        }
+        i = 0;
+        while (i < g.shape.simple) : (i += 1) {
+            try g.declGap();
+            try g.simpleFn(i);
+        }
+    }
+
+    /// `{ f0 : Int, …, f{width-1} : Int }`, one field per line with the
+    /// leading commas the layout rules want (language.md §4).
+    fn wideAlias(g: *Wide) Io.Writer.Error!void {
+        try g.line(0, "--| The record every builder below sets every field of.", .{});
+        try g.line(0, "pub type alias Wide =", .{});
+        try g.line(4, "{{ f0 : Int", .{});
+        var i: u32 = 1;
+        while (i < g.shape.width) : (i += 1) try g.line(4, ", f{d} : Int", .{i});
+        try g.line(4, "}}", .{});
+    }
+
+    /// `Chain0 = Chain1`, …, `Chain{n-1} = Int -> Int`.
+    ///
+    /// The direction matters, and so does writing them in this order.
+    /// Every type starts out optimistically equatable and turns false only
+    /// once the type it names has, so putting the function type LAST means
+    /// "false" has to travel the whole chain against the order the table
+    /// is scanned in — `chain` steps, each of which a fixpoint that
+    /// re-scans pays for over every type in the program. Put the function
+    /// type first and the same chain settles in a single pass, which
+    /// measures nothing.
+    fn aliasChain(g: *Wide) Io.Writer.Error!void {
+        var i: u32 = 0;
+        while (i < g.shape.chain) : (i += 1) {
+            if (i != 0) try g.declGap();
+            try g.line(0, "pub type alias Chain{d} =", .{i});
+            if (i + 1 == g.shape.chain) {
+                try g.line(4, "Int -> Int", .{});
+            } else {
+                try g.line(4, "Chain{d}", .{i + 1});
+            }
+        }
+    }
+
+    /// Uses the chain, so it is reachable from a value and not a run of
+    /// dead type declarations a checker could in principle skip.
+    ///
+    /// It names the LAST link and not `Chain0` on purpose. Expanding
+    /// `Chain0` walks every link, and a written type may not nest more
+    /// than 512 deep — so at `--wide=5120` and up the annotation would be
+    /// `nesting_too_deep` and the corpus would stop checking clean, which
+    /// is a generator bug (see the header). The last link expands in one
+    /// step at every size, and the chain is what `settleEquatable` walks
+    /// whether or not a value names its head.
+    fn applyFn(g: *Wide) Io.Writer.Error!void {
+        try g.line(0, "pub apply : Chain{d} -> Int -> Int", .{g.shape.chain - 1});
+        try g.line(0, "apply f n =", .{});
+        try g.line(4, "f n", .{});
+    }
+
+    fn builderFn(g: *Wide, n: u32) Io.Writer.Error!void {
+        try g.line(0, "pub wideOf{d} : Int -> Wide", .{n});
+        try g.line(0, "wideOf{d} n =", .{n});
+        try g.line(4, "{{ f0 = n + {d}", .{g.konst()});
+        var i: u32 = 1;
+        while (i < g.shape.width) : (i += 1) try g.line(4, ", f{d} = n + {d}", .{ i, g.konst() });
+        try g.line(4, "}}", .{});
+    }
+
+    fn updateFn(g: *Wide, n: u32) Io.Writer.Error!void {
+        try g.line(0, "pub bump{d} : Wide -> Wide", .{n});
+        try g.line(0, "bump{d} w =", .{n});
+        try g.line(4, "{{ w", .{});
+        try g.line(8, "| f0 = w.f0 + {d}", .{g.konst()});
+        var i: u32 = 1;
+        while (i < g.shape.width) : (i += 1) try g.line(8, ", f{d} = w.f{d} + {d}", .{ i, i, g.konst() });
+        try g.line(4, "}}", .{});
+    }
+
+    /// One plain `pub` declaration. Every eighth is UNANNOTATED, and the
+    /// annotated ones sometimes call the nearest one: a top-level
+    /// dependency edge only exists towards an unannotated value (an
+    /// annotation already breaks the recursion), so without them the SCC
+    /// graph would be edgeless and Tarjan would not be doing what it does
+    /// in production. The references only ever point backwards, so no
+    /// group is bigger than one declaration and the component count stays
+    /// equal to the declaration count — which is the case that costs the
+    /// most.
+    fn simpleFn(g: *Wide, n: u32) Io.Writer.Error!void {
+        if (n % 8 == 7) {
+            try g.line(0, "pub tally{d} =", .{n});
+            try g.line(4, "bulk{d} {d}", .{ n - 1, g.konst() });
+            return;
+        }
+        try g.line(0, "pub bulk{d} : Int -> Int", .{n});
+        try g.line(0, "bulk{d} n =", .{n});
+        if (n >= 8 and g.rng.uintLessThan(u8, 100) < 50) {
+            try g.line(4, "n + tally{d} + {d}", .{ (n / 8) * 8 - 1, g.konst() });
+        } else {
+            try g.line(4, "n + {d}", .{g.konst()});
+        }
+    }
+
+    // ---- Wide.Main ------------------------------------------------------
+
+    /// The consumer. `Wide.Bulk`'s interface is built whether or not
+    /// anyone reads it, but a project where nothing imports the big module
+    /// would not exercise cross-module resolution against it at all.
+    fn main(g: *Wide) Io.Writer.Error!void {
+        try g.line(0, "--! Wide.Main: reads Wide.Bulk's interface, so building it is a cost paid.", .{});
+        try g.declGap();
+        try g.line(0, "import Wide.Bulk as Bulk", .{});
+        try g.declGap();
+        try g.line(0, "pub total : Int", .{});
+        try g.line(0, "total =", .{});
+        try g.line(4, "(Bulk.bump0 (Bulk.wideOf0 {d})).f{d}", .{ g.konst(), g.shape.width - 1 });
+    }
+};
+
 /// The abuse inputs too big to check into `bench/pathological/`
 /// (the limit there is 256 KB). Each is one file, one line, and is
 /// regenerated on demand by `bench --pathological=<name>` so the repository
@@ -997,6 +1301,63 @@ fn identAt(s: []const u8) []const u8 {
     var n: usize = 0;
     while (n < s.len and (std.ascii.isAlphanumeric(s[n]) or s[n] == '_')) n += 1;
     return s[0..n];
+}
+
+test "the wide module is a pure function of seed and size, and holds the shape it claims" {
+    var a: Io.Writer.Allocating = .init(testing.allocator);
+    defer a.deinit();
+    var b: Io.Writer.Allocating = .init(testing.allocator);
+    defer b.deinit();
+
+    const shape: WideShape = .init(2000);
+    var pa: std.Random.DefaultPrng = .init(default_seed);
+    var ga: Wide = .{ .w = &a.writer, .rng = pa.random(), .shape = shape };
+    try ga.bulk();
+    var pb: std.Random.DefaultPrng = .init(default_seed);
+    var gb: Wide = .{ .w = &b.writer, .rng = pb.random(), .shape = shape };
+    try gb.bulk();
+    try testing.expectEqualStrings(a.written(), b.written());
+    try testing.expectEqual(ga.lines, std.mem.count(u8, a.written(), "\n"));
+
+    const text = a.written();
+    // The four shapes the corpus exists to make expensive (see `WideShape`),
+    // each asserted by its last member: a count that silently fell to zero
+    // would still `check` clean and measure nothing.
+    try testing.expect(std.mem.indexOf(u8, text, "\n    , f99 : Int\n") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\npub bump19 : Wide -> Wide\n") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\npub type alias Chain199 =\n    Int -> Int\n") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\npub bulk1752 : Int -> Int\n") != null);
+    // EVERY declaration is `pub`: `fillInterface`'s cost is per exported
+    // value, and the same module without `pub` was two orders of magnitude
+    // cheaper, which is the whole point of the shape.
+    var declarations: usize = 0;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |l| {
+        if (l.len == 0 or l[0] == ' ' or std.mem.startsWith(u8, l, "--")) continue;
+        if (std.mem.startsWith(u8, l, "pub ")) {
+            // An annotation and its definition are one declaration; count
+            // the annotation, and the definition line repeats the name
+            // without `pub`.
+            declarations += 1;
+            continue;
+        }
+        // The only other column-1 lines are those definition lines.
+        try testing.expect(std.mem.indexOfScalar(u8, l, '=') != null);
+    }
+    try testing.expectEqual(@as(usize, shape.total()), declarations);
+}
+
+test "the wide shape spends its whole budget, at every size" {
+    // A budget smaller than the fixed part must not underflow, and a big
+    // one must not overshoot: the README's trend is only readable if
+    // `--wide=n` really writes n declarations.
+    for ([_]u32{ 1, 10, 64, 400, 2000, 4000, 8000, 20_000, 100_000 }) |n| {
+        const shape: WideShape = .init(n);
+        try testing.expect(shape.width >= WideShape.min_width);
+        try testing.expect(shape.width <= WideShape.max_width);
+        try testing.expect(shape.chain <= WideShape.max_chain);
+        try testing.expectEqual(@max(n, WideShape.floor), shape.total());
+    }
 }
 
 test "every pathological case is one line, the size it claims, and named by a valid module path" {

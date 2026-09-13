@@ -368,10 +368,15 @@ test "--self-profile records every phase of every file and every counter, exactl
     // span of source. Per module and not per run, because "this module was
     // not re-checked" is what M4's incrementality tests have to see.
     var per_module_seen: [files.len][5]bool = @splat(@splat(false));
-    var serial: [4]bool = @splat(false);
+    var serial: [5]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
     const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive" };
-    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "render" };
+    // `types` is serial and once per run (checker.md §5): numbering every
+    // declared type and settling equatability. It is in the trace because
+    // it can DOMINATE a build — a project of long alias chains spent 1.3 s
+    // of a 1.35 s compile there — and `fast-compiler.md` §12 makes the
+    // trace the instrument.
+    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "types", "render" };
     var counters: [13]?u64 = @splat(null);
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
@@ -415,7 +420,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
     try testing.expectEqual([files.len][5]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
-    try testing.expectEqual([4]bool{ true, true, true, true }, serial);
+    try testing.expectEqual([5]bool{ true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
     // `insts` are the AST and BIR sizes of these three modules, which
@@ -736,7 +741,7 @@ test "dump without a stage is a usage error and does nothing" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
-    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|types\n", dump_bad.stderr);
+    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types\n", dump_bad.stderr);
     try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐
@@ -2295,4 +2300,270 @@ test "dump --stage=interface prints each value's scheme, and <error> for one tha
         \\  value poly : a -> ( a, a )
         \\
     , r.stdout);
+}
+
+// ---------------------------------------------------------------------------
+// M2d — the interface RECORD, not a view of it (checker.md §7,
+// fast-compiler.md §8.1)
+//
+// Every other determinism test in this file compares a printer's output,
+// and the two printers that show an interface both re-sort by name text —
+// so neither can see whether the BYTES of `terms`, `extra` and the
+// quantifier blocks depend on which worker interned which file. §8.1 has M4
+// hashing exactly those bytes, so the property has to be assertable about
+// them. `dump --stage=raw` exists for this and for nothing else.
+// ---------------------------------------------------------------------------
+
+/// A project whose field, parameter and value names are deliberately in a
+/// different order by TEXT than by declaration, spread over enough modules
+/// that the workers interleave: the record's byte layout used to follow the
+/// store's own order, which is by symbol id.
+fn writeRecordShapes(w: *World) !void {
+    for (0..12) |i| {
+        var path: [32]u8 = undefined;
+        var source: [512]u8 = undefined;
+        const n: u32 = @intCast(i);
+        try w.write(
+            try std.fmt.bufPrint(&path, "src/M{d}.beni", .{n}),
+            try std.fmt.bufPrint(&source,
+                \\pub type alias Rec{d} =
+                \\    {{ zulu : Int, alpha : String, middle : Int, bravo : Float }}
+                \\
+                \\
+                \\pub type Wrap{d} zeta alpha
+                \\    = Pair{d} zeta alpha
+                \\    | Empty{d}
+                \\
+                \\
+                \\pub make{d} : Int -> Rec{d}
+                \\make{d} n =
+                \\    {{ zulu = n, alpha = "x", middle = n, bravo = 1.5 }}
+                \\
+                \\
+                \\pub wrap{d} : zeta -> alpha -> Wrap{d} zeta alpha
+                \\wrap{d} a b =
+                \\    Pair{d} a b
+                \\
+            , .{ n, n, n, n, n, n, n, n, n, n, n }),
+        );
+    }
+}
+
+test "the interface record is byte-identical at --jobs=1 and --jobs=8" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeRecordShapes(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Twice each and alternating, because the thing that varies is which
+    // worker happened to take which file — a property of one run, not of a
+    // flag.
+    const runs = [4][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    var raw: [4][]const u8 = undefined;
+    for (&raw, runs) |*out, jobs| {
+        const r = try w.runWith(&.{ "dump", "--stage=raw", jobs, "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stderr);
+        out.* = r.stdout;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Field by field: the raw dump prints one record field per line, so a
+    // difference in term order, in the `extra` words or in the quantifier
+    // numbering names itself.
+    for (raw[1..]) |other| try testing.expectEqualStrings(raw[0], other);
+
+    // The record really does hold what the assertion is about: record
+    // terms with their field names, and quantifier blocks with theirs.
+    try testing.expect(std.mem.indexOf(u8, raw[0], "term ") != null);
+    try testing.expect(std.mem.indexOf(u8, raw[0], "  field alpha term=") != null);
+    try testing.expect(std.mem.indexOf(u8, raw[0], "ctor 0 ") != null);
+}
+
+test "a record's fields are laid out in the record by name text, not by symbol id" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Declared zulu, alpha, middle, bravo — four orders in one: the source
+    // order, the alphabetical one, and (because the module is lexed left to
+    // right) the symbol-id one, which equals the source order here.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub make : Int -> { zulu : Int, alpha : Int, middle : Int, bravo : Int }
+        \\make n =
+        \\    { zulu = n, alpha = n, middle = n, bravo = n }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "dump", "--stage=raw", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    const alpha = std.mem.indexOf(u8, r.stdout, "  field alpha term=").?;
+    const bravo = std.mem.indexOf(u8, r.stdout, "  field bravo term=").?;
+    const middle = std.mem.indexOf(u8, r.stdout, "  field middle term=").?;
+    const zulu = std.mem.indexOf(u8, r.stdout, "  field zulu term=").?;
+    try testing.expect(alpha < bravo);
+    try testing.expect(bravo < middle);
+    try testing.expect(middle < zulu);
+}
+
+test "an imported constructor is instantiated from the interface, argument types and all" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The firewall of fast-compiler.md §8.1: a dependent may read its
+    // dependency's INTERFACE and nothing else, so a constructor's argument
+    // types have to be in the record (checker.md §7's `arg_terms`).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Shapes.beni",
+        \\pub type Box a b
+        \\    = Box a b
+        \\    | Empty
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Shapes exposing (Box)
+        \\
+        \\
+        \\pub wrong : Box Int String
+        \\wrong =
+        \\    Shapes.Box "not an Int" 1
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.type_mismatch, r.diagnostics[0].code);
+    try testing.expectEqual(@as(u32, 6), r.diagnostics[0].span.start.line);
+
+    // The record itself carries the argument terms and the owning type's
+    // parameters; without them the solver would have had to open the
+    // dependency's Bir and find the constructor by name.
+    const raw = try w.runWith(&.{ "dump", "--stage=raw", "src/Shapes.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), raw.exit_code);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "ctor 0 Box type=0 arity=2 arg_terms=") != null);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "  arg 0 term=") != null);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "  arg 1 term=") != null);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "  param 0 kind=0 equatable=false name=a") != null);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "  param 1 kind=0 equatable=false name=b") != null);
+}
+
+test "a type nested past the checker's reading limit is reported, never silently poisoned" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The parser accepts eight times the nesting the checker reads, so
+    // there is a whole band of files the front end takes happily. A type in
+    // that band used to become `<error>` with no message at all — and an
+    // `err` unifies with anything, so the caller below compiled clean.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(testing.allocator);
+    try source.appendSlice(testing.allocator, "pub f : ");
+    for (0..600) |_| try source.appendSlice(testing.allocator, "( ");
+    try source.appendSlice(testing.allocator, "Int");
+    for (0..600) |_| try source.appendSlice(testing.allocator, ", Int )");
+    try source.appendSlice(testing.allocator, " -> Int\nf _ =\n    1\n");
+    try w.write("src/Deep.beni", source.items);
+    try w.write("src/Main.beni",
+        \\import Deep
+        \\
+        \\
+        \\pub main : Int
+        \\main =
+        \\    Deep.f "not a tuple"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.nesting_too_deep, r.diagnostics[0].code);
+    try testing.expectEqualStrings("NESTING TOO DEEP", r.diagnostics[0].title);
+    try testing.expectEqualStrings("src/Deep.beni", r.diagnostics[0].span.file);
+    try testing.expectEqualStrings(
+        "This type is nested more than 512 levels deep, which is more than I can\n" ++
+            "read.\n" ++
+            "\n" ++
+            "I gave up part way down, so I cannot check this declaration or anything\n" ++
+            "that uses it. Give the inner part a `type alias` of its own and write\n" ++
+            "that name here instead.\n",
+        r.diagnostics[0].message,
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One mistake, one message: the caller's argument is checked against a
+    // poisoned type and stays quiet, which is the cascade rule — but the
+    // poison now arrives with a message rather than instead of one.
+    const raw = try w.runWith(&.{ "dump", "--stage=raw", "src/Deep.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), raw.exit_code);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "value 0 f foreign=false scheme=0") != null);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "term 0 err 0 0") != null);
+}
+
+test "one level under the reading limit checks clean and publishes a real scheme" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.ArrayList(u8) = .empty;
+    defer source.deinit(testing.allocator);
+    try source.appendSlice(testing.allocator, "pub f : ");
+    for (0..400) |_| try source.appendSlice(testing.allocator, "( ");
+    try source.appendSlice(testing.allocator, "Int");
+    for (0..400) |_| try source.appendSlice(testing.allocator, ", Int )");
+    try source.appendSlice(testing.allocator, " -> Int\nf _ =\n    1\n");
+    try w.write("Deep.beni", source.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "Deep.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const raw = try w.runWith(&.{ "dump", "--stage=raw", "Deep.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), raw.exit_code);
+    try testing.expect(std.mem.indexOf(u8, raw.stdout, "term 0 app ") != null);
 }

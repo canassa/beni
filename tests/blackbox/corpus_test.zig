@@ -11,6 +11,8 @@
 //!                                   parse to the same AST
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
 //!   check/args/X.beni + X.diag      the missing-argument suite (checker.md §8.3)
+//!   check/depth/XOk.beni            checks clean: one level UNDER a guard
+//!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
 //!
 //! A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`)
@@ -43,6 +45,7 @@ const Kind = enum {
     check_good,
     check_bad,
     check_args,
+    check_depth,
     regress,
 
     fn dir(kind: Kind) []const u8 {
@@ -54,6 +57,7 @@ const Kind = enum {
             .check_good => corpus_root ++ "/check/good",
             .check_bad => corpus_root ++ "/check/bad",
             .check_args => corpus_root ++ "/check/args",
+            .check_depth => corpus_root ++ "/check/depth",
             .regress => corpus_root ++ "/regress",
         };
     }
@@ -95,6 +99,22 @@ test "corpus: check/bad" {
 // number that is buried in `check/bad` is a number nobody looks at.
 test "corpus: check/args" {
     try walk(.check_args);
+}
+
+// The depth sweep (checker.md §5, §7). Its own kind because the assertion
+// is a PAIR, not a file: every guard that can stop the checker reading a
+// type gets a fixture one level under it that must check clean and one
+// level over it that must produce a diagnostic. Each of those guards used
+// to poison the type and say nothing, and a poisoned type unifies with
+// anything — so the declaration became a hole and a caller's mistake
+// compiled clean, which is the one failure mode a compiler may not have.
+//
+// The pairing is enforced mechanically below rather than left to whoever
+// adds a fixture: a `…Ok` file with a golden, or a `…Deep` file without
+// one, is a failure. `generate.sh` in the directory rebuilds them all and
+// records the measured boundary of each guard.
+test "corpus: check/depth" {
+    try walk(.check_depth);
 }
 
 test "corpus: regress" {
@@ -227,6 +247,7 @@ const Case = struct {
             .bir => try c.lowering(),
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
+            .check_depth => try c.depth(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
                 const has_ast = c.goldenExists("ast");
@@ -286,6 +307,36 @@ const Case = struct {
         const r = try c.compiler(&.{ "check", "--diagnostics=json", try c.fixturePath() });
         try expectExit(1, r);
         try c.expectGolden("diag", r.stderr);
+    }
+
+    /// One arm of the depth sweep. The suffix of the NAME says which:
+    /// `…Ok` must check clean and have no golden, `…Deep` must fail with
+    /// the whole diagnostic as its golden. Anything else is a failure —
+    /// a fixture that names neither would pass by not being looked at,
+    /// which is the decay this kind exists to prevent.
+    fn depth(c: Case) !void {
+        const stem = c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
+        if (std.mem.endsWith(u8, stem, "Deep")) {
+            if (!c.goldenExists("diag") and !c.bless) {
+                std.debug.print("{s}: a check/depth `Deep` fixture needs a .diag golden\n", .{c.fixture.name});
+                return error.MissingDiagGolden;
+            }
+            return c.bad();
+        }
+        if (!std.mem.endsWith(u8, stem, "Ok")) {
+            std.debug.print("{s}: a check/depth fixture must be named `…Ok.beni` or `…Deep.beni`\n", .{c.fixture.name});
+            return error.UnpairedDepthFixture;
+        }
+        if (c.goldenExists("diag")) {
+            std.debug.print("{s}: a check/depth `Ok` fixture must check CLEAN, so it must have no .diag\n", .{c.fixture.name});
+            return error.UnexpectedDiagGolden;
+        }
+        const r = try c.compiler(&.{ "check", try c.fixturePath() });
+        try expectExit(0, r);
+        if (r.stderr.len != 0) {
+            std.debug.print("{s}: one level under the guard must produce no diagnostic\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
     }
 
     fn format(c: Case) !void {

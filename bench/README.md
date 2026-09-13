@@ -19,6 +19,291 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-13 — M2d, **after**: the quadratics are gone
+
+The entry below this one is the BEFORE, taken at `f0314b4` on the same
+machine in the same session. This is the same corpus after the M2d review
+fixes. Both binaries were `-Doptimize=ReleaseFast`; every pair was measured
+**interleaved**, best of 3, because this machine drifts about 30 % over
+minutes under load (the entry below explains why that matters).
+
+**Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory
+channel, 16 GB RAM, Linux 7.2, Zig 0.16.0, ReleaseFast, load average 1.8.
+
+### The wide shape
+
+`zig build bench -- --wide=<n>` then `beni check --jobs=1 .zig-cache/bench-wide`:
+
+| `--wide=` | before | after | ratio |
+|---:|---:|---:|---:|
+| 2 000 | 268 ms | **31 ms** | 8.6× |
+| 4 000 | 1 023 ms | **69 ms** | 14.8× |
+| 8 000 | 4 265 ms | **176 ms** | 24.2× |
+| 20 000 | 22 813 ms | **535 ms** | 42.6× |
+
+Before: 4.0× per doubling, dead-straight n². After: 2.2–2.5×, and the
+residual is the corpus itself — `WideShape` widens its records as `n` grows,
+so the text grows faster than the declaration count does.
+
+### The four loops on their own
+
+Each is a synthetic module isolating one of them, `--jobs=1`, best of 3:
+
+| shape | n | before | after |
+|---|---:|---:|---:|
+| one SCC of `n` **`pub`** declarations (writing the interface) | 2 000 | 16 ms | 7 ms |
+| | 4 000 | 45 ms | 9 ms |
+| | 8 000 | 152 ms | 14 ms |
+| | 16 000 | 569 ms | 22 ms |
+| | 32 000 | 2 412 ms | **43 ms** |
+| `n` independent declarations (`Constrain.sccGroups`) | 8 000 | 54 ms | 27 ms |
+| | 16 000 | 169 ms | 49 ms |
+| | 32 000 | 532 ms | **96 ms** |
+| `n` chained aliases (`Types.settleEquatable`) | 250 | 6 ms | 5 ms |
+| | 1 000 | 15 ms | 6 ms |
+| | 2 000 | 41 ms | **7 ms** |
+| 200 functions × `n`-field records (field lookup, `unifyRecord`) | 100 | 50 ms | 23 ms |
+| | 200 | 98 ms | 42 ms |
+| | 400 | 203 ms | 76 ms |
+| | 800 | 456 ms | **152 ms** |
+
+What changed, in the order the time was in:
+
+- **Writing the interface** was quadratic twice over. `fillInterface`
+  resolved each `pub` value by scanning `bir.decls` and comparing symbols
+  (O(values × declarations), and a name lookup checker.md §4.5 forbids); it
+  now goes through `Interface.Provenance`, built in the walk that already
+  knew the answer. And `Schemes.Writer.resetMemo` cleared two STORE-sized
+  arrays once per exported value — invisible in a trace because it sits
+  between the profiled events — which is now a `touched` list. The second
+  one was the larger of the two and was in neither the review nor the first
+  round of fixes; the wide corpus is what found it.
+- **`sccGroups`** grouped members with a scan per component, which is
+  quadratic on the *normal* shape of code (mostly independent declarations,
+  so components ≈ n). Counting sort.
+- **`settleEquatable`** re-scanned the whole type table each round. One pass
+  collecting edges, then a worklist along them.
+- **Record fields**: the literal/update lookups binary-search the sorted
+  range instead of scanning it, and `unifyRecord` is the merge-join the
+  `TypeStore` header always claimed it was — `gatherFields` sorts a
+  flattened extension chain (and only then; a record that is not extended is
+  already in order).
+
+### The 624-file corpus is unchanged
+
+`--generate=100000`, the shape every previous entry measures, `--jobs=1`:
+**137 ms before, 137 ms after**. Per-phase, best of 3 interleaved:
+`check` 74.8 → 76.0 ms, `constrain` 17.1 → 17.5, `solve` 39.3 → 40.4,
+`graph` 3.7 → **0.8** (the condensation's Kahn loop is now linear). None of
+the quadratics above is visible on 624 small files, which is the entire
+reason the wide shape exists.
+
+`instantiations` moved 73 934 → 55 231 and that is a FIX, not a
+regression: an imported value was counted twice, once where its scheme was
+produced and once by `makeCopy`. checker.md §9 has M4's incrementality tests
+asserting this counter did not move, so it has to mean one thing.
+
+### A new row in the trace
+
+`types` (checker.md §5, numbering every declared type and settling
+equatability) now has a profile event. It is 0.7 ms on the 100k corpus and
+was 1.3 s of a 1.35 s compile on the alias-chain shape — a phase that can
+dominate a build and does not appear in the trace defeats the instrument
+(`fast-compiler.md` §12).
+
+---
+
+## 2026-09-13 — M2d, **before**: the wide corpus (one module, many `pub`)
+
+**These numbers are a BEFORE.** They were taken at the M2d starting point,
+`f0314b4`, with four superlinear loops still in the checker. The fixes land
+in this same milestone. This entry is the baseline the next one is read
+against; nothing in it describes what `beni check` does today.
+
+**Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory
+channel, 16 GB RAM, Linux 7.2, Zig 0.16.0, ReleaseFast. Best of 5, load
+average 1.8–2.6 (shared machine). Every configuration below is run once
+per round and the rounds are **interleaved**, not run block by block. Two
+sequential blocks of one earlier batch, minutes apart, read 4 119 ms and
+5 507 ms for the same corpus: that is the machine drifting, not the
+compiler, and interleaving is what makes a 30 % drift cancel rather than
+land on whichever row it happened to cover. Wall and child CPU time agree
+to within 1 % on every row below, so the neighbours cost nothing
+measurable.
+**Corpus:** `bench/gen.zig --wide=<declarations>`, the second generated
+shape. Everything is in ONE module, `Wide/Bulk.beni`; `Wide/Main.beni` is
+nine lines that import it, so the interface it exports is one somebody
+pays for. `beni check` is clean at every size.
+
+### Why a second shape
+
+`--generate=100000` writes 624 files of ~160 lines. That is the right
+shape for throughput per byte and it is blind to anything quadratic in ONE
+module's declaration count: however large the project grows, the biggest
+module is still 160 lines, so every per-module term stays flat and the
+trend line stays straight. Four superlinear loops lived under that line
+from M2a to M2c and were found by reading the code rather than by
+measuring it:
+
+| pass | quadratic in |
+|---|---|
+| `Check.fillInterface` | exported values × the module's declarations |
+| `Constrain.sccGroups` | SCC components × declarations |
+| `Types.settleEquatable` | types × fixpoint rounds |
+| the record-literal / record-update field lookups in `Constrain` | fields × fields, per literal |
+
+`--wide=n` grows all four at once: `n` `pub` declarations, none of them
+mutually recursive so the component count IS the declaration count; a
+`type alias` chain `n/10` links long whose last link is a function type;
+and `n/20`-field records built and updated by 40 functions. `WideShape` in
+`bench/gen.zig` says which part of the budget is aimed at which cost.
+
+### The trend
+
+| `--wide=` | lines | `check --jobs=1` | `--jobs=4` | vs. previous size | LOC/s |
+|---:|---:|---:|---:|---:|---:|
+| 2 000 | 13 713 | 276 ms | 269 ms | — | 49 700 |
+| 4 000 | 27 388 | 1 110 ms | 1 053 ms | **4.02×** | 24 700 |
+| 8 000 | 54 738 | 4 300 ms | 4 177 ms | **3.87×** | 12 700 |
+| 20 000 | 128 588 | 24 031 ms | — | **5.59×** (for 2.5× the size) | 5 400 |
+
+Doubling the size costs four times the work, and 2.5× the size costs 5.6×.
+That is the bend the 624-file corpus cannot draw: `--generate=100000` —
+100 159 lines in 624 files — checks in **141 ms** in the same interleaved
+batch, which is **710 000 LOC/s**. At `--wide=20000` the same checker on
+the same machine manages 5 400, so the shape of a project is worth **130×**
+here, and none of that shows in a corpus of small files.
+
+**Worker count makes no difference.** `--jobs=4` is within 3 % of
+`--jobs=1` at every size. M2c's scheduler parallelises across MODULES, and
+a project whose work is one module has nothing for the other three workers
+to take. The 1.94× of the M2c entry below is a statement about a
+624-module project; this is the shape that says so.
+
+### Where the time goes (`--self-profile`, `--wide=8000`, `--jobs=1`)
+
+Best of 3, same machine state as the table above.
+
+| | ms |
+|---|---:|
+| profiled span | 4 049.4 |
+| `check` (the parent of the three below) | 4 010.6 |
+| `solve` | 109.3 |
+| `constrain` | 18.5 |
+| `exhaustive` | 0.4 |
+| every other event — `read`, `lex`, `parse`, `lower`, `resolve`, the serial steps | 24.4 |
+
+`check` minus its own children is **3 882 ms, 95.9 % of the span**, and
+none of it is inference: it is the per-module bookkeeping around inference,
+the binding-group SCC and writing the module's interface. Inference itself
+is 128 ms for 217 617 unifications — 3 % of the run.
+
+### Which part of the shape buys which cost
+
+`--wide=8000` with one family of declarations cut out, interleaved with
+everything above. The generated module separates its declarations with
+blank-line pairs, so each cut is a filter over those blocks.
+
+| corpus | `check --jobs=1` | difference |
+|---|---:|---:|
+| all of it — 8 001 declarations, 800-link chain, 400-field records | 4 300 ms | — |
+| the alias chain removed (801 declarations) | 4 130 ms | −170 ms |
+| the wide records removed — 41 declarations of 8 001 | 1 568 ms | **−2 732 ms** |
+| the 7 158 plain declarations removed | 183 ms | −4 117 ms |
+| `pub` removed from all but three declarations | 221 ms | **−4 079 ms** |
+
+Two rows carry the finding. 41 declarations out of 8 001 — half a percent
+of the module — are **64 % of the time**; and the same 8 001 declarations
+with `pub` deleted check **19× faster**, which is `fillInterface` and
+nothing else. The differences sum to far more than the total, so these are
+not independent costs: they are one cost with two inputs.
+
+### A fifth superlinear term, which the review did not name
+
+`fillInterface` is O(exported values × declarations) — and worse than
+that. Every `Schemes.Writer.add` call, one per exported value, opens with
+`resetMemo`, which `@memset`s two arrays **sized by the whole type store**.
+So the real shape is
+
+> O(exported values × type-store size)
+
+and a module's type store is far larger than its declaration list: at
+`--wide=8000` that is ~7 200 exported values against a store with a few
+hundred thousand descriptors, which is billions of word writes, and it is
+where the 3 882 ms goes.
+
+Record width is what separates this from the declaration-count term, since
+a field changes the type store and changes no declaration count. Holding
+the 8 001 declarations fixed and varying only how many fields `Wide` has:
+
+| fields in `Wide` | `check --jobs=1` | per field |
+|---:|---:|---:|
+| 0 — no records at all | 1 568 ms | — |
+| 100 | 2 250 ms | 6.8 ms |
+| 200 | 2 890 ms | 6.6 ms |
+| 400 — what `--wide=8000` writes | 4 300 ms | 6.8 ms |
+
+**6.8 ms per field, straight, at a constant declaration count.** Nothing
+quadratic in declarations alone can draw that line, and `constrain` — where
+the field-by-field lookups live — is 18.5 ms of the whole run, so it is not
+that either.
+
+The M2d branch replaces the whole-store clear with Elm's `touched` list,
+and its own note measures the term at 135 ms for 8 000 mutually recursive
+`pub` declarations. That is the same loop, 29× cheaper, because the module
+it was measured on had no wide records and therefore a small store — which
+is the argument for this corpus in one sentence: the size of the module
+was never the whole input.
+
+The other two terms are small at this size and neither will stay small.
+Deleting the 800-link chain saves 170 ms of 4 300 — and that 170 ms is
+everything the chain costs, `settleEquatable` plus 801 fewer declarations
+to lex, parse, lower and scan — but the fixpoint grows as the square of
+the chain, so it is the term that arrives at `--wide=20000`'s 2 000 links.
+`sccGroups` and everything else that does not depend on `pub` fits inside
+the 221 ms of the no-`pub` row. Both are worth fixing; neither is why this
+corpus takes 24 seconds.
+
+### Type-checking throughput (`zig build bench`, single-threaded)
+
+```
+bench: generated 2000 pub declarations (1758 simple, 200 chain links, 40 builders over 100 fields), 13713 lines, 197432 bytes under .zig-cache/bench-wide
+{"phase":"check","modules":13,"lines":13713,"unifications":58659,"generalisations":25849,"instantiations":21056,"obligations":3,"diagnostics":0,"ms":259.25,"loc_per_s":52894,"cold_check_ms":266.1}
+bench: generated 4000 pub declarations (3558 simple, 400 chain links, 40 builders over 200 fields), 27388 lines, 403218 bytes under .zig-cache/bench-wide
+{"phase":"check","modules":13,"lines":27388,"unifications":111454,"generalisations":48612,"instantiations":40238,"obligations":3,"diagnostics":0,"ms":1013.04,"loc_per_s":27035,"cold_check_ms":1025.5}
+bench: generated 8000 pub declarations (7158 simple, 800 chain links, 40 builders over 400 fields), 54738 lines, 816269 bytes under .zig-cache/bench-wide
+{"phase":"check","modules":13,"lines":54738,"unifications":217619,"generalisations":94368,"instantiations":78947,"obligations":3,"diagnostics":0,"ms":4171.38,"loc_per_s":13122,"cold_check_ms":4195.5}
+```
+
+`loc_per_s` for `check` alone falls 52 894 → 27 035 → 13 122 as the module
+grows, against the §2 target of 250 k per core and against the
+**1 086 516** the 624-file corpus reports in the M2c entry below. Same
+language, same checker, same machine: the per-module terms are the whole
+difference, which is the argument for keeping this shape in the corpus
+permanently.
+
+### One thing the corpus caught on the way in
+
+A 2 000-link alias chain named from a value ANNOTATION is a cost of its
+own. An earlier draft of the generator wrote `apply : Chain0 -> Int ->
+Int`, which expands every link, and at `--wide=20000` that one annotation
+took the run from 24 s to **108 s** at `f0314b4` — a 4.5× penalty from
+three words. On the M2d branch the same line is a `nesting_too_deep`
+diagnostic instead, because a written type may not nest more than 512
+deep, which would have left the corpus not checking clean. The generator
+now names the chain's LAST link: the corpus is clean at every size, and
+the chain is still there for the fixpoint to walk.
+
+### Reproduce
+
+```sh
+direnv exec . zig build -Doptimize=ReleaseFast
+direnv exec . zig build bench -- --wide=8000     # writes .zig-cache/bench-wide
+time ./zig-out/bin/beni check --jobs=1 .zig-cache/bench-wide
+```
+
+---
+
 ## 2026-09-13 — M2c (DAG-parallel checking, exhaustiveness)
 
 **Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory

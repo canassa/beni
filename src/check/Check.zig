@@ -154,12 +154,18 @@ pub fn run(
     graph: *const Graph,
     artifacts: *const Artifacts,
     interfaces: []Interface,
+    provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
     options: Options,
 ) Error!Check {
     var check: Check = .empty;
     errdefer check.deinit(gpa);
-    check.types = try Types.build(gpa, graph, artifacts, interfaces, interner);
+    // Inside a profile event: on a project of long alias chains this step
+    // was 1.3 s of a 1.35 s compile and did not appear in the trace at all,
+    // and `fast-compiler.md` §12 makes the trace the instrument of record.
+    const types_token = if (options.profile) |p| p.begin() else null;
+    check.types = try Types.build(gpa, graph, artifacts, interfaces, provenance, interner);
+    if (options.profile) |p| p.end(0, types_token.?, .types, Profile.Event.no_file, 0);
 
     const modules = graph.count();
     // One diagnostics list per module rather than one shared list: a shared
@@ -179,7 +185,18 @@ pub fn run(
     @memset(counters, .{});
 
     var kept: std.ArrayList(Module) = .empty;
-    errdefer kept.deinit(gpa);
+    // Each kept `Module` owns an arena and three tables. On the OOM path
+    // the list itself is not enough: the modules that DID finish have to
+    // give theirs back, or the failure leaks one arena per checked module.
+    errdefer {
+        for (kept.items) |*m| {
+            m.store.deinit();
+            gpa.free(m.decl_scheme);
+            gpa.free(m.decl_display);
+            gpa.free(m.local_type);
+        }
+        kept.deinit(gpa);
+    }
     if (options.keep_stores) {
         try kept.ensureTotalCapacity(gpa, modules);
         for (0..modules) |_| kept.appendAssumeCapacity(.{
@@ -196,6 +213,7 @@ pub fn run(
         .graph = graph,
         .artifacts = artifacts,
         .interfaces = interfaces,
+        .provenance = provenance,
         .interner = interner,
         .types = &check.types,
         .options = options,
@@ -210,7 +228,21 @@ pub fn run(
     // in, and a function of the input alone.
     var diagnostics: std.ArrayList(Diagnostics.Item) = .empty;
     errdefer diagnostics.deinit(gpa);
-    for (graph.order) |m| try diagnostics.appendSlice(gpa, per_module[m.int()].items);
+    // Capacity first, then move: a partial `appendSlice` would leave some
+    // messages owned by `diagnostics` and the rest by `per_module`, and the
+    // two errdefers would free the moved ones twice. Reserving up front
+    // makes the loop below infallible, so ownership transfers whole.
+    var total: usize = 0;
+    for (per_module) |list| total += list.items.len;
+    try diagnostics.ensureTotalCapacity(gpa, total);
+    for (graph.order) |m| diagnostics.appendSliceAssumeCapacity(per_module[m.int()].items);
+    // A module missing from `graph.order` cannot happen — the order is a
+    // permutation of every module — but if one ever were, its messages
+    // would be leaked rather than freed, so they are released explicitly.
+    if (diagnostics.items.len != total) {
+        for (graph.order) |m| per_module[m.int()].clearRetainingCapacity();
+        for (per_module) |list| for (list.items) |d| gpa.free(d.message);
+    }
     for (per_module) |*list| list.deinit(gpa);
     for (counters) |c| {
         check.counters.unifications += c.unifications;
@@ -261,6 +293,7 @@ const Driver = struct {
     graph: *const Graph,
     artifacts: *const Artifacts,
     interfaces: []Interface,
+    provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
     types: *const Types,
     options: Options,
@@ -462,6 +495,7 @@ const Driver = struct {
             .graph = d.graph,
             .artifacts = d.artifacts,
             .interfaces = d.interfaces,
+            .provenance = d.provenance,
             .interner = d.interner,
             .types = d.types,
             .module = m,
@@ -484,6 +518,7 @@ const ModuleCheck = struct {
     graph: *const Graph,
     artifacts: *const Artifacts,
     interfaces: []Interface,
+    provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
     types: *const Types,
     module: Graph.Index,
@@ -530,8 +565,13 @@ const ModuleCheck = struct {
         defer gpa.free(inst_result);
         @memset(inst_result, .none);
 
+        // Empty on every input a person writes; see `Env.too_deep`.
+        var too_deep: std.ArrayList(Bir.Inst.Index) = .empty;
+        defer too_deep.deinit(mc.scratch.allocator());
+
         var env: Constrain.Env = .{
             .scratch = mc.scratch.allocator(),
+            .too_deep = &too_deep,
             .store = store,
             .types = mc.types,
             .graph = mc.graph,
@@ -561,11 +601,11 @@ const ModuleCheck = struct {
             const annotation = d.annotation.unwrap() orelse continue;
             var b = env.builder(.flex, TypeStore.generalized);
             defer b.deinit();
-            decl_scheme[i] = (try b.read(annotation)).toOptional();
+            decl_scheme[i] = (try env.readAnnotation(&b, annotation)).toOptional();
         }
 
         // 2. Binding groups over the values that still need inferring.
-        const groups = try mc.bindingGroups(bir, &env);
+        const groups = try ModuleCheck.bindingGroups(bir, &env);
         var counters: Solve.Counters = .{};
         for (0..groups.starts.len - 1) |g| {
             const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
@@ -585,7 +625,11 @@ const ModuleCheck = struct {
         }
 
         // 4. The interface gains its schemes (checker.md §7).
-        try mc.fillInterface(bir, store, decl_scheme);
+        try mc.fillInterface(&env, bir, store, decl_scheme);
+
+        // 5. Whatever was too deeply nested to read. Last, so a declaration
+        //    that tripped the guard in more than one place is one message.
+        try ModuleCheck.reportTooDeep(&env, &reporter);
 
         // A declaration with no body — a `foreign` value, an annotation the
         // parser found no definition for — has no check variable, so its
@@ -618,7 +662,7 @@ const ModuleCheck = struct {
     /// SCC over the module's top-level values. An edge `d → e` exists when
     /// `d` mentions `e` and `e` is an unannotated value of this module —
     /// the only case where `d`'s check has to wait for `e`'s.
-    fn bindingGroups(mc: *ModuleCheck, bir: *const Bir, env: *Constrain.Env) Error!Constrain.IndexGroups {
+    fn bindingGroups(bir: *const Bir, env: *Constrain.Env) Error!Constrain.IndexGroups {
         const scratch = env.scratch;
         const n = bir.decls.len;
         var edges: std.ArrayList(u32) = .empty;
@@ -638,7 +682,6 @@ const ModuleCheck = struct {
             }
         }
         edge_start[n] = @intCast(edges.items.len);
-        _ = mc;
         return Constrain.sccGroups(scratch, n, edges.items, edge_start);
     }
 
@@ -685,7 +728,7 @@ const ModuleCheck = struct {
                 const mark = generator.storeMark();
                 var b = env.builder(.rigid, TypeStore.outermost);
                 defer b.deinit();
-                cv.* = (try b.read(d.annotation.unwrap().?)).toOptional();
+                cv.* = (try env.readAnnotation(&b, d.annotation.unwrap().?)).toOptional();
                 try generator.adoptSince(mark);
             } else {
                 const v = try generator.freshForDecl();
@@ -762,50 +805,214 @@ const ModuleCheck = struct {
         }, reporter, skip, mc.pattern_budget);
     }
 
-    /// Write every `pub` value's scheme into the interface (checker.md §7).
-    /// A declaration whose type contains an error gets the `err` term, which
-    /// the dump prints as `<error>`: dependents check against the rest.
-    fn fillInterface(mc: *ModuleCheck, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional) Error!void {
+    /// Write every `pub` value's scheme and every visible constructor's
+    /// argument terms into the interface (checker.md §7).
+    ///
+    /// A declaration whose type contains an error gets the `err` term,
+    /// which the dump prints as `<error>`: dependents check against the
+    /// rest.
+    ///
+    /// Both halves go through `Interface.Provenance` rather than looking a
+    /// name up in `bir.decls`. The scan this replaced was O(pub values ×
+    /// declarations) and was the single largest measured cost in the M2
+    /// review: 32 000 mutually recursive `pub` declarations spent 12.8 s
+    /// here, against 73 ms for the same declarations without `pub`, and
+    /// none of it showed in `--self-profile` because it sits between the
+    /// profiled events.
+    fn fillInterface(mc: *ModuleCheck, env: *Constrain.Env, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional) Error!void {
         const gpa = mc.gpa;
         const iface = &mc.interfaces[mc.module.int()];
-        var writer: Schemes.Writer = .init(gpa, store, @intCast(iface.symbols.len));
+        const prov = if (mc.module.int() < mc.provenance.len)
+            &mc.provenance[mc.module.int()]
+        else
+            &Interface.Provenance.empty;
+        var writer: Schemes.Writer = .init(gpa, store, mc.interner, @intCast(iface.symbols.len));
         defer writer.deinit();
 
         const values = try gpa.alloc(Interface.Value, iface.values.len);
         errdefer gpa.free(values);
         @memcpy(values, iface.values);
-        for (values) |*v| {
-            const name = iface.symbol(v.name);
-            const scheme = blk: {
-                for (bir.decls, 0..) |d, i| {
-                    if (!d.kind.isValue() or bir.symbol(d.name) != name) continue;
-                    break :blk decl_scheme[i].unwrap();
-                }
-                break :blk null;
+        for (values, 0..) |*v, i| {
+            const target = blk: {
+                const decl = prov.valueDecl(i) orelse break :blk null;
+                if (decl.int() >= decl_scheme.len) break :blk null;
+                break :blk decl_scheme[decl.int()].unwrap();
             };
-            const target = scheme orelse {
+            const scheme = target orelse {
                 v.scheme = try writer.addError();
                 continue;
             };
-            v.scheme = if (hasError(store, target)) try writer.addError() else try writer.add(target);
+            if (hasError(store, scheme) != .clean) {
+                v.scheme = try writer.addError();
+                continue;
+            }
+            v.scheme = try writer.add(scheme);
+            if (writer.too_deep) {
+                // A truncated scheme is worse than no scheme: the `err`
+                // term sits INSIDE an otherwise concrete type, so it
+                // unifies with anything and a dependent's mistake against
+                // this declaration compiles clean. Report, then publish
+                // `<error>` (checker.md §7).
+                try noteDeepDecl(env, bir, prov.valueDecl(i));
+                v.scheme = try writer.addError();
+            }
         }
         gpa.free(@constCast(iface.values));
         iface.values = values;
+
+        try mc.fillCtorTerms(env, bir, store, prov, iface, &writer);
         try writer.attach(iface);
     }
+
+    /// Every visible constructor's argument types, as terms (checker.md §7's
+    /// `arg_terms`).
+    ///
+    /// This is the interface firewall of `fast-compiler.md` §8.1 made real
+    /// for constructors: with the terms here, a dependent instantiates an
+    /// imported constructor from this record alone. Without them the solver
+    /// opened the declaring module's `Bir` and found the constructor BY
+    /// NAME, which §4.5 forbids and which M4 cannot do at all — a
+    /// dependency's Bir may not be in memory.
+    ///
+    /// The quantifiers are the owning TYPE's parameters, in declaration
+    /// order, so `var(i)` in an argument term is parameter `i` and the
+    /// result half — `T p0 … pk` — needs no storage.
+    fn fillCtorTerms(
+        mc: *ModuleCheck,
+        env: *Constrain.Env,
+        bir: *const Bir,
+        store: *TypeStore,
+        prov: *const Interface.Provenance,
+        iface: *Interface,
+        writer: *Schemes.Writer,
+    ) Error!void {
+        if (iface.ctors.len == 0) return;
+        const gpa = mc.gpa;
+        const scratch = mc.scratch.allocator();
+        const ctors = try gpa.alloc(Interface.Ctor, iface.ctors.len);
+        errdefer gpa.free(ctors);
+        @memcpy(ctors, iface.ctors);
+
+        for (ctors, 0..) |*c, i| {
+            const bir_index = prov.ctorIndex(i) orelse continue;
+            if (bir_index >= bir.ctors.len) continue;
+            const bc = bir.ctors[bir_index];
+            const owner = bir.decl(bc.decl);
+            const params = bir.declTypeParams(owner);
+
+            var b: Types.Builder = .init(
+                store,
+                mc.types,
+                mc.graph,
+                mc.artifacts,
+                mc.module,
+                bir,
+                .flex,
+                TypeStore.generalized,
+                scratch,
+                mc.interner,
+            );
+            defer b.deinit();
+            const param_vars = try scratch.alloc(Var, params.len);
+            defer scratch.free(param_vars);
+            for (params, param_vars) |p, *v| {
+                v.* = try store.fresh(.{ .flex = .{ .name = p.toOptional() } }, TypeStore.generalized);
+                try b.bind(p, v.*);
+            }
+            const args = bir.extraSlice(.{ .start = bc.args_start, .end = bc.args_end }, Bir.Inst.Index);
+            const arg_vars = try scratch.alloc(Var, args.len);
+            defer scratch.free(arg_vars);
+            for (args, arg_vars) |arg, *v| v.* = try b.read(arg);
+            if (b.too_deep) {
+                try noteDeepDecl(env, bir, bc.decl);
+                continue; // leaves `arg_terms` at `no_terms`: a use poisons
+            }
+            const written = try writer.addCtor(param_vars, arg_vars);
+            if (writer.too_deep) {
+                try noteDeepDecl(env, bir, bc.decl);
+                continue;
+            }
+            c.arg_terms = written.arg_terms;
+            c.quantified_start = written.quantified_start;
+        }
+        gpa.free(@constCast(iface.ctors));
+        iface.ctors = ctors;
+    }
+
+    /// One `nesting_too_deep` per over-deep type, in source order.
+    ///
+    /// Sorted and deduplicated here rather than at each note: the same
+    /// annotation is read more than once — once generalised for callers,
+    /// once rigid for the body — and one mistake gets one message. Sorting
+    /// also makes the order a function of the source and not of the order
+    /// the readers happened to run in, which `fast-compiler.md` §10
+    /// requires of everything a build prints.
+    fn reportTooDeep(env: *Constrain.Env, reporter: *Diagnostics.Reporter) Error!void {
+        const regions = env.too_deep.items;
+        if (regions.len == 0) return;
+        std.mem.sort(Bir.Inst.Index, regions, {}, regionLessThan);
+        var previous: Bir.Inst.OptionalIndex = .none;
+        for (regions) |region| {
+            if (previous == region.toOptional()) continue;
+            previous = region.toOptional();
+            try reporter.nestingTooDeep(region, Types.Builder.max_depth);
+        }
+    }
+
+    fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
+        return a.int() < b.int();
+    }
 };
+
+/// The instruction a `nesting_too_deep` about `decl` points at: its
+/// annotation, or its body, or its first instruction. The guard that
+/// stopped the walk may have stopped it inside ANOTHER module's alias body,
+/// so the deepest instruction is not necessarily one of this module's.
+fn noteDeepDecl(env: *Constrain.Env, bir: *const Bir, decl: ?Bir.DeclIndex) Error!void {
+    const index = decl orelse return;
+    if (index.int() >= bir.decls.len) return;
+    const d = bir.decl(index);
+    try env.noteTooDeep(d.annotation.unwrap() orelse d.body.unwrap() orelse d.inst_start);
+}
 
 /// Whether a solved type contains a poisoned variable anywhere. A
 /// declaration that failed to check is `<error>` in the interface rather
 /// than a type built out of `?` (checker.md §7).
-fn hasError(store: *TypeStore, root_var: Var) bool {
+///
+/// Three-valued on purpose. The walk has a bounded worklist, and a type too
+/// wide to finish is `unknown` — which the caller must treat exactly like
+/// `poisoned`, because the alternative is what this used to do: drop the
+/// frontier, answer "clean", and publish a scheme with a raw `err` term
+/// inside it. A dependent instantiating that scheme gets a component that
+/// unifies with anything, which is cascade suppression leaking across the
+/// module firewall — the one place checker.md §7 says it must not.
+const ErrorScan = enum {
+    clean,
+    poisoned,
+    /// Too wide for the worklist; the caller treats it as `poisoned`.
+    unknown,
+};
+
+fn hasError(store: *TypeStore, root_var: Var) ErrorScan {
     const mark = store.nextMark();
     var stack: [256]Var = undefined;
     var len: usize = 1;
     stack[0] = root_var;
-    var budget: usize = 1 << 16;
+    // Every variable is marked at most once, so the walk visits at most the
+    // store's variable count; the budget only bounds a store that is itself
+    // malformed, and it is stated in terms of the input so it cannot become
+    // the real limit.
+    var budget: usize = @as(usize, store.count()) + 16;
+    const push = struct {
+        fn f(buf: *[256]Var, l: *usize, x: Var) bool {
+            if (l.* >= buf.len) return false;
+            buf[l.*] = x;
+            l.* += 1;
+            return true;
+        }
+    }.f;
     while (len > 0) {
-        if (budget == 0) return false;
+        if (budget == 0) return .unknown;
         budget -= 1;
         len -= 1;
         const v = stack[len];
@@ -813,48 +1020,33 @@ fn hasError(store: *TypeStore, root_var: Var) bool {
         if (store.mark(root) == mark) continue;
         store.setMark(root, mark);
         switch (store.content(root)) {
-            .err => return true,
+            .err => return .poisoned,
             .flex, .rigid => {},
             .alias => |a| {
-                if (len < stack.len) {
-                    stack[len] = a.actual;
-                    len += 1;
-                }
+                if (!push(&stack, &len, a.actual)) return .unknown;
             },
             .structure => |flat| switch (flat) {
                 .unit, .empty_record => {},
                 .func => |f| {
-                    for ([_]Var{ f.param, f.result }) |x| {
-                        if (len >= stack.len) break;
-                        stack[len] = x;
-                        len += 1;
-                    }
+                    if (!push(&stack, &len, f.param)) return .unknown;
+                    if (!push(&stack, &len, f.result)) return .unknown;
                 },
                 .app => |a| for (store.vars(a.args)) |x| {
-                    if (len >= stack.len) break;
-                    stack[len] = x;
-                    len += 1;
+                    if (!push(&stack, &len, x)) return .unknown;
                 },
                 .tuple => |t| for (store.vars(t)) |x| {
-                    if (len >= stack.len) break;
-                    stack[len] = x;
-                    len += 1;
+                    if (!push(&stack, &len, x)) return .unknown;
                 },
                 .record => |r| {
                     for (store.fields(r.fields)) |f| {
-                        if (len >= stack.len) break;
-                        stack[len] = f.value;
-                        len += 1;
+                        if (!push(&stack, &len, f.value)) return .unknown;
                     }
-                    if (len < stack.len) {
-                        stack[len] = r.ext;
-                        len += 1;
-                    }
+                    if (!push(&stack, &len, r.ext)) return .unknown;
                 },
             },
         }
     }
-    return false;
+    return .clean;
 }
 
 // ---------------------------------------------------------------------------

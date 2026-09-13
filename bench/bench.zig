@@ -10,7 +10,12 @@
 //!
 //! Options: `--corpus=<dir>` (default `bench/corpus`), `--generate=<lines>`
 //! (write a synthetic project of that size under `.zig-cache/bench-gen` and
-//! measure that instead), `--iterations=<n>` (default 5), `--seed=<n>`.
+//! measure that instead), `--wide=<declarations>` (the other generated
+//! shape: ONE module of that many `pub` declarations under
+//! `.zig-cache/bench-wide`, which is what makes anything quadratic in a
+//! single module's declaration count visible — `--generate` spreads its
+//! lines over hundreds of small files and holds those terms flat),
+//! `--iterations=<n>` (default 5), `--seed=<n>`.
 //!
 //! Phases so far: `read` (bytes through `SourceStore`), `lex` (the
 //! tokenizer, interning included, into fresh per-file output lists — the
@@ -42,12 +47,17 @@ const Options = struct {
     /// `--pathological=<name>`: measure one of the abuse inputs too big to
     /// check in (`gen.Pathological`) instead of a corpus.
     pathological: ?gen.Pathological = null,
+    /// `--wide=<declarations>`: measure `gen.generateWide` at that size
+    /// instead of a corpus. Like `--generate`, it replaces the corpus, so
+    /// passing both measures whichever is applied last.
+    wide: ?u32 = null,
     iterations: u32 = 5,
     seed: u64 = gen.default_seed,
 };
 
 const generated_dir = ".zig-cache/bench-gen";
 const pathological_dir = ".zig-cache/bench-pathological";
+const wide_dir = ".zig-cache/bench-wide";
 
 /// Files under a directory with this name get a line of their own (§12:
 /// "every real slow file ever encountered gets frozen into the benchmark
@@ -71,7 +81,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     const args = try init.minimal.args.toSlice(arena);
     const options = parseArgs(args[1..]) catch |err| {
-        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--pathological=<name>] [--iterations=<n>] [--seed=<n>]\n", .{err});
+        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--wide=<declarations>] [--pathological=<name>] [--iterations=<n>] [--seed=<n>]\n", .{err});
         return 2;
     };
 
@@ -83,6 +93,19 @@ pub fn main(init: std.process.Init) !u8 {
         const stats = try gen.generate(gpa, io, generated_dir, options.seed, lines);
         try stderr.print("bench: generated {d} files, {d} lines, {d} bytes under {s}\n", .{ stats.files, stats.lines, stats.bytes, generated_dir });
         corpus = generated_dir;
+    }
+    if (options.wide) |declarations| {
+        // Regenerated every run, like `--generate`, and for the same
+        // reasons: deterministic, and a 130k-line single module is not
+        // something to carry in the repository.
+        Io.Dir.cwd().deleteTree(io, wide_dir) catch {};
+        const shape: gen.WideShape = .init(declarations);
+        const stats = try gen.generateWide(gpa, io, wide_dir, options.seed, declarations);
+        try stderr.print(
+            "bench: generated {d} pub declarations ({d} simple, {d} chain links, {d} builders over {d} fields), {d} lines, {d} bytes under {s}\n",
+            .{ shape.total(), shape.simple, shape.chain, 2 * shape.builders, shape.width, stats.lines, stats.bytes, wide_dir },
+        );
+        corpus = wide_dir;
     }
     if (options.pathological) |which| {
         Io.Dir.cwd().deleteTree(io, pathological_dir) catch {};
@@ -213,6 +236,10 @@ fn parseArgs(args: []const [:0]const u8) !Options {
             options.corpus = arg["--corpus=".len..];
         } else if (std.mem.startsWith(u8, arg, "--generate=")) {
             options.generate = try std.fmt.parseInt(u64, arg["--generate=".len..], 10);
+        } else if (std.mem.startsWith(u8, arg, "--wide=")) {
+            const declarations = try std.fmt.parseInt(u32, arg["--wide=".len..], 10);
+            if (declarations == 0) return error.ZeroDeclarations;
+            options.wide = declarations;
         } else if (std.mem.startsWith(u8, arg, "--pathological=")) {
             options.pathological = gen.Pathological.parse(arg["--pathological=".len..]) orelse return error.UnknownPathologicalCase;
         } else if (std.mem.startsWith(u8, arg, "--iterations=")) {

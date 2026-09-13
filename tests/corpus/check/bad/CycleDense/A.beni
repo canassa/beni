@@ -1,0 +1,13 @@
+-- check/bad (project): `import_cycle` in a component the walk has to search.
+-- Five modules in one strongly connected component, with a chord (`B` also
+-- imports `D`) and a back-edge (`E` imports `B`) so the depth-first walk
+-- that names the cycle has to skip an edge already on the path before it
+-- finds the one that closes back to `A`. The walk runs on a budget stated
+-- in the component's own edge count (`Graph.appendCyclePath`), and this
+-- fixture is what pins the path it prints.
+import B exposing (b)
+
+
+pub a : Int
+a =
+    b

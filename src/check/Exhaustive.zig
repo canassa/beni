@@ -100,6 +100,13 @@ pub const default_budget: u32 = 200_000;
 /// How deeply the recursion may nest. `budget` alone bounds the total work
 /// but not the STACK, and the failure mode of an unbounded stack is a
 /// segfault rather than a missing warning.
+///
+/// Every guard against it reports NOTHING, which is checker.md §6.6's rule:
+/// a `case` this analysis could not decide gets silence, because the only
+/// alternatives are a warning that may be wrong and a compiler that does
+/// not finish. The depth is a nesting depth of PATTERNS — 512 `Just (Just
+/// (…))` — so no program a person writes comes near it, and one that does
+/// still compiles and still runs correctly; it only loses a warning.
 const max_depth: u32 = 512;
 
 /// The analysis gave up: either the work budget ran out, or the patterns did
@@ -181,15 +188,21 @@ pub const Literal = struct {
     /// which can only ever cost a warning, never invent one.
     parsed: bool = true,
 
-    pub fn eql(a: Literal, b: Literal, bytes: []const u8) bool {
+    /// Through `Patterns.bytesOf` and never `string_bytes` directly:
+    /// `off`/`len` come from `Bir`, and the invariant that they stay inside
+    /// the module's `string_bytes` (`Lower.checkBytes`, fuzz-asserted) is
+    /// one held a file away. `bytesOf` re-checks it here, so a spelling
+    /// comparison cannot become an out-of-bounds slice if that invariant
+    /// ever moves.
+    pub fn eql(a: Literal, b: Literal, p: *const Patterns) bool {
         if (a.kind != b.kind) return false;
         return switch (a.kind) {
             .char => a.value == b.value,
             .int => if (a.parsed and b.parsed)
                 a.value == b.value
             else
-                a.parsed == b.parsed and std.mem.eql(u8, bytes[a.off..][0..a.len], bytes[b.off..][0..b.len]),
-            .string => std.mem.eql(u8, bytes[a.off..][0..a.len], bytes[b.off..][0..b.len]),
+                a.parsed == b.parsed and std.mem.eql(u8, p.bytesOf(a), p.bytesOf(b)),
+            .string => std.mem.eql(u8, p.bytesOf(a), p.bytesOf(b)),
         };
     }
 };
@@ -242,8 +255,14 @@ pub const Patterns = struct {
         return p.alts.items[index];
     }
 
+    /// The bytes a literal spells, or empty when its range is not inside
+    /// this module's. The bound is widened to `u64` first: `off` and `len`
+    /// are both `u32` straight out of `Bir`, and adding them in `u32` is
+    /// itself a trap in a safe build — the check may not be the thing that
+    /// panics.
     pub fn bytesOf(p: *const Patterns, lit: Literal) []const u8 {
-        if (lit.off + lit.len > p.string_bytes.len) return "";
+        const end = @as(u64, lit.off) + lit.len;
+        if (end > p.string_bytes.len) return "";
         return p.string_bytes[lit.off..][0..lit.len];
     }
 
@@ -324,12 +343,16 @@ fn one(
         // about what it matches, so the caret belongs under the pattern.
         const pattern: Bir.Inst.Index = @enumFromInt(bir.instData(b).lhs);
         const p = an.simplify(pattern, 0) catch |err| switch (err) {
+            // The `case` is abandoned WHOLE, with no diagnostic. Checker.md
+            // §6.6: an answer this analysis could not compute is reported
+            // as no answer, never as a guess. The three sites below are the
+            // same decision at the same `case`.
             error.Abandoned => return,
             else => |e| return e,
         };
         const row = try arena.dupe(PatIndex, &.{p});
         const useful = an.isUseful(matrix.items, row, 0) catch |err| switch (err) {
-            error.Abandoned => return,
+            error.Abandoned => return, // silent, by the argument above
             else => |e| return e,
         };
         if (!useful) return reporter.redundantPattern(pattern, @intCast(i + 1));
@@ -337,7 +360,7 @@ fn one(
     }
 
     const missing = an.isExhaustive(matrix.items, 1, 0) catch |err| switch (err) {
-        error.Abandoned => return,
+        error.Abandoned => return, // silent, by the argument above
         else => |e| return e,
     };
     if (missing.len == 0) return;
@@ -366,6 +389,15 @@ const Analysis = struct {
     pats: *Patterns,
     budget: u32,
 
+    /// Charge `amount` to the budget, abandoning the `case` when it runs
+    /// out. **Abandoning reports nothing, on purpose** (checker.md §6.6):
+    /// the budget is only ever reached by a matrix whose exact answer needs
+    /// exponential work (`default_budget`'s note measures how far away that
+    /// is), and there is no partial answer to report — a half-searched
+    /// matrix can no more prove a branch redundant than it can prove one
+    /// missing. Silence loses a warning on input nobody writes; the two
+    /// alternatives are a wrong warning and a compiler that does not
+    /// terminate.
     fn spend(an: *Analysis, amount: usize) Abort!void {
         const cost = std.math.cast(u32, amount) orelse return error.Abandoned;
         if (an.budget < cost) {
@@ -436,6 +468,9 @@ const Analysis = struct {
     }
 
     fn simplify(an: *Analysis, inst: Bir.Inst.Index, depth: u32) Fail!PatIndex {
+        // Nesting guard; the whole `case` then reports nothing. Correct
+        // here because a pattern this deep is not simplified at all, so
+        // there is no matrix to judge — see `max_depth`.
         if (depth > max_depth) return error.Abandoned;
         try an.spend(1);
         const bir = an.cx.bir;
@@ -575,6 +610,10 @@ const Analysis = struct {
     /// Maranget's `U(P, q)`: can `vector` match a value no row of `matrix`
     /// matches?
     fn isUseful(an: *Analysis, matrix: []const []const PatIndex, vector: []const PatIndex, depth: u32) Fail!bool {
+        // Nesting guard. Reporting nothing is the only sound answer: a
+        // truncated search cannot distinguish "not useful" (which would be
+        // `redundant_pattern`) from "not searched far enough", and the
+        // second spelled as the first is a warning about correct code.
         if (depth > max_depth) return error.Abandoned;
         try an.spend(matrix.len + 1);
         // Nothing above it matches the same values, so it is useful.
@@ -617,6 +656,11 @@ const Analysis = struct {
     /// Maranget's `I(P, n)`: value vectors of width `n` that `matrix`
     /// leaves unmatched, at most `max_examples` of them.
     fn isExhaustive(an: *Analysis, matrix: []const []const PatIndex, n: u32, depth: u32) Fail![]const []const PatIndex {
+        // Nesting guard. Reporting nothing is the only sound answer: the
+        // counterexamples found so far are the ones above this point in the
+        // tree, and a truncated branch may be exactly the one that is
+        // covered — printing what we have would be `missing_patterns` on a
+        // `case` that is complete.
         if (depth > max_depth) return error.Abandoned;
         try an.spend(matrix.len + 1);
         // No row matches anything: every value of width `n` is missing.
@@ -738,7 +782,7 @@ const Analysis = struct {
         for (matrix) |row| {
             if (row.len == 0) return error.Abandoned;
             switch (an.pats.tag(row[0])) {
-                .literal => if (an.pats.literal(row[0]).eql(lit, an.pats.string_bytes)) {
+                .literal => if (an.pats.literal(row[0]).eql(lit, an.pats)) {
                     try out.append(an.arena, row[1..]);
                 },
                 .anything => try out.append(an.arena, row[1..]),
@@ -828,16 +872,22 @@ test "integer pattern spellings compare by value, not by text" {
 }
 
 test "a literal compares by value where it parsed and by spelling where it did not" {
-    const bytes = "1  0x1nope";
+    const pats: Patterns = .{ .string_bytes = "1  0x1nope" };
     const decimal: Literal = .{ .kind = .int, .value = 1, .off = 0, .len = 1 };
     const hex: Literal = .{ .kind = .int, .value = 1, .off = 3, .len = 3 };
-    try testing.expect(decimal.eql(hex, bytes));
+    try testing.expect(decimal.eql(hex, &pats));
 
     const a: Literal = .{ .kind = .int, .off = 6, .len = 4, .parsed = false };
     const b: Literal = .{ .kind = .int, .off = 6, .len = 4, .parsed = false };
-    try testing.expect(a.eql(b, bytes));
-    try testing.expect(!a.eql(decimal, bytes));
+    try testing.expect(a.eql(b, &pats));
+    try testing.expect(!a.eql(decimal, &pats));
 
     const text: Literal = .{ .kind = .string, .off = 0, .len = 1 };
-    try testing.expect(!text.eql(decimal, bytes));
+    try testing.expect(!text.eql(decimal, &pats));
+
+    // A range that runs off the end reads as empty rather than trapping —
+    // the bound `bytesOf` adds. Nothing lowering produces looks like this;
+    // the point is that the check lives next to the slice.
+    const past_end: Literal = .{ .kind = .string, .off = 8, .len = 99 };
+    try testing.expect(past_end.eql(.{ .kind = .string, .off = 50, .len = 1 }, &pats));
 }

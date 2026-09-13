@@ -1,0 +1,16 @@
+-- check/bad: a record field called `main` renders by name like any other.
+-- `Symbol` 0 is `main` (it is the first `InternPool.WellKnown` entry), so
+-- a category that spelled "no field" as 0 printed an EMPTY name here — and
+-- `main` is the likeliest field name there is in an Elm-like program.
+pub type alias Model =
+    { main : Int, other : Int }
+
+
+pub build : Model
+build =
+    { main = "not an Int", other = 1 }
+
+
+pub read : Int
+read =
+    (1).main

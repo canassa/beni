@@ -166,6 +166,7 @@ pub fn build(
     graph: *const Graph,
     artifacts: *const Artifacts,
     interfaces: []const Interface,
+    provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
 ) Allocator.Error!Types {
     var types: Types = .empty;
@@ -218,18 +219,20 @@ pub fn build(
             });
             try by_decl.append(gpa, id);
         }
-        // The interface's types are the `pub` subset, sorted by name, so
-        // the mapping is a lookup of each by its declaration.
+        // The interface's types are the `pub` subset, sorted by name. The
+        // declaration behind each one was recorded when the interface was
+        // built (`Interface.Provenance`), so this is an array lookup: the
+        // scan by name it replaced was O(interface types × declarations)
+        // and was the name lookup checker.md §4.5 forbids.
         const iface = &interfaces[i];
-        for (iface.types) |t| {
-            const target = iface.symbol(t.name);
-            var found: TypeId = .none;
-            for (bir.decls, 0..) |d, di| {
-                if (d.kind.isValue() or bir.symbol(d.name) != target) continue;
-                found = by_decl.items[decl_offsets[i] + di];
-                break;
-            }
-            try by_interface.append(gpa, found);
+        const prov = if (i < provenance.len) &provenance[i] else &Interface.Provenance.empty;
+        for (0..iface.types.len) |ti| {
+            const decl = prov.typeDecl(ti) orelse {
+                try by_interface.append(gpa, .none);
+                continue;
+            };
+            const at = decl_offsets[i] + decl.int();
+            try by_interface.append(gpa, if (at < by_decl.items.len) by_decl.items[at] else .none);
         }
     }
     decl_offsets[modules] = @intCast(by_decl.items.len);
@@ -241,7 +244,7 @@ pub fn build(
     types.decl_offsets = decl_offsets;
     types.interface_offsets = interface_offsets;
 
-    types.settleEquatable(graph, artifacts);
+    try types.settleEquatable(gpa, graph, artifacts);
     types.findWellKnown(graph, interfaces, interner);
     return types;
 }
@@ -250,104 +253,183 @@ pub fn build(
 /// (see the header). A `foreign type` is fixed by its declaration and never
 /// moves; everything else is false as soon as a function is reachable in
 /// its body.
-fn settleEquatable(types: *Types, graph: *const Graph, artifacts: *const Artifacts) void {
-    for (types.entries) |*e| {
-        if (e.kind != .foreign) continue;
+///
+/// **One pass, then a worklist.** The property only ever goes true → false,
+/// so it needs no re-scanning: walk each body ONCE, recording whether it
+/// mentions a function and which other types it names, then propagate
+/// `false` backwards along those edges. The re-scanning version this
+/// replaced was O(types² × body size) whenever the dependency chain ran
+/// against declaration order — 250 aliases took 38 ms and 2 000 took
+/// 1 353 ms, a clean 4× per doubling — and it is serial, before the DAG,
+/// so it was on the critical path of every build.
+fn settleEquatable(
+    types: *Types,
+    gpa: Allocator,
+    graph: *const Graph,
+    artifacts: *const Artifacts,
+) Allocator.Error!void {
+    const n = types.entries.len;
+    if (n == 0) return;
+
+    // Edges `dependency → dependent`, flattened: `deps` is collected per
+    // entry first, then counting-sorted into one array with per-dependency
+    // offsets. No map, no per-node allocation.
+    var edge_from: std.ArrayList(u32) = .empty;
+    defer edge_from.deinit(gpa);
+    var edge_to: std.ArrayList(u32) = .empty;
+    defer edge_to.deinit(gpa);
+    var deps: std.ArrayList(TypeId) = .empty;
+    defer deps.deinit(gpa);
+
+    var queue: std.ArrayList(u32) = .empty;
+    defer queue.deinit(gpa);
+
+    var walk: BodyWalk = .{ .gpa = gpa, .graph = graph, .artifacts = artifacts };
+    defer walk.deinit();
+
+    for (types.entries, 0..) |*e, i| {
         const bir = artifacts.bir(graph.moduleFile(e.module));
-        e.equatable = bir.decl(e.decl).is_equatable;
+        const d = bir.decl(e.decl);
+        if (e.kind == .foreign) {
+            // Declared, never computed (checker.md Appendix B).
+            e.equatable = d.is_equatable;
+            if (!e.equatable) try queue.append(gpa, @intCast(i));
+            continue;
+        }
+        deps.clearRetainingCapacity();
+        var has_function = false;
+        switch (e.kind) {
+            .alias => if (d.annotation.unwrap()) |body| {
+                has_function = try walk.run(types, e.module, bir, body, &deps);
+            },
+            .adt => for (bir.declCtors(d)) |c| {
+                for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index)) |arg| {
+                    if (try walk.run(types, e.module, bir, arg, &deps)) has_function = true;
+                }
+            },
+            .foreign => unreachable, // handled above
+        }
+        if (has_function) {
+            e.equatable = false;
+            try queue.append(gpa, @intCast(i));
+            // A type already false needs no incoming edges: nothing can
+            // make it false a second time.
+            continue;
+        }
+        for (deps.items) |dep| {
+            if (dep == .none or dep.int() >= n) continue;
+            try edge_from.append(gpa, dep.int());
+            try edge_to.append(gpa, @intCast(i));
+        }
     }
-    var changed = true;
-    // Bounded so a malformed table cannot spin: each round either clears at
-    // least one flag or stops, and there are only so many flags.
-    var rounds: usize = 0;
-    while (changed and rounds <= types.entries.len) : (rounds += 1) {
-        changed = false;
-        for (types.entries, 0..) |*e, i| {
-            if (!e.equatable or e.kind == .foreign) continue;
-            const bir = artifacts.bir(graph.moduleFile(e.module));
-            const d = bir.decl(e.decl);
-            const ok = switch (e.kind) {
-                .alias => if (d.annotation.unwrap()) |body| types.bodyEquatable(e.module, bir, body) else true,
-                .adt => blk: {
-                    for (bir.declCtors(d)) |c| {
-                        for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index)) |arg| {
-                            if (!types.bodyEquatable(e.module, bir, arg)) break :blk false;
-                        }
-                    }
-                    break :blk true;
-                },
-                // Filtered out above; a `foreign` type's flag is
-                // declared, never computed.
-                .foreign => true,
-            };
-            if (!ok) {
-                types.entries[i].equatable = false;
-                changed = true;
-            }
+
+    // Counting sort the edges by their source, so propagation is one scan
+    // of a contiguous range per popped type.
+    const starts = try gpa.alloc(u32, n + 1);
+    defer gpa.free(starts);
+    @memset(starts, 0);
+    for (edge_from.items) |from| starts[from + 1] += 1;
+    for (1..n + 1) |i| starts[i] += starts[i - 1];
+    const dependents = try gpa.alloc(u32, edge_to.items.len);
+    defer gpa.free(dependents);
+    const cursor = try gpa.alloc(u32, n);
+    defer gpa.free(cursor);
+    @memcpy(cursor, starts[0..n]);
+    for (edge_from.items, edge_to.items) |from, to| {
+        dependents[cursor[from]] = to;
+        cursor[from] += 1;
+    }
+
+    // Propagate. Each type is pushed at most once — it is pushed only on
+    // the transition true → false — so this is O(types + edges).
+    while (queue.pop()) |id| {
+        for (dependents[starts[id]..starts[id + 1]]) |dependent| {
+            if (!types.entries[dependent].equatable) continue;
+            types.entries[dependent].equatable = false;
+            try queue.append(gpa, dependent);
         }
     }
 }
 
-/// Whether a written type mentions no function, treating type VARIABLES as
-/// equatable (their arguments are checked at the use site).
-fn bodyEquatable(
-    types: *const Types,
-    module: Graph.Index,
-    bir: *const Bir,
-    root: Bir.Inst.Index,
-) bool {
-    // An iterative walk: an annotation is as deep as the parser's nesting
-    // limit allows, which is 4096, and that does not belong on the C stack.
-    var stack: [256]struct { module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index } = undefined;
-    var len: usize = 1;
-    stack[0] = .{ .module = module, .bir = bir, .inst = root };
-    var budget: usize = 1 << 16;
-    while (len > 0) {
-        if (budget == 0) return true; // pathological input: stay quiet
-        budget -= 1;
-        len -= 1;
-        const frame = stack[len];
-        const b = frame.bir;
-        const tag = b.instTag(frame.inst);
-        const data = b.instData(frame.inst);
-        const push = struct {
-            fn f(s: anytype, l: *usize, m: Graph.Index, bb: *const Bir, i: Bir.Inst.Index) bool {
-                if (l.* >= s.len) return false;
-                s[l.*] = .{ .module = m, .bir = bb, .inst = i };
-                l.* += 1;
-                return true;
-            }
-        }.f;
-        switch (tag) {
-            .type_fn => return false,
-            .type_var, .type_unit, .@"error" => {},
-            .type_top, .ext_type => {
-                const id = types.headId(frame.module, tag, data);
-                if (!types.isEquatable(id)) return false;
-            },
-            .type_app => {
-                const head_tag = b.instTag(@enumFromInt(data.lhs));
-                const head_data = b.instData(@enumFromInt(data.lhs));
-                const id = types.headId(frame.module, head_tag, head_data);
-                if (!types.isEquatable(id)) return false;
-                for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)) |arg| {
-                    if (!push(&stack, &len, frame.module, b, arg)) return true;
-                }
-            },
-            .type_tuple => for (b.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
-                if (!push(&stack, &len, frame.module, b, el)) return true;
-            },
-            .type_record => for (b.extraSlice(Bir.inlineRange(data), Bir.Field)) |f| {
-                if (!push(&stack, &len, frame.module, b, f.value)) return true;
-            },
-            .type_record_ext => for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| {
-                if (!push(&stack, &len, frame.module, b, f.value)) return true;
-            },
-            else => {},
-        }
+/// Walks a written type once: does it mention a function, and which other
+/// declared types does it name? The two questions together are what
+/// `settleEquatable` needs, and asking them in one walk is what turns its
+/// fixpoint into a worklist.
+///
+/// Type PARAMETERS are not consulted — `List a` is equatable exactly when
+/// `a` is, and the argument is checked at the use site by the obligation
+/// walk of checker.md §6.4.
+const BodyWalk = struct {
+    gpa: Allocator,
+    graph: *const Graph,
+    artifacts: *const Artifacts,
+    /// Reused across every body of the session; an annotation is as deep as
+    /// the parser's nesting limit allows (4096), which does not belong on
+    /// the C stack.
+    stack: std.ArrayList(Frame) = .empty,
+
+    const Frame = struct { module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index };
+
+    fn deinit(w: *BodyWalk) void {
+        w.stack.deinit(w.gpa);
     }
-    return true;
-}
+
+    /// True when a function is reachable. Every named type met on the way
+    /// is appended to `out`, whether or not it is equatable today: the
+    /// caller turns them into edges and propagates along them.
+    ///
+    /// The walk grows its worklist instead of truncating at a fixed size.
+    /// A fixed one would have to answer "equatable" for a type too wide to
+    /// finish, which is a silent yes to `==` on a function — the failure
+    /// mode this whole milestone is about.
+    fn run(
+        w: *BodyWalk,
+        types: *const Types,
+        module: Graph.Index,
+        bir: *const Bir,
+        root: Bir.Inst.Index,
+        out: *std.ArrayList(TypeId),
+    ) Allocator.Error!bool {
+        w.stack.clearRetainingCapacity();
+        try w.stack.append(w.gpa, .{ .module = module, .bir = bir, .inst = root });
+        // A well-formed Bir type is a TREE, so this terminates in the size
+        // of the body; the budget only exists so a poisoned one cannot spin
+        // forever, and it is stated in terms of the input rather than as a
+        // constant so it cannot become the real limit.
+        var budget: usize = @as(usize, bir.insts.len) + 16;
+        while (w.stack.pop()) |frame| {
+            if (budget == 0) return true; // see above: not a limit, a backstop
+            budget -= 1;
+            const b = frame.bir;
+            const tag = b.instTag(frame.inst);
+            const data = b.instData(frame.inst);
+            switch (tag) {
+                .type_fn => return true,
+                .type_var, .type_unit, .@"error" => {},
+                .type_top, .ext_type => try out.append(w.gpa, types.headId(frame.module, tag, data)),
+                .type_app => {
+                    const head_tag = b.instTag(@enumFromInt(data.lhs));
+                    const head_data = b.instData(@enumFromInt(data.lhs));
+                    try out.append(w.gpa, types.headId(frame.module, head_tag, head_data));
+                    for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index)) |arg| {
+                        try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = arg });
+                    }
+                },
+                .type_tuple => for (b.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
+                    try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = el });
+                },
+                .type_record => for (b.extraSlice(Bir.inlineRange(data), Bir.Field)) |f| {
+                    try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = f.value });
+                },
+                .type_record_ext => for (b.extraSlice(b.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| {
+                    try w.stack.append(w.gpa, .{ .module = frame.module, .bir = b, .inst = f.value });
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+};
 
 /// The `TypeId` a resolved type reference names.
 fn headId(types: *const Types, module: Graph.Index, tag: Bir.Inst.Tag, data: Bir.Inst.Data) TypeId {
@@ -427,10 +509,26 @@ pub const Builder = struct {
     /// Bounds alias expansion; `recursive_alias` has refused the cyclic
     /// ones already, so this only catches a poisoned tree.
     depth: u32 = 0,
+    /// Set when `max_depth` stopped the walk, so the caller can REPORT
+    /// before it uses the poisoned result. "Errors never stop the build"
+    /// (`fast-compiler.md` §5) means a poisoned variable after a message,
+    /// never instead of one: an `err` unifies with anything, so a
+    /// declaration truncated here would become a hole and a caller's
+    /// mistake would compile clean. The flag rather than a report on the
+    /// spot because this walk crosses modules — an alias body is read in
+    /// ITS module — and the only instruction that names a position in the
+    /// module being checked is the one the caller asked about.
+    too_deep: bool = false,
 
     pub const Scoped = struct { name: Symbol, v: Var };
 
     pub const Error = Allocator.Error;
+
+    /// How deep a written type may nest. Well under the parser's own
+    /// `Parse.max_depth`, because an annotation is one tree among many and
+    /// this walk also spends a level per alias expansion; past it the
+    /// result is poisoned AND `too_deep` is set, so the caller reports.
+    pub const max_depth: u32 = 512;
 
     pub fn init(
         store: *TypeStore,
@@ -472,7 +570,10 @@ pub const Builder = struct {
     pub fn read(b: *Builder, inst: Bir.Inst.Index) Error!Var {
         b.depth += 1;
         defer b.depth -= 1;
-        if (b.depth > 512) return b.store.freshErr(b.varRank());
+        if (b.depth > max_depth) {
+            b.too_deep = true;
+            return b.store.freshErr(b.varRank());
+        }
         const bir = b.bir;
         const tag = bir.instTag(inst);
         const data = bir.instData(inst);
@@ -569,6 +670,25 @@ pub const Builder = struct {
         return b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
     }
 
+    /// Expand an alias's body once, under its parameters.
+    ///
+    /// **This reads the DECLARING module's Bir, and for a cross-module
+    /// alias that is a hole in the §8.1 firewall** — one of exactly two
+    /// left after M2d, the other being `Types.build` itself. It is not
+    /// reachable today (every module's Bir is in memory for the whole run)
+    /// and it is not what the checker.md §4.5 rule is about: no name is
+    /// looked up, the module and declaration are dense indices resolution
+    /// produced. But M4 wants a dependency's Bir to be absent, and this
+    /// would have nothing to read.
+    ///
+    /// Closing it is checker.md §7's `alias_body: TermIndex?`, written the
+    /// way `Ctor.arg_terms` now is: the expansion as terms quantified over
+    /// the alias's parameters, instantiated from the interface here. That
+    /// is deliberately NOT done yet, because it would close one of two
+    /// holes and leave the larger one — `Types.build` walks every module's
+    /// declarations to number the types and settle equatability, so M4
+    /// needs a story for the whole type table, not for alias bodies alone.
+    /// The comment is here so nothing claims a firewall that does not exist.
     fn aliasBody(b: *Builder, e: Entry, args: []const Var) Error!Var {
         const bir = b.artifacts.bir(b.graph.moduleFile(e.module));
         const d = bir.decl(e.decl);
@@ -578,7 +698,12 @@ pub const Builder = struct {
         // scope inside it and must not leak into it.
         var inner: Builder = .init(b.store, b.types, b.graph, b.artifacts, e.module, bir, b.mode, b.rank, b.scratch, b.interner);
         inner.depth = b.depth;
-        defer inner.deinit();
+        defer {
+            // The inner builder is a different object reading a different
+            // module's tree; its verdict is part of THIS read's answer.
+            b.too_deep = b.too_deep or inner.too_deep;
+            inner.deinit();
+        }
         const params = bir.declTypeParams(d);
         for (params, 0..) |p, i| {
             try inner.bind(p, if (i < args.len) args[i] else try b.store.freshErr(b.varRank()));

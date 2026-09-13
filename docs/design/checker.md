@@ -28,9 +28,20 @@ Out: codegen, the runtime, `main`'s type (a platform fact, M3), the JavaScript h
 ```
 beni check [options] <path>...           now: parse, lower, resolve, type-check every module
 beni dump --stage=interface <file>       the module's interface as text (§7)
+beni dump --stage=raw <file>             the same interface as the RECORD: term tags and
+                                         operands, `extra` words, quantifier blocks, constructor
+                                         argument ranges
 beni dump --stage=types <file>           every top-level declaration with its inferred scheme,
                                          and every local binding with its type, as text
 ```
+
+`--stage=raw` exists for one assertion and is not meant to be read for pleasure. Both other
+views of an interface go through `check/Render.zig`, which re-sorts a record's fields by name
+text — so neither can see whether the BYTES of `terms`, `extra` and the quantifier blocks
+depend on which worker interned which file. `fast-compiler.md` §8.1 has M4 hashing exactly
+those bytes, so "identical at every `--jobs`" has to be assertable about them and not about a
+printer that would hide a difference. Like `--stage=interface` it takes a directory as well as
+a file.
 
 | Flag | Meaning | Default |
 |---|---|---|
@@ -70,7 +81,17 @@ tests/corpus/
   check/bad/<Name>.beni + .diag  (and directories with _expected.diag)
   check/args/<Name>.beni + .diag               the missing-argument suite (§8.3): its own kind
                                                so its size and pass rate are visible on their own
+  check/depth/<Name>Ok.beni                   the depth sweep: one level UNDER a guard, checks clean
+  check/depth/<Name>Deep.beni + .diag         one level OVER it, and says so
 ```
+
+The depth sweep is a kind of its own because its assertion is a PAIR rather than a file. Every
+guard that can stop the checker reading a type gets a fixture one level under it, which must
+check clean, and one level over it, which must produce a diagnostic; the walker enforces the
+pairing by name, so a `…Ok` with a golden or a `…Deep` without one fails. It exists because
+every one of those guards used to poison a type and report nothing — see §5 — and a guard is
+otherwise asserted only by its absence. `tests/corpus/check/depth/generate.sh` rebuilds the
+fixtures and records each guard's measured boundary.
 
 Core is embedded into the binary with `@embedFile` from `build.zig` (one anonymous import per
 file, the list generated from the directory at build time), and parsed on every cold start
@@ -176,6 +197,29 @@ pub const TypeId = enum(u32) { _ };                      // (module, decl) of a 
 - **One `TypeStore` per module being checked**, owned by the worker checking it, arena-backed,
   reset after the interface is extracted. Imported schemes live in interfaces (§7) in a flat
   form and are instantiated into the local store on demand.
+- **A guard that poisons must report first.** Reading a written type is bounded
+  (`Types.Builder.max_depth`, 512 levels) and so is writing a solved one into the interface
+  (`Schemes.Writer.max_depth`), because neither walk belongs on the C stack unbounded. Past the
+  bound the result is an `err` — and an `err` unifies with anything, so a declaration truncated
+  in silence becomes a hole and a caller's mistake against it compiles clean. `fast-compiler.md`
+  §5's "errors never stop the build" means a poisoned variable **after** a message, never
+  instead of one, and the message is `nesting_too_deep`: the same code the parser uses, because
+  it is the same problem and the same fix. M2 shipped these two guards silent; the band between
+  512 and the parser's own `Parse.max_depth` (4096) was eight times wide, and a 511-deep
+  annotation type-checked to `<error>` with no output at all.
+
+  Every other guard in the checker either reports or carries a written argument for why silence
+  is right there, at the guard itself. The two that matter:
+
+  - `Constrain`'s and `Solve`'s recursion guards are written as `Parse.max_depth + 104`, not as
+    a constant. A file the parser accepted cannot reach them and a file that could was reported
+    before the checker ran — deriving the number from the parser's is what keeps that argument
+    from rotting.
+  - `Exhaustive`'s depth and work budgets report **nothing** on purpose (§6.6): a half-searched
+    pattern matrix can no more prove a branch redundant than prove one missing.
+
+  `tests/corpus/check/depth/` sweeps all of them, one fixture per guard at guard − 1 and
+  guard + 1 (§3).
 
 ## 6. Inference
 
@@ -316,13 +360,16 @@ it and map it from disk unchanged (`fast-compiler.md` §8.1, §8.3):
 
 ```
 Interface
-  values:   [] { name: Symbol, scheme: SchemeIndex, is_foreign: bool }        sorted by name
-  types:    [] { name: Symbol, arity: u8, kind: adt|alias|foreign, opaque: bool,
-                 ctors: range into ctors, alias_body: TermIndex?, equatable: bool }  sorted by name
-  ctors:    [] { name: Symbol, type: index into types, arg_terms: range }
-  schemes:  [] { quantified: range of (kind, equatable), body: TermIndex }
+  values:   [] { name: SymbolIndex, scheme: SchemeIndex, is_foreign: bool }   sorted by name
+  types:    [] { name: SymbolIndex, arity: u8, kind: adt|alias|foreign, opaque: bool,
+                 ctors: range into ctors, equatable: bool,
+                 alias_body: TermIndex? }                                     sorted by name
+  ctors:    [] { name: SymbolIndex, type: index into types, arity: u32,
+                 arg_terms: range, quantified_start: u32 }   grouped by type, declaration order
+  schemes:  [] { quantified: range of (kind, equatable, name), body: TermIndex }
   terms:    MultiArrayList { tag, lhs, rhs }   the flat type term language: var(i), fn, app(TypeId, range),
-                                               tuple(range), record(range, ext), unit, alias(TypeId, range)
+                                               tuple(range), record(range, ext), unit, empty_record,
+                                               alias(TypeId, range), err
   extra:    []u32
   symbols:  []Symbol                            remapped like Bir's
 ```
@@ -331,6 +378,43 @@ Interface
 constructors or `opaque`, types rendered by `Render.zig` in the same form diagnostics use, so
 the goldens double as documentation. The interface of a module with type errors still exists:
 erroneous declarations appear with `<error>` so dependents check against the rest.
+`dump --stage=raw` prints the tables themselves (§2).
+
+**`arg_terms` is the firewall for constructors**, and M2 shipped without it. `var(i)` inside a
+constructor's argument terms is the owning TYPE's parameter `i` — they are quantified first and
+in declaration order, `quantified_start` says where their flags are — so a dependent rebuilds
+`arg1 -> … -> argN -> T p0 … pk` from this record alone and the result half needs no storage.
+Without it the solver reached into the declaring module's `Bir` and found the constructor **by
+name**, which breaks §4.5 and which M4 cannot do at all: a dependency's Bir may not be in
+memory.
+
+**Every name in the record is a `SymbolIndex`, never a `Symbol`**, including a quantifier's.
+A `Symbol` is an index into the session's interner, whose numbering depends on which worker
+interned which file (`InternPool`'s header), so a `Symbol` written into `extra` would put a
+scheduling-dependent word into the bytes §8.1 has M4 hashing. For the same reason a record's
+fields are written **sorted by name text**, not in the store's own order, which is by symbol id
+so that unification can merge-join two field sets in one pass. The two orders are different and
+both are deliberate: the store's is for speed inside one module, the interface's is for a hash
+that has to be a function of the source.
+
+**`alias_body` is still not implemented, and that is now a stated gap rather than an omission.**
+Expanding a cross-module alias reads the DECLARING module's `Bir`
+(`Types.Builder.aliasBody`), which is the same hole `Ctor.arg_terms` closed for constructors.
+It is left open on purpose: it is one of exactly TWO cross-module Bir reads left on the
+checking path, and the other is `Types.build` itself — numbering every declared type and
+settling equatability walks every module's declarations (§5). Closing the smaller one while the
+larger stands would buy nothing M4 can use, so what M4 needs is a story for the whole type
+table, at which point `alias_body` falls out of it. Both sites say so in the code; neither
+claims a firewall it does not have, which is what went wrong the first time.
+
+**`Interface.Provenance` is NOT part of the record.** `Interface.build` also returns, as a
+separate value, the `Bir` declaration behind each value, type and constructor — the two places
+that need to go interface entry → declaration (`Types`' `by_interface` and `Check`'s
+`fillInterface`) were scanning the declaration table for a matching name, which is both the
+lookup §4.5 forbids and quadratic in the module's public surface: 32 000 `pub` declarations
+spent 12.8 s there against 73 ms for the same declarations without `pub`. It is kept out of the
+interface because it is meaningless once the Bir is gone and must never be hashed with the
+record M4 caches.
 
 ## 8. Diagnostics
 
@@ -352,7 +436,14 @@ missing_field  unknown_field  record_not_closed
 not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
 tuple_index_out_of_range  not_a_tuple  try_shape
 missing_patterns  redundant_pattern
+nesting_too_deep                                (shared with the parser; §5)
 ```
+
+`nesting_too_deep` is the front end's code and the checker reuses it rather than inventing a
+second one: a type the checker cannot read to the bottom and an expression the parser cannot
+nest any further are the same problem to the author, and the same fix — give the inner part a
+name. Its `bad/` fixtures live in `check/depth/`, paired with the ones that must stay clean
+(§3).
 
 `wrong_type_arity` covers both under- and over-application of a type constructor: there are no
 higher-kinded types, every type constructor is fully applied (language.md gains this line).
@@ -400,6 +491,18 @@ review, the currying decision is revisited before M3 (design §9.3).
   which one a regression is in. All five are per module and none is per run: "this module was
   not re-checked" is only visible in a trace that has a row per module. `check` is recorded on
   the worker that took the module, so a trace also shows the DAG schedule of §4.4.
+- **Every phase that can dominate a build has a row.** `types` — numbering every declared type
+  of every module and settling equatability (§5) — is serial and once per run, and it had no
+  event at all: on a project of long alias chains it was 1.3 s of a 1.35 s compile and the
+  trace showed 46 ms. `fast-compiler.md` §12 makes the trace the instrument of record, so a
+  phase that is invisible in it is a phase nobody will find. The same argument applies to work
+  that sits BETWEEN events rather than outside them: writing the interface is inside `check`
+  but outside `constrain`/`solve`/`exhaustive`, and at M2 it was 750 ms of an 8 000-declaration
+  module's 761 ms with `constrain + solve + exhaustive` reading 10.6 ms. A gap that large
+  between a parent event and its children is itself the finding.
+- **`instantiations` counts one thing.** A scheme goes through `makeCopy`, which counts it;
+  nothing that produces a scheme counts it again. M4's incrementality tests assert this counter
+  did not move, so an imported call reading as two would make the assertion meaningless.
 
 ## 10. Milestones
 
@@ -414,7 +517,10 @@ review, the currying decision is revisited before M3 (design §9.3).
 - **M2c — cross-module and exhaustiveness.** Instantiation from interfaces; DAG-parallel
   checking; `Exhaustive.zig`; multi-module fixtures; the full `check/args` suite and its review.
 - **M2d — measurement and review.** Type-correct generator; `check` bench line; profile
-  counters; a house-rules review; `fast-compiler.md` §9.3's revisit decision recorded.
+  counters; a house-rules review; `fast-compiler.md` §9.3's revisit decision recorded. Acting on
+  that review is what added: the reporting rule for depth guards and the `check/depth` sweep
+  (§5); `Ctor.arg_terms` and the text-sorted, `SymbolIndex`-only interface record (§7);
+  `Interface.Provenance`; `dump --stage=raw` (§2); and the `types` trace event (§9).
 
 ## Appendix A — rules added to `language.md` by M2
 

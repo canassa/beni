@@ -1,0 +1,2044 @@
+-- check/depth: one under the limit, reached by expanding aliases rather than nesting.
+type alias A0 =
+    A1
+
+
+type alias A1 =
+    A2
+
+
+type alias A2 =
+    A3
+
+
+type alias A3 =
+    A4
+
+
+type alias A4 =
+    A5
+
+
+type alias A5 =
+    A6
+
+
+type alias A6 =
+    A7
+
+
+type alias A7 =
+    A8
+
+
+type alias A8 =
+    A9
+
+
+type alias A9 =
+    A10
+
+
+type alias A10 =
+    A11
+
+
+type alias A11 =
+    A12
+
+
+type alias A12 =
+    A13
+
+
+type alias A13 =
+    A14
+
+
+type alias A14 =
+    A15
+
+
+type alias A15 =
+    A16
+
+
+type alias A16 =
+    A17
+
+
+type alias A17 =
+    A18
+
+
+type alias A18 =
+    A19
+
+
+type alias A19 =
+    A20
+
+
+type alias A20 =
+    A21
+
+
+type alias A21 =
+    A22
+
+
+type alias A22 =
+    A23
+
+
+type alias A23 =
+    A24
+
+
+type alias A24 =
+    A25
+
+
+type alias A25 =
+    A26
+
+
+type alias A26 =
+    A27
+
+
+type alias A27 =
+    A28
+
+
+type alias A28 =
+    A29
+
+
+type alias A29 =
+    A30
+
+
+type alias A30 =
+    A31
+
+
+type alias A31 =
+    A32
+
+
+type alias A32 =
+    A33
+
+
+type alias A33 =
+    A34
+
+
+type alias A34 =
+    A35
+
+
+type alias A35 =
+    A36
+
+
+type alias A36 =
+    A37
+
+
+type alias A37 =
+    A38
+
+
+type alias A38 =
+    A39
+
+
+type alias A39 =
+    A40
+
+
+type alias A40 =
+    A41
+
+
+type alias A41 =
+    A42
+
+
+type alias A42 =
+    A43
+
+
+type alias A43 =
+    A44
+
+
+type alias A44 =
+    A45
+
+
+type alias A45 =
+    A46
+
+
+type alias A46 =
+    A47
+
+
+type alias A47 =
+    A48
+
+
+type alias A48 =
+    A49
+
+
+type alias A49 =
+    A50
+
+
+type alias A50 =
+    A51
+
+
+type alias A51 =
+    A52
+
+
+type alias A52 =
+    A53
+
+
+type alias A53 =
+    A54
+
+
+type alias A54 =
+    A55
+
+
+type alias A55 =
+    A56
+
+
+type alias A56 =
+    A57
+
+
+type alias A57 =
+    A58
+
+
+type alias A58 =
+    A59
+
+
+type alias A59 =
+    A60
+
+
+type alias A60 =
+    A61
+
+
+type alias A61 =
+    A62
+
+
+type alias A62 =
+    A63
+
+
+type alias A63 =
+    A64
+
+
+type alias A64 =
+    A65
+
+
+type alias A65 =
+    A66
+
+
+type alias A66 =
+    A67
+
+
+type alias A67 =
+    A68
+
+
+type alias A68 =
+    A69
+
+
+type alias A69 =
+    A70
+
+
+type alias A70 =
+    A71
+
+
+type alias A71 =
+    A72
+
+
+type alias A72 =
+    A73
+
+
+type alias A73 =
+    A74
+
+
+type alias A74 =
+    A75
+
+
+type alias A75 =
+    A76
+
+
+type alias A76 =
+    A77
+
+
+type alias A77 =
+    A78
+
+
+type alias A78 =
+    A79
+
+
+type alias A79 =
+    A80
+
+
+type alias A80 =
+    A81
+
+
+type alias A81 =
+    A82
+
+
+type alias A82 =
+    A83
+
+
+type alias A83 =
+    A84
+
+
+type alias A84 =
+    A85
+
+
+type alias A85 =
+    A86
+
+
+type alias A86 =
+    A87
+
+
+type alias A87 =
+    A88
+
+
+type alias A88 =
+    A89
+
+
+type alias A89 =
+    A90
+
+
+type alias A90 =
+    A91
+
+
+type alias A91 =
+    A92
+
+
+type alias A92 =
+    A93
+
+
+type alias A93 =
+    A94
+
+
+type alias A94 =
+    A95
+
+
+type alias A95 =
+    A96
+
+
+type alias A96 =
+    A97
+
+
+type alias A97 =
+    A98
+
+
+type alias A98 =
+    A99
+
+
+type alias A99 =
+    A100
+
+
+type alias A100 =
+    A101
+
+
+type alias A101 =
+    A102
+
+
+type alias A102 =
+    A103
+
+
+type alias A103 =
+    A104
+
+
+type alias A104 =
+    A105
+
+
+type alias A105 =
+    A106
+
+
+type alias A106 =
+    A107
+
+
+type alias A107 =
+    A108
+
+
+type alias A108 =
+    A109
+
+
+type alias A109 =
+    A110
+
+
+type alias A110 =
+    A111
+
+
+type alias A111 =
+    A112
+
+
+type alias A112 =
+    A113
+
+
+type alias A113 =
+    A114
+
+
+type alias A114 =
+    A115
+
+
+type alias A115 =
+    A116
+
+
+type alias A116 =
+    A117
+
+
+type alias A117 =
+    A118
+
+
+type alias A118 =
+    A119
+
+
+type alias A119 =
+    A120
+
+
+type alias A120 =
+    A121
+
+
+type alias A121 =
+    A122
+
+
+type alias A122 =
+    A123
+
+
+type alias A123 =
+    A124
+
+
+type alias A124 =
+    A125
+
+
+type alias A125 =
+    A126
+
+
+type alias A126 =
+    A127
+
+
+type alias A127 =
+    A128
+
+
+type alias A128 =
+    A129
+
+
+type alias A129 =
+    A130
+
+
+type alias A130 =
+    A131
+
+
+type alias A131 =
+    A132
+
+
+type alias A132 =
+    A133
+
+
+type alias A133 =
+    A134
+
+
+type alias A134 =
+    A135
+
+
+type alias A135 =
+    A136
+
+
+type alias A136 =
+    A137
+
+
+type alias A137 =
+    A138
+
+
+type alias A138 =
+    A139
+
+
+type alias A139 =
+    A140
+
+
+type alias A140 =
+    A141
+
+
+type alias A141 =
+    A142
+
+
+type alias A142 =
+    A143
+
+
+type alias A143 =
+    A144
+
+
+type alias A144 =
+    A145
+
+
+type alias A145 =
+    A146
+
+
+type alias A146 =
+    A147
+
+
+type alias A147 =
+    A148
+
+
+type alias A148 =
+    A149
+
+
+type alias A149 =
+    A150
+
+
+type alias A150 =
+    A151
+
+
+type alias A151 =
+    A152
+
+
+type alias A152 =
+    A153
+
+
+type alias A153 =
+    A154
+
+
+type alias A154 =
+    A155
+
+
+type alias A155 =
+    A156
+
+
+type alias A156 =
+    A157
+
+
+type alias A157 =
+    A158
+
+
+type alias A158 =
+    A159
+
+
+type alias A159 =
+    A160
+
+
+type alias A160 =
+    A161
+
+
+type alias A161 =
+    A162
+
+
+type alias A162 =
+    A163
+
+
+type alias A163 =
+    A164
+
+
+type alias A164 =
+    A165
+
+
+type alias A165 =
+    A166
+
+
+type alias A166 =
+    A167
+
+
+type alias A167 =
+    A168
+
+
+type alias A168 =
+    A169
+
+
+type alias A169 =
+    A170
+
+
+type alias A170 =
+    A171
+
+
+type alias A171 =
+    A172
+
+
+type alias A172 =
+    A173
+
+
+type alias A173 =
+    A174
+
+
+type alias A174 =
+    A175
+
+
+type alias A175 =
+    A176
+
+
+type alias A176 =
+    A177
+
+
+type alias A177 =
+    A178
+
+
+type alias A178 =
+    A179
+
+
+type alias A179 =
+    A180
+
+
+type alias A180 =
+    A181
+
+
+type alias A181 =
+    A182
+
+
+type alias A182 =
+    A183
+
+
+type alias A183 =
+    A184
+
+
+type alias A184 =
+    A185
+
+
+type alias A185 =
+    A186
+
+
+type alias A186 =
+    A187
+
+
+type alias A187 =
+    A188
+
+
+type alias A188 =
+    A189
+
+
+type alias A189 =
+    A190
+
+
+type alias A190 =
+    A191
+
+
+type alias A191 =
+    A192
+
+
+type alias A192 =
+    A193
+
+
+type alias A193 =
+    A194
+
+
+type alias A194 =
+    A195
+
+
+type alias A195 =
+    A196
+
+
+type alias A196 =
+    A197
+
+
+type alias A197 =
+    A198
+
+
+type alias A198 =
+    A199
+
+
+type alias A199 =
+    A200
+
+
+type alias A200 =
+    A201
+
+
+type alias A201 =
+    A202
+
+
+type alias A202 =
+    A203
+
+
+type alias A203 =
+    A204
+
+
+type alias A204 =
+    A205
+
+
+type alias A205 =
+    A206
+
+
+type alias A206 =
+    A207
+
+
+type alias A207 =
+    A208
+
+
+type alias A208 =
+    A209
+
+
+type alias A209 =
+    A210
+
+
+type alias A210 =
+    A211
+
+
+type alias A211 =
+    A212
+
+
+type alias A212 =
+    A213
+
+
+type alias A213 =
+    A214
+
+
+type alias A214 =
+    A215
+
+
+type alias A215 =
+    A216
+
+
+type alias A216 =
+    A217
+
+
+type alias A217 =
+    A218
+
+
+type alias A218 =
+    A219
+
+
+type alias A219 =
+    A220
+
+
+type alias A220 =
+    A221
+
+
+type alias A221 =
+    A222
+
+
+type alias A222 =
+    A223
+
+
+type alias A223 =
+    A224
+
+
+type alias A224 =
+    A225
+
+
+type alias A225 =
+    A226
+
+
+type alias A226 =
+    A227
+
+
+type alias A227 =
+    A228
+
+
+type alias A228 =
+    A229
+
+
+type alias A229 =
+    A230
+
+
+type alias A230 =
+    A231
+
+
+type alias A231 =
+    A232
+
+
+type alias A232 =
+    A233
+
+
+type alias A233 =
+    A234
+
+
+type alias A234 =
+    A235
+
+
+type alias A235 =
+    A236
+
+
+type alias A236 =
+    A237
+
+
+type alias A237 =
+    A238
+
+
+type alias A238 =
+    A239
+
+
+type alias A239 =
+    A240
+
+
+type alias A240 =
+    A241
+
+
+type alias A241 =
+    A242
+
+
+type alias A242 =
+    A243
+
+
+type alias A243 =
+    A244
+
+
+type alias A244 =
+    A245
+
+
+type alias A245 =
+    A246
+
+
+type alias A246 =
+    A247
+
+
+type alias A247 =
+    A248
+
+
+type alias A248 =
+    A249
+
+
+type alias A249 =
+    A250
+
+
+type alias A250 =
+    A251
+
+
+type alias A251 =
+    A252
+
+
+type alias A252 =
+    A253
+
+
+type alias A253 =
+    A254
+
+
+type alias A254 =
+    A255
+
+
+type alias A255 =
+    A256
+
+
+type alias A256 =
+    A257
+
+
+type alias A257 =
+    A258
+
+
+type alias A258 =
+    A259
+
+
+type alias A259 =
+    A260
+
+
+type alias A260 =
+    A261
+
+
+type alias A261 =
+    A262
+
+
+type alias A262 =
+    A263
+
+
+type alias A263 =
+    A264
+
+
+type alias A264 =
+    A265
+
+
+type alias A265 =
+    A266
+
+
+type alias A266 =
+    A267
+
+
+type alias A267 =
+    A268
+
+
+type alias A268 =
+    A269
+
+
+type alias A269 =
+    A270
+
+
+type alias A270 =
+    A271
+
+
+type alias A271 =
+    A272
+
+
+type alias A272 =
+    A273
+
+
+type alias A273 =
+    A274
+
+
+type alias A274 =
+    A275
+
+
+type alias A275 =
+    A276
+
+
+type alias A276 =
+    A277
+
+
+type alias A277 =
+    A278
+
+
+type alias A278 =
+    A279
+
+
+type alias A279 =
+    A280
+
+
+type alias A280 =
+    A281
+
+
+type alias A281 =
+    A282
+
+
+type alias A282 =
+    A283
+
+
+type alias A283 =
+    A284
+
+
+type alias A284 =
+    A285
+
+
+type alias A285 =
+    A286
+
+
+type alias A286 =
+    A287
+
+
+type alias A287 =
+    A288
+
+
+type alias A288 =
+    A289
+
+
+type alias A289 =
+    A290
+
+
+type alias A290 =
+    A291
+
+
+type alias A291 =
+    A292
+
+
+type alias A292 =
+    A293
+
+
+type alias A293 =
+    A294
+
+
+type alias A294 =
+    A295
+
+
+type alias A295 =
+    A296
+
+
+type alias A296 =
+    A297
+
+
+type alias A297 =
+    A298
+
+
+type alias A298 =
+    A299
+
+
+type alias A299 =
+    A300
+
+
+type alias A300 =
+    A301
+
+
+type alias A301 =
+    A302
+
+
+type alias A302 =
+    A303
+
+
+type alias A303 =
+    A304
+
+
+type alias A304 =
+    A305
+
+
+type alias A305 =
+    A306
+
+
+type alias A306 =
+    A307
+
+
+type alias A307 =
+    A308
+
+
+type alias A308 =
+    A309
+
+
+type alias A309 =
+    A310
+
+
+type alias A310 =
+    A311
+
+
+type alias A311 =
+    A312
+
+
+type alias A312 =
+    A313
+
+
+type alias A313 =
+    A314
+
+
+type alias A314 =
+    A315
+
+
+type alias A315 =
+    A316
+
+
+type alias A316 =
+    A317
+
+
+type alias A317 =
+    A318
+
+
+type alias A318 =
+    A319
+
+
+type alias A319 =
+    A320
+
+
+type alias A320 =
+    A321
+
+
+type alias A321 =
+    A322
+
+
+type alias A322 =
+    A323
+
+
+type alias A323 =
+    A324
+
+
+type alias A324 =
+    A325
+
+
+type alias A325 =
+    A326
+
+
+type alias A326 =
+    A327
+
+
+type alias A327 =
+    A328
+
+
+type alias A328 =
+    A329
+
+
+type alias A329 =
+    A330
+
+
+type alias A330 =
+    A331
+
+
+type alias A331 =
+    A332
+
+
+type alias A332 =
+    A333
+
+
+type alias A333 =
+    A334
+
+
+type alias A334 =
+    A335
+
+
+type alias A335 =
+    A336
+
+
+type alias A336 =
+    A337
+
+
+type alias A337 =
+    A338
+
+
+type alias A338 =
+    A339
+
+
+type alias A339 =
+    A340
+
+
+type alias A340 =
+    A341
+
+
+type alias A341 =
+    A342
+
+
+type alias A342 =
+    A343
+
+
+type alias A343 =
+    A344
+
+
+type alias A344 =
+    A345
+
+
+type alias A345 =
+    A346
+
+
+type alias A346 =
+    A347
+
+
+type alias A347 =
+    A348
+
+
+type alias A348 =
+    A349
+
+
+type alias A349 =
+    A350
+
+
+type alias A350 =
+    A351
+
+
+type alias A351 =
+    A352
+
+
+type alias A352 =
+    A353
+
+
+type alias A353 =
+    A354
+
+
+type alias A354 =
+    A355
+
+
+type alias A355 =
+    A356
+
+
+type alias A356 =
+    A357
+
+
+type alias A357 =
+    A358
+
+
+type alias A358 =
+    A359
+
+
+type alias A359 =
+    A360
+
+
+type alias A360 =
+    A361
+
+
+type alias A361 =
+    A362
+
+
+type alias A362 =
+    A363
+
+
+type alias A363 =
+    A364
+
+
+type alias A364 =
+    A365
+
+
+type alias A365 =
+    A366
+
+
+type alias A366 =
+    A367
+
+
+type alias A367 =
+    A368
+
+
+type alias A368 =
+    A369
+
+
+type alias A369 =
+    A370
+
+
+type alias A370 =
+    A371
+
+
+type alias A371 =
+    A372
+
+
+type alias A372 =
+    A373
+
+
+type alias A373 =
+    A374
+
+
+type alias A374 =
+    A375
+
+
+type alias A375 =
+    A376
+
+
+type alias A376 =
+    A377
+
+
+type alias A377 =
+    A378
+
+
+type alias A378 =
+    A379
+
+
+type alias A379 =
+    A380
+
+
+type alias A380 =
+    A381
+
+
+type alias A381 =
+    A382
+
+
+type alias A382 =
+    A383
+
+
+type alias A383 =
+    A384
+
+
+type alias A384 =
+    A385
+
+
+type alias A385 =
+    A386
+
+
+type alias A386 =
+    A387
+
+
+type alias A387 =
+    A388
+
+
+type alias A388 =
+    A389
+
+
+type alias A389 =
+    A390
+
+
+type alias A390 =
+    A391
+
+
+type alias A391 =
+    A392
+
+
+type alias A392 =
+    A393
+
+
+type alias A393 =
+    A394
+
+
+type alias A394 =
+    A395
+
+
+type alias A395 =
+    A396
+
+
+type alias A396 =
+    A397
+
+
+type alias A397 =
+    A398
+
+
+type alias A398 =
+    A399
+
+
+type alias A399 =
+    A400
+
+
+type alias A400 =
+    A401
+
+
+type alias A401 =
+    A402
+
+
+type alias A402 =
+    A403
+
+
+type alias A403 =
+    A404
+
+
+type alias A404 =
+    A405
+
+
+type alias A405 =
+    A406
+
+
+type alias A406 =
+    A407
+
+
+type alias A407 =
+    A408
+
+
+type alias A408 =
+    A409
+
+
+type alias A409 =
+    A410
+
+
+type alias A410 =
+    A411
+
+
+type alias A411 =
+    A412
+
+
+type alias A412 =
+    A413
+
+
+type alias A413 =
+    A414
+
+
+type alias A414 =
+    A415
+
+
+type alias A415 =
+    A416
+
+
+type alias A416 =
+    A417
+
+
+type alias A417 =
+    A418
+
+
+type alias A418 =
+    A419
+
+
+type alias A419 =
+    A420
+
+
+type alias A420 =
+    A421
+
+
+type alias A421 =
+    A422
+
+
+type alias A422 =
+    A423
+
+
+type alias A423 =
+    A424
+
+
+type alias A424 =
+    A425
+
+
+type alias A425 =
+    A426
+
+
+type alias A426 =
+    A427
+
+
+type alias A427 =
+    A428
+
+
+type alias A428 =
+    A429
+
+
+type alias A429 =
+    A430
+
+
+type alias A430 =
+    A431
+
+
+type alias A431 =
+    A432
+
+
+type alias A432 =
+    A433
+
+
+type alias A433 =
+    A434
+
+
+type alias A434 =
+    A435
+
+
+type alias A435 =
+    A436
+
+
+type alias A436 =
+    A437
+
+
+type alias A437 =
+    A438
+
+
+type alias A438 =
+    A439
+
+
+type alias A439 =
+    A440
+
+
+type alias A440 =
+    A441
+
+
+type alias A441 =
+    A442
+
+
+type alias A442 =
+    A443
+
+
+type alias A443 =
+    A444
+
+
+type alias A444 =
+    A445
+
+
+type alias A445 =
+    A446
+
+
+type alias A446 =
+    A447
+
+
+type alias A447 =
+    A448
+
+
+type alias A448 =
+    A449
+
+
+type alias A449 =
+    A450
+
+
+type alias A450 =
+    A451
+
+
+type alias A451 =
+    A452
+
+
+type alias A452 =
+    A453
+
+
+type alias A453 =
+    A454
+
+
+type alias A454 =
+    A455
+
+
+type alias A455 =
+    A456
+
+
+type alias A456 =
+    A457
+
+
+type alias A457 =
+    A458
+
+
+type alias A458 =
+    A459
+
+
+type alias A459 =
+    A460
+
+
+type alias A460 =
+    A461
+
+
+type alias A461 =
+    A462
+
+
+type alias A462 =
+    A463
+
+
+type alias A463 =
+    A464
+
+
+type alias A464 =
+    A465
+
+
+type alias A465 =
+    A466
+
+
+type alias A466 =
+    A467
+
+
+type alias A467 =
+    A468
+
+
+type alias A468 =
+    A469
+
+
+type alias A469 =
+    A470
+
+
+type alias A470 =
+    A471
+
+
+type alias A471 =
+    A472
+
+
+type alias A472 =
+    A473
+
+
+type alias A473 =
+    A474
+
+
+type alias A474 =
+    A475
+
+
+type alias A475 =
+    A476
+
+
+type alias A476 =
+    A477
+
+
+type alias A477 =
+    A478
+
+
+type alias A478 =
+    A479
+
+
+type alias A479 =
+    A480
+
+
+type alias A480 =
+    A481
+
+
+type alias A481 =
+    A482
+
+
+type alias A482 =
+    A483
+
+
+type alias A483 =
+    A484
+
+
+type alias A484 =
+    A485
+
+
+type alias A485 =
+    A486
+
+
+type alias A486 =
+    A487
+
+
+type alias A487 =
+    A488
+
+
+type alias A488 =
+    A489
+
+
+type alias A489 =
+    A490
+
+
+type alias A490 =
+    A491
+
+
+type alias A491 =
+    A492
+
+
+type alias A492 =
+    A493
+
+
+type alias A493 =
+    A494
+
+
+type alias A494 =
+    A495
+
+
+type alias A495 =
+    A496
+
+
+type alias A496 =
+    A497
+
+
+type alias A497 =
+    A498
+
+
+type alias A498 =
+    A499
+
+
+type alias A499 =
+    A500
+
+
+type alias A500 =
+    A501
+
+
+type alias A501 =
+    A502
+
+
+type alias A502 =
+    A503
+
+
+type alias A503 =
+    A504
+
+
+type alias A504 =
+    A505
+
+
+type alias A505 =
+    A506
+
+
+type alias A506 =
+    A507
+
+
+type alias A507 =
+    A508
+
+
+type alias A508 =
+    A509
+
+
+type alias A509 =
+    Int
+
+
+pub f : A0 -> Int
+f _ =
+    1

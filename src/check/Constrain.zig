@@ -48,6 +48,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Parse = @import("../parse/Parse.zig");
 
 const Constrain = @This();
 
@@ -72,12 +73,23 @@ pub const Category = struct {
     /// A 1-based position (`call_arg`, `list_entry`, `case_branch`,
     /// `tuple_element`, `ctor_arg`) or a field `Symbol` (`record_field`,
     /// `field_access`, `record_update`), by tag.
+    ///
+    /// A field tag with `no_field` is about the record as a whole. The
+    /// sentinel cannot be 0: `Symbol` 0 is the first `InternPool.WellKnown`
+    /// name, which is `main` — so overloading 0 made a record field
+    /// actually named `main`, the likeliest field name in an Elm-like
+    /// program, render as an empty name.
     index: u32 = 0,
     /// The instruction the sentence is ABOUT, when that is not the one the
     /// span points at: an argument mismatch underlines the argument but has
     /// to name the function, and the function is only reachable from the
     /// call. `.none` means "the region itself".
     owner: Bir.Inst.OptionalIndex = .none,
+
+    /// `index` on a field-carrying tag when the message is about the record
+    /// and not one of its fields. `Symbol.Optional`'s own sentinel, so the
+    /// two agree.
+    pub const no_field: u32 = std.math.maxInt(u32);
 
     pub const Tag = enum(u8) {
         general,
@@ -276,6 +288,17 @@ pub const Env = struct {
     /// The enclosing declaration's result variable, for a `?` whose target
     /// is the declaration itself.
     decl_result: Var.Optional = .none,
+    /// Written types the reader could not finish (`Types.Builder.max_depth`,
+    /// `Schemes.Writer.max_depth`), by the instruction a message points at.
+    ///
+    /// Collected rather than reported where the guard trips, for two
+    /// reasons: the reader crosses modules (an alias body is read in ITS
+    /// module, so the instruction it gave up on names no position here),
+    /// and the same annotation is read more than once — once generalised
+    /// for callers, once rigid for the body. `Check` sorts, deduplicates
+    /// and reports this once per module. Empty on every input a person
+    /// writes.
+    too_deep: *std.ArrayList(Bir.Inst.Index),
 
     pub fn localVar(env: *const Env, index: u32) ?Var {
         if (index >= env.local_var.len) return null;
@@ -284,6 +307,26 @@ pub const Env = struct {
 
     pub fn builder(env: *const Env, mode: Types.VarMode, rank: u32) Types.Builder {
         return .init(env.store, env.types, env.graph, env.artifacts, env.module, env.bir, mode, rank, env.scratch, env.interner);
+    }
+
+    /// Read `annotation` with `b` and note it when the reader ran out of
+    /// depth. Every caller of `Types.Builder.read` goes through this or
+    /// through `noteTooDeep`, so no guard in the checker can poison a type
+    /// without a message: an `err` unifies with anything, and a
+    /// declaration silently turned into one is a hole a caller's mistake
+    /// falls through (`fast-compiler.md` §5).
+    pub fn readAnnotation(env: *const Env, b: *Types.Builder, annotation: Bir.Inst.Index) Error!Var {
+        const v = try b.read(annotation);
+        if (b.too_deep) try env.noteTooDeep(annotation);
+        return v;
+    }
+
+    /// Note that the type at `region` was too deeply nested to read. Not
+    /// deduplicated here — `Check` sorts and deduplicates at the end,
+    /// because a linear scan per note is quadratic on a generated file
+    /// where every declaration trips the guard.
+    pub fn noteTooDeep(env: *const Env, region: Bir.Inst.Index) Error!void {
+        try env.too_deep.append(env.scratch, region);
     }
 };
 
@@ -306,7 +349,13 @@ pub const Generator = struct {
     /// is the checker's own belt.
     depth: u32 = 0,
 
-    const max_depth = 4200;
+    /// See `Solve.Solver.max_depth`: the parser bounds a declaration at
+    /// `Parse.max_depth` levels and this walk spends one frame per level,
+    /// so a file the front end accepted cannot reach this. A file that
+    /// could was reported as `nesting_too_deep` before the checker ran, so
+    /// dropping the constraint here adds no second message — and there is
+    /// no type to poison, because there is no tree left to constrain.
+    const max_depth = Parse.max_depth + 104;
 
     pub fn init(env: *Env, tree: *Tree, gpa: Allocator, rank: u32) Generator {
         return .{ .env = env, .tree = tree, .gpa = gpa, .rank = rank };
@@ -480,9 +529,7 @@ pub const Generator = struct {
                 try parts.append(g.env.scratch, try g.equal(expected, record_var, inst, category));
                 for (written) |f| {
                     const name = bir.symbol(f.name);
-                    const v = for (g.env.store.fields(range)) |p| {
-                        if (p.name == name) break p.value;
-                    } else try g.freshFlex();
+                    const v = findSortedField(g.env.store, range, name) orelse try g.freshFlex();
                     try parts.append(g.env.scratch, try g.expr(f.value, v, .{ .tag = .record_field, .index = @intFromEnum(name) }));
                 }
                 return g.conj(parts.items);
@@ -502,13 +549,11 @@ pub const Generator = struct {
                 try parts.append(g.env.scratch, try g.expr(@enumFromInt(data.lhs), base, .{ .tag = .general }));
                 // The base must HAVE every updated field; the result is the
                 // base's own type, so an update never widens a record.
-                try parts.append(g.env.scratch, try g.equal(required, base, inst, .{ .tag = .record_update }));
+                try parts.append(g.env.scratch, try g.equal(required, base, inst, .{ .tag = .record_update, .index = Category.no_field }));
                 try parts.append(g.env.scratch, try g.equal(expected, base, inst, category));
                 for (written) |f| {
                     const name = bir.symbol(f.name);
-                    const v = for (g.env.store.fields(range)) |p| {
-                        if (p.name == name) break p.value;
-                    } else try g.freshFlex();
+                    const v = findSortedField(g.env.store, range, name) orelse try g.freshFlex();
                     try parts.append(g.env.scratch, try g.expr(f.value, v, .{ .tag = .record_update, .index = @intFromEnum(name) }));
                 }
                 return g.conj(parts.items);
@@ -740,10 +785,10 @@ pub const Generator = struct {
                     // through it.
                     var scheme_builder = g.env.builder(.flex, TypeStore.generalized);
                     defer scheme_builder.deinit();
-                    const scheme = try scheme_builder.read(a);
+                    const scheme = try g.env.readAnnotation(&scheme_builder, a);
                     var check_builder = g.env.builder(.rigid, g.rank);
                     defer check_builder.deinit();
-                    const check = try check_builder.read(a);
+                    const check = try g.env.readAnnotation(&check_builder, a);
                     try g.pool.append(g.gpa, check);
                     g.env.local_var[def.local] = scheme.toOptional();
                     try header.append(g.env.scratch, .{ .v = check, .region = m, .name = nameOfLocal(g.env, def.local) });
@@ -999,6 +1044,26 @@ fn nameOfLocal(env: *const Env, index: u32) Symbol.Optional {
 // SCC over a `let`'s bindings
 // ---------------------------------------------------------------------------
 
+/// The variable `addFields` gave `name`, by binary search.
+///
+/// `addFields` sorts its input by symbol id, so the range is sorted and a
+/// scan is not needed. The scan this replaced ran once per written field
+/// over the whole range: O(fields²) per record literal, which on 200
+/// functions each building an `n`-field record was roughly 128 ms of the
+/// 179 ms `constrain` took at n = 800.
+fn findSortedField(store: *const TypeStore, range: TypeStore.Range, name: Symbol) ?Var {
+    const fields = store.fields(range);
+    var lo: usize = 0;
+    var hi: usize = fields.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const at = @intFromEnum(fields[mid].name);
+        const want = @intFromEnum(name);
+        if (at < want) lo = mid + 1 else if (at > want) hi = mid else return fields[mid].value;
+    }
+    return null;
+}
+
 /// `sccGroups`'s answer over plain indices: `order[starts[i]..starts[i + 1]]`
 /// is group `i`, and the groups are in dependency order.
 pub const IndexGroups = struct {
@@ -1032,18 +1097,25 @@ pub fn sccGroups(scratch: Allocator, n: usize, edges: []const u32, edge_start: [
     // generalised first. Emitting them the other way round left every
     // unannotated callee's scheme unset at the point its caller was
     // checked, so the call was silently poisoned instead of checked.
+    //
+    // Grouped by a COUNTING SORT rather than a scan per component. The
+    // normal shape of real code is mostly independent top-level
+    // declarations, so components ≈ n and "for each component, scan every
+    // member" was quadratic in the module's declaration count: 8 000
+    // declarations took 44 ms, 16 000 took 139 ms and 32 000 took 506 ms,
+    // while the same 32 000 in ONE component took 73 ms.
     const order = try scratch.alloc(u32, n);
     const starts = try scratch.alloc(u32, t.component_count + 1);
-    var cursor: u32 = 0;
-    for (0..t.component_count) |c| {
-        starts[c] = cursor;
-        for (t.component, 0..) |member, i| {
-            if (member != c) continue;
-            order[cursor] = @intCast(i);
-            cursor += 1;
-        }
+    @memset(starts, 0);
+    for (t.component) |c| starts[c + 1] += 1;
+    for (1..t.component_count + 1) |c| starts[c] += starts[c - 1];
+    const cursor = try scratch.alloc(u32, t.component_count);
+    defer scratch.free(cursor);
+    @memcpy(cursor, starts[0..t.component_count]);
+    for (t.component, 0..) |c, i| {
+        order[cursor[c]] = @intCast(i);
+        cursor[c] += 1;
     }
-    starts[t.component_count] = cursor;
     return .{ .order = order, .starts = starts };
 }
 

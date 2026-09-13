@@ -407,6 +407,14 @@ fn setParent(store: *TypeStore, v: Var, parent: Var) void {
 /// The content of `v`'s root, following aliases to their expansion. What
 /// unification and every structural walk want: an alias is a NAME for its
 /// expansion and is transparent to everything except rendering.
+/// The content behind `v` with every alias looked through, and the root the
+/// walk ended on. Most callers want only the content — `resolvedContent` is
+/// that, and exists so they do not have to name a root they then discard.
+pub fn resolvedContent(store: *TypeStore, v: Var) Content {
+    _, const c = store.resolved(v);
+    return c;
+}
+
 pub fn resolved(store: *TypeStore, v: Var) struct { Var, Content } {
     var root = store.find(v);
     var guard: u32 = 0;
@@ -424,6 +432,36 @@ pub fn resolved(store: *TypeStore, v: Var) struct { Var, Content } {
             else => return .{ root, c },
         }
     }
+}
+
+/// How many arrows `v`'s type has, looking through aliases: the arity of a
+/// function type, which is what §8.3's arity messages and the arity hint
+/// both count.
+///
+/// Here rather than in either caller because it was written twice, verbatim
+/// and with the same bound, in `Solve` and in `Diagnostics` — and the two
+/// have to agree: one decides whether a lambda argument is the suspect, the
+/// other writes the sentence about it.
+///
+/// The bound is a message's patience, not a correctness limit: a type with
+/// more than that many arrows is not something a person reads, and every
+/// caller either compares the count with a small number or prints it.
+pub fn arrowCount(store: *TypeStore, v: Var) u32 {
+    const max_arrows = 64;
+    var arrows: u32 = 0;
+    var current = v;
+    while (arrows < max_arrows) {
+        const f = switch (store.resolvedContent(current)) {
+            .structure => |flat| switch (flat) {
+                .func => |func| func,
+                else => return arrows,
+            },
+            else => return arrows,
+        };
+        arrows += 1;
+        current = f.result;
+    }
+    return arrows;
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +554,16 @@ pub fn commit(store: *TypeStore, snapshot: Snapshot) void {
 /// Undo everything the speculation did: descriptors in reverse order, then
 /// the variables and `extra` words it appended. Returns false when the
 /// journal ran out of memory and the undo is therefore incomplete.
+///
+/// **An inexact undo keeps the variables it could not unwind.** Truncating
+/// `descriptors` back to the snapshot is only safe when every write is
+/// known to have been undone: a pre-existing descriptor whose `parent` was
+/// re-pointed at a variable CREATED during the speculation, and whose old
+/// value the journal could not record, would otherwise point past the end
+/// of the column and the next `find` would index out of bounds. The store
+/// outlives the speculation — the rest of the module's check keeps using it
+/// — so leaking the speculation's variables is the cheap half of the
+/// trade. The sole caller stops guessing once an undo comes back inexact.
 pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
     std.debug.assert(store.depth > 0);
     store.depth -= 1;
@@ -531,8 +579,10 @@ pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
         store.journal.clearRetainingCapacity();
         store.broken = false;
     }
-    store.descriptors.shrinkRetainingCapacity(snapshot.vars);
-    store.extra.shrinkRetainingCapacity(snapshot.extra);
+    if (exact) {
+        store.descriptors.shrinkRetainingCapacity(snapshot.vars);
+        store.extra.shrinkRetainingCapacity(snapshot.extra);
+    }
     return exact;
 }
 
