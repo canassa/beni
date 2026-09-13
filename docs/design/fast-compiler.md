@@ -299,8 +299,12 @@ Evidence for all four is in [`research/08-roc-language-answers.md`](research/08-
   effect polymorphism into the unifier, exactly the surface §3 keeps small, and Roc's own docs
   list purity inference as a benefit no pass exploits. Consequences: §9.1's DCE is exact by
   construction; §7's unifier is unchanged; M2 gives `main` no special type — that is a platform
-  fact checked in M3; the effect-marking syntax question in §3.2 closes as "none". Open for M3:
-  the platform interface, the shape of ports, the runtime. Decided 2026-09-13, before M2.
+  fact checked in M3; the effect-marking syntax question in §3.2 closes as "none". Decided
+  2026-09-13, before M2. **The platform interface, the shape of ports and the runtime are now
+  specified** in [`boundary.md`](boundary.md), on report 13's evidence: ports stay and stay
+  asynchronous, because across fourteen JavaScript-targeting compilers no shipped design lets user
+  code call JavaScript and keep the no-crash guarantee — but the three restrictions Elm stacked on
+  top of ports do not survive the evidence.
 
 - **Project model for M2: one source root plus embedded core, no manifest; module identity is
   package-qualified from day one.** Internally a module is `(package, path)` — the user's project
