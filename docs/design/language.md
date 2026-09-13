@@ -164,8 +164,9 @@ exponent := [eE] [+-]? [0-9]+
 ```
 
 - `"` starts a string. Inside: any byte except `"`, `\`, `$` followed by `{`, a newline, or a
-  tab. A newline inside a string is `unterminated_string` at the newline (strings are
-  single-line; use a multiline string).
+  tab. A newline (or end of file) inside a string is `unterminated_string`, reported as the span
+  from the opening quote to the newline (strings are single-line; use a multiline string). The
+  lexer then leaves string mode, so the next line lexes normally.
 - Escapes: `\n`, `\r`, `\t`, `\\`, `\"`, `\$`, `\'`, `\u{H+}` (1–6 hex digits, a valid Unicode
   scalar value). Anything else after `\` is `invalid_escape`. `$` not followed by `{` is a
   literal dollar.
