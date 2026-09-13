@@ -13,7 +13,7 @@ const world = @import("world.zig");
 const World = world.World;
 const testing = std.testing;
 
-const expected_version = "beni 0.0.0-m0\n";
+const expected_version = "beni 0.1.0-m1\n";
 
 test "version prints the version on stdout and nothing else" {
     // ┌─────────────────────────────────────────┐

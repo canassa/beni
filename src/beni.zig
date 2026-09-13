@@ -5,7 +5,7 @@
 const std = @import("std");
 
 /// Printed by `beni version`. Bumped per milestone until there is a release.
-pub const version = "0.0.0-m0";
+pub const version = "0.1.0-m1";
 
 pub const Arena = @import("Arena.zig");
 pub const Artifacts = @import("Artifacts.zig");
