@@ -298,7 +298,8 @@ asserts the whole diagnostic list with `expectEqualDeep` against literals.
 `parse/good` → `dump --stage=ast` equals the `.ast`; `parse/bad` → `check --diagnostics=json`
 equals the `.diag` (a `.beni` without `.diag` fails); `fmt` → `fmt --stdout` equals `.expected`
 and formatting `.expected` again is a fixed point and parses to the same `.ast`; `bir` → `dump
---stage=bir` equals `.bir`. `BENI_WRITE_EXPECTED=1` blesses; the failure message says so; the
+--stage=bir` equals `.bir`. A fixture whose file name starts with `core_` is run with `--core` (language.md §5.4).
+`BENI_WRITE_EXPECTED=1` blesses; the failure message says so; the
 value is fully materialised before any golden is written.
 
 ## 8. Milestones, acceptance
