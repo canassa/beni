@@ -88,18 +88,21 @@ The toolchain is pinned: `flake.nix` + `.envrc` (`use flake`), nixpkgs
 emitted-JS boundary) and jq. direnv puts it on `PATH` on `cd`; if `zig version`
 does not print `0.16.0`, run `direnv allow`.
 
-**No `build.zig` exists yet** — the repo is design docs plus vendored references;
-M0 of the build order (§13) creates the skeleton. Once it does:
+**The build graph exists** (M0–M1 shipped: lexer, parser, formatter, BIR lowering;
+see `docs/design/frontend.md` for the contract and `git log` for the milestones).
+Steps:
 
 ```sh
-zig build                  # compile to zig-out/
-zig build test             # run the test step
-zig build run              # build + run
-zig fmt src/ build.zig     # format in place (CI uses --check)
-zig build --list-steps
+zig build                  # install zig-out/bin/beni
+zig build test             # hermetic suite (Debug; add -Doptimize=ReleaseSafe too)
+zig build test-blackbox    # spawns the installed binary; runs the corpus walker
+zig build bench -- --generate=100000   # ReleaseFast per-phase throughput
+zig build fmt-check        # zig fmt --check over src build.zig tests bench
+BENI_WRITE_EXPECTED=1 zig build test-blackbox   # bless corpus goldens (BENI_BLESS_ONLY=<substr>)
 ```
 
-Always `zig build` and `zig build test` after changes, before reporting done.
+Always `zig build`, `zig build test`, `zig build test-blackbox` and `zig build fmt-check`
+after changes, before reporting done.
 
 **Submodule vs. toolchain — know which to trust for what.** The vendored
 `references/zig` submodule is at master (`0.16.0-2129-gd84959d9e2`), roughly 2,100

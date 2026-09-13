@@ -257,9 +257,10 @@ test "fuzz tokenizer" {
 
 ## Status and prerequisites
 
-Neither suite exists yet — the repo is design docs plus vendored references. This
-file is the contract to build against, and M0 (§13) creates the skeleton: the two
-build steps, the corpus walker, and the harness.
+Both suites exist (M0–M1). The harness is `tests/blackbox/world.zig`, the walker
+`tests/blackbox/corpus_test.zig`, and the corpus has four kinds (`parse/good`, `parse/bad`,
+`fmt`, `bir`) plus `regress/`; `docs/design/frontend.md` §7 is the contract. Bless with
+`BENI_WRITE_EXPECTED=1`, narrow it with `BENI_BLESS_ONLY=<substring>`.
 
 The toolchain prerequisites are in place: `flake.nix` + `.envrc` pin **Zig 0.16.0**
 and **Node 24**, so Boundary 2 (running the emitted JavaScript) is available from
