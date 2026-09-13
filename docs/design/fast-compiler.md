@@ -6,7 +6,7 @@
 **Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records,
 modules; no typeclasses, no macros, no type-level computation.
 
-This document synthesises five research reports, each source-verified against primary material
+This document synthesises nine research reports, each source-verified against primary material
 and the vendored compilers in `references/`. They are kept alongside this doc and are the
 evidence base for every claim here:
 
@@ -17,6 +17,10 @@ evidence base for every claim here:
 | 03 | [`research/03-js-codegen.md`](research/03-js-codegen.md) | esbuild/oxc/SWC techniques, Elm's DCE and A2/F2 scheme, V8 shape discipline, source maps |
 | 04 | [`research/04-architecture.md`](research/04-architecture.md) | Lexing/parsing, interning, arenas, parallelism, incrementality models, daemons, measurement |
 | 05 | [`research/05-elm-roc.md`](research/05-elm-roc.md) | Source-verified map of elm/compiler; what Roc (now Zig) does differently; copy / don't-copy |
+| 06 | [`research/06-currying.md`](research/06-currying.md) | Roc's case against currying, and why keeping it costs little on a JS target |
+| 07 | [`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md) | How Roc replaced typeclasses with static dispatch, and what doesn't transfer |
+| 08 | [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md) | Roc on annotations, operators, cycles, shadowing, aliases, effects, numbers, lists — and why it changed its syntax |
+| 09 | [`research/09-adhoc-polymorphism-survey.md`](research/09-adhoc-polymorphism-survey.md) | Was Elm's omission deliberate; what dictionary passing costs on JS; what seven languages do instead |
 
 ---
 
@@ -40,11 +44,22 @@ three reasons, and each has a known fix:
    a 500k-line project in **63ms** (01 §7). *Fix: a fine-grained dependency graph plus a
    module-interface firewall.*
 
-The fourth reason is the one you get for free: **the language itself.** Every documented "slow ML
-compiler" traces to a specific nameable mechanism — PureScript's typeclass dictionary resolution,
-its type-level `RowList` blowup, GHC's simplifier and Template Haskell (05 §5). Elm and OCaml are
-fast largely because those mechanisms *do not exist* in them. Beni inherits this by staying
-scope-limited, and that is a language-design commitment, not an implementation detail.
+The fourth reason is the one you get for free: **the language itself.** Feature surface costs
+compile time, and the clearest statement of it comes from Gleam, which rejects typeclasses because
+they "have a high compile time cost, and have a runtime cost unless the compiler performs
+full-program compilation and expensive monomorphisation" (09 §3). PureScript's creator declined to
+build that monomorphisation into the standard compiler for the same structural reason — "being
+global, it doesn't always play nicely with separate compilation" — and the separate optimizer that
+does it is explicitly non-incremental while recovering 25–35% runtime and 20–25% bundle size
+(09 §2). Beni stays scope-limited on those grounds, and that is a language-design commitment, not an
+implementation detail.
+
+Two claims this document previously made here do **not** survive checking, and are corrected in
+09 §2: PureScript's `RowList` blowup was root-caused to its *parser*, not dictionary resolution, and
+the widely repeated "476 million dictionary comparisons" figure could not be sourced at all. Nor is
+there evidence that *Elm's* speed comes from lacking typeclasses — Evan's own performance writing
+credits parser allocation and GC. The argument above stands on the other languages' evidence, not
+on Elm's.
 
 ## 2. Performance budget
 
@@ -73,8 +88,10 @@ These are decisions about the *source language*, made now because they cannot be
   choice. This is Zig's stated parser invariant (01 §9) and Elm's practical one (its combinators
   are committed-choice: a failure after consuming input is final, 05 §1.3). It guarantees linear
   parse time and rules out a whole class of pathological inputs.
-- **No typeclasses / no implicit dictionary passing.** The single most reliable source of
-  superlinear blowup in this family (05 §5).
+- **No typeclasses / no implicit dictionary passing.** Costs compile time and output size, and the
+  effective fix — whole-program specialisation — conflicts with separate compilation. PureScript's
+  creator declined to build it for that reason (09 §2). *Not* because of the `RowList` incident,
+  which was a parser bug.
 - **No type-level computation, no row-polymorphic type functions.** Records get plain extensible
   rows with structural unification, nothing more.
 - **No macros.** This is what lets a simple module-interface firewall work instead of a
@@ -148,6 +165,33 @@ silently compiling is a footgun. Its uniform mechanism (methods named on types, 
 dispatch) is *not* copyable here: what makes it cheap at runtime is monomorphisation, and the
 non-specialising path it offers instead passes hidden dictionaries at runtime — the thing §3 rules
 out — and is marked experimental in Roc's own docs.
+
+### Revisited after the survey (09)
+
+A three-language survey was run to test whether this exclusion was reasoned or inherited. It stands,
+with two changes to the reasoning:
+
+- **Elm's omission was deliberate deferral, not neglect** — Evan chose SML-style operator
+  overloading in 2012 *"because it can be gracefully upgraded to work with type classes"*, and the
+  four `SuperType`s form a real subsumption lattice, not a stopgap. But he never argued it on
+  compile-speed grounds, and Elm's own performance writing credits parser allocation and GC. That
+  justification was ours, wrongly attributed.
+- **"You must do whole-program work" is too strong.** GHC's `SPECIALIZE` propagates dictionary
+  elimination through per-module `.hi` interface files, and F#/Fable's SRTP resolves member
+  constraints per call site on `inline` functions — both shipped, both compatible with separate
+  compilation, both paying in code duplication rather than a global pass.
+
+That second point is the one to keep. It means the door here is **additive**: `number` and
+`appendable` today; call-site-specialised constraints carried through interface files later, if
+ergonomics demand, with no change to the type representation or the §8.1 firewall. Evan's own 2012
+reasoning — choose the interim mechanism that upgrades gracefully — applies unchanged, and the
+decision above is deliberately of that shape.
+
+What the survey also settles: across seven JS-targeting languages, type-directed dispatch *with no
+value to dispatch on* always reduces to either an explicit value threaded by the caller (a
+dictionary by another name — ReScript's docs call functors "dependency injection") or whole-program
+specialisation. There is no third option. Value-directed dispatch, `x.method()`, is free everywhere
+because JS prototypes do it natively — that half never needed typeclasses.
 
 ### Settled alongside it
 
