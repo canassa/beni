@@ -496,6 +496,14 @@ bytes compiled → **24,123 minified → 9,148 gzipped**. **The split to copy:**
 whole-program-aware shrinking it uniquely can do (field/name frequency ranking, purity-driven
 `pure_funcs`); a generic minifier does everything else. Don't reimplement Terser's peephole passes.
 
+> **Superseded.** Beni no longer does this split: it ships no bundler and no minifier, so the
+> "everything else" above is ours to build. Report 12 has the evidence and the ranked list, and
+> §9.5 of the design doc is rewritten accordingly. Two specifics from this paragraph are now
+> wrong for us rather than merely inapplicable: Terser's `--mangle` leaves ESM top-level names
+> alone, so the handoff depends on Elm's IIFE and cannot survive our ESM decision; and the
+> peephole passes worth reimplementing are a much shorter list than Terser's, because most of them
+> measure approximately zero after compression and two of them are negative.
+
 **Pre-minified names.** Elm's base-54/64 ASCII counter (`Name.hs:160-225`) is used for exactly two
 things: record-field short names (Prod) and numbered temp names — *not* as a substitute for Terser's
 mangle pass on locals. Reserve compiler-generated short names for identifiers whose frequency ranking
@@ -564,7 +572,7 @@ needs rather than building a second incremental system.
 | Elm shape unification (`Nil`/`Cons` padding) | +11% Firefox, +4% Chrome, 0% Safari (`foldl`) | [Hansen](https://dev.to/robinheghan/improving-elm-s-compiler-output-5e1h) |
 | Elm direct-call rewrite (`A2`→`.f`) | +109% Firefox, +49% Chrome, +37% Safari (`map`) | same |
 | PureScript backend-optimizer (arity raising) | 25–35% runtime, 20–25% smaller minified bundle | [README](https://github.com/aristanetworks/purescript-backend-optimizer) |
-| Elm TodoMVC asset size (`--optimize` + Terser) | 122,297B → 24,123B minified → 9,148B gzipped | `hints/optimize.md` |
+| Elm TodoMVC asset size (`--optimize` + Terser) | 122,297B → 24,123B minified → 9,148B gzipped | Elm guide, *Asset Size* (**not** `hints/optimize.md` — corrected in report 12 §7.3, verified against `references/elm`) |
 | Elm real-world compile times | 2.6s local / 234s CI; 2min full, 5–45s incremental elsewhere | [#1473](https://github.com/elm/compiler/issues/1473) |
 | Vite 8 Rolldown/Oxc vs esbuild+Rollup | further 10–30× (Linear 46s→6s) | [Vite 8 coverage](https://dev.to/stacknotice/vite-8-complete-guide-rolldown-oxc-and-10x-faster-builds-2026-48lh) |
 
