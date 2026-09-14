@@ -418,15 +418,46 @@ Three rules, each chosen to keep the cost at zero:
    typeclass we don't have (§3). So the error type must match the enclosing function's error type
    exactly; otherwise you write `Result.mapErr` before the `?`. Stating this now avoids discovering
    it when the desugarer is already written.
-3. **It desugars locally to a `case`.** No new constraint kind, no unifier changes, nothing touching
+3. **It desugars in the desugarer.** No new constraint kind, no unifier changes, nothing touching
    inference. Of every ergonomic feature considered here it is the only one that buys its keep
    entirely in the desugarer — which is exactly what §3's "minimal type-system surface area" premise
    makes affordable.
 
+### `?` extends to `Task`
+
+**Settled.** The user-facing rule is unchanged — `expr?` evaluates to the success payload or
+propagates the failure out of the enclosing function — and it stays the same rule because `andThen`
+already short-circuits on failure. One operator now covers `Maybe`, `Result` and `Task` rather than
+three shapes each with its own combinator, which is a large part of what makes Elm's effect code
+read badly.
+
+**Why it is worth taking.** The sequencing pyramid is the most-cited friction in Elm and it bites
+hardest on effects, the one place `?` did not reach. Effect-TS, the JavaScript ecosystem's most
+successful effect library, solves the same problem with **generators**: `yield*` is do-notation in
+disguise, suspending and resuming where an `andThen` closure would nest. It does that because a
+library cannot add syntax. **We can**, so importing a workaround for a constraint we do not have
+would be strange — a generator allocates an object and pays suspend and resume per bind, where this
+desugaring compiles to the same `andThen` chain a hand-written version would. Same flat syntax, no
+machinery.
+
+**The one real subtlety, and rule 3 above needs qualifying.** A `Task` is not data, so this cannot
+desugar to a `case`. It desugars to `andThen`, which moves everything *after* the `?` into a
+continuation:
+
+```
+let x = foo? in rest        becomes        foo |> Task.andThen (\x -> rest)
+```
+
+So for `Task` the rewrite is **non-local**: the desugarer restructures the remainder of the
+function, where for `Maybe` and `Result` it stays a local `case`. Still no unifier involvement and
+still nothing touching inference, which is the property that mattered — but "desugars *locally*" was
+only ever true of the data shapes, and this is the transformation do-notation has always been.
+
 The knowing cost: this is the language's only non-local control flow, in a language whose pitch is
 that everything is an expression. Rule 1 is what keeps that bounded.
 
-`?` applies to both `Maybe` and `Result` — see "`Maybe` stays" below for the rule.
+`?` applies to `Maybe`, `Result` and `Task` — see "`Maybe` stays" below for the data-shape
+rule and the subsection above for effects.
 
 ### `Maybe` stays
 
