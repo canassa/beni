@@ -425,49 +425,60 @@ Three rules, each chosen to keep the cost at zero:
 
 ### Flat effect syntax — OPEN
 
-**Not settled; this section records a proposal and its reasoning, not a decision.** What *is*
-settled is the negative half: we will not adopt Effect-TS's generator trick. `yield*` is do-notation
-in disguise, and it exists because a library cannot add syntax — a generator allocates an object and
-pays suspend and resume per bind. A language that owns its syntax should not import a workaround for
-a constraint it does not have.
+**Nothing here is settled.** This section records what the evidence establishes and what the live
+options are. Reports [15](research/15-flat-effect-syntax.md) and
+[16](research/16-fibers-and-concurrency.md) are the evidence base; both are partial, and report 14 —
+on whether Elm's ergonomics complaint is real at all — was never written, so the question "is this
+worth fixing" is itself still open.
 
-What replaces it is undecided. At least three shapes are available: extending `?` to `Task`
-(described below), a `do`-style block, or an F#-style `let!` binding inside a block. The first is
-written up because it reuses machinery we already have; it is not therefore the answer.
+**What the evidence establishes.**
 
-**The proposal.** The user-facing rule would be unchanged — `expr?` evaluates to the success payload or
-propagates the failure out of the enclosing function — and it stays the same rule because `andThen`
-already short-circuits on failure. One operator now covers `Maybe`, `Result` and `Task` rather than
-three shapes each with its own combinator, which is a large part of what makes Elm's effect code
-read badly.
+1. **Four languages invented the same mechanism independently**: OCaml's `let*`, Gleam's `use`,
+   Koka's `with` and Roc's (removed) backpassing all reduce to one rewrite — *take the rest of the
+   block, make it a lambda, pass it as the last argument to a named thing* — and **none consults a
+   type class**. That matters because §3.1 rules out type classes, and this is the shape that is
+   affordable without them. Gleam's author learned of the others only after designing his.
+2. **`?` extended to `Task` is the most expensive shape, not the cheapest.** `?` is postfix on any
+   application (`language.md` §3), so the continuation would have to be hoisted out of argument
+   positions, conditions, scrutinees and pipelines. Roc shipped both shapes: backpassing desugared in
+   44 lines; the arbitrary-position marker needed a dedicated 1,046-line pass and shipped with a
+   compiler crash. **The expensive thing is not that the rewrite is non-local — it is that the marker
+   may appear anywhere an expression may.**
+3. **It would also introduce a silent wrong answer, verified in our own checker.** `?`'s shape is
+   chosen by ordered speculative unification (`Solve.zig` tries `Result`, then `Maybe`), so
+   `pub step a = let v = a? in Ok v` infers `Result e a -> Result e a` today with no diagnostic.
+   `Task e a` would be a third two-parameter candidate and lose the same way, so a `?` meant for a
+   task would silently type as a result. That is the failure class M2d existed to remove.
+4. **Generators do something no syntactic rewrite can do**, and an earlier draft of this section was
+   wrong to dismiss them as a workaround. `use`, `let*`, `with` and backpassing all capture *the rest
+   of a block*; a generator suspends at an arbitrary point and keeps the rest of the whole function —
+   inside a branch, inside a loop. Block-structured syntax cannot express a bind inside a loop at all;
+   you reach for a fold instead.
+5. **Effect-TS's cost is its fiber runtime, not its generators.** The same earlier draft claimed a
+   generator "allocates an object and pays suspend and resume per bind". The generator object is **per
+   call, not per bind**; per bind you pay a `next()`, a register spill and restore, and an iterator
+   result object the engine may elide. Effect-TS's maintainers attribute their overhead to fibers —
+   the interpreter loop, the effect nodes, the interruption checks — not to the generator layer.
 
-**Why it is worth taking.** The sequencing pyramid is the most-cited friction in Elm and it bites
-hardest on effects, the one place `?` did not reach. Effect-TS, the JavaScript ecosystem's most
-successful effect library, solves the same problem with **generators**: `yield*` is do-notation in
-disguise, suspending and resuming where an `andThen` closure would nest. It does that because a
-library cannot add syntax. **We can**, so importing a workaround for a constraint we do not have
-would be strange — a generator allocates an object and pays suspend and resume per bind, where this
-desugaring compiles to the same `andThen` chain a hand-written version would. Same flat syntax, no
-machinery.
+**The live options**, in increasing order of compiler work:
 
-**The one real subtlety, and it applies to any of the three shapes.** A `Task` is not data, so this cannot
-desugar to a `case`. It desugars to `andThen`, which moves everything *after* the `?` into a
-continuation:
+| | Shape | Binds inside a branch | Binds inside a loop | Cost |
+|---|---|---|---|---|
+| A | Block-structured (`use`-style) | needs a nested block | **not expressible** | parser work; the desugaring is ~44 lines of precedent |
+| B | Emit generators | yes | yes | one state object per call, plus the iterator protocol; opaque to §9.5's elimination and renaming |
+| C | Emit a state machine ourselves | yes | yes | a real backend transform, the thing Rust and C# do for `async`; transparent to the optimiser |
 
-```
-let x = foo? in rest        becomes        foo |> Task.andThen (\x -> rest)
-```
+B and C allocate the same per-call state object, so the gap between them is narrower than it looks:
+the iterator protocol and control over layout, against a decade of engine optimisation obtained for
+free. **Nobody has measured this for us, and it is measurable** — emit the same program both ways and
+compare, which is what `bench` exists for.
 
-So for `Task` the rewrite is **non-local**: the desugarer restructures the remainder of the
-function, where for `Maybe` and `Result` it stays a local `case`. Still no unifier involvement and
-still nothing touching inference, which is the property that mattered — but "desugars *locally*" was
-only ever true of the data shapes, and this is the transformation do-notation has always been.
-
-The knowing cost: this is the language's only non-local control flow, in a language whose pitch is
-that everything is an expression. Rule 1 is what keeps that bounded.
-
-`?` applies to `Maybe`, `Result` and `Task` — see "`Maybe` stays" below for the data-shape
-rule and the subsection above for effects.
+**A second question is entangled with this one and has a different answer.** Effect-TS reads like
+ordinary TypeScript partly because TypeScript *has statements*. beni is expression-based, so
+`let … in` is the only sequencing construct: a run of binds is already flat inside one `let`, but a
+branch is an expression, so a bind inside it nests whichever mechanism we choose. Making that read
+flat is a **language** change (statement blocks), not a codegen one. The two questions — *can a bind
+appear anywhere* and *does a sequence of binds read flat* — should be decided separately.
 
 ### `Maybe` stays
 
