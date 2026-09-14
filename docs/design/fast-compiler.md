@@ -423,9 +423,19 @@ Three rules, each chosen to keep the cost at zero:
    entirely in the desugarer — which is exactly what §3's "minimal type-system surface area" premise
    makes affordable.
 
-### `?` extends to `Task`
+### Flat effect syntax — OPEN
 
-**Settled.** The user-facing rule is unchanged — `expr?` evaluates to the success payload or
+**Not settled; this section records a proposal and its reasoning, not a decision.** What *is*
+settled is the negative half: we will not adopt Effect-TS's generator trick. `yield*` is do-notation
+in disguise, and it exists because a library cannot add syntax — a generator allocates an object and
+pays suspend and resume per bind. A language that owns its syntax should not import a workaround for
+a constraint it does not have.
+
+What replaces it is undecided. At least three shapes are available: extending `?` to `Task`
+(described below), a `do`-style block, or an F#-style `let!` binding inside a block. The first is
+written up because it reuses machinery we already have; it is not therefore the answer.
+
+**The proposal.** The user-facing rule would be unchanged — `expr?` evaluates to the success payload or
 propagates the failure out of the enclosing function — and it stays the same rule because `andThen`
 already short-circuits on failure. One operator now covers `Maybe`, `Result` and `Task` rather than
 three shapes each with its own combinator, which is a large part of what makes Elm's effect code
@@ -440,7 +450,7 @@ would be strange — a generator allocates an object and pays suspend and resume
 desugaring compiles to the same `andThen` chain a hand-written version would. Same flat syntax, no
 machinery.
 
-**The one real subtlety, and rule 3 above needs qualifying.** A `Task` is not data, so this cannot
+**The one real subtlety, and it applies to any of the three shapes.** A `Task` is not data, so this cannot
 desugar to a `case`. It desugars to `andThen`, which moves everything *after* the `?` into a
 continuation:
 
