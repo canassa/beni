@@ -295,6 +295,12 @@ pub const Node = struct {
         apply,
         /// `e?`. `main_token` is `?`; `lhs` is the operand.
         question,
+        /// `_` in argument position of an `apply` (language.md §6.7): the
+        /// argument the call does not supply, which lowering turns into a
+        /// lambda over the innermost enclosing application. `main_token` is
+        /// `_`; data unused. Anywhere else a `_` is a pattern, or
+        /// `placeholder_outside_argument`.
+        placeholder,
 
         // Binary operators (language.md §6.5): `main_token` is the
         // operator; `lhs` and `rhs` are the operands.
@@ -335,10 +341,6 @@ pub const Node = struct {
         pipe_left,
         /// `|>`
         pipe_right,
-        /// `<<`
-        compose_left,
-        /// `>>`
-        compose_right,
 
         /// `\a b -> e`. `main_token` is `\`; `lhs` is the `ExtraIndex` of
         /// a `SubRange` of parameter patterns; `rhs` is the body.
@@ -360,6 +362,11 @@ pub const Node = struct {
         /// `( a, b ) = Expr` in a `let`. `main_token` is the pattern's first
         /// token; `lhs` is the pattern; `rhs` is the expression.
         let_pattern,
+        /// `x <- f a` in a `let` (language.md §6.7): the rest-of-block bind,
+        /// whose `rest` — the bindings after it and the `in` body — becomes
+        /// the last argument of `f a`. `main_token` is the pattern's first
+        /// token; `lhs` is the pattern; `rhs` is the application.
+        let_bind,
         /// `case e of branches`. `main_token` is `case`; `lhs` is the
         /// scrutinee; `rhs` is the `ExtraIndex` of a `SubRange` of `branch`
         /// nodes (at least one, an `error_branch` if none was written).
@@ -432,7 +439,7 @@ pub const Node = struct {
         }
 
         pub fn isBinop(tag: Tag) bool {
-            return @intFromEnum(tag) >= @intFromEnum(Tag.add) and @intFromEnum(tag) <= @intFromEnum(Tag.compose_right);
+            return @intFromEnum(tag) >= @intFromEnum(Tag.add) and @intFromEnum(tag) <= @intFromEnum(Tag.pipe_right);
         }
 
         pub fn isDecl(tag: Tag) bool {
@@ -463,8 +470,6 @@ pub const Node = struct {
                 .op_or_or => .bool_or,
                 .op_pipe_left => .pipe_left,
                 .op_pipe_right => .pipe_right,
-                .op_compose_left => .compose_left,
-                .op_compose_right => .compose_right,
                 else => null,
             };
         }
@@ -989,8 +994,10 @@ pub fn fullLetDef(tree: *const Ast, node: Node.Index) full.LetDef {
     };
 }
 
+/// Both binding forms that pair a `LetPattern` with a right-hand side:
+/// `p = e` (`let_pattern`) and `p <- f a` (`let_bind`, §6.7).
 pub fn fullLetPattern(tree: *const Ast, node: Node.Index) full.LetPattern {
-    std.debug.assert(tree.nodeTag(node) == .let_pattern);
+    std.debug.assert(tree.nodeTag(node) == .let_pattern or tree.nodeTag(node) == .let_bind);
     const data = tree.nodeData(node);
     return .{ .pattern = @enumFromInt(data.lhs), .value = @enumFromInt(data.rhs) };
 }

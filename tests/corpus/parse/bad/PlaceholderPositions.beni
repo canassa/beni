@@ -1,0 +1,52 @@
+-- placeholder_outside_argument, once per `_`, and never the generic
+-- `unexpected_token`: §6.7 makes `_` an argument and nothing else, so every
+-- other expression position rejects it with the specific diagnostic. One
+-- definition per position: list element, record field, tuple element,
+-- callee, `if` condition, `case` scrutinee, `let` value, lambda body, pipe
+-- operand, string interpolation, negation.
+inList =
+    [ _ ]
+
+
+inRecord =
+    { a = _ }
+
+
+inTuple =
+    ( _, 1 )
+
+
+asCallee a =
+    _ a
+
+
+inIf c =
+    if _ then 1 else 2
+
+
+inCase =
+    case _ of
+        _ -> 1
+
+
+inLet =
+    let
+        x = _
+    in
+    x
+
+
+inLambda =
+    \y -> _
+
+
+inPipe f =
+    _ |> f
+
+
+inInterpolation =
+    "v: ${_}"
+
+
+negated =
+    -_

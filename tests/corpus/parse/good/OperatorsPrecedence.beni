@@ -20,14 +20,6 @@ rightPow a b c =
     a ^ b ^ c
 
 
-rightCompose f g h =
-    f << g << h
-
-
-leftCompose f g h =
-    f >> g >> h
-
-
 notAnd a b c =
     not (a == b) && c
 
@@ -74,10 +66,6 @@ questionTighter f r =
 
 mixedRight a b c d =
     a || b || c && d
-
-
-composeThenApply f g x =
-    f << g <| x
 
 
 andChainRight a b c =

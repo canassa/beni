@@ -1,0 +1,51 @@
+-- §9: `if`, `let` and `case` have no single-line form, so a `<-` binding
+-- whose value contains one must not be printed as though it fit: the block
+-- breaks anyway and every enclosing decision — keyword alignment, body
+-- indentation — has to be made on the real widths.
+withIf a =
+    let
+        x <- Result.andThen
+            (if a then
+                someLongFunctionName a
+             else
+                otherLongFunctionName a
+            )
+            extra
+    in
+    x
+
+
+withLet a =
+    let
+        x <- Result.andThen
+            (let
+                y =
+                    someLongFunctionName a
+             in
+             y
+            )
+            extra
+    in
+    x
+
+
+withCase a =
+    let
+        x <- Result.andThen
+            (case a of
+                Ok v ->
+                    v
+                Err e ->
+                    e
+            )
+            extra
+    in
+    x
+
+
+-- No block keyword: the author's line breaks still collapse.
+noBlock a =
+    let
+        x <- Result.andThen (readTheHeader a) extra
+    in
+    x

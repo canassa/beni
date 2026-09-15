@@ -16,8 +16,8 @@ sequences x xs ys =
     ( xs ++ ys, x :: xs )
 
 
-pipes f g x =
-    ( x |> f, f <| x, (f << g) x, (f >> g) x )
+pipes f x =
+    ( x |> f, f <| x )
 
 
 asFunctions =
@@ -33,7 +33,7 @@ asLogic =
 
 
 asRest =
-    ( (++), (::), (|>), (<|), (<<), (>>) )
+    ( (++), (::), (|>), (<|) )
 
 
 folded xs =

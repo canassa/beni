@@ -44,24 +44,6 @@
       (pow
         (ident b)
         (ident c))))
-  (definition rightCompose
-    (pat_var f)
-    (pat_var g)
-    (pat_var h)
-    (compose_left
-      (ident f)
-      (compose_left
-        (ident g)
-        (ident h))))
-  (definition leftCompose
-    (pat_var f)
-    (pat_var g)
-    (pat_var h)
-    (compose_right
-      (compose_right
-        (ident f)
-        (ident g))
-      (ident h)))
   (definition notAnd
     (pat_var a)
     (pat_var b)
@@ -180,15 +162,6 @@
         (bool_and
           (ident c)
           (ident d)))))
-  (definition composeThenApply
-    (pat_var f)
-    (pat_var g)
-    (pat_var x)
-    (pipe_left
-      (compose_left
-        (ident f)
-        (ident g))
-      (ident x)))
   (definition andChainRight
     (pat_var a)
     (pat_var b)

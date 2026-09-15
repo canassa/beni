@@ -1,0 +1,11 @@
+-- bind_rhs_forward_reference at 7:16: the bindings under a `<-` are inside
+-- the callback the call receives (§7), so the call cannot see `later`. The
+-- second bind's `g x` is fine: `x` is bound at the `<-` above it, and a
+-- name bound at or before a `<-` is in scope in the whole block.
+f g =
+    let
+        x <- g later
+        y <- g x
+        later = 1
+    in
+    x + y + later

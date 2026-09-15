@@ -176,7 +176,7 @@ member value xs =
 --|     all isEven [] == True
 pub all : (a -> Bool) -> List a -> Bool
 all isOkay list =
-    not (any (not << isOkay) list)
+    not (any (\x -> not (isOkay x)) list)
 
 
 --| Determine if any elements satisfy some test.

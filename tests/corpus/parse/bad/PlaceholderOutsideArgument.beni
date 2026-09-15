@@ -1,0 +1,14 @@
+-- placeholder_outside_argument at 6:5, 10:5 and 14:8: `_` is an argument
+-- and nothing else (§6.7), so it cannot be a whole body, an operand of an
+-- operator, or a parenthesised expression. It takes precedence over the
+-- generic `unexpected_token` a `_` in expression position would get.
+bare =
+    _
+
+
+operand x =
+    _ + x
+
+
+parenthesised f =
+    f (_)

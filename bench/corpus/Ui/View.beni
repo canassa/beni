@@ -55,8 +55,8 @@ render element =
 
 
 pub shout : Element msg -> String
-shout =
-    render >> String.toUpper
+shout element =
+    String.toUpper (render element)
 
 
 pub indent : Style -> String -> String

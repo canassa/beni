@@ -1,0 +1,69 @@
+-- `let x <- e` (§3 `LetBinding`, §6.7): a bind as the only binding, as the
+-- last one, in the middle of a block, several in a row, with a tuple
+-- pattern, with `_`, and inside a `case` branch, which opens its own `let`.
+only f =
+    let
+        x <- f 1
+    in
+    x
+
+
+afterOthers f =
+    let
+        a =
+            1
+        x <- f a
+    in
+    x
+
+
+inTheMiddle f g =
+    let
+        a =
+            1
+        x <- f a
+        b =
+            2
+    in
+    g x b
+
+
+several f g =
+    let
+        x <- f 1
+        y <- g x
+    in
+    x + y
+
+
+tuplePattern f =
+    let
+        ( x, y ) <- f 1
+    in
+    x + y
+
+
+ignored f g =
+    let
+        _ <- f 1
+    in
+    g 2
+
+
+bareCallee f =
+    let
+        x <- f
+    in
+    x
+
+
+inBranch f m =
+    case m of
+        Just v ->
+            let
+                x <- f v
+            in
+            x
+
+        Nothing ->
+            0

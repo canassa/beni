@@ -1,0 +1,105 @@
+(module
+  (definition only
+    (pat_var f)
+    (let
+      (let_bind
+        (pat_var x)
+        (apply
+          (ident f)
+          (int 1)))
+      (ident x)))
+  (definition afterOthers
+    (pat_var f)
+    (let
+      (let_def a
+        (int 1))
+      (let_bind
+        (pat_var x)
+        (apply
+          (ident f)
+          (ident a)))
+      (ident x)))
+  (definition inTheMiddle
+    (pat_var f)
+    (pat_var g)
+    (let
+      (let_def a
+        (int 1))
+      (let_bind
+        (pat_var x)
+        (apply
+          (ident f)
+          (ident a)))
+      (let_def b
+        (int 2))
+      (apply
+        (ident g)
+        (ident x)
+        (ident b))))
+  (definition several
+    (pat_var f)
+    (pat_var g)
+    (let
+      (let_bind
+        (pat_var x)
+        (apply
+          (ident f)
+          (int 1)))
+      (let_bind
+        (pat_var y)
+        (apply
+          (ident g)
+          (ident x)))
+      (add
+        (ident x)
+        (ident y))))
+  (definition tuplePattern
+    (pat_var f)
+    (let
+      (let_bind
+        (pat_tuple
+          (pat_var x)
+          (pat_var y))
+        (apply
+          (ident f)
+          (int 1)))
+      (add
+        (ident x)
+        (ident y))))
+  (definition ignored
+    (pat_var f)
+    (pat_var g)
+    (let
+      (let_bind
+        (pat_wild)
+        (apply
+          (ident f)
+          (int 1)))
+      (apply
+        (ident g)
+        (int 2))))
+  (definition bareCallee
+    (pat_var f)
+    (let
+      (let_bind
+        (pat_var x)
+        (ident f))
+      (ident x)))
+  (definition inBranch
+    (pat_var f)
+    (pat_var m)
+    (case
+      (ident m)
+      (branch
+        (pat_ctor Just
+          (pat_var v))
+        (let
+          (let_bind
+            (pat_var x)
+            (apply
+              (ident f)
+              (ident v)))
+          (ident x)))
+      (branch
+        (pat_ctor Nothing)
+        (int 0)))))

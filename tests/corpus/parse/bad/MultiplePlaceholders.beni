@@ -1,0 +1,4 @@
+-- multiple_placeholders at 4:11: at most one `_` per application (§6.7).
+-- Two omitted arguments are written as a lambda instead.
+two f a b =
+    f _ a _ b

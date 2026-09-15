@@ -1,0 +1,63 @@
+-- `_` (§6.7) and `let x <- f a` (§6.7) composing, run. Three claims neither
+-- feature makes alone:
+--   `insideRest` puts a `_` in the rest of the block, after the `<-`, so the
+--   lifted lambda is built inside the callback the bind passed along and
+--   still closes over the name the bind introduced.
+--   `nestedInCallee` puts a `_` inside an argument of the bind's own call:
+--   the placeholder belongs to that inner application, and the bind's call
+--   still receives the rest of the block as its last argument.
+--   `pipedIntoHole` reaches a placeholder call through `|>`, which §8
+--   desugars first, so the piped operand is the call's LAST argument and
+--   the `_` keeps the slot it was written in. `subtract` is not
+--   commutative, so both facts are visible in the output.
+import List
+import Node exposing (Program)
+import String
+
+
+subtract : Int -> Int -> Int
+subtract a b =
+    a - b
+
+
+twice : Int -> (Int -> String) -> String
+twice n body =
+    body n ++ "/" ++ body (n + 1)
+
+
+usingAll : List (Int -> Int) -> (List Int -> String) -> String
+usingAll fs body =
+    body (List.map (\f -> f 7) fs)
+
+
+insideRest : String
+insideRest =
+    let
+        n <- twice 10
+    in
+    String.join "," (List.map String.fromInt (List.map (subtract n _) [ 1, 2 ]))
+
+
+nestedInCallee : String
+nestedInCallee =
+    let
+        applied <- usingAll [ subtract 100 _, subtract _ 100 ]
+    in
+    String.join "," (List.map String.fromInt applied)
+
+
+pipedIntoHole : String
+pipedIntoHole =
+    let
+        n <- twice 1
+    in
+    String.fromInt ((n |> subtract _) 100)
+
+
+main : Program
+main =
+    Node.printLines
+        [ insideRest
+        , nestedInCallee
+        , pipedIntoHole
+        ]

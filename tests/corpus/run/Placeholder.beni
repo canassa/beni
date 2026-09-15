@@ -1,0 +1,32 @@
+-- `_` as the partial-application placeholder (§6.7), run: it fills the
+-- position it stands in, including the first, which is the case currying
+-- cannot express. `subtract` is not commutative, so which slot the
+-- placeholder filled is visible in the output.
+import List
+import Node exposing (Program)
+import String
+
+
+subtract : Int -> Int -> Int
+subtract a b =
+    a - b
+
+
+between : Int -> Int -> Int -> Int
+between lo hi n =
+    clamp lo hi n
+
+
+apply : (Int -> Int) -> Int -> Int
+apply f n =
+    f n
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.join "," (List.map String.fromInt (List.map (subtract 10 _) [ 1, 2, 3 ]))
+        , String.join "," (List.map String.fromInt (List.map (subtract _ 10) [ 1, 2, 3 ]))
+        , String.join "," (List.map String.fromInt (List.map (between 2 _ 5) [ 1, 9 ]))
+        , String.fromInt (apply (subtract 100 _) 1)
+        ]

@@ -112,6 +112,10 @@ pub const Tag = enum(u8) {
     colon,
     equal,
     arrow,
+    /// `<-`, the rest-of-block bind of a `let` (language.md §6.7). A symbol,
+    /// not an operator: it may appear only between a `let` binding's pattern
+    /// and its right-hand side.
+    arrow_left,
     backslash,
     pipe,
     underscore,
@@ -135,8 +139,6 @@ pub const Tag = enum(u8) {
     op_or_or,
     op_pipe_right,
     op_pipe_left,
-    op_compose_left,
-    op_compose_right,
 
     eof,
     invalid,
@@ -159,7 +161,7 @@ pub const Tag = enum(u8) {
     /// True for the binary operators of language.md §6.5 (`op_*`).
     pub fn isOperator(tag: Tag) bool {
         return @intFromEnum(tag) >= @intFromEnum(Tag.op_plus) and
-            @intFromEnum(tag) <= @intFromEnum(Tag.op_compose_right);
+            @intFromEnum(tag) <= @intFromEnum(Tag.op_pipe_left);
     }
 };
 
@@ -195,6 +197,7 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .colon => ":",
         .equal => "=",
         .arrow => "->",
+        .arrow_left => "<-",
         .backslash => "\\",
         .pipe => "|",
         .underscore => "_",
@@ -218,8 +221,6 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .op_or_or => "||",
         .op_pipe_right => "|>",
         .op_pipe_left => "<|",
-        .op_compose_left => "<<",
-        .op_compose_right => ">>",
 
         .lower_ident,
         .upper_ident,

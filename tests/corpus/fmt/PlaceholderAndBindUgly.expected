@@ -1,0 +1,17 @@
+-- Formatting `_` and `<-` (§9): `_` is an ordinary argument and takes
+-- ordinary application spacing; a `<-` binding prints on one line with
+-- single spaces around the operator, is never broken, and is never aligned
+-- with its neighbours, `=` bindings included.
+partial xs =
+    List.map (add 1 _) xs
+
+
+pipeline r =
+    let
+        scope <- Task.scope
+        conn <- Task.bracket (\() -> Db.open r.url) Db.close
+        count =
+            1
+        h <- Result.andThen (readHeader r)
+    in
+    render scope conn count h

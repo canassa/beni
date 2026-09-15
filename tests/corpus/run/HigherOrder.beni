@@ -34,5 +34,5 @@ main =
         , String.join "," (List.map String.fromInt (List.map (pick True) [ 1, 2 ]))
         , String.fromInt ((identity (\n -> n - 1)) 10)
         , String.fromInt (4 |> (\n -> n * n) |> (\n -> n + 1))
-        , String.fromInt (((\n -> n * 2) >> (\n -> n + 1)) 5)
+        , String.fromInt ((\n -> n + 1) ((\n -> n * 2) 5))
         ]

@@ -16,6 +16,6 @@ first t =
     t.0
 
 
-composedAccessors : { address : { city : String } } -> String
-composedAccessors =
-    .address >> .city
+appliedAccessors : { address : { city : String } } -> String
+appliedAccessors r =
+    .city (.address r)

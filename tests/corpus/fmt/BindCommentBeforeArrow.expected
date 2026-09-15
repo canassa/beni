@@ -1,0 +1,19 @@
+-- §9 forbids trailing whitespace: a comment that pushes the `<-`, the `=`
+-- or a lambda's `->` onto its own line must not leave the space that was
+-- going to separate it at the end of the line above.
+f r =
+    let
+        x
+            -- why the bind
+            <- readHeader r
+        y
+            -- why the definition
+            =
+            1
+    in
+    render x y
+        (\z
+            -- why the lambda
+            ->
+            z
+        )

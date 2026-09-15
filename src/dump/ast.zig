@@ -170,7 +170,7 @@ const Dumper = struct {
                 try d.openTag(tag, main);
                 try d.w.print(" {s}", .{d.text(main)});
             },
-            .unit, .type_unit, .pat_unit, .pat_wild => try d.openTag(tag, main),
+            .unit, .type_unit, .pat_unit, .pat_wild, .placeholder => try d.openTag(tag, main),
             .annotation => {
                 const a = tree.fullAnnotation(n);
                 try d.openTag(tag, main);
@@ -320,7 +320,7 @@ const Dumper = struct {
                 try d.children(l.params, inner);
                 try d.child(l.body, inner);
             },
-            .let_pattern => {
+            .let_pattern, .let_bind => {
                 const l = tree.fullLetPattern(n);
                 try d.openTag(tag, main);
                 try d.child(l.pattern, inner);

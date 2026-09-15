@@ -491,7 +491,7 @@ apR x f =
     f x
 
 
---| Compose two functions, right to left. `g << f` is "do `f`, then `g`".
+--| Compose two functions, right to left. `composeL g f` is "do `f`, then `g`".
 --|
 --|     apL (composeL not isNaN) 1 == True
 pub composeL : (b -> c) -> (a -> b) -> a -> c
@@ -499,7 +499,7 @@ composeL g f x =
     g (f x)
 
 
---| Compose two functions, left to right. `f >> g` is "do `f`, then `g`".
+--| Compose two functions, left to right. `composeR f g` is "do `f`, then `g`".
 --|
 --|     apL (composeR isNaN not) 1 == True
 pub composeR : (a -> b) -> (b -> c) -> a -> c

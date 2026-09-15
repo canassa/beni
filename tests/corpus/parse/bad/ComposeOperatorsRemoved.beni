@@ -1,0 +1,9 @@
+-- `>>` and `<<` are removed from the language (§6.5, §0), so a file using
+-- them no longer parses: unexpected_token at 5:8 and 9:8, where the `>` and
+-- `<` that remain cannot continue the declaration.
+forward f g =
+    f >> g
+
+
+backward f g =
+    f << g

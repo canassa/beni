@@ -1,0 +1,186 @@
+decl 0: value addOne (annotated)
+  %0 = type_import List.List
+  %1 = type_import Basics.Int
+  %2 = type_app %0 [%1]
+  %3 = type_import List.List
+  %4 = type_import Basics.Int
+  %5 = type_app %3 [%4]
+  %6 = type_fn %2 -> %5
+  %7 = pat_var local 0 (xs)
+  %8 = qualified List.map
+  %9 = pat_var local 1
+  %10 = top 3 (add)
+  %11 = int 1
+  %12 = local 1
+  %13 = call %10 [%11, %12]
+  %14 = lambda [%9] -> %13
+  %15 = local 0 (xs)
+  %16 = call %8 [%14, %15]
+  annotation %6
+  params [%7]
+  body %16
+  locals
+    0 xs param %7
+    1 _ fresh %9
+  refs
+    import_type List.List
+    import_type Basics.Int
+    import_value List.map
+    top 3 (add)
+
+decl 1: value firstPosition (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (n)
+  %4 = top 5 (apply)
+  %5 = pat_var local 1
+  %6 = top 4 (subtract)
+  %7 = local 1
+  %8 = local 0 (n)
+  %9 = call %6 [%7, %8]
+  %10 = lambda [%5] -> %9
+  %11 = call %4 [%10]
+  annotation %2
+  params [%3]
+  body %11
+  locals
+    0 n param %3
+    1 _ fresh %5
+  refs
+    import_type Basics.Int
+    top 5 (apply)
+    top 4 (subtract)
+
+decl 2: value nested (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (n)
+  %4 = top 6 (outer)
+  %5 = pat_var local 1
+  %6 = top 7 (inner)
+  %7 = local 1
+  %8 = call %6 [%7]
+  %9 = lambda [%5] -> %8
+  %10 = local 0 (n)
+  %11 = call %4 [%9, %10]
+  annotation %2
+  params [%3]
+  body %11
+  locals
+    0 n param %3
+    1 _ fresh %5
+  refs
+    import_type Basics.Int
+    top 6 (outer)
+    top 7 (inner)
+
+decl 3: value add (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  %3 = type_fn %1 -> %2
+  %4 = type_fn %0 -> %3
+  %5 = pat_var local 0 (a)
+  %6 = pat_var local 1 (b)
+  %7 = local 0 (a)
+  %8 = local 1 (b)
+  %9 = import_value Basics.add
+  %10 = call %9 [%7, %8]
+  annotation %4
+  params [%5, %6]
+  body %10
+  locals
+    0 a param %5
+    1 b param %6
+  refs
+    import_type Basics.Int
+    import_value Basics.add
+
+decl 4: value subtract (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  %3 = type_fn %1 -> %2
+  %4 = type_fn %0 -> %3
+  %5 = pat_var local 0 (a)
+  %6 = pat_var local 1 (b)
+  %7 = local 0 (a)
+  %8 = local 1 (b)
+  %9 = import_value Basics.sub
+  %10 = call %9 [%7, %8]
+  annotation %4
+  params [%5, %6]
+  body %10
+  locals
+    0 a param %5
+    1 b param %6
+  refs
+    import_type Basics.Int
+    import_value Basics.sub
+
+decl 5: value apply (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = type_import Basics.Int
+  %4 = type_fn %2 -> %3
+  %5 = pat_var local 0 (f)
+  %6 = local 0 (f)
+  %7 = int 1
+  %8 = call %6 [%7]
+  annotation %4
+  params [%5]
+  body %8
+  locals
+    0 f param %5
+  refs
+    import_type Basics.Int
+
+decl 6: value outer (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = type_import Basics.Int
+  %4 = type_import Basics.Int
+  %5 = type_fn %3 -> %4
+  %6 = type_fn %2 -> %5
+  %7 = pat_var local 0 (f)
+  %8 = pat_var local 1 (n)
+  %9 = local 0 (f)
+  %10 = local 1 (n)
+  %11 = call %9 [%10]
+  annotation %6
+  params [%7, %8]
+  body %11
+  locals
+    0 f param %7
+    1 n param %8
+  refs
+    import_type Basics.Int
+
+decl 7: value inner (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn %0 -> %1
+  %3 = pat_var local 0 (n)
+  %4 = local 0 (n)
+  annotation %2
+  params [%3]
+  body %4
+  locals
+    0 n param %3
+  refs
+    import_type Basics.Int
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

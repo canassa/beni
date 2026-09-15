@@ -66,7 +66,6 @@
         (ident xs))))
   (definition pipes
     (pat_var f)
-    (pat_var g)
     (pat_var x)
     (tuple
       (pipe_right
@@ -74,18 +73,6 @@
         (ident f))
       (pipe_left
         (ident f)
-        (ident x))
-      (apply
-        (paren
-          (compose_left
-            (ident f)
-            (ident g)))
-        (ident x))
-      (apply
-        (paren
-          (compose_right
-            (ident f)
-            (ident g)))
         (ident x))))
   (definition asFunctions
     (list
@@ -112,9 +99,7 @@
       (op_fn ++)
       (op_fn ::)
       (op_fn |>)
-      (op_fn <|)
-      (op_fn <<)
-      (op_fn >>)))
+      (op_fn <|)))
   (definition folded
     (pat_var xs)
     (apply

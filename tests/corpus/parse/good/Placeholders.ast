@@ -1,0 +1,63 @@
+(module
+  (definition last
+    (pat_var f)
+    (pat_var a)
+    (apply
+      (ident f)
+      (ident a)
+      (placeholder)))
+  (definition middle
+    (pat_var f)
+    (pat_var a)
+    (pat_var c)
+    (apply
+      (ident f)
+      (ident a)
+      (placeholder)
+      (ident c)))
+  (definition first
+    (pat_var f)
+    (pat_var b)
+    (apply
+      (ident f)
+      (placeholder)
+      (ident b)))
+  (definition only
+    (pat_var f)
+    (apply
+      (ident f)
+      (placeholder)))
+  (definition nested
+    (pat_var f)
+    (pat_var g)
+    (pat_var b)
+    (apply
+      (ident f)
+      (paren
+        (apply
+          (ident g)
+          (placeholder)))
+      (ident b)))
+  (definition inPipeline
+    (pat_var xs)
+    (pipe_right
+      (ident xs)
+      (apply
+        (ident List.map)
+        (paren
+          (apply
+            (ident add)
+            (int 1)
+            (placeholder))))))
+  (definition constructor
+    (pat_var a)
+    (apply
+      (ctor Pair)
+      (ident a)
+      (placeholder)))
+  (definition accessorAfter
+    (pat_var f)
+    (apply
+      (ident f)
+      (placeholder)
+      (accessor .name))))

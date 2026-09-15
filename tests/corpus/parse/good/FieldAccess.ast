@@ -48,10 +48,14 @@
       (tuple
         (int 1)
         (int 2))))
-  (definition composedAccessors
-    (compose_right
-      (accessor .address)
-      (accessor .city)))
+  (definition nestedAccessors
+    (pat_var r)
+    (apply
+      (accessor .city)
+      (paren
+        (apply
+          (accessor .address)
+          (ident r)))))
   (definition accessorPipe
     (pat_var person)
     (pipe_right

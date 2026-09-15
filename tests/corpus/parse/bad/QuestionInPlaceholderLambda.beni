@@ -1,0 +1,19 @@
+-- question_in_lambda at 11:11, 15:6 and 19:13: `_` lifts the whole call
+-- into a lambda (§6.7), and §8 desugars pipes before placeholders, so the
+-- operand a pipe supplies is an argument of that call and sits inside the
+-- lambda too. The three definitions are the same program after desugaring
+-- and must report the same thing.
+g a b =
+    a + b
+
+
+direct x =
+    g _ (x?)
+
+
+piped x =
+    x? |> g _
+
+
+pipedLeft x =
+    g _ <| x?

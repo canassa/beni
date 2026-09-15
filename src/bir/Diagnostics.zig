@@ -138,6 +138,20 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\prelude modules: Basics, List, Maybe, Result, String, Char, Debug.
             , .{ text[0..dot], text });
         },
+        .annotation_without_definition => try w.print(
+            \\This type annotation for `{s}` is not followed by a definition of `{s}`.
+            \\
+            \\The next binding is a `<-`, and a bind is not a definition: it takes no
+            \\annotation, because the type it would name belongs to the callee. Remove the
+            \\annotation, or write `{s} = ...` instead of `{s} <- ...`.
+        , .{ text, text, text, text }),
+        .bind_rhs_forward_reference => try w.print(
+            \\`{s}` is bound after this `<-`, so the call cannot see it.
+            \\
+            \\`let x <- f a` passes everything after it to `f a` as a callback, which means
+            \\the bindings below the `<-` do not exist yet where the call is made. Move the
+            \\binding of `{s}` above the `<-`.
+        , .{ text, text }),
         .question_in_lambda => try w.writeAll(
             \\This `?` is inside a lambda.
             \\

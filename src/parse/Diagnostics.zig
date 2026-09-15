@@ -333,13 +333,6 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\The two pipe operators cannot be combined without parentheses, because it is not
                     \\clear which side applies first. Add parentheses around one of the sides.
                 );
-            } else if (std.mem.eql(u8, text, "<<") or std.mem.eql(u8, text, ">>")) {
-                try w.writeAll(
-                    \\I found `<<` and `>>` mixed in one chain.
-                    \\
-                    \\The two composition operators cannot be combined without parentheses, because
-                    \\it is not clear which side applies first. Add parentheses around one of the sides.
-                );
             } else {
                 try w.print(
                     \\I found a second comparison operator, `{s}`, in the same chain.
@@ -359,6 +352,27 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\`{s}` is not a valid tuple index.
             \\
             \\A tuple index is a decimal integer with no leading zeros: `.0`, `.1`, `.12`.
+        , .{text}),
+        .placeholder_outside_argument => try w.writeAll(
+            \\I found a `_` where an expression should be.
+            \\
+            \\`_` is the placeholder for an argument a call does not supply: `f a _ c` is
+            \\`\x -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,
+            \\be an operand, or sit in parentheses. For a value you do not care about, name it.
+        ),
+        .multiple_placeholders => try w.writeAll(
+            \\I found a second `_` in the same call.
+            \\
+            \\A call may leave one argument open: `f a _ c` is `\x -> f a x c`. Two open
+            \\arguments have no shorter form than the lambda they stand for, so write `f _ b _`
+            \\out in full: `\x y -> f x b y`.
+        ),
+        .bind_rhs_not_application => try w.print(
+            \\I was expecting a call after this `<-`, but I ran into `{s}`.
+            \\
+            \\`let x <- f a` passes the rest of the block to `f a` as its last argument, so the
+            \\right of `<-` must be the call that receives it — a function, or a call missing
+            \\exactly its final argument. Wrap what you meant in parentheses, or use `=`.
         , .{text}),
         .refutable_let_pattern => try w.print(
             \\I found `{s}` in a `let` pattern, but a `let` pattern must always match.
@@ -456,5 +470,23 @@ test "message: the soft errors" {
         "`.00` is not a valid tuple index.\n\nA tuple index is a decimal integer with no leading zeros: `.0`, `.1`, `.12`.",
         .{ .code = .invalid_tuple_index, .start = 1, .end = 4, .context = .expression },
         "t.00",
+    );
+}
+
+test "message: the placeholder and the bind (language.md §6.7)" {
+    try expectMessage(
+        "I found a `_` where an expression should be.\n\n`_` is the placeholder for an argument a call does not supply: `f a _ c` is\n`\\x -> f a x c`. It is an argument and nothing else, so it cannot stand on its own,\nbe an operand, or sit in parentheses. For a value you do not care about, name it.",
+        .{ .code = .placeholder_outside_argument, .start = 4, .end = 5, .context = .expression },
+        "y = _ + 1",
+    );
+    try expectMessage(
+        "I found a second `_` in the same call.\n\nA call may leave one argument open: `f a _ c` is `\\x -> f a x c`. Two open\narguments have no shorter form than the lambda they stand for, so write `f _ b _`\nout in full: `\\x y -> f x b y`.",
+        .{ .code = .multiple_placeholders, .start = 10, .end = 11, .context = .expression },
+        "y = f _ b _",
+    );
+    try expectMessage(
+        "I was expecting a call after this `<-`, but I ran into `+`.\n\n`let x <- f a` passes the rest of the block to `f a` as its last argument, so the\nright of `<-` must be the call that receives it — a function, or a call missing\nexactly its final argument. Wrap what you meant in parentheses, or use `=`.",
+        .{ .code = .bind_rhs_not_application, .start = 7, .end = 8, .context = .let_bindings },
+        "x <- a + b",
     );
 }

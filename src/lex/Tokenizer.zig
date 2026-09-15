@@ -411,12 +411,13 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
         .lt => switch (src[t.index + 1]) {
             '|' => break :state t.take(2, .op_pipe_left),
             '=' => break :state t.take(2, .op_lte),
-            '<' => break :state t.take(2, .op_compose_left),
+            // Longest match (§2.2): `x <-1` is `<-` and `1`, never `<` and
+            // `-1`. A comparison with a negative literal needs the space.
+            '-' => break :state t.take(2, .arrow_left),
             else => break :state t.take(1, .op_lt),
         },
         .gt => switch (src[t.index + 1]) {
             '=' => break :state t.take(2, .op_gte),
-            '>' => break :state t.take(2, .op_compose_right),
             else => break :state t.take(1, .op_gt),
         },
         .equal => switch (src[t.index + 1]) {
@@ -1121,7 +1122,7 @@ test "every symbol" {
 }
 
 test "every operator" {
-    try expectLex("+ - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>", .{ .tokens = &.{
+    try expectLex("+ - * / // ^ ++ :: == /= < > <= >= && || |> <| <-", .{ .tokens = &.{
         .{ .tag = .op_plus, .start = 0, .text = "+" },
         .{ .tag = .op_minus, .start = 2, .text = "-" },
         .{ .tag = .op_star, .start = 4, .text = "*" },
@@ -1140,9 +1141,8 @@ test "every operator" {
         .{ .tag = .op_or_or, .start = 38, .text = "||" },
         .{ .tag = .op_pipe_right, .start = 41, .text = "|>" },
         .{ .tag = .op_pipe_left, .start = 44, .text = "<|" },
-        .{ .tag = .op_compose_left, .start = 47, .text = "<<" },
-        .{ .tag = .op_compose_right, .start = 50, .text = ">>" },
-        .{ .tag = .eof, .start = 52, .text = "" },
+        .{ .tag = .arrow_left, .start = 47, .text = "<-" },
+        .{ .tag = .eof, .start = 49, .text = "" },
     } });
 }
 
@@ -1185,6 +1185,19 @@ test "longest match: |> vs | >, // vs / /, -> vs - >, <| vs < |, and -- after an
         .comments = &.{.{ .kind = .plain, .start = 46, .before_token = 30 }},
         .line_starts = &.{ 0, 50 },
     });
+}
+
+test "longest match: <- wins over < and -, so `x <-1` is a bind arrow (language.md §2.2)" {
+    try expectLex("x <-1 y < -1", .{ .tokens = &.{
+        .{ .tag = .lower_ident, .start = 0, .text = "x" },
+        .{ .tag = .arrow_left, .start = 2, .text = "<-" },
+        .{ .tag = .int, .start = 4, .text = "1" },
+        .{ .tag = .lower_ident, .start = 6, .text = "y" },
+        .{ .tag = .op_lt, .start = 8, .text = "<" },
+        .{ .tag = .op_minus, .start = 10, .text = "-" },
+        .{ .tag = .int, .start = 11, .text = "1" },
+        .{ .tag = .eof, .start = 12, .text = "" },
+    } });
 }
 
 test "a lone & is invalid_character; && is an operator" {
@@ -1758,7 +1771,7 @@ const pieces = [_][]const u8{
     "|",         "_",                    "?",            "+",       "-",                  "*",
     "/",         "//",                   "^",            "++",      "::",                 "==",
     "/=",        "<",                    ">",            "<=",      ">=",                 "&&",
-    "||",        "|>",                   "<|",           "<<",      ">>",                 " ",
+    "||",        "|>",                   "<|",           "<-",      "x <-1",              " ",
     "  ",        "\n",                   "\r\n",         "\n\n",    "-- comment\n",       "--| doc\n",
     "--! mod\n", "\\\\raw ${ \\ line\n",
     "\"é\"",

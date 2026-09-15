@@ -124,6 +124,12 @@ type_params: ?[]const TokenIndex = null,
 /// each may mark its own `a`.
 type_vars_seen: std.ArrayList(Symbol) = .empty,
 
+/// The names bound AFTER the `<-` whose right-hand side is being lowered
+/// (§7): a reference to one of them is `bind_rhs_forward_reference`. Empty
+/// everywhere else, and restored by the caller, so a nested `let` inside the
+/// right-hand side sees its own bindings as locals first.
+forward: []const Symbol = &.{},
+
 /// The token every instruction appended right now is stamped with.
 cur_token: TokenIndex = 0,
 cur_decl: u32 = 0,
@@ -981,6 +987,13 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     if (l.lookupLocal(symbol)) |local| return l.addInst(.local, local, Inst.Data.unused);
+    for (l.forward) |name| {
+        if (name == symbol) {
+            @branchHint(.cold);
+            try l.reportToken(.bind_rhs_forward_reference, token);
+            return l.errorInst(.bind_rhs_forward_reference);
+        }
+    }
     if (l.values.get(symbol)) |entry| switch (entry.kind) {
         .top => {
             try l.addRef(.top_value, entry.index, 0);
@@ -1266,27 +1279,19 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         },
         .apply => {
             const app = l.tree.fullApply(node);
-            const callee = try l.lowerExpr(app.function);
-            const mark = l.scratchMark();
-            defer l.shrinkScratch(mark);
-            for (app.args) |arg| try l.pushScratch(try l.lowerExpr(arg));
-            l.cur_token = main_token;
-            return l.call(callee, l.scratchSince(mark));
+            return l.lowerApplication(main_token, app.function, app.args, null);
         },
         .question => return l.lowerQuestion(node),
         .pipe_right => {
             // `x |> f a` → `f a x` (§8.2).
             const b = l.tree.fullBinop(node);
-            const arg = try l.lowerExpr(b.lhs);
-            return l.saturate(b.rhs, arg);
+            return l.saturate(b.rhs, b.lhs);
         },
         .pipe_left => {
             // `f a <| x` → `f a x`.
             const b = l.tree.fullBinop(node);
-            const arg = try l.lowerExpr(b.rhs);
-            return l.saturate(b.lhs, arg);
+            return l.saturate(b.lhs, b.rhs);
         },
-        .compose_right, .compose_left => return l.lowerCompose(node, tag),
         .lambda => {
             const lam = l.tree.fullLambda(node);
             const mark = l.scope.items.len;
@@ -1322,6 +1327,9 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             l.cur_token = b.op_token;
             return l.call(function, &.{ lhs.int(), rhs.int() });
         },
+        // Only a `<-` right-hand side can hold one (§6.7); the parser has
+        // reported it as `placeholder_outside_argument` already.
+        .placeholder => return l.errorInst(.placeholder_outside_argument),
         else => {
             std.debug.assert(tag.isError());
             return l.errorInst(l.tree.fullError(node).code);
@@ -1363,8 +1371,6 @@ fn operatorFunction(op: Token.Tag) OperatorFunction {
         .op_or_or => .{ .module = .Basics, .function = .@"or" },
         .op_pipe_left => .{ .module = .Basics, .function = .apL },
         .op_pipe_right => .{ .module = .Basics, .function = .apR },
-        .op_compose_left => .{ .module = .Basics, .function = .composeL },
-        .op_compose_right => .{ .module = .Basics, .function = .composeR },
         else => unreachable, // `op_fn` and binop nodes hold operator tokens only
     };
 }
@@ -1372,59 +1378,74 @@ fn operatorFunction(op: Token.Tag) OperatorFunction {
 /// Apply `function_node` to one more argument, flattening an application:
 /// `f a` with `x` becomes `f a x` (the one place the front end changes call
 /// arity, §8.2). Grouping parentheses are looked through.
-fn saturate(l: *Lower, function_node: NodeIndex, extra_arg: Index) Allocator.Error!Index {
+fn saturate(l: *Lower, function_node: NodeIndex, extra_node: NodeIndex) Allocator.Error!Index {
     var fnode = function_node;
     while (l.tree.nodeTag(fnode) == .paren) fnode = l.tree.operand(fnode);
     if (l.tree.nodeTag(fnode) == .apply) {
         const app = l.tree.fullApply(fnode);
-        const callee = try l.lowerExpr(app.function);
-        const mark = l.scratchMark();
-        defer l.shrinkScratch(mark);
-        for (app.args) |arg| try l.pushScratch(try l.lowerExpr(arg));
-        try l.pushScratch(extra_arg);
-        return l.call(callee, l.scratchSince(mark));
+        return l.lowerApplication(l.tree.nodeMainToken(fnode), app.function, app.args, extra_node);
     }
+    const extra_arg = try l.lowerExpr(extra_node);
     const callee = try l.lowerExpr(fnode);
     return l.call(callee, &.{extra_arg.int()});
 }
 
-/// `f >> g` → `\x -> g (f x)`, `f << g` → `\x -> f (g x)` (§8.2). A chain of
-/// the same operator is flattened first — `a >> b >> c` is one lambda
-/// `\x -> c (b (a x))` — since the parser has already rejected mixed
-/// chains (`non_associative_chain`). The functions are lowered before the
-/// lambda is opened: they are evaluated when the composition is built, so
-/// a `?` in them belongs to the enclosing definition, not to the lambda.
-fn lowerCompose(l: *Lower, node: NodeIndex, op: Node.Tag) Allocator.Error!Index {
+/// One application, with `extra` appended when a pipe supplied an argument.
+/// A `_` among the arguments (§6.7) makes the WHOLE call the body of a
+/// one-parameter lambda — the innermost enclosing application is this one —
+/// so `f a _ c` is `\x -> f a x c`. Everything else inside the call is
+/// lowered inside that lambda, which is where the desugared form puts it.
+/// §8 fixes the order as pipes first, then placeholders, so the operand a
+/// pipe supplied is one of this call's arguments and is lowered inside the
+/// lambda too: `a? |> f _` is the same program as `f _ (a?)`, down to the
+/// `question_in_lambda` both report. Without a `_` there is no lambda and
+/// the operand keeps its written position, ahead of the callee.
+fn lowerApplication(
+    l: *Lower,
+    main_token: TokenIndex,
+    function: NodeIndex,
+    args: []const NodeIndex,
+    extra: ?NodeIndex,
+) Allocator.Error!Index {
+    var param: Index = @enumFromInt(0);
+    var local: u32 = 0;
+    const has_hole = l.placeholderIn(args);
+    var extra_arg: ?Index = null;
+    if (has_hole) {
+        param = try l.reserveInst(.pat_var);
+        local = try l.freshLocal(param);
+        l.setInstData(param, local, Inst.Data.unused);
+        try l.frames.append(l.scratch_allocator, .{ .kind = .lambda, .inst = .none });
+    } else if (extra) |e| {
+        extra_arg = try l.lowerExpr(e);
+    }
+    const callee = try l.lowerExpr(function);
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
-    try l.collectComposeChain(node, op);
-    const functions = l.scratchSince(mark);
-    // Which function applies first: the leftmost for `>>`, the rightmost
-    // for `<<`.
-    const param = try l.reserveInst(.pat_var);
-    const local = try l.freshLocal(param);
-    l.setInstData(param, local, Inst.Data.unused);
-    var value = try l.addInst(.local, local, Inst.Data.unused);
-    var i: usize = 0;
-    while (i < functions.len) : (i += 1) {
-        const f: Index = @enumFromInt(if (op == .compose_right) functions[i] else functions[functions.len - 1 - i]);
-        value = try l.call(f, &.{value.int()});
+    for (args) |arg| {
+        // A second `_` is `multiple_placeholders`, already reported; it
+        // shares the one parameter so the tree stays well formed.
+        if (l.tree.nodeTag(arg) == .placeholder) {
+            try l.pushScratch(try l.addInst(.local, local, Inst.Data.unused));
+        } else {
+            try l.pushScratch(try l.lowerExpr(arg));
+        }
     }
+    if (has_hole) {
+        if (extra) |e| extra_arg = try l.lowerExpr(e);
+    }
+    if (extra_arg) |e| try l.pushScratch(e);
+    l.cur_token = main_token;
+    const called = try l.call(callee, l.scratchSince(mark));
+    if (!has_hole) return called;
+    _ = l.frames.pop();
     const params = try l.addRangeRecord(try l.addRange(&.{param.int()}));
-    return l.addInst(.lambda, @intFromEnum(params), value.int());
+    return l.addInstAt(main_token, .lambda, @intFromEnum(params), called.int());
 }
 
-/// Lower every operand of a chain of `op`, left to right, onto the scratch
-/// list. Only bare chains flatten; a parenthesised sub-composition is a
-/// function like any other.
-fn collectComposeChain(l: *Lower, node: NodeIndex, op: Node.Tag) Allocator.Error!void {
-    if (l.tree.nodeTag(node) == op) {
-        const b = l.tree.fullBinop(node);
-        try l.collectComposeChain(b.lhs, op);
-        try l.collectComposeChain(b.rhs, op);
-    } else {
-        try l.pushScratch(try l.lowerExpr(node));
-    }
+fn placeholderIn(l: *const Lower, args: []const NodeIndex) bool {
+    for (args) |a| if (l.tree.nodeTag(a) == .placeholder) return true;
+    return false;
 }
 
 /// `if c then a else b` → `case c of True -> a; False -> b` on the prelude
@@ -1488,6 +1509,29 @@ fn lowerQuestion(l: *Lower, node: NodeIndex) Allocator.Error!Index {
 /// so mutual recursion resolves and a binding may use a later constant.
 fn lowerLet(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     const let_node = l.tree.fullLet(node);
+    return l.lowerBindings(let_node.bindings, let_node.body);
+}
+
+/// The bindings of one `let` up to the first `<-`, then the rest of the
+/// block as that bind's callback (§6.7). `let x <- f a in rest` is
+/// `f a (\x -> rest)`, so the bindings in front of the bind stay an ordinary
+/// `let` whose body is the call, and `rest` — every later binding and the
+/// `in` body — is lowered inside the lambda. A `let` whose ONLY binding is a
+/// bind produces no `let` instruction at all: there is nothing left to bind.
+fn lowerBindings(
+    l: *Lower,
+    all_bindings: []const NodeIndex,
+    body_node: NodeIndex,
+) Allocator.Error!Index {
+    var head_len = all_bindings.len;
+    for (all_bindings, 0..) |b, i| {
+        if (l.tree.nodeTag(b) == .let_bind) {
+            head_len = i;
+            break;
+        }
+    }
+    const head = all_bindings[0..head_len];
+    const rest = all_bindings[head_len..];
     const scope_mark = l.scope.items.len;
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
@@ -1495,7 +1539,7 @@ fn lowerLet(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     // Phase 1: bind. `let_def` gets its instruction now (its index is the
     // `try` target of its body); a `let_pattern` lowers its pattern now
     // (irrefutable, so it resolves nothing) and its value later.
-    for (let_node.bindings) |b| {
+    for (head) |b| {
         switch (l.tree.nodeTag(b)) {
             .let_def => {
                 const inst = try l.reserveInst(.let_def);
@@ -1515,7 +1559,7 @@ fn lowerLet(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     var pending_annotation: Inst.OptionalIndex = .none;
     var pending_annotation_name: ?Symbol = null;
     var slot: usize = mark;
-    for (let_node.bindings) |b| {
+    for (head) |b| {
         switch (l.tree.nodeTag(b)) {
             .let_annotation => {
                 pending_annotation = (try l.lowerRootType(l.tree.operand(b))).toOptional();
@@ -1555,10 +1599,135 @@ fn lowerLet(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             else => {},
         }
     }
-    const body = try l.lowerExpr(let_node.body);
+    // `let x : T` may only precede a Definition (§6.7), and a bind is not
+    // one, so an annotation left pending when the head runs out is
+    // unattached exactly as a top-level one would be.
+    if (rest.len != 0) {
+        if (pending_annotation_name != null) {
+            @branchHint(.cold);
+            try l.reportToken(.annotation_without_definition, l.annotationToken(head));
+        }
+    }
+    const body = if (rest.len == 0)
+        try l.lowerExpr(body_node)
+    else
+        try l.lowerBind(rest[0], rest[1..], body_node);
     l.scope.shrinkRetainingCapacity(scope_mark);
-    const bindings = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
+    const items = l.scratchSince(mark);
+    // Nothing left to bind: the `let` node would be empty. That happens for
+    // the block a `<-` rewrote (its callback body is `rest`, which can be
+    // the `in` body alone) but never for a `let` the author wrote, which
+    // has at least one binding even when every one of them is an error.
+    if (items.len == 0 and (rest.len != 0 or all_bindings.len == 0)) return body;
+    const bindings = try l.addRangeRecord(try l.addRange(items));
     return l.addInst(.let, @intFromEnum(bindings), body.int());
+}
+
+/// `p <- f a` with `rest` after it: `f a (\p -> rest)` (§6.7). The call is
+/// lowered where it is written — outside the lambda, so a `?` in it belongs
+/// to the enclosing definition — and `rest` is the lambda's body, which is
+/// the only place `p` is in scope.
+fn lowerBind(
+    l: *Lower,
+    bind: NodeIndex,
+    rest: []const NodeIndex,
+    body_node: NodeIndex,
+) Allocator.Error!Index {
+    const b = l.tree.fullLetPattern(bind);
+    const bind_token = l.tree.nodeMainToken(bind);
+    var value = b.value;
+    while (l.tree.nodeTag(value) == .paren) value = l.tree.operand(value);
+    const is_apply = l.tree.nodeTag(value) == .apply;
+    const app = if (is_apply) l.tree.fullApply(value) else undefined;
+
+    // The call is made where it is written: outside the callback, and with
+    // the bindings below the `<-` not yet in scope (§7). They exist, so a
+    // reference to one is `bind_rhs_forward_reference` rather than an
+    // `unbound_variable` or, worse, a silent hit on a top-level name.
+    var forward: std.ArrayList(Symbol) = .empty;
+    defer forward.deinit(l.scratch_allocator);
+    // An enclosing bind's forward set still applies: a bind nested in an
+    // outer bind's right-hand side is lowered before the outer block's
+    // later names come into scope, so they stay forward references here
+    // too. Extend the list, never replace it.
+    try forward.appendSlice(l.scratch_allocator, l.forward);
+    try l.forwardNames(rest, &forward);
+    const saved_forward = l.forward;
+    l.forward = forward.items;
+    const callee = try l.lowerExpr(if (is_apply) app.function else value);
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    if (is_apply) for (app.args) |arg| try l.pushScratch(try l.lowerExpr(arg));
+    l.forward = saved_forward;
+
+    const callback = try l.lowerCallback(bind_token, b.pattern, rest, body_node);
+    try l.pushScratch(callback);
+    l.cur_token = bind_token;
+    return l.call(callee, l.scratchSince(mark));
+}
+
+/// The names the bindings after a `<-` introduce, in source order. They are
+/// what the right-hand side may not mention (§7); the list is short and is
+/// scanned linearly, like the scope stack next to it.
+fn forwardNames(l: *Lower, rest: []const NodeIndex, names: *std.ArrayList(Symbol)) Allocator.Error!void {
+    for (rest) |b| switch (l.tree.nodeTag(b)) {
+        .let_def => try names.append(l.scratch_allocator, l.tokenSymbol(l.tree.nodeMainToken(b))),
+        .let_pattern, .let_bind => try l.patternNames(l.tree.fullLetPattern(b).pattern, names),
+        else => {},
+    };
+}
+
+/// Every variable a pattern binds, appended to `names`.
+fn patternNames(l: *Lower, pattern: NodeIndex, names: *std.ArrayList(Symbol)) Allocator.Error!void {
+    switch (l.tree.nodeTag(pattern)) {
+        .pat_var => try names.append(l.scratch_allocator, l.tokenSymbol(l.tree.nodeMainToken(pattern))),
+        .pat_paren => try l.patternNames(l.tree.operand(pattern), names),
+        .pat_as => {
+            const a = l.tree.fullPatAs(pattern);
+            try l.patternNames(a.pattern, names);
+            if (l.tags[a.name] == .lower_ident) try names.append(l.scratch_allocator, l.tokenSymbol(a.name));
+        },
+        .pat_tuple, .pat_list => for (l.tree.children(pattern)) |child| try l.patternNames(child, names),
+        .pat_ctor => for (l.tree.children(pattern)) |child| try l.patternNames(child, names),
+        .pat_cons => {
+            const d = l.tree.nodeData(pattern);
+            try l.patternNames(@enumFromInt(d.lhs), names);
+            try l.patternNames(@enumFromInt(d.rhs), names);
+        },
+        .pat_record => for (l.tree.fullPatRecord(pattern).fields) |f| try names.append(l.scratch_allocator, l.tokenSymbol(f)),
+        else => {},
+    }
+}
+
+/// `\p -> rest`: the lambda a bind passes as the last argument. The pattern
+/// is in scope in `rest` and nowhere else (§6.7), and `rest` is inside a
+/// lambda, so a `?` in it is `question_in_lambda` exactly as the desugared
+/// form says it is.
+fn lowerCallback(
+    l: *Lower,
+    bind_token: TokenIndex,
+    pattern: NodeIndex,
+    rest: []const NodeIndex,
+    body_node: NodeIndex,
+) Allocator.Error!Index {
+    const scope_mark = l.scope.items.len;
+    const pat = try l.lowerPattern(pattern, scope_mark, .pattern);
+    try l.frames.append(l.scratch_allocator, .{ .kind = .lambda, .inst = .none });
+    const rest_expr = try l.lowerBindings(rest, body_node);
+    _ = l.frames.pop();
+    l.scope.shrinkRetainingCapacity(scope_mark);
+    const params = try l.addRangeRecord(try l.addRange(&.{pat.int()}));
+    return l.addInstAt(bind_token, .lambda, @intFromEnum(params), rest_expr.int());
+}
+
+/// The name token of the last `let_annotation` in `bindings`.
+fn annotationToken(l: *const Lower, bindings: []const NodeIndex) TokenIndex {
+    var i = bindings.len;
+    while (i > 0) {
+        i -= 1;
+        if (l.tree.nodeTag(bindings[i]) == .let_annotation) return l.tree.nodeMainToken(bindings[i]);
+    }
+    unreachable; // only called when phase 2 left an annotation pending
 }
 
 /// The local index a reserved `let_def` instruction binds (its `Local`
@@ -1721,6 +1890,9 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
             l.setInstData(inst, inner.int(), local);
             return inst;
         },
+        // Only a `<-` right-hand side can hold one (§6.7); the parser has
+        // reported it as `placeholder_outside_argument` already.
+        .placeholder => return l.errorInst(.placeholder_outside_argument),
         else => {
             std.debug.assert(tag.isError());
             return l.errorInst(l.tree.fullError(node).code);
@@ -2232,11 +2404,11 @@ test "`::` desugars to List.cons, not Basics.cons" {
 
 test "the operator table gives every operator a home module, and only `::` leaves Basics" {
     const ops = [_]Token.Tag{
-        .op_plus,        .op_minus,      .op_star,         .op_slash,
-        .op_slash_slash, .op_caret,      .op_plus_plus,    .op_colon_colon,
-        .op_eq_eq,       .op_slash_eq,   .op_lt,           .op_gt,
-        .op_lte,         .op_gte,        .op_and_and,      .op_or_or,
-        .op_pipe_left,   .op_pipe_right, .op_compose_left, .op_compose_right,
+        .op_plus,        .op_minus,      .op_star,      .op_slash,
+        .op_slash_slash, .op_caret,      .op_plus_plus, .op_colon_colon,
+        .op_eq_eq,       .op_slash_eq,   .op_lt,        .op_gt,
+        .op_lte,         .op_gte,        .op_and_and,   .op_or_or,
+        .op_pipe_left,   .op_pipe_right,
     };
     for (ops) |op| {
         const f = operatorFunction(op);
@@ -2293,43 +2465,89 @@ test "`|>` and `<|` flatten into saturated calls, through grouping parentheses" 
     , &.{});
 }
 
-test "`>>` and `<<` become one lambda per chain, applied in the right order" {
+test "`_` becomes a lambda over the innermost enclosing application (§6.7)" {
     try expectDecls(
-        \\f a b c =
-        \\    ( a >> b >> c, a << b << c )
+        \\f a b =
+        \\    ( max a _, clamp _ (modBy _ b) 3 )
         \\
     ,
         \\decl 0: value f
         \\  %0 = pat_var local 0 (a)
         \\  %1 = pat_var local 1 (b)
-        \\  %2 = pat_var local 2 (c)
-        \\  %3 = local 0 (a)
-        \\  %4 = local 1 (b)
-        \\  %5 = local 2 (c)
-        \\  %6 = pat_var local 3
-        \\  %7 = local 3
-        \\  %8 = call %3 [%7]
-        \\  %9 = call %4 [%8]
-        \\  %10 = call %5 [%9]
-        \\  %11 = lambda [%6] -> %10
-        \\  %12 = local 0 (a)
-        \\  %13 = local 1 (b)
-        \\  %14 = local 2 (c)
-        \\  %15 = pat_var local 4
-        \\  %16 = local 4
-        \\  %17 = call %14 [%16]
-        \\  %18 = call %13 [%17]
-        \\  %19 = call %12 [%18]
-        \\  %20 = lambda [%15] -> %19
-        \\  %21 = tuple [%11, %20]
-        \\  params [%0, %1, %2]
-        \\  body %21
+        \\  %2 = pat_var local 2
+        \\  %3 = import_value Basics.max
+        \\  %4 = local 0 (a)
+        \\  %5 = local 2
+        \\  %6 = call %3 [%4, %5]
+        \\  %7 = lambda [%2] -> %6
+        \\  %8 = pat_var local 3
+        \\  %9 = import_value Basics.clamp
+        \\  %10 = local 3
+        \\  %11 = pat_var local 4
+        \\  %12 = import_value Basics.modBy
+        \\  %13 = local 4
+        \\  %14 = local 1 (b)
+        \\  %15 = call %12 [%13, %14]
+        \\  %16 = lambda [%11] -> %15
+        \\  %17 = int 3
+        \\  %18 = call %9 [%10, %16, %17]
+        \\  %19 = lambda [%8] -> %18
+        \\  %20 = tuple [%7, %19]
+        \\  params [%0, %1]
+        \\  body %20
         \\  locals
         \\    0 a param %0
         \\    1 b param %1
-        \\    2 c param %2
-        \\    3 _ fresh %6
-        \\    4 _ fresh %15
+        \\    2 _ fresh %2
+        \\    3 _ fresh %8
+        \\    4 _ fresh %11
+        \\  refs
+        \\    import_value Basics.max
+        \\    import_value Basics.clamp
+        \\    import_value Basics.modBy
+        \\
+    , &.{});
+}
+
+test "`<-` binds the rest of the block as the call's last argument (§6.7)" {
+    try expectDecls(
+        \\f s =
+        \\    let
+        \\        n = 1
+        \\
+        \\        h <- Result.andThen s
+        \\        t = h
+        \\    in
+        \\    max t n
+        \\
+    ,
+        \\decl 0: value f
+        \\  %0 = pat_var local 0 (s)
+        \\  %1 = let_def local 1 (n) [] = %2
+        \\  %2 = int 1
+        \\  %3 = qualified Result.andThen
+        \\  %4 = local 0 (s)
+        \\  %5 = pat_var local 2 (h)
+        \\  %6 = let_def local 3 (t) [] = %7
+        \\  %7 = local 2 (h)
+        \\  %8 = import_value Basics.max
+        \\  %9 = local 3 (t)
+        \\  %10 = local 1 (n)
+        \\  %11 = call %8 [%9, %10]
+        \\  %12 = let [%6] in %11
+        \\  %13 = lambda [%5] -> %12
+        \\  %14 = call %3 [%4, %13]
+        \\  %15 = let [%1] in %14
+        \\  params [%0]
+        \\  body %15
+        \\  locals
+        \\    0 s param %0
+        \\    1 n let %1
+        \\    2 h pattern %5
+        \\    3 t let %6
+        \\  refs
+        \\    import_value Result.andThen
+        \\    import_value Basics.max
         \\
     , &.{});
 }

@@ -1,0 +1,25 @@
+-- §9: a trailing `<|` lambda continues its body at the indentation of the
+-- line the `<|` is on — which is the column the construct starts in, not
+-- the column the line's leading spaces end at. A chain that starts after a
+-- list's `, ` or inside parentheses must not print its body left of itself.
+inList a =
+    [ someName
+    , Task.attempt (Http.get someVeryLongUrlName) <| \response ->
+      renderTheDecodedValue response a someExtra
+    ]
+
+
+inApp a =
+    wrapTheResultOfEverything
+        someLongArgumentName
+        (Task.attempt (Http.get a) <| \response ->
+         renderTheDecodedValue response a someExtraContextValue
+        )
+        anotherArgument
+
+
+-- Nested chains keep the column they started at instead of stepping right.
+nestedInList a =
+    [ Task.attempt (Http.get a) <| \r ->
+      Task.attempt (Json.decode r) <| \v -> renderTheDecodedValue v a someExtra
+    ]

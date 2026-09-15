@@ -1,0 +1,20 @@
+-- bind_rhs_not_application at 6:18 (the `+`) and 13:14 (the `case`): the
+-- right of `<-` is the call that receives the rest of the block (§6.7), so
+-- an arithmetic expression and a block form have no reading there.
+arithmetic f =
+    let
+        x <- f 1 + 2
+    in
+    x
+
+
+block f m =
+    let
+        x <- case m of
+            Just v ->
+                f v
+
+            Nothing ->
+                f 0
+    in
+    x

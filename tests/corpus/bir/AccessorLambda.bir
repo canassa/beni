@@ -62,32 +62,31 @@ decl 2: value first (annotated)
     import_type Basics.Int
     import_type Basics.String
 
-decl 3: value composedAccessors (annotated)
+decl 3: value appliedAccessors (annotated)
   %0 = type_import Basics.String
   %1 = type_record { city : %0 }
   %2 = type_record { address : %1 }
   %3 = type_import Basics.String
   %4 = type_fn %2 -> %3
-  %5 = pat_var local 0
-  %6 = local 0
-  %7 = field_access %6 .address
-  %8 = lambda [%5] -> %7
-  %9 = pat_var local 1
-  %10 = local 1
-  %11 = field_access %10 .city
-  %12 = lambda [%9] -> %11
-  %13 = pat_var local 2
-  %14 = local 2
-  %15 = call %8 [%14]
-  %16 = call %12 [%15]
-  %17 = lambda [%13] -> %16
+  %5 = pat_var local 0 (r)
+  %6 = pat_var local 1
+  %7 = local 1
+  %8 = field_access %7 .city
+  %9 = lambda [%6] -> %8
+  %10 = pat_var local 2
+  %11 = local 2
+  %12 = field_access %11 .address
+  %13 = lambda [%10] -> %12
+  %14 = local 0 (r)
+  %15 = call %13 [%14]
+  %16 = call %9 [%15]
   annotation %4
-  params []
-  body %17
+  params [%5]
+  body %16
   locals
-    0 _ fresh %5
-    1 _ fresh %9
-    2 _ fresh %13
+    0 r param %5
+    1 _ fresh %6
+    2 _ fresh %10
   refs
     import_type Basics.String
 

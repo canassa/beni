@@ -1,0 +1,55 @@
+-- `let x <- f a` (§6.7), run: the rest of the block really is passed as the
+-- call's last argument, so the callee decides whether and how often it runs.
+-- `scope` wraps the value the block returns; `twice` calls the block twice
+-- and adds the results, which nothing but the desugaring could produce.
+import Node exposing (Program)
+import String
+
+
+scope : String -> (String -> String) -> String
+scope label body =
+    label ++ "(" ++ body label ++ ")"
+
+
+twice : Int -> (Int -> Int) -> Int
+twice n body =
+    body n + body (n + 1)
+
+
+nested : String
+nested =
+    let
+        outer <- scope "a"
+        inner <- scope "b"
+    in
+    outer ++ inner
+
+
+counted : Int
+counted =
+    let
+        n <- twice 10
+    in
+    n * 2
+
+
+mixed : String
+mixed =
+    let
+        prefix =
+            "p"
+
+        s <- scope "c"
+        suffix =
+            "q"
+    in
+    prefix ++ s ++ suffix
+
+
+main : Program
+main =
+    Node.printLines
+        [ nested
+        , String.fromInt counted
+        , mixed
+        ]

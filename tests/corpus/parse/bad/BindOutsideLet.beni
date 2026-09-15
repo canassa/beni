@@ -1,0 +1,26 @@
+-- `<-` is legal only in a `let` binding (§2.2, §6.7): unexpected_token at
+-- 10:7 for a bind arrow in a definition body, and expected_token at 14:8
+-- for one inside a parenthesised expression, where the `)` was needed. The
+-- last three show the longest match: `x <-- 1` is `<-`, `-`, `1` (18:7) and
+-- not a comment, `x <-1` is `<-` and `1` (22:7) and not `<` and `-1`, and
+-- `x <-y` is `<-` and `y` (26:7) and not the comparison `x < -y`, which
+-- would have parsed clean. `x < -1` with the space is still a comparison;
+-- `parse/good/IfChains.beni` pins that one.
+f x =
+    x <- 1
+
+
+g x =
+    (x <- 1)
+
+
+h x =
+    x <-- 1
+
+
+i x =
+    x <-1
+
+
+j x y =
+    x <-y

@@ -1,7 +1,7 @@
 -- Field access chains, tuple index chains `t.0.1`, mixed chains, accessor
 -- functions as arguments, `f .name` (application of an accessor) versus
 -- `f.name` (field access), access on a parenthesised application, on a
--- record literal, on a tuple literal, and accessors composed and piped.
+-- record literal, on a tuple literal, and accessors nested and piped.
 chain r =
     r.a.b.c
 
@@ -34,8 +34,8 @@ fieldOnTuple =
     ( 1, 2 ).1
 
 
-composedAccessors =
-    .address >> .city
+nestedAccessors r =
+    .city (.address r)
 
 
 accessorPipe person =

@@ -94,26 +94,23 @@ decl 3: value partial (annotated)
   %4 = type_import Basics.Int
   %5 = type_app %3 [%4]
   %6 = type_fn %2 -> %5
-  %7 = qualified List.map
-  %8 = import_value Basics.add
-  %9 = int 1
-  %10 = call %8 [%9]
-  %11 = call %7 [%10]
-  %12 = qualified List.filter
-  %13 = import_value Basics.lt
-  %14 = int 2
-  %15 = call %13 [%14]
-  %16 = call %12 [%15]
-  %17 = pat_var local 0
-  %18 = local 0
-  %19 = call %11 [%18]
-  %20 = call %16 [%19]
-  %21 = lambda [%17] -> %20
+  %7 = pat_var local 0 (xs)
+  %8 = local 0 (xs)
+  %9 = qualified List.map
+  %10 = import_value Basics.add
+  %11 = int 1
+  %12 = call %10 [%11]
+  %13 = call %9 [%12, %8]
+  %14 = qualified List.filter
+  %15 = import_value Basics.lt
+  %16 = int 2
+  %17 = call %15 [%16]
+  %18 = call %14 [%17, %13]
   annotation %6
-  params []
-  body %21
+  params [%7]
+  body %18
   locals
-    0 _ fresh %17
+    0 xs param %7
   refs
     import_type List.List
     import_type Basics.Int

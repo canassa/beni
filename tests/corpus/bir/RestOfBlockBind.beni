@@ -1,0 +1,37 @@
+-- BIR: `let x <- f a in rest` lowers to `f a (\x -> rest)` (§8.2): the
+-- bindings before the bind stay an ordinary `let` whose body is the call,
+-- the bindings after it and the `in` body become the callback's body, and a
+-- `let` whose only binding is a bind produces no `let` at all.
+only : Int -> Int
+only n =
+    let
+        x <- withScope n
+    in
+    x
+
+
+around : Int -> Int
+around n =
+    let
+        before =
+            n + 1
+
+        x <- withScope before
+        after =
+            x * 2
+    in
+    after
+
+
+several : Int -> Int
+several n =
+    let
+        x <- withScope n
+        y <- withScope x
+    in
+    x + y
+
+
+withScope : Int -> (Int -> Int) -> Int
+withScope n body =
+    body n

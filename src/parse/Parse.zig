@@ -1250,21 +1250,17 @@ fn opInfo(tag: Tag) ?OpInfo {
         .op_slash => .{ .prec = 7, .assoc = .left, .tag = .div },
         .op_slash_slash => .{ .prec = 7, .assoc = .left, .tag = .int_div },
         .op_caret => .{ .prec = 8, .assoc = .right, .tag = .pow },
-        .op_compose_left => .{ .prec = 9, .assoc = .right, .tag = .compose_left },
-        .op_compose_right => .{ .prec = 9, .assoc = .left, .tag = .compose_right },
         else => null,
     };
 }
 
 /// The operator that may not share a chain with `tag` at the same
-/// precedence: `<|` with `|>`, `<<` with `>>` (opposite associativities at
-/// one level, §6.5: mixing is `non_associative_chain`).
+/// precedence: `<|` with `|>` (opposite associativities at one level, §6.5:
+/// mixing is `non_associative_chain`).
 fn conflicting(tag: Tag) Tag {
     return switch (tag) {
         .op_pipe_left => .op_pipe_right,
         .op_pipe_right => .op_pipe_left,
-        .op_compose_left => .op_compose_right,
-        .op_compose_right => .op_compose_left,
         else => .invalid,
     };
 }
@@ -1321,7 +1317,7 @@ fn parsePostfix(p: *Parse) Allocator.Error!Index {
         const q = p.next();
         node = try p.unary(.question, q, node);
         node = try p.parseAccessChain(node);
-        if (canStartAtom(p.peek())) {
+        if (canStartAtom(p.peek()) or p.peek() == .underscore) {
             @branchHint(.cold);
             _ = try p.report(p.itemAt(.args_after_question));
             // The `apply` wraps the chain: another level.
@@ -1338,17 +1334,28 @@ fn parseApp(p: *Parse) Allocator.Error!Index {
     return p.parseArgs(function);
 }
 
-/// Arguments after `function`, if any. A block form (`let`, `if`, `case`,
-/// lambda) as a bare argument is an error (§3 notes) but is parsed as the
-/// last argument so the expression still has a shape.
+/// Arguments after `function`, if any. `Arg := Atom | '_'` (§3): the
+/// placeholder is an argument and only an argument, and at most one per
+/// application (§6.7), so both of its diagnostics are decided here, where
+/// the application is. A block form (`let`, `if`, `case`, lambda) as a bare
+/// argument is an error (§3 notes) but is parsed as the last argument so the
+/// expression still has a shape.
 fn parseArgs(p: *Parse, function: Index) Allocator.Error!Index {
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
     try p.pushScratch(function);
+    var placeholders: u32 = 0;
     while (true) {
         const before = p.tok_i;
         const tag = p.peek();
-        if (canStartAtom(tag)) {
+        if (tag == .underscore) {
+            placeholders += 1;
+            if (placeholders == 2) {
+                @branchHint(.cold);
+                _ = try p.report(p.itemAt(.multiple_placeholders));
+            }
+            try p.pushScratch(try p.leaf(.placeholder, p.next()));
+        } else if (canStartAtom(tag)) {
             try p.pushScratch(try p.parseAtomAccess(false));
             p.assertProgress(before);
         } else if (isBlockStart(tag)) {
@@ -1431,6 +1438,15 @@ fn parseAtom(p: *Parse, operand_start: bool) Allocator.Error!Index {
         .l_paren => return p.parseParens(),
         .l_bracket => return p.parseList(),
         .l_brace => return p.parseRecord(),
+        .underscore => {
+            // Every `_` that reaches an expression head is outside argument
+            // position (§6.7): `parseArgs` takes the legal ones before the
+            // atom parser ever sees them.
+            @branchHint(.cold);
+            const node = try p.errorNode(.error_expr, p.itemAt(.placeholder_outside_argument));
+            _ = p.next();
+            return node;
+        },
         .invalid => return p.invalidNode(.error_expr),
         else => return p.unexpectedExpr(),
     }
@@ -1729,6 +1745,7 @@ fn canStartBinding(tag: Tag) bool {
 }
 
 /// LetBinding := Annotation | Definition | LetPattern '=' Expr
+///              | LetPattern '<-' App                            (§6.7)
 fn parseLetBinding(p: *Parse) Allocator.Error!Index {
     const saved = p.startBlock(.let_bindings);
     defer p.endBlock(saved);
@@ -1741,7 +1758,7 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
                 const type_expr = try p.parseType();
                 return p.unary(.let_annotation, name, type_expr);
             }
-            if (p.peekAt(1) != .keyword_as) {
+            if (p.peekAt(1) != .keyword_as and p.peekAt(1) != .arrow_left) {
                 const name = p.next();
                 const params = try p.parsePatAtoms();
                 _ = try p.expectToken(.equal);
@@ -1755,9 +1772,64 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
     }
     const pattern = try p.parsePattern();
     try p.checkIrrefutable(pattern);
+    if (p.peek() == .arrow_left) {
+        _ = p.next();
+        const value = try p.parseExpr();
+        try p.checkBindRhs(value);
+        return p.binary(.let_bind, head, pattern, value);
+    }
     _ = try p.expectToken(.equal);
     const value = try p.parseExpr();
     return p.binary(.let_pattern, head, pattern, value);
+}
+
+/// The right-hand side of `<-` is an `App` (§3): a call missing exactly its
+/// final argument, or the bare function when that is the only one it takes.
+/// Everything else — an operator chain, a `?`, a block form — has no reading
+/// as "the call that receives the rest of the block"
+/// (`bind_rhs_not_application`). The whole expression is parsed first, so the
+/// message points at a complete thing and the binding list stays aligned.
+fn checkBindRhs(p: *Parse, node: Index) Allocator.Error!void {
+    const tags = p.nodes.items(.tag);
+    var n = node;
+    while (tags[n.int()] == .paren) n = @enumFromInt(p.nodes.items(.data)[n.int()].lhs);
+    const tag = tags[n.int()];
+    if (tag.isError()) return; // already reported as something else
+    // The final argument of the call is the rest of the block, so the call
+    // does not take a `_` as well (§6.7); one written here is a `_` outside
+    // argument position.
+    if (tag == .apply) {
+        for (p.applyArgs(n)) |arg| {
+            if (tags[arg] == .placeholder) {
+                @branchHint(.cold);
+                _ = try p.report(p.itemAtToken(.placeholder_outside_argument, p.nodes.items(.main_token)[arg]));
+            }
+        }
+        return;
+    }
+    switch (tag) {
+        // A bare name is accepted: an `App` with no arguments written, whose
+        // callee takes the rest of the block and nothing else. That is
+        // `let scope <- Task.scope`, §6.7's own example and the case
+        // `fast-compiler.md` §9.3 item 7 says the form exists to reach.
+        // §6.7's prose also lists "a bare name" among the rejected
+        // right-hand sides, which contradicts its example; delete this line
+        // to take the other reading.
+        .ident, .ctor, .field_access, .tuple_index, .op_fn => {},
+        else => {
+            @branchHint(.cold);
+            var item = p.itemAtToken(.bind_rhs_not_application, p.nodes.items(.main_token)[n.int()]);
+            item.context = .let_bindings;
+            _ = try p.report(item);
+        },
+    }
+}
+
+/// The argument node indices of an `apply` (element 0 of its range is the
+/// function).
+fn applyArgs(p: *const Parse, node: Index) []const u32 {
+    const d = p.nodes.items(.data)[node.int()];
+    return p.extra.items[d.lhs + 1 .. d.rhs];
 }
 
 /// LetPattern (§3, §7): a name, `_`, unit, or tuples/records of those,
@@ -2091,7 +2163,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             if (i.alias) |t| try testing.expect(t < token_count);
             try checkIndices(tree, i.exposed);
         },
-        .exposed, .type_var, .type_unit, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},
+        .exposed, .type_var, .type_unit, .int, .float, .char, .chunk, .ident, .ctor, .accessor, .op_fn, .unit, .placeholder, .pat_wild, .pat_var, .pat_int, .pat_neg_int, .pat_char, .pat_string, .pat_unit => {},
         .annotation => {
             const a = tree.fullAnnotation(n);
             try checkHeader(a.header, token_count, comment_count);
@@ -2178,7 +2250,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try checkIndices(tree, l.params);
             try checkIndex(tree, l.body);
         },
-        .let_pattern => {
+        .let_pattern, .let_bind => {
             const l = tree.fullLetPattern(n);
             try checkIndex(tree, l.pattern);
             try checkIndex(tree, l.value);
@@ -2410,8 +2482,6 @@ test "precedence and associativity: every case of §6.5" {
         \\a3 a b c = a ^ b ^ c
         \\a4 f g x = f <| g <| x
         \\a5 x f g = x |> f |> g
-        \\a6 f g h = f << g << h
-        \\a7 f g h = f >> g >> h
         \\a8 a b c = a == b == c
         \\a9 a b c = a <| b |> c
         \\b1 a b c = a + b * c
@@ -2468,24 +2538,6 @@ test "precedence and associativity: every case of §6.5" {
         \\        (ident x)
         \\        (ident f))
         \\      (ident g)))
-        \\  (definition a6
-        \\    (pat_var f)
-        \\    (pat_var g)
-        \\    (pat_var h)
-        \\    (compose_left
-        \\      (ident f)
-        \\      (compose_left
-        \\        (ident g)
-        \\        (ident h))))
-        \\  (definition a7
-        \\    (pat_var f)
-        \\    (pat_var g)
-        \\    (pat_var h)
-        \\    (compose_right
-        \\      (compose_right
-        \\        (ident f)
-        \\        (ident g))
-        \\      (ident h)))
         \\  (definition a8
         \\    (pat_var a)
         \\    (pat_var b)
@@ -2564,9 +2616,9 @@ test "precedence and associativity: every case of §6.5" {
         \\        (ident f)
         \\        (ident y)))))
         \\
-    , &.{ .{ .code = .non_associative_chain, .line = 8, .col = 19 }, .{ .code = .non_associative_chain, .line = 9, .col = 19 } });
-    // The other order of mixed pipes, and composition mixed the same way.
-    try expectTree("f g x y = g <| x |> y\nh f g = f << g >> f\n",
+    , &.{ .{ .code = .non_associative_chain, .line = 6, .col = 19 }, .{ .code = .non_associative_chain, .line = 7, .col = 19 } });
+    // The other order of mixed pipes.
+    try expectTree("f g x y = g <| x |> y\n",
         \\(module
         \\  (definition f
         \\    (pat_var g)
@@ -2576,17 +2628,9 @@ test "precedence and associativity: every case of §6.5" {
         \\      (ident g)
         \\      (pipe_right
         \\        (ident x)
-        \\        (ident y))))
-        \\  (definition h
-        \\    (pat_var f)
-        \\    (pat_var g)
-        \\    (compose_left
-        \\      (ident f)
-        \\      (compose_right
-        \\        (ident g)
-        \\        (ident f)))))
+        \\        (ident y)))))
         \\
-    , &.{ .{ .code = .non_associative_chain, .line = 1, .col = 18 }, .{ .code = .non_associative_chain, .line = 2, .col = 16 } });
+    , &.{.{ .code = .non_associative_chain, .line = 1, .col = 18 }});
 }
 
 test "negation: every case of §6.5, and `- x` is an error" {
@@ -2721,7 +2765,7 @@ test "field access chains, tuple indices and accessor functions, with and withou
         \\a3 f = f .name
         \\a4 f = f.name
         \\a5 f x = (f x).y
-        \\a6 = .a >> .b
+        \\a6 = .a
         \\a7 t = t.00
         \\
     ,
@@ -2754,15 +2798,140 @@ test "field access chains, tuple indices and accessor functions, with and withou
         \\          (ident f)
         \\          (ident x)))))
         \\  (definition a6
-        \\    (compose_right
-        \\      (accessor .a)
-        \\      (accessor .b)))
+        \\    (accessor .a))
         \\  (definition a7
         \\    (pat_var t)
         \\    (tuple_index .00
         \\      (ident t))))
         \\
     , &.{.{ .code = .invalid_tuple_index, .line = 7, .col = 9 }});
+}
+
+test "`_` is an argument and only an argument (§6.7)" {
+    try expectTree(
+        \\p1 f a c = f a _ c
+        \\p2 f g b = f (g _) b
+        \\p3 f = f _
+        \\p4 f g = f (_)
+        \\p5 f a b = f _ a _ b
+        \\
+    ,
+        \\(module
+        \\  (definition p1
+        \\    (pat_var f)
+        \\    (pat_var a)
+        \\    (pat_var c)
+        \\    (apply
+        \\      (ident f)
+        \\      (ident a)
+        \\      (placeholder)
+        \\      (ident c)))
+        \\  (definition p2
+        \\    (pat_var f)
+        \\    (pat_var g)
+        \\    (pat_var b)
+        \\    (apply
+        \\      (ident f)
+        \\      (paren
+        \\        (apply
+        \\          (ident g)
+        \\          (placeholder)))
+        \\      (ident b)))
+        \\  (definition p3
+        \\    (pat_var f)
+        \\    (apply
+        \\      (ident f)
+        \\      (placeholder)))
+        \\  (definition p4
+        \\    (pat_var f)
+        \\    (pat_var g)
+        \\    (apply
+        \\      (ident f)
+        \\      (paren
+        \\        (error placeholder_outside_argument))))
+        \\  (definition p5
+        \\    (pat_var f)
+        \\    (pat_var a)
+        \\    (pat_var b)
+        \\    (apply
+        \\      (ident f)
+        \\      (placeholder)
+        \\      (ident a)
+        \\      (placeholder)
+        \\      (ident b))))
+        \\
+    , &.{ .{ .code = .placeholder_outside_argument, .line = 4, .col = 13 }, .{ .code = .multiple_placeholders, .line = 5, .col = 18 } });
+}
+
+test "`<-` binds the rest of the block; its right-hand side must be a call (§6.7)" {
+    try expectTree(
+        \\b1 f rest =
+        \\    let
+        \\        x <- f rest
+        \\    in
+        \\    x
+        \\
+        \\
+        \\b2 f g =
+        \\    let
+        \\        a = 1
+        \\        ( x, y ) <- f a
+        \\        b = 2
+        \\    in
+        \\    g x y b
+        \\
+        \\
+        \\b3 f =
+        \\    let
+        \\        x <- f 1 + 2
+        \\    in
+        \\    x
+        \\
+    ,
+        \\(module
+        \\  (definition b1
+        \\    (pat_var f)
+        \\    (pat_var rest)
+        \\    (let
+        \\      (let_bind
+        \\        (pat_var x)
+        \\        (apply
+        \\          (ident f)
+        \\          (ident rest)))
+        \\      (ident x)))
+        \\  (definition b2
+        \\    (pat_var f)
+        \\    (pat_var g)
+        \\    (let
+        \\      (let_def a
+        \\        (int 1))
+        \\      (let_bind
+        \\        (pat_tuple
+        \\          (pat_var x)
+        \\          (pat_var y))
+        \\        (apply
+        \\          (ident f)
+        \\          (ident a)))
+        \\      (let_def b
+        \\        (int 2))
+        \\      (apply
+        \\        (ident g)
+        \\        (ident x)
+        \\        (ident y)
+        \\        (ident b))))
+        \\  (definition b3
+        \\    (pat_var f)
+        \\    (let
+        \\      (let_bind
+        \\        (pat_var x)
+        \\        (add
+        \\          (apply
+        \\            (ident f)
+        \\            (int 1))
+        \\          (int 2)))
+        \\      (ident x))))
+        \\
+    , &.{.{ .code = .bind_rhs_not_application, .line = 19, .col = 18 }});
 }
 
 test "block expressions as the last operand of a chain, and as a bare argument (error)" {
@@ -3721,7 +3890,7 @@ const soup_pieces = [_][]const u8{
     ":",       "=",       "->",     "\\",                 "|",          "_",          "?",
     "+",       "-",       "*",      "/",                  "//",         "^",          "++",
     "::",      "==",      "/=",     "<",                  ">",          "<=",         ">=",
-    "&&",      "||",      "|>",     "<|",                 "<<",         ">>",         " ",
+    "&&",      "||",      "|>",     "<|",                 "<-",         "<--",        " ",
     " ",       " ",       "\n",     "\n",                 "\n    ",     "\n        ", "-- c\n",
     "--| d\n", "--! m\n", "@",      "\t",                 "12abc",
 };
@@ -3746,6 +3915,8 @@ const fragment_pieces = [_][]const u8{
     "q s = parse s? |> f\n",
     "m =\n    \\\\a\n    \\\\b\n",
     "p (Just x) { a } ( b, c ) = -x\n",
+    "n xs = List.map (add 1 _) xs\n",
+    "o f =\n    let\n        x <- f 1\n        y = 2\n    in\n    x + y\n",
 };
 
 // PRNG-driven stand-in for the fuzzer (the toolchain's fuzz mode does not

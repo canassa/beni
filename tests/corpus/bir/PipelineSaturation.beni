@@ -21,5 +21,5 @@ mixedAtom n =
 
 
 partial : List Int -> List Int
-partial =
-    List.map ((+) 1) >> List.filter ((<) 2)
+partial xs =
+    xs |> List.map ((+) 1) |> List.filter ((<) 2)

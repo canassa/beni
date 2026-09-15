@@ -1,0 +1,36 @@
+-- `_` as the partial-application placeholder (§3 `Arg`, §6.7): in the last
+-- position, the middle, the first, as the only argument, inside a nested
+-- application (where it belongs to the inner call), inside a pipeline, and
+-- as a constructor argument. One per application throughout. `f _ .name`
+-- is two arguments, not an access chain: a `dot_lower` must abut an atom
+-- and `_` is not one (§6.7).
+last f a =
+    f a _
+
+
+middle f a c =
+    f a _ c
+
+
+first f b =
+    f _ b
+
+
+only f =
+    f _
+
+
+nested f g b =
+    f (g _) b
+
+
+inPipeline xs =
+    xs |> List.map (add 1 _)
+
+
+constructor a =
+    Pair a _
+
+
+accessorAfter f =
+    f _ .name

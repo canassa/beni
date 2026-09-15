@@ -205,7 +205,6 @@ fn precedence(tag: Node.Tag) u8 {
         .add, .sub => 6,
         .mul, .div, .int_div => 7,
         .pow => 8,
-        .compose_left, .compose_right => 9,
         else => unreachable, // callers check isBinop
     };
 }
@@ -215,7 +214,7 @@ fn precedence(tag: Node.Tag) u8 {
 /// chain at all, so either answer is right for them).
 fn rightAssociative(tag: Node.Tag) bool {
     return switch (tag) {
-        .pipe_left, .bool_or, .bool_and, .append, .cons, .pow, .compose_left => true,
+        .pipe_left, .bool_or, .bool_and, .append, .cons, .pow => true,
         else => false,
     };
 }
@@ -484,6 +483,7 @@ const Measurer = struct {
                 if (m.tok_lines[m.last(@enumFromInt(d.lhs))] != m.tok_lines[m.first(@enumFromInt(d.rhs))]) m.widths[n.int()] = no_fit;
             },
             .type_unit, .unit, .pat_unit => m.set(n, 2, main, main + 1),
+            .placeholder => m.set(n, 1, main, main),
             .type_paren, .paren, .pat_paren => try m.wrapped(n, tree.operand(n)),
             .type_tuple, .type_record, .tuple, .list, .record, .pat_tuple, .pat_list => try m.collection(n, tree.children(n)),
             .type_record_ext => {
@@ -567,6 +567,14 @@ const Measurer = struct {
                 try m.measure(l.value);
                 m.set(n, no_fit, m.first(l.pattern), m.last(l.value));
             },
+            // `x <- f a b` is one line whenever the call is (§9): the
+            // binding is never broken before `<-`.
+            .let_bind => {
+                const l = tree.fullLetPattern(n);
+                try m.measure(l.pattern);
+                try m.measure(l.value);
+                m.set(n, m.w(l.pattern) +| 4 +| m.w(l.value), m.first(l.pattern), m.last(l.value));
+            },
             .case => {
                 const c = tree.fullCase(n);
                 try m.measure(c.scrutinee);
@@ -649,10 +657,22 @@ const Measurer = struct {
             const rhs: Index = @enumFromInt(d.rhs);
             const op_tok = m.tree.nodeMainToken(s);
             const op_line = m.tok_lines[op_tok];
-            const broken = op_line != m.tok_lines[m.last(lhs)] or op_line != m.tok_lines[m.first(rhs)];
+            const broken = op_line != m.tok_lines[m.last(lhs)] or op_line != m.tok_lines[m.first(rhs)] or
+                m.trailingLambdaBroken(tag, rhs);
             const op_width = m.tokenWidth(op_tok) + 2;
             m.set(s, if (broken) no_fit else m.w(lhs) +| op_width +| m.w(rhs), m.first(lhs), m.last(rhs));
         }
+    }
+
+    /// A trailing `<|` lambda whose body the author put on its own line
+    /// keeps the chain vertical, exactly as a break at the operator does.
+    /// The printer's flat form for this case (§9) puts its own break there
+    /// rather than before the operator, so without this the two forms would
+    /// swap on every reformat instead of being a fixed point.
+    fn trailingLambdaBroken(m: *const Measurer, op: Node.Tag, rhs: Index) bool {
+        if (op != .pipe_left or m.tree.nodeTag(rhs) != .lambda) return false;
+        const l = m.tree.fullLambda(rhs);
+        return m.tok_lines[m.first(l.body)] != m.tok_lines[m.first(rhs)];
     }
 
     /// `x.a.b?`: the base and then the glued suffix tokens, which are
@@ -702,6 +722,11 @@ const Printer = struct {
     /// Newlines owed before the next text; written lazily so a trailing
     /// comment can still land on the line being finished.
     pending: u32 = 0,
+    /// A separating space owed before the next text, written lazily for the
+    /// same reason: an own-line comment (or anything else) may end the line
+    /// first, and §9 forbids trailing whitespace. Dropped, never written, if
+    /// the line ends before any text follows it.
+    pending_space: bool = false,
     /// Indentation the next line starts with, once `pending` is flushed.
     next_indent: u32 = 0,
     /// Indentation of the current line: the fallback for a continuation
@@ -714,6 +739,13 @@ const Printer = struct {
     /// A token whose trailing comment the caller printed itself (a comma's,
     /// hoisted after the element before it).
     trailing_done: ?TokenIndex = null,
+    /// Inside a `<-` binding, which prints on one line and is never broken
+    /// (§9): every width test answers "it fits" while this is set, so the
+    /// binding overflows the guide the way a pattern does instead of
+    /// wrapping. A construct that is vertical whatever its width — `let`,
+    /// `if`, `case` — still breaks, and so does anything with a comment
+    /// inside it, which cannot be printed on one line at all.
+    flat: bool = false,
 
     const Kind = enum { expr, field, type, type_field, pattern };
 
@@ -721,7 +753,8 @@ const Printer = struct {
 
     /// Where the next character lands.
     fn curCol(p: *const Printer) u32 {
-        return if (p.pending > 0) p.next_indent else p.col;
+        if (p.pending > 0) return p.next_indent;
+        return p.col + @intFromBool(p.pending_space);
     }
 
     fn flush(p: *Printer) Io.Writer.Error!void {
@@ -734,6 +767,15 @@ const Printer = struct {
     }
 
     fn raw(p: *Printer, bytes: []const u8) Io.Writer.Error!void {
+        if (p.pending_space) {
+            p.pending_space = false;
+            // A line break came between the space and this text: the space
+            // would have been left at the end of the previous line.
+            if (p.pending == 0) {
+                try p.w.writeAll(" ");
+                p.col += 1;
+            }
+        }
         try p.flush();
         try p.w.writeAll(bytes);
         p.col += @intCast(bytes.len);
@@ -741,7 +783,7 @@ const Printer = struct {
     }
 
     fn space(p: *Printer) Io.Writer.Error!void {
-        try p.raw(" ");
+        p.pending_space = true;
     }
 
     /// End the line; the next text starts at `indent`.
@@ -768,7 +810,27 @@ const Printer = struct {
 
     fn fitsAt(p: *const Printer, n: Index, col: u32) bool {
         const width = p.widths[n.int()];
+        if (p.flat and !p.commentIn(n)) return true;
         return width != no_fit and col +| width <= max_width;
+    }
+
+    /// Whether `n` spans an `if`, `let` or `case` keyword — the three forms
+    /// that are vertical whatever their width, so no claim that they fit on
+    /// one line can be honoured.
+    fn hasBlockKeyword(p: *const Printer, n: Index) bool {
+        var t = p.first(n);
+        const end = p.last(n);
+        while (t <= end) : (t += 1) switch (p.tags[t]) {
+            .keyword_if, .keyword_let, .keyword_case => return true,
+            else => {},
+        };
+        return false;
+    }
+
+    /// Whether a comment sits inside `n` (its own leading one excluded).
+    fn commentIn(p: *const Printer, n: Index) bool {
+        const i = firstCommentFrom(p.comments, p.first(n) + 1);
+        return i < p.comments.len and p.comments[i].before_token <= p.last(n);
     }
 
     /// Whether `n` fits at the cursor with `extra` more bytes after it on
@@ -1249,7 +1311,7 @@ const Printer = struct {
         const open = p.tree.nodeMainToken(n);
         const one_line = p.fits(n);
         const col = p.curCol();
-        const inner = (if (p.pending > 0) p.next_indent else p.line_indent) + indent_step;
+        const inner = p.lineIndent() + indent_step;
         try p.tok(open);
         try p.space();
         try p.tok(base);
@@ -1290,7 +1352,7 @@ const Printer = struct {
         if (tag.isBinop()) return p.chain(n, indent);
         if (isAccess(tag)) return p.access(n, indent);
         switch (tag) {
-            .int, .float, .char, .ident, .ctor, .accessor => try p.tok(main),
+            .int, .float, .char, .ident, .ctor, .accessor, .placeholder => try p.tok(main),
             .op_fn => {
                 try p.tok(main - 1);
                 try p.tok(main);
@@ -1362,6 +1424,10 @@ const Printer = struct {
     fn chain(p: *Printer, top: Index, indent: u32) Error!void {
         const mark = p.stack.items.len;
         defer p.stack.shrinkRetainingCapacity(mark);
+        // Where the chain itself starts, which is not the line's indent
+        // when it starts mid-line: a `, ` in a list, an opening paren. A
+        // trailing `<|` lambda continues its body from here (see below).
+        const start_col = p.curCol();
         const tag = p.tree.nodeTag(top);
         const prec = precedence(tag);
         const right = rightAssociative(tag);
@@ -1405,6 +1471,22 @@ const Printer = struct {
         for (0..count) |i| {
             const op_tok: TokenIndex = p.stack.items[ops_at + i];
             const operand: Index = @enumFromInt(p.stack.items[operands_at + 1 + i]);
+            // §9: a trailing `<|` followed by a lambda does not indent. The
+            // `\x ->` stays on the operator's line and the body continues at
+            // that line's own indentation, so a chain of binds stays flat
+            // instead of stepping right once per lambda (research 14/elm
+            // §0.2, the rule elm-format never took).
+            if (!one_line and i + 1 == count and tag == .pipe_left and p.tree.nodeTag(operand) == .lambda) {
+                try p.space();
+                try p.tok(op_tok);
+                try p.space();
+                // "The indentation of the line the `<|` is on" means the
+                // column the construct starts in, not the column the line's
+                // leading spaces end at: a chain that starts after `, ` or
+                // `(` would otherwise put its body left of itself.
+                try p.lambdaFlat(operand, @max(start_col, indent));
+                continue;
+            }
             if (one_line) {
                 try p.space();
                 try p.tok(op_tok);
@@ -1422,6 +1504,29 @@ const Printer = struct {
                 try p.expr(operand, indent + indent_step);
             }
         }
+    }
+
+    /// The indentation of the line being written: what a construct that
+    /// continues "at the same level" as the current line starts from.
+    fn lineIndent(p: *const Printer) u32 {
+        return if (p.pending > 0) p.next_indent else p.line_indent;
+    }
+
+    /// `\x ->` on the line it starts, its body on the next one at `indent`
+    /// — the trailing-`<|` form of §9.
+    fn lambdaFlat(p: *Printer, n: Index, indent: u32) Error!void {
+        const l = p.tree.fullLambda(n);
+        try p.tok(l.backslash);
+        var arrow = l.backslash + 1;
+        for (l.params, 0..) |param, i| {
+            if (i > 0) try p.space();
+            try p.pat(param, indent);
+            arrow = p.last(param) + 1;
+        }
+        try p.space();
+        try p.tok(arrow);
+        p.newline(indent);
+        try p.expr(l.body, indent);
     }
 
     /// The base, then the glued `.field` / `.0` / `?` tokens.
@@ -1521,6 +1626,26 @@ const Printer = struct {
                 try p.tok(p.last(l.pattern) + 1); // `=`
                 p.newline(indent + indent_step);
                 try p.expr(l.value, indent + indent_step);
+            },
+            // `x <- f a b`: single spaces around `<-`, the call on the head
+            // line, no alignment with a neighbouring `=` (§9).
+            .let_bind => {
+                const l = tree.fullLetPattern(n);
+                try p.pat(l.pattern, indent);
+                try p.space();
+                try p.tok(p.last(l.pattern) + 1); // `<-`
+                try p.space();
+                // `flat` claims every node under the value fits on one
+                // line. That is true of applications and collections —
+                // collapsing an author-broken one is what §9 wants — but
+                // `if`, `let` and `case` have no single-line form and break
+                // regardless, so the claim would be a lie every enclosing
+                // decision and the threaded indent were made on. Keep the
+                // ordinary width logic when the value holds one of them.
+                const saved = p.flat;
+                p.flat = !p.hasBlockKeyword(l.value);
+                defer p.flat = saved;
+                try p.expr(l.value, indent);
             },
             else => return error.SyntaxErrors,
         }
@@ -2261,7 +2386,6 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\process xs = xs |>
         \\    List.map (\x -> x * 2) |>
         \\    List.sum
-        \\composed = String.trim >> String.toUpper >> String.reverse
         \\negated x y = -x - -y
         \\
     ,
@@ -2289,10 +2413,6 @@ test "operator chains: one line when they fit and were written so, else broken b
         \\        |> List.sum
         \\
         \\
-        \\composed =
-        \\    String.trim >> String.toUpper >> String.reverse
-        \\
-        \\
         \\negated x y =
         \\    -x - -y
         \\
@@ -2317,8 +2437,8 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\
         \\
         \\g =
-        \\    decode <|
-        \\        \x -> x + 1
+        \\    decode <| \x ->
+        \\    x + 1
         \\
         \\
         \\h =
@@ -2328,6 +2448,48 @@ test "a chain of two operands ending in a block keeps the operator at the end of
         \\                1
         \\        in
         \\        a
+        \\
+    );
+}
+
+test "`_` is an ordinary argument, and `<-` bindings print on one line and are never aligned (§9)" {
+    try check(
+        \\partial xs = List.map (add    1    _) xs
+        \\pipeline r = let
+        \\    scope <- Task.scope
+        \\    conn   <-   Task.bracket (\() -> Db.open r.url) Db.close
+        \\    a = 1
+        \\    h <- Result.andThen (readHeader r)
+        \\  in
+        \\  render scope conn a h
+        \\
+    ,
+        \\partial xs =
+        \\    List.map (add 1 _) xs
+        \\
+        \\
+        \\pipeline r =
+        \\    let
+        \\        scope <- Task.scope
+        \\        conn <- Task.bracket (\() -> Db.open r.url) Db.close
+        \\        a =
+        \\            1
+        \\        h <- Result.andThen (readHeader r)
+        \\    in
+        \\    render scope conn a h
+        \\
+    );
+}
+
+test "a trailing `<|` lambda keeps its body at the indentation of the `<|` line (§9)" {
+    try check(
+        \\chain url = Task.attempt (Http.get url) <| \response -> Task.attempt (Json.decode response) <| \value -> renderTheDecodedValue value withSomeContext andAnotherArgument
+        \\
+    ,
+        \\chain url =
+        \\    Task.attempt (Http.get url) <| \response ->
+        \\    Task.attempt (Json.decode response) <| \value ->
+        \\    renderTheDecodedValue value withSomeContext andAnotherArgument
         \\
     );
 }
