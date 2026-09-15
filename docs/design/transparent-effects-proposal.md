@@ -110,9 +110,10 @@ choice; this is not.
   only place the language spells them, and only platform packages may write `foreign`
   (`boundary.md` §2).
 
-- **`sync` is a checked constraint for boundaries that must not suspend.** It is the inverse of a
-  colouring keyword: annotate the rare requirement, not the common case. In practice only platform
-  signatures carry it (§6), so ordinary users never type it.
+- **`sync` is an optional, deferrable check for boundaries that must not suspend**, and §3.2
+  postpones it. It is the inverse of a colouring keyword: the author asserts the rare requirement
+  at one root, and the compiler checks the entire call tree below it with nothing written anywhere
+  in that tree. Nothing else in this proposal depends on it landing.
 
 - **Deferral is a thunk.** `\() -> fetchSummary id` is a value of type `() -> Summary` that runs
   nothing until called. Retry, timeout, racing, parallel composition and cancellation scopes are
@@ -194,24 +195,60 @@ let anyone write what diagnostics already render is a thin line to draw. The bet
 comes up, because the foreign surface is the leaves — clock, random, HTTP send, console, timers,
 DOM reads — and those are first-order, while everything higher-order in this design is written in
 beni over thunks rather than declared `foreign`. **Enumerate the platform's primitives before
-committing to this** (§10, and it is needed anyway to know how much of a program gets coloured). If
-they are all first-order, the keyword is strictly simpler and the type grammar stays untouched. If
-even one is higher-order, the bits belong in the type and the grammar has to grow.
+committing to this** (§10 item 0, and it is needed anyway to know how much of a program gets
+coloured). If they are all first-order, the keyword is strictly simpler and the type grammar stays
+untouched. If even one is higher-order, the bits belong in the type and the grammar has to grow —
+and §3.2's `sync` turns on the same fact, which is why §10 item 0 answers both at once.
 
-### 3.2 `sync`
+### 3.2 `sync` — optional, and postponed
+
+**Status: not part of v1. Deferred, and nothing else in this document depends on it.** It is
+written up here because the requirement it serves is real and the design should not be re-derived
+later, not because it has to ship with the rest. Everything below stands whether or not it lands.
 
 ```
 Decl := 'sync'? lower_ident ...
 ```
 
-`sync f = …` asserts that `f` does not suspend, and is a compile error if it does. It propagates:
-a `sync` function may only call functions that do not suspend. Nothing else changes about it — it
-is not a different type, and a `sync` function unifies with an ordinary one.
+`sync f = …` asserts that `f` does not suspend, and is a compile error if it does. It propagates
+*as a check, not as an obligation to write anything*: a `sync` function may only call functions
+that do not suspend, and those callees are checked without carrying the keyword themselves. One
+mark at a root covers the whole tree beneath it, and the diagnostic is §8's chain. Nothing else
+changes about it — it is not a different type, and a `sync` function unifies with an ordinary one.
 
 `sync` exists because some requirements come from outside a body rather than from inside it: a
 `view` called by the virtual DOM, a comparator called inside `sort`, a decoder called inside a JSON
-walk, a port handler whose caller needs a value now. All of those are platform-imposed signatures,
-so the platform writes the keyword and users do not.
+walk, a port handler whose caller needs a value now.
+
+**Two positions, and only one of them works as a declaration modifier.**
+
+- **At a root the author writes.** `sync view = …`, `sync compareRows = …`. This is the whole of
+  what the keyword can do, it is cheap — one token per boundary, none in the tree below — and it
+  is what makes postponing it safe: it adds a check, it does not change what compiles otherwise.
+- **At an argument the platform demands.** A `view` handed to `Browser.element`, a comparator
+  handed to `sort`, a decoder handed into a JSON walk. Here the requirement lives in the
+  *callee's parameter type*, and a keyword on a declaration cannot reach it: `Browser.element`
+  has no way to reject a suspending `view` unless its record field says so, and a field that says
+  so has put the bit in the type language. §8's `sync_boundary` is by definition an
+  argument-position error and is therefore not expressible under this rule either.
+
+  So the earlier claim that "the platform writes the keyword and users do not" was backwards, and
+  is withdrawn: under a declaration modifier only the *user* can write it, at their own roots,
+  and the platform cannot impose it at all.
+
+**This is the same open question as §3.1's**, from the other side: can a platform-facing signature
+constrain a function type nested inside it? If every platform primitive is first-order, neither
+§3.1's keyword nor `sync` ever needs the type position, and both stay cheap. If even one is
+higher-order, both need the bits in the type, and they should be designed together rather than
+separately. That is the reason to postpone: **enumerate the platform's primitives first** (§10),
+then decide once.
+
+**What postponing costs.** The boundary question — "may this function suspend?" — is the one §1
+calls load-bearing, and without `sync` v1 has no way to *assert* it. In practice a suspending
+function reaching a synchronous JavaScript caller is a runtime failure rather than a compile
+error until this lands. That is a real gap and it is recorded here rather than hidden; it is
+acceptable for v1 only because the same information is already in the checker (§4) and the check
+can be added later without changing anything that compiles today.
 
 ### 3.3 Bare items in a `let` block
 
@@ -501,8 +538,12 @@ release that cannot suspend cannot delay a cancellation — and observes that a 
 demanding a non-suspending argument needs `sync` in a **type** position, which §3.2 explicitly
 refuses ("it is not a different type, and a `sync` function unifies with an ordinary one"). Under
 this lowering the release runs uninterruptibly by construction, and `research/16` §5.6's table
-types `bracket` under T with no such condition. So `sync` stays a declaration modifier and stays
-out of the type language, which is what keeps §4.1's "the unifier *is* unchanged" true. Where a
+types `bracket` under T with no such condition. So the runtime removes `bracket`'s demand for a
+non-suspending argument entirely, and that is one of the two reasons §3.2 can be postponed without
+losing anything: no concurrency primitive needs it. The other argument-position demands — `view`,
+a comparator, a decoder — are *not* retired by this and remain §3.2's open case. They are also the
+only thing that could force the bits into the type language, so §4.1's "the unifier *is* unchanged"
+holds for v1 and is re-opened by whatever answers §3.2. Where a
 suspending release is genuinely required, take Trio's bounded shield
 (`move_on_after(CLEANUP_TIMEOUT, shield=True)`) and not Kotlin's unbounded
 `withContext(NonCancellable)` (`research/16` §4.7).
@@ -602,13 +643,19 @@ supply, that is a bounded cost rather than an unbounded one, but it is a real on
 
 ### 6.6 What this does to The Elm Architecture, and where the rest of it lives
 
-**One language-level claim, and it is the only thing about TEA this document makes.** `update` and
-`view` can be `sync` (§3.2), so the compiler rejects an effectful call in either, naming the chain
-that made it effectful. Everything a TEA program performs therefore lives in thunks handed to the
-runtime, `update` stays a pure function of message and model, and time-travel debugging is
-unaffected because a command is still an inert value the runtime interprets. That is what Roc's
-users lost when `Task` was removed (`14/roc` §4) and it is the property this design has to be shown
-not to break.
+**One language-level claim, and it is the only thing about TEA this document makes.** Everything a
+TEA program performs lives in thunks handed to the runtime, `update` stays a pure function of
+message and model, and time-travel debugging is unaffected because a command is still an inert
+value the runtime interprets. That is what Roc's users lost when `Task` was removed (`14/roc` §4)
+and it is the property this design has to be shown not to break.
+
+**What holds that property up, in v1 and later.** It is the shape of the platform's API: `update`
+returns a `Cmd` rather than performing, and a `view` returns `Html`. Nothing in v1 *enforces* it —
+with §3.2 postponed there is no way to say "this one must not suspend", so a `view` that reaches a
+suspending call is a runtime failure at the JavaScript boundary rather than a compile error. When
+`sync` lands, the author writes it on `update` and `view` and the compiler rejects the call,
+naming the chain (§8). Until then the guarantee is conventional, not checked — and that is the
+sharpest practical cost of postponing §3.2, listed there.
 
 **Everything else about TEA is a platform package's API and is out of scope here.** The command
 type, its cancellation vocabulary, the concurrency policy on a keyed command, key scoping, and
@@ -784,18 +831,27 @@ which is a reason to land double translation rather than to rely on the fallback
 
 ## 8. Diagnostics
 
-Three errors carry this feature. There is no set expression to print, which is the failure mode
+Three errors carry this feature, and **only one of them is a v1 error**, because the other two
+belong to §3.2's postponed `sync`. There is no set expression to print, which is the failure mode
 the research found in Koka and Flix (`14/koka` §4.3, `14/flix` §7.5).
 
-| Code | When | Shape |
-|---|---|---|
-| `must_not_suspend` | a `sync` function suspends | names the constraint, then the chain: "`view` is `sync`, but it suspends. `view` calls `renderRow` (View.beni:12), `renderRow` calls `iconFor` (View.beni:40), `iconFor` calls `fetchIcon` (Icon.beni:8), which suspends." |
-| `sync_boundary` | a suspending function is passed where a `sync` one is required | as above, at the argument |
-| `flag_monomorphised` | §4.3's extraction hazard | "`f` is used here with an effectful callback and there with a pure one. A `let` binding fixes which one it is; move it to a top-level definition, or inline it." |
+| Code | v1 | When | Shape |
+|---|---|---|---|
+| `flag_monomorphised` | yes | §4.3's extraction hazard | "`f` is used here with an effectful callback and there with a pure one. A `let` binding fixes which one it is; move it to a top-level definition, or inline it." |
+| `must_not_suspend` | with §3.2 | a `sync` function suspends | names the constraint, then the chain: "`view` is `sync`, but it suspends. `view` calls `renderRow` (View.beni:12), `renderRow` calls `iconFor` (View.beni:40), `iconFor` calls `fetchIcon` (Icon.beni:8), which suspends." |
+| `sync_boundary` | needs the bits in the type | a suspending function is passed where a `sync` one is required | as above, at the argument |
 
-The chain in `must_not_suspend` is the whole diagnostic budget of this feature, and it is what
-replaces the marker: the compiler knows the path and prints it, rather than asking the author to
-have written a character at every link.
+`sync_boundary` is listed as *unimplementable under §3.2 as drafted*, not as scheduled work: it
+fires at an argument, so the requirement lives in a parameter type, and a keyword on a declaration
+cannot get there. It ships when §3.2's open question is answered, and its answer decides whether
+the bits stay out of the type language.
+
+The chain in `must_not_suspend` is the whole diagnostic budget of the boundary check, and it is
+what replaces the marker: the compiler knows the path and prints it, rather than asking the author
+to have written a character at every link. Note that this is the one place the argument for
+inference-without-syntax is *paid for in errors* — until §3.2 lands there is no boundary check at
+all, and once it does, the chain is where a reader first meets a concept the source never names
+(§9.2).
 
 ---
 
@@ -818,10 +874,11 @@ still shows nothing. `research/16` §3.3 puts the same point the other way round
 the same bit as "can be interrupted", because a suspension point is also a point at which nothing
 else can run.
 
-There is no annotation to catch it, because this proposal has none. `sync` does not catch it,
-because the sequence was never meant to be synchronous, it was meant to be uninterruptible, and
-those are different properties. `bracket`'s uninterruptible acquire and release (§6.3) is the right
-answer for a *resource* and no answer at all for a *sequence*. Two partial answers remain:
+There is no annotation to catch it, because this proposal has none. `sync` would not catch it even
+once it lands (§3.2), because the sequence was never meant to be synchronous, it was meant to be
+uninterruptible, and those are different properties. `bracket`'s uninterruptible acquire and
+release (§6.3) is the right answer for a *resource* and no answer at all for a *sequence*. Two
+partial answers remain:
 
 - A `beni diff` that computes the published interface, including both bits, and forces the semver
   bump. This is what Elm already does for types and it catches every other API change too.
@@ -884,6 +941,13 @@ This is now the thing in the document most likely to be wrong, and it is no long
 
 ## 10. Prerequisites
 
+0. **An enumeration of the platform's primitives and its imposed signatures**, which §3.1 and §3.2
+   both defer to and which neither can be decided without. For each one: is it first-order, or does
+   it take or return a function whose bits matter? If all first-order, §3.1's keyword is enough,
+   `sync` stays a declaration modifier, §8's `sync_boundary` is dropped, and the type grammar is
+   untouched. If even one is higher-order, the bits belong in the type and §4.1's "the unifier is
+   unchanged" is withdrawn. This is cheap, it is needed anyway to know how much of a program gets
+   coloured, and **no surface decision should be frozen before it exists.**
 1. **`TypeStore.Func` is `{ param: Var, result: Var }`** — the checker's function type is curried
    and built by `Constrain.funcChain`, and `checker.md` §6.1's application rule is still written
    curried. The n-ary decision of 2026-09-14 has not landed. Flags have nowhere to live on a
@@ -955,8 +1019,16 @@ This is now the thing in the document most likely to be wrong, and it is no long
    earlier lowering it was a microtask turn — so the question is now whether double translation is
    worth building at all, and whether `research/16` §6's unanswered one (how a raced or bounded
    primitive interacts with a third compiled body) resurfaces under this lowering.
-8. **`sync` propagation.** It colours, inverted. Does putting the burden on the minority actually
-   work in practice, or does `sync` spread the way `const` does in C++?
+8. **`sync`, now that §3.2 postpones it.** The spreading worry this slot used to raise is
+   withdrawn: `sync` propagates as a *check* down the call tree, not as an obligation to write the
+   keyword, so the cost is one token per boundary and nothing in the tree below. Two questions
+   replace it. **(a)** Is v1 shipping without any boundary check acceptable, given §1 calls the
+   boundary question load-bearing — and what actually happens today when a suspending function is
+   called from JavaScript expecting a value? **(b)** Enumerate the platform's primitives and its
+   imposed signatures (§10 item 0). If any of them constrains a nested function type, `sync` and
+   §3.1's `foreign` keyword both need the bits in the type, and §4.1's "the unifier is unchanged"
+   goes with them. That one enumeration answers §3.1, §3.2 and §8's `sync_boundary` at once, and
+   nothing about the surface should be frozen before it exists.
 9. **Bare `let` items.** §3.3. Is the type guard enough to keep this from becoming statements, or
    does the first request for `for` arrive the week after it ships? And should a pure bare item be
    a warning or an error?
