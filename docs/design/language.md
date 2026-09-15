@@ -12,11 +12,11 @@ and the indentation rules in §4.
 
 ## 0. Differences from Elm, in one place
 
-> **Pending spec change (2026-09-14).** Automatic currying is dropped: every call is saturated,
-> `_` is the partial-application placeholder, `|>` is pipe-first syntax, `>>`/`<<` are removed,
-> and `let x <- e` is a rest-of-block bind. The decision, its evidence and the grammar delta are
-> in [`fast-compiler.md`](fast-compiler.md) §9.3. **This document has not yet been updated**; §3,
-> §6.5, §8 and §9 are stale on those points until the spec pass lands.
+**No automatic currying.** Decided 2026-09-14, specified here 2026-09-15. Every call is
+saturated, function types are n-ary and written `Int, Int -> Int`, `_` is the partial-application
+placeholder, `|>` is pipe-first syntax, `>>` and `<<` are removed, and `let x <- e` binds the rest
+of the block. The decision and the evidence behind it are in [`fast-compiler.md`](fast-compiler.md)
+§9.3; the rules are normative here, in §3, §6.5, §6.7, §8 and §9.
 
 
 | Elm | Beni | Where |
@@ -27,12 +27,18 @@ and the indentation rules in §4.
 | `"""…"""` multiline strings | Zig-style `\\` line-prefixed raw strings | §2.7 |
 | `"a" ++ String.fromInt n` | `"a ${n}"` interpolation, primitives only | §2.6 |
 | `Result.andThen` pyramids | `expr?` postfix, desugared to `case` | §6.6 |
+| — which to reach for | `?` for `Result` and `Maybe`; `<-` for everything else that takes a callback last | §6.6, §6.7 |
 | `Tuple.first`, arity ≤ 3 | `t.0`, `t.1`, any arity ≥ 2 | §6.4 |
 | user-defined operators, `infix` | fixed operator set, fixed fixities | §6.5 |
 | shadowing is an error | same | §7 |
 | `comparable`, `<` on strings | numbers only; not a front-end concern | M2 |
 | tabs | syntax error everywhere | §2.1 |
 | Kernel modules | `foreign` declarations, core root only | §5.4 |
+| `a -> b -> c` curried, partial application everywhere | `a, b -> c` n-ary; every call saturated | §3, §6.7 |
+| partial application by leaving arguments off | `f a _` placeholder, at most one per call | §3, §6.7 |
+| `x \|> f` an ordinary operator | `\|>` is syntax: `e \|> f a` is `f e a`, subject first | §6.5, §6.7 |
+| `f >> g`, `f << g` composition | removed; name the argument | §6.5 |
+| `andThen` pyramids in a `let` | `let x <- f a` binds the rest of the block | §3, §6.7 |
 
 Everything else — application by juxtaposition, `\x ->` lambdas, `case … of`, `let … in`,
 `if … then … else`, records, record update, lists, tuples, type aliases, custom types, `as`
@@ -85,16 +91,20 @@ str_start str_chunk interp_start interp_end str_end   (§2.6)
 multiline_line     \\ …to end of line                 (§2.7)
 char               'a'  '\n'  '\u{1F600}'
 keywords           if then else case of let in type alias pub opaque import as exposing foreign
-symbols            ( ) [ ] { } , : = -> \ | _ ?
-operators          + - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>
+symbols            ( ) [ ] { } , : = -> <- \ | _ ?
+operators          + - * / // ^ ++ :: == /= < > <= >= && || |> <|
 eof
 ```
 
 Comments are **not** tokens. They go into a parallel `comments` array (§2.3) so the parser's
 token stream contains only significant tokens, and the formatter re-attaches them by position.
 
-Longest match applies among operators (`|>` not `|` `>`; `//` not `/` `/`; `->` not `-` `>`).
-`--` always begins a comment; no operator contains `--`.
+Longest match applies among operators (`|>` not `|` `>`; `//` not `/` `/`; `->` not `-` `>`;
+`<-` not `<` `-`). Two consequences to know. A comparison whose right operand is negated needs
+the space: `x <-1`, `x <-y`, `x <-(a + b)` and `x <-r.value` all lex as `<-`, so write `x < -1`.
+And `--` always begins a comment **except after `<`**, where `x <-- c` lexes as `<-`, `-`, `c`.
+`<-` is legal only in a `let` binding (§6.7) and is `unexpected_token` anywhere else. No operator
+contains `--`.
 
 ### 2.3 Comments
 
@@ -243,32 +253,38 @@ Ctor        := upper_ident TypeAtom*
 Annotation  := lower_ident ':' Type
 Definition  := lower_ident PatAtom* '=' Expr
 
-Type        := TypeApp ('->' Type)?                              -- right assoc
+Type        := TypeParams '->' Type                              -- n-ary, right assoc in result
+             | TypeApp
+TypeParams  := TypeApp (',' TypeApp)*                            -- no comma is a 1-ary function
 TypeApp     := (upper_ident | qualified_upper) TypeAtom+
              | 'equatable' lower_ident                           -- core only, §3 notes
              | TypeAtom
 TypeAtom    := lower_ident                                       -- type variable
              | upper_ident | qualified_upper                     -- nullary type
              | '(' ')'                                           -- unit
-             | '(' Type ')'
-             | '(' Type (',' Type)+ ')'                          -- tuple, arity ≥ 2
+             | '(' Type ')'                                      -- grouping, function type included
+             | '(' TypeApp (',' TypeApp)+ ')'                    -- tuple, arity ≥ 2, no '->' inside
              | '{' '}'                                           -- empty record
              | '{' RecordTypeFields '}'
              | '{' lower_ident '|' RecordTypeFields '}'          -- extensible record
 RecordTypeFields := lower_ident ':' Type (',' lower_ident ':' Type)*
+                                                                 -- the comma rule, §3 notes
 
 Expr        := 'let' LetBinding+ 'in' Expr
              | 'if' Expr 'then' Expr 'else' Expr
              | 'case' Expr 'of' Branch+
              | '\' PatAtom+ '->' Expr
              | BinOp
-LetBinding  := Annotation? Definition | LetPattern '=' Expr      -- pattern binds have no args
+LetBinding  := Annotation? Definition
+             | LetPattern '=' Expr                               -- pattern binds have no args
+             | LetPattern '<-' App                               -- rest-of-block bind, §6.7
 Branch      := Pattern '->' Expr
 
 BinOp       := Postfix (operator Postfix)* (operator Block)?     -- Pratt, table in §6.5
 Block       := 'let' … | 'if' … | 'case' … | '\' …               -- the four Expr forms above
 Postfix     := App '?'*
-App         := Atom Atom*
+App         := Atom Arg*
+Arg         := Atom | '_'                                        -- at most one '_' per App, §6.7
 Atom        := literal                                           -- int float char string
              | lower_ident | qualified_lower
              | upper_ident | qualified_upper                     -- constructor
@@ -306,7 +322,28 @@ Notes:
   and comments allowed, nothing else): otherwise `annotation_without_definition`. A definition
   has at most one annotation.
 - A `Definition` at top level always has a `lower_ident` head; destructuring definitions exist
-  only in `let`. A pattern binding in `let` has no annotation and no arguments.
+  only in `let`. A pattern binding in `let` has no annotation and no arguments. **A definition
+  with *n* parameter atoms has an *n*-ary function type** and every call of it supplies exactly
+  *n* arguments (§6.7).
+- **A comma inside a record-type body ends the field's type** when the next two tokens are
+  `lower_ident ':'`. Without that rule the field's `Type` would greedily eat `, b` in
+  `{ a : Int, b : Int }` as a second parameter and then find `:` with nothing to do. One token of
+  lookahead settles it and no backtracking is needed, because `:` can never follow a type item.
+  The same rule governs an extensible record's body. A field whose type is itself an n-ary
+  function needs no parentheses — `{ f : Int, Int -> Int, g : Bool }` reads as the parser reads
+  it — but parenthesising is always available and is what the formatter leaves alone.
+- **The comma in a type is the parameter separator, and it binds looser than everything except
+  `->`.** `Int, Int -> Int` is a 2-ary function. `->` is right-associative in its result, so
+  `a, b -> c -> d` is a 2-ary function returning a 1-ary one. A function-typed parameter takes
+  parentheses: `List.map : List a, (a -> b) -> List b`. Inside parentheses the parser reads the
+  comma-separated items first and then looks at the next token: `->` makes them a parameter list,
+  `)` makes them a tuple when there are two or more and a grouping when there is one. So
+  `(Int, Int) -> Int` is a 1-ary function over a pair and `(Int, Int -> Int)` is a parenthesised
+  2-ary function, and the two do not unify. An item of a tuple may not itself contain a bare
+  `->`, because the `->` would be read as the parameter list's arrow and turn the whole
+  parenthesised group into a function type. That is `arrow_in_tuple_element`, and the message has
+  to carry the example that traps people: `((Int, Int) -> Int, String)` is **not** a pair whose
+  first element is a function, it is a 2-ary function; write `(((Int, Int) -> Int), String)`.
 - `Decl` visibility: `pub` before `type alias`, `type`, `Annotation`, or a `Definition` that has
   no annotation. When a definition has an annotation, `pub` goes on the annotation, not on the
   definition; `pub` on both or only on the definition is `pub_on_definition`. `pub opaque` is
@@ -325,8 +362,11 @@ Notes:
   module outside the core package — is `equatable_outside_core`, and a second marker on
   the same variable, or one on a later occurrence of it, is
   `equatable_not_first_occurrence`. The prefix marks the **variable**, not the argument
-  in front of which it stands: `eq : equatable a -> a -> Bool` is a function of two
-  arguments, and `pub equatable foreign type List a` means "equatable when every
+  in front of which it stands: `eq : equatable a, a -> Bool` is a function of two
+  arguments. Because a `TypeApp` now starts after every comma as well as at the head of a type,
+  the marker may stand on any parameter; to mark a variable that first occurs as an ARGUMENT,
+  parenthesise it, as in `member : List (equatable a), a -> Bool`. A tuple element is a `TypeApp`
+  too, so `(equatable a, Int)` is grammatical and marks `a`. Beyond that, and `pub equatable foreign type List a` means "equatable when every
   parameter is". Because it is recognised only where a whole `Type` starts, an ARGUMENT
   keeps its old reading: `List equatable` is a list of a variable named `equatable`.
   User annotations obtain the mark by inference, never by spelling
@@ -339,10 +379,11 @@ Notes:
 - `lambda`: `\x y -> e` — one or more pattern atoms.
 - Record update: the target is a plain name, as in Elm (`{ r | x = 1 }`). `{ r.a | … }` is not
   allowed.
-- Parenthesised operators: `(+)`, `(::)`, `(|>)` etc. — any operator from §6.5; whitespace
-  inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do
-  not exist. Negation `(-)` is the binary minus function; there is no negation
-  function.
+- Parenthesised operators: `(+)`, `(::)`, `(==)` etc. — any operator from §6.5 that desugars to
+  a call, and each is the 2-ary function it desugars to; whitespace inside the parentheses is
+  allowed and the formatter removes it. Sections such as `(+ 1)` do not exist. Negation `(-)` is
+  the binary minus function; there is no negation function. `|>` and `<|` are syntactic forms
+  rather than calls, so `(|>)` and `(<|)` do not exist and are `operator_not_a_function`.
 - Field access chains on any atom: `(f x).name`, `r.a.b`, `t.0.1`, `xs.0` — the `dot_lower` /
   `dot_index` token must start at the byte right after the atom's last byte (no whitespace).
   With whitespace, `.field` is an accessor-function atom and application applies: `f .name` is
@@ -482,7 +523,7 @@ implemented in JavaScript:
 
 ```
 --| Add two numbers.
-pub foreign add : number -> number -> number
+pub foreign add : number, number -> number
 
 pub foreign type List a
 ```
@@ -552,8 +593,8 @@ non-associative operators reject a second operator of the same precedence withou
 
 | Prec | Operators | Assoc |
 |---|---|---|
-| 0 | `<\|` | right |
-| 0 | `\|>` | left |
+| 0 | `<\|` | right, syntactic (§6.7) |
+| 0 | `\|>` | left, syntactic (§6.7) |
 | 2 | `\|\|` | right |
 | 3 | `&&` | right |
 | 4 | `==` `/=` `<` `>` `<=` `>=` | non-assoc |
@@ -561,13 +602,12 @@ non-associative operators reject a second operator of the same precedence withou
 | 6 | `+` `-` | left |
 | 7 | `*` `/` `//` | left |
 | 8 | `^` | right |
-| 9 | `<<` | right |
-| 9 | `>>` | left |
 | — | `?` postfix, application, `.field`, `.0` | tighter than all of the above, in that order (tightest last) |
 
-Mixing `<|` and `|>` at precedence 0, or `<<` and `>>` at precedence 9, without parentheses is
-`non_associative_chain` — the two operators of each pair associate in opposite directions, so a
-mixed chain has no reading a reader could predict. Elm rejects both pairs.
+Mixing `<|` and `|>` at precedence 0 without parentheses is `non_associative_chain` — the two
+associate in opposite directions, so a mixed chain has no reading a reader could predict. Elm
+rejects the same pair. `<<` and `>>` are removed, and the precedence-9 case of this rule goes with
+them; so does the composition idiom, which is replaced by naming the argument.
 
 **Negation.** `-` directly followed (no whitespace) by an atom, in a position where the parser
 expects the *start* of an operand, is negation: `-x`, `-(a + b)`, `-1`, `[ -1, -2 ]`. In
@@ -592,6 +632,102 @@ is a literal pattern (`-1 ->`).
 - Lowering desugars each `e?` to a `case` on a fresh local (§8); the Maybe/Result choice and the
   "same shape as the enclosing function" rule are M2, checked on the lowered form.
 
+### 6.7 Saturated calls, `_` and `<-`
+
+**Every call is saturated.** A definition with *n* parameter atoms has an *n*-ary function type,
+and a call of it supplies exactly *n* arguments. Too few is `too_few_args`, too many is
+`too_many_args`, and neither has a partial-application reading. Function types of different arity
+do not unify, so an arity mistake is reported where it is written, including inside a lambda
+passed to a higher-order function — which is the whole reason the language dropped currying
+(`fast-compiler.md` §9.3).
+
+**`_` is the placeholder.** In argument position of an application, `_` stands for the argument
+the call does not supply: `f a _ c` is `\x -> f a x c` for a fresh `x`.
+
+- `_` is an argument, never an expression of its own. `let y = _`, `_ + 1` and `f (_)` are
+  `placeholder_outside_argument`, which takes precedence over the generic `unexpected_token` that
+  §10 would otherwise give for a `_` where an expression was expected.
+- **Pipes rewrite before placeholders lift.** `e |> f a _` is `f e a _` and then
+  `\x -> f e a x`; lifting first would leave a lambda as the pipe's right operand and reject the
+  program. The order is fixed here because the two readings disagree, and §8 lists the
+  desugarings in it.
+- `f _.name` applies `f` to the placeholder **and** to the accessor `.name`, because a `dot_lower`
+  must abut an `Atom` and `_` is not one. Write `f (\r -> r.name)` for the other reading.
+- At most one `_` per application (`multiple_placeholders`), as in Gleam. Two omitted arguments
+  are written as a lambda.
+- The lambda wraps the **innermost enclosing application**. In `f (g _) b` the placeholder belongs
+  to `g`, and what `f` receives is `\x -> g x`.
+- A placeholder may fill any position, the first included, which is the case currying could not
+  express.
+- `_` keeps its pattern meaning (§3, `PatAtom`) everywhere a pattern is expected. The two
+  positions never overlap.
+- **A placeholder is a lambda for the purposes of §6.6**, so a `?` inside the application it lifts
+  is `question_in_lambda`. `f a? _` is rejected.
+
+**`|>` is pipe-first syntax.** `e |> f a b` rewrites to `f e a b` and `e |> f` to `f e`: the left
+operand becomes the callee's **first** argument.
+
+- The right operand must be an **application**, and nothing else. A `let`, `if`, `case` or lambda
+  has no head application to insert into, so §3's rule admitting a block as the last operand of a
+  chain does not extend to `|>`; a block there is `pipe_rhs_not_application`. `<|` is the operator
+  that carries blocks and the trailing-lambda idiom, and it is unaffected.
+- **Grouping parentheses around the right operand are looked through**, as lowering already does
+  today: `x |> (f a)` is `f x a`, not a call of the value `(f a)`. The distinction is newly
+  observable now that the operand goes in first, so it is stated rather than left to the code.
+- `|>` and `<|` are syntactic forms rather than calls, so neither has a parenthesised form (§3).
+
+`<|` keeps Elm's meaning: `f <| e` is `f e`.
+
+Because the pipeline inserts at the first argument, **the standard library is subject first and
+function last**: `List.map xs f`, `String.split s sep`, `Dict.insert d k v`, `Result.andThen r f`.
+That convention is what makes a pipeline read and what makes `<-` reach every callback-taking
+function.
+
+**`let x <- e` binds the rest of the block.** `let x <- f a b in rest` desugars to
+`f a b (\x -> rest)`: the remaining bindings and the body become the callee's last argument. It is
+purely syntactic — no type-constructor table, no dispatch, and nothing that depends on inference
+having resolved anything.
+
+- The right-hand side is **the callee applied to all but its final argument**. For a callee of
+  arity one that is the bare name: `scope <- Task.scope` is `Task.scope (\scope -> rest)`, and
+  that shape is the reason the form was generalised at all (`fast-compiler.md` §9.3 item 7). A
+  qualified name, a field access, a parenthesised operator and a parenthesised application are all
+  legal heads for the same reason. What is rejected is anything that is not a call once the rest
+  of the block is appended — a `case`, an `if`, a lambda, a `let`, a `?`, an arithmetic
+  expression — which is `bind_rhs_not_application`.
+- A `|>`/`<|` chain is also legal in principle, because pipes rewrite before the bind does
+  (the order rule above), so `let x <- File.read path |> Task.mapError f` means
+  `Task.mapError (File.read path) f (\x -> rest)`. It is rejected until pipe-first lands, since
+  the two changes have to agree about which argument the operand becomes.
+- It is a call missing exactly its final argument, so it is not a partial application and does not
+  take `_`. A `_` among the **bind's own arguments** is `placeholder_outside_argument`; a `_` in a
+  nested application inside one of those arguments is an ordinary placeholder and lifts over that
+  nested application as usual.
+- **A `<-` binding takes no annotation.** `let x : T` may only precede a `Definition`, so an
+  annotation above a bind is `annotation_without_definition`.
+- `rest` is every binding after this one together with the `in` body. A `<-` may appear anywhere
+  in the binding list, last included, where `rest` is the body alone.
+- The bound pattern is a `LetPattern`, so it is irrefutable, and it is in scope only in `rest`.
+- A bind inside a `case` arm or an `if` branch opens its own `let` and cannot reach past the
+  branch it sits in.
+- Whether the callee's last parameter is in fact a function is a type question, reported in M2 as
+  `bind_not_callback`.
+- **The callback is a lambda for the purposes of §6.6**, so a `?` anywhere in `rest` is
+  `question_in_lambda`. This is the conservative reading and it is deliberately the reversible
+  one: relaxing it later is purely additive, while the alternative — letting `?` return from the
+  callback — is only correct when the callee passes its callback's result through unchanged, and
+  that is not something the front end can know. It is the same question as
+  `transparent-effects-proposal.md` §11 Q5 and should be settled there, not here.
+
+```elm
+let
+    scope <- Task.scope
+    conn <- Task.bracket (\() -> Db.open url) Db.close
+    h <- Result.andThen (readHeader s)
+in
+render scope conn h
+```
+
 ## 7. Scoping and shadowing
 
 - A `let` pattern binding must be irrefutable: a name, `_`, unit, a tuple or record of
@@ -606,7 +742,12 @@ is a literal pattern (`-1 ->`).
   Two sibling scopes may reuse a name (`\x -> …` twice). A pattern may not bind the same name
   twice (`duplicate_pattern_variable`).
 - Top-level names are all in scope in every body; order does not matter. `let` bindings likewise
-  within their `let`.
+  within their `let`, **except that a `<-` splits the block** (§6.7). A name bound at or before a
+  `<-` is in scope in the whole block, as before; the `<-`-bound name itself is in scope only in
+  `rest`, because the desugaring puts it inside a lambda; and a `<-` right-hand side may not
+  reference a binding that appears after it (`bind_rhs_forward_reference`). Mutual recursion
+  through a `<-` is therefore not available, which is what the desugaring means rather than a
+  restriction added on top of it.
 - Type variables in an annotation are scoped to that annotation. Type declarations' parameters
   must be distinct (`duplicate_type_parameter`) and a declared parameter not used in the body is
   fine; an unbound type variable in a `type` or `type alias` body is `unbound_type_variable`.
@@ -622,13 +763,18 @@ the file's bytes: nothing in it depends on another module. Lowering:
    `qualified(alias → module, name)`. Records the set of top-level names each declaration
    references (§9.1 of the design doc: the DCE graph is a byproduct).
 2. Desugars: operators into calls of the corresponding core functions (`a + b` → `add a b`,
-   marked as a `number`-typed builtin — the M2 checker resolves the builtin); `<|` and `|>` into
-   direct application (`x |> f` → `f x`; **this is the one place the front end changes call
-   arity**, so that `|>` chains are saturated calls); `>>`/`<<` into lambdas; `?` into
-   `case`; string interpolation into an `interp` node listing chunks and expressions; `if` into a
-   two-branch `case` on `True`/`False`; multi-parameter lambdas stay n-ary; `.field` accessor
-   functions into one-parameter lambdas; record update, tuples, lists stay as nodes. Field access
-   and tuple index stay as nodes (the checker needs them).
+   marked as a `number`-typed builtin — the M2 checker resolves the builtin); then, **in this
+   order**, `|>` into a call whose **first** argument is the left operand (`e |> f a` → `f e a`,
+   looking through grouping parentheses) and `<|` into direct application, so every pipeline is a
+   saturated call; then `_` into a lambda over the innermost enclosing application; then `x <- e`
+   into a call of `e` whose last argument is a lambda over the rest of the block; `?` into `case`; string interpolation into an `interp` node listing chunks
+   and expressions; `if` into a two-branch `case` on `True`/`False`; multi-parameter lambdas stay
+   n-ary; `.field` accessor functions into one-parameter lambdas; record update, tuples, lists
+   stay as nodes. Field access and tuple index stay as nodes (the checker needs them).
+
+   Calls are n-ary in BIR and always were; what the spec pass changes is that a `call` node is now
+   the *only* reading of an application, since nothing is curried and nothing is partially
+   applied.
 3. Emits the module's **interface skeleton**: the `pub` names, aliases, types, and constructor
    lists — lexically computable, no inference (§8.1 of the design doc).
 4. Reports the diagnostics of §5.3, §6.2 and §7.
@@ -689,6 +835,23 @@ author decides what may.
   head line of a definition.
 - Comments stay attached to the token they precede; a comment on its own line stays on its own
   line; a trailing comment stays at the end of its line. Doc blocks get a space after `--|`.
+- **Function types** print as `A, B -> C`: one space after each comma, one space either side of
+  `->`. The parameter list is a multi-element construct like any other, so the governing rule
+  applies to it: it goes on one line when it fits *and* the author wrote no break between
+  parameters, and an author break keeps it vertical. When a type breaks, the parameters move to
+  the line below `name :` indented 4, one per line with the comma leading each continuation as
+  lists do, and the `->` leads the result's line.
+- **`_`** is an ordinary argument and takes ordinary application spacing. It never forces a break.
+- **`<-` bindings print on one line and are never broken.** `x <- f a b`, single spaces around the
+  operator. This is deliberately *not* the `=` rule, which always puts the body on the next line:
+  a bind's right-hand side is a call whose last argument is the rest of the block, and breaking
+  after `<-` would indent a body that is not there. A bind that exceeds the guide overflows it, as
+  a pattern does. **`<-` operators are never aligned**, in a block of binds or a mixed one; nothing
+  else in this section aligns anything.
+- **A trailing `<|` followed by a lambda does not indent**: the lambda's body continues at the
+  indentation of the line the `<|` is on. This is the one elm-format rule research 14 found to be
+  the binding constraint in Elm (`14/elm` §0.2), and it is adopted here whether or not anything
+  else in this section changes.
 - Strings, numbers and chars are printed as written (no escape normalisation) except that the
   formatter never changes bytes inside a literal.
 
@@ -706,6 +869,9 @@ expected_declaration  expected_token  unexpected_token  unclosed_delimiter
 annotation_without_definition  pub_on_definition  opaque_not_on_type  case_without_branches
 args_after_question  non_associative_chain  negation_with_space  invalid_tuple_index
 refutable_let_pattern
+placeholder_outside_argument  multiple_placeholders  operator_not_a_function
+pipe_rhs_not_application  bind_rhs_not_application  bind_rhs_forward_reference
+arrow_in_tuple_element  bind_not_callback
 duplicate_import  duplicate_import_alias  duplicate_exposed_name  import_after_declaration  self_import
 duplicate_declaration  duplicate_type  duplicate_constructor  shadows_import  duplicate_field
 foreign_outside_platform  equatable_outside_core  equatable_not_first_occurrence

@@ -5,9 +5,10 @@ shaped this way and §2 what it must measure; [`boundary.md`](boundary.md) says 
 meets JavaScript; [`research/12-js-output-and-chunking.md`](research/12-js-output-and-chunking.md)
 is the evidence for every size claim below. This document says what the code looks like.
 
-M3 ends when `beni build` produces JavaScript that runs, the emitted output is measurably close to
-what a dedicated minifier would produce, and the share of call sites emitted as direct calls is high
-enough to justify keeping currying (§9.3).
+M3 ends when `beni build` produces JavaScript that runs and the emitted output is measurably close
+to what a dedicated minifier would produce. The third condition this line used to carry — a direct
+call share high enough to justify keeping currying — is discharged rather than met: §9.3 dropped
+currying on 2026-09-14, so the share is 100% by construction (§6).
 
 ## 1. Scope and order
 
@@ -25,9 +26,10 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
   something wrong.
 - **M3b — the whole language.** Tail-call loops, decision trees, interpolation, `?`, tuples, record
   update, `Int32`, everything remaining. *Acceptance: the corpus compiles and runs.*
-- **M3c — the optimiser.** Reachability elimination, saturated-call specialisation, local
+- **M3c — the optimiser.** Reachability elimination, reachability-driven inlining, local
   dead-binding elimination, renaming, field ambiguation, compact printing. *Acceptance: §9's size
-  and throughput numbers, and the direct-call share that decides §9.3.*
+  and throughput numbers, and §9's size and throughput numbers alone; the direct-call share that used to decide §9.3 is
+  discharged, not measured (§6).*
 - **M3d — chunking and `lazy`.** The keyword, entry-set colouring, the merge pass, cross-chunk
   bindings. *Acceptance: a two-route program splits and both routes run.*
 
@@ -170,28 +172,28 @@ A platform declares its output shape (`boundary.md` §5.2) — what the artifact
 
 ## 6. The calling convention
 
-§9.3 keeps currying **on the condition** that saturated calls at statically known arity become
-direct calls. That condition is now a deliverable with a number attached.
+**There isn't one.** `fast-compiler.md` §9.3 dropped automatic currying on 2026-09-14 and
+`language.md` §6.7 specifies the result: every call is saturated, arity is part of the function
+type, and function types of different arity do not unify. So a beni application of *n* arguments
+emits a JavaScript call of *n* arguments, `f(a, b)`, and there is nothing else to emit.
 
-**M3a shipped a better scheme than this section specified, and dropped the arity tag**, which the other two bullets turn out not to need.
-The tag exists so that a call site can *ask* a value what arity it has, and the only reason to ask
-is that some function-typed values are n-ary and some are not. Make them all the same and the
-question disappears: **every function-typed value in flight is curried**, and n-ary forms exist only
-where the callee is statically known. A saturated call to a known callee is then `f(a, b)` with no
-adapter at all; everything else applies one argument at a time to something that is always curried.
-The curry wrapper is emitted at the site that needs it — `((x) => (y) => f(x, y))` — so there is no
-runtime library, which matters because `boundary.md`'s wall means the only hand-written JavaScript
-in a build is core's siblings and a codegen helper would be neither that nor beni. Elm pays roughly
-49% on Chrome for routing saturated calls through its adapter; we pay nothing, because there is no
-adapter to route through. Indicative direct-call share on the compiler's own output at M3a: **about
-87%**, which is the number §9.3 said would decide whether keeping currying was right.
+**What leaves this document.** The arity tag, the `A2`/`F2` adapter, the saturated-call
+specialiser, the call-site curry wrapper `((x) => (y) => f(x, y))`, the `Arity.unknown` path, and
+M3c's obligation to measure the direct-call share. The share is 100% by construction, so there is
+no number left to decide anything. Elm pays roughly 49% on Chrome for routing saturated calls
+through its adapter; there is no adapter here to route through.
 
-**M3c measures the share of call sites emitted as direct calls and records it here.** §9.3 says
-plainly that if the share is low the currying decision was wrong. The missing-argument diagnostic
-already discharged its half of that bargain at 37 of 38; this is the other half. An indicative count
-over M3a's own output (core plus a small program, counting `name(` against `)(`): 391 direct calls
-against 58 curried applications, so roughly 87%. That is a grep and not the measurement; M3c owns
-the real one.
+**Why the backend never meets a partial application.** The two ways to write one are both
+front-end rewrites that are gone by the time BIR exists (`language.md` §8): `f a _` lowers to a
+lambda over the innermost enclosing application, and `e |> f a` lowers to the call `f e a`. A
+function-typed value in flight is therefore always a closure of known arity, never a partially
+applied thing waiting for more arguments, and a call through a parameter is a call of that
+parameter's arity, which the checker knows.
+
+**What this does not remove.** The absence of a runtime library still holds and still matters:
+`boundary.md`'s wall means the only hand-written JavaScript in a build is core's siblings, and a
+codegen helper would be neither that nor beni. Dropping the adapter makes that easier to keep, not
+harder — it was the one helper this section had ever needed.
 
 ## 7. Pattern matching
 

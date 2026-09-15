@@ -1044,7 +1044,9 @@ which is every signature. `language.md` §3, §6.5 and §9 change (delta below).
 `A2`/`F2` machinery and the saturated-call specialiser leave the M3 plan. The arity fixtures are
 re-cut. It is a breaking change to every program written so far, which at M3a is test corpora.
 
-**Grammar delta for `language.md`, to be written as a spec pass before any code:**
+**Grammar delta for `language.md`. The spec pass landed 2026-09-15**, so the normative text is
+now [`language.md`](language.md) §3, §6.5, §6.7, §8 and §9, and the list below is the record of
+what it had to say rather than a thing still to do:
 
 1. `Definition := lower_ident PatAtom* '=' Expr` and `App := Atom Atom*` are unchanged
    syntactically. A definition with *n* atoms has an *n*-ary function type; the checker requires
@@ -1349,12 +1351,13 @@ Each milestone ends in something measurable.
    (185 MB/s), parse 6 ms, lower 9 ms, `fmt --check` 26 ms on four cores; the formatter round-trips
    the corpus and every `.expected` is a fixed point.* Milestone detail is in
    [`frontend.md`](frontend.md) §8.
-3. **M2 — Checker.** Contract in [`checker.md`](checker.md). M2a (packages, module graph,
-   interfaces, cross-module resolution) and M2b (type store, constrain/solve, the ad-hoc
-   obligations, the missing-argument suite) are **done**; M2c (exhaustiveness, DAG-parallel
-   checking) and M2d (measurement and review) remain. *Measured: 1.33M LOC/s for checking alone
+3. ~~**M2 — Checker.**~~ **Done.** Contract in [`checker.md`](checker.md). M2a (packages, module
+   graph, interfaces, cross-module resolution), M2b (type store, constrain/solve, the ad-hoc
+   obligations, the missing-argument suite), M2c (exhaustiveness, DAG-parallel checking) and M2d
+   (measurement and review) are all shipped. *Measured: 1.33M LOC/s for checking alone
    against the >250k target, and 118 ms for the whole cold pipeline including core against the
-   800 ms budget. The missing-argument suite scored 37/38, discharging §9.3's revisit trigger.*
+   800 ms budget. The missing-argument suite scored 37/38, which held for the direct case only and is what §9.3
+   re-opened the currying decision on.*
 4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, direct n-ary calls everywhere
    (§9.3: no currying, so no `A2`/`F2` adapter and no specialiser), TCO loops, decision trees,
    ESM output. *Measure: emit throughput; output size vs Elm.* Preceded by the §9.3 spec pass on

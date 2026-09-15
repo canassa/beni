@@ -9,8 +9,9 @@ optional, primitives are `foreign` declarations in an embedded core package, the
 pure with one arrow, and a project is one root plus core with package-qualified module identity.
 
 M2 ends when `beni check` type-checks a multi-module project against core, reports Elm-quality
-type errors, measures above the §2 throughput target, and the missing-argument diagnostic has
-its fixture suite — the condition on which §9.3 kept currying.
+type errors, measures above the §2 throughput target, and the arity diagnostics have their
+fixture suite (§8.3). The suite was originally the condition on which §9.3 kept currying; §9.3
+dropped currying on 2026-09-14 and the suite is re-cut around the arity errors that replace it.
 
 ## 1. Scope
 
@@ -185,7 +186,9 @@ pub const TypeId = enum(u32) { _ };                      // (module, decl) of a 
   error rendering's "which of these two did you mean" and for `try`'s shape choice, §6.5).
   Nothing else in M2 speculates; the journal exists because retrofitting it is the rework
   `fast-compiler.md` §13 warns about.
-- **Structures live in `extra`**: `fn` is two vars; `app` is a `TypeId` + range of vars;
+- **Structures live in `extra`**: `fn` is a **range of parameter vars plus a result var**
+  (`language.md` §6.7 — function types are n-ary and unify only at equal arity); `app` is a
+  `TypeId` + range of vars;
   `record` is a sorted range of `(field Symbol, Var)` pairs + an extension var (`unit`-like
   `closed` content for closed records); `tuple` a range of vars.
 - **Aliases are interned, never expanded**: an `alias` content carries the alias id, its
@@ -245,10 +248,10 @@ What each Bir form generates is Elm's, with the beni-specific rules:
 |---|---|
 | `int` | flex var of kind `number` |
 | `float`, `char`, `string`, `interp` | `Float` / `Char` / `String`; `interp` adds `interpolatable(t)` per expression part |
-| `call(import_value(Basics, add), [a, b])` etc. | ordinary application of the core function's scheme — the `number` kind comes from Basics' own annotation `add : number -> number -> number`; the checker has no operator table |
-| `call(import_value(Basics, eq), [a, b])` | `a = b` plus `equatable(a)`: `eq : a -> a -> Bool` in Basics is annotated with the `equatable` marker (Appendix B) |
-| `call(f, args)` | `f = arg1 -> … -> argN -> result`; on mismatch inside a function type, the arity diagnostics of §8.3 |
-| `lambda` | fresh vars per parameter pattern, `fn` chain |
+| `call(import_value(Basics, add), [a, b])` etc. | ordinary application of the core function's scheme — the `number` kind comes from Basics' own annotation `add : number, number -> number`; the checker has no operator table |
+| `call(import_value(Basics, eq), [a, b])` | `a = b` plus `equatable(a)`: `eq : equatable a, a -> Bool` in Basics is annotated with the `equatable` marker (Appendix B) |
+| `call(f, args)` | `f = (arg1, …, argN) -> result` — **one n-ary function type with exactly N parameters**; an arity difference is §8.3's diagnostics and never a partial application |
+| `lambda` | fresh vars per parameter pattern, one n-ary function type |
 | `let` | SCC groups, `let` constraint with generalisation per group |
 | `case` / `branch` | scrutinee = every pattern; every body = result; then §6.6 |
 | `try(e, target)` | §6.5 |
@@ -275,6 +278,15 @@ rigid vs non-identical → `rigid_mismatch`; structure vs structure → same hea
 pairwise, records by Elm's four-way field partition with fresh extension vars; alias vs
 anything → through `actual`. On failure both roots are poisoned to `err` after the diagnostic
 is recorded, so one mistake yields one message.
+
+**Function types carry their parameter count and unify only at equal arity** (`language.md`
+§6.7). `Structure.Func` is a parameter range plus a result rather than a param/result pair, so an
+arity difference is an ordinary structure mismatch inside `unify`, caught by the same "same head
+and arity" test as a type constructor's. What makes it a *good* message rather than a
+`type_mismatch` is the call site: constraint generation knows it built that function type from an
+application, so the mismatch is reported as §8.3's `too_few_args` or `too_many_args`. Everywhere
+else — a function value assigned to a differently-shaped parameter, say — it stays a
+`type_mismatch`, because there is no call to name.
 
 Instantiation copies a scheme with the `copy` memo so internal sharing is preserved (design
 §7 #4), clearing the memo through a scratch list afterwards.
@@ -367,9 +379,13 @@ Interface
   ctors:    [] { name: SymbolIndex, type: index into types, arity: u32,
                  arg_terms: range, quantified_start: u32 }   grouped by type, declaration order
   schemes:  [] { quantified: range of (kind, equatable, name), body: TermIndex }
-  terms:    MultiArrayList { tag, lhs, rhs }   the flat type term language: var(i), fn, app(TypeId, range),
+  terms:    MultiArrayList { tag, lhs, rhs }   the flat type term language: var(i), fn(range, result),
+                                               app(TypeId, range),
                                                tuple(range), record(range, ext), unit, empty_record,
                                                alias(TypeId, range), err
+                                               `fn` spends `lhs` on a range in `extra` and `rhs` on
+                                               the result, since an n-ary parameter list does not
+                                               fit two operand words
   extra:    []u32
   symbols:  []Symbol                            remapped like Bir's
 ```
@@ -383,7 +399,9 @@ erroneous declarations appear with `<error>` so dependents check against the res
 **`arg_terms` is the firewall for constructors**, and M2 shipped without it. `var(i)` inside a
 constructor's argument terms is the owning TYPE's parameter `i` — they are quantified first and
 in declaration order, `quantified_start` says where their flags are — so a dependent rebuilds
-`arg1 -> … -> argN -> T p0 … pk` from this record alone and the result half needs no storage.
+`(arg1, …, argN) -> T p0 … pk`, **one n-ary function**, from this record alone and the result half
+needs no storage. A constructor applied to the wrong number of fields is therefore §8.3's
+`too_few_args` or `too_many_args` like any other call.
 Without it the solver reached into the declaring module's `Bir` and found the constructor **by
 name**, which breaks §4.5 and which M4 cannot do at all: a dependency's Bir may not be in
 memory.
@@ -456,29 +474,40 @@ the app-over-core shadowing rule (cannot happen with one root; exists for M4).
 `Render.zig` prints a type from a store or an interface term: variables named `a`, `b`, … in
 order of first appearance per diagnostic (fresh names allocated only when rendering, design
 §7), kinds as `number`/`appendable`, aliases by name, records as `{ a : Int, b : String }` with
-`{ r | … }` for open ones, functions with the minimal parentheses. The same renderer produces
+`{ r | … }` for open ones, functions with the minimal parentheses. **Minimal, for an n-ary
+function type, is a specific rule** and every diagnostic and dump golden depends on it: a
+function-typed *parameter* is always parenthesised (`List a, (a -> b) -> List b`), a function-typed
+*result* never is (`a, b -> c -> d`, right-associative), and a 1-ary function over a tuple prints
+`(Int, Int) -> Int` so that it is distinguishable from the 2-ary `Int, Int -> Int`. The rule mirrors
+`language.md` §3's grammar notes. The same renderer produces
 `dump --stage=types` and `--stage=interface`, so every diagnostic's type text is corpus-tested
 through the dumps.
 
-### 8.3 The missing-argument suite
+### 8.3 The arity suite
 
-> **Superseded (2026-09-14).** Currying is dropped (design §9.3). The direct-case fixtures below
-> describe mistakes that can no longer occur; `too_many_args` and `not_a_function` stay, and the
-> suite is to be re-cut around arity errors in higher-order position, which are now immediate.
+Currying is gone (`fast-compiler.md` §9.3, `language.md` §6.7), so arity is a property of the type
+and an arity mistake is a local one. Three diagnostics carry the class, and all three fire before
+the generic `type_mismatch` and suppress it:
 
+- **`too_few_args`** — a call supplies fewer arguments than the callee's type takes. The message
+  names the function, how many arguments it takes, how many it got, and the types of the missing
+  ones. Nothing is deferred, because there is no partial-application reading to keep open.
+- **`too_many_args`** — the mirror.
+- **`not_a_function`** — the callee's type is not a function at all.
 
-`fast-compiler.md` §9.3 keeps currying on the condition that a localised `TOO FEW ARGS`
-diagnostic lands convincingly. The rule: when unifying the callee's type with the call's
-`arg1 -> … -> argN -> result` shape, a mismatch where the callee has more arrows than the call
-supplied and the *result* was expected to be a non-function is `too_few_args` at the call,
-naming the function, how many arguments it takes and how many it got, and the type of the
-missing ones; the mirror is `too_many_args`; a non-function callee is `not_a_function`. These
-fire before the generic `type_mismatch` and suppress it. `tests/corpus/check/args/` holds at
-least thirty fixtures taken from real mistakes (forgetting `model` in an `update` call, a
-pipeline missing its subject, `List.map` with one argument passed on, a partially applied
-constructor where a value was expected, a lambda with too few parameters passed to `foldl`),
-each asserting the whole diagnostic. If fewer than 90% of those read as *the* right message on
-review, the currying decision is revisited before M3 (design §9.3).
+**Why this is better than what currying could do, and it is the whole reason for the change.**
+Under currying a one-parameter lambda in a two-parameter callback position is not an error at the
+lambda: `\x -> x` unifies with `a -> b -> b` by making the accumulator a function, and the failure
+surfaces two arguments later on the list. That displaced class is what re-opened the decision
+(`fast-compiler.md` §9.3), and with arity in the type it does not exist — the lambda is wrong where
+it is written.
+
+`tests/corpus/check/args/` is **re-cut around that**, not adapted: a lambda of the wrong arity in
+higher-order position, a call one argument short, a call with one too many, a constructor applied
+to the wrong number of fields, a call through a parameter of function type, and a pipeline whose
+subject is already supplied. Each fixture asserts the whole diagnostic. The direct-case fixtures
+that scored 37 of 38 under currying are re-cut rather than kept, because a different rule now
+produces their message, and `ComposeMissingArg` goes with `>>` and `<<`.
 
 ## 9. Measurement
 
@@ -533,8 +562,8 @@ review, the currying decision is revisited before M3 (design §9.3).
 - A type alias may not refer to itself, directly or through other aliases (`recursive_alias`).
 - An annotation's type variable may be marked for equality with the `equatable` prefix, in
   core only (Appendix B); user annotations obtain the mark by inference, never by spelling.
-  The prefix marks the **variable at its first occurrence**, not an argument: `eq : equatable a
-  -> a -> Bool` is a function of two arguments, and `pub equatable foreign type List a`
+  The prefix marks the **variable at its first occurrence**, not an argument: `eq : equatable a,
+  a -> Bool` is a function of two arguments, and `pub equatable foreign type List a`
   means "equatable when every parameter is". The parser accepts the prefix only before a type
   variable's first occurrence in an annotation, and only before `foreign type` in a declaration
   (`equatable_outside_core` elsewhere).
@@ -550,27 +579,40 @@ explicit-ordering replacements (`fast-compiler.md` §3.1):
   operators, plus `fromInt` (truncating) and `toInt` (identity). The escape hatch of
   `fast-compiler.md` §3.1: `Int` is a double, and exact 32-bit work has a type that says so. `*` is
   deliberately unavailable on it, which is what makes mask-after-multiply unreachable.
+**Two conventions govern every signature below** (`fast-compiler.md` §9.3 items 2 and 8,
+`language.md` §6.7). Function types are **n-ary**, `A, B -> C`. Argument order is **subject first
+and function last**, so that `|>` inserts at the first argument and `<-` reaches the last. Where a
+variable's first occurrence is an argument of a type application, the `equatable` marker is
+attached by parenthesising it: `List (equatable a)`.
+
 - `Basics`: `foreign type Int`, `Float`, `Char`, `String` (declared here so the prelude's types
   have one home); `type Bool = True | False`; `type Order = LT | EQ | GT`; `type Never =
   JustOneMore Never`; the arithmetic, comparison and logic foreigns with `number` annotations
-  (`add : number -> number -> number`, `lt : number -> number -> Bool`, …); `eq : equatable a
-  -> a -> Bool`; `append : appendable -> appendable -> appendable`; `compare : number ->
-  number -> Order`; `max`, `min`, `clamp` on `number`; the numeric functions; `identity`,
+  (`add : number, number -> number`, `lt : number, number -> Bool`, …); `eq : equatable a,
+  a -> Bool`; `append : appendable, appendable -> appendable`; `compare : number, number ->
+  Order`; `max`, `min`, `clamp` on `number`; the numeric functions; `identity`,
   `always`, `never`, `not`, `xor`, `modBy`, `remainderBy`, `negate`, `abs`, `toFloat`, `round`,
   `floor`, `ceiling`, `truncate`, `isNaN`, `isInfinite`, `e`, `pi`, trigonometry.
-- `List`: `foreign type List a`; `foreign` only for `cons`, `head`/`tail`-free primitives and
-  `foldr`/`foldl` if the representation needs it — everything else in beni; `sortWith : (a ->
-  a -> Order) -> List a -> List a`, `sortBy : (a -> number) -> List a -> List a`, `sort :
-  List number -> List number`; `member : equatable a -> List a -> Bool`.
-- `Maybe`, `Result`: entirely beni.
+- `List`: `foreign type List a`; `foreign` only for `cons` — `foldl` and `foldr` move into beni as
+  soon as the code generator emits a tail-call loop (`backend.md` §8), and
+  `research/17-platform-primitives.md` §3 is why that matters beyond tidiness; everything else in
+  beni. `map : List a, (a -> b) -> List b`, `sortWith : List a, (a, a -> Order) -> List a`,
+  `sortBy : List a, (a -> number) -> List a`, `sort : List number -> List number`,
+  `member : List (equatable a), a -> Bool`.
+- `Maybe`, `Result`: entirely beni. `Result.andThen : Result x a, (a -> Result x b) -> Result x b`.
 - `String`: `foreign` primitives (`length`, `slice`, `fromInt`, `toInt`, `fromFloat`,
-  `toFloat`, `fromChar`, `toList`, `fromList`, `append`, `compare : String -> String ->
-  Order`, `toUpper`, `toLower`, …); the rest in beni.
+  `toFloat`, `fromChar`, `toList`, `fromList`, `append`, `compare : String, String ->
+  Order`, `toUpper`, `toLower`, …); the rest in beni. `split : String, String -> List String`.
 - `Char`: `foreign` classification and conversion.
-- `Debug`: `foreign log : String -> a -> a`, `foreign todo : String -> a`, `foreign toString :
-  a -> String`.
-- `Dict`, `Set`: beni, keyed by an explicit comparator (`Dict.empty : (k -> k -> Order) -> Dict
-  k v`) with `Dict.String`/`Dict.Int` modules as sugar, per `fast-compiler.md` §3.1 point 4.
+- `Debug`: `foreign log : a, String -> a` (subject first, so `value |> Debug.log "label"` reads),
+  `foreign todo : String -> a`, `foreign toString : a -> String`.
+- `Dict`, `Set`: beni, keyed by an explicit comparator (`Dict.empty : (k, k -> Order) -> Dict
+  k v`, `Dict.insert : Dict k v, k, v -> Dict k v`) with `Dict.String`/`Dict.Int` modules as sugar,
+  per `fast-compiler.md` §3.1 point 4.
+
+The argument order of every remaining signature is settled by the same rule when `core/` is
+rewritten; that rewrite is the deliverable, and this appendix is its specification rather than its
+inventory.
 
 The `equatable` annotation marker is the only spelling in the language that user code may not
 write; the parser accepts it under `--core` only (`equatable_outside_core`, joining §10's
