@@ -116,8 +116,15 @@ bundled here. So:
 - **Architecture** (how the compiler is structured — the table above): read the
   submodule. That is what it is for, and master is the better reference.
 - **API signatures** (what compiles against our toolchain): trust the langref, or
-  the installed std at `$(zig env | jq -r .lib_dir)/std`. A signature copied from
-  the submodule may not exist in 0.16.0.
+  the installed std, which `zig env` locates. It prints **ZON, not JSON** — do not
+  pipe it to `jq`:
+
+  ```sh
+  STD=$(zig env | sed -n 's/.*\.std_dir = "\(.*\)".*/\1/p')
+  grep -n "pub fn getEmittedDocs" "$STD/Build/Step/Compile.zig"
+  ```
+
+  A signature copied from the submodule may not exist in 0.16.0.
 
 Upgrading the toolchain is deliberate: bump the nixpkgs input, read the release
 notes, fix what breaks, commit — and re-sync the bundled langref if the version
