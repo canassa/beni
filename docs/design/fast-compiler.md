@@ -113,8 +113,8 @@ These are decisions about the *source language*, made now because they cannot be
   would break this parallelization, requiring all modules to be processed before knowing which
   names are exposed." Readability is listed as the minor reason.
 - **Tabs are a syntax error; indentation rules are lexically decidable.** No layout pre-pass.
-- **Currying stays** (it's an Elm-like language) — but see §9.3, this is the one place the
-  decision is genuinely contested and it must be settled before codegen exists.
+- **No automatic currying** (decided 2026-09-14, §9.3): every call is saturated, `_` is the
+  partial-application placeholder, `|>` is pipe-first syntax. Juxtaposition stays.
 
 ## 3.1 Ad-hoc polymorphism: `number` yes, `comparable` no
 
@@ -425,11 +425,27 @@ Three rules, each chosen to keep the cost at zero:
 
 ### Flat effect syntax — OPEN
 
-**Nothing here is settled.** This section records what the evidence establishes and what the live
-options are. Reports [15](research/15-flat-effect-syntax.md) and
-[16](research/16-fibers-and-concurrency.md) are the evidence base; both are partial, and report 14 —
-on whether Elm's ergonomics complaint is real at all — was never written, so the question "is this
-worth fixing" is itself still open.
+**Partly settled.** Reports [15](research/15-flat-effect-syntax.md) and
+[16](research/16-fibers-and-concurrency.md) were the first evidence base; research
+[14](research/14-direct-style/01-solution-space.md) — eighteen per-subject reports and a
+synthesis — supersedes both on the design space, and its Elm report answers "is this worth
+fixing": the pyramid is real but rare in Elm because there is almost nothing to chain, the
+formatter is the binding constraint where it is hit, and the branch is where the residual pain
+sits (14/elm §0, §7). The author's position is that it is worth fixing regardless.
+
+**Adopted (2026-09-14, generalised 2026-09-15): a rest-of-block bind, `let x <- e`,** as the
+general sequencing form for **any function taking its callback last** — `let x <- f a b` is
+`f a b (\x -> rest)`, Gleam's `use`, purely syntactic. The original form dispatched on an
+`andThen` table resolved per type after inference; that is withdrawn, because typed effects remove
+`Task` from the table and `?` covers `Result` and `Maybe`, and because the table cannot express
+`Task.scope : (Scope -> a) -> a` or `Task.bracket`, which the effects design leans on (§9.3,
+grammar delta item 7). This is research 14's option B, and it is adopted because dropping currying (§9.3)
+removes Elm's applicative constructor pipeline and this is its replacement. **Still open:**
+whether `Task` uses this bind or a call-site marker over typed effect sets — research 14's S2,
+and the synthesis discussion's candidate "typed effects as calls, with the platform as the only
+handler", which gives effect-polymorphic higher-order functions and named effects in signatures
+at the cost of set unification and a diagnostics deliverable. The rest of this section is the
+earlier record and reads as prior thinking.
 
 **What the evidence establishes.**
 
@@ -979,69 +995,128 @@ saturated call is a plain JS call with no adapter at all. Hansen's measurements 
 adapter itself costs real performance — rewriting `A2(f,a,b)` to direct `f.f(a,b)` measured +49%
 on Chrome, +109% on Firefox (03 §5.2).
 
-**Resolved: keep currying** — see [`research/06-currying.md`](research/06-currying.md) for the full
-evidence from Roc's FAQ and three years of its Zulip. Three findings decided it:
+**Resolved (2026-09-14, reversing the M2b decision): no automatic currying.** Every call is
+saturated; a function of *n* parameters has an *n*-ary type, and function types of different
+arity do not unify. Partial application is written with Gleam's placeholder, `f a _`, which is
+sugar for a lambda over the marked position. `|>` becomes a syntactic form that inserts its left
+operand as the callee's **first** argument, so the standard library goes subject-first
+(`List.map xs f`), as in Roc, Gleam and Elixir. Application stays juxtaposition; parentheses are
+not adopted. `>>` and `<<` are removed. A rest-of-block bind, `let x <- e`, is adopted as the
+general sequencing form for any function taking its callback last (§3.2, and item 7 below for the
+2026-09-15 generalisation). Research
+[06](research/06-currying.md) is the evidence on Roc; research
+[14](research/14-direct-style/01-solution-space.md) is the evidence on the bind.
 
-- **Roc's *particular* performance argument does not transfer** — but a JS-specific one does, and it
-  binds. Roc's closure wins come from lambda sets and are LLVM-specific: stack-allocated closures,
-  seeing through opaque function pointers. JS closures are already heap-allocated and V8 has neither
-  problem. **However**, §9.3's own measurements say currying is only free if the adapter disappears:
+**Why the M2b decision was reopened.** It rested on one condition — that a curried checker could
+match Roc's `TOO FEW ARGS` diagnostic — and the 37/38 fixture score discharged it. On re-reading
+the fixtures the score holds for the *direct* case (a named function short one argument, the
+result used as a value) and for `too_many_args`; those messages are as good as Roc's. It does not
+hold for the *displaced* case: a one-argument lambda passed to `List.foldl` is not an error at the
+lambda, because `\x -> x` unifies with `a -> b -> b` by making the accumulator a function; the
+failure surfaces two arguments later, on the list, and is recovered by a pattern-matched hint
+(`tests/corpus/check/args/FoldlLambdaTooFewParams`). That class — an arity mistake inside a
+higher-order argument, or a partial application that is legal where it is made and wrong where it
+is used — is the strong form of Roc's argument, and the corpus has one fixture for it, graded by
+the people who wrote the heuristic. The single admitted failure (`ComposeMissingArg`, types shown
+as `a -> b`) is in the same class. Without currying the class does not exist: a 1-ary and a 2-ary
+function type do not unify, so the lambda is wrong at the lambda.
 
-  | Tier | Cost |
-  |---|---|
-  | Naive curried closures (PureScript stock) | 25–35% runtime, 20–25% bundle size |
-  | Elm's `A2`/`F2` adapter at saturated sites | **+49% Chrome**, +109% Firefox, +37% Safari vs. direct |
-  | Direct n-ary call at statically-known sites | baseline |
+**What decided it**, weighed against the case for keeping currying:
 
-  The adapter costs a property load, an `=== n` comparison and an indirect call at every call site.
-  So keeping currying is only cheap at the third tier, which makes the specializer a **requirement of
-  M3, not a later optimisation**. Roc's FAQ concedes currying's cost is "most likely possible to
-  optimize away" — that concession is the whole plan here, so it has to actually ship.
-  (Caveat: these are `map`/`foldl` microbenchmarks from a community post, browser- and
-  workload-specific. Directionally consistent with the PureScript figure; not a precise budget.)
-- **Dropping currying is not a local change; it rewrites the idiom.** Elm's `|>` *depends on*
-  partial application — `x |> String.split sep` only works because `String.split sep` is a value.
-  Remove currying and you are forced into Roc's pipe-first convention and a standard library whose
-  subject argument comes first, the opposite of `List.map f list`. Every signature flips. That is a
-  far bigger change than the calling convention.
-- **The one argument that does transfer is error quality**, and it is separable. Roc's real prize is
-  a localised `TOO FEW ARGS` diagnostic, which a curried language supposedly cannot produce. But the
-  unifier knows when it expected `a` and found `b -> a` — that *is* the missing-argument shape, and
-  it can be reported as such with the call site underlined.
+| For keeping | Assessment |
+|---|---|
+| Partial application for free (`List.map (add 1) xs`) | recovered by `_`, which also covers leaving a *first* argument open, which currying cannot |
+| Nested partials (`List.map (List.map f)`) | recovered by `_` |
+| Point-free composition (`List.map f >> List.sum`) | **lost**; name the argument. The one genuine loss |
+| The applicative constructor pipeline (`Decode.succeed Person \|> required …`) | lost in that form; replaced by the rest-of-block bind, which Gleam's decoder library adopted after living without currying, and which names fields where they are bound instead of matching them to constructor positions by order |
+| `\|>` as an ordinary operator | becomes syntax, as in Roc 2019–2024; a pipeline reads identically |
+| The M2b diagnostic work | the direct-case fixtures become moot (the mistake cannot occur); `too_many_args` and `not_a_function` fixtures stay |
 
-So: keep currying, and **treat the missing-argument diagnostic as a deliverable of M2, with its own
-fixture suite**. That mitigation is the entire justification for keeping the feature, so it has to
-be proven rather than assumed. If it does not land convincingly on real mistakes, revisit before M3
-— afterwards it is a breaking language change, not a compiler change.
+| For dropping | Evidence |
+|---|---|
+| Arity errors are immediate everywhere, including lambdas in higher-order position | Roc's documented rationale (06 §2) and the displaced-case gap in our own fixtures |
+| No adapter, no arity tag, no specialiser | the +49% Chrome / +109% Firefox adapter cost (03 §5.2) is neither paid nor planned around; the M3 obligation below is deleted |
+| No regret found | three years of Roc's Zulip (06 §5) |
+| The look survives | juxtaposition kept; in a pipeline the curried and uncurried text is identical |
 
-### Settled in M2b: the condition is met, currying stays
+**What it costs**, stated plainly. The standard library's argument order flips to subject-first,
+which is every signature. `language.md` §3, §6.5 and §9 change (delta below). `>>`/`<<` go. The
+`A2`/`F2` machinery and the saturated-call specialiser leave the M3 plan. The arity fixtures are
+re-cut. It is a breaking change to every program written so far, which at M3a is test corpora.
 
-`tests/corpus/check/args/` holds 38 fixtures taken from real mistakes, each asserting a whole
-diagnostic and each producing exactly one. On review, **37 of 38 read as the right message** —
-above the 90% bar this section set. They name the function, its arity, what it got, the type of
-the missing argument, and why the result could not be the value that was wanted:
+**Grammar delta for `language.md`, to be written as a spec pass before any code:**
 
-```
-The `update` function expects 2 arguments, but it got only 1.
-The missing argument is:      Model
-So this call produces a function:      Model -> Model
-But I needed a value of type:      Model
-```
+1. `Definition := lower_ident PatAtom* '=' Expr` and `App := Atom Atom*` are unchanged
+   syntactically. A definition with *n* atoms has an *n*-ary function type; the checker requires
+   exactly the callee's arity, so `too_few_args` and `too_many_args` are the only outcomes and
+   there is no partial-application reading.
+2. Function types are spelled Roc-style: `Int, Int -> Int`. **Decided 2026-09-14.** The comma is
+   required because space is already type application (`List Int`), so `List Int, Int -> Int`
+   and `List Int Int -> Int` must differ. `->` binds loosest and is right-associative:
+   `a, b -> c -> d` is a 2-ary function returning a 1-ary one, and a function-typed parameter
+   takes parentheses, `List.map : List a, (a -> b) -> List b`. `(Int, Int) -> Int` is a 1-ary
+   function over a tuple and does not unify with `Int, Int -> Int`.
+3. Placeholder: `_` as an `Atom` in argument position of an `App`, not as a bare expression.
+   `f a _ c` is `\x -> f a x c`. Exactly one `_` per call, as Gleam. **Decided 2026-09-14.**
+4. `|>`: `e |> f a b` rewrites to `f e a b`, `e |> f` to `f e`; the right operand must be an `App`,
+   or a `Block` under the existing last-operand rule, whose head application receives the
+   operand. `<|` stays as `f <| e` = `f e`; it needs no partial application and carries the
+   trailing-lambda idiom. **Decided 2026-09-14.**
+5. Remove `>>` and `<<` from §6.5, and `non_associative_chain` for the precedence-9 pair.
+6. `( operator )` stays: `(+)` is the 2-ary function. Sections still do not exist.
+7. Rest-of-block bind: `LetBinding := … | LetPattern '<-' Expr`. **Revised 2026-09-15 — the
+   `andThen`-dispatch form below is withdrawn in favour of Gleam's, which is both more general
+   and less machinery.**
 
-The single failure is a composition (`f = String.toUpper >> String.trim`) where the message and
-hint are right but the types shown are two unresolved variables: a lambda's equality is solved
-before its body, so nothing has been learned yet at the point of report. Fixing it means
-constraining a lambda's body before its type, which costs precision everywhere else. Three more
-are right-message-but-imperfect-underline and pass on the strength of a dedicated hint.
+   `let x <- f a b in rest` desugars to `f a b (\x -> rest)`: the rest of the block becomes the
+   callee's **last argument**. Purely syntactic. No type-constructor table, no dispatch, no
+   dependency on inference having resolved anything — which is 44 lines in Roc's measurement of
+   the same block-shaped rewrite (research 15) against the table this replaces. The expression
+   after `<-` is a call missing exactly its final argument, and that argument must be a function,
+   else `bind_not_callback`; it is not a partial application, so it does not need `_`. `rest` is
+   the remaining bindings and the body, and a bind inside a `case` arm or `if` branch opens its
+   own `let`.
 
-The revisit trigger is therefore **discharged**: currying stays, and §9.3's two M3 obligations
-below are what it now costs.
+   It composes with item 8's subject-first/function-last convention by construction, so every
+   callback-taking function in the standard library is reachable:
 
-Concretely, that means **two** M3 obligations, not one: emit a direct n-ary call wherever the callee's
-arity is statically known at a saturated call site — which is the overwhelming majority, since the
-DCE graph (§9.1) already resolves every top-level reference — and fall back to the `A2`-style tagged
-adapter only for genuinely higher-order or partially-applied positions. Elm leaves the ~49% on the
-table precisely because it always routes through the adapter; there is no reason to repeat that.
+   ```elm
+   let
+       scope <- Task.scope
+       conn  <- Task.bracket (\() -> Db.open url) Db.close
+       h     <- Result.andThen (readHeader s)
+   in
+   …
+   ```
+
+   **Why the table went.** It served `Task`, `Result`, `Maybe` and `Decoder`. Typed effects remove
+   `Task` (`transparent-effects-proposal.md`), and `?` serves `Result` and `Maybe` more neatly
+   than a bind does (§3.2), which left a closed table plus inference-ordered dispatch serving
+   roughly one type. The cost of withdrawing it is that monadic uses name their combinator —
+   `let h <- Result.andThen (readHeader s)` rather than `let h <- readHeader s` — which is a few
+   characters on a case `?` already covers, and is more legible besides, since the sequencing
+   function is visible. The gain is that the form reaches **any** function taking its callback
+   last, including `Task.scope : (Scope -> a) -> a` and `Task.bracket`, which `andThen`-shape
+   dispatch cannot express and which are the constructs the effects design leans on hardest.
+   Without it those nest, and the pyramid research 14 was commissioned to remove reappears at
+   exactly the scopes and resource brackets that design depends on.
+
+   **Deferred, not adopted:** allowing `_` to mark a non-final callback slot, `let x <- f a _ b`.
+   Cheap, since the placeholder already exists, but no combinator in the standard library or the
+   platform wants it yet.
+
+   Diagnostics are a deliverable: Gleam's record for the same "purely syntactic" feature is four
+   bespoke error paths, a formatter function, an LSP action and two shipped confusing-error bugs
+   (14/gleam-use §0.2, §4).
+8. Standard-library convention: subject first, function last. `List.map xs f`,
+   `String.split s sep`, `Dict.insert d k v`, `Result.andThen r f`.
+9. Formatter: rules for `_` and `<-`; and the trailing-lambda rule research 14's Elm report found
+   to be the binding constraint in Elm — do not indent after a trailing `<|` followed by a lambda
+   (14/elm §0.2) — is adopted alongside.
+
+**Open, deliberately.** Whether `Task` is sequenced with this bind (research 14's option B) or with
+a call-site marker over typed effect sets (research 14 S2, and the synthesis discussion's "typed
+effects as calls, platform as the only handler") is not decided here; see §3.2.
 
 ### 9.4 Representation, tuned for V8
 
@@ -1280,10 +1355,10 @@ Each milestone ends in something measurable.
    checking) and M2d (measurement and review) remain. *Measured: 1.33M LOC/s for checking alone
    against the >250k target, and 118 ms for the whole cold pipeline including core against the
    800 ms budget. The missing-argument suite scored 37/38, discharging §9.3's revisit trigger.*
-4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, **saturated-call specialization
-   with `A2`/`F2` only as fallback** (§9.3), TCO loops, decision trees, ESM output. *Measure: emit
-   throughput; output size vs Elm; and the share of call sites emitted as direct n-ary calls — if
-   that share is low, the currying decision was wrong.*
+4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, direct n-ary calls everywhere
+   (§9.3: no currying, so no `A2`/`F2` adapter and no specialiser), TCO loops, decision trees,
+   ESM output. *Measure: emit throughput; output size vs Elm.* Preceded by the §9.3 spec pass on
+   `language.md` and a re-cut of `tests/corpus/check/args/`.
 5. **M4 — Daemon + incrementality.** Socket protocol, content-hash cache, mmap artifacts, interface
    firewall, then the declaration-level graph. *Measure: the warm-rebuild budgets in §2.*
 6. **M5 — Polish.** Source maps, code splitting, LSP, field-name shortening, minifier handoff.
@@ -1294,9 +1369,10 @@ that doing this in the wrong order costs a 30,000-line refactor (01 §7).
 
 ## 14. Open questions
 
-1. ~~**Currying vs. Gleam-style explicit partial application**~~ — **resolved, see §9.3**: keep
-   currying; recover Roc's `TOO FEW ARGS` diagnostic in the unifier instead. Carries an M2
-   obligation (a missing-argument fixture suite) and a revisit-before-M3 trigger if that fails.
+1. ~~**Currying vs. Gleam-style explicit partial application**~~ — **resolved twice, see §9.3**:
+   kept in M2b on the strength of the missing-argument suite, then dropped on 2026-09-14 when the
+   suite was found to cover only the direct case. No currying; `_` placeholder; pipe-first;
+   rest-of-block bind. The `language.md` spec pass and the fixture re-cut are the open work.
 2. **List representation** — cons cells vs. persistent vector trie (§9.4). Benchmark against real
    idiomatic code during M3; the answer is workload-dependent and PureScript's experience shows
    intuition is unreliable here.

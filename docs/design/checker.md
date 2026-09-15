@@ -462,6 +462,11 @@ through the dumps.
 
 ### 8.3 The missing-argument suite
 
+> **Superseded (2026-09-14).** Currying is dropped (design §9.3). The direct-case fixtures below
+> describe mistakes that can no longer occur; `too_many_args` and `not_a_function` stay, and the
+> suite is to be re-cut around arity errors in higher-order position, which are now immediate.
+
+
 `fast-compiler.md` §9.3 keeps currying on the condition that a localised `TOO FEW ARGS`
 diagnostic lands convincingly. The rule: when unifying the callee's type with the call's
 `arg1 -> … -> argN -> result` shape, a mismatch where the callee has more arrows than the call

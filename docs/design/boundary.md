@@ -251,6 +251,65 @@ Two platforms ship with the compiler:
   run the emitted JavaScript, assert what it printed — so it is not a nicety, it is what makes
   codegen testable at all.
 
+### 5.4 The Elm Architecture's command type, and cancelling one
+
+`transparent-effects-proposal.md` settles the language side: `update` and `view` are `sync`, so
+neither may perform, and everything a program performs lives in a thunk handed to the runtime. What
+that thunk is wrapped in is this package's business, and none of it needs a language feature.
+
+```elm
+type Policy = Restart | Ignore | Queue | Concurrent
+
+Cmd.run    : (() -> a), (a -> msg) -> Cmd msg               -- fire and forget
+Cmd.keyed  : k, Policy, (() -> a), (a -> msg) -> Cmd msg    -- k equatable
+Cmd.cancel : k -> Cmd msg
+```
+
+**Commands must be cancellable or the runtime's justification stops at this boundary.** The fiber
+runtime can interrupt a parked fiber in a microsecond (`research/16` §2.4); a `Cmd` API that hands
+over a thunk and forgets it would leave every user-facing effect in the architecture uncancellable,
+which is Elm's present behaviour and one of its few widely-voiced complaints — a debounced search
+box or a request abandoned on navigation is handled today by ignoring a stale `Msg` when it
+arrives, leaking the work.
+
+The runtime holds a map from key to fiber. `Restart` cancels a running fiber under the same key and
+starts the new one; `Ignore` drops the new one while the old is in flight; `Queue` runs them in
+order; `Concurrent` runs them side by side. Those four are what RxJS separates as `switchMap`,
+`exhaustMap`, `concatMap` and `mergeMap`; naming all four now costs nothing and is awkward to add
+later. Cancelling runs the fiber's finalisers, so a cancelled command releases what it held.
+
+```elm
+update msg model =
+    case msg of
+        Typed q       -> ( { model | q = q }, Cmd.keyed "search" Restart (\() -> search q) GotHits )
+        NavigatedAway -> ( model, Cmd.cancel "search" )
+```
+
+**Why a key and not a handle.** `update` is `sync` and pure, and between the update that starts the
+work and the one that cancels it there is no beni frame alive to hold anything — the program is
+parked in the event loop. Elm's alternative is the round trip `research/16` §1.4 records as a
+defect: *"`kill` needs an `Id`, `spawn` yields one only as a `Task`… By the time you can cancel, a
+frame has passed."* A key is data, so it survives the gap and keeps `update` pure.
+
+The split is not arbitrary. Handle-based cancellation is what imperative runtimes use — Kotlin's
+`Job`, Go's `context.Context`, Effect's `Fiber.interrupt`, Swift's `Task`. Keyed cancellation is
+what *declarative* ones use: React Query cancels by query key, SwiftUI's `.task(id:)` restarts when
+the id changes, Redux-Saga's `takeLatest` keys by action type. The stricter an architecture is about
+pure state updates, the more it identifies work by value rather than by object, and TEA is the
+strictest of them.
+
+**This improves the testing story rather than leaving it flat.** A `Cmd` stays opaque, as in Elm, so
+what a thunk *would do* is still not inspectable. But the key is ordinary data in the returned
+value, so "navigating away cancels the search" becomes assertable, which it is not in Elm today.
+
+**Open.** Whether keys are global with callers namespacing their own strings, as port names are, or
+whether TEA needs a notion of component identity it does not currently have; whether `k` is a
+polymorphic equatable or simply `String`; whether `Cmd.cancel` on a key with nothing running is
+silent or warns. And **subscriptions are not designed here** — `Sub msg` is named in §4 as an
+admitted `foreign` shape and nothing more, and a good deal of real cancellation lives in them.
+
+---
+
 ## 6. The capability roadmap
 
 What "better equipped" concretely means. Each entry is a capability Elm walls off, brought inside the

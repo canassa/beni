@@ -12,6 +12,13 @@ and the indentation rules in §4.
 
 ## 0. Differences from Elm, in one place
 
+> **Pending spec change (2026-09-14).** Automatic currying is dropped: every call is saturated,
+> `_` is the partial-application placeholder, `|>` is pipe-first syntax, `>>`/`<<` are removed,
+> and `let x <- e` is a rest-of-block bind. The decision, its evidence and the grammar delta are
+> in [`fast-compiler.md`](fast-compiler.md) §9.3. **This document has not yet been updated**; §3,
+> §6.5, §8 and §9 are stale on those points until the spec pass lands.
+
+
 | Elm | Beni | Where |
 |---|---|---|
 | `module Foo exposing (..)` header | none; module name from path; `pub` per declaration | §5.1 |
