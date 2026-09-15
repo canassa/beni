@@ -1145,142 +1145,92 @@ effects as calls, platform as the only handler") is not decided here; see §3.2.
 
 ### 9.5 Output format and minification
 
-**Emit ESM.** Elm's IIFE is universally compatible but opaque: no dev server can compute which
-modules an edit affects, so any change forces a full reload (03 §6). ESM keeps the output
-analysable, and the decision is unchangeable later without breaking every consumer.
+**`beni build` produces deployable JavaScript on its own: no external bundler, no external
+minifier.** This reverses an earlier split that handed local-variable mangling and peephole
+compression to Terser or esbuild. A toolchain the user has to assemble is not the product, and the
+handoff was the one place where the purity proof had to be re-explained to a tool that could not
+verify it. Evidence for every row below is in report 12; report 03 for the ESM row.
 
-**ESM is also what makes the full-stack decision necessary rather than merely nice** (12 §7.5).
-Elm's delegation to a downstream minifier works *because* of the IIFE: Terser's `--mangle` leaves
-ESM top-level names alone by default, and `terser -m toplevel=true` is byte-identical to `terser
--m` on Elm's output. Closure has never supported ESM as an emitter needs it, which is why Scala.js
-deprecated it. Choosing ESM and choosing to own minification are the same decision.
+| Decision | Why |
+|---|---|
+| **Emit ESM**, never Elm's IIFE | an IIFE is opaque, so no dev server can compute which modules an edit affects (03 §6). Unchangeable later without breaking every consumer |
+| **Own minification** | Terser's `--mangle` leaves ESM top-level names alone and Closure never supported ESM as an emitter needs it, so choosing ESM and owning minification are the same decision (12 §7.5) |
+| **js_of_ocaml is the model, not Closure** | ~3,450 lines, minified by default, no external minifier in its graph. Closure ADVANCED measured 12% *larger* in brotli than Terser at 50× the wall time, is 180,000 lines, runs at 0.06 MB/s against §2's budget, and has no ES-module support |
+| **Measure after compression, always** | brotli primary, gzip secondary, raw as a diagnostic only. Raw counts *invert* the ranking: renaming saved 12,269 more raw bytes than a compression pass and still finished 1,334 bytes larger after gzip, and reordering declarations swung compressed size 18% at constant raw size |
+| **The model is entropy, not length** | fewer distinct identifiers means cheaper Huffman codes, a whole-stream property with no window dependence. So whole-program naming consistency pays under gzip as well as brotli, and the sliding-window folklore is not the argument |
+| **Two build modes, one graph** | `beni build` is dev: one ESM file per source module, no elimination, string constructor tags, maps on, and it is what §2's 15 ms warm budget is measured against. `--release` is chunks, exact elimination, integer tags, whole-program renaming and field ambiguation, maps off |
 
-**Beni is a full-stack solution: no external bundler, no external minifier.** `beni build`
-produces deployable JavaScript on its own. This reverses the earlier split here, which handed
-local-variable mangling and peephole compression to Terser or esbuild. That split was a reasonable
-division of labour and is given up deliberately: a toolchain the user has to assemble is not the
-product, and the handoff was the one place where the purity proof had to be re-explained to a tool
-that could not verify it.
+**Build, ranked by compressed bytes** (12 §5.1): local and top-level identifier renaming; property
+and field renaming, including **type-directed field ambiguation**, where fields that never co-occur
+on a type share one short name — it lowers the distinct-symbol count rather than merely shortening
+it, and it needs exactly what the checker already built, so Elm cannot have it; exact dead-code
+elimination (§9.1); compact printing.
 
-**The reference point is js_of_ocaml, not Closure.** An earlier draft of this section named
-Closure's advanced mode, and report 12 falsified it by measurement: Closure ADVANCED finished 12%
-*larger* in brotli than Terser given purity flags, at 50× the wall time, and Closure's own FAQ
-attributes its big wins to externs and exports rather than analysis. js_of_ocaml owns short-name
-allocation, JS-level simplification and compact printing in about 3,450 lines, is minified by
-default, and has no external minifier in its dependency graph. Closure is the wrong model on three
-counts: 180,000 lines, 0.06 MB/s against §2's emit budget, and no ES-module support.
+**Do not build.** All measured approximately zero or negative after compression: `booleans`
+(`true` → `!0` makes brotli output *larger*), `if_return`, `collapse_vars`, `inline`, `evaluate`,
+`reduce_vars`, `sequences`, `comparisons`, `switches`, `typeofs`.
 
-**Size is tracked after compression, everywhere.** Brotli primary, gzip secondary, raw as a
-diagnostic only. This is not a refinement — raw byte counts *invert* the ranking of
-transformations. Report 12 measured renaming saving 12,269 more raw bytes than a compression pass
-and still finishing 1,334 bytes larger after gzip, and measured an 18% swing in compressed size
-from reordering declarations with the raw count held exactly constant. Closure reached the same
-conclusion independently and says so in its source: it keeps `AliasStrings` disabled because "gzip
-actually prefers that strings are not aliased", and its `PerformanceTracker` measures every pass
-before *and* after gzip.
+#### Code splitting
 
-**The model is entropy, not length.** Fewer distinct identifiers means cheaper Huffman codes. This
-corrects the reasoning an earlier draft gave for assuming brotli. The sliding-window mechanism is
-real and confirmed — gzip matches within 32KB, brotli within megabytes, a 180× difference on
-synthetic repetition — but on real bundles the extra reach is worth 5.1% at 206KB and 0.7% on a
-minified 53KB file, and nothing at all once the file is smaller than the window. So the claim that
-whole-program naming consistency "largely does not pay under gzip" is **refuted**: it pays under
-both, through entropy, which is a whole-stream property with no window dependence. Brotli stays the
-assumed encoding on its own merits, roughly 16% ahead on the same file, but the argument for it is
-not the window and not the static dictionary, whose folklore did not reproduce (12 §2.3, §2.4).
+Designed in now rather than retrofitted: Elm has no chunking concept and adding one means reworking
+its emission core. An M3 requirement, and all four decisions come from report 12.
 
-The corollary is a technique Elm cannot have: **type-directed field ambiguation.** Fields that
-never co-occur on any type can share one short name, which lowers the distinct-symbol count rather
-than merely shortening it. Google's `AmbiguateProperties` exists precisely because disambiguation
-*increases* compressed size, so this is the direction that helps.
+- **Opt-in per program, release only.** Entry points are `main` plus every `lazy` declaration, so a
+  program with no `lazy` emits exactly one file. A program is split where its author said to split
+  it, never because it got large.
+- **Assignment is per declaration**, by entry-set colouring over §9.1's graph, with the colour
+  **hash-consed from the start** — dart2js's `ImportSetLattice`. GWT and Rollup both discovered late
+  that the naive representation costs minutes; dart2js measured 401 deferred imports producing 2.9
+  million import-sets and a 5 GB heap before interning. Declaration granularity is proven in four
+  whole-program compilers, and Closure's four safety guards for it are vacuous in a pure language.
+- **A size-driven merge pass follows colouring**, budgeted by compression rather than request count:
+  each chunk starts a fresh compression window, so four chunks cost about 6.6% of brotli'd bytes and
+  sixteen about 18% before any chunk has saved anything.
+- **The assigner synthesises the cross-chunk `import`/`export` bindings itself**, and is budgeted
+  with the assigner rather than after it. Closure is the only other declaration-granular chunker
+  with an ESM mode and the combination is broken there — it relocates declarations without emitting
+  the matching bindings (closure-compiler#4264, open). esbuild's `computeCrossChunkDependencies` is
+  the model.
 
-What we must build, ranked by compressed bytes (12 §5.1), with an explicit *not* list: local and
-top-level identifier renaming, property and field renaming including the ambiguation above, exact
-dead-code elimination (§9.1), and compact printing. **Not** `booleans` (`true` → `!0` makes brotli
-output *larger*), not `if_return` or `collapse_vars` (negative under brotli), and not `inline`,
-`evaluate`, `reduce_vars`, `sequences`, `comparisons`, `switches` or `typeofs`, all of which
-measured approximately zero.
+#### The `lazy` marker
 
-**Two build modes, one graph.** `beni build` is development output: one ESM file per source
-module, mirroring the source tree, no dead-code elimination, string constructor tags, source maps
-on. It optimises for rebuild latency and debuggability, and it is what the §2 warm-rebuild budget
-of 15ms is measured against — one edit rewrites one small file. `beni build --release` is
-deployment output: reachability chunks, exact elimination, integer tags, whole-program renaming and
-field ambiguation, maps off. Both read the same declaration graph, so nothing is built twice, and
-§9.4's "tag as a small integer in release mode, string in dev" already assumed this split existed.
+**A `lazy` marker on a top-level declaration is the split trigger**, and it rewrites the
+declaration's type at the boundary: `pub lazy adminDashboard : Model -> Html Msg` is written at the
+declared type and seen by importers as `Task LoadError (Model -> Html Msg)`. Every shipped trigger
+in every language changes a type at the boundary — Dart a `Future`, Scala.js a `Promise` — and
+TC39's `import defer` exists because that "forces all functions and their callers into an
+asynchronous programming model". In a language whose effects are already values (§3.1), a value
+arriving through a `Task` colours nothing that was not already coloured, so the cost that dominates
+this feature everywhere else is already paid. Precedent is strongest for the declaration-level form:
+Leptos ships `#[lazy]` exactly. First-class `LazyRef a` values were rejected as the one candidate
+with no working precedent anywhere.
 
-**Code splitting is designed in now, not retrofitted.** Elm has no chunking concept and adding one
-means reworking its emission core. Large programs are expected to need chunks, so this is an M3
-requirement. Three decisions, all from report 12:
+> **Open.** That rewritten type names `Task`, which `transparent-effects-proposal.md` removes.
+> Whatever replaces `Task` replaces it here.
 
-**Chunking is opt-in per program, and release-only.** The entry points are `main` plus every
-`lazy` declaration, so a program with no `lazy` colours every reachable declaration identically and
-emits exactly one file. Nothing is split because a program got large; a program is split where its
-author said to split it.
-
-- **Chunk assignment is per declaration**, by entry-set colouring over the §9.1 graph, with the
-  colour **hash-consed from the start** — dart2js's `ImportSetLattice`. Both GWT and Rollup
-  discovered late that the naive representation costs minutes; dart2js measured 401 deferred
-  imports producing 2.9 million import-sets and a 5GB heap before interning. Declaration
-  granularity is proven in production by four whole-program compilers, and Closure's four safety
-  guards for it are all vacuous in a pure language.
-- **A size-driven merge pass runs after colouring, with its budget set by compression rather than
-  request count.** Each chunk starts a fresh compression window, so four chunks cost about 6.6% of
-  brotli'd bytes and sixteen about 18% *before any chunk has saved anything*.
-- **The assigner synthesises the cross-chunk `import`/`export` bindings itself.** Closure is the
-  only system doing declaration-granular chunking with an ESM mode, and the combination is broken
-  there — it relocates declarations without emitting the matching bindings (closure-compiler#4264,
-  open). esbuild's `computeCrossChunkDependencies` is the model. Budget this with the assigner, not
-  after it.
-
-**The split trigger is a `lazy` marker on a top-level declaration**, rewriting its type into the
-effect language: `lazy adminDashboard : Model -> Html Msg` is seen by importers as
-`Task LoadError (Model -> Html Msg)`. Every shipped trigger in every language changes a type at the
-boundary — Dart a `Future`, Scala.js a `Promise` — and TC39's `import defer` proposal exists
-because that "forces all functions and their callers into an asynchronous programming model". **In
-a language whose effects are already values (§3.1), a value arriving through a `Task` colours
-nothing that was not already coloured: the cost that dominates this feature everywhere else is
-already paid.** Precedent is strongest for the declaration-level form — Leptos ships `#[lazy]`
-exactly, and a Roc contributor named Leptos-style annotation as Roc's likely path for the identical
-problem. First-class `LazyRef a` values were rejected as the one candidate with no working
-precedent anywhere, and the design that maximally creates references reachability cannot see
-through.
-
-**Where the marker goes: on a top-level declaration, never on a file, a local or an import.**
-`pub lazy adminDashboard : Model -> Html Msg`, with the body written at the declared type and the
-rewritten type being what everyone else sees. Not per file, because in release mode files are not
-output units at all and the marker should sit at the granularity of the graph it controls, which is
-per declaration. Not on a local, because a `let` binding is not a node in the declaration graph.
-Not on the import, which is the one arguable alternative and is where Dart and PureScript's proposal
-put it: consumer-side marking would make a module's interface differ per importer, and the interface
-being a single fact is what §8.1's firewall rests on. Producer-side also matches `pub`, already a
-per-declaration marker on the same line. A private declaration may be `lazy`: it still creates an
-entry point, which is what you want for one large helper behind one route.
-
-**A `lazy` declaration is an entry point, not a chunk.** Its chunk is everything reachable from it
-that no other entry point needs, so marking one function moves its whole private subtree. The
-corollary is worth stating because it is how the feature reports its own futility: if almost
-everything is shared, the chunk holds only that one function, and the merge pass folds it back
-rather than paying a compression window and a round trip for nothing.
-
-Two constraints come with it. dart2js's rule binds: **anything reachable from a pure position goes
-in the main chunk**, so `view` cannot await — though here the type rewrite makes that a type error
-rather than a dedicated check, which is the benefit of doing it in the type system. And the interaction with §9.3's saturated-call specialization
-**must be designed rather than discovered** — whole-program optimisation silently defeating split
-points is the single most common entry in GWT's issue tracker.
+- **On a top-level declaration, never a file, a local or an import.** Files are not output units in
+  release mode; a `let` binding is not a node in the declaration graph; and consumer-side marking,
+  where Dart and PureScript's proposal put it, would make a module's interface differ per importer,
+  which is what §8.1's firewall rests on. Producer-side also matches `pub`, already a
+  per-declaration marker on the same line. A private declaration may be `lazy` — it still creates an
+  entry point, which is what one large helper behind one route wants.
+- **A `lazy` declaration is an entry point, not a chunk.** Its chunk is everything reachable from it
+  that no other entry point needs, so marking one function moves its whole private subtree. If
+  almost everything is shared, the chunk holds only that function and the merge pass folds it back:
+  that is how the feature reports its own futility.
+- **Anything reachable from a pure position goes in the main chunk** (dart2js's rule), so `view`
+  cannot await. Here the type rewrite makes that a type error rather than a dedicated check, which
+  is the benefit of doing it in the type system.
 
 **What chunking will not buy.** On the bundle report 12 measured, 90% of bytes are runtime plus
-library, which no chunker can split. Chunking is a large-application feature, not a size strategy.
+library, which no chunker can split. It is a large-application feature, not a size strategy.
 
 **The exit criterion, because the counter-evidence is real.** Scala.js built the type-aware half of
-this and still expects a downstream generic minifier; going without it measured 1.58× in brotli.
-That does not sink the plan, because Scala.js never built the generic half at all — but it makes
-the risk measurable. **M3 exits when beni's own brotli'd output is within about 10% of beni's
-output piped through esbuild `--minify`.** If it approaches 1.58×, revisit before M5.
-
-The size target is Elm's TodoMVC, and the number that counts is the compressed one: 122KB raw,
-24KB minified, **9KB gzipped**. (Report 03 attributes these to `hints/optimize.md`; they are in the
-Elm guide's asset-size page, verified against `references/elm`.)
+this and still expects a downstream generic minifier; going without measured 1.58× in brotli. It
+never built the generic half at all, which is why that does not sink the plan — but **M3 exits when
+beni's brotli'd output is within about 10% of beni's own output piped through esbuild `--minify`**,
+and if it approaches 1.58× this is revisited before M5. The size target is Elm's TodoMVC, and the
+number that counts is the compressed one: 122 KB raw, 24 KB minified, **9 KB gzipped**.
 
 ### 9.6 Source maps
 
