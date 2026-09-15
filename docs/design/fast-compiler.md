@@ -175,6 +175,21 @@ mechanism is additive: `number` and `appendable` are a closed set resolved post-
 call-site constraints would change no type representation and no part of the firewall — the shape
 Evan chose in 2012 *because* it upgrades gracefully, still upgradeable thirteen years later.
 
+**Re-tested 2026-09-16 against Roc's shipped feature**, in
+[`research/18-static-dispatch-revisited.md`](research/18-static-dispatch-revisited.md). The decision
+stands; three of the four reasons above do not. The runtime-cost row is borrowed from a language
+whose dictionary density beni cannot reach, and on a JS target the runtime argument mildly *favours*
+adopting it (18 §1.1, §1.5); Roc's throughput number belongs to monomorphisation, not dispatch
+(18 §1.1); the prototype row is a strawman, because static dispatch emits direct calls and needs no
+prototypes (18 §1.3). What replaces them is one argument the reports above could not have made:
+**the cost lands on inference**, where Roc lost principal type inference in August 2026 and bought
+it back by assuming top-level annotations — the mitigation beni gave up when it made annotations
+optional and the interface the inferred scheme (18 §2.3). The claim that the mechanism is additive
+is also too strong: it is additive to the type system and invasive to the module system, because
+user-named methods need a declaring module (18 §4, §6). The report's two standing recommendations
+are to generalise obligation discharge beyond the hardcoded `number`/`appendable`/`equatable` set,
+and to decide structural codec derivation separately, since it needs no dispatch at all.
+
 ### Settled alongside it
 
 Evidence for the first four is in [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md).

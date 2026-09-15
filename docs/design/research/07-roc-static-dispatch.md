@@ -3,6 +3,15 @@
 Evidence for the §3.1 decision. Sources: the vendored Roc compiler at `references/roc`
 (Zig, master) and roc.zulipchat.com via [`.claude/skills/roc-zulip`](../../../.claude/skills/roc-zulip/SKILL.md).
 
+> **Superseded in part by [`18-static-dispatch-revisited.md`](18-static-dispatch-revisited.md)
+> (2026-09-16).** This report was written while Roc's static dispatch was a proposal. Report 18
+> re-tests it against the shipped feature and corrects three things here: the check-time mechanism
+> is row polymorphism rather than dictionary infrastructure (18 §1.2), nominal typing is required
+> far more narrowly than "copy the design taste, not the machinery" implies — structural shapes get
+> `is_eq`/`to_hash`/`parser_for`/`encoder_for` derived automatically (18 §4.2) — and the cost that
+> actually survives lands on type inference (18 §2). The conclusion below still stands; its
+> reasoning does not.
+
 ---
 
 ## The answer: one mechanism, not two
