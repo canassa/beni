@@ -1,63 +1,57 @@
 # Beni: design for an extremely fast Elm-like → JavaScript compiler
 
-**Status:** implemented through M3a (see §13 for where each milestone stands). The design below is
-the one the code follows; where a milestone proved part of it wrong, the correction is written here
-and the commit that found it says so. **Host language:** Zig. **Target:** JavaScript (ESM).
-**Source language:** Elm-like — ML family, full Hindley-Milner inference, ADTs, records, modules; no
-typeclasses, no macros, no type-level computation.
+**Host language:** Zig. **Target:** JavaScript (ESM). **Source language:** Elm-like — ML family,
+full Hindley-Milner inference, ADTs, records, modules; no typeclasses, no macros, no type-level
+computation.
 
-**Stance: Elm's walled garden, better equipped.** The wall stays and is not up for negotiation: user
-code does not reach arbitrary JavaScript, effects cross a controlled boundary, matches are
-exhaustive, there is no null, and well-typed code does not throw at runtime. What was wrong with Elm
-was never the wall — it was how sparsely the garden inside it was furnished: no exact 32-bit
-arithmetic, no code splitting, no source maps, a small standard library, a privileged kernel only
-the core team could extend. So the question a proposed capability faces is not "can user code reach
-this" — that answer stays no — but **what would it take to offer this inside the wall, typed so that
-well-typed code still cannot crash?** Exact 32-bit arithmetic needed a type, not a hole (§3.1, "Settled alongside it"); code
-splitting needed a declaration marker and an effect type (§9.5); both are in, and neither cost a
-guarantee. The interesting cases are the ones where the answer is a *platform* capability rather
-than a language one, which is why the JavaScript-boundary contract is written before M3 rather than
-discovered during it.
+**Stance: Elm's walled garden, better equipped.** The wall is not negotiable: user code does not
+reach arbitrary JavaScript, effects cross a controlled boundary, matches are exhaustive, there is no
+null, well-typed code does not throw. What was wrong with Elm was not the wall but how sparsely the
+garden inside it was furnished — no exact 32-bit arithmetic, no code splitting, no source maps, a
+small standard library, a kernel only the core team could extend. So the question a capability faces
+is not "can user code reach this" (no) but **what would it take to offer it inside the wall, typed so
+well-typed code still cannot crash?** Exact 32-bit arithmetic needed a type, not a hole (§3.1); code
+splitting needed a declaration marker and an effect type (§9.5); neither cost a guarantee. The hard
+cases are where the answer is a *platform* capability, which is why the JavaScript-boundary contract
+is written up front.
 
 ## 1. The thesis
 
-Compilers in this family are not slow because of clever algorithms done badly. They are slow for
-three reasons, and each has a known fix:
+Compilers in this family are slow for three reasons, each with a known fix:
 
-1. **Process and phase overhead dominates small edits.** A fresh process costs tens of
-   milliseconds on dynamic linking and runtime init before a single byte is lexed (04 §8). At a
-   100ms budget that is most of the budget. *Fix: a daemon.*
-2. **Pointer-chasing, per-node allocation and string comparison tax every phase.** oxc measured
-   ~20% from arena allocation alone; Carbon measured 5–12% lex / 4.5% parse / 1–2% total check
-   from packing tokens to 8 bytes; Zig measured −17.5% wall time from refining one intern pool
-   (01 §5, 04 §1). Elm pays a byte-array comparison on *every* identifier lookup through the
-   entire back half of its pipeline because `Name` is never interned (05 §2). *Fix: flat SoA IRs,
-   u32 indices, arenas, intern once at lex time.*
-3. **Invalidation is coarser than the edit.** Elm re-checks whole modules; declaration-level
-   output granularity did not buy it declaration-level *compilation* granularity (03 §7, 05 §3).
-   Zig, tracking a declaration's type separately from its value, re-analyses a single-file edit in
-   a 500k-line project in **63ms** (01 §7). *Fix: a fine-grained dependency graph plus a
+1. **Process and phase overhead dominates small edits.** A fresh process costs tens of milliseconds
+   on dynamic linking and runtime init before a byte is lexed (04 §8) — most of a 100ms budget.
+   *Fix: a daemon.*
+2. **Pointer-chasing, per-node allocation and string comparison tax every phase.** oxc measured ~20%
+   from arena allocation alone; Carbon 5–12% lex / 4.5% parse / 1–2% total check from packing tokens
+   to 8 bytes; Zig −17.5% wall time from refining one intern pool (01 §5, 04 §1). Elm pays a
+   byte-array comparison on *every* identifier lookup through the entire back half of its pipeline
+   because `Name` is never interned (05 §2). *Fix: flat SoA IRs, u32 indices, arenas, intern once at
+   lex time.*
+3. **Invalidation is coarser than the edit.** Elm re-checks whole modules; declaration-level *output*
+   granularity did not buy it declaration-level *compilation* granularity (03 §7, 05 §3). Zig,
+   tracking a declaration's type separately from its value, re-analyses a single-file edit in a
+   500k-line project in **63ms** (01 §7). *Fix: a fine-grained dependency graph plus a
    module-interface firewall.*
 
-The fourth reason is free: **the language itself.** Feature surface costs compile time, and the
-clearest statement of it is Gleam's, which rejects typeclasses because they "have a high compile time
-cost, and have a runtime cost unless the compiler performs full-program compilation and expensive
-monomorphisation" (09 §3); PureScript's creator declined to build that monomorphisation into the
-standard compiler because "being global, it doesn't always play nicely with separate compilation",
-and the separate optimizer that does it is non-incremental while recovering 25–35% runtime and
-20–25% bundle size (09 §2). Beni stays scope-limited on those grounds, as a language-design
-commitment.
+The fourth reason is free: **the language itself**, since feature surface costs compile time. Gleam
+rejects typeclasses for their "high compile time cost, and… runtime cost unless the compiler performs
+full-program compilation and expensive monomorphisation" (09 §3); PureScript's creator declined to
+build that monomorphisation into the standard compiler because "being global, it doesn't always play
+nicely with separate compilation", and the separate optimizer that does it is non-incremental while
+recovering 25–35% runtime and 20–25% bundle size (09 §2). Beni stays scope-limited on those grounds,
+as a language-design commitment.
 
-**Correction.** Two claims this document previously made here do not survive checking (09 §2):
-PureScript's `RowList` blowup was root-caused to its *parser*, not dictionary resolution, and the
-widely repeated "476 million dictionary comparisons" figure could not be sourced at all. Nor is
-there evidence that *Elm's* speed comes from lacking typeclasses — Evan's own performance writing
-credits parser allocation and GC. The argument stands on the other languages' evidence, not Elm's.
+**Correction.** Two claims made here previously do not survive checking (09 §2): PureScript's
+`RowList` blowup was root-caused to its *parser*, not dictionary resolution, and the "476 million
+dictionary comparisons" figure could not be sourced at all. Nor is there evidence that *Elm's* speed
+comes from lacking typeclasses — Evan's own performance writing credits parser allocation and GC.
+The argument stands on the other languages' evidence, not Elm's.
 
 ## 2. Performance budget
 
-Targets are per-operation, on a warm daemon, measured on a 100k-line project. These are the
-numbers CI tracks (§12); missing them is a bug report, not a nice-to-have.
+Per-operation, on a warm daemon, on a 100k-line project. These are the numbers CI tracks (§12);
+missing them is a bug report, not a nice-to-have.
 
 | Operation | Target | Evidence it's achievable |
 |---|---|---|
@@ -69,26 +63,23 @@ numbers CI tracks (§12); missing them is a bug report, not a nice-to-have.
 | Type checking throughput (cold, per core) | **> 250k LOC/s** | HM with levels is near-linear; Elm reaches ~130k LOC/s for the *whole* pipeline in GHC |
 | Emit throughput | **> 5 MB/s of JS** | esbuild prints+sourcemaps 547k lines in 390ms including parse and link (03 §1) |
 
-Two non-goals, stated so they don't creep in: Beni does not aim to beat esbuild at bundling
-third-party JavaScript, and it does not aim for sub-millisecond *cold* starts. It aims for edits
-that feel instantaneous inside a running session.
-
+Two non-goals: beating esbuild at bundling third-party JavaScript, and sub-millisecond *cold* starts.
 **These targets are Elm-shaped, not Roc-shaped, and the difference is one phase.** Roc caches
-checking and not specialisation, and its measured times split exactly along that line: `roc check`
-does 58k lines in **0.78s**, while an `--opt=dev` build of 55k lines takes **16.9s** — about 3,400
-lines/s against Elm's ~120–130k for its whole pipeline (10). We are aiming at the first profile, and
-the reason it is reachable is that there is no specialisation phase to pay for.
+checking and not specialisation, and its times split along that line: `roc check` does 58k lines in
+**0.78s**, an `--opt=dev` build of 55k lines takes **16.9s** — ~3,400 lines/s against Elm's ~120–130k
+for its whole pipeline (10). We aim at the first profile, reachable because there is no
+specialisation phase to pay for.
 
 ## 3. Language constraints that exist for compiler speed
 
-These are decisions about the *source language*, made now because they cannot be retrofitted.
+Decisions about the *source language*, made now because they cannot be retrofitted.
 
 - **LL(k), no backtracking.** Constant lookahead, committed choice — Zig's stated parser invariant
   (01 §9) and Elm's practical one (05 §1.3). Guarantees linear parse time.
-- **No typeclasses, no dictionary passing, and no static dispatch.** Settled — see §3.1 and reports
-  09 and 10. Dictionaries cost runtime and bundle size, the effective fix is global, and
-  whole-program specialisation is the one phase nobody has made cheap to cache. *Not* because of the
-  `RowList` incident, which was a parser bug.
+- **No typeclasses, no dictionary passing, no static dispatch.** Settled — §3.1, reports 09 and 10.
+  Dictionaries cost runtime and bundle size, the effective fix is global, and whole-program
+  specialisation is the one phase nobody has made cheap to cache. *Not* the `RowList` incident, a
+  parser bug.
 - **No type-level computation, no row-polymorphic type functions.** Records get plain extensible
   rows with structural unification, nothing more.
 - **No macros** — what lets a simple module-interface firewall work instead of a salsa-style query
@@ -97,22 +88,21 @@ These are decisions about the *source language*, made now because they cannot be
 - **Explicit imports, no wildcards.** Makes per-module name resolution parallelisable without a
   global pre-pass, which Roc's FAQ gives as its *primary* reason.
 - **Tabs are a syntax error; indentation rules are lexically decidable.** No layout pre-pass.
-- **No automatic currying** (decided 2026-09-14, §9.3): every call is saturated, `_` is the
-  partial-application placeholder, `|>` is pipe-first syntax. Juxtaposition stays.
+- **No automatic currying** (§9.3): every call is saturated, `_` is the partial-application
+  placeholder, `|>` is pipe-first syntax. Juxtaposition stays.
 
 ## 3.1 Ad-hoc polymorphism: `number` yes, `comparable` no
 
-**The problem.** Without typeclasses, `+` still has to work on `Int` and `Float`, and something has
-to order the keys of a `Dict`. Elm's answer is four magic type variables — `number`, `comparable`,
-`appendable`, `compappend` — each meaning "one of a fixed set of types", and they make the unifier
-ask a second question beyond "are these the same type": "is this type in the allowed set?" For
-`number` that is one comparison; for `comparable` the set is recursive, so it means walking the whole
-type under a cycle guard — the **only** place Elm runs an O(term size) check inside unification,
-where everything else is batched to once per let-bound name (02 §3). Only `Comparable` and
-`CompAppend` pay it (`Unify.hs:370-414`, with the author's own `TODO` doubting the guard at
-`:421-422`), so the cost is not constrained type variables as a category but `comparable`
-specifically — which is also what forces the generic runtime comparator `_Utils_cmp`, the
-megamorphic dispatch point V8 cannot inline through (03 §5.7). It taxes both sides.
+**The problem.** Without typeclasses, `+` must still work on `Int` and `Float`, and something must
+order `Dict` keys. Elm's answer is four magic type variables — `number`, `comparable`, `appendable`,
+`compappend` — each "one of a fixed set of types", making the unifier ask a second question beyond
+"are these the same type": "is this type in the allowed set?" For `number` that is one comparison;
+`comparable`'s set is recursive, so it walks the whole type under a cycle guard — the **only** place
+Elm runs an O(term size) check inside unification, where everything else is batched to once per
+let-bound name (02 §3). Only `Comparable` and `CompAppend` pay it (`Unify.hs:370-414`, the author's
+own `TODO` doubting the guard at `:421-422`), so the cost is `comparable` specifically, not
+constrained type variables as a category — and `comparable` also forces the generic runtime
+comparator `_Utils_cmp`, the megamorphic dispatch point V8 cannot inline through (03 §5.7).
 
 ### Decision
 
@@ -129,34 +119,30 @@ megamorphic dispatch point V8 cannot inline through (03 §5.7). It taxes both si
 
 ### Why, and what it costs
 
-The unifier ends up doing exactly one thing, with no recursive membership walk and no occurs check
-on its hot path — the §7 premise intact rather than punctured. The price is ergonomic and real:
-`List.sort` becomes `List.sortBy identity`, tuple-keyed dictionaries need a comparator, some ordering
-code gets longer. Point 3 is the genuine departure from Elm; 1, 2 and 5 are close to free.
-**Roc reached the same place independently**
-([`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md)) — no `comparable`, no
-generic `sort`, comparison operators deliberately numeric — but its uniform
-mechanism of methods named on types is *not* copyable, because what makes it cheap is
-monomorphisation and the non-specialising path it offers passes hidden dictionaries instead.
+The unifier does one thing, with no recursive membership walk and no occurs check
+on its hot path — §7's premise intact. The price is ergonomic and real: `List.sort` becomes
+`List.sortBy identity`, tuple-keyed dictionaries need a comparator, some ordering code gets longer.
+Point 3 is the genuine departure from Elm; 1, 2 and 5 are close to free. **Roc reached the same place
+independently** ([`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md)), but its
+mechanism of methods named on types is *not* copyable: what makes it cheap is monomorphisation, and
+its non-specialising path passes hidden dictionaries instead.
 
 ### Revisited after the survey (09)
 
-The exclusion survived a three-language survey, with two corrections to its reasoning. **Elm's
-omission was deliberate deferral, not neglect** — Evan chose SML-style operator overloading in 2012
-because it upgrades gracefully to type classes — but never argued it on compile-speed grounds, so
-that justification was ours, wrongly attributed. And **"you must do whole-program work" is too
-strong**: GHC's `SPECIALIZE` and F#/Fable's SRTP both ship dictionary elimination compatible with
-separate compilation, paying in code duplication. A follow-up survey (10) sharpened rather than
-overturned the claim: Rust makes whole-program work incremental only at 256 codegen units instead of
-16, worse codegen, cross-crate duplication and a memory-blowup bug category open after a decade, and
-Roc does not cache specialisation at all. So the defensible claim is narrower — **specialisation is
-the phase nobody has made cheap to cache.**
+The exclusion survived, with two corrections. **Elm's omission was deliberate deferral, not
+neglect** — Evan chose SML-style operator overloading in 2012 because it upgrades gracefully to type
+classes — but never argued it on compile-speed grounds, so that justification was ours, wrongly
+attributed. And **"you must do whole-program work" is too strong**: GHC's `SPECIALIZE` and F#/Fable's
+SRTP both ship dictionary elimination compatible with separate compilation, paying in code
+duplication. A follow-up survey (10) sharpened rather than overturned the claim — Rust makes it
+incremental only at 256 codegen units instead of 16, worse codegen, cross-crate duplication and a
+memory-blowup bug category open after a decade; Roc does not cache specialisation at all — so the
+claim is narrower: **specialisation is the phase nobody has made cheap to cache.**
 
 ### Decision: no static dispatch
 
-**Settled. Beni has no typeclasses, no dictionary passing, and no static dispatch.** Ad-hoc
-polymorphism is limited to `number` and `appendable` (above); ordering, equality on user types and
-stringification are explicit.
+Ad-hoc polymorphism is limited to `number` and `appendable`; ordering, equality on user types and
+stringification are explicit. Four mechanisms ruled out:
 
 | Ruled out | Why |
 |---|---|
@@ -165,30 +151,27 @@ stringification are explicit.
 | **JS prototype dispatch** (`x.method()`) | Free at runtime — the engine does it — but methods on prototypes defeat the precise whole-program tree-shaking §9.1 depends on. Rejected on output size, not compile time. |
 | **Interface-propagated call-site specialisation** (GHC `SPECIALIZE`, F# SRTP) | The one incremental-compatible route, and genuinely viable — but it pays in code duplication, which is what §9 optimises hardest, and it would have to be opt-in per function. Putting a body into its interface file means body edits change the interface, which is exactly what §8.1 exists to prevent; GHC keeps the firewall intact only because `INLINABLE` is an explicit annotation. Not worth the language surface for what it buys. |
 
-It is *not* based on PureScript's `RowList` blowup or the "476 million dictionary comparisons"
-figure, both corrected in §1 and 09 §2, nor on Elm. **Beyond this project**, across seven JS-targeting
-languages type-directed dispatch *with no value to dispatch on* always reduces to either a
-caller-threaded dictionary or whole-program specialisation — no third option — while value-directed
-dispatch is free everywhere because JS prototypes do it natively (09 §3). **If this is ever
-revisited**, the entry point is the last table row, and the door is not welded shut because §3.1's
-mechanism is additive: `number` and `appendable` are a closed set resolved post-solve, so opt-in
-call-site constraints would change no type representation and no part of the firewall — the shape
-Evan chose in 2012 *because* it upgrades gracefully, still upgradeable thirteen years later.
+Across seven JS-targeting languages, type-directed dispatch *with no value to dispatch on* always
+reduces to a caller-threaded dictionary or whole-program specialisation — no third option — while
+value-directed dispatch is free everywhere because JS prototypes do it natively (09 §3). **If ever
+revisited**, the entry point is the last table row: `number` and `appendable` are a closed set
+resolved post-solve, so opt-in call-site constraints would change no type representation and no part
+of the firewall.
 
-**Re-tested 2026-09-16 against Roc's shipped feature**, in
-[`research/18-static-dispatch-revisited.md`](research/18-static-dispatch-revisited.md). The decision
-stands; three of the four reasons above do not. The runtime-cost row is borrowed from a language
+**Re-tested against Roc's shipped feature**
+([`research/18-static-dispatch-revisited.md`](research/18-static-dispatch-revisited.md)): the
+decision stands, three of the four reasons do not. The runtime-cost row is borrowed from a language
 whose dictionary density beni cannot reach, and on a JS target the runtime argument mildly *favours*
 adopting it (18 §1.1, §1.5); Roc's throughput number belongs to monomorphisation, not dispatch
-(18 §1.1); the prototype row is a strawman, because static dispatch emits direct calls and needs no
-prototypes (18 §1.3). What replaces them is one argument the reports above could not have made:
-**the cost lands on inference**, where Roc lost principal type inference in August 2026 and bought
-it back by assuming top-level annotations — the mitigation beni gave up when it made annotations
-optional and the interface the inferred scheme (18 §2.3). The claim that the mechanism is additive
-is also too strong: it is additive to the type system and invasive to the module system, because
-user-named methods need a declaring module (18 §4, §6). The report's two standing recommendations
-are to generalise obligation discharge beyond the hardcoded `number`/`appendable`/`equatable` set,
-and to decide structural codec derivation separately, since it needs no dispatch at all.
+(18 §1.1); the prototype row is a strawman, since static dispatch emits direct calls (18 §1.3).
+Replacing them is one argument the earlier reports could not make: **the cost lands on inference** —
+Roc lost principal type inference in August 2026 and bought it back by assuming top-level
+annotations, the mitigation beni gave up in making annotations optional and the interface the
+inferred scheme (18 §2.3). "Additive" is also too strong: additive to the type system, invasive to
+the module system, since user-named methods need a declaring module (18 §4, §6). Two standing
+recommendations: generalise obligation discharge beyond the hardcoded
+`number`/`appendable`/`equatable` set, and decide structural codec derivation separately, needing no
+dispatch at all.
 
 ### Settled alongside it
 
@@ -201,44 +184,41 @@ Evidence for the first four is in [`research/08-roc-language-answers.md`](resear
 - **Type aliases are transparent but interned, never expanded.** Elm expands them into every
   dependent's interface — measured bloat (elm/compiler#1453). Copy Roc's compact alias node over a
   shared backing variable.
-- **Shadowing is an error**, not a warning, as in Elm — Roc permits it with a permanent warning, but
-  its own stated benefit (reading a snippet or diff with stronger guarantees about what names mean)
+- **Shadowing is an error**, not a warning, as in Elm. Roc permits it with a permanent warning, but
+  its own stated benefit — reading a snippet or diff with stronger guarantees about what names mean —
   is an argument for banning.
-- **Top-level annotations are optional**, as in Elm and Roc. **Decided 2026-09-13, before M2.** The
-  cost lands in §8.1: an interface is the *inferred* scheme of each `pub` declaration, so its hash can
-  only be computed after checking and an importer is re-checked whenever a dependency's inferred
-  interface changes by value (Elm's `.elmi` comparison, Roc's content-hash chain). What stays lexical
-  is the *set* of `pub` names, all per-module name resolution (§3) needs. Requiring annotations would
-  have made interfaces free to compute; that win is unmeasured, and matching Elm and Roc was judged
-  worth more.
+- **Top-level annotations are optional**, as in Elm and Roc. The cost lands in §8.1: an interface is
+  the *inferred* scheme of each `pub` declaration, so its hash is computable only after checking, and
+  an importer is re-checked whenever a dependency's inferred interface changes by value (Elm's
+  `.elmi` comparison, Roc's content-hash chain). What stays lexical is the *set* of `pub` names, all
+  per-module name resolution (§3) needs. Requiring annotations would have made interfaces free to
+  compute; that win is unmeasured, and matching Elm and Roc was judged worth more.
 - **Primitives: core is written in beni, embedded in the compiler, with `foreign` declarations for
-  what cannot be.** **Decided 2026-09-13, before M2.** Elm's Kernel modules and Roc's embedded
-  builtin `.roc` files are the precedents. Most of core is ordinary beni, so §9.1's DCE graph and
-  §9.3's direct-call specialisation reach the standard library and core is tested through the same
-  corpus and Node boundary as user code; only arithmetic, string primitives and the list
-  representation are `foreign`, with `Int`, `Float`, `Char`, `String` and `List a` as `foreign type`,
-  which keeps the list-representation question (§14 #2) out of the source until M3. The cost is a
-  cold-start parse of core, under a millisecond per thousand lines at §2's targets, which §8.3's
-  cache erases. Syntax in [`language.md`](language.md) §5.4.
-- **Effects: a pure language, one function arrow, effects as values interpreted by a platform.**
-  **Decided 2026-09-13, before M2.** Elm's model, with Roc's name for the boundary. The rejected
-  alternative, Roc's `->`/`=>` with effects in the types, composes effectful code more naturally but
-  puts two function kinds and effect polymorphism into the unifier. Consequences: §9.1's DCE is exact
-  by construction; §7's unifier is unchanged; M2 gives `main` no special type, a platform fact checked
-  in M3; the effect-marking question in §3.2 closes as "none". **The platform interface, ports and
-  the runtime are now specified** in [`boundary.md`](boundary.md) on report 13's evidence: ports stay
-  and stay asynchronous, because across fourteen JavaScript-targeting compilers no shipped design
-  lets user code call JavaScript and keep the no-crash guarantee — but the three restrictions Elm
-  stacked on ports do not survive it.
-- **Project model for M2: one source root plus embedded core, no manifest; module identity is
-  package-qualified from day one.** **Decided 2026-09-13, before M2.** A module is internally
-  `(package, path)`, so M4 needs no retrofit when packages arrive, where Elm's flat global namespace
-  must error when two packages define the same module. Manifests, versions, hashes and lockfiles are
-  M4, where the cache key holds that information anyway. The one piece of M2 built for M4 is the
-  **interface record**: flat and index-based per §5, holding public names, types, constructors,
-  opacity and inferred schemes; M2 compares it by value, M4 hashes and mmaps it unchanged.
-- **`Int` is a double; exact 32-bit work has its own type.** **Decided 2026-09-13, before M3.**
-  JavaScript has no integer type, and every representation costs something:
+  what cannot be** (`language.md` §5.4) — Elm's Kernel modules and Roc's embedded builtin `.roc`
+  files are the precedents. Core being mostly ordinary beni, §9.1's DCE graph and §9.3's direct calls
+  reach the standard library, and core is tested through the same corpus and Node boundary as user
+  code; only arithmetic, string primitives and the list representation are `foreign`, with `Int`,
+  `Float`, `Char`, `String` and `List a` as `foreign type`, keeping the list-representation question
+  (§14 #2) out of the source. The cost is a cold-start parse of core, under a millisecond per
+  thousand lines at §2's targets, which §8.3's cache erases.
+- **Effects: a pure language, one function arrow, effects as values interpreted by a platform** —
+  Elm's model with Roc's name for the boundary. The rejected alternative, Roc's `->`/`=>` with
+  effects in the types, composes effectful code more naturally but puts two function kinds and effect
+  polymorphism into the unifier. Consequences: §9.1's DCE is exact by construction; §7's unifier is
+  unchanged; `main` gets no special type, a platform fact; §3.2's effect-marking question closes as
+  "none". **Platform interface, ports and runtime are specified** in [`boundary.md`](boundary.md) on
+  report 13's evidence: ports stay and stay asynchronous, because across fourteen JavaScript-targeting
+  compilers no shipped design lets user code call JavaScript and keep the no-crash guarantee — but
+  the three restrictions Elm stacked on ports do not survive it.
+- **Project model: one source root plus embedded core, no manifest; module identity is
+  package-qualified from day one.** A module is internally `(package, path)`, so packages need no
+  retrofit when they arrive, where Elm's flat global namespace must error when two packages define
+  the same module. Manifests, versions, hashes and lockfiles defer to the package work, whose cache
+  key holds that anyway. Built ahead of it is the **interface record**: flat and index-based per §5,
+  holding public names, types, constructors, opacity and inferred schemes; compared by value now,
+  hashed and mmap'd unchanged later.
+- **`Int` is a double; exact 32-bit work has its own type.** JavaScript has no integer type, and
+  every representation costs something:
 
   | | Exact to | Cost per operation | Overflow |
   |---|---|---|---|
@@ -246,17 +226,17 @@ Evidence for the first four is in [`research/08-roc-language-answers.md`](resear
   | 32-bit | 2,147,483,647 | a truncation on every result | wraps, defined |
   | BigInt | unbounded | boxed, ~an order of magnitude slower | never |
 
-  BigInt would make the most common type in every program the slowest one. **Double is the default**,
-  as in Elm, and its failure mode is the worse one: past 2⁵³ addition stops working and says nothing.
+  BigInt would make the most common type in every program the slowest. **Double is the default**, as
+  in Elm, and its failure mode is the worse one: past 2⁵³ addition stops working and says nothing.
   **Bit operations alone are not the escape hatch** — hashing, checksums, PRNGs and binary formats
-  need wrapping *multiply*, which cannot be faked because a 32-bit product can exceed 2⁵³; Elm's own
-  random and hashing libraries splitting each multiply into 16-bit halves by hand is the evidence
-  that `Bitwise` is insufficient. So core ships an **opaque `Int32`** with total arithmetic — multiply
-  to `Math.imul`, add and subtract truncating, shifts and masks native — free at runtime, since
+  need wrapping *multiply*, unfakeable because a 32-bit product can exceed 2⁵³; Elm's own random and
+  hashing libraries splitting each multiply into 16-bit halves by hand is the evidence that `Bitwise`
+  is insufficient. So core ships an **opaque `Int32`** with total arithmetic — multiply to
+  `Math.imul`, add and subtract truncating, shifts and masks native — free at runtime, since
   underneath it is an ordinary number. A distinct type rather than Elm's module over plain `Int`, for
   the same reason `comparable` was dropped: if arithmetic wraps the type says so, and `*` is not
-  available on it. `Int64` over BigInt can follow later. The stance's exemplar: a capability Elm
-  lacks, added inside the wall with no hole cut.
+  available on it. `Int64` over BigInt can follow. The stance's exemplar: a capability Elm lacks,
+  added inside the wall with no hole cut.
 
 ### Still open
 
@@ -269,7 +249,7 @@ Each is cheaper to take now than later:
 
 ## 3.2 Surface syntax
 
-Roc changed most of its syntax just before and during the Zig rewrite, and the reasoning is in
+Roc changed most of its syntax just before and during the Zig rewrite, reasoning in
 [`research/08-roc-language-answers.md`](research/08-roc-language-answers.md); two of their findings
 are about *parsing cost*, which is our constraint too. **The normative grammar is
 [`language.md`](language.md); what follows is each decision and the compiler-speed reason it was
@@ -287,35 +267,36 @@ taken for, not a second copy of the rules.**
 
 ### The two parser findings this rests on
 
-**Whitespace application is ambiguous *without* indentation rules — not in general.** Roc moved
-calls from `f a b` to `f(a, b)` after Joshua Warner produced token streams with two valid parses, but
-Roc is indentation-*insensitive* and Elm keeps whitespace application and is fine precisely because
-it is not. So the lesson is conditional, and carries a price we accept knowingly: **whitespace
-application commits us to indentation-sensitivity**, threaded through the combinators as Elm does it
+**Whitespace application is ambiguous *without* indentation rules — not in general.** Roc moved calls
+to `f(a, b)` after Joshua Warner produced token streams with two valid parses; but Roc is
+indentation-*insensitive*, and Elm keeps whitespace application and is fine precisely because it is
+not. So the lesson is conditional, and carries a price we accept knowingly: **whitespace application
+commits us to indentation-sensitivity**, threaded through the combinators as Elm does
 (`Parse/Primitives.hs`'s `withIndent`), never a separate layout pass.
 
-**`|x|` lambdas are not free when `|>` exists.** Anthony Bullard, #compiler development, 2025-01-15,
-on Roc's `|_| ...`: "we had to peek before trying to parse this to make sure we don't try to consume
-the `||` and `|>` operators as part of the lambda args." That is lookahead introduced purely by a
-syntax choice; it produced fuzzer-caught bugs, and the same ambiguity class was still generating
-parse errors in real user code as late as 2026-02.
+**`|x|` lambdas are not free when `|>` exists.** Bullard, #compiler development, 2025-01-15, on Roc's
+`|_| ...`: "we had to peek before trying to parse this to make sure we don't try to consume the `||`
+and `|>` operators as part of the lambda args." That is lookahead from a syntax choice alone; it
+produced fuzzer-caught bugs, and the class was still generating parse errors in real user code as
+late as 2026-02.
 
 ### Error handling: `?`
 
 `expr?` on a `Result` evaluates to the `Ok` payload, or returns the `Err` from the enclosing
-function; `Result.andThen` chains remain, so `?` is sugar for the common sequential case. Normative
-in [`language.md`](language.md) §6.6. Three rules keep its cost at zero. **`?` returns from the
-nearest enclosing *named* function and is a compile error inside a lambda** — the one real hazard,
-which Roc found the hard way when backpassing let early returns land in a function the reader wasn't
-looking at; making the ambiguous case illegal is a scope check, free, and reversible, since relaxing
-a restriction later is easy. **No implicit error conversion**, because Rust's `?` applies `From::from`
-and that needs a typeclass we don't have (§3), so error types must match exactly. **It desugars in
-the desugarer** — no new constraint kind, no unifier changes, nothing touching inference; the only
-ergonomic feature here that buys its keep entirely there.
+function; `Result.andThen` chains remain. Normative in [`language.md`](language.md) §6.6. Three rules
+keep its cost at zero, and a fourth extends its reach.
 
-**It works on both `Maybe` and `Result`**, with the enclosing function required to return the *same*
-shape and no conversion between the two. `Maybe.andThen` pyramids are as common as `Result` ones in
-Elm code, so the win is real, and the check stays local: two desugaring cases, no inference.
+1. **`?` returns from the nearest enclosing *named* function; inside a lambda it is a compile
+   error.** The one real hazard — Roc found it the hard way when backpassing let early returns land
+   in a function the reader wasn't looking at. Making the ambiguous case illegal is a free scope
+   check, and reversible.
+2. **No implicit error conversion.** Rust's `?` applies `From::from`, needing a typeclass we don't
+   have (§3), so error types must match exactly.
+3. **It desugars in the desugarer** — no new constraint kind, no unifier change, nothing touching
+   inference.
+4. **It works on `Maybe` as well as `Result`**, the enclosing function returning the *same* shape
+   with no conversion between the two: `Maybe` pyramids are as common as `Result` ones in Elm, and
+   the check stays local at two desugaring cases.
 
 ### Flat effect syntax — OPEN
 
@@ -324,39 +305,40 @@ Elm code, so the win is real, and the check stays local: two desugaring cases, n
 [14](research/14-direct-style/01-solution-space.md) — eighteen per-subject reports and a synthesis —
 supersedes both on the design space, and its Elm report answers "is this worth fixing": the pyramid
 is real but rare in Elm, the formatter is the binding constraint where it is hit, and the branch is
-where the residual pain sits (14/elm §0, §7). The author's position is that it is worth fixing
-regardless.
+where the residual pain sits (14/elm §0, §7). The author holds it worth fixing regardless.
 
-**Adopted (2026-09-14, generalised 2026-09-15): a rest-of-block bind, `let x <- e`,** as the general
-sequencing form for **any function taking its callback last** — `let x <- f a b` is
-`f a b (\x -> rest)`, Gleam's `use`, purely syntactic; normative in [`language.md`](language.md)
-§6.7 — 44 lines of precedent in Roc's measurement of the same block-shaped rewrite (research 15)
-against the table it replaces. The original form dispatched on an `andThen` table resolved per type
-after inference, and **that is withdrawn (2026-09-15)**: typed effects remove `Task` from the table,
-`?` covers `Result` and `Maybe`, and the table cannot express `Task.scope : (Scope -> a) -> a` or
-`Task.bracket` — without which those nest and the pyramid research 14 was commissioned to remove
-reappears at exactly the scopes and resource brackets the effects design depends on (§9.3). This is
-research 14's option B, adopted because dropping currying (§9.3) removes Elm's applicative
-constructor pipeline and this replaces it. **Still open:** whether
-`Task` uses this bind or a call-site marker over typed effect sets — research 14's S2, and the
-synthesis discussion's "typed effects as calls, with the platform as the only handler", which gives
+**Adopted: a rest-of-block bind, `let x <- e`,** the general sequencing form for **any function
+taking its callback last** — `let x <- f a b` is `f a b (\x -> rest)`, Gleam's `use`, purely
+syntactic (normative in [`language.md`](language.md) §6.7), on 44 lines of precedent in Roc's
+measurement of the same block-shaped rewrite (research 15). The original form dispatched on an
+`andThen` table resolved per type after inference, and **that is withdrawn**: typed effects remove
+`Task` from the table, `?` covers `Result` and `Maybe`, and the table cannot express
+`Task.scope : (Scope -> a) -> a` or `Task.bracket` — without which those nest and the pyramid
+research 14 was commissioned to remove reappears at exactly the scopes and resource brackets the
+effects design depends on (§9.3). Research 14's option B, adopted because dropping currying (§9.3)
+removes Elm's applicative constructor pipeline and this replaces it. **Still open:** whether `Task`
+uses this bind or a call-site marker over typed effect sets — research 14's S2, and the synthesis
+discussion's "typed effects as calls, with the platform as the only handler", giving
 effect-polymorphic higher-order functions and named effects in signatures at the cost of set
 unification and a diagnostics deliverable.
 
-**What the evidence establishes** — the rest of this section is the earlier record. **Four languages
-invented the same mechanism independently** (OCaml's `let*`, Gleam's `use`, Koka's `with`, Roc's
-removed backpassing), all one rewrite and **none consulting a type class**, which is the shape
-affordable without the type classes §3.1 rules out. **`?` extended to `Task` is the most expensive
-shape, not the cheapest**, because `?` is postfix on any application, so the continuation must be
-hoisted out of argument positions, conditions, scrutinees and pipelines: Roc shipped both, and
-backpassing desugared in 44 lines while the arbitrary-position marker needed a dedicated 1,046-line
-pass and shipped with a compiler crash. It would also **introduce a silent wrong answer, verified in
-our own checker**: `?`'s shape is chosen by ordered speculative unification (`Solve.zig` tries
-`Result`, then `Maybe`), so `Task e a` would be a third two-parameter candidate losing the same way —
-the failure class M2d existed to remove. Two corrections to an earlier draft: **generators do
-something no syntactic rewrite can do**, suspending at an arbitrary point inside a branch or a loop
-where block-structured binds capture only the rest of a block; and **Effect-TS's cost is its fiber
-runtime, not its generators**, the generator object being **per call, not per bind**.
+**What the evidence establishes** — the rest of this section is the earlier record, numbered because
+other documents cite these points by number.
+
+1. **Four languages invented the same mechanism independently** (OCaml's `let*`, Gleam's `use`,
+   Koka's `with`, Roc's removed backpassing), all one rewrite and **none consulting a type class**,
+   the shape affordable without the type classes §3.1 rules out.
+2. **`?` extended to `Task` is the most expensive shape, not the cheapest**: `?` is postfix on any
+   application, so the continuation must be hoisted out of argument positions, conditions,
+   scrutinees and pipelines. Roc shipped both — backpassing desugared in 44 lines, the
+   arbitrary-position marker needed a dedicated 1,046-line pass and shipped with a compiler crash.
+3. **It would also introduce a silent wrong answer, verified in our own checker.** `?`'s shape is
+   chosen by ordered speculative unification (`Solve.zig` tries `Result`, then `Maybe`), so
+   `Task e a` would be a third two-parameter candidate losing the same way.
+4. **Generators do something no syntactic rewrite can do**, suspending at an arbitrary point inside
+   a branch or loop where block-structured binds capture only the rest of a block.
+5. **Effect-TS's cost is its fiber runtime, not its generators**, the generator object being **per
+   call, not per bind**. Points 4 and 5 correct an earlier draft.
 
 **The live options**, in increasing order of compiler work:
 
@@ -366,107 +348,91 @@ runtime, not its generators**, the generator object being **per call, not per bi
 | B | Emit generators | yes | yes | one state object per call, plus the iterator protocol; opaque to §9.5's elimination and renaming |
 | C | Emit a state machine ourselves | yes | yes | a real backend transform, the thing Rust and C# do for `async`; transparent to the optimiser |
 
-B and C allocate the same per-call state object, so the gap between them is narrower than it looks,
-and **nobody has measured this for us, though it is measurable** — emit the same program both ways
-and compare, which is what `bench` exists for. **A second question is entangled and has a different
-answer:** beni is expression-based, so a run of binds is already flat inside one `let` but a branch
-is an expression, so a bind inside it nests whichever mechanism we choose. Making that read flat is
-a **language** change (statement blocks), not a codegen one; decide the two separately.
+B and C allocate the same per-call state object, so the gap is narrower than it looks, and **nobody
+has measured this for us, though it is measurable** — emit the same program both ways and compare,
+which is what `bench` exists for. **A second question is entangled and answers differently:** beni is
+expression-based, so a run of binds is already flat inside one `let`, but a branch is an expression,
+so a bind inside it nests whichever mechanism we choose. Making that read flat is a **language**
+change (statement blocks), not a codegen one; decide the two separately.
 
 ### `Maybe` stays
 
-Roc has no `Maybe`, `Option`, `null` or `nil`, its FAQ arguing a tag union says *why* rather than
-merely *that* — `[Loading, Loaded(Artist)]` against `Maybe(Artist)`. **The argument does not transfer,
-because Roc's tag unions are structural:** the type was never declared, so there is nothing to
-refactor. Beni has **nominal** ADTs, like Elm, so dropping `Maybe` means every `Dict.get`,
-`List.head` and `String.toInt` either needs a bespoke declared type at each call site or returns
-`Result () a`, which is `Maybe` with extra ceremony; and adding structural tag unions to recover it
-would be row polymorphism for sums, carrying exactly the inference costs §3 exists to avoid (OCaml's
-polymorphic variants are the cautionary case), while `Maybe` itself is an ordinary ADT costing no
-special machinery anywhere. **Take Roc's real insight**, which is orthogonal: don't reach for `Maybe`
-when a domain type says *why* — stdlib guidance, not a language decision.
+Roc has none, its FAQ arguing a tag union says *why* rather than merely *that*. **The argument does
+not transfer, because Roc's tag unions are structural** — nothing was declared, so nothing needs
+refactoring. Beni's ADTs are **nominal**, so dropping `Maybe` means every `Dict.get`, `List.head` and
+`String.toInt` needs a bespoke declared type per call site or returns `Result () a`, `Maybe` with
+extra ceremony; recovering it structurally would be row polymorphism for sums, carrying the inference
+costs §3 exists to avoid (OCaml's polymorphic variants are the cautionary case), where `Maybe` is an
+ordinary ADT costing no special machinery. Roc's real insight is orthogonal and worth taking: don't
+reach for `Maybe` when a domain type says *why* — stdlib guidance, not a language decision.
 
 ### Tuples: yes, unbounded arity (minimum 2)
 
-Keep them — `Dict.toList`, `List.zip`, `List.indexedMap` and "return two things" all need a pair,
-and without tuples each wants a declared record type, the same ceremony problem as dropping `Maybe`.
-Normative in [`language.md`](language.md) §6.4.
+Normative in [`language.md`](language.md) §6.4. `Dict.toList`, `List.zip`, `List.indexedMap` and
+"return two things" all need a pair, and without tuples each wants a declared record type — the
+ceremony problem again. **No arity cap, reversing an earlier draft** that copied Elm's maximum of 3
+so the tuple type could be a fixed-size IR node, unbounded arity "forcing a slice into the `extra`
+array and a loop in the unifier's hot path." **That argument is wrong, and Roc's compiler shows why:
+records are already variable-length, so the machinery exists regardless — and tuples use strictly
+less of it.** Tuple and record nodes share one `SafeList`/`Range` primitive; `unifyTuple` is an arity
+check plus a pairwise loop, twenty lines, against `unifyTwoRecords` with its transitive field
+gathering and four extension cases; at runtime tuples alias the record layout path
+(`roc/src/types/types.zig:554`, `:743`; `src/check/unify.zig:1397-1421`, `:2490+`;
+`src/layout/layout.zig:864`, `src/layout/store.zig:554`). A cap only relocates the per-arity problem
+into the standard library (Feldman, #contributing, 2023-03-26).
 
-**No arity cap**, reversing an earlier draft that copied Elm's maximum of 3 on the grounds that a cap
-lets the tuple type be a fixed-size IR node (`references/elm/compiler/src/Type/Type.hs:87`) while
-unbounded arity "forces a slice into the `extra` array and a loop in the unifier's hot path."
-**That argument is wrong, and Roc's compiler shows why: records are already variable-length, so the
-machinery exists regardless — and tuples use strictly less of it.** Tuple and record nodes share one
-`SafeList`/`Range` primitive (`references/roc/src/types/types.zig:554`, `:743`); `unifyTuple`
-(`src/check/unify.zig:1397-1421`) is an arity check plus a pairwise loop, twenty lines, against
-`unifyTwoRecords` (`:2490+`) with its transitive field gathering and four extension cases; and at
-runtime tuples alias the record layout path (`src/layout/layout.zig:864`,
-`src/layout/store.zig:554`). A cap only relocates the per-arity problem into the standard library
-(Feldman, #contributing, 2023-03-26).
-
-**Representation:** a fixed-shape object per arity, following §9.4's hidden-class rule; no runtime
-tag is needed, so tuples cost one field less than Elm's `{$: '#2', a, b}`. With `comparable` gone
-(§3.1) a tuple-keyed `Dict` takes an explicit comparator — the intended consequence.
-
-**Positional access: `.0` / `.1`, zero-based**, reversing an earlier draft that rejected it as
-costing lookahead: the real cost is one extra branch and a single byte
-(`references/roc/src/parse/tokenize.zig:1412-1442`), inside the `.` case the lexer *already* needs.
-Unbounded arity makes it necessary rather than merely nice, since there can be no per-arity accessor
-functions — hence no `Tuple.first`/`second`.
+**Representation:** a fixed-shape object per arity, per §9.4's hidden-class rule; no runtime tag, so
+one field less than Elm's `{$: '#2', a, b}`. With `comparable` gone (§3.1) a tuple-keyed `Dict` takes
+an explicit comparator — the intended consequence. **Positional access `.0`/`.1`, zero-based,
+reversing an earlier draft** that rejected it as costing lookahead: the real cost is one branch and
+one byte (`roc/src/parse/tokenize.zig:1412-1442`) inside the `.` case the lexer *already* needs.
+Unbounded arity makes it necessary, since there can be no per-arity accessors — hence no
+`Tuple.first`/`second`.
 
 ### String interpolation: `${expr}`, no nested strings, primitives only
 
-Normative in [`language.md`](language.md) §2.6. What each decision buys: **a fixed set of
-interpolatable primitives** (`String`, `Int`, `Float`, `Bool`, `Char`) with the compiler inserting
-the conversion, because without typeclasses there is no `Display`/`Show`; **no new constraint in the
-unifier**, since "this type is interpolatable" is an obligation discharged *after* solving — the same
-mechanism as equatability in §3.1, a flat membership test at one syntactic site run once; **lexing as
-a mode flag and a brace-depth counter, no stack**, which is why **a `"` inside an interpolation is a
-syntax error**, nested strings being what would force a full mode *stack* (the token stream stays in
-the flat SoA array with real offsets, so §6.1's lossless CST needs nothing special; lexing a string
-as one opaque token and re-lexing it later is the approach that *would* hurt); **multiline strings
-that do not interpolate and stay fully raw**, as in Zig, so the line-prefixed path needs no mode
-switching; and **free codegen**, interpolation mapping onto a JS template literal.
+Normative in [`language.md`](language.md) §2.6. A **fixed set of interpolatable primitives**
+(`String`, `Int`, `Float`, `Bool`, `Char`) with the compiler inserting the conversion, because
+without typeclasses there is no `Display`/`Show`; **no new unifier constraint**, "this type is
+interpolatable" being discharged *after* solving by §3.1's flat membership test at one syntactic
+site; **lexing as a mode flag and a brace-depth counter, no stack**, which is why **a `"` inside an
+interpolation is a syntax error**, nested strings being what would force a mode *stack* (the token
+stream stays in the flat SoA array with real offsets, so §6.1's lossless CST needs nothing special;
+lexing a string as one opaque token and re-lexing later is the approach that *would* hurt);
+**multiline strings that do not interpolate and stay raw**, as in Zig, so the line-prefixed path
+needs no mode switching; and **free codegen** onto a JS template literal.
 
 ### Comments and multiline strings: line-oriented, Zig-style
 
-Normative in [`language.md`](language.md) §2.3 and §2.7. Both are line-based: nothing has a closing
-delimiter, nothing nests, a newline always ends it, and there are **no block comments**, since Elm's
-nesting `{- -}` is exactly the nesting counter this decision exists to avoid. `--` is an ordinary
-comment, `--|` documents what follows, `--!` documents the module — Zig's machinery with Elm's
-vocabulary, because `|` already means "documentation" to this audience while `---` reads as a divider
-and is also a diff and Markdown/YAML marker. `--|` is mechanically cheaper too: Zig needs an "exactly
-three slashes, not four" carve-out so a row of `////` isn't captured as documentation, and `---`
-would need the same for rows of dashes, whereas `--|` cannot be produced accidentally, so lexing
-stays one byte peeked after `--`.
-
-What it buys is all lexer cost avoided: **no mode stack and no depth counter**; **a whole error class
-disappears**, since there is no unterminated comment or multiline string, so a truncated file cannot
-swallow the rest of the program, which matters for §6.1's error recovery; and **raw multiline
-strings**, line-prefixed with no escape processing, sidestep escaping entirely. The lexer ends up
-with **no** delimited constructs to track state for besides quoted strings. Doc comments are trivia:
-the lossless CST (§6.1) carries them tagged, never discarded.
+Normative in [`language.md`](language.md) §2.3 and §2.7. No closing delimiter, no nesting, a newline
+always ends it, and **no block comments**, Elm's nesting `{- -}` being exactly the nesting counter
+this avoids. `--` comment, `--|` documents what follows, `--!` the module — Zig's machinery with
+Elm's vocabulary, because `|` already reads as "documentation" here while `---` is a divider, diff
+and Markdown/YAML marker, and is mechanically dearer: Zig needs an "exactly three slashes, not four"
+carve-out so `////` isn't documentation, `---` would need one for rows of dashes, whereas `--|`
+cannot be produced accidentally — one byte peeked after `--`. It buys all lexer cost avoided (**no
+mode stack, no depth counter**) and **a whole error class gone**: with no unterminated comment or
+string, a truncated file cannot swallow the rest of the program, which matters for §6.1's recovery.
+**Raw multiline strings** sidestep escaping entirely. The lexer tracks state for no delimited
+construct besides quoted strings; doc comments are trivia, carried tagged in the CST (§6.1).
 
 ### Modules: no header, `pub` per declaration
 
-Normative in [`language.md`](language.md) §5. **No header line** — the module's name comes from its
-path, as in Roc, where Elm declares the name *and* requires it to match, redundancy that buys an
-error class and makes duplicate names merely diagnosable rather than impossible. **Visibility is
-marked at the declaration with `pub`**, everything unmarked private, `pub opaque type T = …` exposing
-a name without its constructors; imports stay Elm-shaped.
+Normative in [`language.md`](language.md) §5. The name comes from the path, as in Roc, where Elm
+declares it *and* requires a match — redundancy buying an error class, and making duplicate names
+merely diagnosable rather than impossible. Everything unmarked is private; `pub opaque type T = …`
+exposes a name without its constructors; imports stay Elm-shaped. Rejected: **Roc's type modules** (a
+capitalised `Url.roc` defines type `Url`, public functions *associated items* on it) — nicer, but a
+view of static dispatch, which §3.1 rejected, so we take only the part needing no dispatch,
+*namespacing*; **Go's capitalisation rule**, unavailable because case is spoken for — in ML syntax
+`Url` is a type or constructor and `parse` a value, and the lexer depends on it; and **Elm's exposing
+list**, two edits per new public function plus an error class of its own.
 
-Three alternatives rejected. **Roc's type modules** (no exposing list; a capitalised `Url.roc`
-defines type `Url` and public functions are *associated items* on it) are nicer but not a separate
-feature — they are a view of static dispatch, which §3.1 rejected; what we take is the part needing
-no dispatch, *namespacing*. **Go's capitalisation rule** is unavailable because case is already
-spoken for: in ML syntax `Url` is a type or constructor and `parse` a value, and the lexer depends on
-it. **Elm's exposing list** costs two edits per new public function and an error class of its own.
-
-**§8.1 is unaffected**, which is the compiler-speed point: the public surface stays lexically
-computable — scan for `pub` — so the interface hash needs no inference and parallel name resolution
-keeps the property §3 requires, and the `exposing (Type(..))` problem disappears with it, a wildcard
-whose meaning depends on reading *another* module. **The cost:** you cannot read a module's whole API
-on one line; you scan the file or ask the tooling.
+**§8.1 is unaffected**, the compiler-speed point: the public surface stays lexically computable —
+scan for `pub` — so the interface hash needs no inference, parallel name resolution keeps the
+property §3 requires, and `exposing (Type(..))`, a wildcard whose meaning depends on reading
+*another* module, disappears with it. **The cost:** you cannot read a module's whole API on one line;
+you scan the file or ask the tooling.
 
 ### Two principles worth stealing
 
@@ -476,14 +442,13 @@ on one line; you scan the file or ask the tooling.
   against it.
 - **A formatter that auto-migrates makes micro-syntax reversible.** Roc flipped its optional-field
   marker twice with formatter-driven migration and a did-you-mean diagnostic each time — only cheap
-  if the formatter exists early, so it belongs in **M1**, alongside the parser, not in M5. It is the
-  same lossless CST the LSP needs (§6.1), so it costs little extra.
+  if the formatter exists early, so it is built alongside the parser rather than at the end, on the
+  same lossless CST the LSP needs (§6.1).
 
 ### Still open
 
-Effect marking is settled by §3.1's effects decision: the language is pure, so there is none.
-Record and optional-field syntax details are open; per the formatter principle above, they are
-cheap to revisit.
+Effect marking is settled by §3.1's effects decision: the language is pure, so there is none. Record
+and optional-field syntax details are open; per the formatter principle above, cheap to revisit.
 
 ## 4. Process architecture: a daemon, from day one
 
@@ -492,8 +457,8 @@ The CLI is a thin client over a Unix socket; the compiler is a resident process 
 investment pays off in both (04 §8; rust-analyzer's `AnalysisHost`/`Analysis` and gopls'
 `cache.Snapshot` are the model). Designed in, not bolted on: no global mutable singletons; arenas
 reusable per compilation, not per process; every phase able to run against an immutable snapshot
-while the next edit is ingested; file watching on `inotify`/`FSEvents` directly, because esbuild
-polls and that scales badly on large trees (03 §1).
+while the next edit is ingested; file watching on `inotify`/`FSEvents` directly, since esbuild polls
+and that scales badly on large trees (03 §1).
 
 ```
 beni (CLI, ~5ms)  ─┐
@@ -507,18 +472,18 @@ editor / LSP      ─┘                                 ├─ SourceStore (mma
 
 ## 5. Data representation — the spine of the design
 
-Every IR in Beni is a `MultiArrayList` of fixed-size records with `u32` indices and a shared
-`extra: []u32` sidecar for variable-length payloads — Zig's own design (01 §1–3), and independently
-Carbon's, rust-analyzer's and oxc's (04 §2). A token is **5 bytes** (tag plus start offset, no length
-field: it is derivable from the tag or re-derived at literal decode) and an AST node is **~13 bytes**
-(tag, main token, and an *untagged* data union, since the tag already discriminates). The declared
-shapes are in [`frontend.md`](frontend.md) §3. Rules, non-negotiable across the codebase:
+Every IR is a `MultiArrayList` of fixed-size records with `u32` indices and a shared `extra: []u32`
+sidecar for variable-length payloads — Zig's own design (01 §1–3), and independently Carbon's,
+rust-analyzer's and oxc's (04 §2). A token is **5 bytes** (tag plus start offset, no length field:
+derivable from the tag or re-derived at literal decode), an AST node **~13 bytes** (tag, main token,
+and an *untagged* data union, since the tag already discriminates). Shapes are in
+[`frontend.md`](frontend.md) §3. Rules, non-negotiable across the codebase:
 
 1. **No pointer inside any IR.** References are `u32` indices into a named array: halves reference
    size, survives reallocation, serialises with no fixup pass, and makes equality an integer compare
    (01 §2).
-2. **No per-node allocation.** One arena per phase; teardown is a handful of bulk frees. oxc
-   measured teardown at ~0.3ms vs ~7ms for an equivalent heap AST (03 §2).
+2. **No per-node allocation.** One arena per phase; teardown is a handful of bulk frees. oxc measured
+   teardown at ~0.3ms vs ~7ms for an equivalent heap AST (03 §2).
 3. **Per-worker arenas, not a shared one.** Roc wrote `SingleThreadArena` specifically to avoid
    `std.heap.ArenaAllocator`'s atomic RMW per allocation (05 §4). Copy this.
 4. **Offsets, never slices, into source text.** A slice is 16 bytes; an offset is 4.
@@ -530,14 +495,13 @@ shapes are in [`frontend.md`](frontend.md) §3. Rules, non-negotiable across the
 Identifiers are interned **at lex time** into `Symbol = enum(u32)`, hashing while scanning rather
 than materialising-then-rehashing (04 §3); types and constants go into the same `InternPool` so type
 identity is `a.index == b.index`, one integer compare (01 §5). This fixes Elm's single largest
-structural cost: un-interned `Name` as a raw byte array, compared byte-by-byte on every lookup
-through the entire back half of its pipeline (05 §2). But interning has a documented failure mode —
-**oxc removed a global interner and gained ~30% parallel parsing throughput**, the mutex having
-serialised precisely the phase being parallelised (03 §2). **Decision:** per-worker interners during
-parallel lex/parse, merged at one synchronisation point, then a sharded global pool following Zig's
-index encoding (per-thread `locals` with the thread id in the index's high bits, per-shard locks on
-the dedup tables, 01 §5); short identifiers use inline storage (SSO) in the token payload so the
-common case never touches the table.
+structural cost, un-interned `Name` compared byte-by-byte on every lookup (05 §2). But interning has
+a documented failure mode — **oxc removed a global interner and gained ~30% parallel parsing
+throughput**, the mutex having serialised precisely the phase being parallelised (03 §2).
+**Decision:** per-worker interners during parallel lex/parse, merged at one synchronisation point,
+then a sharded global pool following Zig's index encoding (per-thread `locals` with the thread id in
+the index's high bits, per-shard locks on the dedup tables, 01 §5); short identifiers use inline
+storage (SSO) in the token payload so the common case never touches the table.
 
 ## 6. Pipeline
 
@@ -561,8 +525,8 @@ embarrassingly parallel; everything below is scheduled on the module DAG.
 
 ### 6.1 Parsing
 
-Recursive descent for declarations, Pratt/precedence-climbing for expressions (04 §2) — ~40 lines,
-no function-per-precedence-level. Two error-recovery invariants, both free on the happy path (04 §2):
+Recursive descent for declarations, Pratt/precedence-climbing for expressions (04 §2) — ~40 lines, no
+function-per-precedence-level. Two error-recovery invariants, both free on the happy path (04 §2):
 every loop consumes ≥1 token and terminates at EOF, and on error the parser emits a structurally
 valid placeholder node, so downstream passes treat it as another node kind and there is no separate
 recovery machinery. **Build the lossless CST from day one** — trivia is just more array entries in a
@@ -597,8 +561,7 @@ without cloning.
 
 ## 8. Incrementality
 
-Two layers, deliberately. The cheap one does most of the work; the fine one handles the case the
-cheap one handles badly.
+Two layers: the cheap one does most of the work, the fine one handles what it handles badly.
 
 ### 8.1 Layer 1 — the module interface firewall (primary)
 
@@ -630,17 +593,17 @@ invalidates its value, not its signature, and callers depending only on the sign
 | `ctor` / `type_def` | a change to an ADT's constructors or a record alias's fields |
 | `emit` | a change to `decl_val`, or to any representation decision it depends on |
 
-Propagation is Zig's two-phase mark: a direct dependent becomes `outdated`, its transitive
-dependents `potentially_outdated` with a counter, and a PO unit whose counter reaches zero without
-ever being marked outdated is *proven* unchanged and never re-analysed — what stops transitive
-invalidation degenerating into "recompile everything" (01 §7).
+Propagation is Zig's two-phase mark: a direct dependent becomes `outdated`, its transitive dependents
+`potentially_outdated` with a counter, and a PO unit whose counter reaches zero without ever being
+marked outdated is *proven* unchanged and never re-analysed — what stops transitive invalidation
+degenerating into "recompile everything" (01 §7).
 
 ### 8.3 Persisted cache format
 
-Dump the arena's flat arrays as raw byte ranges with a small header; `mmap` on load; validate with
-a format version and content hash. No general serialization library — rkyv-style zero-copy is the
-*idea* to steal, not the dependency (04 §7). Roc calls this "zero-parse deserialization" and loads
-at roughly memcpy speed (05 §4). This is only possible because of the no-pointers rule in §5.
+Dump the arena's flat arrays as raw byte ranges with a small header; `mmap` on load; validate with a
+format version and content hash. No general serialization library — rkyv-style zero-copy is the
+*idea* to steal, not the dependency (04 §7). Roc calls this "zero-parse deserialization" and loads at
+roughly memcpy speed (05 §4). Only possible because of the no-pointers rule in §5.
 
 ## 9. JavaScript backend
 
@@ -651,79 +614,85 @@ carrying its own set of referenced globals — and that dependency set is **a by
 lowering**, no separate free-variable pass, because the name-resolution tracker records each global
 reference as it generates the node (03 §5.1, 05 §1.5). Emission is a visited-set DFS from `main` and
 every exposed value, so anything unreachable is never even looked up and no tree-shaking pass exists.
-This beats any JS bundler, which must *infer* side-effect-freedom heuristically
-(`sideEffects: false`, `/*#__PURE__*/`) where Beni's type system *proves* purity — and it is the same
-graph Layer-2 incrementality and code splitting use: build it once, use it three times.
+This beats any JS bundler, which must *infer* side-effect-freedom heuristically (`sideEffects: false`,
+`/*#__PURE__*/`) where Beni's type system *proves* purity — and Layer-2 incrementality and code
+splitting reuse the same graph: build once, use three times.
 
 ### 9.2 Two IRs, not one
 
 Lower the typed IR into a small JS-shaped `JsIr` ([`backend.md`](backend.md) §3) as part of existing
-lowering, then run one print pass straight to a growable byte buffer. This is a deliberate departure
-from esbuild's single-AST model, and the evidence is Elm's own source: its author tried emitting
-directly to a byte builder, measured it "neutral for perf," and kept the intermediate IR because
-codegen needs to pattern-match on generated structure to strip redundant IIFEs and closures (03 §3).
-esbuild can skip the second IR only because its input and output are both JavaScript. Output assembly
-follows esbuild's `Joiner`: accumulate `{data, offset}` pieces and a running length, then allocate
-**exactly once** and blit (03 §3). Never concatenate.
+lowering, then run one print pass straight to a growable byte buffer. A deliberate departure from
+esbuild's single-AST model, and the evidence is Elm's own source: its author tried emitting directly
+to a byte builder, measured it "neutral for perf," and kept the intermediate IR because codegen needs
+to pattern-match on generated structure to strip redundant IIFEs and closures (03 §3). esbuild can
+skip the second IR only because its input and output are both JavaScript. Output assembly follows
+esbuild's `Joiner`: accumulate `{data, offset}` pieces and a running length, then allocate **exactly
+once** and blit (03 §3). Never concatenate.
 
-### 9.3 Calling convention — decided 2026-09-14, no currying
+### 9.3 Calling convention — no currying
 
-**Decided 2026-09-14, reversing the M2b decision: no automatic currying.** Every call is saturated;
-a function of *n* parameters has an *n*-ary type, and types of different arity do not unify. Partial
-application is Gleam's placeholder, `f a _`. `|>` becomes a syntactic form inserting its left operand
-as the callee's **first** argument, so the standard library goes subject-first (`List.map xs f`), as
-in Roc, Gleam and Elixir. Application stays juxtaposition; `>>` and `<<` are removed; function types
-are spelled Roc-style, `Int, Int -> Int`, because space is already type application; and a
-rest-of-block bind, `let x <- e`, is the general sequencing form for any function taking its callback
-last (§3.2). Evidence: research [06](research/06-currying.md) on Roc, research
-[14](research/14-direct-style/01-solution-space.md) on the bind.
+**No automatic currying.** The delta from Elm, itemised because five documents and one source
+comment cite these items by number:
 
-**The normative rules are [`language.md`](language.md) §3, §6.5, §6.7, §8 and §9** — that spec pass
-landed 2026-09-15 — and the emission consequence is [`backend.md`](backend.md) §6. What follows is
-the decision record; the grammar is not restated here.
+1. **Every call is saturated.** A function of *n* parameters has an *n*-ary type, and types of
+   different arity do not unify.
+2. **Function types are n-ary**, spelled Roc-style `Int, Int -> Int`, because space is already type
+   application.
+3. **Partial application is Gleam's placeholder**, `f a _`.
+4. **Application stays juxtaposition.**
+5. **`>>` and `<<` are removed.**
+6. **`|>` becomes a syntactic form**, inserting its left operand as the callee's **first** argument.
+7. **A rest-of-block bind, `let x <- e`**, is the general sequencing form for any function taking its
+   callback last (§3.2) — including a callee of arity one, `scope <- Task.scope`, the shape the form
+   was generalised to reach.
+8. **The standard library goes subject-first and function-last** (`List.map xs f`), as in Roc, Gleam
+   and Elixir, so `|>` inserts at the first argument and `<-` reaches the last.
+
+Evidence: research [06](research/06-currying.md) on Roc,
+[14](research/14-direct-style/01-solution-space.md) on the bind. **Normative rules:
+[`language.md`](language.md) §3, §6.5, §6.7, §8, §9**; emission consequence
+[`backend.md`](backend.md) §6. What follows is the decision record.
 
 **The speed argument.** The rejected alternative is Elm's curried A2/F2 adapter: an arity tag `.a`
-plus the raw n-ary `.f`, with a saturated call site emitting `A2(f, x, y)`, which checks `f.a === 2`
-and calls `f.f(x, y)` directly, falling back to `f(x)(y)` (03 §5.2). Around 80% of ML-family calls
-are saturated so the fast path dominates, and PureScript's measured cost of *not* doing this is
-25–35% runtime and 20–25% bundle size — but the adapter is not free either: rewriting `A2(f,a,b)` to
-direct `f.f(a,b)` measured **+49% on Chrome and +109% on Firefox** (03 §5.2). Gleam's answer —
-partial application an error unless explicitly requested, so every saturated call is a plain JS call
-with no adapter at all (03 §5.2) — is the one taken: uncurried there is no adapter, no arity tag and
-no saturated-call specialiser, so that cost is neither paid nor planned around.
+plus the raw n-ary `.f`, a saturated call site emitting `A2(f, x, y)`, which checks `f.a === 2` and
+calls `f.f(x, y)`, falling back to `f(x)(y)` (03 §5.2). Around 80% of ML-family calls are saturated
+so the fast path dominates, and PureScript's measured cost of *not* doing this is 25–35% runtime and
+20–25% bundle size — but the adapter is not free either: rewriting `A2(f,a,b)` to direct `f.f(a,b)`
+measured **+49% on Chrome and +109% on Firefox** (03 §5.2). Gleam's answer — partial application an
+error unless explicitly requested, so every saturated call is a plain JS call with no adapter at all
+(03 §5.2) — is the one taken: uncurried there is no adapter, no arity tag and no saturated-call
+specialiser, so that cost is neither paid nor planned around.
 
-**Why the M2b decision was reopened.** It rested on one condition — that a curried checker could
-match Roc's `TOO FEW ARGS` diagnostic — and the 37/38 fixture score discharged it. On re-reading, the
-score holds for the *direct* case and `too_many_args` but not the *displaced* case: a one-argument
-lambda passed to `List.foldl` is not an error at the lambda, because `\x -> x` unifies with
-`a -> b -> b` by making the accumulator a function, so the failure surfaces two arguments later
-(`tests/corpus/check/args/FoldlLambdaTooFewParams`); the single admitted failure
-(`ComposeMissingArg`, types shown as `a -> b`) is the same class. Uncurried the class does not exist
-— a 1-ary and a 2-ary type do not unify, so the lambda is wrong at the lambda. That, Roc's documented
-rationale (06 §2) and three years of Roc's Zulip finding no regret (06 §5) decided it.
+**This reverses an earlier decision to keep currying**, which rested on one condition — that a curried
+checker could match Roc's `TOO FEW ARGS` diagnostic — discharged by a 37/38 fixture score. That score
+holds for the *direct* case and `too_many_args` but not the *displaced* case: a one-argument lambda
+passed to `List.foldl` is not an error at the lambda, because `\x -> x` unifies with `a -> b -> b`
+by making the accumulator a function, so the failure surfaces two arguments later
+(`tests/corpus/check/args/FoldlLambdaTooFewParams`); the one admitted failure (`ComposeMissingArg`)
+is the same class. Uncurried the class does not exist — a 1-ary and a 2-ary type do not unify. That,
+Roc's documented rationale (06 §2) and three years of Roc's Zulip finding no regret (06 §5) decided
+it.
 
-**What it costs.** Partial application and nested partials are recovered by `_`, which also covers
-leaving a *first* argument open, which currying cannot; `|>` becomes syntax, as in Roc 2019–2024, and
-a pipeline reads identically; the applicative constructor pipeline is replaced by the rest-of-block
+**What it costs.** `_` recovers partial application and nested partials, and also covers leaving a
+*first* argument open, which currying cannot; `|>` becomes syntax, as in Roc 2019–2024, and a
+pipeline reads identically; the applicative constructor pipeline is replaced by the rest-of-block
 bind, which Gleam's decoder library adopted after living without currying. **Point-free composition
 (`List.map f >> List.sum`) is the one genuine loss**; name the argument. The standard library's
-argument order flips to subject-first, which is every signature; the `A2`/`F2` machinery and the
-specialiser leave the M3 plan; the arity fixtures are re-cut. It is a breaking change to every
-program written so far, which at M3a is test corpora.
+argument order flips to subject-first — every signature; the `A2`/`F2` machinery and the
+saturated-call specialiser leave the backend plan; the arity fixtures are re-cut. It is a breaking
+change to every program written so far.
 
-**Also decided 2026-09-14/15**, normative in `language.md`: exactly one `_` per call, as Gleam, in
-argument position only; `e |> f a b` rewrites to `f e a b`, while `<|` stays and carries the
-trailing-lambda idiom; `( operator )` stays, so `(+)` is the 2-ary function, and sections still do
-not exist; `>>`/`<<` and the precedence-9 `non_associative_chain` go; and the formatter adopts
-research 14's Elm finding that a trailing `<|` followed by a lambda must not indent (14/elm §0.2).
-**Deferred, not adopted:** letting `_` mark a non-final callback slot, `let x <- f a _ b` — cheap,
-but no combinator wants it yet. **Diagnostics are a deliverable:** Gleam's record for the same
-"purely syntactic" feature is four bespoke error paths, a formatter function, an LSP action and two
-shipped confusing-error bugs (14/gleam-use §0.2, §4).
-
-**Open, deliberately.** Whether `Task` is sequenced with this bind (research 14's option B) or with
-a call-site marker over typed effect sets (research 14 S2, and the synthesis discussion's "typed
-effects as calls, platform as the only handler") is not decided here; see §3.2.
+**Also decided**, normative in `language.md`: exactly one `_` per call, as Gleam, in argument position
+only; `e |> f a b` rewrites to `f e a b`, while `<|` stays and carries the trailing-lambda idiom;
+`( operator )` stays, so `(+)` is the 2-ary function, and sections still do not exist; `>>`/`<<` and
+the precedence-9 `non_associative_chain` go; and the formatter adopts research 14's Elm finding that
+a trailing `<|` followed by a lambda must not indent (14/elm §0.2). **Deferred, not adopted:** letting
+`_` mark a non-final callback slot, `let x <- f a _ b` — cheap, but no combinator wants it yet.
+**Diagnostics are a deliverable:** Gleam's record for the same "purely syntactic" feature is four
+bespoke error paths, a formatter function, an LSP action and two shipped confusing-error bugs
+(14/gleam-use §0.2, §4). **Open, deliberately:** whether `Task` is sequenced with this bind (research
+14's option B) or with a call-site marker over typed effect sets (research 14 S2, and the synthesis
+discussion's "typed effects as calls, platform as the only handler") is not decided here; see §3.2.
 
 ### 9.4 Representation, tuned for V8
 
@@ -744,10 +713,9 @@ Emission detail is [`backend.md`](backend.md) §4, §7 and §8; the choices and 
   stack frame; flag it as a known limitation and revisit with a trampoline.
 - **Pattern matching** → decision trees (Scott & Ramsey heuristics) compiled to native `switch`,
   single-use branches inlined and multi-use branches shared via labelled loops (03 §5.4).
-- **Primitive peephole** → recognise core arithmetic/comparison calls at *print* time and emit
-  native operators, keeping the optimiser generic while avoiding a megamorphic dispatch point on the
-  hottest call sites in the program (03 §5.7).
-
+- **Primitive peephole** → recognise core arithmetic/comparison calls at *print* time and emit native
+  operators, keeping the optimiser generic while avoiding a megamorphic dispatch point on the hottest
+  call sites in the program (03 §5.7).
 
 ### 9.5 Output format and minification
 
@@ -766,87 +734,67 @@ verify it. Evidence for every row below is in report 12; report 03 for the ESM r
 | **The model is entropy, not length** | fewer distinct identifiers means cheaper Huffman codes, a whole-stream property with no window dependence. So whole-program naming consistency pays under gzip as well as brotli, and the sliding-window folklore is not the argument |
 | **Two build modes, one graph** | `beni build` is dev: one ESM file per source module, no elimination, string constructor tags, maps on, and it is what §2's 15 ms warm budget is measured against. `--release` is chunks, exact elimination, integer tags, whole-program renaming and field ambiguation, maps off |
 
-**Build, ranked by compressed bytes** (12 §5.1): local and top-level identifier renaming; property
-and field renaming, including **type-directed field ambiguation**, where fields that never co-occur
-on a type share one short name — it lowers the distinct-symbol count rather than merely shortening
-it, and it needs exactly what the checker already built, so Elm cannot have it; exact dead-code
-elimination (§9.1); compact printing.
-
-**Do not build.** All measured approximately zero or negative after compression: `booleans`
-(`true` → `!0` makes brotli output *larger*), `if_return`, `collapse_vars`, `inline`, `evaluate`,
-`reduce_vars`, `sequences`, `comparisons`, `switches`, `typeofs`.
+**Build, ranked by compressed bytes** (12 §5.1): local and top-level identifier renaming; property and
+field renaming, including **type-directed field ambiguation**, where fields that never co-occur on a
+type share one short name — it lowers the distinct-symbol count rather than merely shortening it, and
+it needs exactly what the checker already built, so Elm cannot have it; exact dead-code elimination
+(§9.1); compact printing. **Do not build** — all measured approximately zero or negative after
+compression: `booleans` (`true` → `!0` makes brotli output *larger*), `if_return`, `collapse_vars`,
+`inline`, `evaluate`, `reduce_vars`, `sequences`, `comparisons`, `switches`, `typeofs`.
 
 #### Code splitting
 
 Designed in now rather than retrofitted: Elm has no chunking concept and adding one means reworking
-its emission core. An M3 requirement, and all four decisions come from report 12.
-
-- **Opt-in per program, release only.** Entry points are `main` plus every `lazy` declaration, so a
-  program with no `lazy` emits exactly one file. A program is split where its author said to split
-  it, never because it got large.
-- **Assignment is per declaration**, by entry-set colouring over §9.1's graph, with the colour
-  **hash-consed from the start** — dart2js's `ImportSetLattice`. GWT and Rollup both discovered late
-  that the naive representation costs minutes; dart2js measured 401 deferred imports producing 2.9
-  million import-sets and a 5 GB heap before interning. Declaration granularity is proven in four
-  whole-program compilers, and Closure's four safety guards for it are vacuous in a pure language.
-- **A size-driven merge pass follows colouring**, budgeted by compression rather than request count:
-  each chunk starts a fresh compression window, so four chunks cost about 6.6% of brotli'd bytes and
-  sixteen about 18% before any chunk has saved anything.
-- **The assigner synthesises the cross-chunk `import`/`export` bindings itself**, and is budgeted
-  with the assigner rather than after it. Closure is the only other declaration-granular chunker
-  with an ESM mode and the combination is broken there — it relocates declarations without emitting
-  the matching bindings (closure-compiler#4264, open). esbuild's `computeCrossChunkDependencies` is
-  the model.
+its emission core. **The mechanism — entry-set colouring, hash-consed colours, the
+compression-budgeted merge pass and the synthesised cross-chunk bindings — is
+[`backend.md`](backend.md) §10**, on report 12's evidence. Two decisions sit here rather than there.
+**Opt-in per program, release only:** entry points are `main` plus every `lazy` declaration, so a
+program with no `lazy` emits exactly one file, split where its author said to split it and never
+because it got large. **Per declaration rather than a coarser unit**, because that granularity is
+proven in four whole-program compilers and Closure's four safety guards for it are vacuous in a pure
+language.
 
 #### The `lazy` marker
-
-**A `lazy` marker on a top-level declaration is the split trigger**, and it rewrites the
-declaration's type at the boundary: `pub lazy adminDashboard : Model -> Html Msg` is written at the
-declared type and seen by importers as `Task LoadError (Model -> Html Msg)`. Every shipped trigger
-in every language changes a type at the boundary — Dart a `Future`, Scala.js a `Promise` — and
-TC39's `import defer` exists because that "forces all functions and their callers into an
-asynchronous programming model". In a language whose effects are already values (§3.1), a value
-arriving through a `Task` colours nothing that was not already coloured, so the cost that dominates
-this feature everywhere else is already paid. Precedent is strongest for the declaration-level form:
-Leptos ships `#[lazy]` exactly. First-class `LazyRef a` values were rejected as the one candidate
-with no working precedent anywhere.
-
-> **Open.** That rewritten type names `Task`, which `transparent-effects-proposal.md` removes.
-> Whatever replaces `Task` replaces it here.
 
 - **On a top-level declaration, never a file, a local or an import.** Files are not output units in
   release mode; a `let` binding is not a node in the declaration graph; and consumer-side marking,
   where Dart and PureScript's proposal put it, would make a module's interface differ per importer,
-  which is what §8.1's firewall rests on. Producer-side also matches `pub`, already a
-  per-declaration marker on the same line. A private declaration may be `lazy` — it still creates an
-  entry point, which is what one large helper behind one route wants.
-- **A `lazy` declaration is an entry point, not a chunk.** Its chunk is everything reachable from it
-  that no other entry point needs, so marking one function moves its whole private subtree. If
-  almost everything is shared, the chunk holds only that function and the merge pass folds it back:
-  that is how the feature reports its own futility.
+  which is what §8.1's firewall rests on. Producer-side also matches `pub`.
+- **It rewrites the declaration's type at the boundary**, `pub lazy adminDashboard : Model -> Html
+  Msg` seen by importers as `Task LoadError (Model -> Html Msg)`. Every shipped trigger changes a
+  type at the boundary — Dart a `Future`, Scala.js a `Promise`, TC39's `import defer` existing
+  because that "forces all functions and their callers into an asynchronous programming model" — and
+  in a language whose effects are already values (§3.1) a value arriving through a `Task` colours
+  nothing not already coloured, so the cost that dominates this feature elsewhere is already paid.
+  Leptos ships `#[lazy]` exactly; first-class `LazyRef a` values were rejected as the one candidate
+  with no working precedent anywhere.
+- **An entry point, not a chunk:** its chunk is everything reachable from it that no other entry
+  point needs, so marking one function moves its whole private subtree. A private declaration may be
+  `lazy` — what one large helper behind one route wants.
 - **Anything reachable from a pure position goes in the main chunk** (dart2js's rule), so `view`
-  cannot await. Here the type rewrite makes that a type error rather than a dedicated check, which
-  is the benefit of doing it in the type system.
+  cannot await; the type rewrite makes that a type error rather than a dedicated check.
+
+> **Open.** That rewritten type names `Task`, which `transparent-effects-proposal.md` removes.
+> Whatever replaces `Task` replaces it here.
 
 **What chunking will not buy.** On the bundle report 12 measured, 90% of bytes are runtime plus
 library, which no chunker can split. It is a large-application feature, not a size strategy.
 
-**The exit criterion, because the counter-evidence is real.** Scala.js built the type-aware half of
-this and still expects a downstream generic minifier; going without measured 1.58× in brotli. It
-never built the generic half at all, which is why that does not sink the plan — but **M3 exits when
-beni's brotli'd output is within about 10% of beni's own output piped through esbuild `--minify`**,
-and if it approaches 1.58× this is revisited before M5. The size target is Elm's TodoMVC, and the
-number that counts is the compressed one: 122 KB raw, 24 KB minified, **9 KB gzipped**.
-
+**The counter-evidence is real, so the decision carries an exit.** Scala.js built the type-aware half
+of this and still expects a downstream generic minifier; going without measured 1.58× in brotli. It
+never built the generic half at all, which is why that does not sink the plan — but own minification
+has to land within about 10% of beni's own output piped through esbuild `--minify`, and if it
+approaches 1.58× the no-external-minifier decision is revisited. The size target is Elm's TodoMVC,
+and the number that counts is the compressed one: 122 KB raw, 24 KB minified, **9 KB gzipped**.
 
 ### 9.6 Source maps
 
 Fused into the print pass (`addMapping` at each emit site, no second traversal), delta-encoded VLQ
-with a 64-byte lookup table and a single-sextet fast path, per-file chunks rebased once at join
-time — all esbuild's techniques (03 §4). **Off by default**, since maps can be 3× the size of the
-output. But position tracking must exist in the IR *from the start* even while maps are off:
-retrofitting it means touching every pass, not just the printer, and Elm never threaded positions
-through codegen and consequently has no source maps at all (03 §4).
+with a 64-byte lookup table and a single-sextet fast path, per-file chunks rebased once at join time —
+all esbuild's techniques (03 §4). **Off by default**, since maps can be 3× the size of the output.
+But position tracking must exist in the IR *from the start* even while maps are off: retrofitting it
+means touching every pass, not just the printer, and Elm never threaded positions through codegen and
+consequently has no source maps at all (03 §4).
 
 ## 10. Parallelism — and where not to use it
 
@@ -863,8 +811,8 @@ nearly all the available win at a fraction of the risk.
 **Determinism is a requirement, not an aspiration.** rustc's project goals call its parallel
 frontend's non-determinism "fundamental," and `codegen-units > 1` still produces non-reproducible
 binaries because merge order follows thread timing (04 §5). Rules: stable input-derived ids assigned
-*before* parallel work starts (module index by sorted path, never completion order); results
-re-keyed by that id before merging; global tables append-then-sort; two-run output diffing in CI.
+*before* parallel work starts (module index by sorted path, never completion order); results re-keyed
+by that id before merging; global tables append-then-sort; two-run output diffing in CI.
 
 ## 11. What we are deliberately not doing
 
@@ -880,7 +828,7 @@ re-keyed by that id before merging; global tables append-then-sort; two-run outp
 
 ## 12. Measurement discipline
 
-Build this before the optimiser, not after.
+Built before the optimiser, not after.
 
 - **`--self-profile`** emitting Chrome-trace JSON per phase and per analysis unit. Clang's
   `-ftime-trace` and rustc's `-Z self-profile` are the models; rustc's captures query cache
@@ -895,51 +843,38 @@ Build this before the optimiser, not after.
 
 ## 13. Build order
 
-Each milestone ends in something measurable.
+The order below is itself a design decision. M4's incrementality is the single largest win (63ms vs
+seconds) but the one that needs the data model from M0–M3 to be right first — Zig's own experience is
+that the wrong order costs a 30,000-line refactor (01 §7).
 
-1. ~~**M0 — Skeleton.**~~ **Done.** Token SoA, arena infrastructure, intern pool,
-   `--self-profile`, the benchmark harness and the determinism test. *Measured: read 780 MB/s.*
-2. ~~**M1 — Front end.**~~ **Done.** Lexer, LL(k) parser with error recovery and a lossless CST,
-   BIR lowering, and the formatter. Parallel per file. *Measured on 100k LOC: lex 9 ms
-   (185 MB/s), parse 6 ms, lower 9 ms, `fmt --check` 26 ms on four cores; the formatter round-trips
-   the corpus and every `.expected` is a fixed point.* Milestone detail is in
-   [`frontend.md`](frontend.md) §8.
-3. ~~**M2 — Checker.**~~ **Done.** Contract in [`checker.md`](checker.md). M2a (packages, module
-   graph, interfaces, cross-module resolution), M2b (type store, constrain/solve, the ad-hoc
-   obligations, the missing-argument suite), M2c (exhaustiveness, DAG-parallel checking) and M2d
-   (measurement and review) all shipped. *Measured: 1.33M LOC/s for checking alone against the >250k
-   target, and 118 ms for the whole cold pipeline including core against the 800 ms budget. The
-   missing-argument suite scored 37/38, which held for the direct case only and is what §9.3
-   re-opened the currying decision on.*
+1. **M0 — Skeleton.** Token SoA, arena infrastructure, intern pool, `--self-profile`, the benchmark
+   harness and the determinism test.
+2. **M1 — Front end.** Lexer, LL(k) parser with error recovery and a lossless CST, BIR lowering, and
+   the formatter. Parallel per file. Detail in [`frontend.md`](frontend.md) §8.
+3. **M2 — Checker.** Packages, module graph, interfaces and cross-module resolution; the type store,
+   constrain/solve and the ad-hoc obligations; exhaustiveness and DAG-parallel checking. Contract in
+   [`checker.md`](checker.md).
 4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, direct n-ary calls everywhere
-   (§9.3: no currying, so no `A2`/`F2` adapter and no specialiser), TCO loops, decision trees,
-   ESM output. *Measure: emit throughput; output size vs Elm.* Preceded by the §9.3 spec pass on
-   `language.md` and a re-cut of `tests/corpus/check/args/`.
+   (§9.3: no currying, so no `A2`/`F2` adapter and no specialiser), TCO loops, decision trees, ESM
+   output.
 5. **M4 — Daemon + incrementality.** Socket protocol, content-hash cache, mmap artifacts, interface
-   firewall, then the declaration-level graph. *Measure: the warm-rebuild budgets in §2.*
-6. **M5 — Polish.** Source maps, code splitting, LSP, field-name shortening. No minifier
-   handoff: §9.5 reversed that split and beni owns minification.
-
-The ordering is deliberate: M4's incrementality is the single largest win (63ms vs seconds) but the
-one that needs the data model from M0–M3 to be right first — Zig's own experience is that the wrong
-order costs a 30,000-line refactor (01 §7).
+   firewall, then the declaration-level graph.
+6. **M5 — Polish.** Source maps, code splitting, LSP, field-name shortening. No minifier handoff:
+   §9.5 reversed that split and beni owns minification.
 
 ## 14. Open questions
 
-1. ~~**Currying vs. Gleam-style explicit partial application**~~ — **resolved twice, see §9.3**:
-   kept in M2b on the strength of the missing-argument suite, then dropped on 2026-09-14 when the
-   suite was found to cover only the direct case. No currying; `_` placeholder; pipe-first;
-   rest-of-block bind. The `language.md` spec pass landed 2026-09-15 and `>>`/`<<`, `_` and `<-`
-   shipped with it; n-ary types, saturated calls and the standard library's argument order are the
-   open work.
+1. ~~**Currying vs. Gleam-style explicit partial application**~~ — **resolved, and reversed once:**
+   kept on the strength of the missing-argument suite, then dropped when the suite was found to
+   cover only the direct case. See §9.3.
 2. **List representation** — cons cells vs. persistent vector trie (§9.4). Benchmark against real
-   idiomatic code during M3; the answer is workload-dependent and PureScript's experience shows
-   intuition is unreliable here.
-3. **How fine is too fine for Layer 2?** Zig found `AnalUnit` granularity needed a major refactor
-   to avoid over-analysis when a type doubles as a namespace (01 §7). Start at the four kinds in
-   §8.2 and resist adding more without a measurement that demands it.
+   idiomatic code; the answer is workload-dependent and PureScript's experience shows intuition is
+   unreliable here.
+3. **How fine is too fine for Layer 2?** Zig found `AnalUnit` granularity needed a major refactor to
+   avoid over-analysis when a type doubles as a namespace (01 §7). Start at the four kinds in §8.2
+   and resist adding more without a measurement that demands it.
 4. **Does BIR need to be separate from the resolved IR at all**, given that Beni has no `comptime`
-   and a much simpler semantic model than Zig? The caching argument says yes; the complexity
-   argument says measure it in M1 before committing.
-5. **Mutual-recursion stack safety** (§9.4). Trampolining costs the common case; leaving it
-   unfixed is a real cliff for idiomatic ML code. Defer, but don't forget.
+   and a much simpler semantic model than Zig? The caching argument says yes; the complexity argument
+   says measure it before committing.
+5. **Mutual-recursion stack safety** (§9.4). Trampolining costs the common case; leaving it unfixed
+   is a real cliff for idiomatic ML code. Defer, but don't forget.

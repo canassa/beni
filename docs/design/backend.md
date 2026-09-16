@@ -237,16 +237,20 @@ identical raw size.
 
 Entry points are `main` and every `lazy` declaration. Each declaration's colour is the set of entry
 points that reach it; declarations sharing a colour share a chunk. The colour is **hash-consed from
-the first line written**, because dart2js measured 2.9 million import-sets and a five-gigabyte heap
-without interning, and both GWT and Rollup found the same late.
+the first line written**, because dart2js measured 401 deferred imports producing 2.9 million
+import-sets and a five-gigabyte heap without interning, and both GWT and Rollup found the same late.
+dart2js's `ImportSetLattice` is the structure to copy. Declaration granularity is proven in four
+whole-program compilers, and Closure's four safety guards for it are vacuous in a pure language.
 
 A **merge pass** follows, budgeted by compression rather than request count: four chunks cost about
 6.6% of compressed bytes and sixteen about 18%, before any chunk has saved anything. A chunk whose
 private content does not repay that is folded back.
 
-The assigner **synthesises the cross-chunk `import`/`export` bindings itself**. Closure is the only
-system doing declaration-granular chunking with an ES-module mode and the combination is broken
-there, because it relocates declarations without emitting the bindings.
+The assigner **synthesises the cross-chunk `import`/`export` bindings itself**, and is budgeted with
+the assigner rather than after it. Closure is the only other system doing declaration-granular
+chunking with an ES-module mode and the combination is broken there, because it relocates
+declarations without emitting the bindings (closure-compiler#4264, open). esbuild's
+`computeCrossChunkDependencies` is the model.
 
 ## 11. Source maps
 
