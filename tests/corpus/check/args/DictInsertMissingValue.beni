@@ -1,0 +1,8 @@
+-- check/args: `Dict.insert` takes the dictionary, the key AND the value,
+-- and the value — the one that comes last — was forgotten.
+import Dict exposing (Dict)
+
+
+pub add : Dict Int String -> Dict Int String
+add d =
+    Dict.insert d 1

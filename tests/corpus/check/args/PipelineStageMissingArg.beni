@@ -1,0 +1,8 @@
+-- check/args: `|>` inserts the subject as the FIRST argument, so a stage
+-- that takes more than one is still short of its LAST. The pipe supplies
+-- the list to `List.take`; the count was never written.
+pub firstThree : List String -> List String
+firstThree parts =
+    parts
+        |> List.map String.toUpper
+        |> List.take

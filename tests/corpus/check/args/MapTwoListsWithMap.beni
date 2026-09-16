@@ -1,5 +1,5 @@
 -- check/args: `List.map` was reached for where `List.map2` was needed, so
--- the second list arrives as a third argument.
+-- the second list and the function together are one argument too many.
 pub sums : List Int, List Int -> List Int
 sums xs ys =
-    List.map (\a b -> a + b) xs ys
+    List.map xs ys (\a b -> a + b)

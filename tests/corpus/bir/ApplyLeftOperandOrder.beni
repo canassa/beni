@@ -1,0 +1,26 @@
+-- BIR: `<|` lowers its operand where it is WRITTEN — after the callee and
+-- after every argument it is written after (§6.7, §8.2) — so a pipeline's
+-- instructions keep source order and only the operand's slot in the call
+-- moves. `?` is what makes the order load-bearing: each `e?` is a `try`
+-- that returns from the enclosing declaration, so in `f a? <| b?` the
+-- `try` on `a` has to be emitted BEFORE the `try` on `b`, or the wrong
+-- early return wins. `|>` writes its operand first and so lowers it
+-- first; `applyRightOperandOrder` is the mirror.
+two : Int, Int -> Int
+two a b =
+    a + b
+
+
+applyLeftOperandOrder : String, String -> Maybe Int
+applyLeftOperandOrder a b =
+    Just (two (String.toInt a?) <| String.toInt b?)
+
+
+applyRightOperandOrder : String, String -> Maybe Int
+applyRightOperandOrder a b =
+    Just (String.toInt a? |> two (String.toInt b?))
+
+
+bareCallee : Int -> Int
+bareCallee n =
+    two n <| n + 1

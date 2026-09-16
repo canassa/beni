@@ -1,10 +1,9 @@
 --! Helpers for Data.Parser: a module that is mostly one-line functions,
 --! which is what most real modules look like.
 
-
 pub afterFirst : String -> String
 afterFirst input =
-    String.dropLeft 1 input
+    String.dropLeft input 1
 
 
 pub isDigit : Char -> Bool
@@ -34,7 +33,7 @@ negativeExample =
 
 pub clampIndex : Int, Int -> Int
 clampIndex limit index =
-    clamp 0 (limit - 1) index
+    clamp index 0 (limit - 1)
 
 
 pub pairUp : a, b -> ( a, b )

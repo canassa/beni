@@ -139,9 +139,9 @@ decl 4: value negation
 decl 5: value asFunction
   %0 = pat_var local 0 (xs)
   %1 = qualified List.foldl
-  %2 = import_value Basics.add
+  %2 = local 0 (xs)
   %3 = int 0
-  %4 = local 0 (xs)
+  %4 = import_value Basics.add
   %5 = call %1 [%2, %3, %4]
   params [%0]
   body %5

@@ -7,11 +7,11 @@ decl 0: value parse (annotated)
   %5 = type_fn [%0] -> %4
   %6 = pat_var local 0 (s)
   %7 = qualified Result.fromMaybe
-  %8 = string "nan"
-  %9 = qualified String.toInt
-  %10 = local 0 (s)
-  %11 = call %9 [%10]
-  %12 = call %7 [%8, %11]
+  %8 = qualified String.toInt
+  %9 = local 0 (s)
+  %10 = call %8 [%9]
+  %11 = string "nan"
+  %12 = call %7 [%10, %11]
   annotation %5
   params [%6]
   body %12

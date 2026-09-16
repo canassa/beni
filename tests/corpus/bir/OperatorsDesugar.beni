@@ -22,4 +22,4 @@ negation x =
 
 
 asFunction xs =
-    List.foldl (+) 0 xs
+    List.foldl xs 0 (+)

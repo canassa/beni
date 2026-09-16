@@ -1,6 +1,7 @@
 --! A tokenizer and precedence-climbing parser for arithmetic expressions
 --! with variables, unary minus, exponentiation and function calls, plus an
 --! evaluator and a printer. Typical hand-written parser shape.
+
 import Dict exposing (Dict)
 
 
@@ -309,7 +310,7 @@ eval env expr =
             Ok n
 
         Var name ->
-            Dict.get name env |> Result.fromMaybe "unknown variable ${name}"
+            Dict.get env name |> Result.fromMaybe "unknown variable ${name}"
 
         Neg inner ->
             Ok (negate (eval env inner?))
@@ -397,7 +398,7 @@ print expr =
             "${printAtom left} ${opSymbol op} ${printAtom right}"
 
         Call name args ->
-            name ++ "(" ++ String.join ", " (List.map print args) ++ ")"
+            name ++ "(" ++ String.join (List.map args print) ", " ++ ")"
 
 
 printAtom : Expr -> String

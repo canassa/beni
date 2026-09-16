@@ -7,9 +7,12 @@
 --   the placeholder belongs to that inner application, and the bind's call
 --   still receives the rest of the block as its last argument.
 --   `pipedIntoHole` reaches a placeholder call through `|>`, which §8
---   desugars first, so the piped operand is the call's LAST argument and
---   the `_` keeps the slot it was written in. `subtract` is not
---   commutative, so both facts are visible in the output.
+--   rewrites first, so the piped operand becomes the call's FIRST argument
+--   and the `_` is lifted only afterwards, over the rewritten call: the
+--   hole lands in the slot AFTER the operand, not the one it was written
+--   in. `n |> subtract _` is `subtract n _`, so the result is `n - 100`
+--   and not `100 - n`. `subtract` is not commutative, so both facts are
+--   visible in the output.
 import List
 import Node exposing (Program)
 import String
@@ -27,7 +30,7 @@ twice n body =
 
 usingAll : List (Int -> Int), (List Int -> String) -> String
 usingAll fs body =
-    body (List.map (\f -> f 7) fs)
+    body (List.map fs (\f -> f 7))
 
 
 insideRest : String
@@ -35,7 +38,7 @@ insideRest =
     let
         n <- twice 10
     in
-    String.join "," (List.map String.fromInt (List.map (subtract n _) [ 1, 2 ]))
+    String.join (List.map (List.map [ 1, 2 ] (subtract n _)) String.fromInt) ","
 
 
 nestedInCallee : String
@@ -43,7 +46,7 @@ nestedInCallee =
     let
         applied <- usingAll [ subtract 100 _, subtract _ 100 ]
     in
-    String.join "," (List.map String.fromInt applied)
+    String.join (List.map applied String.fromInt) ","
 
 
 pipedIntoHole : String

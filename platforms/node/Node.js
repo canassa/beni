@@ -18,4 +18,4 @@ export const printLines = (lines) => {
   return { code: 0, out: items.length === 0 ? "" : `${items.join("\n")}\n` };
 };
 
-export const exitWith = (code, line) => ({ code, out: `${line}\n` });
+export const exitWith = (line, code) => ({ code, out: `${line}\n` });

@@ -8,20 +8,20 @@ decl 0: value addOne (annotated)
   %6 = type_fn [%2] -> %5
   %7 = pat_var local 0 (xs)
   %8 = qualified List.map
-  %9 = pat_var local 1
-  %10 = top 3 (add)
-  %11 = int 1
-  %12 = local 1
-  %13 = call %10 [%11, %12]
-  %14 = lambda [%9] -> %13
-  %15 = local 0 (xs)
-  %16 = call %8 [%14, %15]
+  %9 = local 0 (xs)
+  %10 = pat_var local 1
+  %11 = top 3 (add)
+  %12 = int 1
+  %13 = local 1
+  %14 = call %11 [%12, %13]
+  %15 = lambda [%10] -> %14
+  %16 = call %8 [%9, %15]
   annotation %6
   params [%7]
   body %16
   locals
     0 xs param %7
-    1 _ fresh %9
+    1 _ fresh %10
   refs
     import_type List.List
     import_type Basics.Int

@@ -1283,18 +1283,20 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         },
         .apply => {
             const app = l.tree.fullApply(node);
-            return l.lowerApplication(main_token, app.function, app.args, null);
+            return l.lowerApplication(main_token, app.function, app.args, null, .last);
         },
         .question => return l.lowerQuestion(node),
         .pipe_right => {
-            // `x |> f a` → `f a x` (§8.2).
+            // `x |> f a` → `f x a` (§8.2): the operand is the callee's FIRST
+            // argument, which is what makes the subject-first library read
+            // as a pipeline (§6.7).
             const b = l.tree.fullBinop(node);
-            return l.saturate(b.rhs, b.lhs);
+            return l.saturate(b.rhs, b.lhs, .first);
         },
         .pipe_left => {
             // `f a <| x` → `f a x`.
             const b = l.tree.fullBinop(node);
-            return l.saturate(b.lhs, b.rhs);
+            return l.saturate(b.lhs, b.rhs, .last);
         },
         .lambda => {
             const lam = l.tree.fullLambda(node);
@@ -1373,25 +1375,44 @@ fn operatorFunction(op: Token.Tag) OperatorFunction {
         .op_gte => .{ .module = .Basics, .function = .ge },
         .op_and_and => .{ .module = .Basics, .function = .@"and" },
         .op_or_or => .{ .module = .Basics, .function = .@"or" },
-        .op_pipe_left => .{ .module = .Basics, .function = .apL },
-        .op_pipe_right => .{ .module = .Basics, .function = .apR },
+        // `|>` and `<|` are syntax, not calls (§6.5): they have no core
+        // function, no `(|>)` form, and never reach this table.
         else => unreachable, // `op_fn` and binop nodes hold operator tokens only
     };
 }
 
-/// Apply `function_node` to one more argument, flattening an application:
-/// `f a` with `x` becomes `f a x` (the one place the front end changes call
-/// arity, §8.2). Grouping parentheses are looked through.
-fn saturate(l: *Lower, function_node: NodeIndex, extra_node: NodeIndex) Allocator.Error!Index {
-    var fnode = function_node;
-    while (l.tree.nodeTag(fnode) == .paren) fnode = l.tree.operand(fnode);
-    if (l.tree.nodeTag(fnode) == .apply) {
-        const app = l.tree.fullApply(fnode);
-        return l.lowerApplication(l.tree.nodeMainToken(fnode), app.function, app.args, extra_node);
-    }
-    const extra_arg = try l.lowerExpr(extra_node);
-    const callee = try l.lowerExpr(fnode);
-    return l.call(callee, &.{extra_arg.int()});
+/// Which end of the argument list a pipe's operand lands on: `|>` inserts at
+/// the FIRST argument and `<|` appends at the last (§6.7).
+const Position = enum { first, last };
+
+/// Apply `function_node` to one more argument, flattening the call spine it
+/// is written against: `f a` with `x` becomes `f x a` (`|>`) or `f a x`
+/// (`<|`) — the one place the front end changes call arity, §8.2. The walk
+/// is `bindSpine`, shared with `<-`, so one set of rules decides what a
+/// pipe's right operand means in both positions: grouping parentheses are
+/// looked through (`x |> (f a)` is `f x a`, not a call of the value), a bare
+/// name contributes no arguments, and a nested pipe underneath contributes
+/// its own operand rather than being called as a value — `x |> (y |> f)` is
+/// `f x y`, because `y |> f` is `f y` first and §8 runs the rewrite before
+/// anything else (§6.7).
+fn saturate(l: *Lower, function_node: NodeIndex, extra_node: NodeIndex, position: Position) Allocator.Error!Index {
+    var arg_nodes: std.ArrayList(NodeIndex) = .empty;
+    defer arg_nodes.deinit(l.scratch_allocator);
+    const callee_node = try l.bindSpine(function_node, &arg_nodes);
+    return l.lowerApplication(l.spineToken(function_node), callee_node, arg_nodes.items, extra_node, position);
+}
+
+/// The token the call a pipe rewrote is stamped with: the head of the spine
+/// `bindSpine` walks, so `x |> (y |> f a)` reports against `f a` rather than
+/// against either `|>`.
+fn spineToken(l: *const Lower, node: NodeIndex) TokenIndex {
+    var n = node;
+    while (true) switch (l.tree.nodeTag(n)) {
+        .paren => n = l.tree.operand(n),
+        .pipe_right => n = l.tree.fullBinop(n).rhs,
+        .pipe_left => n = l.tree.fullBinop(n).lhs,
+        else => return l.tree.nodeMainToken(n),
+    };
 }
 
 /// One application, with `extra` appended when a pipe supplied an argument.
@@ -1401,15 +1422,26 @@ fn saturate(l: *Lower, function_node: NodeIndex, extra_node: NodeIndex) Allocato
 /// lowered inside that lambda, which is where the desugared form puts it.
 /// §8 fixes the order as pipes first, then placeholders, so the operand a
 /// pipe supplied is one of this call's arguments and is lowered inside the
-/// lambda too: `a? |> f _` is the same program as `f _ (a?)`, down to the
+/// lambda too: `a? |> f _` is the same program as `f (a?) _`, down to the
 /// `question_in_lambda` both report. Without a `_` there is no lambda and
 /// the operand keeps its written position, ahead of the callee.
+///
+/// `position` says which end the pipe's operand lands on, and it is lowered
+/// where it is WRITTEN, which is not the same end: `|>` writes its operand
+/// ahead of the callee, so it is lowered first and then rotated to the front
+/// of the argument list; `<|` writes it after the callee and after every
+/// argument, so it is lowered last, like the hole case. Either way the
+/// instructions come out in source order and only the operand's slot in the
+/// call moves. That matters because `?` returns from the enclosing function
+/// where it is lowered: in `Just (two (String.toInt a?) <| String.toInt b?)`
+/// the `try` on `a` has to precede the `try` on `b`.
 fn lowerApplication(
     l: *Lower,
     main_token: TokenIndex,
     function: NodeIndex,
     args: []const NodeIndex,
     extra: ?NodeIndex,
+    position: Position,
 ) Allocator.Error!Index {
     var param: Index = @enumFromInt(0);
     var local: u32 = 0;
@@ -1420,8 +1452,10 @@ fn lowerApplication(
         local = try l.freshLocal(param);
         l.setInstData(param, local, Inst.Data.unused);
         try l.frames.append(l.scratch_allocator, .{ .kind = .lambda, .inst = .none });
-    } else if (extra) |e| {
-        extra_arg = try l.lowerExpr(e);
+    } else if (position == .first) {
+        // `|>` writes its operand before the callee, so that is where it is
+        // lowered. `<|` writes it last and is lowered below, after the args.
+        if (extra) |e| extra_arg = try l.lowerExpr(e);
     }
     const callee = try l.lowerExpr(function);
     const mark = l.scratchMark();
@@ -1435,10 +1469,22 @@ fn lowerApplication(
             try l.pushScratch(try l.lowerExpr(arg));
         }
     }
-    if (has_hole) {
+    // The operand of a `<|`, and of a `|>` whose call has a hole, is written
+    // after the arguments (a hole's lambda wraps the whole call, so `a? |> f _`
+    // is the same program as `f (a?) _`, down to the `question_in_lambda`).
+    if (extra_arg == null) {
         if (extra) |e| extra_arg = try l.lowerExpr(e);
     }
-    if (extra_arg) |e| try l.pushScratch(e);
+    if (extra_arg) |e| {
+        try l.pushScratch(e);
+        // `|>` inserts at the first argument, so its operand is rotated to
+        // the front of the slots, which moves one word and leaves every
+        // instruction where it is.
+        if (position == .first) {
+            const slots = l.list_scratch.items[mark..];
+            std.mem.rotate(u32, slots, slots.len - 1);
+        }
+    }
     l.cur_token = main_token;
     const called = try l.call(callee, l.scratchSince(mark));
     if (!has_hole) return called;
@@ -1639,10 +1685,13 @@ fn lowerBind(
 ) Allocator.Error!Index {
     const b = l.tree.fullLetPattern(bind);
     const bind_token = l.tree.nodeMainToken(bind);
-    var value = b.value;
-    while (l.tree.nodeTag(value) == .paren) value = l.tree.operand(value);
-    const is_apply = l.tree.nodeTag(value) == .apply;
-    const app = if (is_apply) l.tree.fullApply(value) else undefined;
+    // Pipes rewrite before the bind does (§6.7, §8), so the callee and the
+    // arguments in front of the callback are the ones the REWRITTEN chain
+    // has: `x <- File.read path |> Task.mapError f` is
+    // `Task.mapError (File.read path) f (\x -> rest)`.
+    var arg_nodes: std.ArrayList(NodeIndex) = .empty;
+    defer arg_nodes.deinit(l.scratch_allocator);
+    const callee_node = try l.bindSpine(b.value, &arg_nodes);
 
     // The call is made where it is written: outside the callback, and with
     // the bindings below the `<-` not yet in scope (§7). They exist, so a
@@ -1658,16 +1707,48 @@ fn lowerBind(
     try l.forwardNames(rest, &forward);
     const saved_forward = l.forward;
     l.forward = forward.items;
-    const callee = try l.lowerExpr(if (is_apply) app.function else value);
+    const callee = try l.lowerExpr(callee_node);
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
-    if (is_apply) for (app.args) |arg| try l.pushScratch(try l.lowerExpr(arg));
+    for (arg_nodes.items) |arg| try l.pushScratch(try l.lowerExpr(arg));
     l.forward = saved_forward;
 
     const callback = try l.lowerCallback(bind_token, b.pattern, rest, body_node);
     try l.pushScratch(callback);
     l.cur_token = bind_token;
     return l.call(callee, l.scratchSince(mark));
+}
+
+/// The callee of a `<-` right-hand side, with its argument NODES appended to
+/// `args` in the order the rewritten call has them (§6.7). Grouping
+/// parentheses are looked through, an application contributes its own
+/// arguments, `|>` contributes its operand at the FRONT of what its right
+/// operand contributed, and `<|` contributes its operand at the back. A bare
+/// name contributes nothing, which is `scope <- Task.scope`.
+fn bindSpine(l: *Lower, node: NodeIndex, args: *std.ArrayList(NodeIndex)) Allocator.Error!NodeIndex {
+    var n = node;
+    while (l.tree.nodeTag(n) == .paren) n = l.tree.operand(n);
+    switch (l.tree.nodeTag(n)) {
+        .apply => {
+            const app = l.tree.fullApply(n);
+            try args.appendSlice(l.scratch_allocator, app.args);
+            return app.function;
+        },
+        .pipe_right => {
+            const b = l.tree.fullBinop(n);
+            const start = args.items.len;
+            const callee = try l.bindSpine(b.rhs, args);
+            try args.insert(l.scratch_allocator, start, b.lhs);
+            return callee;
+        },
+        .pipe_left => {
+            const b = l.tree.fullBinop(n);
+            const callee = try l.bindSpine(b.lhs, args);
+            try args.append(l.scratch_allocator, b.rhs);
+            return callee;
+        },
+        else => return n,
+    }
 }
 
 /// The names the bindings after a `<-` introduce, in source order. They are
@@ -2414,11 +2495,10 @@ test "`::` desugars to List.cons, not Basics.cons" {
 
 test "the operator table gives every operator a home module, and only `::` leaves Basics" {
     const ops = [_]Token.Tag{
-        .op_plus,        .op_minus,      .op_star,      .op_slash,
-        .op_slash_slash, .op_caret,      .op_plus_plus, .op_colon_colon,
-        .op_eq_eq,       .op_slash_eq,   .op_lt,        .op_gt,
-        .op_lte,         .op_gte,        .op_and_and,   .op_or_or,
-        .op_pipe_left,   .op_pipe_right,
+        .op_plus,        .op_minus,    .op_star,      .op_slash,
+        .op_slash_slash, .op_caret,    .op_plus_plus, .op_colon_colon,
+        .op_eq_eq,       .op_slash_eq, .op_lt,        .op_gt,
+        .op_lte,         .op_gte,      .op_and_and,   .op_or_or,
     };
     for (ops) |op| {
         const f = operatorFunction(op);
@@ -2432,10 +2512,10 @@ test "the operator table gives every operator a home module, and only `::` leave
     try testing.expectEqualDeep(OperatorFunction{ .module = .Basics, .function = .append }, operatorFunction(.op_plus_plus));
 }
 
-test "`|>` and `<|` flatten into saturated calls, through grouping parentheses" {
+test "`|>` inserts at the FIRST argument, `<|` at the last, through grouping parentheses" {
     try expectDecls(
         \\f g x =
-        \\    ( x |> g 1, g <| x, x |> (g 1) |> g, g <| g <| x, x |> \y -> y )
+        \\    ( x |> g 1, g <| x, x |> (g 1) |> g, g <| g <| x )
         \\
     ,
         \\decl 0: value f
@@ -2444,33 +2524,27 @@ test "`|>` and `<|` flatten into saturated calls, through grouping parentheses" 
         \\  %2 = local 1 (x)
         \\  %3 = local 0 (g)
         \\  %4 = int 1
-        \\  %5 = call %3 [%4, %2]
-        \\  %6 = local 1 (x)
-        \\  %7 = local 0 (g)
-        \\  %8 = call %7 [%6]
+        \\  %5 = call %3 [%2, %4]
+        \\  %6 = local 0 (g)
+        \\  %7 = local 1 (x)
+        \\  %8 = call %6 [%7]
         \\  %9 = local 1 (x)
         \\  %10 = local 0 (g)
         \\  %11 = int 1
-        \\  %12 = call %10 [%11, %9]
+        \\  %12 = call %10 [%9, %11]
         \\  %13 = local 0 (g)
         \\  %14 = call %13 [%12]
-        \\  %15 = local 1 (x)
+        \\  %15 = local 0 (g)
         \\  %16 = local 0 (g)
-        \\  %17 = call %16 [%15]
-        \\  %18 = local 0 (g)
-        \\  %19 = call %18 [%17]
-        \\  %20 = local 1 (x)
-        \\  %21 = pat_var local 2 (y)
-        \\  %22 = local 2 (y)
-        \\  %23 = lambda [%21] -> %22
-        \\  %24 = call %23 [%20]
-        \\  %25 = tuple [%5, %8, %14, %19, %24]
+        \\  %17 = local 1 (x)
+        \\  %18 = call %16 [%17]
+        \\  %19 = call %15 [%18]
+        \\  %20 = tuple [%5, %8, %14, %19]
         \\  params [%0, %1]
-        \\  body %25
+        \\  body %20
         \\  locals
         \\    0 g param %0
         \\    1 x param %1
-        \\    2 y param %21
         \\
     , &.{});
 }

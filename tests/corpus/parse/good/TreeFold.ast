@@ -107,10 +107,12 @@
       (type_con Tree
         (type_con Int))))
   (definition fromList
+    (pat_var xs)
     (apply
       (ident List.foldl)
-      (ident insert)
-      (ctor Leaf)))
+      (ident xs)
+      (ctor Leaf)
+      (ident insert)))
   (annotation pub toList
     (type_fn
       (type_con Tree

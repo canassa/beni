@@ -4,9 +4,13 @@
 --! name listed there is declared here, so a module that imports nothing still
 --! sees `Int`, `Bool`, `max` and the rest. It is also where the functions the
 --! operators of §6.5 desugar to live: `a + b` is `add a b`, `a == b` is
---! `eq a b`, `x |> f` is `apR x f`. The operators are syntax, so these names
---! are never written by hand — but they are what the checker types and what
---! the code generator emits.
+--! `eq a b`, and likewise `-` `*` `/` `//` `^` `/=` `<` `>` `<=` `>=` `&&`
+--! `||` and `++`, with the prefix `-` desugaring to `negate`. Those are all
+--! of them: `::` desugars to `List.cons`, and `|>` and `<|` are pure syntax
+--! with no function behind them — `x |> f a` rewrites to the direct call
+--! `f x a`, and `f <| x` to `f x` (§6.5, §6.7). The operators are syntax, so
+--! these names are never written by hand — but they are what the checker
+--! types and what the code generator emits.
 --!
 --! Two things Elm has are gone (`fast-compiler.md` §3.1): `comparable` and
 --! `compappend`. `<`, `>`, `<=` and `>=` are numbers only; to order anything
@@ -230,19 +234,21 @@ pub foreign ceiling : Float -> Int
 pub foreign truncate : Float -> Int
 
 
---| Perform modular arithmetic. The result has the sign of the modulus.
+--| Perform modular arithmetic: the number first, then the modulus. The
+--| result has the sign of the modulus.
 --|
---|     modBy 4 (-1) == 3
---|     modBy 4 11 == 3
+--|     modBy (-1) 4 == 3
+--|     modBy 11 4 == 3
 --|
---| The modulus comes first so `modBy 2 _` reads as a function on its own.
+--| The number comes first so a pipeline reads: `n |> modBy 2` is `modBy n 2`.
 pub foreign modBy : Int, Int -> Int
 
 
---| Get the remainder after division. The result has the sign of the dividend.
+--| Get the remainder after dividing the first number by the second. The
+--| result has the sign of the dividend, the number being divided.
 --|
---|     remainderBy 4 (-1) == -1
---|     remainderBy 4 11 == 3
+--|     remainderBy (-1) 4 == -1
+--|     remainderBy 11 4 == 3
 pub foreign remainderBy : Int, Int -> Int
 
 
@@ -252,9 +258,10 @@ pub foreign remainderBy : Int, Int -> Int
 pub foreign sqrt : Float -> Float
 
 
---| Calculate the logarithm of a number with a given base.
+--| Calculate the logarithm of a number in a given base: the number first,
+--| then the base.
 --|
---|     logBase 10 100 == 2
+--|     logBase 100 10 == 2
 pub foreign logBase : Float, Float -> Float
 
 
@@ -353,12 +360,13 @@ min x y =
         y
 
 
---| Clamp a number between a lower and an upper bound.
+--| Clamp a number between a lower and an upper bound: the number first, then
+--| the bounds.
 --|
---|     clamp 100 200 42 == 100
---|     clamp 100 200 178 == 178
+--|     clamp 42 100 200 == 100
+--|     clamp 178 100 200 == 178
 pub clamp : number, number, number -> number
-clamp low high n =
+clamp n low high =
     if n < low then
         low
     else if n > high then
@@ -420,7 +428,7 @@ identity a =
 --| it is still the "do nothing" argument to a higher-order function.
 --|
 --|     always 0 1 == 0
---|     List.map (always 0 _) [ 1, 2, 3 ] == [ 0, 0, 0 ]
+--|     List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]
 pub always : a, b -> a
 always a _ =
     a
@@ -473,39 +481,3 @@ toPolar ( x, y ) =
 pub fromPolar : ( Float, Float ) -> ( Float, Float )
 fromPolar ( radius, theta ) =
     ( radius * cos theta, radius * sin theta )
-
-
---| Apply a function to a value. `f <| x` is `f x` with the argument written
---| last, which saves a pair of parentheses around a long final argument.
---|
---|     apL sqrt 4 == 2
-pub apL : (a -> b), a -> b
-apL f x =
-    f x
-
-
---| Apply a function to a value, value first. `x |> f` is `f x`, and a chain of
---| them reads as a pipeline.
---|
---|     apR 4 sqrt == 2
-pub apR : a, (a -> b) -> b
-apR x f =
-    f x
-
-
---| Compose two functions, right to left. `composeL g f x` is "do `f` to `x`,
---| then `g`".
---|
---|     composeL not isNaN 1 == True
-pub composeL : (b -> c), (a -> b), a -> c
-composeL g f x =
-    g (f x)
-
-
---| Compose two functions, left to right. `composeR f g x` is "do `f` to `x`,
---| then `g`".
---|
---|     composeR isNaN not 1 == True
-pub composeR : (a -> b), (b -> c), a -> c
-composeR f g x =
-    g (f x)

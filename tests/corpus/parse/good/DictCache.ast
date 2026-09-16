@@ -20,7 +20,9 @@
       (field misses
         (int 0))
       (field table
-        (ident Dict.empty))))
+        (apply
+          (ident Dict.empty)
+          (ident compare)))))
   (annotation pub fib
     (type_fn
       (type_con Int)
@@ -34,9 +36,9 @@
     (case
       (apply
         (ident Dict.get)
-        (ident n)
         (field_access .table
-          (ident cache)))
+          (ident cache))
+        (ident n))
       (branch
         (pat_ctor Just
           (pat_var value))
@@ -100,10 +102,10 @@
                 (field table
                   (apply
                     (ident Dict.insert)
-                    (ident n)
-                    (ident result)
                     (field_access .table
-                      (ident cache2)))))))))))
+                      (ident cache2))
+                    (ident n)
+                    (ident result))))))))))
   (annotation pub fibAll
     (type_fn
       (type_con List
@@ -139,11 +141,11 @@
       (pipe_right
         (apply
           (ident List.foldl)
-          (ident step)
+          (ident ns)
           (tuple
             (list)
             (ident cache))
-          (ident ns))
+          (ident step))
         (paren
           (lambda
             (pat_tuple

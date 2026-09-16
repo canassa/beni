@@ -54,8 +54,10 @@
       (ident f)
       (ident x)))
   (definition sumPairs
+    (pat_var xs)
     (apply
       (ident List.map)
+      (ident xs)
       (paren
         (lambda
           (pat_tuple

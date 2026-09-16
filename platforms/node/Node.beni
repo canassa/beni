@@ -43,10 +43,18 @@ pub foreign printLines : List String -> Program
 --| A program that writes one line and exits with the code you give it. A
 --| non-zero code is how a command-line program says it failed.
 --|
+--| The line comes first and the code second, like every other signature in
+--| the library (`language.md` §6.7): the line is the subject, so a pipeline
+--| ends in one.
+--|
 --|     main : Program
 --|     main =
---|         Node.exitWith 1 "could not read the file"
-pub foreign exitWith : Int, String -> Program
+--|         Node.exitWith "could not read the file" 1
+--|
+--|     main : Program
+--|     main =
+--|         formatError err |> Node.exitWith 1
+pub foreign exitWith : String, Int -> Program
 
 
 --| A program that writes nothing and exits 0.

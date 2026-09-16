@@ -137,8 +137,15 @@ const WyhashHasher = struct {
 
 /// Well-known symbols with fixed indices in `Global` AND in every `Local`
 /// made by `Local.init` (frontend.md §3.3): the names the checker and the
-/// backend refer to without a lookup. Declaration order IS the index; append
-/// only. The set is `main`, the prelude module names (language.md Appendix
+/// backend refer to without a lookup. Declaration order IS the index, so a
+/// `WellKnown` and its `Symbol` are the same number in both pools and neither
+/// needs a table. That holds within one build of the compiler and no further:
+/// entries come and go from the MIDDLE of this list as the language changes —
+/// `composeL`/`composeR` went with `>>` and `<<`, then `apL`/`apR` with the
+/// desugaring of `|>` and `<|` — so an index is not a value to persist. When
+/// M4's daemon starts writing indices into an on-disk cache, that cache has
+/// to be keyed on the compiler build, not merely checked for new names at the
+/// end. The set is `main`, the prelude module names (language.md Appendix
 /// A), the core function each operator of language.md §6.5 desugars to, and
 /// every name the prelude exposes (types, constructors, values), so that
 /// lowering decides "is this symbol a prelude name?" by comparing its index
@@ -170,10 +177,10 @@ pub const WellKnown = enum(u32) {
     ge,
     @"and",
     @"or",
-    apL,
-    apR,
-    composeL,
-    composeR,
+    // `|>` and `<|` are syntax, not calls (language.md §6.5, §6.7): they
+    // rearrange the application they are written in and desugar to no
+    // function at all, so — unlike every operator above — they contribute
+    // no name here.
     // Prelude types not already listed as modules (Appendix A).
     Int,
     Float,
@@ -478,10 +485,10 @@ test "well-known symbols have stable indices in Global" {
     try testing.expectEqual(@as(Symbol, @enumFromInt(0)), WellKnown.main.symbol());
     try testing.expectEqualStrings("main", global.slice(WellKnown.main.symbol()));
     try testing.expectEqualStrings("and", global.slice(WellKnown.@"and".symbol()));
-    try testing.expectEqualStrings("composeR", global.slice(WellKnown.composeR.symbol()));
+    try testing.expectEqualStrings("Never", global.slice(WellKnown.Never.symbol()));
     try testing.expectEqualStrings("Debug", global.slice(WellKnown.Debug.symbol()));
     // Looking a well-known name up returns its fixed index, never a new one.
-    try testing.expectEqual(WellKnown.apR.symbol(), try global.getOrPut(testing.allocator, "apR"));
+    try testing.expectEqual(WellKnown.cons.symbol(), try global.getOrPut(testing.allocator, "cons"));
     try testing.expectEqual(@as(u32, WellKnown.count), global.count());
 }
 

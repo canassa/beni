@@ -906,7 +906,7 @@ const Module = struct {
             }
         }
         if (g.chance(50)) {
-            try g.line(8, "|> List.foldl (\\x acc -> acc + x) 0", .{});
+            try g.line(8, "|> List.foldl 0 (\\x acc -> acc + x)", .{});
         } else {
             try g.line(8, "|> sum{d}", .{g.index});
         }
@@ -947,7 +947,7 @@ const Module = struct {
         } else {
             try g.line(4, "{{ model", .{});
             try g.line(8, "| name = String.toUpper label", .{});
-            try g.line(8, ", items = List.map .count [ model ]", .{});
+            try g.line(8, ", items = List.map [ model ] .count", .{});
             try g.line(4, "}}", .{});
         }
     }
@@ -976,7 +976,7 @@ const Module = struct {
         _ = g.push("times");
         switch (g.rng.uintLessThan(u8, 3)) {
             0 => try g.line(4, "\"Hello, ${{who}}! You have ${{times}} new items.\\n\"", .{}),
-            1 => try g.line(4, "\"\\\"${{who}}\\\" said: \" ++ String.repeat times \"$\"", .{}),
+            1 => try g.line(4, "\"\\\"${{who}}\\\" said: \" ++ String.repeat \"$\" times", .{}),
             else => try g.line(4, "String.fromChar '{c}' ++ who ++ \"\\t\" ++ String.fromInt times", .{g.pick(u8, "abcxyz")}),
         }
     }
@@ -1085,17 +1085,16 @@ const Module = struct {
                 // Lambda applied through a prelude function.
                 const mark = g.scopeMark();
                 const param = g.bind();
-                try g.w.print("List.foldl (\\{s} carry -> carry + {s}) 0 [ ", .{ param, param });
+                try g.w.print("List.foldl [ ", .{});
                 g.scopeReset(mark);
                 try g.atom();
-                try g.w.writeAll(" ]");
+                try g.w.print(" ] 0 (\\{s} carry -> carry + {s})", .{ param, param });
             },
             5 => {
-                try g.w.writeAll("Maybe.withDefault ");
+                try g.w.writeAll("Maybe.withDefault (Just ");
                 try g.atom();
-                try g.w.writeAll(" (Just ");
+                try g.w.writeAll(") ");
                 try g.atom();
-                try g.w.writeByte(')');
             },
             6 => try g.crossModuleCall(),
             7 => {

@@ -14,12 +14,12 @@ type alias Cache =
 
 pub empty : Cache
 empty =
-    { hits = 0, misses = 0, table = Dict.empty }
+    { hits = 0, misses = 0, table = Dict.empty compare }
 
 
 pub fib : Int, Cache -> ( Int, Cache )
 fib n cache =
-    case Dict.get n cache.table of
+    case Dict.get cache.table n of
         Just value ->
             ( value, { cache | hits = cache.hits + 1 } )
 
@@ -40,7 +40,7 @@ fib n cache =
                 ( result
                 , { cache2
                     | misses = cache2.misses + 1
-                    , table = Dict.insert n result cache2.table
+                    , table = Dict.insert cache2.table n result
                   }
                 )
 
@@ -55,7 +55,7 @@ fibAll ns cache =
             in
             ( value :: acc, c1 )
     in
-    List.foldl step ( [], cache ) ns
+    List.foldl ns ( [], cache ) step
         |> (\( values, final ) -> ( List.reverse values, final ))
 
 

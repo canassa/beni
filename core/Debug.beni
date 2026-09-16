@@ -6,12 +6,17 @@
 --! language itself cannot: write to the outside world, stop the program, and
 --! look at a value's representation without knowing its type.
 
---| Print a value to the console, prefixed with a tag, and return it
+--| Print a value to the console, tagged with a label, and return it
 --| unchanged. Because the value comes back out, a `log` can be dropped into
---| the middle of a pipeline without moving any other code.
+--| the middle of an expression without moving any other code.
 --|
---|     total = List.sum (Debug.log "prices" prices)
-pub foreign log : String, a -> a
+--|     total = List.sum (Debug.log prices "prices")
+--|
+--| The value is the first argument and the label the second, so dropping one
+--| into a pipeline costs nothing but the step itself:
+--|
+--|     total = prices |> Debug.log "prices" |> List.sum
+pub foreign log : a, String -> a
 
 
 --| Say that some code is not done yet, with a message about what is missing.

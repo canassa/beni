@@ -633,8 +633,6 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
                 .module = module,
                 .graph = &session.graph,
                 .interfaces = session.resolution.interfaces,
-                .birs = birs,
-                .provenance = session.resolution.provenance,
                 .specifiers = specifiers,
                 .sibling = "./x.js",
             });

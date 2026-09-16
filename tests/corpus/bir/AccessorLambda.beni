@@ -3,7 +3,7 @@
 -- `t.0` stay as nodes.
 names : List { name : String } -> List String
 names people =
-    List.map .name people
+    List.map people .name
 
 
 nestedAccess : { a : { b : Int } } -> Int

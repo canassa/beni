@@ -25,9 +25,10 @@ const codePoints = (s) => Array.from(s);
 
 export const length = (s) => codePoints(s).length;
 
-// Indexes are code points, and a negative index counts from the end
-// (String.beni: `slice 0 -7 "snakes on a plane!" == "snakes on a"`).
-export const slice = (start, end, s) => {
+// The string comes first (subject first, String.beni). Indexes are code
+// points, and a negative index counts from the end
+// (String.beni: `slice "snakes on a plane!" 0 -7 == "snakes on a"`).
+export const slice = (s, start, end) => {
   const points = codePoints(s);
   const n = points.length;
   const from = start < 0 ? Math.max(0, n + start) : Math.min(start, n);
@@ -69,9 +70,11 @@ export const words = (s) => {
 
 export const lines = (s) => fromArray(s.split(/\r\n|\r|\n/));
 
-export const split = (separator, s) => fromArray(s.split(separator));
+// Subject first: the string being split, then the separator.
+export const split = (s, separator) => fromArray(s.split(separator));
 
-export const indexes = (needle, haystack) => {
+// Subject first: the string being searched, then the needle.
+export const indexes = (haystack, needle) => {
   if (needle.length === 0) return nil;
   const found = [];
   let at = haystack.indexOf(needle);

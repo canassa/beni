@@ -1,0 +1,14 @@
+-- operator_not_a_function at 6:6, 10:6 and 14:22: `|>` and `<|` are syntax,
+-- not calls (§6.5), so neither has a parenthesised form. Every operator
+-- that DOES desugar to a call keeps one, which parse/good/OperatorsAll
+-- pins.
+pipeRight =
+    (|>)
+
+
+pipeLeft =
+    (<|)
+
+
+passedAlong xs =
+    List.foldl xs 0 (|>)

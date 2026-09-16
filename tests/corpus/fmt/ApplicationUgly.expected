@@ -10,9 +10,9 @@ short =
 
 long =
     List.foldl
-        (\item acc -> acc + String.length item)
-        0
         [ "a very long string literal", "another very long string literal", "and one more" ]
+        0
+        (\item acc -> acc + String.length item)
 
 
 nestedCall =

@@ -1,0 +1,123 @@
+decl 0: value two (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (a)
+  %5 = pat_var local 1 (b)
+  %6 = local 0 (a)
+  %7 = local 1 (b)
+  %8 = import_value Basics.add
+  %9 = call %8 [%6, %7]
+  annotation %3
+  params [%4, %5]
+  body %9
+  locals
+    0 a param %4
+    1 b param %5
+  refs
+    import_type Basics.Int
+    import_value Basics.add
+
+decl 1: value applyLeftOperandOrder (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Basics.String
+  %2 = type_import Maybe.Maybe
+  %3 = type_import Basics.Int
+  %4 = type_app %2 [%3]
+  %5 = type_fn [%0, %1] -> %4
+  %6 = pat_var local 0 (a)
+  %7 = pat_var local 1 (b)
+  %8 = import_ctor Maybe.Just
+  %9 = top 0 (two)
+  %10 = qualified String.toInt
+  %11 = local 0 (a)
+  %12 = call %10 [%11]
+  %13 = try %12 (returns from the declaration)
+  %14 = qualified String.toInt
+  %15 = local 1 (b)
+  %16 = call %14 [%15]
+  %17 = try %16 (returns from the declaration)
+  %18 = call %9 [%13, %17]
+  %19 = call %8 [%18]
+  annotation %5
+  params [%6, %7]
+  body %19
+  locals
+    0 a param %6
+    1 b param %7
+  refs
+    import_type Basics.String
+    import_type Maybe.Maybe
+    import_type Basics.Int
+    import_ctor Maybe.Just
+    top 0 (two)
+    import_value String.toInt
+
+decl 2: value applyRightOperandOrder (annotated)
+  %0 = type_import Basics.String
+  %1 = type_import Basics.String
+  %2 = type_import Maybe.Maybe
+  %3 = type_import Basics.Int
+  %4 = type_app %2 [%3]
+  %5 = type_fn [%0, %1] -> %4
+  %6 = pat_var local 0 (a)
+  %7 = pat_var local 1 (b)
+  %8 = import_ctor Maybe.Just
+  %9 = qualified String.toInt
+  %10 = local 0 (a)
+  %11 = call %9 [%10]
+  %12 = try %11 (returns from the declaration)
+  %13 = top 0 (two)
+  %14 = qualified String.toInt
+  %15 = local 1 (b)
+  %16 = call %14 [%15]
+  %17 = try %16 (returns from the declaration)
+  %18 = call %13 [%12, %17]
+  %19 = call %8 [%18]
+  annotation %5
+  params [%6, %7]
+  body %19
+  locals
+    0 a param %6
+    1 b param %7
+  refs
+    import_type Basics.String
+    import_type Maybe.Maybe
+    import_type Basics.Int
+    import_ctor Maybe.Just
+    import_value String.toInt
+    top 0 (two)
+
+decl 3: value bareCallee (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_fn [%0] -> %1
+  %3 = pat_var local 0 (n)
+  %4 = top 0 (two)
+  %5 = local 0 (n)
+  %6 = local 0 (n)
+  %7 = int 1
+  %8 = import_value Basics.add
+  %9 = call %8 [%6, %7]
+  %10 = call %4 [%5, %9]
+  annotation %2
+  params [%3]
+  body %10
+  locals
+    0 n param %3
+  refs
+    import_type Basics.Int
+    top 0 (two)
+    import_value Basics.add
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

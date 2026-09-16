@@ -367,6 +367,25 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\arguments have no shorter form than the lambda they stand for, so write `f _ b _`
             \\out in full: `\x y -> f x b y`.
         ),
+        .operator_not_a_function => try w.print(
+            \\I found `({s})`, but `{s}` is not a function.
+            \\
+            \\`(+)`, `(::)` and the rest name the 2-ary function the operator desugars to. `|>`
+            \\and `<|` desugar to nothing: they rearrange the call they are written in — `x |> f a`
+            \\is `f x a` and `f <| x` is `f x` — so there is no function to pass around. Write the
+            \\lambda you meant, or name the argument.
+        , .{ text, text }),
+        .pipe_rhs_not_application => try w.print(
+            \\I was expecting a call after this `|>`, but I ran into `{s}`.
+            \\
+            \\`x |> f a` is `f x a`: the value on the left becomes the FIRST argument of the call
+            \\on the right, so the right of `|>` must be that call — a function, or a call it is
+            \\one argument short of. A `let`, `if`, `case` or lambda has no argument list to
+            \\insert into. Parentheses do not hand it over as a value either — they are looked
+            \\through, so `5 |> (\y -> y + 1)` CALLS the lambda on `5` and is `6`. Write that if
+            \\it is what you meant. When the block is the argument rather than the function, it
+            \\belongs on the right of `<|`, which does carry one: `f a <| case x of ...`.
+        , .{text}),
         .bind_rhs_not_application => try w.print(
             \\I was expecting a call after this `<-`, but I ran into `{s}`.
             \\

@@ -9,7 +9,7 @@
 --!
 --!     counts : Dict Int Int
 --!     counts =
---!         Dict.insert 7 1 Dict.Int.empty
+--!         Dict.insert Dict.Int.empty 7 1
 --!
 --! Nothing here is `foreign`.
 
@@ -27,7 +27,7 @@ empty =
 --|     singleton 7 "seven"
 pub singleton : Int, v -> Dict Int v
 singleton key value =
-    Dict.singleton compare key value
+    Dict.singleton key value compare
 
 
 --| Convert an association list with `Int` keys into a dictionary.
@@ -35,4 +35,4 @@ singleton key value =
 --|     fromList [ ( 1, "a" ), ( 2, "b" ) ]
 pub fromList : List ( Int, v ) -> Dict Int v
 fromList assocs =
-    Dict.fromList compare assocs
+    Dict.fromList assocs compare

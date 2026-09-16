@@ -20,8 +20,8 @@
     (pat_var people)
     (apply
       (ident List.map)
-      (accessor .name)
-      (ident people)))
+      (ident people)
+      (accessor .name)))
   (definition accessorApplied
     (pat_var f)
     (apply

@@ -3,8 +3,8 @@
 -- irrefutable, §7), lambdas returning tuples,
 -- recursion through a local `go`, nested `case` in a `let` inside a lambda,
 -- and `?` on applications.
-pub opaque type Parser a =
-    Parser (String -> Result String ( a, String ))
+pub opaque type Parser a
+    = Parser (String -> Result String ( a, String ))
 
 
 pub run : Parser a, String -> Result String a
@@ -46,8 +46,8 @@ char expected =
         )
 
 
-pub map : (a -> b), Parser a -> Parser b
-map f (Parser p) =
+pub map : Parser a, (a -> b) -> Parser b
+map (Parser p) f =
     Parser
         (\input ->
             case p input of
@@ -59,8 +59,8 @@ map f (Parser p) =
         )
 
 
-pub andThen : (a -> Parser b), Parser a -> Parser b
-andThen f (Parser p) =
+pub andThen : Parser a, (a -> Parser b) -> Parser b
+andThen (Parser p) f =
     Parser
         (\input ->
             let
@@ -111,7 +111,7 @@ oneOf parsers =
 
 pub digits : Parser Int
 digits =
-    many (oneOf (List.map char [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ]))
+    many (oneOf (List.map [ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ] char))
         |> andThen
             (\cs ->
                 case String.toInt (String.fromList cs) of

@@ -1,7 +1,7 @@
 // The sibling JavaScript of `Debug.beni` (docs/design/boundary.md §4).
 //
 // `log` is the one deliberate violation of §4's two-shape rule, exactly as
-// it is in Elm: its type is `String, a -> a`, a pure function, and it
+// it is in Elm: its type is `a, String -> a`, a pure function, and it
 // writes to the console. That is stated in boundary.md §4 rather than
 // discovered here, and it is why `Debug` is not for shipping code.
 
@@ -31,7 +31,7 @@ const show = (value, seen) => {
   }
 };
 
-export const log = (tag, value) => {
+export const log = (value, tag) => {
   console.log(`${tag}: ${show(value, new Set())}`);
   return value;
 };

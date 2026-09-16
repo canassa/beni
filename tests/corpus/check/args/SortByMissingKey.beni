@@ -1,5 +1,5 @@
--- check/args: `List.sortBy` needs the key function first; this call gives
--- it only the list.
+-- check/args: `List.sortBy` takes the list and then the key function; this
+-- call gives it only the list.
 pub ordered : List Int -> List Int
 ordered xs =
     List.sortBy xs

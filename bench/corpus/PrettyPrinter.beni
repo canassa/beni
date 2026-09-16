@@ -1,7 +1,9 @@
 --! A Wadler-style pretty printer: a document algebra, a width-aware
 --! layout algorithm, and a printer for a JSON-like value type built on it.
 --! Deep recursion and many small functions, as in real library code.
+
 import Dict exposing (Dict)
+import Dict.String
 
 
 pub type Doc
@@ -51,11 +53,11 @@ append =
 
 pub concat : List Doc -> Doc
 concat docs =
-    List.foldr Concat Empty docs
+    List.foldr docs Empty Concat
 
 
-pub join : Doc, List Doc -> Doc
-join separator docs =
+pub join : List Doc, Doc -> Doc
+join docs separator =
     case docs of
         [] ->
             Empty
@@ -64,12 +66,14 @@ join separator docs =
             only
 
         first :: rest ->
-            Concat first (Concat separator (join separator rest))
+            Concat first (Concat separator (join rest separator))
 
 
 pub bracket : String, Doc, String -> Doc
 bracket open inner close =
-    Group (Concat (Text open) (Concat (Nest 4 (Concat SoftLine inner)) (Concat SoftLine (Text close))))
+    Group
+        (Concat (Text open) (Concat (Nest 4 (Concat SoftLine inner)) (Concat SoftLine (Text close)))
+        )
 
 
 pub hang : Int, Doc -> Doc
@@ -178,7 +182,7 @@ fits remaining items =
 
 newline : Int -> String
 newline indent =
-    "\n" ++ String.repeat indent " "
+    "\n" ++ String.repeat " " indent
 
 
 pub type Value
@@ -197,7 +201,12 @@ valueDoc value =
             Text "null"
 
         Bool b ->
-            Text (if b then "true" else "false")
+            Text
+                (if b then
+                    "true"
+                 else
+                    "false"
+                )
 
         Number n ->
             Text (String.fromFloat n)
@@ -209,15 +218,15 @@ valueDoc value =
             Text "[]"
 
         Array items ->
-            bracket "[" (join (Concat (Text ",") SoftLine) (List.map valueDoc items)) "]"
+            bracket "[" (join (List.map items valueDoc) (Concat (Text ",") SoftLine)) "]"
 
         Object fields ->
             if Dict.isEmpty fields then
                 Text "{}"
             else
                 bracket "{"
-                    (join (Concat (Text ",") SoftLine)
-                        (List.map fieldDoc (Dict.toList fields))
+                    (join (List.map (Dict.toList fields) fieldDoc)
+                        (Concat (Text ",") SoftLine)
                     )
                     "}"
 
@@ -249,12 +258,14 @@ printValue w value =
 pub sample : Value
 sample =
     Object
-        (Dict.fromList
+        (Dict.String.fromList
             [ ( "name", String "beni" )
             , ( "version", Number 0.1 )
             , ( "stable", Bool False )
             , ( "tags", Array [ String "elm", String "javascript", String "compiler" ] )
-            , ( "author", Object (Dict.fromList [ ( "name", String "anon" ), ( "email", Null ) ]) )
+            , ( "author"
+              , Object (Dict.String.fromList [ ( "name", String "anon" ), ( "email", Null ) ])
+              )
             ]
         )
 

@@ -16,8 +16,8 @@ decl 0: value firstTwo (annotated)
   %14 = try %13 (returns from the declaration)
   %15 = qualified List.head
   %16 = qualified List.drop
-  %17 = int 1
-  %18 = local 0 (xs)
+  %17 = local 0 (xs)
+  %18 = int 1
   %19 = call %16 [%17, %18]
   %20 = call %15 [%19]
   %21 = try %20 (returns from the declaration)

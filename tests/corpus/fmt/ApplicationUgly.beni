@@ -7,7 +7,7 @@ short =
       1
    2
 long =
-        List.foldl (\item acc -> acc + String.length item) 0 [ "a very long string literal", "another very long string literal", "and one more" ]
+        List.foldl [ "a very long string literal", "another very long string literal", "and one more" ] 0 (\item acc -> acc + String.length item)
 nestedCall = f (g (h 1
   2) 3)
 f a = a

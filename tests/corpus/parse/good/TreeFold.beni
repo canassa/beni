@@ -1,6 +1,6 @@
 -- A binary tree with a fold: a recursive parameterised custom type, nested
--- constructor patterns, an accumulator threaded through recursion, point-free
--- definitions built from the fold, and an operator passed as a function.
+-- constructor patterns, an accumulator threaded through recursion, a point-free
+-- definition built from the fold, and an operator passed as a function.
 -- Nullary constructors as pattern arguments are parenthesised because §3's
 -- PatAtom has no bare upper_ident form.
 pub type Tree a
@@ -34,8 +34,8 @@ insert x tree =
 
 
 pub fromList : List Int -> Tree Int
-fromList =
-    List.foldl insert Leaf
+fromList xs =
+    List.foldl xs Leaf insert
 
 
 pub toList : Tree a -> List a

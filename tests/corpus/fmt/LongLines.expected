@@ -33,9 +33,9 @@ big =
 
 call =
     List.foldl
-        (\item acc -> acc + String.length item * 2)
-        0
         [ "some", "long", "list", "of", "strings", "here" ]
+        0
+        (\item acc -> acc + String.length item * 2)
 
 
 signature :

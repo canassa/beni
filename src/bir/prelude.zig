@@ -58,7 +58,7 @@ pub fn ctorModule(w: WellKnown) ?WellKnown {
 }
 
 /// The module that exposes `w` as a value, or null. Every prelude value is
-/// from `Basics`. The operator functions (`add`, `apR`, …) are NOT prelude
+/// from `Basics`. The operator functions (`add`, `cons`, …) are NOT prelude
 /// values: operators are syntax and their functions are reached only
 /// through desugaring, so a user may name a function `add`.
 pub fn valueModule(w: WellKnown) ?WellKnown {

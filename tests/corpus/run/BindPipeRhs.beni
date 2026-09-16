@@ -1,0 +1,55 @@
+-- §6.7: the right-hand side of a `<-` may be a `|>`/`<|` chain, because
+-- pipes rewrite BEFORE the bind does (§8) — `let x <- e |> f a` is
+-- `f e a (\x -> rest)`. Until pipe-first landed the front end rejected
+-- this as `bind_rhs_not_application`, which §6.7 called implementation
+-- lag. `withDiff` is not commutative and takes its callback last, so both
+-- the operand's position and the callback's are visible in the output.
+import Node exposing (Program)
+import String
+
+
+withDiff : Int, Int, (Int -> String) -> String
+withDiff a b body =
+    body (a - b)
+
+
+subtract : Int, Int -> Int
+subtract a b =
+    a - b
+
+
+piped : String
+piped =
+    let
+        x <- 100 |> withDiff 1
+    in
+    String.fromInt x
+
+
+chained : String
+chained =
+    let
+        x <- 200 |> subtract 50 |> withDiff 7
+    in
+    String.fromInt x
+
+
+appliedLeft : String
+appliedLeft =
+    let
+        x <- withDiff 100 <| 1
+    in
+    String.fromInt x
+
+
+parenthesised : String
+parenthesised =
+    let
+        x <- 100 |> (withDiff 1)
+    in
+    String.fromInt x
+
+
+main : Program
+main =
+    Node.printLines [ piped, chained, appliedLeft, parenthesised ]

@@ -59,7 +59,7 @@ update msg model =
                 )
 
         Delete id ->
-            ( { model | todos = List.filter (\t -> t.id /= id) model.todos }, [] )
+            ( { model | todos = List.filter model.todos (\t -> t.id /= id) }, [] )
 
         Check id isDone ->
             let
@@ -69,13 +69,13 @@ update msg model =
                     else
                         t
             in
-            ( { model | todos = List.map updateTodo model.todos }, [] )
+            ( { model | todos = List.map model.todos updateTodo }, [] )
 
         CheckAll isDone ->
-            ( { model | todos = List.map (\t -> { t | done = isDone }) model.todos }, [] )
+            ( { model | todos = List.map model.todos (\t -> { t | done = isDone }) }, [] )
 
         DeleteComplete ->
-            ( { model | todos = List.filter (\t -> not t.done) model.todos }, [] )
+            ( { model | todos = List.filter model.todos (\t -> not t.done) }, [] )
 
         ChangeVisibility visibility ->
             ( { model | visibility = visibility }, [ "now showing ${visibilityName visibility}" ] )

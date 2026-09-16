@@ -37,5 +37,5 @@ main =
         , String.fromInt (apply (add3 1 2 _) 3)
         , String.fromInt (apply (\n -> n * 2) 21)
         , String.fromInt ((counterFrom 10) 5)
-        , String.join "," (List.map String.fromInt (List.map (add3 1 1 _) [ 1, 2, 3 ]))
+        , String.join (List.map (List.map [ 1, 2, 3 ] (add3 1 1 _)) String.fromInt) ","
         ]

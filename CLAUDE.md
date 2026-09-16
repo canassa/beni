@@ -32,10 +32,10 @@ code elimination, and chunking. [`backend.md`](docs/design/backend.md) is the
 contract, [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
 
 **In flight across M3**: the no-currying change, sliced. Landed so far are the
-removal of `>>`/`<<`, the `_` placeholder and the `let x <- e` bind. Still to
-come are n-ary function types through the parser, BIR and checker; saturated
-calls in the backend; and `core/` rewritten subject-first with `|>` flipped to
-pipe-first.
+removal of `>>`/`<<`, the `_` placeholder, the `let x <- e` bind, n-ary
+function types through the parser, BIR and checker, and `core/` rewritten
+subject-first with `|>` flipped to pipe-first. Still to come are saturated
+calls in the backend.
 
 M4 is the daemon and incrementality; M5 is source maps, code splitting and LSP.
 Neither has started.

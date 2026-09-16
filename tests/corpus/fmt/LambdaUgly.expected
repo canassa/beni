@@ -14,4 +14,4 @@ h =
 
 
 k =
-    List.map (\x -> x * 2)
+    List.map [ 1, 2 ] (\x -> x * 2)

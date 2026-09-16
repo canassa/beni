@@ -5,7 +5,7 @@
 -- else in it is lowered inside the lambda.
 addOne : List Int -> List Int
 addOne xs =
-    List.map (add 1 _) xs
+    List.map xs (add 1 _)
 
 
 firstPosition : Int -> Int

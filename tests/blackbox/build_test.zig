@@ -168,7 +168,7 @@ test "a non-zero exit code from the platform reaches the process" {
         \\
         \\main : Program
         \\main =
-        \\    Node.exitWith 3 "could not read the file"
+        \\    Node.exitWith "could not read the file" 3
         \\
     );
 

@@ -1,5 +1,6 @@
--- check/args: `List.map f` is a perfectly good value, but here it is handed
--- to `List.length`, which wants an actual list.
+-- check/args: `List.map` given only its list is not a value waiting for a
+-- function — it is a call one argument short. The message lands on the call
+-- where it is written, not two arguments later on `List.length`.
 pub sizes : List Int -> Int
 sizes xs =
-    List.length (List.map negate)
+    List.length (List.map xs)

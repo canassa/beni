@@ -7,11 +7,11 @@
 -- writing that binding's value, so a parameter picked inside the first
 -- value only avoided the names bound so far. `beni check` on the generated
 -- 100k-line corpus reported five of these. Expected: one `shadowing` at
--- 14:26, naming `total`, bound on line 16.
+-- 14:37, naming `total`, bound on line 16.
 compute left right =
     let
         first =
-            List.foldl (\total carry -> carry + total) 0 [ left ]
+            List.foldl [ left ] 0 (\total carry -> carry + total)
 
         total =
             right + 1

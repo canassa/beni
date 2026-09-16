@@ -1,8 +1,0 @@
--- check/args: `Dict.insert` takes a key, a value AND the dictionary, and
--- the dictionary is the one that was forgotten.
-import Dict exposing (Dict)
-
-
-pub add : Dict Int String -> Dict Int String
-add d =
-    Dict.insert 1 "one"

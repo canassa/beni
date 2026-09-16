@@ -1056,7 +1056,7 @@ pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
         .{ wk.append, "++" }, .{ wk.cons, "::" }, .{ wk.eq, "==" },
         .{ wk.neq, "/=" },    .{ wk.lt, "<" },    .{ wk.gt, ">" },
         .{ wk.le, "<=" },     .{ wk.ge, ">=" },   .{ wk.@"and", "&&" },
-        .{ wk.@"or", "||" },  .{ wk.apL, "<|" },  .{ wk.apR, "|>" },
+        .{ wk.@"or", "||" },
     };
     inline for (pairs) |pair| {
         if (symbol == pair[0].symbol()) return pair[1];
@@ -1191,9 +1191,6 @@ test "operator spellings cover the desugarings of language.md §6.5" {
     try testing.expectEqualStrings("+", operatorSpelling(InternPool.WellKnown.add.symbol()).?);
     try testing.expectEqualStrings("==", operatorSpelling(InternPool.WellKnown.eq.symbol()).?);
     try testing.expectEqualStrings("::", operatorSpelling(InternPool.WellKnown.cons.symbol()).?);
-    // `composeR` was `>>` until the operator was removed (language.md §6.5);
-    // it is an ordinary core function now and prints under its own name.
-    try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.composeR.symbol()));
     // A prelude value the author DOES write by hand keeps its own name.
     try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.negate.symbol()));
     try testing.expectEqual(@as(?[]const u8, null), operatorSpelling(InternPool.WellKnown.max.symbol()));

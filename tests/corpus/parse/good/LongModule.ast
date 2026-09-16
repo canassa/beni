@@ -133,7 +133,9 @@
   (definition init
     (record
       (field cards
-        (ident Dict.empty))
+        (apply
+          (ident Dict.empty)
+          (ident compare)))
       (field nextId
         (int 1))
       (field editing
@@ -143,7 +145,9 @@
       (field filter
         (string))
       (field collapsed
-        (ident Set.empty))
+        (apply
+          (ident Set.empty)
+          (ident String.compare)))
       (field newCardTitle
         (string))
       (field errors
@@ -328,11 +332,11 @@
                 (field cards
                   (apply
                     (ident Dict.insert)
+                    (field_access .cards
+                      (ident model))
                     (field_access .id
                       (ident card))
-                    (ident card)
-                    (field_access .cards
-                      (ident model))))
+                    (ident card)))
                 (field nextId
                   (add
                     (field_access .nextId
@@ -348,9 +352,9 @@
             (field cards
               (apply
                 (ident Dict.remove)
-                (ident id)
                 (field_access .cards
-                  (ident model)))))
+                  (ident model))
+                (ident id))))
           (ident renumber)))
       (branch
         (pat_ctor MoveCard
@@ -367,9 +371,9 @@
         (case
           (apply
             (ident Dict.get)
-            (ident id)
             (field_access .cards
-              (ident model)))
+              (ident model))
+            (ident id))
           (branch
             (pat_ctor Just
               (pat_var card))
@@ -389,9 +393,9 @@
         (case
           (apply
             (ident Dict.get)
-            (ident id)
             (field_access .cards
-              (ident model)))
+              (ident model))
+            (ident id))
           (branch
             (pat_ctor Just
               (pat_var card))
@@ -524,23 +528,23 @@
         (if
           (apply
             (ident Set.member)
-            (ident key)
             (field_access .collapsed
-              (ident model)))
+              (ident model))
+            (ident key))
           (record_update model
             (field collapsed
               (apply
                 (ident Set.remove)
-                (ident key)
                 (field_access .collapsed
-                  (ident model)))))
+                  (ident model))
+                (ident key))))
           (record_update model
             (field collapsed
               (apply
                 (ident Set.insert)
-                (ident key)
                 (field_access .collapsed
-                  (ident model)))))))
+                  (ident model))
+                (ident key))))))
       (branch
         (pat_ctor ToggleLabel
           (pat_var id)
@@ -575,12 +579,16 @@
                             (field_access .id
                               (ident c))
                             (ident c))))))
-                  (ident Dict.fromList)))
+                  (apply
+                    (ident Dict.fromList)
+                    (ident compare))))
               (field nextId
                 (add
                   (int 1)
                   (apply
                     (ident List.foldl)
+                    (ident cards)
+                    (int 0)
                     (paren
                       (lambda
                         (pat_var c)
@@ -589,9 +597,7 @@
                           (ident max)
                           (ident acc)
                           (field_access .id
-                            (ident c)))))
-                    (int 0)
-                    (ident cards))))))
+                            (ident c))))))))))
           (branch
             (pat_ctor Err
               (pat_var error))
@@ -623,9 +629,9 @@
           (ident message)
           (apply
             (ident List.take)
-            (int 4)
             (field_access .errors
-              (ident model)))))))
+              (ident model))
+            (int 4))))))
   (annotation updateCard
     (type_fn
       (type_con Int)
@@ -642,9 +648,9 @@
     (case
       (apply
         (ident Dict.get)
-        (ident id)
         (field_access .cards
-          (ident model)))
+          (ident model))
+        (ident id))
       (branch
         (pat_ctor Just
           (pat_var card))
@@ -652,13 +658,13 @@
           (field cards
             (apply
               (ident Dict.insert)
+              (field_access .cards
+                (ident model))
               (ident id)
               (paren
                 (apply
                   (ident f)
-                  (ident card)))
-              (field_access .cards
-                (ident model))))))
+                  (ident card)))))))
       (branch
         (pat_ctor Nothing)
         (ident model))))
@@ -673,21 +679,21 @@
     (if
       (apply
         (ident List.member)
-        (ident label)
         (field_access .labels
-          (ident card)))
+          (ident card))
+        (ident label))
       (record_update card
         (field labels
           (apply
             (ident List.filter)
+            (field_access .labels
+              (ident card))
             (paren
               (lambda
                 (pat_var l)
                 (neq
                   (ident l)
-                  (ident label))))
-            (field_access .labels
-              (ident card)))))
+                  (ident label)))))))
       (record_update card
         (field labels
           (cons
@@ -766,9 +772,9 @@
     (case
       (apply
         (ident Dict.get)
-        (ident id)
         (field_access .cards
-          (ident model)))
+          (ident model))
+        (ident id))
       (branch
         (pat_ctor Just
           (pat_var card))
@@ -796,10 +802,10 @@
                 (field cards
                   (apply
                     (ident Dict.insert)
-                    (ident id)
-                    (ident moved)
                     (field_access .cards
-                      (ident model)))))
+                      (ident model))
+                    (ident id)
+                    (ident moved))))
               (ident renumber)))))
       (branch
         (pat_ctor Nothing)
@@ -831,25 +837,25 @@
                       (ident index)))))))
           (apply
             (ident List.foldl)
+            (ident cards)
             (paren
               (lambda
                 (pat_var card)
                 (pat_var acc)
                 (apply
                   (ident Dict.insert)
+                  (ident acc)
                   (field_access .id
                     (ident card))
-                  (ident card)
-                  (ident acc))))
-            (ident cards))))
+                  (ident card)))))))
       (record_update model
         (field cards
           (apply
             (ident List.foldl)
-            (ident renumberColumn)
+            (ident columns)
             (field_access .cards
               (ident model))
-            (ident columns))))))
+            (ident renumberColumn))))))
   (annotation cardsIn
     (type_fn
       (type_con Column)
@@ -913,35 +919,35 @@
       (bool_or
         (apply
           (ident String.contains)
-          (ident filter)
           (paren
             (apply
               (ident String.toLower)
               (field_access .title
-                (ident card)))))
+                (ident card))))
+          (ident filter))
         (bool_or
           (apply
             (ident String.contains)
-            (ident filter)
             (paren
               (apply
                 (ident String.toLower)
                 (field_access .description
-                  (ident card)))))
+                  (ident card))))
+            (ident filter))
           (apply
             (ident List.any)
+            (field_access .labels
+              (ident card))
             (paren
               (lambda
                 (pat_var label)
                 (apply
                   (ident String.contains)
-                  (ident filter)
                   (paren
                     (apply
                       (ident String.toLower)
-                      (ident label))))))
-            (field_access .labels
-              (ident card)))))))
+                      (ident label)))
+                  (ident filter)))))))))
   (annotation handleKey
     (type_fn
       (type_con String)
@@ -1021,9 +1027,9 @@
         (case
           (apply
             (ident Dict.get)
-            (ident cardId)
             (field_access .cards
-              (ident model)))
+              (ident model))
+            (ident cardId))
           (branch
             (pat_ctor Just
               (pat_var card))
@@ -1081,11 +1087,11 @@
           (paren
             (apply
               (ident List.map)
+              (ident columns)
               (paren
                 (apply
                   (ident viewColumn)
-                  (ident model)))
-              (ident columns)))))))
+                  (ident model)))))))))
   (annotation viewHeader
     (type_fn
       (type_con Model)
@@ -1247,6 +1253,7 @@
           (paren
             (apply
               (ident List.map)
+              (ident errors)
               (paren
                 (lambda
                   (pat_var err)
@@ -1256,8 +1263,7 @@
                     (list
                       (apply
                         (ident text)
-                        (ident err))))))
-              (ident errors)))))))
+                        (ident err))))))))))))
   (annotation viewColumn
     (type_fn
       (type_con Model)
@@ -1275,9 +1281,9 @@
       (let_def collapsed
         (apply
           (ident Set.member)
-          (ident key)
           (field_access .collapsed
-            (ident model))))
+            (ident model))
+          (ident key)))
       (let_def cards
         (apply
           (ident visibleCardsIn)
@@ -1371,11 +1377,11 @@
               (paren
                 (apply
                   (ident List.map)
+                  (ident cards)
                   (paren
                     (apply
                       (ident viewCard)
-                      (ident model)))
-                  (ident cards)))))
+                      (ident model)))))))
           (apply
             (ident viewDropZone)
             (ident column))))))
@@ -1661,8 +1667,8 @@
       (append
         (apply
           (ident String.left)
-          (int 77)
-          (ident s))
+          (ident s)
+          (int 77))
         (string
           (chunk "...")))))
   (annotation viewLabels
@@ -1682,6 +1688,12 @@
       (paren
         (apply
           (ident List.map)
+          (paren
+            (apply
+              (ident List.sortBy)
+              (field_access .labels
+                (ident card))
+              (ident identity)))
           (paren
             (lambda
               (pat_var label)
@@ -1705,13 +1717,7 @@
                 (list
                   (apply
                     (ident text)
-                    (ident label))))))
-          (paren
-            (apply
-              (ident List.sortBy)
-              (ident identity)
-              (field_access .labels
-                (ident card))))))))
+                    (ident label))))))))))
   (annotation viewCardActions
     (type_fn
       (type_con Card)
@@ -2046,6 +2052,7 @@
     (pat_var model)
     (apply
       (ident List.map)
+      (ident columns)
       (paren
         (lambda
           (pat_var column)
@@ -2059,8 +2066,7 @@
                 (apply
                   (ident cardsIn)
                   (ident column)
-                  (ident model)))))))
-      (ident columns)))
+                  (ident model)))))))))
   (annotation pub labelsInUse
     (type_fn
       (type_con Model)
@@ -2078,7 +2084,9 @@
           (apply
             (ident List.concatMap)
             (accessor .labels)))
-        (ident Set.fromList))
+        (apply
+          (ident Set.fromList)
+          (ident String.compare)))
       (ident Set.toList)))
   (annotation pub oldestCard
     (type_fn

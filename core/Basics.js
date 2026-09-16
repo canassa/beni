@@ -68,13 +68,13 @@ export const floor = (a) => Math.floor(a);
 export const ceiling = (a) => Math.ceil(a);
 export const truncate = (a) => Math.trunc(a);
 
-// The result takes the sign of the MODULUS (Basics.beni: `modBy 4 (-1) == 3`),
-// which JavaScript's `%` does not do.
-export const modBy = (k, n) => (k === 0 ? 0 : ((n % k) + k) % k);
-export const remainderBy = (k, n) => (k === 0 ? 0 : n % k);
+// Subject first, then the modulus. The result takes the sign of the MODULUS
+// (Basics.beni: `modBy (-1) 4 == 3`), which JavaScript's `%` does not do.
+export const modBy = (n, k) => (k === 0 ? 0 : ((n % k) + k) % k);
+export const remainderBy = (n, k) => (k === 0 ? 0 : n % k);
 
 export const sqrt = (a) => Math.sqrt(a);
-export const logBase = (base, a) => Math.log(a) / Math.log(base);
+export const logBase = (a, base) => Math.log(a) / Math.log(base);
 export const e = Math.E;
 export const pi = Math.PI;
 export const cos = (a) => Math.cos(a);

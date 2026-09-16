@@ -1,7 +1,9 @@
 --! Form validation: an accumulating `Validation` type, field validators
 --! combined applicatively, a sign-up form model, and error rendering.
 --! Typical business-logic shape: many small functions, some long records.
+
 import Dict exposing (Dict)
+import Dict.String
 import Set exposing (Set)
 
 
@@ -14,8 +16,8 @@ pub type alias Validator a =
     String, a -> Validation a
 
 
-pub map : (a -> b), Validation a -> Validation b
-map f validation =
+pub map : Validation a, (a -> b) -> Validation b
+map validation f =
     case validation of
         Valid a ->
             Valid (f a)
@@ -24,8 +26,8 @@ map f validation =
             Invalid errors
 
 
-pub andMap : Validation a, Validation (a -> b) -> Validation b
-andMap value function =
+pub andMap : Validation (a -> b), Validation a -> Validation b
+andMap function value =
     case ( function, value ) of
         ( Valid f, Valid a ) ->
             Valid (f a)
@@ -40,8 +42,8 @@ andMap value function =
             Invalid (left ++ right)
 
 
-pub andThen : (a -> Validation b), Validation a -> Validation b
-andThen f validation =
+pub andThen : Validation a, (a -> Validation b) -> Validation b
+andThen validation f =
     case validation of
         Valid a ->
             f a
@@ -83,9 +85,9 @@ maxLength n =
 
 pub email : Validator String
 email field value =
-    case String.split "@" value of
+    case String.split value "@" of
         [ local, domain ] ->
-            if String.isEmpty local || not (String.contains "." domain) then
+            if String.isEmpty local || not (String.contains domain ".") then
                 fail field "must be a valid email address"
             else
                 Valid value
@@ -97,12 +99,12 @@ email field value =
 pub oneOfSet : Set String -> Validator String
 oneOfSet allowed =
     \field value ->
-        if Set.member value allowed then
+        if Set.member allowed value then
             Valid value
         else
             let
                 choices =
-                    String.join ", " (Set.toList allowed)
+                    String.join (Set.toList allowed) ", "
             in
             fail field "must be one of: ${choices}"
 
@@ -128,23 +130,22 @@ matches otherName other =
 pub all : List (Validator a) -> Validator a
 all validators =
     \field value ->
-        List.foldl
-        (\validator acc ->
-            case ( acc, validator field value ) of
-                ( Valid _, Valid v ) ->
-                    Valid v
+        List.foldl validators
+            (Valid value)
+            (\validator acc ->
+                case ( acc, validator field value ) of
+                    ( Valid _, Valid v ) ->
+                        Valid v
 
-                ( Valid _, Invalid errors ) ->
-                    Invalid errors
+                    ( Valid _, Invalid errors ) ->
+                        Invalid errors
 
-                ( Invalid errors, Valid _ ) ->
-                    Invalid errors
+                    ( Invalid errors, Valid _ ) ->
+                        Invalid errors
 
-                ( Invalid left, Invalid right ) ->
-                    Invalid (left ++ right)
-        )
-        (Valid value)
-        validators
+                    ( Invalid left, Invalid right ) ->
+                        Invalid (left ++ right)
+            )
 
 
 pub firstOf : List (Validator a) -> Validator a
@@ -200,7 +201,7 @@ emptyForm =
 
 countries : Set String
 countries =
-    Set.fromList [ "BR", "DE", "FR", "GB", "JP", "US" ]
+    Set.fromList [ "BR", "DE", "FR", "GB", "JP", "US" ] String.compare
 
 
 pub validateSignUp : SignUpForm -> Validation SignUp
@@ -210,8 +211,16 @@ validateSignUp form =
     -- written out. `andMap` hands over one argument at a time by
     -- construction, which is the one place where saturated calls cost
     -- something in readability.
-    Valid (\user -> \mail -> \pass -> \years -> \country -> \news -> SignUp user mail pass years country news)
-        |> andMap ((firstOf [ required, minLength 3, maxLength 20, usernameChars ]) "username" form.username)
+    Valid
+        (\user ->
+            \mail ->
+                \pass -> \years -> \country -> \news -> SignUp user mail pass years country news
+        )
+        |> andMap
+            ((firstOf [ required, minLength 3, maxLength 20, usernameChars ])
+                "username"
+                form.username
+            )
         |> andMap ((firstOf [ required, email ]) "email" form.email)
         |> andMap ((firstOf [ required, minLength 8, strongPassword ]) "password" form.password)
         |> andMap (parseAge "age" form.age |> andThen (\v -> (intBetween 13 120) "age" v))
@@ -223,7 +232,7 @@ validateSignUp form =
 
 usernameChars : Validator String
 usernameChars field value =
-    if String.all (\c -> Char.isAlphaNum c || c == '_') value then
+    if String.all value (\c -> Char.isAlphaNum c || c == '_') then
         Valid value
     else
         fail field "may only contain letters, digits and underscores"
@@ -233,13 +242,13 @@ strongPassword : Validator String
 strongPassword field value =
     let
         hasDigit =
-            String.any Char.isDigit value
+            String.any value Char.isDigit
 
         hasUpper =
-            String.any Char.isUpper value
+            String.any value Char.isUpper
 
         hasLower =
-            String.any Char.isLower value
+            String.any value Char.isLower
     in
     if hasDigit && hasUpper && hasLower then
         Valid value
@@ -279,17 +288,16 @@ pub errorsByField : Validation a -> Dict String (List String)
 errorsByField validation =
     case validation of
         Valid _ ->
-            Dict.empty
+            Dict.String.empty
 
         Invalid errors ->
-            List.foldl
+            List.foldl errors
+                Dict.String.empty
                 (\( field, message ) acc ->
-                    Dict.update field
-                        (\existing -> Just (Maybe.withDefault [] existing ++ [ message ]))
-                        acc
+                    Dict.update acc
+                        field
+                        (\existing -> Just (Maybe.withDefault existing [] ++ [ message ]))
                 )
-                Dict.empty
-                errors
 
 
 pub errorSummary : Validation a -> String

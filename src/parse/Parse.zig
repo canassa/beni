@@ -1449,6 +1449,7 @@ fn parseBinop(p: *Parse, min_bp: u8, banned: Tag) Allocator.Error!Index {
                 .none => try p.parseBinop(info.lbp() + 1, .invalid),
             };
         };
+        if (info.tag == .pipe_right) try p.checkPipeRhs(rhs);
         lhs = try p.binary(info.tag, op_token, lhs, rhs);
         banned_prec = if (info.assoc == .none) info.prec else -1;
         last_op = tok;
@@ -1618,8 +1619,16 @@ fn parseParens(p: *Parse) Allocator.Error!Index {
         return p.leaf(.unit, open);
     }
     if (p.peek().isOperator() and p.peekAt(1) == .r_paren) {
+        const op_tag = p.peek();
         const op = p.next();
         _ = p.next();
+        // `(+)` is the 2-ary function `+` desugars to, but `|>` and `<|`
+        // desugar to nothing: they rearrange the call they are written in
+        // (§6.5, §6.7), so there is no function to name.
+        if (op_tag == .op_pipe_left or op_tag == .op_pipe_right) {
+            @branchHint(.cold);
+            return p.errorNode(.error_expr, p.itemAtToken(.operator_not_a_function, op));
+        }
         return p.leaf(.op_fn, op);
     }
     try p.pushBracket(.r_paren);
@@ -1932,6 +1941,28 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
     return p.binary(.let_pattern, head, pattern, value);
 }
 
+/// The right operand of `|>` is an `App` (§3, §6.7): the operand becomes the
+/// callee's first argument, so there has to be a callee. A `let`, `if`,
+/// `case` or lambda has no head application to insert into — §3's rule
+/// admitting a block as the last operand of a chain does not extend to `|>`
+/// — and neither does an operator chain or a `?`. `<|` carries all of them
+/// and is unaffected.
+///
+/// An `Atom` counts, parentheses included: `x |> (f a)` is an `App` whose
+/// callee is written in parentheses, and lowering looks through them (§8).
+fn checkPipeRhs(p: *Parse, node: Index) Allocator.Error!void {
+    const tag = p.nodes.items(.tag)[node.int()];
+    if (tag.isError()) return; // already reported as something else
+    const is_app = switch (tag) {
+        .let, .@"if", .case, .lambda, .question => false,
+        else => !Node.Tag.isBinop(tag),
+    };
+    if (!is_app) {
+        @branchHint(.cold);
+        _ = try p.report(p.itemAtToken(.pipe_rhs_not_application, p.nodes.items(.main_token)[node.int()]));
+    }
+}
+
 /// The right-hand side of `<-` is an `App` (§3): a call missing exactly its
 /// final argument, or the bare function when that is the only one it takes.
 /// Everything else — an operator chain, a `?`, a block form — has no reading
@@ -1940,8 +1971,27 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
 /// message points at a complete thing and the binding list stays aligned.
 fn checkBindRhs(p: *Parse, node: Index) Allocator.Error!void {
     const tags = p.nodes.items(.tag);
+    const data = p.nodes.items(.data);
+    // A `|>`/`<|` chain is legal here, because pipes rewrite BEFORE the bind
+    // does (§6.7, §8): `x <- File.read path |> Task.mapError f` is
+    // `Task.mapError (File.read path) f (\x -> rest)`. The chain's head
+    // application is what receives the callback, so that is what is checked.
     var n = node;
-    while (tags[n.int()] == .paren) n = @enumFromInt(p.nodes.items(.data)[n.int()].lhs);
+    var through_pipe = false;
+    while (true) {
+        switch (tags[n.int()]) {
+            .paren => n = @enumFromInt(data[n.int()].lhs),
+            .pipe_right => {
+                through_pipe = true;
+                n = @enumFromInt(data[n.int()].rhs);
+            },
+            .pipe_left => {
+                through_pipe = true;
+                n = @enumFromInt(data[n.int()].lhs);
+            },
+            else => break,
+        }
+    }
     const tag = tags[n.int()];
     if (tag.isError()) return; // already reported as something else
     // The final argument of the call is the rest of the block, so the call
@@ -1956,6 +2006,10 @@ fn checkBindRhs(p: *Parse, node: Index) Allocator.Error!void {
         }
         return;
     }
+    // Whatever the head of a pipe chain is, the chain is a call once it is
+    // rewritten, so there is always something for the callback to be the
+    // last argument of.
+    if (through_pipe) return;
     switch (tag) {
         // A bare name is accepted: an `App` with no arguments written, whose
         // callee takes the rest of the block and nothing else. That is
@@ -2602,7 +2656,7 @@ test "types: the comma is the parameter separator and the arrow right-associates
 
 test "every atom: literals, names, brackets, operator functions, strings, multiline" {
     try expectClean(
-        \\v = ( (+), (::), (|>), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", \a b -> a, if a then b else c )
+        \\v = ( (+), (::), (^), (), (1), (1, 2), [], [1], {}, 'c', 1.5, 0x1F, "a${b}c", "", \a b -> a, if a then b else c )
         \\m =
         \\    \\a
         \\    \\b
@@ -2614,7 +2668,7 @@ test "every atom: literals, names, brackets, operator functions, strings, multil
         \\    (tuple
         \\      (op_fn +)
         \\      (op_fn ::)
-        \\      (op_fn |>)
+        \\      (op_fn ^)
         \\      (unit)
         \\      (paren
         \\        (int 1))
@@ -3113,6 +3167,105 @@ test "`<-` binds the rest of the block; its right-hand side must be a call (§6.
         \\      (ident x))))
         \\
     , &.{.{ .code = .bind_rhs_not_application, .line = 19, .col = 18 }});
+}
+
+test "`|>` takes only an application, and neither pipe has a parenthesised form (§6.5, §6.7)" {
+    // `<|` is unaffected and still carries a block, which the chain test
+    // below covers; here only `|>` and the two operator-function forms.
+    try expectClean(
+        \\p1 xs f = xs |> f
+        \\p2 xs f = xs |> f 1
+        \\p3 xs f = xs |> (f 1)
+        \\p4 xs f g = xs |> f 1 |> g
+        \\
+    ,
+        \\(module
+        \\  (definition p1
+        \\    (pat_var xs)
+        \\    (pat_var f)
+        \\    (pipe_right
+        \\      (ident xs)
+        \\      (ident f)))
+        \\  (definition p2
+        \\    (pat_var xs)
+        \\    (pat_var f)
+        \\    (pipe_right
+        \\      (ident xs)
+        \\      (apply
+        \\        (ident f)
+        \\        (int 1))))
+        \\  (definition p3
+        \\    (pat_var xs)
+        \\    (pat_var f)
+        \\    (pipe_right
+        \\      (ident xs)
+        \\      (paren
+        \\        (apply
+        \\          (ident f)
+        \\          (int 1)))))
+        \\  (definition p4
+        \\    (pat_var xs)
+        \\    (pat_var f)
+        \\    (pat_var g)
+        \\    (pipe_right
+        \\      (pipe_right
+        \\        (ident xs)
+        \\        (apply
+        \\          (ident f)
+        \\          (int 1)))
+        \\      (ident g))))
+        \\
+    );
+    // The tree stays complete after each report, so one bad pipe does not
+    // swallow the declarations after it.
+    try expectTree(
+        \\e1 xs = xs |> \x -> x
+        \\e2 c a b = a |> if c then b else a
+        \\e3 x f = x |> f 1 + 2
+        \\e4 = (|>)
+        \\e5 = (<|)
+        \\
+    ,
+        \\(module
+        \\  (definition e1
+        \\    (pat_var xs)
+        \\    (pipe_right
+        \\      (ident xs)
+        \\      (lambda
+        \\        (pat_var x)
+        \\        (ident x))))
+        \\  (definition e2
+        \\    (pat_var c)
+        \\    (pat_var a)
+        \\    (pat_var b)
+        \\    (pipe_right
+        \\      (ident a)
+        \\      (if
+        \\        (ident c)
+        \\        (ident b)
+        \\        (ident a))))
+        \\  (definition e3
+        \\    (pat_var x)
+        \\    (pat_var f)
+        \\    (pipe_right
+        \\      (ident x)
+        \\      (add
+        \\        (apply
+        \\          (ident f)
+        \\          (int 1))
+        \\        (int 2))))
+        \\  (definition e4
+        \\    (error operator_not_a_function))
+        \\  (definition e5
+        \\    (error operator_not_a_function)))
+        \\
+    , &.{
+        .{ .code = .pipe_rhs_not_application, .line = 1, .col = 15 },
+        .{ .code = .pipe_rhs_not_application, .line = 2, .col = 17 },
+        .{ .code = .pipe_rhs_not_application, .line = 3, .col = 19 },
+        .{ .code = .operator_not_a_function, .line = 4, .col = 7 },
+        .{ .code = .operator_not_a_function, .line = 5, .col = 7 },
+    });
 }
 
 test "block expressions as the last operand of a chain, and as a bare argument (error)" {

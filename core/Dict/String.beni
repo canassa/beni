@@ -12,7 +12,7 @@
 --!
 --!     scores : Dict String Int
 --!     scores =
---!         Dict.insert "Alice" 3 Dict.String.empty
+--!         Dict.insert Dict.String.empty "Alice" 3
 --!
 --! Nothing here is `foreign`.
 
@@ -31,7 +31,7 @@ empty =
 --|     singleton "Tom" 42
 pub singleton : String, v -> Dict String v
 singleton key value =
-    Dict.singleton String.compare key value
+    Dict.singleton key value String.compare
 
 
 --| Convert an association list with `String` keys into a dictionary.
@@ -39,4 +39,4 @@ singleton key value =
 --|     fromList [ ( "a", 0 ), ( "b", 1 ) ]
 pub fromList : List ( String, v ) -> Dict String v
 fromList assocs =
-    Dict.fromList String.compare assocs
+    Dict.fromList assocs String.compare

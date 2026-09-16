@@ -110,15 +110,15 @@
             (field todos
               (apply
                 (ident List.filter)
+                (field_access .todos
+                  (ident model))
                 (paren
                   (lambda
                     (pat_var t)
                     (neq
                       (field_access .id
                         (ident t))
-                      (ident id))))
-                (field_access .todos
-                  (ident model)))))
+                      (ident id)))))))
           (list)))
       (branch
         (pat_ctor Check
@@ -141,9 +141,9 @@
               (field todos
                 (apply
                   (ident List.map)
-                  (ident updateTodo)
                   (field_access .todos
-                    (ident model)))))
+                    (ident model))
+                  (ident updateTodo))))
             (list))))
       (branch
         (pat_ctor CheckAll
@@ -153,14 +153,14 @@
             (field todos
               (apply
                 (ident List.map)
+                (field_access .todos
+                  (ident model))
                 (paren
                   (lambda
                     (pat_var t)
                     (record_update t
                       (field done
-                        (ident isDone)))))
-                (field_access .todos
-                  (ident model)))))
+                        (ident isDone))))))))
           (list)))
       (branch
         (pat_ctor DeleteComplete)
@@ -169,15 +169,15 @@
             (field todos
               (apply
                 (ident List.filter)
+                (field_access .todos
+                  (ident model))
                 (paren
                   (lambda
                     (pat_var t)
                     (apply
                       (ident not)
                       (field_access .done
-                        (ident t)))))
-                (field_access .todos
-                  (ident model)))))
+                        (ident t))))))))
           (list)))
       (branch
         (pat_ctor ChangeVisibility

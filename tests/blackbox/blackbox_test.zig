@@ -1382,7 +1382,7 @@ test "fmt --stdout needs exactly one file" {
 // M1c: lowering (docs/design/language.md §5–§8, frontend.md §1.2, §8).
 // ---------------------------------------------------------------------------
 
-test "dump --stage=bir shows a pipeline as saturated calls and an operator as a core call" {
+test "dump --stage=bir shows a pipeline as pipe-first saturated calls and an operator as a core call" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1414,7 +1414,7 @@ test "dump --stage=bir shows a pipeline as saturated calls and an operator as a 
         \\  %6 = import_value Basics.mul
         \\  %7 = call %6 [%4, %5]
         \\  %8 = lambda [%3] -> %7
-        \\  %9 = call %2 [%8, %1]
+        \\  %9 = call %2 [%1, %8]
         \\  %10 = qualified List.sum
         \\  %11 = call %10 [%9]
         \\  params [%0]
@@ -2237,7 +2237,7 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
         \\        step a b =
         \\            a + b
         \\    in
-        \\    List.foldl step 0 xs
+        \\    List.foldl xs 0 step
         \\
     );
 

@@ -130,19 +130,19 @@
                   (chunk "unexpected end of input")))))))))
   (annotation pub map
     (type_fn
+      (type_con Parser
+        (type_var a))
       (type_paren
         (type_fn
           (type_var a)
           (type_var b)))
       (type_con Parser
-        (type_var a))
-      (type_con Parser
         (type_var b))))
   (definition map
-    (pat_var f)
     (pat_paren
       (pat_ctor Parser
         (pat_var p)))
+    (pat_var f)
     (apply
       (ctor Parser)
       (paren
@@ -172,20 +172,20 @@
                 (ident message))))))))
   (annotation pub andThen
     (type_fn
+      (type_con Parser
+        (type_var a))
       (type_paren
         (type_fn
           (type_var a)
           (type_con Parser
             (type_var b))))
       (type_con Parser
-        (type_var a))
-      (type_con Parser
         (type_var b))))
   (definition andThen
-    (pat_var f)
     (pat_paren
       (pat_ctor Parser
         (pat_var p)))
+    (pat_var f)
     (apply
       (ctor Parser)
       (paren
@@ -325,7 +325,6 @@
             (paren
               (apply
                 (ident List.map)
-                (ident char)
                 (list
                   (char '0')
                   (char '1')
@@ -336,7 +335,8 @@
                   (char '6')
                   (char '7')
                   (char '8')
-                  (char '9')))))))
+                  (char '9'))
+                (ident char))))))
       (apply
         (ident andThen)
         (paren

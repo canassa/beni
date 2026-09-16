@@ -15,7 +15,7 @@ tupleThenField t =
 
 
 accessorArg people =
-    List.map .name people
+    List.map people .name
 
 
 accessorApplied f =

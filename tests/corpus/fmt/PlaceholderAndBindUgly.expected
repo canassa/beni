@@ -3,7 +3,7 @@
 -- single spaces around the operator, is never broken, and is never aligned
 -- with its neighbours, `=` bindings included.
 partial xs =
-    List.map (add 1 _) xs
+    List.map xs (add 1 _)
 
 
 pipeline r =

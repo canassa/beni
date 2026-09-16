@@ -4,6 +4,7 @@
 -- it exists so the parser is proven on real-code density and length.
 --! Kanban board: model, update and view for a three-column task board.
 --! Cards move between columns, can be edited inline, and persist as JSON.
+
 import Dict exposing (Dict)
 import Html exposing (Html, button, div, h1, h2, input, li, span, text, ul)
 import Html.Attributes exposing (class, classList, placeholder, value)
@@ -81,12 +82,12 @@ pub type Msg
 
 pub init : Model
 init =
-    { cards = Dict.empty
+    { cards = Dict.empty compare
     , nextId = 1
     , editing = NotEditing
     , drag = Nothing
     , filter = ""
-    , collapsed = Set.empty
+    , collapsed = Set.empty String.compare
     , newCardTitle = ""
     , errors = []
     }
@@ -193,20 +194,20 @@ update msg model =
                         }
                 in
                 { model
-                    | cards = Dict.insert card.id card model.cards
+                    | cards = Dict.insert model.cards card.id card
                     , nextId = model.nextId + 1
                     , newCardTitle = ""
                 }
 
         DeleteCard id ->
-            { model | cards = Dict.remove id model.cards }
+            { model | cards = Dict.remove model.cards id }
                 |> renumber
 
         MoveCard id column ->
             moveCard id column model
 
         StartEditTitle id ->
-            case Dict.get id model.cards of
+            case Dict.get model.cards id of
                 Just card ->
                     { model | editing = EditingTitle id card.title }
 
@@ -214,7 +215,7 @@ update msg model =
                     model
 
         StartEditDescription id ->
-            case Dict.get id model.cards of
+            case Dict.get model.cards id of
                 Just card ->
                     { model | editing = EditingDescription id card.description }
 
@@ -269,10 +270,10 @@ update msg model =
             { model | filter = String.toLower str }
 
         ToggleCollapse key ->
-            if Set.member key model.collapsed then
-                { model | collapsed = Set.remove key model.collapsed }
+            if Set.member model.collapsed key then
+                { model | collapsed = Set.remove model.collapsed key }
             else
-                { model | collapsed = Set.insert key model.collapsed }
+                { model | collapsed = Set.insert model.collapsed key }
 
         ToggleLabel id label ->
             updateCard id (toggleLabel label) model
@@ -281,8 +282,8 @@ update msg model =
             case result of
                 Ok cards ->
                     { model
-                        | cards = cards |> List.map (\c -> ( c.id, c )) |> Dict.fromList
-                        , nextId = 1 + List.foldl (\c acc -> max acc c.id) 0 cards
+                        | cards = cards |> List.map (\c -> ( c.id, c )) |> Dict.fromList compare
+                        , nextId = 1 + List.foldl cards 0 (\c acc -> max acc c.id)
                     }
 
                 Err error ->
@@ -294,14 +295,14 @@ update msg model =
 
 addError : String, Model -> Model
 addError message model =
-    { model | errors = message :: List.take 4 model.errors }
+    { model | errors = message :: List.take model.errors 4 }
 
 
 updateCard : Int, (Card -> Card), Model -> Model
 updateCard id f model =
-    case Dict.get id model.cards of
+    case Dict.get model.cards id of
         Just card ->
-            { model | cards = Dict.insert id (f card) model.cards }
+            { model | cards = Dict.insert model.cards id (f card) }
 
         Nothing ->
             model
@@ -309,8 +310,8 @@ updateCard id f model =
 
 toggleLabel : String, Card -> Card
 toggleLabel label card =
-    if List.member label card.labels then
-        { card | labels = List.filter (\l -> l /= label) card.labels }
+    if List.member card.labels label then
+        { card | labels = List.filter card.labels (\l -> l /= label) }
     else
         { card | labels = label :: card.labels }
 
@@ -337,7 +338,7 @@ commitEdit model =
 
 moveCard : Int, Column, Model -> Model
 moveCard id column model =
-    case Dict.get id model.cards of
+    case Dict.get model.cards id of
         Just card ->
             if card.column == column then
                 model
@@ -349,7 +350,7 @@ moveCard id column model =
                             , order = List.length (cardsIn column model)
                         }
                 in
-                { model | cards = Dict.insert id moved model.cards }
+                { model | cards = Dict.insert model.cards id moved }
                     |> renumber
 
         Nothing ->
@@ -362,9 +363,9 @@ renumber model =
         renumberColumn column cards =
             cardsIn column model
                 |> List.indexedMap (\index card -> { card | order = index })
-                |> List.foldl (\card acc -> Dict.insert card.id card acc) cards
+                |> List.foldl cards (\card acc -> Dict.insert acc card.id card)
     in
-    { model | cards = List.foldl renumberColumn model.cards columns }
+    { model | cards = List.foldl columns model.cards renumberColumn }
 
 
 cardsIn : Column, Model -> List Card
@@ -384,9 +385,9 @@ visibleCardsIn column model =
 matchesFilter : String, Card -> Bool
 matchesFilter filter card =
     String.isEmpty filter
-        || String.contains filter (String.toLower card.title)
-        || String.contains filter (String.toLower card.description)
-        || List.any (\label -> String.contains filter (String.toLower label)) card.labels
+        || String.contains (String.toLower card.title) filter
+        || String.contains (String.toLower card.description) filter
+        || List.any card.labels (\label -> String.contains (String.toLower label) filter)
 
 
 handleKey : String, Model -> Model
@@ -415,7 +416,7 @@ shiftSelected : (Column -> Maybe Column), Model -> Model
 shiftSelected direction model =
     case model.drag of
         Just { cardId } ->
-            case Dict.get cardId model.cards of
+            case Dict.get model.cards cardId of
                 Just card ->
                     case direction card.column of
                         Just target ->
@@ -436,7 +437,7 @@ view model =
     div [ class "board" ]
         [ viewHeader model
         , viewErrors model.errors
-        , div [ class "columns" ] (List.map (viewColumn model) columns)
+        , div [ class "columns" ] (List.map columns (viewColumn model))
         ]
 
 
@@ -491,7 +492,7 @@ viewErrors errors =
             text ""
 
         _ ->
-            ul [ class "errors" ] (List.map (\err -> li [] [ text err ]) errors)
+            ul [ class "errors" ] (List.map errors (\err -> li [] [ text err ]))
 
 
 viewColumn : Model, Column -> Html Msg
@@ -501,7 +502,7 @@ viewColumn model column =
             columnKey column
 
         collapsed =
-            Set.member key model.collapsed
+            Set.member model.collapsed key
 
         cards =
             visibleCardsIn column model
@@ -529,7 +530,7 @@ viewColumn model column =
         , if collapsed then
             text ""
           else
-            ul [ class "cards" ] (List.map (viewCard model) cards)
+            ul [ class "cards" ] (List.map cards (viewCard model))
         , viewDropZone column
         ]
 
@@ -632,13 +633,14 @@ truncate80 s =
     if String.length s <= 80 then
         s
     else
-        String.left 77 s ++ "..."
+        String.left s 77 ++ "..."
 
 
 viewLabels : Card -> Html Msg
 viewLabels card =
     ul [ class "labels" ]
         (List.map
+            (List.sortBy card.labels identity)
             (\label ->
                 li
                     [ class "label label-${label}"
@@ -646,7 +648,6 @@ viewLabels card =
                     ]
                     [ text label ]
             )
-            (List.sortBy identity card.labels)
         )
 
 
@@ -732,7 +733,7 @@ load json =
 
 pub summary : Model -> List ( String, Int )
 summary model =
-    List.map (\column -> ( columnName column, List.length (cardsIn column model) )) columns
+    List.map columns (\column -> ( columnName column, List.length (cardsIn column model) ))
 
 
 pub labelsInUse : Model -> List String
@@ -740,7 +741,7 @@ labelsInUse model =
     model.cards
         |> Dict.values
         |> List.concatMap .labels
-        |> Set.fromList
+        |> Set.fromList String.compare
         |> Set.toList
 
 

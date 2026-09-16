@@ -11,4 +11,4 @@ text s =
 
 pub total : List J.Value -> Int
 total vs =
-    List.foldl (\v acc -> acc + J.size v) 0 vs
+    List.foldl vs 0 (\v acc -> acc + J.size v)

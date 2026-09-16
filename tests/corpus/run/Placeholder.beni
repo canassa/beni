@@ -14,7 +14,7 @@ subtract a b =
 
 between : Int, Int, Int -> Int
 between lo hi n =
-    clamp lo hi n
+    clamp n lo hi
 
 
 apply : (Int -> Int), Int -> Int
@@ -25,8 +25,8 @@ apply f n =
 main : Program
 main =
     Node.printLines
-        [ String.join "," (List.map String.fromInt (List.map (subtract 10 _) [ 1, 2, 3 ]))
-        , String.join "," (List.map String.fromInt (List.map (subtract _ 10) [ 1, 2, 3 ]))
-        , String.join "," (List.map String.fromInt (List.map (between 2 _ 5) [ 1, 9 ]))
+        [ String.join (List.map (List.map [ 1, 2, 3 ] (subtract 10 _)) String.fromInt) ","
+        , String.join (List.map (List.map [ 1, 2, 3 ] (subtract _ 10)) String.fromInt) ","
+        , String.join (List.map (List.map [ 1, 9 ] (between 2 _ 5)) String.fromInt) ","
         , String.fromInt (apply (subtract 100 _) 1)
         ]

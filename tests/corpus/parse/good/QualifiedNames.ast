@@ -1,7 +1,7 @@
 (module
+  (import Http)
   (import Json.Decode)
   (import Json.Encode as E)
-  (import Http)
   (annotation decoder
     (type_con Json.Decode.Decoder
       (type_con Int)))
@@ -109,6 +109,6 @@
     (pat_var n)
     (apply
       (ident Debug.log)
+      (ident n)
       (string
-        (chunk "n"))
-      (ident n))))
+        (chunk "n")))))

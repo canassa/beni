@@ -1,0 +1,55 @@
+-- The standard library is **subject first and function last** (§6.7), so
+-- `subject |> Module.fn rest` reads. This pins the orders a swap would NOT
+-- be caught by the checker, because both arguments have the same type and
+-- the mis-ordered call typechecks silently — `List.repeat` against its
+-- sibling `String.repeat` is the pair that found the bug (`0 |> repeat 3`
+-- used to give `[]` where `repeat 3 0` gave three zeros), and `modBy`,
+-- `remainderBy`, `clamp` and `replace` are the rest of that class.
+import Basics
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int -> String
+show xs =
+    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+yesNo : Bool -> String
+yesNo b =
+    if b then
+        "yes"
+    else
+        "no"
+
+
+main : Program
+main =
+    Node.printLines
+        -- `repeat` is subject first in BOTH modules: the thing repeated,
+        -- then the count. Every argument here is an `Int`, so the swapped
+        -- reading `repeat 3 7` is a well-typed different program.
+        [ show (List.repeat 7 3)
+        , show (7 |> List.repeat 3)
+        , String.repeat "ab" 3
+        , "ab" |> String.repeat 3
+        -- number first, then the modulus / the bounds.
+        , String.fromInt (Basics.modBy 11 4)
+        , String.fromInt (11 |> Basics.modBy 4)
+        , String.fromInt (Basics.remainderBy 11 4)
+        , String.fromInt (Basics.clamp 10 0 5)
+        -- subject, then what to look for, then what to put in its place.
+        , String.replace "a,b,c" "," "/"
+        , "a,b,c" |> String.replace "," "/"
+        , yesNo (String.contains "beni" "en")
+        -- subject first, count second, matching `take`/`drop`.
+        , String.left "beni" 2
+        , String.dropLeft "beni" 2
+        , String.slice "snakes" 1 3
+        , show (List.take (List.range 1 5) 2)
+        , show (List.drop (List.range 1 5) 3)
+        -- subject first, function last, so the lambda is the final word.
+        , String.foldl "time" "" (\char acc -> String.cons acc char)
+        , String.join (String.split "a,b,c" ",") "-"
+        ]

@@ -8,12 +8,12 @@ main : Program
 main =
     Node.printLines
         [ "butter" ++ "fly"
-        , String.join ", " [ "a", "b", "c" ]
-        , String.repeat 3 "ab"
+        , String.join [ "a", "b", "c" ] ", "
+        , String.repeat "ab" 3
         , String.reverse "stressed"
         , String.toUpper "skinner"
-        , String.slice 7 9 "snakes on a plane!"
-        , String.slice 0 (0 - 7) "snakes on a plane!"
+        , String.slice "snakes on a plane!" 7 9
+        , String.slice "snakes on a plane!" 0 (0 - 7)
         , String.fromInt (String.length "innumerable")
         , String.trim "  hats \n"
         ]

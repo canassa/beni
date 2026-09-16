@@ -1,6 +1,7 @@
--- The string primitives that reach into the platform's own string type.
--- `length`, `slice` and `toList` work in CODE POINTS, so the astral
--- character at the end counts as one.
+-- The string primitives that reach into the platform's own string type,
+-- every one of them subject first: the string or list being worked on is
+-- the first argument. `length` and `toList` work in CODE POINTS, so the
+-- `é` in `"héllo"` counts as one character and not as its two UTF-8 bytes.
 import List
 import Node exposing (Program)
 import String
@@ -9,16 +10,16 @@ import String
 main : Program
 main =
     Node.printLines
-        [ String.join "|" (String.split "," "cat,dog,cow")
-        , String.join "|" (String.words "How are \n you? \t Good?")
-        , String.join "|" (String.lines "one\ntwo\nthree")
-        , String.join "," (List.map String.fromInt (String.indexes "i" "Mississippi"))
+        [ String.join (String.split "cat,dog,cow" ",") "|"
+        , String.join (String.words "How are \n you? \t Good?") "|"
+        , String.join (String.lines "one\ntwo\nthree") "|"
+        , String.join (List.map (String.indexes "Mississippi" "i") String.fromInt) ","
         , String.fromList [ 'a', 'b', 'c' ]
-        , String.join "" (List.map String.fromChar (String.toList "abc"))
+        , String.join (List.map (String.toList "abc") String.fromChar) ""
         , String.fromInt (String.length "héllo")
-        , String.replace "," ";" "a,b,c"
-        , String.left 3 "abcdef"
-        , String.right 3 "abcdef"
+        , String.replace "a,b,c" "," ";"
+        , String.left "abcdef" 3
+        , String.right "abcdef" 3
         , String.fromFloat 1.5
         , String.fromFloat 2.0
         ]

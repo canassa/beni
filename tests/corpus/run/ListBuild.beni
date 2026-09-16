@@ -7,7 +7,7 @@ import String
 
 show : List Int -> String
 show xs =
-    "[" ++ String.join "," (List.map String.fromInt xs) ++ "]"
+    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
 
 
 main : Program
@@ -17,7 +17,7 @@ main =
         , show (1 :: [ 2, 3 ])
         , show ([ 1, 2 ] ++ [ 3, 4 ])
         , show (List.range 1 5)
-        , show (List.repeat 3 7)
+        , show (List.repeat 7 3)
         , show (List.reverse [ 1, 2, 3 ])
         , show []
         , String.fromInt (List.length (List.range 1 100))

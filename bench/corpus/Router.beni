@@ -1,6 +1,8 @@
 --! URL routing: a route type, parsing a path plus query string into it,
 --! printing a route back to a URL, breadcrumbs and navigation guards.
+
 import Dict exposing (Dict)
+import Dict.String
 
 
 pub type Route
@@ -84,8 +86,8 @@ fromUrl url =
 
         [ "search" ] ->
             Search
-                (Dict.get "q" params |> Maybe.withDefault "")
-                (Dict.get "page" params |> Maybe.andThen String.toInt |> Maybe.withDefault 1)
+                (Dict.get params "q" |> Maybe.withDefault "")
+                (Dict.get params "page" |> Maybe.andThen String.toInt |> Maybe.withDefault 1)
 
         [ "settings" ] ->
             Settings Profile
@@ -112,14 +114,14 @@ usersQuery : Dict String String -> UsersQuery
 usersQuery params =
     let
         intParam name default =
-            Dict.get name params
+            Dict.get params name
                 |> Maybe.andThen String.toInt
                 |> Maybe.withDefault default
     in
     { page = intParam "page" 1 |> clampPage
     , perPage = intParam "per_page" 20 |> clamp 1 100
     , sort =
-        case Dict.get "sort" params of
+        case Dict.get params "sort" of
             Just "created" ->
                 ByCreated
 
@@ -128,7 +130,7 @@ usersQuery params =
 
             _ ->
                 ByName
-    , filter = Dict.get "filter" params |> Maybe.andThen nonEmpty
+    , filter = Dict.get params "filter" |> Maybe.andThen nonEmpty
     }
 
 
@@ -153,12 +155,12 @@ parseQuery query =
     query
         |> String.split "&"
         |> List.filterMap parsePair
-        |> Dict.fromList
+        |> Dict.String.fromList
 
 
 parsePair : String -> Maybe ( String, String )
 parsePair pair =
-    case String.split "=" pair of
+    case String.split pair "=" of
         [ key ] ->
             if String.isEmpty key then
                 Nothing
@@ -166,7 +168,7 @@ parsePair pair =
                 Just ( decodeSegment key, "" )
 
         key :: rest ->
-            Just ( decodeSegment key, decodeSegment (String.join "=" rest) )
+            Just ( decodeSegment key, decodeSegment (String.join rest "=") )
 
         [] ->
             Nothing
@@ -243,7 +245,7 @@ usersQueryString query =
 
                 ByActivity ->
                     Just ( "sort", "activity" )
-            , Maybe.map (\f -> ( "filter", encodeSegment f )) query.filter
+            , Maybe.map query.filter (\f -> ( "filter", encodeSegment f ))
             ]
                 |> List.filterMap identity
     in
@@ -252,7 +254,7 @@ usersQueryString query =
             ""
 
         _ ->
-            "?" ++ String.join "&" (List.map (\( k, v ) -> "${k}=${v}") pairs)
+            "?" ++ String.join (List.map pairs (\( k, v ) -> "${k}=${v}")) "&"
 
 
 tabName : SettingsTab -> String

@@ -1,7 +1,9 @@
 --! JSON encoders and decoders for an order-processing domain: nested
 --! records, enums decoded via `andThen`, optional fields with defaults,
 --! `oneOf` fallbacks, and round-trip helpers.
+
 import Dict exposing (Dict)
+import Dict.String
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 
@@ -88,11 +90,12 @@ tierToString tier =
 
 pub addressDecoder : Decoder Address
 addressDecoder =
-    Decode.map4 Address
+    Decode.map4
         (Decode.field "street" Decode.string)
         (Decode.field "city" Decode.string)
         (Decode.oneOf [ Decode.field "postcode" Decode.string, Decode.field "zip" Decode.string ])
         (optionalField "country" Decode.string "US")
+        Address
 
 
 optionalField : String, Decoder a, a -> Decoder a
@@ -105,20 +108,22 @@ optionalField name decoder default =
 
 pub customerDecoder : Decoder Customer
 customerDecoder =
-    Decode.map5 Customer
+    Decode.map5
         (Decode.field "id" Decode.int)
         (Decode.field "name" Decode.string)
         (Decode.field "email" Decode.string)
         (optionalField "tier" tierDecoder Free)
         (Decode.maybe (Decode.field "address" addressDecoder))
+        Customer
 
 
 pub lineItemDecoder : Decoder LineItem
 lineItemDecoder =
-    Decode.map3 LineItem
+    Decode.map3
         (Decode.field "sku" Decode.string)
         (Decode.field "quantity" Decode.int)
         (Decode.field "unit_price" Decode.float)
+        LineItem
 
 
 pub statusDecoder : Decoder Status
@@ -131,13 +136,13 @@ statusDecoder =
                         Decode.succeed Pending
 
                     "paid" ->
-                        Decode.map Paid (Decode.field "at" Decode.int)
+                        Decode.map (Decode.field "at" Decode.int) Paid
 
                     "shipped" ->
-                        Decode.map Shipped (Decode.field "tracking" Decode.string)
+                        Decode.map (Decode.field "tracking" Decode.string) Shipped
 
                     "cancelled" ->
-                        Decode.map Cancelled (optionalField "reason" Decode.string "")
+                        Decode.map (optionalField "reason" Decode.string "") Cancelled
 
                     other ->
                         Decode.fail "unknown status kind: ${other}"
@@ -146,13 +151,14 @@ statusDecoder =
 
 pub orderDecoder : Decoder Order
 orderDecoder =
-    Decode.map6 Order
+    Decode.map6
         (Decode.field "id" Decode.int)
         (Decode.field "customer" customerDecoder)
         (Decode.field "items" (Decode.list lineItemDecoder))
         (Decode.field "status" statusDecoder)
-        (optionalField "notes" (Decode.dict Decode.string) Dict.empty)
+        (optionalField "notes" (Decode.dict Decode.string) Dict.String.empty)
         (Decode.field "placed_at" Decode.int)
+        Order
 
 
 pub ordersDecoder : Decoder (List Order)
@@ -188,11 +194,11 @@ encodeCustomer customer =
          , ( "tier", encodeTier customer.tier )
          ]
             ++ (case customer.address of
-                    Just address ->
-                        [ ( "address", encodeAddress address ) ]
+                   Just address ->
+                       [ ( "address", encodeAddress address ) ]
 
-                    Nothing ->
-                        []
+                   Nothing ->
+                       []
                )
         )
 
@@ -216,10 +222,12 @@ encodeStatus status =
             Encode.object [ ( "kind", Encode.string "paid" ), ( "at", Encode.int at ) ]
 
         Shipped tracking ->
-            Encode.object [ ( "kind", Encode.string "shipped" ), ( "tracking", Encode.string tracking ) ]
+            Encode.object
+                [ ( "kind", Encode.string "shipped" ), ( "tracking", Encode.string tracking ) ]
 
         Cancelled reason ->
-            Encode.object [ ( "kind", Encode.string "cancelled" ), ( "reason", Encode.string reason ) ]
+            Encode.object
+                [ ( "kind", Encode.string "cancelled" ), ( "reason", Encode.string reason ) ]
 
 
 pub encodeOrder : Order -> Encode.Value
@@ -227,9 +235,9 @@ encodeOrder order =
     Encode.object
         [ ( "id", Encode.int order.id )
         , ( "customer", encodeCustomer order.customer )
-        , ( "items", Encode.list encodeLineItem order.items )
+        , ( "items", Encode.list order.items encodeLineItem )
         , ( "status", encodeStatus order.status )
-        , ( "notes", Encode.dict identity Encode.string order.notes )
+        , ( "notes", Encode.dict order.notes identity Encode.string )
         , ( "placed_at", Encode.int order.placedAt )
         ]
 
@@ -276,7 +284,7 @@ roundTrip json =
         orders =
             parseOrders json?
     in
-    Ok (Encode.encode 2 (Encode.list encodeOrder orders))
+    Ok (Encode.encode 2 (Encode.list orders encodeOrder))
 
 
 pub summarize : String -> Result String (Dict String Int)
@@ -285,8 +293,8 @@ summarize json =
         orders =
             parseOrders json?
 
-        bump key counts =
-            Dict.update key (\existing -> Just (Maybe.withDefault 0 existing + 1)) counts
+        bump counts key =
+            Dict.update counts key (\existing -> Just (Maybe.withDefault existing 0 + 1))
 
         statusKey order =
             case order.status of
@@ -302,4 +310,4 @@ summarize json =
                 Cancelled _ ->
                     "cancelled"
     in
-    Ok (List.foldl (\order counts -> bump (statusKey order) counts) Dict.empty orders)
+    Ok (List.foldl orders Dict.String.empty (\order counts -> bump counts (statusKey order)))

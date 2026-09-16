@@ -97,20 +97,18 @@
   (definition asRest
     (tuple
       (op_fn ++)
-      (op_fn ::)
-      (op_fn |>)
-      (op_fn <|)))
+      (op_fn ::)))
   (definition folded
     (pat_var xs)
     (apply
       (ident List.foldl)
-      (op_fn +)
+      (ident xs)
       (int 0)
-      (ident xs)))
+      (op_fn +)))
   (definition consed
     (pat_var xs)
     (apply
       (ident List.foldr)
-      (op_fn ::)
+      (ident xs)
       (list)
-      (ident xs))))
+      (op_fn ::))))

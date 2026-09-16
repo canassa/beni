@@ -1,6 +1,7 @@
 -- `Debug.log` is boundary.md §4's one deliberate violation of the two-shape
--- rule: a pure type that writes to the console. It returns its argument
--- unchanged, so it can be dropped into a pipeline without moving anything.
+-- rule: a pure type that writes to the console. It takes the value first and
+-- the label second, and returns the value unchanged, so it can be dropped
+-- into the middle of an expression without moving any other code.
 import Node exposing (Program)
 import String
 
@@ -9,7 +10,7 @@ main : Program
 main =
     let
         doubled =
-            Debug.log "input" 21 * 2
+            Debug.log 21 "input" * 2
     in
     Node.printLines
         [ Debug.toString [ 1, 2, 3 ]

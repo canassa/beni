@@ -1,5 +1,7 @@
--- Every operator of §6.5 used infix once, and every operator as a
--- parenthesised function value, including ones passed to folds.
+-- Every operator of §6.5 used infix once, and every operator that HAS a
+-- parenthesised function form used as one, including ones passed to folds.
+-- `(|>)` and `(<|)` are absent on purpose: they are syntax, not calls
+-- (§6.5), and are pinned as `operator_not_a_function` in parse/bad.
 arith a b =
     ( a + b, a - b, a * b, a / b, a // b, a ^ b )
 
@@ -33,12 +35,12 @@ asLogic =
 
 
 asRest =
-    ( (++), (::), (|>), (<|) )
+    ( (++), (::) )
 
 
 folded xs =
-    List.foldl (+) 0 xs
+    List.foldl xs 0 (+)
 
 
 consed xs =
-    List.foldr (::) [] xs
+    List.foldr xs [] (::)

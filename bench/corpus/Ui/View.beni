@@ -1,7 +1,6 @@
 --! A toy view layer so Counter has something to import. Constructors with
 --! payloads, an opaque type, record update, pipelines and composition.
 
-
 pub opaque type Element msg
     = Text String
     | Button String msg
@@ -61,4 +60,4 @@ shout element =
 
 pub indent : Style, String -> String
 indent style line =
-    String.repeat style.padding " " ++ line
+    String.repeat " " style.padding ++ line

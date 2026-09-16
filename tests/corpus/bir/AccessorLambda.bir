@@ -9,18 +9,18 @@ decl 0: value names (annotated)
   %7 = type_fn [%3] -> %6
   %8 = pat_var local 0 (people)
   %9 = qualified List.map
-  %10 = pat_var local 1
-  %11 = local 1
-  %12 = field_access %11 .name
-  %13 = lambda [%10] -> %12
-  %14 = local 0 (people)
-  %15 = call %9 [%13, %14]
+  %10 = local 0 (people)
+  %11 = pat_var local 1
+  %12 = local 1
+  %13 = field_access %12 .name
+  %14 = lambda [%11] -> %13
+  %15 = call %9 [%10, %14]
   annotation %7
   params [%8]
   body %15
   locals
     0 people param %8
-    1 _ fresh %10
+    1 _ fresh %11
   refs
     import_type List.List
     import_type Basics.String

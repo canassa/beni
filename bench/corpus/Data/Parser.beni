@@ -56,8 +56,8 @@ pub keyword : String -> Parser ()
 keyword word =
     { run =
         \input ->
-            if String.startsWith word input then
-                Ok ( (), String.dropLeft (String.length word) input )
+            if String.startsWith input word then
+                Ok ( (), String.dropLeft input (String.length word) )
             else
                 Err "expected `${word}`"
     }

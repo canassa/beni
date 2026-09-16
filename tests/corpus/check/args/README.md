@@ -19,8 +19,10 @@ The suite is cut around the shapes §8.3 names:
   surfaced two arguments later on the list. With arity in the type the
   lambda is wrong where it is written, and the message says so.
 * **a call one argument short** (`UpdateMissingModel`, `ViewMissingModel`,
-  `PipelineMissingSubject`, `WithDefaultMissingFallback`, the `Partial*`
-  family) — the TEA papercut and its relatives.
+  `PipelineStageMissingArg`, `WithDefaultMissingFallback`, the `Partial*`
+  family) — the TEA papercut and its relatives. The library is subject
+  first and function last (`language.md` §6.7), so the argument a call is
+  short of is the trailing one, and that is what the message names.
 * **a call with one too many** (`TooManyArgsToLocal`,
   `MissingParensAroundInnerCall`, `PipelineSubjectAlreadySupplied`,
   `MapTwoListsWithMap`).
@@ -31,9 +33,12 @@ The suite is cut around the shapes §8.3 names:
 * **a call through a parameter of function type** (`CallThroughParameter`,
   `AppliedRecordField`) — no name to look up, so the arity comes from the
   parameter's own type.
-* **a pipeline whose subject is already supplied**
-  (`PipelineSubjectAlreadySupplied`) — invisible in the pipeline's shape
-  until the arity is in the type.
+* **the two `|>` shapes.** `|>` inserts its left operand as the callee's
+  FIRST argument, so `PipelineStageMissingArg` is a stage that has its
+  subject and is still short of a later argument, and
+  `PipelineSubjectAlreadySupplied` is a stage that was already saturated
+  and gets one too many — invisible in the pipeline's shape until the
+  arity is in the type.
 
 `ComposeMissingArg` went with `>>` and `<<` (`language.md` §6.5).
 

@@ -1,0 +1,34 @@
+-- `|>` is pipe-first (§6.7, §8): the left operand becomes the callee's
+-- FIRST argument, not its last. `subtract` is not commutative, so the
+-- position is visible in the output — `10 |> subtract 3` prints 7 and
+-- would print -7 if the operand still went last. Also pinned here: a bare
+-- callee takes it too, grouping parentheses are looked through, a chain
+-- is left-associative, `<|` still appends at the other end, pipes rewrite
+-- BEFORE `_` lifts, and the subject-first library makes a real pipeline
+-- read.
+import List
+import Node exposing (Program)
+import String
+
+
+subtract : Int, Int -> Int
+subtract a b =
+    a - b
+
+
+double : Int -> Int
+double n =
+    n * 2
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (10 |> subtract 3)
+        , String.fromInt (10 |> double)
+        , String.fromInt (10 |> (subtract 3))
+        , String.fromInt (10 |> subtract 3 |> subtract 2)
+        , String.fromInt (subtract 10 <| 3)
+        , String.fromInt ((10 |> subtract _) 3)
+        , [ 3, 1, 2 ] |> List.sort |> List.map String.fromInt |> String.join ","
+        ]

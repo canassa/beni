@@ -6,6 +6,11 @@
 -- 1-ary — not a 2-ary function. Calling it therefore takes two
 -- applications, `(pick True) 5`, because `pick True 5` would be one call of
 -- two arguments (`language.md` §6.7).
+--
+-- `16 |> bump` is the same closure reached through a pipe: `|>` puts the
+-- left operand FIRST, so it is `bump 16`. The right operand has to be a
+-- name or an application, which is why the lambdas here are applied
+-- directly instead.
 import List
 import Node exposing (Program)
 import String
@@ -31,13 +36,17 @@ pick big =
 
 main : Program
 main =
+    let
+        bump =
+            pick False
+    in
     Node.printLines
         [ String.fromInt (compose (\n -> n + 1) (\n -> n * 2) 5)
         , String.fromInt (twice (\n -> n * 3) 2)
         , String.fromInt ((pick True) 5)
         , String.fromInt ((pick False) 5)
-        , String.join "," (List.map String.fromInt (List.map (pick True) [ 1, 2 ]))
+        , String.join (List.map (List.map [ 1, 2 ] (pick True)) String.fromInt) ","
         , String.fromInt ((identity (\n -> n - 1)) 10)
-        , String.fromInt (4 |> (\n -> n * n) |> (\n -> n + 1))
+        , String.fromInt (16 |> bump)
         , String.fromInt ((\n -> n + 1) ((\n -> n * 2) 5))
         ]

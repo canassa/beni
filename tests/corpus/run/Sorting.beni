@@ -17,14 +17,14 @@ people =
 
 names : List Person -> String
 names ps =
-    String.join "," (List.map (\p -> p.name) ps)
+    String.join (List.map ps (\p -> p.name)) ","
 
 
 main : Program
 main =
     Node.printLines
-        [ String.join "," (List.map String.fromInt (List.sort [ 3, 1, 2 ]))
-        , names (List.sortBy (\p -> p.age) people)
-        , names (List.sortWith (\a b -> String.compare a.name b.name) people)
-        , names (List.sortWith (\a b -> compare b.age a.age) people)
+        [ String.join (List.map (List.sort [ 3, 1, 2 ]) String.fromInt) ","
+        , names (List.sortBy people (\p -> p.age))
+        , names (List.sortWith people (\a b -> String.compare a.name b.name))
+        , names (List.sortWith people (\a b -> compare b.age a.age))
         ]

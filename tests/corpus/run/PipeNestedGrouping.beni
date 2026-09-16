@@ -1,0 +1,36 @@
+-- §6.7: parentheses around a pipe's right operand are LOOKED THROUGH, and
+-- that is not a call of the value inside them — `x |> (f a)` is `f x a`.
+-- §8 runs the pipe rewrite before everything else, so a pipe nested under
+-- those parentheses has already become a call by the time the outer one
+-- inserts: `1 |> (2 |> subtract)` is `subtract 1 2`, not `(subtract 2) 1`.
+-- Lowering used to read this one way in expression position and another in
+-- a `<-` right-hand side; both now walk the same spine, and with saturated
+-- calls the old reading was not merely different but rejected.
+import Node exposing (Program)
+import String
+
+
+subtract : Int, Int -> Int
+subtract a b =
+    a - b
+
+
+three : Int, Int, Int -> Int
+three a b c =
+    a - b - c
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (1 |> (2 |> subtract))
+        , String.fromInt (1 |> (2 |> three 3))
+        , String.fromInt (1 |> (2 |> (3 |> three)))
+        , String.fromInt (1 |> (subtract <| 2))
+        , String.fromInt ((1 |> subtract) <| 2)
+        , String.fromInt ((1 |> three 2) <| 3)
+        -- A parenthesised lambda is looked through the same way, so it is
+        -- the CALLEE and the operand is its argument. `pipe_rhs_not_application`
+        -- says so: parenthesising does not pass the block along as a value.
+        , String.fromInt (5 |> (\y -> y + 1))
+        ]

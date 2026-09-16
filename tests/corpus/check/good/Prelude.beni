@@ -19,4 +19,4 @@ firstOrZero m =
 
 pub lengths : List String -> List Int
 lengths xs =
-    List.map String.length xs
+    List.map xs String.length

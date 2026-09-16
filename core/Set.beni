@@ -5,7 +5,15 @@
 --!
 --!     names : Set String
 --!     names =
---!         Set.fromList String.compare [ "Alice", "Bob" ]
+--!         Set.fromList [ "Alice", "Bob" ] String.compare
+--!
+--! Argument order here is **subject first and function last**, as it is
+--! everywhere in core: the set comes first, so `names |> Set.insert "Carol"`
+--! is `Set.insert names "Carol"` — `|>` is pipe-first, it inserts its left
+--! operand as the callee's first argument. A function argument comes last, so
+--! a lambda you write inline is the final one; where a function takes both an
+--! *ordering* and a *callback*, as `map` does, the ordering comes first and
+--! the callback stays last.
 --!
 --! Insert, remove and query take *O(log n)* time. A `Set` is a `Dict` whose
 --! values are all `()`, which is how Elm builds it too.
@@ -32,22 +40,26 @@ empty cmp =
 
 --| Create a set with one value, ordered by the given function.
 --|
---|     Set.singleton String.compare "Tom"
-pub singleton : (t, t -> Order), t -> Set t
-singleton cmp value =
-    Set (Dict.singleton cmp value ())
+--|     Set.singleton "Tom" String.compare
+pub singleton : t, (t, t -> Order) -> Set t
+singleton value cmp =
+    Set (Dict.singleton value () cmp)
 
 
 --| Insert a value into a set.
-pub insert : t, Set t -> Set t
-insert value (Set dict) =
-    Set (Dict.insert value () dict)
+--|
+--|     Set.insert (Set.empty String.compare) "Tom"
+pub insert : Set t, t -> Set t
+insert (Set dict) value =
+    Set (Dict.insert dict value ())
 
 
 --| Remove a value from a set. If the value is not found, no changes are made.
-pub remove : t, Set t -> Set t
-remove value (Set dict) =
-    Set (Dict.remove value dict)
+--|
+--|     Set.remove names "Tom"
+pub remove : Set t, t -> Set t
+remove (Set dict) value =
+    Set (Dict.remove dict value)
 
 
 --| Determine if a set is empty.
@@ -59,9 +71,11 @@ isEmpty (Set dict) =
 
 
 --| Determine if a value is in a set.
-pub member : t, Set t -> Bool
-member value (Set dict) =
-    Dict.member value dict
+--|
+--|     Set.member names "Alice" == True
+pub member : Set t, t -> Bool
+member (Set dict) value =
+    Dict.member dict value
 
 
 --| Determine the number of elements in a set.
@@ -99,48 +113,55 @@ toList (Set dict) =
 --| Convert a list into a set, removing any duplicates, ordered by the given
 --| function.
 --|
---|     Set.fromList String.compare [ "a", "b", "a" ]
-pub fromList : (t, t -> Order), List t -> Set t
-fromList cmp list =
-    List.foldl insert (empty cmp) list
+--|     Set.fromList [ "a", "b", "a" ] String.compare
+pub fromList : List t, (t, t -> Order) -> Set t
+fromList list cmp =
+    List.foldl list (empty cmp) (\value set -> insert set value)
 
 
 --| Map a function onto a set, creating a new set with no duplicates. The
---| result is ordered by the function given first, because the values it holds
---| have a new type and the old ordering no longer applies to them.
+--| ordering comes before the function, because the values the result holds
+--| have a new type and the old ordering no longer applies to them — and
+--| because the function you write inline belongs last.
 --|
---|     Set.map compare String.length names
-pub map : (b, b -> Order), (a -> b), Set a -> Set b
-map cmp func set =
-    fromList cmp (List.map func (toList set))
+--|     Set.map names compare String.length
+pub map : Set a, (b, b -> Order), (a -> b) -> Set b
+map set cmp func =
+    fromList (List.map (toList set) func) cmp
 
 
 --| Fold over the values in a set, in order from lowest to highest.
-pub foldl : (t, b -> b), b, Set t -> b
-foldl func initial (Set dict) =
-    Dict.foldl (\key _ acc -> func key acc) initial dict
+--|
+--|     Set.foldl numbers 0 (\n total -> n + total)
+pub foldl : Set t, b, (t, b -> b) -> b
+foldl (Set dict) initial func =
+    Dict.foldl dict initial (\key _ acc -> func key acc)
 
 
 --| Fold over the values in a set, in order from highest to lowest.
-pub foldr : (t, b -> b), b, Set t -> b
-foldr func initial (Set dict) =
-    Dict.foldr (\key _ acc -> func key acc) initial dict
+--|
+--|     Set.foldr names [] (\name acc -> name :: acc) == Set.toList names
+pub foldr : Set t, b, (t, b -> b) -> b
+foldr (Set dict) initial func =
+    Dict.foldr dict initial (\key _ acc -> func key acc)
 
 
 --| Only keep elements that pass the given test.
 --|
---|     Set.filter (\n -> n > 0) numbers
-pub filter : (t -> Bool), Set t -> Set t
-filter isGood (Set dict) =
-    Set (Dict.filter (\key _ -> isGood key) dict)
+--|     Set.filter numbers (\n -> n > 0)
+pub filter : Set t, (t -> Bool) -> Set t
+filter (Set dict) isGood =
+    Set (Dict.filter dict (\key _ -> isGood key))
 
 
 --| Create two new sets. The first contains all the elements that passed the
 --| given test, and the second contains all the elements that did not.
-pub partition : (t -> Bool), Set t -> ( Set t, Set t )
-partition isGood (Set dict) =
+--|
+--|     Set.partition numbers (\n -> n > 0)
+pub partition : Set t, (t -> Bool) -> ( Set t, Set t )
+partition (Set dict) isGood =
     let
         ( trues, falses ) =
-            Dict.partition (\key _ -> isGood key) dict
+            Dict.partition dict (\key _ -> isGood key)
     in
     ( Set trues, Set falses )

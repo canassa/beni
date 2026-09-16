@@ -9,7 +9,10 @@ largest a b =
 
 wrap : Int -> Maybe Int
 wrap n =
-    if n > 0 then Just n else Nothing
+    if n > 0 then
+        Just n
+    else
+        Nothing
 
 
 describe : Result String Int -> String
@@ -37,9 +40,9 @@ ordering a b =
 
 qualified : List Int -> Int
 qualified xs =
-    List.length xs + Basics.round 1.5 + Char.toCode 'a' + Debug.log "n" 0
+    List.length xs + Basics.round 1.5 + Char.toCode 'a' + Debug.log 0 "n"
 
 
 cached : Maybe Int -> Int
 cached m =
-    Maybe.withDefault 0 m + Result.withDefault 0 (Ok 1)
+    Maybe.withDefault m 0 + Result.withDefault (Ok 1) 0

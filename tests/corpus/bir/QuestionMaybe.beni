@@ -4,7 +4,7 @@
 -- in `viaHelper` the `let` helper `headPlus n` itself (§6.6).
 firstTwo : List Int -> Maybe ( Int, Int )
 firstTwo xs =
-    Just ( List.head xs?, List.head (List.drop 1 xs)? )
+    Just ( List.head xs?, List.head (List.drop xs 1)? )
 
 
 viaHelper : List Int -> Maybe Int

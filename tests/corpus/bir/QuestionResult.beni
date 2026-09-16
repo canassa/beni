@@ -4,7 +4,7 @@
 -- Maybe (see QuestionMaybe). Also `?` on an application and chained twice.
 parse : String -> Result String Int
 parse s =
-    Result.fromMaybe "nan" (String.toInt s)
+    Result.fromMaybe (String.toInt s) "nan"
 
 
 both : String, String -> Result String Int

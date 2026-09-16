@@ -2,7 +2,7 @@
 --! Hand-written in the language of docs/design/language.md; part of the
 --! permanent bench corpus (frontend.md §5). Shape follows Elm's counter example.
 
-import Ui.View exposing (button, column, text)
+import Ui.View exposing (Element, button, column, text)
 
 
 --| What the counter remembers.
@@ -44,7 +44,7 @@ step delta model =
     }
 
 
-pub view : Model -> String
+pub view : Model -> Element Msg
 view model =
     let
         label =

@@ -3,4 +3,4 @@
 -- the fix is a concrete annotation or an equality function passed in.
 pub contains : a, List a -> Bool
 contains needle xs =
-    List.any (\x -> x == needle) xs
+    List.any xs (\x -> x == needle)

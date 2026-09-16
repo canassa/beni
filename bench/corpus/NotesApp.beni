@@ -1,6 +1,9 @@
 --! A notes application: model, messages, update with undo history, search,
 --! tagging, and a view. Real-application shape for the benchmark corpus.
+
 import Dict exposing (Dict)
+import Dict.Int
+import Dict.String
 import Html exposing (Html, button, div, h1, input, li, span, text, textarea, ul)
 import Html.Attributes exposing (class, classList, placeholder, value)
 import Html.Events exposing (onClick, onInput)
@@ -57,7 +60,7 @@ pub type Msg
 
 pub init : Int -> Model
 init now =
-    { notes = Dict.empty
+    { notes = Dict.Int.empty
     , nextId = 1
     , selected = Nothing
     , query = ""
@@ -78,28 +81,28 @@ update msg model =
                     { id = model.nextId
                     , title = "Untitled"
                     , body = ""
-                    , tags = Set.empty
+                    , tags = Set.empty String.compare
                     , pinned = False
                     , updatedAt = model.now
                     }
             in
             model
                 |> pushHistory
-                |> setNotes (Dict.insert note.id note model.notes)
+                |> setNotes (Dict.insert model.notes note.id note)
                 |> select (Just note.id)
                 |> bumpId
 
         Select id ->
-            select (Just id) model
+            select model (Just id)
 
         Deselect ->
-            select Nothing model
+            select model Nothing
 
         SetTitle title ->
-            editSelected (\note -> { note | title = title }) model
+            editSelected model (\note -> { note | title = title })
 
         SetBody body ->
-            editSelected (\note -> { note | body = body }) model
+            editSelected model (\note -> { note | body = body })
 
         AddTag tag ->
             let
@@ -109,10 +112,10 @@ update msg model =
             if String.isEmpty clean then
                 model
             else
-                editSelected (\note -> { note | tags = Set.insert clean note.tags }) model
+                editSelected model (\note -> { note | tags = Set.insert note.tags clean })
 
         RemoveTag tag ->
-            editSelected (\note -> { note | tags = Set.remove tag note.tags }) model
+            editSelected model (\note -> { note | tags = Set.remove note.tags tag })
 
         TogglePin id ->
             model
@@ -122,7 +125,7 @@ update msg model =
         Delete id ->
             let
                 remaining =
-                    Dict.remove id model.notes
+                    Dict.remove model.notes id
 
                 selected =
                     if model.selected == Just id then
@@ -180,18 +183,18 @@ update msg model =
 pushHistory : Model -> Model
 pushHistory model =
     { model
-        | history = List.take 50 (model.notes :: model.history)
+        | history = List.take (model.notes :: model.history) 50
         , future = []
     }
 
 
-setNotes : Dict Int Note, Model -> Model
-setNotes notes model =
+setNotes : Model, Dict Int Note -> Model
+setNotes model notes =
     { model | notes = notes }
 
 
-select : Maybe Int, Model -> Model
-select id model =
+select : Model, Maybe Int -> Model
+select model id =
     { model | selected = id }
 
 
@@ -200,25 +203,25 @@ bumpId model =
     { model | nextId = model.nextId + 1 }
 
 
-editNote : Int, (Note -> Note), Model -> Model
-editNote id f model =
-    case Dict.get id model.notes of
+editNote : Model, Int, (Note -> Note) -> Model
+editNote model id f =
+    case Dict.get model.notes id of
         Just note ->
             let
                 edited =
                     f note
             in
-            { model | notes = Dict.insert id { edited | updatedAt = model.now } model.notes }
+            { model | notes = Dict.insert model.notes id { edited | updatedAt = model.now } }
 
         Nothing ->
             model
 
 
-editSelected : (Note -> Note), Model -> Model
-editSelected f model =
+editSelected : Model, (Note -> Note) -> Model
+editSelected model f =
     case model.selected of
         Just id ->
-            editNote id f model
+            editNote model id f
 
         Nothing ->
             model
@@ -232,13 +235,13 @@ visibleNotes model =
 
         matchesQuery note =
             String.isEmpty query
-                || String.contains query (String.toLower note.title)
-                || String.contains query (String.toLower note.body)
+                || String.contains (String.toLower note.title) query
+                || String.contains (String.toLower note.body) query
 
         matchesTag note =
             case model.activeTag of
                 Just tag ->
-                    Set.member tag note.tags
+                    Set.member note.tags tag
 
                 Nothing ->
                     True
@@ -248,26 +251,38 @@ visibleNotes model =
                 0
             else
                 1
+
+        pinnedFirstThenNewest a b =
+            if rank a /= rank b then
+                compare (rank a) (rank b)
+            else
+                compare b.updatedAt a.updatedAt
     in
     Dict.values model.notes
         |> List.filter matchesQuery
         |> List.filter matchesTag
-        |> List.sortBy (\note -> ( rank note, -note.updatedAt ))
+        |> List.sortWith pinnedFirstThenNewest
 
 
 pub allTags : Model -> List ( String, Int )
 allTags model =
     let
         count tag counts =
-            Dict.update tag (\existing -> Just (Maybe.withDefault 0 existing + 1)) counts
+            Dict.update counts tag (\existing -> Just (Maybe.withDefault existing 0 + 1))
 
         countNote note counts =
-            Set.foldl count counts note.tags
+            Set.foldl note.tags counts count
+
+        commonestFirst ( tag1, n1 ) ( tag2, n2 ) =
+            if n1 /= n2 then
+                compare n2 n1
+            else
+                String.compare tag1 tag2
     in
     Dict.values model.notes
-        |> List.foldl countNote Dict.empty
+        |> List.foldl Dict.String.empty countNote
         |> Dict.toList
-        |> List.sortBy (\( tag, n ) -> ( -n, tag ))
+        |> List.sortWith commonestFirst
 
 
 pub view : Model -> Html Msg
@@ -288,7 +303,7 @@ viewSidebar model =
         , button [ onClick Undo ] [ text "Undo" ]
         , button [ onClick Redo ] [ text "Redo" ]
         , viewTags model
-        , ul [ class "notes" ] (List.map (viewNoteItem model.selected) (visibleNotes model))
+        , ul [ class "notes" ] (List.map (visibleNotes model) (viewNoteItem model.selected _))
         ]
 
 
@@ -296,7 +311,7 @@ viewTags : Model -> Html Msg
 viewTags model =
     ul [ class "tags" ]
         (li [ onClick (FilterTag Nothing) ] [ text "all" ]
-            :: List.map
+            :: List.map (allTags model)
                 (\( tag, n ) ->
                     li
                         [ classList [ ( "active", model.activeTag == Just tag ) ]
@@ -304,7 +319,6 @@ viewTags model =
                         ]
                         [ text "${tag} (${n})" ]
                 )
-                (allTags model)
         )
 
 
@@ -320,7 +334,15 @@ viewNoteItem selected note =
         ]
         [ span [ class "title" ] [ text note.title ]
         , span [ class "preview" ] [ text (preview note.body) ]
-        , button [ onClick (TogglePin note.id) ] [ text (if note.pinned then "unpin" else "pin") ]
+        , button
+            [ onClick (TogglePin note.id) ]
+            [ text
+                (if note.pinned then
+                    "unpin"
+                 else
+                    "pin"
+                )
+            ]
         , button [ onClick (Delete note.id) ] [ text "delete" ]
         ]
 
@@ -332,22 +354,21 @@ preview body =
             body |> String.lines |> List.head |> Maybe.withDefault ""
     in
     if String.length firstLine > 40 then
-        String.left 37 firstLine ++ "..."
+        String.left firstLine 37 ++ "..."
     else
         firstLine
 
 
 viewEditor : Model -> Html Msg
 viewEditor model =
-    case model.selected |> Maybe.andThen (\id -> Dict.get id model.notes) of
+    case model.selected |> Maybe.andThen (\id -> Dict.get model.notes id) of
         Just note ->
             div [ class "editor" ]
                 [ input [ value note.title, onInput SetTitle ] []
                 , textarea [ value note.body, onInput SetBody ] []
                 , ul [ class "note-tags" ]
-                    (List.map
+                    (List.map (Set.toList note.tags)
                         (\tag -> li [ onClick (RemoveTag tag) ] [ text tag ])
-                        (Set.toList note.tags)
                     )
                 , input [ placeholder "Add tag", onInput AddTag ] []
                 , span [ class "meta" ] [ text "updated ${note.updatedAt}" ]

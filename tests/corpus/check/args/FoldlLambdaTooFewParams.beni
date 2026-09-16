@@ -2,4 +2,4 @@
 -- accumulator, and this lambda only names the element.
 pub total : List Int -> Int
 total xs =
-    List.foldl (\x -> x) 0 xs
+    List.foldl xs 0 (\x -> x)

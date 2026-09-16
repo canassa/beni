@@ -1,9 +1,9 @@
 -- Qualified names as single tokens (§2.4): qualified values, qualified
 -- constructors in expressions and patterns, qualified types, a two-segment
 -- module path, an alias, and prelude module aliases without an import.
+import Http
 import Json.Decode
 import Json.Encode as E
-import Http
 
 
 decoder : Json.Decode.Decoder Int
@@ -61,4 +61,4 @@ nested =
 
 logged : Int -> Int
 logged n =
-    Debug.log "n" n
+    Debug.log n "n"

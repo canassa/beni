@@ -2,6 +2,12 @@
 --! says "this might be missing" in a type, so it is checked rather than
 --! discovered at run time; there is no null.
 --!
+--! Every function here takes the `Maybe` as its first argument and the
+--! function it applies, if any, as its last. That is what lets `|>` feed a
+--! `Maybe` in at the front — `maybe |> map toString` is `map maybe toString` —
+--! and lets `let x <- andThen maybe` bind the rest of the block as the
+--! callback.
+--!
 --! Everything here is ordinary beni — no `foreign` declarations.
 
 --| Represent values that may or may not exist. It can be useful if you have a
@@ -17,13 +23,13 @@ pub type Maybe a
 
 --| Provide a default value, turning an optional value into a normal value.
 --|
---|     withDefault 100 (Just 42) == 42
---|     withDefault 100 Nothing == 100
+--|     withDefault (Just 42) 100 == 42
+--|     withDefault Nothing 100 == 100
 --|
 --| It is best to pattern match when you can, so a missing value is handled
 --| where it happens rather than papered over here.
-pub withDefault : a, Maybe a -> a
-withDefault default maybe =
+pub withDefault : Maybe a, a -> a
+withDefault maybe default =
     case maybe of
         Just value ->
             value
@@ -34,10 +40,14 @@ withDefault default maybe =
 
 --| Transform a `Maybe` value with a given function.
 --|
---|     map sqrt (Just 9) == Just 3
---|     map sqrt Nothing == Nothing
-pub map : (a -> b), Maybe a -> Maybe b
-map func maybe =
+--|     map (Just 9) sqrt == Just 3
+--|     map Nothing sqrt == Nothing
+--|
+--| The `Maybe` comes first, so this reads well in a pipeline:
+--|
+--|     (Just 9 |> map sqrt) == Just 3
+pub map : Maybe a, (a -> b) -> Maybe b
+map maybe func =
     case maybe of
         Just value ->
             Just (func value)
@@ -46,12 +56,12 @@ map func maybe =
             Nothing
 
 
---| Apply a function if both arguments are `Just` a value.
+--| Apply a function if both `Maybe` values are `Just` a value.
 --|
---|     map2 (+) (Just 3) (Just 4) == Just 7
---|     map2 (+) (Just 3) Nothing == Nothing
-pub map2 : (a, b -> value), Maybe a, Maybe b -> Maybe value
-map2 func ma mb =
+--|     map2 (Just 3) (Just 4) (+) == Just 7
+--|     map2 (Just 3) Nothing (+) == Nothing
+pub map2 : Maybe a, Maybe b, (a, b -> value) -> Maybe value
+map2 ma mb func =
     case ma of
         Nothing ->
             Nothing
@@ -65,9 +75,12 @@ map2 func ma mb =
                     Just (func a b)
 
 
---| Apply a function if all three arguments are `Just` a value.
-pub map3 : (a, b, c -> value), Maybe a, Maybe b, Maybe c -> Maybe value
-map3 func ma mb mc =
+--| Apply a function if all three `Maybe` values are `Just` a value.
+--|
+--|     map3 (Just 1) (Just 2) (Just 3) (\a b c -> a + b + c) == Just 6
+--|     map3 (Just 1) Nothing (Just 3) (\a b c -> a + b + c) == Nothing
+pub map3 : Maybe a, Maybe b, Maybe c, (a, b, c -> value) -> Maybe value
+map3 ma mb mc func =
     case ma of
         Nothing ->
             Nothing
@@ -86,15 +99,15 @@ map3 func ma mb mc =
                             Just (func a b c)
 
 
---| Apply a function if all four arguments are `Just` a value.
+--| Apply a function if all four `Maybe` values are `Just` a value.
 pub map4 :
-    (a, b, c, d -> value)
-    , Maybe a
+    Maybe a
     , Maybe b
     , Maybe c
     , Maybe d
+    , (a, b, c, d -> value)
     -> Maybe value
-map4 func ma mb mc md =
+map4 ma mb mc md func =
     case ma of
         Nothing ->
             Nothing
@@ -118,16 +131,16 @@ map4 func ma mb mc md =
                                     Just (func a b c d)
 
 
---| Apply a function if all five arguments are `Just` a value.
+--| Apply a function if all five `Maybe` values are `Just` a value.
 pub map5 :
-    (a, b, c, d, e -> value)
-    , Maybe a
+    Maybe a
     , Maybe b
     , Maybe c
     , Maybe d
     , Maybe e
+    , (a, b, c, d, e -> value)
     -> Maybe value
-map5 func ma mb mc md me =
+map5 ma mb mc md me func =
     case ma of
         Nothing ->
             Nothing
@@ -158,13 +171,15 @@ map5 func ma mb mc md me =
 
 --| Chain together many computations that may fail.
 --|
---|     andThen (\x -> Just (x + 1)) (Just 1) == Just 2
---|     andThen (\x -> Just (x + 1)) Nothing == Nothing
+--|     andThen (Just 1) (\x -> Just (x + 1)) == Just 2
+--|     andThen Nothing (\x -> Just (x + 1)) == Nothing
 --|
---| The `?` operator does the same thing with less punctuation: `head xs?` is
---| the value, or an early return of `Nothing` from the enclosing function.
-pub andThen : (a -> Maybe b), Maybe a -> Maybe b
-andThen callback maybe =
+--| The callback comes last, so `let x <- andThen maybe` binds the rest of the
+--| block as the callback. The `?` operator does the same thing with less
+--| punctuation: `head xs?` is the value, or an early return of `Nothing` from
+--| the enclosing function.
+pub andThen : Maybe a, (a -> Maybe b) -> Maybe b
+andThen maybe callback =
     case maybe of
         Just value ->
             callback value

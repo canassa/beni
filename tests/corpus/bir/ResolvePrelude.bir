@@ -151,8 +151,8 @@ decl 4: value qualified (annotated)
   %17 = import_value Basics.add
   %18 = call %17 [%13, %16]
   %19 = qualified Debug.log
-  %20 = string "n"
-  %21 = int 0
+  %20 = int 0
+  %21 = string "n"
   %22 = call %19 [%20, %21]
   %23 = import_value Basics.add
   %24 = call %23 [%18, %22]
@@ -178,15 +178,15 @@ decl 5: value cached (annotated)
   %4 = type_fn [%2] -> %3
   %5 = pat_var local 0 (m)
   %6 = qualified Maybe.withDefault
-  %7 = int 0
-  %8 = local 0 (m)
+  %7 = local 0 (m)
+  %8 = int 0
   %9 = call %6 [%7, %8]
   %10 = qualified Result.withDefault
-  %11 = int 0
-  %12 = import_ctor Result.Ok
-  %13 = int 1
-  %14 = call %12 [%13]
-  %15 = call %10 [%11, %14]
+  %11 = import_ctor Result.Ok
+  %12 = int 1
+  %13 = call %11 [%12]
+  %14 = int 0
+  %15 = call %10 [%13, %14]
   %16 = import_value Basics.add
   %17 = call %16 [%9, %15]
   annotation %4

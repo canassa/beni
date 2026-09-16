@@ -7,8 +7,8 @@ adder =
 
 
 pairs : List ( Int, Int ) -> List Int
-pairs =
-    List.map (\( a, b ) -> a + b)
+pairs xs =
+    List.map xs (\( a, b ) -> a + b)
 
 
 collections : ( List Int, ( Int, Int, Int ), () )

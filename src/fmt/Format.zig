@@ -3123,7 +3123,7 @@ const stress_decls = [_][]const u8{
     "m{d} =\n    \\\\a\n    \\\\b   \n",
     "p{d} (Just x) { a } ( b, c ) = -x\n",
     "u{d} m = { m | count = m.count + 1, aVeryLongFieldNameToMakeItWide = m.aVeryLongFieldNameToMakeItWide + 1 }\n",
-    "op{d} = ( + ) 1 2 + (::) 1 [] + ( |> ) 1 identity\n",
+    "op{d} = ( + ) 1 2 + (::) 1 [] + ( ^ ) 1 2\n",
     "app{d} = List.foldl (\\item acc -> acc + String.length item * 2) 0 [ \"some\", \"long\", \"list\", \"of\", \"strings\", \"here\" ]\n",
     "ann{d} : { host : String, port : Int, user : String, password : String, timeout : Int } -> Result String { host : String, port : Int } -> Bool\nann{d} _ _ = True\n",
     "chain{d} r = String.length r.name > 0 && String.length r.name < 100 && r.age >= 0 && r.age < 150 && not (String.isEmpty r.email)\n",

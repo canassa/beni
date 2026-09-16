@@ -9,8 +9,8 @@ import String exposing (fromInt, join)
 main : Program
 main =
     printLines
-        [ join "," (L.map fromInt (L.range 1 4))
+        [ join (L.map (L.range 1 4) fromInt) ","
         , fromInt (L.sum (L.range 1 4))
-        , String.toUpper (join "-" [ "a", "b" ])
+        , String.toUpper (join [ "a", "b" ] "-")
         , fromInt (List.length [ 1, 2, 3 ])
         ]

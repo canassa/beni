@@ -2,6 +2,11 @@
 --! literals are enclosed in double quotes, and `"a ${n}"` interpolates a
 --! primitive value into one.
 --!
+--! Argument order here is **subject first and function last**: the string
+--! comes first, so `str |> split ","` inserts it at the front and reads as
+--! "split this string on commas", and a function argument comes last, so a
+--! lambda you write inline is the final argument.
+--!
 --! Strings are not ordered by `<` (`fast-compiler.md` §3.1); `compare` below
 --! is the replacement, and it is what you hand to `Dict.String` or
 --! `List.sortWith`.
@@ -31,11 +36,11 @@ pub foreign length : String -> Int
 
 
 --| Take a substring given a start and end index. Negative indexes are taken
---| starting from the *end* of the list.
+--| starting from the *end* of the string.
 --|
---|     slice 7 9 "snakes on a plane!" == "on"
---|     slice 0 -7 "snakes on a plane!" == "snakes on a"
-pub foreign slice : Int, Int, String -> String
+--|     slice "snakes on a plane!" 7 9 == "on"
+--|     slice "snakes on a plane!" 0 -7 == "snakes on a"
+pub foreign slice : String, Int, Int -> String
 
 
 --| Append two strings. `++` does the same thing.
@@ -97,16 +102,18 @@ pub foreign words : String -> List String
 pub foreign lines : String -> List String
 
 
---| Split a string using a given separator.
+--| Split a string using a given separator. The string being split comes
+--| first, so `csv |> split ","` reads as "split this on commas".
 --|
---|     split "," "cat,dog,cow" == [ "cat", "dog", "cow" ]
+--|     split "cat,dog,cow" "," == [ "cat", "dog", "cow" ]
 pub foreign split : String, String -> List String
 
 
---| Get all of the indexes for a substring in another string.
+--| Get all of the indexes for a substring in a string. The string being
+--| searched comes first, the needle second.
 --|
---|     indexes "i" "Mississippi" == [ 1, 4, 7, 10 ]
---|     indexes "needle" "haystack" == []
+--|     indexes "Mississippi" "i" == [ 1, 4, 7, 10 ]
+--|     indexes "haystack" "needle" == []
 pub foreign indexes : String, String -> List Int
 
 
@@ -175,18 +182,20 @@ reverse str =
 
 --| Repeat a string `n` times.
 --|
---|     repeat 3 "ha" == "hahaha"
-pub repeat : Int, String -> String
-repeat n chunk =
-    concat (List.repeat n chunk)
+--|     repeat "ha" 3 == "hahaha"
+pub repeat : String, Int -> String
+repeat chunk n =
+    concat (List.repeat chunk n)
 
 
---| Replace all occurrences of some substring.
+--| Replace all occurrences of some substring. The string being rewritten
+--| comes first, then the substring to look for, then what to put in its
+--| place, so `path |> replace "/" "."` reads in the order you say it.
 --|
---|     replace "," "/" "a,b,c" == "a/b/c"
+--|     replace "a,b,c" "," "/" == "a/b/c"
 pub replace : String, String, String -> String
-replace before after str =
-    join after (split before str)
+replace str before after =
+    join (split str before) after
 
 
 --| Concatenate many strings into one.
@@ -194,73 +203,75 @@ replace before after str =
 --|     concat [ "never", "the", "less" ] == "nevertheless"
 pub concat : List String -> String
 concat strings =
-    join "" strings
+    join strings ""
 
 
---| Put many strings together with a given separator.
+--| Put many strings together with a given separator. The list is the subject
+--| here, so `names |> join ", "` puts the separator between its elements.
 --|
---|     join ", " [ "cat", "dog" ] == "cat, dog"
-pub join : String, List String -> String
-join sep chunks =
+--|     join [ "cat", "dog" ] ", " == "cat, dog"
+pub join : List String, String -> String
+join chunks sep =
     case chunks of
         [] ->
             ""
 
         first :: rest ->
-            List.foldl (\chunk acc -> append (append acc sep) chunk) first rest
+            List.foldl rest first (\chunk acc -> append (append acc sep) chunk)
 
 
 --| Take `n` characters from the left side of a string.
 --|
---|     left 2 "Mulder" == "Mu"
-pub left : Int, String -> String
-left n str =
+--|     left "Mulder" 2 == "Mu"
+pub left : String, Int -> String
+left str n =
     if n < 1 then
         ""
     else
-        slice 0 n str
+        slice str 0 n
 
 
 --| Take `n` characters from the right side of a string.
 --|
---|     right 2 "Scully" == "ly"
-pub right : Int, String -> String
-right n str =
+--|     right "Scully" 2 == "ly"
+pub right : String, Int -> String
+right str n =
     if n < 1 then
         ""
     else
-        slice (negate n) (length str) str
+        slice str (negate n) (length str)
 
 
 --| Drop `n` characters from the left side of a string.
 --|
---|     dropLeft 2 "The Lone Gunmen" == "e Lone Gunmen"
-pub dropLeft : Int, String -> String
-dropLeft n str =
+--|     dropLeft "The Lone Gunmen" 2 == "e Lone Gunmen"
+pub dropLeft : String, Int -> String
+dropLeft str n =
     if n < 1 then
         str
     else
-        slice n (length str) str
+        slice str n (length str)
 
 
 --| Drop `n` characters from the right side of a string.
 --|
---|     dropRight 2 "Cigarette Smoking Man" == "Cigarette Smoking M"
-pub dropRight : Int, String -> String
-dropRight n str =
+--|     dropRight "Cigarette Smoking Man" 2 == "Cigarette Smoking M"
+pub dropRight : String, Int -> String
+dropRight str n =
     if n < 1 then
         str
     else
-        slice 0 (negate n) str
+        slice str 0 (negate n)
 
 
---| See if the second string contains the first one.
+--| See if a string contains a substring. The string being searched comes
+--| first, so `word |> contains "the"` asks about `word`.
 --|
---|     contains "the" "theory" == True
---|     contains "hat" "theory" == False
+--|     contains "theory" "the" == True
+--|     contains "theory" "hat" == False
 pub contains : String, String -> Bool
-contains sub str =
-    case indexes sub str of
+contains str sub =
+    case indexes str sub of
         [] ->
             False
 
@@ -268,36 +279,37 @@ contains sub str =
             True
 
 
---| See if the second string starts with the first one.
+--| See if a string starts with a given prefix.
 --|
---|     startsWith "the" "theory" == True
+--|     startsWith "theory" "the" == True
 pub startsWith : String, String -> Bool
-startsWith prefix str =
-    left (length prefix) str == prefix
+startsWith str prefix =
+    left str (length prefix) == prefix
 
 
---| See if the second string ends with the first one.
+--| See if a string ends with a given suffix.
 --|
---|     endsWith "ory" "theory" == True
+--|     endsWith "theory" "ory" == True
 pub endsWith : String, String -> Bool
-endsWith suffix str =
-    right (length suffix) str == suffix
+endsWith str suffix =
+    right str (length suffix) == suffix
 
 
 --| Get all of the indexes for a substring. An alias of `indexes`, kept
 --| because Elm has both spellings.
 --|
---|     indices "i" "Mississippi" == [ 1, 4, 7, 10 ]
+--|     indices "Mississippi" "i" == [ 1, 4, 7, 10 ]
 pub indices : String, String -> List Int
-indices sub str =
-    indexes sub str
+indices str sub =
+    indexes str sub
 
 
---| Add a character to the beginning of a string.
+--| Add a character to the beginning of a string. The string is the subject,
+--| so `"he truth is out there" |> cons 'T'` puts the `'T'` on the front.
 --|
---|     cons 'T' "he truth is out there" == "The truth is out there"
-pub cons : Char, String -> String
-cons char str =
+--|     cons "he truth is out there" 'T' == "The truth is out there"
+pub cons : String, Char -> String
+cons str char =
     append (fromChar char) str
 
 
@@ -317,75 +329,75 @@ uncons str =
 
 --| Pad a string on both sides until it has a given length.
 --|
---|     pad 5 ' ' "1" == "  1  "
-pub pad : Int, Char, String -> String
-pad n char str =
+--|     pad "1" 5 ' ' == "  1  "
+pub pad : String, Int, Char -> String
+pad str n char =
     let
         half =
             Basics.toFloat (n - length str) / 2
     in
-    repeat (ceiling half) (fromChar char) ++ str ++ repeat (floor half) (fromChar char)
+    repeat (fromChar char) (ceiling half) ++ str ++ repeat (fromChar char) (floor half)
 
 
 --| Pad a string on the left until it has a given length.
 --|
---|     padLeft 5 '.' "1" == "....1"
-pub padLeft : Int, Char, String -> String
-padLeft n char str =
-    repeat (n - length str) (fromChar char) ++ str
+--|     padLeft "1" 5 '.' == "....1"
+pub padLeft : String, Int, Char -> String
+padLeft str n char =
+    repeat (fromChar char) (n - length str) ++ str
 
 
 --| Pad a string on the right until it has a given length.
 --|
---|     padRight 5 '.' "1" == "1...."
-pub padRight : Int, Char, String -> String
-padRight n char str =
-    str ++ repeat (n - length str) (fromChar char)
+--|     padRight "1" 5 '.' == "1...."
+pub padRight : String, Int, Char -> String
+padRight str n char =
+    str ++ repeat (fromChar char) (n - length str)
 
 
 --| Transform every character in a string.
 --|
---|     map (\char -> if char == '/' then '.' else char) "a/b/c" == "a.b.c"
-pub map : (Char -> Char), String -> String
-map func str =
-    fromList (List.map func (toList str))
+--|     map "a/b/c" (\char -> if char == '/' then '.' else char) == "a.b.c"
+pub map : String, (Char -> Char) -> String
+map str func =
+    fromList (List.map (toList str) func)
 
 
 --| Keep only the characters that pass the test.
 --|
---|     filter Char.isDigit "R2-D2" == "22"
-pub filter : (Char -> Bool), String -> String
-filter isGood str =
-    fromList (List.filter isGood (toList str))
+--|     filter "R2-D2" Char.isDigit == "22"
+pub filter : String, (Char -> Bool) -> String
+filter str isGood =
+    fromList (List.filter (toList str) isGood)
 
 
---| Reduce a string from the left.
+--| Reduce a string from the left, starting from an initial value.
 --|
---|     foldl cons "" "time" == "emit"
-pub foldl : (Char, b -> b), b, String -> b
-foldl func acc str =
-    List.foldl func acc (toList str)
+--|     foldl "time" "" (\char acc -> cons acc char) == "emit"
+pub foldl : String, b, (Char, b -> b) -> b
+foldl str acc func =
+    List.foldl (toList str) acc func
 
 
---| Reduce a string from the right.
+--| Reduce a string from the right, starting from an initial value.
 --|
---|     foldr cons "" "time" == "time"
-pub foldr : (Char, b -> b), b, String -> b
-foldr func acc str =
-    List.foldr func acc (toList str)
+--|     foldr "time" "" (\char acc -> cons acc char) == "time"
+pub foldr : String, b, (Char, b -> b) -> b
+foldr str acc func =
+    List.foldr (toList str) acc func
 
 
 --| Determine whether any characters pass the test.
 --|
---|     any Char.isDigit "R2-D2" == True
-pub any : (Char -> Bool), String -> Bool
-any isGood str =
-    List.any isGood (toList str)
+--|     any "R2-D2" Char.isDigit == True
+pub any : String, (Char -> Bool) -> Bool
+any str isGood =
+    List.any (toList str) isGood
 
 
 --| Determine whether all characters pass the test.
 --|
---|     all Char.isDigit "2D2" == False
-pub all : (Char -> Bool), String -> Bool
-all isGood str =
-    List.all isGood (toList str)
+--|     all "2D2" Char.isDigit == False
+pub all : String, (Char -> Bool) -> Bool
+all str isGood =
+    List.all (toList str) isGood
