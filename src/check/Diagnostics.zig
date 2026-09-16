@@ -56,24 +56,10 @@ pub const Callee = struct {
     pub const anonymous: Callee = .{ .kind = .anonymous, .name = "" };
 };
 
-/// A lambda argument that takes fewer parameters than its position wants.
-/// Not an error on its own — currying makes it legal — but when another
-/// argument of the same call fails, this is nearly always why.
-pub const SuspectLambda = struct {
-    /// 1-based argument position.
-    index: u32,
-    /// Parameters the lambda names.
-    written: u32,
-    /// Arrows the callee's parameter type has.
-    wanted: u32,
-};
-
 pub const Reporter = struct {
     gpa: Allocator,
     env: *Constrain.Env,
     items: *std.ArrayList(Item),
-    /// Set by the solver for the duration of one `call_arg` report.
-    suspect_lambda: ?SuspectLambda = null,
     /// A module in an import cycle reports nothing (checker.md §4.3), and
     /// so does a declaration that has already failed: one mistake, one
     /// message.
@@ -285,8 +271,8 @@ pub const Reporter = struct {
         // Two functions of different arity where one was wanted is the
         // missing-argument shape again, one level in: §8.3 catches it at a
         // CALL, and this is the same mistake passed as an argument.
-        const wanted_arrows = r.arrowCount(expected);
-        const found_arrows = r.arrowCount(actual);
+        const wanted_arrows = r.paramCount(expected);
+        const found_arrows = r.paramCount(actual);
         if (wanted_arrows > 0 and found_arrows > 0 and wanted_arrows != found_arrows) {
             w.print(
                 \\
@@ -358,26 +344,8 @@ pub const Reporter = struct {
     /// Elm's hint for an argument after the first: the types of a call's
     /// arguments are decided left to right, so a mismatch on the third can
     /// be the consequence of a mistake in the first.
-    fn leftToRightHint(r: *Reporter, w: *std.Io.Writer, category: Category) Error!void {
+    fn leftToRightHint(_: *Reporter, w: *std.Io.Writer, category: Category) Error!void {
         if (category.tag != .call_arg) return;
-        if (r.suspect_lambda) |suspect| {
-            if (suspect.index != category.index) {
-                const scratch = r.env.scratch;
-                w.print(
-                    \\
-                    \\Hint: the {s} argument is a function of {s}, and this call needs one of
-                    \\{s} there. That is the likelier mistake: I work out a call's argument
-                    \\types from left to right, so a function that is too small in an earlier
-                    \\position shows up as a mismatch in a later one.
-                    \\
-                , .{
-                    ordinal(scratch, suspect.index),
-                    plural(scratch, suspect.written, "argument"),
-                    plural(scratch, suspect.wanted, "argument"),
-                }) catch return error.OutOfMemory;
-                return;
-            }
-        }
         if (category.index <= 1) return;
         w.writeAll(
             \\
@@ -388,12 +356,12 @@ pub const Reporter = struct {
         ) catch return error.OutOfMemory;
     }
 
-    /// How many arrows `v` has at the top level, following aliases.
-    /// `TypeStore` owns the rule: the solver counts arrows to decide which
-    /// argument to blame and this writes the sentence about it, so the two
+    /// How many arguments `v` takes, following aliases. `TypeStore` owns
+    /// the rule: the solver counts parameters to decide whether a call's
+    /// arity is wrong and this writes the sentence about it, so the two
     /// must agree, and they did so by holding the same code twice.
-    fn arrowCount(r: *const Reporter, v: Var) u32 {
-        return r.env.store.arrowCount(v);
+    fn paramCount(r: *const Reporter, v: Var) u32 {
+        return r.env.store.paramCount(v);
     }
 
     fn primitiveOf(r: *const Reporter, v: Var) Types.TypeId {
@@ -430,10 +398,14 @@ pub const Reporter = struct {
 
     // ---- Arity (checker.md §8.3) ----------------------------------------
 
-    /// `too_few_args`: the callee has more arrows than the call supplied and
-    /// the result was wanted as something that is not a function. THE
-    /// load-bearing diagnostic — `fast-compiler.md` §9.3 keeps currying on
-    /// the condition that this reads right.
+    /// `too_few_args`: the callee takes more arguments than the call
+    /// supplied. THE load-bearing diagnostic of §8.3.
+    ///
+    /// **Nothing is deferred.** Under currying this message had to argue
+    /// that the call "produces a function" and that a function was not what
+    /// the context wanted; with saturated calls there is no
+    /// partial-application reading to keep open, so the message is the
+    /// count and the types of the arguments that are missing.
     pub fn tooFewArgs(
         r: *Reporter,
         region: Bir.Inst.Index,
@@ -441,8 +413,6 @@ pub const Reporter = struct {
         arity: u32,
         given: u32,
         missing: []const Var,
-        result: Var,
-        expected: Var,
     ) Error!void {
         if (r.quiet) return;
         var out = r.writer();
@@ -465,15 +435,10 @@ pub const Reporter = struct {
             Render.writeVar(w, r.cx(), &namer, m, .top) catch return error.OutOfMemory;
             w.writeByte('\n') catch return error.OutOfMemory;
         }
-        w.writeAll("\nSo this call produces a function:\n\n    ") catch return error.OutOfMemory;
-        Render.writeVar(w, r.cx(), &namer, result, .top) catch return error.OutOfMemory;
-        w.writeAll("\n\nBut I needed a value of type:\n\n    ") catch return error.OutOfMemory;
-        Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
         w.writeAll(
             \\
-            \\
-            \\Hint: a call with too few arguments is a function, not a value. Give it the
-            \\remaining ones, or check whether an argument was dropped by mistake.
+            \\Hint: every call supplies every argument. To make a function out of this one,
+            \\write the missing argument as `_`: `f a _` is `\x -> f a x`.
             \\
         ) catch return error.OutOfMemory;
         try r.emit(.too_few_args, region, &out);

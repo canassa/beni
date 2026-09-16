@@ -1,0 +1,12 @@
+-- parse/bad: a tuple element may not contain a bare `->` (language.md §3,
+-- Types). The comma in a type is the PARAMETER separator, so inside
+-- parentheses the arrow is read as the parameter list's and the comma that
+-- follows it has no reading at all. This is the example the message has to
+-- carry, because it is the one that traps people.
+type alias Handler =
+    ((Int, Int) -> Int, String)
+
+
+pub run : Handler -> Int
+run h =
+    0

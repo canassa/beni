@@ -7,7 +7,7 @@ pub opaque type Parser a =
     Parser (String -> Result String ( a, String ))
 
 
-pub run : Parser a -> String -> Result String a
+pub run : Parser a, String -> Result String a
 run (Parser p) input =
     case p input of
         Ok ( value, "" ) ->
@@ -46,7 +46,7 @@ char expected =
         )
 
 
-pub map : (a -> b) -> Parser a -> Parser b
+pub map : (a -> b), Parser a -> Parser b
 map f (Parser p) =
     Parser
         (\input ->
@@ -59,7 +59,7 @@ map f (Parser p) =
         )
 
 
-pub andThen : (a -> Parser b) -> Parser a -> Parser b
+pub andThen : (a -> Parser b), Parser a -> Parser b
 andThen f (Parser p) =
     Parser
         (\input ->
@@ -123,6 +123,6 @@ digits =
             )
 
 
-sumOf : String -> String -> Result String Int
+sumOf : String, String -> Result String Int
 sumOf a b =
     Ok (run digits a? + run digits b?)

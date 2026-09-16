@@ -73,8 +73,9 @@ pub const Node = struct {
     };
 
     /// A node the lowering invented rather than found in the source: the
-    /// temporaries a `case` needs, the `import` and `export` statements, a
-    /// curry wrapper. Printed the same; a source map skips it.
+    /// temporaries a `case` needs, the `import` and `export` statements, the
+    /// wrapper around a constructor used as a value. Printed the same; a
+    /// source map skips it.
     pub const no_pos: u32 = std.math.maxInt(u32);
 
     pub const Index = enum(u32) {

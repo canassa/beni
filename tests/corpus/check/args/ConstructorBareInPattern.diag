@@ -1,0 +1,1 @@
+[{"code":"too_few_args","severity":"error","span":{"file":"tests/corpus/check/args/ConstructorBareInPattern.beni","start":{"line":14,"col":9},"end":{"line":14,"col":13}},"title":"TOO FEW ARGS","message":"The `Pair` constructor takes 2 arguments, but this pattern gives it 0.\n\nHint: a constructor pattern has to name every argument the constructor takes.\n"}]

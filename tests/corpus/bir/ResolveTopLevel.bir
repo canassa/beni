@@ -1,7 +1,7 @@
 decl 0: value double (annotated)
   %0 = type_import Basics.Int
   %1 = type_import Basics.Int
-  %2 = type_fn %0 -> %1
+  %2 = type_fn [%0] -> %1
   %3 = pat_var local 0 (n)
   %4 = top 2 (scale)
   %5 = local 0 (n)
@@ -26,38 +26,37 @@ decl 2: value scale (annotated)
   %0 = type_import Basics.Int
   %1 = type_import Basics.Int
   %2 = type_import Basics.Int
-  %3 = type_fn %1 -> %2
-  %4 = type_fn %0 -> %3
-  %5 = pat_var local 0 (n)
-  %6 = pat_var local 1 (k)
-  %7 = local 1 (k)
-  %8 = int 0
-  %9 = import_value Basics.eq
-  %10 = call %9 [%7, %8]
-  %11 = import_ctor Basics.True
-  %12 = pat_ctor %11 []
-  %13 = int 0
-  %14 = branch %12 -> %13
-  %15 = import_ctor Basics.False
-  %16 = pat_ctor %15 []
-  %17 = local 0 (n)
-  %18 = top 2 (scale)
-  %19 = local 0 (n)
-  %20 = local 1 (k)
-  %21 = int 1
-  %22 = import_value Basics.sub
-  %23 = call %22 [%20, %21]
-  %24 = call %18 [%19, %23]
-  %25 = import_value Basics.add
-  %26 = call %25 [%17, %24]
-  %27 = branch %16 -> %26
-  %28 = case %10 [%14, %27]
-  annotation %4
-  params [%5, %6]
-  body %28
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (n)
+  %5 = pat_var local 1 (k)
+  %6 = local 1 (k)
+  %7 = int 0
+  %8 = import_value Basics.eq
+  %9 = call %8 [%6, %7]
+  %10 = import_ctor Basics.True
+  %11 = pat_ctor %10 []
+  %12 = int 0
+  %13 = branch %11 -> %12
+  %14 = import_ctor Basics.False
+  %15 = pat_ctor %14 []
+  %16 = local 0 (n)
+  %17 = top 2 (scale)
+  %18 = local 0 (n)
+  %19 = local 1 (k)
+  %20 = int 1
+  %21 = import_value Basics.sub
+  %22 = call %21 [%19, %20]
+  %23 = call %17 [%18, %22]
+  %24 = import_value Basics.add
+  %25 = call %24 [%16, %23]
+  %26 = branch %15 -> %25
+  %27 = case %9 [%13, %26]
+  annotation %3
+  params [%4, %5]
+  body %27
   locals
-    0 n param %5
-    1 k param %6
+    0 n param %4
+    1 k param %5
   refs
     import_type Basics.Int
     import_value Basics.eq

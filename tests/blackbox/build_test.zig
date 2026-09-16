@@ -237,6 +237,66 @@ test "a build is byte-identical at every --jobs" {
     }
 }
 
+test "a saturated n-ary call emits a direct JavaScript call" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §6: there is no calling convention. A 2-ary beni call
+    // emits `f(a, b)` — no adapter, no arity tag, no call-site curry
+    // wrapper — and a function used as a VALUE is the binding itself.
+    // `tests/corpus/run/SaturatedCalls.beni` is the other half of this
+    // assertion: that the emitted program behaves.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\add : Int, Int -> Int
+        \\add a b =
+        \\    a + b
+        \\
+        \\
+        \\apply : (Int, Int -> Int), Int, Int -> Int
+        \\apply f a b =
+        \\    f a b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (apply add 20 22))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("42\n", program.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const main_mjs = try w.read("out/Main.mjs");
+    // The 2-ary definition is a 2-ary function expression, the call through
+    // a parameter passes both arguments at once, and `add` handed on as a
+    // value is the bare name.
+    try testing.expect(std.mem.indexOf(u8, main_mjs, "(a$1, b$2) =>") != null);
+    try testing.expect(std.mem.indexOf(u8, main_mjs, "f$1(a$2, b$3)") != null);
+    try testing.expect(std.mem.indexOf(u8, main_mjs, "Main$apply(Main$add, 20, 22)") != null);
+    // Nothing anywhere in the build curries: no `(x) => (y) =>` chain, and
+    // no call of a call one argument at a time.
+    try testing.expect(std.mem.indexOf(u8, main_mjs, ") => (") == null);
+}
+
 test "modules import each other through ESM, and the program runs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

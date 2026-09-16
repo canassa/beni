@@ -435,19 +435,14 @@ pub const Generator = struct {
         return g.fresh(.{ .structure = .{ .app = .{ .type = id, .args = range } } });
     }
 
-    fn func(g: *Generator, param: Var, result: Var) Error!Var {
-        return g.fresh(.{ .structure = .{ .func = .{ .param = param, .result = result } } });
-    }
-
-    /// `p1 -> p2 -> … -> result`, right-associated.
-    fn funcChain(g: *Generator, params: []const Var, result: Var) Error!Var {
-        var out = result;
-        var i = params.len;
-        while (i > 0) {
-            i -= 1;
-            out = try g.func(params[i], out);
-        }
-        return out;
+    /// `p1, …, pn -> result`: ONE n-ary function type, whatever `n` is
+    /// (language.md §6.7). There is no chain to build — that is the point
+    /// of the change — and the arity is part of the structure, so two
+    /// function types unify only when they take the same number of
+    /// arguments.
+    fn func(g: *Generator, params: []const Var, result: Var) Error!Var {
+        const range = try g.env.store.addVars(params);
+        return g.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } });
     }
 
     // ---- Expressions -----------------------------------------------------
@@ -666,7 +661,7 @@ pub const Generator = struct {
 
         var parts: std.ArrayList(Constraint) = .empty;
         defer parts.deinit(g.env.scratch);
-        try parts.append(g.env.scratch, try g.equal(expected, try g.funcChain(param_vars, result), inst, category));
+        try parts.append(g.env.scratch, try g.equal(expected, try g.func(param_vars, result), inst, category));
         for (params, param_vars) |p, v| {
             try parts.append(g.env.scratch, try g.pattern(p, v));
         }
@@ -833,7 +828,7 @@ pub const Generator = struct {
                 g.setInstResult(m, result);
                 var parts: std.ArrayList(Constraint) = .empty;
                 defer parts.deinit(g.env.scratch);
-                try parts.append(g.env.scratch, try g.equal(binding, try g.funcChain(param_vars, result), m, .{
+                try parts.append(g.env.scratch, try g.equal(binding, try g.func(param_vars, result), m, .{
                     .tag = if (def.annotation == .none) .general else .let_annotation,
                 }));
                 for (params, param_vars) |p, v| try parts.append(g.env.scratch, try g.pattern(p, v));
@@ -985,7 +980,7 @@ pub const Generator = struct {
         g.env.decl_result = result.toOptional();
         var parts: std.ArrayList(Constraint) = .empty;
         defer parts.deinit(g.env.scratch);
-        try parts.append(g.env.scratch, try g.equal(target, try g.funcChain(param_vars, result), body, .{
+        try parts.append(g.env.scratch, try g.equal(target, try g.func(param_vars, result), body, .{
             .tag = if (annotated) .annotation else .general,
         }));
         for (params, param_vars) |p, v| try parts.append(g.env.scratch, try g.pattern(p, v));

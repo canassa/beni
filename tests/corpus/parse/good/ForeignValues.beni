@@ -2,7 +2,7 @@
 -- without a doc comment, with type variables, function and record types.
 -- Parsing is legal in every file; only lowering cares about `--core`.
 --| Add two numbers.
-pub foreign add : number -> number -> number
+pub foreign add : number, number -> number
 
 
 pub foreign length : String -> Int

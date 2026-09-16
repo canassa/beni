@@ -1013,16 +1013,121 @@ fn canStartTypeAtom(tag: Tag) bool {
     };
 }
 
-/// Type := TypeApp ('->' Type)?    (right associative)
+/// `Type := TypeParams '->' Type | TypeApp` and
+/// `TypeParams := TypeApp (',' TypeApp)*` (language.md §3).
+///
+/// Used everywhere a single, complete type is wanted — an annotation, an
+/// alias body, a record field, the result of an arrow. The COMMA is the
+/// parameter separator and binds looser than everything except `->`, so the
+/// items are collected first and the token after them decides: `->` makes
+/// them a parameter list, anything else means there had better be exactly
+/// one of them. A parenthesised type is the other reading of the same
+/// items and `parseTypeAtom` gathers them itself (`(a, b)` is a tuple).
 fn parseType(p: *Parse) Allocator.Error!Index {
     if (try p.enter()) |placeholder| return placeholder;
     defer p.leave();
-    const lhs = try p.parseTypeApp();
-    if (p.eat(.arrow)) |arrow| {
-        const rhs = try p.parseType();
-        return p.binary(.type_fn, arrow, lhs, rhs);
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    try p.parseTypeItems();
+    return p.finishType(mark, .params);
+}
+
+/// How the RESULT of an arrow is parsed (`finishType`'s `mode`).
+///
+/// `.params` is the ordinary reading: the result is a whole `Type`, so
+/// `a -> b, c -> d` right-associates into `a -> (b, c -> d)` exactly as
+/// language.md §3's `Type := TypeParams '->' Type` says.
+///
+/// `.single` is what a PARENTHESISED type needs. Inside parentheses the
+/// token after the items has already decided that they were a parameter
+/// list, so the result runs to the `)` and a top-level comma in it belongs
+/// to nobody: it is the tuple-element trap of §3, where the author wrote a
+/// tuple whose first element has a bare `->`. Reading the result greedily
+/// there would swallow the comma and silently produce a nested function
+/// type instead, so in this mode each link of the result's arrow chain is a
+/// single `TypeApp` and the comma is left for the caller to report on.
+const ResultMode = enum { params, single };
+
+/// `TypeApp (',' TypeApp)*` onto the scratch stack above `mark`.
+///
+/// **The record-field comma rule** (language.md §3, Types): a comma whose
+/// next two tokens are `lower_ident ':'` ends the item list, because a `:`
+/// can never follow a type item — that one token of lookahead is what lets
+/// `{ a : Int, b : Int }` have two fields with no backtracking and no
+/// parentheses around a field of function type. It costs nothing to apply
+/// it everywhere rather than only inside a record body, and the reason it
+/// is safe is the same reason.
+fn parseTypeItems(p: *Parse) Allocator.Error!void {
+    try p.pushScratch(try p.parseTypeApp());
+    while (p.peek() == .comma and !p.commaEndsFieldType()) {
+        const before = p.tok_i;
+        defer p.assertProgress(before);
+        _ = p.next();
+        try p.pushScratch(try p.parseTypeApp());
     }
-    return lhs;
+}
+
+fn commaEndsFieldType(p: *const Parse) bool {
+    return p.peekAt(1) == .lower_ident and p.peekAt(2) == .colon;
+}
+
+/// Turn the items above `mark` into one type: an n-ary `type_fn` when `->`
+/// follows, the single item when it does not.
+///
+/// Two or more items with no arrow INSIDE PARENTHESES is the trap
+/// language.md §3 names: the author wrote a tuple one of whose elements has
+/// a bare `->`, and the arrow was read as the parameter list's.
+/// `arrow_in_tuple_element` says so, and carries the example. Outside
+/// parentheses the same shape is an ordinary missing `->` — a parameter
+/// list with nothing to be the parameters of — and says that instead, so
+/// the message about tuples only appears where a tuple was plausible.
+///
+/// Either way the items are folded into a `type_tuple` so the rest of the
+/// declaration still parses.
+fn finishType(p: *Parse, mark: usize, mode: ResultMode) Allocator.Error!Index {
+    if (p.eat(.arrow)) |arrow| {
+        const params = try p.listToRange(p.scratchSince(mark));
+        const result = switch (mode) {
+            .params => try p.parseType(),
+            .single => try p.parseTypeResult(),
+        };
+        const extra = try p.addExtra(params);
+        return p.addNode(.{
+            .tag = .type_fn,
+            .main_token = arrow,
+            .data = .{ .lhs = @intFromEnum(extra), .rhs = result.int() },
+        });
+    }
+    const items = p.scratchSince(mark);
+    if (items.len == 1) return @enumFromInt(items[0]);
+    if (p.insideParens()) {
+        _ = try p.report(p.itemAt(.arrow_in_tuple_element));
+    } else {
+        var item = p.itemAt(.expected_token);
+        item.expected = .arrow;
+        _ = try p.report(item);
+    }
+    return p.rangeNode(.type_tuple, p.tok_i, try p.listToRange(items));
+}
+
+/// The result of an arrow inside parentheses: `TypeApp ('->' <result>)*`,
+/// never a comma list (see `ResultMode.single`). `a, b -> c -> d` still
+/// right-associates; `(a -> b, c)` stops at the comma so the `.l_paren`
+/// branch can report `arrow_in_tuple_element` on it.
+fn parseTypeResult(p: *Parse) Allocator.Error!Index {
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    try p.pushScratch(try p.parseTypeApp());
+    return p.finishType(mark, .single);
+}
+
+/// Whether the innermost open bracket is a `(`. The parameter-list reading
+/// of a comma list is only a TUPLE's rival inside parentheses.
+fn insideParens(p: *const Parse) bool {
+    const open = p.brackets.items;
+    return open.len != 0 and open[open.len - 1] == .r_paren;
 }
 
 /// True when token `t` is the contextual word `equatable` (checker.md
@@ -1035,7 +1140,7 @@ fn isEquatableToken(p: *const Parse, t: TokenIndex) bool {
 /// TypeApp := 'equatable'? TypeAtom | (upper_ident | qualified_upper) TypeAtom+ | TypeAtom
 ///
 /// The `equatable` marker (checker.md Appendix A) is recognised only where
-/// a whole `Type` starts — so `eq : equatable a -> a -> Bool` marks
+/// a whole `Type` starts — so `eq : equatable a, a -> Bool` marks
 /// the variable `a`, and an ARGUMENT position keeps its old reading:
 /// `List equatable` is a list of a variable named `equatable`, not a marked
 /// nothing. Whether the file may write the marker at all is a package fact
@@ -1062,7 +1167,8 @@ fn parseTypeApp(p: *Parse) Allocator.Error!Index {
 }
 
 /// TypeAtom := lower | upper | qualified_upper | '(' ')' | '(' Type ')'
-///           | '(' Type (',' Type)+ ')' | '{' '}' | '{' fields '}' | '{' lower '|' fields '}'
+///           | '(' TypeApp (',' TypeApp)+ ')' | '{' '}' | '{' fields '}'
+///           | '{' lower '|' fields '}'
 fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.type_expr);
     defer p.context = saved_context;
@@ -1070,6 +1176,14 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
         .lower_ident => return p.typeVar(p.next(), .none),
         .upper_ident, .qualified_upper => return p.rangeNode(.type_con, p.next(), try p.listToRange(&.{})),
         .l_paren => {
+            // The depth charge for a parenthesised type. `parseTypeItems`
+            // is called directly below rather than through `parseType`, so
+            // `parseTypeItems → parseTypeApp → parseTypeAtom` is a cycle
+            // with no other `enter()` in it: without this one a file of
+            // 30 000 nested `(` is accepted in silence and a deeper one
+            // overflows the stack instead of reporting.
+            if (try p.enter()) |placeholder| return placeholder;
+            defer p.leave();
             if (p.peekAt(1) == .r_paren) {
                 const open = p.next();
                 _ = p.next();
@@ -1078,22 +1192,57 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             const open = p.next();
             try p.pushBracket(.r_paren);
             defer p.popBracket();
-            const first = try p.parseType();
-            if (p.peek() != .comma) {
-                try p.expectCloser(.r_paren, open);
-                return p.unary(.type_paren, open, first);
-            }
+            // Inside parentheses the token AFTER the comma-separated items
+            // decides what they were (language.md §3, Types): `->` makes
+            // them a parameter list, `)` a tuple at two or more and a
+            // grouping at one.
             const mark = p.scratchMark();
             defer p.shrinkScratch(mark);
-            try p.pushScratch(first);
-            while (p.eat(.comma)) |_| try p.pushScratch(try p.parseType());
+            try p.parseTypeItems();
+            if (p.peek() == .arrow) {
+                // `.single`: the arrow settled the items, so the result may
+                // not go on to eat a comma of its own. One that follows it
+                // is the §3 trap — `(Int -> Int, Bool -> Bool)` is not a
+                // pair of functions — and says so rather than turning into
+                // a nested function type nobody wrote.
+                const inner = try p.finishType(mark, .single);
+                if (p.peek() == .comma and !p.commaEndsFieldType()) {
+                    _ = try p.report(p.itemAt(.arrow_in_tuple_element));
+                    // Recover as the tuple that was meant, so the rest of
+                    // the declaration still parses. Each further element is
+                    // read the same way, arrow and all.
+                    p.shrinkScratch(mark);
+                    try p.pushScratch(inner);
+                    while (p.peek() == .comma and !p.commaEndsFieldType()) {
+                        const before = p.tok_i;
+                        defer p.assertProgress(before);
+                        _ = p.next();
+                        try p.pushScratch(try p.parseTypeResult());
+                    }
+                    const tuple = try p.listToRange(p.scratchSince(mark));
+                    try p.expectCloser(.r_paren, open);
+                    return p.rangeNode(.type_tuple, open, tuple);
+                }
+                try p.expectCloser(.r_paren, open);
+                return p.unary(.type_paren, open, inner);
+            }
+            const items = p.scratchSince(mark);
+            if (items.len == 1) {
+                const only: Index = @enumFromInt(items[0]);
+                try p.expectCloser(.r_paren, open);
+                return p.unary(.type_paren, open, only);
+            }
+            const elements = try p.listToRange(items);
             try p.expectCloser(.r_paren, open);
-            return p.rangeNode(.type_tuple, open, try p.listToRange(p.scratchSince(mark)));
+            return p.rangeNode(.type_tuple, open, elements);
         },
         .l_brace => {
             const open = p.next();
             try p.pushBracket(.r_brace);
             defer p.popBracket();
+            // No `enter()` in this branch: every way into a record type
+            // body runs through `parseRecordTypeFields → parseType`, which
+            // charges a level, so a `{` cannot nest without paying.
             if (p.peek() == .r_brace) {
                 _ = p.next();
                 return p.rangeNode(.type_record, open, try p.listToRange(&.{}));
@@ -2213,7 +2362,13 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try checkIndices(tree, r.fields);
         },
         .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren => try checkIndex(tree, tree.operand(n)),
-        .type_fn, .pat_cons => {
+        .type_fn => {
+            const f = tree.fullTypeFn(n);
+            try testing.expect(f.params.len >= 1);
+            try checkIndices(tree, f.params);
+            try checkIndex(tree, f.result);
+        },
+        .pat_cons => {
             const data = tree.nodeData(n);
             try checkIndex(tree, @enumFromInt(data.lhs));
             try checkIndex(tree, @enumFromInt(data.rhs));
@@ -2324,7 +2479,7 @@ test "every declaration kind with visibility, docs and type parameters" {
         \\type U = C
         \\foreign f : Int -> Int
         \\pub foreign type L a
-        \\f : (a -> b) -> List a -> List b
+        \\f : (a -> b), List a -> List b
         \\f g xs = xs
         \\pub answer = 42
         \\
@@ -2366,11 +2521,10 @@ test "every declaration kind with visibility, docs and type parameters" {
         \\        (type_fn
         \\          (type_var a)
         \\          (type_var b)))
-        \\      (type_fn
-        \\        (type_con List
-        \\          (type_var a))
-        \\        (type_con List
-        \\          (type_var b)))))
+        \\      (type_con List
+        \\        (type_var a))
+        \\      (type_con List
+        \\        (type_var b))))
         \\  (definition f
         \\    (pat_var g)
         \\    (pat_var xs)
@@ -2381,16 +2535,22 @@ test "every declaration kind with visibility, docs and type parameters" {
     );
 }
 
-test "types: arrows are right associative, applications take atoms, qualified heads" {
+test "types: the comma is the parameter separator and the arrow right-associates in its result" {
+    // language.md §3, Types: `a, b -> c -> d` is a 2-ary function returning
+    // a 1-ary one, a tuple is the `)` reading of the same items, and a
+    // comma inside a record body ends the FIELD when `lower_ident :`
+    // follows — one token of lookahead, no backtracking.
     try expectTree(
-        \\a : Int -> Int -> Int
+        \\a : Int, Int -> Int -> Int
         \\b : Dict.Dict String (List ( Int, Maybe b )) -> List b
-        \\c : { r | x : Int } -> Int
+        \\c : { r | x : Int, y : Int } -> Int
+        \\d : { f : Int, Int -> Int, g : Bool }, ( Int, Int ) -> Int
         \\
     ,
         \\(module
         \\  (annotation a
         \\    (type_fn
+        \\      (type_con Int)
         \\      (type_con Int)
         \\      (type_fn
         \\        (type_con Int)
@@ -2411,10 +2571,31 @@ test "types: arrows are right associative, applications take atoms, qualified he
         \\    (type_fn
         \\      (type_record_ext r
         \\        (record_type_field x
+        \\          (type_con Int))
+        \\        (record_type_field y
         \\          (type_con Int)))
+        \\      (type_con Int)))
+        \\  (annotation d
+        \\    (type_fn
+        \\      (type_record
+        \\        (record_type_field f
+        \\          (type_fn
+        \\            (type_con Int)
+        \\            (type_con Int)
+        \\            (type_con Int)))
+        \\        (record_type_field g
+        \\          (type_con Bool)))
+        \\      (type_tuple
+        \\        (type_con Int)
+        \\        (type_con Int))
         \\      (type_con Int))))
         \\
-    , &.{ .{ .code = .annotation_without_definition, .line = 1, .col = 1 }, .{ .code = .annotation_without_definition, .line = 2, .col = 1 }, .{ .code = .annotation_without_definition, .line = 3, .col = 1 } });
+    , &.{
+        .{ .code = .annotation_without_definition, .line = 1, .col = 1 },
+        .{ .code = .annotation_without_definition, .line = 2, .col = 1 },
+        .{ .code = .annotation_without_definition, .line = 3, .col = 1 },
+        .{ .code = .annotation_without_definition, .line = 4, .col = 1 },
+    });
 }
 
 // ---- Expressions -----------------------------------------------------------

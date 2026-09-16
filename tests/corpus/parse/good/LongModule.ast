@@ -270,9 +270,8 @@
   (annotation pub update
     (type_fn
       (type_con Msg)
-      (type_fn
-        (type_con Model)
-        (type_con Model))))
+      (type_con Model)
+      (type_con Model)))
   (definition update
     (pat_var msg)
     (pat_var model)
@@ -613,9 +612,8 @@
   (annotation addError
     (type_fn
       (type_con String)
-      (type_fn
-        (type_con Model)
-        (type_con Model))))
+      (type_con Model)
+      (type_con Model)))
   (definition addError
     (pat_var message)
     (pat_var model)
@@ -631,14 +629,12 @@
   (annotation updateCard
     (type_fn
       (type_con Int)
-      (type_fn
-        (type_paren
-          (type_fn
-            (type_con Card)
-            (type_con Card)))
+      (type_paren
         (type_fn
-          (type_con Model)
-          (type_con Model)))))
+          (type_con Card)
+          (type_con Card)))
+      (type_con Model)
+      (type_con Model)))
   (definition updateCard
     (pat_var id)
     (pat_var f)
@@ -669,9 +665,8 @@
   (annotation toggleLabel
     (type_fn
       (type_con String)
-      (type_fn
-        (type_con Card)
-        (type_con Card))))
+      (type_con Card)
+      (type_con Card)))
   (definition toggleLabel
     (pat_var label)
     (pat_var card)
@@ -761,11 +756,9 @@
   (annotation moveCard
     (type_fn
       (type_con Int)
-      (type_fn
-        (type_con Column)
-        (type_fn
-          (type_con Model)
-          (type_con Model)))))
+      (type_con Column)
+      (type_con Model)
+      (type_con Model)))
   (definition moveCard
     (pat_var id)
     (pat_var column)
@@ -860,10 +853,9 @@
   (annotation cardsIn
     (type_fn
       (type_con Column)
-      (type_fn
-        (type_con Model)
-        (type_con List
-          (type_con Card)))))
+      (type_con Model)
+      (type_con List
+        (type_con Card))))
   (definition cardsIn
     (pat_var column)
     (pat_var model)
@@ -888,10 +880,9 @@
   (annotation visibleCardsIn
     (type_fn
       (type_con Column)
-      (type_fn
-        (type_con Model)
-        (type_con List
-          (type_con Card)))))
+      (type_con Model)
+      (type_con List
+        (type_con Card))))
   (definition visibleCardsIn
     (pat_var column)
     (pat_var model)
@@ -910,9 +901,8 @@
   (annotation matchesFilter
     (type_fn
       (type_con String)
-      (type_fn
-        (type_con Card)
-        (type_con Bool))))
+      (type_con Card)
+      (type_con Bool)))
   (definition matchesFilter
     (pat_var filter)
     (pat_var card)
@@ -955,9 +945,8 @@
   (annotation handleKey
     (type_fn
       (type_con String)
-      (type_fn
-        (type_con Model)
-        (type_con Model))))
+      (type_con Model)
+      (type_con Model)))
   (definition handleKey
     (pat_var key)
     (pat_var model)
@@ -1018,9 +1007,8 @@
           (type_con Column)
           (type_con Maybe
             (type_con Column))))
-      (type_fn
-        (type_con Model)
-        (type_con Model))))
+      (type_con Model)
+      (type_con Model)))
   (definition shiftSelected
     (pat_var direction)
     (pat_var model)
@@ -1217,9 +1205,8 @@
   (annotation percent
     (type_fn
       (type_con Int)
-      (type_fn
-        (type_con Int)
-        (type_con Int))))
+      (type_con Int)
+      (type_con Int)))
   (definition percent
     (pat_var part)
     (pat_var whole)
@@ -1274,10 +1261,9 @@
   (annotation viewColumn
     (type_fn
       (type_con Model)
-      (type_fn
-        (type_con Column)
-        (type_con Html
-          (type_con Msg)))))
+      (type_con Column)
+      (type_con Html
+        (type_con Msg))))
   (definition viewColumn
     (pat_var model)
     (pat_var column)
@@ -1422,10 +1408,9 @@
   (annotation viewCard
     (type_fn
       (type_con Model)
-      (type_fn
-        (type_con Card)
-        (type_con Html
-          (type_con Msg)))))
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
   (definition viewCard
     (pat_var model)
     (pat_var card)
@@ -1488,10 +1473,9 @@
   (annotation viewCardTitle
     (type_fn
       (type_con Editing)
-      (type_fn
-        (type_con Card)
-        (type_con Html
-          (type_con Msg)))))
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
   (definition viewCardTitle
     (pat_var editing)
     (pat_var card)
@@ -1564,10 +1548,9 @@
   (annotation viewCardDescription
     (type_fn
       (type_con Editing)
-      (type_fn
-        (type_con Card)
-        (type_con Html
-          (type_con Msg)))))
+      (type_con Card)
+      (type_con Html
+        (type_con Msg))))
   (definition viewCardDescription
     (pat_var editing)
     (pat_var card)

@@ -25,7 +25,7 @@ empty =
 --| A dictionary with one key-value pair and `Int` keys.
 --|
 --|     singleton 7 "seven"
-pub singleton : Int -> v -> Dict Int v
+pub singleton : Int, v -> Dict Int v
 singleton key value =
     Dict.singleton compare key value
 

@@ -11,10 +11,10 @@ pub type Validation a
 
 
 pub type alias Validator a =
-    String -> a -> Validation a
+    String, a -> Validation a
 
 
-pub map : (a -> b) -> Validation a -> Validation b
+pub map : (a -> b), Validation a -> Validation b
 map f validation =
     case validation of
         Valid a ->
@@ -24,7 +24,7 @@ map f validation =
             Invalid errors
 
 
-pub andMap : Validation a -> Validation (a -> b) -> Validation b
+pub andMap : Validation a, Validation (a -> b) -> Validation b
 andMap value function =
     case ( function, value ) of
         ( Valid f, Valid a ) ->
@@ -40,7 +40,7 @@ andMap value function =
             Invalid (left ++ right)
 
 
-pub andThen : (a -> Validation b) -> Validation a -> Validation b
+pub andThen : (a -> Validation b), Validation a -> Validation b
 andThen f validation =
     case validation of
         Valid a ->
@@ -50,7 +50,7 @@ andThen f validation =
             Invalid errors
 
 
-pub fail : String -> String -> Validation a
+pub fail : String, String -> Validation a
 fail field message =
     Invalid [ ( field, message ) ]
 
@@ -64,19 +64,21 @@ required field value =
 
 
 pub minLength : Int -> Validator String
-minLength n field value =
-    if String.length value < n then
-        fail field "must be at least ${n} characters"
-    else
-        Valid value
+minLength n =
+    \field value ->
+        if String.length value < n then
+            fail field "must be at least ${n} characters"
+        else
+            Valid value
 
 
 pub maxLength : Int -> Validator String
-maxLength n field value =
-    if String.length value > n then
-        fail field "must be at most ${n} characters"
-    else
-        Valid value
+maxLength n =
+    \field value ->
+        if String.length value > n then
+            fail field "must be at most ${n} characters"
+        else
+            Valid value
 
 
 pub email : Validator String
@@ -93,36 +95,40 @@ email field value =
 
 
 pub oneOfSet : Set String -> Validator String
-oneOfSet allowed field value =
-    if Set.member value allowed then
-        Valid value
-    else
-        let
-            choices =
-                String.join ", " (Set.toList allowed)
-        in
-        fail field "must be one of: ${choices}"
+oneOfSet allowed =
+    \field value ->
+        if Set.member value allowed then
+            Valid value
+        else
+            let
+                choices =
+                    String.join ", " (Set.toList allowed)
+            in
+            fail field "must be one of: ${choices}"
 
 
-pub intBetween : Int -> Int -> Validator Int
-intBetween low high field value =
-    if value < low || value > high then
-        fail field "must be between ${low} and ${high}"
-    else
-        Valid value
+pub intBetween : Int, Int -> Validator Int
+intBetween low high =
+    \field value ->
+        if value < low || value > high then
+            fail field "must be between ${low} and ${high}"
+        else
+            Valid value
 
 
-pub matches : String -> String -> Validator String
-matches otherName other field value =
-    if value == other then
-        Valid value
-    else
-        fail field "must match ${otherName}"
+pub matches : String, String -> Validator String
+matches otherName other =
+    \field value ->
+        if value == other then
+            Valid value
+        else
+            fail field "must match ${otherName}"
 
 
 pub all : List (Validator a) -> Validator a
-all validators field value =
-    List.foldl
+all validators =
+    \field value ->
+        List.foldl
         (\validator acc ->
             case ( acc, validator field value ) of
                 ( Valid _, Valid v ) ->
@@ -142,18 +148,19 @@ all validators field value =
 
 
 pub firstOf : List (Validator a) -> Validator a
-firstOf validators field value =
-    case validators of
-        [] ->
-            Valid value
+firstOf validators =
+    \field value ->
+        case validators of
+            [] ->
+                Valid value
 
-        validator :: rest ->
-            case validator field value of
-                Valid v ->
-                    firstOf rest field v
+            validator :: rest ->
+                case validator field value of
+                    Valid v ->
+                        (firstOf rest) field v
 
-                invalid ->
-                    invalid
+                    invalid ->
+                        invalid
 
 
 pub type alias SignUpForm =
@@ -198,15 +205,20 @@ countries =
 
 pub validateSignUp : SignUpForm -> Validation SignUp
 validateSignUp form =
-    Valid SignUp
-        |> andMap (firstOf [ required, minLength 3, maxLength 20, usernameChars ] "username" form.username)
-        |> andMap (firstOf [ required, email ] "email" form.email)
-        |> andMap (firstOf [ required, minLength 8, strongPassword ] "password" form.password)
-        |> andMap (parseAge "age" form.age |> andThen (intBetween 13 120 "age"))
-        |> andMap (firstOf [ required, oneOfSet countries ] "country" form.country)
+    -- The applicative idiom needs a CURRIED function in the `Valid`, and a
+    -- constructor is n-ary now (`language.md` §6.7), so the currying is
+    -- written out. `andMap` hands over one argument at a time by
+    -- construction, which is the one place where saturated calls cost
+    -- something in readability.
+    Valid (\user -> \mail -> \pass -> \years -> \country -> \news -> SignUp user mail pass years country news)
+        |> andMap ((firstOf [ required, minLength 3, maxLength 20, usernameChars ]) "username" form.username)
+        |> andMap ((firstOf [ required, email ]) "email" form.email)
+        |> andMap ((firstOf [ required, minLength 8, strongPassword ]) "password" form.password)
+        |> andMap (parseAge "age" form.age |> andThen (\v -> (intBetween 13 120) "age" v))
+        |> andMap ((firstOf [ required, oneOfSet countries ]) "country" form.country)
         |> andMap (Valid form.newsletter)
-        |> andThen (checkConfirm form)
-        |> andThen (checkTerms form)
+        |> andThen (checkConfirm form _)
+        |> andThen (checkTerms form _)
 
 
 usernameChars : Validator String
@@ -235,7 +247,7 @@ strongPassword field value =
         fail field "must contain upper and lower case letters and a digit"
 
 
-parseAge : String -> String -> Validation Int
+parseAge : String, String -> Validation Int
 parseAge field value =
     case String.toInt (String.trim value) of
         Just n ->
@@ -245,9 +257,9 @@ parseAge field value =
             fail field "must be a whole number"
 
 
-checkConfirm : SignUpForm -> SignUp -> Validation SignUp
+checkConfirm : SignUpForm, SignUp -> Validation SignUp
 checkConfirm form signUp =
-    case matches "password" form.password "passwordConfirm" form.passwordConfirm of
+    case (matches "password" form.password) "passwordConfirm" form.passwordConfirm of
         Valid _ ->
             Valid signUp
 
@@ -255,7 +267,7 @@ checkConfirm form signUp =
             Invalid errors
 
 
-checkTerms : SignUpForm -> SignUp -> Validation SignUp
+checkTerms : SignUpForm, SignUp -> Validation SignUp
 checkTerms form signUp =
     if form.terms then
         Valid signUp
@@ -292,7 +304,7 @@ errorSummary validation =
                 |> String.join "; "
 
 
-pub fieldError : String -> Validation a -> Maybe String
+pub fieldError : String, Validation a -> Maybe String
 fieldError field validation =
     errorsByField validation
         |> Dict.get field

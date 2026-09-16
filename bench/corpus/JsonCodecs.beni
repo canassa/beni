@@ -95,7 +95,7 @@ addressDecoder =
         (optionalField "country" Decode.string "US")
 
 
-optionalField : String -> Decoder a -> a -> Decoder a
+optionalField : String, Decoder a, a -> Decoder a
 optionalField name decoder default =
     Decode.oneOf
         [ Decode.field name decoder

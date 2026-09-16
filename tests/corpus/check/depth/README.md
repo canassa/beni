@@ -12,6 +12,7 @@ without one, is a failure.
 | `AliasChainOk` / `AliasChainDeep` | the same guard, reached by expanding aliases | 509 clean, 510 reports |
 | `InferredOk` / `InferredDeep` | `Schemes.Writer.max_depth` (512) | 511 clean, 512 reports |
 | `ParserOk` / `ParserDeep` | `Parse.max_depth` (4096) | 4095 clean, 4096 reports |
+| `TypeParensOk` / `TypeParensDeep` | the same guard, reached through a **type** | 4095 clean, 4096 reports |
 | `RenderTruncatedDeep` | `Render.max_depth` (24) | truncates one type to `…` |
 
 ## Why this kind exists

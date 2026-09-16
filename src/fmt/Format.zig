@@ -478,9 +478,22 @@ const Measurer = struct {
             },
             .type_con => try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
             .type_fn => {
-                const d = tree.nodeData(n);
-                try m.pair(n, @enumFromInt(d.lhs), @enumFromInt(d.rhs), 4);
-                if (m.tok_lines[m.last(@enumFromInt(d.lhs))] != m.tok_lines[m.first(@enumFromInt(d.rhs))]) m.widths[n.int()] = no_fit;
+                // `A, B -> C` (§9, function types): the parameter list is a
+                // multi-element construct like any other, so a source break
+                // anywhere along it — between two parameters, or before the
+                // `->` — keeps the whole type vertical.
+                const f = tree.fullTypeFn(n);
+                var width: u32 = 0;
+                for (f.params, 0..) |param, i| {
+                    try m.measure(param);
+                    width +|= (if (i == 0) @as(u32, 0) else 2) +| m.w(param);
+                }
+                try m.measure(f.result);
+                width +|= 4 +| m.w(f.result);
+                const last_param = f.params[f.params.len - 1];
+                if (m.brokenBetween(m.first(f.params[0]), f.params[1..], null) or
+                    m.tok_lines[m.last(last_param)] != m.tok_lines[m.first(f.result)]) width = no_fit;
+                m.set(n, width, m.first(f.params[0]), m.last(f.result));
             },
             .type_unit, .unit, .pat_unit => m.set(n, 2, main, main + 1),
             .placeholder => m.set(n, 1, main, main),
@@ -1747,42 +1760,37 @@ const Printer = struct {
         }
     }
 
-    /// `a -> b -> c` on one line, or every arrow leading a line at the
-    /// column the type started on. The chain follows the right spine (arrows
-    /// associate right) without recursing along it.
+    /// `A, B -> C` on one line, or — when it does not fit, or the author
+    /// broke it — the parameters one per line with the comma leading each
+    /// continuation as a list does, and every `->` leading a line, all at
+    /// the column the type started on (§9, function types).
+    ///
+    /// The chain follows the right spine (an arrow associates right in its
+    /// RESULT) without recursing along it, so `a, b -> c -> d` is one
+    /// vertical run and not a nested indent.
     fn arrows(p: *Printer, top: Index, indent: u32, force_vertical: bool) Error!void {
-        const mark = p.stack.items.len;
-        defer p.stack.shrinkRetainingCapacity(mark);
-        var node_i = top;
-        while (true) {
-            const d = p.tree.nodeData(node_i);
-            try p.stack.append(p.scratch, d.lhs);
-            try p.stack.append(p.scratch, p.tree.nodeMainToken(node_i));
-            const rhs: Index = @enumFromInt(d.rhs);
-            if (p.tree.nodeTag(rhs) != .type_fn) {
-                try p.stack.append(p.scratch, d.rhs);
-                break;
-            }
-            node_i = rhs;
-        }
         const one_line = !force_vertical and p.fits(top);
         const col = p.curCol();
-        const count = (p.stack.items.len - mark) / 2;
-        try p.typ(@enumFromInt(p.stack.items[mark]), indent);
-        for (0..count) |i| {
-            const arrow: TokenIndex = p.stack.items[mark + 2 * i + 1];
-            const operand: Index = @enumFromInt(p.stack.items[mark + 2 * i + 2]);
-            if (one_line) {
-                try p.space();
-                try p.tok(arrow);
-                try p.space();
-                try p.typ(operand, indent);
-            } else {
-                p.newline(col);
-                try p.tok(arrow);
-                try p.space();
-                try p.typ(operand, col);
+        const inner = if (one_line) indent else col;
+        var node_i = top;
+        while (true) {
+            const f = p.tree.fullTypeFn(node_i);
+            for (f.params, 0..) |param, i| {
+                if (i != 0) {
+                    if (!one_line) p.newline(col);
+                    try p.tok(p.last(f.params[i - 1]) + 1); // `,`
+                    try p.space();
+                }
+                try p.typ(param, inner);
             }
+            if (one_line) try p.space() else p.newline(col);
+            try p.tok(f.arrow);
+            try p.space();
+            if (p.tree.nodeTag(f.result) != .type_fn) {
+                try p.typ(f.result, inner);
+                return;
+            }
+            node_i = f.result;
         }
     }
 

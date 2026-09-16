@@ -581,9 +581,13 @@ pub const Builder = struct {
             .type_var => return b.typeVar(bir.symbol(@enumFromInt(data.lhs)), Bir.TypeVarInfo.unpack(data.rhs)),
             .type_unit => return b.store.fresh(.{ .structure = .unit }, b.varRank()),
             .type_fn => {
-                const param = try b.read(@enumFromInt(data.lhs));
+                const params = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index);
+                const vars = try b.scratch.alloc(Var, params.len);
+                defer b.scratch.free(vars);
+                for (params, vars) |param, *v| v.* = try b.read(param);
+                const range = try b.store.addVars(vars);
                 const result = try b.read(@enumFromInt(data.rhs));
-                return b.store.fresh(.{ .structure = .{ .func = .{ .param = param, .result = result } } }, b.varRank());
+                return b.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, b.varRank());
             },
             .type_tuple => {
                 const elements = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);

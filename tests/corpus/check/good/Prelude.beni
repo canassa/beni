@@ -2,7 +2,7 @@
 -- constructors resolves against the embedded core package with no import
 -- at all (language.md Appendix A). Proves the prelude rows reach `Basics`,
 -- `Maybe` and `List` and that none of them is an import cycle.
-pub biggest : Int -> Int -> Int
+pub biggest : Int, Int -> Int
 biggest a b =
     max a b
 

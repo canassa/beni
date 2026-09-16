@@ -10,7 +10,7 @@ factor =
     2
 
 
-scale : Int -> Int -> Int
+scale : Int, Int -> Int
 scale n k =
     if k == 0 then
         0

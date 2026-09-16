@@ -4,7 +4,7 @@ decl 0: value parse (annotated)
   %2 = type_import Basics.String
   %3 = type_import Basics.Int
   %4 = type_app %1 [%2, %3]
-  %5 = type_fn %0 -> %4
+  %5 = type_fn [%0] -> %4
   %6 = pat_var local 0 (s)
   %7 = qualified Result.fromMaybe
   %8 = string "nan"
@@ -31,28 +31,27 @@ decl 1: value both (annotated)
   %3 = type_import Basics.String
   %4 = type_import Basics.Int
   %5 = type_app %2 [%3, %4]
-  %6 = type_fn %1 -> %5
-  %7 = type_fn %0 -> %6
-  %8 = pat_var local 0 (a)
-  %9 = pat_var local 1 (b)
-  %10 = import_ctor Result.Ok
-  %11 = top 0 (parse)
-  %12 = local 0 (a)
-  %13 = call %11 [%12]
-  %14 = try %13 (returns from the declaration)
-  %15 = top 0 (parse)
-  %16 = local 1 (b)
-  %17 = call %15 [%16]
-  %18 = try %17 (returns from the declaration)
-  %19 = import_value Basics.add
-  %20 = call %19 [%14, %18]
-  %21 = call %10 [%20]
-  annotation %7
-  params [%8, %9]
-  body %21
+  %6 = type_fn [%0, %1] -> %5
+  %7 = pat_var local 0 (a)
+  %8 = pat_var local 1 (b)
+  %9 = import_ctor Result.Ok
+  %10 = top 0 (parse)
+  %11 = local 0 (a)
+  %12 = call %10 [%11]
+  %13 = try %12 (returns from the declaration)
+  %14 = top 0 (parse)
+  %15 = local 1 (b)
+  %16 = call %14 [%15]
+  %17 = try %16 (returns from the declaration)
+  %18 = import_value Basics.add
+  %19 = call %18 [%13, %17]
+  %20 = call %9 [%19]
+  annotation %6
+  params [%7, %8]
+  body %20
   locals
-    0 a param %8
-    1 b param %9
+    0 a param %7
+    1 b param %8
   refs
     import_type Basics.String
     import_type Result.Result
@@ -73,7 +72,7 @@ decl 2: value nested (annotated)
   %8 = type_import Basics.String
   %9 = type_import Basics.Int
   %10 = type_app %7 [%8, %9]
-  %11 = type_fn %6 -> %10
+  %11 = type_fn [%6] -> %10
   %12 = pat_var local 0 (r)
   %13 = import_ctor Result.Ok
   %14 = local 0 (r)
@@ -97,7 +96,7 @@ decl 3: value inLet (annotated)
   %2 = type_import Basics.String
   %3 = type_import Basics.Int
   %4 = type_app %1 [%2, %3]
-  %5 = type_fn %0 -> %4
+  %5 = type_fn [%0] -> %4
   %6 = pat_var local 0 (s)
   %7 = let_def local 1 (twice) [%8] = %17
   %8 = pat_var local 2 (t)

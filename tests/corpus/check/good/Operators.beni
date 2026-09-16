@@ -2,12 +2,12 @@
 -- function, and each one has to exist in the module the desugaring names —
 -- `::` in `List`, everything else in `Basics`. If one of those names were
 -- wrong this file would be a pile of `unknown_import_name`.
-pub arithmetic : Int -> Int -> Int
+pub arithmetic : Int, Int -> Int
 arithmetic a b =
     a + b - a * b // 2
 
 
-pub logic : Int -> Int -> Bool
+pub logic : Int, Int -> Bool
 logic a b =
     (a == b || a /= b) && not (a < b)
 

@@ -205,7 +205,8 @@ pub const Inst = struct {
         /// A type applied to arguments, `Maybe a`. `lhs` is the type
         /// reference; `rhs` is extra `SubRange` of argument type insts.
         type_app,
-        /// `a -> b`. `lhs` parameter, `rhs` result.
+        /// `a, b -> c` (language.md §6.7): n-ary. `lhs` is an extra
+        /// `SubRange` record of parameter types, `rhs` the result type.
         type_fn,
         /// `()`.
         type_unit,

@@ -98,14 +98,12 @@
         (type_fn
           (type_con Int)
           (type_con Int)))
-      (type_fn
-        (type_paren
-          (type_fn
-            (type_con Int)
-            (type_con Int)))
+      (type_paren
         (type_fn
           (type_con Int)
-          (type_con Int)))))
+          (type_con Int)))
+      (type_con Int)
+      (type_con Int)))
   (definition l
     (pat_var p)
     (pat_var q)

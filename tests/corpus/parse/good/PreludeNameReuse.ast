@@ -2,9 +2,8 @@
   (annotation max
     (type_fn
       (type_con Int)
-      (type_fn
-        (type_con Int)
-        (type_con Int))))
+      (type_con Int)
+      (type_con Int)))
   (definition max
     (pat_var a)
     (pat_var b)

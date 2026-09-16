@@ -17,12 +17,10 @@
           (type_fn
             (type_var b)
             (type_var b))))
-      (type_fn
-        (type_var b)
-        (type_fn
-          (type_con Tree
-            (type_var a))
-          (type_var b)))))
+      (type_var b)
+      (type_con Tree
+        (type_var a))
+      (type_var b)))
   (definition fold
     (pat_var f)
     (pat_var acc)
@@ -54,11 +52,10 @@
   (annotation pub insert
     (type_fn
       (type_con Int)
-      (type_fn
-        (type_con Tree
-          (type_con Int))
-        (type_con Tree
-          (type_con Int)))))
+      (type_con Tree
+        (type_con Int))
+      (type_con Tree
+        (type_con Int))))
   (definition insert
     (pat_var x)
     (pat_var tree)

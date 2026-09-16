@@ -4,9 +4,9 @@ module Base
     Feet
   value factor : Unit -> Int
 module Left
-  value scaleUp : Unit -> Int -> Int
+  value scaleUp : Unit, Int -> Int
 module Right
-  value scaleDown : Unit -> Int -> Int
+  value scaleDown : Unit, Int -> Int
 module Top
   value metres : Int
-  value round : Unit -> Int -> Int
+  value round : Unit, Int -> Int

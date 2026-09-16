@@ -23,7 +23,7 @@ init =
     { count = 0, history = [] }
 
 
-pub update : Msg -> Model -> Model
+pub update : Msg, Model -> Model
 update msg model =
     case msg of
         Increment ->
@@ -36,7 +36,7 @@ update msg model =
             init
 
 
-step : Int -> Model -> Model
+step : Int, Model -> Model
 step delta model =
     { model
         | count = model.count + delta

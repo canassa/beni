@@ -1028,7 +1028,9 @@ fn hasError(store: *TypeStore, root_var: Var) ErrorScan {
             .structure => |flat| switch (flat) {
                 .unit, .empty_record => {},
                 .func => |f| {
-                    if (!push(&stack, &len, f.param)) return .unknown;
+                    for (store.vars(f.params)) |x| {
+                        if (!push(&stack, &len, x)) return .unknown;
+                    }
                     if (!push(&stack, &len, f.result)) return .unknown;
                 },
                 .app => |a| for (store.vars(a.args)) |x| {
@@ -1096,22 +1098,22 @@ const test_core = [_]TestProject.Module{
     \\    | GT
     \\
     \\
-    \\pub foreign add : number -> number -> number
+    \\pub foreign add : number, number -> number
     \\
     \\
-    \\pub foreign sub : number -> number -> number
+    \\pub foreign sub : number, number -> number
     \\
     \\
-    \\pub foreign mul : number -> number -> number
+    \\pub foreign mul : number, number -> number
     \\
     \\
-    \\pub foreign lt : number -> number -> Bool
+    \\pub foreign lt : number, number -> Bool
     \\
     \\
-    \\pub foreign eq : equatable a -> a -> Bool
+    \\pub foreign eq : equatable a, a -> Bool
     \\
     \\
-    \\pub foreign append : appendable -> appendable -> appendable
+    \\pub foreign append : appendable, appendable -> appendable
     \\
     \\
     \\pub foreign toFloat : Int -> Float
@@ -1122,7 +1124,7 @@ const test_core = [_]TestProject.Module{
     \\    a
     \\
     \\
-    \\pub max : number -> number -> number
+    \\pub max : number, number -> number
     \\max x y =
     \\    x
     \\
@@ -1131,13 +1133,13 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type List a
     \\
     \\
-    \\pub foreign cons : a -> List a -> List a
+    \\pub foreign cons : a, List a -> List a
     \\
     \\
-    \\pub foreign map : (a -> b) -> List a -> List b
+    \\pub foreign map : (a -> b), List a -> List b
     \\
     \\
-    \\pub foreign foldl : (a -> b -> b) -> b -> List a -> b
+    \\pub foreign foldl : (a, b -> b), b, List a -> b
     \\
     \\
     \\pub foreign length : List a -> Int
@@ -1257,7 +1259,7 @@ test "inference: the principal type of an unannotated definition" {
         \\module M
         \\  identity : a -> a
         \\    x : a
-        \\  apply : (a -> b) -> a -> b
+        \\  apply : (a -> b), a -> b
         \\    f : a -> b
         \\    x : a
         \\  count : List a -> Int
@@ -1504,7 +1506,7 @@ test "the occurs check fires once, at the binding" {
 
 test "obligations: equatable, interpolatable and tuple_index" {
     try expectCodes(&.{.not_equatable},
-        \\pub same : (Int -> Int) -> (Int -> Int) -> Bool
+        \\pub same : (Int -> Int), (Int -> Int) -> Bool
         \\same f g =
         \\    f == g
         \\
@@ -1535,7 +1537,7 @@ test "obligations: equatable, interpolatable and tuple_index" {
     // `number` interpolation needs no annotation: `Int` and `Float` are
     // both on the list.
     try expectCodes(&.{},
-        \\pub same : Int -> Int -> Bool
+        \\pub same : Int, Int -> Bool
         \\same a b =
         \\    a == b
         \\
@@ -1637,12 +1639,22 @@ test "the arity rule of §8.3 fires before the generic mismatch" {
         \\    limit 2
         \\
     );
-    // A partial application flowing into something that has not decided it
-    // is a value is NOT an error: that is what currying is for.
+    // The case currying could not localise (§8.3): a lambda of the wrong
+    // arity in higher-order position is wrong WHERE IT IS WRITTEN, and the
+    // message is about the lambda rather than about the list two arguments
+    // later.
+    try expectCodes(&.{.type_mismatch},
+        \\pub total : List Int -> Int
+        \\total xs =
+        \\    List.foldl (\x -> x) 0 xs
+        \\
+    );
+    // `_` is how a call leaves one argument open, and it is not an arity
+    // mistake.
     try expectCodes(&.{},
         \\pub bump : List Int -> List Int
         \\bump xs =
-        \\    List.map (max 1) xs
+        \\    List.map (max 1 _) xs
         \\
     );
 }

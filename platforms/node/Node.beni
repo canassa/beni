@@ -46,7 +46,7 @@ pub foreign printLines : List String -> Program
 --|     main : Program
 --|     main =
 --|         Node.exitWith 1 "could not read the file"
-pub foreign exitWith : Int -> String -> Program
+pub foreign exitWith : Int, String -> Program
 
 
 --| A program that writes nothing and exits 0.

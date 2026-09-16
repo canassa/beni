@@ -25,7 +25,7 @@ pub opaque type Set t
 --| Create an empty set whose values are ordered by the given function.
 --|
 --|     Set.empty String.compare
-pub empty : (t -> t -> Order) -> Set t
+pub empty : (t, t -> Order) -> Set t
 empty cmp =
     Set (Dict.empty cmp)
 
@@ -33,19 +33,19 @@ empty cmp =
 --| Create a set with one value, ordered by the given function.
 --|
 --|     Set.singleton String.compare "Tom"
-pub singleton : (t -> t -> Order) -> t -> Set t
+pub singleton : (t, t -> Order), t -> Set t
 singleton cmp value =
     Set (Dict.singleton cmp value ())
 
 
 --| Insert a value into a set.
-pub insert : t -> Set t -> Set t
+pub insert : t, Set t -> Set t
 insert value (Set dict) =
     Set (Dict.insert value () dict)
 
 
 --| Remove a value from a set. If the value is not found, no changes are made.
-pub remove : t -> Set t -> Set t
+pub remove : t, Set t -> Set t
 remove value (Set dict) =
     Set (Dict.remove value dict)
 
@@ -59,7 +59,7 @@ isEmpty (Set dict) =
 
 
 --| Determine if a value is in a set.
-pub member : t -> Set t -> Bool
+pub member : t, Set t -> Bool
 member value (Set dict) =
     Dict.member value dict
 
@@ -72,20 +72,20 @@ size (Set dict) =
 
 --| Get the union of two sets. Keep all values. The ordering of the second
 --| set is the one the result keeps, as it is the set being added to.
-pub union : Set t -> Set t -> Set t
+pub union : Set t, Set t -> Set t
 union (Set d1) (Set d2) =
     Set (Dict.union d1 d2)
 
 
 --| Get the intersection of two sets. Keeps values that appear in both sets.
-pub intersect : Set t -> Set t -> Set t
+pub intersect : Set t, Set t -> Set t
 intersect (Set d1) (Set d2) =
     Set (Dict.intersect d1 d2)
 
 
 --| Get the difference between the first set and the second. Keeps values
 --| that do not appear in the second set.
-pub diff : Set t -> Set t -> Set t
+pub diff : Set t, Set t -> Set t
 diff (Set d1) (Set d2) =
     Set (Dict.diff d1 d2)
 
@@ -100,7 +100,7 @@ toList (Set dict) =
 --| function.
 --|
 --|     Set.fromList String.compare [ "a", "b", "a" ]
-pub fromList : (t -> t -> Order) -> List t -> Set t
+pub fromList : (t, t -> Order), List t -> Set t
 fromList cmp list =
     List.foldl insert (empty cmp) list
 
@@ -110,19 +110,19 @@ fromList cmp list =
 --| have a new type and the old ordering no longer applies to them.
 --|
 --|     Set.map compare String.length names
-pub map : (b -> b -> Order) -> (a -> b) -> Set a -> Set b
+pub map : (b, b -> Order), (a -> b), Set a -> Set b
 map cmp func set =
     fromList cmp (List.map func (toList set))
 
 
 --| Fold over the values in a set, in order from lowest to highest.
-pub foldl : (t -> b -> b) -> b -> Set t -> b
+pub foldl : (t, b -> b), b, Set t -> b
 foldl func initial (Set dict) =
     Dict.foldl (\key _ acc -> func key acc) initial dict
 
 
 --| Fold over the values in a set, in order from highest to lowest.
-pub foldr : (t -> b -> b) -> b -> Set t -> b
+pub foldr : (t, b -> b), b, Set t -> b
 foldr func initial (Set dict) =
     Dict.foldr (\key _ acc -> func key acc) initial dict
 
@@ -130,14 +130,14 @@ foldr func initial (Set dict) =
 --| Only keep elements that pass the given test.
 --|
 --|     Set.filter (\n -> n > 0) numbers
-pub filter : (t -> Bool) -> Set t -> Set t
+pub filter : (t -> Bool), Set t -> Set t
 filter isGood (Set dict) =
     Set (Dict.filter (\key _ -> isGood key) dict)
 
 
 --| Create two new sets. The first contains all the elements that passed the
 --| given test, and the second contains all the elements that did not.
-pub partition : (t -> Bool) -> Set t -> ( Set t, Set t )
+pub partition : (t -> Bool), Set t -> ( Set t, Set t )
 partition isGood (Set dict) =
     let
         ( trues, falses ) =

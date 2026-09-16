@@ -252,7 +252,13 @@ const Dumper = struct {
                 try d.openTag(tag, main);
                 try d.child(tree.operand(n), inner);
             },
-            .type_fn, .pat_cons => {
+            .type_fn => {
+                const f = tree.fullTypeFn(n);
+                try d.openTag(tag, main);
+                for (f.params) |param| try d.child(param, inner);
+                try d.child(f.result, inner);
+            },
+            .pat_cons => {
                 const data = tree.nodeData(n);
                 try d.openTag(tag, main);
                 try d.child(@enumFromInt(data.lhs), inner);

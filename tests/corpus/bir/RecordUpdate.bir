@@ -22,7 +22,7 @@ decl 1: value initial (annotated)
 decl 2: value bumpLocal (annotated)
   %0 = type_top 0 (Model)
   %1 = type_top 0 (Model)
-  %2 = type_fn %0 -> %1
+  %2 = type_fn [%0] -> %1
   %3 = pat_var local 0 (model)
   %4 = local 0 (model)
   %5 = local 0 (model)
@@ -57,7 +57,7 @@ decl 4: value bumpImport (annotated)
   %0 = type_import Basics.Int
   %1 = type_import Basics.Int
   %2 = type_record { timeout : %1 }
-  %3 = type_fn %0 -> %2
+  %3 = type_fn [%0] -> %2
   %4 = pat_var local 0 (t)
   %5 = import_value Defaults.config
   %6 = local 0 (t)

@@ -206,22 +206,36 @@ fn write(
             // A bare extension variable that closed: only reachable as a
             // record's tail, where `writeRecord` handles it.
             .empty_record => try w.writeAll("{}"),
+            // `A, B -> C` with the minimal parentheses (checker.md §8.2):
+            // a function-typed PARAMETER is always parenthesised, a
+            // function-typed RESULT never is, and a 1-ary function over a
+            // tuple prints `(Int, Int) -> Int` — which the tuple's own
+            // `( … )` already does — so that it reads differently from the
+            // 2-ary `Int, Int -> Int`.
             .func => |f| {
                 const wrap = prec != .top;
                 if (wrap) try w.writeByte('(');
-                try write(w, cx, namer, f.param, .arg, depth + 1);
+                for (cx.store.vars(f.params), 0..) |param, i| {
+                    if (i != 0) try w.writeAll(", ");
+                    try write(w, cx, namer, param, .arg, depth + 1);
+                }
                 try w.writeAll(" -> ");
                 // The result stays at `top`, which is what makes
-                // `a -> b -> c` right-associate with no parentheses.
+                // `a, b -> c -> d` right-associate with no parentheses.
                 try write(w, cx, namer, f.result, .top, depth + 1);
                 if (wrap) try w.writeByte(')');
             },
             .app => |a| try writeNamed(w, cx, namer, a.type, cx.store.vars(a.args), prec, depth),
+            // Elements print at `.arg`, which parenthesises exactly the
+            // function-typed ones. A tuple element may not contain a bare
+            // `->` (language.md §3), so `( Int -> Int, Int )` is not this
+            // type at all — it re-reads as a function — and a type in a
+            // diagnostic has to be one the reader can paste back.
             .tuple => |range| {
                 try w.writeAll("( ");
                 for (cx.store.vars(range), 0..) |el, i| {
                     if (i != 0) try w.writeAll(", ");
-                    try write(w, cx, namer, el, .top, depth + 1);
+                    try write(w, cx, namer, el, .arg, depth + 1);
                 }
                 try w.writeAll(" )");
             },

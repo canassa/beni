@@ -8,7 +8,7 @@ type Msg
     | Dec
 
 
-update : Msg -> Int -> Int
+update : Msg, Int -> Int
 update msg n =
     case msg of
         Inc ->

@@ -17,7 +17,7 @@ empty =
     { hits = 0, misses = 0, table = Dict.empty }
 
 
-pub fib : Int -> Cache -> ( Int, Cache )
+pub fib : Int, Cache -> ( Int, Cache )
 fib n cache =
     case Dict.get n cache.table of
         Just value ->
@@ -45,7 +45,7 @@ fib n cache =
                 )
 
 
-pub fibAll : List Int -> Cache -> ( List Int, Cache )
+pub fibAll : List Int, Cache -> ( List Int, Cache )
 fibAll ns cache =
     let
         step n ( acc, c ) =

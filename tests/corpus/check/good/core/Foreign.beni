@@ -12,6 +12,6 @@ pub foreign type Opaque a
 pub foreign make : Int -> Handle
 
 
-pub same : Handle -> Handle -> Bool
+pub same : Handle, Handle -> Bool
 same a b =
     a == b

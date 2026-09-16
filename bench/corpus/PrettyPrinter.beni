@@ -34,7 +34,7 @@ softline =
     SoftLine
 
 
-pub nest : Int -> Doc -> Doc
+pub nest : Int, Doc -> Doc
 nest =
     Nest
 
@@ -44,7 +44,7 @@ group =
     Group
 
 
-pub append : Doc -> Doc -> Doc
+pub append : Doc, Doc -> Doc
 append =
     Concat
 
@@ -54,7 +54,7 @@ concat docs =
     List.foldr Concat Empty docs
 
 
-pub join : Doc -> List Doc -> Doc
+pub join : Doc, List Doc -> Doc
 join separator docs =
     case docs of
         [] ->
@@ -67,12 +67,12 @@ join separator docs =
             Concat first (Concat separator (join separator rest))
 
 
-pub bracket : String -> Doc -> String -> Doc
+pub bracket : String, Doc, String -> Doc
 bracket open inner close =
     Group (Concat (Text open) (Concat (Nest 4 (Concat SoftLine inner)) (Concat SoftLine (Text close))))
 
 
-pub hang : Int -> Doc -> Doc
+pub hang : Int, Doc -> Doc
 hang indent doc =
     Group (Nest indent doc)
 
@@ -89,14 +89,14 @@ type alias Item =
     }
 
 
-pub render : Int -> Doc -> String
+pub render : Int, Doc -> String
 render w doc =
     layout w 0 [ { indent = 0, mode = Break, doc = doc } ] []
         |> List.reverse
         |> String.concat
 
 
-layout : Int -> Int -> List Item -> List String -> List String
+layout : Int, Int, List Item, List String -> List String
 layout w column items acc =
     case items of
         [] ->
@@ -138,7 +138,7 @@ layout w column items acc =
                         layout w column ({ item | mode = Break, doc = inner } :: rest) acc
 
 
-fits : Int -> List Item -> Bool
+fits : Int, List Item -> Bool
 fits remaining items =
     if remaining < 0 then
         False
@@ -241,7 +241,7 @@ escape s =
         |> String.replace "\t" "\\t"
 
 
-pub printValue : Int -> Value -> String
+pub printValue : Int, Value -> String
 printValue w value =
     render w (valueDoc value)
 

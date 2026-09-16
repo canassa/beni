@@ -4,6 +4,6 @@ pub type alias Handler =
     { name : String, run : Int -> Int }
 
 
-pub same : Handler -> Handler -> Bool
+pub same : Handler, Handler -> Bool
 same a b =
     a == b

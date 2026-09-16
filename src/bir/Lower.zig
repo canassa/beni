@@ -1111,9 +1111,13 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.addInstAt(main_token, .type_app, ref.int(), @intFromEnum(range));
         },
         .type_fn => {
-            const param = try l.lowerType(@enumFromInt(data.lhs));
-            const result = try l.lowerType(@enumFromInt(data.rhs));
-            return l.addInstAt(main_token, .type_fn, param.int(), result.int());
+            const fn_type = l.tree.fullTypeFn(node);
+            const mark = l.scratchMark();
+            defer l.shrinkScratch(mark);
+            for (fn_type.params) |param| try l.pushScratch(try l.lowerType(param));
+            const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
+            const result = try l.lowerType(fn_type.result);
+            return l.addInstAt(main_token, .type_fn, @intFromEnum(range), result.int());
         },
         .type_unit => return l.addInst(.type_unit, 0, 0),
         .type_paren => return l.lowerType(l.tree.operand(node)),
@@ -2192,7 +2196,13 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             try checkInDecl(d, @enumFromInt(data.lhs));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
         },
-        .type_fn, .let_pattern, .branch, .pat_cons => {
+        .type_fn => {
+            const params = try checkRecordAt(bir, data.lhs);
+            try testing.expect(params.len() >= 1);
+            try checkInstList(bir, d, params);
+            try checkInDecl(d, @enumFromInt(data.rhs));
+        },
+        .let_pattern, .branch, .pat_cons => {
             try checkInDecl(d, @enumFromInt(data.lhs));
             try checkInDecl(d, @enumFromInt(data.rhs));
         },
@@ -3244,7 +3254,7 @@ test "type variables must be parameters in type bodies, and are free in annotati
 test "foreign declarations are rejected without --core and accepted with it" {
     const source =
         \\--| Doc.
-        \\pub foreign add : Int -> Int -> Int
+        \\pub foreign add : Int, Int -> Int
         \\
         \\
         \\foreign type Handle
@@ -3260,9 +3270,8 @@ test "foreign declarations are rejected without --core and accepted with it" {
         \\  %0 = type_import Basics.Int
         \\  %1 = type_import Basics.Int
         \\  %2 = type_import Basics.Int
-        \\  %3 = type_fn %1 -> %2
-        \\  %4 = type_fn %0 -> %3
-        \\  annotation %4
+        \\  %3 = type_fn [%0, %1] -> %2
+        \\  annotation %3
         \\  refs
         \\    import_type Basics.Int
         \\  interface foreign value add

@@ -5,11 +5,11 @@ pub type alias User =
     { name : String, age : Int }
 
 
-pub make : String -> Int -> User
+pub make : String, Int -> User
 make name age =
     User name age
 
 
-pub rename : User -> String -> User
+pub rename : User, String -> User
 rename user name =
     { user | name = name }

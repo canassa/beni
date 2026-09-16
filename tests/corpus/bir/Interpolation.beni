@@ -2,12 +2,12 @@
 -- expressions in order (§8.2): a chunk-expr-chunk string, adjacent
 -- expressions, an expression-only string, a string with escapes around the
 -- interpolation, and a plain string that stays a literal.
-greet : String -> Int -> String
+greet : String, Int -> String
 greet name n =
     "hello ${name}, ${n} new"
 
 
-adjacent : Int -> Int -> String
+adjacent : Int, Int -> String
 adjacent a b =
     "${a}${b}"
 

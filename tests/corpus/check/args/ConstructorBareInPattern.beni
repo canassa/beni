@@ -1,0 +1,15 @@
+-- check/args: a constructor of arity 2 written BARE in a pattern. `Constrain`
+-- emits a call of NO arguments for every constructor pattern, nullary ones
+-- included, so this is the 0-of-n case that sits next to the 1-of-2 of
+-- `ConstructorTooFewInPattern`: it has to reach §8.3's arity rule and say the
+-- constructor takes 2 and this pattern gives it 0, not fall out as a raw
+-- `type_mismatch` against the scrutinee.
+pub type Pair
+    = Pair Int Int
+
+
+pub first : Pair -> Int
+first p =
+    case p of
+        Pair ->
+            0

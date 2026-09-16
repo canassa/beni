@@ -1,7 +1,7 @@
 -- check/good: `?` (checker.md §6.5) picks its shape from the enclosing
 -- definition's result type — `Result` here, `Maybe` there — and the two are
 -- never converted into each other.
-pub parseBoth : String -> String -> Result String Int
+pub parseBoth : String, String -> Result String Int
 parseBoth a b =
     let
         left =

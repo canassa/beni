@@ -15,7 +15,7 @@ tiny b =
     if b then 1 else 0
 
 
-nested : Bool -> Bool -> Int
+nested : Bool, Bool -> Int
 nested a b =
     if a then
         if b then

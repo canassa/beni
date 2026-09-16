@@ -10,7 +10,7 @@ pub type Msg
     | Decrement
 
 
-pub update : Msg -> Model -> Model
+pub update : Msg, Model -> Model
 update msg model =
     case msg of
         Increment ->

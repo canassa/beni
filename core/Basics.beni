@@ -96,38 +96,38 @@ pub type Never
 --|     add 3 4 == 7
 --|
 --| This is what `+` desugars to.
-pub foreign add : number -> number -> number
+pub foreign add : number, number -> number
 
 
 --| Subtract the second number from the first. What `-` desugars to.
 --|
 --|     sub 4 3 == 1
-pub foreign sub : number -> number -> number
+pub foreign sub : number, number -> number
 
 
 --| Multiply two numbers. What `*` desugars to.
 --|
 --|     mul 2 3 == 6
-pub foreign mul : number -> number -> number
+pub foreign mul : number, number -> number
 
 
 --| Floating-point division. What `/` desugars to.
 --|
 --|     fdiv 3 2 == 1.5
-pub foreign fdiv : Float -> Float -> Float
+pub foreign fdiv : Float, Float -> Float
 
 
 --| Integer division, truncated towards zero. What `//` desugars to.
 --|
 --|     idiv 3 2 == 1
 --|     idiv -3 2 == -1
-pub foreign idiv : Int -> Int -> Int
+pub foreign idiv : Int, Int -> Int
 
 
 --| Exponentiation. What `^` desugars to.
 --|
 --|     pow 3 2 == 9
-pub foreign pow : number -> number -> number
+pub foreign pow : number, number -> number
 
 
 --| Check if two values are equal. Equality is structural: two values of the
@@ -138,13 +138,13 @@ pub foreign pow : number -> number -> number
 --|
 --| The `equatable` marker rules out the one case that cannot be decided:
 --| comparing functions is a compile error, not a crash. What `==` desugars to.
-pub foreign eq : equatable a -> a -> Bool
+pub foreign eq : equatable a, a -> Bool
 
 
 --| Check if two values are not equal. What `/=` desugars to.
 --|
 --|     neq 1 2 == True
-pub foreign neq : equatable a -> a -> Bool
+pub foreign neq : equatable a, a -> Bool
 
 
 --| Check if the first number is less than the second. What `<` desugars to.
@@ -152,41 +152,41 @@ pub foreign neq : equatable a -> a -> Bool
 --|     lt 1 2 == True
 --|
 --| Numbers only. `String.compare` orders text.
-pub foreign lt : number -> number -> Bool
+pub foreign lt : number, number -> Bool
 
 
 --| Check if the first number is greater than the second. What `>` desugars to.
 --|
 --|     gt 2 1 == True
-pub foreign gt : number -> number -> Bool
+pub foreign gt : number, number -> Bool
 
 
 --| Check if the first number is less than or equal to the second. What `<=`
 --| desugars to.
 --|
 --|     le 1 1 == True
-pub foreign le : number -> number -> Bool
+pub foreign le : number, number -> Bool
 
 
 --| Check if the first number is greater than or equal to the second. What `>=`
 --| desugars to.
 --|
 --|     ge 1 1 == True
-pub foreign ge : number -> number -> Bool
+pub foreign ge : number, number -> Bool
 
 
 --| The logical AND, short-circuiting: the second argument is evaluated only
 --| when the first is `True`. What `&&` desugars to.
 --|
 --|     and True False == False
-pub foreign and : Bool -> Bool -> Bool
+pub foreign and : Bool, Bool -> Bool
 
 
 --| The logical OR, short-circuiting: the second argument is evaluated only
 --| when the first is `False`. What `||` desugars to.
 --|
 --|     or True False == True
-pub foreign or : Bool -> Bool -> Bool
+pub foreign or : Bool, Bool -> Bool
 
 
 --| Put two appendable values together. `appendable` is `String` or `List a`.
@@ -195,7 +195,7 @@ pub foreign or : Bool -> Bool -> Bool
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
 --|
 --| What `++` desugars to.
-pub foreign append : appendable -> appendable -> appendable
+pub foreign append : appendable, appendable -> appendable
 
 
 --| Convert an integer into a float.
@@ -235,15 +235,15 @@ pub foreign truncate : Float -> Int
 --|     modBy 4 (-1) == 3
 --|     modBy 4 11 == 3
 --|
---| The modulus comes first so `modBy 2` reads as a function on its own.
-pub foreign modBy : Int -> Int -> Int
+--| The modulus comes first so `modBy 2 _` reads as a function on its own.
+pub foreign modBy : Int, Int -> Int
 
 
 --| Get the remainder after division. The result has the sign of the dividend.
 --|
 --|     remainderBy 4 (-1) == -1
 --|     remainderBy 4 11 == 3
-pub foreign remainderBy : Int -> Int -> Int
+pub foreign remainderBy : Int, Int -> Int
 
 
 --| Take the square root of a number.
@@ -255,7 +255,7 @@ pub foreign sqrt : Float -> Float
 --| Calculate the logarithm of a number with a given base.
 --|
 --|     logBase 10 100 == 2
-pub foreign logBase : Float -> Float -> Float
+pub foreign logBase : Float, Float -> Float
 
 
 --| An approximation of Euler's constant.
@@ -293,7 +293,7 @@ pub foreign atan : Float -> Float
 
 --| Figure out the arctangent of `y / x` in radians, keeping the signs of both
 --| arguments so the answer lands in the right quadrant.
-pub foreign atan2 : Float -> Float -> Float
+pub foreign atan2 : Float, Float -> Float
 
 
 --| Determine whether a float is an undefined or unrepresentable number.
@@ -334,7 +334,7 @@ abs n =
 --| Find the larger of two numbers.
 --|
 --|     max 42 12345678 == 12345678
-pub max : number -> number -> number
+pub max : number, number -> number
 max x y =
     if x > y then
         x
@@ -345,7 +345,7 @@ max x y =
 --| Find the smaller of two numbers.
 --|
 --|     min 42 12345678 == 42
-pub min : number -> number -> number
+pub min : number, number -> number
 min x y =
     if x < y then
         x
@@ -357,7 +357,7 @@ min x y =
 --|
 --|     clamp 100 200 42 == 100
 --|     clamp 100 200 178 == 178
-pub clamp : number -> number -> number -> number
+pub clamp : number, number, number -> number
 clamp low high n =
     if n < low then
         low
@@ -374,7 +374,7 @@ clamp low high n =
 --|
 --| Only numbers. Ordering anything else is an explicit function you pass in,
 --| such as `String.compare` or a lambda over a record field.
-pub compare : number -> number -> Order
+pub compare : number, number -> Order
 compare x y =
     if x < y then
         LT
@@ -399,7 +399,7 @@ not b =
 --|
 --|     xor True False == True
 --|     xor True True == False
-pub xor : Bool -> Bool -> Bool
+pub xor : Bool, Bool -> Bool
 xor a b =
     if a then
         not b
@@ -416,10 +416,12 @@ identity a =
     a
 
 
---| Create a function that always returns the same value, whatever it is given.
+--| Return the first argument and ignore the second. With the `_` placeholder
+--| it is still the "do nothing" argument to a higher-order function.
 --|
---|     List.map (always 0) [ 1, 2, 3 ] == [ 0, 0, 0 ]
-pub always : a -> b -> a
+--|     always 0 1 == 0
+--|     List.map (always 0 _) [ 1, 2, 3 ] == [ 0, 0, 0 ]
+pub always : a, b -> a
 always a _ =
     a
 
@@ -477,7 +479,7 @@ fromPolar ( radius, theta ) =
 --| last, which saves a pair of parentheses around a long final argument.
 --|
 --|     apL sqrt 4 == 2
-pub apL : (a -> b) -> a -> b
+pub apL : (a -> b), a -> b
 apL f x =
     f x
 
@@ -486,22 +488,24 @@ apL f x =
 --| them reads as a pipeline.
 --|
 --|     apR 4 sqrt == 2
-pub apR : a -> (a -> b) -> b
+pub apR : a, (a -> b) -> b
 apR x f =
     f x
 
 
---| Compose two functions, right to left. `composeL g f` is "do `f`, then `g`".
+--| Compose two functions, right to left. `composeL g f x` is "do `f` to `x`,
+--| then `g`".
 --|
---|     apL (composeL not isNaN) 1 == True
-pub composeL : (b -> c) -> (a -> b) -> a -> c
+--|     composeL not isNaN 1 == True
+pub composeL : (b -> c), (a -> b), a -> c
 composeL g f x =
     g (f x)
 
 
---| Compose two functions, left to right. `composeR f g` is "do `f`, then `g`".
+--| Compose two functions, left to right. `composeR f g x` is "do `f` to `x`,
+--| then `g`".
 --|
---|     apL (composeR isNaN not) 1 == True
-pub composeR : (a -> b) -> (b -> c) -> a -> c
+--|     composeR isNaN not 1 == True
+pub composeR : (a -> b), (b -> c), a -> c
 composeR f g x =
     g (f x)

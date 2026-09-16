@@ -8,68 +8,67 @@ decl 0: value split (annotated)
   %6 = type_import Basics.Int
   %7 = type_record { name : %5, age : %6 }
   %8 = type_import Basics.String
-  %9 = type_fn %7 -> %8
-  %10 = type_fn %4 -> %9
-  %11 = pat_var local 0 (input)
-  %12 = pat_var local 1 (person)
-  %13 = pat_var local 2 (n)
-  %14 = pat_var local 3 (s)
-  %15 = pat_var local 4 (flag)
-  %16 = pat_tuple [%14, %15]
-  %17 = pat_tuple [%13, %16]
-  %18 = pat_record [local 5 (name), local 6 (age)]
-  %19 = pat_unit
-  %20 = pat_var local 7 (a)
-  %21 = pat_var local 8 (b)
-  %22 = pat_tuple [%20, %21]
-  %23 = pat_as %22 as local 9 (pair)
-  %24 = let_def local 10 (total) : %35 [] = %46
-  %25 = local 0 (input)
-  %26 = let_pattern %17 = %25
-  %27 = local 1 (person)
-  %28 = let_pattern %18 = %27
-  %29 = unit
-  %30 = let_pattern %19 = %29
-  %31 = local 2 (n)
-  %32 = local 6 (age)
-  %33 = tuple [%31, %32]
-  %34 = let_pattern %23 = %33
-  %35 = type_import Basics.Int
-  %36 = local 2 (n)
-  %37 = local 7 (a)
-  %38 = import_value Basics.add
-  %39 = call %38 [%36, %37]
-  %40 = local 8 (b)
-  %41 = import_value Basics.add
-  %42 = call %41 [%39, %40]
-  %43 = local 9 (pair)
-  %44 = tuple_index %43 .0
-  %45 = import_value Basics.add
-  %46 = call %45 [%42, %44]
-  %47 = local 5 (name)
-  %48 = chunk ":"
-  %49 = local 3 (s)
-  %50 = chunk ":"
-  %51 = local 10 (total)
-  %52 = chunk ":"
-  %53 = local 4 (flag)
-  %54 = interp [%47, %48, %49, %50, %51, %52, %53]
-  %55 = let [%26, %28, %30, %34, %24] in %54
-  annotation %10
-  params [%11, %12]
-  body %55
+  %9 = type_fn [%4, %7] -> %8
+  %10 = pat_var local 0 (input)
+  %11 = pat_var local 1 (person)
+  %12 = pat_var local 2 (n)
+  %13 = pat_var local 3 (s)
+  %14 = pat_var local 4 (flag)
+  %15 = pat_tuple [%13, %14]
+  %16 = pat_tuple [%12, %15]
+  %17 = pat_record [local 5 (name), local 6 (age)]
+  %18 = pat_unit
+  %19 = pat_var local 7 (a)
+  %20 = pat_var local 8 (b)
+  %21 = pat_tuple [%19, %20]
+  %22 = pat_as %21 as local 9 (pair)
+  %23 = let_def local 10 (total) : %34 [] = %45
+  %24 = local 0 (input)
+  %25 = let_pattern %16 = %24
+  %26 = local 1 (person)
+  %27 = let_pattern %17 = %26
+  %28 = unit
+  %29 = let_pattern %18 = %28
+  %30 = local 2 (n)
+  %31 = local 6 (age)
+  %32 = tuple [%30, %31]
+  %33 = let_pattern %22 = %32
+  %34 = type_import Basics.Int
+  %35 = local 2 (n)
+  %36 = local 7 (a)
+  %37 = import_value Basics.add
+  %38 = call %37 [%35, %36]
+  %39 = local 8 (b)
+  %40 = import_value Basics.add
+  %41 = call %40 [%38, %39]
+  %42 = local 9 (pair)
+  %43 = tuple_index %42 .0
+  %44 = import_value Basics.add
+  %45 = call %44 [%41, %43]
+  %46 = local 5 (name)
+  %47 = chunk ":"
+  %48 = local 3 (s)
+  %49 = chunk ":"
+  %50 = local 10 (total)
+  %51 = chunk ":"
+  %52 = local 4 (flag)
+  %53 = interp [%46, %47, %48, %49, %50, %51, %52]
+  %54 = let [%25, %27, %29, %33, %23] in %53
+  annotation %9
+  params [%10, %11]
+  body %54
   locals
-    0 input param %11
-    1 person param %12
-    2 n pattern %13
-    3 s pattern %14
-    4 flag pattern %15
-    5 name pattern %18
-    6 age pattern %18
-    7 a pattern %20
-    8 b pattern %21
-    9 pair pattern %23
-    10 total let %24
+    0 input param %10
+    1 person param %11
+    2 n pattern %12
+    3 s pattern %13
+    4 flag pattern %14
+    5 name pattern %17
+    6 age pattern %17
+    7 a pattern %19
+    8 b pattern %20
+    9 pair pattern %22
+    10 total let %23
   refs
     import_type Basics.Int
     import_type Basics.String

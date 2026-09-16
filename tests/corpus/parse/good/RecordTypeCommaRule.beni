@@ -1,0 +1,27 @@
+-- parse/good: the record-type comma rule (language.md §3, Types). A comma
+-- inside a record-type body ends the FIELD's type when the next two tokens
+-- are `lower_ident ':'`; one token of lookahead settles it with no
+-- backtracking, because a `:` can never follow a type item.
+--
+-- So a field of n-ary function type needs no parentheses and reads as the
+-- parser reads it, and the plain `{ a : Int, b : Int }` that this rule
+-- exists for keeps its two fields.
+type alias Pair =
+    { a : Int, b : Int }
+
+
+type alias Callbacks =
+    { f : Int, Int -> Int
+    , g : Bool
+    , h : Int, Int, String -> Bool
+    , i : { x : Int, y : Int }, Int -> Int
+    }
+
+
+type alias Open r =
+    { r | step : Int, Int -> Int, label : String }
+
+
+pub apply : Callbacks, Int -> Int
+apply cs n =
+    cs.f n n

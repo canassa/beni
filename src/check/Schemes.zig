@@ -260,9 +260,11 @@ pub const Writer = struct {
                 .unit => return try w.memoise(root, try w.term(.unit, 0, 0)),
                 .empty_record => return try w.memoise(root, try w.term(.empty_record, 0, 0)),
                 .func => |f| {
-                    const param = try w.writeVar(f.param);
+                    const words = try w.writeRange(w.store.vars(f.params));
+                    defer w.gpa.free(words);
+                    const start = try w.addRange(words);
                     const result = try w.writeVar(f.result);
-                    return try w.memoise(root, try w.term(.func, param.int(), result.int()));
+                    return try w.memoise(root, try w.term(.func, start, result.int()));
                 },
                 .app => |a| {
                     const words = try w.writeRange(w.store.vars(a.args));
@@ -454,13 +456,13 @@ pub fn instantiateCtor(
     // The result: the owning type applied to its own parameters. An ADT is
     // an `app` and never an `alias` — only a `type` declares constructors.
     const params = try store.addVars(fresh);
-    var result = try store.fresh(.{ .structure = .{ .app = .{ .type = type_id, .args = params } } }, rank);
-    var i = args.len;
-    while (i > 0) {
-        i -= 1;
-        result = try store.fresh(.{ .structure = .{ .func = .{ .param = args[i], .result = result } } }, rank);
-    }
-    return result;
+    const result = try store.fresh(.{ .structure = .{ .app = .{ .type = type_id, .args = params } } }, rank);
+    // A constructor of n fields is an n-ARY function, not a chain of n
+    // one-argument ones (language.md §6.7), and a nullary one is the type
+    // itself.
+    if (args.len == 0) return result;
+    const arg_range = try store.addVars(args);
+    return try store.fresh(.{ .structure = .{ .func = .{ .params = arg_range, .result = result } } }, rank);
 }
 
 const Reader = struct {
@@ -492,9 +494,11 @@ const Reader = struct {
             .unit => try r.store.fresh(.{ .structure = .unit }, r.rank),
             .empty_record => try r.store.fresh(.{ .structure = .empty_record }, r.rank),
             .func => blk: {
-                const param = try r.read(@enumFromInt(t.lhs));
+                const params = try r.readRange(t.lhs);
+                defer r.scratch.free(params);
+                const range = try r.store.addVars(params);
                 const result = try r.read(@enumFromInt(t.rhs));
-                break :blk try r.store.fresh(.{ .structure = .{ .func = .{ .param = param, .result = result } } }, r.rank);
+                break :blk try r.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, r.rank);
             },
             .app => blk: {
                 const args = try r.readRange(t.rhs);
@@ -566,7 +570,8 @@ test "a scheme round trips through terms with its sharing intact" {
 
     // `a -> a`: one generalised variable, used twice.
     const a = try store.fresh(.{ .flex = .{ .kind = .number } }, TypeStore.generalized);
-    const body = try store.fresh(.{ .structure = .{ .func = .{ .param = a, .result = a } } }, TypeStore.generalized);
+    const one = try store.addVars(&.{a});
+    const body = try store.fresh(.{ .structure = .{ .func = .{ .params = one, .result = a } } }, TypeStore.generalized);
 
     var iface: Interface = .empty;
     defer iface.deinit(gpa);
@@ -587,10 +592,12 @@ test "a scheme round trips through terms with its sharing intact" {
     const second = try instantiate(&iface, &target, 0, 1, arena.allocator());
     const f1 = target.content(target.find(first)).structure.func;
     const f2 = target.content(target.find(second)).structure.func;
-    try testing.expectEqual(target.find(f1.param), target.find(f1.result));
-    try testing.expect(target.find(f1.param) != target.find(f2.param));
+    const p1 = target.vars(f1.params)[0];
+    const p2 = target.vars(f2.params)[0];
+    try testing.expectEqual(target.find(p1), target.find(f1.result));
+    try testing.expect(target.find(p1) != target.find(p2));
     // The kind crossed with it: a `number` stays a `number`.
-    try testing.expectEqual(TypeStore.Kind.number, target.content(target.find(f1.param)).flex.kind);
+    try testing.expectEqual(TypeStore.Kind.number, target.content(target.find(p1)).flex.kind);
 }
 
 /// Build a random solved type at `TypeStore.generalized`, with deliberate
@@ -632,9 +639,13 @@ const RandomType = struct {
             1 => return g.store.fresh(.{ .structure = .unit }, rank),
             2 => return g.store.fresh(.{ .structure = .empty_record }, rank),
             3 => {
-                const param = try g.make(depth + 1);
+                const n = 1 + g.random.uintLessThan(usize, 3);
+                const ps = try g.gpa.alloc(Var, n);
+                defer g.gpa.free(ps);
+                for (ps) |*x| x.* = try g.make(depth + 1);
+                const range = try g.store.addVars(ps);
                 const result = try g.make(depth + 1);
-                return g.store.fresh(.{ .structure = .{ .func = .{ .param = param, .result = result } } }, rank);
+                return g.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, rank);
             },
             4 => {
                 const n = 1 + g.random.uintLessThan(usize, 3);
@@ -701,10 +712,10 @@ fn nthChildOf(store: *TypeStore, root: Var, n: u32) ?Var {
         },
         .structure => |flat| switch (flat) {
             .unit, .empty_record => return null,
-            .func => |f| return switch (n) {
-                0 => f.param,
-                1 => f.result,
-                else => null,
+            .func => |f| {
+                const ps = store.vars(f.params);
+                if (n < ps.len) return ps[n];
+                return if (n == ps.len) f.result else null;
             },
             .app => |a| {
                 const args = store.vars(a.args);

@@ -6,12 +6,12 @@ identity2 x =
     x
 
 
-const : a -> b -> a
+const : a, b -> a
 const x _ =
     x
 
 
-mapPair : (a -> b) -> ( a, a ) -> ( b, b )
+mapPair : (a -> b), ( a, a ) -> ( b, b )
 mapPair f ( x, y ) =
     ( f x, f y )
 

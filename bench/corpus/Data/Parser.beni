@@ -26,7 +26,7 @@ fail reason =
     { run = \_ -> Err reason }
 
 
-pub map : (a -> b) -> Parser a -> Parser b
+pub map : (a -> b), Parser a -> Parser b
 map f parser =
     { run =
         \input ->
@@ -39,7 +39,7 @@ map f parser =
     }
 
 
-pub andThen : (a -> Parser b) -> Parser a -> Parser b
+pub andThen : (a -> Parser b), Parser a -> Parser b
 andThen next parser =
     { run =
         \input ->

@@ -1,6 +1,0 @@
--- check/args: composing two functions by name builds a function, and the
--- result was used as a value. `>>` is gone (language.md §6.5), so the
--- composition is written out and the missing argument is the last one.
-pub shout : String -> String
-shout s =
-    Basics.composeR String.toUpper String.trim

@@ -420,7 +420,7 @@ const Dumper = struct {
             },
             .type_fn => {
                 try d.w.writeByte(' ');
-                try d.ref(data.lhs);
+                try d.refList(bir.subRange(@enumFromInt(data.lhs)));
                 try d.w.writeAll(" -> ");
                 try d.ref(data.rhs);
             },

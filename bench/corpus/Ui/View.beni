@@ -29,7 +29,7 @@ text content =
     Text content
 
 
-pub button : String -> msg -> Element msg
+pub button : String, msg -> Element msg
 button label onPress =
     Button label onPress
 
@@ -59,6 +59,6 @@ shout element =
     String.toUpper (render element)
 
 
-pub indent : Style -> String -> String
+pub indent : Style, String -> String
 indent style line =
     String.repeat style.padding " " ++ line

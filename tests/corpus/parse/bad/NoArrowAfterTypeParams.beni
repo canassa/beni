@@ -1,0 +1,8 @@
+-- parse/bad: a comma list in a type is a PARAMETER list (language.md §3,
+-- Types), so outside parentheses it has to be followed by `->`. Without one
+-- there is nothing for the parameters to belong to, and the message is the
+-- plain missing-token one rather than the tuple-element message, which
+-- would name a reading these parentheses-free items never had.
+x : Int, String
+x =
+    1

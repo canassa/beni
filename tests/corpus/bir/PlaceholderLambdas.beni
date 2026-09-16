@@ -18,12 +18,12 @@ nested n =
     outer (inner _) n
 
 
-add : Int -> Int -> Int
+add : Int, Int -> Int
 add a b =
     a + b
 
 
-subtract : Int -> Int -> Int
+subtract : Int, Int -> Int
 subtract a b =
     a - b
 
@@ -33,7 +33,7 @@ apply f =
     f 1
 
 
-outer : (Int -> Int) -> Int -> Int
+outer : (Int -> Int), Int -> Int
 outer f n =
     f n
 

@@ -11,7 +11,7 @@
 --| the middle of a pipeline without moving any other code.
 --|
 --|     total = List.sum (Debug.log "prices" prices)
-pub foreign log : String -> a -> a
+pub foreign log : String, a -> a
 
 
 --| Say that some code is not done yet, with a message about what is missing.

@@ -6,12 +6,12 @@ import Node exposing (Program)
 import String
 
 
-scope : String -> (String -> String) -> String
+scope : String, (String -> String) -> String
 scope label body =
     label ++ "(" ++ body label ++ ")"
 
 
-twice : Int -> (Int -> Int) -> Int
+twice : Int, (Int -> Int) -> Int
 twice n body =
     body n + body (n + 1)
 

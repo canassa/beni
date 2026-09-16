@@ -1,0 +1,13 @@
+-- parse/bad: the same trap as `ArrowInTupleElement` (language.md §3, Types),
+-- but with a function type in EVERY element, so the items after the first
+-- arrow end with another `->` instead of with `)`. The first `->` is still
+-- read as the parameter list's arrow and the comma after it still has no
+-- reading — and this shape used to slip past in silence, parsing as a nested
+-- function type nobody wrote. Parenthesise each element.
+type alias Pair =
+    (Int -> Int, Bool -> Bool)
+
+
+pub run : Pair -> Int
+run _ =
+    0

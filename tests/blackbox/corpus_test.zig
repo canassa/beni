@@ -10,7 +10,7 @@
 //!                                   the golden again is a fixed point, and both
 //!                                   parse to the same AST
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
-//!   check/args/X.beni + X.diag      the missing-argument suite (checker.md §8.3)
+//!   check/args/X.beni + X.diag      the arity suite (checker.md §8.3)
 //!   run/X.beni        + X.expected  `build --platform=node`, then the emitted
 //!                                   program under Node; its stdout is the golden
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
@@ -97,10 +97,10 @@ test "corpus: check/bad" {
     try walk(.check_bad);
 }
 
-// The missing-argument suite (checker.md §8.3). Its own kind so its size
-// and its pass rate are visible on their own: `fast-compiler.md` §9.3 keeps
-// currying on the condition that these read as THE right message, and a
-// number that is buried in `check/bad` is a number nobody looks at.
+// The arity suite (checker.md §8.3). Its own kind so its size and its pass
+// rate are visible on their own: an arity mistake is the class currying
+// could not localise, these are the messages that replaced it, and a number
+// buried in `check/bad` is a number nobody looks at.
 test "corpus: check/args" {
     try walk(.check_args);
 }

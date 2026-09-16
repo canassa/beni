@@ -6,9 +6,8 @@
   (annotation update
     (type_fn
       (type_con Msg)
-      (type_fn
-        (type_con Int)
-        (type_con Int))))
+      (type_con Int)
+      (type_con Int)))
   (definition update
     (pat_var msg)
     (pat_var n)

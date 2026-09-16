@@ -1,12 +1,12 @@
 // The sibling JavaScript of `Basics.beni` (docs/design/boundary.md §4): one
 // export per `foreign` value, under the same name, and nothing else.
 //
-// Every function here is n-ary, with n the number of arrows its beni
-// annotation spells. That is the calling convention of fast-compiler.md
-// §9.3: a saturated call at statically known arity is a DIRECT call, so
-// `a + b` reaches `add(a, b)` with no adapter. A function passed as a value
-// is curried by the emitter at the site that passes it, so nothing here has
-// to know about currying.
+// Every function here is n-ary, with n the number of parameters its beni
+// annotation lists before the `->`. That is the calling convention of
+// fast-compiler.md §9.3: a saturated call at statically known arity is a
+// DIRECT call, so `a + b` reaches `add(a, b)` with no adapter. Function
+// types are n-ary throughout, so a function passed as a value is the same
+// n-ary function and nothing here has to know about currying.
 //
 // Representation (backend.md §4, §9.4), which this file and the emitter
 // agree on by contract:
@@ -43,8 +43,8 @@ export const ge = (a, b) => a >= b;
 // Short-circuiting is the reason these are `foreign` at all (Basics.beni's
 // header): a beni definition would take both sides as arguments. The
 // emitter recognises a saturated call of either and emits `&&` / `||`
-// directly, so these two are reached only through a partial application —
-// where both arguments already exist and eagerness costs nothing.
+// directly, so these two are reached only when the function is passed as a
+// value — where both arguments already exist and eagerness costs nothing.
 export const and = (a, b) => a && b;
 export const or = (a, b) => a || b;
 

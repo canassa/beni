@@ -38,7 +38,7 @@ tokenize input =
     tokenizeChars (String.toList input) []
 
 
-tokenizeChars : List Char -> List Token -> Result String (List Token)
+tokenizeChars : List Char, List Token -> Result String (List Token)
 tokenizeChars chars acc =
     case chars of
         [] ->
@@ -104,7 +104,7 @@ isNumberChar c =
     Char.isDigit c || c == '.'
 
 
-span : (a -> Bool) -> List a -> ( List a, List a )
+span : (a -> Bool), List a -> ( List a, List a )
 span predicate items =
     let
         go taken remaining =
@@ -138,7 +138,7 @@ parse input =
             Err "unexpected ${describeToken token} after expression"
 
 
-parseExpr : Int -> List Token -> Result String ( Expr, List Token )
+parseExpr : Int, List Token -> Result String ( Expr, List Token )
 parseExpr minPrec tokens =
     let
         ( left, rest ) =
@@ -147,7 +147,7 @@ parseExpr minPrec tokens =
     climb minPrec left rest
 
 
-climb : Int -> Expr -> List Token -> Result String ( Expr, List Token )
+climb : Int, Expr, List Token -> Result String ( Expr, List Token )
 climb minPrec left tokens =
     case tokens of
         token :: rest ->
@@ -246,7 +246,7 @@ parseAtom tokens =
             Err "unexpected end of input"
 
 
-parseArgs : List Token -> List Expr -> Result String ( List Expr, List Token )
+parseArgs : List Token, List Expr -> Result String ( List Expr, List Token )
 parseArgs tokens acc =
     case tokens of
         TRParen :: rest ->
@@ -302,7 +302,7 @@ describeToken token =
             "`,`"
 
 
-pub eval : Dict String Float -> Expr -> Result String Float
+pub eval : Dict String Float, Expr -> Result String Float
 eval env expr =
     case expr of
         Number n ->
@@ -349,7 +349,7 @@ eval env expr =
             callFunction name values
 
 
-evalAll : Dict String Float -> List Expr -> Result String (List Float)
+evalAll : Dict String Float, List Expr -> Result String (List Float)
 evalAll env exprs =
     case exprs of
         [] ->
@@ -359,7 +359,7 @@ evalAll env exprs =
             Ok (eval env first? :: evalAll env rest?)
 
 
-callFunction : String -> List Float -> Result String Float
+callFunction : String, List Float -> Result String Float
 callFunction name args =
     case ( name, args ) of
         ( "sqrt", [ x ] ) ->
@@ -429,6 +429,6 @@ opSymbol op =
             "^"
 
 
-pub calculate : Dict String Float -> String -> Result String Float
+pub calculate : Dict String Float, String -> Result String Float
 calculate env input =
     eval env (parse input?)

@@ -3,10 +3,9 @@
     (type_fn
       (type_con Maybe
         (type_con Int))
-      (type_fn
-        (type_con Maybe
-          (type_con Int))
-        (type_con Int))))
+      (type_con Maybe
+        (type_con Int))
+      (type_con Int)))
   (definition combine
     (pat_var a)
     (pat_var b)
@@ -33,10 +32,9 @@
     (type_fn
       (type_con Maybe
         (type_con Int))
-      (type_fn
-        (type_con Maybe
-          (type_con Int))
-        (type_con Int))))
+      (type_con Maybe
+        (type_con Int))
+      (type_con Int)))
   (definition combineLet
     (pat_var a)
     (pat_var b)
@@ -66,10 +64,9 @@
     (type_fn
       (type_con Maybe
         (type_con Int))
-      (type_fn
-        (type_con Maybe
-          (type_con Int))
-        (type_con Int))))
+      (type_con Maybe
+        (type_con Int))
+      (type_con Int)))
   (definition tight
     (pat_var a)
     (pat_var b)

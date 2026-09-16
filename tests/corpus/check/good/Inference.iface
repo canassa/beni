@@ -1,6 +1,6 @@
 module Inference
-  value apply : (a -> b) -> a -> b
-  value compose : (a -> b) -> (c -> a) -> c -> b
+  value apply : (a -> b), a -> b
+  value compose : (a -> b), (c -> a), c -> b
   value identity : a -> a
   value letPolymorphism : ( ( number, number ), ( String, String ) )
   value sizes : List String -> List Int

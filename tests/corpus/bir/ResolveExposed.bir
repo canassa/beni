@@ -21,7 +21,7 @@ decl 0: value table (annotated)
 decl 1: value describe (annotated)
   %0 = type_import Http.Error
   %1 = type_import Basics.String
-  %2 = type_fn %0 -> %1
+  %2 = type_fn [%0] -> %1
   %3 = pat_var local 0 (err)
   %4 = local 0 (err)
   %5 = import_ctor Http.Timeout

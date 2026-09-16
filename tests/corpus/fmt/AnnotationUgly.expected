@@ -14,6 +14,6 @@ g a b =
     a + b
 
 
-h : (Int -> Int) -> List Int -> List Int
+h : (Int -> Int), List Int -> List Int
 h fn xs =
     List.map fn xs

@@ -3,9 +3,8 @@
     (type_fn
       (type_con Maybe
         (type_con Int))
-      (type_fn
-        (type_con Bool)
-        (type_con Int))))
+      (type_con Bool)
+      (type_con Int)))
   (definition process
     (pat_var m)
     (pat_var flag)
@@ -45,9 +44,8 @@
     (type_fn
       (type_con Maybe
         (type_con Int))
-      (type_fn
-        (type_con Int)
-        (type_con Int))))
+      (type_con Int)
+      (type_con Int)))
   (definition handler
     (pat_var m)
     (pat_var x)
@@ -74,9 +72,8 @@
     (type_fn
       (type_con Maybe
         (type_con Int))
-      (type_fn
-        (type_con Int)
-        (type_con Int))))
+      (type_con Int)
+      (type_con Int)))
   (definition sumWithDefault
     (pat_var m)
     (pat_var d)

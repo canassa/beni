@@ -1,0 +1,53 @@
+-- A 2-ary beni call emits a 2-ary JavaScript call, `f(a, b)` — there is no
+-- calling convention any more (`backend.md` §6). This fixture proves it
+-- BEHAVES; the emitted text is asserted in `tests/blackbox/build_test.zig`
+-- ("a saturated n-ary call emits a direct JavaScript call"), because the
+-- two halves of "no adapter" are a shape and a result.
+--
+-- A `foreign` is called at the arity its sibling JavaScript exports, a
+-- constructor is applied to exactly its fields, a callback is called with
+-- every argument at once, and a `_` fills the single argument a call leaves
+-- open.
+import List
+import Node exposing (Program)
+import String
+
+
+type Point
+    = Point Int Int
+
+
+add : Int, Int -> Int
+add a b =
+    a + b
+
+
+sum3 : Int, Int, Int -> Int
+sum3 a b c =
+    a + b + c
+
+
+area : Point -> Int
+area p =
+    case p of
+        Point x y ->
+            x * y
+
+
+callWith : (Int, Int -> Int), Int, Int -> Int
+callWith f a b =
+    f a b
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (add 2 3)
+        , String.fromInt (sum3 1 2 3)
+        , String.fromInt (area (Point 6 7))
+        , String.fromInt (callWith add 20 22)
+        , String.fromInt (callWith (\a b -> a * b) 6 7)
+        , String.fromInt (List.foldl add 0 [ 1, 2, 3, 4 ])
+        , String.join "," (List.map String.fromInt (List.map (add 10 _) [ 1, 2, 3 ]))
+        , String.fromInt (String.length (String.append "ab" "cde"))
+        ]

@@ -106,6 +106,27 @@ parens 4096 'one over: the PARSER reports, so the checker 4200 guards are unreac
     > "$dir/ParserDeep.beni"
 
 # ---------------------------------------------------------------------------
+# The same guard reached through a TYPE rather than an expression. Its own
+# pair because the two take different paths into `enter()`: an expression
+# charges in `parseExpr`, a parenthesised type in `parseTypeAtom`'s `(`
+# branch, and the n-ary function type change briefly removed the second —
+# `parseTypeItems -> parseTypeApp -> parseTypeAtom` is a cycle, so 30 000
+# nested `(` were accepted in silence. Measured: 4095 clean, 4096 reports.
+# ---------------------------------------------------------------------------
+type_parens() {
+    printf -- '-- check/depth: %s\n' "$2"
+    printf 'pub f : '
+    repeat "$1" '('
+    printf 'Int'
+    repeat "$1" ')'
+    printf ' -> Int\nf _ =\n    1\n'
+}
+type_parens 4095 'one under Parse.max_depth, reached through a TYPE: it parses and checks.' \
+    > "$dir/TypeParensOk.beni"
+type_parens 4096 'one over, in a type: a parenthesised type charges a level like any other.' \
+    > "$dir/TypeParensDeep.beni"
+
+# ---------------------------------------------------------------------------
 # `Render.max_depth` (24): the one guard whose silence is a FORMATTING
 # decision and not a judgement. A type printed deeper than this is
 # unreadable, so the renderer truncates it to `…` — the diagnostic is

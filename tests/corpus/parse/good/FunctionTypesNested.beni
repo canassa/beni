@@ -1,30 +1,36 @@
--- Function types nested inside tuples and records, right-associative arrows,
--- parenthesised arrows as arguments, and a qualified type head applied to
--- several atoms.
+-- Function types nested inside tuples and records, n-ary parameter lists,
+-- the arrow right-associating in its result, and a qualified type head
+-- applied to several atoms. `language.md` §3, Types.
+--
+-- The record body needs no parentheses around a field of function type: a
+-- comma there ends the field when `lower_ident :` follows. A TUPLE element
+-- does need them, because the comma is the parameter separator and a bare
+-- `->` inside one would be read as the parameter list's arrow.
 import Dict exposing (Dict)
 
 
 type alias Callbacks msg =
     { onClick : msg -> msg
     , onInput : String -> msg
-    , order : Int -> Int -> Order
+    , order : Int, Int -> Order
+    , tag : String
     }
 
 
 type alias Step a =
-    ( a -> a, a )
+    ( (a -> a), a )
 
 
 type alias Chain =
-    Int -> Int -> Int -> Int
+    Int, Int -> Int -> Int
 
 
-apply : ( Int -> Int, Int ) -> Int
+apply : ( (Int -> Int), Int ) -> Int
 apply ( fn, x ) =
     fn x
 
 
-compose2 : (b -> c) -> (a -> b) -> a -> c
+compose2 : (b -> c), (a -> b), a -> c
 compose2 f g x =
     f (g x)
 

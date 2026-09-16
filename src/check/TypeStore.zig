@@ -170,7 +170,11 @@ pub const Structure = union(enum) {
     tuple: Range,
     record: Record,
 
-    pub const Func = struct { param: Var, result: Var };
+    /// `p1, …, pn -> result` (language.md §6.7). The parameters are a
+    /// RANGE and not one var: function types are n-ary and unify only at
+    /// equal arity, so the count is part of the structure head and an
+    /// arity difference is an ordinary structure mismatch.
+    pub const Func = struct { params: Range, result: Var };
     pub const App = struct { type: TypeId, args: Range };
     pub const Record = struct {
         /// `(field Symbol, Var)` pairs, sorted by symbol id.
@@ -434,34 +438,26 @@ pub fn resolved(store: *TypeStore, v: Var) struct { Var, Content } {
     }
 }
 
-/// How many arrows `v`'s type has, looking through aliases: the arity of a
-/// function type, which is what §8.3's arity messages and the arity hint
-/// both count.
+/// How many parameters `v`'s type takes, looking through aliases: the
+/// ARITY of a function type, which is what §8.3's arity messages and the
+/// arity hint both count. Zero when `v` is not a function.
 ///
-/// Here rather than in either caller because it was written twice, verbatim
-/// and with the same bound, in `Solve` and in `Diagnostics` — and the two
-/// have to agree: one decides whether a lambda argument is the suspect, the
-/// other writes the sentence about it.
+/// Since function types are n-ary (language.md §6.7) this is one lookup and
+/// not a walk down a chain of arrows: `a, b -> c -> d` takes two arguments
+/// and returns a function of one, and counting three there would be exactly
+/// the conflation currying forced.
 ///
-/// The bound is a message's patience, not a correctness limit: a type with
-/// more than that many arrows is not something a person reads, and every
-/// caller either compares the count with a small number or prints it.
-pub fn arrowCount(store: *TypeStore, v: Var) u32 {
-    const max_arrows = 64;
-    var arrows: u32 = 0;
-    var current = v;
-    while (arrows < max_arrows) {
-        const f = switch (store.resolvedContent(current)) {
-            .structure => |flat| switch (flat) {
-                .func => |func| func,
-                else => return arrows,
-            },
-            else => return arrows,
-        };
-        arrows += 1;
-        current = f.result;
-    }
-    return arrows;
+/// Here rather than in either caller because it was written twice, verbatim,
+/// in `Solve` and in `Diagnostics` — and the two have to agree: one decides
+/// whether a call's arity is wrong, the other writes the sentence about it.
+pub fn paramCount(store: *TypeStore, v: Var) u32 {
+    return switch (store.resolvedContent(v)) {
+        .structure => |flat| switch (flat) {
+            .func => |func| func.params.len,
+            else => 0,
+        },
+        else => 0,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -656,7 +652,8 @@ test "rollback restores descriptors and discards variables and extra made since 
     const snapshot = store.beginSpeculation();
     const args = try store.addVars(&.{ a, b });
     const applied = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(3), .args = args } } }, 3);
-    _ = store.merge(a, b, .{ .structure = .{ .func = .{ .param = applied, .result = applied } } });
+    const params = try store.addVars(&.{applied});
+    _ = store.merge(a, b, .{ .structure = .{ .func = .{ .params = params, .result = applied } } });
     store.setRank(a, 99);
     try testing.expect(store.content(store.find(b)) == .structure);
 

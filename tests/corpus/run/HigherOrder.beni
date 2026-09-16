@@ -1,17 +1,22 @@
--- Functions stored, passed and returned. Everything here goes through the
--- curried form, because a function used as a VALUE has no statically known
--- callee at its use site.
+-- Functions stored, passed and returned. A function-typed value in flight
+-- is an ordinary closure of known arity (`backend.md` §6), so every one of
+-- these is a direct call of the arity written at the call site.
+--
+-- `pick` RETURNS a function, which is a 1-ary function whose result is
+-- 1-ary — not a 2-ary function. Calling it therefore takes two
+-- applications, `(pick True) 5`, because `pick True 5` would be one call of
+-- two arguments (`language.md` §6.7).
 import List
 import Node exposing (Program)
 import String
 
 
-compose : (b -> c) -> (a -> b) -> a -> c
+compose : (b -> c), (a -> b), a -> c
 compose g f x =
     g (f x)
 
 
-twice : (a -> a) -> a -> a
+twice : (a -> a), a -> a
 twice f x =
     f (f x)
 
@@ -29,8 +34,8 @@ main =
     Node.printLines
         [ String.fromInt (compose (\n -> n + 1) (\n -> n * 2) 5)
         , String.fromInt (twice (\n -> n * 3) 2)
-        , String.fromInt (pick True 5)
-        , String.fromInt (pick False 5)
+        , String.fromInt ((pick True) 5)
+        , String.fromInt ((pick False) 5)
         , String.join "," (List.map String.fromInt (List.map (pick True) [ 1, 2 ]))
         , String.fromInt ((identity (\n -> n - 1)) 10)
         , String.fromInt (4 |> (\n -> n * n) |> (\n -> n + 1))

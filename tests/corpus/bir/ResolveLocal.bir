@@ -7,64 +7,62 @@ decl 0: value f (annotated)
   %5 = type_import Basics.Int
   %6 = type_app %4 [%5]
   %7 = type_import Basics.Int
-  %8 = type_fn %6 -> %7
-  %9 = type_fn %3 -> %8
-  %10 = type_fn %0 -> %9
-  %11 = pat_var local 0 (a)
-  %12 = pat_var local 1 (b)
-  %13 = pat_var local 2 (c)
-  %14 = pat_tuple [%12, %13]
-  %15 = pat_var local 3 (m)
-  %16 = let_def local 4 (d) [] = %23
-  %17 = pat_var local 5 (g)
-  %18 = pat_var local 6 (h)
-  %19 = pat_tuple [%17, %18]
-  %20 = local 0 (a)
-  %21 = local 1 (b)
-  %22 = import_value Basics.add
-  %23 = call %22 [%20, %21]
-  %24 = local 2 (c)
-  %25 = local 4 (d)
-  %26 = tuple [%24, %25]
-  %27 = let_pattern %19 = %26
-  %28 = local 3 (m)
-  %29 = import_ctor Maybe.Just
-  %30 = pat_var local 7 (n)
-  %31 = pat_ctor %29 [%30]
-  %32 = pat_var local 8 (k)
-  %33 = local 8 (k)
-  %34 = local 7 (n)
-  %35 = import_value Basics.add
-  %36 = call %35 [%33, %34]
-  %37 = local 5 (g)
-  %38 = import_value Basics.add
-  %39 = call %38 [%36, %37]
-  %40 = local 6 (h)
-  %41 = import_value Basics.add
-  %42 = call %41 [%39, %40]
-  %43 = lambda [%32] -> %42
-  %44 = local 4 (d)
-  %45 = call %43 [%44]
-  %46 = branch %31 -> %45
-  %47 = import_ctor Maybe.Nothing
-  %48 = pat_ctor %47 []
-  %49 = int 0
-  %50 = branch %48 -> %49
-  %51 = case %28 [%46, %50]
-  %52 = let [%16, %27] in %51
-  annotation %10
-  params [%11, %14, %15]
-  body %52
+  %8 = type_fn [%0, %3, %6] -> %7
+  %9 = pat_var local 0 (a)
+  %10 = pat_var local 1 (b)
+  %11 = pat_var local 2 (c)
+  %12 = pat_tuple [%10, %11]
+  %13 = pat_var local 3 (m)
+  %14 = let_def local 4 (d) [] = %21
+  %15 = pat_var local 5 (g)
+  %16 = pat_var local 6 (h)
+  %17 = pat_tuple [%15, %16]
+  %18 = local 0 (a)
+  %19 = local 1 (b)
+  %20 = import_value Basics.add
+  %21 = call %20 [%18, %19]
+  %22 = local 2 (c)
+  %23 = local 4 (d)
+  %24 = tuple [%22, %23]
+  %25 = let_pattern %17 = %24
+  %26 = local 3 (m)
+  %27 = import_ctor Maybe.Just
+  %28 = pat_var local 7 (n)
+  %29 = pat_ctor %27 [%28]
+  %30 = pat_var local 8 (k)
+  %31 = local 8 (k)
+  %32 = local 7 (n)
+  %33 = import_value Basics.add
+  %34 = call %33 [%31, %32]
+  %35 = local 5 (g)
+  %36 = import_value Basics.add
+  %37 = call %36 [%34, %35]
+  %38 = local 6 (h)
+  %39 = import_value Basics.add
+  %40 = call %39 [%37, %38]
+  %41 = lambda [%30] -> %40
+  %42 = local 4 (d)
+  %43 = call %41 [%42]
+  %44 = branch %29 -> %43
+  %45 = import_ctor Maybe.Nothing
+  %46 = pat_ctor %45 []
+  %47 = int 0
+  %48 = branch %46 -> %47
+  %49 = case %26 [%44, %48]
+  %50 = let [%14, %25] in %49
+  annotation %8
+  params [%9, %12, %13]
+  body %50
   locals
-    0 a param %11
-    1 b pattern %12
-    2 c pattern %13
-    3 m param %15
-    4 d let %16
-    5 g pattern %17
-    6 h pattern %18
-    7 n pattern %30
-    8 k param %32
+    0 a param %9
+    1 b pattern %10
+    2 c pattern %11
+    3 m param %13
+    4 d let %14
+    5 g pattern %15
+    6 h pattern %16
+    7 n pattern %28
+    8 k param %30
   refs
     import_type Basics.Int
     import_type Maybe.Maybe

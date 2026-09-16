@@ -153,7 +153,10 @@ pub const Term = struct {
     pub const Tag = enum(u8) {
         /// `lhs` is the index into the scheme's quantified list.
         @"var",
-        /// `lhs` parameter term, `rhs` result term.
+        /// `lhs` is an `extra` range of parameter terms, `rhs` the result
+        /// term. A function type is n-ary (language.md §6.7), so the
+        /// parameters need a range of their own the way `app`'s arguments
+        /// do — both operand words were already spoken for.
         func,
         /// `lhs` is a `TypeStore.TypeId`; `rhs` an `extra` range of terms.
         app,

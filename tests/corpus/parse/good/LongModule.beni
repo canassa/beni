@@ -165,7 +165,7 @@ previousColumn column =
             Just InProgress
 
 
-pub update : Msg -> Model -> Model
+pub update : Msg, Model -> Model
 update msg model =
     case msg of
         NoOp ->
@@ -292,12 +292,12 @@ update msg model =
             handleKey key model
 
 
-addError : String -> Model -> Model
+addError : String, Model -> Model
 addError message model =
     { model | errors = message :: List.take 4 model.errors }
 
 
-updateCard : Int -> (Card -> Card) -> Model -> Model
+updateCard : Int, (Card -> Card), Model -> Model
 updateCard id f model =
     case Dict.get id model.cards of
         Just card ->
@@ -307,7 +307,7 @@ updateCard id f model =
             model
 
 
-toggleLabel : String -> Card -> Card
+toggleLabel : String, Card -> Card
 toggleLabel label card =
     if List.member label card.labels then
         { card | labels = List.filter (\l -> l /= label) card.labels }
@@ -335,7 +335,7 @@ commitEdit model =
             updateCard id (\card -> { card | description = description }) finished
 
 
-moveCard : Int -> Column -> Model -> Model
+moveCard : Int, Column, Model -> Model
 moveCard id column model =
     case Dict.get id model.cards of
         Just card ->
@@ -367,7 +367,7 @@ renumber model =
     { model | cards = List.foldl renumberColumn model.cards columns }
 
 
-cardsIn : Column -> Model -> List Card
+cardsIn : Column, Model -> List Card
 cardsIn column model =
     model.cards
         |> Dict.values
@@ -375,13 +375,13 @@ cardsIn column model =
         |> List.sortBy .order
 
 
-visibleCardsIn : Column -> Model -> List Card
+visibleCardsIn : Column, Model -> List Card
 visibleCardsIn column model =
     cardsIn column model
         |> List.filter (matchesFilter model.filter)
 
 
-matchesFilter : String -> Card -> Bool
+matchesFilter : String, Card -> Bool
 matchesFilter filter card =
     String.isEmpty filter
         || String.contains filter (String.toLower card.title)
@@ -389,7 +389,7 @@ matchesFilter filter card =
         || List.any (\label -> String.contains filter (String.toLower label)) card.labels
 
 
-handleKey : String -> Model -> Model
+handleKey : String, Model -> Model
 handleKey key model =
     case ( key, model.editing ) of
         ( "Escape", _ ) ->
@@ -411,7 +411,7 @@ handleKey key model =
             model
 
 
-shiftSelected : (Column -> Maybe Column) -> Model -> Model
+shiftSelected : (Column -> Maybe Column), Model -> Model
 shiftSelected direction model =
     case model.drag of
         Just { cardId } ->
@@ -476,7 +476,7 @@ countLabel model =
         "${done} of ${total} done (${percent done total}%)"
 
 
-percent : Int -> Int -> Int
+percent : Int, Int -> Int
 percent part whole =
     if whole == 0 then
         0
@@ -494,7 +494,7 @@ viewErrors errors =
             ul [ class "errors" ] (List.map (\err -> li [] [ text err ]) errors)
 
 
-viewColumn : Model -> Column -> Html Msg
+viewColumn : Model, Column -> Html Msg
 viewColumn model column =
     let
         key =
@@ -543,7 +543,7 @@ viewDropZone column =
         [ text "Drop here to move to ${columnName column}" ]
 
 
-viewCard : Model -> Card -> Html Msg
+viewCard : Model, Card -> Html Msg
 viewCard model card =
     let
         dragging =
@@ -568,7 +568,7 @@ viewCard model card =
         ]
 
 
-viewCardTitle : Editing -> Card -> Html Msg
+viewCardTitle : Editing, Card -> Html Msg
 viewCardTitle editing card =
     case editing of
         EditingTitle id draft ->
@@ -595,7 +595,7 @@ staticTitle card =
         [ text "#${card.id} ${card.title}" ]
 
 
-viewCardDescription : Editing -> Card -> Html Msg
+viewCardDescription : Editing, Card -> Html Msg
 viewCardDescription editing card =
     case editing of
         EditingDescription id draft ->

@@ -35,13 +35,13 @@ pub foreign length : String -> Int
 --|
 --|     slice 7 9 "snakes on a plane!" == "on"
 --|     slice 0 -7 "snakes on a plane!" == "snakes on a"
-pub foreign slice : Int -> Int -> String -> String
+pub foreign slice : Int, Int, String -> String
 
 
 --| Append two strings. `++` does the same thing.
 --|
 --|     append "butter" "fly" == "butterfly"
-pub foreign append : String -> String -> String
+pub foreign append : String, String -> String
 
 
 --| Compare two strings lexicographically, by Unicode scalar value.
@@ -51,7 +51,7 @@ pub foreign append : String -> String -> String
 --|
 --| This is the replacement for Elm's `"a" < "b"`, which does not compile in
 --| beni: comparison operators are numbers only.
-pub foreign compare : String -> String -> Order
+pub foreign compare : String, String -> Order
 
 
 --| Convert a string to all upper case. Useful for case-insensitive
@@ -100,14 +100,14 @@ pub foreign lines : String -> List String
 --| Split a string using a given separator.
 --|
 --|     split "," "cat,dog,cow" == [ "cat", "dog", "cow" ]
-pub foreign split : String -> String -> List String
+pub foreign split : String, String -> List String
 
 
 --| Get all of the indexes for a substring in another string.
 --|
 --|     indexes "i" "Mississippi" == [ 1, 4, 7, 10 ]
 --|     indexes "needle" "haystack" == []
-pub foreign indexes : String -> String -> List Int
+pub foreign indexes : String, String -> List Int
 
 
 --| Try to convert a string into an int, failing on improperly formatted
@@ -176,7 +176,7 @@ reverse str =
 --| Repeat a string `n` times.
 --|
 --|     repeat 3 "ha" == "hahaha"
-pub repeat : Int -> String -> String
+pub repeat : Int, String -> String
 repeat n chunk =
     concat (List.repeat n chunk)
 
@@ -184,7 +184,7 @@ repeat n chunk =
 --| Replace all occurrences of some substring.
 --|
 --|     replace "," "/" "a,b,c" == "a/b/c"
-pub replace : String -> String -> String -> String
+pub replace : String, String, String -> String
 replace before after str =
     join after (split before str)
 
@@ -200,7 +200,7 @@ concat strings =
 --| Put many strings together with a given separator.
 --|
 --|     join ", " [ "cat", "dog" ] == "cat, dog"
-pub join : String -> List String -> String
+pub join : String, List String -> String
 join sep chunks =
     case chunks of
         [] ->
@@ -213,7 +213,7 @@ join sep chunks =
 --| Take `n` characters from the left side of a string.
 --|
 --|     left 2 "Mulder" == "Mu"
-pub left : Int -> String -> String
+pub left : Int, String -> String
 left n str =
     if n < 1 then
         ""
@@ -224,7 +224,7 @@ left n str =
 --| Take `n` characters from the right side of a string.
 --|
 --|     right 2 "Scully" == "ly"
-pub right : Int -> String -> String
+pub right : Int, String -> String
 right n str =
     if n < 1 then
         ""
@@ -235,7 +235,7 @@ right n str =
 --| Drop `n` characters from the left side of a string.
 --|
 --|     dropLeft 2 "The Lone Gunmen" == "e Lone Gunmen"
-pub dropLeft : Int -> String -> String
+pub dropLeft : Int, String -> String
 dropLeft n str =
     if n < 1 then
         str
@@ -246,7 +246,7 @@ dropLeft n str =
 --| Drop `n` characters from the right side of a string.
 --|
 --|     dropRight 2 "Cigarette Smoking Man" == "Cigarette Smoking M"
-pub dropRight : Int -> String -> String
+pub dropRight : Int, String -> String
 dropRight n str =
     if n < 1 then
         str
@@ -258,7 +258,7 @@ dropRight n str =
 --|
 --|     contains "the" "theory" == True
 --|     contains "hat" "theory" == False
-pub contains : String -> String -> Bool
+pub contains : String, String -> Bool
 contains sub str =
     case indexes sub str of
         [] ->
@@ -271,7 +271,7 @@ contains sub str =
 --| See if the second string starts with the first one.
 --|
 --|     startsWith "the" "theory" == True
-pub startsWith : String -> String -> Bool
+pub startsWith : String, String -> Bool
 startsWith prefix str =
     left (length prefix) str == prefix
 
@@ -279,7 +279,7 @@ startsWith prefix str =
 --| See if the second string ends with the first one.
 --|
 --|     endsWith "ory" "theory" == True
-pub endsWith : String -> String -> Bool
+pub endsWith : String, String -> Bool
 endsWith suffix str =
     right (length suffix) str == suffix
 
@@ -288,7 +288,7 @@ endsWith suffix str =
 --| because Elm has both spellings.
 --|
 --|     indices "i" "Mississippi" == [ 1, 4, 7, 10 ]
-pub indices : String -> String -> List Int
+pub indices : String, String -> List Int
 indices sub str =
     indexes sub str
 
@@ -296,7 +296,7 @@ indices sub str =
 --| Add a character to the beginning of a string.
 --|
 --|     cons 'T' "he truth is out there" == "The truth is out there"
-pub cons : Char -> String -> String
+pub cons : Char, String -> String
 cons char str =
     append (fromChar char) str
 
@@ -318,7 +318,7 @@ uncons str =
 --| Pad a string on both sides until it has a given length.
 --|
 --|     pad 5 ' ' "1" == "  1  "
-pub pad : Int -> Char -> String -> String
+pub pad : Int, Char, String -> String
 pad n char str =
     let
         half =
@@ -330,7 +330,7 @@ pad n char str =
 --| Pad a string on the left until it has a given length.
 --|
 --|     padLeft 5 '.' "1" == "....1"
-pub padLeft : Int -> Char -> String -> String
+pub padLeft : Int, Char, String -> String
 padLeft n char str =
     repeat (n - length str) (fromChar char) ++ str
 
@@ -338,7 +338,7 @@ padLeft n char str =
 --| Pad a string on the right until it has a given length.
 --|
 --|     padRight 5 '.' "1" == "1...."
-pub padRight : Int -> Char -> String -> String
+pub padRight : Int, Char, String -> String
 padRight n char str =
     str ++ repeat (n - length str) (fromChar char)
 
@@ -346,7 +346,7 @@ padRight n char str =
 --| Transform every character in a string.
 --|
 --|     map (\char -> if char == '/' then '.' else char) "a/b/c" == "a.b.c"
-pub map : (Char -> Char) -> String -> String
+pub map : (Char -> Char), String -> String
 map func str =
     fromList (List.map func (toList str))
 
@@ -354,7 +354,7 @@ map func str =
 --| Keep only the characters that pass the test.
 --|
 --|     filter Char.isDigit "R2-D2" == "22"
-pub filter : (Char -> Bool) -> String -> String
+pub filter : (Char -> Bool), String -> String
 filter isGood str =
     fromList (List.filter isGood (toList str))
 
@@ -362,7 +362,7 @@ filter isGood str =
 --| Reduce a string from the left.
 --|
 --|     foldl cons "" "time" == "emit"
-pub foldl : (Char -> b -> b) -> b -> String -> b
+pub foldl : (Char, b -> b), b, String -> b
 foldl func acc str =
     List.foldl func acc (toList str)
 
@@ -370,7 +370,7 @@ foldl func acc str =
 --| Reduce a string from the right.
 --|
 --|     foldr cons "" "time" == "time"
-pub foldr : (Char -> b -> b) -> b -> String -> b
+pub foldr : (Char, b -> b), b, String -> b
 foldr func acc str =
     List.foldr func acc (toList str)
 
@@ -378,7 +378,7 @@ foldr func acc str =
 --| Determine whether any characters pass the test.
 --|
 --|     any Char.isDigit "R2-D2" == True
-pub any : (Char -> Bool) -> String -> Bool
+pub any : (Char -> Bool), String -> Bool
 any isGood str =
     List.any isGood (toList str)
 
@@ -386,6 +386,6 @@ any isGood str =
 --| Determine whether all characters pass the test.
 --|
 --|     all Char.isDigit "2D2" == False
-pub all : (Char -> Bool) -> String -> Bool
+pub all : (Char -> Bool), String -> Bool
 all isGood str =
     List.all isGood (toList str)

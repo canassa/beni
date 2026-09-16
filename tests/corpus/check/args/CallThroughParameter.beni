@@ -1,0 +1,6 @@
+-- check/args: a call through a PARAMETER of function type. The callee is
+-- not a name the compiler can look up — its arity comes from the
+-- parameter's own type, which the annotation fixed at two.
+pub combine : (Int, Int -> Int), Int -> Int
+combine f n =
+    f n

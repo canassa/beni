@@ -1,0 +1,14 @@
+-- check/args: a `|>` pipeline whose last stage already has every argument.
+-- The pipe inserts the subject as one more argument, so the call ends up
+-- with one too many — a mistake that is invisible in the pipeline's shape
+-- and reads as a mystery until the arity is in the type.
+wrap : String, String -> String
+wrap tag body =
+    tag ++ body ++ tag
+
+
+shout : String -> String
+shout s =
+    s
+        |> wrap "*"
+        |> wrap "!" "?"

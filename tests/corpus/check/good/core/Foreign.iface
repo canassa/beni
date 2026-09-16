@@ -2,4 +2,4 @@ module Foreign
   foreign type Handle (equatable)
   foreign type Opaque a
   foreign value make : Int -> Handle
-  value same : Handle -> Handle -> Bool
+  value same : Handle, Handle -> Bool

@@ -32,11 +32,11 @@ negativeExample =
     [ -1, 0, 1 ]
 
 
-pub clampIndex : Int -> Int -> Int
+pub clampIndex : Int, Int -> Int
 clampIndex limit index =
     clamp 0 (limit - 1) index
 
 
-pub pairUp : a -> b -> ( a, b )
+pub pairUp : a, b -> ( a, b )
 pairUp left right =
     ( left, right )

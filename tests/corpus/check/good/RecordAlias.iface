@@ -1,5 +1,5 @@
 module RecordAlias
   alias User
     User/2
-  value make : String -> Int -> User
-  value rename : User -> String -> User
+  value make : String, Int -> User
+  value rename : User, String -> User

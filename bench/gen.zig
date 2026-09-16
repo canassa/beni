@@ -302,7 +302,7 @@ const Wide = struct {
     /// step at every size, and the chain is what `settleEquatable` walks
     /// whether or not a value names its head.
     fn applyFn(g: *Wide) Io.Writer.Error!void {
-        try g.line(0, "pub apply : Chain{d} -> Int -> Int", .{g.shape.chain - 1});
+        try g.line(0, "pub apply : Chain{d}, Int -> Int", .{g.shape.chain - 1});
         try g.line(0, "apply f n =", .{});
         try g.line(4, "f n", .{});
     }
@@ -746,7 +746,7 @@ const Module = struct {
     fn updateFn(g: *Module) Io.Writer.Error!void {
         const mark = g.scopeMark();
         defer g.scopeReset(mark);
-        try g.line(0, "pub update{d} : Msg{d} -> Model{d} -> Model{d}", .{ g.index, g.index, g.index, g.index });
+        try g.line(0, "pub update{d} : Msg{d}, Model{d} -> Model{d}", .{ g.index, g.index, g.index, g.index });
         try g.line(0, "update{d} msg model =", .{g.index});
         _ = g.push("msg");
         _ = g.push("model");
@@ -839,7 +839,7 @@ const Module = struct {
     fn letFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "compute");
-        try g.line(0, "{s} : Int -> Int -> Int", .{name});
+        try g.line(0, "{s} : Int, Int -> Int", .{name});
         try g.line(0, "{s} left right =", .{name});
         _ = g.push("left");
         _ = g.push("right");
@@ -938,7 +938,7 @@ const Module = struct {
     fn recordFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "rename");
-        try g.line(0, "{s} : String -> Model{d} -> Model{d}", .{ name, g.index, g.index });
+        try g.line(0, "{s} : String, Model{d} -> Model{d}", .{ name, g.index, g.index });
         try g.line(0, "{s} label model =", .{name});
         _ = g.push("label");
         _ = g.push("model");
@@ -970,7 +970,7 @@ const Module = struct {
     fn stringFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "greet");
-        try g.line(0, "{s} : String -> Int -> String", .{name});
+        try g.line(0, "{s} : String, Int -> String", .{name});
         try g.line(0, "{s} who times =", .{name});
         _ = g.push("who");
         _ = g.push("times");

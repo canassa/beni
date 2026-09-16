@@ -1,0 +1,31 @@
+-- Function types (§9): `A, B -> C`, one space after each comma and one
+-- either side of `->`. The parameter list is a multi-element construct, so
+-- a source break anywhere along it keeps the whole type vertical; a type
+-- too wide for 100 columns breaks the same way, with the comma leading each
+-- parameter's continuation and `->` leading the result.
+--
+-- A record-type body needs no parentheses around a field of function type
+-- and the formatter must not add any; a tuple element does, and the
+-- formatter must not take them away.
+pub apply : (a->b) , a ->b
+apply f x = f x
+
+
+pub pairOver : ( Int, Int ) -> ( (Int -> Int), Int )
+pairOver p = ( \n -> n, p.0 )
+
+
+pub type alias Handlers msg =
+    { onClick : msg -> msg, onKey : Int, Int -> msg, label : String }
+
+
+pub reduce :
+    (element, accumulator -> accumulator)
+    , accumulator
+    , List element
+    -> accumulator
+reduce step initial items = List.foldl step initial items
+
+
+pub wide : SomethingRatherLongIndeed, AnotherNameThatIsAlsoQuiteLong, AndAThirdOneHere -> Int
+wide a b c = 0

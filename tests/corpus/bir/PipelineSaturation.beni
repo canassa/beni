@@ -10,7 +10,7 @@ process xs =
         |> List.sum
 
 
-applyRight : (Int -> Int) -> Int -> Int
+applyRight : (Int -> Int), Int -> Int
 applyRight f x =
     f <| f <| x
 

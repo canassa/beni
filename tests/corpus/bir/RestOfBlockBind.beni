@@ -32,6 +32,6 @@ several n =
     x + y
 
 
-withScope : Int -> (Int -> Int) -> Int
+withScope : Int, (Int -> Int) -> Int
 withScope n body =
     body n

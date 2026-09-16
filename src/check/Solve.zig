@@ -29,14 +29,14 @@
 //! the reason one mistake yields one message (research/02 §6).
 //!
 //! **The arity rule of §8.3 is in `call`.** A `call` node is not an ordinary
-//! equality: the solver peels the callee's arrows, matches them against the
-//! arguments the call supplied, and — when the callee has more arrows left
-//! and the context wanted something that is not a function — reports
-//! `too_few_args` naming the function, its arity and the types of the
-//! missing arguments. It fires BEFORE the generic `type_mismatch` and
-//! suppresses it. `fast-compiler.md` §9.3 keeps currying on the condition
-//! that this reads convincingly, so it is the one diagnostic with its own
-//! fixture suite.
+//! equality. Every call is saturated (`language.md` §6.7), so the question
+//! is one comparison and not a peeling loop: the callee's type carries its
+//! parameter count, and a call that does not supply exactly that many is
+//! `too_few_args` (naming the function, its arity and the types of the
+//! missing arguments), `too_many_args`, or — when the callee is not a
+//! function at all — `not_a_function`. All three fire BEFORE the generic
+//! `type_mismatch` and suppress it, and they are the one family with a
+//! fixture suite of its own (`tests/corpus/check/args`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -130,19 +130,6 @@ pub const Solver = struct {
     /// point at the expression the author wrote, not at wherever the
     /// recursion happened to be.
     region: Bir.Inst.Index = @enumFromInt(0),
-    /// A lambda argument of the call being checked that takes fewer
-    /// parameters than the callee's matching parameter has arrows. It is
-    /// not an error by itself — the callee may genuinely want a curried
-    /// function — but when something else in the same call fails it is
-    /// almost always the cause, and left-to-right inference will have
-    /// reported the failure somewhere else entirely (§8.3's family, one
-    /// level in). Cleared per call.
-    suspect_lambda: ?Diagnostics.SuspectLambda = null,
-    /// Which call `suspect_lambda` belongs to. A call's arguments are
-    /// constrained AFTER the call node — that is what lets §8.3 see the
-    /// callee's arrows before the arguments narrow them — so the suspicion
-    /// has to outlive the call node and is matched by owner instead.
-    suspect_call: Bir.Inst.OptionalIndex = .none,
     /// The call whose arguments already produced a message. A call's
     /// arguments are constrained consecutively, so one slot is enough, and
     /// suppressing the rest is the same reasoning as the left-to-right
@@ -303,8 +290,6 @@ pub const Solver = struct {
             return;
         }
         s.last_bad_call = owner;
-        s.reporter.suspect_lambda = if (category.tag == .call_arg and category.owner == s.suspect_call) s.suspect_lambda else null;
-        defer s.reporter.suspect_lambda = null;
         try s.reportFailure(region, category, expected, actual);
         s.poison(expected);
         s.poison(actual);
@@ -550,12 +535,18 @@ pub const Solver = struct {
             // the same type twice ("expected `Float -> Float`, got `Float ->
             // Float`"). The depth guard in `unifyQuiet` is what a cyclic
             // structure meets instead of an early merge.
+            // **Arity is part of the head** (checker.md §6.2): a function
+            // type carries its parameter count, so two of different arity
+            // fail here exactly as `Maybe a` and `Result x a` do, and the
+            // author is told where the mistake is written rather than two
+            // arguments later.
             .func => |fa| {
                 const fb = switch (sb) {
                     .func => |f| f,
                     else => return false,
                 };
-                if (!try s.unifyQuiet(fa.param, fb.param)) return false;
+                if (fa.params.len != fb.params.len) return false;
+                if (!try s.unifyPairs(fa.params, fb.params)) return false;
                 if (!try s.unifyQuiet(fa.result, fb.result)) return false;
                 _ = st.merge(st.find(ra), st.find(rb), .{ .structure = .{ .func = fa } });
                 return true;
@@ -773,124 +764,87 @@ pub const Solver = struct {
         const args = try s.copyVars(s.tree.vars(info.args_start, info.args_len));
         defer s.env.scratch.free(args);
         const st = s.store();
-
-        // Peel the callee's arrows. This is the whole of §8.3: how many
-        // does it have, and what is left when the call's arguments run out?
-        var params: std.ArrayList(Var) = .empty;
-        defer params.deinit(s.env.scratch);
-        // Peel arrows, but keep the TAIL as the variable the author would
-        // recognise: `resolved` looks through an alias, and stopping on the
-        // expansion would make the message say `{ count : Int }` where the
-        // annotation said `Model`. The `max_depth` bound is the arrow COUNT
-        // of one type, which is bounded by the same declaration nesting the
-        // parser caps — see `max_depth`.
-        var tail = st.find(info.callee);
-        var guard: u32 = 0;
-        while (guard < max_depth) : (guard += 1) {
-            const c = st.resolvedContent(tail);
-            const f = switch (c) {
-                .structure => |flat| switch (flat) {
-                    .func => |func| func,
-                    else => break,
-                },
-                else => break,
-            };
-            try params.append(s.env.scratch, f.param);
-            tail = st.find(f.result);
-        }
-        const arrows: u32 = @intCast(params.items.len);
         const given: u32 = @intCast(args.len);
-        const tail_content = st.resolvedContent(tail);
-        if (tail_content == .err) return;
-
         const arg_regions = s.argRegions(node.region);
-        s.suspect_lambda = s.findSuspectLambda(params.items, arg_regions, @min(arrows, given));
-        s.suspect_call = if (s.suspect_lambda == null) .none else node.region.toOptional();
+
+        // A nullary constructor PATTERN arrives here as a call of no
+        // arguments (`Constrain`'s `.ctor_pattern`): there is nothing to
+        // apply, and the constructor's type is the pattern's type.
+        //
+        // The callee has to be nullary too. `Constrain` emits a `.call` for
+        // EVERY constructor pattern, so `case p of Pair ->` with a 2-ary
+        // `Pair` arrives here as well, and short-circuiting it would trade
+        // §8.3's arity message for a raw `type_mismatch`. An `err` callee
+        // and a flex one both have `paramCount == 0` and keep the shortcut.
+        if (given == 0 and st.paramCount(info.callee) == 0) {
+            try s.unify(info.result, info.callee, node.region, node.category);
+            return;
+        }
+
+        // Every call is saturated (language.md §6.7), so §8.3 is one
+        // question and not a peeling loop: is the callee a function, and
+        // does it take exactly this many arguments? A callee that is still
+        // a variable is the higher-order case — it becomes the n-ary
+        // function this call needs, and its arity is fixed from here on.
+        const callee_content = st.resolvedContent(info.callee);
+        const callee_func = switch (callee_content) {
+            .err => return,
+            .structure => |flat| switch (flat) {
+                .func => |f| f,
+                else => null,
+            },
+            .flex => |flags| blk: {
+                // A `number` or an `appendable` is never a function, so a
+                // call of one is `not_a_function` and not an invitation to
+                // grow arrows.
+                if (flags.kind != .any) break :blk null;
+                const wanted = try s.func(args, info.result);
+                try s.unify(info.callee, wanted, node.region, node.category);
+                return;
+            },
+            else => null,
+        } orelse {
+            if (info.flavor == .ctor_pattern) {
+                try s.reporter.ctorPatternArity(node.region, s.reporter.calleeOf(node.region), 0, given);
+            } else {
+                try s.reporter.notAFunction(node.region, s.reporter.calleeOf(node.region), given, info.callee);
+            }
+            s.poison(info.result);
+            for (args) |arg| s.poison(arg);
+            return;
+        };
+
+        // Copied out of `extra`: unifying an argument appends to it and
+        // would dangle a view (see `unifyPairs`).
+        const params = try s.copyVars(st.vars(callee_func.params));
+        defer s.env.scratch.free(params);
+        const arity: u32 = @intCast(params.len);
 
         // The arity rule of §8.3 comes FIRST and suppresses the generic
         // mismatch. A call with the wrong number of arguments has its
         // arguments in the wrong positions, so checking them would report a
         // second, misleading message about a type the author never meant to
         // put there.
-        if (arrows > given and s.wantsNonFunction(info.result)) {
-            const rest = try s.chain(params.items[given..], tail);
+        if (arity != given) {
             if (info.flavor == .ctor_pattern) {
-                try s.reporter.ctorPatternArity(node.region, s.reporter.calleeOf(node.region), arrows, given);
+                try s.reporter.ctorPatternArity(node.region, s.reporter.calleeOf(node.region), arity, given);
+            } else if (arity > given) {
+                try s.reporter.tooFewArgs(node.region, s.reporter.calleeOf(node.region), arity, given, params[given..]);
             } else {
-                try s.reporter.tooFewArgs(
-                    node.region,
-                    s.reporter.calleeOf(node.region),
-                    arrows,
-                    given,
-                    params.items[given..],
-                    rest,
-                    info.result,
-                );
-            }
-            s.poison(info.result);
-            for (args) |arg| s.poison(arg);
-            return;
-        }
-        // A variable CAN grow into more arrows — that is an ordinary
-        // higher-order call — but only an unconstrained one: a `number` or
-        // an `appendable` is never a function, so a call that would make it
-        // one has too many arguments, not an interesting kind error.
-        const tail_can_grow = switch (tail_content) {
-            .flex => |flags| flags.kind == .any,
-            else => false,
-        };
-        if (arrows < given and !tail_can_grow) {
-            if (info.flavor == .ctor_pattern) {
-                try s.reporter.ctorPatternArity(node.region, s.reporter.calleeOf(node.region), arrows, given);
-            } else if (arrows == 0) {
-                try s.reporter.notAFunction(node.region, s.reporter.calleeOf(node.region), given, info.callee);
-            } else {
-                try s.reporter.tooManyArgs(node.region, s.reporter.calleeOf(node.region), arrows, given);
+                try s.reporter.tooManyArgs(node.region, s.reporter.calleeOf(node.region), arity, given);
             }
             s.poison(info.result);
             for (args) |arg| s.poison(arg);
             return;
         }
 
-        if (arrows >= given) {
-            const failed = try s.unifyArgs(node, params.items, args, arg_regions, given);
-            const rest = if (arrows == given) tail else try s.chain(params.items[given..], tail);
-            if (failed) {
-                s.poison(info.result);
-                return;
-            }
-            try s.unify(info.result, rest, node.region, node.category);
-            return;
-        }
-
-        // More arguments than arrows, and the tail is still a variable: an
-        // ordinary higher-order call, where the callee's type simply grows.
-        if (try s.unifyArgs(node, params.items, args, arg_regions, arrows)) {
+        if (try s.unifyArgs(node, params, args, arg_regions, given)) {
             s.poison(info.result);
             return;
         }
-        const wanted = try s.chain(args[arrows..], info.result);
-        try s.unify(tail, wanted, node.region, node.category);
+        try s.unify(info.result, callee_func.result, node.region, node.category);
     }
 
-    /// The first argument that is a LAMBDA with fewer parameters than its
-    /// expected type has arrows. See `Solver.suspect_lambda`.
-    fn findSuspectLambda(s: *Solver, params: []const Var, arg_regions: []const Bir.Inst.Index, count: u32) ?Diagnostics.SuspectLambda {
-        const bir = s.env.bir;
-        for (0..count) |i| {
-            if (i >= arg_regions.len) break;
-            const inst = arg_regions[i];
-            if (inst.int() >= bir.insts.len or bir.instTag(inst) != .lambda) continue;
-            const written: u32 = bir.subRange(@enumFromInt(bir.instData(inst).lhs)).len();
-            const wanted = s.store().arrowCount(params[i]);
-            if (wanted > written) {
-                return .{ .index = @intCast(i + 1), .written = written, .wanted = wanted };
-            }
-        }
-        return null;
-    }
-
-    /// How many arrows `v` has at the top level, following aliases.
     /// Unify the first `count` arguments against the callee's parameters,
     /// STOPPING at the first failure. One mistake yields one message: once
     /// an argument is wrong every later parameter was computed from a type
@@ -931,28 +885,10 @@ pub const Solver = struct {
         };
     }
 
-    /// `p1 -> … -> pn -> result`.
-    fn chain(s: *Solver, params: []const Var, result: Var) Error!Var {
-        var out = result;
-        var i = params.len;
-        while (i > 0) {
-            i -= 1;
-            out = try s.fresh(.{ .structure = .{ .func = .{ .param = params[i], .result = out } } });
-        }
-        return out;
-    }
-
-    /// Whether the context has already decided the call's result is not a
-    /// function. A flex variable has decided nothing, and a partial
-    /// application flowing into one is perfectly ordinary.
-    fn wantsNonFunction(s: *Solver, v: Var) bool {
-        const c = s.store().resolvedContent(v);
-        return switch (c) {
-            .flex, .err => false,
-            .rigid => true,
-            .structure => |flat| flat != .func,
-            .alias => false, // `resolved` looked through it already
-        };
+    /// `p1, …, pn -> result`: one n-ary function type.
+    fn func(s: *Solver, params: []const Var, result: Var) Error!Var {
+        const range = try s.store().addVars(params);
+        return s.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } });
     }
 
     // ---- Instantiation ---------------------------------------------------
@@ -1036,12 +972,13 @@ pub const Solver = struct {
         // hole; a message has to go with it (`Env.too_deep`).
         if (b.too_deep) try s.env.noteTooDeep(s.region);
         const result = try b.apply(id, param_vars);
-        // Everything the BUILDER made has to join the pool; `chain` goes
+        // Everything the BUILDER made has to join the pool; `func` goes
         // through `fresh`, which pools as it goes, so it runs after —
-        // adopting a range that already contained the chain's variables
-        // would put each of them in twice.
+        // adopting a range that already contained the function type's
+        // variable would put it in twice.
         try s.adoptSince(mark);
-        return try s.chain(arg_vars, result);
+        if (arg_vars.len == 0) return result;
+        return try s.func(arg_vars, result);
     }
 
     /// A constructor of another module, instantiated from that module's
@@ -1129,7 +1066,7 @@ pub const Solver = struct {
             .structure => |flat| {
                 const copied: TypeStore.Structure = switch (flat) {
                     .unit, .empty_record => flat,
-                    .func => |f| .{ .func = .{ .param = try s.copyHelp(f.param), .result = try s.copyHelp(f.result) } },
+                    .func => |f| .{ .func = .{ .params = try s.copyRange(st.vars(f.params)), .result = try s.copyHelp(f.result) } },
                     .app => |a| .{ .app = .{ .type = a.type, .args = try s.copyRange(st.vars(a.args)) } },
                     .tuple => |t| .{ .tuple = try s.copyRange(st.vars(t)) },
                     .record => |r| blk: {
@@ -1510,10 +1447,11 @@ fn adjustRankContent(st: *TypeStore, young_mark: u32, visit_mark: u32, group_ran
         .structure => |flat| switch (flat) {
             // A unit or an empty record never needs generalising.
             .unit, .empty_record => return TypeStore.outermost,
-            .func => |f| return @max(
-                adjustRank(st, young_mark, visit_mark, group_rank, f.param, depth + 1),
-                adjustRank(st, young_mark, visit_mark, group_rank, f.result, depth + 1),
-            ),
+            .func => |f| {
+                var max = adjustRank(st, young_mark, visit_mark, group_rank, f.result, depth + 1);
+                for (st.vars(f.params)) |param| max = @max(max, adjustRank(st, young_mark, visit_mark, group_rank, param, depth + 1));
+                return max;
+            },
             .app => |a| {
                 var max = TypeStore.outermost;
                 for (st.vars(a.args)) |arg| max = @max(max, adjustRank(st, young_mark, visit_mark, group_rank, arg, depth + 1));
@@ -1594,10 +1532,10 @@ fn nthChild(st: *TypeStore, root: Var, n: u32) ?Var {
         },
         .structure => |flat| switch (flat) {
             .unit, .empty_record => return null,
-            .func => |f| return switch (n) {
-                0 => f.param,
-                1 => f.result,
-                else => null,
+            .func => |f| {
+                const params = st.vars(f.params);
+                if (n < params.len) return params[n];
+                return if (n == params.len) f.result else null;
             },
             .app => |a| {
                 const args = st.vars(a.args);
@@ -1629,12 +1567,14 @@ test "occurs finds a variable inside its own structure and nothing else" {
     defer frames.deinit(testing.allocator);
     const a = try store.freshFlex(1);
     const b = try store.freshFlex(1);
-    const pair = try store.fresh(.{ .structure = .{ .func = .{ .param = a, .result = b } } }, 1);
+    const pa = try store.addVars(&.{a});
+    const pair = try store.fresh(.{ .structure = .{ .func = .{ .params = pa, .result = b } } }, 1);
     try testing.expect(!try occurs(&frames, testing.allocator, &store, pair));
     try testing.expect(!try occurs(&frames, testing.allocator, &store, a));
 
     // Tie `a` to a function that mentions `a`: `a = a -> b`.
-    _ = store.merge(a, try store.freshFlex(1), .{ .structure = .{ .func = .{ .param = pair, .result = b } } });
+    const pp = try store.addVars(&.{pair});
+    _ = store.merge(a, try store.freshFlex(1), .{ .structure = .{ .func = .{ .params = pp, .result = b } } });
     try testing.expect(try occurs(&frames, testing.allocator, &store, a));
 }
 
@@ -1645,7 +1585,8 @@ test "adjustRank pulls a structure's rank down to the outermost it reaches" {
     // rank 1 may not be generalised by the inner `let`.
     const outer = try store.freshFlex(1);
     const inner = try store.freshFlex(3);
-    const applied = try store.fresh(.{ .structure = .{ .func = .{ .param = outer, .result = inner } } }, 3);
+    const po = try store.addVars(&.{outer});
+    const applied = try store.fresh(.{ .structure = .{ .func = .{ .params = po, .result = inner } } }, 3);
     const young = store.nextMark();
     const visit = store.nextMark();
     store.setMark(applied, young);

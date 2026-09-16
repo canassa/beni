@@ -1,5 +1,5 @@
 -- check/args: the desugaring of an operator is a two-argument function, and
 -- a parenthesised section given three arguments is one too many.
-pub sum3 : Int -> Int -> Int -> Int
+pub sum3 : Int, Int, Int -> Int
 sum3 a b c =
     (+) a b c

@@ -1,0 +1,53 @@
+(module
+  (type_alias Pair
+    (type_record
+      (record_type_field a
+        (type_con Int))
+      (record_type_field b
+        (type_con Int))))
+  (type_alias Callbacks
+    (type_record
+      (record_type_field f
+        (type_fn
+          (type_con Int)
+          (type_con Int)
+          (type_con Int)))
+      (record_type_field g
+        (type_con Bool))
+      (record_type_field h
+        (type_fn
+          (type_con Int)
+          (type_con Int)
+          (type_con String)
+          (type_con Bool)))
+      (record_type_field i
+        (type_fn
+          (type_record
+            (record_type_field x
+              (type_con Int))
+            (record_type_field y
+              (type_con Int)))
+          (type_con Int)
+          (type_con Int)))))
+  (type_alias Open r
+    (type_record_ext r
+      (record_type_field step
+        (type_fn
+          (type_con Int)
+          (type_con Int)
+          (type_con Int)))
+      (record_type_field label
+        (type_con String))))
+  (annotation pub apply
+    (type_fn
+      (type_con Callbacks)
+      (type_con Int)
+      (type_con Int)))
+  (definition apply
+    (pat_var cs)
+    (pat_var n)
+    (apply
+      (field_access .f
+        (ident cs))
+      (ident n)
+      (ident n))))

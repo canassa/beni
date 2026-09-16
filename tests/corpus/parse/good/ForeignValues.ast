@@ -3,9 +3,8 @@
     (doc "Add two numbers.")
     (type_fn
       (type_var number)
-      (type_fn
-        (type_var number)
-        (type_var number))))
+      (type_var number)
+      (type_var number)))
   (foreign_value pub length
     (type_fn
       (type_con String)

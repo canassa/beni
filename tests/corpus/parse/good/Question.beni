@@ -6,7 +6,7 @@ parseAge s =
     String.toInt s |> Result.fromMaybe "not a number"
 
 
-both : String -> String -> Result String Int
+both : String, String -> Result String Int
 both a b =
     Ok (parseAge a? + parseAge b?)
 

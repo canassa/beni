@@ -9,29 +9,27 @@
 //! statement and no pattern binds anything, one conditional expression, so
 //! `if a then b else c` prints as `a ? b : c` and not as four lines.
 //!
-//! **The calling convention** (§6, fast-compiler.md §9.3). §9.3 keeps
-//! currying on the condition that saturated calls at statically known arity
-//! become DIRECT n-ary calls, and that condition is discharged here rather
-//! than deferred to M3c's specialiser:
+//! **There is no calling convention** (`backend.md` §6). Currying went on
+//! 2026-09-14 (`fast-compiler.md` §9.3) and `language.md` §6.7 specifies
+//! the result: every call is saturated, arity is part of the function type,
+//! and function types of different arity do not unify. So:
 //!
-//!   - A declaration, a `foreign`, a `let` definition or a constructor with
-//!     *n* parameters emits an n-ary JavaScript function (or, for a
-//!     constructor, an object literal).
-//!   - A call with exactly *n* arguments to such a callee emits `f(a, b)`.
-//!     No adapter, no property load, no arity comparison — the +49% Chrome
-//!     figure §9.3 measures for Elm's `A2` is simply not paid.
-//!   - Anything else — a partial application, a call through a parameter,
-//!     a function used as a value — goes through the CURRIED form of the
-//!     callee, `((x) => (y) => f(x, y))`, and is then applied one argument
-//!     at a time. That wrapper is emitted at the site that needs it, so
-//!     there is no runtime library: `boundary.md`'s wall means the only
-//!     hand-written JavaScript in a build is core's siblings, and a
-//!     codegen helper would be neither that nor beni.
+//!   - A declaration, a `foreign`, a lambda, a `let` definition or a
+//!     constructor with *n* parameters emits an n-ary JavaScript function
+//!     (or, for a constructor, an object literal).
+//!   - A beni application of *n* arguments emits `f(a, b)`, whatever the
+//!     callee is. No adapter, no property load, no arity comparison, no
+//!     call-site curry wrapper — the +49% Chrome figure §9.3 measures for
+//!     Elm's `A2` is simply not paid, and the direct-call share is 100% by
+//!     construction rather than by measurement.
 //!
-//!   The invariant that makes this total: **every function-typed value in
-//!   flight is curried.** A callee whose arity is not known statically is
-//!   therefore always callable one argument at a time, and a callee whose
-//!   arity IS known is always callable directly.
+//!   **The backend never meets a partial application.** The two ways to
+//!   write one are front-end rewrites that are gone by the time Bir exists
+//!   (`language.md` §8): `f a _` lowers to a lambda over the innermost
+//!   enclosing application, and a pipe lowers to a call. A function-typed
+//!   value in flight is therefore always a closure of known arity, never
+//!   something waiting for more arguments — which is what lets this file
+//!   emit a call without knowing anything about the callee.
 //!
 //! **Representation** is §9.4's, with three departures that `backend.md` §4
 //! now records under "Corrections from M3a": `Basics.Bool` is a JavaScript
@@ -91,20 +89,6 @@ pub const Input = struct {
     module: Graph.Index,
     graph: *const Graph,
     interfaces: []const Interface,
-    /// Every module's `Bir`, indexed by `Graph.Index`, and where each
-    /// interface entry came from in it.
-    ///
-    /// Needed because **a value's ARITY is not in its interface**. The
-    /// interface carries the scheme, and a scheme's arrow count is not the
-    /// emitted function's parameter count: `f : Int -> Int -> Int` defined
-    /// as `f a = \b -> …` has two arrows and one parameter, and a caller
-    /// that guessed two would emit `f(x, y)` against a unary function.
-    /// M3a has every module in memory so the declaring `Bir` answers it
-    /// exactly; M4's cache does not, and the interface will have to carry
-    /// the number. That is noted in the M3a report as a gap in
-    /// `checker.md` §7.
-    birs: []const *const Bir,
-    provenance: []const Interface.Provenance,
     /// One ESM specifier per graph module, relative to THIS module's output
     /// file: what an `import` from it is written as. A module that cannot
     /// be reached (never referenced) may be an empty string.
@@ -145,7 +129,7 @@ pub fn lower(
         .module_name = input.graph.moduleName(input.module),
         .well = .{
             .temp = try interner.getOrPut(gpa, "$t"),
-            .curry = try interner.getOrPut(gpa, "$x"),
+            .ctor_arg = try interner.getOrPut(gpa, "$x"),
             .param = try interner.getOrPut(gpa, "$p"),
             .tag = try interner.getOrPut(gpa, "$"),
         },
@@ -178,7 +162,7 @@ pub fn lower(
 /// name can collide with one.
 const WellKnown = struct {
     temp: Symbol,
-    curry: Symbol,
+    ctor_arg: Symbol,
     param: Symbol,
     tag: Symbol,
 };
@@ -215,49 +199,7 @@ const CtorRep = union(enum) {
     tagged: struct { fields: u32 },
 };
 
-/// Where a name's arity is known, a call of exactly that many arguments is
-/// a direct call. `unknown` means the value is curried and is applied one
-/// argument at a time.
-const Arity = union(enum) {
-    unknown,
-    known: u32,
-};
-
 const StmtList = std.ArrayList(Node.Index);
-
-/// How many arguments a declaration's emitted JavaScript takes directly.
-///
-/// An ordinary value's is its parameter count — `f a b = …` emits
-/// `(a, b) => …`, and `f a = \b -> …` emits a unary function returning a
-/// curried one, which is arity ONE however many arrows its type has.
-///
-/// A `foreign`'s is the number of arrows its ANNOTATION spells, because
-/// that is what the sibling JavaScript exports (`boundary.md` §4): the
-/// declaration has no body to count parameters in, and the annotation is
-/// the contract the JavaScript was written against.
-fn declArity(b: *const Bir, d: Bir.Decl) u32 {
-    return switch (d.kind) {
-        .value => d.params,
-        .foreign_value => arrowCount(b, d.annotation.unwrap() orelse return 0),
-        else => 0,
-    };
-}
-
-fn arrowCount(b: *const Bir, root: Inst.Index) u32 {
-    var count: u32 = 0;
-    var at = root;
-    // Bounded by the instruction count: a `type_fn`'s result always lies
-    // later in the same declaration's range, so this cannot loop, but the
-    // guard costs nothing and a malformed range would otherwise hang.
-    var budget: u32 = @intCast(b.insts.len + 1);
-    while (budget != 0) : (budget -= 1) {
-        if (at.int() >= b.insts.len) return count;
-        if (b.instTag(at) != .type_fn) return count;
-        count += 1;
-        at = @enumFromInt(b.instData(at).rhs);
-    }
-    return count;
-}
 
 const Lowerer = struct {
     gpa: Allocator,
@@ -274,8 +216,6 @@ const Lowerer = struct {
     needed: std.ArrayList(Needed) = .empty,
     /// The declaration being lowered: its locals and its parameter count.
     locals: []const Bir.Local = &.{},
-    /// Arity per local of the current declaration, parallel to `locals`.
-    local_arity: []Arity = &.{},
     /// The JavaScript name of each local, parallel to `locals`, filled the
     /// first time one is asked for. It has to be REMEMBERED and not derived:
     /// a local made by desugaring (`>>`, `<<`, `.field`) has no source name
@@ -463,8 +403,6 @@ const Lowerer = struct {
         }
         const body = d.body.unwrap() orelse return;
         l.locals = l.bir.declLocals(d);
-        l.local_arity = try l.scratch.alloc(Arity, l.locals.len);
-        @memset(l.local_arity, .unknown);
         l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
         @memset(l.local_names, .none);
 
@@ -634,26 +572,21 @@ const Lowerer = struct {
         return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
     }
 
-    /// `((x1) => (x2) => callee(x1, x2))` — the curried form of an n-ary
-    /// callee, emitted where a function is used as a VALUE. Arity 0 and 1
-    /// need no wrapper at all, which is most of them.
-    fn curried(l: *Lowerer, arity: u32, p: u32, make: anytype) !Node.Index {
-        if (arity <= 1) return make.direct(l, &.{}, p);
+    /// `((x1, x2) => Ctor(x1, x2))` — an n-ary constructor used as a VALUE
+    /// rather than called. The only wrapper this file emits, and only
+    /// because a constructor has no JavaScript binding of its own: it is an
+    /// object literal at each use site (§4), so there is nothing to name.
+    fn ctorLambda(l: *Lowerer, rep: CtorRep, tag: Symbol, arity: u32, p: u32) !Node.Index {
         var params: std.ArrayList(JsIr.NameIndex) = .empty;
         var args: std.ArrayList(Node.Index) = .empty;
         for (0..arity) |_| {
-            const n = try l.fresh(l.well.curry);
+            const n = try l.fresh(l.well.ctor_arg);
             try params.append(l.scratch, n);
             try args.append(l.scratch, try l.ident(n, p));
         }
-        var inner = try make.direct(l, args.items, p);
-        var i: usize = arity;
-        while (i > 0) {
-            i -= 1;
-            const stmts = [_]Node.Index{try l.returnStmt(inner, p)};
-            inner = try l.arrowOf(params.items[i .. i + 1], &stmts, p);
-        }
-        return inner;
+        const value = try l.ctorValue(rep, tag, args.items, p);
+        const stmts = [_]Node.Index{try l.returnStmt(value, p)};
+        return l.arrowOf(params.items, &stmts, p);
     }
 
     // ---- Names and references ---------------------------------------------
@@ -684,49 +617,28 @@ const Lowerer = struct {
         });
     }
 
-    /// How many arguments a reference can take directly.
-    fn arityOf(l: *Lowerer, inst: Inst.Index) Arity {
+    /// How many fields a CONSTRUCTOR reference takes. The one arity this
+    /// file still has to know, because a constructor is an object literal
+    /// and not a function: used as a value it needs a wrapper of the right
+    /// width. Every other callee is called with the arguments written at
+    /// the call site and nothing else.
+    fn ctorArity(l: *Lowerer, inst: Inst.Index) u32 {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
-            .top => {
-                if (d.lhs >= l.bir.decls.len) return .unknown;
-                return .{ .known = declArity(l.bir, l.bir.decls[d.lhs]) };
-            },
-            .local => {
-                if (d.lhs >= l.local_arity.len) return .unknown;
-                return l.local_arity[d.lhs];
-            },
-            .ext_value => {
-                const module: Graph.Index = @enumFromInt(d.lhs);
-                if (module.int() >= l.in.interfaces.len) return .unknown;
-                if (d.rhs >= l.in.interfaces[module.int()].values.len) return .unknown;
-                return .{ .known = l.externalArity(module, d.rhs) };
-            },
             .ctor => {
-                if (d.lhs >= l.bir.ctors.len) return .unknown;
+                if (d.lhs >= l.bir.ctors.len) return 0;
                 const c = l.bir.ctors[d.lhs];
-                return .{ .known = Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end }) };
+                return Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end });
             },
             .ext_ctor => {
                 const module: Graph.Index = @enumFromInt(d.lhs);
-                if (module.int() >= l.in.interfaces.len) return .unknown;
+                if (module.int() >= l.in.interfaces.len) return 0;
                 const iface = &l.in.interfaces[module.int()];
-                if (d.rhs >= iface.ctors.len) return .unknown;
-                return .{ .known = iface.ctors[d.rhs].arity };
+                if (d.rhs >= iface.ctors.len) return 0;
+                return iface.ctors[d.rhs].arity;
             },
-            else => return .unknown,
+            else => return 0,
         }
-    }
-
-    /// The arity of a value in another module: its declaration's, read out
-    /// of that module's `Bir`. Zero when the module is not in memory, which
-    /// makes every call to it curried — correct, just slower.
-    fn externalArity(l: *Lowerer, module: Graph.Index, value: u32) u32 {
-        if (module.int() >= l.in.provenance.len or module.int() >= l.in.birs.len) return 0;
-        const decl = l.in.provenance[module.int()].valueDecl(value) orelse return 0;
-        const b = l.in.birs[module.int()];
-        if (decl.int() >= b.decls.len) return 0;
-        return declArity(b, b.decls[decl.int()]);
     }
 
     // ---- Constructors -----------------------------------------------------
@@ -913,9 +825,8 @@ const Lowerer = struct {
             .call => return l.callExpr(out, inst),
             .lambda => {
                 const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
-                // A lambda is a VALUE, so it is curried: every
-                // function-typed value in flight is (see the header).
-                return l.curriedLambda(params, @enumFromInt(d.rhs), p);
+                const record = try l.functionOf(params, @enumFromInt(d.rhs), p);
+                return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
             },
             .let => {
                 try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
@@ -971,21 +882,18 @@ const Lowerer = struct {
         return l.object(properties.items, p);
     }
 
-    /// A reference in VALUE position: curried when it names something
-    /// callable, plain otherwise.
+    /// A reference in VALUE position: the JavaScript binding itself. Only a
+    /// constructor needs anything built, because it has no binding.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         if (l.ctorRepOf(inst)) |rep_and_tag| {
             const rep, const tag = rep_and_tag;
-            const arity = switch (l.arityOf(inst)) {
-                .known => |n| n,
-                .unknown => 0,
-            };
+            const arity = l.ctorArity(inst);
             if (arity == 0) return l.ctorValue(rep, tag, &.{}, p);
-            return l.curried(arity, p, CtorMake{ .rep = rep, .tag = tag });
+            return l.ctorLambda(rep, tag, arity, p);
         }
-        const base: Node.Index = switch (l.bir.instTag(inst)) {
+        return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             .top => try l.ident(try l.topName(d.lhs), p),
             .ext_value => blk: {
@@ -995,59 +903,6 @@ const Lowerer = struct {
             },
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        return switch (l.arityOf(inst)) {
-            .unknown => base,
-            .known => |n| if (n <= 1) base else l.curried(n, p, IdentMake{ .callee = base }),
-        };
-    }
-
-    const IdentMake = struct {
-        callee: Node.Index,
-        fn direct(m: IdentMake, l: *Lowerer, args: []const Node.Index, p: u32) !Node.Index {
-            if (args.len == 0) return m.callee;
-            return l.call(m.callee, args, p);
-        }
-    };
-
-    const CtorMake = struct {
-        rep: CtorRep,
-        tag: Symbol,
-        fn direct(m: CtorMake, l: *Lowerer, args: []const Node.Index, p: u32) !Node.Index {
-            return l.ctorValue(m.rep, m.tag, args, p);
-        }
-    };
-
-    fn curriedLambda(l: *Lowerer, params: []const Inst.Index, body: Inst.Index, p: u32) !Node.Index {
-        if (params.len == 0) {
-            const record = try l.functionOf(&.{}, body, p);
-            return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
-        }
-        // Build innermost-out: the last parameter's arrow holds the body.
-        var stmts: StmtList = .empty;
-        var names: std.ArrayList(JsIr.NameIndex) = .empty;
-        for (params) |param| {
-            if (l.bir.instTag(param) == .pat_var) {
-                try names.append(l.scratch, try l.localName(l.bir.instData(param).lhs));
-                continue;
-            }
-            if (l.bir.instTag(param) == .pat_wild) {
-                try names.append(l.scratch, try l.fresh(l.well.param));
-                continue;
-            }
-            const n = try l.fresh(l.well.param);
-            try names.append(l.scratch, n);
-            try l.bindings(&stmts, param, try l.ident(n, l.pos(param)));
-        }
-        const value = try l.expr(&stmts, body);
-        try stmts.append(l.scratch, try l.returnStmt(value, p));
-        var inner = try l.arrowOf(names.items[names.items.len - 1 ..], stmts.items, p);
-        var i: usize = names.items.len - 1;
-        while (i > 0) {
-            i -= 1;
-            const wrapper = [_]Node.Index{try l.returnStmt(inner, p)};
-            inner = try l.arrowOf(names.items[i .. i + 1], &wrapper, p);
-        }
-        return inner;
     }
 
     // ---- Calls ------------------------------------------------------------
@@ -1072,46 +927,21 @@ const Lowerer = struct {
             }
         }
 
-        const args = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
-
+        // A constructor is an object literal and never a call (§4); the
+        // checker has already refused any application of one that is not
+        // saturated, so `args` is exactly its field list.
         if (l.ctorRepOf(callee_inst)) |rep_and_tag| {
             const rep, const tag = rep_and_tag;
-            const arity = switch (l.arityOf(callee_inst)) {
-                .known => |n| n,
-                .unknown => 0,
-            };
-            if (args.len == arity) return l.ctorValue(rep, tag, args, p);
-            // Under-applied: build the curried constructor and apply what
-            // there is. Over-application cannot type-check.
-            var value = try l.curried(arity, p, CtorMake{ .rep = rep, .tag = tag });
-            for (args) |arg| value = try l.call(value, &.{arg}, p);
-            return value;
+            const args = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+            return l.ctorValue(rep, tag, args, p);
         }
 
-        switch (l.arityOf(callee_inst)) {
-            .known => |n| {
-                const callee = try l.calleeIdent(callee_inst, p);
-                if (n != 0 and args.len >= n) {
-                    // Saturated: the direct n-ary call §9.3's whole
-                    // currying decision rests on. Extra arguments apply to
-                    // the (curried) result.
-                    var value = try l.call(callee, args[0..n], p);
-                    for (args[n..]) |arg| value = try l.call(value, &.{arg}, p);
-                    return value;
-                }
-                // Under-applied, or a value that happens to be a function:
-                // go through the curried form, which evaluates each
-                // argument exactly once.
-                var value = if (n <= 1) callee else try l.curried(n, p, IdentMake{ .callee = callee });
-                for (args) |arg| value = try l.call(value, &.{arg}, p);
-                return value;
-            },
-            .unknown => {
-                var value = try l.expr(out, callee_inst);
-                for (args) |arg| value = try l.call(value, &.{arg}, p);
-                return value;
-            },
-        }
+        // Everything else is one direct n-ary call (`backend.md` §6). The
+        // callee is lowered FIRST because JavaScript evaluates it first,
+        // and either side may need statements hoisted ahead of the call.
+        const callee = try l.expr(out, callee_inst);
+        const args = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+        return l.call(callee, args, p);
     }
 
     /// `Basics.and` / `Basics.or`, however the reference reached here: an
@@ -1176,23 +1006,6 @@ const Lowerer = struct {
         return l.ident(n, p);
     }
 
-    /// The bare identifier of a callee whose arity is known — `reference`
-    /// would wrap it in its curried form, which is exactly what a direct
-    /// call must not go through.
-    fn calleeIdent(l: *Lowerer, inst: Inst.Index, p: u32) !Node.Index {
-        const d = l.bir.instData(inst);
-        return switch (l.bir.instTag(inst)) {
-            .local => l.ident(try l.localName(d.lhs), p),
-            .top => l.ident(try l.topName(d.lhs), p),
-            .ext_value => blk: {
-                const module: Graph.Index = @enumFromInt(d.lhs);
-                try l.need(module, d.rhs);
-                break :blk try l.ident(try l.externalName(module, d.rhs), p);
-            },
-            else => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
-        };
-    }
-
     // ---- `let` ------------------------------------------------------------
 
     /// Every binding of one `let`, into the enclosing statement list (§4).
@@ -1202,13 +1015,6 @@ const Lowerer = struct {
     /// scope in all bodies") and `const` would turn into a dead-zone throw.
     fn letBindings(l: *Lowerer, out: *StmtList, range: Bir.SubRange) !void {
         const defs = l.bir.extraSlice(range, Inst.Index);
-        // Arities first: a binding may call one declared after it.
-        for (defs) |def| {
-            if (l.bir.instTag(def) != .let_def) continue;
-            const payload = l.bir.extraData(@enumFromInt(l.bir.instData(def).lhs), Bir.LetDef);
-            const params = Bir.SubRange.len(.{ .start = payload.params_start, .end = payload.params_end });
-            if (payload.local < l.local_arity.len) l.local_arity[payload.local] = .{ .known = params };
-        }
         for (defs) |def| {
             const d = l.bir.instData(def);
             const p = l.pos(def);
@@ -1568,28 +1374,28 @@ const test_core = [_]TestProject.Module{
     \\    | GT
     \\
     \\
-    \\pub foreign add : number -> number -> number
+    \\pub foreign add : number, number -> number
     \\
     \\
-    \\pub foreign sub : number -> number -> number
+    \\pub foreign sub : number, number -> number
     \\
     \\
-    \\pub foreign mul : number -> number -> number
+    \\pub foreign mul : number, number -> number
     \\
     \\
-    \\pub foreign lt : number -> number -> Bool
+    \\pub foreign lt : number, number -> Bool
     \\
     \\
-    \\pub foreign eq : equatable a -> a -> Bool
+    \\pub foreign eq : equatable a, a -> Bool
     \\
     \\
-    \\pub foreign and : Bool -> Bool -> Bool
+    \\pub foreign and : Bool, Bool -> Bool
     \\
     \\
-    \\pub foreign or : Bool -> Bool -> Bool
+    \\pub foreign or : Bool, Bool -> Bool
     \\
     \\
-    \\pub foreign append : appendable -> appendable -> appendable
+    \\pub foreign append : appendable, appendable -> appendable
     \\
     \\
     \\pub identity : a -> a
@@ -1601,10 +1407,10 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type List a
     \\
     \\
-    \\pub foreign cons : a -> List a -> List a
+    \\pub foreign cons : a, List a -> List a
     \\
     \\
-    \\pub foreign foldl : (a -> b -> b) -> b -> List a -> b
+    \\pub foreign foldl : (a, b -> b), b, List a -> b
     \\
     },
     .{ .path = "Maybe.beni", .package = .core, .source =
@@ -1635,11 +1441,9 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const birs = try arena.alloc(*const Bir, count);
     const specifiers = try arena.alloc([]const u8, count);
-    for (birs, specifiers, 0..) |*b, *specifier, i| {
+    for (specifiers, 0..) |*specifier, i| {
         const index: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
-        b.* = session.artifacts.bir(session.graph.moduleFile(index));
         specifier.* = try std.fmt.allocPrint(arena, "./{s}.mjs", .{session.store.moduleName(session.graph.moduleFile(index))});
     }
     const file = session.graph.moduleFile(m);
@@ -1651,8 +1455,6 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
-        .birs = birs,
-        .provenance = session.resolution.provenance,
         .specifiers = specifiers,
         .sibling = "./M.foreign.mjs",
     });
@@ -1693,26 +1495,28 @@ test "a top-level constant and a top-level function" {
         \\    1
         \\
         \\
-        \\pub plus : Int -> Int -> Int
+        \\pub plus : Int, Int -> Int
         \\plus a b =
         \\    a + b
         \\
     );
 }
 
-test "a saturated call at known arity is a direct call; a partial one is curried" {
-    // This is §9.3's whole condition for keeping currying, and the shape it
-    // asserts is the one M3c measures the share of.
+test "every call is a direct n-ary call and a function value is the binding itself" {
+    // `backend.md` §6: there is no calling convention. A 2-ary beni call
+    // emits `f(a, b)`, a function used as a VALUE emits its own name, and
+    // the one argument a call leaves open is written `_` — which is a
+    // lambda by the time the backend sees it (`language.md` §6.7).
     try expectJs(
         \\import { Basics$add } from "./Basics.mjs";
         \\const M$plus = (a$1, b$2) => Basics$add(a$1, b$2);
         \\const M$six = M$plus(2, 4);
-        \\const M$addTwo = (($x$1) => ($x$2) => M$plus($x$1, $x$2))(2);
-        \\const M$asValue = ($x$3) => ($x$4) => M$plus($x$3, $x$4);
+        \\const M$addTwo = ($p$1) => M$plus(2, $p$1);
+        \\const M$asValue = M$plus;
         \\export { M$plus, M$six, M$addTwo, M$asValue };
         \\
     ,
-        \\pub plus : Int -> Int -> Int
+        \\pub plus : Int, Int -> Int
         \\plus a b =
         \\    a + b
         \\
@@ -1724,10 +1528,10 @@ test "a saturated call at known arity is a direct call; a partial one is curried
         \\
         \\pub addTwo : Int -> Int
         \\addTwo =
-        \\    plus 2
+        \\    plus 2 _
         \\
         \\
-        \\pub asValue : Int -> Int -> Int
+        \\pub asValue : Int, Int -> Int
         \\asValue =
         \\    plus
         \\
@@ -1746,7 +1550,7 @@ test "if becomes a conditional expression and `&&` becomes `&&`" {
         \\export { M$pick };
         \\
     ,
-        \\pub pick : Bool -> Bool -> Int
+        \\pub pick : Bool, Bool -> Int
         \\pick a b =
         \\    if a && b then
         \\        1
@@ -1896,7 +1700,7 @@ test "let bindings become const, and a let binding with parameters becomes a hoi
     );
 }
 
-test "a lambda is curried, because every function-typed value in flight is" {
+test "a lambda is an n-ary function expression, of exactly its parameters" {
     try expectJs(
         \\import { Basics$add, Basics$mul } from "./Basics.mjs";
         \\const M$apply = (f$1, x$2) => f$1(x$2);
@@ -1905,7 +1709,7 @@ test "a lambda is curried, because every function-typed value in flight is" {
         \\export { M$apply, M$answer, M$twice };
         \\
     ,
-        \\pub apply : (Int -> Int) -> Int -> Int
+        \\pub apply : (Int -> Int), Int -> Int
         \\apply f x =
         \\    f x
         \\
@@ -1990,13 +1794,8 @@ test "`?` is refused with a diagnostic rather than emitted wrongly" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const count = session.graph.count();
-    const birs = try arena.alloc(*const Bir, count);
     const specifiers = try arena.alloc([]const u8, count);
-    for (birs, specifiers, 0..) |*b, *specifier, i| {
-        const index: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
-        b.* = session.artifacts.bir(session.graph.moduleFile(index));
-        specifier.* = "./x.mjs";
-    }
+    for (specifiers) |*specifier| specifier.* = "./x.mjs";
     const file = session.graph.moduleFile(m);
     var result = try lower(gpa, arena, &session.interner, .{
         .bir = session.artifacts.bir(file),
@@ -2004,8 +1803,6 @@ test "`?` is refused with a diagnostic rather than emitted wrongly" {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
-        .birs = birs,
-        .provenance = session.resolution.provenance,
         .specifiers = specifiers,
         .sibling = "",
     });

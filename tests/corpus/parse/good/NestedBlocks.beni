@@ -2,7 +2,7 @@
 -- in `case`, a lambda whose body holds a `let` holding a `case`, applied to an
 -- argument after the closing paren, and a `case` as a parenthesised argument
 -- with the enclosing application continuing after it.
-process : Maybe Int -> Bool -> Int
+process : Maybe Int, Bool -> Int
 process m flag =
     if flag then
         let
@@ -27,7 +27,7 @@ process m flag =
                 -1
 
 
-handler : Maybe Int -> Int -> Int
+handler : Maybe Int, Int -> Int
 handler m x =
     (\y ->
         let
@@ -44,7 +44,7 @@ handler m x =
         x
 
 
-sumWithDefault : Maybe Int -> Int -> Int
+sumWithDefault : Maybe Int, Int -> Int
 sumWithDefault m d =
     max
         (case m of

@@ -23,7 +23,7 @@ pub type Result e a
 --|
 --|     withDefault 0 (Ok 123) == 123
 --|     withDefault 0 (Err "no") == 0
-pub withDefault : a -> Result x a -> a
+pub withDefault : a, Result x a -> a
 withDefault default result =
     case result of
         Ok value ->
@@ -38,7 +38,7 @@ withDefault default result =
 --|
 --|     map sqrt (Ok 4.0) == Ok 2.0
 --|     map sqrt (Err "bad input") == Err "bad input"
-pub map : (a -> value) -> Result x a -> Result x value
+pub map : (a -> value), Result x a -> Result x value
 map func result =
     case result of
         Ok value ->
@@ -50,7 +50,7 @@ map func result =
 
 --| Apply a function if both results are `Ok`. If not, the first `Err` will
 --| propagate through.
-pub map2 : (a -> b -> value) -> Result x a -> Result x b -> Result x value
+pub map2 : (a, b -> value), Result x a, Result x b -> Result x value
 map2 func ra rb =
     case ra of
         Err x ->
@@ -66,7 +66,7 @@ map2 func ra rb =
 
 
 --| Apply a function if all three results are `Ok`.
-pub map3 : (a -> b -> c -> value) -> Result x a -> Result x b -> Result x c -> Result x value
+pub map3 : (a, b, c -> value), Result x a, Result x b, Result x c -> Result x value
 map3 func ra rb rc =
     case ra of
         Err x ->
@@ -88,11 +88,11 @@ map3 func ra rb rc =
 
 --| Apply a function if all four results are `Ok`.
 pub map4 :
-    (a -> b -> c -> d -> value)
-    -> Result x a
-    -> Result x b
-    -> Result x c
-    -> Result x d
+    (a, b, c, d -> value)
+    , Result x a
+    , Result x b
+    , Result x c
+    , Result x d
     -> Result x value
 map4 func ra rb rc rd =
     case ra of
@@ -120,12 +120,12 @@ map4 func ra rb rc rd =
 
 --| Apply a function if all five results are `Ok`.
 pub map5 :
-    (a -> b -> c -> d -> e -> value)
-    -> Result x a
-    -> Result x b
-    -> Result x c
-    -> Result x d
-    -> Result x e
+    (a, b, c, d, e -> value)
+    , Result x a
+    , Result x b
+    , Result x c
+    , Result x d
+    , Result x e
     -> Result x value
 map5 func ra rb rc rd re =
     case ra of
@@ -163,7 +163,7 @@ map5 func ra rb rc rd re =
 --|
 --| The `?` operator does the same thing with less punctuation: `toInt s?` is
 --| the number, or an early return of the `Err` from the enclosing function.
-pub andThen : (a -> Result x b) -> Result x a -> Result x b
+pub andThen : (a -> Result x b), Result x a -> Result x b
 andThen callback result =
     case result of
         Ok value ->
@@ -176,7 +176,7 @@ andThen callback result =
 --| Transform an `Err` value, leaving an `Ok` alone.
 --|
 --|     mapError toString (Err 42) == Err "42"
-pub mapError : (x -> y) -> Result x a -> Result y a
+pub mapError : (x -> y), Result x a -> Result y a
 mapError func result =
     case result of
         Ok value ->
@@ -204,7 +204,7 @@ toMaybe result =
 --|
 --|     fromMaybe "lost" (Just 42) == Ok 42
 --|     fromMaybe "lost" Nothing == Err "lost"
-pub fromMaybe : x -> Maybe a -> Result x a
+pub fromMaybe : x, Maybe a -> Result x a
 fromMaybe err maybe =
     case maybe of
         Just value ->

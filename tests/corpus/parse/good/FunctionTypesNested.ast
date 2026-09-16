@@ -14,29 +14,31 @@
       (record_type_field order
         (type_fn
           (type_con Int)
-          (type_fn
-            (type_con Int)
-            (type_con Order))))))
+          (type_con Int)
+          (type_con Order)))
+      (record_type_field tag
+        (type_con String))))
   (type_alias Step a
     (type_tuple
-      (type_fn
-        (type_var a)
-        (type_var a))
+      (type_paren
+        (type_fn
+          (type_var a)
+          (type_var a)))
       (type_var a)))
   (type_alias Chain
     (type_fn
       (type_con Int)
+      (type_con Int)
       (type_fn
         (type_con Int)
-        (type_fn
-          (type_con Int)
-          (type_con Int)))))
+        (type_con Int))))
   (annotation apply
     (type_fn
       (type_tuple
-        (type_fn
-          (type_con Int)
-          (type_con Int))
+        (type_paren
+          (type_fn
+            (type_con Int)
+            (type_con Int)))
         (type_con Int))
       (type_con Int)))
   (definition apply
@@ -52,14 +54,12 @@
         (type_fn
           (type_var b)
           (type_var c)))
-      (type_fn
-        (type_paren
-          (type_fn
-            (type_var a)
-            (type_var b)))
+      (type_paren
         (type_fn
           (type_var a)
-          (type_var c)))))
+          (type_var b)))
+      (type_var a)
+      (type_var c)))
   (definition compose2
     (pat_var f)
     (pat_var g)

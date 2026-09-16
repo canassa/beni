@@ -9,9 +9,8 @@
   (annotation const
     (type_fn
       (type_var a)
-      (type_fn
-        (type_var b)
-        (type_var a))))
+      (type_var b)
+      (type_var a)))
   (definition const
     (pat_var x)
     (pat_wild)
@@ -22,13 +21,12 @@
         (type_fn
           (type_var a)
           (type_var b)))
-      (type_fn
-        (type_tuple
-          (type_var a)
-          (type_var a))
-        (type_tuple
-          (type_var b)
-          (type_var b)))))
+      (type_tuple
+        (type_var a)
+        (type_var a))
+      (type_tuple
+        (type_var b)
+        (type_var b))))
   (definition mapPair
     (pat_var f)
     (pat_tuple

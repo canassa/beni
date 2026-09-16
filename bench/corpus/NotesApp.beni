@@ -69,7 +69,7 @@ init now =
     }
 
 
-pub update : Msg -> Model -> Model
+pub update : Msg, Model -> Model
 update msg model =
     case msg of
         NewNote ->
@@ -185,12 +185,12 @@ pushHistory model =
     }
 
 
-setNotes : Dict Int Note -> Model -> Model
+setNotes : Dict Int Note, Model -> Model
 setNotes notes model =
     { model | notes = notes }
 
 
-select : Maybe Int -> Model -> Model
+select : Maybe Int, Model -> Model
 select id model =
     { model | selected = id }
 
@@ -200,7 +200,7 @@ bumpId model =
     { model | nextId = model.nextId + 1 }
 
 
-editNote : Int -> (Note -> Note) -> Model -> Model
+editNote : Int, (Note -> Note), Model -> Model
 editNote id f model =
     case Dict.get id model.notes of
         Just note ->
@@ -214,7 +214,7 @@ editNote id f model =
             model
 
 
-editSelected : (Note -> Note) -> Model -> Model
+editSelected : (Note -> Note), Model -> Model
 editSelected f model =
     case model.selected of
         Just id ->
@@ -308,7 +308,7 @@ viewTags model =
         )
 
 
-viewNoteItem : Maybe Int -> Note -> Html Msg
+viewNoteItem : Maybe Int, Note -> Html Msg
 viewNoteItem selected note =
     li
         [ classList

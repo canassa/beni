@@ -344,7 +344,7 @@ requiresAuth route =
             False
 
 
-pub redirect : { loggedIn : Bool } -> Route -> Route
+pub redirect : { loggedIn : Bool }, Route -> Route
 redirect session route =
     if requiresAuth route && not session.loggedIn then
         Search "login" 1
@@ -352,7 +352,7 @@ redirect session route =
         route
 
 
-pub isSameSection : Route -> Route -> Bool
+pub isSameSection : Route, Route -> Bool
 isSameSection a b =
     case ( a, b ) of
         ( Users _, Users _ ) ->

@@ -34,19 +34,19 @@ pub equatable foreign type List a
 --|     cons 1 [ 2, 3 ] == [ 1, 2, 3 ]
 --|
 --| This is what `::` desugars to.
-pub foreign cons : a -> List a -> List a
+pub foreign cons : a, List a -> List a
 
 
 --| Reduce a list from the left.
 --|
 --|     foldl cons [] [ 1, 2, 3 ] == [ 3, 2, 1 ]
-pub foreign foldl : (a -> b -> b) -> b -> List a -> b
+pub foreign foldl : (a, b -> b), b, List a -> b
 
 
 --| Reduce a list from the right.
 --|
 --|     foldr cons [] [ 1, 2, 3 ] == [ 1, 2, 3 ]
-pub foreign foldr : (a -> b -> b) -> b -> List a -> b
+pub foreign foldr : (a, b -> b), b, List a -> b
 
 
 --| Create a list with only one element.
@@ -60,12 +60,12 @@ singleton value =
 --| Create a list with `n` copies of a value.
 --|
 --|     repeat 3 0 == [ 0, 0, 0 ]
-pub repeat : Int -> a -> List a
+pub repeat : Int, a -> List a
 repeat n value =
     repeatHelp [] n value
 
 
-repeatHelp : List a -> Int -> a -> List a
+repeatHelp : List a, Int, a -> List a
 repeatHelp result n value =
     if n <= 0 then
         result
@@ -79,12 +79,12 @@ repeatHelp result n value =
 --|     range 3 6 == [ 3, 4, 5, 6 ]
 --|     range 3 3 == [ 3 ]
 --|     range 6 3 == []
-pub range : Int -> Int -> List Int
+pub range : Int, Int -> List Int
 range lo hi =
     rangeHelp lo hi []
 
 
-rangeHelp : Int -> Int -> List Int -> List Int
+rangeHelp : Int, Int, List Int -> List Int
 rangeHelp lo hi list =
     if lo <= hi then
         rangeHelp lo (hi - 1) (hi :: list)
@@ -95,7 +95,7 @@ rangeHelp lo hi list =
 --| Apply a function to every element of a list.
 --|
 --|     map negate [ 1, 4, 9 ] == [ -1, -4, -9 ]
-pub map : (a -> b) -> List a -> List b
+pub map : (a -> b), List a -> List b
 map func xs =
     foldr (\x acc -> func x :: acc) [] xs
 
@@ -104,7 +104,7 @@ map func xs =
 --| starting at zero.
 --|
 --|     indexedMap Tuple2 [ "a", "b" ] == [ Tuple2 0 "a", Tuple2 1 "b" ]
-pub indexedMap : (Int -> a -> b) -> List a -> List b
+pub indexedMap : (Int, a -> b), List a -> List b
 indexedMap func xs =
     map2 func (range 0 (length xs - 1)) xs
 
@@ -112,7 +112,7 @@ indexedMap func xs =
 --| Keep the elements that pass the test.
 --|
 --|     filter isEven [ 1, 2, 3, 4 ] == [ 2, 4 ]
-pub filter : (a -> Bool) -> List a -> List a
+pub filter : (a -> Bool), List a -> List a
 filter isGood list =
     foldr
         (\x xs ->
@@ -129,12 +129,12 @@ filter isGood list =
 --| lists, filter out the empty ones in the same pass that unwraps the rest.
 --|
 --|     filterMap head [ [ 1, 2 ], [], [ 3 ] ] == [ 1, 3 ]
-pub filterMap : (a -> Maybe b) -> List a -> List b
+pub filterMap : (a -> Maybe b), List a -> List b
 filterMap func xs =
-    foldr (maybeCons func) [] xs
+    foldr (\value rest -> maybeCons func value rest) [] xs
 
 
-maybeCons : (a -> Maybe b) -> a -> List b -> List b
+maybeCons : (a -> Maybe b), a, List b -> List b
 maybeCons func value xs =
     case func value of
         Just result ->
@@ -165,7 +165,7 @@ reverse list =
 --|
 --|     member 9 [ 1, 2, 3 ] == False
 --|     member 4 [ 1, 4, 9 ] == True
-pub member : equatable a -> List a -> Bool
+pub member : equatable a, List a -> Bool
 member value xs =
     any (\x -> x == value) xs
 
@@ -174,7 +174,7 @@ member value xs =
 --|
 --|     all isEven [ 2, 4 ] == True
 --|     all isEven [] == True
-pub all : (a -> Bool) -> List a -> Bool
+pub all : (a -> Bool), List a -> Bool
 all isOkay list =
     not (any (\x -> not (isOkay x)) list)
 
@@ -183,7 +183,7 @@ all isOkay list =
 --|
 --|     any isEven [ 2, 3 ] == True
 --|     any isEven [] == False
-pub any : (a -> Bool) -> List a -> Bool
+pub any : (a -> Bool), List a -> Bool
 any isOkay list =
     case list of
         [] ->
@@ -245,7 +245,7 @@ product xs =
 --| Put two lists together. `++` does the same thing.
 --|
 --|     append [ 1, 2 ] [ 3 ] == [ 1, 2, 3 ]
-pub append : List a -> List a -> List a
+pub append : List a, List a -> List a
 append xs ys =
     case ys of
         [] ->
@@ -266,7 +266,7 @@ concat lists =
 --| Map a given function onto a list and flatten the resulting lists.
 --|
 --|     concatMap (\x -> [ x, x ]) [ 1, 2 ] == [ 1, 1, 2, 2 ]
-pub concatMap : (a -> List b) -> List a -> List b
+pub concatMap : (a -> List b), List a -> List b
 concatMap func list =
     concat (map func list)
 
@@ -274,7 +274,7 @@ concatMap func list =
 --| Places the given value between all members of the given list.
 --|
 --|     intersperse "on" [ "turtles", "turtles" ] == [ "turtles", "on", "turtles" ]
-pub intersperse : a -> List a -> List a
+pub intersperse : a, List a -> List a
 intersperse sep xs =
     case xs of
         [] ->
@@ -295,7 +295,7 @@ intersperse sep xs =
 --| longer, the extra elements are dropped.
 --|
 --|     map2 (+) [ 1, 2, 3 ] [ 10, 20 ] == [ 11, 22 ]
-pub map2 : (a -> b -> result) -> List a -> List b -> List result
+pub map2 : (a, b -> result), List a, List b -> List result
 map2 func xs ys =
     case ( xs, ys ) of
         ( x :: xrest, y :: yrest ) ->
@@ -306,7 +306,7 @@ map2 func xs ys =
 
 
 --| Combine three lists, combining them with the given function.
-pub map3 : (a -> b -> c -> result) -> List a -> List b -> List c -> List result
+pub map3 : (a, b, c -> result), List a, List b, List c -> List result
 map3 func xs ys zs =
     case ( xs, ys, zs ) of
         ( x :: xrest, y :: yrest, z :: zrest ) ->
@@ -317,7 +317,7 @@ map3 func xs ys zs =
 
 
 --| Combine four lists, combining them with the given function.
-pub map4 : (a -> b -> c -> d -> result) -> List a -> List b -> List c -> List d -> List result
+pub map4 : (a, b, c, d -> result), List a, List b, List c, List d -> List result
 map4 func xs ys zs ws =
     case ( xs, ys, zs, ws ) of
         ( x :: xrest, y :: yrest, z :: zrest, w :: wrest ) ->
@@ -329,12 +329,12 @@ map4 func xs ys zs ws =
 
 --| Combine five lists, combining them with the given function.
 pub map5 :
-    (a -> b -> c -> d -> e -> result)
-    -> List a
-    -> List b
-    -> List c
-    -> List d
-    -> List e
+    (a, b, c, d, e -> result)
+    , List a
+    , List b
+    , List c
+    , List d
+    , List e
     -> List result
 map5 func xs ys zs ws vs =
     case ( xs, ys, zs, ws, vs ) of
@@ -359,7 +359,7 @@ sort xs =
 --| Sort values by a derived number.
 --|
 --|     sortBy .age [ { age = 30 }, { age = 20 } ] == [ { age = 20 }, { age = 30 } ]
-pub sortBy : (a -> number) -> List a -> List a
+pub sortBy : (a -> number), List a -> List a
 sortBy toKey xs =
     sortWith (\x y -> compare (toKey x) (toKey y)) xs
 
@@ -370,7 +370,7 @@ sortBy toKey xs =
 --|
 --| The sort is a stable merge sort: equal elements keep the order they were
 --| given in.
-pub sortWith : (a -> a -> Order) -> List a -> List a
+pub sortWith : (a, a -> Order), List a -> List a
 sortWith cmp list =
     case list of
         [] ->
@@ -394,7 +394,7 @@ splitHalf list =
     splitHalfHelp list list []
 
 
-splitHalfHelp : List a -> List a -> List a -> ( List a, List a )
+splitHalfHelp : List a, List a, List a -> ( List a, List a )
 splitHalfHelp slow fast acc =
     case fast of
         [] ->
@@ -414,12 +414,12 @@ splitHalfHelp slow fast acc =
 
 --| Merge two sorted lists into one. On `EQ` the left element wins, which is
 --| what makes `sortWith` stable.
-mergeWith : (a -> a -> Order) -> List a -> List a -> List a
+mergeWith : (a, a -> Order), List a, List a -> List a
 mergeWith cmp left right =
     mergeWithHelp cmp left right []
 
 
-mergeWithHelp : (a -> a -> Order) -> List a -> List a -> List a -> List a
+mergeWithHelp : (a, a -> Order), List a, List a, List a -> List a
 mergeWithHelp cmp left right acc =
     case left of
         [] ->
@@ -439,7 +439,7 @@ mergeWithHelp cmp left right acc =
                             mergeWithHelp cmp xrest right (x :: acc)
 
 
-reverseAppend : List a -> List a -> List a
+reverseAppend : List a, List a -> List a
 reverseAppend acc rest =
     foldl cons rest acc
 
@@ -488,12 +488,12 @@ tail list =
 --| Take the first `n` members of a list.
 --|
 --|     take 2 [ 1, 2, 3 ] == [ 1, 2 ]
-pub take : Int -> List a -> List a
+pub take : Int, List a -> List a
 take n list =
     reverse (takeHelp n list [])
 
 
-takeHelp : Int -> List a -> List a -> List a
+takeHelp : Int, List a, List a -> List a
 takeHelp n list acc =
     if n <= 0 then
         acc
@@ -509,7 +509,7 @@ takeHelp n list acc =
 --| Drop the first `n` members of a list.
 --|
 --|     drop 2 [ 1, 2, 3 ] == [ 3 ]
-pub drop : Int -> List a -> List a
+pub drop : Int, List a -> List a
 drop n list =
     if n <= 0 then
         list
@@ -527,7 +527,7 @@ drop n list =
 --| not.
 --|
 --|     partition isEven [ 1, 2, 3, 4 ] == ( [ 2, 4 ], [ 1, 3 ] )
-pub partition : (a -> Bool) -> List a -> ( List a, List a )
+pub partition : (a -> Bool), List a -> ( List a, List a )
 partition pred list =
     let
         step x ( trues, falses ) =

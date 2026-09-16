@@ -2,7 +2,7 @@
 -- forms an explicit import would give: `import_value(Basics, max)`,
 -- `import_ctor(Maybe, Just)`, and the module aliases `List`, `String`,
 -- `Maybe`, `Result`, `Char`, `Basics` and `Debug` for qualified names.
-largest : Int -> Int -> Int
+largest : Int, Int -> Int
 largest a b =
     max a b
 
@@ -22,7 +22,7 @@ describe r =
             message
 
 
-ordering : Int -> Int -> Order
+ordering : Int, Int -> Order
 ordering a b =
     case compare a b of
         LT ->

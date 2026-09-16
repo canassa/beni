@@ -513,11 +513,6 @@ const Emitter = struct {
 
     fn emitModules(e: *Emitter, entry: Entry) !void {
         const count = e.graph().count();
-        // Every module's `Bir` by graph index: `js/Lower.zig` reads the
-        // DECLARING module's parameter count to decide whether a call is
-        // saturated, and the interface does not carry it.
-        const birs = try e.scratch.alloc(*const Bir, count);
-        for (birs, 0..) |*slot, i| slot.* = e.bir(@enumFromInt(@as(u32, @intCast(i))));
         // The output path of every module, so a specifier is a string join
         // and not a second walk.
         const paths = try e.scratch.alloc([]const u8, count);
@@ -539,8 +534,6 @@ const Emitter = struct {
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
-                .birs = birs,
-                .provenance = e.session.resolution.provenance,
                 .specifiers = specifiers,
                 .sibling = sibling,
                 .entry_decl = if (m == entry.module) entry.decl.int() else null,
@@ -771,10 +764,14 @@ fn firstTypeVar(b: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
         switch (b.instTag(inst)) {
             .type_var => return inst,
             .type_fn => {
-                if (depth + 2 > stack.len) return null;
-                stack[depth] = @enumFromInt(d.lhs);
-                stack[depth + 1] = @enumFromInt(d.rhs);
-                depth += 2;
+                const params = b.extraSlice(b.subRange(@enumFromInt(d.lhs)), Bir.Inst.Index);
+                if (depth + params.len + 1 > stack.len) return null;
+                for (params) |param| {
+                    stack[depth] = param;
+                    depth += 1;
+                }
+                stack[depth] = @enumFromInt(d.rhs);
+                depth += 1;
             },
             .type_app => {
                 for (b.extraSlice(b.subRange(@enumFromInt(d.rhs)), Bir.Inst.Index)) |child| {

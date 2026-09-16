@@ -1,18 +1,19 @@
--- Closures and partial application. Every one of these applies a function
--- to fewer arguments than it takes, which is the case §9.3 keeps currying
--- for — and the case that has to go through the curried form rather than a
--- direct call.
+-- Closures: a lambda that captures, a `let` function that captures, and a
+-- function returned from one. There is no partial application any more
+-- (`language.md` §6.7) — `_` fills ONE missing argument and anything else
+-- is written as the lambda it stands for, which is what the last three
+-- lines do.
 import List
 import Node exposing (Program)
 import String
 
 
-add3 : Int -> Int -> Int -> Int
+add3 : Int, Int, Int -> Int
 add3 a b c =
     a + b + c
 
 
-apply : (Int -> Int) -> Int -> Int
+apply : (Int -> Int), Int -> Int
 apply f n =
     f n
 
@@ -21,10 +22,10 @@ main : Program
 main =
     let
         addOne =
-            add3 1
+            \b c -> add3 1 b c
 
         addOneTwo =
-            add3 1 2
+            add3 1 2 _
 
         counterFrom start =
             \step -> start + step
@@ -33,8 +34,8 @@ main =
         [ String.fromInt (add3 1 2 3)
         , String.fromInt (addOne 2 3)
         , String.fromInt (addOneTwo 3)
-        , String.fromInt (apply (add3 1 2) 3)
+        , String.fromInt (apply (add3 1 2 _) 3)
         , String.fromInt (apply (\n -> n * 2) 21)
-        , String.fromInt (counterFrom 10 5)
-        , String.join "," (List.map String.fromInt (List.map (add3 1 1) [ 1, 2, 3 ]))
+        , String.fromInt ((counterFrom 10) 5)
+        , String.join "," (List.map String.fromInt (List.map (add3 1 1 _) [ 1, 2, 3 ]))
         ]

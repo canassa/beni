@@ -33,7 +33,7 @@ type Msg
     | ChangeVisibility Visibility
 
 
-pub update : Msg -> Model -> ( Model, List String )
+pub update : Msg, Model -> ( Model, List String )
 update msg model =
     case msg of
         NoOp ->
@@ -81,7 +81,7 @@ update msg model =
             ( { model | visibility = visibility }, [ "now showing ${visibilityName visibility}" ] )
 
 
-newTodo : String -> Int -> Todo
+newTodo : String, Int -> Todo
 newTodo title id =
     { id = id, title = title, done = False }
 

@@ -205,8 +205,10 @@ pub const Node = struct {
         /// `Dict.Dict k v`. `main_token` is the upper or qualified upper
         /// identifier; `lhs..rhs` is the `SubRange` of argument type nodes.
         type_con,
-        /// `a -> b`, right associative. `main_token` is the arrow; `lhs`
-        /// is the parameter type, `rhs` the result type.
+        /// `a, b -> c` (language.md §3): n-ary, right associative in its
+        /// RESULT. `main_token` is the arrow; `lhs` is the `ExtraIndex` of
+        /// a `SubRange` of parameter type nodes (one or more), `rhs` the
+        /// result type.
         type_fn,
         /// `()`. `main_token` is `(`.
         type_unit,
@@ -617,6 +619,12 @@ pub const full = struct {
         args: []const Node.Index,
     };
 
+    pub const TypeFn = struct {
+        arrow: TokenIndex,
+        params: []const Node.Index,
+        result: Node.Index,
+    };
+
     pub const TypeRecordExt = struct {
         brace: TokenIndex,
         base: TokenIndex,
@@ -918,6 +926,16 @@ pub fn fullConstructor(tree: *const Ast, node: Node.Index) full.Constructor {
 pub fn fullTypeCon(tree: *const Ast, node: Node.Index) full.TypeCon {
     std.debug.assert(tree.nodeTag(node) == .type_con);
     return .{ .name = tree.nodeMainToken(node), .args = tree.children(node) };
+}
+
+pub fn fullTypeFn(tree: *const Ast, node: Node.Index) full.TypeFn {
+    std.debug.assert(tree.nodeTag(node) == .type_fn);
+    const data = tree.nodeData(node);
+    return .{
+        .arrow = tree.nodeMainToken(node),
+        .params = tree.extraSlice(tree.rangeAt(data.lhs), Node.Index),
+        .result = @enumFromInt(data.rhs),
+    };
 }
 
 pub fn fullTypeRecordExt(tree: *const Ast, node: Node.Index) full.TypeRecordExt {

@@ -4,4 +4,4 @@ module Geometry
   value origin : Point
 module Move
   value right : Point
-  value shift : Point -> Int -> Point
+  value shift : Point, Int -> Point

@@ -60,7 +60,7 @@ k _ =
     []
 
 
-l : (Int -> Int) -> (Int -> Int) -> Int -> Int
+l : (Int -> Int), (Int -> Int), Int -> Int
 l p q x =
     p (q x)
 

@@ -81,6 +81,7 @@ pub const Code = enum {
     multiple_placeholders,
     bind_rhs_not_application,
     bind_rhs_forward_reference,
+    arrow_in_tuple_element,
     nesting_too_deep,
     duplicate_exposed_name,
     duplicate_import,
@@ -117,8 +118,8 @@ pub const Code = enum {
     // M2b (checker.md §8.1): inference. `rigid_mismatch` is the case where
     // one side was an annotation's promise about ALL types, which needs a
     // different hint from an ordinary mismatch; the three arity codes are
-    // §8.3's, and `fast-compiler.md` §9.3 keeps currying on the strength of
-    // them.
+    // §8.3's, and with currying gone (`language.md` §6.7) they are what an
+    // arity mistake reads as, at the place it was written.
     type_mismatch,
     rigid_mismatch,
     infinite_type,
@@ -190,6 +191,7 @@ pub fn title(code: Code) []const u8 {
         .placeholder_outside_argument => "PLACEHOLDER OUTSIDE ARGUMENT",
         .multiple_placeholders => "TWO PLACEHOLDERS",
         .bind_rhs_not_application => "BIND WITHOUT A CALL",
+        .arrow_in_tuple_element => "ARROW IN A TUPLE ELEMENT",
         .bind_rhs_forward_reference => "BIND USES A LATER BINDING",
         .nesting_too_deep => "NESTING TOO DEEP",
         .duplicate_exposed_name => "DUPLICATE EXPOSED NAME",

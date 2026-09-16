@@ -2,8 +2,8 @@ decl 0: value adder (annotated)
   %0 = type_import Basics.Int
   %1 = type_import Basics.Int
   %2 = type_import Basics.Int
-  %3 = type_fn %1 -> %2
-  %4 = type_fn %0 -> %3
+  %3 = type_fn [%1] -> %2
+  %4 = type_fn [%0] -> %3
   %5 = pat_var local 0 (a)
   %6 = pat_var local 1 (b)
   %7 = local 0 (a)
@@ -30,7 +30,7 @@ decl 1: value pairs (annotated)
   %5 = type_import List.List
   %6 = type_import Basics.Int
   %7 = type_app %5 [%6]
-  %8 = type_fn %4 -> %7
+  %8 = type_fn [%4] -> %7
   %9 = qualified List.map
   %10 = pat_var local 0 (a)
   %11 = pat_var local 1 (b)

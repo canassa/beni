@@ -18,11 +18,10 @@
   (annotation both
     (type_fn
       (type_con String)
-      (type_fn
+      (type_con String)
+      (type_con Result
         (type_con String)
-        (type_con Result
-          (type_con String)
-          (type_con Int)))))
+        (type_con Int))))
   (definition both
     (pat_var a)
     (pat_var b)

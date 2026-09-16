@@ -15,17 +15,17 @@ import Node exposing (Program)
 import String
 
 
-subtract : Int -> Int -> Int
+subtract : Int, Int -> Int
 subtract a b =
     a - b
 
 
-twice : Int -> (Int -> String) -> String
+twice : Int, (Int -> String) -> String
 twice n body =
     body n ++ "/" ++ body (n + 1)
 
 
-usingAll : List (Int -> Int) -> (List Int -> String) -> String
+usingAll : List (Int -> Int), (List Int -> String) -> String
 usingAll fs body =
     body (List.map (\f -> f 7) fs)
 

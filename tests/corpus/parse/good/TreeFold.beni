@@ -8,7 +8,7 @@ pub type Tree a
     | Node (Tree a) a (Tree a)
 
 
-pub fold : (a -> b -> b) -> b -> Tree a -> b
+pub fold : (a -> b -> b), b, Tree a -> b
 fold f acc tree =
     case tree of
         Leaf ->
@@ -18,7 +18,7 @@ fold f acc tree =
             fold f (f value (fold f acc left)) right
 
 
-pub insert : Int -> Tree Int -> Tree Int
+pub insert : Int, Tree Int -> Tree Int
 insert x tree =
     case tree of
         Leaf ->

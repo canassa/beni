@@ -7,7 +7,7 @@ parse s =
     Result.fromMaybe "nan" (String.toInt s)
 
 
-both : String -> String -> Result String Int
+both : String, String -> Result String Int
 both a b =
     Ok (parse a? + parse b?)
 

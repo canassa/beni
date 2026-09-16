@@ -13,11 +13,10 @@
     (type_fn
       (type_con Parser
         (type_var a))
-      (type_fn
+      (type_con String)
+      (type_con Result
         (type_con String)
-        (type_con Result
-          (type_con String)
-          (type_var a)))))
+        (type_var a))))
   (definition run
     (pat_paren
       (pat_ctor Parser
@@ -135,11 +134,10 @@
         (type_fn
           (type_var a)
           (type_var b)))
-      (type_fn
-        (type_con Parser
-          (type_var a))
-        (type_con Parser
-          (type_var b)))))
+      (type_con Parser
+        (type_var a))
+      (type_con Parser
+        (type_var b))))
   (definition map
     (pat_var f)
     (pat_paren
@@ -179,11 +177,10 @@
           (type_var a)
           (type_con Parser
             (type_var b))))
-      (type_fn
-        (type_con Parser
-          (type_var a))
-        (type_con Parser
-          (type_var b)))))
+      (type_con Parser
+        (type_var a))
+      (type_con Parser
+        (type_var b))))
   (definition andThen
     (pat_var f)
     (pat_paren
@@ -367,11 +364,10 @@
   (annotation sumOf
     (type_fn
       (type_con String)
-      (type_fn
+      (type_con String)
+      (type_con Result
         (type_con String)
-        (type_con Result
-          (type_con String)
-          (type_con Int)))))
+        (type_con Int))))
   (definition sumOf
     (pat_var a)
     (pat_var b)

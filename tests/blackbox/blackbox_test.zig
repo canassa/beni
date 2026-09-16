@@ -2022,8 +2022,9 @@ test "a type mismatch names the definition, shows both types and hints" {
 }
 
 test "TOO FEW ARGS names the function, its arity, and the missing argument" {
-    // This is the diagnostic fast-compiler.md §9.3 keeps currying on the
-    // strength of, so it is asserted whole rather than by its code.
+    // checker.md §8.3's load-bearing diagnostic, asserted whole rather than
+    // by its code. Nothing is deferred: with saturated calls there is no
+    // partial-application reading to argue against.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -2031,7 +2032,7 @@ test "TOO FEW ARGS names the function, its arity, and the missing argument" {
         \\    { count : Int }
         \\
         \\
-        \\pub update : Int -> Model -> Model
+        \\pub update : Int, Model -> Model
         \\update n model =
         \\    { model | count = model.count + n }
         \\
@@ -2057,16 +2058,8 @@ test "TOO FEW ARGS names the function, its arity, and the missing argument" {
             "\n" ++
             "    Model\n" ++
             "\n" ++
-            "So this call produces a function:\n" ++
-            "\n" ++
-            "    Model -> Model\n" ++
-            "\n" ++
-            "But I needed a value of type:\n" ++
-            "\n" ++
-            "    Model\n" ++
-            "\n" ++
-            "Hint: a call with too few arguments is a function, not a value. Give it the\n" ++
-            "remaining ones, or check whether an argument was dropped by mistake.\n",
+            "Hint: every call supplies every argument. To make a function out of this one,\n" ++
+            "write the missing argument as `_`: `f a _` is `\\x -> f a x`.\n",
     }, r.diagnostics[0]);
 }
 
@@ -2076,7 +2069,7 @@ test "`==` on functions is a compile error, not a runtime crash" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
-        \\pub same : (Int -> Int) -> (Int -> Int) -> Bool
+        \\pub same : (Int -> Int), (Int -> Int) -> Bool
         \\same f g =
         \\    f == g
         \\
@@ -2260,12 +2253,12 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
         \\module Main
         \\  shift : Point -> Point
         \\    p : Point
-        \\  apply : (a -> b) -> a -> b
+        \\  apply : (a -> b), a -> b
         \\    f : a -> b
         \\    x : a
         \\  total : List number -> number
         \\    xs : List number
-        \\    step : number2 -> number2 -> number2
+        \\    step : number2, number2 -> number2
         \\    a : number2
         \\    b : number2
         \\
@@ -2342,7 +2335,7 @@ fn writeRecordShapes(w: *World) !void {
                 \\    {{ zulu = n, alpha = "x", middle = n, bravo = 1.5 }}
                 \\
                 \\
-                \\pub wrap{d} : zeta -> alpha -> Wrap{d} zeta alpha
+                \\pub wrap{d} : zeta, alpha -> Wrap{d} zeta alpha
                 \\wrap{d} a b =
                 \\    Pair{d} a b
                 \\

@@ -40,12 +40,11 @@
   (annotation pub update
     (type_fn
       (type_con Msg)
-      (type_fn
+      (type_con Model)
+      (type_tuple
         (type_con Model)
-        (type_tuple
-          (type_con Model)
-          (type_con List
-            (type_con String))))))
+        (type_con List
+          (type_con String)))))
   (definition update
     (pat_var msg)
     (pat_var model)
@@ -197,9 +196,8 @@
   (annotation newTodo
     (type_fn
       (type_con String)
-      (type_fn
-        (type_con Int)
-        (type_con Todo))))
+      (type_con Int)
+      (type_con Todo)))
   (definition newTodo
     (pat_var title)
     (pat_var id)

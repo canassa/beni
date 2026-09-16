@@ -374,6 +374,21 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\right of `<-` must be the call that receives it — a function, or a call missing
             \\exactly its final argument. Wrap what you meant in parentheses, or use `=`.
         , .{text}),
+        .arrow_in_tuple_element => try w.writeAll(
+            \\I read the `->` in these parentheses as a function type's arrow, and then found a
+            \\comma after it.
+            \\
+            \\The comma in a type separates PARAMETERS, so inside parentheses the token after
+            \\the items decides what they were: `->` makes them a parameter list and `)` makes
+            \\them a tuple. A tuple element therefore cannot contain a bare `->`, because the
+            \\arrow is read as the parameter list's:
+            \\
+            \\    ((Int, Int) -> Int, String)
+            \\
+            \\is not a pair whose first element is a function. Parenthesise the element:
+            \\
+            \\    (((Int, Int) -> Int), String)
+        ),
         .refutable_let_pattern => try w.print(
             \\I found `{s}` in a `let` pattern, but a `let` pattern must always match.
             \\
