@@ -1,0 +1,30 @@
+decl 0: pub foreign value sort
+  %0 = type_import List.List
+  %1 = type_var a
+  %2 = type_app %0 [%1]
+  %3 = type_import List.List
+  %4 = type_var a
+  %5 = type_app %3 [%4]
+  %6 = type_fn [%2] -> %5
+  %7 = type_var a
+  %8 = type_var a
+  %9 = type_import Basics.Order
+  %10 = type_fn [%7, %8] -> %9
+  annotation %6
+  where a.compare : %10
+  refs
+    import_type List.List
+    import_type Basics.Order
+  interface foreign value sort
+
+interface
+  foreign value sort
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

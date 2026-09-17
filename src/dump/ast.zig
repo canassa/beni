@@ -178,6 +178,7 @@ const Dumper = struct {
                 try d.w.print(" {s}", .{d.text(a.name)});
                 try d.docs(a.header, inner);
                 try d.child(a.type_expr, inner);
+                try d.children(tree.whereConstraints(a.header), inner);
             },
             .definition => {
                 const def = tree.fullDefinition(n);
@@ -213,6 +214,7 @@ const Dumper = struct {
                 try d.w.print(" {s}", .{d.text(f.name)});
                 try d.docs(f.header, inner);
                 try d.child(f.type_expr, inner);
+                try d.children(tree.whereConstraints(f.header), inner);
             },
             .foreign_type => {
                 const f = tree.fullForeignType(n);
@@ -242,6 +244,15 @@ const Dumper = struct {
                 try d.openTag(tag, main);
                 try d.w.print(" {s}", .{d.text(r.base)});
                 try d.children(r.fields, inner);
+            },
+            .where_constraint => {
+                // `(where_constraint k .compare <type>)`: the constrained
+                // variable and the method name, then the method's type
+                // (static-dispatch-spike.md §2.1).
+                const c = tree.fullWhereConstraint(n);
+                try d.openTag(tag, main);
+                try d.w.print(" {s} {s}", .{ d.text(c.variable), d.text(c.method) });
+                try d.child(c.type_expr, inner);
             },
             .record_type_field, .field, .field_access, .tuple_index, .let_annotation => {
                 try d.openTag(tag, main);

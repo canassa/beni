@@ -1,0 +1,26 @@
+-- Parse: `where` is a contextual word, not a keyword (§2.2). It is an
+-- ordinary name everywhere the three-token lookahead `where lower_ident
+-- dot_lower` does not match: a type variable, a value, a parameter, a
+-- record field, and — the limit case — a type variable named `where` that
+-- a `where` clause then constrains.
+pub holder : List where -> where
+holder xs =
+    where
+
+
+where : Int
+where =
+    1
+
+
+pub uses : { where : Int } -> Int
+uses r =
+    r.where
+
+
+-- And the limit case: a type variable named `where`, constrained by a
+-- `where` clause. The lookahead decides at the second one, which is
+-- followed by `where.eq`.
+pub compareThem : where, where -> Bool where where.eq : where, where -> Bool
+compareThem a b =
+    True

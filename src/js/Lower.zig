@@ -823,6 +823,7 @@ const Lowerer = struct {
                 return l.member(target, try l.slotName(d.rhs), p);
             },
             .call => return l.callExpr(out, inst),
+            .method_call => return l.methodCallExpr(out, inst),
             .lambda => {
                 const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
                 const record = try l.functionOf(params, @enumFromInt(d.rhs), p);
@@ -848,13 +849,71 @@ const Lowerer = struct {
                 );
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            // S4: dispatch on a type variable (static-dispatch-spike.md §4,
+            // §8.4) needs the dispatch table, which S3 fills in. It is
+            // reported rather than swallowed, because an `else` arm here is
+            // how `const M$decode = (s) => undefined;` shipped with exit
+            // code 0 (the checker refuses it first, and this is the second
+            // wall).
+            .type_dispatch => {
+                try l.report(
+                    .not_implemented,
+                    inst,
+                    \\I cannot compile a dispatch on a type yet.
+                    \\
+                    \\`a.decode s` calls a method of whatever type `a` stands for at the call
+                    \\(`docs/design/static-dispatch-spike.md` §4), and the table that says which
+                    \\function that is arrives with the checker's dispatch pass. Pass the
+                    \\function as an argument for now.
+                ,
+                    .{},
+                );
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
             // A poisoned instruction: the name did not resolve or the
             // parser could not build a node. `beni build` refuses to emit a
             // project with any error diagnostic, so this is unreachable
             // from a successful build; emitting `undefined` rather than
             // asserting keeps a bug in that gate from becoming a crash.
             .@"error" => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
-            else => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // Every remaining tag is a TYPE or a PATTERN, which no
+            // expression position holds: patterns are lowered by
+            // `bindings`, types never reach the backend at all
+            // (`backend.md` §3), and the four unresolved name forms are
+            // rewritten by `Resolve` before this runs. Listed rather than
+            // caught by an `else`, so a new expression tag is a compile
+            // error here instead of a silent `undefined`.
+            .type_var,
+            .type_top,
+            .type_import,
+            .type_qualified,
+            .ext_type,
+            .type_app,
+            .type_fn,
+            .type_unit,
+            .type_tuple,
+            .type_record,
+            .type_record_ext,
+            .import_value,
+            .import_ctor,
+            .qualified,
+            .qualified_ctor,
+            .pat_wild,
+            .pat_var,
+            .pat_ctor,
+            .pat_int,
+            .pat_char,
+            .pat_string,
+            .pat_unit,
+            .pat_tuple,
+            .pat_list,
+            .pat_cons,
+            .pat_record,
+            .pat_as,
+            .let_def,
+            .let_pattern,
+            .branch,
+            => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         }
     }
 
@@ -906,6 +965,87 @@ const Lowerer = struct {
     }
 
     // ---- Calls ------------------------------------------------------------
+
+    /// **S4 SHIM** (static-dispatch-spike.md §8.3 replaces it with the
+    /// dispatch table the checker fills in).
+    ///
+    /// S2 changed what LOWERING emits, not what the backend knows, so this
+    /// emits exactly what the two forms a `method_call` replaced emitted: a
+    /// dot-call `x.m a` is the field call `x.m(a)` it used to be, and one
+    /// of the six operators is the call of the `Basics` function it used to
+    /// desugar to — `Basics$eq(a, b)`, the structural walk in
+    /// `core/Basics.js`, not `===`. The reference is rebuilt here because
+    /// lowering no longer emits one (§1.4): the operator has no callee
+    /// instruction any more.
+    fn methodCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+        const args_range: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
+        if (m.origin.basicsFunction()) |function| {
+            const callee = try l.basicsValue(function, inst);
+            const receiver = try l.expr(out, @enumFromInt(d.lhs));
+            const rest = try l.exprList(out, args_range);
+            const args = try l.scratch.alloc(Node.Index, rest.len + 1);
+            args[0] = receiver;
+            @memcpy(args[1..], rest);
+            return l.call(callee, args, p);
+        }
+        const target = try l.expr(out, @enumFromInt(d.lhs));
+        const callee = try l.member(target, l.bir.symbol(m.name), p);
+        const args = try l.exprList(out, args_range);
+        return l.call(callee, args, p);
+    }
+
+    /// **S4 SHIM**: a reference to a `pub` value of `core/Basics.beni` by
+    /// name, however this module reaches it — a plain top-level name when
+    /// the module BEING lowered is `Basics` itself, an import otherwise.
+    /// This is what `Resolve` does for an `import_value` instruction; the
+    /// shim does it by hand because the operators no longer produce one.
+    ///
+    /// Each failure is REPORTED and not silently emitted as `undefined`.
+    /// Before the operators stopped referencing `Basics`, a core package
+    /// without `eq` failed in `Resolve` with a name error (`--core-root`
+    /// makes that reachable); the reference moved here, so the failure has
+    /// to be reported here too, or `a == b` compiles to `undefined(a, b)`.
+    fn basicsValue(l: *Lowerer, function: InternPool.WellKnown, inst: Inst.Index) !Node.Index {
+        const p = l.pos(inst);
+        const spelling = l.interner.slice(function.symbol());
+        const module = l.in.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse
+            return l.missingBasics(inst, spelling, "there is no `Basics` module in the core package");
+        if (module == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (l.bir.symbol(d.name) != function.symbol()) continue;
+                return l.ident(try l.topName(@intCast(i)), p);
+            }
+            return l.missingBasics(inst, spelling, "this module IS `Basics`, and it does not declare it");
+        }
+        const index = l.in.interfaces[module.int()].findValue(l.interner, function.symbol()) orelse
+            return l.missingBasics(inst, spelling, "`Basics` does not expose it");
+        try l.need(module, @intFromEnum(index));
+        return l.ident(try l.externalName(module, @intFromEnum(index)), p);
+    }
+
+    /// The one failure `basicsValue` can hit: a core package that does not
+    /// hold the function an operator needs. `internal`, because a complete
+    /// core package always does and the build cannot continue honestly.
+    fn missingBasics(l: *Lowerer, inst: Inst.Index, spelling: []const u8, why: []const u8) !Node.Index {
+        try l.report(
+            .internal,
+            inst,
+            \\I cannot find `Basics.{s}`, which this operator needs.
+            \\
+            \\Every comparison operator is emitted as a call of the matching function in
+            \\`core/Basics.beni` (`docs/design/static-dispatch-spike.md` §3.1), but
+            \\{s}.
+            \\
+            \\A core package replaced with `--core-root` must declare `eq`, `neq`, `lt`,
+            \\`le`, `gt` and `ge`.
+        ,
+            .{ spelling, why },
+        );
+        return l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
+    }
 
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
@@ -1357,12 +1497,6 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type Float
     \\
     \\
-    \\pub equatable foreign type Char
-    \\
-    \\
-    \\pub equatable foreign type String
-    \\
-    \\
     \\pub type Bool
     \\    = True
     \\    | False
@@ -1425,8 +1559,8 @@ const test_core = [_]TestProject.Module{
     \\    | Err x
     \\
     },
-    .{ .path = "String.beni", .package = .core, .source = "pub foreign fromInt : Int -> String\n" },
-    .{ .path = "Char.beni", .package = .core, .source = "pub foreign isDigit : Char -> Bool\n" },
+    .{ .path = "String.beni", .package = .core, .source = "pub equatable foreign type String\n\n\npub foreign fromInt : Int -> String\n" },
+    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign isDigit : Char -> Bool\n" },
     .{ .path = "Debug.beni", .package = .core, .source = "pub foreign todo : String -> a\n" },
 };
 

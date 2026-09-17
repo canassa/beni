@@ -1,0 +1,6 @@
+-- where_variable_unbound (§10.6 trigger (a), 4:11): a `where` clause
+-- constrains a variable of the type above it, and `a` is not one of them.
+pub render : Int -> String
+    where a.show : a -> String
+render n =
+    "x"

@@ -234,6 +234,14 @@ pub const WellKnown = enum(u32) {
     identity,
     always,
     never,
+    // NOT a prelude name, and in no namespace: the letter the checker gives
+    // the type variable of a well-known method's own type, so a message
+    // about `==` says `a` and not `number`
+    // (`docs/design/static-dispatch-spike.md` §3.1, which took it from
+    // `core/Basics.beni`'s `eq : equatable a, a -> Bool`). `prelude.zig`'s
+    // three namespace functions answer null for it, so `a` stays an
+    // ordinary identifier in every program.
+    a,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @enumFromInt(@intFromEnum(w));

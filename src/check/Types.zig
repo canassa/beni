@@ -446,8 +446,10 @@ fn findWellKnown(types: *Types, graph: *const Graph, interfaces: []const Interfa
     const pairs = [_]Pair{
         .{ .module = .Basics, .type_name = .Int, .slot = &types.well_known.int },
         .{ .module = .Basics, .type_name = .Float, .slot = &types.well_known.float },
-        .{ .module = .Basics, .type_name = .Char, .slot = &types.well_known.char },
-        .{ .module = .Basics, .type_name = .String, .slot = &types.well_known.string },
+        // `Char` and `String` are declared by their own modules
+        // (static-dispatch-spike.md §5.1), not by `Basics`.
+        .{ .module = .Char, .type_name = .Char, .slot = &types.well_known.char },
+        .{ .module = .String, .type_name = .String, .slot = &types.well_known.string },
         .{ .module = .Basics, .type_name = .Bool, .slot = &types.well_known.bool },
         .{ .module = .List, .type_name = .List, .slot = &types.well_known.list },
         .{ .module = .Maybe, .type_name = .Maybe, .slot = &types.well_known.maybe },

@@ -1,13 +1,13 @@
 decl 0: value split (annotated)
   %0 = type_import Basics.Int
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_import Basics.Bool
   %3 = type_tuple [%1, %2]
   %4 = type_tuple [%0, %3]
-  %5 = type_import Basics.String
+  %5 = type_import String.String
   %6 = type_import Basics.Int
   %7 = type_record { name : %5, age : %6 }
-  %8 = type_import Basics.String
+  %8 = type_import String.String
   %9 = type_fn [%4, %7] -> %8
   %10 = pat_var local 0 (input)
   %11 = pat_var local 1 (person)
@@ -71,7 +71,7 @@ decl 0: value split (annotated)
     10 total let %23
   refs
     import_type Basics.Int
-    import_type Basics.String
+    import_type String.String
     import_type Basics.Bool
     import_value Basics.add
 

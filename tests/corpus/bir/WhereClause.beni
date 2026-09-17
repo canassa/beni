@@ -1,0 +1,19 @@
+-- BIR: a `where` clause is stored on the declaration as
+-- `(variable, method, type)` triples beside its annotation (§1.4, §2.1),
+-- and the constraint's type is lowered like any other type — the `where`
+-- rows below name instructions in the declaration's own range.
+import Dict exposing (Dict)
+
+
+pub insert : Dict k v, k, v -> Dict k v
+    where k.compare : k, k -> Order
+insert d k v =
+    d
+
+
+pub pairUp : List a, List b -> Bool
+    where
+        a.eq : a, a -> Bool
+        , b.compare : b, b -> Order
+pairUp xs ys =
+    True

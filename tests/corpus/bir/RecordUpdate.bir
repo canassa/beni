@@ -1,12 +1,12 @@
 decl 0: alias Model
   %0 = type_import Basics.Int
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_record { count : %0, name : %1 }
   body %2
   ctor 0 Model [%0, %1]
   refs
     import_type Basics.Int
-    import_type Basics.String
+    import_type String.String
 
 decl 1: value initial (annotated)
   %0 = type_top 0 (Model)

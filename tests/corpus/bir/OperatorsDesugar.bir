@@ -44,41 +44,28 @@ decl 1: value comparisons
   %1 = pat_var local 1 (b)
   %2 = local 0 (a)
   %3 = local 1 (b)
-  %4 = import_value Basics.eq
-  %5 = call %4 [%2, %3]
-  %6 = local 0 (a)
-  %7 = local 1 (b)
-  %8 = import_value Basics.neq
-  %9 = call %8 [%6, %7]
-  %10 = local 0 (a)
-  %11 = local 1 (b)
-  %12 = import_value Basics.lt
-  %13 = call %12 [%10, %11]
+  %4 = method_call %2 .eq [%3] (==)
+  %5 = local 0 (a)
+  %6 = local 1 (b)
+  %7 = method_call %5 .eq [%6] (/=)
+  %8 = local 0 (a)
+  %9 = local 1 (b)
+  %10 = method_call %8 .compare [%9] (<)
+  %11 = local 0 (a)
+  %12 = local 1 (b)
+  %13 = method_call %11 .compare [%12] (>)
   %14 = local 0 (a)
   %15 = local 1 (b)
-  %16 = import_value Basics.gt
-  %17 = call %16 [%14, %15]
-  %18 = local 0 (a)
-  %19 = local 1 (b)
-  %20 = import_value Basics.le
-  %21 = call %20 [%18, %19]
-  %22 = local 0 (a)
-  %23 = local 1 (b)
-  %24 = import_value Basics.ge
-  %25 = call %24 [%22, %23]
-  %26 = tuple [%5, %9, %13, %17, %21, %25]
+  %16 = method_call %14 .compare [%15] (<=)
+  %17 = local 0 (a)
+  %18 = local 1 (b)
+  %19 = method_call %17 .compare [%18] (>=)
+  %20 = tuple [%4, %7, %10, %13, %16, %19]
   params [%0, %1]
-  body %26
+  body %20
   locals
     0 a param %0
     1 b param %1
-  refs
-    import_value Basics.eq
-    import_value Basics.neq
-    import_value Basics.lt
-    import_value Basics.gt
-    import_value Basics.le
-    import_value Basics.ge
 
 decl 2: value logic
   %0 = pat_var local 0 (a)

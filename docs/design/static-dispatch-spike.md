@@ -171,15 +171,17 @@ a packed field would make the golden depend on a bit layout.
 dot-call, so a golden distinguishes `a == b` from `a.eq b`:
 
 ```
-%7 = method_call %5 eq [%6] from `==`
-%9 = method_call %5 compare [%8] from `<`
-%11 = method_call %5 eq [%10]
-%13 = type_dispatch a decode [%12]
+%4 = method_call %2 .eq [%3] (==)
+%10 = method_call %8 .compare [%9] (<)
+%6 = method_call %3 .insert [%4, %5]
+%14 = type_dispatch a.decode [%13]
 ```
 
-The `from` clause is absent exactly when `origin` is `none`. `tests/corpus/bir/OperatorsAsFunctions.beni`
-and its `.bir` golden assert all seven spellings, including the parenthesised operator forms of
-§3.1 which lower to a lambda over a marked `method_call`.
+The method name is printed with its dot, as the source writes it and as `field_access` already
+prints it, and the origin is parenthesised after the arguments. It is absent exactly when `origin`
+is `none`. `tests/corpus/bir/ComparisonOperators.beni` and its `.bir` golden assert all six
+spellings, including the parenthesised operator forms of §3.1 which lower to a lambda over a marked
+`method_call`; `tests/corpus/bir/MethodCalls.beni` asserts every form of §1.1.
 
 `Bir.Decl` gains `where_start` / `where_end` into `extra`, a range of
 `(variable SymbolIndex, method SymbolIndex, type Inst.Index)` triples, beside `annotation` (§2.4).
@@ -217,7 +219,11 @@ Constraint  := lower_ident dot_lower ':' Type
 
 `lower_ident dot_lower` is `k.compare` written with no space: `dot_lower` must abut its atom
 (`language.md` §3, "access chains"), and the same lexical rule is reused here unchanged. `k . compare`
-and `k.Compare` are `unexpected_token`.
+is `unexpected_token` — the three-token lookahead of §2.2 fails, so `where` stays a type variable and
+the tokens after it cannot continue the declaration. `k.Compare` never reaches the parser as a
+constraint at all: the lexer makes a `dot_lower` only out of `.` followed by a LOWER letter, so `.C`
+is `invalid_character` ("I found a `.` that does not start a field access"), and the rest of the line
+is reported against the tokens that survive.
 
 A `let` annotation (`language.md` §3 `LetBinding := Annotation? Definition`) takes **no** `where`
 clause. Evidence parameters are a property of a declaration (§8.1) and `Bir.Decl` is where the
@@ -261,7 +267,7 @@ backtracking is needed, because `:` can never follow a type item.
 | `where k.compare : k, k -> Order` | one: `k.compare : k, k -> Order` |
 | `where a.eq : a, a -> Bool, b.eq : b, b -> Bool` | two |
 | `where a.fold : a, (a, b -> b), b -> b` | one, whose type has three parameters. Both `a` and `b` must occur in the annotated type (§2.4), so this clause is well formed only under an annotation such as `sum : a, b -> b` |
-| `where a.eq : a, a -> Bool, b.x` | `unexpected_token` at `b.x`: the lookahead matched `lower_ident dot_lower` but not `':'`, so the comma stayed a parameter separator and `b.x` is not a type |
+| `where a.eq : a, a -> Bool, b.x` | `expected_token` at `.x`, expecting `->`: the lookahead matched `lower_ident dot_lower` but not `':'`, so the comma stayed a parameter separator, `Bool, b` became a parameter LIST, and a parameter list needs the arrow that never came. The diagnostic names the arrow rather than the offending token because that is what the parser was waiting for — `unexpected_token` would name `.x` without saying what was missing |
 
 ### 2.4 Well-formedness
 
@@ -2155,18 +2161,20 @@ clause":
 
 > **UNKNOWN CONSTRAINED VARIABLE** — `<w>` appears in a constraint but not in the type.
 >
-> This constraint mentions `<w>`:
->
->     <v>.<m> : <the constraint's type>
->
-> but `<w>` is not a variable of
+> This constraint mentions `<w>`, but `<w>` is not a variable of
 >
 >     <the annotated type>
 >
 > A constraint may only mention variables the annotation quantifies, because those are the ones a
 > caller gets to choose.
 >
-> Hint: give `<decl>` a parameter or a result that mentions `<w>`.
+> Hint: give the declaration a parameter or a result that mentions `<w>`.
+
+The constraint is identified by the SPAN, which points at `<w>`'s occurrence inside it, rather than
+by quoting `<v>.<m> : <the constraint's type>` above the annotated type: a lowering diagnostic
+carries one secondary byte range (`src/bir/Diagnostics.zig`, `Item.other_start/other_end`), and the
+annotated type is the more useful of the two — it is what the reader must change. The hint says "the
+declaration" for the same reason: naming it would need a third range.
 
 ```elm
 -- tests/corpus/parse/bad/WhereConstraintFreeVariable.beni
@@ -2176,8 +2184,10 @@ total xs =
     List.foldl xs
 ```
 
-Here `x` and `s` occur only inside the constraint; the message fires once per offending variable,
-at its first occurrence.
+Here `x` and `s` occur only inside the constraint; the message fires once per offending variable, at
+its first occurrence. A variable that trigger (a) has already reported is **not** reported again by
+(b) — in `where a.show : a -> String` under `render : Int -> String` the head `a` and the `a` inside
+the type are one mistake, and one mistake gets one message.
 
 ### 10.7 `duplicate_where_constraint`
 
@@ -2689,3 +2699,45 @@ Roc derives six methods and `compare` is not among them, so the spike's extra ha
 independent decision to make `compare` well-known (plan §0), not to static dispatch. *Alternative:*
 one number, which would charge dispatch for the cost of dropping `comparable` and would make report
 19 wrong in the direction that flatters the objection.
+
+---
+
+The rows below were added on 2026-09-17, after the read-only review of S2 (the front end). Each is a
+**text correction**: the code S2 landed is what the row now describes, and the earlier wording was
+written before the code existed. Nothing here changes a decision.
+
+**A.39 — `dump --stage=bir` prints `method_call %2 .eq [%3] (==)`** (§1.4) [m13]. The method name
+carries its dot, as `field_access` already prints it and as the source writes it, and the origin is
+parenthesised after the arguments. *Why:* the spec's `method_call %5 eq [%6] from \`==\`` was
+invented before the dumper existed and reads worse — a bare `eq` where every other name-carrying
+instruction shows the dot, and a `from` clause the eye has to parse. The code is better and the
+goldens are the contract. *Alternative:* change the dumper to the spec's spelling and re-bless.
+
+**A.40 — the operator goldens are `tests/corpus/bir/ComparisonOperators.beni` and
+`tests/corpus/bir/MethodCalls.beni`** (§1.4) [m13]. The spec named a file
+`tests/corpus/bir/OperatorsAsFunctions.beni` that was never written. *Why:* the two fixtures split on
+the claim they pin — every row of §1.1, and every spelling of §3.1 — which is the corpus's "one idea
+per fixture" rule. *Alternative:* one fixture with both, under the spec's name.
+
+**A.41 — `where a.eq : a, a -> Bool, b.x` is `expected_token` expecting `->`, at `.x`** (§2.3)
+[m13]. *Why:* it is what the rule the section specifies actually produces — the comma stayed a
+parameter separator, so `Bool, b` is a parameter list and the arrow it needs never came — and naming
+the missing arrow is more useful than naming the token that is not it. The spec's `unexpected_token`
+was a guess at the consequence. *Alternative:* special-case the lookahead to report the constraint
+head it half-matched, which is a rule with no other purpose.
+
+**A.42 — `k.Compare` is `invalid_character` from the LEXER** (§2.1) [m13]. A `dot_lower` is `.`
+followed by a lower letter (`src/lex/Tokenizer.zig`), so `.C` never becomes one and the constraint
+never reaches the parser. *Why:* the spec said `unexpected_token`, which is what `k . compare`
+gets — a different path with a different message. *Alternative:* none; this is a lexical fact.
+
+**A.43 — §10.6 (b) shows the annotated type and says "the declaration"** (§10.6) [m13]. It does not
+quote `<v>.<m> : <the constraint's type>`, and the hint does not name the declaration. *Why:* a
+lowering diagnostic carries exactly one secondary byte range, and the annotated type is the half the
+reader has to change; the span already points into the constraint. *Alternative:* widen
+`bir/Diagnostics.Item` to three ranges for one sentence in one message.
+
+**A.44 — trigger (a) of §10.6 suppresses trigger (b) for the same variable** (§10.6) [m13]. *Why:*
+the section's own example — `where a.show : a -> String` under `render : Int -> String` — trips both,
+and two messages for one mistake is the thing `fast-compiler.md` §5 and every `check/bad` golden
+exist to prevent. *Alternative:* report both and let the reader work out that they are one.

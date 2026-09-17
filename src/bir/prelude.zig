@@ -39,7 +39,14 @@ pub fn isModule(w: WellKnown) bool {
 /// and a type of that module; the namespaces are separate (§5.3).
 pub fn typeModule(w: WellKnown) ?WellKnown {
     return switch (w) {
-        .Int, .Float, .Bool, .Char, .String, .Order, .Never => .Basics,
+        .Int, .Float, .Bool, .Order, .Never => .Basics,
+        // `String` and `Char` are declared by their own modules
+        // (static-dispatch-spike.md §5.1): under the module rule a type's
+        // methods are its declaring module's `pub` values, and leaving them
+        // in `Basics` would make `Basics.compare : number, number -> Order`
+        // the `compare` of both.
+        .String => .String,
+        .Char => .Char,
         .List => .List,
         .Maybe => .Maybe,
         .Result => .Result,
@@ -132,6 +139,11 @@ test "every prelude name has exactly the namespaces Appendix A gives it" {
     try std.testing.expectEqual(@as(?WellKnown, null), ctorModule(.main));
     try std.testing.expectEqual(@as(?WellKnown, .Maybe), ctorModule(.Just));
     try std.testing.expectEqual(@as(?WellKnown, .List), typeModule(.List));
+    // `String` and `Char` are declared by their own modules
+    // (static-dispatch-spike.md §5.1) and still resolve unqualified from
+    // every module, because they are prelude TYPES either way.
+    try std.testing.expectEqual(@as(?WellKnown, .String), typeModule(.String));
+    try std.testing.expectEqual(@as(?WellKnown, .Char), typeModule(.Char));
     try std.testing.expect(isModule(.List));
     try std.testing.expectEqual(@as(?WellKnown, .max), wellKnown(WellKnown.max.symbol()));
     try std.testing.expectEqual(@as(?WellKnown, null), wellKnown(@enumFromInt(WellKnown.count)));

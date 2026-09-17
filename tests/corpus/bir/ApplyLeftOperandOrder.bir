@@ -20,8 +20,8 @@ decl 0: value two (annotated)
     import_value Basics.add
 
 decl 1: value applyLeftOperandOrder (annotated)
-  %0 = type_import Basics.String
-  %1 = type_import Basics.String
+  %0 = type_import String.String
+  %1 = type_import String.String
   %2 = type_import Maybe.Maybe
   %3 = type_import Basics.Int
   %4 = type_app %2 [%3]
@@ -47,7 +47,7 @@ decl 1: value applyLeftOperandOrder (annotated)
     0 a param %6
     1 b param %7
   refs
-    import_type Basics.String
+    import_type String.String
     import_type Maybe.Maybe
     import_type Basics.Int
     import_ctor Maybe.Just
@@ -55,8 +55,8 @@ decl 1: value applyLeftOperandOrder (annotated)
     import_value String.toInt
 
 decl 2: value applyRightOperandOrder (annotated)
-  %0 = type_import Basics.String
-  %1 = type_import Basics.String
+  %0 = type_import String.String
+  %1 = type_import String.String
   %2 = type_import Maybe.Maybe
   %3 = type_import Basics.Int
   %4 = type_app %2 [%3]
@@ -82,7 +82,7 @@ decl 2: value applyRightOperandOrder (annotated)
     0 a param %6
     1 b param %7
   refs
-    import_type Basics.String
+    import_type String.String
     import_type Maybe.Maybe
     import_type Basics.Int
     import_ctor Maybe.Just

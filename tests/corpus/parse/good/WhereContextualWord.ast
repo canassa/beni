@@ -1,0 +1,37 @@
+(module
+  (annotation pub holder
+    (type_fn
+      (type_con List
+        (type_var where))
+      (type_var where)))
+  (definition holder
+    (pat_var xs)
+    (ident where))
+  (annotation where
+    (type_con Int))
+  (definition where
+    (int 1))
+  (annotation pub uses
+    (type_fn
+      (type_record
+        (record_type_field where
+          (type_con Int)))
+      (type_con Int)))
+  (definition uses
+    (pat_var r)
+    (field_access .where
+      (ident r)))
+  (annotation pub compareThem
+    (type_fn
+      (type_var where)
+      (type_var where)
+      (type_con Bool))
+    (where_constraint where .eq
+      (type_fn
+        (type_var where)
+        (type_var where)
+        (type_con Bool))))
+  (definition compareThem
+    (pat_var a)
+    (pat_var b)
+    (ctor True)))

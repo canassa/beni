@@ -1,0 +1,156 @@
+decl 0: value dotCall
+  %0 = pat_var local 0 (d)
+  %1 = pat_var local 1 (k)
+  %2 = pat_var local 2 (v)
+  %3 = local 0 (d)
+  %4 = local 1 (k)
+  %5 = local 2 (v)
+  %6 = method_call %3 .insert [%4, %5]
+  params [%0, %1, %2]
+  body %6
+  locals
+    0 d param %0
+    1 k param %1
+    2 v param %2
+
+decl 1: value fieldReceiver
+  %0 = pat_var local 0 (x)
+  %1 = pat_var local 1 (b)
+  %2 = local 0 (x)
+  %3 = field_access %2 .a
+  %4 = local 1 (b)
+  %5 = method_call %3 .m [%4]
+  params [%0, %1]
+  body %5
+  locals
+    0 x param %0
+    1 b param %1
+
+decl 2: value tupleReceiver
+  %0 = pat_var local 0 (x)
+  %1 = pat_var local 1 (a)
+  %2 = local 0 (x)
+  %3 = tuple_index %2 .0
+  %4 = local 1 (a)
+  %5 = method_call %3 .m [%4]
+  params [%0, %1]
+  body %5
+  locals
+    0 x param %0
+    1 a param %1
+
+decl 3: value qualifiedReceiver
+  %0 = pat_var local 0 (a)
+  %1 = qualified String.length
+  %2 = local 0 (a)
+  %3 = method_call %1 .m [%2]
+  params [%0]
+  body %3
+  locals
+    0 a param %0
+  refs
+    import_value String.length
+
+decl 4: value placeholder
+  %0 = pat_var local 0 (x)
+  %1 = pat_var local 1 (b)
+  %2 = pat_var local 2
+  %3 = local 0 (x)
+  %4 = local 2
+  %5 = local 1 (b)
+  %6 = method_call %3 .m [%4, %5]
+  %7 = lambda [%2] -> %6
+  params [%0, %1]
+  body %7
+  locals
+    0 x param %0
+    1 b param %1
+    2 _ fresh %2
+
+decl 5: value pipeIn
+  %0 = pat_var local 0 (source)
+  %1 = pat_var local 1 (x)
+  %2 = pat_var local 2 (a)
+  %3 = local 0 (source)
+  %4 = local 1 (x)
+  %5 = local 2 (a)
+  %6 = method_call %4 .m [%3, %5]
+  params [%0, %1, %2]
+  body %6
+  locals
+    0 source param %0
+    1 x param %1
+    2 a param %2
+
+decl 6: value pipeOut
+  %0 = pat_var local 0 (x)
+  %1 = pat_var local 1 (a)
+  %2 = pat_var local 2 (f)
+  %3 = local 0 (x)
+  %4 = local 1 (a)
+  %5 = method_call %3 .m [%4]
+  %6 = local 2 (f)
+  %7 = call %6 [%5]
+  params [%0, %1, %2]
+  body %7
+  locals
+    0 x param %0
+    1 a param %1
+    2 f param %2
+
+decl 7: value pipeOnly
+  %0 = pat_var local 0 (source)
+  %1 = pat_var local 1 (x)
+  %2 = local 0 (source)
+  %3 = local 1 (x)
+  %4 = method_call %3 .m [%2]
+  params [%0, %1]
+  body %4
+  locals
+    0 source param %0
+    1 x param %1
+
+decl 8: value fieldAccess
+  %0 = pat_var local 0 (x)
+  %1 = local 0 (x)
+  %2 = field_access %1 .m
+  params [%0]
+  body %2
+  locals
+    0 x param %0
+
+decl 9: value fieldCall
+  %0 = pat_var local 0 (x)
+  %1 = pat_var local 1 (a)
+  %2 = local 0 (x)
+  %3 = field_access %2 .m
+  %4 = local 1 (a)
+  %5 = call %3 [%4]
+  params [%0, %1]
+  body %5
+  locals
+    0 x param %0
+    1 a param %1
+
+decl 10: value qualifiedCall
+  %0 = pat_var local 0 (a)
+  %1 = qualified String.length
+  %2 = local 0 (a)
+  %3 = call %1 [%2]
+  params [%0]
+  body %3
+  locals
+    0 a param %0
+  refs
+    import_value String.length
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

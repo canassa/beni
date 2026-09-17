@@ -1,0 +1,14 @@
+-- BIR: the six comparison operators of language.md §6.5 are method calls
+-- carrying the operator they were written as (§1.3, §3.1): `==` and `/=`
+-- ask for `eq`, `<` `<=` `>` `>=` ask for `compare`, and none of them
+-- references `Basics` any more — the `refs` section is empty where
+-- `import_value Basics.eq` used to stand. Their parenthesised forms are a
+-- lambda over the same node (§3.1, Appendix A.22), not a reference to
+-- `Basics.eq`, which would be structural equality and the wrong answer;
+-- `(+)` beside them is unchanged.
+comparisons a b =
+    ( a == b, a /= b, a < b, a > b, a <= b, a >= b )
+
+
+asFunctions =
+    [ (==), (/=), (<), (>), (<=), (>=), (+) ]

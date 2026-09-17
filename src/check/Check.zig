@@ -563,10 +563,15 @@ const ModuleCheck = struct {
         // Empty on every input a person writes; see `Env.too_deep`.
         var too_deep: std.ArrayList(Bir.Inst.Index) = .empty;
         defer too_deep.deinit(mc.scratch.allocator());
+        // Empty until a file uses a construct the checker cannot type yet;
+        // see `Env.not_implemented`.
+        var not_implemented: std.ArrayList(Bir.Inst.Index) = .empty;
+        defer not_implemented.deinit(mc.scratch.allocator());
 
         var env: Constrain.Env = .{
             .scratch = mc.scratch.allocator(),
             .too_deep = &too_deep,
+            .not_implemented = &not_implemented,
             .store = store,
             .types = mc.types,
             .graph = mc.graph,
@@ -625,6 +630,8 @@ const ModuleCheck = struct {
         // 5. Whatever was too deeply nested to read. Last, so a declaration
         //    that tripped the guard in more than one place is one message.
         try ModuleCheck.reportTooDeep(&env, &reporter);
+        // 6. And whatever the checker cannot type yet (S3's `type_dispatch`).
+        try ModuleCheck.reportNotImplemented(&env, &reporter);
 
         // A declaration with no body — a `foreign` value, an annotation the
         // parser found no definition for — has no check variable, so its
@@ -949,6 +956,20 @@ const ModuleCheck = struct {
         }
     }
 
+    /// One `not_implemented` per construct the checker cannot type yet, in
+    /// source order, deduplicated like `reportTooDeep`.
+    fn reportNotImplemented(env: *Constrain.Env, reporter: *Diagnostics.Reporter) Error!void {
+        const regions = env.not_implemented.items;
+        if (regions.len == 0) return;
+        std.mem.sort(Bir.Inst.Index, regions, {}, regionLessThan);
+        var previous: Bir.Inst.OptionalIndex = .none;
+        for (regions) |region| {
+            if (previous == region.toOptional()) continue;
+            previous = region.toOptional();
+            try reporter.typeDispatchNotImplemented(region);
+        }
+    }
+
     fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
         return a.int() < b.int();
     }
@@ -1071,12 +1092,6 @@ const test_core = [_]TestProject.Module{
     \\pub equatable foreign type Float
     \\
     \\
-    \\pub equatable foreign type Char
-    \\
-    \\
-    \\pub equatable foreign type String
-    \\
-    \\
     \\pub type Bool
     \\    = True
     \\    | False
@@ -1148,13 +1163,16 @@ const test_core = [_]TestProject.Module{
     \\
     },
     .{ .path = "String.beni", .package = .core, .source =
+    \\pub equatable foreign type String
+    \\
+    \\
     \\pub foreign length : String -> Int
     \\
     \\
     \\pub foreign fromInt : Int -> String
     \\
     },
-    .{ .path = "Char.beni", .package = .core, .source = "pub foreign isDigit : Char -> Bool\n" },
+    .{ .path = "Char.beni", .package = .core, .source = "pub equatable foreign type Char\n\n\npub foreign isDigit : Char -> Bool\n" },
     .{ .path = "Debug.beni", .package = .core, .source = "pub foreign todo : String -> a\n" },
 };
 

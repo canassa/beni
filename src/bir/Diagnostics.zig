@@ -25,6 +25,12 @@ pub const Item = struct {
     end: u32,
     other_start: u32 = 0,
     other_end: u32 = 0,
+    /// `where_variable_unbound` only: which of the two triggers of
+    /// static-dispatch-spike.md §10.6 fired. False is (a), the constraint's
+    /// own variable; true is (b), the closure rule — a variable that occurs
+    /// only INSIDE a constraint's type. The prose differs because the
+    /// mistake does, and the fix for (b) is not "delete the clause".
+    inside_constraint: bool = false,
 
     pub fn hasOther(item: Item) bool {
         return item.other_end > item.other_start;
@@ -35,6 +41,9 @@ pub const Item = struct {
 pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
     const text = source[item.start..item.end];
     const other_line = diagnostic.position(line_starts, item.other_start).line;
+    // The second range as TEXT: the annotated type a `where` clause is
+    // about (§10.6). Empty for every other code.
+    const other = source[item.other_start..item.other_end];
     switch (item.code) {
         .duplicate_import => try w.print(
             \\The module `{s}` is imported twice; the first import is on line {d}.
@@ -197,6 +206,38 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\Every type variable used in a `type` or `type alias` body must be declared as a
             \\parameter: `type alias Wrapper {s} = ...`.
         , .{ text, text }),
+        // The two well-formedness rules of a `where` clause
+        // (static-dispatch-spike.md §2.4, §10.6, §10.7). Both are decided
+        // in lowering, so both are lowering diagnostics.
+        .where_variable_unbound => if (item.inside_constraint) {
+            try w.print(
+                \\`{s}` appears in a constraint but not in the type.
+                \\
+                \\This constraint mentions `{s}`, but `{s}` is not a variable of
+                \\
+                \\    {s}
+                \\
+                \\A constraint may only mention variables the annotation quantifies, because
+                \\those are the ones a caller gets to choose.
+                \\
+                \\Hint: give the declaration a parameter or a result that mentions `{s}`.
+            , .{ text, text, text, other, text });
+        } else {
+            try w.print(
+                \\`{s}` is not a type variable of this annotation.
+                \\
+                \\A `where` clause constrains a variable of the type above it, and `{s}` does not
+                \\appear in
+                \\
+                \\    {s}
+            , .{ text, text, other });
+        },
+        .duplicate_where_constraint => try w.print(
+            \\`{s}` is constrained twice; the first constraint is on line {d}.
+            \\
+            \\One variable carries one constraint per method name. Merge the two, or constrain
+            \\a different method.
+        , .{ text, other_line }),
         // Only the codes above are lowering errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),

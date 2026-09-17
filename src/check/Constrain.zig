@@ -288,6 +288,13 @@ pub const Env = struct {
     /// The enclosing declaration's result variable, for a `?` whose target
     /// is the declaration itself.
     decl_result: Var.Optional = .none,
+    /// `type_dispatch` instructions this module holds, which the checker
+    /// cannot type yet (static-dispatch-spike.md §4, §6.7 — S3's work).
+    /// Collected here and reported by `Check` as `not_implemented`, for the
+    /// reason `fast-compiler.md` §5 gives: a construct the compiler cannot
+    /// handle must SAY so. Typing it as poison instead made the §4 example
+    /// pass `check` and `build` with exit code 0 and emit `undefined`.
+    not_implemented: *std.ArrayList(Bir.Inst.Index),
     /// Written types the reader could not finish (`Types.Builder.max_depth`,
     /// `Schemes.Writer.max_depth`), by the instruction a message points at.
     ///
@@ -299,6 +306,10 @@ pub const Env = struct {
     /// and reports this once per module. Empty on every input a person
     /// writes.
     too_deep: *std.ArrayList(Bir.Inst.Index),
+
+    pub fn noteNotImplemented(env: *const Env, inst: Bir.Inst.Index) Error!void {
+        try env.not_implemented.append(env.scratch, inst);
+    }
 
     pub fn localVar(env: *const Env, index: u32) ?Var {
         if (index >= env.local_var.len) return null;
@@ -579,6 +590,16 @@ pub const Generator = struct {
             },
 
             .call => return g.call(inst, data, expected, category),
+            .method_call => return g.methodCall(inst, data, expected, category),
+            // S3: a dispatch on a type variable (static-dispatch-spike.md
+            // §4, §6.7) is typed when the solver grows method constraints.
+            // Until then it is REPORTED — poison alone is silent and
+            // unifies with anything, so the declaration became a hole that
+            // checked clean and compiled to `undefined`.
+            .type_dispatch => {
+                try g.env.noteNotImplemented(inst);
+                return g.equal(expected, try g.fresh(.err), inst, category);
+            },
             .lambda => return g.lambda(inst, data, expected, category),
             .let => return g.letExpr(inst, data, expected, category),
             .case => return g.caseExpr(inst, data, expected, category),
@@ -615,9 +636,140 @@ pub const Generator = struct {
         return g.fresh(.err);
     }
 
+    /// **S3 SHIM** (static-dispatch-spike.md §6.3 replaces all of it with
+    /// method resolution and the constraint of §6.1).
+    ///
+    /// S2 changed what LOWERING emits, not what the checker knows: a
+    /// `method_call` reaches here in place of the two forms it replaced,
+    /// and this reproduces exactly what each of those meant.
+    ///
+    ///   - a dot-call `x.m a` was `call(field_access(x, m), [a])`, so the
+    ///     receiver must be a record with an `m` field and that field is
+    ///     the callee. The regions are unchanged: a `method_call` is
+    ///     stamped with the method-name token, which is what the
+    ///     `field_access` it replaced was stamped with too.
+    ///   - one of the six operators (§3.1) was `call(Basics.eq, [a, b])`
+    ///     and friends, whose types are `equatable a, a -> Bool` and
+    ///     `number, number -> Bool`. Those are written out here rather than
+    ///     instantiated from `Basics`, because the operator no longer
+    ///     REFERENCES `Basics` — lowering emits no `import_value` for it,
+    ///     so there is nothing to instantiate.
+    fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
+        const bir = g.env.bir;
+        const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+        const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
+        const receiver: Bir.Inst.Index = @enumFromInt(data.lhs);
+        if (m.origin != .none) return g.wellKnownCall(inst, receiver, args, m.origin, expected, category);
+
+        const name = bir.symbol(m.name);
+        const callee = try g.freshFlex();
+        const arg_vars = try g.env.scratch.alloc(Var, args.len);
+        defer g.env.scratch.free(arg_vars);
+        for (arg_vars) |*v| v.* = try g.freshFlex();
+        const args_start: u32 = @intCast(g.tree.extra.items.len);
+        try g.tree.extra.appendSlice(g.gpa, @ptrCast(arg_vars));
+        const payload = try g.addExtra(Call{
+            .callee = callee,
+            .args_start = args_start,
+            .args_len = @intCast(args.len),
+            .result = expected,
+            .flavor = .call,
+        });
+
+        // `{ ext | m : callee }`, the open record of `field_access`.
+        var pairs = [_]TypeStore.Field{.{ .name = name, .value = callee }};
+        const range = try g.env.store.addFields(&pairs);
+        const ext = try g.freshFlex();
+        const required = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
+        const target = try g.freshFlex();
+
+        var parts: std.ArrayList(Constraint) = .empty;
+        defer parts.deinit(g.env.scratch);
+        try parts.append(g.env.scratch, try g.expr(receiver, target, .{ .tag = .general }));
+        try parts.append(g.env.scratch, try g.equal(required, target, inst, .{ .tag = .field_access, .index = @intFromEnum(name) }));
+        try parts.append(g.env.scratch, try g.add(.call, inst, payload, 0, category));
+        for (args, arg_vars, 0..) |arg, v, i| {
+            try parts.append(g.env.scratch, try g.expr(arg, v, .{
+                .tag = .call_arg,
+                .index = @intCast(i + 1),
+                .owner = inst.toOptional(),
+            }));
+        }
+        return g.conj(parts.items);
+    }
+
+    /// **S3 SHIM**: the type both operands of a well-known call share.
+    /// `eq`/`neq` take any ONE equatable type and the four orderings take
+    /// `number`, exactly as `Basics.eq` and `Basics.lt` do (§3.1). The
+    /// equality variable carries the NAME `a`, which is the name the
+    /// annotation it replaces gives it (`core/Basics.beni`): without it a
+    /// message about `1 == "a"` reads "needs the 2nd argument to be
+    /// `number`" — the kind it picked up from the other operand — where it
+    /// used to read `a`.
+    fn operandVar(g: *Generator, origin: Bir.WellKnown) Error!Var {
+        return switch (origin) {
+            .eq, .neq => g.fresh(.{ .flex = .{ .name = InternPool.WellKnown.a.symbol().toOptional() } }),
+            else => g.freshKind(.number),
+        };
+    }
+
+    /// **S3 SHIM**, the operator half of `methodCall`: `a == b` and the four
+    /// orderings, typed as the `Basics` functions they used to call.
+    fn wellKnownCall(
+        g: *Generator,
+        inst: Bir.Inst.Index,
+        receiver: Bir.Inst.Index,
+        args: []const Bir.Inst.Index,
+        origin: Bir.WellKnown,
+        expected: Var,
+        category: Category,
+    ) Error!Constraint {
+        // `eq`/`neq` take any ONE equatable type; the four orderings take
+        // `number`. Both pin their two operands to the same variable and
+        // answer `Bool` (§3.1).
+        const operand = try g.operandVar(origin);
+        var parts: std.ArrayList(Constraint) = .empty;
+        defer parts.deinit(g.env.scratch);
+        try parts.append(g.env.scratch, try g.equal(expected, try g.primitive(g.env.types.well_known.bool), inst, category));
+        try parts.append(g.env.scratch, try g.expr(receiver, operand, .{
+            .tag = .call_arg,
+            .index = 1,
+            .owner = inst.toOptional(),
+        }));
+        for (args, 0..) |arg, i| {
+            try parts.append(g.env.scratch, try g.expr(arg, operand, .{
+                .tag = .call_arg,
+                .index = @intCast(i + 2),
+                .owner = inst.toOptional(),
+            }));
+        }
+        // The `equatable` obligation `Basics.eq`'s annotation used to carry
+        // (checker.md §6.4), registered at the receiver, which is where the
+        // unification that used to raise it happened.
+        if (origin == .eq or origin == .neq) {
+            try parts.append(g.env.scratch, try g.add(.equatable, receiver, @intFromEnum(operand), 0, .{ .tag = .general }));
+        }
+        return g.conj(parts.items);
+    }
+
     fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
         const bir = g.env.bir;
         const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
+
+        // **S3 SHIM**: a SATURATED operator section — `(==) a b` — is the
+        // operator applied to those two arguments, which is what it used to
+        // lower to. Reading it as a call of the lambda instead would report
+        // every mistake against the lambda's synthesised locals, all of
+        // which are stamped with the operator's own token: `(==) inc inc`
+        // underlined `(==)` where it should underline `inc`. An unsaturated
+        // one keeps the lambda, so its arity mistake still says "The (==)
+        // operator expects 2 arguments".
+        if (args.len == 2) {
+            if (bir.operatorSection(@enumFromInt(data.lhs), g.env.locals_base)) |origin| {
+                return g.wellKnownCall(inst, args[0], args[1..], origin, expected, category);
+            }
+        }
+
         const callee = try g.freshFlex();
         const arg_vars = try g.env.scratch.alloc(Var, args.len);
         defer g.env.scratch.free(arg_vars);
@@ -657,7 +809,21 @@ pub const Generator = struct {
         const param_vars = try g.env.scratch.alloc(Var, params.len);
         defer g.env.scratch.free(param_vars);
         for (param_vars) |*v| v.* = try g.freshFlex();
-        const result = try g.freshFlex();
+        var result = try g.freshFlex();
+
+        // **S3 SHIM**: `(==)` is a lambda over a method call (§3.1, A.22),
+        // and its type is known EXACTLY — `a, a -> Bool`, or
+        // `number, number -> Bool`. Pinning it here, before the body is
+        // descended into, is what makes `List.foldl [ 1 ] 0 (<)` say "this
+        // argument is `Int, Int -> Bool` but `foldl` needs
+        // `Int, Int -> Int`": with fresh variables the parameter type won
+        // the unification first and the mistake surfaced inside the body,
+        // as "this is `Bool` but I need `b`".
+        if (bir.operatorSection(inst, g.env.locals_base)) |origin| {
+            const operand = try g.operandVar(origin);
+            for (param_vars) |*v| v.* = operand;
+            result = try g.primitive(g.env.types.well_known.bool);
+        }
 
         var parts: std.ArrayList(Constraint) = .empty;
         defer parts.deinit(g.env.scratch);
@@ -1199,6 +1365,15 @@ fn pushChildren(env: *Env, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.
             for (bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field)) |f| try stack.append(scratch, f.value);
         },
         .field_access, .tuple_index, .@"try" => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .method_call => {
+            const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+            try stack.append(scratch, @enumFromInt(data.lhs));
+            try stack.appendSlice(scratch, bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index));
+        },
+        .type_dispatch => {
+            const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+            try stack.appendSlice(scratch, bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Bir.Inst.Index));
+        },
         .call, .pat_ctor, .case, .type_app => {
             try stack.append(scratch, @enumFromInt(data.lhs));
             try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));

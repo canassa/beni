@@ -1,7 +1,7 @@
 decl 0: value greet (annotated)
-  %0 = type_import Basics.String
+  %0 = type_import String.String
   %1 = type_import Basics.Int
-  %2 = type_import Basics.String
+  %2 = type_import String.String
   %3 = type_fn [%0, %1] -> %2
   %4 = pat_var local 0 (name)
   %5 = pat_var local 1 (n)
@@ -18,13 +18,13 @@ decl 0: value greet (annotated)
     0 name param %4
     1 n param %5
   refs
-    import_type Basics.String
+    import_type String.String
     import_type Basics.Int
 
 decl 1: value adjacent (annotated)
   %0 = type_import Basics.Int
   %1 = type_import Basics.Int
-  %2 = type_import Basics.String
+  %2 = type_import String.String
   %3 = type_fn [%0, %1] -> %2
   %4 = pat_var local 0 (a)
   %5 = pat_var local 1 (b)
@@ -39,11 +39,11 @@ decl 1: value adjacent (annotated)
     1 b param %5
   refs
     import_type Basics.Int
-    import_type Basics.String
+    import_type String.String
 
 decl 2: value only (annotated)
   %0 = type_import Basics.Int
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_fn [%0] -> %1
   %3 = pat_var local 0 (a)
   %4 = local 0 (a)
@@ -55,11 +55,11 @@ decl 2: value only (annotated)
     0 a param %3
   refs
     import_type Basics.Int
-    import_type Basics.String
+    import_type String.String
 
 decl 3: value escaped (annotated)
   %0 = type_import Basics.Int
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_fn [%0] -> %1
   %3 = pat_var local 0 (a)
   %4 = chunk "\t"
@@ -76,17 +76,17 @@ decl 3: value escaped (annotated)
     0 a param %3
   refs
     import_type Basics.Int
-    import_type Basics.String
+    import_type String.String
     import_value Basics.add
 
 decl 4: value plain (annotated)
-  %0 = type_import Basics.String
+  %0 = type_import String.String
   %1 = string "no interpolation"
   annotation %0
   params []
   body %1
   refs
-    import_type Basics.String
+    import_type String.String
 
 interface
 

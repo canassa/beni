@@ -31,35 +31,33 @@ decl 2: value scale (annotated)
   %5 = pat_var local 1 (k)
   %6 = local 1 (k)
   %7 = int 0
-  %8 = import_value Basics.eq
-  %9 = call %8 [%6, %7]
-  %10 = import_ctor Basics.True
-  %11 = pat_ctor %10 []
-  %12 = int 0
-  %13 = branch %11 -> %12
-  %14 = import_ctor Basics.False
-  %15 = pat_ctor %14 []
-  %16 = local 0 (n)
-  %17 = top 2 (scale)
-  %18 = local 0 (n)
-  %19 = local 1 (k)
-  %20 = int 1
-  %21 = import_value Basics.sub
-  %22 = call %21 [%19, %20]
-  %23 = call %17 [%18, %22]
-  %24 = import_value Basics.add
-  %25 = call %24 [%16, %23]
-  %26 = branch %15 -> %25
-  %27 = case %9 [%13, %26]
+  %8 = method_call %6 .eq [%7] (==)
+  %9 = import_ctor Basics.True
+  %10 = pat_ctor %9 []
+  %11 = int 0
+  %12 = branch %10 -> %11
+  %13 = import_ctor Basics.False
+  %14 = pat_ctor %13 []
+  %15 = local 0 (n)
+  %16 = top 2 (scale)
+  %17 = local 0 (n)
+  %18 = local 1 (k)
+  %19 = int 1
+  %20 = import_value Basics.sub
+  %21 = call %20 [%18, %19]
+  %22 = call %16 [%17, %21]
+  %23 = import_value Basics.add
+  %24 = call %23 [%15, %22]
+  %25 = branch %14 -> %24
+  %26 = case %8 [%12, %25]
   annotation %3
   params [%4, %5]
-  body %27
+  body %26
   locals
     0 n param %4
     1 k param %5
   refs
     import_type Basics.Int
-    import_value Basics.eq
     import_ctor Basics.True
     import_ctor Basics.False
     top 2 (scale)

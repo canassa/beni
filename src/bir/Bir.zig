@@ -261,6 +261,18 @@ pub const Inst = struct {
         /// `call(import_value(Basics, add), [a, b])`. `lhs` callee; `rhs`
         /// extra `SubRange` of arguments (at least one).
         call,
+        /// `x.m a b` where the field access is the HEAD of an application
+        /// (static-dispatch-spike.md §1.1, §1.4), and what the six
+        /// comparison operators desugar to (§3.1). `lhs` is the receiver;
+        /// `rhs` is the `ExtraIndex` of a `MethodCall`. Which function it
+        /// calls is not known before the checker runs, so — unlike `call` —
+        /// it adds no `refs` edge (§1.4).
+        method_call,
+        /// `a.decode s` inside a declaration whose `where` clause
+        /// constrains the type variable `a` (§4.1): a call on a TYPE, with
+        /// no receiver value. `lhs` is the variable's `SymbolIndex`; `rhs`
+        /// is the `ExtraIndex` of a `TypeDispatch`.
+        type_dispatch,
         /// `\a b -> e`, n-ary. `lhs` extra `SubRange` of parameter patterns;
         /// `rhs` body. Also what `.field`, `>>` and `<<` desugar to.
         lambda,
@@ -418,6 +430,106 @@ pub const Field = struct {
     value: Inst.Index,
 };
 
+/// Which surface form a `method_call` came from (static-dispatch-spike.md
+/// §1.3): `none` is the dot-call `x.m a`, the other six name the operator
+/// of `language.md` §6.5 that desugared into the node (§3.1). It is an
+/// enum and not a flag because the typing rule differs — `a == b` pins both
+/// operands to one type — and because every diagnostic about one of these
+/// calls names the OPERATOR, not `eq`.
+pub const WellKnown = enum(u8) {
+    none,
+    eq,
+    neq,
+    lt,
+    le,
+    gt,
+    ge,
+
+    /// How the operator is written, or null for a dot-call.
+    pub fn spelling(w: WellKnown) ?[]const u8 {
+        return switch (w) {
+            .none => null,
+            .eq => "==",
+            .neq => "/=",
+            .lt => "<",
+            .le => "<=",
+            .gt => ">",
+            .ge => ">=",
+        };
+    }
+
+    /// The origin an operator TOKEN produces, or null for an operator that
+    /// is still a call of its core function (`+`, `::`, `&&`, …).
+    pub fn fromOperator(op: @import("../lex/Token.zig").Tag) ?WellKnown {
+        return switch (op) {
+            .op_eq_eq => .eq,
+            .op_slash_eq => .neq,
+            .op_lt => .lt,
+            .op_lte => .le,
+            .op_gt => .gt,
+            .op_gte => .ge,
+            else => null,
+        };
+    }
+
+    /// The method the operator asks for: `eq` for equality, `compare` for
+    /// the four orderings (§3.1). Null for a dot-call, whose method name is
+    /// whatever was written.
+    pub fn method(w: WellKnown) ?InternPool.WellKnown {
+        return switch (w) {
+            .none => null,
+            .eq, .neq => .eq,
+            .lt, .le, .gt, .ge => .compare,
+        };
+    }
+
+    /// The `Basics` function the operator used to desugar to
+    /// (`language.md` §6.5). It is still declared and callable; only the
+    /// OPERATOR stopped meaning it (§3.1). Used by the S4 shim in the
+    /// backend, which emits that call until the dispatch table exists.
+    pub fn basicsFunction(w: WellKnown) ?InternPool.WellKnown {
+        return switch (w) {
+            .none => null,
+            .eq => .eq,
+            .neq => .neq,
+            .lt => .lt,
+            .le => .le,
+            .gt => .gt,
+            .ge => .ge,
+        };
+    }
+};
+
+/// Payload of `method_call` (§1.4).
+pub const MethodCall = struct {
+    /// The method name, without its dot.
+    name: SymbolIndex,
+    /// The surface form this call was written as.
+    origin: WellKnown,
+    /// The arguments, NOT counting the receiver.
+    args_start: ExtraIndex,
+    args_end: ExtraIndex,
+};
+
+/// Payload of `type_dispatch` (§4.1).
+pub const TypeDispatch = struct {
+    name: SymbolIndex,
+    args_start: ExtraIndex,
+    args_end: ExtraIndex,
+};
+
+/// One constraint of a declaration's `where` clause
+/// (static-dispatch-spike.md §2.1), stored as a triple in `extra` between
+/// `Decl.where_start` and `Decl.where_end`.
+pub const WhereConstraint = struct {
+    /// The constrained type variable.
+    variable: SymbolIndex,
+    /// The method name.
+    method: SymbolIndex,
+    /// The method's type at this constraint.
+    type_inst: Inst.Index,
+};
+
 /// Payload of `let_def`.
 pub const LetDef = struct {
     /// The local index the binding introduces.
@@ -460,6 +572,11 @@ pub const Decl = struct {
     /// `value` with an annotation, `annotation_only`, `foreign_value`: the
     /// annotation's type. `type_alias`: the aliased type. Else none.
     annotation: Inst.OptionalIndex,
+    /// The annotation's `where` clause as `WhereConstraint` triples in
+    /// `extra` (static-dispatch-spike.md §1.4, §2.1); empty when there is
+    /// none, which is every declaration outside the spike's fixtures.
+    where_start: ExtraIndex,
+    where_end: ExtraIndex,
     /// `value`: the body expression. Else none.
     body: Inst.OptionalIndex,
     /// The declaration's instructions, contiguous.
@@ -504,6 +621,10 @@ pub const Decl = struct {
 
     pub fn hasAnnotation(d: Decl) bool {
         return d.annotation != .none;
+    }
+
+    pub fn whereRange(d: Decl) SubRange {
+        return .{ .start = d.where_start, .end = d.where_end };
     }
 };
 
@@ -695,6 +816,42 @@ pub fn declLocals(bir: *const Bir, d: Decl) []const Local {
 
 pub fn declRefs(bir: *const Bir, d: Decl) []const Ref {
     return bir.refs[d.refs_start..d.refs_end];
+}
+
+/// The operator a `lambda` instruction is the desugaring of
+/// (static-dispatch-spike.md §3.1, Appendix A.22: `(==)` is
+/// `\a b -> a == b`), or null for a lambda someone wrote.
+///
+/// Matched on SHAPE, with nothing stored on the instruction: two
+/// parameters, both COMPILER-MADE locals (`Local.Kind.fresh` — a
+/// hand-written `\a b -> a == b` binds named locals and is not this), over
+/// a `method_call` whose origin is an operator. Both the checker (which
+/// pins such a lambda's type, and reads a saturated one as the operator
+/// call it stands for) and the diagnostics (which name the operator) ask
+/// this one question, so they cannot drift apart.
+///
+/// `locals_base` is where the enclosing declaration's locals start in the
+/// module-wide table, because a `pat_var`'s index is relative to its
+/// declaration.
+pub fn operatorSection(bir: *const Bir, inst: Inst.Index, locals_base: u32) ?WellKnown {
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .lambda) return null;
+    const data = bir.instData(inst);
+    const params = bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Inst.Index);
+    if (params.len != 2) return null;
+    const body: Inst.Index = @enumFromInt(data.rhs);
+    if (body.int() >= bir.insts.len or bir.instTag(body) != .method_call) return null;
+    for (params) |p| {
+        if (p.int() >= bir.insts.len or bir.instTag(p) != .pat_var) return null;
+        const local = locals_base + bir.instData(p).lhs;
+        if (local >= bir.locals.len or bir.locals[local].kind != .fresh) return null;
+    }
+    const m = bir.extraData(@enumFromInt(bir.instData(body).rhs), MethodCall);
+    return if (m.origin == .none) null else m.origin;
+}
+
+/// The constraints of a declaration's `where` clause, in source order.
+pub fn declWhere(bir: *const Bir, d: Decl) []const WhereConstraint {
+    return bir.extraSlice(d.whereRange(), WhereConstraint);
 }
 
 pub fn declCtors(bir: *const Bir, d: Decl) []const Ctor {

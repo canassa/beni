@@ -1,0 +1,13 @@
+-- check/bad: a SATURATED operator section is the operator call it stands
+-- for (§3.1), so the `not_equatable` obligation is reported against the
+-- OPERAND — `(==) inc inc` underlines the first `inc` at 13:10 — and not
+-- against the synthesised lambda, whose every instruction is stamped with
+-- the operator's own token and so underlined `(==)`.
+pub inc : Int -> Int
+inc n =
+    n
+
+
+pub bad : Bool
+bad =
+    (==) inc inc

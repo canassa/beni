@@ -28,28 +28,26 @@ decl 1: value wrap (annotated)
   %5 = pat_var local 0 (n)
   %6 = local 0 (n)
   %7 = int 0
-  %8 = import_value Basics.gt
-  %9 = call %8 [%6, %7]
-  %10 = import_ctor Basics.True
-  %11 = pat_ctor %10 []
-  %12 = import_ctor Maybe.Just
-  %13 = local 0 (n)
-  %14 = call %12 [%13]
-  %15 = branch %11 -> %14
-  %16 = import_ctor Basics.False
-  %17 = pat_ctor %16 []
-  %18 = import_ctor Maybe.Nothing
-  %19 = branch %17 -> %18
-  %20 = case %9 [%15, %19]
+  %8 = method_call %6 .compare [%7] (>)
+  %9 = import_ctor Basics.True
+  %10 = pat_ctor %9 []
+  %11 = import_ctor Maybe.Just
+  %12 = local 0 (n)
+  %13 = call %11 [%12]
+  %14 = branch %10 -> %13
+  %15 = import_ctor Basics.False
+  %16 = pat_ctor %15 []
+  %17 = import_ctor Maybe.Nothing
+  %18 = branch %16 -> %17
+  %19 = case %8 [%14, %18]
   annotation %4
   params [%5]
-  body %20
+  body %19
   locals
     0 n param %5
   refs
     import_type Basics.Int
     import_type Maybe.Maybe
-    import_value Basics.gt
     import_ctor Basics.True
     import_ctor Maybe.Just
     import_ctor Basics.False
@@ -57,10 +55,10 @@ decl 1: value wrap (annotated)
 
 decl 2: value describe (annotated)
   %0 = type_import Result.Result
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_import Basics.Int
   %3 = type_app %0 [%1, %2]
-  %4 = type_import Basics.String
+  %4 = type_import String.String
   %5 = type_fn [%3] -> %4
   %6 = pat_var local 0 (r)
   %7 = local 0 (r)
@@ -86,7 +84,7 @@ decl 2: value describe (annotated)
     2 message pattern %16
   refs
     import_type Result.Result
-    import_type Basics.String
+    import_type String.String
     import_type Basics.Int
     import_ctor Result.Ok
     import_value String.fromInt

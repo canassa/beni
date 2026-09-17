@@ -228,6 +228,13 @@ pub const Node = struct {
         /// `x : Int` inside a record type. `main_token` is the field name;
         /// `lhs` is the type.
         record_type_field,
+        /// `k.compare : k, k -> Order`, one constraint of a `where` clause
+        /// (static-dispatch-spike.md §2.1). `main_token` is the constrained
+        /// variable's lower identifier; the method name is the abutting
+        /// `dot_lower` at `main_token + 1` and the `:` the one after that;
+        /// `lhs` is the type. Only a top-level annotation or `foreign`
+        /// value has these, in `DeclHeader.where_start..where_end`.
+        where_constraint,
 
         // ---- Expressions: leaves ---------------------------------------
 
@@ -498,8 +505,28 @@ pub const DeclHeader = struct {
     /// Comment indices `[doc_start, doc_end)` of the attached `--|` block.
     doc_start: u32,
     doc_end: u32,
+    /// `SubRange` of `where_constraint` nodes (static-dispatch-spike.md
+    /// §2.1), empty when the declaration has no `where` clause. Only a
+    /// top-level `annotation` or `foreign_value` can carry one; it lives on
+    /// the header rather than on those two records so `declHeader` — the one
+    /// accessor every declaration shares — reaches it (plan §5.1).
+    where_start: ExtraIndex,
+    where_end: ExtraIndex,
 
-    pub const none: DeclHeader = .{ .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .doc_start = 0, .doc_end = 0 };
+    pub const none: DeclHeader = .{
+        .pub_token = .none,
+        .opaque_token = .none,
+        .equatable_token = .none,
+        .doc_start = 0,
+        .doc_end = 0,
+        .where_start = @enumFromInt(0),
+        .where_end = @enumFromInt(0),
+    };
+
+    /// The `where` clause's constraints, empty when there is none.
+    pub fn whereRange(h: DeclHeader) SubRange {
+        return .{ .start = h.where_start, .end = h.where_end };
+    }
 
     pub fn docs(h: DeclHeader) CommentRange {
         return .{ .start = h.doc_start, .end = h.doc_end };
@@ -612,6 +639,15 @@ pub const full = struct {
     pub const Constructor = struct {
         name: TokenIndex,
         args: []const Node.Index,
+    };
+
+    /// `k.compare : k, k -> Order` (static-dispatch-spike.md §2.1).
+    pub const WhereConstraint = struct {
+        /// The constrained type variable.
+        variable: TokenIndex,
+        /// The `dot_lower` naming the method, abutting `variable`.
+        method: TokenIndex,
+        type_expr: Node.Index,
     };
 
     pub const TypeCon = struct {
@@ -833,6 +869,22 @@ pub fn typeVarMarker(tree: *const Ast, node: Node.Index) ?TokenIndex {
     std.debug.assert(tree.nodeTag(node) == .type_var);
     const o: OptionalTokenIndex = @enumFromInt(tree.nodeData(node).lhs);
     return o.unwrap();
+}
+
+/// The constraints of a declaration header's `where` clause, in source
+/// order; empty when there is none.
+pub fn whereConstraints(tree: *const Ast, header: DeclHeader) []const Node.Index {
+    return tree.extraSlice(header.whereRange(), Node.Index);
+}
+
+pub fn fullWhereConstraint(tree: *const Ast, node: Node.Index) full.WhereConstraint {
+    std.debug.assert(tree.nodeTag(node) == .where_constraint);
+    const variable = tree.nodeMainToken(node);
+    return .{
+        .variable = variable,
+        .method = variable + 1,
+        .type_expr = @enumFromInt(tree.nodeData(node).lhs),
+    };
 }
 
 /// The visibility and doc range of any declaration tag.
@@ -1091,13 +1143,13 @@ pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
 const testing = std.testing;
 
 test "extraData flattens nested headers and extraLen agrees" {
-    try testing.expectEqual(@as(u32, 5), extraLen(DeclHeader));
-    try testing.expectEqual(@as(u32, 7), extraLen(Definition));
-    try testing.expectEqual(@as(u32, 9), extraLen(TypeDecl));
+    try testing.expectEqual(@as(u32, 7), extraLen(DeclHeader));
+    try testing.expectEqual(@as(u32, 9), extraLen(Definition));
+    try testing.expectEqual(@as(u32, 11), extraLen(TypeDecl));
     try testing.expectEqual(@as(u32, 5), extraLen(Import));
 
     const none_token = std.math.maxInt(u32);
-    const words = [_]u32{ 7, none_token, 3, 2, 5, 10, 12 };
+    const words = [_]u32{ 7, none_token, 3, 2, 5, 0, 0, 10, 12 };
     var tree: Ast = empty;
     tree.extra = &words;
     const d = tree.extraData(@enumFromInt(0), Definition);

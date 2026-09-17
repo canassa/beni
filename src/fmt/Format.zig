@@ -332,6 +332,22 @@ const Measurer = struct {
         return i < m.comments.len and m.comments[i].before_token <= last_tok;
     }
 
+    /// Measure a header's `where` constraints and return the declaration's
+    /// last token: the clause's, when there is one (static-dispatch-spike.md
+    /// §2.5). The constraints must be measured — the printer reads their
+    /// `firsts` to find the `where` and the commas — and the declaration's
+    /// span must cover them, or a comment inside the clause is attributed
+    /// to the declaration after it.
+    fn whereClause(m: *Measurer, header: Ast.DeclHeader, type_last: u32) Error!u32 {
+        const constraints = m.tree.whereConstraints(header);
+        var last_tok = type_last;
+        for (constraints) |c| {
+            try m.measure(c);
+            last_tok = m.last(c);
+        }
+        return last_tok;
+    }
+
     fn leaf(m: *Measurer, n: Index) void {
         const t = m.tree.nodeMainToken(n);
         m.set(n, m.tokenWidth(t), t, t);
@@ -437,11 +453,22 @@ const Measurer = struct {
                 } else m.leaf(n);
             },
             .exposed, .int, .float, .char, .ident, .ctor, .accessor, .pat_var, .pat_int, .pat_char, .chunk => m.leaf(n),
+            .where_constraint => {
+                // `k.compare : k, k -> Order` — the variable and the method
+                // abut, then ` : ` and the type (§2.1).
+                const c = tree.fullWhereConstraint(n);
+                try m.measure(c.type_expr);
+                m.set(n, m.tokenWidth(c.variable) +| m.tokenWidth(c.method) +| 3 +| m.w(c.type_expr), c.variable, m.last(c.type_expr));
+            },
             .annotation => {
                 const a = tree.fullAnnotation(n);
                 try m.measure(a.type_expr);
                 const pub_width: u32 = if (a.header.pub_token != .none) 4 else 0;
-                m.set(n, pub_width + m.tokenWidth(a.name) + 3 +| m.w(a.type_expr), a.header.pub_token.unwrap() orelse a.name, m.last(a.type_expr));
+                const width = pub_width + m.tokenWidth(a.name) + 3 +| m.w(a.type_expr);
+                m.set(n, width, a.header.pub_token.unwrap() orelse a.name, try m.whereClause(a.header, m.last(a.type_expr)));
+                // A `where` clause is always vertical (§2.5), so the
+                // annotation has no single-line form once it has one.
+                if (a.header.where_end != a.header.where_start) m.widths[n.int()] = no_fit;
             },
             .definition => {
                 const d = tree.fullDefinition(n);
@@ -469,7 +496,9 @@ const Measurer = struct {
                 const f = tree.fullForeignValue(n);
                 try m.measure(f.type_expr);
                 const pub_width: u32 = if (f.header.pub_token != .none) 4 else 0;
-                m.set(n, pub_width + 8 + m.tokenWidth(f.name) + 3 +| m.w(f.type_expr), m.headerFirst(f.header, main - 1), m.last(f.type_expr));
+                const width = pub_width + 8 + m.tokenWidth(f.name) + 3 +| m.w(f.type_expr);
+                m.set(n, width, m.headerFirst(f.header, main - 1), try m.whereClause(f.header, m.last(f.type_expr)));
+                if (f.header.where_end != f.header.where_start) m.widths[n.int()] = no_fit;
             },
             .foreign_type => {
                 const f = tree.fullForeignType(n);
@@ -1124,6 +1153,7 @@ const Printer = struct {
                 try p.space();
                 try p.tok(a.name + 1); // `:`
                 try p.annotated(a.type_expr, 0);
+                try p.whereClause(a.header);
             },
             .definition => {
                 const d = tree.fullDefinition(n);
@@ -1183,6 +1213,7 @@ const Printer = struct {
                 try p.space();
                 try p.tok(f.name + 1); // `:`
                 try p.annotated(f.type_expr, 0);
+                try p.whereClause(f.header);
             },
             .foreign_type => {
                 const f = tree.fullForeignType(n);
@@ -1199,6 +1230,49 @@ const Printer = struct {
             },
             else => return error.SyntaxErrors,
         }
+    }
+
+    /// The `where` clause of a top-level annotation or `foreign` value
+    /// (static-dispatch-spike.md §2.5): never joined to the annotation's
+    /// own line, never reordered. One constraint shares the `where` line;
+    /// two or more put `where` alone and one constraint per line indented
+    /// 8, with a leading comma from the second on — the vertical form a
+    /// list takes. The `where` token is the one before the first
+    /// constraint and each comma the one before the constraint it leads,
+    /// exactly as `|` is found in a `type` declaration.
+    fn whereClause(p: *Printer, h: Ast.DeclHeader) Error!void {
+        const constraints = p.tree.whereConstraints(h);
+        if (constraints.len == 0) return;
+        p.newline(indent_step);
+        try p.tok(p.first(constraints[0]) - 1); // `where`
+        if (constraints.len == 1) {
+            try p.space();
+            try p.constraint(constraints[0], indent_step);
+            return;
+        }
+        for (constraints, 0..) |c, i| {
+            p.newline(2 * indent_step);
+            if (i != 0) {
+                try p.tok(p.first(c) - 1); // `,`
+                try p.space();
+            }
+            try p.constraint(c, 2 * indent_step);
+        }
+    }
+
+    /// `k.compare : k, k -> Order`. The type is printed FLAT: like a
+    /// pattern it overflows the guide rather than breaking (§2.5).
+    fn constraint(p: *Printer, n: Index, indent: u32) Error!void {
+        const c = p.tree.fullWhereConstraint(n);
+        try p.tok(c.variable);
+        try p.tok(c.method); // `.m`, abutting its variable (§2.1)
+        try p.space();
+        try p.tok(c.method + 1); // `:`
+        try p.space();
+        const saved = p.flat;
+        p.flat = true;
+        defer p.flat = saved;
+        try p.typ(c.type_expr, indent);
     }
 
     /// `name : Type` on one line when it fits, else `name :` and the type

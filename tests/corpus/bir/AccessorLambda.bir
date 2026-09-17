@@ -1,10 +1,10 @@
 decl 0: value names (annotated)
   %0 = type_import List.List
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_record { name : %1 }
   %3 = type_app %0 [%2]
   %4 = type_import List.List
-  %5 = type_import Basics.String
+  %5 = type_import String.String
   %6 = type_app %4 [%5]
   %7 = type_fn [%3] -> %6
   %8 = pat_var local 0 (people)
@@ -23,7 +23,7 @@ decl 0: value names (annotated)
     1 _ fresh %11
   refs
     import_type List.List
-    import_type Basics.String
+    import_type String.String
     import_value List.map
 
 decl 1: value nestedAccess (annotated)
@@ -46,7 +46,7 @@ decl 1: value nestedAccess (annotated)
 
 decl 2: value first (annotated)
   %0 = type_import Basics.Int
-  %1 = type_import Basics.String
+  %1 = type_import String.String
   %2 = type_tuple [%0, %1]
   %3 = type_import Basics.Int
   %4 = type_fn [%2] -> %3
@@ -60,13 +60,13 @@ decl 2: value first (annotated)
     0 t param %5
   refs
     import_type Basics.Int
-    import_type Basics.String
+    import_type String.String
 
 decl 3: value appliedAccessors (annotated)
-  %0 = type_import Basics.String
+  %0 = type_import String.String
   %1 = type_record { city : %0 }
   %2 = type_record { address : %1 }
-  %3 = type_import Basics.String
+  %3 = type_import String.String
   %4 = type_fn [%2] -> %3
   %5 = pat_var local 0 (r)
   %6 = pat_var local 1
@@ -88,7 +88,7 @@ decl 3: value appliedAccessors (annotated)
     1 _ fresh %6
     2 _ fresh %10
   refs
-    import_type Basics.String
+    import_type String.String
 
 interface
 

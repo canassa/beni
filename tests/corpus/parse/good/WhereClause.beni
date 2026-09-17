@@ -1,0 +1,40 @@
+-- Parse: `where` clauses on top-level annotations
+-- (`docs/design/static-dispatch-spike.md` §2.1): one constraint on a
+-- continuation line, two with the clause broken over lines and a leading
+-- comma, a constraint whose own type is a comma-separated parameter list
+-- (the three-token rule of §2.3 keeps `k, k -> Order` inside one
+-- constraint), one whose type takes a parenthesised function, and one whose
+-- type holds a RECORD, whose own commas stay the record's (§2.3 governs the
+-- clause's top level, not the inside of a bracket).
+pub insert : Dict k v, k, v -> Dict k v
+    where k.compare : k, k -> Order
+insert d k v =
+    d
+
+
+pub pairUp : List a, List b -> List ( a, b )
+    where
+        a.eq : a, a -> Bool
+        , b.compare : b, b -> Order
+pairUp xs ys =
+    []
+
+
+pub both : a, b -> Bool
+    where a.eq : a, a -> Bool, b.eq : b, b -> Bool
+both x y =
+    True
+
+
+pub fold : a, b -> b
+    where a.fold : a, (a, b -> b), b -> b
+fold x y =
+    y
+
+
+pub place : { x : Int, y : Int }, a, b -> Bool
+    where
+        a.eq : { x : Int, y : Int }, a -> Bool
+        , b.compare : b, b -> Order
+place r v w =
+    True

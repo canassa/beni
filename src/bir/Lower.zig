@@ -648,6 +648,8 @@ fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.D
         .type_params_start = 0,
         .type_params_end = 0,
         .annotation = .none,
+        .where_start = @enumFromInt(0),
+        .where_end = @enumFromInt(0),
         .body = .none,
         .inst_start = @enumFromInt(0),
         .inst_end = @enumFromInt(0),
@@ -810,10 +812,12 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
             .annotation => {
                 const ann = l.tree.fullAnnotation(src.node);
                 l.decls.items[i].annotation = (try l.lowerRootType(ann.type_expr)).toOptional();
+                try l.lowerWhere(ann.header, ann.name);
             },
             .foreign_value => {
                 const fv = l.tree.fullForeignValue(src.node);
                 l.decls.items[i].annotation = (try l.lowerRootType(fv.type_expr)).toOptional();
+                try l.lowerWhere(fv.header, fv.name);
             },
             .type_alias => {
                 const ta = l.tree.fullTypeAlias(src.node);
@@ -866,6 +870,139 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
     }
 }
 
+/// The key `duplicate_where_constraint` is decided on: one constraint per
+/// `(variable, method)` pair (§2.4).
+const ConstraintKey = struct { variable: Symbol, method: Symbol };
+
+/// The annotation's `where` clause (static-dispatch-spike.md §2.1, §2.4),
+/// lowered right after the annotated type and stored on the declaration as
+/// `(variable, method, type)` triples. `name_token` is the declared name,
+/// whose `name_token + 2` is the first token of the annotated type.
+///
+/// Every well-formedness rule of §2.4 is checked here, where the clause is
+/// stored, so all of them are pure functions of the file (§8):
+///
+///   - the constrained variable occurs in the annotated type, else
+///     `where_variable_unbound` (§10.6 trigger (a));
+///   - every variable inside a constraint's TYPE occurs in the annotated
+///     type — the closure rule — else `where_variable_unbound` (trigger
+///     (b)). It is load-bearing and not tidiness: a scheme's quantifiers
+///     are discovered by walking its body, so a variable that occurs only
+///     in a constraint has no index in the canonical evidence order and
+///     caller and callee would disagree about the evidence list in silence
+///     (Appendix A.21);
+///   - no two constraints share a `(variable, method)` pair, else
+///     `duplicate_where_constraint` (§10.7).
+///
+/// The annotated type's variables are exactly `type_vars_seen`: it was
+/// cleared by `lowerRootType` and only that type has been lowered since.
+fn lowerWhere(l: *Lower, header: Ast.DeclHeader, name_token: TokenIndex) Allocator.Error!void {
+    const constraints = l.tree.whereConstraints(header);
+    if (constraints.len == 0) return;
+    // The annotated type's variables, kept as a set of their own: the
+    // constraint types lowered below get a SCOPE of their own for the
+    // `equatable` marker, so `type_vars_seen` cannot double as this.
+    const annotation_set = try l.scratch_allocator.dupe(Symbol, l.type_vars_seen.items);
+    defer l.scratch_allocator.free(annotation_set);
+    // The annotated type as source bytes, for the two messages of §10.6:
+    // from the token after the `:` to the token before the `where`, which
+    // is the one before the FIRST WELL-FORMED constraint's variable. A
+    // clause whose every constraint is an error placeholder is already
+    // reported and has nothing to store.
+    var first_constraint: ?Ast.full.WhereConstraint = null;
+    for (constraints) |node| {
+        if (l.tree.nodeTag(node) != .where_constraint) continue;
+        first_constraint = l.tree.fullWhereConstraint(node);
+        break;
+    }
+    const first = (first_constraint orelse return).variable;
+    const annotated: struct { u32, u32 } = .{ l.starts[name_token + 2], l.tokenEnd(first - 2) };
+
+    // `(variable, method)` pairs already seen, for `duplicate_where_constraint`:
+    // a map and not a scan, because a generated file may carry thousands of
+    // constraints and the scan made that quadratic.
+    var seen: std.AutoHashMapUnmanaged(ConstraintKey, TokenIndex) = .empty;
+    defer seen.deinit(l.scratch_allocator);
+    var reported: std.ArrayList(Symbol) = .empty;
+    defer reported.deinit(l.scratch_allocator);
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    for (constraints) |node| {
+        // A constraint the parser could not build is already reported.
+        if (l.tree.nodeTag(node) != .where_constraint) continue;
+        const c = l.tree.fullWhereConstraint(node);
+        const variable = l.tokenSymbol(c.variable);
+        const method = l.tokenSymbol(c.method);
+        if (std.mem.indexOfScalar(Symbol, annotation_set, variable) == null) {
+            try l.diagnostics.append(l.gpa, .{
+                .code = .where_variable_unbound,
+                .start = l.starts[c.variable],
+                .end = l.tokenEnd(c.variable),
+                .other_start = annotated[0],
+                .other_end = annotated[1],
+            });
+            // One mistake, one message: the same variable inside the
+            // constraint's own type is the SAME mistake, not the closure
+            // rule, so trigger (b) stays quiet about it.
+            if (std.mem.indexOfScalar(Symbol, reported.items, variable) == null) {
+                try reported.append(l.scratch_allocator, variable);
+            }
+        }
+        const duplicate = try seen.getOrPut(l.scratch_allocator, .{ .variable = variable, .method = method });
+        if (duplicate.found_existing) {
+            const earlier = duplicate.value_ptr.*;
+            try l.diagnostics.append(l.gpa, .{
+                .code = .duplicate_where_constraint,
+                .start = l.starts[c.variable],
+                .end = l.tokenEnd(c.method),
+                .other_start = l.starts[earlier],
+                .other_end = l.tokenEnd(earlier + 1),
+            });
+        } else {
+            duplicate.value_ptr.* = c.variable;
+        }
+        const type_start: u32 = @intCast(l.insts.len);
+        // A constraint's type is its own scope for the `equatable` marker
+        // (checker.md Appendix A), which is legal at a variable's FIRST
+        // occurrence: the annotation's occurrences are not the clause's,
+        // and one constraint's are not the next one's. Without the reset,
+        // `where a.compare : equatable a, a -> Order` — core's own
+        // spelling after S6 — is `equatable_not_first_occurrence`.
+        l.type_vars_seen.clearRetainingCapacity();
+        const type_inst = try l.lowerType(c.type_expr);
+        // The closure rule, read off the instructions the type just made:
+        // its `type_var`s are contiguous in that range and each carries the
+        // token of the occurrence, which is where the message points.
+        var j = type_start;
+        while (j < l.insts.len) : (j += 1) {
+            if (l.insts.items(.tag)[j] != .type_var) continue;
+            const symbol = l.symbols.items[l.insts.items(.data)[j].lhs];
+            if (std.mem.indexOfScalar(Symbol, annotation_set, symbol) != null) continue;
+            if (std.mem.indexOfScalar(Symbol, reported.items, symbol) != null) continue;
+            try reported.append(l.scratch_allocator, symbol);
+            const token = l.insts.items(.main_token)[j];
+            try l.diagnostics.append(l.gpa, .{
+                .code = .where_variable_unbound,
+                .start = l.starts[token],
+                .end = l.tokenEnd(token),
+                .other_start = annotated[0],
+                .other_end = annotated[1],
+                .inside_constraint = true,
+            });
+        }
+        try l.pushScratch(@intFromEnum(try l.addSymbol(variable)));
+        try l.pushScratch(@intFromEnum(try l.addSymbol(method)));
+        try l.pushScratch(type_inst.int());
+    }
+    // Leave the annotation's variables where the caller found them.
+    l.type_vars_seen.clearRetainingCapacity();
+    try l.type_vars_seen.appendSlice(l.scratch_allocator, annotation_set);
+    const range = try l.addRange(l.scratchSince(mark));
+    const d = &l.decls.items[l.cur_decl];
+    d.where_start = range.start;
+    d.where_end = range.end;
+}
+
 /// Type parameters of a `type`, `type alias` or `foreign type`: recorded
 /// on the declaration, checked for duplicates (§7), and made the scope of
 /// the body's type variables.
@@ -891,6 +1028,7 @@ fn lowerDefinition(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) A
     if (annotation.unwrap()) |ann| {
         const a = l.tree.fullAnnotation(ann);
         l.decls.items[l.cur_decl].annotation = (try l.lowerRootType(a.type_expr)).toOptional();
+        try l.lowerWhere(a.header, a.name);
     }
     const params = try l.lowerParams(def.params);
     try l.frames.append(l.scratch_allocator, Frame.definition(def.params.len > 0, .none));
@@ -1247,7 +1385,15 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const params = try l.addRangeRecord(try l.addRange(&.{param.int()}));
             return l.addInst(.lambda, @intFromEnum(params), access.int());
         },
-        .op_fn => return l.operatorRef(l.tags[main_token]),
+        .op_fn => {
+            // `(==)` and its five relatives are a LAMBDA over a method call
+            // (static-dispatch-spike.md §3.1, Appendix A.22): a reference to
+            // `Basics.eq` would be structural equality, which is not what
+            // the operator means any more. Every other operator is still the
+            // reference to its core function.
+            if (Bir.WellKnown.fromOperator(l.tags[main_token])) |origin| return l.operatorLambda(origin);
+            return l.operatorRef(l.tags[main_token]);
+        },
         .unit => return l.addInst(.unit, 0, 0),
         .negate => {
             const operand = try l.lowerExpr(l.tree.operand(node));
@@ -1324,11 +1470,18 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             const branches = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
             return l.addInstAt(main_token, .case, scrutinee.int(), @intFromEnum(branches));
         },
-        // Every other binary operator: a call of its core function.
+        // Every other binary operator: a call of its core function — except
+        // the six comparisons, which are method calls on the type of their
+        // left operand and carry the operator they were written as
+        // (static-dispatch-spike.md §3.1).
         .add, .sub, .mul, .div, .int_div, .pow, .append, .cons, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
             const b = l.tree.fullBinop(node);
             const lhs = try l.lowerExpr(b.lhs);
             const rhs = try l.lowerExpr(b.rhs);
+            if (Bir.WellKnown.fromOperator(l.tags[b.op_token])) |origin| {
+                l.cur_token = b.op_token;
+                return l.methodCall(lhs, origin.method().?.symbol(), origin, &.{rhs.int()});
+            }
             const function = try l.operatorRef(l.tags[b.op_token]);
             l.cur_token = b.op_token;
             return l.call(function, &.{ lhs.int(), rhs.int() });
@@ -1346,6 +1499,49 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
 fn call(l: *Lower, callee: Index, args: []const u32) Allocator.Error!Index {
     const range = try l.addRangeRecord(try l.addRange(args));
     return l.addInst(.call, callee.int(), @intFromEnum(range));
+}
+
+/// `x.m a b` (static-dispatch-spike.md §1.4). `args` excludes the receiver,
+/// which is the instruction's `lhs`. No `refs` edge is recorded: which
+/// function this calls is the checker's to decide (§1.4).
+fn methodCall(l: *Lower, receiver: Index, name: Symbol, origin: Bir.WellKnown, args: []const u32) Allocator.Error!Index {
+    const range = try l.addRange(args);
+    const extra = try l.addExtra(Bir.MethodCall{
+        .name = try l.addSymbol(name),
+        .origin = origin,
+        .args_start = range.start,
+        .args_end = range.end,
+    });
+    return l.addInst(.method_call, receiver.int(), @intFromEnum(extra));
+}
+
+/// `a.m args` with no receiver value (§4.1): `var_symbol` is the type
+/// variable the enclosing declaration's `where` clause constrains.
+fn typeDispatch(l: *Lower, var_symbol: Symbol, name: Symbol, args: []const u32) Allocator.Error!Index {
+    const range = try l.addRange(args);
+    const extra = try l.addExtra(Bir.TypeDispatch{
+        .name = try l.addSymbol(name),
+        .args_start = range.start,
+        .args_end = range.end,
+    });
+    return l.addInst(.type_dispatch, @intFromEnum(try l.addSymbol(var_symbol)), @intFromEnum(extra));
+}
+
+/// `(==)` → `\a b -> a == b` (§3.1, Appendix A.22): a closure of arity two
+/// whose BODY carries the method constraint, so the operator as a function
+/// dispatches exactly as the operator does.
+fn operatorLambda(l: *Lower, origin: Bir.WellKnown) Allocator.Error!Index {
+    const left = try l.reserveInst(.pat_var);
+    const left_local = try l.freshLocal(left);
+    l.setInstData(left, left_local, Inst.Data.unused);
+    const right = try l.reserveInst(.pat_var);
+    const right_local = try l.freshLocal(right);
+    l.setInstData(right, right_local, Inst.Data.unused);
+    const receiver = try l.addInst(.local, left_local, Inst.Data.unused);
+    const argument = try l.addInst(.local, right_local, Inst.Data.unused);
+    const body = try l.methodCall(receiver, origin.method().?.symbol(), origin, &.{argument.int()});
+    const params = try l.addRangeRecord(try l.addRange(&.{ left.int(), right.int() }));
+    return l.addInst(.lambda, @intFromEnum(params), body.int());
 }
 
 /// The core function of language.md §6.5's table for an operator token,
@@ -1457,7 +1653,28 @@ fn lowerApplication(
         // lowered. `<|` writes it last and is lowered below, after the args.
         if (extra) |e| extra_arg = try l.lowerExpr(e);
     }
-    const callee = try l.lowerExpr(function);
+    // An application whose head is a field access is a METHOD CALL
+    // (static-dispatch-spike.md §1.1): `x.m a` is `method_call`, and so is
+    // `x.a.m b`, `x.0.m a`, `M.v.m a` and `e |> x.m a`, because the head of
+    // each is a field access. Parentheses opt out — the head of `(x.m) a`
+    // is a `paren`, which is not looked through here — and `x.m` with no
+    // argument is not an application at all, so it stays a field access.
+    const Method = struct { target: NodeIndex, name: TokenIndex };
+    const method: ?Method = if (l.tree.nodeTag(function) == .field_access)
+        .{ .target = l.tree.operand(function), .name = l.tree.nodeMainToken(function) }
+    else
+        null;
+    // `a.decode s`: a receiver that is a lower name binding no value, but
+    // naming a type variable of this declaration's `where` clause, is a
+    // dispatch on the TYPE and never a field access (§4.1).
+    const dispatch: ?Symbol = if (method) |m| l.typeDispatchVar(m.target) else null;
+    var receiver: Index = @enumFromInt(0);
+    var callee: Index = @enumFromInt(0);
+    if (method) |m| {
+        if (dispatch == null) receiver = try l.lowerExpr(m.target);
+    } else {
+        callee = try l.lowerExpr(function);
+    }
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
     for (args) |arg| {
@@ -1485,8 +1702,18 @@ fn lowerApplication(
             std.mem.rotate(u32, slots, slots.len - 1);
         }
     }
-    l.cur_token = main_token;
-    const called = try l.call(callee, l.scratchSince(mark));
+    const called = blk: {
+        if (method) |m| {
+            // The method name is the region: every diagnostic about a method
+            // call is about `m`, not about the receiver's first token.
+            l.cur_token = m.name;
+            const name = l.tokenSymbol(m.name);
+            if (dispatch) |variable| break :blk try l.typeDispatch(variable, name, l.scratchSince(mark));
+            break :blk try l.methodCall(receiver, name, .none, l.scratchSince(mark));
+        }
+        l.cur_token = main_token;
+        break :blk try l.call(callee, l.scratchSince(mark));
+    };
     if (!has_hole) return called;
     _ = l.frames.pop();
     const params = try l.addRangeRecord(try l.addRange(&.{param.int()}));
@@ -1496,6 +1723,30 @@ fn lowerApplication(
 fn placeholderIn(l: *const Lower, args: []const NodeIndex) bool {
     for (args) |a| if (l.tree.nodeTag(a) == .placeholder) return true;
     return false;
+}
+
+/// The type variable a `v.m args` head dispatches on (§4.1), or null: `v`
+/// must be an unqualified lower name that resolves to NO value binding —
+/// not a local, not a top-level value, not an `exposing` name, not a
+/// prelude value — and must be constrained by the enclosing declaration's
+/// own `where` clause. Shadowing is an error in beni (§7), so the two
+/// readings never overlap.
+fn typeDispatchVar(l: *const Lower, receiver: NodeIndex) ?Symbol {
+    if (l.tree.nodeTag(receiver) != .ident) return null;
+    const token = l.tree.nodeMainToken(receiver);
+    if (l.tags[token] != .lower_ident) return null;
+    const symbol = l.tokenSymbol(token);
+    if (l.lookupLocal(symbol) != null) return null;
+    if (l.values.get(symbol) != null) return null;
+    if (prelude.wellKnown(symbol)) |w| {
+        if (prelude.valueModule(w) != null) return null;
+    }
+    const d = l.decls.items[l.cur_decl];
+    var i = @intFromEnum(d.where_start);
+    while (i < @intFromEnum(d.where_end)) : (i += Bir.extraLen(Bir.WhereConstraint)) {
+        if (l.symbols.items[l.extra.items[i]] == symbol) return symbol;
+    }
+    return null;
 }
 
 /// `if c then a else b` → `case c of True -> a; False -> b` on the prelude
@@ -2301,6 +2552,21 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             try testing.expect(data.rhs < bir.symbols.len);
         },
         .tuple_index => try checkInDecl(d, @enumFromInt(data.lhs)),
+        .method_call => {
+            try checkInDecl(d, @enumFromInt(data.lhs));
+            try testing.expect(data.rhs + Bir.extraLen(Bir.MethodCall) <= bir.extra.len);
+            const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+            try checkSymbol(bir, m.name);
+            try checkInstList(bir, d, .{ .start = m.args_start, .end = m.args_end });
+            try testing.expect(m.args_end != m.args_start); // never zero arguments (§1.1)
+        },
+        .type_dispatch => {
+            try testing.expect(data.lhs < bir.symbols.len);
+            try testing.expect(data.rhs + Bir.extraLen(Bir.TypeDispatch) <= bir.extra.len);
+            const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+            try checkSymbol(bir, t.name);
+            try checkInstList(bir, d, .{ .start = t.args_start, .end = t.args_end });
+        },
         .lambda, .let => {
             try checkInstList(bir, d, try checkRecordAt(bir, data.lhs));
             try checkInDecl(d, @enumFromInt(data.rhs));
@@ -2379,7 +2645,11 @@ test "operators become calls of their core functions, `(+)` the function itself,
     , &.{});
 }
 
-test "every binary operator maps to the §6.5 core function" {
+test "every binary operator maps to the §6.5 core function, except the six comparisons" {
+    // The six comparison operators are method calls on the type of their
+    // left operand and carry the operator they were written as
+    // (static-dispatch-spike.md §3.1); `Basics.eq` and friends stay
+    // declared and callable, they are simply no longer what `==` means.
     try expectDecls(
         \\f a b =
         \\    [ a - b, a * b, a / b, a ^ b, a ++ b, a == b, a /= b, a < b, a > b, a <= b, a >= b, a && b, a || b ]
@@ -2410,39 +2680,33 @@ test "every binary operator maps to the §6.5 core function" {
         \\  %21 = call %20 [%18, %19]
         \\  %22 = local 0 (a)
         \\  %23 = local 1 (b)
-        \\  %24 = import_value Basics.eq
-        \\  %25 = call %24 [%22, %23]
-        \\  %26 = local 0 (a)
-        \\  %27 = local 1 (b)
-        \\  %28 = import_value Basics.neq
-        \\  %29 = call %28 [%26, %27]
-        \\  %30 = local 0 (a)
-        \\  %31 = local 1 (b)
-        \\  %32 = import_value Basics.lt
-        \\  %33 = call %32 [%30, %31]
+        \\  %24 = method_call %22 .eq [%23] (==)
+        \\  %25 = local 0 (a)
+        \\  %26 = local 1 (b)
+        \\  %27 = method_call %25 .eq [%26] (/=)
+        \\  %28 = local 0 (a)
+        \\  %29 = local 1 (b)
+        \\  %30 = method_call %28 .compare [%29] (<)
+        \\  %31 = local 0 (a)
+        \\  %32 = local 1 (b)
+        \\  %33 = method_call %31 .compare [%32] (>)
         \\  %34 = local 0 (a)
         \\  %35 = local 1 (b)
-        \\  %36 = import_value Basics.gt
-        \\  %37 = call %36 [%34, %35]
-        \\  %38 = local 0 (a)
-        \\  %39 = local 1 (b)
-        \\  %40 = import_value Basics.le
-        \\  %41 = call %40 [%38, %39]
-        \\  %42 = local 0 (a)
-        \\  %43 = local 1 (b)
-        \\  %44 = import_value Basics.ge
-        \\  %45 = call %44 [%42, %43]
-        \\  %46 = local 0 (a)
-        \\  %47 = local 1 (b)
-        \\  %48 = import_value Basics.and
-        \\  %49 = call %48 [%46, %47]
-        \\  %50 = local 0 (a)
-        \\  %51 = local 1 (b)
-        \\  %52 = import_value Basics.or
-        \\  %53 = call %52 [%50, %51]
-        \\  %54 = list [%5, %9, %13, %17, %21, %25, %29, %33, %37, %41, %45, %49, %53]
+        \\  %36 = method_call %34 .compare [%35] (<=)
+        \\  %37 = local 0 (a)
+        \\  %38 = local 1 (b)
+        \\  %39 = method_call %37 .compare [%38] (>=)
+        \\  %40 = local 0 (a)
+        \\  %41 = local 1 (b)
+        \\  %42 = import_value Basics.and
+        \\  %43 = call %42 [%40, %41]
+        \\  %44 = local 0 (a)
+        \\  %45 = local 1 (b)
+        \\  %46 = import_value Basics.or
+        \\  %47 = call %46 [%44, %45]
+        \\  %48 = list [%5, %9, %13, %17, %21, %24, %27, %30, %33, %36, %39, %43, %47]
         \\  params [%0, %1]
-        \\  body %54
+        \\  body %48
         \\  locals
         \\    0 a param %0
         \\    1 b param %1
@@ -2452,12 +2716,6 @@ test "every binary operator maps to the §6.5 core function" {
         \\    import_value Basics.fdiv
         \\    import_value Basics.pow
         \\    import_value Basics.append
-        \\    import_value Basics.eq
-        \\    import_value Basics.neq
-        \\    import_value Basics.lt
-        \\    import_value Basics.gt
-        \\    import_value Basics.le
-        \\    import_value Basics.ge
         \\    import_value Basics.and
         \\    import_value Basics.or
         \\
@@ -3426,10 +3684,10 @@ test "the interface skeleton lists every pub declaration and nothing private" {
         \\  interface type Color = Red | Green
         \\
         \\decl 3: pub opaque type Token
-        \\  %0 = type_import Basics.String
+        \\  %0 = type_import String.String
         \\  ctor 3 Token [%0]
         \\  refs
-        \\    import_type Basics.String
+        \\    import_type String.String
         \\  interface opaque type Token
         \\
         \\decl 4: type Hidden

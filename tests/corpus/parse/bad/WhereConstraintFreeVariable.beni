@@ -1,0 +1,10 @@
+-- where_variable_unbound (§10.6 trigger (b), 8:24 and 8:27): the closure
+-- rule of §2.4 — `x` and `s` occur only inside the constraint's type, so
+-- they are not quantified by the annotation, have no place in the
+-- canonical evidence order (§7.2) and are refused here rather than
+-- silently disagreed about at the first call. One message per offending
+-- variable, at its first occurrence.
+pub total : List a -> a
+    where a.fold : a, (x, s -> s), s -> s
+total xs =
+    xs

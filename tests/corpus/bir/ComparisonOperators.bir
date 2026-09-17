@@ -1,0 +1,95 @@
+decl 0: value comparisons
+  %0 = pat_var local 0 (a)
+  %1 = pat_var local 1 (b)
+  %2 = local 0 (a)
+  %3 = local 1 (b)
+  %4 = method_call %2 .eq [%3] (==)
+  %5 = local 0 (a)
+  %6 = local 1 (b)
+  %7 = method_call %5 .eq [%6] (/=)
+  %8 = local 0 (a)
+  %9 = local 1 (b)
+  %10 = method_call %8 .compare [%9] (<)
+  %11 = local 0 (a)
+  %12 = local 1 (b)
+  %13 = method_call %11 .compare [%12] (>)
+  %14 = local 0 (a)
+  %15 = local 1 (b)
+  %16 = method_call %14 .compare [%15] (<=)
+  %17 = local 0 (a)
+  %18 = local 1 (b)
+  %19 = method_call %17 .compare [%18] (>=)
+  %20 = tuple [%4, %7, %10, %13, %16, %19]
+  params [%0, %1]
+  body %20
+  locals
+    0 a param %0
+    1 b param %1
+
+decl 1: value asFunctions
+  %0 = pat_var local 0
+  %1 = pat_var local 1
+  %2 = local 0
+  %3 = local 1
+  %4 = method_call %2 .eq [%3] (==)
+  %5 = lambda [%0, %1] -> %4
+  %6 = pat_var local 2
+  %7 = pat_var local 3
+  %8 = local 2
+  %9 = local 3
+  %10 = method_call %8 .eq [%9] (/=)
+  %11 = lambda [%6, %7] -> %10
+  %12 = pat_var local 4
+  %13 = pat_var local 5
+  %14 = local 4
+  %15 = local 5
+  %16 = method_call %14 .compare [%15] (<)
+  %17 = lambda [%12, %13] -> %16
+  %18 = pat_var local 6
+  %19 = pat_var local 7
+  %20 = local 6
+  %21 = local 7
+  %22 = method_call %20 .compare [%21] (>)
+  %23 = lambda [%18, %19] -> %22
+  %24 = pat_var local 8
+  %25 = pat_var local 9
+  %26 = local 8
+  %27 = local 9
+  %28 = method_call %26 .compare [%27] (<=)
+  %29 = lambda [%24, %25] -> %28
+  %30 = pat_var local 10
+  %31 = pat_var local 11
+  %32 = local 10
+  %33 = local 11
+  %34 = method_call %32 .compare [%33] (>=)
+  %35 = lambda [%30, %31] -> %34
+  %36 = import_value Basics.add
+  %37 = list [%5, %11, %17, %23, %29, %35, %36]
+  params []
+  body %37
+  locals
+    0 _ fresh %0
+    1 _ fresh %1
+    2 _ fresh %6
+    3 _ fresh %7
+    4 _ fresh %12
+    5 _ fresh %13
+    6 _ fresh %18
+    7 _ fresh %19
+    8 _ fresh %24
+    9 _ fresh %25
+    10 _ fresh %30
+    11 _ fresh %31
+  refs
+    import_value Basics.add
+
+interface
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

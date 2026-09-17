@@ -28,6 +28,16 @@
 import List
 
 
+--| A chunk of text, written between double quotes.
+--|
+--|     "hello"
+--|     "a ${n}"
+--|
+--| Two strings are equal when they are the same sequence of characters.
+--| `compare` below is what orders them.
+pub equatable foreign type String
+
+
 --| Get the length of a string.
 --|
 --|     length "innumerable" == 11

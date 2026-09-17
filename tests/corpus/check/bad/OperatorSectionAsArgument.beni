@@ -1,0 +1,10 @@
+-- check/bad: an operator section passed as an argument
+-- (`docs/design/static-dispatch-spike.md` §3.1, Appendix A.22). Its type is
+-- known exactly — `number, number -> Bool` — so the mistake is reported
+-- where it is made, against `foldl`'s 3rd parameter, and not inside the
+-- lambda the section desugars to: type_mismatch at 10:25 naming `foldl`.
+-- With the section's type left to the body, this read "This is `Bool` but I
+-- need `b`" and pointed at the same place for a different reason.
+pub folded : Int
+folded =
+    List.foldl [ 1 ] 0 (<)

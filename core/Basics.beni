@@ -49,25 +49,6 @@ pub equatable foreign type Int
 pub equatable foreign type Float
 
 
---| A single Unicode scalar value, written between single quotes.
---|
---|     'a'
---|     '\n'
---|
---| Two characters are equal when they are the same scalar value.
-pub equatable foreign type Char
-
-
---| A chunk of text, written between double quotes.
---|
---|     "hello"
---|     "a ${n}"
---|
---| Two strings are equal when they are the same sequence of characters.
---| Strings are not ordered by `<`; use `String.compare`.
-pub equatable foreign type String
-
-
 --| A value that is either `True` or `False`. It is what `if` branches on and
 --| what `&&`, `||` and `not` work with.
 pub type Bool

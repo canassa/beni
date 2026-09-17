@@ -1,0 +1,25 @@
+-- check/bad: `(==)` and friends are a lambda over a method call
+-- (`docs/design/static-dispatch-spike.md` §3.1, Appendix A.22), and §1.3
+-- promises that every message about a well-known call names the OPERATOR.
+-- So an arity or type mistake on one says "The (==) operator", not "This
+-- value": too_few_args at 10:6, too_many_args at 15:6, kind_mismatch at
+-- 20:9. The hand-written lambda at the bottom is the control — it is not
+-- an operator section and must not be named as one (too_few_args at 25:5).
+pub tooFew : Int -> Bool
+tooFew n =
+    (==) n
+
+
+pub tooMany : Bool
+tooMany =
+    (<) 1 2 3
+
+
+pub wrongType : Bool
+wrongType =
+    (<) "a" "b"
+
+
+pub handWritten : Int -> Bool
+handWritten n =
+    (\a b -> a == b) n

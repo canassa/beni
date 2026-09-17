@@ -159,6 +159,12 @@ pub const Code = enum {
     /// in two halves and the half that is missing must say so.
     not_implemented,
     internal,
+    // The static-dispatch spike (docs/design/static-dispatch-spike.md §10),
+    // appended so no existing line moves. These two are lowering's, from the
+    // well-formedness rules of a `where` clause (§2.4); the other eight codes
+    // of §10 are the checker's and land with S3.
+    where_variable_unbound,
+    duplicate_where_constraint,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -254,6 +260,8 @@ pub fn title(code: Code) []const u8 {
         .foreign_unbound_reference => "UNBOUND JAVASCRIPT REFERENCE",
         .missing_main => "MISSING MAIN",
         .main_not_program => "MAIN IS NOT A PROGRAM",
+        .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",
+        .duplicate_where_constraint => "DUPLICATE CONSTRAINT",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

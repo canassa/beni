@@ -1,0 +1,38 @@
+decl 0: pub value decode (annotated)
+  %0 = type_import String.String
+  %1 = type_import Result.Result
+  %2 = type_import String.String
+  %3 = type_var a
+  %4 = type_app %1 [%2, %3]
+  %5 = type_fn [%0] -> %4
+  %6 = type_import String.String
+  %7 = type_import Result.Result
+  %8 = type_import String.String
+  %9 = type_var a
+  %10 = type_app %7 [%8, %9]
+  %11 = type_fn [%6] -> %10
+  %12 = pat_var local 0 (s)
+  %13 = local 0 (s)
+  %14 = type_dispatch a.decode [%13]
+  annotation %5
+  where a.decode : %11
+  params [%12]
+  body %14
+  locals
+    0 s param %12
+  refs
+    import_type String.String
+    import_type Result.Result
+  interface value decode (annotated)
+
+interface
+  value decode (annotated)
+
+imports
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

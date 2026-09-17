@@ -1,0 +1,53 @@
+-- BIR: an application whose head is a field access is a `method_call`
+-- (`docs/design/static-dispatch-spike.md` §1.1, §1.4), one row of §1.1's
+-- table per declaration: the plain call, a field-access receiver, a tuple
+-- element receiver, a qualified value receiver, the placeholder lambda, and
+-- both pipe directions — including the pipe that supplies the ONLY
+-- argument, which makes a method call out of what would otherwise be a
+-- field access. The three forms that are NOT method calls are here
+-- too: `x.m` alone stays a `field_access`, `(x.m) a` stays a call of a
+-- field, and `M.f x` stays a call of a qualified value. No `refs` edge is
+-- recorded for any method call: which function it calls is the checker's to
+-- decide (§1.4).
+dotCall d k v =
+    d.insert k v
+
+
+fieldReceiver x b =
+    x.a.m b
+
+
+tupleReceiver x a =
+    x.0.m a
+
+
+qualifiedReceiver a =
+    String.length.m a
+
+
+placeholder x b =
+    x.m _ b
+
+
+pipeIn source x a =
+    source |> x.m a
+
+
+pipeOut x a f =
+    x.m a |> f
+
+
+pipeOnly source x =
+    source |> x.m
+
+
+fieldAccess x =
+    x.m
+
+
+fieldCall x a =
+    (x.m) a
+
+
+qualifiedCall a =
+    String.length a

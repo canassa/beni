@@ -76,6 +76,7 @@ pub const Context = enum {
     record_update,
     string,
     interpolation,
+    where_clause,
 };
 
 /// A construct whose start was required and not found.
@@ -91,6 +92,7 @@ pub const Construct = enum {
     binding,
     field_name,
     branch,
+    constraint,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -120,6 +122,7 @@ fn contextText(c: Context) []const u8 {
         .record_update => "a record update",
         .string => "a string",
         .interpolation => "the `${…}` inside this string",
+        .where_clause => "a `where` clause",
     };
 }
 
@@ -136,6 +139,7 @@ fn constructText(c: Construct) []const u8 {
         .binding => "a `let` binding",
         .field_name => "a field name",
         .branch => "a branch",
+        .constraint => "a `where` constraint like `k.compare : k, k -> Order`",
     };
 }
 

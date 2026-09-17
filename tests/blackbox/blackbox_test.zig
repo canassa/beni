@@ -1906,7 +1906,9 @@ test "--core-root replaces the embedded core package" {
     // A core of one module that has `Int` but not `String`: a project that
     // names `Int` checks, and one that names `String` cannot — which is
     // only true if the flag really replaced the embedded copy rather than
-    // adding to it.
+    // adding to it. `String` is declared by the module `String`
+    // (static-dispatch-spike.md §5.1), which this core does not have at
+    // all, so the prelude row it resolves through names a missing module.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("mycore/Basics.beni", "pub foreign type Int\n");
@@ -1927,18 +1929,74 @@ test "--core-root replaces the embedded core package" {
     try testing.expectEqualStrings("", ok.stderr);
     try testing.expectEqual(@as(u8, 1), missing.exit_code);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
-        .code = .unknown_import_name,
+        .code = .unknown_module_alias,
         .severity = .@"error",
         .span = .{ .file = "other/Main.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 15 } },
-        .title = "UNKNOWN IMPORT NAME",
-        .message = "`Basics` does not expose `String`.\n" ++
+        .title = "UNKNOWN MODULE",
+        .message = "I cannot find a module named `String`.\n" ++
             "\n" ++
-            "Check the spelling, or check that the declaration in `Basics` is marked `pub`.",
+            "The qualified name `String.String` needs it. Check the spelling, or add an import.",
     }}), missing.diagnostics);
     // The same project against the real core package is clean, so the
     // difference above is the flag and nothing else.
     try testing.expectEqual(@as(u8, 0), embedded.exit_code);
     try testing.expectEqualStrings("", embedded.stderr);
+}
+
+test "--core-root without the operators' functions is reported, not emitted as undefined" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `==` is a method call now (`docs/design/static-dispatch-spike.md`
+    // §3.1) and the backend rebuilds the reference to `Basics.eq` itself,
+    // so the failure that used to come out of name resolution — the lowered
+    // `import_value Basics.eq` not resolving — has to come out of the
+    // backend instead. Without that report `a == b` compiled to
+    // `undefined(a, b)` and the build exited 0.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("mycore/Basics.beni", "pub equatable foreign type Int\n\n\npub type Bool\n    = True\n    | False\n");
+    try w.write("mycore/Basics.js", "export {};\n");
+    try w.write("myplat/beni.json",
+        \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js" }
+    );
+    try w.write("myplat/Prog.beni", "pub foreign type Program\n\n\npub foreign say : Int -> Program\n");
+    try w.write("myplat/Prog.js", "export const say = (n) => ({ n });\n");
+    try w.write("myplat/run.js", "export const run = (program) => {};\n");
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\pub same : Int, Int -> Bool
+        \\same a b =
+        \\    a == b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say 1
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=./myplat", "--core-root=mycore", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.internal, r.diagnostics[0].code);
+    try testing.expectEqual(@as(u32, 6), r.diagnostics[0].span.start.line);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "`Basics.eq`") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY STATE                            │
+    // └─────────────────────────────────────────┘
+    // A refused build writes nothing (backend.md §2).
+    try testing.expect(!w.exists("out/Main.mjs"));
 }
 
 test "a file under --core-root may use foreign without --core" {

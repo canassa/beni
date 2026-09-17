@@ -11,6 +11,15 @@
 --!
 --! The classification functions are ASCII, exactly as Elm's are.
 
+--| A single Unicode scalar value, written between single quotes.
+--|
+--|     'a'
+--|     '\n'
+--|
+--| Two characters are equal when they are the same scalar value.
+pub equatable foreign type Char
+
+
 --| Convert to the corresponding Unicode code point.
 --|
 --|     toCode 'A' == 0x41

@@ -641,6 +641,37 @@ pub const Reporter = struct {
         try r.emit(.nesting_too_deep, region, &out);
     }
 
+    /// S3: `a.decode s`, a dispatch on a type variable
+    /// (static-dispatch-spike.md §4). The front end lowers it; the solver
+    /// cannot type it until method constraints exist, and a construct the
+    /// compiler cannot handle says so rather than poisoning in silence
+    /// (`fast-compiler.md` §5).
+    pub fn typeDispatchNotImplemented(r: *Reporter, region: Bir.Inst.Index) Error!void {
+        if (r.quiet) return;
+        const bir = r.env.bir;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        var variable: []const u8 = "a";
+        var method: []const u8 = "m";
+        if (region.int() < bir.insts.len and bir.instTag(region) == .type_dispatch) {
+            const data = bir.instData(region);
+            const payload = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+            variable = r.env.interner.slice(bir.symbols[data.lhs]);
+            method = r.env.interner.slice(bir.symbol(payload.name));
+        }
+        w.print(
+            \\I cannot check `{s}.{s}` yet.
+            \\
+            \\`{s}` is a type, not a value, so this call asks for the `{s}` of whatever type
+            \\`{s}` stands for at the call (`docs/design/static-dispatch-spike.md` §4). The
+            \\constraints that decide which function that is arrive with the checker's
+            \\dispatch pass. Pass the function as an argument for now.
+            \\
+        , .{ variable, method, variable, method, variable }) catch return error.OutOfMemory;
+        try r.emit(.not_implemented, region, &out);
+    }
+
     pub fn notEquatable(r: *Reporter, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
         if (r.quiet) return;
         var out = r.writer();
@@ -995,6 +1026,15 @@ pub const Reporter = struct {
             .call, .pat_ctor => @enumFromInt(bir.instData(region).lhs),
             else => region,
         };
+        // A method call names the METHOD, or — when it came from one of the
+        // six comparison operators — the operator the author wrote
+        // (static-dispatch-spike.md §1.3, "diagnostics name the operator").
+        // Its `lhs` is the receiver, so it cannot go through `describe`.
+        if (tag == .method_call) {
+            const m = bir.extraData(@enumFromInt(bir.instData(region).rhs), Bir.MethodCall);
+            if (m.origin.spelling()) |op| return .{ .kind = .operator, .name = op };
+            return .{ .kind = .value, .name = r.env.interner.slice(bir.symbol(m.name)) };
+        }
         return r.describe(reference);
     }
 
@@ -1040,6 +1080,14 @@ pub const Reporter = struct {
             // `s.retries 2`: the field is what the author wrote, so it is
             // what the message names.
             .field_access => return .{ .kind = .value, .name = r.env.interner.slice(bir.symbols[data.rhs]) },
+            // `(==)` is a LAMBDA over a method call
+            // (static-dispatch-spike.md §3.1, Appendix A.22), so without
+            // this every message about one said "This value". §1.3 promises
+            // that a message about a well-known call names the operator.
+            .lambda => return if (bir.operatorSection(reference, r.env.locals_base)) |origin|
+                .{ .kind = .operator, .name = origin.spelling().? }
+            else
+                .anonymous,
             else => return .anonymous,
         }
     }

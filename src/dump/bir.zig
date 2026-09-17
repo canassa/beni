@@ -244,6 +244,13 @@ const Dumper = struct {
                     try d.refIndex(a);
                     try d.w.writeByte('\n');
                 }
+                // `where k.compare : %3` — one row per constraint, in source
+                // order (static-dispatch-spike.md §2.1).
+                for (d.bir.declWhere(decl_)) |c| {
+                    try d.w.print("  where {s}.{s} : ", .{ d.sym(c.variable), d.sym(c.method) });
+                    try d.refIndex(c.type_inst);
+                    try d.w.writeByte('\n');
+                }
                 if (decl_.kind == .value) {
                     try d.w.writeAll("  params ");
                     try d.refList(.{ .start = decl_.params_start, .end = decl_.params_end });
@@ -473,6 +480,22 @@ const Dumper = struct {
                 try d.ref(data.lhs);
                 try d.w.writeByte(' ');
                 try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+            },
+            // `method_call %0 .insert [%1, %2]`, and for one of the six
+            // operators the form it was written as: `method_call %0 .eq
+            // [%1] (==)` (static-dispatch-spike.md §1.3, §3.1).
+            .method_call => {
+                const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+                try d.w.writeByte(' ');
+                try d.ref(data.lhs);
+                try d.w.print(" .{s} ", .{d.sym(m.name)});
+                try d.refList(.{ .start = m.args_start, .end = m.args_end });
+                if (m.origin.spelling()) |op| try d.w.print(" ({s})", .{op});
+            },
+            .type_dispatch => {
+                const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+                try d.w.print(" {s}.{s} ", .{ d.symRaw(data.lhs), d.sym(t.name) });
+                try d.refList(.{ .start = t.args_start, .end = t.args_end });
             },
             .lambda => {
                 try d.w.writeByte(' ');

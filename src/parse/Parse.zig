@@ -126,6 +126,16 @@ module_doc: Ast.CommentRange = .empty,
 scratch: std.ArrayList(u32) = .empty,
 /// Scratch: the closers of every open bracket, innermost last.
 brackets: std.ArrayList(Tag) = .empty,
+/// True while the `Type` of a TOP-LEVEL annotation or `foreign` value is
+/// being parsed: the only two positions a `where` clause may follow
+/// (static-dispatch-spike.md §2.1). It is what makes `where` a CONTEXTUAL
+/// word (§2.2) — everywhere else, a `lower_ident` spelled `where` is an
+/// ordinary name. A `let` annotation leaves it false, so a `where` after
+/// one is an ordinary token the enclosing block reports (Appendix A.1).
+in_top_annotation: bool = false,
+/// True while a `where` constraint's type is being parsed: the comma rule
+/// of §2.3 takes one more token of lookahead there.
+in_where: bool = false,
 
 /// Deeper nesting than this reports `nesting_too_deep` instead of
 /// recursing: one level per bracket, block form, right-associative operator
@@ -689,7 +699,15 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
     const saved = p.startBlock(.declaration);
     defer p.endBlock(saved);
 
-    var header: Ast.DeclHeader = .{ .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .doc_start = docs.start, .doc_end = docs.end };
+    var header: Ast.DeclHeader = .{
+        .pub_token = .none,
+        .opaque_token = .none,
+        .equatable_token = .none,
+        .doc_start = docs.start,
+        .doc_end = docs.end,
+        .where_start = @enumFromInt(0),
+        .where_end = @enumFromInt(0),
+    };
     if (p.eat(.keyword_pub)) |pub_token| {
         header.pub_token = .fromToken(pub_token);
         if (p.eat(.keyword_opaque)) |opaque_token| header.opaque_token = .fromToken(opaque_token);
@@ -779,14 +797,89 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
     return node;
 }
 
-/// Annotation := lower_ident ':' Type
-fn parseAnnotation(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
+/// TopAnnotation := lower_ident ':' Type WhereClause?
+/// (language.md §3; the clause is static-dispatch-spike.md §2.1.)
+fn parseAnnotation(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index {
     p.context = .annotation;
+    var header = header_in;
     const name = p.next();
     _ = p.next(); // ':' by lookahead
-    const type_expr = try p.parseType();
+    const type_expr = try p.parseTopType();
+    const clause = try p.parseWhere();
+    header.where_start = clause.start;
+    header.where_end = clause.end;
     const extra = try p.addExtra(header);
     return p.addNode(.{ .tag = .annotation, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = type_expr.int() } });
+}
+
+/// The `Type` of a top-level annotation or `foreign` value: the one
+/// position where a following `where` ends it (§2.2).
+fn parseTopType(p: *Parse) Allocator.Error!Index {
+    const saved = p.in_top_annotation;
+    p.in_top_annotation = true;
+    defer p.in_top_annotation = saved;
+    return p.parseType();
+}
+
+/// True at the `where` that begins a clause: the contextual-word rule of
+/// §2.2, three tokens and no backtracking. `where` followed by anything
+/// but an abutting `lower_ident dot_lower` is an ordinary type variable.
+/// Callers inside a type also require `in_top_annotation`; after the type
+/// that is the only position left, so `parseWhere` asks this alone.
+fn atWhereClause(p: *const Parse) bool {
+    if (p.peek() != .lower_ident or !p.isWhereToken(p.tok_i)) return false;
+    return p.peekAt(1) == .lower_ident and p.peekAt(2) == .dot_lower and p.adjacent(p.tok_i + 2);
+}
+
+/// True when token `t` is the contextual word `where`, compared by TEXT
+/// like `equatable` (§2.2).
+fn isWhereToken(p: *const Parse, t: TokenIndex) bool {
+    return std.mem.eql(u8, Tokenizer.slice(p.source, p.tags[t], p.starts[t]), "where");
+}
+
+/// WhereClause := 'where' Constraint (',' Constraint)*  (§2.1). Empty when
+/// no clause follows, which is every declaration outside the spike's own
+/// fixtures and all of `core/` until S6.
+fn parseWhere(p: *Parse) Allocator.Error!SubRange {
+    if (!p.atWhereClause()) return p.listToRange(&.{});
+    _ = p.next(); // `where`
+    const saved_context = p.setContext(.where_clause);
+    defer p.context = saved_context;
+    const saved_where = p.in_where;
+    p.in_where = true;
+    defer p.in_where = saved_where;
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (true) {
+        const before = p.tok_i;
+        try p.pushScratch(try p.parseWhereConstraint());
+        if (p.eat(.comma) == null) break;
+        p.assertProgress(before); // the comma, at the very least
+    }
+    return p.listToRange(p.scratchSince(mark));
+}
+
+/// Constraint := lower_ident dot_lower ':' Type (§2.1). The method name is
+/// the `dot_lower`, which the lexer only produces where it abuts its atom,
+/// so `k . compare` and `k.Compare` are `unexpected_token`.
+fn parseWhereConstraint(p: *Parse) Allocator.Error!Index {
+    if (p.peek() != .lower_ident) {
+        const node = try p.unexpected(.error_type, .constraint);
+        p.recoverUnlessStructural();
+        return node;
+    }
+    const variable = p.next();
+    if (p.peek() != .dot_lower or !p.adjacent(p.tok_i)) {
+        var item = p.itemAt(.expected_token);
+        item.expected = .dot_lower;
+        const node = try p.errorNode(.error_type, item);
+        p.recoverUnlessStructural();
+        return node;
+    }
+    _ = p.next(); // the method name
+    _ = try p.expectToken(.colon);
+    const type_expr = try p.parseType();
+    return p.addNode(.{ .tag = .where_constraint, .main_token = variable, .data = .{ .lhs = type_expr.int(), .rhs = 0 } });
 }
 
 /// Definition := lower_ident PatAtom* '=' Expr
@@ -896,16 +989,21 @@ fn parseConstructor(p: *Parse) Allocator.Error!Index {
     return p.rangeNode(.constructor, name, try p.listToRange(p.scratchSince(mark)));
 }
 
-/// Foreign := 'foreign' lower_ident ':' Type
-fn parseForeignValue(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
+/// Foreign := 'foreign' lower_ident ':' Type WhereClause?
+/// (language.md §5.4; the clause is static-dispatch-spike.md §2.1, §5.2.)
+fn parseForeignValue(p: *Parse, header_in: Ast.DeclHeader) Allocator.Error!Index {
     p.context = .foreign;
+    var header = header_in;
     _ = p.next(); // foreign
     const name = switch (try p.expectDeclName(.lower_ident)) {
         .name => |n| n,
         .placeholder => |node| return node,
     };
     _ = try p.expectToken(.colon);
-    const type_expr = try p.parseType();
+    const type_expr = try p.parseTopType();
+    const clause = try p.parseWhere();
+    header.where_start = clause.start;
+    header.where_end = clause.end;
     const extra = try p.addExtra(header);
     return p.addNode(.{ .tag = .foreign_value, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = type_expr.int() } });
 }
@@ -1067,8 +1165,14 @@ fn parseTypeItems(p: *Parse) Allocator.Error!void {
     }
 }
 
+/// Whether the comma at the cursor ends the type it follows rather than
+/// separating a parameter list: the record-field rule above, plus — inside
+/// a `where` clause — the three-token rule of static-dispatch-spike.md
+/// §2.3, `lower_ident dot_lower ':'`, which is the next CONSTRAINT.
 fn commaEndsFieldType(p: *const Parse) bool {
-    return p.peekAt(1) == .lower_ident and p.peekAt(2) == .colon;
+    if (p.peekAt(1) == .lower_ident and p.peekAt(2) == .colon) return true;
+    return p.in_where and p.peekAt(1) == .lower_ident and p.peekAt(2) == .dot_lower and
+        p.adjacent(p.tok_i + 2) and p.peekAt(3) == .colon;
 }
 
 /// Turn the items above `mark` into one type: an n-ary `type_fn` when `->`
@@ -1155,7 +1259,10 @@ fn parseTypeApp(p: *Parse) Allocator.Error!Index {
             const name = p.next();
             const mark = p.scratchMark();
             defer p.shrinkScratch(mark);
-            while (canStartTypeAtom(p.peek())) {
+            // `TypeApp` is greedy, so without the `where` guard
+            // `Dict k v where k.compare : …` would read `where` as a third
+            // type argument (static-dispatch-spike.md §2.2).
+            while (canStartTypeAtom(p.peek()) and !(p.in_top_annotation and p.atWhereClause())) {
                 const before = p.tok_i;
                 defer p.assertProgress(before);
                 try p.pushScratch(try p.parseTypeAtom());
@@ -1176,6 +1283,15 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
         .lower_ident => return p.typeVar(p.next(), .none),
         .upper_ident, .qualified_upper => return p.rangeNode(.type_con, p.next(), try p.listToRange(&.{})),
         .l_paren => {
+            // Inside brackets the `where` comma rule of §2.3 does not
+            // apply: a record type's own fields are `lower_ident ':'`, and
+            // `{ x : Int, b : Int }` inside a constraint would otherwise
+            // have its second field read as the next CONSTRAINT the moment
+            // a field name abutted a `.` — the rule is about the clause's
+            // top level and nowhere else.
+            const saved_where = p.in_where;
+            p.in_where = false;
+            defer p.in_where = saved_where;
             // The depth charge for a parenthesised type. `parseTypeItems`
             // is called directly below rather than through `parseType`, so
             // `parseTypeItems → parseTypeApp → parseTypeAtom` is a cycle
@@ -1237,6 +1353,9 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             return p.rangeNode(.type_tuple, open, elements);
         },
         .l_brace => {
+            const saved_where = p.in_where;
+            p.in_where = false;
+            defer p.in_where = saved_where;
             const open = p.next();
             try p.pushBracket(.r_brace);
             defer p.popBracket();
@@ -1913,7 +2032,20 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
             if (p.peekAt(1) == .colon) {
                 const name = p.next();
                 _ = p.next();
-                const type_expr = try p.parseType();
+                // A `let` annotation takes no `where` clause
+                // (static-dispatch-spike.md §2.1, Appendix A.1): evidence
+                // parameters belong to a declaration and a `let` binding is
+                // not one. The clause is still RECOGNISED here, so the
+                // report names `where` instead of letting the greedy type
+                // application swallow it and blame whatever follows.
+                const type_expr = try p.parseTopType();
+                if (p.atWhereClause()) {
+                    var item = p.itemAt(.unexpected_token);
+                    item.context = .let_bindings;
+                    item.construct = .binding;
+                    _ = try p.report(item);
+                    p.recover();
+                }
                 return p.unary(.let_annotation, name, type_expr);
             }
             if (p.peekAt(1) != .keyword_as and p.peekAt(1) != .arrow_left) {

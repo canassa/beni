@@ -1,0 +1,112 @@
+(module
+  (annotation pub insert
+    (type_fn
+      (type_con Dict
+        (type_var k)
+        (type_var v))
+      (type_var k)
+      (type_var v)
+      (type_con Dict
+        (type_var k)
+        (type_var v)))
+    (where_constraint k .compare
+      (type_fn
+        (type_var k)
+        (type_var k)
+        (type_con Order))))
+  (definition insert
+    (pat_var d)
+    (pat_var k)
+    (pat_var v)
+    (ident d))
+  (annotation pub pairUp
+    (type_fn
+      (type_con List
+        (type_var a))
+      (type_con List
+        (type_var b))
+      (type_con List
+        (type_tuple
+          (type_var a)
+          (type_var b))))
+    (where_constraint a .eq
+      (type_fn
+        (type_var a)
+        (type_var a)
+        (type_con Bool)))
+    (where_constraint b .compare
+      (type_fn
+        (type_var b)
+        (type_var b)
+        (type_con Order))))
+  (definition pairUp
+    (pat_var xs)
+    (pat_var ys)
+    (list))
+  (annotation pub both
+    (type_fn
+      (type_var a)
+      (type_var b)
+      (type_con Bool))
+    (where_constraint a .eq
+      (type_fn
+        (type_var a)
+        (type_var a)
+        (type_con Bool)))
+    (where_constraint b .eq
+      (type_fn
+        (type_var b)
+        (type_var b)
+        (type_con Bool))))
+  (definition both
+    (pat_var x)
+    (pat_var y)
+    (ctor True))
+  (annotation pub fold
+    (type_fn
+      (type_var a)
+      (type_var b)
+      (type_var b))
+    (where_constraint a .fold
+      (type_fn
+        (type_var a)
+        (type_paren
+          (type_fn
+            (type_var a)
+            (type_var b)
+            (type_var b)))
+        (type_var b)
+        (type_var b))))
+  (definition fold
+    (pat_var x)
+    (pat_var y)
+    (ident y))
+  (annotation pub place
+    (type_fn
+      (type_record
+        (record_type_field x
+          (type_con Int))
+        (record_type_field y
+          (type_con Int)))
+      (type_var a)
+      (type_var b)
+      (type_con Bool))
+    (where_constraint a .eq
+      (type_fn
+        (type_record
+          (record_type_field x
+            (type_con Int))
+          (record_type_field y
+            (type_con Int)))
+        (type_var a)
+        (type_con Bool)))
+    (where_constraint b .compare
+      (type_fn
+        (type_var b)
+        (type_var b)
+        (type_con Order))))
+  (definition place
+    (pat_var r)
+    (pat_var v)
+    (pat_var w)
+    (ctor True)))

@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/WhereOnLetAnnotation.beni","start":{"line":9,"col":13},"end":{"line":9,"col":18}},"title":"UNEXPECTED TOKEN","message":"I was parsing the bindings of this `let` and ran into `where`. I was expecting a `let` binding."}]

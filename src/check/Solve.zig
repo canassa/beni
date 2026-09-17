@@ -917,6 +917,14 @@ pub const Solver = struct {
         if (region.int() >= bir.insts.len) return &.{};
         return switch (bir.instTag(region)) {
             .call, .pat_ctor => bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(region).rhs)), Bir.Inst.Index),
+            // A method call's arguments are a range inside its payload, and
+            // the receiver is not one of them (static-dispatch-spike.md
+            // §1.4). Without this arm every argument of a dot-call
+            // underlined the whole call.
+            .method_call => {
+                const m = bir.extraData(@enumFromInt(bir.instData(region).rhs), Bir.MethodCall);
+                return bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
+            },
             else => &.{},
         };
     }

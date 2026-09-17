@@ -1,0 +1,22 @@
+-- Already canonical (§2.5): the two shapes a `where` clause takes, a
+-- comment on a constraint's own line and one trailing a constraint, and a
+-- `where` used as an ordinary name beside them (§2.2) — all survive a
+-- second pass unchanged.
+pub insert : Dict k v, k, v -> Dict k v
+    where k.compare : k, k -> Order
+insert d k v =
+    d
+
+
+pub pairUp : List a, List b -> Bool
+    where
+        -- equality on the left, order on the right
+        a.eq : a, a -> Bool
+        , b.compare : b, b -> Order -- and the keys are sorted
+pairUp xs ys =
+    True
+
+
+where : Int
+where =
+    1

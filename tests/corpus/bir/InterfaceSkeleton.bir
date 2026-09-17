@@ -12,10 +12,10 @@ decl 1: pub type Color
   interface type Color = Red | Green | Blue
 
 decl 2: pub opaque type Token
-  %0 = type_import Basics.String
+  %0 = type_import String.String
   ctor 3 Token [%0]
   refs
-    import_type Basics.String
+    import_type String.String
   interface opaque type Token
 
 decl 3: type Hidden

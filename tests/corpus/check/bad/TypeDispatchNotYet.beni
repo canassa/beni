@@ -1,0 +1,10 @@
+-- check/bad: return-type dispatch parses and lowers (§4.1) but the checker
+-- cannot type it until method constraints exist, so it says so rather than
+-- poisoning in silence. Without this the declaration checked clean AND
+-- compiled, emitting `const M$decode = (s) => undefined;` with exit code 0.
+-- RENAME ME when S3 lands: the code then becomes a real type error or no
+-- error at all. not_implemented at 10:6.
+pub decode : String -> Result String a
+    where a.decode : String -> Result String a
+decode s =
+    a.decode s

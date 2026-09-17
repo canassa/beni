@@ -5,43 +5,39 @@ decl 0: value sign (annotated)
   %3 = pat_var local 0 (n)
   %4 = local 0 (n)
   %5 = int 0
-  %6 = import_value Basics.lt
-  %7 = call %6 [%4, %5]
-  %8 = import_ctor Basics.True
-  %9 = pat_ctor %8 []
-  %10 = int 1
-  %11 = import_value Basics.negate
-  %12 = call %11 [%10]
-  %13 = branch %9 -> %12
-  %14 = import_ctor Basics.False
-  %15 = pat_ctor %14 []
-  %16 = local 0 (n)
-  %17 = int 0
-  %18 = import_value Basics.eq
-  %19 = call %18 [%16, %17]
-  %20 = import_ctor Basics.True
-  %21 = pat_ctor %20 []
-  %22 = int 0
-  %23 = branch %21 -> %22
-  %24 = import_ctor Basics.False
-  %25 = pat_ctor %24 []
-  %26 = int 1
-  %27 = branch %25 -> %26
-  %28 = case %19 [%23, %27]
-  %29 = branch %15 -> %28
-  %30 = case %7 [%13, %29]
+  %6 = method_call %4 .compare [%5] (<)
+  %7 = import_ctor Basics.True
+  %8 = pat_ctor %7 []
+  %9 = int 1
+  %10 = import_value Basics.negate
+  %11 = call %10 [%9]
+  %12 = branch %8 -> %11
+  %13 = import_ctor Basics.False
+  %14 = pat_ctor %13 []
+  %15 = local 0 (n)
+  %16 = int 0
+  %17 = method_call %15 .eq [%16] (==)
+  %18 = import_ctor Basics.True
+  %19 = pat_ctor %18 []
+  %20 = int 0
+  %21 = branch %19 -> %20
+  %22 = import_ctor Basics.False
+  %23 = pat_ctor %22 []
+  %24 = int 1
+  %25 = branch %23 -> %24
+  %26 = case %17 [%21, %25]
+  %27 = branch %14 -> %26
+  %28 = case %6 [%12, %27]
   annotation %2
   params [%3]
-  body %30
+  body %28
   locals
     0 n param %3
   refs
     import_type Basics.Int
-    import_value Basics.lt
     import_ctor Basics.True
     import_value Basics.negate
     import_ctor Basics.False
-    import_value Basics.eq
 
 decl 1: value clamp01 (annotated)
   %0 = type_import Basics.Float
@@ -52,27 +48,25 @@ decl 1: value clamp01 (annotated)
   %5 = int 0
   %6 = local 0 (x)
   %7 = int 1
-  %8 = import_value Basics.gt
-  %9 = call %8 [%6, %7]
-  %10 = import_ctor Basics.True
-  %11 = pat_ctor %10 []
-  %12 = int 1
-  %13 = branch %11 -> %12
-  %14 = import_ctor Basics.False
-  %15 = pat_ctor %14 []
-  %16 = local 0 (x)
-  %17 = branch %15 -> %16
-  %18 = case %9 [%13, %17]
-  %19 = call %4 [%5, %18]
+  %8 = method_call %6 .compare [%7] (>)
+  %9 = import_ctor Basics.True
+  %10 = pat_ctor %9 []
+  %11 = int 1
+  %12 = branch %10 -> %11
+  %13 = import_ctor Basics.False
+  %14 = pat_ctor %13 []
+  %15 = local 0 (x)
+  %16 = branch %14 -> %15
+  %17 = case %8 [%12, %16]
+  %18 = call %4 [%5, %17]
   annotation %2
   params [%3]
-  body %19
+  body %18
   locals
     0 x param %3
   refs
     import_type Basics.Float
     import_value Basics.max
-    import_value Basics.gt
     import_ctor Basics.True
     import_ctor Basics.False
 
