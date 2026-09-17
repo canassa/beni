@@ -251,6 +251,10 @@ gains a constraint on `String` at the call and no source change.
 | `run/DerivedEquality.beni` | `==` on a record, a tuple, an ADT with padding, an all-nullary type, a nested `Maybe (List Int)`, `NaN /= NaN`, `() == ()` |
 | `run/DerivedOrdering.beni` | `compare` on a record (field-name order), a tuple, an ADT (declaration order), an all-nullary type, `List (List Int)` (shorter is `LT`) |
 | `run/DecodeInto.beni` | return-type dispatch, S7, two target types |
+| `run/EvidenceCapture.beni` | evidence used inside a nested lambda two levels below the declaration that owns it (spec §6.4, §8.1 — `$m$k` is captured lexically, never forwarded) |
+| `check/bad/LetConstrainedTwice.beni` | a `let` binding is not generalised over a constrained variable; a second use at another type is `method_constraint_mismatch` (spec §6.4, A.30) |
+| `check/bad/UnknownMethodThroughGeneric/` | the two-span rule: primary at the call that created the obligation, secondary at the constraint's origin (spec §10 preamble, §10.1) |
+| `check/bad/MissingWhereCaller/` | same rule for `missing_where_constraint`, primary span on the caller not in the callee (spec §10.4; report 18 §2.4) |
 
 ### 4.2 `check/args/`
 

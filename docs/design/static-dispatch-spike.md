@@ -28,6 +28,11 @@ disagreement is listed in Appendix A.
 | §5.2 `foreign` with a `where` clause | `boundary.md` §4 | the sibling export's arity becomes evidence count + declared arity. `boundary.md` §4's checks are *export coverage* and *import coverage* (`src/js/Sibling.zig:1-33`); neither checks arity, so this rule is **documented and not enforced** on the branch — §11 records it as a widening of the `foreign` surface |
 | §11 known limits | — | what the spike knowingly does not solve |
 
+[`research/20-roc-static-dispatch-implementation.md`](research/20-roc-static-dispatch-implementation.md)
+walks Roc's Zig implementation of all of this and its §9 maps every mechanism to a section here;
+where this document cites `references/roc/…` it is following that report's evidence. Appendix A.30
+onward records the amendments it produced.
+
 **Plan section → spec section**, so the slice table in `plans/static-dispatch-spike.md` §8 stays
 usable: plan §3.1 → §1; §3.2 → §2; §3.3 → §3; §3.4 → §4; §3.5 → §5; §4.1 → §6.1; §4.2 → §6.2;
 §4.3 → §6.3; §4.4 → §6.4–§6.6; §4.5 → §6.7; §4.6 → §7; §4.7 → §10; §4.8 → §6.8; §5.1–§5.2 → §1.4,
@@ -78,6 +83,7 @@ for an application is `call` (`src/bir/Bir.zig:263`).
 | `x.m _ b` | placeholder over the method call: `\y -> x.m y b` (`language.md` §6.7) | `lambda` over `method_call` |
 | `x.0.m a` | receiver is the tuple element `x.0` | `method_call { tuple_index(x, 0), m, [a] }` |
 | `M.f x` | qualified value call, **not** a method call: the head is a qualified name — a `qualified_lower` token, lowered to `import_value` or to the BIR tag `qualified` (`src/bir/Bir.zig:164`) — and not a field access | `call(import_value(M, f), [x])` |
+| `M.v.m a` | receiver is the qualified value `M.v`; method `m`. The head of the application is a field access on a qualified name, so this is a method call, unlike `M.f x` above | `method_call { import_value(M, v), m, [a] }` |
 
 `x.m` with **no** arguments is never a method call, even when `m` resolves to a nullary method:
 `language.md` §6.3's field access wins, because an application with no arguments is not an
@@ -116,27 +122,64 @@ local or imported function of the same name; that is Roc's rule and its reason i
 [`research/18`](research/18-static-dispatch-revisited.md) §4.2 item 4. The receiver-first pipe
 `e |> f a` is what reaches a function you do not own.
 
-### 1.3 The `well_known` marking
+### 1.3 `well_known`: the surface origin
 
-A `method_call` carries an operator field, `well_known`, whose value is one of `none`, `eq`, `neq`,
-`lt`, `le`, `gt`, `ge`. Only `language.md` §6.5's operators produce a non-`none` value (§3.1); the
-dot-call form always produces `none`. Three rules hang on it:
+A `method_call` carries a **surface origin**, not a boolean. It is an enum over the syntax the call
+was written as:
 
-1. A `method_call` marked non-`none` is **never** rewritten into a field call, so `r == s` on a
-   record with a field named `eq` still means structural equality.
-2. Only a marked call may derive (§9) — `x.eq y` written by hand on a type with no `eq` is
+```zig
+pub const WellKnown = enum(u8) { none, eq, neq, lt, le, gt, ge };
+```
+
+`none` means the author wrote a dot-call; the other six name the operator of `language.md` §6.5 that
+desugared into this node (§3.1). This is Roc's `Expression.SurfaceOrigin`
+(`references/roc/src/canonicalize/Expression.zig:756-770`), whose own comment is the argument for
+recording it as data rather than as a flag: *"Operator forms carry contracts the method-call form
+does not … so re-emitting them as `.method()` calls would weaken the program."* beni's reasons are
+the same two, minus Roc's third:
+
+| Why an enum | Detail |
+|---|---|
+| **the typing rule differs** | `a == b` pins both operands to one type and the result to `Bool`; `a.eq b` does not (§3.1, report 20 §9 row X-4). A flag cannot express which rule applies, and the two are not interchangeable |
+| **diagnostics name the operator** | every message about a well-known call says `==` or `<`, not `eq` or `compare`. Roc keeps a `getOperatorForMethod` map for this (`references/roc/src/check/report.zig:2605-2611`); the enum makes the map unnecessary |
+| **(Roc only) re-emission** | Roc canonicalises operators into dispatch nodes and must print them back. **beni does not**: `fmt` is an Ast pass (`language.md` §9) and never sees BIR, so the round-trip is not at risk here. What beni needs the enum for is `dump --stage=bir`, which is a tested output and must show which operator produced a node |
+
+Four rules hang on it:
+
+1. A `method_call` whose origin is not `none` is **never** rewritten into a field call, so `r == s`
+   on a record with a field named `eq` still means structural equality.
+2. Only such a call may derive (§9) — `x.eq y` written by hand on a type with no `eq` is
    `unknown_method`, not a silent derivation.
-3. The backend may emit a JavaScript operator for a marked call whose target is `primitive` (§8.3).
+3. The backend emits a JavaScript operator for such a call when the target is `primitive`, choosing
+   which operator from the origin (§8.3).
+4. The constraint it raises is the pinned one of §3.1, not the loose dot-call one.
 
 ### 1.4 BIR
 
 ```
 method_call  lhs = receiver Inst.Index
-             rhs = ExtraIndex of { name: SymbolIndex, well_known: u8, args: SubRange }
+             rhs = ExtraIndex of { name: SymbolIndex, origin: WellKnown, args: SubRange }
 
 type_dispatch lhs = SymbolIndex of the type variable (§4)
               rhs = ExtraIndex of { name: SymbolIndex, args: SubRange }
 ```
+
+`origin` is stored as its own `u32` word of `extra`, not packed into `name`: the dump prints it and
+a packed field would make the golden depend on a bit layout.
+
+**`dump --stage=bir`** prints the origin as the operator the author wrote, or omits it for a
+dot-call, so a golden distinguishes `a == b` from `a.eq b`:
+
+```
+%7 = method_call %5 eq [%6] from `==`
+%9 = method_call %5 compare [%8] from `<`
+%11 = method_call %5 eq [%10]
+%13 = type_dispatch a decode [%12]
+```
+
+The `from` clause is absent exactly when `origin` is `none`. `tests/corpus/bir/OperatorsAsFunctions.beni`
+and its `.bir` golden assert all seven spellings, including the parenthesised operator forms of
+§3.1 which lower to a lambda over a marked `method_call`.
 
 `Bir.Decl` gains `where_start` / `where_end` into `extra`, a range of
 `(variable SymbolIndex, method SymbolIndex, type Inst.Index)` triples, beside `annotation` (§2.4).
@@ -292,14 +335,39 @@ declaration — will legitimately differ in layout and in order.
 `language.md` §6.5's six comparison operators stop being calls of `Basics` functions. Lowering
 emits one `method_call` each, marked per §1.3:
 
-| Operator | Lowers to | Method type demanded | Instruction's type |
+| Operator | Lowers to | Constraint raised | Instruction's type |
 |---|---|---|---|
-| `a == b` | `method_call { a, eq, [b], well_known = eq }` | `T, T -> Bool` | `Bool` |
-| `a /= b` | `method_call { a, eq, [b], well_known = neq }` | `T, T -> Bool` | `Bool` |
-| `a < b` | `method_call { a, compare, [b], well_known = lt }` | `T, T -> Order` | `Bool` |
-| `a <= b` | `method_call { a, compare, [b], well_known = le }` | `T, T -> Order` | `Bool` |
-| `a > b` | `method_call { a, compare, [b], well_known = gt }` | `T, T -> Order` | `Bool` |
-| `a >= b` | `method_call { a, compare, [b], well_known = ge }` | `T, T -> Order` | `Bool` |
+| `a == b` | `method_call { a, eq, [b], origin = eq }` | `eq : t, t -> Bool` | `Bool` |
+| `a /= b` | `method_call { a, eq, [b], origin = neq }` | `eq : t, t -> Bool` | `Bool` |
+| `a < b` | `method_call { a, compare, [b], origin = lt }` | `compare : t, t -> Order` | `Bool` |
+| `a <= b` | `method_call { a, compare, [b], origin = le }` | `compare : t, t -> Order` | `Bool` |
+| `a > b` | `method_call { a, compare, [b], origin = gt }` | `compare : t, t -> Order` | `Bool` |
+| `a >= b` | `method_call { a, compare, [b], origin = ge }` | `compare : t, t -> Order` | `Bool` |
+
+**The operator form pins both operands to one type**, and this is deliberately *tighter* than the
+constraint a hand-written dot-call raises. Constraint generation unifies the receiver's variable
+with the argument's variable and the instruction's type with `Bool` **before** the constraint is
+attached, so `t` is one variable in all three positions:
+
+| Written | Inferred |
+|---|---|
+| `same a b = a == b` | `a, a -> Bool where a.eq : a, a -> Bool` |
+| `same a b = a.eq b` | `a, b -> c where a.eq : a, b -> c` |
+
+Roc takes the same rule and states the reason (`references/roc/design.md:3002-3012`): *"These
+contracts let inference propagate information before a method has been selected. Either comparison
+operand can determine the other's type … A plain method call cannot assume these relationships."*
+Report 20 §9 row X-4 is the finding that the spike's first draft omitted it.
+
+**Why it matters to the measurement, not only to ergonomics.** The spike exists partly to measure
+report 18 §2.3's claim that an unannotated `pub` function's inferred scheme carries its accumulated
+constraints into the interface, so a body edit re-checks every importer. A looser scheme is a bigger
+scheme: `a, b -> c where a.eq : a, b -> c` is three quantifiers and a three-parameter constraint
+term where the pinned form is one quantifier and a two-parameter one. Had `==` lowered to the
+dot-call constraint, **M3 would have measured churn caused by the spec's own lowering rather than by
+static dispatch**, and the number would have been wrong in the direction that flatters the
+objection. The four ordering operators pin the same way, with `Order` in place of `Bool` inside the
+constraint and `Bool` as the instruction's type.
 
 **The operator-as-function form** (`language.md` §6.5, "operators as functions", `language.md:485`;
 the live fixture is `tests/corpus/parse/good/OperatorsAll.beni:30`, `[ (==), (/=), (<), (>), (<=), (>=) ]`)
@@ -307,14 +375,15 @@ gets the same dispatch as the operator, because it lowers to a lambda over it:
 
 | Written | Lowers to |
 |---|---|
-| `(==)` | `\a b -> method_call { a, eq, [b], well_known = eq }` |
-| `(/=)` | `\a b -> method_call { a, eq, [b], well_known = neq }` |
-| `(<)` `(<=)` `(>)` `(>=)` | `\a b -> method_call { a, compare, [b], well_known = lt \| le \| gt \| ge }` |
+| `(==)` | `\a b -> method_call { a, eq, [b], origin = eq }` |
+| `(/=)` | `\a b -> method_call { a, eq, [b], origin = neq }` |
+| `(<)` `(<=)` `(>)` `(>=)` | `\a b -> method_call { a, compare, [b], origin = lt \| le \| gt \| ge }` |
 | `(+)` `(::)` and the rest | unchanged: still `\a b -> call(import_value(Basics, add), [a, b])` and friends |
 
 So `(==)` is a closure of arity two whose *body* carries the constraint, and the constraint lands on
 the enclosing declaration's scheme like any other. It is not a reference to `Basics.eq`, which would
-be structural equality and the wrong answer. Appendix A.22.
+be structural equality and the wrong answer. The pinning rule applies inside the lambda too, so
+`(==) : a, a -> Bool where a.eq : a, a -> Bool`. Appendix A.22.
 
 The four ordering operators are typed `Bool` while the method they call returns `Order`; the
 backend supplies the test (§8.3). There is no desugaring to a `case` and no new core function for
@@ -598,10 +667,45 @@ Five invariants, each load-bearing:
 | # | Invariant | Why |
 |---|---|---|
 | 1 | A `ConstraintSet` is an `enum(u32)` index into a per-store `constraint_sets: std.ArrayList(Range)`, each `Range` a half-open run of a per-store `constraints: std.ArrayList(MethodConstraint)` — two flat tables, never a pointer or a map | the house data rule (`fast-compiler.md` §5); it keeps `Flags` one word wider and makes rollback two truncations |
-| 2 | Sets are **append-only**. Merging two sets appends a third and leaves both originals | the undo journal rolls speculation back by truncating `constraints.items.len`, exactly as it truncates the descriptor journal (`checker.md` §5) |
-| 3 | A set holds **at most one constraint per name** | the spike's simplification; two uses at different types unify (§6.2). Roc's August-2026 principality fix is stretch item 1 (§11) |
+| 2 | **Every table written during discharge is an append-only list that rollback truncates by length.** Merging two sets appends a third and leaves both originals; nothing written during discharge is ever mutated in place, removed out of order, or keyed by anything but its own index. See below | the undo journal rolls speculation back by truncating lengths, exactly as it truncates the descriptor journal (`checker.md` §5). Roc does the same and for the same reason (`references/roc/src/types/store.zig:515`, a `shrinkRetainingCapacity`) |
+| 3 | A set holds **at most one constraint per name**, and two uses of that name unify through it (§6.2 Rule U1) | the spike's simplification. It is *correct* for a `where` clause and for an operator desugaring, and *too strong* for two independent dot-calls — which is exactly report 18 §2.2's program. Roc's shipped fix is a partition by origin class, not "several per name"; it is stretch item 1 and §11 costs it |
 | 4 | Constraints are stored in **insertion order** and sorted only when written to an interface or rendered | sorting on every merge would be quadratic; sorting at the two boundaries is what determinism needs (§6.5) |
 | 5 | `Kind` is **not** extended | `fast-compiler.md` §3.1 closes that set, and a method constraint is not an ad-hoc kind |
+
+**What invariant 2 covers, and why it is not only about the store.** `checker.md` §5's journal
+brackets a speculative unification, and the spike gives the checker a second speculator: `?`
+(`checker.md` §6.5) was the only one, and now `dischargeMethod` can run inside a probe because §6.2's
+rules register obligations from *inside* `unify`. Roc hit this and its probe rollback shrinks
+twenty-four checker side tables, not just the store (report 20 §9 row S3-5,
+`references/roc/src/check/Check.zig:25285-25340`). So `TypeStore.Snapshot`
+(`src/check/TypeStore.zig:240-244`, today `{ journal_len, vars, extra }`) gains one length per new
+append-only table:
+
+```zig
+pub const Snapshot = struct {
+    journal_len: u32,
+    vars: u32,
+    extra: u32,
+    constraints: u32,        // NEW: MethodConstraint table
+    constraint_sets: u32,    // NEW: the Range table
+    sites: u32,              // NEW: Dispatch.sites builder      (§7.1)
+    derived: u32,            // NEW: Dispatch.derived builder    (§7.1)
+    parts: u32,              // NEW: Dispatch.parts builder      (§7.1)
+    evidence: u32,           // NEW: Dispatch.evidence builder   (§7.1)
+};
+```
+
+`rollback` truncates each to the snapshot's length; `commit` leaves them. Two details that are easy
+to get wrong:
+
+- **The truncation is per snapshot, not a single saved length.** beni's journal *nests* — it carries
+  a `depth` (`src/check/TypeStore.zig:229`, `:530`, `:541`, `:565`) — whereas Roc asserts savepoints
+  never nest (`references/roc/src/types/store.zig:425`). A single "length at the start of
+  speculation" would be wrong for an inner probe.
+- **A loop over a constraint set must be index-based and re-fetch the slice each iteration.**
+  Unifying a pair can recursively grow the very list being walked, so a held `[]MethodConstraint`
+  slice is a use-after-realloc. Roc writes it this way in six places and says so
+  (`references/roc/src/check/unify.zig:3509-3520`); the spike's implementation is required to.
 
 **`Descriptor` does not grow.** `Flags` goes from 8 bytes to 12 (`name: u32`, `kind: u8`,
 `equatable: bool`, 2 bytes of padding, `constraints: u32`), and the largest `Content` payload is
@@ -612,9 +716,51 @@ the extra arm in the drain loop, not a wider store. If that is measurable, the f
 the plan is a side table keyed by root `Var` and moved on merge, which changes nothing in this
 section but `Flags`.
 
-### 6.2 Unification
+### 6.2 Unification, and when the method is resolved
 
-Three sites in `unify` gain a rule; everything else in `checker.md` §6.2 is unchanged.
+Three sites in `unify` gain a rule; everything else in `checker.md` §6.2 is unchanged. Before them,
+one rule about *ordering*, because it decides the quality of every message inside a lambda argument.
+
+**Rule U0 — resolve the method before the arguments, when the receiver is already concrete.**
+
+Roc does this and says why (`references/roc/src/check/Check.zig:20045-20054`):
+
+> *"A receiver whose type is already known has its method resolved before the arguments are checked,
+> so each argument is checked against the parameter type the method declares for it, as a plain
+> call's arguments are. A closure argument then has its parameters seeded before its body is
+> checked."*
+
+Without it, `xs.map (\x -> x.field)` checks the lambda against a fresh variable, the lambda's
+parameter type is unknown while its body is checked, and `x.field` becomes a second deferred
+constraint that fails somewhere else — report 20 §9 row S3-9.
+
+**beni can do this, and the ordering lives in constraint generation, not in the solver.**
+`Constrain` builds a tree and `Solve` walks it, so at *generation* time no receiver type is known
+and Roc's `varResolvesToKnownType` test has no meaning. What beni has instead is that
+`Constrain.Node.Tag.and_` solves its children **left to right**
+(`src/check/Constrain.zig:128-130`), which is all the ordering this needs. So:
+
+1. `Constrain` gains one node tag, `method` — `a` = the receiver `Var`, `b` = an `extra` index of a
+   `Method { name, origin, args_start, args_len, result }` — beside `call`
+   (`src/check/Constrain.zig:135-136`), and one `Node.Tag` entry `method_call` for its category.
+2. For a `method_call` instruction, the generator emits, **in this order** inside one `and_`: the
+   receiver's own constraints, then the `method` node, then the `call_arg` constraints for the
+   arguments and the constraints of the argument expressions themselves.
+3. `Solve`'s arm for `method` resolves the receiver to its root and switches:
+   - the root is **not** `flex` — a structure, an alias, or a rigid: run `dischargeMethod` (§6.3)
+     **now**, inline, so the argument variables are already unified with the method's declared
+     parameter types by the time the `call_arg` constraints are reached;
+   - the root **is** `flex`: attach the constraint (§6.1) and register the obligation, exactly as
+     Rule U3 does, and the arguments check against fresh variables as they do today.
+
+A lambda argument is seeded by *unification*, not by generation, so it does not matter that its body
+constraints were already built: they are solved after the `method` node, against parameter variables
+that are no longer fresh. The concrete-receiver case is the common one — every `d.insert k v` on a
+known `Dict`, every `==` on an annotated type — so this covers the messages that matter.
+
+**What it does not buy.** A receiver that is still a variable at this point behaves as before;
+there is no second attempt. That is the same limit Roc has (`resolve_method_first` is a test, not a
+retry), and §11 records it beside the deferred-receiver row rather than pretending otherwise.
 
 **Rule U1 — flex ⊓ flex.** Union the two constraint sets onto the surviving root, beside the
 existing `equatable` OR and `Kind` meet:
@@ -639,11 +785,35 @@ and is never extended. For every constraint on the flex:
 The rigid keeps its own set; the flex is bound to the rigid as usual.
 
 **Rule U3 — flex vs structure, alias or `err`.** Do **not** walk. Register one obligation
-`.method{ constraint }` on the concrete variable per constraint in the flex's set, at the
-constraint's own region, exactly as a flagged-`equatable` flex does today (`checker.md` §6.2, "a
-flex var marked equatable that meets a structure registers an obligation instead of walking"). The
-walk happens once, at discharge (§6.3). Against `err` nothing is registered and nothing is
-reported.
+`.method{ constraint }` on the concrete variable per constraint in the flex's set, exactly as a
+flagged-`equatable` flex does today (`checker.md` §6.2, "a flex var marked equatable that meets a
+structure registers an obligation instead of walking"). The walk happens once, at discharge (§6.3).
+Against `err` nothing is registered and nothing is reported.
+
+**The obligation carries two regions, and that is the fix for report 18 §2.4.**
+`Solve.Obligation` (`src/check/Solve.zig:106-116`, today `{ kind, v, region, index, result }`) gains
+one field:
+
+```zig
+pub const Obligation = struct {
+    kind: Kind,
+    v: Var,
+    region: Bir.Inst.Index,     // where the CONSTRAINT was written
+    origin: Bir.Inst.Index,     // NEW: the instruction whose instantiation created THIS obligation
+    index: u32 = 0,
+    result: Var.Optional = .none,
+};
+```
+
+`region` is the constraint's own: the `x.m` call, the operator, or the `where` clause the constraint
+was declared in — and for a constraint that arrived by instantiating an imported scheme, that region
+is **inside the callee**. `origin` is the instruction in *this* module that instantiated the scheme
+and thereby created the obligation. Roc records the same thing —
+`DeferredConstraintCheck.failure_expr`, *"the expression whose instantiation created this
+obligation"* (`references/roc/src/check/unify.zig:3950-3956`) — and report 20 §7.2's finding is that
+Roc's reports never read it, which is precisely why a missing `to_hash` on a caller is reported
+inside the callee. §10 makes `origin` the **primary** region of the three diagnostics that can carry
+one, so the spike beats Roc on the thing report 18 said was worst about it.
 
 **Rule U4 — rigid vs rigid.** Unchanged: non-identical rigids are `rigid_mismatch` and the
 constraint sets are not consulted.
@@ -661,12 +831,24 @@ variable to its root and switches on the content:
 | `app T args` | §6.3.1 |
 | `alias` whose `actual` is available — every same-module alias, and any alias already instantiated in this store | discharge against `actual`. The alias is transparent (`fast-compiler.md` §3.1), so its methods are the expansion's |
 | `alias` declared in another module, whose body cannot be read (`Interface.alias_body`, `checker.md` §7) | `no_methods_on_shape`, naming the alias. §11 records this as a spike gap that closes the moment `alias_body` lands |
-| `record(fields, ext)` with `ext` **closed** (`empty_record`) | well-known name (§1.3 marked): target `derived { kind, shape = record(sorted field names) }`, and register the same obligation on **every field type**. Any other name: `no_methods_on_shape`, with the hint "write `(x.m) a` for a field call" |
-| `record(fields, ext)` with `ext` still a variable — an **open** record | `no_methods_on_shape`. An open record's field set is not yet known, so neither the shape key (§9.2) nor the field obligations can be computed, and a later-arriving field would silently change which function ran |
-| `tuple(args)` | well-known name: target `derived { kind, shape = tuple(arity) }`, and register the same obligation on every element type. Any other name: `no_methods_on_shape` |
-| `unit` | well-known name: target `derived { kind, shape = unit }`. Any other name: `no_methods_on_shape` |
+| `Structure.record { fields, ext }` where `find(ext)` is `Structure.empty_record` — a **closed** record | well-known name (§1.3): target `derived { kind, shape = record(sorted field names) }`, and register the same obligation on **every field type**. Any other name: `no_methods_on_shape`, with the hint "write `(x.m) a` for a field call" |
+| `Structure.record { fields, ext }` where `find(ext)` is `Content.flex` — an **open** record whose extension is still unsolved | `no_methods_on_shape`. See below |
+| `Structure.record { fields, ext }` where `find(ext)` is `Content.rigid` — an open record from an annotation, `{ r \| a : Int }` | `no_methods_on_shape`. See below |
+| `Structure.tuple(args)` | well-known name: target `derived { kind, shape = tuple(arity) }`, and register the same obligation on every element type. Any other name: `no_methods_on_shape` |
+| `Structure.unit` | well-known name: target `derived { kind, shape = unit }`. Any other name: `no_methods_on_shape` |
 | `func` | `eq`: **`dischargeMethod` reports `not_equatable` itself**, directly. Today that code fires off `Flags.equatable`, which is set by instantiating `Basics.eq`'s `equatable a` marker — and after §3.1 nothing instantiates `Basics.eq` for `==` any more, so the code would become unreachable if this arm did not raise it. Anything else, `compare` included: `no_methods_on_shape` |
 | `err` | silence (`checker.md` §6.2) |
+
+**Only a closed record derives**, and the two open cases are refused for the same reason by two
+different routes. beni's record content is `Structure.record { fields: Range, ext: Var }` with
+`Structure.empty_record` as the closed end of the extension chain
+(`src/check/TypeStore.zig:180-183`, `:194-199`), so "closed" is a content test on the resolved
+extension and not a flag. A **flex** extension means more fields may still arrive, so the shape key
+of §9.2 is not yet determined and a field turning up later would silently change which derived
+function ran. A **rigid** extension means the annotation promised to work for *every* extension, so
+no shape key exists at all — deriving against the known fields would be deriving against a type the
+caller never named. Appendix A.28 records the decision; this row records which `Content` and
+`Structure` variants it is a test on.
 
 **§6.3.1 — the `app T args` case, in order.**
 
@@ -755,6 +937,74 @@ At generalisation, a constraint still sitting on a flex variable of the generali
 `constrained_constant` exists because a value with evidence parameters is a function (§8.1), and
 silently turning a declared constant into a function would change its type across the module
 boundary. The author's fix is to give it a parameter or an annotation that pins the type.
+
+**The outer-rank receiver, and why the spike does not build Roc's side table.**
+
+Roc found that "constraints ride on the variable, so generalisation carries them" is not enough. A
+generalised scheme there is a **pair** — the root type plus an explicit side table of promoted
+requirements — because *"the callable relation can contain scheme-owned argument, result, and
+literal variables even though traversing the root type alone cannot reach them"*
+(`references/roc/design.md:5461-5468`; `captureSchemeDispatchRequirements`,
+`references/roc/src/check/Check.zig:28361-28471`). The case is an inner declaration whose constraint
+sits on an **outer-rank** receiver but whose `fn_var` mentions the inner declaration's own
+quantifiers: §7.2's canonical order walks the scheme's quantifiers and never sees that constraint,
+so two instantiations of the inner scheme share one method type and are wrongly unified — the same
+failure `copyHelp` guards against, one scope out. Report 20 §9 row S3-4.
+
+**The spike does not build the side table.** It removes the case instead, with two rules:
+
+> **(a) A `let` binding is never generalised over a variable that carries a method constraint.**
+> At a `let` generalisation boundary, a variable in the young pool whose `Flags.constraints` is not
+> `.none` is **not** quantified: its rank is adjusted to the enclosing rank and it stays there, to be
+> generalised (or promoted, or reported) at the enclosing declaration's boundary instead. So a
+> constraint never straddles a boundary, and every constraint that reaches promotion sits on a
+> variable the *declaration* quantifies — which is exactly what §7.2's walk requires.
+>
+> **(b) `generalize` checks it.** After a declaration's rank is generalised, every promoted
+> constraint's `fn_var` is walked; reaching a variable quantified by a *different* scheme is an
+> `std.debug.assert` failure in a debug build and an internal `nesting_too_deep`-class diagnostic at
+> the declaration in a release build, never a silent miscompile. If that assert ever fires on real
+> code, the answer is Roc's side table and the spike has found the thing report 20 says nobody has
+> measured (§10, "Roc's own measurement of what the side table costs").
+
+**What rule (a) costs**, stated plainly because it is a real restriction and not a free win: a `let`
+binding whose type carries a method constraint is **monomorphic within its declaration**. Two uses
+at different types are `method_constraint_mismatch` (§10.5), not two instantiations.
+
+```elm
+-- tests/corpus/check/bad/LetConstrainedTwice.beni
+pub report : Int, String -> String
+report n s =
+    let
+        show x =
+            "${x.render}"
+    in
+    show n ++ show s
+```
+
+`show`'s parameter carries a `render` constraint, so `show` is not generalised over it; the first
+use pins it to `Int` and the second is `method_constraint_mismatch` at `show s`. Writing `show` as a
+top-level declaration with an annotation is the fix, and the message says so. §11 carries the limit
+row. Appendix A.30.
+
+**One level of evidence is therefore enough**, which settles report 20 §9 row S4-1. Roc's
+`EvidenceChainIndex { depth, index }`
+(`references/roc/src/check/static_dispatch_registry.zig:1336-1339`) exists because a nested
+lambda is itself a callable that may need evidence re-passed into it. In beni it cannot be, for two
+reasons that together close the case:
+
+- a `let` binding never has evidence parameters, by rule (a), so the only things that do are
+  top-level declarations (§8.1);
+- a lambda inside a declaration lowers to a JavaScript closure, so a reference to `$m$k` in its body
+  is an ordinary lexical capture and needs no re-passing at all.
+
+`Target.evidence: u16` (§7.1) is therefore one number — the index of the *enclosing declaration's*
+evidence parameter — with no depth, and no declaration ever needs another declaration's evidence.
+`tests/corpus/run/EvidenceCapture.beni` is the fixture: a `pub` declaration with a `where`
+constraint whose body uses the constrained method inside a lambda **inside another lambda**, passed
+to `List.map` and then to `List.foldl`, so `$m$0` is read two closure levels below the parameter
+list; it must print the right answer and its emitted JavaScript must contain exactly one `$m$0`
+parameter.
 
 `--explain` is a new flag on `beni check` and `beni build` that emits informational diagnostics
 otherwise suppressed. It adds **no new severity**: `diagnostic.Severity` stays
@@ -918,7 +1168,9 @@ pub const Dispatch = struct {
     pub const Target = union(enum(u8)) {
         top: Bir.DeclIndex,                                       // a value of this module
         ext: struct { module: Graph.Index, value: Interface.ValueIndex },
-        evidence: u16,                                            // the k-th evidence parameter
+        evidence: u16,                                            // the k-th evidence parameter of the
+                                                                  // ENCLOSING DECLARATION. One level, no
+                                                                  // depth — §6.4 proves why
         primitive: enum(u8) { strict_eq, num_compare, char_compare, string_compare },
         derived: u32,                                             // index into `derived`
         field,                                                    // a record: a plain field call
@@ -972,8 +1224,15 @@ callee both derive the order from the scheme record, never from the source and n
 identity, so they agree; a spec that said "left to right in the annotation" would have them disagree
 silently, which is the worst failure mode this table has. Appendix A.24.
 
-The closure rule of §2.4 is what makes the rule total: every variable a constraint can mention is a
-quantifier of the scheme, so every constraint has a slot.
+**The closure rule of §2.4 is what makes this rule total, and it is why there is no second phase.**
+Roc's enumerator walks the resolved root type and then **drains a queue over the constraints' own
+function types**, because a `fn_var` can bind further constrained variables the root walk never
+reaches — `where [a.iter : a -> i, i.next : …]`, with `i` introduced by the constraint
+(`references/roc/src/check/dispatch_evidence.zig:211-241`; report 20 §0 and §3.5). beni's §2.4
+forbids exactly that shape: every type variable mentioned anywhere in a constraint's type must occur
+in the annotated type, so `i` would have to be a parameter or result of the declaration and would
+therefore be a quantifier the root walk already visits. One phase suffices **because** A.21 refused
+the programs that need two. If A.21 is ever relaxed, this rule needs Roc's queue.
 
 `Dispatch.Evidence` records the `(quantified, method)` pair each slot came from so the dump can
 name it and so a mismatch is a caught bug rather than a silent miscompile.
@@ -1098,6 +1357,25 @@ A declaration of **zero** beni parameters that has evidence would become a funct
 type across the module boundary; the checker refuses it first (`constrained_constant`, §6.4), so
 the backend never meets one.
 
+**Only a top-level declaration has evidence parameters**, and a lambda never does. §6.4 rule (a)
+keeps a `let` binding from being generalised over a constrained variable, so no nested binding
+acquires its own evidence list, and a lambda in a declaration's body lowers to a JavaScript closure
+that reads `$m$k` by ordinary lexical capture:
+
+```js
+// pub tally : List a -> List ( a, Int ) where a.eq : a, a -> Bool
+export const Tally$tally = ($m$0, xs) =>
+  List$map(xs, (x) => ({ a: x, b: List$foldl(xs, 0, (y, n) => ($m$0(x, y) ? n + 1 : n)) }));
+//                                                              ^^^^^ two closures down, captured
+```
+
+That is why `Target.evidence` is a single `u16` and not Roc's `EvidenceChainIndex { depth, index }`
+(`references/roc/src/check/static_dispatch_registry.zig:1336-1339`, resolved by walking out
+through enclosing callables at `monotype/lower.zig:992-1001`): Roc's nested callables are separate
+functions that must have evidence re-passed into them, and beni's are closures that already see it.
+Report 20 §9 row S4-1 asks for this to be stated rather than assumed, and
+`tests/corpus/run/EvidenceCapture.beni` (§6.4) is the fixture that holds it.
+
 Two consequences worth stating, because they are what M4 and M5 measure:
 
 - the emitted arity of a `pub` value is now a function of its inferred scheme, so an edit that adds
@@ -1167,10 +1445,10 @@ const cmp = (a, b, c) => Dict$insert(String$compare, a, b, c);
 | `primitive p` | see below |
 | `err` | `not_implemented` is not raised; the declaration already has a diagnostic and emits nothing |
 
-A `primitive` target combines with the `well_known` marking of §1.3 to give the operator directly.
+A `primitive` target combines with the surface origin of §1.3 to give the operator directly.
 This is the only place the marking reaches the backend, and it is why the marking exists:
 
-| `well_known` | `strict_eq` | `num_compare` | `char_compare` | `string_compare` |
+| origin | `strict_eq` | `num_compare` | `char_compare` | `string_compare` |
 |---|---|---|---|---|
 | `eq` | `x === y` | — | — | — |
 | `neq` | `x !== y` | — | — | — |
@@ -1685,14 +1963,35 @@ Four existing codes are reused rather than duplicated: `not_equatable` for `eq` 
 | Exit code | **none.** `frontend.md`'s exit codes are `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O (`docs/design/frontend.md:44-45`), so a warning cannot change the exit code and `--explain` cannot turn a passing build into a failing one |
 | Stream | `stderr`, sorted with every other diagnostic by file, position, code |
 
+**Two regions, and which is primary.** Three of the ten codes are raised while discharging an
+obligation, and an obligation carries two instructions (§6.2): `origin`, the instruction in *this*
+module whose instantiation created the obligation, and `region`, where the constraint itself was
+written — which for a constraint that arrived on an imported scheme is **inside the callee**. The
+rule, for `unknown_method` (§10.1), `missing_where_constraint` (§10.4) and
+`method_constraint_mismatch` (§10.5):
+
+> The **primary** span — the one the message points at, the one the exit code is attributed to, the
+> one a `.diag` golden lists first — is `origin`: the call the author wrote. The **secondary** span
+> is `region`: the annotation, `where` clause or earlier use the requirement came from, rendered as
+> a follow-on note. When the two are the same instruction, only one span is printed.
+
+This is the whole of report 18 §2.4's complaint and report 20 §7.2's confirmation of it. Roc records
+the same instruction — `DeferredConstraintCheck.failure_expr`
+(`references/roc/src/check/unify.zig:3950-3956`) — and its reports never read it, highlighting
+`constraint.fn_var`'s region instead (`references/roc/src/check/report.zig:2494-2500`), which for a
+`where`-clause constraint is the *callee's* annotation node
+(`references/roc/src/check/Check.zig:15100-15110`) and survives being copied to a caller
+(`:6845-6858`). The spike's cheapest win over Roc is to print both and put the caller first.
+
 Every message follows Elm's register as `checker.md` §8 requires: the title in SHOUTING CASE, what
 the compiler was looking at, the types laid out, then a hint. The templates below show the shape,
 not the final wording; `<…>` is filled in.
 
 ### 10.1 `unknown_method`
 
-**Severity** error. **Region** the `.m` token of the method call — the `dot_lower`, not the whole
-application, because that is the name that is wrong.
+**Severity** error. **Primary** the obligation's `origin` — the call whose instantiation made the
+receiver concrete. **Secondary** the constraint's `region`, the `.m` token that asked for the
+method; omitted when it is the same instruction.
 
 > **UNKNOWN METHOD** — `<Type>` has no method called `<m>`.
 >
@@ -1711,6 +2010,13 @@ pub area : Shape -> Float
 area s =
     s.volume 2
 ```
+
+Here the two coincide — the `.volume` call is both the constraint and what made `s` concrete — so
+the `.diag` golden has **one** span, at `.volume` on line 7. The two-span form is exercised by
+`tests/corpus/check/bad/UnknownMethodThroughGeneric/`: `Lib.beni` has
+`pub render : a -> String where a.draw : a -> String`, `Main.beni` calls `Lib.render shape` on a
+`Shape` with no `draw`. Primary is `Lib.render shape` in `Main.beni`; secondary is the `where`
+clause in `Lib.beni`, as *"`draw` was required by `Lib.render`'s annotation"*.
 
 ### 10.2 `private_method`
 
@@ -1747,9 +2053,10 @@ later f g =
 
 ### 10.4 `missing_where_constraint`
 
-**Severity** error. **Region** the **call in the body** that needs the method — never the
-annotation. This is the direct answer to report 18 §2.4's complaint that Roc reports a caller's
-missing constraint inside the callee.
+**Severity** error. **Primary** the obligation's `origin` — the call in the body, or in the
+*caller*, that needs the method. **Secondary** the annotation or `where` clause the requirement came
+from. Never the other way round: this is the direct answer to report 18 §2.4's complaint that Roc
+reports a caller's missing constraint inside the callee, and report 20 §7.2 confirms Roc still does.
 
 > **MISSING CONSTRAINT** — I need `<v>.<m>` here, and the annotation does not allow it.
 >
@@ -1770,15 +2077,23 @@ biggest xs =
     List.sort xs
 ```
 
+The two spans here are `List.sort xs` on line 4 (primary) and `List.sort`'s own `where` clause in
+`core/List.beni` (secondary), rendered as *"`compare` is required by `List.sort`"* — so the golden
+shows a span in a **different file** below the one in this one.
+
 A second fixture, `tests/corpus/check/bad/MissingWhereCaller/`, puts the constraint on a *caller*:
 `Lib.beni` declares `pub top : List a -> Maybe a where a.compare : a, a -> Order`, and `Main.beni`
-calls it from an annotated function with no constraint. The assertion is that the span is in
-`Main.beni`.
+calls it from an annotated function with no constraint. The assertion is that the **primary** span
+is in `Main.beni`, at the call, and the secondary is in `Lib.beni`. Reversing them is the Roc bug,
+so the fixture asserts the order and not merely the set.
 
 ### 10.5 `method_constraint_mismatch`
 
-**Severity** error. **Region** the **younger** of the two uses — the larger Bir instruction index,
-which is the later occurrence in the file.
+**Severity** error. **Primary** the **younger** of the two uses — the larger Bir instruction index,
+which is the later occurrence in the file. **Secondary** the older use, or, when the older
+"use" is a `where` clause rather than an expression, that clause. Both come from the two
+constraints' own `region`s; when one of them arrived by instantiation the obligation's `origin` is
+used for it instead, by the preamble's rule.
 
 > **CONFLICTING METHOD TYPES** — `<v>.<m>` is used at two different types.
 >
@@ -1801,10 +2116,15 @@ pub widen x =
 ```
 
 Both uses are on one flex variable, so Rule U1 merges them and the two `render` types have to
-unify; `a, Int -> b` against `a, String -> c` does not.
+unify; `a, Int -> b` against `a, String -> c` does not. The golden has two spans on line 2: primary
+at `x.render "two"`, secondary at `x.render 1` with *"here it was used at `a, Int -> b`"*.
 
 This is Roc's rank-2 limitation (report 18 §2.2) reproduced deliberately; §11 records that the fix
-is stretch item 1.
+is stretch item 1, and report 20 §2.3 is what that item actually costs.
+
+A second fixture, `tests/corpus/check/bad/LetConstrainedTwice.beni` (§6.4), reaches the same code
+from the other direction: a `let` binding is not generalised over a constrained variable, so two
+uses at different types collide here rather than instantiating.
 
 ### 10.6 `where_variable_unbound`
 
@@ -1967,14 +2287,34 @@ so a method whose only parameter is the receiver — `t.toString`, `s.length` �
 `M.toString t`. This is the price of keeping `language.md` §6.3 unchanged, and it is why §5 adds no
 zero-argument methods to core.
 
+**A constrained `let` binding is monomorphic.** §6.4 rule (a) refuses to generalise a `let` over a
+variable carrying a method constraint, which is how the spike avoids Roc's promoted-requirements
+side table (`references/roc/design.md:5461-5468`, report 20 §9 row S3-4). The price is that a helper
+defined in a `let` and used at two types is `method_constraint_mismatch`
+(`tests/corpus/check/bad/LetConstrainedTwice.beni`, §10.5) where an unconstrained helper would have
+been fine. The fix the message suggests — lift it to a top-level declaration with an annotation —
+always works, because a top-level boundary has no enclosing rank to escape to. Whether this bites in
+real code is a finding for report 19: if §6.4 rule (b)'s assert ever fires, or if the corpus rewrite
+trips over rule (a), the side table is the answer and the spike will have measured the thing report
+20 §10 says Roc has never measured.
+
+**Resolve-method-first only fires on a concrete receiver.** §6.2 Rule U0 seeds a lambda argument's
+parameter types from the method when the receiver's type is already known at that point in the
+constraint tree. When it is not, the arguments check against fresh variables and a mistake inside
+the lambda surfaces later and further away. Roc has the same limit — `resolve_method_first` is a
+test, not a retry (`references/roc/src/check/Check.zig:20054`) — and the spike does not add a second
+pass.
+
 **Deferred receiver.** `x.m a` with `x`'s type still unknown is a method constraint, never a field
 call, so `\r -> r.f 1` where `r` turns out to be a record is `no_methods_on_shape` with a hint to
 write `(r.f) 1`. This is the ambiguity report 18 §2.1 names and the one Roc's `->` operator lives
 with; M6 shows the message.
 
 **Same-name constraints unify.** One constraint per `(variable, name)` (§6.1 invariant 3), so the
-rank-2 example from Roc's August-2026 thread fails with `method_constraint_mismatch` (§10.5). Roc's
-multi-constraint principality fix is stretch item 1.
+rank-2 example from Roc's August-2026 thread fails with `method_constraint_mismatch` (§10.5). That
+is right for a `where` clause and for an operator desugaring, and too strong for two independent
+dot-calls. Roc's principality fix **shipped**, and report 20 §2.3 establishes that it is not what
+the Zulip thread described: see stretch item 1 below for what it actually is.
 
 **`Float` ordering is not total.** `compare` on `Float` returns `EQ` for any pair involving `NaN`,
 because both `<` and `>` are false; `==` on `NaN` is `False`. `Dict Float v` and `List.sort` on a
@@ -1987,6 +2327,15 @@ function per shape per consuming module. M4's per-type figure is therefore exact
 sampled — **one `eq` + one `compare` per declared nominal type** — which is precisely the number
 report 18 §1.5's "grows per type × derived method" row asked for and could not supply. It is also an
 upper bound on what a program with DCE would ship, and `--release` stays refused.
+
+**M4 reports `eq` bytes and `compare` bytes as two numbers, never their sum.**
+`dump --stage=dispatch` already distinguishes them (`derived <i> eq|compare`, §7.3), so the split
+costs nothing to collect. It is required because Roc derives six methods and **`compare` is not one
+of them** (`references/roc/src/check/static_dispatch_registry.zig:1315-1322`): the spike's
+derivation surface is strictly larger than anything Roc has ever shipped, and the extra half comes
+from a *separate* decision — making `compare` well-known, plan §0 — which report 18 §5 said should
+be argued on its own merits. A single summed figure would charge static dispatch for the cost of
+dropping `comparable`, and report 19 must not let it (report 20 §9 row S6-1).
 
 **`String` and `Char` ordering costs a call.** `primitive string_compare` emits `String$compare` and
 `char_compare` emits a code-point comparison, not `<` (§3.2, §9.1). `<` on JavaScript strings is
@@ -2035,7 +2384,30 @@ into functions. `Dict.empty` is unaffected — it has no constraint (§5.3).
 
 ### Stretch, only after S8
 
-1. Multiple same-name constraints per variable, instantiated per use — Roc's principality fix.
+1. **Partition same-name constraints by origin class** — Roc's shipped principality fix, and not
+   the "keep several constraints per name" the Zulip thread described (report 18 §2.2, corrected by
+   report 20 §2.3 and §9 row S3-3). `partitionStaticDispatchConstraints`
+   (`references/roc/src/check/unify.zig:3599-3607`) states the rule: *"When a same-name group
+   contains any declarative relation (where clause, literal, or operator), the whole group unifies
+   through one representative declarative; a group of dot calls alone stays separate so each use can
+   instantiate a selected rank-1 method scheme independently."* Per same-name group: a
+   **declarative** constraint — `origin` of `where_clause` or `well_known` in §6.1's enum — makes the
+   whole group unify through one representative, which is today's invariant 3; a group of
+   `dot_call` constraints alone keeps **every member separate**, one per use
+   (`references/roc/src/check/unify.zig:3807-3824`). The cost is a sort by origin plus an
+   arity-and-effect pre-check (`:3709-3746`), not a new representation — estimate the item from
+   that, not from the Zulip description.
+
+   It has a backend half, which must be costed with it: **evidence slots dedupe by method name, not
+   by constraint.** `emitConstraints`
+   (`references/roc/src/check/dispatch_evidence.zig:510-543`) emits one evidence parameter per
+   `(dispatcher var, method name)` even when the variable carries several same-name constraints, and
+   pushes each constraint's `fn_var` onto a queue for further walking; the call whose constraint is
+   not the representative is marked `independent_callable`
+   (`references/roc/src/check/static_dispatch_registry.zig:1344-1357`). §7.2's canonical order
+   would need the same two rules — dedupe by name, and a second phase over the constraints' own
+   function types — and §7.1's `Site` would need to record which constraint of a name it used.
+   Report 20 §9 row S3-12.
 2. The per-type method block, measuring how much of `core/` must opt in.
 3. Record-per-variable evidence encoding behind a flag, for the inline-cache row of report 18 §1.4.
 
@@ -2233,3 +2605,87 @@ constraints and obligations.
 and `Derived.parts` index the sorted arrays, so the dump and the emitter walk one table in one
 order. *Alternative:* sort only at print time, which makes the dump and the emitted file disagree
 about which function is `derived 0`.
+
+---
+
+The rows below were added on 2026-09-17 after
+[`research/20-roc-static-dispatch-implementation.md`](research/20-roc-static-dispatch-implementation.md)
+walked Roc's Zig implementation. Bracketed numbers are that report's §9 rows.
+
+**A.30 — a `let` binding is never generalised over a constrained variable, and there is no
+promoted-requirements side table** (§6.4, §11) [S3-4]. Roc's generalised scheme is a pair — root
+type plus an explicit table of promoted requirements — because a requirement's receiver can belong
+to an enclosing scope while its callable mentions scheme-owned variables
+(`references/roc/design.md:5461-5468`). The spike removes the case rather than representing it:
+a constrained variable is held at the enclosing rank at a `let` boundary, so every constraint that
+reaches promotion sits on a variable the declaration itself quantifies, and `generalize` asserts
+(debug) or reports (release) if one ever does not. *Why:* the side table is a second artifact to
+build, hash, serialise and instantiate, for a case report 20 §10 records that Roc has never
+measured the frequency of. *Alternative:* build it, which is Roc's answer and the right one if the
+assert fires. *Cost:* a constrained `let` helper used at two types is `method_constraint_mismatch`
+rather than two instantiations; §11 carries the row and
+`tests/corpus/check/bad/LetConstrainedTwice.beni` the fixture.
+
+**A.31 — `Target.evidence` is one number, with no depth** (§6.4, §7.1, §8.1) [S4-1]. Roc carries
+`EvidenceChainIndex { depth, index }` and resolves it by walking out through enclosing callables.
+beni does not need `depth` because A.30 means only a top-level declaration has evidence parameters,
+and a lambda in its body is a JavaScript closure that captures `$m$k` lexically. *Why:* it is true,
+and leaving it unsaid would have made a later reader add `depth` defensively. *Alternative:* carry
+`depth` anyway, which costs a field and an unused walk. `tests/corpus/run/EvidenceCapture.beni`
+holds it.
+
+**A.32 — the well-known marking is a surface-origin enum, not a flag** (§1.3, §1.4) [S3-10]. It
+records *which* operator desugared into the node. *Why:* the typing rule differs between `a == b`
+and `a.eq b` (A.33), diagnostics must say `==` rather than `eq`, and `dump --stage=bir` is a tested
+output that has to show it. Roc's third reason — re-emitting operator forms from canonical IR
+(`references/roc/src/canonicalize/Expression.zig:756-770`) — **does not apply to beni**, because
+`fmt` is an Ast pass and never sees BIR; the enum is justified here on the first three grounds only.
+*Alternative:* a boolean plus a lookup from method name to operator, which is Roc's
+`getOperatorForMethod` and is ambiguous for `eq` (`==` or `/=`?).
+
+**A.33 — `a == b` pins both operands to one type and the result to `Bool`** (§3.1) [X-4]. Deliberately
+tighter than the constraint `a.eq b` raises. *Why:* Roc's stated reason — comparison operands
+determine each other's type before a method is selected
+(`references/roc/design.md:3002-3012`) — plus one of beni's own: a looser scheme is a bigger scheme,
+and M3 measures interface churn, so lowering `==` to the dot-call constraint would have made the
+spike measure churn caused by its own lowering rule. *Alternative:* one lowering for both forms,
+which is simpler to implement and corrupts the measurement the spike exists for.
+
+**A.34 — the method is resolved before its arguments when the receiver is already concrete**
+(§6.2 Rule U0) [S3-9]. Implemented as a constraint-*generation* ordering — a new `method` node
+emitted before the `call_arg` nodes inside one `and_`, which `Constrain` already solves left to
+right (`src/check/Constrain.zig:128-130`) — plus an inline discharge in `Solve` when the receiver's
+root is not `flex`. *Why:* without it a lambda argument checks against a fresh variable and every
+mistake in its body cascades. *Alternative:* leave it out and accept the cascade, which is what the
+first draft did silently; §11 records the residual limit (a receiver still unknown at that point
+gets no second attempt).
+
+**A.35 — every table written during discharge is journaled by length** (§6.1 invariant 2) [S3-5].
+`TypeStore.Snapshot` grows from `{ journal_len, vars, extra }` to include the constraint tables and
+all four `Dispatch` builders, and the truncation is **per snapshot** because beni's journal nests
+(`src/check/TypeStore.zig:229`) where Roc's asserts it does not
+(`references/roc/src/types/store.zig:425`). *Why:* §6.2 registers obligations from inside `unify`,
+so `dischargeMethod` can run under a `?` probe, and a rolled-back probe that left sites behind would
+emit a call the checker retracted. *Alternative:* forbid discharge under a probe — which is what Roc
+asserts for promotion (`references/roc/src/check/Check.zig:28368-28370`) — but beni's `?` probe runs
+before the shape is known, so the obligation is registered before anyone could check.
+
+**A.36 — only a closed record derives, and the test names the content variants** (§6.3) [A.28
+refined]. `Structure.record { fields, ext }` derives when `find(ext)` is `Structure.empty_record`;
+a `Content.flex` extension means more fields may arrive, and a `Content.rigid` one means the
+annotation promised to work for every extension, so neither has a shape key. *Alternative:* defer
+until the extension closes, a third deferral mechanism beside constraints and obligations.
+
+**A.37 — an obligation carries the instantiating instruction, and it is the primary span**
+(§6.2, §10 preamble, §10.1, §10.4, §10.5) [S3-11]. `Solve.Obligation` gains `origin`; the message
+points at the call the author wrote and names the annotation it came from as a secondary span.
+*Why:* this is report 18 §2.4's complaint, and report 20 §7.2 shows Roc records the same instruction
+(`DeferredConstraintCheck.failure_expr`) and never reads it. *Alternative:* one span at the
+constraint's own region, which for an imported scheme is inside the callee — the Roc behaviour the
+spike exists to beat. The fixtures assert span *order*, not just the set.
+
+**A.38 — M4 reports derived `eq` bytes and derived `compare` bytes separately** (§11) [S6-1]. *Why:*
+Roc derives six methods and `compare` is not among them, so the spike's extra half belongs to the
+independent decision to make `compare` well-known (plan §0), not to static dispatch. *Alternative:*
+one number, which would charge dispatch for the cost of dropping `comparable` and would make report
+19 wrong in the direction that flatters the objection.
