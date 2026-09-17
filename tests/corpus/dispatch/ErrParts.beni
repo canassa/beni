@@ -1,0 +1,74 @@
+-- dispatch: what an `err` part means, and where the only ones a clean
+-- program produces come from.
+--
+-- **A PIN, not a regression fixture.** This golden passes on `c63ae48` as
+-- well: nothing in S5 moved it, and nothing was wrong with what it records.
+-- It is here because the meaning of `err` is an invariant two slices lean
+-- on from opposite sides — the checker writes it, `Lower.structuralEq`
+-- reads it — and neither side states it anywhere else. A fixture that
+-- fails first would be a fixture for a bug; this one exists so that the
+-- next change to either side has to say, in a golden diff, that it meant
+-- to move the line.
+--
+-- `err` is the target the checker writes when it cannot NAME a function for
+-- a position, and the backend leans on it: `Lower.structuralEq` answers
+-- `true` for an `err` part, so a comparison whose other parts are
+-- structural still goes through `core/Basics.js`'s `eq`, and a derived body
+-- emits `Basics$eq` at that position. That is only safe while `err` means
+-- one thing, so this golden is where the one thing is written down.
+--
+-- It is a position the comparison NEVER REACHES, and there are two ways to
+-- write one. The first is a type variable nothing constrains: `[] == []`
+-- compares two empty lists, so the element type is free, and `Nothing ==
+-- Nothing` carries no payload. The second is subtler and `crossed` is it —
+-- `Ok 1 == Err "a"` is a `Result String Int`, so the `x` position is
+-- `String` and not a free variable at all, but the RECEIVER (`Ok 1`) is
+-- what pins the type at the moment the constraint is discharged, and it
+-- pins only `a`; `x` arrives from the argument afterwards and the part is
+-- already written. That is a real imprecision in the table rather than a
+-- fact about the program, and it is harmless for the same reason the first
+-- case is: the receiver always pins the position its OWN constructor
+-- carries, so the position left `err` is the one the tag test rejects
+-- before either side is read.
+--
+-- What `err` is NOT, and the reason the last three declarations are here:
+-- an unresolved `number`. A.59 makes `targetFor` ask the builtin bridge
+-- before it gives up, so a `number` element of a derived shape answers
+-- `strict_eq` (for `eq`) or `num_compare` (for `compare`) — the same
+-- answers §3.2 gives at the top level — and never `err`. Before that every
+-- literal position of a derived shape was a hole.
+--
+-- The moment the checker starts writing `err` for a position it could not
+-- resolve for some OTHER reason — a user's own `pub eq` it failed to find,
+-- say — the backend silently routes that position through the structural
+-- walk and answers the wrong `Bool`. No `run/` fixture can see the
+-- difference, because both readings compile and only one is right. This
+-- golden can.
+pub empties : Bool
+empties =
+    [] == []
+
+
+pub nothings : Bool
+nothings =
+    Nothing == Nothing
+
+
+pub crossed : Bool
+crossed =
+    Ok 1 == Err "a"
+
+
+pub insideAShape : Bool
+insideAShape =
+    { a = [] } == { a = [] }
+
+
+pub literalPair : Bool
+literalPair =
+    ( 1, 2.5 ) == ( 3, 4 )
+
+
+pub literalOrder : Bool
+literalOrder =
+    ( 1, 2 ) < ( 3, 4 )

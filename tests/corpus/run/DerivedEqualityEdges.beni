@@ -1,0 +1,78 @@
+-- The two float values a derived `eq` must NOT special-case, and the record
+-- shape that must not depend on the order the fields were written in
+-- (`docs/design/static-dispatch-spike.md` §3.2, §9.2, A.46).
+--
+-- **NaN.** §3.2 gives `Float` `primitive strict_eq`, and `NaN === NaN` is
+-- `false` — IEEE's answer and today's. A derived function inherits it at
+-- every position, because a position is `===` or a call of something that
+-- bottoms out in one: so a record, a tuple and a constructor argument
+-- holding NaN are all unequal to themselves, and a generated `eq` that
+-- "helpfully" compared bit patterns, or tested `x !== x` first, would be a
+-- different language. `/=` says so from the other side.
+--
+-- **Negative zero.** `-0.0 === 0.0` is `true`, so the same shapes ARE equal
+-- across the two zeros. The pair is here together because every wrong
+-- implementation of one is a wrong implementation of the other:
+-- `Object.is` gets NaN "right" and negative zero wrong.
+--
+-- The last two lines put the same pair of values behind a
+-- `where`-constrained generic, so the tuple's derived `eq` travels as
+-- EVIDENCE rather than being called directly (§8.2, A.25) — and answers the
+-- same thing, which is what makes the eta-expansion a wrapper and not a
+-- second implementation.
+--
+-- **Field order.** A record's shape key is its field names SORTED by text
+-- (§7.1, §9.2), and the emitted object's keys are sorted the same way
+-- (`backend.md` §4), so `{ x = …, y = … }` and `{ y = …, x = … }` are one
+-- type, one hidden class and one derived function. A shape keyed on the
+-- written order would either derive two functions or read the fields off
+-- the wrong slots.
+import Node exposing (Program)
+
+
+pub type Boxed
+    = Boxed Float
+
+
+sameAs : a, a -> Bool
+    where a.eq : a, a -> Bool
+sameAs x y =
+    x == y
+
+
+nan : Float
+nan =
+    0.0 / 0.0
+
+
+negativeZero : Float
+negativeZero =
+    0.0 * -1.0
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (nan == nan)
+        , show (nan /= nan)
+        , show (( nan, 1 ) == ( nan, 1 ))
+        , show ({ v = nan } == { v = nan })
+        , show (Boxed nan == Boxed nan)
+        , show (negativeZero == 0.0)
+        , show (( negativeZero, 1 ) == ( 0.0, 1 ))
+        , show ({ v = negativeZero } == { v = 0.0 })
+        , show (Boxed negativeZero == Boxed 0.0)
+        , show ({ x = 1, y = 2 } == { y = 2, x = 1 })
+        , show ({ x = 1, y = 2 } == { y = 9, x = 1 })
+        , show (sameAs ( nan, 1 ) ( nan, 1 ))
+        , show (sameAs ( negativeZero, 1 ) ( 0.0, 1 ))
+        ]

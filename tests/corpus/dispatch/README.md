@@ -33,7 +33,11 @@ a wrong golden here pins a wrong call.
 the emission-order sort; `DerivedShapesDistinctElements` pins that the
 evidence is per USE and not per function (A.46) — with shape-keyed evidence
 its second `t2` site loses its own `part` lines and orders strings with
-JavaScript `<`. `AllNullaryEq` is A.18, `UserMethodWins` §3.3 step 1,
+JavaScript `<`. `ErrParts` is the `err` target — what a clean program makes
+one for, and what `Lower.structuralEq` may assume when it reads one.
+`AllNullaryEq` is A.18, `UserMethodWins` §3.3 step 1 and
+`PrivateEqStillDerives` the half of that step a `pub` makes the difference to — a private `eq`
+wins inside its own module and still leaves the derived row every dependent names (A.63),
 `FieldCall` the `field` target S4 must keep, `ImportedMethod` the `ext` and
 `ext_derived` targets across a module boundary, and `core/ForeignWithWhere`
 a `pub foreign` with a `where` clause (§5.2, A.7), which has no body and so

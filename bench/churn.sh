@@ -539,13 +539,34 @@ classes="E1 E2 E3 E3poly"
 # the JSON diagnostics stream and never from the exit status: `beni dump`
 # exits 0 on a type error, an unknown module and a parse failure alike.
 # ---------------------------------------------------------------------------
+# A run that FAILED TO RUN, recorded here rather than swallowed. The error
+# count below is read out of `dump.err`, and an empty `dump.err` reads as
+# zero errors — so a `beni` that never started scores every edit as a clean,
+# interface-preserving measurement and the table comes out full of zeros in
+# the `rejected` column. The status is what tells the two apart: `beni dump`
+# exits 0 whatever it FOUND, so a non-zero status is the process itself
+# failing and never a diagnostic.
+spawn_failures="$work/spawn-failures"
+: >"$spawn_failures"
+
 dump_root() {
+    status=0
     if [ -n "$core_flag" ]; then
         (cd "$work" && "$beni_abs" dump --stage=raw --core --diagnostics=json --root="$src_name" "$src_name" \
-            >"$work/dump.out" 2>"$work/dump.err") || true
+            >"$work/dump.out" 2>"$work/dump.err") || status=$?
     else
         (cd "$work" && "$beni_abs" dump --stage=raw --diagnostics=json --root="$src_name" "$src_name" \
-            >"$work/dump.out" 2>"$work/dump.err") || true
+            >"$work/dump.out" 2>"$work/dump.err") || status=$?
+    fi
+    if [ "$status" != 0 ]; then
+        echo "bench/churn.sh: '$beni_abs dump' exited $status; the measurement below would be counted out of an empty diagnostics stream" >&2
+        sed -n '1,20p' "$work/dump.err" >&2 || true
+        # The sentinel, because this function is also called from inside the
+        # declaration loop's pipeline subshell, where `set -e` unwinds no
+        # further than that subshell and the `|| true` on its `done` would
+        # swallow the status. The file outlives both.
+        echo "exit $status" >>"$spawn_failures"
+        return 1
     fi
     grep -o '"severity":"error"' "$work/dump.err" | wc -l >"$work/errors"
     awk -v want="$1" -f "$work/record.awk" "$work/dump.out" >"$2"
@@ -683,6 +704,13 @@ done) || restored=no
 
 broken=$(grep -c ' awkfailed$' "$log" 2>/dev/null || true)
 [ -n "$broken" ] || broken=0
+
+# A failed spawn is a failed MEASUREMENT, and no table is printed for one:
+# the numbers would be indistinguishable from a corpus that churns nothing.
+if [ -s "$spawn_failures" ]; then
+    echo "bench/churn.sh: the compiler failed to run $(wc -l <"$spawn_failures" | tr -d ' ') time(s); no table" >&2
+    exit 1
+fi
 
 echo "corpus: $corpus"
 [ -z "$excluded" ] || echo "modules excluded (the pristine root does not resolve them):$excluded"

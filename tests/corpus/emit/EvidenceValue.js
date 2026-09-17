@@ -1,5 +1,6 @@
 import { Basics$mul } from "./core/Basics.mjs";
 import { Node$printLines } from "./platform/Node.mjs";
+const EvidenceValue$Metre$$eq = ($x, $y) => $x.a === $y.a;
 const EvidenceValue$scale = (m$1, factor$2) => {
   let $t$1;
   const n$3 = m$1.a;
@@ -11,4 +12,4 @@ const EvidenceValue$apply = (f$1, m$2) => f$1(m$2, 2);
 const EvidenceValue$grow = (m$1) => EvidenceValue$apply(($p$2, $p$3) => EvidenceValue$twice(EvidenceValue$scale, $p$2, $p$3), m$1);
 const EvidenceValue$bound = ($p$4, $p$5) => EvidenceValue$twice(EvidenceValue$scale, $p$4, $p$5);
 const EvidenceValue$main = Node$printLines({ $: 0, a: null, b: null });
-export { EvidenceValue$main, EvidenceValue$scale, EvidenceValue$grow, EvidenceValue$bound };
+export { EvidenceValue$Metre$$eq, EvidenceValue$main, EvidenceValue$scale, EvidenceValue$grow, EvidenceValue$bound };

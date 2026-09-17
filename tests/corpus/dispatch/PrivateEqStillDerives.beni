@@ -1,0 +1,32 @@
+-- dispatch: a PRIVATE `eq` wins for this module's own uses and does NOT
+-- suppress the derived row every other module needs (§3.3 step 1, §8.5).
+--
+-- Two answers to one name, and the golden is both of them at once.
+--
+-- `sameMajor`'s `==` is a use INSIDE the declaring module, where §3.3 step
+-- 1 says "the declaring module's own value `name`, `pub` (or any, in the
+-- same module)" — so the site is `top eq` and the private declaration wins.
+--
+-- The `derived 0 eq` row beside it is what a DEPENDENT sees. `Interface`
+-- maps only the `pub` entries, so a module that writes `Id 3 4 == Id 3 99`
+-- cannot reach this `eq` at all: it derives, and names `Id$$eq` in THIS
+-- module by §8.5. The eager pass therefore has to write that function.
+-- Excluding the row on any declaration of the name — `pub` or not — made
+-- the dependent import a name no module exported: exit 0, and a
+-- `SyntaxError` at load.
+pub type Id
+    = Id Int Int
+
+
+eq : Id, Id -> Bool
+eq a b =
+    case a of
+        Id majorA _ ->
+            case b of
+                Id majorB _ ->
+                    majorA == majorB
+
+
+pub sameMajor : Id, Id -> Bool
+sameMajor a b =
+    a == b

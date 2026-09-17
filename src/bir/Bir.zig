@@ -482,22 +482,6 @@ pub const WellKnown = enum(u8) {
             .lt, .le, .gt, .ge => .compare,
         };
     }
-
-    /// The `Basics` function the operator used to desugar to
-    /// (`language.md` §6.5). It is still declared and callable; only the
-    /// OPERATOR stopped meaning it (§3.1). Used by the S4 shim in the
-    /// backend, which emits that call until the dispatch table exists.
-    pub fn basicsFunction(w: WellKnown) ?InternPool.WellKnown {
-        return switch (w) {
-            .none => null,
-            .eq => .eq,
-            .neq => .neq,
-            .lt => .lt,
-            .le => .le,
-            .gt => .gt,
-            .ge => .ge,
-        };
-    }
 };
 
 /// Payload of `method_call` (§1.4).

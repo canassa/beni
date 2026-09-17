@@ -1966,6 +1966,10 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try w.write("mycore/Basics.js", "export {};\n");
     try w.write("mycore/String.beni", "pub equatable foreign type String\n");
     try w.write("mycore/String.js", "export {};\n");
+    // `List` is here for the second half below: it is the one type whose
+    // `eq` still routes to `core/Basics.js`'s structural walk after S5.
+    try w.write("mycore/List.beni", "pub equatable foreign type List a\n");
+    try w.write("mycore/List.js", "export {};\n");
     try w.write("myplat/beni.json",
         \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js" }
     );
@@ -2010,27 +2014,30 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE — the other half of the message │
     // └─────────────────────────────────────────┘
-    // `String.compare` is one of the three values the diagnostic names;
-    // `Basics.eq` and `Basics.neq` are the other two, and they are a
-    // DIFFERENT path to the same report. `==` on a custom type resolves to
-    // a derived `eq` whose parts are all structural, which is A.51's
-    // bridge: the call goes to `core/Basics.js`'s `eq`, the one structural
-    // walk, and a core root without it has nothing to call. Without this
-    // half the whole `Basics` branch of `missingCoreValue` was unexercised.
+    // `String.compare` is one of the two values the diagnostic names;
+    // `Basics.eq` is the other, and it is a DIFFERENT path to the same
+    // report. After S5 a custom type compares through its OWN derived body
+    // (§9.4), so the one comparison still routed to `core/Basics.js`'s `eq`
+    // is the one no module writes a function for: a `List`, whose `eq` is a
+    // `foreign type`'s and waits for §5.2 (A.55, A.60). Its elements here
+    // are `Int`s, so the structural walk answers exactly what the table
+    // asks, the bridge takes it, and a core root without `eq` has nothing
+    // to call. Without this half the `Basics` branch of `missingCoreValue`
+    // is unexercised.
+    //
+    // Both declarations name `Basics.eq` and neither names `Basics.neq`:
+    // §8.3 makes `a /= b` the NEGATION of the method, `!eq(a, b)`, so the
+    // emitter reaches for one function and not two.
     try w.write("Main.beni",
         \\import Prog exposing (Program)
         \\
         \\
-        \\type T
-        \\    = T Int
-        \\
-        \\
-        \\pub same : T, T -> Bool
+        \\pub same : List Int, List Int -> Bool
         \\same a b =
         \\    a == b
         \\
         \\
-        \\pub differ : T, T -> Bool
+        \\pub differ : List Int, List Int -> Bool
         \\differ a b =
         \\    a /= b
         \\
@@ -2048,9 +2055,8 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try testing.expectEqual(@as(u8, 1), eq.exit_code);
     try testing.expectEqual(@as(usize, 2), eq.diagnostics.len);
     for (eq.diagnostics) |d| try testing.expectEqual(diagnostic.Code.internal, d.code);
-    // Sorted by position, so `same` before `differ`.
-    try testing.expect(std.mem.indexOf(u8, eq.diagnostics[0].message, "`Basics.eq`") != null);
-    try testing.expect(std.mem.indexOf(u8, eq.diagnostics[1].message, "`Basics.neq`") != null);
+    // Sorted by position, so `same` before `differ` — and both name `eq`.
+    for (eq.diagnostics) |d| try testing.expect(std.mem.indexOf(u8, d.message, "`Basics.eq`") != null);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY STATE                            │
@@ -2459,9 +2465,9 @@ test "the backend refuses a comparison whose function S5 owns" {
     try testing.expectEqual(@as(usize, 0), ok.diagnostics.len);
 }
 
-test "a derived eq over a user's own eq is refused, not walked structurally" {
-    // A.51's bridge is narrow on purpose, and this is the program that
-    // shows why it has to be checked RECURSIVELY.
+test "a derived eq calls the user's own eq, across a module boundary" {
+    // The program A.51's narrow bridge was built for, now compiled the way
+    // §9.2 says rather than refused.
     //
     // `core/Basics.js`'s `eq` is one structural walk: it compares every
     // reachable primitive with `===` and knows nothing about a user's `pub
@@ -2470,12 +2476,13 @@ test "a derived eq over a user's own eq is refused, not walked structurally" {
     // `Id`'s own `eq` compares only the major number, so `{ k = Id 1 2 } ==
     // { k = Id 1 99 }` is `True` by the table and `False` by the walk.
     //
-    // Inspecting only the site's top-level target accepted it and printed
-    // `False`. The correct answer needs §9's derived body, which is S5's,
-    // so until then the only honest output is a refusal — `backend.md` §1's
-    // rule that the missing half must say so. When S5 lands, this scenario
-    // becomes `tests/corpus/run/UserEqInsideRecord.beni` with `True` as its
-    // golden; the program is kept here verbatim so the swap is mechanical.
+    // S4 could emit neither and refused (`backend.md` §1). S5 emits the
+    // record shape's own function, hands it `Id$eq` as the `k` field's
+    // evidence, and the program prints the answer the table always had.
+    // The single-module version of the same question is
+    // `tests/corpus/run/UserEqInsideRecord.beni`; this one is here because
+    // the method and the use are in DIFFERENT modules, so the part is an
+    // `ext` target and the import is the one S4 built.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Id.beni",
@@ -2515,24 +2522,26 @@ test "a derived eq over a user's own eq is refused, not walked structurally" {
     );
 
     // The table says the record's one field is compared with `Id`'s own
-    // `eq`, which is exactly the part the bridge must see.
+    // `eq`, which is exactly the part the emitted body must call.
     // `dump` takes no `--platform`, so `Node` does not resolve and the
     // command exits 1 — the table is still printed, and it is the table
     // this scenario is about.
     const table = try w.runWith(&.{ "dump", "--stage=dispatch", "src" }, .{ .raw_diagnostics = true });
     try testing.expect(std.mem.indexOf(u8, table.stdout, "part 0 ext Id eq") != null);
 
-    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
-    try testing.expectEqual(@as(u8, 1), built.exit_code);
-    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.not_implemented, built.diagnostics[0].code);
-    try testing.expect(std.mem.indexOf(u8, built.diagnostics[0].message, "DERIVED") != null);
-    // A refused build writes nothing (backend.md §2).
-    try testing.expect(!w.exists("out/Main.mjs"));
+    const built = try w.buildAndRun(&.{"src"});
+    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
+    try testing.expectEqualStrings("True\n", built.program.?.stdout);
+
+    // The emitted body is the record shape's, parameterised by the field's
+    // evidence (§9.2, A.46) — one function, and the `Id$eq` that tells it
+    // apart from any other `{ k : … }` passed in at the use.
+    const js = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, js, "const Main$eq$r$k = ($m$0, $x, $y) => $m$0($x.k, $y.k);") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "Main$eq$r$k(Id$eq,") != null);
 
     // The bridge still carries what it was for: a record of PRIMITIVES has
-    // no user method anywhere inside it, so the structural walk is right
-    // and the same program compiles and runs.
+    // no user method anywhere inside it, and the same program runs.
     try w.write("src/Main.beni",
         \\import Node exposing (Program)
         \\
@@ -2556,6 +2565,390 @@ test "a derived eq over a user's own eq is refused, not walked structurally" {
     const ok = try w.buildAndRun(&.{"src"});
     try testing.expectEqual(@as(u8, 0), ok.build.exit_code);
     try testing.expectEqualStrings("True\n", ok.program.?.stdout);
+}
+
+test "a list whose elements have an eq of their own is refused until List gets one" {
+    // The wall S5 leaves standing, and the fixture that names it.
+    //
+    // `List a` is a `foreign type`: it has no constructors, so no module
+    // derives a body for it (A.55, A.60) and §5.2's `pub foreign eq` — the
+    // one written in JavaScript against the emitter's cons cells (§9.5) —
+    // is S6's. Until then the only function that can answer `xs == ys` is
+    // `core/Basics.js`'s structural walk, and here that walk is WRONG:
+    // `Id`'s own `eq` compares the major number only, so the table says
+    // `True` and the walk says `False`.
+    //
+    // A refusal is the one honest output (`backend.md` §1). The same
+    // comparison one level down — `List Int` — is structural all the way
+    // and still compiles, which is the second half below.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Id.beni",
+        \\pub type Id
+        \\    = Id Int Int
+        \\
+        \\
+        \\pub eq : Id, Id -> Bool
+        \\eq a b =
+        \\    case a of
+        \\        Id majorA _ ->
+        \\            case b of
+        \\                Id majorB _ ->
+        \\                    majorA == majorB
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Id exposing (Id)
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\pub sameIds : List Id, List Id -> Bool
+        \\sameIds a b =
+        \\    a == b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines []
+        \\
+    );
+
+    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, built.diagnostics[0].code);
+    // The message names the type whose method is missing and the section
+    // that adds it, not "a derived function" in the abstract.
+    try testing.expect(std.mem.indexOf(u8, built.diagnostics[0].message, "`foreign type`") != null);
+    try testing.expect(std.mem.indexOf(u8, built.diagnostics[0].message, "§5.2") != null);
+    // A refused build writes nothing (backend.md §2).
+    try testing.expect(!w.exists("out/Main.mjs"));
+
+    // `List Int` is structural all the way down, so the walk answers what
+    // the table asks and the bridge takes it.
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show ([ 1, 2 ] == [ 1, 2 ])
+        \\        ]
+        \\
+    );
+    const ok = try w.buildAndRun(&.{"src"});
+    try testing.expectEqual(@as(u8, 0), ok.build.exit_code);
+    try testing.expectEqualStrings("True\n", ok.program.?.stdout);
+}
+
+test "a constrained value in a part position is refused in value position too" {
+    // `partEq` (a BODY position) tested this and `partValue` (an evidence
+    // position) did not, and the difference was a wrong-arity call that
+    // built clean.
+    //
+    // `Lib.eq` carries a `where` clause, so §8.1 gives it one hidden
+    // leading evidence parameter: `Lib$eq` is `($m$0, x, y)`. §7.1's
+    // `parts` tree has no range in which to say what that `$m$0` is — a
+    // `Target.ext` carries none — so the record shape's derived function
+    // was handed the bare name and called it with two arguments. Build
+    // exit 0, `TypeError: Cannot read properties of undefined` at run
+    // time, which is the one outcome `backend.md` §1 forbids.
+    //
+    // A `run/` fixture comes with S6a, when §7.1's `parts` grow a range for
+    // a constrained target. Until then the refusal IS the behaviour.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni",
+        \\pub type Wrap a
+        \\    = Wrap a
+        \\
+        \\
+        \\pub eq : Wrap a, Wrap a -> Bool where a.eq : a, a -> Bool
+        \\eq x y =
+        \\    case x of
+        \\        Wrap a ->
+        \\            case y of
+        \\                Wrap b ->
+        \\                    a == b
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Lib exposing (Wrap)
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show ({ k = Lib.Wrap 1 } == { k = Lib.Wrap 1 })
+        \\        ]
+        \\
+    );
+
+    // The table names it: the record's one field is `ext Lib eq`, and that
+    // `ext` is a value with evidence of its own.
+    const table = try w.runWith(&.{ "dump", "--stage=dispatch", "src" }, .{ .raw_diagnostics = true });
+    try testing.expect(std.mem.indexOf(u8, table.stdout, "part 0 ext Lib eq") != null);
+
+    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, built.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, built.diagnostics[0].message, "§7.1") != null);
+    try testing.expect(std.mem.indexOf(u8, built.diagnostics[0].message, "one argument short") != null);
+    // A refused build writes nothing (backend.md §2).
+    try testing.expect(!w.exists("out/Main.mjs"));
+}
+
+test "a private eq wins inside its module and still lets every other module derive" {
+    // §3.3 step 1 reaches exactly as far as `Interface` does, and the eager
+    // pass has to use the same ruler.
+    //
+    // `Ids.eq` is NOT `pub`. Inside `Ids` it wins — `sameMajor` compares
+    // the major number only. Outside it, `Interface.findValue` maps only
+    // the `pub` entries, so `Main` cannot reach it at all and derives over
+    // `Id`'s shape instead, naming `Ids$Id$$eq` in `Ids` by §8.5.
+    //
+    // The eager pass excluded the row on ANY declaration of the name,
+    // `pub` or not, so `Ids` wrote no such function: the build exited 0 and
+    // emitted `import { Ids$Id$$eq } from "./Ids.mjs"` against a module
+    // that exported no such name — `SyntaxError` at load, before a line of
+    // the program ran. Both answers are printed here, because a fix that
+    // wrote the row by making the private value invisible everywhere would
+    // pass with only one of them.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Ids.beni",
+        \\pub type Id
+        \\    = Id Int Int
+        \\
+        \\
+        \\eq : Id, Id -> Bool
+        \\eq a b =
+        \\    case a of
+        \\        Id majorA _ ->
+        \\            case b of
+        \\                Id majorB _ ->
+        \\                    majorA == majorB
+        \\
+        \\
+        \\pub sameMajor : Id, Id -> Bool
+        \\sameMajor a b =
+        \\    a == b
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Ids exposing (Id)
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show (Ids.sameMajor (Ids.Id 3 4) (Ids.Id 3 99))
+        \\        , show ({ k = Ids.Id 3 4 } == { k = Ids.Id 3 99 })
+        \\        ]
+        \\
+    );
+
+    const built = try w.buildAndRun(&.{"src"});
+    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
+    // The private `eq` inside `Ids`; the derived shape outside it.
+    try testing.expectEqualStrings("True\nFalse\n", built.program.?.stdout);
+
+    // And the name the importer reaches for is the one the declaring module
+    // wrote, which is the half that used to be missing.
+    const ids = try w.read("out/Ids.mjs");
+    try testing.expect(std.mem.indexOf(u8, ids, "const Ids$Id$$eq = ") != null);
+    try testing.expect(std.mem.indexOf(u8, ids, "export { Ids$Id$$eq,") != null);
+    const main = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main, "Ids$Id$$eq") != null);
+    try testing.expect(std.mem.indexOf(u8, main, "from \"./Ids.mjs\";") != null);
+}
+
+test "core/Basics carries the derived rows §3.2's table asks it for" {
+    // §3.2's table is consulted BEFORE §1.2's module rule, and `deriveOne`
+    // has to consult it in the same order.
+    //
+    // `core/Basics.beni` declares `Bool`, `Order` and `Never` and also
+    // declares a `pub foreign eq` and a `pub compare` of its own — which is
+    // exactly why the table exists (§3.2's opening paragraph). Asking
+    // §3.3's module rule first let those two values suppress every row the
+    // table asks Basics for, so the module printed no `derived` line at all
+    // while every other module's `<` on an `Order` named
+    // `ext_derived Basics.Order compare` (A.47): a target naming a row that
+    // was not there.
+    //
+    // The real `core/`, not a copy: a copy would drift from the package the
+    // binary embeds, and the rows are a claim about that package.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(
+        &.{ "dump", "--stage=dispatch", "--core", "core/Basics.beni" },
+        .{ .raw_diagnostics = true, .cwd = .inherit },
+    );
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+
+    // `Order`'s `compare` — alphabetic tag order is not `LT < EQ < GT`, so
+    // this one cannot be `strict_eq`'s partner and has to be derived.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "compare Basics.Order") != null);
+    // `Never`'s two, which §3.2 gives no primitive at all.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "eq Basics.Never") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "compare Basics.Never") != null);
+    // And NOT `Order`'s `eq`, nor `Bool`'s pair: an all-nullary type is a
+    // bare tag string and `Bool` is a JavaScript boolean, so the table
+    // answers `primitive` and a primitive is not a function anyone emits
+    // (A.18, §3.2).
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "eq Basics.Order") == null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "Basics.Bool") == null);
+}
+
+test "a derived method of a submodule's namesake type does not collide with its values" {
+    // §8.5's printed name is `<module path with dots as $>$<base>`, and the
+    // synthesised nominal base has to be a base no module path can spell.
+    //
+    // Module `Shapes` declares `pub type Box`, so its derived `eq` is a
+    // value of `Shapes`. Module `Shapes.Box` declares a `pub eq`, so that
+    // is a value of `Shapes.Box`. With the base `Box$eq` both print
+    // `Shapes$Box$eq`, and a module importing both emits two `import`s of
+    // one name: `SyntaxError: Identifier 'Shapes$Box$eq' has already been
+    // declared`, after a build that exited 0.
+    //
+    // The double separator is what fixes it. `Shapes$Box$$eq` has an empty
+    // segment between its two `$`, which no module path has and no beni
+    // identifier can contain, so the synthesised namespace and the module
+    // namespace cannot meet.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Shapes.beni",
+        \\pub type Box
+        \\    = Box Int
+        \\
+    );
+    try w.write("src/Shapes/Box.beni",
+        \\pub eq : Int, Int -> Bool
+        \\eq a b =
+        \\    a == b
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\import Shapes exposing (Box)
+        \\import Shapes.Box
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show (Shapes.Box 1 == Shapes.Box 1)
+        \\        , show (Shapes.Box.eq 1 1)
+        \\        ]
+        \\
+    );
+
+    const built = try w.buildAndRun(&.{"src"});
+    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
+    try testing.expectEqualStrings("True\nTrue\n", built.program.?.stdout);
+
+    // Two imports, two names, one statement each.
+    const main = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main, "import { Shapes$Box$$eq } from \"./Shapes.mjs\";") != null);
+    try testing.expect(std.mem.indexOf(u8, main, "import { Shapes$Box$eq } from \"./Shapes/Box.mjs\";") != null);
+}
+
+test "a type that is not pub still exports the method another module derives for it" {
+    // A PIN, not a regression: this passes on `c63ae48` too. It is here
+    // because `Lower.exports` emits a nominal derived row whether or not
+    // the type is `pub`, which reads like a leak until you have this
+    // program in front of you.
+    //
+    // `Wrapped` is private to `Hidden`, so `Main` cannot name it — and
+    // still holds one, because `Solve.targetFor` reaches a nominal type
+    // through the VALUE's type and never through a written name. `Main`'s
+    // `==` therefore derives and names `Hidden$Wrapped$$eq`, a function
+    // only `Hidden` may write (§8.5: an opaque type's constructors are not
+    // readable anywhere else). Exporting on `is_pub` would emit an import
+    // of a name the declaring module kept to itself.
+    //
+    // What crosses the boundary is the METHOD, not the type: `Main` still
+    // cannot write `Wrapped` in an annotation.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Hidden.beni",
+        \\type Wrapped
+        \\    = Wrapped Int
+        \\
+        \\
+        \\pub wrap : Int -> Wrapped
+        \\wrap n =
+        \\    Wrapped n
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Hidden
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show (Hidden.wrap 1 == Hidden.wrap 1)
+        \\        , show (Hidden.wrap 1 == Hidden.wrap 2)
+        \\        ]
+        \\
+    );
+
+    const built = try w.buildAndRun(&.{"src"});
+    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
+    try testing.expectEqualStrings("True\nFalse\n", built.program.?.stdout);
+    const hidden = try w.read("out/Hidden.mjs");
+    try testing.expect(std.mem.indexOf(u8, hidden, "export { Hidden$Wrapped$$eq,") != null);
 }
 
 test "a pub foreign with a where clause takes its evidence in front of its own arguments" {

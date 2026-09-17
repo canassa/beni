@@ -1,0 +1,81 @@
+-- Derived `eq`, one shape per line
+-- (`docs/design/static-dispatch-spike.md` §9.2, §9.3, §9.4, §8.3).
+--
+-- Every `==` here resolves to a function the code generator GENERATES from
+-- the shape of the type — a record's fields in name order, a tuple's slots,
+-- a constructor's arguments — and the point of running it is that a
+-- generated function is the one kind of code no reader ever writes and no
+-- `emit/` golden can prove correct. A tag test that compared the padding
+-- slots, a `switch` whose last arm fell through, or a field pair read off
+-- the wrong object all type-check and all emit; only the answers say which.
+--
+-- The last two lines hand a derived function to a `where`-constrained
+-- generic as EVIDENCE, which is the other half of §8.2: a shape's `eq`
+-- takes evidence of its own, so it is not a value of two arguments until it
+-- is eta-expanded (A.25). S4 refused every derived target in an evidence
+-- slot, so those two lines are also what fails before this slice.
+--
+-- Line by line: the empty shape `()`, a two-element tuple, a record, an
+-- all-nullary type (a bare tag string, so `===`), a payload type down each
+-- of its two constructors, the padding case where two constructors of
+-- DIFFERENT arity are compared, a recursive type whose derived function
+-- calls itself, and `/=` on the same recursive type.
+import Node exposing (Program)
+
+
+pub type Colour
+    = Red
+    | Green
+    | Blue
+
+
+pub type Shape
+    = Circle Float
+    | Rect Float Float
+
+
+pub type Tree
+    = Leaf
+    | Node Tree Int Tree
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+sameAs : a, a -> Bool
+    where a.eq : a, a -> Bool
+sameAs x y =
+    x == y
+
+
+left : Tree
+left =
+    Node (Node Leaf 1 Leaf) 2 Leaf
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (() == ())
+        , show (( 1, "a" ) == ( 1, "a" ))
+        , show (( 1, "a" ) == ( 1, "b" ))
+        , show ({ x = 1, y = 'c' } == { x = 1, y = 'c' })
+        , show ({ x = 1, y = 'c' } == { x = 2, y = 'c' })
+        , show (Red == Red)
+        , show (Red == Blue)
+        , show (Circle 1.5 == Circle 1.5)
+        , show (Rect 1.0 2.0 == Rect 1.0 2.0)
+        , show (Rect 1.0 2.0 == Rect 1.0 9.0)
+        , show (Circle 1.0 == Rect 1.0 1.0)
+        , show (left == Node (Node Leaf 1 Leaf) 2 Leaf)
+        , show (left == Node (Node Leaf 9 Leaf) 2 Leaf)
+        , show (left /= Node Leaf 2 Leaf)
+        , show (sameAs ( 1, "a" ) ( 1, "a" ))
+        , show (sameAs left (Node Leaf 2 Leaf))
+        ]

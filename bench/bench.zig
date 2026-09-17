@@ -664,6 +664,7 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
                     &session.checked.dispatch[module.int()]
                 else
                     &JsLower.Dispatch.empty,
+                .types = &session.checked.types,
                 .specifiers = specifiers,
                 .sibling = "./x.js",
             });

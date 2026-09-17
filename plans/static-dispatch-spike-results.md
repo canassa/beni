@@ -661,3 +661,70 @@ tree could not be measured at all at this budget.
 `constraints_created` is now one per *new* name on a variable (2 007) and
 `constraints_merged` one per union of two sets (3 999); before the fix both
 counted every attach.
+
+---
+
+## 2026-09-17 — S5, M5 R4 (derived `eq` against the structural walk)
+
+`plans/static-dispatch-spike.md` §7 M5, R4 only: it is the one program of the
+six whose work is `==`. R6 is here because it contains one `==` as well —
+on an `Int`, which §3.2 has answered with `===` since S4, so it is the control
+that says the machine did not move under the measurement.
+
+**Interleaved ABBA on one machine state, not against the S1 row.** A is the
+branch at `c63ae48` (S4: every `==` still routed to `core/Basics.js`'s single
+structural walk through A.51's bridge), B is S5 (the derived `eq` of §9).
+Both are Debug compilers building the same `bench/runtime/c0/*.beni` sources —
+the measurement is of the EMITTED JavaScript under Node, so the compiler's own
+optimisation level is not in it. 20 runs each, best and median, net of a
+measured process floor.
+
+**Load before:** ` 23:18:45 up 4 days,  5:59,  3 users,  load average: 0.48, 1.04, 1.19`
+**Load after:** ` 23:19:44 up 4 days,  6:00,  3 users,  load average: 0.80, 1.02, 1.17`
+
+```
+$ direnv exec … node bench/runtime.mjs --runs=20 --program=R4Equality --program=R6Megamorphic --beni=<A>
+A {"program":"R4Equality","variant":"c0","runs":20,"ops":220200,"floor_ms":35.85,"best_ms":198.21,"median_ms":200.43,"ns_per_op":737.3,"checksum":"400 20000 200 0 6"}
+A {"program":"R6Megamorphic","variant":"c0","runs":20,"ops":3000000,"floor_ms":34.75,"best_ms":160.04,"median_ms":163.4,"ns_per_op":41.8,"checksum":"1352000"}
+B {"program":"R4Equality","variant":"c0","runs":20,"ops":220200,"floor_ms":35.38,"best_ms":151.02,"median_ms":156.1,"ns_per_op":525.2,"checksum":"400 20000 200 0 6"}
+B {"program":"R6Megamorphic","variant":"c0","runs":20,"ops":3000000,"floor_ms":35.85,"best_ms":158.65,"median_ms":162.8,"ns_per_op":40.9,"checksum":"1352000"}
+B {"program":"R4Equality","variant":"c0","runs":20,"ops":220200,"floor_ms":35.30,"best_ms":152.86,"median_ms":156.52,"ns_per_op":533.9,"checksum":"400 20000 200 0 6"}
+B {"program":"R6Megamorphic","variant":"c0","runs":20,"ops":3000000,"floor_ms":35.15,"best_ms":160.12,"median_ms":163.22,"ns_per_op":41.7,"checksum":"1352000"}
+A {"program":"R4Equality","variant":"c0","runs":20,"ops":220200,"floor_ms":35.28,"best_ms":198.89,"median_ms":202.09,"ns_per_op":743.0,"checksum":"400 20000 200 0 6"}
+A {"program":"R6Megamorphic","variant":"c0","runs":20,"ops":3000000,"floor_ms":34.76,"best_ms":160.57,"median_ms":162.35,"ns_per_op":41.9,"checksum":"1352000"}
+```
+
+| Program | A — S4 bridge (ns/op) | B — S5 derived (ns/op) | B ÷ A |
+|---|---|---|---|
+| R4Equality | 737.3 / 743.0 | **525.2** / 533.9 | **0.71×** (−28.8 %) |
+| R6Megamorphic | 41.8 / 41.9 | 40.9 / 41.7 | 0.98× (noise) |
+
+Reading: **a derived `eq` is 1.40× faster than the one structural walk** on
+R4's mix of a five-field record, a 1 000-element list of ADTs and a nested
+`Maybe (List Int)`. The `checksum` is byte-identical across all four runs —
+`400 20000 200 0 6`, whose fourth field is R4's `nearMisses` counter and must
+stay 0 — so the two are computing the same answers and the ratio is a
+like-for-like one. R6 does not move, which is what a program whose only `==`
+is on an `Int` should do.
+
+**What the number is NOT.** R4 still contains one comparison S5 does not
+derive: `List a` is a `foreign type`, no module writes a body for it (A.55,
+A.60) and §5.2's `pub foreign eq` is S6's, so the list of ADTs and the nested
+`Maybe (List Int)` still go through `Basics.eq` — with the *elements* walked
+structurally too, since the bridge is all-or-nothing. The 28.8 % is therefore
+a LOWER bound on what §9 buys on this program, and S6 should move it again.
+
+**Do not compare this to the S1 M5 row.** S1 measured R4 at 746.5 and R6 at
+58.2 on `master` on 2026-09-17 at 13:50; the same R6 measures 41.8 today on a
+binary that changed nothing about it. The machine moved between sessions by
+more than the effect being measured on that row, which is exactly why
+`bench/README.md` asks for interleaved runs and why this row carries its own A.
+
+**`derived_bytes` has left zero.** Not a timed row, but the M4 counter S1
+recorded as 0 is now non-zero for every program: derivation is eager (A.23),
+so core alone ships four derived functions — `Maybe$Maybe$eq`,
+`Result$Result$eq`, `Dict$Tree$eq`, `Dict$NColor$eq` — in the floor that every
+build carries, plus one per nominal type and one per structural shape the
+program itself uses. `bench/size.mjs` counts them today
+(`tests/blackbox/build_test.zig`, the two `size.mjs` scenarios); the full M4
+table is S8's.

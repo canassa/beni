@@ -1,0 +1,15 @@
+-- check/bad (project, core): the module that declares the `foreign type`,
+-- with a `compare` for it that is NOT `pub`.
+--
+-- It lives under `core/` so the walker runs it with `--core` and the
+-- `foreign` line below is legal (`boundary.md` §2); it is a PROJECT because
+-- what it is about needs two modules, which is why the walker collects
+-- project directories under `core/` as well as beside it. The one
+-- diagnostic is the one in `Main.beni`: a private `compare` is reachable
+-- from inside this module and from nowhere else.
+pub foreign type Handle
+
+
+compare : Handle, Handle -> Order
+compare a b =
+    LT

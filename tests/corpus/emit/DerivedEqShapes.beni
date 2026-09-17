@@ -1,0 +1,64 @@
+-- emit: the derived `eq` of a STRUCTURAL shape — a record, a tuple, `()`
+-- (`docs/design/static-dispatch-spike.md` §9.2, §9.3, §8.5, A.46).
+--
+-- **The golden is §9's SHAPE, not its listing.** §9.4's and §9.6's worked
+-- examples name the two operands `x` and `y` and the nominal function
+-- `<Type>$eq`; the emitter writes `$x`, `$y` and `<Type>$$eq`, because a
+-- derived body's operands share a namespace with the module's own locals
+-- and the nominal base has to be one no module path can spell (§8.5). The
+-- structure — which positions are compared, in what order, and what a tag
+-- test does — is the spec's; the spelling is this file's, and only the
+-- spelling.
+--
+-- A shape has no owning module, so it is derived where it is USED and
+-- keyed on the shape and nothing else: the field names sorted by text, or
+-- the arity. One evidence parameter per position, in the same order,
+-- applied to the two values position by position — which is why
+-- `{ x : Int, y : Int }` and `{ x : String, y : Char }` are ONE
+-- `eq$r$x$y` here and differ only in the two arguments each use hands it.
+-- Baking the first requester's element targets into the function is the
+-- miscompile A.46 records.
+--
+-- `t2` says the same for tuples: `( Int, Int )` and `( Char, String )`
+-- share it. `eq$unit` takes no evidence and answers `true`, because `()` is
+-- `null` at runtime and both operands hold the same value.
+--
+-- The functions come before every declaration and are sorted by printed
+-- name text — `eq$prim`, `eq$r$x$y`, `eq$t2`, `eq$unit` — which is the pass
+-- of §8.5, and none of them is exported: each consumer emits its own.
+import Node exposing (Program)
+
+
+pub samePoint : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
+samePoint a b =
+    a == b
+
+
+pub sameLabel : { x : String, y : Char }, { x : String, y : Char } -> Bool
+sameLabel a b =
+    a == b
+
+
+pub samePair : ( Int, Int ), ( Int, Int ) -> Bool
+samePair a b =
+    a == b
+
+
+pub sameMixed : ( Char, String ), ( Char, String ) -> Bool
+sameMixed a b =
+    a == b
+
+
+pub sameUnit : (), () -> Bool
+sameUnit a b =
+    a == b
+
+
+pub differs : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
+differs a b =
+    a /= b
+
+
+main : Program
+main =
+    Node.printLines []

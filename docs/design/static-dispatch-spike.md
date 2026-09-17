@@ -1620,12 +1620,24 @@ emitting module as `module` and an interned base, so the printer spells it `Modu
 
 | What | Emitted in | When | Base | Printed |
 |---|---|---|---|---|
-| well-known method of a nominal type `T` in module `M` | `M`, always — even when the only use is elsewhere, and even when `T` is `pub opaque`, which is what makes derivation legal for an opaque type | **eagerly**: one `eq` and one `compare` per declared nominal type, used or not, unless a payload contains a function type (§6.3.1 step 4) | `<T>$eq`, `<T>$compare` | `Shapes$Shape$eq` |
-| the tag-order table of a type with two or more constructors | `M` | with its `compare` | `<T>$order` | `Shapes$Colour$order` |
+| well-known method of a nominal type `T` in module `M` | `M`, always — even when the only use is elsewhere, and even when `T` is `pub opaque`, which is what makes derivation legal for an opaque type | **eagerly**: one `eq` and one `compare` per declared nominal type, used or not, unless a payload contains a function type (§6.3.1 step 4) | `<T>$$eq`, `<T>$$compare` | `Shapes$Shape$$eq` |
+| the tag-order table of a type with two or more constructors | `M` | with its `compare` | `<T>$$order` | `Shapes$Colour$$order` |
 | a record shape | the **consuming** module, deduplicated per file | on demand: a shape is not declared anywhere, so there is no module to derive it in ahead of time | `eq$r$<f1>$<f2>$…` | `Main$eq$r$x$y` |
 | a tuple shape | the consuming module | on demand | `eq$t<n>` | `Main$compare$t2` |
 | `unit` | the consuming module | on demand | `eq$unit` | `Main$eq$unit` |
 | a primitive, as a **value** (§9.1) | the consuming module | on demand | `eq$prim`, `compare$prim`, `compare$char` | `Main$compare$prim` |
+
+**Why the nominal base takes a DOUBLE separator.** A printed name is the module path with its dots
+turned into `$`, then `$`, then the base, so a nominal base of `<T>$eq` puts the synthesised
+namespace and the module namespace in one flat space — and they collide. Module `Shapes` with a
+`pub type Box` spells its derived method `Shapes$Box$eq`; the submodule `Shapes.Box` with a
+`pub eq` of its own spells that value `Shapes$Box$eq` too, and a module importing both emits two
+`import`s of one name: `SyntaxError: Identifier 'Shapes$Box$eq' has already been declared`, after a
+build that exited 0. `<T>$$eq` has an empty segment between its two `$`, which no module path has
+— a path has no empty segment — and which no beni identifier can contain, so the two namespaces
+can no longer meet. The structural bases need no such guard: `eq$r$…`, `eq$t<n>`, `eq$unit`,
+`eq$prim`, `compare$prim` and `compare$char` all begin lower-case, and a module path segment is
+upper-case. Appendix A.61.
 
 **Why nominal derivation is eager.** A `Dispatch` table is per module and is built at the end of
 that module's own check; `T`'s module is checked and lowered *before* any user of `T` under §6.8's
@@ -1655,10 +1667,17 @@ Sorted by name and not by request order because request order depends on which i
 discharged first: deterministic today, but not *obviously* so, and CLAUDE.md rule 5 asks for an
 order a reader can check. Ordering *within* the pass never matters for correctness — every derived
 function is an arrow, so a reference from one to another is resolved at call time and a forward
-reference is fine — and the `<T>$order` table is the one exception: it is a plain object literal, so
-it must precede the `compare` that indexes it. Sorting by name gives `Shapes$Colour$compare` before
-`Shapes$Colour$order`, which is the wrong way round, so the pass emits **every `$order` table
-first**, sorted by name, then every function, sorted by name. Two sorted runs, both byte-stable.
+reference is fine — and the `<T>$$order` table is the one exception: it is a plain object literal,
+so it must precede the `compare` that indexes it. Sorting by name gives `Shapes$Colour$$compare`
+before `Shapes$Colour$$order`, which is the wrong way round, so the pass emits **every `$$order`
+table first**, sorted by name, then every function, sorted by name. Two sorted runs, both
+byte-stable.
+
+**This table is what governs the spelling.** The listings elsewhere in this document — §8.3's
+`Shapes$Shape$eq(a, b)`, §9.4's and §9.6's worked examples — were written before A.61 and still
+show the single separator and the operand names `x` and `y` where the emitter writes `$x` and `$y`.
+They are illustrations of SHAPE and are left as they were written; where one disagrees with the row
+above, the row above is the contract.
 
 ---
 
@@ -2533,11 +2552,17 @@ an arity check to `Sibling.zig` (real work, and it needs a JavaScript parser to 
 is the dependency the wall exists to avoid) or to refuse `where` on `foreign` and give `List` an
 uncons primitive instead.
 
-**Cross-module recursive derivation.** A type in module `A` whose payload mentions a type in module
-`B` whose payload mentions `A`'s makes `A$eq` and `B$eq` mutually recursive across an ESM cycle.
-Top-level `const` arrows in an import cycle can hit the temporal dead zone if one is *called*
-during module evaluation; nothing in a beni module calls a derived function at evaluation time, so
-it is safe today, and the spike records it rather than defending against it.
+**Cross-module recursive derivation is refused before it can happen.** The shape this row was
+written for — a type in module `A` whose payload mentions a type in module `B` whose payload
+mentions `A`'s, making `A$$eq` and `B$$eq` mutually recursive across an ESM cycle — cannot be
+written: `A` mentioning `B`'s type and `B` mentioning `A`'s is an `import_cycle`, which the module
+graph rejects before a single declaration is checked. The language has no mutual recursion across
+a module boundary for types, so derivation has none either. What remains is the SAME-module case
+(`type Tree = Leaf | Node Tree Int Tree`, whose `Tree$$eq` names itself), and that is one `const`
+arrow naming itself from inside its own body, which JavaScript has always allowed and which
+`emit/DerivedEqNominal` pins. The temporal-dead-zone worry the earlier text raised was therefore a
+hazard of a program the compiler does not accept. It is recorded here rather than deleted because
+a future module system with recursive imports would bring it back, and this is where it would land.
 
 **Constrained constants** are refused (`constrained_constant`, §6.4) rather than silently turned
 into functions. `Dict.empty` is unaffected — it has no constraint (§5.3).
@@ -3106,3 +3131,59 @@ the backend asks it, and refuses what it cannot honour (A.51). *Alternative:* ha
 inspect the parts and bridge when they are all structural, which moves the backend's decision into
 the checker and duplicates it. Fixture: `dispatch/UserEqInsideParametric` (and `c5` of
 `dispatch/WhereClauseDerives`, which moved back to the row shape `master` had).
+
+**A.61 — the synthesised nominal base takes a DOUBLE separator: `<T>$$eq`, `<T>$$compare`,
+`<T>$$order`** (§8.5) [S5 fix]. A printed name is the module path with its dots turned into `$`,
+then `$`, then the base, so `<T>$eq` puts the synthesised names and the module's own values in one
+flat namespace. Module `Shapes` with a `pub type Box` and the submodule `Shapes.Box` with a
+`pub eq` then both spell `Shapes$Box$eq`, and a consumer importing both emits two `import`s of one
+name — `SyntaxError: Identifier 'Shapes$Box$eq' has already been declared`, after a build that
+exited 0. *Why the double separator rather than a reserved word or a prefix:* the empty segment
+between the two `$` is unspellable from beni — a module path has no empty segment and an identifier
+holds no `$` — so the guarantee is structural and needs no list of names to avoid. The structural
+bases (`eq$r$…`, `eq$t<n>`, `eq$unit`, `eq$prim`, `compare$prim`, `compare$char`) keep their single
+separator: they begin lower-case and a module path segment is upper-case, so they could never
+collide. *Alternative:* a `$D$` infix or a leading `$`, both of which are just as safe and read
+worse in a stack trace. Fixture: `blackbox_test`, "a derived method of a submodule's namesake type
+does not collide with its values". Every `emit/*.js` golden was re-blessed for it and nothing but
+the names moved.
+
+**A.62 — `Lower.Input.types` is a name, declaration AND derivability service** (§8.0, §8.5, A.51,
+A.55) [S5 fix]. §8.0 says the lowerer reads targets and never types, and that remains true of every
+DECISION about which function a call runs. But `Lower.derivedBodyExists` reads `Types.Entry.kind`
+and `Types.Entry.equatable` to answer whether the module owning an `ext_derived` target actually
+wrote a body for it — a `foreign type` has no constructors, so no module did — and that is the
+refusal A.51 requires, not a lookup. *Why record it:* the field's own doc comment claimed the
+backend asked `Types` for names alone, which was the strongest claim in the file and the one that
+was false; a reader checking §3's ignorance against the code would have found the discrepancy and
+had nothing to read. *Alternative:* have the CHECKER decide it and carry a bit on the target, which
+is A.60's rejected alternative under a different name — the question is about the parts, so the
+backend is where it is asked.
+
+**A.63 — the eager pass's step-1 exclusion requires `pub`, and §3.2's table is consulted before it**
+(§3.2, §3.3, §8.5, A.23, A.47) [S5 fix]. Two corrections to `Solve.deriveOne`, both of them the
+same mistake: it asked a narrower question than a USE asks.
+
+A use in another module resolves `(T, name)` through `Interface.findValue`, which maps only the
+`pub` entries — so a private `eq` in `T`'s module wins for that module's own uses (§3.3 step 1
+says "`pub` (or any, in the same module)") and for nobody else's. The eager pass excluded the row
+on any declaration of the name, `pub` or not, so the dependent derived, named `<T>$$eq` in the
+declaring module, and imported a name no module had exported: exit 0, `SyntaxError` at load. The
+exclusion now tests `is_pub`; the declaring module's own uses still take the private `top`.
+
+And §3.2's table is consulted before §3.3's module rule, which is the order §3.2 itself states and
+the order resolution already used. `core/Basics.beni` declares `Bool`, `Order` and `Never` over a
+`pub foreign eq` and a `pub compare` of its own — which is precisely why the table exists — so
+asking the module rule first let those two suppress every row the table asks Basics for:
+`dump --stage=dispatch --core core/Basics.beni` printed no `derived` line at all while every other
+module's `<` on an `Order` named `ext_derived Basics.Order compare` (A.47), a target pointing at a
+row that was not there. Basics now carries `Order`'s `compare` and both of `Never`'s. `Order`'s
+`eq` and `Bool`'s pair stay absent: the table answers `primitive` for them and a primitive is not a
+function anyone emits (A.18).
+
+*Why both in one row:* they are one question — "who else can see this name?" — asked of a user
+declaration and of the compiler's own table. *Alternative for the first:* make the private value
+invisible to its own module too, which would change what §3.3 step 1 means for a reason that has
+nothing to do with derivation. Fixtures: `dispatch/PrivateEqStillDerives`, and in `blackbox_test`
+"a private eq wins inside its module and still lets every other module derive" and "core/Basics
+carries the derived rows §3.2's table asks it for".

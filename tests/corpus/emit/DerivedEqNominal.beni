@@ -1,0 +1,77 @@
+-- emit: the derived `eq` of a NOMINAL type, one line per constructor shape
+-- (`docs/design/static-dispatch-spike.md` §9.4, §8.5, A.18, A.20, A.23).
+--
+-- **The golden is §9's SHAPE, not its listing.** §9.4's and §9.6's worked
+-- examples name the two operands `x` and `y` and the nominal function
+-- `<Type>$eq`; the emitter writes `$x`, `$y` and `<Type>$$eq`, because a
+-- derived body's operands share a namespace with the module's own locals
+-- and the nominal base has to be one no module path can spell (§8.5). The
+-- structure — which positions are compared, in what order, and what a tag
+-- test does — is the spec's; the spelling is this file's, and only the
+-- spelling.
+--
+-- Five shapes, and the golden is where their differences are visible:
+--
+--   - `Colour` is all-nullary, so its values are bare tag strings and `eq`
+--     is `===` with nothing to walk (A.18). The row is emitted anyway,
+--     because another module may name it as evidence.
+--   - `Metre` has one constructor, so there is no tag test and no `switch`:
+--     nothing to disagree about.
+--   - `Shape` has two of DIFFERENT arity, so every constructor is padded to
+--     the widest and the `switch` touches only the arguments the live one
+--     has. The padding slots are not compared (A.12), and the LAST
+--     constructor is the `default` arm with no `case` of its own.
+--   - `Tree` is recursive: a top-level `const` arrow may name itself from
+--     inside its body, so the derived function simply calls itself.
+--   - `Box a` is parametric: one evidence parameter per type PARAMETER, in
+--     declaration order, and a position that is the parameter is that
+--     parameter applied (A.20).
+--
+-- Every one of them is emitted although this module compares only two:
+-- derivation for a nominal type is EAGER and happens in the declaring
+-- module (A.23, §8.5), so they are exported as well.
+import Node exposing (Program)
+
+
+pub type Colour
+    = Red
+    | Green
+    | Blue
+
+
+pub type Metre
+    = Metre Float
+
+
+pub type Shape
+    = Circle Float
+    | Rect Float Float
+
+
+pub type Tree
+    = Leaf
+    | Node Tree Int Tree
+
+
+pub type Box a
+    = Box a
+
+
+pub sameShape : Shape, Shape -> Bool
+sameShape a b =
+    a == b
+
+
+pub sameTree : Tree, Tree -> Bool
+sameTree a b =
+    a == b
+
+
+pub sameBoxes : Box Int, Box Int -> Bool
+sameBoxes a b =
+    a == b
+
+
+main : Program
+main =
+    Node.printLines []

@@ -1,0 +1,76 @@
+-- Derived `eq` for PARAMETRIC types, where the evidence is the whole of the
+-- answer (`docs/design/static-dispatch-spike.md` §9.4, §8.2, A.20, A.46).
+--
+-- A parametric type's derived function takes one hidden parameter per type
+-- PARAMETER, in declaration order, used or not — and every position inside
+-- the body that is one of those parameters is that hidden argument applied
+-- to the two values. Get the pairing wrong by one and the program still
+-- compiles: `Pair` would compare its second slot with the first type's `eq`
+-- and answer nonsense. §9.4 calls that "the single most likely bug in S5",
+-- which is why `Pair Int String` and `Result String Int` are both here —
+-- `Result x a` declares `Ok a` FIRST and quantifies `x` first, so `Ok` uses
+-- `$m$1` and `Err` uses `$m$0`, the one place the two orders disagree.
+--
+-- `Maybe` and `Result` are declared in `core/Maybe.beni` and
+-- `core/Result.beni`, so their functions are emitted THERE, eagerly,
+-- although nothing in core compares one (§8.5): these lines are the
+-- cross-module half, and they also prove the import machinery reaches a
+-- name no interface records (A.47).
+--
+-- `Box (Just 1)` nests one parametric type inside another, which is where
+-- the evidence has to be eta-expanded: `Maybe`'s `eq` takes evidence, so it
+-- is not a function of two arguments until it is wrapped (§8.2, A.25). The
+-- two `List` lines are the other side of that — `List a` is a `foreign
+-- type` and no module derives a body for it (A.55, A.60), so an element
+-- type that is structural all the way down still routes to
+-- `core/Basics.js`'s walk until §5.2 gives `List` a `pub foreign eq` in S6.
+-- `Maybe Int` is structural, so the two agree, and the answers are here to
+-- say that the bridge is still right where it is still used.
+import Node exposing (Program)
+
+
+pub type Box a
+    = Box a
+
+
+pub type Pair a b
+    = Pair a b
+
+
+sameAs : a, a -> Bool
+    where a.eq : a, a -> Bool
+sameAs x y =
+    x == y
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Box 1 == Box 1)
+        , show (Box "a" == Box "b")
+        , show (Pair 1 "a" == Pair 1 "a")
+        , show (Pair 1 "a" == Pair 1 "b")
+        , show (Pair 1 "a" == Pair 2 "a")
+        , show (Just 1 == Just 1)
+        , show (Just 1 == Just 2)
+        , show (Just 1 == Nothing)
+        , show (Ok 1 == Ok 1)
+        , show (Ok 1 == Err "a")
+        , show (Err "a" == Err "a")
+        , show (Err "a" == Err "b")
+        , show (Box (Just 1) == Box (Just 1))
+        , show (Box (Just 1) == Box (Just 2))
+        , show ([ Just 1, Nothing ] == [ Just 1, Nothing ])
+        , show ([ Just 1, Nothing ] == [ Just 2, Nothing ])
+        , show (sameAs (Just 1) (Just 1))
+        , show (sameAs (Box (Just 1)) (Box (Just 2)))
+        ]

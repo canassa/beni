@@ -539,6 +539,7 @@ const Emitter = struct {
                     &e.session.checked.dispatch[m.int()]
                 else
                     &Dispatch.empty,
+                .types = &e.session.checked.types,
                 .specifiers = specifiers,
                 .sibling = sibling,
                 .entry_decl = if (m == entry.module) entry.decl.int() else null,

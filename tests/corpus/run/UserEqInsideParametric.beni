@@ -1,0 +1,61 @@
+-- A user's own `pub eq` reached through a parametric type declared in
+-- ANOTHER module (`docs/design/static-dispatch-spike.md` §9.4, A.47, A.60).
+--
+-- `Maybe` and `Result` are core's, so their derived functions are emitted in
+-- `core/Maybe.beni` and `core/Result.beni` and this module imports them —
+-- and what it hands them is the method THIS module declares. That is the
+-- pairing A.60 is about: the argument's method is named by the use, so
+-- `Just (Id 1 2) == Just (Id 1 99)` is `True` because `Id`'s own `eq`
+-- compares the major number only. A backend that sent the comparison to
+-- `core/Basics.js`'s structural walk instead would compile, run, and print
+-- `False`, which is the silent miscompile the table exists to prevent.
+--
+-- `Result Id Int` is the same question with the pairing to get wrong: `x`
+-- is `Id` and `a` is `Int`, `Ok` is declared first and quantified second,
+-- so the two evidence arguments have to cross (§9.4).
+import Node exposing (Program)
+
+
+pub type Id
+    = Id Int Int
+
+
+-- Two ids are the same when their MAJOR numbers are.
+pub eq : Id, Id -> Bool
+eq a b =
+    case a of
+        Id majorA _ ->
+            case b of
+                Id majorB _ ->
+                    majorA == majorB
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+left : Result Id Int
+left =
+    Err (Id 1 2)
+
+
+right : Result Id Int
+right =
+    Err (Id 1 99)
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Just (Id 1 2) == Just (Id 1 99))
+        , show (Just (Id 1 2) == Just (Id 9 2))
+        , show (Just (Id 1 2) == Nothing)
+        , show (left == right)
+        , show (left == Ok 3)
+        , show (Ok 3 == Ok 3)
+        ]

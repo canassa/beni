@@ -2600,6 +2600,24 @@ pub const Solver = struct {
         return null;
     }
 
+    /// The `pub` declaration of THIS module named `name`.
+    ///
+    /// The difference from `ownDeclNamed` is the whole of §3.3 step 1's
+    /// reach: a private value wins for this module's own uses, and for
+    /// nobody else's, because `Interface.findValue` maps only the `pub`
+    /// entries. So the EAGER pass (`deriveOne`) asks this one — a row it
+    /// skips is a row every dependent still expects — while a use inside
+    /// this module asks `ownDeclNamed` and takes the private value.
+    fn ownPubDeclNamed(s: *const Solver, name: Symbol) ?u32 {
+        const bir = s.env.bir;
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue()) continue;
+            if (!d.is_pub) continue;
+            if (bir.symbol(d.name) == name) return @intCast(i);
+        }
+        return null;
+    }
+
     /// Whether `module` declares `name` WITHOUT `pub`, for §10.2.
     ///
     /// This reads another module's `Bir`, which the checker does not do on
@@ -3039,10 +3057,44 @@ pub const Solver = struct {
 
         for ([_]InternPool.WellKnown{ .eq, .compare }) |well_known| {
             const name = well_known.symbol();
-            // Step 1 of §3.3: a user `pub` value of that name wins, and
-            // then there is nothing to derive.
-            if (s.ownDeclNamed(name) != null) continue;
             const kind: Dispatch.Derived.Kind = if (well_known == .eq) .eq else .compare;
+            // **§3.2's table FIRST, before §3.3's module rule**, which is
+            // the order resolution itself uses. `core/Basics.beni` declares
+            // `Bool`, `Order` and `Never` over a `pub foreign eq` and a
+            // `pub compare` of its own, and consulting step 1 first let
+            // those two suppress every row the table asks Basics for: the
+            // module printed no `derived` line at all while every other
+            // module's `< ` on an `Order` named `ext_derived Basics.Order
+            // compare` (A.47). A primitive row is not a function and gets
+            // no derived body; `Order`'s `compare` and both of `Never`'s
+            // are derived and must be written here.
+            const c: TypeStore.MethodConstraint = .{
+                .name = name,
+                .fn_var = try s.store().freshErr(TypeStore.generalized),
+                .region = d.inst_start,
+                .origin = .well_known,
+                .sites = .empty,
+            };
+            const table = s.wellKnownTarget(c, .{ .type = id, .args = .empty });
+            if (table) |answer| {
+                // `Int`, `Float`, `Char`, `String`, `Bool` and `Order`'s
+                // `eq` are all `primitive`: a use emits the JavaScript
+                // operator, so there is no function for this module to
+                // write (A.18).
+                if (answer == .primitive) continue;
+            } else {
+                // Step 1 of §3.3: a user value of that name wins, and then
+                // there is nothing to derive — but only a `pub` one, since
+                // that is the only value another module can reach. A
+                // PRIVATE `eq` is found by this module's own uses (the
+                // `top` target of §3.3 step 1, which `targetFor` still
+                // takes) and by nobody else's, so a dependent resolving the
+                // same type derives instead and names `<T>$$eq` in this
+                // module. Suppressing the row on a private declaration made
+                // that name an import of an export that was never written:
+                // exit 0, and `SyntaxError` at load.
+                if (s.ownPubDeclNamed(name) != null) continue;
+            }
             // **The exclusions of §6.3.1 step 4, and they have to be the
             // SAME test a use makes** (A.23, A.54): the two transitive
             // gates. `equatable` is false as soon as a function is
@@ -3057,13 +3109,6 @@ pub const Solver = struct {
                 .compare => s.env.types.isComparable(id),
             };
             if (!gated) continue;
-            const c: TypeStore.MethodConstraint = .{
-                .name = name,
-                .fn_var = try s.store().freshErr(TypeStore.generalized),
-                .region = d.inst_start,
-                .origin = .well_known,
-                .sites = .empty,
-            };
             // The entry FIRST, then its parts: a recursive type's derived
             // function is a position of itself.
             const index = try s.env.dispatch.derive(kind, .{ .nominal = id }, @intCast(params.len));

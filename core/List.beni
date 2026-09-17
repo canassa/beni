@@ -174,12 +174,13 @@ reverse list =
     foldl list [] cons
 
 
---| Figure out whether a list contains a value. The element type has to be
---| equatable, which rules out lists of functions.
+--| Figure out whether a list contains a value. The element type has to have
+--| an `eq`, which rules out lists of functions.
 --|
 --|     member [ 1, 2, 3 ] 9 == False
 --|     member [ 1, 4, 9 ] 4 == True
-pub member : List (equatable a), a -> Bool
+pub member : List a, a -> Bool
+    where a.eq : a, a -> Bool
 member xs value =
     any xs (\x -> x == value)
 

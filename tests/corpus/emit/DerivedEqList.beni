@@ -1,0 +1,38 @@
+-- emit: `==` on a `List`, which is the one derived `eq` S5 does NOT emit
+-- (`docs/design/static-dispatch-spike.md` §9.5, §5.2, A.55, A.60, A.51).
+--
+-- `List a` is a `foreign type`: it has no constructors, so there is no body
+-- to derive from, and the two loops of §9.5 belong in `core/List.js` behind
+-- a `pub foreign eq` that §5.2 adds in S6. Until then the only function
+-- that can answer is `core/Basics.js`'s `eq`, the one structural walk —
+-- and it is taken only when every part of the comparison says the walk
+-- would answer the same thing.
+--
+-- Both declarations here pass that test: `List Int` is `===` at the
+-- element, and `List { x : Int }` is a record of primitives. So the golden
+-- shows `Basics$eq` twice, and `eq$r$x` — which the checker derived for the
+-- element and the emitter therefore wrote — sits there uncalled: dead
+-- weight the bridge leaves behind, and one more reason it is temporary.
+-- When §5.2 lands, both calls become `List$eq(<element evidence>, a, b)`
+-- and `eq$r$x` becomes the evidence the second one is handed, which is
+-- exactly the diff S6 should produce in this file.
+--
+-- The case the walk would get WRONG — an element with a `pub eq` of its own
+-- — is refused rather than emitted, and lives in `tests/blackbox` because a
+-- refusal has no `.mjs` to compare.
+import Node exposing (Program)
+
+
+pub sameInts : List Int, List Int -> Bool
+sameInts a b =
+    a == b
+
+
+pub sameRows : List { x : Int }, List { x : Int } -> Bool
+sameRows a b =
+    a == b
+
+
+main : Program
+main =
+    Node.printLines []

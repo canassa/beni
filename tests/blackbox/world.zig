@@ -150,6 +150,14 @@ pub const World = struct {
         return false;
     }
 
+    /// Make `rel_path` executable (chmod 755), so a scenario can point a
+    /// harness script at a stand-in for the compiler. `write` creates a
+    /// plain data file, and a harness that takes a `--beni=<path>` checks
+    /// the executable bit before it runs anything.
+    pub fn makeExecutable(world: *World, rel_path: []const u8) !void {
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o755), .{});
+    }
+
     /// Read a file from the project. Owned by the world.
     pub fn read(world: *World, rel_path: []const u8) ![]u8 {
         return world.tmp.dir.readFileAlloc(world.io, rel_path, world.arena.allocator(), .limited(max_stream_bytes));

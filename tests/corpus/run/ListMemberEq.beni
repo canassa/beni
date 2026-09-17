@@ -1,0 +1,52 @@
+-- `List.member` through a `where` constraint
+-- (`docs/design/static-dispatch-spike.md` §5.5, §8.1, §8.2).
+--
+-- `member` used to read `List (equatable a), a -> Bool` and compare with
+-- `core/Basics.js`'s structural walk. It now reads
+-- `List a, a -> Bool where a.eq : a, a -> Bool`, takes that `eq` as a
+-- hidden leading parameter, and every call site supplies it — which is the
+-- whole of the C1 rewrite in one declaration, and the first core function
+-- to lose a structural comparison.
+--
+-- The first line is what changes: `Id`'s own `eq` compares major numbers,
+-- so `Id 3 99` IS a member of a list holding `Id 3 4`, and the structural
+-- walk would say it is not. The rest pin that the ordinary cases still
+-- answer what they answered — the evidence for `Int` and `String` is the
+-- primitive comparator of §9.1, passed by name because it takes no evidence
+-- of its own.
+import Node exposing (Program)
+
+
+pub type Id
+    = Id Int Int
+
+
+-- Two ids are the same when their MAJOR numbers are.
+pub eq : Id, Id -> Bool
+eq a b =
+    case a of
+        Id majorA _ ->
+            case b of
+                Id majorB _ ->
+                    majorA == majorB
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (List.member [ Id 1 2, Id 3 4 ] (Id 3 99))
+        , show (List.member [ Id 1 2, Id 3 4 ] (Id 9 4))
+        , show (List.member [ 1, 2, 3 ] 9)
+        , show (List.member [ 1, 2, 3 ] 2)
+        , show (List.member [ "a", "b" ] "b")
+        , show (List.member [] 1)
+        ]

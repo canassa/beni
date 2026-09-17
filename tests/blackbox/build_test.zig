@@ -1264,9 +1264,15 @@ test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a fl
     // A program that prints one number adds bytes to the floor and does not
     // remove any: without DCE the floor is contained in every build.
     try testing.expect(program.net_raw_bytes > 0);
-    // Nothing derives anything until the spike does (§7 M4).
-    try testing.expectEqual(@as(u64, 0), program.derived_bytes);
-    try testing.expectEqual(@as(u32, 0), program.derived_functions);
+    // Derivation is EAGER (§8.5, A.23), so the floor every program carries
+    // now holds one derived `eq` per nominal type core declares —
+    // `Maybe$Maybe$eq`, `Result$Result$eq`, `Dict$Tree$eq`,
+    // `Dict$NColor$eq` — whether or not anything compares one. That is
+    // exactly the "grows per type x method" row M4 reports, and it is a
+    // floor cost until DCE exists (§11). `Tiny.beni` itself derives
+    // nothing, so this counts what core ships.
+    try testing.expect(program.derived_bytes > 0);
+    try testing.expect(program.derived_functions >= 4);
 
     const total = try parseJson(SizeTotal, arena, lastLine(r.stdout));
     try testing.expect(total.total);
@@ -1285,11 +1291,11 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `derived_bytes` is the whole point of M4's "grows per type x method"
-    // row, and it is 0 on every real corpus today, so a scenario that only
-    // ever saw 0 would pass with the matcher deleted. A `pub eq` in a module
-    // called `Foo` is emitted as `Foo$eq` — exactly the printed shape §8.5
-    // gives a derived `eq` — and core's own `Basics$compare` is in the same
-    // output tree and must NOT be counted.
+    // row. A `pub eq` in a module called `Foo` is emitted as `Foo$eq` —
+    // exactly the printed shape §8.5 gives a derived `eq` — and core's own
+    // `Basics$compare`, `Basics$eq` and `String$compare` are in the same
+    // output tree and must NOT be counted, being hand-written values the
+    // shape would otherwise claim.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Foo.beni",
@@ -1327,9 +1333,19 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
     _ = it.next(); // the floor
     const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
-    // Exactly one: `Foo$eq`. Two would mean `Basics$compare` was counted as
-    // well, and zero would mean the matcher never fires.
-    try testing.expectEqual(@as(u32, 1), program.derived_functions);
+    // Exactly six, and the list is the assertion: `Foo$eq`, plus the five
+    // core derives eagerly (`Maybe$Maybe$$eq`, `Result$Result$$eq`,
+    // `Dict$Tree$$eq`, `Dict$NColor$$eq`, `Basics$Never$$eq`). Seven would
+    // mean a hand-written `Basics$compare` or `Basics$eq` was counted as
+    // well; five would mean the matcher missed the module's own `Foo$eq`.
+    //
+    // `Basics$Never$$eq` is §3.2's row for a type that has no values, so it
+    // can never be called — and §8.5 emits every declared nominal type's
+    // method whether or not anything calls it, which is exactly the eager
+    // rule §11's "no DCE yet" row is the price of. It joined the count when
+    // `deriveOne` started consulting §3.2's table before §3.3's module
+    // rule; before that `Basics`' own `pub foreign eq` suppressed it.
+    try testing.expectEqual(@as(u32, 6), program.derived_functions);
     try testing.expect(program.derived_bytes > 0);
     try testing.expect(program.derived_bytes < program.raw_bytes);
 }
@@ -1508,6 +1524,66 @@ test "bench/churn.sh reports every edit class against both variants, counts a re
     // The corpus it was pointed at is byte-identical afterwards.
     try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "    n + 1\n") != null);
     try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "always") == null);
+}
+
+test "bench/churn.sh fails loudly when the compiler does not run at all" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The script's error count is read out of `dump.err`, and an empty
+    // `dump.err` reads as zero errors. So a `beni` that never STARTED — a
+    // crash, a kill, an `ETXTBSY` against a binary something else still has
+    // open for writing — scored every edit as a clean, interface-preserving
+    // measurement: a full plausible table, exit 0, and `rejected` zero in
+    // every row. That is the flake the suite saw, and the reason it looked
+    // like a flake is that the only assertion it broke was
+    // `E3 annotated rejected == 1`.
+    //
+    // A compiler that exits non-zero without printing a diagnostic is that
+    // failure, deterministically: `beni dump` exits 0 whatever it FOUND, so
+    // a non-zero status is never a diagnostic and always the process
+    // itself.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Tiny.beni",
+        \\pub bump : Int -> Int
+        \\bump n =
+        \\    n + 1
+        \\
+        \\
+        \\pub applyTwice : (Int -> Int), Int -> Int
+        \\applyTwice f n =
+        \\    f (f n)
+        \\
+    );
+    try w.write("fake-beni",
+        \\#!/bin/sh
+        \\exit 1
+        \\
+    );
+    const arena = w.arena.allocator();
+    try w.makeExecutable("fake-beni");
+    const fake = try std.fmt.allocPrint(arena, "{s}/fake-beni", .{try projectPath(&w)});
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        "sh",
+        "bench/churn.sh",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{fake}),
+        try std.fmt.allocPrint(arena, "--corpus={s}", .{try projectPath(&w)}),
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(r.exit_code != 0);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "exited 1") != null);
+    // And NO table: numbers counted out of an empty diagnostics stream are
+    // indistinguishable from a corpus that churns nothing, so printing them
+    // is worse than printing none.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "changed/accepted") == null);
 }
 
 const SizeFloor = struct {

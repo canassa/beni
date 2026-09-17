@@ -180,7 +180,13 @@ fn walk(kind: Kind) !void {
     const core_dir = try std.fs.path.join(arena, &.{ kind.dir(), "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
     try collect(arena, kind.dir(), false, true, &fixtures, kind.hasProjects());
-    try collect(arena, core_dir, true, false, &fixtures, false);
+    // Projects under `core/` too, and for the same reason they exist above
+    // it: a fixture about what one module may say to ANOTHER cannot be one
+    // file, and `--core` is what lets a fixture write `foreign` at all
+    // (`boundary.md` §2). Without this a two-module `--core` fixture could
+    // not exist, and the one that wanted to be one carried an unrelated
+    // `foreign_outside_platform` in its golden.
+    try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
 
     if (fixtures.items.len == 0) {
         std.debug.print("corpus {s} is empty (M1 fills it)\n", .{kind.dir()});
