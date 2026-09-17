@@ -1,0 +1,27 @@
+-- check/bad: A.23's exclusion, seen through ANOTHER nominal type (A.58).
+--
+-- `HasFn` holds a function, so §6.3.1 step 4 gives it neither derived
+-- method. `IndirectFn` holds a `HasFn`, and derivation is structural and
+-- recursive (§3.3) — so it can have neither either.
+--
+-- The exclusion walked this body's `app` ARGUMENTS and stopped there, so it
+-- never looked inside `HasFn`: `a < b` compiled, and the eager pass wrote a
+-- parts-less `derived compare HasFn` row it had itself refused to derive.
+-- The gate is now the transitive one `Types.isEquatable` already settles,
+-- with a `comparable` twin beside it (A.54).
+pub type HasFn
+    = HasFn (Int -> Int)
+
+
+pub type IndirectFn
+    = Indirect HasFn
+
+
+pub before : IndirectFn, IndirectFn -> Bool
+before a b =
+    a < b
+
+
+pub same : IndirectFn, IndirectFn -> Bool
+same a b =
+    a == b

@@ -21,6 +21,14 @@
 //! until nothing changes terminates and lands on the greatest fixpoint —
 //! the answer that lets a recursive type be equatable at all.
 //!
+//! **Two more bits ride that fixpoint.** `comparable` is the same walk
+//! asking whether `<` can be answered (static-dispatch-spike.md §3.3, A.54)
+//! — false for a `foreign type` whose module declares no `pub compare` of
+//! its own, and false for anything holding one. `has_function` is the same
+//! walk again, run the other way up: false by default, true along the edges
+//! from any type whose body holds a function, because the two gates above
+//! fold several causes into one bit and §10.3 needs to know which (A.58).
+//!
 //! **`Builder` is the annotation reader.** A written type — an annotation, a
 //! constructor's argument, an alias body — is a tree of `Bir` type
 //! instructions; this turns one into store variables, with the annotation's
@@ -62,6 +70,29 @@ pub const Entry = struct {
     kind: Interface.TypeKind,
     /// May be compared with `==` when every argument can (see the header).
     equatable: bool,
+    /// May be ORDERED with `<` — the same fixpoint, one gate further out
+    /// (`docs/design/static-dispatch-spike.md` §3.3, A.50, A.54).
+    ///
+    /// `equatable` does not answer this question. A `foreign type` is
+    /// equatable when its declaration says so and there is nothing more to
+    /// know; it is COMPARABLE only when §3.2's table answers for it or its
+    /// own module declares a `pub compare` whose first parameter is that
+    /// type (`declaresPubCompare`), because deriving one would mean writing
+    /// a body over a representation the compiler cannot see. So
+    /// `type Wraps = Wraps Handle` over a plain `foreign type Handle` is not
+    /// comparable however equatable it is, and without this field `a < b` on
+    /// it derived a function whose one part was `err`.
+    comparable: bool,
+    /// A function type is reachable inside this type's body — through
+    /// another named type as well, which is what makes it a fixpoint and
+    /// not a property of one body (A.58).
+    ///
+    /// `equatable` folds this together with "a payload that cannot answer
+    /// the method", and `comparable` folds it together with "a `foreign
+    /// type` whose module declares no `pub compare`". Neither can say WHICH
+    /// happened, and §10.3 has a different sentence for each — so the one
+    /// question a message needs is asked separately and kept here.
+    has_function: bool,
 };
 
 /// Owned. One per declared type, in topological module order.
@@ -127,6 +158,8 @@ pub fn entry(types: *const Types, id: TypeId) Entry {
         .arity = 0,
         .kind = .foreign,
         .equatable = true,
+        .comparable = true,
+        .has_function = false,
     };
     return types.entries[id.int()];
 }
@@ -138,6 +171,24 @@ pub fn name(types: *const Types, id: TypeId) Symbol {
 pub fn isEquatable(types: *const Types, id: TypeId) bool {
     if (id == .none) return true; // poisoned: say yes and stay quiet
     return types.entry(id).equatable;
+}
+
+/// Whether `<` can be answered for `id` — by §3.2's table, by a `pub
+/// compare` in the declaring module, or by deriving over a body every one
+/// of whose named types can answer it too (A.54).
+pub fn isComparable(types: *const Types, id: TypeId) bool {
+    if (id == .none) return true; // poisoned: say yes and stay quiet
+    return types.entry(id).comparable;
+}
+
+/// Whether a function is reachable inside `id`, transitively (A.58). Only
+/// ever asked of a type the `equatable`/`comparable` gate has already
+/// refused, to pick §10.3's sentence: a function inside is a different
+/// story from a payload with no ordering, and the folded gates cannot tell
+/// them apart.
+pub fn hasFunction(types: *const Types, id: TypeId) bool {
+    if (id == .none) return false; // poisoned: it has a message already
+    return types.entry(id).has_function;
 }
 
 /// The type declared by `decl` of `module`, or `.none` when that
@@ -221,6 +272,8 @@ pub fn build(
                     else => .foreign,
                 },
                 .equatable = true, // settled below
+                .comparable = true, // settled below
+                .has_function = false, // settled below
             });
             try by_decl.append(gpa, id);
         }
@@ -249,8 +302,11 @@ pub fn build(
     types.decl_offsets = decl_offsets;
     types.interface_offsets = interface_offsets;
 
-    try types.settleEquatable(gpa, graph, artifacts);
+    // The table of §3.2 FIRST: `settleEquatable` settles `comparable`
+    // alongside `equatable`, and a `Char` is comparable because the table
+    // says so and not because `core/Char.beni` declares anything.
     types.findWellKnown(graph, interfaces, interner);
+    try types.settleEquatable(gpa, graph, artifacts);
     return types;
 }
 
@@ -288,6 +344,17 @@ fn settleEquatable(
 
     var queue: std.ArrayList(u32) = .empty;
     defer queue.deinit(gpa);
+    // `comparable` is the SAME fixpoint over the SAME edges, so it rides
+    // along: one body walk, two properties, two queues (A.54).
+    var order_queue: std.ArrayList(u32) = .empty;
+    defer order_queue.deinit(gpa);
+    // And `has_function` is the same fixpoint run the other way up (A.58):
+    // it starts FALSE and spreads TRUE along the same edges, because a type
+    // holds a function exactly when one of the types it holds does. It is
+    // what lets §10.3 tell "there is a function inside it" from "something
+    // it holds has no ordering", which the two folded gates above cannot.
+    var function_queue: std.ArrayList(u32) = .empty;
+    defer function_queue.deinit(gpa);
 
     var walk: BodyWalk = .{ .gpa = gpa, .graph = graph, .artifacts = artifacts };
     defer walk.deinit();
@@ -299,6 +366,14 @@ fn settleEquatable(
             // Declared, never computed (checker.md Appendix B).
             e.equatable = d.is_equatable;
             if (!e.equatable) try queue.append(gpa, @intCast(i));
+            // A `foreign type` has no body to derive `compare` over, so it
+            // answers `<` only through §3.2's table or through a `pub
+            // compare` of its own module (A.50). `List` has neither until
+            // §5.2 lands in S6, which is what makes `xs < ys` an honest
+            // `unknown_method` today.
+            e.comparable = types.inWellKnownTable(@enumFromInt(i)) or
+                types.declaresPubCompare(e.module, bir, @enumFromInt(i));
+            if (!e.comparable) try order_queue.append(gpa, @intCast(i));
             continue;
         }
         deps.clearRetainingCapacity();
@@ -316,10 +391,16 @@ fn settleEquatable(
         }
         if (has_function) {
             e.equatable = false;
+            e.comparable = false;
+            e.has_function = true;
             try queue.append(gpa, @intCast(i));
-            // A type already false needs no incoming edges: nothing can
-            // make it false a second time.
-            continue;
+            try order_queue.append(gpa, @intCast(i));
+            try function_queue.append(gpa, @intCast(i));
+            // A type already false needs no incoming edges for `equatable`
+            // or `comparable`: nothing can make it false a second time. It
+            // still needs its OUTGOING edges, because `has_function` runs
+            // the other way — this type is how a function reaches the ones
+            // that hold it.
         }
         for (deps.items) |dep| {
             if (dep == .none or dep.int() >= n) continue;
@@ -354,6 +435,68 @@ fn settleEquatable(
             try queue.append(gpa, dependent);
         }
     }
+    while (order_queue.pop()) |id| {
+        for (dependents[starts[id]..starts[id + 1]]) |dependent| {
+            if (!types.entries[dependent].comparable) continue;
+            types.entries[dependent].comparable = false;
+            try order_queue.append(gpa, dependent);
+        }
+    }
+    while (function_queue.pop()) |id| {
+        for (dependents[starts[id]..starts[id + 1]]) |dependent| {
+            if (types.entries[dependent].has_function) continue;
+            types.entries[dependent].has_function = true;
+            try function_queue.append(gpa, dependent);
+        }
+    }
+}
+
+/// Whether §3.2's table answers `eq` and `compare` for `id`. The five types
+/// that stay in `core/Basics.beni` plus `String` and `Char`: the table
+/// exists precisely because the module rule cannot serve them, so the
+/// fixpoint must not ask it to either.
+fn inWellKnownTable(types: *const Types, id: TypeId) bool {
+    const wk = types.well_known;
+    return id != .none and (id == wk.int or id == wk.float or id == wk.char or
+        id == wk.string or id == wk.bool or id == wk.order or id == wk.never);
+}
+
+/// Whether the module that declares the `foreign type` `id` supplies the
+/// `pub compare` that A.50 says is the only way to order one — asked of the
+/// module rule exactly as a USE would ask it (§1.2).
+///
+/// Two halves, and the property needs both. **`pub`**, because this answer
+/// is one bit on a session-wide table read from every module, and a private
+/// `compare` is invisible to all but one of them: a gate that said yes
+/// would make `type Wraps = Wraps Handle` derive a `compare` whose one part
+/// is `err` everywhere else. **The first parameter**, because a module's
+/// `pub` values are one namespace (§11) — `pub compare : Tag, Tag -> Order`
+/// beside an unrelated `pub foreign type Handle` is `Tag`'s method and not
+/// `Handle`'s, and taking it for `Handle`'s emitted a call to it with a
+/// `Handle` in hand.
+fn declaresPubCompare(types: *const Types, module: Graph.Index, bir: *const Bir, id: TypeId) bool {
+    for (bir.decls) |d| {
+        if (!d.kind.isValue() or !d.is_pub) continue;
+        if (bir.symbol(d.name) != InternPool.WellKnown.compare.symbol()) continue;
+        const annotation = d.annotation.unwrap() orelse continue;
+        if (bir.instTag(annotation) != .type_fn) continue;
+        const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
+        if (params.len == 0) continue;
+        if (types.writtenHead(module, bir, params[0]) == id) return true;
+    }
+    return false;
+}
+
+/// The `TypeId` a written type's HEAD names: `Handle`, `List a` and a bare
+/// `Handle` alike. `.none` for anything else — a variable, a tuple, a
+/// record, a function.
+fn writtenHead(types: *const Types, module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index) TypeId {
+    const tag = bir.instTag(inst);
+    if (tag == .type_app) {
+        const head: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
+        return types.headId(module, bir.instTag(head), bir.instData(head));
+    }
+    return types.headId(module, tag, bir.instData(inst));
 }
 
 /// Walks a written type once: does it mention a function, and which other

@@ -1,0 +1,19 @@
+-- dispatch (core): the positive half of A.54's gate. A `foreign type` IS
+-- orderable when its own module declares a `pub compare` whose first
+-- parameter is that type (A.50), and a shape holding one inherits it.
+--
+-- The control for `check/bad/core/CompareOnForeignWithUnrelatedCompare`,
+-- which is the same file with `Handle` swapped out of the annotation: there
+-- the gate must refuse, here it must accept — and the part it emits is the
+-- call the module rule would make.
+pub foreign type Handle
+
+
+pub compare : Handle, Handle -> Order
+compare a b =
+    LT
+
+
+pub before : ( Handle, Int ), ( Handle, Int ) -> Bool
+before a b =
+    a < b

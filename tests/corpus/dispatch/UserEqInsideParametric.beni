@@ -1,0 +1,62 @@
+-- dispatch: a user `pub eq` reached THROUGH a parametric core type (A.60).
+--
+-- `List` is a `pub equatable foreign type List a`, and A.55 sends an
+-- `equatable` `foreign type` to `Basics.eq`, the one structural walk. For a
+-- type with nothing underneath it that is right. For `List Id` it is not:
+-- `Id`'s own `eq` compares the first field only, and the structural walk
+-- compares both — so `[ Id 1 2 ] == [ Id 1 99 ]` checked clean, emitted
+-- `Basics$eq` and printed `False` where the method says `True`.
+--
+-- The row is where that method is NAMED, so a parametric `foreign type`
+-- keeps it. Which of these the backend can emit today is the backend's
+-- decision, taken from the parts (A.51); the checker's job is to write down
+-- the method the author declared.
+--
+-- `Maybe` and `Result` are ADTs and a tuple is a shape, so those three were
+-- always right; they are here as the controls that say the shapes agree.
+pub type Id
+    = Id Int Int
+
+
+pub eq : Id, Id -> Bool
+eq a b =
+    case a of
+        Id x _ ->
+            case b of
+                Id y _ ->
+                    x == y
+
+
+pub lists : Bool
+lists =
+    [ Id 1 2 ] == [ Id 1 99 ]
+
+
+pub listsOfRecords : Bool
+listsOfRecords =
+    [ { key = Id 1 2 } ] == [ { key = Id 1 99 } ]
+
+
+pub maybes : Bool
+maybes =
+    Just (Id 1 2) == Just (Id 1 99)
+
+
+pub okId : Result String Id
+okId =
+    Ok (Id 1 2)
+
+
+pub results : Bool
+results =
+    okId == Ok (Id 1 99)
+
+
+pub tuples : Bool
+tuples =
+    ( Id 1 2, 0 ) == ( Id 1 99, 0 )
+
+
+pub listsOfInts : Bool
+listsOfInts =
+    [ 1, 2 ] == [ 3 ]

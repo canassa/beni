@@ -1,0 +1,35 @@
+-- dispatch (project): an evidence argument for a `number` literal against
+-- an IMPORTED constrained callee (A.57).
+--
+-- `Gen.before 1 2` emitted no site at all. `Schemes.instantiate` writes an
+-- imported scheme's constraint sites and stops there, and `tagInstantiated`
+-- then sees indices below its own mark — the constraints were created
+-- before it was called — so it registered no obligation; the `number` flex
+-- never meets a structure, so Rule U3 never fired either, and the A.53
+-- bridge that answers `Int`-or-`Float` never ran. The backend emitted
+-- `Gen$before(1, 2)`, one argument short, and Node threw at load.
+--
+-- The `Float` and `String` rows are the control: those literals resolve to
+-- a structure, so U3 always answered them. `sameInts` is the same hole for
+-- `eq`.
+import Gen
+
+
+pub ints : Bool
+ints =
+    Gen.before 1 2
+
+
+pub sameInts : Bool
+sameInts =
+    Gen.same 1 2
+
+
+pub floats : Bool
+floats =
+    Gen.before 1.5 2.5
+
+
+pub strings : Bool
+strings =
+    Gen.before "a" "b"

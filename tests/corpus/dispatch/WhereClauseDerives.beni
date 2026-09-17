@@ -1,0 +1,70 @@
+-- dispatch: a `where` clause DERIVES at a user type
+-- (`docs/design/static-dispatch-spike.md` §3.3 step 2, §1.3 rule 2, A.56).
+--
+-- §1.3 rule 2 excludes exactly one surface from derivation: a hand-written
+-- `x.eq y`, which is `unknown_method` and never a silent derivation. An
+-- operator, a `where` clause and a return-type dispatch are all declarative
+-- — the author asked for the method by the name the compiler owns — and all
+-- three derive.
+--
+-- Testing the ORIGIN rather than the NAME meant a constraint instantiated
+-- from a `where` clause never derived: every call below was
+-- `unknown_method` (nullary ADT, record ADT, list) or `no_methods_on_shape`
+-- (tuple, record), §9.7's own `List.sort rows` example could not compile,
+-- and §5's `Dict`/`Set`/`List.sort` rewrite — every one of which reaches
+-- its method through a `where` clause — was dead on arrival.
+--
+-- `c1` is A.18 (an all-nullary type is a bare tag string, so the USE gets
+-- `===`), `c5` is the parametric `foreign type` of A.60 — `List` keeps a
+-- row with one part per argument, which is where a user `pub eq` on the
+-- element would be named — and `c6` is the operator form as the control.
+pub type Colour
+    = Red
+    | Green
+
+
+pub type Shape
+    = Circle Float
+    | Rect Float Float
+
+
+pub eqGen : a, a -> Bool
+    where a.eq : a, a -> Bool
+eqGen x y =
+    x.eq y
+
+
+pub cmpGen : a, a -> Order
+    where a.compare : a, a -> Order
+cmpGen x y =
+    x.compare y
+
+
+pub c1 : Bool
+c1 =
+    eqGen Red Green
+
+
+pub c2 : Order
+c2 =
+    cmpGen (Circle 1.0) (Rect 1.0 2.0)
+
+
+pub c3 : Bool
+c3 =
+    eqGen ( 1, "a" ) ( 2, "b" )
+
+
+pub c4 : Order
+c4 =
+    cmpGen { x = 1, y = 2 } { x = 3, y = 4 }
+
+
+pub c5 : Bool
+c5 =
+    eqGen [ 1, 2 ] [ 3 ]
+
+
+pub c6 : Bool
+c6 =
+    Red == Green

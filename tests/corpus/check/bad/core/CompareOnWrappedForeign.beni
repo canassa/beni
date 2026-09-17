@@ -1,0 +1,31 @@
+-- check/bad (core): a `foreign type` has no body to derive an ordering
+-- over, so it answers `<` only through §3.2's table or through a `pub
+-- compare` of its own module (A.50) — and a type that WRAPS one inherits
+-- exactly that (A.54).
+--
+-- `Wraps` was accepted and derived a `compare` whose one part was `err`:
+-- `equatable` is the only transitive gate the checker had, and it says
+-- nothing about ordering. `compare` now has a `comparable` twin settled by
+-- the same fixpoint.
+--
+-- `Hidden` is the control, and the second half of A.55: `Key` IS equatable,
+-- so `==` on a `Hidden` resolves — but through `Basics.eq`, the one
+-- structural walk, and NOT by minting a derived row for a foreign type S5
+-- has no body to emit.
+pub foreign type Handle
+
+
+pub equatable foreign type Key
+
+
+pub type Wraps
+    = Wraps Handle
+
+
+pub opaque type Hidden
+    = Hidden Key
+
+
+pub before : Wraps, Wraps -> Bool
+before a b =
+    a < b

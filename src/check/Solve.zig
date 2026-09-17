@@ -179,6 +179,33 @@ pub const Solver = struct {
     /// n(n+1)/2 constraints. That accumulation IS what plan §7's M2
     /// measures, so the bookkeeping over it has to be free.
     promoted: std.ArrayList(Var) = .empty,
+    /// Constraint indices that have been ANSWERED — a target emitted for
+    /// their sites, or a message written about why there is none (A.57).
+    ///
+    /// One constraint can be answered twice over. The instantiation that
+    /// created it registers an obligation; Rule U3 registers another when
+    /// its variable later meets a structure; and Rule U2 answers it inside
+    /// unification, before any obligation is drained, when the variable
+    /// turns out to be the enclosing declaration's own rigid. Every one of
+    /// those routes is needed — none of them fires in every case — so the
+    /// SECOND answer is the one that must be a no-op, or a failing
+    /// constraint reports its message twice and a succeeding one emits the
+    /// same evidence argument twice (`EvidenceParameters`: `inner($m$0,
+    /// $m$0, x, factor)`).
+    ///
+    /// Only a settled answer is recorded. Folding a constraint back onto a
+    /// flex variable (§6.2) settles nothing, and a later obligation for it
+    /// is what answers it.
+    ///
+    /// Keyed on the constraint's index in the store's table, which is
+    /// stable for as long as the entry is — and a speculative probe can
+    /// retract both the entry and the answer, so `resolved_journal` records
+    /// the order they were added in and `tryShape` unwinds it.
+    resolved_methods: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// `resolved_methods`' keys in insertion order, so a retracted probe
+    /// takes back exactly what it decided and nothing else (A.35's
+    /// journal-by-length, applied to one more table).
+    resolved_journal: std.ArrayList(u32) = .empty,
     depth: u32 = 0,
     /// Set by a sub-unification that knows more than "they differ"; read
     /// and cleared by the `unify` that owns the region.
@@ -236,6 +263,8 @@ pub const Solver = struct {
         s.obligations.deinit(s.gpa);
         s.touched.deinit(s.gpa);
         s.promoted.deinit(s.gpa);
+        s.resolved_methods.deinit(s.gpa);
+        s.resolved_journal.deinit(s.gpa);
     }
 
     fn store(s: *const Solver) *TypeStore {
@@ -305,6 +334,24 @@ pub const Solver = struct {
             },
             .try_ => try s.tryShape(node),
             .method => try s.method(node),
+        }
+    }
+
+    /// Record that constraint `at` has been answered (A.57).
+    fn markResolved(s: *Solver, at: u32) Error!void {
+        const gop = try s.resolved_methods.getOrPut(s.gpa, at);
+        if (gop.found_existing) return;
+        errdefer _ = s.resolved_methods.remove(at);
+        try s.resolved_journal.append(s.gpa, at);
+    }
+
+    /// Unwind `resolved_methods` to the length `mark`, for a probe whose
+    /// answers have been retracted along with the constraints they were
+    /// about.
+    fn forgetResolvedSince(s: *Solver, mark: usize) void {
+        while (s.resolved_journal.items.len > mark) {
+            const at = s.resolved_journal.pop().?;
+            _ = s.resolved_methods.remove(at);
         }
     }
 
@@ -1126,9 +1173,61 @@ pub const Solver = struct {
         const scheme_index = iface.values[index].scheme;
         if (scheme_index == .none) return null;
         const mark = s.store().count();
+        const from: u32 = @intCast(s.store().constraints.items.len);
         const v = try Schemes.instantiate(iface, s.store(), @intFromEnum(scheme_index), s.rank, s.env.scratch, site);
         try s.adoptSince(mark);
+        // **An imported scheme's constraints need obligations exactly as a
+        // local one's do** (A.57). `Schemes.instantiate` writes their
+        // dispatch sites and stops there; `tagInstantiated` then sees
+        // indices BELOW its own mark — the constraints were created before
+        // it was called — and registers nothing. So `Gen.before 1 2`, with
+        // `before : a, a -> Bool where a.compare : …` in another module,
+        // got no evidence site at all: the `number` flex never meets a
+        // structure, Rule U3 never fires, and the emitted call was one
+        // argument short of the function it called. Float, `String` and an
+        // annotated parameter all did get theirs, which is how long it hid.
+        if (site != null) try s.registerInstantiated(v, from);
         return v;
+    }
+
+    /// One obligation per constraint an instantiation created, in the
+    /// canonical order of §7.2 so the drain is the same on every run
+    /// (CLAUDE.md rule 5). `from` is the constraint table's length before
+    /// the instantiation: anything below it belongs to something else.
+    fn registerInstantiated(s: *Solver, copy: Var, from: u32) Error!void {
+        const st = s.store();
+        var order: std.ArrayList(Var) = .empty;
+        defer order.deinit(s.env.scratch);
+        try Schemes.quantifierOrder(st, s.env.interner, copy, &order, s.env.scratch);
+        for (order.items) |root| {
+            const set = st.flagsOf(root).constraints;
+            const n = st.constraintCount(set);
+            if (n == 0) continue;
+            const base = st.constraint_sets.items[set.unwrap().?.int()].start;
+            for (0..n) |j| {
+                const at = base + @as(u32, @intCast(j));
+                if (at < from) continue;
+                try s.registerMethod(root, at);
+            }
+        }
+    }
+
+    /// Register the obligation that answers constraint `at` on `root`. Its
+    /// `origin` is the instruction the instantiation tagged the constraint
+    /// with — the call the author wrote (§6.2, A.37) — and `s.region` only
+    /// when there is none.
+    fn registerMethod(s: *Solver, root: Var, at: u32) Error!void {
+        const st = s.store();
+        const c = st.constraints.items[at];
+        const sites = st.constraintSites(c);
+        try s.register(.{
+            .kind = .method,
+            .v = root,
+            .region = c.region,
+            .origin = if (sites.len != 0) sites[0].inst else s.region,
+            .index = at,
+        });
+        s.counters.constraints_deferred += 1;
     }
 
     /// Elm's `makeCopy`: copy a generalised type, memoising through the
@@ -1276,6 +1375,7 @@ pub const Solver = struct {
             // has already discarded.
             const pool_len = (try s.pool(s.rank)).items.len;
             const obligation_len = (try s.obligationsAt(s.rank)).items.len;
+            const resolved_len = s.resolved_journal.items.len;
             // The dispatch builder and the diagnostics are the other two
             // things a retracted probe must not leave behind (A.35, B3):
             // §6.2 registers obligations from INSIDE `unify`, so
@@ -1295,6 +1395,10 @@ pub const Solver = struct {
             const exact = s.store().rollback(snapshot);
             (try s.pool(s.rank)).shrinkRetainingCapacity(pool_len);
             (try s.obligationsAt(s.rank)).shrinkRetainingCapacity(obligation_len);
+            // A retracted probe's constraints are gone from the store's
+            // table and their indices will be handed to other constraints,
+            // so what this run decided about them has to go too (A.57).
+            s.forgetResolvedSince(resolved_len);
             s.env.dispatch.shrink(dispatch_len);
             s.reporter.rollbackTo(report_mark);
             // An inexact rollback (the journal could not allocate) leaves
@@ -1475,18 +1579,46 @@ pub const Solver = struct {
                 // message that would help.
                 .ok, .unknown => {},
                 .function => try s.reporter.notEquatable(o.region, o.v, .function),
-                .opaque_type => try s.reporter.notEquatable(o.region, o.v, .opaque_type),
+                // `==` folds the two into one answer, as it always has:
+                // §3.4's `equatable` marker is the whole story it tells and
+                // `contains_function` is only reachable from the `compare`
+                // gate (`walkComparable`).
+                .opaque_type, .contains_function => try s.reporter.notEquatable(o.region, o.v, .opaque_type),
             },
         }
     }
 
-    const EquatableResult = enum { ok, function, opaque_type, unknown };
+    const EquatableResult = enum {
+        ok,
+        /// The receiver IS a function.
+        function,
+        /// A named type the gate refused, with no more to say.
+        opaque_type,
+        /// A named type the gate refused BECAUSE a function is reachable
+        /// inside it — one level down or ten (A.58). §10.3 has a sentence
+        /// of its own for this, and it is the one that helps.
+        contains_function,
+        unknown,
+    };
 
     /// Walk a concrete type ONCE, with a mark as the cycle guard: no
     /// function anywhere, and every named type declared equatable
     /// (checker.md §6.4, Appendix B). The walk happens here, at discharge,
     /// and never inside unification — which is the whole point of §3.1.
     fn walkEquatable(s: *Solver, root_var: Var) EquatableResult {
+        return walkDerivable(s, root_var, .eq);
+    }
+
+    /// The same walk asking whether `<` can be answered at every named type
+    /// it reaches (A.54). `compare` has no `equatable` marker to lean on, so
+    /// this is the only gate it has — and it has to be the same one the
+    /// eager pass of A.23 excludes a type by, or a use would name a function
+    /// nobody emitted.
+    fn walkComparable(s: *Solver, root_var: Var) EquatableResult {
+        return walkDerivable(s, root_var, .compare);
+    }
+
+    fn walkDerivable(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind) EquatableResult {
         const st = s.store();
         const mark = st.nextMark();
         var stack: [256]Var = undefined;
@@ -1521,7 +1653,15 @@ pub const Solver = struct {
                     .unit, .empty_record => {},
                     .func => return .function,
                     .app => |a| {
-                        if (!s.env.types.isEquatable(a.type)) return .opaque_type;
+                        const ok = switch (kind) {
+                            .eq => s.env.types.isEquatable(a.type),
+                            .compare => s.env.types.isComparable(a.type),
+                        };
+                        // Which of the two gates said no is not a question
+                        // the gate can answer — both fold several causes
+                        // into one bit — so the ONE cause §10.3 has a
+                        // better sentence for is kept beside them (A.58).
+                        if (!ok) return if (s.env.types.hasFunction(a.type)) .contains_function else .opaque_type;
                         for (st.vars(a.args)) |arg| {
                             if (!push(&stack, &len, arg)) return .unknown;
                         }
@@ -1849,6 +1989,10 @@ pub const Solver = struct {
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const c = st.constraintAt(set, i);
+            // Every arm below ANSWERS this constraint, rightly or wrongly,
+            // and the obligation its instantiation registered must not
+            // answer it a second time (A.57).
+            try s.markResolved(st.constraint_sets.items[set.unwrap().?.int()].start + i);
             if (st.findConstraint(flags.constraints, c.name)) |rc| {
                 if (!try s.unifyQuiet(rc.fn_var, c.fn_var)) {
                     try s.reporter.methodConstraintMismatch(c.region, rc.region, c.name, c.fn_var, rc.fn_var);
@@ -1879,7 +2023,6 @@ pub const Solver = struct {
         const n = st.constraintCount(set);
         var i: u32 = 0;
         while (i < n) : (i += 1) {
-            const c = st.constraintAt(set, i);
             const index = st.constraint_sets.items[set.unwrap().?.int()].start + i;
             // **§6.2, A.37**: `origin` is the instruction in THIS module
             // whose instantiation created the obligation — the call the
@@ -1888,21 +2031,17 @@ pub const Solver = struct {
             // instantiated scheme already knows it: its dispatch site is
             // that very instruction. `s.region` is the fallback for a
             // constraint raised here, where the two coincide.
-            const sites = st.constraintSites(c);
-            try s.register(.{
-                .kind = .method,
-                .v = concrete,
-                .region = c.region,
-                .origin = if (sites.len != 0) sites[0].inst else s.region,
-                .index = index,
-            });
-            s.counters.constraints_deferred += 1;
+            try s.registerMethod(concrete, index);
         }
     }
 
     fn dischargeMethod(s: *Solver, o: Obligation) Error!void {
         const st = s.store();
         if (o.index >= st.constraints.items.len) return;
+        // **Answered once** (A.57): see `resolved_methods`. Emitting the
+        // site twice is an argument passed twice and reporting the failure
+        // twice is two copies of one message.
+        if (s.resolved_methods.contains(o.index)) return;
         const c = st.constraints.items[o.index];
         const root, const content = st.resolved(o.v);
         switch (content) {
@@ -1918,6 +2057,7 @@ pub const Solver = struct {
                 // discharge. `isEven n = n < 2` would otherwise infer
                 // `number -> Bool where number.compare : …`.
                 if (s.builtinRigidTarget(flags, c)) |target| {
+                    try s.markResolved(o.index);
                     try s.emitSites(c, target);
                     try s.detachConstraint(root, c.name);
                     return;
@@ -1925,6 +2065,7 @@ pub const Solver = struct {
                 try s.attachConstraint(root, c, o.origin);
             },
             else => {
+                try s.markResolved(o.index);
                 const outer = s.region;
                 defer s.region = outer;
                 s.region = o.origin;
@@ -2024,28 +2165,6 @@ pub const Solver = struct {
         }
     }
 
-    /// Whether the EAGER pass (A.23) derived `compare` for the nominal type
-    /// under `root` — the one authority on whether a type of this module
-    /// derives, because it is what decides which functions get emitted.
-    ///
-    /// A type of ANOTHER module is refused: its table is not here, and the
-    /// only fact this module has is that `walkEquatable` already said the
-    /// payload is not equatable, which for an ADT means something inside it
-    /// is a function or is itself not equatable. Conservative, and the same
-    /// answer `eq` gives.
-    fn nominalDerives(s: *Solver, root: Var) bool {
-        const c = s.store().resolvedContent(root);
-        const a = switch (c) {
-            .structure => |flat| switch (flat) {
-                .app => |app| app,
-                else => return false,
-            },
-            else => return false,
-        };
-        if (s.env.types.entry(a.type).module != s.env.module) return false;
-        return s.env.dispatch.findDerived(.compare, .{ .nominal = a.type }) != null;
-    }
-
     /// The bridge between the two ad-hoc mechanisms `fast-compiler.md` §3.1
     /// keeps and the method constraints of this branch.
     ///
@@ -2080,9 +2199,28 @@ pub const Solver = struct {
         return null;
     }
 
+    /// Whether this constraint may DERIVE (§3.3 step 2).
+    ///
+    /// The test is on the NAME plus the surface the constraint came from,
+    /// and §1.3 rule 2 excludes exactly one of the four: a hand-written
+    /// `x.eq y` is `unknown_method` and never a silent derivation. An
+    /// operator (`well_known`), a `where` clause (`where_clause`) and a
+    /// return-type dispatch (`type_dispatch`) are all declarative — the
+    /// author asked for the method by the name the compiler owns — and all
+    /// three derive (A.56).
+    ///
+    /// Testing `origin == .well_known` alone, as this did, meant that a
+    /// constraint instantiated from a `where` clause never derived at a
+    /// user type: `eqGen Red Green` under
+    /// `eqGen : a, a -> Bool where a.eq : a, a -> Bool` was
+    /// `unknown_method`, and §5's `Dict`/`Set`/`List.sort` rewrite — every
+    /// one of which reaches its method through a `where` clause — could not
+    /// have compiled at all.
     fn isWellKnown(s: *const Solver, c: TypeStore.MethodConstraint) bool {
         _ = s;
-        return c.origin == .well_known;
+        if (c.origin == .dot_call) return false;
+        return c.name == InternPool.WellKnown.eq.symbol() or
+            c.name == InternPool.WellKnown.compare.symbol();
     }
 
     /// Whether the shape under `root` can be derived for, reporting if not.
@@ -2093,7 +2231,11 @@ pub const Solver = struct {
     /// had and `compare` gets the one §6.3's `func` row gives it.
     fn derivable(s: *Solver, c: TypeStore.MethodConstraint, root: Var, origin: Bir.Inst.Index) Error!bool {
         const is_eq = c.name == InternPool.WellKnown.eq.symbol();
-        switch (walkEquatable(s, root)) {
+        // `compare` asks the SAME walk with the other gate (A.54), so a
+        // record of a tuple of a `Wraps` is refused for the same reason a
+        // bare `Wraps` is — and refused HERE, which is what keeps the use
+        // and the eager pass saying the same thing.
+        switch (if (is_eq) walkEquatable(s, root) else walkComparable(s, root)) {
             .ok => return true,
             // A type too wide for the walk's worklist. `dischargeEquatable`
             // ACCEPTS it — refusing a program for being large helps nobody
@@ -2108,17 +2250,26 @@ pub const Solver = struct {
                     try s.reporter.noMethodsOnShape(origin, c.name, root, .contains_function);
                 }
             },
-            // A named type that is not `equatable` — which for an ADT means
-            // something inside it is not. `eq` refuses it, as it always
-            // has. `compare` has no marker of its own, so it asks the
-            // narrower question directly, and it MUST be the same question
-            // the eager pass of A.23 excludes a type by: a `compare` that
-            // derived here but was excluded there would name a function
-            // nobody emitted.
+            // A named type that holds a function, one level down or ten
+            // (A.58). `eq` keeps `not_equatable`, which §3.4 says is the
+            // better message; `compare` gets §10.3's sentence about the
+            // function, which is the one that says what to do about it.
+            .contains_function => {
+                if (is_eq) {
+                    try s.reporter.notEquatable(origin, root, .opaque_type);
+                } else {
+                    try s.reporter.noMethodsOnShape(origin, c.name, root, .contains_function);
+                }
+            },
+            // A named type the gate refused for any OTHER reason. For `eq`
+            // that is the `equatable` answer it always was; for `compare`
+            // it is A.54's, and its message names the causes that are left
+            // — a payload with no ordering, a `foreign type` whose module
+            // declares no `pub compare` — because the fixpoint does not
+            // record which.
             .opaque_type => {
                 if (!is_eq) {
-                    if (s.nominalDerives(root)) return true;
-                    try s.reporter.noMethodsOnShape(origin, c.name, root, .contains_function);
+                    try s.reporter.noMethodsOnShape(origin, c.name, root, .not_orderable);
                 } else {
                     try s.reporter.notEquatable(origin, root, .opaque_type);
                 }
@@ -2331,6 +2482,16 @@ pub const Solver = struct {
 
         // 3. Derivation, for a well-known name on a shape that supports it
         //    (§3.3 step 2).
+        if (s.isWellKnown(c) and !s.derivesForNominal(c, a.type) and entry.kind != .foreign) {
+            // A declared type that cannot answer the method: the walk knows
+            // WHY — a function somewhere inside, or a payload that cannot
+            // answer it either — and says so. A `foreign type` falls
+            // through to `unknown_method` instead, which is A.50's message
+            // and the one that names the `pub compare` its module is
+            // missing.
+            _ = try s.derivable(c, root, origin);
+            return;
+        }
         if (s.isWellKnown(c) and s.derivesForNominal(c, a.type)) {
             if (!try s.derivable(c, root, origin)) return;
             try s.unifyMethodType(c, root, &.{ root, root }, s.wellKnownResult(c), origin);
@@ -2483,6 +2644,13 @@ pub const Solver = struct {
                 for (s.type_params, 0..) |marker, i| {
                     if (st.find(marker) == root) return .{ .evidence = @intCast(i) };
                 }
+                // The A.53 bridge first (A.59): a `number` position is
+                // `Int` or `Float` and §3.2 gives both the same answer, so
+                // a tuple of `( 1, "a" )` derives with `num_compare` at
+                // position 0 and not with `err`. Without it every literal
+                // position of a derived shape was a hole.
+                const flags = st.flagsOf(root);
+                if (s.builtinRigidTarget(flags, c)) |t| return t;
                 const inner = try s.freshMethodConstraint(c, root);
                 try s.attachConstraint(root, inner, origin);
                 return .err;
@@ -2560,6 +2728,29 @@ pub const Solver = struct {
     ) Error!Dispatch.Target {
         const kind = s.derivedKind(c);
         const entry = s.env.types.entry(a.type);
+        // **A NULLARY `foreign type` never gets a derived row**, here or in
+        // the eager pass (A.55): there is no body to write and nothing
+        // underneath it, so a row would name a function S5 has nothing to
+        // emit for. What answers `eq` on an `equatable` one is the
+        // structural walk `core/Basics.js` already has, which is what the
+        // `equatable`-rigid bridge uses and what the S4 shim emits for
+        // every `==` (A.53).
+        //
+        // A PARAMETRIC one keeps its row (A.60). `List a` is `equatable`
+        // when `a` is, and `a` may be a type with a user `pub eq`: the
+        // structural walk would compare its payloads and ignore the method
+        // the author wrote, so `[ Id 1 2 ] == [ Id 1 99 ]` answered `False`
+        // where `Id`'s own `eq` says `True`. The row carries one part per
+        // argument, which is the only place that method is named, and the
+        // backend decides from the parts whether the structural walk will
+        // do — the decision is its, and it refuses what it cannot honour
+        // (A.51).
+        if (entry.kind == .foreign and a.args.len == 0) {
+            if (c.name == InternPool.WellKnown.eq.symbol()) {
+                if (s.structuralEqTarget()) |t| return t;
+            }
+            return .err;
+        }
         const args = try s.env.scratch.dupe(Var, s.store().vars(a.args));
         defer s.env.scratch.free(args);
         const range = try s.env.dispatch.reserveParts(args.len);
@@ -2576,6 +2767,15 @@ pub const Solver = struct {
             .kind = kind,
             .parts = range,
         } };
+    }
+
+    /// `core/Basics.beni`'s `eq`, the one structural walk (§3.4, A.53).
+    fn structuralEqTarget(s: *const Solver) ?Dispatch.Target {
+        const module = s.env.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return null;
+        if (module.int() >= s.env.interfaces.len) return null;
+        const iface = &s.env.interfaces[module.int()];
+        const value = iface.findValue(s.env.interner, InternPool.WellKnown.eq.symbol()) orelse return null;
+        return .{ .ext = .{ .module = module, .value = value } };
     }
 
     fn recordTarget(
@@ -2632,8 +2832,21 @@ pub const Solver = struct {
     /// §3.4 says means exactly "has an `eq`".
     fn derivesForNominal(s: *const Solver, c: TypeStore.MethodConstraint, id: Types.TypeId) bool {
         const entry = s.env.types.entry(id);
-        if (entry.kind != .foreign) return true;
-        return c.name == InternPool.WellKnown.eq.symbol() and s.env.types.isEquatable(id);
+        if (c.name == InternPool.WellKnown.eq.symbol()) {
+            // A `foreign type` has no constructors to walk, so `eq` reaches
+            // it only through the `equatable` marker, which §3.4 says means
+            // exactly "has an `eq`" — the bridge core leans on until §5.2
+            // (A.50). Anything else is answered by the transitive walk in
+            // `derivable`.
+            if (entry.kind == .foreign) return s.env.types.isEquatable(id);
+            return true;
+        }
+        // `compare` has no marker, so it has a gate of its own (A.54): a
+        // type derives it only when every named type in its body can answer
+        // `<` too. Without it, `type Wraps = Wraps Handle` over a plain
+        // `foreign type Handle` derived a `compare` whose one part was
+        // `err`, and `a < b` on it compiled.
+        return s.env.types.isComparable(id);
     }
 
     /// A constraint of the same name and origin as `c`, at a fresh method
@@ -2723,6 +2936,18 @@ pub const Solver = struct {
                 }
                 st.constraints.items[at].sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = index }});
                 index += 1;
+                // **Every constraint an instantiation creates gets an
+                // obligation**, and not only the ones a later unification
+                // happens to carry into `deferConstraints` (Rule U3, A.57).
+                //
+                // `gen 1 2` under `gen : a, a -> Bool where a.compare` is
+                // the case that needs it: `1` is a `number` flex that never
+                // meets a structure, so U3 never fires, the A.53 bridge in
+                // `dischargeMethod`'s `.flex` arm never runs, and the call
+                // got NO evidence site at all while `gen 1.5 2.5` and
+                // `gen "a" "b"` got one each. When U3 does fire as well,
+                // `resolved_methods` makes the second discharge a no-op.
+                try s.registerMethod(root, at);
             }
         }
     }
@@ -2807,9 +3032,6 @@ pub const Solver = struct {
             for (written) |arg| try args.append(scratch, try b.read(arg));
         }
         if (b.too_deep) return; // already reported by `reportTooDeep`
-        for (args.items) |arg| {
-            if (s.containsFunction(arg)) return;
-        }
 
         const outer = s.type_params;
         defer s.type_params = outer;
@@ -2821,6 +3043,20 @@ pub const Solver = struct {
             // then there is nothing to derive.
             if (s.ownDeclNamed(name) != null) continue;
             const kind: Dispatch.Derived.Kind = if (well_known == .eq) .eq else .compare;
+            // **The exclusions of §6.3.1 step 4, and they have to be the
+            // SAME test a use makes** (A.23, A.54): the two transitive
+            // gates. `equatable` is false as soon as a function is
+            // reachable — through another nominal type as well, which a
+            // walk over this body's `app` ARGUMENTS alone would have missed
+            // — and `comparable` is false for anything whose body reaches a
+            // type that cannot answer `<`. A row written here that a use
+            // refuses is a function nobody calls; a row a use names that is
+            // not written here is a call to nothing.
+            const gated = switch (kind) {
+                .eq => s.env.types.isEquatable(id),
+                .compare => s.env.types.isComparable(id),
+            };
+            if (!gated) continue;
             const c: TypeStore.MethodConstraint = .{
                 .name = name,
                 .fn_var = try s.store().freshErr(TypeStore.generalized),
@@ -2837,57 +3073,6 @@ pub const Solver = struct {
             }
             s.env.dispatch.setDerivedParts(index, range);
         }
-    }
-
-    /// Whether a function type occurs anywhere inside `root_var`.
-    ///
-    /// Not `walkEquatable`: that stops at the first type not marked
-    /// `equatable`, so a function under an opaque type would hide from it,
-    /// and the A.23 exclusion has to see every payload.
-    fn containsFunction(s: *Solver, root_var: Var) bool {
-        const st = s.store();
-        const mark = st.nextMark();
-        var stack: [256]Var = undefined;
-        var len: usize = 1;
-        stack[0] = root_var;
-        var budget: usize = 1 << 16;
-        while (len > 0) {
-            if (budget == 0) return true; // too wide to be sure: do not derive
-            budget -= 1;
-            len -= 1;
-            const v = stack[len];
-            const root, const c = st.resolved(v);
-            if (st.mark(root) == mark) continue;
-            st.setMark(root, mark);
-            const push = struct {
-                fn f(buf: *[256]Var, l: *usize, x: Var) bool {
-                    if (l.* >= buf.len) return false;
-                    buf[l.*] = x;
-                    l.* += 1;
-                    return true;
-                }
-            }.f;
-            switch (c) {
-                .err, .flex, .rigid, .alias => {},
-                .structure => |flat| switch (flat) {
-                    .unit, .empty_record => {},
-                    .func => return true,
-                    .app => |a| for (st.vars(a.args)) |arg| {
-                        if (!push(&stack, &len, arg)) return true;
-                    },
-                    .tuple => |t| for (st.vars(t)) |el| {
-                        if (!push(&stack, &len, el)) return true;
-                    },
-                    .record => |r| {
-                        for (st.fields(r.fields)) |f| {
-                            if (!push(&stack, &len, f.value)) return true;
-                        }
-                        if (!push(&stack, &len, r.ext)) return true;
-                    },
-                },
-            }
-        }
-        return false;
     }
 
     /// Seed the outermost pool with what the generator allocated. The

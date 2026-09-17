@@ -1,0 +1,28 @@
+-- check/bad (core): a `pub compare` makes the `foreign type` of its module
+-- orderable only when it is THAT type's compare (A.54).
+--
+-- A module's `pub` values are one namespace (§11), so "does this module
+-- declare a `compare`?" is not the same question as "does this foreign type
+-- have one". `Tag`'s `compare` is here, `Handle`'s is not, and the gate read
+-- the module: the tuple below derived an ordering whose first part was a
+-- call to `compare` with a `Handle` in hand — no diagnostic, and an
+-- unsound call in the dispatch table (`part 0 top compare`).
+--
+-- The receiver is a TUPLE and not a `Handle` so that the module rule of
+-- §1.2, which answers `Handle`'s own `<` in step 2 of §6.3.1, cannot answer
+-- this one: derivation over the shape is what consults the gate.
+pub foreign type Handle
+
+
+pub type Tag
+    = Tag Int
+
+
+pub compare : Tag, Tag -> Order
+compare a b =
+    LT
+
+
+pub before : ( Handle, Int ), ( Handle, Int ) -> Bool
+before a b =
+    a < b

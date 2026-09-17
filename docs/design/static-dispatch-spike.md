@@ -3006,3 +3006,103 @@ methods, while their rewrite is §5 and slice S6. The constraint is DETACHED whe
 it, so `isEven n = n < 1` still publishes `number -> Bool` and not
 `number -> Bool where number.compare : …`. *Alternative:* rewrite those five declarations in S3,
 which is the `core/` signature change S6 owns.
+
+**A.54 — `compare` has a transitive gate of its own, and a `foreign type` passes it only on a
+`pub compare` of its own whose FIRST PARAMETER is that type** (§3.3, §6.3, A.50) [S3]. `Types.Entry`
+grows a `comparable` bit beside `equatable`, settled by the same fixpoint over the same edges: an
+`adt` or `alias` is comparable when every named type its body reaches is, and a `foreign type` is
+comparable when §3.2's table answers for it or its module declares that `pub compare`. The gate is
+asked in three places that must agree — the eager pass of A.23, `derivesForNominal`, and the walk
+`derivable` makes at a use. *Why:* `equatable` says nothing about ordering, so without it
+`type Wraps = Wraps Handle` over a plain `foreign type Handle` derived a `compare` whose one part
+was `err` and `a < b` on it compiled clean. **`pub`** because this is one bit on a session-wide
+table that every module reads, and a private `compare` is invisible to all but one of them; **the
+first parameter** because a module's `pub` values are one namespace (§11), so
+`pub compare : Tag, Tag -> Order` beside an unrelated `pub foreign type Handle` is `Tag`'s method,
+and taking it for `Handle`'s emitted a call to it with a `Handle` in hand — no diagnostic, an
+unsound `part 0 top compare`. *Alternative:* key the gate on the use site instead, so a private
+`compare` still orders its own module's types; rejected because the property is one bit per type,
+read from everywhere, and a per-module answer is a different data structure. *Known behaviour
+change:* a same-module `<` that reached a private `compare` on a `foreign type` is now refused, and
+`type W = W Fn` whose `Fn` holds a function but whose module supplies a `pub compare` is refused
+too (HEAD accepted it with `part 0 ext Fns compare`) — consistent with `equatable`, and a change.
+Fixtures: `check/bad/core/CompareOnWrappedForeign`, `check/bad/core/CompareOnForeignWithUnrelatedCompare`,
+`check/bad/PrivateForeignCompare/`, and the positive `dispatch/core/ForeignPubCompare`.
+
+**A.55 — a NULLARY `foreign type` never gets a derived row** (§6.3, §8.5, A.50, A.60) [S3]. Neither
+the eager pass nor a use mints `derived <i> eq|compare <Foreign>` for one: there are no constructors
+to walk and nothing underneath it, so the row would name a function S5 has nothing to emit for. A
+parametric one is A.60 and keeps its row. What answers `eq` on an `equatable` one is
+`core/Basics.beni`'s `eq`, the one structural walk, which is what the `equatable`-rigid bridge
+already uses and what the S4 shim emits for every `==` (A.53). *Why:* a table that names a function
+nobody writes is worse than one that says `err`, and §3.4's marker is a promise about a
+representation the compiler cannot see. *Alternative:* emit a stub that throws, which trades a
+build-time hole for a runtime one. Fixture: `dispatch/core/NoForeignDerivedRow`.
+
+**A.56 — a constraint derives by its NAME, not by the surface it came from** (§3.3 step 2, §1.3
+rule 2) [S3]. `isWellKnown` is `name ∈ { eq, compare }` and `origin != .dot_call`: an operator, a
+`where` clause and a return-type dispatch are all declarative — the author asked for the method by
+the name the compiler owns — and all three derive, while a hand-written `x.eq y` stays
+`unknown_method`, which is the one exclusion §1.3 rule 2 makes. *Why:* testing `origin ==
+.well_known` alone meant a constraint instantiated from a `where` clause never derived at a user
+type, so `eqGen Red Green` under `eqGen : a, a -> Bool where a.eq : …` was `unknown_method` and
+§5's `Dict`/`Set`/`List.sort` rewrite — every one of which reaches its method through a `where`
+clause — could not have compiled at all. *Alternative:* let a `dot_call` derive too, which is §1.3
+rule 2 reversed and makes `x.eq y` silently mean something the module never declared. Fixture:
+`dispatch/WhereClauseDerives`.
+
+**A.57 — every instantiation's constraints get an obligation, and a constraint is answered exactly
+once** (§6.2, §6.3) [S3]. Both halves are one decision. **Every instantiation**: a local copy
+(`tagInstantiated`) and an imported scheme (`Schemes.instantiate`, through `importedValue`) each
+register one obligation per constraint they create, instead of waiting for Rule U3 to carry one in
+when the variable meets a structure. **Exactly once**: the solver records which constraints have
+been answered, and the second answer — whichever route brings it — is a no-op. *Why:* a `number`
+literal is a flex that never meets a structure, so U3 never fires for it and `Gen.before 1 2` got
+NO evidence site at all while `1.5` and `"a"` got one each; the emitted call was one argument short
+and Node threw `$m$0 is not a function` at load. And once every route registers, two of them can
+answer the same constraint: a failing one printed its diagnostic twice (`Reporter.emit` has no
+dedup) and a succeeding one passed the same evidence argument twice
+(`inner($m$0, $m$0, x, factor)`). *Alternative:* collapse duplicate rows in `Dispatch.finish`, which
+was tried and removed — it hides a disagreement as readily as a repetition, and the rows it
+collapsed were a symptom. Fixtures: `dispatch/LiteralEvidence`,
+`dispatch/LiteralEvidenceAcrossModules/`, `check/bad/WhereCallOnUnorderableType`.
+
+**A.58 — `has_function` is a third bit, because §10.3 has two sentences and the gates have one
+answer** (§10.3, A.23) [S3]. `Types.Entry` carries "a function is reachable inside this type",
+settled by the same fixpoint the other two use and spreading the other way: false by default, true
+along the edges from any type whose own body holds a function. `equatable` and `comparable` each
+fold several causes into one bit and cannot say which fired; this one can, so §10.3 keeps its
+sentence about the function ("there is a function inside it, and functions have no ordering") for
+the types that have one and says "something it holds has no ordering of its own" only for the rest.
+*Why:* the exclusion of A.23 is transitive — `type Indirect = Indirect HasFn` holds a function as
+surely as `HasFn` does, through another nominal type that a walk over one body's `app` arguments
+would miss — and until the bit existed the `contains_function` arm was unreachable for any `app`
+receiver, so a type that directly held a function got the vaguer sentence and a type wrapping a
+`foreign type` got a hint about a `pub compare` that had nothing to do with it. *Alternative:* have
+the walk report which type failed and re-derive the reason at the message, which asks the question
+again at every use instead of once per session. Fixtures: `check/bad/CompareOnTypeHoldingFunction`,
+`check/bad/IndirectFunctionPayload`, `check/bad/IndirectFunctionAcrossModules/`.
+
+**A.59 — the A.53 bridge reaches inside a derived shape** (§6.3, A.53) [S3]. `targetFor`'s `.flex`
+arm asks `builtinRigidTarget` before it falls back to a fresh constraint, so a `number` position of
+a derived tuple or record answers `num_compare` and a `equatable`-marked one answers `Basics.eq` —
+the same two answers §3.2 and §3.4 give at the top level. *Why:* without it every literal position
+of a derived shape was a hole: `( 1, 2.5 ) == ( 3, 4 )` derived a structural `eq` whose part 0 was
+`err`, which is a table naming nothing at the exact position the author wrote a number.
+*Alternative:* default an undecided `number` position to `Int`, which is a decision the checker has
+no business making inside a shape it derived. Fixture: `dispatch/LiteralEvidence` (`site 54 0
+derived 0`, parts `num_compare`).
+
+**A.60 — a PARAMETRIC `foreign type` keeps its derived row; A.55's bridge is for the nullary ones**
+(§6.3, §8.5, A.51, A.55) [S3]. `List a` gets `ext_derived List.List eq` with one part per argument,
+exactly as it did before A.55; only a `foreign type` with no arguments answers `eq` through
+`Basics.eq` directly. *Why:* the row is the only place an argument's method is NAMED, and an
+argument may be a type with a user `pub eq`. Sending `List Id` to the structural walk compared
+`Id`'s payloads and ignored the method its module declared, so `[ Id 1 2 ] == [ Id 1 99 ]` compiled,
+ran and printed `False` where `Id.eq` — which compares the first field only — says `True`; and it
+did so silently, because the backend consults `structuralEq` for a `derived`/`ext_derived` target
+and never for a bare `ext`. Whether the structural walk will do is a question about the PARTS, so
+the backend asks it, and refuses what it cannot honour (A.51). *Alternative:* have the checker
+inspect the parts and bridge when they are all structural, which moves the backend's decision into
+the checker and duplicates it. Fixture: `dispatch/UserEqInsideParametric` (and `c5` of
+`dispatch/WhereClauseDerives`, which moved back to the row shape `master` had).

@@ -1,0 +1,37 @@
+-- check/bad: one failing constraint, ONE message (A.57).
+--
+-- A constraint an instantiation creates can be answered twice over: the
+-- instantiation registers an obligation for it, Rule U3 registers another
+-- when its variable meets a structure, and Rule U2 answers it inside
+-- unification when the variable is the enclosing declaration's own rigid.
+-- Every route is needed — none fires in every case — so the SECOND answer
+-- has to be a no-op.
+--
+-- It was not. `eqGen`'s `not_equatable` and `cmpGen`'s `no_methods_on_shape`
+-- were each printed TWICE, because `Reporter.emit` has no dedup and the
+-- discharge ran twice; on the paths that SUCCEED the same double answer
+-- emitted one evidence argument twice. The golden's whole job is the count.
+pub type Handler
+    = Handler (Int -> Int)
+
+
+pub eqGen : a, a -> Bool
+    where a.eq : a, a -> Bool
+eqGen x y =
+    x.eq y
+
+
+pub cmpGen : a, a -> Order
+    where a.compare : a, a -> Order
+cmpGen x y =
+    x.compare y
+
+
+pub bad1 : Bool
+bad1 =
+    eqGen (Handler (\n -> n)) (Handler (\n -> n))
+
+
+pub bad2 : Order
+bad2 =
+    cmpGen (Handler (\n -> n)) (Handler (\n -> n))

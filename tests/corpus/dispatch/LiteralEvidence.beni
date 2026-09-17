@@ -1,0 +1,57 @@
+-- dispatch: an evidence argument for a `number` literal (A.57).
+--
+-- `gen 1 2` used to emit NO site at all while `gen 1.5 2.5` and
+-- `gen "a" "b"` each emitted one. A `number` literal's variable is a flex
+-- that never meets a structure — `Int` and `Float` are both still open — so
+-- Rule U3 never fired, no obligation was registered, and the A.53 bridge in
+-- `dischargeMethod`'s `.flex` arm never ran. The call would have been
+-- emitted with one argument too few.
+--
+-- Every constraint an instantiation creates now gets an obligation of its
+-- own, so the bridge is reached whatever the variable meets. The `Float`
+-- and `String` rows are the control: they were always here.
+--
+-- `pairOfLiterals` is A.59, the same bridge one level in: a `number`
+-- position of a DERIVED shape answers `num_compare` where it used to be a
+-- hole (`part 0 err`).
+pub gen : a, a -> Order
+    where a.compare : a, a -> Order
+gen x y =
+    x.compare y
+
+
+pub eqGen : a, a -> Bool
+    where a.eq : a, a -> Bool
+eqGen x y =
+    x.eq y
+
+
+pub ints : Order
+ints =
+    gen 1 2
+
+
+pub floats : Order
+floats =
+    gen 1.5 2.5
+
+
+pub strings : Order
+strings =
+    gen "a" "b"
+
+
+pub sameInts : Bool
+sameInts =
+    eqGen 1 2
+
+
+pub pairOfLiterals : Order
+pairOfLiterals =
+    cmp ( 1, 2.5 ) ( 3, 4.5 )
+
+
+pub cmp : a, a -> Order
+    where a.compare : a, a -> Order
+cmp x y =
+    x.compare y

@@ -1,0 +1,7 @@
+module ForeignPubCompare
+  decl compare evidence=0
+  decl before evidence=0
+  derived 0 compare t2 evidence=2
+  site 19 0 derived 0
+    part 0 top compare
+    part 1 primitive num_compare

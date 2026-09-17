@@ -1,0 +1,13 @@
+-- dispatch (project): the constrained callee, in another module. Its own
+-- table is the control — one evidence parameter each, one site each — and
+-- nothing about it changed.
+pub before : a, a -> Bool
+    where a.compare : a, a -> Order
+before x y =
+    x < y
+
+
+pub same : a, a -> Bool
+    where a.eq : a, a -> Bool
+same x y =
+    x.eq y

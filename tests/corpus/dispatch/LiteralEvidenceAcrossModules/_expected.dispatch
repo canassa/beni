@@ -1,0 +1,16 @@
+module Gen
+  decl before evidence=1
+    evidence 0 quantified=0 var=a method=compare
+  decl same evidence=1
+    evidence 0 quantified=0 var=a method=eq
+  site 12 0 evidence 0
+  site 25 0 evidence 0
+module Main
+  decl ints evidence=0
+  decl sameInts evidence=0
+  decl floats evidence=0
+  decl strings evidence=0
+  site 4 0 primitive num_compare
+  site 9 0 primitive strict_eq
+  site 14 0 primitive num_compare
+  site 19 0 primitive string_compare

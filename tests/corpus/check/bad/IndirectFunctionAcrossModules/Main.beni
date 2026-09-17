@@ -1,0 +1,14 @@
+-- check/bad (project): the cross-module half of A.58. `Indirect` holds an
+-- imported `HasFn`, and before the transitive gate this module's table
+-- carried `ext_derived Holder.HasFn compare` — a call to a function
+-- `Holder` never emits, in a program that compiled clean.
+import Holder exposing (HasFn, wrap)
+
+
+pub type Indirect
+    = Indirect HasFn
+
+
+pub before : Indirect, Indirect -> Bool
+before a b =
+    a < b

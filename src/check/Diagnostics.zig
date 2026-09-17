@@ -853,7 +853,7 @@ pub const Reporter = struct {
     }
 
     /// Which shape a receiver turned out to be, for §10.3's sentence.
-    pub const ShapeKind = enum { record, tuple, unit, function, contains_function, other };
+    pub const ShapeKind = enum { record, tuple, unit, function, contains_function, not_orderable, other };
 
     /// §10.1. `<Type>` has no method called `<m>`.
     pub fn unknownMethod(
@@ -1002,21 +1002,41 @@ pub const Reporter = struct {
             .tuple => "tuple",
             .unit => "`()`",
             .function => "function",
-            .contains_function, .other => "type",
+            .contains_function, .not_orderable, .other => "type",
         };
-        if (shape == .contains_function) {
+        if (shape == .contains_function or shape == .not_orderable) {
             w.print("This type has no `{s}`:\n\n    ", .{method_text}) catch return error.OutOfMemory;
             Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
-            w.writeAll(
-                \\
-                \\
-                \\There is a function inside it, and functions have no ordering — so the
-                \\compiler cannot write one for the type that holds them either.
-                \\
-                \\Hint: order by something you can compare — a name, an id — that sits
-                \\next to the function.
-                \\
-            ) catch return error.OutOfMemory;
+            if (shape == .contains_function) {
+                w.writeAll(
+                    \\
+                    \\
+                    \\There is a function inside it, and functions have no ordering — so the
+                    \\compiler cannot write one for the type that holds them either.
+                    \\
+                    \\Hint: order by something you can compare — a name, an id — that sits
+                    \\next to the function.
+                    \\
+                ) catch return error.OutOfMemory;
+            } else {
+                // §3.3 and A.54: derivation is structural and recursive, so
+                // a type can only be ordered when everything it holds can
+                // be. A `foreign type` holds a representation the compiler
+                // cannot see, so it can be ordered only by a `pub compare`
+                // in its own module (A.50) — and a type wrapping one
+                // inherits that.
+                w.writeAll(
+                    \\
+                    \\
+                    \\Something it holds has no ordering of its own — a function, or a
+                    \\`foreign type` whose module declares no `compare` — and I derive an
+                    \\ordering only over parts that already have one.
+                    \\
+                    \\Hint: a `foreign type` is ordered by a `pub compare` in the module that
+                    \\declares it. Add one there, or pass an ordering function instead.
+                    \\
+                ) catch return error.OutOfMemory;
+            }
             try r.emit(.no_methods_on_shape, region, &out);
             return;
         }

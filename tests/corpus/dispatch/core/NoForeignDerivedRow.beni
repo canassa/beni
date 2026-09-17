@@ -1,0 +1,21 @@
+-- dispatch (core): a `foreign type` never gets a derived row (A.55).
+--
+-- `Key` is `equatable`, so `==` on a `Hidden` resolves — §3.4 says the
+-- marker means exactly "has an `eq`" and it is the bridge core leans on
+-- until §5.2. What answers it is `Basics.eq`, the one structural walk in
+-- `core/Basics.js`, which is also what the `equatable`-rigid bridge uses
+-- and what the S4 shim emits for every `==` (A.53).
+--
+-- What must NOT be here is a `derived eq M.Key` row: a `foreign type` has
+-- no constructors to walk, so that row named a function S5 has nothing to
+-- emit for. The golden's whole job is the row that is absent.
+pub equatable foreign type Key
+
+
+pub opaque type Hidden
+    = Hidden Key
+
+
+pub same : Hidden, Hidden -> Bool
+same a b =
+    a == b

@@ -1,0 +1,36 @@
+module WhereClauseDerives
+  decl eqGen evidence=1
+    evidence 0 quantified=0 var=a method=eq
+  decl cmpGen evidence=1
+    evidence 0 quantified=0 var=a method=compare
+  decl c1 evidence=0
+  decl c2 evidence=0
+  decl c3 evidence=0
+  decl c4 evidence=0
+  decl c5 evidence=0
+  decl c6 evidence=0
+  derived 0 compare WhereClauseDerives.Colour evidence=0
+  derived 1 eq WhereClauseDerives.Colour evidence=0
+  derived 2 compare WhereClauseDerives.Shape evidence=0
+    part 0 primitive num_compare
+    part 1 primitive num_compare
+    part 2 primitive num_compare
+  derived 3 eq WhereClauseDerives.Shape evidence=0
+    part 0 primitive strict_eq
+    part 1 primitive strict_eq
+    part 2 primitive strict_eq
+  derived 4 compare r$x$y evidence=2
+  derived 5 eq t2 evidence=2
+  site 15 0 evidence 0
+  site 28 0 evidence 0
+  site 33 0 primitive strict_eq
+  site 43 0 derived 2
+  site 52 0 derived 5
+    part 0 primitive strict_eq
+    part 1 primitive strict_eq
+  site 61 0 derived 4
+    part 0 primitive num_compare
+    part 1 primitive num_compare
+  site 69 0 ext_derived List.List eq
+    part 0 primitive strict_eq
+  site 73 0 primitive strict_eq

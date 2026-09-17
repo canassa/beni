@@ -1,0 +1,17 @@
+-- check/bad (project): `Wraps` holds a `Handle` whose only `compare` is
+-- private to `Handles` (A.54, A.50).
+--
+-- The gate asked whether the declaring module has a value called `compare`,
+-- `pub` or not, so this module derived an ordering for `Wraps` — and the
+-- part for its `Handle` was `err`, because the module rule cannot reach a
+-- private value from here. A clean compile and a table naming nothing.
+import Handles exposing (Handle)
+
+
+pub type Wraps
+    = Wraps Handle
+
+
+pub before : Wraps, Wraps -> Bool
+before a b =
+    a < b
