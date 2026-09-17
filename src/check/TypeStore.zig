@@ -53,6 +53,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Arena = @import("../Arena.zig");
+const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 
 const TypeStore = @This();
@@ -155,6 +156,70 @@ pub const Flags = struct {
     /// next to `kind` rather than inside it because it is orthogonal: a
     /// `number` is also equatable.
     equatable: bool = false,
+    /// The method constraints this variable carries
+    /// (static-dispatch-spike.md §6.1): an index into `constraint_sets`, or
+    /// `.none`. It rides here, beside `equatable`, because flex and rigid
+    /// share this payload and a constraint is exactly as orthogonal to
+    /// `kind` as `equatable` is — the same place Roc keeps
+    /// `Flex.constraints`.
+    ///
+    /// `Descriptor` does not grow: `Flags` goes from 8 bytes to 12 and the
+    /// largest `Content` payload is already `Alias` at 16.
+    constraints: ConstraintSet.Optional = .none,
+};
+
+/// One method constraint on a type variable (static-dispatch-spike.md
+/// §6.1): "whatever type ends up here has a method `name` at `fn_var`".
+pub const MethodConstraint = struct {
+    /// The method's name.
+    name: Symbol,
+    /// The method's type AT THIS USE, e.g. `a, A, B -> R`.
+    fn_var: Var,
+    /// Where the constraint was written: the `x.m` call, the operator, or
+    /// the `where` clause. NOT where the obligation that carries it was
+    /// created — that is `Solve.Obligation.origin` (§6.2).
+    region: Bir.Inst.Index,
+    origin: Origin,
+    /// The dispatch sites this constraint answers, as a range of
+    /// `constraint_sites` (§7.2). A constraint carries more than one when
+    /// Rule U1 merged two sets that both named the method.
+    sites: Range = .empty,
+
+    pub const Origin = enum(u8) { dot_call, well_known, where_clause, type_dispatch };
+};
+
+/// `(instruction, evidence index)` — which argument slot of which
+/// instruction a constraint's answer belongs in (static-dispatch-spike.md
+/// §7.2).
+pub const ConstraintSite = struct {
+    inst: Bir.Inst.Index,
+    evidence_index: u16,
+};
+
+/// A run of `constraints`, named by its index in `constraint_sets`.
+///
+/// Sets are APPEND-ONLY and never mutated: merging two appends a third and
+/// leaves both originals, so the undo journal rolls speculation back by
+/// truncating two lengths (§6.1 invariant 2).
+pub const ConstraintSet = enum(u32) {
+    _,
+
+    pub fn int(c: ConstraintSet) u32 {
+        return @intFromEnum(c);
+    }
+
+    pub fn toOptional(c: ConstraintSet) Optional {
+        return @enumFromInt(@intFromEnum(c));
+    }
+
+    pub const Optional = enum(u32) {
+        none = std.math.maxInt(u32),
+        _,
+
+        pub fn unwrap(o: Optional) ?ConstraintSet {
+            return if (o == .none) null else @enumFromInt(@intFromEnum(o));
+        }
+    };
 };
 
 pub const Structure = union(enum) {
@@ -224,6 +289,15 @@ descriptors: std.MultiArrayList(Descriptor) = .empty,
 extra: std.ArrayList(u32) = .empty,
 /// Undo entries, newest last. Empty unless a `mark` is outstanding.
 journal: std.ArrayList(Entry) = .empty,
+/// Every method constraint ever created, in creation order
+/// (static-dispatch-spike.md §6.1 invariant 1). A `ConstraintSet` is a run
+/// of this list; nothing is ever removed out of order, so rollback is a
+/// truncation.
+constraints: std.ArrayList(MethodConstraint) = .empty,
+/// One `Range` per set, indexed by `ConstraintSet`.
+constraint_sets: std.ArrayList(Range) = .empty,
+/// The `(inst, evidence_index)` pairs `MethodConstraint.sites` ranges over.
+constraint_sites: std.ArrayList(ConstraintSite) = .empty,
 /// How many `mark`s are outstanding. Journaling is off at zero, which is
 /// the whole of a normal solve.
 depth: u32 = 0,
@@ -241,6 +315,20 @@ pub const Snapshot = struct {
     journal_len: u32,
     vars: u32,
     extra: u32,
+    /// The three append-only constraint tables, truncated by `rollback`
+    /// exactly as `vars` and `extra` are (static-dispatch-spike.md §6.1
+    /// invariant 2, A.35). The truncation is PER SNAPSHOT and not one saved
+    /// length, because this journal nests (`depth`) where Roc's asserts it
+    /// does not.
+    ///
+    /// The four `Dispatch` builders of §7.1 are journaled the same way, but
+    /// by `Solve.tryShape` beside the pool and the obligation list, which is
+    /// where the solver's own per-rank bookkeeping is already rolled back;
+    /// the store does not own them and a pointer from here to the solver
+    /// would be the only one in the file.
+    constraints: u32,
+    constraint_sets: u32,
+    constraint_sites: u32,
 };
 
 pub fn init(backing: Allocator) TypeStore {
@@ -507,6 +595,102 @@ comptime {
 }
 
 // ---------------------------------------------------------------------------
+// Method constraints (static-dispatch-spike.md §6.1)
+// ---------------------------------------------------------------------------
+
+/// A new set holding `items`, appended. Neither any existing set nor any
+/// existing constraint is touched (invariant 2).
+pub fn addConstraints(store: *TypeStore, items: []const MethodConstraint) Allocator.Error!ConstraintSet {
+    const start: u32 = @intCast(store.constraints.items.len);
+    try store.constraints.appendSlice(store.gpa(), items);
+    const index: u32 = @intCast(store.constraint_sets.items.len);
+    try store.constraint_sets.append(store.gpa(), .{ .start = start, .len = @intCast(items.len) });
+    return @enumFromInt(index);
+}
+
+/// `set` with `c` appended, as a new set.
+///
+/// A set is a half-open RANGE of an append-only list, so when the old range
+/// already ends at the tail this is one append and one range; otherwise it
+/// is one copy. Neither the old set nor any existing constraint is touched
+/// (invariant 2), and rollback is still a truncation of both lists.
+pub fn extendConstraints(
+    store: *TypeStore,
+    set: ConstraintSet.Optional,
+    c: MethodConstraint,
+) Allocator.Error!ConstraintSet.Optional {
+    const existing = set.unwrap() orelse {
+        return (try store.addConstraints(&.{c})).toOptional();
+    };
+    const range = store.constraint_sets.items[existing.int()];
+    if (range.start + range.len == store.constraints.items.len) {
+        try store.constraints.append(store.gpa(), c);
+        const index: u32 = @intCast(store.constraint_sets.items.len);
+        try store.constraint_sets.append(store.gpa(), .{ .start = range.start, .len = range.len + 1 });
+        return (@as(ConstraintSet, @enumFromInt(index))).toOptional();
+    }
+    // Capacity first: `appendSlice` from the list into itself would read a
+    // slice the growth had already moved.
+    try store.constraints.ensureUnusedCapacity(store.gpa(), range.len + 1);
+    const start: u32 = @intCast(store.constraints.items.len);
+    store.constraints.appendSliceAssumeCapacity(store.constraints.items[range.start..][0..range.len]);
+    store.constraints.appendAssumeCapacity(c);
+    const index: u32 = @intCast(store.constraint_sets.items.len);
+    try store.constraint_sets.append(store.gpa(), .{ .start = start, .len = range.len + 1 });
+    return (@as(ConstraintSet, @enumFromInt(index))).toOptional();
+}
+
+/// A new site range holding `items`, appended.
+pub fn addConstraintSites(store: *TypeStore, items: []const ConstraintSite) Allocator.Error!Range {
+    const start: u32 = @intCast(store.constraint_sites.items.len);
+    try store.constraint_sites.appendSlice(store.gpa(), items);
+    return .{ .start = start, .len = @intCast(items.len) };
+}
+
+/// How many constraints `set` holds. Prefer this and `constraintAt` to
+/// holding the slice: unifying a pair can grow `constraints` from under a
+/// view, which is a use-after-realloc (§6.1 invariant 2).
+pub fn constraintCount(store: *const TypeStore, set: ConstraintSet.Optional) u32 {
+    const s = set.unwrap() orelse return 0;
+    if (s.int() >= store.constraint_sets.items.len) return 0;
+    return store.constraint_sets.items[s.int()].len;
+}
+
+/// The `i`th constraint of `set`, BY VALUE. Re-fetched per iteration on
+/// purpose; see `constraintCount`.
+pub fn constraintAt(store: *const TypeStore, set: ConstraintSet.Optional, i: u32) MethodConstraint {
+    const s = set.unwrap().?;
+    const range = store.constraint_sets.items[s.int()];
+    return store.constraints.items[range.start + i];
+}
+
+/// The sites `c` answers, by value into a caller-owned buffer would be the
+/// safe form; this view is valid only until the next `addConstraintSites`.
+pub fn constraintSites(store: *const TypeStore, c: MethodConstraint) []const ConstraintSite {
+    if (c.sites.len == 0) return &.{};
+    return store.constraint_sites.items[c.sites.start..][0..c.sites.len];
+}
+
+/// The constraint named `name` in `set`, or null.
+pub fn findConstraint(store: *const TypeStore, set: ConstraintSet.Optional, name: Symbol) ?MethodConstraint {
+    const n = store.constraintCount(set);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const c = store.constraintAt(set, i);
+        if (c.name == name) return c;
+    }
+    return null;
+}
+
+/// The flags of `v`'s root, or an empty set when it is not a variable.
+pub fn flagsOf(store: *const TypeStore, v: Var) Flags {
+    return switch (store.content(v)) {
+        .flex, .rigid => |f| f,
+        else => .{},
+    };
+}
+
+// ---------------------------------------------------------------------------
 // The undo journal
 // ---------------------------------------------------------------------------
 
@@ -532,6 +716,9 @@ pub fn beginSpeculation(store: *TypeStore) Snapshot {
         .journal_len = @intCast(store.journal.items.len),
         .vars = @intCast(store.descriptors.len),
         .extra = @intCast(store.extra.items.len),
+        .constraints = @intCast(store.constraints.items.len),
+        .constraint_sets = @intCast(store.constraint_sets.items.len),
+        .constraint_sites = @intCast(store.constraint_sites.items.len),
     };
 }
 
@@ -578,6 +765,9 @@ pub fn rollback(store: *TypeStore, snapshot: Snapshot) bool {
     if (exact) {
         store.descriptors.shrinkRetainingCapacity(snapshot.vars);
         store.extra.shrinkRetainingCapacity(snapshot.extra);
+        store.constraints.shrinkRetainingCapacity(snapshot.constraints);
+        store.constraint_sets.shrinkRetainingCapacity(snapshot.constraint_sets);
+        store.constraint_sites.shrinkRetainingCapacity(snapshot.constraint_sites);
     }
     return exact;
 }

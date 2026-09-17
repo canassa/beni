@@ -1,0 +1,8 @@
+-- check/good (project): the go-between. It names `Owner`, so its edge is
+-- an ordinary import, and it publishes a value whose type is `Owner`'s.
+import Owner exposing (Token, make)
+
+
+pub first : Token
+first =
+    make 1

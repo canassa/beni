@@ -1,0 +1,7 @@
+-- check/bad: §10.3 again, and the other half of §1.2's tuple row: a tuple
+-- gets the WELL-KNOWN methods by derivation (A.16) and nothing else, so
+-- `p.fst 1` has nowhere to resolve. The hint is the field-call one only for
+-- a record receiver, so this message carries none.
+pub first : ( Int, Int ) -> Int
+first p =
+    p.fst 1

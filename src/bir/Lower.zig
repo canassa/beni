@@ -123,6 +123,15 @@ type_params: ?[]const TokenIndex = null,
 /// declaration: two `let` annotations in one body are two annotations, and
 /// each may mark its own `a`.
 type_vars_seen: std.ArrayList(Symbol) = .empty,
+/// The type variables of the declaration's own annotation, kept for the
+/// whole of its body. `type_vars_seen` cannot serve: a `let` annotation or
+/// a `where` constraint's type resets it. Read by `typeDispatchVar` for
+/// trigger (2) of static-dispatch-spike.md §4.1 — `v.m` where `v` IS an
+/// annotation variable and the declaration has no `where` clause at all,
+/// which the checker then reports as `type_dispatch_needs_annotation`
+/// (§10.8, A.5). Without it that trigger has no reachable path and the
+/// diagnostic could never fire.
+annotation_vars: std.ArrayList(Symbol) = .empty,
 
 /// The names bound AFTER the `<-` whose right-hand side is being lowered
 /// (§7): a reference to one of them is `bind_rhs_forward_reference`. Empty
@@ -247,6 +256,7 @@ pub fn lower(
         l.list_scratch.deinit(scratch);
         l.decl_sources.deinit(scratch);
         l.type_vars_seen.deinit(scratch);
+        l.annotation_vars.deinit(scratch);
         scratch.free(l.decl_stamp);
         scratch.free(l.ctor_stamp);
     }
@@ -1025,9 +1035,11 @@ fn lowerTypeParams(l: *Lower, params: []const TokenIndex) Allocator.Error!void {
 
 fn lowerDefinition(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) Allocator.Error!void {
     const def = l.tree.fullDefinition(node);
+    l.annotation_vars.clearRetainingCapacity();
     if (annotation.unwrap()) |ann| {
         const a = l.tree.fullAnnotation(ann);
         l.decls.items[l.cur_decl].annotation = (try l.lowerRootType(a.type_expr)).toOptional();
+        try l.annotation_vars.appendSlice(l.scratch_allocator, l.type_vars_seen.items);
         try l.lowerWhere(a.header, a.name);
     }
     const params = try l.lowerParams(def.params);
@@ -1746,6 +1758,12 @@ fn typeDispatchVar(l: *const Lower, receiver: NodeIndex) ?Symbol {
     while (i < @intFromEnum(d.where_end)) : (i += Bir.extraLen(Bir.WhereConstraint)) {
         if (l.symbols.items[l.extra.items[i]] == symbol) return symbol;
     }
+    // Trigger (2) of §4.1: the declaration has an annotation naming `v` as
+    // a type variable but no `where` clause for it. The node is emitted so
+    // that the CHECKER can say `type_dispatch_needs_annotation` (§10.8)
+    // naming the constraint to add; reporting `unbound_variable` here would
+    // leave A.5's second trigger with no path at all.
+    if (std.mem.indexOfScalar(Symbol, l.annotation_vars.items, symbol) != null) return symbol;
     return null;
 }
 

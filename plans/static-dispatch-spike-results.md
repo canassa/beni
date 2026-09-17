@@ -610,3 +610,54 @@ on both runs.
 Not captured in this session: **M1b** (needs C1 and the branch checker),
 **M6** (needs the `check/bad/` fixtures of the spike), **M9** (a branch gate),
 and the C1 column of every row — all of them are S8 work by construction.
+
+---
+
+## 2026-09-17 — S3, M2 after the attach fix
+
+`bench/gen.zig --pathological=constraint-chain=<n>` (plan §7 M2), best of 5
+after one warm-up, `--jobs=1`, interleaved **ABBA**: A is the S1 harness
+binary at `c870e9a` (`../beni-s1`, no dispatch in the checker at all), B is
+this branch with S3. Load average 1.5 on an otherwise idle machine; the two
+binaries are built from the same Zig and run back to back.
+
+The fix under test is `attachConstraint`: it rebuilt the whole constraint set
+on every attach, which is quadratic in the set — and a chain is exactly the
+input that walks into it. A set is a half-open range of an append-only list,
+so it now costs one append when the old range ends at the tail and one copy
+otherwise (`TypeStore.extendConstraints`). `promote`'s duplicate check moved
+from a per-constraint scan to a per-VARIABLE one for the same reason.
+
+```
+$ … zig build bench -- --pathological=constraint-chain=1000 --iterations=5
+A {"phase":"check","modules":12,"lines":3008,"unifications":20216,"generalisations":1509367,"instantiations":5622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":280.76,"loc_per_s":10713,"cold_check_ms":283.5}
+B {"phase":"check","modules":12,"lines":3008,"unifications":16199,"generalisations":1007901,"instantiations":5589,"obligations":1014,"constraints_created":1007,"constraints_merged":1999,"constraints_deferred":1014,"constraints_discharged":40,"constraints_promoted":500500,"diagnostics":0,"ms":483.51,"loc_per_s":6221,"cold_check_ms":486.3}
+B {"phase":"check","modules":12,"lines":3008,"unifications":16199,"generalisations":1007901,"instantiations":5589,"obligations":1014,"constraints_created":1007,"constraints_merged":1999,"constraints_deferred":1014,"constraints_discharged":40,"constraints_promoted":500500,"diagnostics":0,"ms":493.67,"loc_per_s":6093,"cold_check_ms":496.5}
+A {"phase":"check","modules":12,"lines":3008,"unifications":20216,"generalisations":1509367,"instantiations":5622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":289.37,"loc_per_s":10394,"cold_check_ms":292.1}
+
+$ … zig build bench -- --pathological=constraint-chain=2000 --iterations=5
+A {"phase":"check","modules":12,"lines":6008,"unifications":33268,"generalisations":1599447,"instantiations":9622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":1,"ms":301.84,"loc_per_s":19904,"cold_check_ms":306.2}
+B {"phase":"check","modules":12,"lines":6008,"unifications":27199,"generalisations":4013901,"instantiations":9589,"obligations":2014,"constraints_created":2007,"constraints_merged":3999,"constraints_deferred":2014,"constraints_discharged":40,"constraints_promoted":2001000,"diagnostics":0,"ms":2061.24,"loc_per_s":2914,"cold_check_ms":2065.7}
+B {"phase":"check","modules":12,"lines":6008,"unifications":27199,"generalisations":4013901,"instantiations":9589,"obligations":2014,"constraints_created":2007,"constraints_merged":3999,"constraints_deferred":2014,"constraints_discharged":40,"constraints_promoted":2001000,"diagnostics":0,"ms":2099.30,"loc_per_s":2861,"cold_check_ms":2104.1}
+A {"phase":"check","modules":12,"lines":6008,"unifications":33268,"generalisations":1599447,"instantiations":9622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":1,"ms":301.84,"loc_per_s":19904,"cold_check_ms":306.2}
+```
+
+| n | A (`c870e9a`) | B (S3) | B ÷ A | `constraints_promoted` |
+|---|---|---|---|---|
+| 1000 | 280.8 / 289.4 ms | 483.5 / 493.7 ms | **1.71×** | 500 500 |
+| 2000 | 301.8 / 311.3 ms | 2061.2 / 2099.3 ms | **6.8×** | 2 001 000 |
+
+**Read the ratio with two caveats.** A at n = 2000 reports `diagnostics: 1`:
+the C0 chain stops checking past ~64 links (S1's M2 row records it), so it
+is not doing the same work and the 6.8× is against a run that gave up. And
+the growth that remains is the FEATURE, not the bookkeeping: link `k` of an
+unannotated chain accumulates `k` constraints, so a chain of `n` promotes
+n(n+1)/2 of them and the dispatch table gains one row per evidence argument
+of every call — 2 001 000 at n = 2000. That accumulation is exactly what M2
+exists to measure, and report 18 §2.3 is the claim it is measuring. What the
+fix removed was the extra factor on top of it: before it, the same n = 2000
+tree could not be measured at all at this budget.
+
+`constraints_created` is now one per *new* name on a variable (2 007) and
+`constraints_merged` one per union of two sets (3 999); before the fix both
+counted every attach.

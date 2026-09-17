@@ -1,0 +1,8 @@
+-- check/bad: §10.8, trigger (2) of A.5. `a` is a type variable of the
+-- annotation and there is no `where` clause at all, so `a.decode s` is a
+-- dispatch on the type with nothing to resolve it — and the message names
+-- the constraint to add. Without this trigger the code had no reachable
+-- path: lowering's `unbound_variable` would have swallowed it.
+pub decode : String -> Result String a
+decode s =
+    a.decode s

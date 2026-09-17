@@ -1,0 +1,22 @@
+-- check/good (project): the gap §6.8 actually leaves open. This module
+-- imports nothing and names nothing, and every one of its types is MINTED
+-- by the checker: `List` and `Basics.Int` from the list, `String` from the
+-- literal, `Char` from the character, and `Basics.Bool` from `<` — which
+-- lowers to a `method_call` and records no `refs` edge of its own
+-- (static-dispatch-spike.md §1.4). Without the type edges of §6.8 this
+-- module has NO dependencies at all and `--jobs=8` checks it beside the
+-- core modules whose interfaces its methods must read.
+pub sizes =
+    [ 1, 2, 3 ]
+
+
+pub label =
+    "size"
+
+
+pub initial =
+    'x'
+
+
+pub bigger a b =
+    a < b

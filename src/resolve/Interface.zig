@@ -126,20 +126,44 @@ pub const Quantified = struct {
     /// `--jobs`. Every other name in this record is a `SymbolIndex` for
     /// exactly that reason; this one was the exception.
     name: SymbolIndex.Optional,
+    /// The method constraints this variable carries
+    /// (static-dispatch-spike.md §6.5): `constraints_len` CONSTRAINTS —
+    /// not words — at `extra[constraints_start..][0 .. 2 * constraints_len]`,
+    /// each a `(SymbolIndex, TermIndex)` pair.
+    ///
+    /// **Sorted by name TEXT**, never by symbol id, for the reason the
+    /// header gives for every other order in this record: a `Symbol` is an
+    /// index into the session interner and its numbering depends on which
+    /// worker interned which file, and these bytes are what
+    /// `fast-compiler.md` §8.1 has M4 hashing.
+    ///
+    /// `var(i)` inside a constraint's term means quantifier `i` of the SAME
+    /// scheme, exactly as it does in the body, so a dependent rebuilds the
+    /// constraint from this record alone.
+    constraints_start: u32 = 0,
+    constraints_len: u32 = 0,
 
-    pub const words = 2;
+    pub const words = 4;
 
     pub fn flags(q: Quantified) u32 {
         return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8);
     }
 
-    pub fn unpack(flag_word: u32, name_word: u32) Quantified {
+    pub fn unpack(flag_word: u32, name_word: u32, start: u32, len: u32) Quantified {
         return .{
             .kind = @truncate(flag_word),
             .equatable = (flag_word >> 8) & 1 == 1,
             .name = @enumFromInt(name_word),
+            .constraints_start = start,
+            .constraints_len = len,
         };
     }
+};
+
+/// One `(method name, type)` pair of a quantifier's constraint block.
+pub const QuantifiedConstraint = struct {
+    name: SymbolIndex,
+    type: TermIndex,
 };
 
 /// The flat type term language of checker.md §7. `lhs` and `rhs` mean what
@@ -351,7 +375,17 @@ pub fn quantifiedSymbol(iface: *const Interface, q: Quantified) Symbol.Optional 
 /// The `i`th quantified variable of `s`.
 pub fn quantified(iface: *const Interface, s: Scheme, i: u32) Quantified {
     const at = s.quantified_start + i * Quantified.words;
-    return Quantified.unpack(iface.extra[at], iface.extra[at + 1]);
+    if (at + Quantified.words > iface.extra.len) return .{ .kind = 0, .equatable = false, .name = .none };
+    return Quantified.unpack(iface.extra[at], iface.extra[at + 1], iface.extra[at + 2], iface.extra[at + 3]);
+}
+
+/// The `j`th constraint of quantifier `q`. Out of range yields a constraint
+/// with no type, so a record mapped from disk that does not describe itself
+/// cannot trap.
+pub fn quantifiedConstraint(iface: *const Interface, q: Quantified, j: u32) QuantifiedConstraint {
+    const at = q.constraints_start + j * 2;
+    if (at + 1 >= iface.extra.len) return .{ .name = @enumFromInt(0), .type = .none };
+    return .{ .name = @enumFromInt(iface.extra[at]), .type = @enumFromInt(iface.extra[at + 1]) };
 }
 
 /// The `i`th parameter of the type that declares `c`, as a quantifier.
@@ -360,8 +394,8 @@ pub fn quantified(iface: *const Interface, s: Scheme, i: u32) Quantified {
 /// record M4 mapped from disk that does not describe itself cannot trap.
 pub fn ctorQuantified(iface: *const Interface, c: Ctor, i: u32) Quantified {
     const at = c.quantified_start + i * Quantified.words;
-    if (at + 1 >= iface.extra.len) return .{ .kind = 0, .equatable = false, .name = .none };
-    return Quantified.unpack(iface.extra[at], iface.extra[at + 1]);
+    if (at + Quantified.words > iface.extra.len) return .{ .kind = 0, .equatable = false, .name = .none };
+    return Quantified.unpack(iface.extra[at], iface.extra[at + 1], iface.extra[at + 2], iface.extra[at + 3]);
 }
 
 /// The scheme of `value`, or null when it has none — a declaration that

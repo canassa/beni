@@ -146,6 +146,9 @@ pub const Options = struct {
     /// been extracted (§5), and keeping them costs memory proportional to
     /// the whole project rather than to one module.
     keep_type_stores: bool = false,
+    /// `--explain` (static-dispatch-spike.md §10 preamble): emit the
+    /// informational `warning`s that are otherwise suppressed.
+    explain: bool = false,
     /// Work one `case` may spend on pattern usefulness (checker.md §6.6)
     /// before it is abandoned and reports nothing. A knob for the tests
     /// that prove the bound, not a flag.
@@ -238,11 +241,19 @@ pub const Worker = struct {
     /// Record a diagnostic for `file`. `message` is copied into gpa memory
     /// owned by the session.
     pub fn report(worker: *Worker, session: *Session, file: SourceStore.Index, code: diagnostic.Code, start: diagnostic.Position, end: diagnostic.Position, message: []const u8) Allocator.Error!void {
+        return worker.reportAs(session, file, code, .@"error", start, end, message);
+    }
+
+    /// As `report`, with an explicit severity. A `warning` does not change
+    /// the exit code (`frontend.md` §1), which is what lets `--explain`
+    /// emit `ambiguous_method_receiver` without ever turning a passing
+    /// build into a failing one (static-dispatch-spike.md §10 preamble).
+    pub fn reportAs(worker: *Worker, session: *Session, file: SourceStore.Index, code: diagnostic.Code, severity: diagnostic.Severity, start: diagnostic.Position, end: diagnostic.Position, message: []const u8) Allocator.Error!void {
         const owned = try session.gpa.dupe(u8, message);
         errdefer session.gpa.free(owned);
         try worker.diagnostics.append(session.gpa, .{ .file = file, .diagnostic = .{
             .code = code,
-            .severity = .@"error",
+            .severity = severity,
             .span = .{ .file = session.store.path(file), .start = start, .end = end },
             .title = diagnostic.title(code),
             .message = owned,
@@ -843,6 +854,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                 .{
                     .profile = &r.session.profile,
                     .keep_stores = r.session.options.keep_type_stores,
+                    .explain = r.session.options.explain,
                     .quiet = r.quiet,
                     .jobs = @intCast(r.session.workers.len),
                     .pattern_budget = r.session.options.pattern_budget,
@@ -864,12 +876,15 @@ fn reportCheckDiagnostics(session: *Session) RunError!void {
     for (session.checked.diagnostics) |item| {
         const file = session.graph.moduleFile(item.module);
         const bir = session.artifacts.bir(file);
-        const token = if (item.region.int() < bir.insts.len)
+        // A message ABOUT a declaration carries the token it should
+        // underline, because no instruction carries a declaration's name
+        // (static-dispatch-spike.md §10.9, §10.10).
+        const token = item.token orelse if (item.region.int() < bir.insts.len)
             bir.insts.items(.main_token)[item.region.int()]
         else
             0;
         const start, const end = session.tokenSpan(file, token);
-        try session.workers[0].report(session, file, item.code, start, end, item.message);
+        try session.workers[0].reportAs(session, file, item.code, item.severity, start, end, item.message);
     }
 }
 

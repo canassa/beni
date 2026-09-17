@@ -1,0 +1,18 @@
+module DerivedShapes
+  decl sameUnit evidence=0
+  decl samePair evidence=0
+  decl sameInts evidence=0
+  decl sameMixed evidence=0
+  derived 0 eq r$x$y evidence=2
+  derived 1 eq t2 evidence=2
+  derived 2 eq unit evidence=0
+  site 8 0 derived 2
+  site 21 0 derived 1
+    part 0 primitive strict_eq
+    part 1 primitive strict_eq
+  site 34 0 derived 0
+    part 0 primitive strict_eq
+    part 1 primitive strict_eq
+  site 47 0 derived 0
+    part 0 primitive strict_eq
+    part 1 primitive strict_eq

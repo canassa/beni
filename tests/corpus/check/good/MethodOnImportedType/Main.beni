@@ -1,0 +1,10 @@
+-- check/good (project): `t.bump 1` names no module, and `bump` is not in
+-- scope here — a method resolves ONLY in the module that declares the
+-- receiver's type (§1.2, "no fallback to local functions"). The dispatch
+-- table records `ext Token bump` for it (§7.1).
+import Token exposing (Token, bump)
+
+
+pub step : Token -> Token
+step t =
+    t.bump 1

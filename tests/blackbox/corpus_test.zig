@@ -10,6 +10,7 @@
 //!                                   the golden again is a fixed point, and both
 //!                                   parse to the same AST
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
+//!   dispatch/X.beni   + X.dispatch  `dump --stage=dispatch` equals the golden
 //!   check/args/X.beni + X.diag      the arity suite (checker.md §8.3)
 //!   run/X.beni        + X.expected  `build --platform=node`, then the emitted
 //!                                   program under Node; its stdout is the golden
@@ -44,6 +45,7 @@ const Kind = enum {
     parse_bad,
     fmt,
     bir,
+    dispatch,
     check_good,
     check_bad,
     check_args,
@@ -57,6 +59,7 @@ const Kind = enum {
             .parse_bad => corpus_root ++ "/parse/bad",
             .fmt => corpus_root ++ "/fmt",
             .bir => corpus_root ++ "/bir",
+            .dispatch => corpus_root ++ "/dispatch",
             .check_good => corpus_root ++ "/check/good",
             .check_bad => corpus_root ++ "/check/bad",
             .check_args => corpus_root ++ "/check/args",
@@ -69,7 +72,7 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad;
+        return kind == .check_good or kind == .check_bad or kind == .dispatch;
     }
 };
 
@@ -87,6 +90,15 @@ test "corpus: fmt" {
 
 test "corpus: bir" {
     try walk(.bir);
+}
+
+// The checker→backend side table (static-dispatch-spike.md §7). Its own
+// kind for the reason `bir/` is one: it is an OUTPUT of a phase, printed
+// with no ids and no positions, and a golden here is the contract S4 and S5
+// lower against. A method call that resolved to the wrong function is
+// invisible in `--stage=types` and obvious here.
+test "corpus: dispatch" {
+    try walk(.dispatch);
 }
 
 test "corpus: check/good" {
@@ -259,6 +271,7 @@ const Case = struct {
             .parse_bad => try c.bad(),
             .fmt => try c.format(),
             .bir => try c.lowering(),
+            .dispatch => try c.dispatching(),
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
@@ -422,6 +435,22 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=bir", try c.fixturePath() });
         try expectExit(0, r);
         try c.expectGolden("bir", r.stdout);
+    }
+
+    /// The dispatch table of one module (§7.3). Both halves matter: the
+    /// fixture must check CLEAN — a diagnostic means the table describes a
+    /// program the compiler rejected — and the table is the golden.
+    fn dispatching(c: Case) !void {
+        const path = try c.fixturePath();
+        const checked = try c.compiler(&.{ "check", path });
+        try expectExit(0, checked);
+        if (checked.stderr.len != 0) {
+            std.debug.print("{s}: a dispatch fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        const r = try c.compiler(&.{ "dump", "--stage=dispatch", path });
+        try expectExit(0, r);
+        try c.expectGolden("dispatch", r.stdout);
     }
 
     /// A module — or a project — that resolves clean: no diagnostic at

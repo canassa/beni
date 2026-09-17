@@ -1,0 +1,17 @@
+-- check/bad (project): §10.2. `bump` is declared here but not `pub`, so it
+-- is not one of `Token`'s methods outside this module (§1.2). Inside it, it
+-- would be: `private_method` cannot fire in the declaring module.
+pub type Token
+    = Token Int
+
+
+bump : Token, Int -> Token
+bump t step =
+    case t of
+        Token n ->
+            Token (n + step)
+
+
+pub zero : Token
+zero =
+    Token 0

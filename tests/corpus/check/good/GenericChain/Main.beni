@@ -1,0 +1,21 @@
+-- check/good (project): the concrete end of the chain. `Metre`'s own
+-- `scale` is what every level above finally calls, and the site that
+-- supplies it is the ONE place in the chain where the evidence is a name
+-- and not a forwarded parameter (§8.2).
+import Lib
+
+
+pub type Metre
+    = Metre Int
+
+
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+pub grow : Metre -> Metre
+grow m =
+    Lib.outer m 3

@@ -1,6 +1,11 @@
 -- check/bad: an annotation that says ANY type flows through, and a body
--- that compares two of them. Only core may spell the `equatable` marker, so
--- the fix is a concrete annotation or an equality function passed in.
+-- that compares two of them. On this branch `==` is the `eq` method
+-- (`docs/design/static-dispatch-spike.md` §3.1), a rigid variable carries
+-- exactly the constraints its `where` clause declares (§6.2 Rule U2), and
+-- the message is `missing_where_constraint` at the CALL that needs the
+-- method — never at the annotation (§10.4). Before S3 this was
+-- `not_equatable` with the `rigid_variable` reason, which said the type
+-- could not be compared rather than what to write.
 pub contains : a, List a -> Bool
 contains needle xs =
     List.any xs (\x -> x == needle)

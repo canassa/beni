@@ -1,0 +1,31 @@
+-- dispatch: the bug A.11 and A.46 exist to stop.
+--
+-- A structural derived function is keyed on its SHAPE — the arity, or the
+-- field names — and on nothing else, so both tuples below are one `t2` and
+-- both records one `r$x$y`. What tells them apart is the evidence each USE
+-- passes, which is why the `part` lines hang under the `site` and not under
+-- the `derived`.
+--
+-- Bake the first requester's elements into the function instead and
+-- `orderStrings` reuses `num_compare` — JavaScript `<` on strings, which is
+-- UTF-16 code-unit order and disagrees with `String.compare` on astral
+-- characters, exactly what A.26 refuses — while `nested` compares its inner
+-- tuple with `===`.
+pub orderInts : ( Int, Int ), ( Int, Int ) -> Bool
+orderInts a b =
+    a < b
+
+
+pub orderStrings : ( String, String ), ( String, String ) -> Bool
+orderStrings a b =
+    a < b
+
+
+pub sameInts : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
+sameInts a b =
+    a == b
+
+
+pub nested : { x : Int, y : ( Char, Char ) }, { x : Int, y : ( Char, Char ) } -> Bool
+nested a b =
+    a == b

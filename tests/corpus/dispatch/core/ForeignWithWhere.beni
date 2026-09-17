@@ -1,0 +1,11 @@
+-- dispatch (core): a `pub foreign` may carry a `where` clause (§5.2, A.7),
+-- and its sibling export's arity is then evidence count + declared arity.
+-- It has no body, so it never reaches a binding group — its evidence list
+-- has to be recorded where its scheme is read, or the declaration the
+-- backend must give a hidden parameter to has no `decl` line at all.
+pub foreign eq : List a, List a -> Bool
+    where a.eq : a, a -> Bool
+
+
+pub foreign compare : List a, List a -> Order
+    where a.compare : a, a -> Order

@@ -1,0 +1,34 @@
+-- dispatch: derivation over the three structural shapes (§9.2, §9.3) and
+-- the `parts` contract of §9 — one `Target` per structural position, fields
+-- sorted by name TEXT and tuple elements 0…n−1.
+--
+-- A shape key is the field-name list or the arity, never the field TYPES
+-- (A.11): `{ x : Int, y : Int }` and `{ x : Int, y : String }` share one
+-- `r$x$y` function and differ only in the evidence they are given, which is
+-- what bounds the emitted-function count by shapes instead of
+-- instantiations. Both records below are that one entry.
+--
+-- The declarations are in the REVERSE of the order the derived functions
+-- sort in, so the sort is load-bearing: request order is `unit`, `t2`,
+-- `r$x$y`, and §8.5's order — by printed name text — is the other way
+-- round. A table that printed request order would pass with the wrong
+-- numbering and `derived 0` would name a different function than the
+-- emitter's first (A.15, A.29).
+pub sameUnit : (), () -> Bool
+sameUnit a b =
+    a == b
+
+
+pub samePair : ( Int, Char ), ( Int, Char ) -> Bool
+samePair a b =
+    a == b
+
+
+pub sameInts : { x : Int, y : Int }, { x : Int, y : Int } -> Bool
+sameInts a b =
+    a == b
+
+
+pub sameMixed : { y : String, x : Int }, { y : String, x : Int } -> Bool
+sameMixed a b =
+    a == b

@@ -147,10 +147,133 @@ pub fn writeVar(
     return write(w, cx, namer, v, prec, 0);
 }
 
-/// A whole scheme, which at this point is just its body: the quantifiers
-/// are implicit in beni's surface syntax and printing `∀` would be noise.
+/// A whole scheme: its body, then the `where` clause its quantified
+/// variables carry (static-dispatch-spike.md §6.6).
+///
+/// `writeVar` and `allocType` — which every diagnostic uses, because a
+/// message builds prose out of type fragments rather than printing a scheme
+/// — are deliberately NOT this and print no suffix. A constraint belongs to
+/// a scheme, not to a type, and a two-type mismatch message is already the
+/// busiest prose in the compiler.
+///
+/// The order is by variable name AS RENDERED, then by method name text: a
+/// total order that is a function of the scheme and not of the store, which
+/// is what `--jobs` determinism needs. The whole suffix is one line; the
+/// FORMATTER breaks a `where` clause over continuation lines (§2.5) and the
+/// two differ on purpose.
 pub fn writeScheme(w: *std.Io.Writer, cx: Context, namer: *Namer, v: Var) (std.Io.Writer.Error || Allocator.Error)!void {
-    return write(w, cx, namer, v, .top, 0);
+    try write(w, cx, namer, v, .top, 0);
+    try writeWhere(w, cx, namer, v);
+}
+
+/// One rendered constraint, for the sort.
+const Rendered = struct { variable: []const u8, method: []const u8, fn_var: Var };
+
+/// The `where` suffix of `v`'s scheme, or nothing when no variable in it
+/// carries a constraint.
+pub fn writeWhere(w: *std.Io.Writer, cx: Context, namer: *Namer, v: Var) (std.Io.Writer.Error || Allocator.Error)!void {
+    var roots: std.ArrayList(Var) = .empty;
+    defer roots.deinit(namer.gpa);
+    const mark = cx.store.nextMark();
+    try collectVars(cx, v, &roots, namer.gpa, mark, 0);
+    var items: std.ArrayList(Rendered) = .empty;
+    defer items.deinit(namer.gpa);
+    // By INDEX, and re-reading the length: a constraint's own type can
+    // mention a variable the body never reaches, and naming it means
+    // walking it — which appends. The same reason `Schemes.quantifierOrder`
+    // drains its list rather than iterating a slice.
+    var r: usize = 0;
+    while (r < roots.items.len) : (r += 1) {
+        const root = roots.items[r];
+        const flags = cx.store.flagsOf(root);
+        const n = cx.store.constraintCount(flags.constraints);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const c = cx.store.constraintAt(flags.constraints, i);
+            try collectVars(cx, c.fn_var, &roots, namer.gpa, mark, 0);
+            // The renderer's own name for the variable, so the suffix and
+            // the body agree about which `a` this is.
+            const preferred: ?[]const u8 = if (flags.name.unwrap()) |sym|
+                cx.interner.slice(sym)
+            else if (flags.kind != .any)
+                flags.kind.text()
+            else
+                null;
+            const name = try namer.name(root, preferred);
+            try items.append(namer.gpa, .{
+                .variable = name,
+                .method = cx.interner.slice(c.name),
+                .fn_var = c.fn_var,
+            });
+        }
+    }
+    if (items.items.len == 0) return;
+    std.mem.sort(Rendered, items.items, {}, renderedLessThan);
+    try w.writeAll(" where ");
+    for (items.items, 0..) |item, i| {
+        if (i != 0) try w.writeAll(", ");
+        try w.print("{s}.{s} : ", .{ item.variable, item.method });
+        try write(w, cx, namer, item.fn_var, .top, 0);
+    }
+}
+
+fn renderedLessThan(_: void, a: Rendered, b: Rendered) bool {
+    return switch (std.mem.order(u8, a.variable, b.variable)) {
+        .lt => true,
+        .gt => false,
+        .eq => std.mem.lessThan(u8, a.method, b.method),
+    };
+}
+
+/// Every variable reachable from `v`, in the order `write` names them, so
+/// the `where` suffix uses the names the body already printed.
+fn collectVars(
+    cx: Context,
+    v: Var,
+    out: *std.ArrayList(Var),
+    gpa: Allocator,
+    mark: u32,
+    depth: u32,
+) (std.Io.Writer.Error || Allocator.Error)!void {
+    if (depth > max_depth) return;
+    const root = cx.store.find(v);
+    if (cx.store.mark(root) == mark) return;
+    cx.store.setMark(root, mark);
+    switch (cx.store.content(root)) {
+        .err => {},
+        .flex, .rigid => try out.append(gpa, root),
+        .structure => |flat| switch (flat) {
+            .unit, .empty_record => {},
+            .func => |f| {
+                const params = try gpa.dupe(Var, cx.store.vars(f.params));
+                defer gpa.free(params);
+                for (params) |p| try collectVars(cx, p, out, gpa, mark, depth + 1);
+                try collectVars(cx, f.result, out, gpa, mark, depth + 1);
+            },
+            .app => |a| {
+                const args = try gpa.dupe(Var, cx.store.vars(a.args));
+                defer gpa.free(args);
+                for (args) |arg| try collectVars(cx, arg, out, gpa, mark, depth + 1);
+            },
+            .tuple => |t| {
+                const items = try gpa.dupe(Var, cx.store.vars(t));
+                defer gpa.free(items);
+                for (items) |el| try collectVars(cx, el, out, gpa, mark, depth + 1);
+            },
+            .record => |r| {
+                const fields = try gpa.dupe(TypeStore.Field, cx.store.fields(r.fields));
+                defer gpa.free(fields);
+                for (fields) |f| try collectVars(cx, f.value, out, gpa, mark, depth + 1);
+                try collectVars(cx, r.ext, out, gpa, mark, depth + 1);
+            },
+        },
+        .alias => |a| {
+            const args = try gpa.dupe(Var, cx.store.vars(a.args));
+            defer gpa.free(args);
+            for (args) |arg| try collectVars(cx, arg, out, gpa, mark, depth + 1);
+            try collectVars(cx, a.actual, out, gpa, mark, depth + 1);
+        },
+    }
 }
 
 /// A type rendered into a freshly allocated string. For the diagnostics,

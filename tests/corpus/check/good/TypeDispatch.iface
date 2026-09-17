@@ -1,0 +1,2 @@
+module TypeDispatch
+  value decode : String -> Result String a where a.decode : String -> Result String a

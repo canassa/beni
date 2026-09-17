@@ -1,0 +1,20 @@
+-- check/good (project): three levels of `where`-constrained generics. Each
+-- one instantiates the next and has to pass its own evidence on, which is
+-- what §7.2's canonical order is for and what `_expected.iface` shows as a
+-- `where` clause on all three.
+pub outer : a, Int -> a
+    where a.scale : a, Int -> a
+outer x factor =
+    middle x factor
+
+
+pub middle : a, Int -> a
+    where a.scale : a, Int -> a
+middle x factor =
+    inner x factor
+
+
+pub inner : a, Int -> a
+    where a.scale : a, Int -> a
+inner x factor =
+    x.scale factor

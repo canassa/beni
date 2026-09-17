@@ -73,8 +73,17 @@ pub const Writer = struct {
     touched: std.ArrayList(Var) = .empty,
     quantified_count: u32 = 0,
     /// Flags of the quantifiers discovered so far, moved into `extra` when
-    /// the scheme is closed.
+    /// the scheme is closed. `Quantified.words` words each; the last two —
+    /// the constraint block's start and length — are patched by
+    /// `writeConstraints` once the body is written
+    /// (static-dispatch-spike.md §6.5).
     pending_flags: std.ArrayList(u32) = .empty,
+    /// The store root behind each quantifier, parallel to `pending_flags`.
+    /// A quantifier's constraints live on its variable, and they can only
+    /// be written after the body — writing one's type may discover a
+    /// further quantifier, and a quantifier's four words have to stay
+    /// contiguous.
+    pending_roots: std.ArrayList(Var) = .empty,
     depth: u32 = 0,
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
@@ -103,6 +112,7 @@ pub const Writer = struct {
         w.extra.deinit(w.gpa);
         w.symbols.deinit(w.gpa);
         w.pending_flags.deinit(w.gpa);
+        w.pending_roots.deinit(w.gpa);
         w.gpa.free(w.memo);
         w.gpa.free(w.quantified);
         w.* = undefined;
@@ -119,6 +129,7 @@ pub const Writer = struct {
         // appearance in the body, which is also the order `Render` names
         // them in.
         const body = try w.writeVar(v);
+        try w.writeConstraints();
         const count = w.quantified_count;
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
@@ -165,6 +176,7 @@ pub const Writer = struct {
         const words = try w.gpa.alloc(u32, args.len);
         defer w.gpa.free(words);
         for (args, words) |arg, *word| word.* = (try w.writeVar(arg)).int();
+        try w.writeConstraints();
         const quantified_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
         return .{ .arg_terms = try w.addRange(words), .quantified_start = quantified_start };
@@ -203,6 +215,48 @@ pub const Writer = struct {
         }
         w.quantified_count = 0;
         w.pending_flags.clearRetainingCapacity();
+        w.pending_roots.clearRetainingCapacity();
+    }
+
+    /// Write every quantifier's constraint block and patch its two words
+    /// (static-dispatch-spike.md §6.5).
+    ///
+    /// By INDEX and re-reading the length each round, because writing a
+    /// constraint's type can discover a further quantifier — which then
+    /// needs its own block — and because `pending_roots` grows from under a
+    /// held slice while that happens.
+    fn writeConstraints(w: *Writer) Error!void {
+        var i: usize = 0;
+        while (i < w.pending_roots.items.len) : (i += 1) {
+            const root = w.pending_roots.items[i];
+            const set = w.store.flagsOf(root).constraints;
+            const n = w.store.constraintCount(set);
+            if (n == 0) continue;
+            // Sorted by name TEXT, never by symbol id (§6.5 rule 1).
+            const sorted = try w.gpa.alloc(TypeStore.MethodConstraint, n);
+            defer w.gpa.free(sorted);
+            for (sorted, 0..) |*c, j| c.* = w.store.constraintAt(set, @intCast(j));
+            std.mem.sort(TypeStore.MethodConstraint, sorted, w.interner, constraintNameLessThan);
+            const words = try w.gpa.alloc(u32, n * 2);
+            defer w.gpa.free(words);
+            for (sorted, 0..) |c, j| {
+                words[j * 2] = try w.symbolIndex(c.name);
+                words[j * 2 + 1] = (try w.writeVar(c.fn_var)).int();
+            }
+            const start: u32 = @intCast(w.extra.items.len);
+            try w.extra.appendSlice(w.gpa, words);
+            const at = i * Interface.Quantified.words;
+            w.pending_flags.items[at + 2] = start;
+            w.pending_flags.items[at + 3] = @intCast(n);
+        }
+    }
+
+    fn constraintNameLessThan(
+        interner: *const InternPool.Global,
+        a: TypeStore.MethodConstraint,
+        b: TypeStore.MethodConstraint,
+    ) bool {
+        return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
     }
 
     /// Remember that `root` has an entry in `memo` or `quantified`, so the
@@ -317,10 +371,6 @@ pub const Writer = struct {
         }
     }
 
-    fn fieldNameLessThan(interner: *const InternPool.Global, a: TypeStore.Field, b: TypeStore.Field) bool {
-        return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
-    }
-
     fn memoise(w: *Writer, root: Var, t: Interface.TermIndex) Error!Interface.TermIndex {
         if (root.int() < w.memo.len) {
             w.memo[root.int()] = t;
@@ -360,6 +410,11 @@ pub const Writer = struct {
         };
         try w.pending_flags.append(w.gpa, q.flags());
         try w.pending_flags.append(w.gpa, @intFromEnum(q.name));
+        // Patched by `writeConstraints`; a quantifier with none keeps
+        // `0, 0` and consumes no `extra` (§6.5 rule 4).
+        try w.pending_flags.append(w.gpa, 0);
+        try w.pending_flags.append(w.gpa, 0);
+        try w.pending_roots.append(w.gpa, root);
         return index;
     }
 
@@ -377,6 +432,110 @@ pub const Writer = struct {
     }
 };
 
+/// The quantifiers of a solved type, in the order `Writer` records them
+/// (static-dispatch-spike.md §7.2's canonical order).
+///
+/// **This must agree with `Writer.writeVar` exactly**, because caller and
+/// callee compute the evidence order independently — the callee from its own
+/// store, the caller from the interface record — and a disagreement is a
+/// silent miscompile rather than a diagnostic. It lives here, next to the
+/// writer, and `quantifier order matches the writer` below pins the one case
+/// where the two could plausibly drift: a record, whose fields the writer
+/// sorts by name TEXT before descending (`Schemes.zig`'s `.record` arm).
+///
+/// Appends the roots to `out`; a root already in `out` is not appended
+/// again. Roots discovered inside a constraint's own type come after the
+/// whole body, exactly as `writeConstraints` discovers them.
+pub fn quantifierOrder(
+    store: *TypeStore,
+    interner: *const InternPool.Global,
+    v: Var,
+    out: *std.ArrayList(Var),
+    gpa: Allocator,
+) Error!void {
+    const mark = store.nextMark();
+    try orderWalk(store, interner, v, out, gpa, mark, 0);
+    // A quantifier's constraints can mention a variable the body never
+    // reaches only when §2.4's closure rule was not in force — an inferred
+    // scheme. By index and re-reading the length, because the walk appends.
+    var i: usize = 0;
+    while (i < out.items.len) : (i += 1) {
+        const root = out.items[i];
+        const set = store.flagsOf(root).constraints;
+        const n = store.constraintCount(set);
+        if (n == 0) continue;
+        const sorted = try gpa.alloc(TypeStore.MethodConstraint, n);
+        defer gpa.free(sorted);
+        for (sorted, 0..) |*c, j| c.* = store.constraintAt(set, @intCast(j));
+        std.mem.sort(TypeStore.MethodConstraint, sorted, interner, constraintLessThan);
+        for (sorted) |c| try orderWalk(store, interner, c.fn_var, out, gpa, mark, 0);
+    }
+}
+
+fn fieldNameLessThan(interner: *const InternPool.Global, a: TypeStore.Field, b: TypeStore.Field) bool {
+    return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
+}
+
+fn constraintLessThan(
+    interner: *const InternPool.Global,
+    a: TypeStore.MethodConstraint,
+    b: TypeStore.MethodConstraint,
+) bool {
+    return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
+}
+
+fn orderWalk(
+    store: *TypeStore,
+    interner: *const InternPool.Global,
+    v: Var,
+    out: *std.ArrayList(Var),
+    gpa: Allocator,
+    mark: u32,
+    depth: u32,
+) Error!void {
+    if (depth > Writer.max_depth) return;
+    const root = store.find(v);
+    if (store.mark(root) == mark) return;
+    store.setMark(root, mark);
+    switch (store.content(root)) {
+        .err => {},
+        .flex, .rigid => try out.append(gpa, root),
+        .structure => |flat| switch (flat) {
+            .unit, .empty_record => {},
+            .func => |f| {
+                const params = try gpa.dupe(Var, store.vars(f.params));
+                defer gpa.free(params);
+                for (params) |p| try orderWalk(store, interner, p, out, gpa, mark, depth + 1);
+                try orderWalk(store, interner, f.result, out, gpa, mark, depth + 1);
+            },
+            .app => |a| {
+                const args = try gpa.dupe(Var, store.vars(a.args));
+                defer gpa.free(args);
+                for (args) |arg| try orderWalk(store, interner, arg, out, gpa, mark, depth + 1);
+            },
+            .tuple => |t| {
+                const items = try gpa.dupe(Var, store.vars(t));
+                defer gpa.free(items);
+                for (items) |el| try orderWalk(store, interner, el, out, gpa, mark, depth + 1);
+            },
+            .record => |r| {
+                const fields = try gpa.dupe(TypeStore.Field, store.fields(r.fields));
+                defer gpa.free(fields);
+                // By name TEXT, which is what the writer descends in.
+                std.mem.sort(TypeStore.Field, fields, interner, fieldNameLessThan);
+                for (fields) |f| try orderWalk(store, interner, f.value, out, gpa, mark, depth + 1);
+                try orderWalk(store, interner, r.ext, out, gpa, mark, depth + 1);
+            },
+        },
+        .alias => |a| {
+            const args = try gpa.dupe(Var, store.vars(a.args));
+            defer gpa.free(args);
+            for (args) |arg| try orderWalk(store, interner, arg, out, gpa, mark, depth + 1);
+            try orderWalk(store, interner, a.actual, out, gpa, mark, depth + 1);
+        },
+    }
+}
+
 /// Copy an interface scheme into `store` at `rank`: one fresh variable per
 /// quantifier, then the body rebuilt on top of them.
 pub fn instantiate(
@@ -385,6 +544,7 @@ pub fn instantiate(
     scheme_index: u32,
     rank: u32,
     scratch: Allocator,
+    site: ?Site,
 ) Error!Var {
     const s = iface.schemes[scheme_index];
     const fresh = try scratch.alloc(Var, s.quantified_count);
@@ -403,8 +563,53 @@ pub fn instantiate(
     defer scratch.free(memo);
     @memset(memo, .none);
     var reader: Reader = .{ .iface = iface, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
-    return reader.read(s.body);
+    const body = try reader.read(s.body);
+    // The constraint blocks LAST, so every quantifier already has its
+    // variable and a `var(i)` inside a constraint's type lands on the same
+    // one the body uses (static-dispatch-spike.md §6.5 rule 3). Each
+    // quantifier gets a FRESH set; the evidence index runs across
+    // quantifiers in canonical order (§7.2).
+    var evidence_index: u16 = if (site) |sp| sp.first_index else 0;
+    for (fresh, 0..) |v, i| {
+        const q = iface.quantified(s, @intCast(i));
+        if (q.constraints_len == 0) continue;
+        const built = try scratch.alloc(TypeStore.MethodConstraint, q.constraints_len);
+        defer scratch.free(built);
+        for (built, 0..) |*c, j| {
+            const qc = iface.quantifiedConstraint(q, @intCast(j));
+            const sites: TypeStore.Range = if (site) |sp| try store.addConstraintSites(&.{.{
+                .inst = sp.inst,
+                .evidence_index = evidence_index,
+            }}) else .empty;
+            evidence_index += 1;
+            c.* = .{
+                .name = iface.symbol(qc.name),
+                .fn_var = try reader.read(qc.type),
+                .region = if (site) |sp| sp.inst else @enumFromInt(0),
+                .origin = .where_clause,
+                .sites = sites,
+            };
+        }
+        const set = try store.addConstraints(built);
+        const flags = store.flagsOf(store.find(v));
+        store.setContent(store.find(v), .{ .flex = .{
+            .name = flags.name,
+            .kind = flags.kind,
+            .equatable = flags.equatable,
+            .constraints = set.toOptional(),
+        } });
+    }
+    return body;
 }
+
+/// Where an instantiation happened, so every constraint it creates can be
+/// tagged with the dispatch site it answers (static-dispatch-spike.md §7.2).
+/// `first_index` is 1 for a `method_call` — whose site 0 names the callee —
+/// and 0 for everything else.
+pub const Site = struct {
+    inst: @import("../bir/Bir.zig").Inst.Index,
+    first_index: u16,
+};
 
 /// Copy an imported constructor's type into `store` at `rank`:
 /// `arg1 -> … -> argN -> T p0 … pk`, with one fresh variable per parameter
@@ -588,8 +793,8 @@ test "a scheme round trips through terms with its sharing intact" {
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const first = try instantiate(&iface, &target, 0, 1, arena.allocator());
-    const second = try instantiate(&iface, &target, 0, 1, arena.allocator());
+    const first = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
+    const second = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
     const f1 = target.content(target.find(first)).structure.func;
     const f2 = target.content(target.find(second)).structure.func;
     const p1 = target.vars(f1.params)[0];
@@ -598,6 +803,143 @@ test "a scheme round trips through terms with its sharing intact" {
     try testing.expect(target.find(p1) != target.find(p2));
     // The kind crossed with it: a `number` stays a `number`.
     try testing.expectEqual(TypeStore.Kind.number, target.content(target.find(p1)).flex.kind);
+}
+
+test "a method constraint round trips through the interface onto a fresh variable" {
+    // static-dispatch-spike.md §6.5: a quantifier's `where` block is two
+    // words per constraint in `extra`, sorted by name TEXT, and `var(i)`
+    // inside a constraint's term means quantifier `i` of the SAME scheme —
+    // so a dependent rebuilds the constraint from this record alone.
+    const gpa = testing.allocator;
+    var interner: InternPool.Global = try .init(gpa);
+    defer interner.deinit(gpa);
+    var store: TypeStore = .init(gpa);
+    defer store.deinit();
+
+    // `a, Int -> a where a.eq : a, a -> Bool, a.compare : a, a -> Order`,
+    // the two constraints DECLARED in the wrong order on purpose: the
+    // record must come back sorted by name text, `compare` before `eq`.
+    const int: TypeStore.TypeId = @enumFromInt(1);
+    const bool_id: TypeStore.TypeId = @enumFromInt(2);
+    const order_id: TypeStore.TypeId = @enumFromInt(3);
+    const a = try store.fresh(.{ .flex = .{} }, TypeStore.generalized);
+    const int_var = try store.fresh(.{ .structure = .{ .app = .{ .type = int, .args = .empty } } }, TypeStore.generalized);
+    const bool_var = try store.fresh(.{ .structure = .{ .app = .{ .type = bool_id, .args = .empty } } }, TypeStore.generalized);
+    const order_var = try store.fresh(.{ .structure = .{ .app = .{ .type = order_id, .args = .empty } } }, TypeStore.generalized);
+    const pair = try store.addVars(&.{ a, a });
+    const eq_fn = try store.fresh(.{ .structure = .{ .func = .{ .params = pair, .result = bool_var } } }, TypeStore.generalized);
+    const compare_fn = try store.fresh(.{ .structure = .{ .func = .{ .params = pair, .result = order_var } } }, TypeStore.generalized);
+    const eq_name = try interner.getOrPut(gpa, "eq");
+    const compare_name = try interner.getOrPut(gpa, "compare");
+    const set = try store.addConstraints(&.{
+        .{ .name = eq_name, .fn_var = eq_fn, .region = @enumFromInt(0), .origin = .where_clause },
+        .{ .name = compare_name, .fn_var = compare_fn, .region = @enumFromInt(0), .origin = .where_clause },
+    });
+    store.setContent(a, .{ .flex = .{ .constraints = set.toOptional() } });
+    const params = try store.addVars(&.{ a, int_var });
+    const body = try store.fresh(.{ .structure = .{ .func = .{ .params = params, .result = a } } }, TypeStore.generalized);
+
+    var iface: Interface = .empty;
+    defer iface.deinit(gpa);
+    var w: Writer = .init(gpa, &store, &interner, 0);
+    defer w.deinit();
+    _ = try w.add(body);
+    try w.attach(&iface);
+
+    const scheme = iface.schemes[0];
+    try testing.expectEqual(@as(u32, 1), scheme.quantified_count);
+    const q = iface.quantified(scheme, 0);
+    try testing.expectEqual(@as(u32, 2), q.constraints_len);
+    // Sorted by name text, whatever order they were declared in.
+    try testing.expectEqualStrings("compare", interner.slice(iface.symbol(iface.quantifiedConstraint(q, 0).name)));
+    try testing.expectEqualStrings("eq", interner.slice(iface.symbol(iface.quantifiedConstraint(q, 1).name)));
+
+    // Reading it back gives ONE fresh variable carrying a FRESH set whose
+    // method types are about that same variable — the sharing `var(i)`
+    // encodes.
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var target: TypeStore = .init(gpa);
+    defer target.deinit();
+    const copy = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
+    const func = target.content(target.find(copy)).structure.func;
+    const fresh_a = target.find(target.vars(func.params)[0]);
+    try testing.expectEqual(fresh_a, target.find(func.result));
+    const read = target.flagsOf(fresh_a).constraints;
+    try testing.expectEqual(@as(u32, 2), target.constraintCount(read));
+    const read_compare = target.findConstraint(read, compare_name).?;
+    const read_eq = target.findConstraint(read, eq_name).?;
+    // `a, a -> Order` and `a, a -> Bool`, both about the instantiated `a`.
+    const compare_shape = target.content(target.find(read_compare.fn_var)).structure.func;
+    try testing.expectEqual(fresh_a, target.find(target.vars(compare_shape.params)[0]));
+    try testing.expectEqual(order_id, target.resolvedContent(compare_shape.result).structure.app.type);
+    const eq_shape = target.content(target.find(read_eq.fn_var)).structure.func;
+    try testing.expectEqual(fresh_a, target.find(target.vars(eq_shape.params)[1]));
+    try testing.expectEqual(bool_id, target.resolvedContent(eq_shape.result).structure.app.type);
+
+    // A second instantiation is independent: two call sites of a
+    // constrained value do not share a method type.
+    const again = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
+    const second = target.content(target.find(again)).structure.func;
+    const other_a = target.find(target.vars(second.params)[0]);
+    try testing.expect(other_a != fresh_a);
+    try testing.expect(target.findConstraint(target.flagsOf(other_a).constraints, eq_name).?.fn_var != read_eq.fn_var);
+}
+
+test "quantifier order matches the writer, records and constraints included" {
+    // static-dispatch-spike.md §7.2, A.24: caller and callee compute the
+    // canonical evidence order independently — the callee from its own
+    // store with `quantifierOrder`, the caller from the interface record's
+    // quantifier list — so the two walks must agree exactly. The case that
+    // could plausibly drift is a RECORD, whose fields the writer sorts by
+    // name TEXT before descending, so `{ b : x, a : y } -> x` discovers `y`
+    // before `x`.
+    const gpa = testing.allocator;
+    var interner: InternPool.Global = try .init(gpa);
+    defer interner.deinit(gpa);
+    var store: TypeStore = .init(gpa);
+    defer store.deinit();
+
+    const x = try store.fresh(.{ .flex = .{} }, TypeStore.generalized);
+    const y = try store.fresh(.{ .flex = .{} }, TypeStore.generalized);
+    const b_name = try interner.getOrPut(gpa, "b");
+    const a_name = try interner.getOrPut(gpa, "a");
+    var fields = [_]TypeStore.Field{
+        .{ .name = b_name, .value = x },
+        .{ .name = a_name, .value = y },
+    };
+    const range = try store.addFields(&fields);
+    const closed = try store.fresh(.{ .structure = .empty_record }, TypeStore.generalized);
+    const record = try store.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = closed } } }, TypeStore.generalized);
+    const params = try store.addVars(&.{record});
+    const body = try store.fresh(.{ .structure = .{ .func = .{ .params = params, .result = x } } }, TypeStore.generalized);
+
+    var order: std.ArrayList(Var) = .empty;
+    defer order.deinit(gpa);
+    try quantifierOrder(&store, &interner, body, &order, gpa);
+    try testing.expectEqualSlices(Var, &.{ y, x }, order.items);
+
+    var iface: Interface = .empty;
+    defer iface.deinit(gpa);
+    var w: Writer = .init(gpa, &store, &interner, 0);
+    defer w.deinit();
+    _ = try w.add(body);
+    try w.attach(&iface);
+    // The writer numbered them the same way: field `a`'s variable is
+    // quantifier 0 and field `b`'s is quantifier 1, so a caller reading the
+    // record lays the evidence out in the order the callee expects.
+    const scheme = iface.schemes[0];
+    try testing.expectEqual(@as(u32, 2), scheme.quantified_count);
+    const record_term = iface.term(@enumFromInt(iface.term(scheme.body).rhs));
+    _ = record_term;
+    const func_term = iface.term(scheme.body);
+    const param_words = iface.range(func_term.lhs);
+    const rec = iface.term(@enumFromInt(param_words[0]));
+    const pairs = iface.range(rec.lhs);
+    try testing.expectEqualStrings("a", interner.slice(iface.symbol(@enumFromInt(pairs[0]))));
+    try testing.expectEqual(@as(u32, 0), iface.term(@enumFromInt(pairs[1])).lhs);
+    try testing.expectEqualStrings("b", interner.slice(iface.symbol(@enumFromInt(pairs[2]))));
+    try testing.expectEqual(@as(u32, 1), iface.term(@enumFromInt(pairs[3])).lhs);
 }
 
 /// Build a random solved type at `TypeStore.generalized`, with deliberate
@@ -774,7 +1116,7 @@ fn expectRoundTrip(seed: u64) !void {
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const copy = try instantiate(&iface, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator());
+    const copy = try instantiate(&iface, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator(), null);
 
     // The record must not have smuggled an error term into a type that had
     // none: `err` unifies with anything, so one hiding inside a published

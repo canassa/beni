@@ -1,0 +1,15 @@
+-- check/bad (project): §10.1's two-span case. `Shape` has no `draw`, and the
+-- call that made `a` concrete is HERE — so the primary span is
+-- `Lib.render shape` at 11:5 in this file, and the callee's `where` clause is
+-- named in the prose. Roc reports the callee's span instead and report 18
+-- §2.4 is the complaint about it; report 20 §7.2 confirms Roc still does.
+import Lib
+
+
+pub type Shape
+    = Circle Float
+
+
+pub show : Shape -> String
+show shape =
+    Lib.render shape

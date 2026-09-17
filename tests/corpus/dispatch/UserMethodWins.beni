@@ -1,0 +1,20 @@
+-- dispatch: §3.3 step 1 — a user `pub eq` in the DECLARING module wins over
+-- derivation. The check result is identical either way, which is why this
+-- fixture is here and not in `check/good`: only the table says WHICH
+-- function `==` calls, and `top eq` is the whole assertion.
+pub type Version
+    = Version Int Int
+
+
+pub eq : Version, Version -> Bool
+eq a b =
+    case a of
+        Version majorA _ ->
+            case b of
+                Version majorB _ ->
+                    majorA == majorB
+
+
+pub sameVersion : Version, Version -> Bool
+sameVersion a b =
+    a == b

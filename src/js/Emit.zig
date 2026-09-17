@@ -55,6 +55,7 @@ const InternPool = @import("../InternPool.zig");
 const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Lower = @import("Lower.zig");
+const Dispatch = @import("../check/Dispatch.zig");
 const Print = @import("Print.zig");
 const Sibling = @import("Sibling.zig");
 
@@ -534,6 +535,10 @@ const Emitter = struct {
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
+                .dispatch = if (m.int() < e.session.checked.dispatch.len)
+                    &e.session.checked.dispatch[m.int()]
+                else
+                    &Dispatch.empty,
                 .specifiers = specifiers,
                 .sibling = sibling,
                 .entry_decl = if (m == entry.module) entry.decl.int() else null,

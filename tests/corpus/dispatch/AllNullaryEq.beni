@@ -1,0 +1,21 @@
+-- dispatch: §9.4 and A.18. An all-nullary type is a bare tag string, so a
+-- USE SITE of `==` on one gets `primitive strict_eq` and no derived
+-- function at all — there is nothing to derive. `compare` cannot be the
+-- same primitive, because the tags are compared alphabetically and the
+-- language means DECLARATION order, so it takes a derived function with an
+-- order table (§9.4); `Basics.Order` is exactly that case, which is why
+-- §3.2's table gives `Order` a `derived` row and not `strict_eq`'s partner.
+pub type Colour
+    = Red
+    | Green
+    | Blue
+
+
+pub sameColour : Colour, Colour -> Bool
+sameColour a b =
+    a == b
+
+
+pub before : Colour, Colour -> Bool
+before a b =
+    a < b

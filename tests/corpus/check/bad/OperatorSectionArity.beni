@@ -2,9 +2,14 @@
 -- (`docs/design/static-dispatch-spike.md` §3.1, Appendix A.22), and §1.3
 -- promises that every message about a well-known call names the OPERATOR.
 -- So an arity or type mistake on one says "The (==) operator", not "This
--- value": too_few_args at 10:6, too_many_args at 15:6, kind_mismatch at
+-- value": too_few_args at 10:6, too_many_args at 15:6, type_mismatch at
 -- 20:9. The hand-written lambda at the bottom is the control — it is not
 -- an operator section and must not be named as one (too_few_args at 25:5).
+--
+-- `wrongType` compares a `String` with an `Int` and not a `String` with a
+-- `String`: on this branch `<` is the receiver's `compare` method (§3.1) and
+-- `"a" < "b"` COMPILES, so the mistake has to be one the operator's own
+-- pinning rule catches — both operands are one type (A.33).
 pub tooFew : Int -> Bool
 tooFew n =
     (==) n
@@ -17,7 +22,7 @@ tooMany =
 
 pub wrongType : Bool
 wrongType =
-    (<) "a" "b"
+    (<) "a" 1
 
 
 pub handWritten : Int -> Bool

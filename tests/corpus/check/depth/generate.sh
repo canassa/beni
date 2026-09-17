@@ -86,6 +86,19 @@ inferred 512 'one over: the scheme is `<error>` AND there is a message.' \
     > "$dir/InferredDeep.beni"
 
 # ---------------------------------------------------------------------------
+# There is no pair for the DERIVATION guard of
+# `docs/design/static-dispatch-spike.md` §6.3, and there cannot be one.
+# Derivation is structural and recursive (§3.3), so `==` on a deep tuple
+# costs a level of `targetFor` per level of type — but the TYPE READER stops
+# at `Types.Builder.max_depth` (512) first, which `AnnotationOk`/`Deep`
+# above already pin, and the §6.3 guard is written at `Parse.max_depth + 104`
+# for the same reason `Constrain`'s and `Solve`'s are: the parser refuses the
+# file before the checker can reach it. A pair here would have pinned the 512
+# guard a second time under a name that says 4200, which is worse than none.
+# The guard is in the code (`Solver.targetFor`) so a poisoned store cannot
+# make the recursion run away; nothing reachable from a source file trips it.
+
+# ---------------------------------------------------------------------------
 # `Parse.max_depth` (4096), which is why the checker's own 4200-level guards
 # in `Constrain` and `Solve` are unreachable and may stay silent: the parser
 # refuses the file first. Measured: 4095 checks clean, 4096 reports — and

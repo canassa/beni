@@ -1,0 +1,8 @@
+module UserMethodWins
+  decl eq evidence=0
+  decl sameVersion evidence=0
+  derived 0 compare UserMethodWins.Version evidence=0
+    part 0 primitive num_compare
+    part 1 primitive num_compare
+  site 20 0 primitive strict_eq
+  site 33 0 top eq

@@ -1,0 +1,3 @@
+module FieldCall
+  decl invoke evidence=0
+  site 11 0 field

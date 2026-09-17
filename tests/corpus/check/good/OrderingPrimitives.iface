@@ -1,0 +1,5 @@
+module OrderingPrimitives
+  value chars : Char, Char -> Bool
+  value floats : Float, Float -> Bool
+  value ints : Int, Int -> Bool
+  value strings : String, String -> Bool

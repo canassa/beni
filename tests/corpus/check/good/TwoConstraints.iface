@@ -1,0 +1,2 @@
+module TwoConstraints
+  value choose : a, a, b -> a where a.eq : a, a -> Bool, a.pick : a, a -> a, b.render : b, Int -> a

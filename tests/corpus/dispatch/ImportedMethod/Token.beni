@@ -1,0 +1,13 @@
+-- dispatch (project): the module that DECLARES the type. It is the one that
+-- emits `Token`'s derived `eq` and `compare` — eagerly, used or not
+-- (`docs/design/static-dispatch-spike.md` §6.3.1 step 4, §8.5, A.23) —
+-- because a consumer is checked AFTER it and cannot ask it for anything.
+pub type Token
+    = Token Int
+
+
+pub bump : Token, Int -> Token
+bump t step =
+    case t of
+        Token n ->
+            Token (n + step)

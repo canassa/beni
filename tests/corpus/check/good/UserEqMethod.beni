@@ -1,0 +1,20 @@
+-- check/good: a user `pub eq` in the declaring module WINS over derivation
+-- (§3.3 step 1), so `==` on a `Version` calls this module's own `eq` and
+-- compares only the major number. The two ignored fields are what makes the
+-- difference visible: a derived `eq` would compare all three.
+pub type Version
+    = Version Int Int Int
+
+
+pub eq : Version, Version -> Bool
+eq a b =
+    case a of
+        Version majorA _ _ ->
+            case b of
+                Version majorB _ _ ->
+                    majorA == majorB
+
+
+pub sameMajor : Version, Version -> Bool
+sameMajor a b =
+    a == b

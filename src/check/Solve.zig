@@ -50,6 +50,7 @@ const Constrain = @import("Constrain.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Dispatch = @import("Dispatch.zig");
 
 const Solve = @This();
 
@@ -108,13 +109,23 @@ pub const Counters = struct {
 pub const Obligation = struct {
     kind: Kind,
     v: Var,
+    /// Where the requirement itself was WRITTEN: the `x.m` call, the
+    /// operator, or — for a constraint that arrived by instantiating an
+    /// imported scheme — the `where` clause inside the CALLEE.
     region: Bir.Inst.Index,
-    /// `tuple_index`: the index. Unused otherwise.
+    /// The instruction in THIS module whose instantiation created this
+    /// obligation (static-dispatch-spike.md §6.2, A.37). It is the
+    /// PRIMARY span of every message that carries two: the call the author
+    /// wrote, not the annotation it came from. Roc records the same thing
+    /// and never reads it, which is report 18 §2.4's complaint.
+    origin: Bir.Inst.Index = @enumFromInt(0),
+    /// `tuple_index`: the index. `method`: the index into the store's
+    /// `constraints` table of the constraint being discharged.
     index: u32 = 0,
     /// `tuple_index`: the variable the element must equal.
     result: Var.Optional = .none,
 
-    pub const Kind = enum { equatable, interpolatable, tuple_index };
+    pub const Kind = enum { equatable, interpolatable, tuple_index, method };
 };
 
 pub const Error = Allocator.Error;
@@ -156,6 +167,18 @@ pub const Solver = struct {
     counters: Counters = .{},
     /// Variables whose `copy` memo one instantiation set, cleared after it.
     touched: std.ArrayList(Var) = .empty,
+    /// Constraint indices `promote` has already emitted sites for. Two
+    /// declarations of one mutually recursive group share their generalised
+    /// variables, so without this each of them emits the same
+    /// `(inst, evidence_index)` row — an argument passed twice.
+    ///
+    /// Keyed on the VARIABLE and not on the constraint: two headers of one
+    /// group share their generalised variables wholesale, so one entry per
+    /// quantifier settles every constraint on it — and a group has a
+    /// handful of quantifiers where an unannotated chain of `n` links has
+    /// n(n+1)/2 constraints. That accumulation IS what plan §7's M2
+    /// measures, so the bookkeeping over it has to be free.
+    promoted: std.ArrayList(Var) = .empty,
     depth: u32 = 0,
     /// Set by a sub-unification that knows more than "they differ"; read
     /// and cleared by the `unify` that owns the region.
@@ -176,6 +199,12 @@ pub const Solver = struct {
     /// The occurs check's stack, reused across every generalised binding of
     /// the group; see `occurs`.
     occurs_frames: OccursFrames = .empty,
+    /// The declaring type's own parameters, as store variables, during the
+    /// eager derivation pass of A.23. A position that resolves to one of
+    /// them is `evidence i` — the derived function's own hidden parameter,
+    /// not the enclosing declaration's (§9's parts contract). Empty every
+    /// other moment.
+    type_params: []const Var = &.{},
 
     /// Deep enough for anything the parser accepts, and shallow enough not
     /// to overflow a worker's 64 MiB stack (`Check.stack_size`).
@@ -206,6 +235,7 @@ pub const Solver = struct {
         for (s.obligations.items) |*o| o.deinit(s.gpa);
         s.obligations.deinit(s.gpa);
         s.touched.deinit(s.gpa);
+        s.promoted.deinit(s.gpa);
     }
 
     fn store(s: *const Solver) *TypeStore {
@@ -274,6 +304,7 @@ pub const Solver = struct {
                 });
             },
             .try_ => try s.tryShape(node),
+            .method => try s.method(node),
         }
     }
 
@@ -296,7 +327,7 @@ pub const Solver = struct {
         // Obligations first: `tuple_index` can still BIND, and binding
         // after generalisation would write into a scheme (checker.md §6.4).
         try s.dischargeObligations(info.rank);
-        try s.generalize(info.rank);
+        try s.generalize(info.rank, true);
         // The deferred occurs check, once per generalised binding — not
         // inside unification (design §7 #3).
         for (s.tree.headers(info.header_start, info.header_len)) |h| {
@@ -408,11 +439,27 @@ pub const Solver = struct {
             .flex => |fb| {
                 const kind = TypeStore.Kind.meet(fa.kind, fb.kind) orelse
                     return s.fail(.{ .kinds = .{ .left = fa.kind, .right = fb.kind } });
+                // **Rule U1** (static-dispatch-spike.md §6.2): union the two
+                // constraint sets onto the surviving root, beside the
+                // `equatable` OR and the `Kind` meet. A name on both sides
+                // unifies the two method types.
+                //
+                // The union is computed, the roots are MERGED, and only then
+                // are the paired method types unified — in that order,
+                // because unifying `a, Int -> a` with `b, Int -> b` unifies
+                // `a` with `b`, which re-enters this arm. Merging first
+                // makes the re-entry `ra == rb` and stops it dead; doing it
+                // the other way round recursed to the depth guard and
+                // emitted one dispatch site per level.
+                const merged, const pairs = try s.unionConstraints(fa.constraints, fb.constraints);
+                defer s.env.scratch.free(pairs);
                 _ = st.merge(ra, rb, .{ .flex = .{
                     .name = if (fb.name != .none) fb.name else fa.name,
                     .kind = kind,
                     .equatable = fa.equatable or fb.equatable,
+                    .constraints = merged,
                 } });
+                try s.unifyPending(pairs);
                 return true;
             },
             .rigid => |fb| {
@@ -422,6 +469,7 @@ pub const Solver = struct {
                 if (fa.kind != .any and fa.kind != fb.kind) return false;
                 if (fa.equatable and !fb.equatable) return s.fail(.{ .not_equatable_rigid = rb });
                 _ = st.merge(ra, rb, cb);
+                try s.checkAgainstRigid(fa.constraints, st.find(rb), fb);
                 return true;
             },
             .alias, .structure => {
@@ -429,6 +477,7 @@ pub const Solver = struct {
                     return s.fail(.{ .kind_not_satisfied = .{ .kind = fa.kind } });
                 }
                 if (fa.equatable) try s.register(.{ .kind = .equatable, .v = rb, .region = s.region });
+                try s.deferConstraints(fa.constraints, rb);
                 _ = st.merge(ra, rb, cb);
                 return true;
             },
@@ -467,7 +516,10 @@ pub const Solver = struct {
             .flex => |fb| {
                 if (fb.kind != .any and fb.kind != fa.kind) return false;
                 if (fb.equatable and !fa.equatable) return s.fail(.{ .not_equatable_rigid = ra });
+                // Rule U2 from the other side: the rigid's set is what its
+                // `where` clause declared and is never extended (§6.2).
                 _ = st.merge(ra, rb, .{ .rigid = fa });
+                try s.checkAgainstRigid(fb.constraints, st.find(ra), fa);
                 return true;
             },
             // Two different rigids, or a rigid against a real type: the
@@ -490,6 +542,7 @@ pub const Solver = struct {
                     return s.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
                 }
                 if (fb.equatable) try s.register(.{ .kind = .equatable, .v = ra, .region = s.region });
+                try s.deferConstraints(fb.constraints, ra);
                 _ = st.merge(ra, rb, .{ .alias = aa });
                 return true;
             },
@@ -543,6 +596,7 @@ pub const Solver = struct {
                     return s.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
                 }
                 if (fb.equatable) try s.register(.{ .kind = .equatable, .v = ra, .region = s.region });
+                try s.deferConstraints(fb.constraints, ra);
                 _ = st.merge(ra, rb, .{ .structure = sa });
                 return true;
             },
@@ -939,11 +993,22 @@ pub const Solver = struct {
 
     fn instantiate(s: *Solver, node: Constrain.Node) Error!void {
         const target: Var = @enumFromInt(node.a);
-        const scheme = (try s.schemeOf(node.region)) orelse {
+        const owner: Bir.Inst.OptionalIndex = @enumFromInt(node.b);
+        const site = owner.unwrap() orelse node.region;
+        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .first_index = 0 })) orelse {
             s.poison(target);
             return;
         };
+        const mark: u32 = @intCast(s.store().constraints.items.len);
         const copy = try s.makeCopy(scheme);
+        // A reference to a declaration of the CURRENT binding group is used
+        // at its monomorphic type (`checker.md` §6.1), so `makeCopy` hands
+        // back the scheme itself and there is nothing new to tag. The call
+        // still has to forward the evidence, so its site is APPENDED to the
+        // shared constraint instead — which is how `even`/`odd` with an
+        // inferred `where` get the arguments their recursion needs.
+        const shared = s.env.bir.instTag(node.region) == .top;
+        try s.tagInstantiated(copy, site, 0, mark, shared);
         try s.unify(target, copy, node.region, node.category);
     }
 
@@ -957,7 +1022,7 @@ pub const Solver = struct {
     /// used to open the declaring module's Bir and scan its constructor
     /// table by NAME, under this very comment. `Interface.Ctor.arg_terms`
     /// is what makes the comment true.
-    fn schemeOf(s: *Solver, region: Bir.Inst.Index) Error!?Var {
+    fn schemeOf(s: *Solver, region: Bir.Inst.Index, site: ?Schemes.Site) Error!?Var {
         const bir = s.env.bir;
         const data = bir.instData(region);
         switch (bir.instTag(region)) {
@@ -967,7 +1032,7 @@ pub const Solver = struct {
                 return s.env.decl_scheme[data.lhs].unwrap();
             },
             .ctor => return try s.ctorType(data.lhs),
-            .ext_value => return try s.importedValue(@enumFromInt(data.lhs), data.rhs),
+            .ext_value => return try s.importedValue(@enumFromInt(data.lhs), data.rhs, site),
             .ext_ctor => return try s.importedCtor(@enumFromInt(data.lhs), data.rhs),
             else => return null,
         }
@@ -1054,14 +1119,14 @@ pub const Solver = struct {
     /// would make one imported call read as two, and checker.md §9 has M4's
     /// incrementality tests asserting this counter did not move, so it has
     /// to mean exactly one thing.
-    fn importedValue(s: *Solver, module: Graph.Index, index: u32) Error!?Var {
+    fn importedValue(s: *Solver, module: Graph.Index, index: u32, site: ?Schemes.Site) Error!?Var {
         if (module.int() >= s.env.interfaces.len) return null;
         const iface = &s.env.interfaces[module.int()];
         if (index >= iface.values.len) return null;
         const scheme_index = iface.values[index].scheme;
         if (scheme_index == .none) return null;
         const mark = s.store().count();
-        const v = try Schemes.instantiate(iface, s.store(), @intFromEnum(scheme_index), s.rank, s.env.scratch);
+        const v = try Schemes.instantiate(iface, s.store(), @intFromEnum(scheme_index), s.rank, s.env.scratch, site);
         try s.adoptSince(mark);
         return v;
     }
@@ -1102,11 +1167,32 @@ pub const Solver = struct {
         try s.touched.append(s.gpa, root);
 
         switch (content) {
-            .err, .flex => {},
+            .err => {},
+            // **§6.4**: a constraint's `fn_var` is copied through the SAME
+            // memo as the rest of the scheme. Without it the copy shares
+            // the scheme's method type, so discharging one use binds the
+            // SCHEME — `twice : a, Int -> a where a.scale : …` came back
+            // from its first call site as `Metre, Int -> Metre` and every
+            // later caller was checked against that.
+            .flex => |flags| {
+                if (flags.constraints != .none) {
+                    st.setContent(copy, .{ .flex = .{
+                        .name = flags.name,
+                        .kind = flags.kind,
+                        .equatable = flags.equatable,
+                        .constraints = try s.copyConstraints(flags.constraints),
+                    } });
+                }
+            },
             // Instantiating an annotation's promise turns it into an
             // ordinary variable: inside the body `a` is rigid, at a call
             // site it is whatever the caller needs (Elm's `makeCopyHelp`).
-            .rigid => |flags| st.setContent(copy, .{ .flex = flags }),
+            .rigid => |flags| st.setContent(copy, .{ .flex = .{
+                .name = flags.name,
+                .kind = flags.kind,
+                .equatable = flags.equatable,
+                .constraints = try s.copyConstraints(flags.constraints),
+            } }),
             .structure => |flat| {
                 const copied: TypeStore.Structure = switch (flat) {
                     .unit, .empty_record => flat,
@@ -1136,6 +1222,33 @@ pub const Solver = struct {
         return copy;
     }
 
+    /// A fresh constraint set whose method types are copies, made through
+    /// the enclosing `makeCopy`'s memo so two constraints that mention the
+    /// same variable still share it after the copy (§6.4).
+    ///
+    /// The new constraints carry NO sites: the sites of an instantiated
+    /// scheme are the instantiating instruction's, and `tagInstantiated`
+    /// assigns them in the canonical order of §7.2 once the copy is whole.
+    fn copyConstraints(s: *Solver, set: TypeStore.ConstraintSet.Optional) Error!TypeStore.ConstraintSet.Optional {
+        const st = s.store();
+        const n = st.constraintCount(set);
+        if (n == 0) return .none;
+        var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
+        defer built.deinit(s.env.scratch);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const c = st.constraintAt(set, i);
+            try built.append(s.env.scratch, .{
+                .name = c.name,
+                .fn_var = try s.copyHelp(c.fn_var),
+                .region = c.region,
+                .origin = c.origin,
+                .sites = .empty,
+            });
+        }
+        return (try st.addConstraints(built.items)).toOptional();
+    }
+
     /// Copy a range of variables. The dupe is unavoidable for the same
     /// reason as `copyHelp`'s record arm: `st.vars` is a view into `extra`
     /// and copying a child appends to it.
@@ -1163,6 +1276,16 @@ pub const Solver = struct {
             // has already discarded.
             const pool_len = (try s.pool(s.rank)).items.len;
             const obligation_len = (try s.obligationsAt(s.rank)).items.len;
+            // The dispatch builder and the diagnostics are the other two
+            // things a retracted probe must not leave behind (A.35, B3):
+            // §6.2 registers obligations from INSIDE `unify`, so
+            // `checkAgainstRigid` — which appends sites and raises
+            // `missing_where_constraint` — is reachable from here. A site
+            // the checker retracted is an argument the emitter would pass
+            // anyway, and a message about a shape the compiler decided
+            // against is worse than no message.
+            const dispatch_len = s.env.dispatch.lengths();
+            const report_mark = s.reporter.mark();
             const snapshot = s.store().beginSpeculation();
             const ok = try s.tryShapeOnce(id, scrutinee, info);
             if (ok) {
@@ -1172,6 +1295,8 @@ pub const Solver = struct {
             const exact = s.store().rollback(snapshot);
             (try s.pool(s.rank)).shrinkRetainingCapacity(pool_len);
             (try s.obligationsAt(s.rank)).shrinkRetainingCapacity(obligation_len);
+            s.env.dispatch.shrink(dispatch_len);
+            s.reporter.rollbackTo(report_mark);
             // An inexact rollback (the journal could not allocate) leaves
             // the store in a state no further guess can be trusted against,
             // so stop guessing rather than report a shape that was decided
@@ -1214,7 +1339,7 @@ pub const Solver = struct {
     /// Elm's `generalize`: bucket the young pool by rank, fix the ranks
     /// bottom-up, move what escaped into its own pool, and quantify the
     /// rest. Never scans the environment (research/02 §2.2).
-    pub fn generalize(s: *Solver, young_rank: u32) Error!void {
+    pub fn generalize(s: *Solver, young_rank: u32, is_let: bool) Error!void {
         const st = s.store();
         const young_mark = st.nextMark();
         const visit_mark = st.nextMark();
@@ -1253,10 +1378,35 @@ pub const Solver = struct {
             if (st.find(v) != v) continue;
             if (st.rank(v) < young_rank) {
                 try (try s.pool(st.rank(v))).append(s.gpa, v);
-            } else {
-                st.setRank(v, TypeStore.generalized);
-                s.counters.generalisations += 1;
+                continue;
             }
+            // **§6.4 rule (a)**: a `let` binding is never generalised over a
+            // variable that carries a method constraint. It is held at the
+            // enclosing rank instead, to be generalised — or promoted, or
+            // reported — at the DECLARATION's boundary, so no constraint
+            // ever straddles a boundary and every constraint that reaches
+            // promotion sits on a variable the declaration itself
+            // quantifies. That is what removes Roc's promoted-requirements
+            // side table (A.30); the price is that a constrained `let`
+            // helper is monomorphic, and `method_constraint_mismatch` is
+            // what a second use at another type gets (§11).
+            if (is_let and young_rank > TypeStore.outermost and st.flagsOf(v).constraints != .none) {
+                // Remembered for the one message the boundary produces
+                // (`Env.monomorphic`): by the time the second use fails,
+                // the constraint is gone and only this says why.
+                const flags = st.flagsOf(v);
+                if (st.constraintCount(flags.constraints) != 0) {
+                    try s.env.monomorphic.append(s.env.scratch, .{
+                        .v = v,
+                        .method = st.constraintAt(flags.constraints, 0).name,
+                    });
+                }
+                st.setRank(v, young_rank - 1);
+                try (try s.pool(young_rank - 1)).append(s.gpa, v);
+                continue;
+            }
+            st.setRank(v, TypeStore.generalized);
+            s.counters.generalisations += 1;
         }
         (try s.pool(young_rank)).clearRetainingCapacity();
     }
@@ -1270,10 +1420,14 @@ pub const Solver = struct {
         // a call that may grow it.
         var i: usize = 0;
         var rounds: usize = 0;
+        var exhausted = true;
         while (rounds < 1 << 20) : (rounds += 1) {
             const o = blk: {
                 const list = try s.obligationsAt(rank);
-                if (i >= list.items.len) break;
+                if (i >= list.items.len) {
+                    exhausted = false;
+                    break;
+                }
                 break :blk list.items[i];
             };
             i += 1;
@@ -1282,7 +1436,23 @@ pub const Solver = struct {
                 .equatable => try s.dischargeEquatable(o),
                 .interpolatable => try s.dischargeInterpolatable(o),
                 .tuple_index => try s.dischargeTupleIndex(o),
+                .method => try s.dischargeMethod(o),
             }
+        }
+        // **A.27**: an exhausted budget used to fall out of the `while` and
+        // clear the list, which left a module CHECKED with undischarged
+        // obligations — the hole `checker.md` §5's "a guard that poisons
+        // must report first" exists to close. A method obligation can
+        // register more (§6.3.1 step 3), so the bound is reachable by input
+        // and not only by a compiler bug.
+        if (exhausted) {
+            const list = try s.obligationsAt(rank);
+            const region = if (list.items.len > i) list.items[i].origin else s.region;
+            try s.reporter.nestingTooDeep(region, max_depth);
+            for (list.items[i..]) |pending| s.poison(pending.v);
+            // In a debug build this IS a compiler bug and a message would
+            // hide it.
+            if (std.debug.runtime_safety) @panic("obligation drain loop exhausted its budget");
         }
         (try s.obligationsAt(rank)).clearRetainingCapacity();
     }
@@ -1428,6 +1598,1298 @@ pub const Solver = struct {
         }
     }
 
+    // ---- Method constraints and dispatch (static-dispatch-spike.md §6) ---
+
+    /// **Rule U0** (§6.2, A.34): the `method` node. A receiver whose root is
+    /// already concrete has its method resolved HERE, inline, before the
+    /// argument constraints that follow it in the same `and_` are solved.
+    fn method(s: *Solver, node: Constrain.Node) Error!void {
+        const info = s.tree.extraData(node.b, Constrain.Method);
+        const receiver: Var = @enumFromInt(node.a);
+        const st = s.store();
+        const first_index: u16 = 0;
+        const sites = try st.addConstraintSites(&.{.{ .inst = node.region, .evidence_index = first_index }});
+        const c: TypeStore.MethodConstraint = .{
+            .name = info.name,
+            .fn_var = info.fn_var,
+            .region = node.region,
+            .origin = if (info.kind == 1)
+                .type_dispatch
+            else if (info.origin != @intFromEnum(Bir.WellKnown.none))
+                .well_known
+            else
+                .dot_call,
+            .sites = sites,
+        };
+        const root, const content = st.resolved(receiver);
+        switch (content) {
+            .flex => {
+                try s.attachConstraint(root, c, node.region);
+                try s.register(.{
+                    .kind = .method,
+                    .v = root,
+                    .region = node.region,
+                    .origin = node.region,
+                    .index = s.lastConstraintIndex(),
+                });
+                s.counters.constraints_deferred += 1;
+            },
+            // Concrete — or rigid, which is what a `type_dispatch`'s
+            // variable always is. Resolve now (Rule U0).
+            else => try s.resolveMethod(c, root, content, node.region, true, info),
+        }
+    }
+
+    fn lastConstraintIndex(s: *const Solver) u32 {
+        return @intCast(s.store().constraints.items.len - 1);
+    }
+
+    /// Add one constraint to a flex root's set, by Rule U1: a name already
+    /// present unifies the two method types and keeps both sites.
+    ///
+    /// **Appends when it can.** Rebuilding the whole set on every attach is
+    /// quadratic, and a constraint chain is exactly the input that walks
+    /// into it: at n = 800 it was 7.3x slower than the chain without
+    /// dispatch and `constraints_promoted` read n(n+1)/2. A set is a
+    /// half-open RANGE of an append-only list, so when the old range ends at
+    /// the tail the new set is "that range, one longer" and costs one
+    /// append; otherwise it costs one copy, which happens only when
+    /// something else appended in between.
+    fn attachConstraint(s: *Solver, root: Var, c: TypeStore.MethodConstraint, region: Bir.Inst.Index) Error!void {
+        const st = s.store();
+        const flags = st.flagsOf(root);
+        const n = st.constraintCount(flags.constraints);
+
+        // The common case by far: a name this variable does not carry yet.
+        if (st.findConstraint(flags.constraints, c.name) == null) {
+            const set = try st.extendConstraints(flags.constraints, c);
+            s.counters.constraints_created += 1;
+            s.setConstraints(root, flags, set);
+            return;
+        }
+
+        var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
+        defer built.deinit(s.env.scratch);
+        var pending: std.ArrayList(Pending) = .empty;
+        defer pending.deinit(s.env.scratch);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const existing = st.constraintAt(flags.constraints, i);
+            if (existing.name != c.name) {
+                try built.append(s.env.scratch, existing);
+                continue;
+            }
+            const first, const second = if (existing.region.int() <= c.region.int())
+                .{ existing, c }
+            else
+                .{ c, existing };
+            try built.append(s.env.scratch, try s.joinConstraint(first, second));
+            try pending.append(s.env.scratch, .{ .younger = second, .older = first });
+        }
+        const set = try st.addConstraints(built.items);
+        s.counters.constraints_merged += 1;
+        s.setConstraints(root, flags, set.toOptional());
+        // After the set is in place, for the same reason Rule U1 merges
+        // before it unifies: unifying two method types unifies the variables
+        // they are about, and that re-enters here.
+        const outer = s.region;
+        defer s.region = outer;
+        s.region = region;
+        try s.unifyPending(pending.items);
+    }
+
+    fn setConstraints(s: *Solver, root: Var, flags: TypeStore.Flags, set: TypeStore.ConstraintSet.Optional) void {
+        const st = s.store();
+        const with: TypeStore.Flags = .{
+            .name = flags.name,
+            .kind = flags.kind,
+            .equatable = flags.equatable,
+            .constraints = set,
+        };
+        st.setContent(root, switch (st.content(root)) {
+            .rigid => .{ .rigid = with },
+            else => .{ .flex = with },
+        });
+    }
+
+    /// Drop the constraint named `name` from `root`'s set, because one of
+    /// the two mechanisms `fast-compiler.md` §3.1 keeps already answers it
+    /// (`builtinRigidTarget`). The set is rebuilt, never edited (§6.1
+    /// invariant 2); leaving the constraint on would promote it, and
+    /// `isEven n = n < 1` would publish
+    /// `number -> Bool where number.compare : …` in its interface.
+    fn detachConstraint(s: *Solver, root: Var, name: Symbol) Error!void {
+        const st = s.store();
+        const flags = st.flagsOf(root);
+        const n = st.constraintCount(flags.constraints);
+        if (n == 0) return;
+        var kept: std.ArrayList(TypeStore.MethodConstraint) = .empty;
+        defer kept.deinit(s.env.scratch);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const c = st.constraintAt(flags.constraints, i);
+            if (c.name == name) continue;
+            try kept.append(s.env.scratch, c);
+        }
+        const set: TypeStore.ConstraintSet.Optional = if (kept.items.len == 0)
+            .none
+        else
+            (try st.addConstraints(kept.items)).toOptional();
+        s.setConstraints(root, flags, set);
+    }
+
+    /// Two constraints of the same name on one variable: one constraint per
+    /// `(variable, name)` (§6.1 invariant 3), so the two method types have
+    /// to agree. The surviving constraint answers BOTH sites.
+    fn joinConstraint(
+        s: *Solver,
+        older: TypeStore.MethodConstraint,
+        younger: TypeStore.MethodConstraint,
+    ) Error!TypeStore.MethodConstraint {
+        const st = s.store();
+        // Deduplicated: the same constraint is folded into its own set
+        // again when its obligation is discharged against a still-flex
+        // receiver (§6.3's `flex` row), and a site emitted twice is an
+        // argument passed twice.
+        const old_sites = st.constraintSites(older);
+        const new_sites = st.constraintSites(younger);
+        var buffer = try s.env.scratch.alloc(TypeStore.ConstraintSite, old_sites.len + new_sites.len);
+        defer s.env.scratch.free(buffer);
+        var len: usize = 0;
+        for ([_][]const TypeStore.ConstraintSite{ old_sites, new_sites }) |run| {
+            outer: for (run) |site| {
+                for (buffer[0..len]) |seen| {
+                    if (seen.inst == site.inst and seen.evidence_index == site.evidence_index) continue :outer;
+                }
+                buffer[len] = site;
+                len += 1;
+            }
+        }
+        const joined = buffer[0..len];
+        return .{
+            .name = older.name,
+            .fn_var = older.fn_var,
+            .region = older.region,
+            .origin = older.origin,
+            .sites = try st.addConstraintSites(joined),
+        };
+    }
+
+    /// One method type pair the caller must unify once the roots are
+    /// merged, and where to report if it does not fit.
+    const Pending = struct { younger: TypeStore.MethodConstraint, older: TypeStore.MethodConstraint };
+
+    /// **Rule U1**: union two sets onto one fresh range. Neither input is
+    /// mutated (§6.1 invariant 2), and nothing is unified — the pairs that
+    /// have to agree come back for the caller to unify AFTER the merge.
+    fn unionConstraints(
+        s: *Solver,
+        a: TypeStore.ConstraintSet.Optional,
+        b: TypeStore.ConstraintSet.Optional,
+    ) Error!struct { TypeStore.ConstraintSet.Optional, []Pending } {
+        const st = s.store();
+        if (a == .none) return .{ b, &.{} };
+        if (b == .none) return .{ a, &.{} };
+        s.counters.constraints_merged += 1;
+        var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
+        defer built.deinit(s.env.scratch);
+        var pending: std.ArrayList(Pending) = .empty;
+        errdefer pending.deinit(s.env.scratch);
+        const na = st.constraintCount(a);
+        var i: u32 = 0;
+        while (i < na) : (i += 1) {
+            const left = st.constraintAt(a, i);
+            if (st.findConstraint(b, left.name)) |right| {
+                const first, const second = if (left.region.int() <= right.region.int())
+                    .{ left, right }
+                else
+                    .{ right, left };
+                try pending.append(s.env.scratch, .{ .younger = second, .older = first });
+                try built.append(s.env.scratch, try s.joinConstraint(first, second));
+            } else {
+                try built.append(s.env.scratch, left);
+            }
+        }
+        const nb = st.constraintCount(b);
+        var j: u32 = 0;
+        while (j < nb) : (j += 1) {
+            const right = st.constraintAt(b, j);
+            if (st.findConstraint(a, right.name) == null) try built.append(s.env.scratch, right);
+        }
+        const set = (try st.addConstraints(built.items)).toOptional();
+        return .{ set, try pending.toOwnedSlice(s.env.scratch) };
+    }
+
+    fn unifyPending(s: *Solver, pairs: []const Pending) Error!void {
+        for (pairs) |pair| {
+            if (try s.unifyQuiet(pair.older.fn_var, pair.younger.fn_var)) continue;
+            try s.reporter.methodConstraintMismatch(
+                pair.younger.region,
+                pair.older.region,
+                pair.younger.name,
+                pair.younger.fn_var,
+                pair.older.fn_var,
+            );
+            s.poison(pair.older.fn_var);
+            s.poison(pair.younger.fn_var);
+        }
+    }
+
+    /// **Rule U2**: every constraint on a flex meeting a rigid must be
+    /// present by name on the rigid, which carries exactly what its `where`
+    /// clause declared and is never extended.
+    fn checkAgainstRigid(
+        s: *Solver,
+        set: TypeStore.ConstraintSet.Optional,
+        rigid_root: Var,
+        flags: TypeStore.Flags,
+    ) Error!void {
+        const st = s.store();
+        const n = st.constraintCount(set);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const c = st.constraintAt(set, i);
+            if (st.findConstraint(flags.constraints, c.name)) |rc| {
+                if (!try s.unifyQuiet(rc.fn_var, c.fn_var)) {
+                    try s.reporter.methodConstraintMismatch(c.region, rc.region, c.name, c.fn_var, rc.fn_var);
+                    s.poison(c.fn_var);
+                } else if (s.evidenceIndexOf(rigid_root, c.name)) |k| {
+                    try s.emitSites(c, .{ .evidence = k });
+                } else {
+                    try s.reporter.internal(s.region, "a `where` constraint has no evidence parameter");
+                    try s.emitSites(c, .err);
+                }
+                continue;
+            }
+            if (s.builtinRigidTarget(flags, c)) |target| {
+                try s.emitSites(c, target);
+                continue;
+            }
+            // At the FLEX's region — the call in the body that needs the
+            // method — and never at the annotation (§6.2 Rule U2, §10.4).
+            try s.reporter.missingWhereConstraint(s.region, c.origin == .where_clause, flags.name, c.name, c.fn_var);
+        }
+    }
+
+    /// **Rule U3**: a flex carrying constraints meets a structure or an
+    /// alias. Do NOT walk: register one obligation per constraint on the
+    /// concrete variable, exactly as a flagged-`equatable` flex does.
+    fn deferConstraints(s: *Solver, set: TypeStore.ConstraintSet.Optional, concrete: Var) Error!void {
+        const st = s.store();
+        const n = st.constraintCount(set);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            const c = st.constraintAt(set, i);
+            const index = st.constraint_sets.items[set.unwrap().?.int()].start + i;
+            // **§6.2, A.37**: `origin` is the instruction in THIS module
+            // whose instantiation created the obligation — the call the
+            // author wrote — and not wherever the unification that
+            // discovered it happened to be. A constraint that arrived on an
+            // instantiated scheme already knows it: its dispatch site is
+            // that very instruction. `s.region` is the fallback for a
+            // constraint raised here, where the two coincide.
+            const sites = st.constraintSites(c);
+            try s.register(.{
+                .kind = .method,
+                .v = concrete,
+                .region = c.region,
+                .origin = if (sites.len != 0) sites[0].inst else s.region,
+                .index = index,
+            });
+            s.counters.constraints_deferred += 1;
+        }
+    }
+
+    fn dischargeMethod(s: *Solver, o: Obligation) Error!void {
+        const st = s.store();
+        if (o.index >= st.constraints.items.len) return;
+        const c = st.constraints.items[o.index];
+        const root, const content = st.resolved(o.v);
+        switch (content) {
+            .err => {},
+            // Fold and stop: it will be promoted at generalisation or
+            // discharged later against a concrete type. The
+            // accumulate-until-nominal shape `dischargeEquatable` has.
+            .flex => |flags| {
+                // Unless the variable already answers it: a `number` is
+                // `Int` or `Float` and an `equatable` variable has an `eq`
+                // by §3.4, so folding either would promote a constraint the
+                // two mechanisms `fast-compiler.md` §3.1 keeps already
+                // discharge. `isEven n = n < 2` would otherwise infer
+                // `number -> Bool where number.compare : …`.
+                if (s.builtinRigidTarget(flags, c)) |target| {
+                    try s.emitSites(c, target);
+                    try s.detachConstraint(root, c.name);
+                    return;
+                }
+                try s.attachConstraint(root, c, o.origin);
+            },
+            else => {
+                const outer = s.region;
+                defer s.region = outer;
+                s.region = o.origin;
+                try s.resolveMethod(c, root, content, o.origin, false, null);
+            },
+        }
+    }
+
+    /// The §6.3 discharge table: resolve `c` against a receiver that is no
+    /// longer a variable, unify the method's type with the constraint's,
+    /// and record the site's target.
+    ///
+    /// `immediate` distinguishes Rule U0's inline resolution from a
+    /// deferred obligation, and it changes exactly one row: a RECORD
+    /// receiver whose type was already known is a field call (§1.2), while
+    /// a constraint that was deferred and only later met a record is
+    /// `no_methods_on_shape` (§6.3, §11's deferred-receiver row).
+    fn resolveMethod(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        root: Var,
+        content: TypeStore.Content,
+        origin: Bir.Inst.Index,
+        immediate: bool,
+        info: ?Constrain.Method,
+    ) Error!void {
+        s.counters.constraints_discharged += 1;
+        const st = s.store();
+        switch (content) {
+            .err => return,
+            .flex => |flags| {
+                if (s.builtinRigidTarget(flags, c)) |target| {
+                    try s.emitSites(c, target);
+                    try s.detachConstraint(root, c.name);
+                    return;
+                }
+                try s.attachConstraint(root, c, origin);
+                return;
+            },
+            .rigid => |flags| {
+                if (st.findConstraint(flags.constraints, c.name)) |rc| {
+                    if (!try s.unifyQuiet(rc.fn_var, c.fn_var)) {
+                        try s.reporter.methodConstraintMismatch(origin, rc.region, c.name, c.fn_var, rc.fn_var);
+                        s.poison(c.fn_var);
+                        return;
+                    }
+                    if (s.evidenceIndexOf(root, c.name)) |k| {
+                        try s.emitSites(c, .{ .evidence = k });
+                    } else {
+                        try s.reporter.internal(origin, "a `where` constraint has no evidence parameter");
+                        try s.emitSites(c, .err);
+                    }
+                    return;
+                }
+                if (s.builtinRigidTarget(flags, c)) |target| {
+                    try s.unifyMethodType(c, root, &.{ root, root }, s.wellKnownResult(c), origin);
+                    try s.emitSites(c, target);
+                    return;
+                }
+                if (c.origin == .type_dispatch) {
+                    const var_name = if (info) |i| @as(Symbol.Optional, @enumFromInt(i.var_name)) else flags.name;
+                    try s.reporter.typeDispatchNeedsAnnotation(origin, var_name, c.name, c.fn_var);
+                    s.poison(c.fn_var);
+                    return;
+                }
+                try s.reporter.missingWhereConstraint(origin, c.origin == .where_clause, flags.name, c.name, c.fn_var);
+                try s.emitSites(c, .err);
+                return;
+            },
+            // `resolved` followed every alias already (§6.3's alias row: an
+            // alias is transparent, so its methods are the expansion's).
+            .alias => return,
+            .structure => |flat| switch (flat) {
+                .app => |a| return s.methodOnApp(c, root, a, origin),
+                .record => |r| return s.methodOnRecord(c, root, r, origin, immediate),
+                .empty_record => return s.methodOnRecord(c, root, .{ .fields = .empty, .ext = root }, origin, immediate),
+                .tuple, .unit => {
+                    if (!s.isWellKnown(c)) return s.noMethodsOnShape(c, root, origin);
+                    if (!try s.derivable(c, root, origin)) return;
+                    return s.finishDerived(c, root, origin);
+                },
+                .func => {
+                    // `eq` on a function keeps `not_equatable`, which is the
+                    // better message; `dischargeMethod` raises it itself
+                    // because nothing instantiates `Basics.eq` for `==` any
+                    // more (§6.3, §3.4).
+                    if (c.name == InternPool.WellKnown.eq.symbol()) {
+                        try s.reporter.notEquatable(origin, root, .function);
+                    } else {
+                        try s.reporter.noMethodsOnShape(origin, c.name, root, .function);
+                    }
+                    try s.emitSites(c, .err);
+                    s.poison(c.fn_var);
+                    return;
+                },
+            },
+        }
+    }
+
+    /// Whether the EAGER pass (A.23) derived `compare` for the nominal type
+    /// under `root` — the one authority on whether a type of this module
+    /// derives, because it is what decides which functions get emitted.
+    ///
+    /// A type of ANOTHER module is refused: its table is not here, and the
+    /// only fact this module has is that `walkEquatable` already said the
+    /// payload is not equatable, which for an ADT means something inside it
+    /// is a function or is itself not equatable. Conservative, and the same
+    /// answer `eq` gives.
+    fn nominalDerives(s: *Solver, root: Var) bool {
+        const c = s.store().resolvedContent(root);
+        const a = switch (c) {
+            .structure => |flat| switch (flat) {
+                .app => |app| app,
+                else => return false,
+            },
+            else => return false,
+        };
+        if (s.env.types.entry(a.type).module != s.env.module) return false;
+        return s.env.dispatch.findDerived(.compare, .{ .nominal = a.type }) != null;
+    }
+
+    /// The bridge between the two ad-hoc mechanisms `fast-compiler.md` §3.1
+    /// keeps and the method constraints of this branch.
+    ///
+    /// A rigid `number` is `Int` or `Float` and nothing else, and the
+    /// well-known table (§3.2) gives both of them the same answer; a rigid
+    /// marked `equatable` is, by §3.4, exactly a type that has an `eq`.
+    /// Both therefore DISCHARGE a well-known constraint without a `where`
+    /// clause, which is what keeps `core/Basics.beni`'s `compare`, `max`,
+    /// `min` and `clamp` and `core/List.beni`'s `member` checking while
+    /// their signatures still say `number` and `equatable a` — the rewrite
+    /// that gives them `where` clauses is §5, and it is slice S6.
+    ///
+    /// Recorded in the report as an addition to §6.3's rigid row: without
+    /// it S3 cannot land without S6, and §3.4 already says the two
+    /// mechanisms mean the same thing.
+    fn builtinRigidTarget(s: *Solver, flags: TypeStore.Flags, c: TypeStore.MethodConstraint) ?Dispatch.Target {
+        const is_eq = c.name == InternPool.WellKnown.eq.symbol();
+        const is_compare = c.name == InternPool.WellKnown.compare.symbol();
+        if (!is_eq and !is_compare) return null;
+        if (flags.kind == .number) {
+            return if (is_eq) .{ .primitive = .strict_eq } else .{ .primitive = .num_compare };
+        }
+        if (is_eq and flags.equatable) {
+            // `Basics.eq` is the one structural walk (`core/Basics.js`),
+            // which is what `==` on an `equatable a` means today.
+            const module = s.env.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return null;
+            if (module.int() >= s.env.interfaces.len) return null;
+            const iface = &s.env.interfaces[module.int()];
+            const value = iface.findValue(s.env.interner, c.name) orelse return null;
+            return .{ .ext = .{ .module = module, .value = value } };
+        }
+        return null;
+    }
+
+    fn isWellKnown(s: *const Solver, c: TypeStore.MethodConstraint) bool {
+        _ = s;
+        return c.origin == .well_known;
+    }
+
+    /// Whether the shape under `root` can be derived for, reporting if not.
+    ///
+    /// Derivation is structural and recursive (§3.3), so a function ANYWHERE
+    /// inside the type stops it — which is the walk `equatable` already does
+    /// (`checker.md` §6.4), reused here so `==` keeps exactly the messages it
+    /// had and `compare` gets the one §6.3's `func` row gives it.
+    fn derivable(s: *Solver, c: TypeStore.MethodConstraint, root: Var, origin: Bir.Inst.Index) Error!bool {
+        const is_eq = c.name == InternPool.WellKnown.eq.symbol();
+        switch (walkEquatable(s, root)) {
+            .ok => return true,
+            // A type too wide for the walk's worklist. `dischargeEquatable`
+            // ACCEPTS it — refusing a program for being large helps nobody
+            // when the answer is one structural walk at runtime — but
+            // derivation has to write a function per position, and a
+            // function hiding in the part it could not reach would be a
+            // wrong answer rather than a slow one.
+            .unknown, .function => {
+                if (is_eq) {
+                    try s.reporter.notEquatable(origin, root, .function);
+                } else {
+                    try s.reporter.noMethodsOnShape(origin, c.name, root, .contains_function);
+                }
+            },
+            // A named type that is not `equatable` — which for an ADT means
+            // something inside it is not. `eq` refuses it, as it always
+            // has. `compare` has no marker of its own, so it asks the
+            // narrower question directly, and it MUST be the same question
+            // the eager pass of A.23 excludes a type by: a `compare` that
+            // derived here but was excluded there would name a function
+            // nobody emitted.
+            .opaque_type => {
+                if (!is_eq) {
+                    if (s.nominalDerives(root)) return true;
+                    try s.reporter.noMethodsOnShape(origin, c.name, root, .contains_function);
+                } else {
+                    try s.reporter.notEquatable(origin, root, .opaque_type);
+                }
+            },
+        }
+        try s.emitSites(c, .err);
+        s.poison(c.fn_var);
+        return false;
+    }
+
+    fn noMethodsOnShape(s: *Solver, c: TypeStore.MethodConstraint, root: Var, origin: Bir.Inst.Index) Error!void {
+        try s.reporter.noMethodsOnShape(origin, c.name, root, switch (s.store().resolvedContent(root)) {
+            .structure => |flat| switch (flat) {
+                .tuple => .tuple,
+                .unit => .unit,
+                .func => .function,
+                .record, .empty_record => .record,
+                else => .other,
+            },
+            else => .other,
+        });
+        try s.emitSites(c, .err);
+        s.poison(c.fn_var);
+    }
+
+    /// A record receiver. Known at the call (Rule U0): a FIELD call, which
+    /// is `language.md` §6.3 unchanged. Deferred and only now concrete: a
+    /// well-known name derives over the closed shape, anything else is
+    /// `no_methods_on_shape` (§6.3, A.28, A.36).
+    fn methodOnRecord(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        root: Var,
+        rec: TypeStore.Structure.Record,
+        origin: Bir.Inst.Index,
+        immediate: bool,
+    ) Error!void {
+        const st = s.store();
+        if (s.isWellKnown(c)) {
+            // Only a CLOSED record derives: a flex extension means more
+            // fields may arrive and a rigid one means the annotation
+            // promised every extension, so neither has a shape key.
+            const ext_content = st.resolvedContent(rec.ext);
+            const closed = switch (ext_content) {
+                .structure => |flat| flat == .empty_record,
+                else => false,
+            };
+            if (!closed) return s.noMethodsOnShape(c, root, origin);
+            if (!try s.derivable(c, root, origin)) return;
+            return s.finishDerived(c, root, origin);
+        }
+        if (!immediate) return s.noMethodsOnShape(c, root, origin);
+
+        // The field call: `{ ext | m : args -> result }` on the receiver,
+        // and the field's type takes the ARGUMENTS only — the receiver is
+        // not one of them.
+        const params = st.vars(switch (st.resolvedContent(c.fn_var)) {
+            .structure => |flat| switch (flat) {
+                .func => |f| f.params,
+                else => return s.noMethodsOnShape(c, root, origin),
+            },
+            else => return s.noMethodsOnShape(c, root, origin),
+        });
+        const result = switch (st.resolvedContent(c.fn_var)) {
+            .structure => |flat| flat.func.result,
+            else => unreachable,
+        };
+        const rest = try s.env.scratch.dupe(Var, params[1..]);
+        defer s.env.scratch.free(rest);
+        // The FIELD first, against an open record, so a name the record does
+        // not have is `unknown_field` and not an arity message about a type
+        // nobody wrote (§1.2: "the ordinary record diagnostics").
+        const callee = try s.fresh(.{ .flex = .{} });
+        var pairs = [_]TypeStore.Field{.{ .name = c.name, .value = callee }};
+        const range = try st.addFields(&pairs);
+        const ext = try s.fresh(.{ .flex = .{} });
+        const required = try s.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
+        try s.unify(required, root, origin, .{ .tag = .field_access, .index = @intFromEnum(c.name) });
+        try s.emitSites(c, .field);
+        // Then §8.3's arity rule on what the field holds, which is the same
+        // question a `call` asks and gets the same three messages.
+        const given: u32 = @intCast(rest.len);
+        switch (st.resolvedContent(callee)) {
+            .err => return,
+            .flex => |flags| {
+                if (flags.kind == .any) {
+                    const wanted = try s.func(rest, result);
+                    try s.unify(callee, wanted, origin, .{ .tag = .general });
+                    return;
+                }
+                try s.reporter.notAFunction(origin, s.reporter.calleeOf(origin), given, callee);
+                s.poison(result);
+                return;
+            },
+            .structure => |flat| switch (flat) {
+                .func => |f| {
+                    const arity: u32 = f.params.len;
+                    if (arity != given) {
+                        const declared = try s.copyVars(st.vars(f.params));
+                        defer s.env.scratch.free(declared);
+                        if (arity > given) {
+                            try s.reporter.tooFewArgs(origin, s.reporter.calleeOf(origin), arity, given, declared[given..]);
+                        } else {
+                            try s.reporter.tooManyArgs(origin, s.reporter.calleeOf(origin), arity, given);
+                        }
+                        s.poison(result);
+                        return;
+                    }
+                    const wanted = try s.func(rest, result);
+                    try s.unify(callee, wanted, origin, .{ .tag = .general });
+                    return;
+                },
+                else => {
+                    try s.reporter.notAFunction(origin, s.reporter.calleeOf(origin), given, callee);
+                    s.poison(result);
+                    return;
+                },
+            },
+            else => {
+                try s.reporter.notAFunction(origin, s.reporter.calleeOf(origin), given, callee);
+                s.poison(result);
+                return;
+            },
+        }
+    }
+
+    fn fieldTextLessThan(interner: *const InternPool.Global, a: TypeStore.Field, b: TypeStore.Field) bool {
+        return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
+    }
+
+    /// §6.3.1: the well-known table, then the module rule, then derivation,
+    /// then `unknown_method`.
+    fn methodOnApp(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        root: Var,
+        a: TypeStore.Structure.App,
+        origin: Bir.Inst.Index,
+    ) Error!void {
+        // 1. The well-known table (§3.2), consulted BEFORE the module rule
+        //    because `Int`, `Float`, `Bool`, `Order` and `Never` share
+        //    `core/Basics.beni`, whose `compare : number, number -> Order`
+        //    would be found for `Bool` and then fail to unify.
+        if (s.wellKnownTarget(c, a)) |target| {
+            try s.unifyMethodType(c, root, &.{ root, root }, s.wellKnownResult(c), origin);
+            switch (target) {
+                .derived_nominal => try s.emitSites(c, try s.nominalTarget(c, a, origin, 0)),
+                .primitive => |p| try s.emitSites(c, .{ .primitive = p }),
+            }
+            return;
+        }
+
+        // 2. The module rule (§1.2), keyed on `(TypeId, name)`.
+        const entry = s.env.types.entry(a.type);
+        if (entry.module == s.env.module) {
+            if (s.ownDeclNamed(c.name)) |decl| {
+                const scheme = s.env.decl_scheme[decl].unwrap() orelse {
+                    try s.emitSites(c, .err);
+                    return;
+                };
+                const mark: u32 = @intCast(s.store().constraints.items.len);
+                const copy = try s.makeCopy(scheme);
+                // A `method_call`'s site 0 names the CALLEE, so its evidence
+                // slots start at 1 (§7.2).
+                try s.tagInstantiated(copy, origin, 1, mark, false);
+                if (!try s.unifyQuiet(copy, c.fn_var)) {
+                    try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
+                    try s.emitSites(c, .err);
+                    s.poison(c.fn_var);
+                    return;
+                }
+                try s.emitSites(c, .{ .top = @enumFromInt(decl) });
+                return;
+            }
+        } else if (entry.module.int() >= s.env.interfaces.len) {
+            // **§6.8 is not landed** (a concurrent slice owns
+            // `resolve/Graph.zig`), so under `--jobs>1` a method lookup can
+            // reach a module the DAG did not order before this one and whose
+            // interface is therefore absent. That is a compiler bug in the
+            // making, not a program error, so it says `internal` and never
+            // panics — and it becomes unreachable the moment the implicit
+            // `ext_type` edges of §6.8 land.
+            try s.reporter.internal(origin, "a method's declaring module has no interface");
+            try s.emitSites(c, .err);
+            s.poison(c.fn_var);
+            return;
+        } else {
+            const iface = &s.env.interfaces[entry.module.int()];
+            if (iface.findValue(s.env.interner, c.name)) |value| {
+                const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{ .inst = origin, .first_index = 1 })) orelse {
+                    try s.emitSites(c, .err);
+                    return;
+                };
+                if (!try s.unifyQuiet(copy, c.fn_var)) {
+                    try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
+                    try s.emitSites(c, .err);
+                    s.poison(c.fn_var);
+                    return;
+                }
+                try s.emitSites(c, .{ .ext = .{ .module = entry.module, .value = value } });
+                return;
+            }
+            if (s.privateInOtherModule(entry.module, c.name)) {
+                try s.reporter.privateMethod(origin, entry.module, c.name);
+                try s.emitSites(c, .err);
+                s.poison(c.fn_var);
+                return;
+            }
+        }
+
+        // 3. Derivation, for a well-known name on a shape that supports it
+        //    (§3.3 step 2).
+        if (s.isWellKnown(c) and s.derivesForNominal(c, a.type)) {
+            if (!try s.derivable(c, root, origin)) return;
+            try s.unifyMethodType(c, root, &.{ root, root }, s.wellKnownResult(c), origin);
+            // **A.18**: an all-nullary type is a bare tag string, so `eq` at
+            // a USE SITE is `===` and there is nothing to derive. `compare`
+            // cannot be, because alphabetic tag order is not declaration
+            // order (§9.4).
+            if (c.name == InternPool.WellKnown.eq.symbol() and s.allNullary(a.type)) {
+                try s.emitSites(c, .{ .primitive = .strict_eq });
+                return;
+            }
+            try s.emitSites(c, try s.nominalTarget(c, a, origin, 0));
+            return;
+        }
+
+        // 4. `unknown_method`, with a did-you-mean over the module's `pub`
+        //    value names (§10.1).
+        try s.reporter.unknownMethod(origin, c.origin == .where_clause, entry.module, entry.name, c.name);
+        try s.emitSites(c, .err);
+        s.poison(c.fn_var);
+    }
+
+    /// Whether every constructor of `id` takes no arguments, which is what
+    /// makes its representation a bare tag string (`backend.md` §4).
+    /// A type with NO constructors — a `foreign type` — is not one.
+    fn allNullary(s: *const Solver, id: Types.TypeId) bool {
+        const entry = s.env.types.entry(id);
+        if (entry.module == s.env.module) {
+            const bir = s.env.bir;
+            if (entry.decl.int() >= bir.decls.len) return false;
+            const d = bir.decls[entry.decl.int()];
+            if (d.ctors_start == d.ctors_end) return false;
+            for (bir.ctors[d.ctors_start..d.ctors_end]) |ctor| {
+                if (ctor.args_start != ctor.args_end) return false;
+            }
+            return true;
+        }
+        if (entry.module.int() >= s.env.interfaces.len) return false;
+        const iface = &s.env.interfaces[entry.module.int()];
+        const index = iface.findType(s.env.interner, entry.name) orelse return false;
+        const t = iface.types[@intFromEnum(index)];
+        if (t.ctors_start == t.ctors_end) return false;
+        for (iface.ctors[t.ctors_start..t.ctors_end]) |ctor| {
+            if (ctor.arity != 0) return false;
+        }
+        return true;
+    }
+
+    const WellKnownTarget = union(enum) { primitive: Dispatch.Target.Primitive, derived_nominal };
+
+    fn wellKnownTarget(s: *const Solver, c: TypeStore.MethodConstraint, a: TypeStore.Structure.App) ?WellKnownTarget {
+        if (a.args.len != 0) return null;
+        const wk = s.env.types.well_known;
+        const is_eq = c.name == InternPool.WellKnown.eq.symbol();
+        const is_compare = c.name == InternPool.WellKnown.compare.symbol();
+        if (!is_eq and !is_compare) return null;
+        const t = a.type;
+        if (t == .none) return null;
+        if (t == wk.int or t == wk.float or t == wk.bool) {
+            return if (is_eq) .{ .primitive = .strict_eq } else .{ .primitive = .num_compare };
+        }
+        if (t == wk.char) return if (is_eq) .{ .primitive = .strict_eq } else .{ .primitive = .char_compare };
+        if (t == wk.string) return if (is_eq) .{ .primitive = .strict_eq } else .{ .primitive = .string_compare };
+        // `Order` is all-nullary, so `eq` is `===`; `compare` cannot be,
+        // because alphabetic tag order is not `LT < EQ < GT` (§3.2).
+        if (t == wk.order) return if (is_eq) .{ .primitive = .strict_eq } else .derived_nominal;
+        if (t == wk.never) return .derived_nominal;
+        return null;
+    }
+
+    fn wellKnownResult(s: *const Solver, c: TypeStore.MethodConstraint) Types.TypeId {
+        return if (c.name == InternPool.WellKnown.eq.symbol())
+            s.env.types.well_known.bool
+        else
+            s.env.types.well_known.order;
+    }
+
+    /// Unify the constraint's recorded type with `params -> T`.
+    fn unifyMethodType(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        root: Var,
+        params: []const Var,
+        result_type: Types.TypeId,
+        origin: Bir.Inst.Index,
+    ) Error!void {
+        _ = root;
+        const result = try s.applied(result_type, &.{});
+        const wanted = try s.func(params, result);
+        try s.unify(wanted, c.fn_var, origin, .{ .tag = .general });
+    }
+
+    /// The declaration of THIS module named `name`, `pub` or not.
+    ///
+    /// A linear scan over the declaration table, and deliberately not
+    /// `Interface.Provenance`: that maps only the `pub` entries, so a
+    /// private method would be invisible and `private_method` could never
+    /// be told apart from `unknown_method` inside the declaring module
+    /// (§6.3.1 step 2).
+    fn ownDeclNamed(s: *const Solver, name: Symbol) ?u32 {
+        const bir = s.env.bir;
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue()) continue;
+            if (bir.symbol(d.name) == name) return @intCast(i);
+        }
+        return null;
+    }
+
+    /// Whether `module` declares `name` WITHOUT `pub`, for §10.2.
+    ///
+    /// This reads another module's `Bir`, which the checker does not do on
+    /// the happy path (`checker.md` §4.5) — it runs only after
+    /// `Interface.findValue` has already failed, so the declaration is
+    /// already wrong and the only question left is which message it gets.
+    /// When the Bir is not in memory the answer is "no" and the message is
+    /// `unknown_method`, which is the honest degradation.
+    fn privateInOtherModule(s: *const Solver, module: Graph.Index, name: Symbol) bool {
+        const file = s.env.graph.moduleFile(module);
+        const bir = s.env.artifacts.bir(file);
+        for (bir.decls) |d| {
+            if (!d.kind.isValue()) continue;
+            if (bir.symbol(d.name) == name) return true;
+        }
+        return false;
+    }
+
+    /// **The recursive resolver of §9's parts contract.** Never reports:
+    /// the receiver's own arm has already run `derivable`, whose walk sees
+    /// every position this one visits, so a mistake anywhere inside the
+    /// type has a message before this is called.
+    ///
+    /// `.err` is what a position the checker cannot answer gets — a
+    /// variable that is still flex, an open record, a function. The
+    /// constraint is attached to a flex position so it still propagates and
+    /// is still promoted.
+    fn targetFor(s: *Solver, c: TypeStore.MethodConstraint, v: Var, origin: Bir.Inst.Index, depth: u32) Error!Dispatch.Target {
+        // Derivation is structural and recursive (§3.3), so it needs a
+        // guard of its own: a poisoned store can hand it a cycle that the
+        // type reader's own `max_depth` never saw.
+        if (depth > max_depth) return .err;
+        const st = s.store();
+        const root, const content = st.resolved(v);
+        switch (content) {
+            .err, .alias => return .err,
+            .flex => {
+                // A marker for one of the declaring type's own parameters,
+                // during the eager pass of A.23: the derived function takes
+                // one evidence parameter per type parameter, used or not
+                // (§9.4, A.20).
+                for (s.type_params, 0..) |marker, i| {
+                    if (st.find(marker) == root) return .{ .evidence = @intCast(i) };
+                }
+                const inner = try s.freshMethodConstraint(c, root);
+                try s.attachConstraint(root, inner, origin);
+                return .err;
+            },
+            .rigid => |flags| {
+                if (st.findConstraint(flags.constraints, c.name) != null) {
+                    return .{ .evidence = s.evidenceIndexOf(root, c.name) orelse return .err };
+                }
+                if (s.builtinRigidTarget(flags, c)) |t| return t;
+                return .err;
+            },
+            .structure => |flat| switch (flat) {
+                .app => |a| return s.appTarget(c, a, origin, depth),
+                .record => |r| {
+                    const ext_content = st.resolvedContent(r.ext);
+                    const closed = switch (ext_content) {
+                        .structure => |f| f == .empty_record,
+                        else => false,
+                    };
+                    if (!closed) return .err;
+                    return s.recordTarget(c, r, origin, depth);
+                },
+                .empty_record => return s.recordTarget(c, .{ .fields = .empty, .ext = root }, origin, depth),
+                .tuple => |t| {
+                    const elements = try s.env.scratch.dupe(Var, st.vars(t));
+                    defer s.env.scratch.free(elements);
+                    const arity: u8 = @intCast(@min(elements.len, 255));
+                    return s.derivedUse(c, .{ .tuple = arity }, elements, origin, depth);
+                },
+                .unit => return s.derivedUse(c, .unit, &.{}, origin, depth),
+                .func => return .err,
+            },
+        }
+    }
+
+    /// The well-known method of a nominal type, as a target: the table of
+    /// §3.2, then the module rule, then derivation (§6.3.1 without the
+    /// diagnostics).
+    fn appTarget(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        a: TypeStore.Structure.App,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Target {
+        if (s.wellKnownTarget(c, a)) |wk| {
+            return switch (wk) {
+                .primitive => |p| .{ .primitive = p },
+                .derived_nominal => s.nominalTarget(c, a, origin, depth),
+            };
+        }
+        const entry = s.env.types.entry(a.type);
+        if (entry.module == s.env.module) {
+            if (s.ownDeclNamed(c.name)) |decl| return .{ .top = @enumFromInt(decl) };
+        } else if (entry.module.int() < s.env.interfaces.len) {
+            const iface = &s.env.interfaces[entry.module.int()];
+            if (iface.findValue(s.env.interner, c.name)) |value| {
+                return .{ .ext = .{ .module = entry.module, .value = value } };
+            }
+        }
+        if (!s.derivesForNominal(c, a.type)) return .err;
+        return s.nominalTarget(c, a, origin, depth);
+    }
+
+    /// A use of a nominal type's derived method. The function itself is
+    /// emitted by the DECLARING module (§8.5, A.23), so a type from another
+    /// module is `ext_derived` and gets no row in this module's table
+    /// (A.47); the evidence is one target per type parameter either way.
+    fn nominalTarget(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        a: TypeStore.Structure.App,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Target {
+        const kind = s.derivedKind(c);
+        const entry = s.env.types.entry(a.type);
+        const args = try s.env.scratch.dupe(Var, s.store().vars(a.args));
+        defer s.env.scratch.free(args);
+        const range = try s.env.dispatch.reserveParts(args.len);
+        for (args, 0..) |arg, i| {
+            s.env.dispatch.setPart(range, i, try s.targetFor(c, arg, origin, depth + 1));
+        }
+        if (entry.module == s.env.module) {
+            const index = try s.env.dispatch.derive(kind, .{ .nominal = a.type }, @intCast(args.len));
+            return .{ .derived = .{ .index = index, .parts = range } };
+        }
+        return .{ .ext_derived = .{
+            .module = entry.module,
+            .type = a.type,
+            .kind = kind,
+            .parts = range,
+        } };
+    }
+
+    fn recordTarget(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        rec: TypeStore.Structure.Record,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Target {
+        const st = s.store();
+        const fields = try s.env.scratch.dupe(TypeStore.Field, st.fields(rec.fields));
+        defer s.env.scratch.free(fields);
+        std.mem.sort(TypeStore.Field, fields, s.env.interner, fieldTextLessThan);
+        const names = try s.env.scratch.alloc(Symbol, fields.len);
+        defer s.env.scratch.free(names);
+        const values = try s.env.scratch.alloc(Var, fields.len);
+        defer s.env.scratch.free(values);
+        for (fields, names, values) |f, *n, *v| {
+            n.* = f.name;
+            v.* = f.value;
+        }
+        const shape_range = try s.env.dispatch.addSymbols(names);
+        return s.derivedUse(c, .{ .record = shape_range }, values, origin, depth);
+    }
+
+    /// A use of a STRUCTURAL derived function: the function is keyed on the
+    /// shape alone and takes one evidence parameter per position, so what
+    /// this use contributes is the arguments and nothing else (A.11, A.46).
+    fn derivedUse(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        shape: Dispatch.Shape,
+        positions: []const Var,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Target {
+        const kind = s.derivedKind(c);
+        const index = try s.env.dispatch.derive(kind, shape, @intCast(positions.len));
+        const range = try s.env.dispatch.reserveParts(positions.len);
+        for (positions, 0..) |v, i| {
+            s.env.dispatch.setPart(range, i, try s.targetFor(c, v, origin, depth + 1));
+        }
+        return .{ .derived = .{ .index = index, .parts = range } };
+    }
+
+    fn derivedKind(_: *const Solver, c: TypeStore.MethodConstraint) Dispatch.Derived.Kind {
+        return if (c.name == InternPool.WellKnown.eq.symbol()) .eq else .compare;
+    }
+
+    /// Whether `id`'s shape supports derivation at all (§3.3, "shape
+    /// supports it"). A `foreign type` has no constructors to walk, so it
+    /// derives only through §3.2's table — or, until §5.2 gives `List` its
+    /// own `pub foreign eq` in S6, through the `equatable` marker, which
+    /// §3.4 says means exactly "has an `eq`".
+    fn derivesForNominal(s: *const Solver, c: TypeStore.MethodConstraint, id: Types.TypeId) bool {
+        const entry = s.env.types.entry(id);
+        if (entry.kind != .foreign) return true;
+        return c.name == InternPool.WellKnown.eq.symbol() and s.env.types.isEquatable(id);
+    }
+
+    /// A constraint of the same name and origin as `c`, at a fresh method
+    /// type, for a position inside a derived function.
+    fn freshMethodConstraint(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        v: Var,
+    ) Error!TypeStore.MethodConstraint {
+        const result = try s.applied(s.wellKnownResult(c), &.{});
+        return .{
+            .name = c.name,
+            .fn_var = try s.func(&.{ v, v }, result),
+            .region = c.region,
+            .origin = c.origin,
+            .sites = .empty,
+        };
+    }
+
+    /// The receiver's own derived target: `T, T -> Bool | Order`, and one
+    /// site per instruction the constraint answers.
+    fn finishDerived(s: *Solver, c: TypeStore.MethodConstraint, root: Var, origin: Bir.Inst.Index) Error!void {
+        try s.unifyMethodType(c, root, &.{ root, root }, s.wellKnownResult(c), origin);
+        try s.emitSites(c, try s.targetFor(c, root, origin, 0));
+    }
+
+    /// Record one dispatch site per instruction this constraint answers.
+    fn emitSites(s: *Solver, c: TypeStore.MethodConstraint, target: Dispatch.Target) Error!void {
+        const view = s.store().constraintSites(c);
+        if (view.len == 0) return;
+        const copied = try s.env.scratch.dupe(TypeStore.ConstraintSite, view);
+        defer s.env.scratch.free(copied);
+        for (copied) |site| {
+            try s.env.dispatch.addSite(.{ .inst = site.inst, .evidence_index = site.evidence_index, .target = target });
+        }
+    }
+
+    /// Which evidence parameter of the enclosing declaration answers
+    /// `(rigid, name)` (§7.2). Built by `Check` from the annotation.
+    ///
+    /// **Null is a compiler bug, not a program error**, and every caller
+    /// says so rather than passing evidence 0 — which is a silently wrong
+    /// argument at a call the author cannot see.
+    fn evidenceIndexOf(s: *const Solver, rigid_root: Var, name: Symbol) ?u16 {
+        const st = s.store();
+        for (s.env.rigid_evidence) |e| {
+            if (e.method != name) continue;
+            if (@constCast(st).find(e.v) == rigid_root) return e.index;
+        }
+        return null;
+    }
+
+    /// Tag the constraints a LOCAL instantiation created with the site they
+    /// answer, in the canonical order of §7.2.
+    ///
+    /// The copy is structurally identical to the scheme, so the same walk
+    /// gives the same order on both sides of a module boundary. The entries
+    /// were appended by this very call, so writing their `sites` is not a
+    /// mutation of anything already committed (§6.1 invariant 2).
+    fn tagInstantiated(s: *Solver, copy: Var, origin: Bir.Inst.Index, first_index: u16, from: u32, shared: bool) Error!void {
+        const st = s.store();
+        var order: std.ArrayList(Var) = .empty;
+        defer order.deinit(s.env.scratch);
+        try Schemes.quantifierOrder(st, s.env.interner, copy, &order, s.env.scratch);
+        var index: u16 = first_index;
+        for (order.items) |root| {
+            const set = st.flagsOf(root).constraints;
+            const n = st.constraintCount(set);
+            if (n == 0) continue;
+            const sorted = try s.env.scratch.alloc(u32, n);
+            defer s.env.scratch.free(sorted);
+            const base = st.constraint_sets.items[set.unwrap().?.int()].start;
+            for (sorted, 0..) |*x, j| x.* = base + @as(u32, @intCast(j));
+            std.mem.sort(u32, sorted, s, constraintIndexLessThan);
+            for (sorted) |at| {
+                // Only what THIS copy created. `makeCopy` of a reference to
+                // a non-generalised variable — a local, or a member of the
+                // current binding group — hands back the variable itself,
+                // and OVERWRITING that would replace the DECLARATION's own
+                // `where`-clause constraint with the site of one use. A
+                // same-group top reference still needs its forwarding site,
+                // so there the site is appended rather than written.
+                if (at < from) {
+                    if (shared) try s.appendSite(at, .{ .inst = origin, .evidence_index = index });
+                    index += 1;
+                    continue;
+                }
+                st.constraints.items[at].sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = index }});
+                index += 1;
+            }
+        }
+    }
+
+    /// Add one more dispatch site to an existing constraint, unless it is
+    /// already there. The site list is a range of an append-only table, so
+    /// this is a fresh range and the old one is left alone (§6.1
+    /// invariant 2).
+    fn appendSite(s: *Solver, at: u32, site: TypeStore.ConstraintSite) Error!void {
+        const st = s.store();
+        const existing = st.constraintSites(st.constraints.items[at]);
+        for (existing) |seen| {
+            if (seen.inst == site.inst and seen.evidence_index == site.evidence_index) return;
+        }
+        const joined = try s.env.scratch.alloc(TypeStore.ConstraintSite, existing.len + 1);
+        defer s.env.scratch.free(joined);
+        @memcpy(joined[0..existing.len], existing);
+        joined[existing.len] = site;
+        st.constraints.items[at].sites = try st.addConstraintSites(joined);
+    }
+
+    fn constraintIndexLessThan(s: *const Solver, a: u32, b: u32) bool {
+        const st = s.store();
+        return std.mem.lessThan(
+            u8,
+            s.env.interner.slice(st.constraints.items[a].name),
+            s.env.interner.slice(st.constraints.items[b].name),
+        );
+    }
+
+    // ---- Eager nominal derivation (A.23, §6.3.1 step 4, §8.5) ----------
+
+    /// Derive `eq` and `compare` for every nominal type this module
+    /// declares, used or not.
+    ///
+    /// **It has to be eager, and it has to be here.** `Dispatch` is per
+    /// module and is built at the end of that module's own check; the
+    /// declaring module is checked and lowered BEFORE any user of the type
+    /// (§6.8), so a use site cannot ask it for anything. Deriving on demand
+    /// would either put the function in the consuming module — impossible
+    /// for a `pub opaque type`, whose constructors it may not read — or
+    /// make the declaring module's bytes depend on which other module asked
+    /// first, which varies with `--jobs` and CLAUDE.md rule 5 forbids
+    /// outright.
+    ///
+    /// Two exclusions (§6.3.1 step 4): a type whose module supplies a `pub`
+    /// value of that name gets that instead, and a type ANY of whose
+    /// constructor payloads contains a function type gets neither — a use
+    /// is then `not_equatable` or `no_methods_on_shape` at the use.
+    pub fn deriveDeclaredTypes(s: *Solver) Error!void {
+        const bir = s.env.bir;
+        for (bir.decls, 0..) |d, i| {
+            if (d.kind != .type) continue;
+            const id = s.env.types.ofDecl(s.env.module, @enumFromInt(i));
+            if (id == .none) continue;
+            try s.deriveOne(d, id);
+        }
+    }
+
+    fn deriveOne(s: *Solver, d: Bir.Decl, id: Types.TypeId) Error!void {
+        const bir = s.env.bir;
+        const scratch = s.env.scratch;
+        const params = bir.declTypeParams(d);
+
+        // The type's own parameters as markers: a position that resolves to
+        // one of them is `evidence i` of the DERIVED function (§9.4, A.20).
+        const markers = try scratch.alloc(Var, params.len);
+        defer scratch.free(markers);
+        var b = s.env.builder(.flex, TypeStore.generalized);
+        defer b.deinit();
+        for (params, markers) |name, *v| {
+            v.* = try s.store().fresh(.{ .flex = .{ .name = name.toOptional() } }, TypeStore.generalized);
+            try b.bind(name, v.*);
+        }
+
+        // Every constructor argument, constructors in DECLARATION order and
+        // arguments left to right — §9's parts contract exactly.
+        var args: std.ArrayList(Var) = .empty;
+        defer args.deinit(scratch);
+        for (bir.ctors[d.ctors_start..d.ctors_end]) |ctor| {
+            const written = bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index);
+            for (written) |arg| try args.append(scratch, try b.read(arg));
+        }
+        if (b.too_deep) return; // already reported by `reportTooDeep`
+        for (args.items) |arg| {
+            if (s.containsFunction(arg)) return;
+        }
+
+        const outer = s.type_params;
+        defer s.type_params = outer;
+        s.type_params = markers;
+
+        for ([_]InternPool.WellKnown{ .eq, .compare }) |well_known| {
+            const name = well_known.symbol();
+            // Step 1 of §3.3: a user `pub` value of that name wins, and
+            // then there is nothing to derive.
+            if (s.ownDeclNamed(name) != null) continue;
+            const kind: Dispatch.Derived.Kind = if (well_known == .eq) .eq else .compare;
+            const c: TypeStore.MethodConstraint = .{
+                .name = name,
+                .fn_var = try s.store().freshErr(TypeStore.generalized),
+                .region = d.inst_start,
+                .origin = .well_known,
+                .sites = .empty,
+            };
+            // The entry FIRST, then its parts: a recursive type's derived
+            // function is a position of itself.
+            const index = try s.env.dispatch.derive(kind, .{ .nominal = id }, @intCast(params.len));
+            const range = try s.env.dispatch.reserveParts(args.items.len);
+            for (args.items, 0..) |arg, j| {
+                s.env.dispatch.setPart(range, j, try s.targetFor(c, arg, d.inst_start, 0));
+            }
+            s.env.dispatch.setDerivedParts(index, range);
+        }
+    }
+
+    /// Whether a function type occurs anywhere inside `root_var`.
+    ///
+    /// Not `walkEquatable`: that stops at the first type not marked
+    /// `equatable`, so a function under an opaque type would hide from it,
+    /// and the A.23 exclusion has to see every payload.
+    fn containsFunction(s: *Solver, root_var: Var) bool {
+        const st = s.store();
+        const mark = st.nextMark();
+        var stack: [256]Var = undefined;
+        var len: usize = 1;
+        stack[0] = root_var;
+        var budget: usize = 1 << 16;
+        while (len > 0) {
+            if (budget == 0) return true; // too wide to be sure: do not derive
+            budget -= 1;
+            len -= 1;
+            const v = stack[len];
+            const root, const c = st.resolved(v);
+            if (st.mark(root) == mark) continue;
+            st.setMark(root, mark);
+            const push = struct {
+                fn f(buf: *[256]Var, l: *usize, x: Var) bool {
+                    if (l.* >= buf.len) return false;
+                    buf[l.*] = x;
+                    l.* += 1;
+                    return true;
+                }
+            }.f;
+            switch (c) {
+                .err, .flex, .rigid, .alias => {},
+                .structure => |flat| switch (flat) {
+                    .unit, .empty_record => {},
+                    .func => return true,
+                    .app => |a| for (st.vars(a.args)) |arg| {
+                        if (!push(&stack, &len, arg)) return true;
+                    },
+                    .tuple => |t| for (st.vars(t)) |el| {
+                        if (!push(&stack, &len, el)) return true;
+                    },
+                    .record => |r| {
+                        for (st.fields(r.fields)) |f| {
+                            if (!push(&stack, &len, f.value)) return true;
+                        }
+                        if (!push(&stack, &len, r.ext)) return true;
+                    },
+                },
+            }
+        }
+        return false;
+    }
+
     /// Seed the outermost pool with what the generator allocated. The
     /// top-level driver plays the part `let_` plays for a nested `let`.
     pub fn enterTopLevel(s: *Solver, vars: []const Var) Error!void {
@@ -1440,11 +2902,100 @@ pub const Solver = struct {
     /// the deferred occurs check once per binding (design §7 #3).
     pub fn finishTopLevel(s: *Solver, headers: []const Constrain.Header) Error!void {
         try s.dischargeObligations(s.rank);
-        try s.generalize(s.rank);
+        try s.generalize(s.rank, false);
         for (headers) |h| {
             if (!try occurs(&s.occurs_frames, s.gpa, s.store(), h.v)) continue;
             s.store().setContent(s.store().find(h.v), .err);
             try s.reporter.infiniteType(h.region, h.name);
+        }
+        for (headers) |h| try s.promote(h);
+    }
+
+    /// **Promotion** (§6.4): a constraint still sitting on a generalised
+    /// variable of a declaration becomes part of the declaration's type.
+    ///
+    /// Constraints ride on `Flags`, so `generalize` already carried them;
+    /// what happens here is the bookkeeping that hangs off that — the
+    /// declaration's evidence list in the canonical order of §7.2, the sites
+    /// of every promoted constraint, and the two diagnostics promotion can
+    /// raise.
+    ///
+    /// An ANNOTATED declaration is skipped: its `where` clause is the whole
+    /// set (Rule U2), `Check` built its evidence list from the annotation
+    /// before the body was checked, and anything the body needed beyond it
+    /// was already `missing_where_constraint`.
+    fn promote(s: *Solver, h: Constrain.Header) Error!void {
+        if (h.decl == Constrain.Header.no_decl) return;
+        const bir = s.env.bir;
+        if (h.decl >= bir.decls.len) return;
+        const d = bir.decls[h.decl];
+        if (d.annotation != .none) return;
+        const st = s.store();
+
+        var order: std.ArrayList(Var) = .empty;
+        defer order.deinit(s.env.scratch);
+        try Schemes.quantifierOrder(st, s.env.interner, h.v, &order, s.env.scratch);
+
+        var entries: std.ArrayList(Dispatch.Evidence) = .empty;
+        defer entries.deinit(s.env.scratch);
+        var index: u16 = 0;
+        for (order.items, 0..) |root, q| {
+            const flags = st.flagsOf(root);
+            const n = st.constraintCount(flags.constraints);
+            if (n == 0) continue;
+            // A variable another header of this group already promoted:
+            // its sites are recorded, and emitting them again would pass
+            // the same argument twice. The evidence INDEX still advances —
+            // this declaration's own list has a slot for each of them.
+            const seen = std.mem.indexOfScalar(Var, s.promoted.items, root) != null;
+            if (!seen) try s.promoted.append(s.gpa, root);
+            const base = st.constraint_sets.items[flags.constraints.unwrap().?.int()].start;
+            const sorted = try s.env.scratch.alloc(u32, n);
+            defer s.env.scratch.free(sorted);
+            for (sorted, 0..) |*x, j| x.* = base + @as(u32, @intCast(j));
+            std.mem.sort(u32, sorted, s, constraintIndexLessThan);
+            for (sorted) |at| {
+                const c = st.constraints.items[at];
+                try entries.append(s.env.scratch, .{
+                    .quantified = @intCast(q),
+                    .var_name = flags.name,
+                    .method = c.name,
+                });
+                if (!seen) {
+                    try s.emitSites(c, .{ .evidence = index });
+                    s.counters.constraints_promoted += 1;
+                }
+                index += 1;
+            }
+        }
+        if (entries.items.len == 0) return;
+        const range = try s.env.dispatch.addEvidence(entries.items);
+        try s.env.dispatch.setDeclEvidence(bir.decls.len, h.decl, range);
+
+        if (!d.is_pub) return;
+        // A `pub` value of ZERO parameters whose promoted scheme carries a
+        // constraint would become a function of its evidence parameters
+        // (§8.1), silently changing its type across the module boundary.
+        if (d.params == 0) {
+            try s.reporter.constrainedConstant(
+                d.body.unwrap() orelse h.region,
+                d.name_token,
+                bir.symbol(d.name),
+                entries.items[0].var_name,
+                entries.items[0].method,
+            );
+            return;
+        }
+        // Informational, and only under `--explain` (§10.9): this is what
+        // plan §7's M3 churn measurement counts.
+        if (s.env.explain) {
+            try s.reporter.ambiguousMethodReceiver(
+                d.body.unwrap() orelse h.region,
+                d.name_token,
+                bir.symbol(d.name),
+                @intCast(entries.items.len),
+                h.v,
+            );
         }
     }
 };

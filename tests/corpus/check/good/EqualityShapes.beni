@@ -1,0 +1,35 @@
+-- check/good: `==` is the `eq` method (`docs/design/static-dispatch-spike.md`
+-- §3.1) and resolves for every shape §3.2 and §3.3 name: the primitives
+-- from the well-known table, a record and a tuple by derivation over their
+-- closed shapes (§6.3, A.36), a custom type and `Maybe` by derivation over
+-- the nominal type, and a `List a` through `List`'s own methods — which on
+-- this branch are still the structural walk `Basics.eq` does, because the
+-- core rewrite of §5.2 is slice S6.
+pub type Colour
+    = Red
+    | Green
+
+
+pub sameColour : Colour, Colour -> Bool
+sameColour a b =
+    a == b
+
+
+pub sameRecord : { x : Int, y : String }, { x : Int, y : String } -> Bool
+sameRecord a b =
+    a == b
+
+
+pub samePair : ( Int, Char ), ( Int, Char ) -> Bool
+samePair a b =
+    a == b
+
+
+pub sameList : List Int, List Int -> Bool
+sameList a b =
+    a == b
+
+
+pub sameMaybe : Maybe Int, Maybe Int -> Bool
+sameMaybe a b =
+    a /= b

@@ -163,7 +163,19 @@ pub fn writeRaw(
         try w.print("scheme {d} body={d} quantified={d}\n", .{ i, @intFromEnum(sch.body), sch.quantified_count });
         for (0..sch.quantified_count) |q| {
             const info = iface.quantified(sch, @intCast(q));
-            try w.print("  q {d} kind={d} equatable={} name={s}\n", .{ q, info.kind, info.equatable, quantifiedName(iface, interner, info) });
+            try w.print("  q {d} kind={d} equatable={} name={s} constraints={d}\n", .{
+                q,
+                info.kind,
+                info.equatable,
+                quantifiedName(iface, interner, info),
+                info.constraints_len,
+            });
+            // The `where` block of static-dispatch-spike.md §6.5, so the
+            // `--jobs=1` vs `--jobs=8` byte comparison covers it.
+            for (0..info.constraints_len) |c| {
+                const qc = iface.quantifiedConstraint(info, @intCast(c));
+                try w.print("    where {s} term={d}\n", .{ interner.slice(iface.symbol(qc.name)), @intFromEnum(qc.type) });
+            }
         }
     }
     const tags = iface.terms.items(.tag);
@@ -213,6 +225,7 @@ fn writeScheme(
         @intFromEnum(iface.values[@intFromEnum(value)].scheme),
         TypeStore.generalized,
         arena.allocator(),
+        null,
     );
     var namer: Render.Namer = .init(gpa);
     defer namer.deinit();

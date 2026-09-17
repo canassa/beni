@@ -1,0 +1,13 @@
+module Literals
+  value bigger : a, a -> Bool where a.compare : a, a -> Order
+  value initial : Char
+  value label : String
+  value sizes : List number
+module Middle
+  value first : Token
+module Owner
+  type Token
+    Token/1
+  value make : Int -> Token
+module User
+  value again : Token

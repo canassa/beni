@@ -1,0 +1,13 @@
+-- check/bad: §6.4 rule (a) and §10.5. A `let` binding is never generalised
+-- over a variable carrying a method constraint — which is how the spike
+-- avoids Roc's promoted-requirements side table (A.30) — so `show` is
+-- monomorphic inside `report`, the first use pins it to `Int`, and the
+-- second is a conflict rather than a second instantiation. §11 carries the
+-- limit; the fix the message suggests is a top-level annotated declaration.
+pub report : Int, String -> String
+report n s =
+    let
+        show x =
+            x.render 1
+    in
+    show n ++ show s

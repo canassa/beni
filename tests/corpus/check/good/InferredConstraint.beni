@@ -1,0 +1,11 @@
+-- check/good: an unannotated `pub` declaration's inferred scheme carries the
+-- constraints its body raised, and that scheme IS the module's interface
+-- (§6.4, `fast-compiler.md` §8.1). This is the cost report 18 §2.3 predicts,
+-- made observable: the `.iface` golden shows the `where` clause nobody
+-- wrote, and an edit to the body that adds an operation changes it.
+pub bigger a b =
+    a < b
+
+
+pub same a b =
+    a == b

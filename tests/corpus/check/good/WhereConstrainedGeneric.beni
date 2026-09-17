@@ -1,0 +1,25 @@
+-- check/good: a `where` clause is what lets a body call a method on a type
+-- variable (`docs/design/static-dispatch-spike.md` §2, §6.2 Rule U2), and
+-- the constraint rides out on the interface, which is what the `.iface`
+-- golden shows (§6.5, §6.6). The method takes an argument because `x.scale`
+-- with none is a field access and never a method call (§1.1, §11).
+pub type Metre
+    = Metre Int
+
+
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+pub twice : a, Int -> a
+    where a.scale : a, Int -> a
+twice x factor =
+    (x.scale factor).scale factor
+
+
+pub grow : Metre -> Metre
+grow m =
+    twice m 3

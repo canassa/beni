@@ -66,6 +66,7 @@ pub const check = struct {
     pub const Render = @import("check/Render.zig");
     pub const Diagnostics = @import("check/Diagnostics.zig");
     pub const Check = @import("check/Check.zig");
+    pub const Dispatch = @import("check/Dispatch.zig");
 };
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
@@ -73,6 +74,8 @@ pub const dump = struct {
     pub const bir = @import("dump/bir.zig");
     pub const interface = @import("dump/interface.zig");
     pub const types = @import("dump/types.zig");
+    pub const graph = @import("dump/graph.zig");
+    pub const dispatch = @import("dump/dispatch.zig");
 };
 pub const render = struct {
     pub const text = @import("render/text.zig");

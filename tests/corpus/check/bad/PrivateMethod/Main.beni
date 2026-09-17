@@ -1,0 +1,11 @@
+-- check/bad (project): the use. `Interface.findValue` sees only `pub`
+-- values, so telling `private_method` from `unknown_method` needs the
+-- declaring module's own declaration table — which the checker reads here
+-- and only here, on the failure path, after the interface has already said
+-- no (§6.3.1 step 2).
+import Token exposing (Token, zero)
+
+
+pub step : Token -> Token
+step t =
+    t.bump 1

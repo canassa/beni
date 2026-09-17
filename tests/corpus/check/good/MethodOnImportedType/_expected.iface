@@ -1,0 +1,6 @@
+module Main
+  value step : Token -> Token
+module Token
+  type Token
+    Token/1
+  value bump : Token, Int -> Token

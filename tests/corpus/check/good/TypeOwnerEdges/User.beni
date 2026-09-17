@@ -1,0 +1,10 @@
+-- check/good (project): the module §6.8 is about. It never writes the word
+-- `Owner`, yet the type of `again` is `Owner.Token` — so `Owner` must still
+-- be checked before it. There is no direct edge `User -> Owner`; the
+-- guarantee is that `Owner` is an ANCESTOR (`User -> Middle -> Owner`),
+-- because a module starts only once every dependency has FINISHED.
+import Middle exposing (first)
+
+
+pub again =
+    first

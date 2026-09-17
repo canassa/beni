@@ -1,0 +1,12 @@
+-- check/bad (project): §10.4's caller case, and the assertion is span
+-- ORDER, not just the set. `best` is annotated with a bare `a` and calls a
+-- constrained `Lib.top`, so the requirement arrives by instantiation: the
+-- PRIMARY span is the call in THIS file, and `Lib.top` is named in the
+-- prose. Reversing the two is the Roc behaviour report 18 §2.4 complains
+-- about (report 20 §7.2).
+import Lib
+
+
+pub best : a, a -> a
+best x y =
+    Lib.top x y

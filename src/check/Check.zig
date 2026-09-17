@@ -54,6 +54,7 @@ const Diagnostics = @import("Diagnostics.zig");
 const Render = @import("Render.zig");
 const Schemes = @import("Schemes.zig");
 const Solve = @import("Solve.zig");
+const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 
@@ -92,9 +93,16 @@ diagnostics: []const Diagnostics.Item,
 /// Owned when `modules.len != 0`: one per graph module, in module index
 /// order. Empty unless the run asked to keep them.
 modules: []Module,
+/// Owned. One per graph module, in module index order: what the checker
+/// decided about every method call (static-dispatch-spike.md §7).
+///
+/// Kept whatever `keep_stores` says, unlike `modules`: the backend needs it
+/// on every build, and it holds no `Var` — everything in it is an index or a
+/// name that outlives the store.
+dispatch: []Dispatch,
 counters: Solve.Counters,
 
-pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .counters = .{} };
+pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .counters = .{} };
 
 pub fn deinit(check: *Check, gpa: Allocator) void {
     check.types.deinit(gpa);
@@ -107,6 +115,8 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
         gpa.free(m.local_type);
     }
     gpa.free(check.modules);
+    for (check.dispatch) |*d| d.deinit(gpa);
+    gpa.free(check.dispatch);
     check.* = empty;
 }
 
@@ -120,6 +130,11 @@ pub const Options = struct {
     /// Keep each module's store and variable tables alive after the check,
     /// for `dump --stage=types`.
     keep_stores: bool = false,
+    /// `--explain` (static-dispatch-spike.md §10 preamble): emit the
+    /// informational warnings that are otherwise suppressed. The only one
+    /// in the spike is `ambiguous_method_receiver` (§10.9), and a warning
+    /// never changes the exit code.
+    explain: bool = false,
     /// One per graph module: true when an EARLIER phase already reported on
     /// it. Such a module is still checked — its dependents need schemes —
     /// but silently.
@@ -184,6 +199,14 @@ pub fn run(
     defer gpa.free(counters);
     @memset(counters, .{});
 
+    // One per module, filled at the end of that module's own check while
+    // its store is still alive (§7.1). Allocated here so the driver can
+    // write into it from any worker without a lock: a module writes only
+    // its own slot.
+    const dispatch = try gpa.alloc(Dispatch, modules);
+    @memset(dispatch, .empty);
+    check.dispatch = dispatch;
+
     var kept: std.ArrayList(Module) = .empty;
     // Each kept `Module` owns an arena and three tables. On the OOM path
     // the list itself is not enough: the modules that DID finish have to
@@ -220,6 +243,7 @@ pub fn run(
         .per_module = per_module,
         .counters = counters,
         .kept = if (options.keep_stores) kept.items else &.{},
+        .dispatch = dispatch,
     };
     try driver.go(scratch);
     if (driver.failure) |err| return err;
@@ -295,6 +319,8 @@ const Driver = struct {
     per_module: []std.ArrayList(Diagnostics.Item),
     counters: []Solve.Counters,
     kept: []Module,
+    /// One per module, written by the worker that checked it.
+    dispatch: []Dispatch,
 
     mutex: Io.Mutex = .init,
     /// A worker waits here for a module to become ready.
@@ -499,6 +525,8 @@ const Driver = struct {
             .profile = d.options.profile,
             .tid = tid,
             .pattern_budget = d.options.pattern_budget,
+            .explain = d.options.explain,
+            .dispatch = &d.dispatch[m.int()],
         };
         d.counters[m.int()] = try one.run(if (d.kept.len != 0) &d.kept[m.int()] else null);
     }
@@ -525,6 +553,13 @@ const ModuleCheck = struct {
     /// buffers lock-free.
     tid: u32 = 0,
     pattern_budget: u32 = Exhaustive.default_budget,
+    explain: bool = false,
+    /// This module's slot of the run's dispatch tables (§7.1), filled at
+    /// the end of `run`.
+    dispatch: *Dispatch = undefined,
+    /// `(rigid variable, method) → evidence index` for this module's
+    /// annotated declarations; owned by `run`.
+    rigid_evidence: *std.ArrayList(Dispatch.RigidEvidence) = undefined,
     /// Nanoseconds this module spent in each half, summed over its binding
     /// groups and emitted as one event each when the module is done.
     constrain_ns: u64 = 0,
@@ -563,15 +598,25 @@ const ModuleCheck = struct {
         // Empty on every input a person writes; see `Env.too_deep`.
         var too_deep: std.ArrayList(Bir.Inst.Index) = .empty;
         defer too_deep.deinit(mc.scratch.allocator());
-        // Empty until a file uses a construct the checker cannot type yet;
-        // see `Env.not_implemented`.
-        var not_implemented: std.ArrayList(Bir.Inst.Index) = .empty;
-        defer not_implemented.deinit(mc.scratch.allocator());
+        // The module's dispatch table as it is built (§7.1). It outlives
+        // the store — everything in it is an index or a name — and is kept
+        // whatever `keep_stores` says.
+        var dispatch: Dispatch.Builder = .{ .gpa = gpa };
+        defer dispatch.deinit();
+        // `(rigid variable, method) → evidence index` for every annotated
+        // declaration of this module, in the canonical order of §7.2.
+        var rigid_evidence: std.ArrayList(Dispatch.RigidEvidence) = .empty;
+        defer rigid_evidence.deinit(mc.scratch.allocator());
+        var monomorphic: std.ArrayList(Constrain.Monomorphic) = .empty;
+        defer monomorphic.deinit(mc.scratch.allocator());
+        mc.rigid_evidence = &rigid_evidence;
 
         var env: Constrain.Env = .{
             .scratch = mc.scratch.allocator(),
             .too_deep = &too_deep,
-            .not_implemented = &not_implemented,
+            .dispatch = &dispatch,
+            .monomorphic = &monomorphic,
+            .explain = mc.explain,
             .store = store,
             .types = mc.types,
             .graph = mc.graph,
@@ -596,15 +641,44 @@ const ModuleCheck = struct {
         };
 
         // 1. Every annotated value's scheme, before any body is checked.
+        //    The `where` clause is read with the SAME builder, so a variable
+        //    a constraint mentions is the one the annotation introduced
+        //    (§2.4); the constraints then ride on the scheme's flags and
+        //    `Schemes.Writer` carries them into the interface (§6.5).
         for (bir.decls, 0..) |d, i| {
             if (!d.kind.isValue()) continue;
             const annotation = d.annotation.unwrap() orelse continue;
             var b = env.builder(.flex, TypeStore.generalized);
             defer b.deinit();
-            decl_scheme[i] = (try env.readAnnotation(&b, annotation)).toOptional();
+            const v = try env.readAnnotation(&b, annotation);
+            try ModuleCheck.attachWhere(&env, bir, d, &b);
+            decl_scheme[i] = v.toOptional();
+            // A declaration with no BODY never reaches `checkGroup`, so its
+            // evidence list has to be recorded here — a `pub foreign … where`
+            // (§5.2, A.7) is exactly that, and without this it got no `decl`
+            // line and no evidence at all. The scheme's own variables carry
+            // the clause, and they are never met by a body, so nothing is
+            // added to `rigid_evidence`.
+            if (d.body == .none and d.where_start != d.where_end) {
+                try mc.recordEvidence(&env, bir, @intCast(i), v, false);
+            }
         }
 
-        // 2. Binding groups over the values that still need inferring.
+        // 2. Every nominal type this module declares gets `eq` and
+        //    `compare` derived, used or not (A.23) — BEFORE any body is
+        //    checked, so a use site can ask whether a type derives at all
+        //    by looking the entry up rather than re-deciding it. The two
+        //    answers have to agree: a `compare` that derived at a use but
+        //    was excluded here would name a function nobody emits.
+        {
+            var empty_tree: Constrain.Tree = .{};
+            var deriver: Solve.Solver = .init(gpa, &env, &empty_tree, &reporter);
+            defer deriver.deinit();
+            deriver.rank = TypeStore.generalized;
+            try deriver.deriveDeclaredTypes();
+        }
+
+        // 3. Binding groups over the values that still need inferring.
         const groups = try ModuleCheck.bindingGroups(bir, &env);
         var counters: Solve.Counters = .{};
         for (0..groups.starts.len - 1) |g| {
@@ -612,7 +686,7 @@ const ModuleCheck = struct {
             counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
         }
 
-        // 3. Pattern usefulness, over the declarations that solved clean
+        // 4. Pattern usefulness, over the declarations that solved clean
         //    (checker.md §6.6). It runs here rather than inside the group
         //    loop because "did THIS declaration produce a diagnostic?" is
         //    only settled once every group is done.
@@ -624,14 +698,23 @@ const ModuleCheck = struct {
             profile.end(mc.tid, exhaustive_token.?, .exhaustive, file.int(), 0);
         }
 
-        // 4. The interface gains its schemes (checker.md §7).
+        // 5. The interface gains its schemes (checker.md §7).
         try mc.fillInterface(&env, bir, store, decl_scheme);
 
-        // 5. Whatever was too deeply nested to read. Last, so a declaration
+        // 7. Whatever was too deeply nested to read. Last, so a declaration
         //    that tripped the guard in more than one place is one message.
         try ModuleCheck.reportTooDeep(&env, &reporter);
-        // 6. And whatever the checker cannot type yet (S3's `type_dispatch`).
-        try ModuleCheck.reportNotImplemented(&env, &reporter);
+
+        // 6. The dispatch table, sorted once (§7.1, §7.3). Built while the
+        //    store was alive; nothing in it needs the store afterwards.
+        var namer: DerivedNamer = .{ .mc = mc, .types = mc.types, .builder = &dispatch };
+        mc.dispatch.* = try dispatch.finish(
+            gpa,
+            bir.decls.len,
+            mc.scratch.allocator(),
+            DerivedNamer.write,
+            @ptrCast(&namer),
+        );
 
         // A declaration with no body — a `foreign` value, an annotation the
         // parser found no definition for — has no check variable, so its
@@ -654,6 +737,108 @@ const ModuleCheck = struct {
 
     fn add(a: Solve.Counters, b: Solve.Counters) Solve.Counters {
         return a.add(b);
+    }
+
+    /// Attach an annotation's `where` clause to the variables the
+    /// annotation introduced (static-dispatch-spike.md §2.4, §6.1).
+    ///
+    /// Read with the SAME `Types.Builder` as the annotation, which is what
+    /// makes `where k.compare : k, k -> Order` talk about the `k` of
+    /// `Dict k v` and not a fresh variable. §2.4's closure rule guarantees
+    /// every variable a constraint mentions is already in that scope, so no
+    /// quantifier can appear here that the body does not also introduce —
+    /// which is what makes §7.2's canonical order total.
+    fn attachWhere(env: *Constrain.Env, bir: *const Bir, d: Bir.Decl, b: *Types.Builder) Error!void {
+        const clause = bir.declWhere(d);
+        if (clause.len == 0) return;
+        const scratch = env.scratch;
+        const store = env.store;
+        // Every type first: reading one can grow `b.scope`, and the lookup
+        // below wants the finished scope.
+        const fn_vars = try scratch.alloc(Var, clause.len);
+        defer scratch.free(fn_vars);
+        for (clause, fn_vars) |wc, *v| v.* = try env.readAnnotation(b, wc.type_inst);
+        const taken = try scratch.alloc(bool, clause.len);
+        defer scratch.free(taken);
+        @memset(taken, false);
+        var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
+        defer built.deinit(scratch);
+        for (clause, 0..) |wc, i| {
+            if (taken[i]) continue;
+            const variable = bir.symbol(wc.variable);
+            built.clearRetainingCapacity();
+            for (clause[i..], fn_vars[i..], i..) |other, fn_var, j| {
+                if (bir.symbol(other.variable) != variable) continue;
+                taken[j] = true;
+                try built.append(scratch, .{
+                    .name = bir.symbol(other.method),
+                    .fn_var = fn_var,
+                    .region = other.type_inst,
+                    .origin = .where_clause,
+                    .sites = .empty,
+                });
+            }
+            const target = blk: {
+                for (b.scope.items) |scoped| {
+                    if (scoped.name == variable) break :blk scoped.v;
+                }
+                // `where_variable_unbound` already refused this in lowering
+                // (§2.4); a poisoned clause simply attaches nothing.
+                continue;
+            };
+            const set = try store.addConstraints(built.items);
+            const root = store.find(target);
+            const flags = store.flagsOf(root);
+            const with: TypeStore.Flags = .{
+                .name = flags.name,
+                .kind = flags.kind,
+                .equatable = flags.equatable,
+                .constraints = set.toOptional(),
+            };
+            store.setContent(root, switch (store.content(root)) {
+                .rigid => .{ .rigid = with },
+                else => .{ .flex = with },
+            });
+        }
+    }
+
+    /// The evidence list of one ANNOTATED declaration, in §7.2's canonical
+    /// order: the scheme's quantifiers in the order `Schemes.Writer`
+    /// records them, and within each for its constraints in name-text
+    /// order.
+    ///
+    /// Computed over the RIGID reading, which is the tree the body's
+    /// constraints live in; it is structurally identical to the flex
+    /// reading a caller instantiates, so both sides number the same slots.
+    fn recordEvidence(mc: *ModuleCheck, env: *Constrain.Env, bir: *const Bir, decl: u32, rigid: Var, keyed: bool) Error!void {
+        const scratch = env.scratch;
+        var order: std.ArrayList(Var) = .empty;
+        defer order.deinit(scratch);
+        try Schemes.quantifierOrder(env.store, env.interner, rigid, &order, scratch);
+        var entries: std.ArrayList(Dispatch.Evidence) = .empty;
+        defer entries.deinit(scratch);
+        var index: u16 = 0;
+        for (order.items, 0..) |root, q| {
+            const flags = env.store.flagsOf(root);
+            const n = env.store.constraintCount(flags.constraints);
+            if (n == 0) continue;
+            const sorted = try scratch.alloc(TypeStore.MethodConstraint, n);
+            defer scratch.free(sorted);
+            for (sorted, 0..) |*c, j| c.* = env.store.constraintAt(flags.constraints, @intCast(j));
+            std.mem.sort(TypeStore.MethodConstraint, sorted, env.interner, constraintNameLessThan);
+            for (sorted) |c| {
+                try entries.append(scratch, .{
+                    .quantified = @intCast(q),
+                    .var_name = flags.name,
+                    .method = c.name,
+                });
+                if (keyed) try mc.rigid_evidence.append(scratch, .{ .v = root, .method = c.name, .index = index });
+                index += 1;
+            }
+        }
+        if (entries.items.len == 0) return;
+        const range = try env.dispatch.addEvidence(entries.items);
+        try env.dispatch.setDeclEvidence(bir.decls.len, decl, range);
     }
 
     /// SCC over the module's top-level values. An edge `d → e` exists when
@@ -717,7 +902,13 @@ const ModuleCheck = struct {
         // up as a counter that does not mean anything.
         const check_vars = try env.scratch.alloc(Var.Optional, members.len);
         defer env.scratch.free(check_vars);
-        for (members, check_vars) |index, *cv| {
+        // The annotation's rigid variables per member, so a `type_dispatch`
+        // in the body can name one (§4.2) and so the `where` clause can be
+        // read into them.
+        const member_rigids = try env.scratch.alloc([]const Types.Builder.Scoped, members.len);
+        defer env.scratch.free(member_rigids);
+        @memset(member_rigids, &.{});
+        for (members, check_vars, member_rigids) |index, *cv, *rigids| {
             const d = bir.decls[index];
             cv.* = .none;
             if (!d.kind.isValue() or d.body == .none) continue;
@@ -726,7 +917,10 @@ const ModuleCheck = struct {
                 var b = env.builder(.rigid, TypeStore.outermost);
                 defer b.deinit();
                 cv.* = (try env.readAnnotation(&b, d.annotation.unwrap().?)).toOptional();
+                try ModuleCheck.attachWhere(env, bir, d, &b);
+                rigids.* = try env.scratch.dupe(Types.Builder.Scoped, b.scope.items);
                 try generator.adoptSince(mark);
+                try mc.recordEvidence(env, bir, @intCast(index), cv.*.unwrap().?, true);
             } else {
                 const v = try generator.freshForDecl();
                 cv.* = v.toOptional();
@@ -736,9 +930,10 @@ const ModuleCheck = struct {
                 .v = cv.*.unwrap().?,
                 .region = d.body.unwrap().?,
                 .name = bir.symbol(d.name).toOptional(),
+                .decl = @intCast(index),
             });
         }
-        for (members, check_vars) |index, cv_opt| {
+        for (members, check_vars, member_rigids) |index, cv_opt, rigids| {
             decl_display[index] = cv_opt;
             const cv = cv_opt.unwrap() orelse continue;
             const d = bir.decls[index];
@@ -747,8 +942,15 @@ const ModuleCheck = struct {
             env.inst_base = d.inst_start.int();
             env.inst_result = inst_result[d.inst_start.int()..d.inst_end.int()];
             env.decl_result = .none;
+            env.decl = @intCast(index);
+            env.decl_rigids = rigids;
             try parts.append(env.scratch, try generator.decl(@enumFromInt(index), cv));
         }
+        env.decl_rigids = &.{};
+        // After the declare loop, so the list has stopped growing: an
+        // earlier slice would dangle the moment another annotation added a
+        // constraint.
+        env.rigid_evidence = mc.rigid_evidence.items;
         tree.root = try generator.finishGroup(parts.items);
         if (mc.profile) |p| {
             mc.constrain_ns += p.since(constrain_token.?);
@@ -956,22 +1158,68 @@ const ModuleCheck = struct {
         }
     }
 
-    /// One `not_implemented` per construct the checker cannot type yet, in
-    /// source order, deduplicated like `reportTooDeep`.
-    fn reportNotImplemented(env: *Constrain.Env, reporter: *Diagnostics.Reporter) Error!void {
-        const regions = env.not_implemented.items;
-        if (regions.len == 0) return;
-        std.mem.sort(Bir.Inst.Index, regions, {}, regionLessThan);
-        var previous: Bir.Inst.OptionalIndex = .none;
-        for (regions) |region| {
-            if (previous == region.toOptional()) continue;
-            previous = region.toOptional();
-            try reporter.typeDispatchNotImplemented(region);
-        }
-    }
-
     fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
         return a.int() < b.int();
+    }
+};
+
+fn constraintNameLessThan(
+    interner: *const InternPool.Global,
+    a: TypeStore.MethodConstraint,
+    b: TypeStore.MethodConstraint,
+) bool {
+    return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
+}
+
+/// Spells a derived function the way §8.5 prints it, so
+/// `Dispatch.Builder.finish` can sort by EMITTED NAME TEXT and not by the
+/// order discharge happened to reach them in (A.15).
+const DerivedNamer = struct {
+    mc: *ModuleCheck,
+    types: *const Types,
+    builder: *const Dispatch.Builder,
+
+    fn write(ctx: *anyopaque, d: Dispatch.Derived, out: *std.ArrayList(u8), a: Allocator) Allocator.Error!void {
+        const self: *DerivedNamer = @ptrCast(@alignCast(ctx));
+        const interner = self.mc.interner;
+        const kind = switch (d.kind) {
+            .eq => "eq",
+            .compare => "compare",
+        };
+        switch (d.shape) {
+            // `<Module>$<Type>$eq`: the DECLARING module, which is where it
+            // is emitted (§8.5).
+            .nominal => |id| {
+                const entry = self.types.entry(id);
+                try out.appendSlice(a, interner.slice(self.mc.graph.moduleName(entry.module)));
+                try out.append(a, '$');
+                try out.appendSlice(a, interner.slice(entry.name));
+                try out.append(a, '$');
+                try out.appendSlice(a, kind);
+            },
+            // `<Module>$<kind>$<shape>`: the CONSUMING module, this one.
+            else => {
+                try out.appendSlice(a, interner.slice(self.mc.graph.moduleName(self.mc.module)));
+                try out.append(a, '$');
+                try out.appendSlice(a, kind);
+                try out.append(a, '$');
+                switch (d.shape) {
+                    .record => |r| {
+                        try out.append(a, 'r');
+                        for (self.builder.symbols.items[r.start..][0..r.len]) |name| {
+                            try out.append(a, '$');
+                            try out.appendSlice(a, interner.slice(name));
+                        }
+                    },
+                    .tuple => |n| {
+                        var buf: [8]u8 = undefined;
+                        try out.appendSlice(a, std.fmt.bufPrint(&buf, "t{d}", .{n}) catch "t?");
+                    },
+                    .unit => try out.appendSlice(a, "unit"),
+                    .nominal => unreachable,
+                }
+            },
+        }
     }
 };
 

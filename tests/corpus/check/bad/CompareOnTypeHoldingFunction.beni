@@ -1,0 +1,20 @@
+-- check/bad: §6.3.1 step 4's exclusion, seen from the USE.
+--
+-- A type any of whose constructor payloads contains a function type gets
+-- neither derived method (A.23), so the eager pass emits nothing for
+-- `Handler` — and a use has to agree with that pass exactly, or `<` would
+-- name a function nobody wrote. `eq` keeps `not_equatable`, which §3.4
+-- says is the better message; `compare` has no marker of its own and says
+-- what it found instead.
+pub type Handler
+    = Handler (Int -> Int)
+
+
+pub before : Handler, Handler -> Bool
+before a b =
+    a < b
+
+
+pub same : Handler, Handler -> Bool
+same a b =
+    a == b

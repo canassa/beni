@@ -1,0 +1,11 @@
+-- check/good (project): the module that DECLARES the type. A method call
+-- resolves in this module (static-dispatch-spike.md §1.2), so every module
+-- that can see a `Token` has to be checked after it — which is what
+-- `_expected.graph` asserts.
+pub type Token
+    = Token Int
+
+
+pub make : Int -> Token
+make n =
+    Token n

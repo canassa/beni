@@ -1,0 +1,5 @@
+module UserEqMethod
+  type Version
+    Version/3
+  value eq : Version, Version -> Bool
+  value sameMajor : Version, Version -> Bool

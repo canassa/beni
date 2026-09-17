@@ -1,0 +1,15 @@
+-- check/bad: §10.5. One variable carries one constraint per method name
+-- (§6.1 invariant 3), so two uses of `x.render` have to agree and these do
+-- not — the first takes one argument, the second two. This is Roc's rank-2
+-- limitation reproduced deliberately; §11 records that the fix is stretch
+-- item 1. The primary span is the YOUNGER use, at 10:21, and the older one
+-- is quoted in the prose.
+--
+-- The arity is what makes the two disagree AT the method node. §10.5's own
+-- example, `( x.render 1, x.render "two" )`, disagrees one step later — the
+-- second call's argument variable is still fresh when its method node is
+-- solved, so the two method types unify and `"two"` then meets `number` —
+-- and gets `type_mismatch` at the argument instead, which is a better span
+-- and a different code.
+pub widen x =
+    ( x.render 1, x.render 1 2 )

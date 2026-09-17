@@ -91,6 +91,11 @@ pub const WellKnown = struct {
     list: TypeId = .none,
     maybe: TypeId = .none,
     result: TypeId = .none,
+    /// The two the well-known method table of static-dispatch-spike.md §3.2
+    /// names and nothing else does: `Order` is what `compare` answers and
+    /// `Never` is the empty type. Both stay in `core/Basics.beni` (A.6).
+    order: TypeId = .none,
+    never: TypeId = .none,
 };
 
 pub const empty: Types = .{
@@ -454,6 +459,8 @@ fn findWellKnown(types: *Types, graph: *const Graph, interfaces: []const Interfa
         .{ .module = .List, .type_name = .List, .slot = &types.well_known.list },
         .{ .module = .Maybe, .type_name = .Maybe, .slot = &types.well_known.maybe },
         .{ .module = .Result, .type_name = .Result, .slot = &types.well_known.result },
+        .{ .module = .Basics, .type_name = .Order, .slot = &types.well_known.order },
+        .{ .module = .Basics, .type_name = .Never, .slot = &types.well_known.never },
     };
     for (pairs) |p| {
         // The prelude always targets package `core` (checker.md §4.3), so a

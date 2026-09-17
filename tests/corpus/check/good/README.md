@@ -34,6 +34,13 @@ an importer, and `QualifiedAcrossModules` reaches a dotted module through an
 A fixture under `core/` is run with `--core`, so `foreign` and the
 `equatable` marker are legal (`language.md` §5.4, checker.md Appendix B).
 
+`TypeOwnerEdges` carries a third golden, `_expected.graph`, which the
+corpus runner knows nothing about: the scenario in `blackbox_test.zig` that
+compares `dump --stage=graph` at `--jobs=1` and `--jobs=8` reads it, because
+what that fixture is about is the module graph's EDGES
+(`static-dispatch-spike.md` §6.8) and not its interfaces. It blesses with
+the same switch.
+
 Bless with `BENI_WRITE_EXPECTED=1 zig build test-blackbox`; check the blessed
 golden against the fixture's intent comment before committing it.
 

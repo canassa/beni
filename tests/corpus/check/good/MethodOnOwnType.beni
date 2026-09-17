@@ -1,0 +1,23 @@
+-- check/good: the module rule (`docs/design/static-dispatch-spike.md` §1.2).
+-- `Counter` is declared here, so every `pub` value of this module is one of
+-- its methods and `c.bump 1` resolves to `bump c 1` — including the private
+-- `shift`, because `private_method` cannot fire inside the declaring module.
+pub type Counter
+    = Counter Int
+
+
+shift : Counter, Int -> Counter
+shift c step =
+    case c of
+        Counter n ->
+            Counter (n + step)
+
+
+pub bump : Counter, Int -> Counter
+bump c step =
+    c.shift step
+
+
+pub twice : Counter -> Counter
+twice c =
+    (c.bump 1).bump 2

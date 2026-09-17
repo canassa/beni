@@ -1,0 +1,7 @@
+-- check/bad (project): the CALLEE. Its `where` clause is where the
+-- requirement is written, so it is the obligation's `region` — the
+-- SECONDARY half of the two-span rule (§10 preamble, A.37).
+pub render : a -> String
+    where a.draw : a, Int -> String
+render x =
+    x.draw 1

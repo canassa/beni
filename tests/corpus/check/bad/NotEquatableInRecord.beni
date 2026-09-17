@@ -1,5 +1,6 @@
 -- check/bad: the function is buried inside a record, and the obligation
--- walk finds it there too.
+-- walk finds it there too. Derivation is structural and recursive (§3.3),
+-- so the function stops it before a shape key is ever computed (§6.3).
 pub type alias Handler =
     { name : String, run : Int -> Int }
 

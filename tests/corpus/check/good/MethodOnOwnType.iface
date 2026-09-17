@@ -1,0 +1,5 @@
+module MethodOnOwnType
+  type Counter
+    Counter/1
+  value bump : Counter, Int -> Counter
+  value twice : Counter -> Counter

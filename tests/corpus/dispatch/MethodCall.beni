@@ -1,0 +1,24 @@
+-- dispatch: §7.3's second worked example. `a.wider b` is a `method_call`,
+-- so its site is at `evidence_index = 0` and names the CALLEE — a `call`'s
+-- callee is already in the Bir and needs no site (§7.2).
+--
+-- Both derived rows are here although nothing in the module writes `==` or
+-- `<`: derivation for a nominal type is EAGER (§6.3.1 step 4, A.23). It has
+-- to be — `Dispatch` is per module and built at the end of that module's own
+-- check, and the declaring module is checked first, so a consumer cannot ask
+-- it for anything. Their `part` lines are the BODY's positions, one per
+-- constructor argument in declaration order (§9's parts contract), and
+-- `evidence=0` because `Shape` takes no type parameters.
+pub type Shape
+    = Circle Float
+    | Rect Float Float
+
+
+pub wider : Shape, Shape -> Bool
+wider a b =
+    True
+
+
+pub bigger : Shape, Shape -> Bool
+bigger a b =
+    a.wider b

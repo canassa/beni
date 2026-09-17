@@ -741,7 +741,7 @@ test "dump without a stage is a usage error and does nothing" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), dump_bad.exit_code);
-    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types\n", dump_bad.stderr);
+    try testing.expectEqualStrings("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch\n", dump_bad.stderr);
     try testing.expectEqualStrings("", dump_bad.stdout);
 
     // ┌─────────────────────────────────────────┐
@@ -2123,7 +2123,10 @@ test "TOO FEW ARGS names the function, its arity, and the missing argument" {
 
 test "`==` on functions is a compile error, not a runtime crash" {
     // fast-compiler.md §3.1 point 5: dropping `comparable` turns Elm's last
-    // runtime crash into this.
+    // runtime crash into this. On this branch `==` is the `eq` method
+    // (static-dispatch-spike.md §3.1) and `dischargeMethod` raises
+    // `not_equatable` itself (§6.3, §3.4), at the OPERATOR — which is the
+    // region §10.3 asks for.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -2140,7 +2143,7 @@ test "`==` on functions is a compile error, not a runtime crash" {
     try testing.expectEqualDeep(diagnostic.Diagnostic{
         .code = .not_equatable,
         .severity = .@"error",
-        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 5 }, .end = .{ .line = 3, .col = 6 } },
+        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 7 }, .end = .{ .line = 3, .col = 9 } },
         .title = "NOT EQUATABLE",
         .message = "I cannot compare these values with `==`:\n" ++
             "\n" ++
@@ -2323,6 +2326,149 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     , r.stdout);
 }
 
+test "the backend refuses a method call the S4 shim cannot honour" {
+    // static-dispatch-spike.md §8 is S4's and §9 is S5's, so the code
+    // generator still emits every `==` as `Basics.eq` and every `<` as
+    // `Basics.lt` and passes no evidence at all. That is right for what
+    // `master` accepted and wrong for what this branch newly accepts: `<`
+    // on a custom type now CHECKS, and `Basics.lt` on two objects answers
+    // nonsense.
+    //
+    // `backend.md` §1 ships the language in two halves and the half that is
+    // missing must say so, so the shim refuses instead. S4 and S5 replace
+    // this refusal with the evidence parameters and the derived functions.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\type T
+        \\    = T Int
+        \\
+        \\
+        \\before : T, T -> Bool
+        \\before a b =
+        \\    a < b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ String.fromInt 1 ]
+        \\
+    );
+
+    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // The CHECKER is happy — `<` is `T`'s derived `compare` (§3.1, §9.4) —
+    // so the ONE diagnostic is the backend's, and it is the whole point:
+    // before S3 this program did not type-check at all, and half-landing it
+    // would have shipped `Basics$lt` on two objects.
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    const d = built.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.not_implemented, d.code);
+    try testing.expectEqual(diagnostic.Severity.@"error", d.severity);
+    try testing.expectEqual(@as(u32, 11), d.span.start.line);
+    try testing.expect(std.mem.indexOf(u8, d.message, "method call") != null);
+
+    // What master accepted still compiles: `==` on a custom type is a
+    // structural walk either way, and `Basics.eq` is that walk.
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\type T
+        \\    = T Int
+        \\
+        \\
+        \\same : T, T -> Bool
+        \\same a b =
+        \\    a == b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ String.fromInt 1 ]
+        \\
+    );
+    const ok = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), ok.exit_code);
+    try testing.expectEqual(@as(usize, 0), ok.diagnostics.len);
+}
+
+test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
+    // static-dispatch-spike.md §7.3: no symbol ids, no positions and no
+    // module indices, and `derived` sorted by emitted name text and `sites`
+    // by `(inst, evidence_index)` BEFORE anything indexes them (§7.1,
+    // A.29). The table is what S4 and S5 lower from, so a byte that moves
+    // with `--jobs` is a program that changes with `--jobs`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeRecordShapes(&w);
+
+    const runs = [4][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    var out: [4][]const u8 = undefined;
+    for (&out, runs) |*slot, jobs| {
+        const r = try w.runWith(&.{ "dump", "--stage=dispatch", jobs, "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        slot.* = r.stdout;
+    }
+    for (out[1..]) |other| try testing.expectEqualStrings(out[0], other);
+
+    // The table really does hold what the assertion is about.
+    try testing.expect(std.mem.indexOf(u8, out[0], "  site ") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "  derived ") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "    evidence 0 ") != null);
+}
+
+test "--explain reports a constraint that rode out on an inferred interface, and does not fail the build" {
+    // static-dispatch-spike.md §10.9 and §6.4: an unannotated `pub`
+    // declaration's inferred scheme carries the constraints its body raised,
+    // and that scheme IS the module's interface — so a body edit can change
+    // what every importer is checked against (report 18 §2.3). The warning
+    // exists so plan §7's M3 churn measurement has something to count.
+    //
+    // Both halves are asserted: the message is a `warning`, and the exit
+    // code stays 0. `diagnostic.Severity` gains no third value and a warning
+    // cannot change the exit code (frontend.md §1), so `--explain` can never
+    // turn a passing build into a failing one (A.10).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub bigger a b =
+        \\    a < b
+        \\
+        \\
+        \\pub annotated : Int, Int -> Bool
+        \\annotated a b =
+        \\    a < b
+        \\
+    );
+
+    // Off by default: the same file is silent without the flag.
+    const quiet = try w.run(&.{ "check", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), quiet.exit_code);
+    try testing.expectEqual(@as(usize, 0), quiet.diagnostics.len);
+
+    const r = try w.run(&.{ "check", "--explain", "Main.beni" });
+
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    const d = r.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.ambiguous_method_receiver, d.code);
+    try testing.expectEqual(diagnostic.Severity.warning, d.severity);
+    try testing.expectEqualStrings("CONSTRAINT IN AN INFERRED INTERFACE", d.title);
+    // The whole scheme, `where` clause included, is what the reader has to
+    // see: it is the thing that changes.
+    try testing.expect(std.mem.indexOf(u8, d.message, "a, a -> Bool where a.compare : a, a -> Order") != null);
+    // `annotated` pins its type, so it carries no constraint and is not
+    // reported — which is the hint the message gives.
+    try testing.expect(std.mem.indexOf(u8, d.message, "annotated") == null);
+}
+
 test "dump --stage=interface prints each value's scheme, and <error> for one that failed" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -2374,7 +2520,7 @@ test "dump --stage=interface prints each value's scheme, and <error> for one tha
 fn writeRecordShapes(w: *World) !void {
     for (0..12) |i| {
         var path: [32]u8 = undefined;
-        var source: [512]u8 = undefined;
+        var source: [1024]u8 = undefined;
         const n: u32 = @intCast(i);
         try w.write(
             try std.fmt.bufPrint(&path, "src/M{d}.beni", .{n}),
@@ -2397,7 +2543,18 @@ fn writeRecordShapes(w: *World) !void {
                 \\wrap{d} a b =
                 \\    Pair{d} a b
                 \\
-            , .{ n, n, n, n, n, n, n, n, n, n, n }),
+                \\
+                \\pub pick{d} : zeta, zeta, alpha -> zeta
+                \\    where alpha.compare : alpha, alpha -> Order
+                \\    , zeta.eq : zeta, zeta -> Bool
+                \\pick{d} a b tag =
+                \\    if a.eq b then a else b
+                \\
+                \\
+                \\pub near{d} a b =
+                \\    a.close b 1
+                \\
+            , .{ n, n, n, n, n, n, n, n, n, n, n, n, n, n }),
         );
     }
 }
@@ -2438,6 +2595,15 @@ test "the interface record is byte-identical at --jobs=1 and --jobs=8" {
     try testing.expect(std.mem.indexOf(u8, raw[0], "term ") != null);
     try testing.expect(std.mem.indexOf(u8, raw[0], "  field alpha term=") != null);
     try testing.expect(std.mem.indexOf(u8, raw[0], "ctor 0 ") != null);
+    // And the `where` blocks of static-dispatch-spike.md §6.5, which are
+    // the bytes S3 added to the record M4 will hash. They are written
+    // SORTED BY NAME TEXT, never by symbol id, for exactly the reason the
+    // record's fields are — so `compare` precedes `eq` here whatever order
+    // the workers interned them in, and both an annotated `where` clause
+    // (`pick`) and an INFERRED one (`near`) are present.
+    try testing.expect(std.mem.indexOf(u8, raw[0], "    where compare term=") != null);
+    try testing.expect(std.mem.indexOf(u8, raw[0], "    where eq term=") != null);
+    try testing.expect(std.mem.indexOf(u8, raw[0], "    where close term=") != null);
 }
 
 test "a record's fields are laid out in the record by name text, not by symbol id" {
@@ -2619,4 +2785,136 @@ test "one level under the reading limit checks clean and publishes a real scheme
     const raw = try w.runWith(&.{ "dump", "--stage=raw", "Deep.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), raw.exit_code);
     try testing.expect(std.mem.indexOf(u8, raw.stdout, "term 0 app ") != null);
+}
+
+// ---------------------------------------------------------------------------
+// S3 — the module graph carries TYPE edges, and they are deterministic
+// (`static-dispatch-spike.md` §6.8, `fast-compiler.md` §10, CLAUDE.md rule 5)
+//
+// A method call resolves in the module that DECLARES the receiver's type
+// (§1.2), so that module's interface has to be complete before the call is
+// checked. Under `--jobs>1` the only thing that guarantees it is the graph:
+// a module starts once every dependency has finished, and those once theirs
+// had. `dump --stage=graph` is what makes the edge set assertable, and the
+// fixture it is pointed at is a corpus project, so the same four modules
+// are also checked and interface-goldened by `corpus_test.zig`.
+// ---------------------------------------------------------------------------
+
+const type_owner_edges = "tests/corpus/check/good/TypeOwnerEdges";
+
+test "dump --stage=graph prints the type edges, identically at --jobs=1 and --jobs=8" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Twice each and alternating: what varies between runs is which worker
+    // took which file, which is a property of a run and not of the flag.
+    const runs = [4][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    var dumps: [4][]const u8 = undefined;
+    for (&dumps, runs) |*out, jobs| {
+        const r = try w.runWith(
+            &.{ "dump", "--stage=graph", jobs, type_owner_edges },
+            .{ .raw_diagnostics = true, .cwd = .inherit },
+        );
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stderr);
+        out.* = r.stdout;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (dumps[1..]) |other| try testing.expectEqualStrings(dumps[0], other);
+
+    // The claims the fixture exists to make, named so that re-blessing the
+    // golden cannot quietly drop one:
+    //
+    //   - a type reached through another module's interface: `User` never
+    //     writes `Owner`, and `Owner` is its ancestor through `Middle`;
+    //   - a type the checker MINTS: `Literals` imports nothing and names
+    //     nothing, and `a < b` lowers to a `method_call` that records no
+    //     `refs` edge of its own (§1.4). Before §6.8 that module had no
+    //     dependency at all and ran beside the core modules it reads.
+    for ([_][]const u8{
+        "app:User -> app:Middle\n",
+        "app:Middle -> app:Owner\n",
+        "app:Literals -> core:Basics\n",
+        "app:Literals -> core:Char\n",
+        "app:Literals -> core:List\n",
+        "app:Literals -> core:String\n",
+    }) |edge| {
+        if (std.mem.indexOf(u8, dumps[0], edge) == null) {
+            std.debug.print("missing edge {s}--- graph ---\n{s}", .{ edge, dumps[0] });
+            return error.MissingEdge;
+        }
+    }
+    // `User -> Owner` is NOT an edge: §6.8 buys an ancestor, not a direct
+    // dependency, and claiming the stronger thing would be a false golden.
+    try testing.expect(std.mem.indexOf(u8, dumps[0], "app:User -> app:Owner\n") == null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The whole edge set, core included, against the golden next to the
+    // fixture. Bless with `BENI_WRITE_EXPECTED=1 zig build test-blackbox`.
+    try expectGolden(type_owner_edges ++ "/_expected.graph", dumps[0]);
+}
+
+/// Compare `actual` against a golden file relative to the repo root — or
+/// write it when `BENI_WRITE_EXPECTED` is set, the same switch
+/// `corpus_test.zig` blesses with.
+fn expectGolden(path: []const u8, actual: []const u8) !void {
+    const gpa = testing.allocator;
+    const io = testing.io;
+    const bless = blk: {
+        const value = testing.environ.getAlloc(gpa, "BENI_WRITE_EXPECTED") catch break :blk false;
+        defer gpa.free(value);
+        break :blk value.len != 0 and !std.mem.eql(u8, value, "0");
+    };
+    if (bless) {
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = actual });
+        return;
+    }
+    const expected = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(world.max_stream_bytes)) catch |err| {
+        std.debug.print("{s}: {t} (bless with BENI_WRITE_EXPECTED=1 zig build test-blackbox)\n", .{ path, err });
+        return err;
+    };
+    defer gpa.free(expected);
+    try testing.expectEqualStrings(expected, actual);
+}
+
+test "a minted type's edge is to core, even when an app module shadows the name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `List` here is the user's own module, and it shadows core's for every
+    // NAME in the project (`Graph.lookup`). It does not shadow the TYPE a
+    // list literal has: `check/Types.findWellKnown` resolves `List` against
+    // package `core` and nothing else. `Uses` writes a list and names
+    // nobody, so the edge §6.8 adds has to go where the checker will look.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/List.beni", "pub mine : Int\nmine =\n    1\n");
+    try w.write("src/Uses.beni", "pub sizes =\n    [ 1, 2 ]\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "dump", "--stage=graph", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "app:Uses -> core:List\n") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "app:Uses -> app:List\n") == null);
+    // And the shadowing module itself is still a module of the project,
+    // with its own edge for its own literal.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "app:List -> core:Basics\n") != null);
 }

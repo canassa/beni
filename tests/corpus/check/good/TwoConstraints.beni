@@ -1,0 +1,14 @@
+-- check/good: two constraints on ONE variable, which is what pins §6.6's
+-- rendering order and §6.5's layout. The clause is written `pick` before
+-- `eq` and `render` before both; the scheme must print them sorted by
+-- VARIABLE name as rendered, then by METHOD name text — so `a.eq` comes
+-- before `a.pick`, and both before `b.render`. The interface record sorts
+-- each variable's block the same way (§6.5 rule 1), and neither order is
+-- the order they were written in.
+pub choose : a, a, b -> a
+    where
+        a.pick : a, a -> a
+        , b.render : b, Int -> a
+        , a.eq : a, a -> Bool
+choose x y tag =
+    if x.eq y then tag.render 1 else x.pick y

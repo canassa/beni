@@ -1,0 +1,14 @@
+-- dispatch (project): the consumer. `t.bump 1` is `ext Token bump`, and
+-- `t == t` is `ext_derived Token.Token eq` — a function this module names
+-- and does NOT emit, which is why it gets no `derived` row here (A.47).
+import Token exposing (Token, bump)
+
+
+pub step : Token -> Token
+step t =
+    t.bump 1
+
+
+pub same : Token, Token -> Bool
+same a b =
+    a == b

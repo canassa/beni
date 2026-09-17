@@ -9,7 +9,7 @@
 //! beni build  [options] --platform=<name> <path>...
 //! beni check  [options] <path>...
 //! beni fmt    [options] [--check] [--stdout] <path>...
-//! beni dump   [options] --stage=<tokens|ast|bir|interface|raw|types> [--positions] <file>
+//! beni dump   [options] --stage=<tokens|ast|bir|interface|raw|types|graph> [--positions] <file>
 //! beni version
 //! beni help
 //! ```
@@ -24,7 +24,7 @@ pub const usage =
     \\  build    compile to JavaScript for a platform
     \\  check    parse, lower and resolve every module against core; report diagnostics
     \\  fmt      format in place, or --check to verify, or --stdout to print
-    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types)
+    \\  dump     print one file's IR as text (--stage=tokens|ast|bir|interface|raw|types|graph|dispatch)
     \\  version  print the version
     \\  help     print this text
     \\
@@ -35,6 +35,7 @@ pub const usage =
     \\  --root=<dir>              the source root module names are derived from
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
     \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
+    \\  --explain                 emit informational diagnostics that are otherwise suppressed (check and build)
     \\
     \\build options:
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
@@ -47,7 +48,7 @@ pub const usage =
     \\  --stdout                  print the formatted text instead of writing it
     \\
     \\dump options:
-    \\  --stage=tokens|ast|bir|interface|raw|types
+    \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch
     \\                            which representation to print (required)
     \\  --positions               include source positions
     \\
@@ -62,7 +63,7 @@ pub const DiagnosticsFormat = enum { text, json };
 /// see a difference in the bytes `fast-compiler.md` §8.1 has M4 hashing.
 /// It exists so a test can assert "the same at every `--jobs`" about the
 /// record and not about a printer.
-pub const Stage = enum { tokens, ast, bir, interface, raw, types };
+pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -76,6 +77,12 @@ pub const Common = struct {
     /// `--core-root=<dir>`: read core from there instead of the embedded
     /// copy (checker.md §2).
     core_root: ?[]const u8 = null,
+    /// `--explain`: emit the informational diagnostics that are otherwise
+    /// suppressed (static-dispatch-spike.md §10 preamble, A.10). Parsed by
+    /// every subcommand; only `check` and `build` act on it. It adds no
+    /// severity — the one diagnostic it controls is a `warning` — so it can
+    /// never turn a passing build into a failing one.
+    explain: bool = false,
 };
 
 pub const Check = struct {
@@ -234,6 +241,11 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
         common.core = true;
         return null;
     }
+    if (std.mem.eql(u8, name, "--explain")) {
+        if (value != null) return noValue(name);
+        common.explain = true;
+        return null;
+    }
     if (std.mem.eql(u8, name, "--core-root")) {
         const v = value orelse return needsValue(name, "<dir>");
         if (v.len == 0) return needsValue(name, "<dir>");
@@ -381,9 +393,9 @@ const DumpSpecific = struct {
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--stage")) {
-            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types");
+            const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types|graph|dispatch");
             self.stage = std.meta.stringToEnum(Stage, v) orelse
-                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface, raw or types)", .{v});
+                return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface, raw, types, graph or dispatch)", .{v});
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--positions")) {
             if (value != null) return noValue(name);
@@ -398,9 +410,10 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     var s: Scanner(DumpSpecific) = .{};
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
-    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types", .{}) };
-    // `--stage=interface` also takes a directory (the whole project's
-    // interfaces, checker.md §3); either way it is one path.
+    const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", .{}) };
+    // `--stage=interface` and `--stage=dispatch` also take a directory (a
+    // whole project's interfaces or dispatch tables, checker.md §3 and
+    // static-dispatch-spike.md §7.3); either way it is one path.
     if (s.positionals.items.len != 1) return .{ .usage = .init("beni: dump needs exactly one file", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,
@@ -518,9 +531,10 @@ test "dump: stage, positions, exactly one file" {
     try expectCommand(.{ .dump = .{ .stage = .bir, .file = "M.beni" } }, &.{ "dump", "--stage=bir", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .interface, .file = "M.beni" } }, &.{ "dump", "--stage=interface", "M.beni" });
     try expectCommand(.{ .dump = .{ .stage = .types, .file = "M.beni" } }, &.{ "dump", "--stage=types", "M.beni" });
-    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|raw|types", &.{ "dump", "Main.beni" });
-    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|raw|types", &.{ "dump", "--stage", "Main.beni" });
-    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir, interface, raw or types)", &.{ "dump", "--stage=cst", "Main.beni" });
+    try expectCommand(.{ .dump = .{ .stage = .graph, .file = "src" } }, &.{ "dump", "--stage=graph", "src" });
+    try expectUsage("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", &.{ "dump", "Main.beni" });
+    try expectUsage("beni: option '--stage' needs a value: --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", &.{ "dump", "--stage", "Main.beni" });
+    try expectUsage("beni: invalid value 'cst' for --stage (expected tokens, ast, bir, interface, raw, types, graph or dispatch)", &.{ "dump", "--stage=cst", "Main.beni" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast" });
     try expectUsage("beni: dump needs exactly one file", &.{ "dump", "--stage=ast", "A.beni", "B.beni" });
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
@@ -548,7 +562,7 @@ test "build: the platform is required and --release is refused" {
 }
 
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release" }) |word| {
+    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
 }

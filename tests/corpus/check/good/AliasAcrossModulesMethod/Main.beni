@@ -1,0 +1,25 @@
+-- check/good (project): a cross-module alias is TRANSPARENT to dispatch.
+--
+-- `docs/design/static-dispatch-spike.md` §1.2, §6.3 and §11 say an alias
+-- declared in another module is `no_methods_on_shape` on the branch, because
+-- looking it through would need `Interface.alias_body`, which `checker.md`
+-- §7 records as not implemented. That is a SPEC DEFECT: the interface's own
+-- `alias` term already carries the expansion (`Interface.Term.Tag.alias`,
+-- "an `extra` range whose last word is the expansion"), so `store.resolved`
+-- looks a cross-module alias through exactly as it looks a same-module one
+-- through, and no new interface field is needed.
+--
+-- So `==` on an imported `Point` derives over the record shape (§9.2) and
+-- `p.x` is the ordinary field access it always was. This fixture pins the
+-- behaviour the code has; §11's row overstates the limit.
+import Lib exposing (Point, origin)
+
+
+pub same : Point, Point -> Bool
+same a b =
+    a == b
+
+
+pub atOrigin : Point -> Bool
+atOrigin p =
+    p == origin

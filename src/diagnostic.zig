@@ -165,6 +165,17 @@ pub const Code = enum {
     // of §10 are the checker's and land with S3.
     where_variable_unbound,
     duplicate_where_constraint,
+    /// The eight the CHECKER raises (§6, §10.1-§10.5, §10.8-§10.10).
+    unknown_method,
+    private_method,
+    no_methods_on_shape,
+    missing_where_constraint,
+    method_constraint_mismatch,
+    type_dispatch_needs_annotation,
+    /// The one `warning` the branch adds, emitted only under `--explain`
+    /// (§10.9). A warning never changes the exit code.
+    ambiguous_method_receiver,
+    constrained_constant,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -262,6 +273,14 @@ pub fn title(code: Code) []const u8 {
         .main_not_program => "MAIN IS NOT A PROGRAM",
         .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",
         .duplicate_where_constraint => "DUPLICATE CONSTRAINT",
+        .unknown_method => "UNKNOWN METHOD",
+        .private_method => "PRIVATE METHOD",
+        .no_methods_on_shape => "NO METHODS HERE",
+        .missing_where_constraint => "MISSING CONSTRAINT",
+        .method_constraint_mismatch => "CONFLICTING METHOD TYPES",
+        .type_dispatch_needs_annotation => "TYPE DISPATCH NEEDS AN ANNOTATION",
+        .ambiguous_method_receiver => "CONSTRAINT IN AN INFERRED INTERFACE",
+        .constrained_constant => "CONSTRAINED CONSTANT",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

@@ -1,0 +1,12 @@
+-- check/good (project): the module that DECLARES the type. Under the module
+-- rule (`docs/design/static-dispatch-spike.md` §1.2) its `pub` values are
+-- `Token`'s methods, and `bump` is the one `Main` reaches with a dot-call.
+pub type Token
+    = Token Int
+
+
+pub bump : Token, Int -> Token
+bump t step =
+    case t of
+        Token n ->
+            Token (n + step)

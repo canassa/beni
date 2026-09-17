@@ -1,0 +1,27 @@
+-- check/bad: §11's module-rule namespace clash, in the small. A module's
+-- `pub` values are ONE namespace, so `eq` here is `Version`'s method and
+-- `Colour`'s at the same time — and `==` on a `Colour` finds it and fails
+-- to unify. Roc hit this and moved to a per-type block in October 2025;
+-- `plans/static-dispatch-spike.md` §0 and §11 record that we may need to
+-- as well, and M8 counts how often it would bite.
+--
+-- Because every lookup is keyed on `(TypeId, name)` (§1.2), a block form
+-- would be a front-end change and nothing else — which is why this is a
+-- fixture and not a bug.
+pub type Version
+    = Version Int
+
+
+pub type Colour
+    = Red
+    | Green
+
+
+pub eq : Version, Version -> Bool
+eq a b =
+    True
+
+
+pub sameColour : Colour, Colour -> Bool
+sameColour a b =
+    a == b

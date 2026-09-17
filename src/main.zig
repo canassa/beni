@@ -82,6 +82,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .root = common.root,
         .core = common.core,
         .core_root = common.core_root,
+        .explain = common.explain,
     };
 }
 
@@ -147,7 +148,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // alongside the file (checker.md §4). The other three stages are a
     // function of the file's own bytes, and loading ~2,800 lines of core
     // into every one of them would be pure cost.
-    options.core_package = dump.stage == .interface or dump.stage == .raw or dump.stage == .types;
+    options.core_package = dump.stage == .interface or dump.stage == .raw or dump.stage == .types or dump.stage == .graph or dump.stage == .dispatch;
     // `--stage=types` prints local bindings' types, and a `Var` means
     // nothing once its store is gone (checker.md §5).
     options.keep_type_stores = dump.stage == .types;
@@ -156,11 +157,22 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     const phases: Session.Phases = switch (dump.stage) {
         .tokens, .ast => Session.parse_phases,
         .bir => Session.lower_phases,
-        .interface, .raw, .types => Session.check_phases,
+        .interface, .raw, .types, .dispatch => Session.check_phases,
+        // The graph is what `resolve_phases` builds first, and nothing
+        // after it changes an edge (`static-dispatch-spike.md` §6.8), so
+        // this dump stops before a single module is checked.
+        .graph => Session.resolve_phases,
     };
     switch (runSession(&session, stderr, &.{dump.file}, phases)) {
         .summary => {},
         .exit => |code| return code,
+    }
+    // `--stage=graph` is about the PROJECT and not about one file: it
+    // takes whatever path the other stages take and prints the whole
+    // module graph, so it never looks a dump target up.
+    if (dump.stage == .graph) {
+        beni.dump.graph.write(stdout, gpa, &session.graph, &session.interner) catch return 2;
+        return 0;
     }
     // `--stage=interface` takes a directory as well as a file: a project's
     // interfaces in path order are exactly what a `check/good` corpus
@@ -168,6 +180,10 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // interface is a per-MODULE product that only exists once the whole
     // project has resolved.
     const file = dumpTarget(&session, dump.file) orelse {
+        // `--stage=dispatch` takes a directory for the same reason
+        // (static-dispatch-spike.md §7.3): the table is per module, and a
+        // project's tables in path order are what a corpus golden is.
+        if (dump.stage == .dispatch) return dumpProjectDispatch(&session, stdout, stderr, dump.file);
         if (dump.stage != .interface and dump.stage != .raw) return fail(stderr, "beni: dump needs exactly one file", .{});
         return dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file, dump.stage == .raw);
     };
@@ -225,6 +241,23 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
                 &session.interner,
             ) catch return 2;
         },
+        // `--stage=dispatch` is per module, like `--stage=types`, and needs
+        // no store: everything in the table is an index or a name (§7.1).
+        .dispatch => {
+            const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
+            if (m.int() >= session.checked.dispatch.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
+            beni.dump.dispatch.write(
+                stdout,
+                session.store.moduleName(file),
+                session.artifacts.bir(file),
+                &session.checked.dispatch[m.int()],
+                &session.graph,
+                session.resolution.interfaces,
+                &session.checked.types,
+                &session.interner,
+            ) catch return 2;
+        },
+        .graph => unreachable, // handled above: the graph is not one file's
         .types => {
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             if (m.int() >= session.checked.modules.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
@@ -267,6 +300,33 @@ fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.
             beni.dump.interface.writeRaw(stdout, session.store.moduleName(f), iface, &session.interner) catch return 2
         else
             beni.dump.interface.write(stdout, gpa, session.store.moduleName(f), iface, &session.checked.types, &session.interner) catch return 2;
+        printed += 1;
+    }
+    if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
+    return 0;
+}
+
+/// Every module under the directory `arg`, in path order: the dispatch
+/// golden of a whole project (§7.3).
+fn dumpProjectDispatch(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
+    const dir = std.mem.trimEnd(u8, arg, "/");
+    var printed: u32 = 0;
+    for (0..session.store.count()) |i| {
+        const f: SourceStore.Index = @enumFromInt(i);
+        const p = session.store.path(f);
+        if (!(p.len > dir.len and std.mem.startsWith(u8, p, dir) and p[dir.len] == '/')) continue;
+        const m = moduleOf(session, f) orelse continue;
+        if (m.int() >= session.checked.dispatch.len) continue;
+        beni.dump.dispatch.write(
+            stdout,
+            session.store.moduleName(f),
+            session.artifacts.bir(f),
+            &session.checked.dispatch[m.int()],
+            &session.graph,
+            session.resolution.interfaces,
+            &session.checked.types,
+            &session.interner,
+        ) catch return 2;
         printed += 1;
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});

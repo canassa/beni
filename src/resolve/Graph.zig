@@ -47,6 +47,15 @@
 //! `fast-compiler.md` §9.1). An import the author DID write is always an
 //! edge, used or not: it is a statement about the project, and reporting
 //! `unknown_module` for it is the point.
+//!
+//! **A type is a dependency too** (`static-dispatch-spike.md` §6.8). `x.m`
+//! resolves in the module that DECLARES `x`'s type, so a module that can
+//! SEE a type depends on that type's module whether or not it names it.
+//! Naming one is already an edge and one reached through a dependency's
+//! interface is an edge transitively; the gap is the type the checker
+//! MINTS for an instruction that names nothing — a number, a list, a
+//! string, a comparison. `mintedModules` is that third source of edges,
+//! and its doc comment carries the argument in full.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -255,8 +264,9 @@ pub fn build(
     }
     g.modules = modules.toOwnedSlice();
 
-    // 2. Edges, from each module's import table. A module's references to
-    //    ITSELF add no edge (see the header).
+    // 2. Edges: one per import the module uses, then one per module that
+    //    declares a type it can see but never names (§6.8). A module's
+    //    references to ITSELF add no edge (see the header).
     const packages = g.modules.items(.package);
     for (0..g.modules.len) |i| {
         const index: Index = @enumFromInt(i);
@@ -285,6 +295,21 @@ pub fn build(
             if (std.mem.indexOfScalar(Index, deps.items[start..], target) != null) continue;
             try deps.append(gpa, target);
         }
+        // The types the checker MINTS for this module
+        // (`static-dispatch-spike.md` §6.8). Resolved against `core` and
+        // not against the module's own package, because that is where
+        // `check/Types.findWellKnown` resolves them: a user module called
+        // `List` shadows the NAME for its dependents, and does not move
+        // the type a list literal has out from under the checker — so the
+        // two must not disagree about which module the edge is to.
+        const minted = mintedModules(bir);
+        for (minted_modules, 0..) |w, bit| {
+            if (minted & (@as(u8, 1) << @intCast(bit)) == 0) continue;
+            const target = g.lookup(.core, w.symbol()) orelse continue;
+            if (target == index) continue;
+            if (std.mem.indexOfScalar(Index, deps.items[start..], target) != null) continue;
+            try deps.append(gpa, target);
+        }
         g.modules.items(.deps_start)[i] = start;
         g.modules.items(.deps_end)[i] = @intCast(deps.items.len);
     }
@@ -301,6 +326,11 @@ pub fn build(
 /// The modules a file actually names something from, from its `refs`
 /// table. Deduplicated; the count is the handful of modules one file
 /// mentions, so a linear set beats a hash map here.
+///
+/// A type this file WRITES is in here too: a `type_import` or a
+/// `type_qualified` records an `import_type` ref, which is the
+/// `static-dispatch-spike.md` §6.8 edge for every type with a name on it.
+/// `mintedModules` below covers the types that never get one.
 fn referencedModules(scratch: Allocator, bir: *const Bir) Allocator.Error![]const Symbol {
     var out: std.ArrayList(Symbol) = .empty;
     for (bir.refs) |ref| {
@@ -314,6 +344,95 @@ fn referencedModules(scratch: Allocator, bir: *const Bir) Allocator.Error![]cons
     }
     return out.items;
 }
+
+/// Which of `minted_modules` declare a type this file's instructions mint
+/// without naming it (`static-dispatch-spike.md` §6.8), as a bit set.
+///
+/// `x.m` resolves in the module that DECLARES `x`'s type (§1.2), so that
+/// module has to be checked before this one or the lookup reads a
+/// half-built interface — a data race, not a wrong answer. A type this
+/// file names is already an edge (see `referencedModules`), and a type
+/// that arrives through a dependency's interface is covered transitively,
+/// because a module starts only once every dependency has FINISHED and
+/// those only once theirs had. What neither covers is the type an
+/// instruction mints out of nothing: `1` is a `Basics.Int`, `[ … ]` a
+/// `List.List`, `"…"` a `String.String`, and — since §1.4 gives
+/// `method_call` no `refs` edge — `a < b` is a `Basics.Bool` written
+/// without the word `Basics`. A module of nothing but literals has no
+/// import, no ref and, before this, no dependency at all: `--jobs=8` ran
+/// it beside the very core modules its methods resolve in.
+///
+/// The invariant the three together buy, by induction over the order:
+/// **every nominal type visible while a module is checked is declared by
+/// that module itself or by a transitive dependency of it.**
+///
+/// **Inside core this rule bites.** A minted edge always points into
+/// `core`, so it can never make a user project cyclic — but a string
+/// literal in `Basics` would make `Basics` depend on `String`, which
+/// already depends on `Basics`, and the author would get an
+/// `import_cycle` for writing a literal. No core module mints a type from
+/// a module that names it back today; a rewrite of core has to keep it
+/// that way, or this rule needs an exemption stated in §6.8 first.
+///
+/// One pass over the tag column — the whole point of the SoA — reading a
+/// 256-byte table instead of branching per instruction, four accumulators
+/// deep so no iteration waits on the last one's OR. Measured on
+/// `zig build bench -- --generate=100000`: 635 modules, 202k instructions,
+/// 3837 edges before and 3938 after, `resolve` 4.93 ms before and 4.85 ms
+/// after (best of twelve, interleaved ABBA against a build of the parent
+/// commit) — the scan does not show. The one accumulator the first draft
+/// used, with an early exit per instruction, cost a consistent 0.4 ms:
+/// every instruction waited on the previous one's OR.
+fn mintedModules(bir: *const Bir) u8 {
+    const tags = bir.insts.items(.tag);
+    var acc: [4]u8 = @splat(0);
+    var i: usize = 0;
+    while (i + 4 <= tags.len) : (i += 4) {
+        inline for (0..4) |k| acc[k] |= minted_bits[@intFromEnum(tags[i + k])];
+    }
+    var seen = acc[0] | acc[1] | acc[2] | acc[3];
+    while (i < tags.len) : (i += 1) seen |= minted_bits[@intFromEnum(tags[i])];
+    return seen;
+}
+
+/// The modules that declare a well-known type, one bit each in the order
+/// `minted_bits` uses. `check/Types.findWellKnown` names the same six.
+const minted_modules = [_]InternPool.WellKnown{ .Basics, .List, .String, .Char, .Maybe, .Result };
+
+/// Which of `minted_modules` an instruction of each tag makes a dependency.
+/// `Int`, `Float` and `Bool` all live in `Basics`: a comparison is a
+/// `method_call` whose result is `Bool` (§3.1) and which records no `refs`
+/// edge of its own (§1.4), while `if` is a `case` on `Basics.True` — that
+/// one DOES record a ref, and costs nothing to name twice.
+const minted_bits: [256]u8 = blk: {
+    const basics: u8 = 1 << 0;
+    const list: u8 = 1 << 1;
+    const string: u8 = 1 << 2;
+    const char: u8 = 1 << 3;
+    // `e?` is a `Maybe` shape or a `Result` shape, and WHICH is the
+    // checker's decision on this instruction — so both modules are a
+    // dependency of a file that writes one.
+    const maybe_result: u8 = (1 << 4) | (1 << 5);
+    var table: [256]u8 = @splat(0);
+    for ([_]struct { Bir.Inst.Tag, u8 }{
+        .{ .int, basics },
+        .{ .float, basics },
+        .{ .pat_int, basics },
+        .{ .method_call, basics },
+        .{ .type_dispatch, basics },
+        .{ .list, list },
+        .{ .pat_list, list },
+        .{ .pat_cons, list },
+        .{ .string, string },
+        .{ .chunk, string },
+        .{ .interp, string },
+        .{ .pat_string, string },
+        .{ .char, char },
+        .{ .pat_char, char },
+        .{ .@"try", maybe_result },
+    }) |entry| table[@intFromEnum(entry[0])] = entry[1];
+    break :blk table;
+};
 
 /// Tarjan's SCC, then Kahn over the condensation. Both are iterative: a
 /// project is allowed to be 100k lines deep in imports and the compiler may

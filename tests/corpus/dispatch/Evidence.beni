@@ -1,0 +1,29 @@
+-- dispatch: the evidence half of §7.2. `scaleTwice` is `where`-constrained,
+-- so it has one evidence parameter in the canonical order — the scheme's
+-- quantifiers as `Schemes.Writer` records them, then each variable's
+-- constraints by name text — and its body FORWARDS it (`evidence 0`).
+--
+-- `grow` calls it at a concrete type, and that call's site is where the
+-- evidence becomes a name: `top scale`, this module's own method for
+-- `Metre`. A `call`'s evidence sites are numbered from 0, because unlike a
+-- `method_call` there is no site naming the callee (§7.2).
+pub type Metre
+    = Metre Int
+
+
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+pub scaleTwice : a, Int -> a
+    where a.scale : a, Int -> a
+scaleTwice x factor =
+    (x.scale factor).scale factor
+
+
+pub grow : Metre -> Metre
+grow m =
+    scaleTwice m 3

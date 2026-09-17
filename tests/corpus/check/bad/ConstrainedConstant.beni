@@ -1,0 +1,11 @@
+-- check/bad: §10.10. `(==)` is a lambda over a method call (§3.1, A.22), so
+-- `equals` is a `pub` value of NO beni parameters whose inferred scheme
+-- carries `a.eq`. A value that needs a method has to receive it, which would
+-- make `equals` a function of one hidden argument (§8.1) and change its type
+-- across the module boundary, so the checker refuses it.
+--
+-- It must be UNANNOTATED: with `pub equals : a, a -> Bool` the annotation
+-- declares `a` rigid with an empty constraint set and the body's requirement
+-- is `missing_where_constraint` (§10.4) instead.
+pub equals =
+    (==)

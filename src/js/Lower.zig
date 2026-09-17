@@ -82,6 +82,10 @@ pub const Result = struct {
     }
 };
 
+/// Re-exported so a caller can name `Dispatch.empty` without reaching past
+/// the backend into the checker.
+pub const Dispatch = @import("../check/Dispatch.zig");
+
 pub const Input = struct {
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
@@ -89,6 +93,10 @@ pub const Input = struct {
     module: Graph.Index,
     graph: *const Graph,
     interfaces: []const Interface,
+    /// What the checker decided about every method call of this module
+    /// (static-dispatch-spike.md §7). S4 and S5 lower from it; the S4 shim
+    /// below reads it only to REFUSE what it cannot honour.
+    dispatch: *const Dispatch,
     /// One ESM specifier per graph module, relative to THIS module's output
     /// file: what an `import` from it is written as. A module that cannot
     /// be reached (never referenced) may be an empty string.
@@ -981,6 +989,9 @@ const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+        if (try l.refuseUnsupportedDispatch(inst, m.origin)) {
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
         const args_range: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
         if (m.origin.basicsFunction()) |function| {
             const callee = try l.basicsValue(function, inst);
@@ -995,6 +1006,86 @@ const Lowerer = struct {
         const callee = try l.member(target, l.bir.symbol(m.name), p);
         const args = try l.exprList(out, args_range);
         return l.call(callee, args, p);
+    }
+
+    /// **S4 SHIM, the wall half.** The shim below emits `Basics$eq` for
+    /// every `==` and `Basics$lt` and friends for every `<`, and passes no
+    /// evidence at all. That is exactly right for what `master` accepted
+    /// and exactly wrong for what this branch newly accepts: `T 1 < T 2`,
+    /// `( a, b ) < ( c, d )` and `"a" < "b"` all reach `Basics$lt`, which
+    /// compares JavaScript objects and strings and answers nonsense.
+    ///
+    /// So every site of this instruction is checked against what the shim
+    /// can honour, and anything else is `not_implemented` — the same wall
+    /// `?` and `type_dispatch` already stand behind (`backend.md` §1: the
+    /// half of the language that is missing must SAY so). S4 lowers the
+    /// evidence parameters and S5 the derived functions, and this function
+    /// goes with them.
+    ///
+    /// What survives:
+    ///
+    ///   - `field` — a dot-call on a record, which is `language.md` §6.3
+    ///     unchanged and what the shim already emits;
+    ///   - `==` and `/=` against a STRUCTURAL answer (`primitive
+    ///     strict_eq`, a derived function, or `Basics.eq` reached through
+    ///     the `equatable` bridge), because `core/Basics.js`'s `eq` is that
+    ///     structural walk and gives the same answer;
+    ///   - `<`, `<=`, `>`, `>=` against `primitive num_compare`, which is
+    ///     `Int` and `Float` and is what `Basics.lt` does.
+    ///
+    /// Everything else refuses, including every evidence site: a call that
+    /// needs a hidden argument the shim does not pass would run with one
+    /// argument too few.
+    fn refuseUnsupportedDispatch(l: *Lowerer, inst: Inst.Index, origin: Bir.WellKnown) !bool {
+        var refused = false;
+        for (l.in.dispatch.sites) |site| {
+            if (site.inst != inst) continue;
+            if (site.evidence_index == 0 and l.shimCanEmit(origin, site.target)) continue;
+            refused = true;
+            break;
+        }
+        if (!refused) return false;
+        try l.report(
+            .not_implemented,
+            inst,
+            \\I cannot compile this method call to JavaScript yet.
+            \\
+            \\The checker resolved it (`docs/design/static-dispatch-spike.md` §6.3), but the
+            \\code generator still emits every `==` as `Basics.eq` and every `<` as
+            \\`Basics.lt`, and neither is the function this call needs. Hidden evidence
+            \\arguments and derived `eq`/`compare` land with S4 and S5 (§8, §9).
+            \\
+            \\Hint: compare the parts by hand, or pass an ordering function, until then.
+        ,
+            .{},
+        );
+        return true;
+    }
+
+    fn shimCanEmit(l: *Lowerer, origin: Bir.WellKnown, target: Dispatch.Target) bool {
+        return switch (target) {
+            .field => origin == .none,
+            .primitive => |prim| switch (prim) {
+                .strict_eq => origin == .eq or origin == .neq,
+                .num_compare => origin == .lt or origin == .le or origin == .gt or origin == .ge,
+                .char_compare, .string_compare => false,
+            },
+            // A derived `eq` is a structural walk and so is `Basics.eq`.
+            .derived => |dd| origin != .none and l.in.dispatch.derived[dd.index].kind == .eq,
+            .ext_derived => |dd| origin != .none and dd.kind == .eq,
+            // The `equatable`-marker bridge of §3.4, which core still leans
+            // on until §5.5 rewrites `List.member`: the target IS
+            // `Basics.eq`, so the shim's own call is the right one.
+            .ext => |e| (origin == .eq or origin == .neq) and l.isBasicsEq(e),
+            .top => false,
+            .evidence, .err => false,
+        };
+    }
+
+    fn isBasicsEq(l: *Lowerer, e: Dispatch.Target.Ext) bool {
+        const basics = l.in.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return false;
+        if (e.module != basics or e.module.int() >= l.in.interfaces.len) return false;
+        return l.in.interfaces[e.module.int()].valueName(e.value) == InternPool.WellKnown.eq.symbol();
     }
 
     /// **S4 SHIM**: a reference to a `pub` value of `core/Basics.beni` by
@@ -1048,6 +1139,12 @@ const Lowerer = struct {
     }
 
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        // A call of a constrained value needs hidden arguments the shim
+        // does not pass (§8.2); `refuseUnsupportedDispatch` refuses every
+        // site here, because none of them is a `method_call`'s callee.
+        if (try l.refuseUnsupportedDispatch(inst, .none)) {
+            return l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
+        }
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const callee_inst: Inst.Index = @enumFromInt(d.lhs);
@@ -1589,6 +1686,10 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
+        .dispatch = if (m.int() < session.checked.dispatch.len)
+            &session.checked.dispatch[m.int()]
+        else
+            &Dispatch.empty,
         .specifiers = specifiers,
         .sibling = "./M.foreign.mjs",
     });
@@ -1937,6 +2038,10 @@ test "`?` is refused with a diagnostic rather than emitted wrongly" {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
+        .dispatch = if (m.int() < session.checked.dispatch.len)
+            &session.checked.dispatch[m.int()]
+        else
+            &Dispatch.empty,
         .specifiers = specifiers,
         .sibling = "",
     });

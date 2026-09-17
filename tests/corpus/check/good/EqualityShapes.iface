@@ -1,0 +1,9 @@
+module EqualityShapes
+  type Colour
+    Red
+    Green
+  value sameColour : Colour, Colour -> Bool
+  value sameList : List Int, List Int -> Bool
+  value sameMaybe : Maybe Int, Maybe Int -> Bool
+  value samePair : ( Int, Char ), ( Int, Char ) -> Bool
+  value sameRecord : { x : Int, y : String }, { x : Int, y : String } -> Bool

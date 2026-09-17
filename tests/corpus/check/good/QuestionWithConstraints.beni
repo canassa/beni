@@ -1,0 +1,22 @@
+-- check/good: `?` and method constraints in one declaration.
+--
+-- `?` is the checker's other speculator (`checker.md` §6.5): it tries
+-- `Result` and then `Maybe` under a journal mark and rolls the loser back.
+-- Since S3, `unify` can register obligations and raise messages from inside
+-- that probe (`docs/design/static-dispatch-spike.md` §6.2, A.35), so the
+-- probe now rolls back the dispatch builder and the diagnostics too. This
+-- fixture puts the two together: the declaration must check clean and its
+-- dispatch table must hold exactly the sites the SURVIVING shape needs.
+pub firstBigger : Result String a, a -> Result String Bool
+    where a.compare : a, a -> Order
+firstBigger r limit =
+    let
+        value = r?
+    in
+    Ok (bigger value limit)
+
+
+pub bigger : a, a -> Bool
+    where a.compare : a, a -> Order
+bigger x y =
+    x.compare y == GT

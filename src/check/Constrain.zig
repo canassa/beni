@@ -48,6 +48,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Dispatch = @import("Dispatch.zig");
 const Parse = @import("../parse/Parse.zig");
 
 const Constrain = @This();
@@ -144,6 +145,18 @@ pub const Node = struct {
         tuple_index,
         /// `a` = the scrutinee, `b` = `extra` index of a `Try`.
         try_,
+        /// A method call's resolution (static-dispatch-spike.md §6.2 Rule
+        /// U0): `a` = the RECEIVER's `Var` — for a `type_dispatch`, the
+        /// annotation's rigid variable — and `b` = `extra` index of a
+        /// `Method`.
+        ///
+        /// It is emitted BEFORE the argument constraints and after the
+        /// receiver's own, inside one `and_`, which `Solve` walks left to
+        /// right: that ordering IS "resolve the method before the
+        /// arguments" (A.34). A concrete receiver is discharged inline
+        /// here, so a lambda argument's parameters are seeded from the
+        /// method's declared type before its body is checked.
+        method,
     };
 };
 
@@ -171,6 +184,12 @@ pub const Header = struct {
     /// The bound name, for the diagnostic's prose; `.none` for a pattern
     /// binding that names nothing.
     name: Symbol.Optional,
+    /// Which top-level declaration this is, so promotion can find its
+    /// annotation, its `pub`-ness and its parameter count
+    /// (static-dispatch-spike.md §6.4). `no_decl` for a `let` header.
+    decl: u32 = no_decl,
+
+    pub const no_decl: u32 = std.math.maxInt(u32);
 };
 
 /// Payload of `Node.Tag.call` — a saturated or partial application, and the
@@ -192,6 +211,29 @@ pub const Call = struct {
         ctor_pattern,
     };
 };
+
+/// Payload of `Node.Tag.method` (static-dispatch-spike.md §6.1, §6.2).
+pub const Method = struct {
+    /// The method's name: what was written after the dot, or `eq` /
+    /// `compare` for one of the six operators (§3.1).
+    name: Symbol,
+    /// `Bir.WellKnown` as an integer: which operator desugared into this
+    /// call, or `none` for a hand-written dot-call (§1.3).
+    origin: u32,
+    /// The method's type AT THIS USE — `receiver, arg₁, …, argₙ -> result`
+    /// for a dot-call, `arg₁, …, argₙ -> result` for a `type_dispatch`.
+    fn_var: Var,
+    /// 0 for a `method_call`, 1 for a `type_dispatch` (§4). The two differ
+    /// in whether the receiver is a value and in which diagnostic a
+    /// missing constraint gets.
+    kind: u32,
+    /// `type_dispatch` only: the type variable's name, for §10.8's prose.
+    /// `Symbol.Optional` as an integer.
+    var_name: u32,
+};
+
+/// One `let` binding rule (a) refused to generalise; see `Env.monomorphic`.
+pub const Monomorphic = struct { v: Var, method: Symbol };
 
 pub const TupleIndex = struct {
     index: u32,
@@ -244,12 +286,12 @@ pub const Tree = struct {
     }
 
     pub fn headers(tree: *const Tree, start: u32, len: u32) []const Header {
-        return @ptrCast(tree.extra.items[start..][0 .. len * 3]);
+        return @ptrCast(tree.extra.items[start..][0 .. len * 4]);
     }
 };
 
 comptime {
-    std.debug.assert(@sizeOf(Header) == 12);
+    std.debug.assert(@sizeOf(Header) == 16);
 }
 
 // ---------------------------------------------------------------------------
@@ -288,13 +330,34 @@ pub const Env = struct {
     /// The enclosing declaration's result variable, for a `?` whose target
     /// is the declaration itself.
     decl_result: Var.Optional = .none,
-    /// `type_dispatch` instructions this module holds, which the checker
-    /// cannot type yet (static-dispatch-spike.md §4, §6.7 — S3's work).
-    /// Collected here and reported by `Check` as `not_implemented`, for the
-    /// reason `fast-compiler.md` §5 gives: a construct the compiler cannot
-    /// handle must SAY so. Typing it as poison instead made the §4 example
-    /// pass `check` and `build` with exit code 0 and emit `undefined`.
-    not_implemented: *std.ArrayList(Bir.Inst.Index),
+    /// The declaration being checked, and its annotation's rigid type
+    /// variables in first-appearance order (static-dispatch-spike.md §2.4,
+    /// §4.2). Empty for an unannotated declaration; `decl` is
+    /// `Bir.decls.len` when nothing is being checked.
+    decl: u32 = 0,
+    decl_rigids: []const Types.Builder.Scoped = &.{},
+    /// Which evidence parameter answers each `(rigid variable, method)` of
+    /// this module's annotated declarations, in the canonical order of
+    /// §7.2. Flat across the module: a rigid variable belongs to exactly
+    /// one declaration, so the variable alone identifies the entry.
+    rigid_evidence: []const Dispatch.RigidEvidence = &.{},
+    /// Every variable §6.4 rule (a) held back from a `let` generalisation,
+    /// with the constraint that held it.
+    ///
+    /// It exists for ONE message. The boundary A.30 buys surfaces as an
+    /// ordinary `type_mismatch` at the second use, by which time the
+    /// constraint has been discharged against the first use's type and
+    /// nothing in the store says why the binding was monomorphic. Without
+    /// this the hint on that message told the author to check their
+    /// arithmetic (M7).
+    monomorphic: *std.ArrayList(Monomorphic),
+    /// The module's dispatch table as it is built (§7.1). Owned by
+    /// `ModuleCheck`; the solver appends to it and `finish` sorts it once.
+    dispatch: *Dispatch.Builder,
+    /// `--explain` (§10 preamble): whether the informational warnings that
+    /// are otherwise suppressed are emitted. The only one in the spike is
+    /// `ambiguous_method_receiver` (§10.9).
+    explain: bool = false,
     /// Written types the reader could not finish (`Types.Builder.max_depth`,
     /// `Schemes.Writer.max_depth`), by the instruction a message points at.
     ///
@@ -306,10 +369,6 @@ pub const Env = struct {
     /// and reports this once per module. Empty on every input a person
     /// writes.
     too_deep: *std.ArrayList(Bir.Inst.Index),
-
-    pub fn noteNotImplemented(env: *const Env, inst: Bir.Inst.Index) Error!void {
-        try env.not_implemented.append(env.scratch, inst);
-    }
 
     pub fn localVar(env: *const Env, index: u32) ?Var {
         if (index >= env.local_var.len) return null;
@@ -359,6 +418,9 @@ pub const Generator = struct {
     /// parser already refuses more than 4096 levels (language.md §10); this
     /// is the checker's own belt.
     depth: u32 = 0,
+    /// The instruction an instantiation's evidence sites belong to while a
+    /// CALL's callee is being generated (§7.2). `.none` everywhere else.
+    site_owner: Bir.Inst.OptionalIndex = .none,
 
     /// See `Solve.Solver.max_depth`: the parser bounds a declaration at
     /// `Parse.max_depth` levels and this walk spends one frame per level,
@@ -490,7 +552,17 @@ pub const Generator = struct {
             },
 
             .local, .top, .ctor, .ext_value, .ext_ctor => {
-                return g.add(.instantiate, inst, @intFromEnum(expected), 0, category);
+                // `b` is the instruction the evidence arguments of this
+                // instantiation belong to (static-dispatch-spike.md §7.2):
+                // the enclosing CALL when this reference is its callee —
+                // which is where `Lower.callExpr` prepends them — and the
+                // reference itself for a bare mention, whose lowering is the
+                // eta-expansion of §8.2.
+                const owner: Bir.Inst.OptionalIndex = if (g.site_owner == .none)
+                    inst.toOptional()
+                else
+                    g.site_owner;
+                return g.add(.instantiate, inst, @intFromEnum(expected), @intFromEnum(owner), category);
             },
 
             .tuple => {
@@ -591,15 +663,7 @@ pub const Generator = struct {
 
             .call => return g.call(inst, data, expected, category),
             .method_call => return g.methodCall(inst, data, expected, category),
-            // S3: a dispatch on a type variable (static-dispatch-spike.md
-            // §4, §6.7) is typed when the solver grows method constraints.
-            // Until then it is REPORTED — poison alone is silent and
-            // unifies with anything, so the declaration became a hole that
-            // checked clean and compiled to `undefined`.
-            .type_dispatch => {
-                try g.env.noteNotImplemented(inst);
-                return g.equal(expected, try g.fresh(.err), inst, category);
-            },
+            .type_dispatch => return g.typeDispatch(inst, data, expected, category),
             .lambda => return g.lambda(inst, data, expected, category),
             .let => return g.letExpr(inst, data, expected, category),
             .case => return g.caseExpr(inst, data, expected, category),
@@ -636,24 +700,16 @@ pub const Generator = struct {
         return g.fresh(.err);
     }
 
-    /// **S3 SHIM** (static-dispatch-spike.md §6.3 replaces all of it with
-    /// method resolution and the constraint of §6.1).
+    /// `x.m a b` (static-dispatch-spike.md §1.1) and the six comparison
+    /// operators (§3.1), as one node.
     ///
-    /// S2 changed what LOWERING emits, not what the checker knows: a
-    /// `method_call` reaches here in place of the two forms it replaced,
-    /// and this reproduces exactly what each of those meant.
-    ///
-    ///   - a dot-call `x.m a` was `call(field_access(x, m), [a])`, so the
-    ///     receiver must be a record with an `m` field and that field is
-    ///     the callee. The regions are unchanged: a `method_call` is
-    ///     stamped with the method-name token, which is what the
-    ///     `field_access` it replaced was stamped with too.
-    ///   - one of the six operators (§3.1) was `call(Basics.eq, [a, b])`
-    ///     and friends, whose types are `equatable a, a -> Bool` and
-    ///     `number, number -> Bool`. Those are written out here rather than
-    ///     instantiated from `Basics`, because the operator no longer
-    ///     REFERENCES `Basics` — lowering emits no `import_value` for it,
-    ///     so there is nothing to instantiate.
+    /// The ORDER inside the `and_` is Rule U0 (§6.2, A.34) and is the whole
+    /// of it: the receiver's own constraints, then the `method` node, then
+    /// the arguments. `Solve` walks an `and_` left to right, so by the time
+    /// an argument is checked the method has been resolved against a
+    /// concrete receiver and the argument's variable is already the
+    /// parameter type the method declares — which is what seeds a lambda
+    /// argument's parameters before its body is checked.
     fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
         const bir = g.env.bir;
         const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
@@ -662,32 +718,31 @@ pub const Generator = struct {
         if (m.origin != .none) return g.wellKnownCall(inst, receiver, args, m.origin, expected, category);
 
         const name = bir.symbol(m.name);
-        const callee = try g.freshFlex();
+        const recv = try g.freshFlex();
         const arg_vars = try g.env.scratch.alloc(Var, args.len);
         defer g.env.scratch.free(arg_vars);
         for (arg_vars) |*v| v.* = try g.freshFlex();
-        const args_start: u32 = @intCast(g.tree.extra.items.len);
-        try g.tree.extra.appendSlice(g.gpa, @ptrCast(arg_vars));
-        const payload = try g.addExtra(Call{
-            .callee = callee,
-            .args_start = args_start,
-            .args_len = @intCast(args.len),
-            .result = expected,
-            .flavor = .call,
-        });
 
-        // `{ ext | m : callee }`, the open record of `field_access`.
-        var pairs = [_]TypeStore.Field{.{ .name = name, .value = callee }};
-        const range = try g.env.store.addFields(&pairs);
-        const ext = try g.freshFlex();
-        const required = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
-        const target = try g.freshFlex();
+        // The method's type at this use: the receiver FIRST, because
+        // `x.m a b` means `M.m x a b` (§1.2). Nothing constrains its shape
+        // beyond that (A.2).
+        const params = try g.env.scratch.alloc(Var, args.len + 1);
+        defer g.env.scratch.free(params);
+        params[0] = recv;
+        @memcpy(params[1..], arg_vars);
+        const fn_var = try g.funcVar(params, expected);
+        const payload = try g.addExtra(Method{
+            .name = name,
+            .origin = @intFromEnum(m.origin),
+            .fn_var = fn_var,
+            .kind = 0,
+            .var_name = @intFromEnum(Symbol.Optional.none),
+        });
 
         var parts: std.ArrayList(Constraint) = .empty;
         defer parts.deinit(g.env.scratch);
-        try parts.append(g.env.scratch, try g.expr(receiver, target, .{ .tag = .general }));
-        try parts.append(g.env.scratch, try g.equal(required, target, inst, .{ .tag = .field_access, .index = @intFromEnum(name) }));
-        try parts.append(g.env.scratch, try g.add(.call, inst, payload, 0, category));
+        try parts.append(g.env.scratch, try g.expr(receiver, recv, .{ .tag = .general }));
+        try parts.append(g.env.scratch, try g.add(.method, inst, @intFromEnum(recv), payload, category));
         for (args, arg_vars, 0..) |arg, v, i| {
             try parts.append(g.env.scratch, try g.expr(arg, v, .{
                 .tag = .call_arg,
@@ -698,23 +753,72 @@ pub const Generator = struct {
         return g.conj(parts.items);
     }
 
-    /// **S3 SHIM**: the type both operands of a well-known call share.
-    /// `eq`/`neq` take any ONE equatable type and the four orderings take
-    /// `number`, exactly as `Basics.eq` and `Basics.lt` do (§3.1). The
-    /// equality variable carries the NAME `a`, which is the name the
-    /// annotation it replaces gives it (`core/Basics.beni`): without it a
-    /// message about `1 == "a"` reads "needs the 2nd argument to be
-    /// `number`" — the kind it picked up from the other operand — where it
-    /// used to read `a`.
-    fn operandVar(g: *Generator, origin: Bir.WellKnown) Error!Var {
-        return switch (origin) {
-            .eq, .neq => g.fresh(.{ .flex = .{ .name = InternPool.WellKnown.a.symbol().toOptional() } }),
-            else => g.freshKind(.number),
-        };
+    /// `a.decode s` (§4): a dispatch on a TYPE, with no receiver value.
+    ///
+    /// The variable is looked up among the declaration's rigid annotation
+    /// variables. When it is not one — the annotation was poisoned, or the
+    /// declaration lost its annotation — the expression is poisoned and the
+    /// solver's `method` arm reports; lowering has already refused every
+    /// case where `v` is not a type variable at all (§4.1).
+    fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
+        const bir = g.env.bir;
+        const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+        const args = bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Bir.Inst.Index);
+        const name = bir.symbol(t.name);
+        const var_symbol = bir.symbols[data.lhs];
+        const rigid = g.rigidNamed(var_symbol) orelse try g.fresh(.err);
+
+        const arg_vars = try g.env.scratch.alloc(Var, args.len);
+        defer g.env.scratch.free(arg_vars);
+        for (arg_vars) |*v| v.* = try g.freshFlex();
+        // No receiver: the constraint's type is `arg₁, …, argₙ -> result`
+        // (§4.2), which is exactly why A.2 imposes no shape on it.
+        const fn_var = try g.funcVar(arg_vars, expected);
+        const payload = try g.addExtra(Method{
+            .name = name,
+            .origin = @intFromEnum(Bir.WellKnown.none),
+            .fn_var = fn_var,
+            .kind = 1,
+            .var_name = @intFromEnum(var_symbol.toOptional()),
+        });
+
+        var parts: std.ArrayList(Constraint) = .empty;
+        defer parts.deinit(g.env.scratch);
+        try parts.append(g.env.scratch, try g.add(.method, inst, @intFromEnum(rigid), payload, category));
+        for (args, arg_vars, 0..) |arg, v, i| {
+            try parts.append(g.env.scratch, try g.expr(arg, v, .{
+                .tag = .call_arg,
+                .index = @intCast(i + 1),
+                .owner = inst.toOptional(),
+            }));
+        }
+        return g.conj(parts.items);
     }
 
-    /// **S3 SHIM**, the operator half of `methodCall`: `a == b` and the four
-    /// orderings, typed as the `Basics` functions they used to call.
+    /// The rigid variable the declaration's annotation introduced for
+    /// `name`, or null.
+    fn rigidNamed(g: *const Generator, name: Symbol) ?Var {
+        for (g.env.decl_rigids) |scoped| {
+            if (scoped.name == name) return scoped.v;
+        }
+        return null;
+    }
+
+    /// `p1, …, pn -> result`, one n-ary function type at the current rank.
+    fn funcVar(g: *Generator, params: []const Var, result: Var) Error!Var {
+        const range = try g.env.store.addVars(params);
+        return g.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } });
+    }
+
+    /// `a == b` and the four orderings (§3.1).
+    ///
+    /// **The operator form pins both operands to one type and the result to
+    /// `Bool`**, which is deliberately tighter than the constraint a
+    /// hand-written `a.eq b` raises (A.33): `t` is ONE variable in the
+    /// receiver, the argument and the constraint, so `same a b = a == b` is
+    /// `a, a -> Bool where a.eq : a, a -> Bool` and not three quantifiers.
+    /// M3 measures interface churn, so a looser lowering here would have
+    /// made the spike measure churn caused by its own rule.
     fn wellKnownCall(
         g: *Generator,
         inst: Bir.Inst.Index,
@@ -724,30 +828,40 @@ pub const Generator = struct {
         expected: Var,
         category: Category,
     ) Error!Constraint {
-        // `eq`/`neq` take any ONE equatable type; the four orderings take
-        // `number`. Both pin their two operands to the same variable and
-        // answer `Bool` (§3.1).
-        const operand = try g.operandVar(origin);
+        const operand = try g.freshFlex();
+        const wk = g.env.types.well_known;
+        // `eq` answers `Bool`, `compare` answers `Order`; the INSTRUCTION
+        // is `Bool` either way, and the backend supplies the test (§3.1,
+        // A.3).
+        const method_result = switch (origin) {
+            .none, .eq, .neq => try g.primitive(wk.bool),
+            else => try g.primitive(wk.order),
+        };
+        const fn_var = try g.funcVar(&.{ operand, operand }, method_result);
+        const name = (origin.method() orelse InternPool.WellKnown.eq).symbol();
+        const payload = try g.addExtra(Method{
+            .name = name,
+            .origin = @intFromEnum(origin),
+            .fn_var = fn_var,
+            .kind = 0,
+            .var_name = @intFromEnum(Symbol.Optional.none),
+        });
+
         var parts: std.ArrayList(Constraint) = .empty;
         defer parts.deinit(g.env.scratch);
-        try parts.append(g.env.scratch, try g.equal(expected, try g.primitive(g.env.types.well_known.bool), inst, category));
+        try parts.append(g.env.scratch, try g.equal(expected, try g.primitive(wk.bool), inst, category));
         try parts.append(g.env.scratch, try g.expr(receiver, operand, .{
             .tag = .call_arg,
             .index = 1,
             .owner = inst.toOptional(),
         }));
+        try parts.append(g.env.scratch, try g.add(.method, inst, @intFromEnum(operand), payload, category));
         for (args, 0..) |arg, i| {
             try parts.append(g.env.scratch, try g.expr(arg, operand, .{
                 .tag = .call_arg,
                 .index = @intCast(i + 2),
                 .owner = inst.toOptional(),
             }));
-        }
-        // The `equatable` obligation `Basics.eq`'s annotation used to carry
-        // (checker.md §6.4), registered at the receiver, which is where the
-        // unification that used to raise it happened.
-        if (origin == .eq or origin == .neq) {
-            try parts.append(g.env.scratch, try g.add(.equatable, receiver, @intFromEnum(operand), 0, .{ .tag = .general }));
         }
         return g.conj(parts.items);
     }
@@ -791,7 +905,12 @@ pub const Generator = struct {
         // itself, so §8.3's rule sees both the arrows and what the result
         // was wanted for; then the arguments, so an argument mismatch is
         // reported against a callee that is already concrete.
-        try parts.append(g.env.scratch, try g.expr(@enumFromInt(data.lhs), callee, .{ .tag = .general }));
+        {
+            const outer = g.site_owner;
+            defer g.site_owner = outer;
+            g.site_owner = inst.toOptional();
+            try parts.append(g.env.scratch, try g.expr(@enumFromInt(data.lhs), callee, .{ .tag = .general }));
+        }
         try parts.append(g.env.scratch, try g.add(.call, inst, payload, 0, category));
         for (args, arg_vars, 0..) |arg, v, i| {
             try parts.append(g.env.scratch, try g.expr(arg, v, .{
@@ -819,8 +938,8 @@ pub const Generator = struct {
         // `Int, Int -> Int`": with fresh variables the parameter type won
         // the unification first and the mistake surfaced inside the body,
         // as "this is `Bool` but I need `b`".
-        if (bir.operatorSection(inst, g.env.locals_base)) |origin| {
-            const operand = try g.operandVar(origin);
+        if (bir.operatorSection(inst, g.env.locals_base)) |_| {
+            const operand = try g.freshFlex();
             for (param_vars) |*v| v.* = operand;
             result = try g.primitive(g.env.types.well_known.bool);
         }

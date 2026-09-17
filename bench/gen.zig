@@ -44,9 +44,13 @@ pub const default_seed: u64 = 0xBE21;
 ///
 /// What changes, and which row of §7 each part feeds:
 ///
-///   - `helper<i>` takes its module's `Model<i>` as its first parameter, so
-///     every call to it is a method call `m.helper<i> n` (§1) — including
-///     the cross-module ones, which is the implicit graph edge of §6.8.
+///   - `helper<i>` takes its module's `Msg<i>` as its first parameter, so
+///     every call to it is a method call `(Reset).helper<i> n` (§1) —
+///     including the cross-module ones, `(P<k>.Reset).helper<k> n`, which
+///     is §1.1's `M.v.m a` row and the implicit graph edge of §6.8. The
+///     receiver is a NOMINAL type on purpose: §1.2 looks a `type alias`
+///     through to its expansion, so a record alias like `Model<i>` would
+///     make every one of these a field call, not a method call.
 ///   - one declaration in four is a CONSTRAINED helper: annotated with a
 ///     §2 `where` clause when the plain declaration would have been
 ///     annotated, and otherwise unannotated with the same constraint
@@ -58,7 +62,9 @@ pub const default_seed: u64 = 0xBE21;
 ///     helper, where it is forwarded (§8.2). A constrained declaration
 ///     nobody calls exercises only half the feature.
 ///   - `==` is used on a record (`model == init<i>`) and on a custom type
-///     (`msg == Reset`), the two derived-`eq` shapes of §3 and §9.
+///     (`msg == Reset`), the two derived-`eq` shapes of §3 and §9. The
+///     operators are how derivation is reached at all: §1.3 rule 2 lets
+///     only an operator-marked call derive.
 ///   - one module in sixteen builds a `Dict` and a `Set` with **no**
 ///     comparator argument (§5.3), through method calls `acc.insert k v`.
 ///
@@ -799,13 +805,22 @@ const Module = struct {
         return g.mode == .dispatch;
     }
 
-    /// Which constraint this module's `where` helpers carry: the well-known
-    /// `compare` (§3, discharged against the derived record ordering) or
-    /// the module's own `helper<i>` method (§6.3's module-lookup path). One
-    /// kind PER MODULE, so every helper in a module carries the same
+    /// Which of `Msg<i>`'s two methods this module's `where` helpers
+    /// constrain: `update<i> : Msg<i>, Model<i> -> Model<i>` or
+    /// `helper<i> : Msg<i>, Int -> Int`. Both go through §6.3's module
+    /// lookup, and the first puts a non-`Int` type into a `where` clause.
+    ///
+    /// Neither is the well-known `compare`, and that is not an oversight:
+    /// §1.3 rule 2 says only an OPERATOR-marked call may derive, so a
+    /// hand-written `x.compare y` on a type with no `pub compare` is
+    /// `unknown_method` by design. The derivation path of §9 is reached by
+    /// the `==` this corpus writes on records and on custom types, which is
+    /// where it is actually exercised.
+    ///
+    /// One kind PER MODULE, so every helper in a module carries the same
     /// constraint and can therefore forward its evidence to the one before
-    /// it; both paths are in the corpus because the modules alternate.
-    fn wellKnownWhere(g: *const Module) bool {
+    /// it; both are in the corpus because the modules alternate.
+    fn updateWhere(g: *const Module) bool {
         return g.index % 2 == 0;
     }
 
@@ -831,6 +846,14 @@ const Module = struct {
     /// already has a call site: the point of the shape is the `$m$k`
     /// argument passed from one constrained declaration to another, and it
     /// costs two bytes over calling the constraint directly.
+    /// A value of this module's own nominal type, for use as a method
+    /// receiver (§1.2's module rule). `Reset` is a nullary constructor of
+    /// `Msg<i>`, which every module declares, and the parentheses are what
+    /// make it an ATOM rather than the head of a qualified name: bare
+    /// `Reset.helper<i>` lexes as `qualified_lower` — module `Reset`, value
+    /// `helper<i>` — which is §1.1's `M.f x` row and not a method call.
+    const receiver = "(Reset)";
+
     fn lastWhere(g: *const Module) ?[]const u8 {
         if (g.where_count == 0) return null;
         return g.whereName(g.where_count - 1);
@@ -1014,15 +1037,17 @@ const Module = struct {
                     g.aliased_count += 1;
                 },
                 else => {
-                    // In dispatch mode the exposed value is `init<k>` — a
-                    // `Model<k>` — and NOT `helper<k>`: the method is found
-                    // through the receiver's type, in the module that
-                    // declares it, with no import of the value at all
-                    // (§1, §6.8). That is the edge the parallel checker
-                    // has to learn about, and it only exists if the corpus
-                    // reaches a method the importer never named.
+                    // In dispatch mode the same two names are exposed and
+                    // NEITHER is used: `helper<k>` is reached through the
+                    // receiver's TYPE, in the module that declares it, with
+                    // no import of the value at all (§1, §6.8). That is the
+                    // edge the parallel checker has to learn about, and it
+                    // only exists if the corpus reaches a method the
+                    // importer never named. The alias is what puts module
+                    // `k`'s constructors in reach, since the receiver has to
+                    // be a value of a type module `k` declares.
                     if (g.dispatch()) {
-                        try g.line(0, "import {s} exposing (Model{d}, init{d})", .{ name, k, k });
+                        try g.line(0, "import {s} as P{d} exposing (Model{d}, helper{d})", .{ name, k, k, k });
                     } else {
                         try g.line(0, "import {s} exposing (Model{d}, helper{d})", .{ name, k, k });
                     }
@@ -1113,14 +1138,23 @@ const Module = struct {
         defer g.scopeReset(mark);
         try g.line(0, "--| A small numeric helper every module exports.", .{});
         // The one declaration the whole corpus calls, so it is the one
-        // worth routing through dispatch: taking `Model<i>` first makes it
-        // a METHOD of a type this module declares (§1.2, the module rule),
-        // and every call site below becomes `m.helper<i> n`. The line count
-        // and the draws are the same either way.
+        // worth routing through dispatch. The receiver is `Msg<i>`, the
+        // module's CUSTOM type, and not `Model<i>`: `Model<i>` is a
+        // `type alias` for a record, and §1.2 looks an alias through to its
+        // expansion, so `m.helper<i> n` on one is a field call on a record
+        // with no such field (`missing_field`), not a method call. The
+        // module rule needs a NOMINAL type — `type`, `opaque type` or
+        // `foreign type` — and `Msg<i>` is the one every module declares.
+        //
+        // The receiver is not read. A `Msg<i>` cannot appear in the `Int`
+        // arithmetic these bodies are made of, and spending a `case` on it
+        // would cost more bytes than the whole dispatch shape has to give
+        // (§7 compares the two corpora per byte). What is being measured is
+        // the call and its resolution, and both are unaffected.
         if (g.dispatch()) {
-            try g.line(0, "pub helper{d} : Model{d}, Int -> Int", .{ g.index, g.index });
-            try g.line(0, "helper{d} model n =", .{g.index});
-            _ = g.pushFunction("model");
+            try g.line(0, "pub helper{d} : Msg{d}, Int -> Int", .{ g.index, g.index });
+            try g.line(0, "helper{d} msg n =", .{g.index});
+            _ = g.pushFunction("msg");
         } else {
             try g.line(0, "pub helper{d} : Int -> Int", .{g.index});
             try g.line(0, "helper{d} n =", .{g.index});
@@ -1130,34 +1164,9 @@ const Module = struct {
         // a mode that drew one number fewer would rename every declaration
         // after it and the two trees would stop being the same project.
         switch (g.rng.uintLessThan(u8, 3)) {
-            0 => {
-                const a = 1 + g.rng.uintLessThan(u32, 9);
-                const b = g.rng.uintLessThan(u32, 100);
-                if (g.dispatch()) {
-                    // The receiver REPLACES a literal rather than being
-                    // added to one: the two corpora are compared per byte.
-                    try g.line(4, "n * {d} + model.count", .{a});
-                } else {
-                    try g.line(4, "n * {d} + {d}", .{ a, b });
-                }
-            },
-            1 => {
-                const a = g.rng.uintLessThan(u32, 100);
-                const b = g.rng.uintLessThan(u32, 10);
-                if (g.dispatch()) {
-                    try g.line(4, "max n {d} - model.count", .{a});
-                } else {
-                    try g.line(4, "max n {d} - min n {d}", .{ a, b });
-                }
-            },
-            else => {
-                const a = 2 + g.rng.uintLessThan(u32, 30);
-                if (g.dispatch()) {
-                    try g.line(4, "modBy {d} (abs model.count)", .{a});
-                } else {
-                    try g.line(4, "modBy {d} (abs n)", .{a});
-                }
-            },
+            0 => try g.line(4, "n * {d} + {d}", .{ 1 + g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 100) }),
+            1 => try g.line(4, "max n {d} - min n {d}", .{ g.rng.uintLessThan(u32, 100), g.rng.uintLessThan(u32, 10) }),
+            else => try g.line(4, "modBy {d} (abs n)", .{2 + g.rng.uintLessThan(u32, 30)}),
         }
     }
 
@@ -1241,11 +1250,11 @@ const Module = struct {
         // in the body and promoted at generalisation (§6.4) — which is the
         // case report 18 §2.3 argues about, so both belong in the corpus.
         if (g.dispatch() and isWhereSlot(n) and g.canAffordWhere(n)) {
-            const well_known = g.wellKnownWhere();
+            const via_update = g.updateWhere();
             if (annotated) {
                 try g.line(0, "{s} : a, Int -> Int", .{name});
-                if (well_known) {
-                    try g.line(4, "where a.compare : a, a -> Order", .{});
+                if (via_update) {
+                    try g.line(4, "where a.update{d} : a, Model{d} -> Model{d}", .{ g.index, g.index, g.index });
                 } else {
                     try g.line(4, "where a.helper{d} : a, Int -> Int", .{g.index});
                 }
@@ -1261,8 +1270,8 @@ const Module = struct {
             // the constraint directly.
             if (g.takeUncalledWhere() orelse g.lastWhere()) |previous| {
                 try g.w.print("{s} x (", .{previous});
-            } else if (well_known) {
-                try g.w.writeAll("if (x.compare x) == GT then n else (");
+            } else if (via_update) {
+                try g.w.print("(x.update{d} init{d}).count + (", .{ g.index, g.index });
             } else {
                 try g.w.print("x.helper{d} (", .{g.index});
             }
@@ -1281,7 +1290,7 @@ const Module = struct {
         // plain stream is untouched, and it is the only place a helper in a
         // module that writes exactly one is guaranteed to be called from.
         const wrap = if (g.dispatch()) g.takeUncalledWhere() else null;
-        if (wrap) |helper| try g.w.print("{s} init{d} (", .{ helper, g.index });
+        if (wrap) |helper| try g.w.print("{s} {s} (", .{ helper, receiver });
         try g.expr(2);
         if (wrap != null) try g.w.writeByte(')');
         try g.w.writeByte('\n');
@@ -1336,7 +1345,7 @@ const Module = struct {
         try g.line(4, "in", .{});
         try g.w.splatByteAll(' ', 4);
         const wrap = if (g.dispatch()) g.takeUncalledWhere() else null;
-        if (wrap) |helper| try g.w.print("{s} init{d} (", .{ helper, g.index });
+        if (wrap) |helper| try g.w.print("{s} {s} (", .{ helper, receiver });
         try g.expr(3);
         if (wrap != null) try g.w.writeByte(')');
         try g.w.writeByte('\n');
@@ -1367,7 +1376,7 @@ const Module = struct {
                     // (`static-dispatch-spike.md` §1.1, the `x.m _ b` row):
                     // a lambda over `method_call`, and shorter than writing
                     // the lambda out.
-                    try g.line(8, "|> List.map (init{d}.helper{d} _)", .{ g.index, g.index })
+                    try g.line(8, "|> List.map ({s}.helper{d} _)", .{ receiver, g.index })
                 else
                     try g.line(8, "|> List.map helper{d}", .{g.index}),
                 else => try g.line(8, "|> List.reverse", .{}),
@@ -1569,9 +1578,9 @@ const Module = struct {
                 // it displaces.
                 if (g.dispatch()) {
                     if (g.takeUncalledWhere()) |helper| {
-                        try g.w.print("{s} init{d} ", .{ helper, g.index });
+                        try g.w.print("{s} {s} ", .{ helper, receiver });
                     } else {
-                        try g.w.print("init{d}.helper{d} ", .{ g.index, g.index });
+                        try g.w.print("{s}.helper{d} ", .{ receiver, g.index });
                     }
                 } else {
                     try g.w.print("helper{d} ", .{g.index});
@@ -1643,9 +1652,9 @@ const Module = struct {
             const k = g.exposed[g.rng.uintLessThan(usize, g.exposed_count)];
             if (g.dispatch()) {
                 if (g.takeUncalledWhere()) |helper| {
-                    try g.w.print("{s} init{d} ", .{ helper, g.index });
+                    try g.w.print("{s} {s} ", .{ helper, receiver });
                 } else {
-                    try g.w.print("init{d}.helper{d} ", .{ k, k });
+                    try g.w.print("(P{d}.Reset).helper{d} ", .{ k, k });
                 }
             } else {
                 try g.w.print("helper{d} ", .{k});
@@ -1656,9 +1665,9 @@ const Module = struct {
             const k = g.aliased[g.rng.uintLessThan(usize, g.aliased_count)];
             if (g.dispatch()) {
                 if (g.takeUncalledWhere()) |helper| {
-                    try g.w.print("{s} init{d} ", .{ helper, g.index });
+                    try g.w.print("{s} {s} ", .{ helper, receiver });
                 } else {
-                    try g.w.print("P{d}.init{d}.helper{d} ", .{ k, k, k });
+                    try g.w.print("(P{d}.Reset).helper{d} ", .{ k, k });
                 }
             } else {
                 try g.w.print("P{d}.helper{d} ", .{ k, k });
@@ -1669,9 +1678,9 @@ const Module = struct {
         // helper still waiting for a call site.
         if (g.dispatch()) {
             if (g.takeUncalledWhere()) |helper| {
-                try g.w.print("{s} init{d} ", .{ helper, g.index });
+                try g.w.print("{s} {s} ", .{ helper, receiver });
             } else {
-                try g.w.print("init{d}.helper{d} ", .{ g.index, g.index });
+                try g.w.print("{s}.helper{d} ", .{ receiver, g.index });
             }
         } else {
             try g.w.print("helper{d} ", .{g.index});
@@ -1911,7 +1920,7 @@ test "the dispatch tree is the same project as the plain one, written with dispa
     var found: struct {
         method: bool = false,
         cross_module: bool = false,
-        where_compare: bool = false,
+        where_update: bool = false,
         where_method: bool = false,
         inferred: bool = false,
         record_eq: bool = false,
@@ -1932,21 +1941,21 @@ test "the dispatch tree is the same project as the plain one, written with dispa
 
         const text = disp.written();
         if (std.mem.indexOf(u8, text, ".helper") != null) found.method = true;
-        if (std.mem.indexOf(u8, text, ".init") != null) found.cross_module = true;
-        if (std.mem.indexOf(u8, text, "    where a.compare : a, a -> Order") != null) found.where_compare = true;
+        if (std.mem.indexOf(u8, text, "(P") != null and std.mem.indexOf(u8, text, ".Reset).helper") != null) found.cross_module = true;
+        if (std.mem.indexOf(u8, text, "    where a.update") != null) found.where_update = true;
         if (std.mem.indexOf(u8, text, "    where a.helper") != null) found.where_method = true;
         if (std.mem.indexOf(u8, text, "if model == init") != null) found.record_eq = true;
         if (std.mem.indexOf(u8, text, "if msg == Reset then") != null) found.custom_eq = true;
         if (std.mem.indexOf(u8, text, "List.foldl xs Dict.empty (\\x acc -> acc.insert x 1)") != null) found.dict = true;
         if (std.mem.indexOf(u8, text, "List.foldl xs Set.empty (\\x acc -> acc.insert x)") != null) found.set = true;
-        if (std.mem.indexOf(u8, text, "|> List.map (init") != null) found.placeholder = true;
+        if (std.mem.indexOf(u8, text, "|> List.map ((Reset).helper") != null) found.placeholder = true;
     }
     // Every part of the M1b shape is really in the tree. A flag that
     // silently stopped firing would leave a corpus that measures the
     // feature's cost on code that does not use it, which is M1a.
     try testing.expect(found.method);
     try testing.expect(found.cross_module);
-    try testing.expect(found.where_compare);
+    try testing.expect(found.where_update);
     try testing.expect(found.where_method);
     try testing.expect(found.record_eq);
     try testing.expect(found.custom_eq);
@@ -2020,8 +2029,8 @@ fn expectWithin(what: []const u8, plain: u64, dispatch: u64, percent: u64) !void
 const WhereHelpers = struct {
     total: usize = 0,
     uncalled: usize = 0,
-    /// `scale<i>_<n> init<i> …`: a call at a concrete type, which is where
-    /// the evidence argument is supplied.
+    /// `scale<i>_<n> (Reset) …`: a call at a concrete NOMINAL type, which
+    /// is where the evidence argument is supplied.
     concrete_sites: usize = 0,
     /// `scale<i>_<n> x …`: a call from inside another constrained helper,
     /// which is where the evidence argument is forwarded.
@@ -2049,7 +2058,7 @@ const WhereHelpers = struct {
             const uses = std.mem.count(u8, text, with_space) - declarations;
             if (uses == 0) h.uncalled += 1;
 
-            const concrete = try std.fmt.bufPrint(&buf[2], "{s} init", .{name});
+            const concrete = try std.fmt.bufPrint(&buf[2], "{s} (Reset)", .{name});
             h.concrete_sites += std.mem.count(u8, text, concrete);
             const forwarded = try std.fmt.bufPrint(&buf[3], "{s} x (", .{name});
             h.forwarding_sites += std.mem.count(u8, text, forwarded);

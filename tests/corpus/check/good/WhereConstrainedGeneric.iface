@@ -1,0 +1,6 @@
+module WhereConstrainedGeneric
+  type Metre
+    Metre/1
+  value grow : Metre -> Metre
+  value scale : Metre, Int -> Metre
+  value twice : a, Int -> a where a.scale : a, Int -> a

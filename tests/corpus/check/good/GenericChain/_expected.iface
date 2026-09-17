@@ -1,0 +1,9 @@
+module Lib
+  value inner : a, Int -> a where a.scale : a, Int -> a
+  value middle : a, Int -> a where a.scale : a, Int -> a
+  value outer : a, Int -> a where a.scale : a, Int -> a
+module Main
+  type Metre
+    Metre/1
+  value grow : Metre -> Metre
+  value scale : Metre, Int -> Metre

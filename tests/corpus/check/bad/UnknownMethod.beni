@@ -1,0 +1,11 @@
+-- check/bad: §10.1. `s.volume` resolves in the module that declares
+-- `Shape`, which is this one, and there is no `volume` here. The two spans
+-- of the two-span rule coincide — the `.volume` call is both the constraint
+-- and what made `s` concrete — so the golden has ONE span, at 10:6.
+pub type Shape
+    = Circle Float
+
+
+pub area : Shape -> Float
+area s =
+    s.volume 2

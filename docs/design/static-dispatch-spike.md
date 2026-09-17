@@ -98,7 +98,7 @@ receiver type `R`:
 |---|---|---|
 | a nominal type `T` declared in module `M` — `type`, `pub opaque type`, `foreign type` | `M.m x a b` | `unknown_method` when `M` has no value named `m`; `private_method` when `M` has a value `m` that is not `pub` and `M` is not the current module |
 | an alias declared in **this** module | looked through to what it names — aliases are transparent (`fast-compiler.md` §3.1), so the method set is the *expansion's* | as the expansion |
-| an alias declared in **another** module | `no_methods_on_shape` on the branch. Looking it through needs `Interface.alias_body`, which `checker.md` §7 records as not implemented; §11 says why the spike does not close it | `no_methods_on_shape`, with a hint naming the alias |
+| an alias declared in **another** module | looked through as well: the interface's own `alias` term carries the expansion, so no `Interface.alias_body` is needed (A.48) | as the expansion |
 | a record | a **field call**: `(x.m) a b`, `language.md` §6.3 unchanged | the ordinary record diagnostics (`unknown_field`, `not_a_function`) |
 | a tuple | well-known names only (§3): `eq`/`compare` derive (§9.3) | any other name: `no_methods_on_shape` |
 | `()` | well-known names only: `eq` is constantly `True`, `compare` constantly `EQ` | any other name: `no_methods_on_shape` |
@@ -440,6 +440,12 @@ For a name that is not in the table, resolution of `(T, name)` is:
 that reaches the table. A function type never does (`not_equatable` for `eq`,
 `no_methods_on_shape` for `compare`), and a `foreign type` that is neither in the table nor given a
 `pub eq` by its module does not either — `unknown_method`.
+
+**One exception, and it expires with S6** (A.50). A `foreign type` marked `equatable` answers `eq`
+through the marker, which §3.4 says means exactly "has an `eq`": `xs == ys` on a `List a` therefore
+resolves while `core/List.beni` still has no `pub foreign eq`. `compare` gets no such bridge — there
+is no marker for it — so `xs < ys` is `unknown_method` until §5.2 lands, which is what
+`tests/corpus/check/bad/CompareOnForeignType.beni` pins. §5.2 is S6's obligation and removes both.
 
 Derivation is **structural and recursive**: each position inside `T` resolves the same well-known
 name by the same three rules, so a record of `Maybe (List Point)` derives down to `Point`'s own
@@ -851,7 +857,7 @@ variable to its root and switches on the content:
 | `rigid` without the name | `missing_where_constraint` (Rule U2's message, at the constraint's region) |
 | `app T args` | §6.3.1 |
 | `alias` whose `actual` is available — every same-module alias, and any alias already instantiated in this store | discharge against `actual`. The alias is transparent (`fast-compiler.md` §3.1), so its methods are the expansion's |
-| `alias` declared in another module, whose body cannot be read (`Interface.alias_body`, `checker.md` §7) | `no_methods_on_shape`, naming the alias. §11 records this as a spike gap that closes the moment `alias_body` lands |
+| `alias` declared in another module | the same: `TypeStore.resolved` already followed it, because the interface's `alias` term carries the expansion (A.48) |
 | `Structure.record { fields, ext }` where `find(ext)` is `Structure.empty_record` — a **closed** record | well-known name (§1.3): target `derived { kind, shape = record(sorted field names) }`, and register the same obligation on **every field type**. Any other name: `no_methods_on_shape`, with the hint "write `(x.m) a` for a field call" |
 | `Structure.record { fields, ext }` where `find(ext)` is `Content.flex` — an **open** record whose extension is still unsolved | `no_methods_on_shape`. See below |
 | `Structure.record { fields, ext }` where `find(ext)` is `Content.rigid` — an open record from an annotation, `{ r \| a : Int }` | `no_methods_on_shape`. See below |
@@ -1262,21 +1268,44 @@ pub const Dispatch = struct {
                                                                   // ENCLOSING DECLARATION. One level, no
                                                                   // depth — §6.4 proves why
         primitive: enum(u8) { strict_eq, num_compare, char_compare, string_compare },
-        derived: u32,                                             // index into `derived`
+        derived: struct { index: u32, parts: Range },             // a function THIS module emits, and the
+                                                                  // evidence this USE passes it (A.46)
+        ext_derived: struct { module: Graph.Index, type: Types.TypeId,
+                              kind: Derived.Kind, parts: Range }, // another module's nominal type (A.47)
         field,                                                    // a record: a plain field call
         err,
     };
 
     pub const Site = struct { inst: Bir.Inst.Index, evidence_index: u16, target: Target };
     pub const Evidence = struct { quantified: u16, var_name: SymbolIndex, method: SymbolIndex };
-    pub const Derived = struct { kind: enum(u8) { eq, compare }, shape: Shape, parts: Range };
+    pub const Derived = struct {
+        kind: enum(u8) { eq, compare },
+        shape: Shape,
+        evidence_count: u16,   // one per field, element or type parameter, in shape order
+        parts: Range,          // NOMINAL only: the body's per-constructor-argument targets.
+                               // Empty for a record, a tuple or `()` — such a body is
+                               // `$m$0 … $m$n-1` applied position by position (§9.2, §9.3)
+    };
 
     sites: []Site,                     // sorted by (inst, evidence_index)
     decl_evidence: []Range,            // per declaration, into `evidence`
     evidence: []Evidence,              // canonical order within each declaration
-    derived: []Derived,                // SORTED by emitted name text (§8.5)
-    parts: []Target,                   // one Target per structural position of a derived function
+    derived: []Derived,                // SORTED by emitted name text (§8.5). Exactly what this
+                                       // module EMITS: another module's nominal method is an
+                                       // `ext_derived` target and has no row (A.47)
+    parts: []Target,                   // the evidence arguments of every `derived`/`ext_derived`
+                                       // target, and the body positions of every nominal
+                                       // `Derived`. Ranges into it NEST
+    symbols: []Symbol,                 // the field names a `Shape.record` ranges over
 };
+
+**A structural derived function is keyed on its shape and on nothing else, and is parameterised by
+element evidence** (A.11, A.46). `{ x : Int, y : Int }` and `{ x : String, y : String }` are one
+`r$x$y`; what tells them apart is the two arguments each use hands it, which is why `parts` hangs off
+the **`Target`** and not off the `Derived`. Baking the first requester's element targets into the
+function is a miscompile and not a detail: the second use of a `t2` would then order `String`s with
+JavaScript `<`, which is the UTF-16 order A.26 refuses, and a record whose second field is a tuple
+would compare that tuple with `===`.
 ```
 
 `derived` is sorted **before** anything indexes it: `Target.derived: u32` and `Derived.parts` are
@@ -1339,17 +1368,24 @@ golden untouched and `--jobs` cannot move a byte (the rule `dump/types.zig` alre
 module <ModuleName>
   decl <name> evidence=<n>
     evidence <k> quantified=<q> var=<varName> method=<methodName>
-  derived <i> <eq|compare> <shape>
+  derived <i> <eq|compare> <shape> evidence=<n>
     part <j> <target>
   site <inst> <evidence_index> <target>
+    part <j> <target>
 ```
 
-- `decl` lines are in **source order**; a declaration with no evidence prints `evidence=0` and no
-  `evidence` lines. A module with no dispatch at all prints its `module` line and nothing else.
-- `derived` lines are in the emission order of §8.5 (by emitted name text), `part` lines in
-  structural order (§9).
+- `decl` lines are in **source order** and there is one per value declaration; a declaration with no
+  evidence prints `evidence=0` and no `evidence` lines. A module with no dispatch at all prints its
+  `module` line and nothing else.
+- `derived` lines are in the emission order of §8.5 (by emitted name text). Their `part` lines are
+  the **body's** positions — every constructor argument of a nominal type, in declaration order
+  (§9's parts contract). A record, a tuple and `()` have none: `evidence=<n>` is the whole of it.
 - `site` lines are sorted by `(inst, evidence_index)`, `inst` printed as the decimal Bir
-  instruction index.
+  instruction index. Their `part` lines are the **evidence this use passes**, one per evidence
+  parameter in shape order, and they NEST: a position that is itself a derived function has its own
+  underneath it, indented two more spaces (A.46).
+- Like `--stage=interface`, the stage accepts a **directory** as well as a file, and then prints
+  every module under it in path order.
 
 Target spellings, exhaustive:
 
@@ -1360,6 +1396,7 @@ Target spellings, exhaustive:
 | `evidence` | `evidence <k>` |
 | `primitive` | `primitive strict_eq` \| `primitive num_compare` \| `primitive char_compare` \| `primitive string_compare` |
 | `derived` | `derived <i>` |
+| `ext_derived` | `ext_derived <ModuleName>.<TypeName> <eq\|compare>` |
 | `field` | `field` |
 | `err` | `err` |
 
@@ -1389,6 +1426,16 @@ module Tally
   site 12 0 primitive string_compare
 ```
 
+A site whose target takes evidence prints it underneath, one `part` line per evidence parameter.
+`xs == ys` at `List (List Int)` is one `ext_derived` naming `List`'s `eq`, whose single argument is
+itself `List`'s `eq` at `Int`:
+
+```
+  site 9 0 ext_derived List.List eq
+    part 0 ext_derived List.List eq
+      part 0 primitive strict_eq
+```
+
 `Dict.insert` is an ordinary `call`, not a `method_call`, so §7.2 numbers its evidence sites from
 **0** and there is no site naming the callee — a `call`'s callee is already in the Bir. `Dict.empty`
 has no constraint (§5.3) and so no site at all. `Dict.insert`'s scheme quantifies `k` then `v`; only
@@ -1407,11 +1454,12 @@ bigger a b =
 
 ```
 module Shapes
+  decl wider evidence=0
   decl bigger evidence=0
-  derived 0 eq Shapes.Shape
-    part 0 primitive strict_eq
-  derived 1 compare Shapes.Shape
+  derived 0 compare Shapes.Shape evidence=0
     part 0 primitive num_compare
+  derived 1 eq Shapes.Shape evidence=0
+    part 0 primitive strict_eq
   site 7 0 top wider
 ```
 
@@ -1704,9 +1752,18 @@ decision, Appendix A.11: it bounds the number of emitted functions by the number
 instead of the number of *instantiations*, which is what M4 is trying to measure, and it needs no
 mangling of arbitrary types into a name.
 
+**The evidence is a property of the USE and not of the function** (A.46). `Main$eq$r$x$y` above is
+one function whatever the two fields hold, and the two arguments it is handed come from the
+`Target.derived`'s own `parts` range (§7.1). This is the half the table has to get right: a
+`Derived` row carries `evidence_count` and, for a nominal shape, the body's positions — never a
+use's arguments.
+
 ### 9.3 Tuples and unit
 
 Shape key is the arity; positions are the slot names `a`, `b`, `c`, … of `backend.md` §4.
+
+Tuples are keyed on their arity alone, so `( Int, Int )` and `( String, String )` share
+`Main$compare$t2` and differ only in the evidence they are given (A.46).
 
 ```js
 const Main$eq$t2 = ($m$0, $m$1, x, y) => $m$0(x.a, y.a) && $m$1(x.b, y.b);
@@ -2212,9 +2269,13 @@ at `x.render "two"`, secondary at `x.render 1` with *"here it was used at `a, In
 This is Roc's rank-2 limitation (report 18 §2.2) reproduced deliberately; §11 records that the fix
 is stretch item 1, and report 20 §2.3 is what that item actually costs.
 
-A second fixture, `tests/corpus/check/bad/LetConstrainedTwice.beni` (§6.4), reaches the same code
-from the other direction: a `let` binding is not generalised over a constrained variable, so two
-uses at different types collide here rather than instantiating.
+**§6.4 rule (a)'s boundary does NOT reach this code, and `LetConstrainedTwice` asserts what it does
+reach** (A.49). A `let` binding is not generalised over a constrained variable, so the first use
+pins the type and the second arrives as an ordinary `type_mismatch` at the argument — by which
+point the constraint has been discharged against the first use's type and nothing in the store says
+why the binding was monomorphic. That message therefore carries a hint of its own, which names the
+binding, names the method, and says to lift it to a top-level declaration with a `where` clause. The
+ordinary numeric hints would have told the author to check their arithmetic.
 
 ### 10.6 `where_variable_unbound`
 
@@ -2384,9 +2445,9 @@ zero-argument methods to core.
 **A constrained `let` binding is monomorphic.** §6.4 rule (a) refuses to generalise a `let` over a
 variable carrying a method constraint, which is how the spike avoids Roc's promoted-requirements
 side table (`references/roc/design.md:5461-5468`, report 20 §9 row S3-4). The price is that a helper
-defined in a `let` and used at two types is `method_constraint_mismatch`
-(`tests/corpus/check/bad/LetConstrainedTwice.beni`, §10.5) where an unconstrained helper would have
-been fine. The fix the message suggests — lift it to a top-level declaration with an annotation —
+defined in a `let` and used at two types is a `type_mismatch` at the second use
+(`tests/corpus/check/bad/LetConstrainedTwice.beni`, §10.5, A.49) where an unconstrained helper would
+have been fine. The fix the message suggests — lift it to a top-level declaration with an annotation —
 always works, because a top-level boundary has no enclosing rank to escape to. Whether this bites in
 real code is a finding for report 19: if §6.4 rule (b)'s assert ever fires, or if the corpus rewrite
 trips over rule (a), the side table is the answer and the spike will have measured the thing report
@@ -2452,15 +2513,13 @@ genuinely needed, are an exemption stated in §6.8 (a named list of literal kind
 inside `core`, at the cost of the invariant holding only outside it), or moving the offending
 declaration into a module lower in the core graph. Neither is taken now.
 
-**A cross-module alias is opaque to dispatch.** §1.2 looks an alias through to its expansion, which
-needs the alias's body. `checker.md` §7 records that `alias_body` is **not implemented**: expanding
-a cross-module alias reads the declaring module's `Bir`, one of exactly two cross-module Bir reads
-left on the checking path, and closing it alone buys M4 nothing. So on the branch a method call or a
-derivation whose receiver is an alias **declared in another module** is `no_methods_on_shape`, with
-a hint naming the alias and suggesting the expansion be written out. A same-module alias is looked
-through normally. `tests/corpus/check/bad/MethodThroughImportedAlias/` is the fixture. This is a
-gap in the spike, not in the design: the moment `alias_body` lands, the rule of §1.2 applies
-unchanged.
+**A cross-module alias is transparent after all** — this row said the opposite and was wrong
+(A.48). Looking an alias through does **not** need `Interface.alias_body`: the interface's own
+`alias` term already carries the expansion as the last word of its range
+(`Interface.Term.Tag.alias`, `checker.md` §7), so `TypeStore.resolved` walks a cross-module alias
+exactly as it walks a same-module one and `store.resolved` is all §6.3's alias row ever needed.
+`tests/corpus/check/good/AliasAcrossModulesMethod/` pins it: `==` on an imported record alias
+derives over the record shape, and `p.field` is the field access it always was.
 
 **The `foreign` surface is wider.** §5.2 lets a `pub foreign` carry a `where` clause, which makes the
 sibling export's arity depend on the checker's answer rather than on the declaration's text.
@@ -2728,9 +2787,10 @@ reaches promotion sits on a variable the declaration itself quantifies, and `gen
 (debug) or reports (release) if one ever does not. *Why:* the side table is a second artifact to
 build, hash, serialise and instantiate, for a case report 20 §10 records that Roc has never
 measured the frequency of. *Alternative:* build it, which is Roc's answer and the right one if the
-assert fires. *Cost:* a constrained `let` helper used at two types is `method_constraint_mismatch`
-rather than two instantiations; §11 carries the row and
-`tests/corpus/check/bad/LetConstrainedTwice.beni` the fixture.
+assert fires. *Cost:* a constrained `let` helper used at two types is refused rather than
+instantiated twice; §11 carries the row and
+`tests/corpus/check/bad/LetConstrainedTwice.beni` the fixture. **Amended by A.49**: the refusal is a
+`type_mismatch` at the second use with a hint of its own, not `method_constraint_mismatch`.
 
 **A.31 — `Target.evidence` is one number, with no depth** (§6.4, §7.1, §8.1) [S4-1]. Roc carries
 `EvidenceChainIndex { depth, index }` and resolves it by walking out through enclosing callables.
@@ -2859,3 +2919,90 @@ and hand it to `Graph.build`, which removes the serial scan entirely — worth d
 shows in a profile, and not worth the extra field in `Bir` before it does. *New obligation:* a
 minted edge inside `core` can create an `import_cycle` from a literal, which §5's preamble makes a
 condition on the S6 rewrite and §11 records.
+
+---
+
+The rows below were added on 2026-09-17, after the read-only review of S3 (the checker). Three of
+them fix a miscompile the first implementation shipped; the rest are decisions the review asked to
+be written down rather than left in the code.
+
+**A.46 — a structural derived function is keyed on its SHAPE and parameterised by element
+evidence** (§7.1, §9.2, §9.3) [B1, M4]. `Derived` carries `evidence_count` and, for a nominal shape
+only, the body's per-constructor-argument positions; the evidence a use passes rides on the
+`Target` as its own `parts` range, and those ranges nest. *Why:* the first implementation keyed the
+function on the shape — which A.11 requires — but baked the FIRST requester's element targets into
+it, so a second `( String, String ) < …` reused `part 0 primitive num_compare` and ordered strings
+with JavaScript `<`, which is the UTF-16 order A.26 refuses; `{ x : Int, y : ( Int, Int ) }` shared
+`r$x$y` with `strict_eq` on the tuple. It also made `partTarget` return a silent `err` for a nested
+record or tuple, so no nested shape was ever derived at all. *Alternative:* monomorphise per
+concrete field-type vector, which A.11 already refused for needing a total mangling of arbitrary
+types into a name; or key the function on `(shape, element targets)`, which is that mangling under
+another name and makes M4's shape count meaningless.
+
+**A.47 — another module's nominal method is `Target.ext_derived`, not a row in this module's
+`derived` table** (§7.1, §7.3) [M11]. *Why:* derivation for a nominal type is eager and happens in
+the DECLARING module (A.23), so `derived` means exactly "the functions this module emits" and S5 can
+walk it without asking which rows are really references. The name is `<Module>$<Type>$<kind>` by
+§8.5, which the `TypeId` and its `Types.Entry.module` already determine; the variant carries the
+module explicitly so the table stays self-describing for a backend that holds no type store.
+*Alternative:* a `derived` row with an `owner` flag, which makes `derived <i>` mean two things and
+puts rows S5 must skip in the middle of the list it emits.
+
+**A.48 — a cross-module alias is TRANSPARENT** (§1.2, §6.3, §11). The earlier rows said it was
+`no_methods_on_shape` "because looking it through needs `Interface.alias_body`, which is not
+implemented". That is wrong: the interface's own `alias` term carries the expansion as the last word
+of its range (`checker.md` §7), so `TypeStore.resolved` follows a cross-module alias exactly as it
+follows a same-module one and nothing had to be built. *Why the correction rather than the code:*
+the behaviour is strictly better and matches §1.2's own rule that an alias is transparent;
+`tests/corpus/check/good/AliasAcrossModulesMethod/` pins it. The fixture the old row named,
+`check/bad/MethodThroughImportedAlias/`, was never written and is not needed.
+
+**A.49 — §6.4 rule (a)'s boundary surfaces as `type_mismatch`, with a hint of its own** (§10.5,
+§11, A.30) [M7]. A `let` binding that is not generalised over a constrained variable has its type
+fixed by its first use, so the second use is an ordinary argument mismatch and never reaches
+`method_constraint_mismatch`. *Why not make it reach that code:* by then the constraint has been
+discharged against the first use's type, and re-raising it would mean keeping a second, parallel
+record of what a variable used to carry. The checker remembers one thing instead — which variable
+rule (a) held back, and which method held it — and the mismatch's hint names the binding, the
+method, and the fix. *Alternative:* leave the generic hint, which told the author that `<` and the
+arithmetic operators work on numbers only.
+
+**A.50 — `compare` on a `foreign type` with no `pub compare` is `unknown_method`; `eq` on an
+`equatable` one is not** (§3.3) [M1]. Derivation needs constructors to walk and a `foreign type`
+has none, so §3.3's last clause applies — except that §3.4 makes the `equatable` marker mean
+exactly "has an `eq`", which is the bridge `core/List.beni` leans on until §5.2 gives it a
+`pub foreign eq`. *Why:* without the bridge every program comparing a list stops compiling, and
+§5.2 is S6; with it applied to `compare` as well, `xs < ys` would derive over a representation the
+compiler cannot see. *Alternative:* land §5.2 in S3, which is a `core/` signature change and a
+different slice. §11 carries it as S6's obligation.
+
+**A.51 — the S4 shim REFUSES what it cannot honour** (§8) [B2]. `Lower.Input` gains
+`dispatch`, and the shim reports `not_implemented` for any site it cannot emit correctly: it keeps
+`field`, `==`/`/=` against a structural answer (`primitive strict_eq`, a derived function, or
+`Basics.eq` through the `equatable` bridge — `core/Basics.js`'s `eq` IS that structural walk), and
+`<` and friends against `primitive num_compare`. Everything else — `char_compare`,
+`string_compare`, a derived `compare`, a user `pub eq`, and every evidence site — refuses. *Why:*
+S3 made `T 1 < T 2`, `( a, b ) < ( c, d )` and `"a" < "b"` CHECK, and the shim emitted `Basics$lt`
+on objects and strings for all three; `master` rejected them and printing a wrong answer is worse
+than either. `backend.md` §1 ships the language in two halves and the missing half must say so.
+*Alternative:* the reviewer's narrower list (`field`, `strict_eq`, `num_compare` only), which also
+refuses `==` on records, ADTs and lists — programs `master` compiled correctly through the same
+`Basics$eq`.
+
+**A.52 — there is no `check/depth/ConstraintChain` pair** (§6.3) [M10]. The derivation recursion is
+guarded, but every route to that guard is cut off at `Types.Builder.max_depth` (512) first, which
+`AnnotationOk`/`AnnotationDeep` already pin — and §6.3's guard is written at `Parse.max_depth + 104`
+for the same reason `Constrain`'s and `Solve`'s are: the parser refuses the file before the checker
+can reach it, which `generate.sh` has recorded since M2b. *Why:* a pair named for the 4200 guard
+that actually measured the 512 one is worse than none. *Alternative:* lower the derivation guard to
+something reachable, which would refuse programs for being deep rather than for being wrong.
+
+**A.53 — a `number` or `equatable` variable discharges a well-known constraint with no `where`
+clause** (§6.2, §6.3). Not a `where` clause and not the table: a third row on the rigid and flex
+arms. *Why:* `number` is `Int` or `Float` and §3.2 gives both the same answer, and §3.4 says
+`equatable` means exactly "has an `eq`" — and without it `core/Basics.beni`'s `compare`, `max`,
+`min` and `clamp` and `core/List.beni`'s `member` stop checking the moment `<` and `==` become
+methods, while their rewrite is §5 and slice S6. The constraint is DETACHED when the bridge answers
+it, so `isEven n = n < 1` still publishes `number -> Bool` and not
+`number -> Bool where number.compare : …`. *Alternative:* rewrite those five declarations in S3,
+which is the `core/` signature change S6 owns.
