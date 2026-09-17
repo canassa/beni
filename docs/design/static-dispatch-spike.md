@@ -520,6 +520,18 @@ This section replaces the `Dict`, `Set`, `List` and `Basics` rows of `checker.md
 the branch**. Line numbers are `master` at `f466aac`. The rewrite itself is slice S6 and its
 site-by-site plan is [`../../plans/static-dispatch-c1-rewrite.md`](../../plans/static-dispatch-c1-rewrite.md).
 
+**One constraint governs every edit below, and it is new with §6.8.** The checker mints a type for
+instructions that name nothing — a number is a `Basics.Int`, a list literal a `List.List`, a string
+literal a `String.String`, a `'c'` a `Char.Char`, an `e?` a `Maybe` *or* a `Result` — and §6.8 turns
+each of those into a graph edge into `core`. Outside `core` that can never make a project cyclic.
+**Inside `core` it can**: a string literal written in `core/Basics.beni` would make `Basics` depend
+on `String`, which already depends on `Basics`, and the author would get an `import_cycle` for
+writing `"…"`. No core module mints a type from a module that names it back today
+(`tests/corpus/check/good/TypeOwnerEdges/_expected.graph` shows `core:Basics` with no outgoing edge
+at all). **S6 must keep it that way**: no literal of a kind whose owning module depends, directly or
+transitively, on the module being edited. If a rewrite genuinely needs one, §6.8 needs a stated
+exemption **before** the rewrite lands, not after. §11 carries the row.
+
 ### 5.1 Two type moves
 
 | Declaration | From | To | Why |
@@ -535,11 +547,14 @@ either type, so the move adds no import edge to `Basics`.
 **No module gains an `import`.** `String` and `Char` are prelude *types* (`language.md` Appendix A),
 so a module that names one already resolves it through the prelude table and needs no import line
 before or after the move. What changes is which module the **conditional prelude edge** points at:
-`Graph.zig:266-269` makes a prelude row an edge only when the module actually resolves a name
-through it, so `core/Debug.beni` — whose `log:19`, `todo:28` and `toString:37` all name `String` —
-gains a graph edge to `String` instead of to `Basics`, and `core/String.beni` gains an edge to
-nothing (it declares the type itself). §6.8's implicit `ext_type` edges then add the same edge
-wherever a `String` method is called.
+`src/resolve/Graph.zig:277-297` makes a prelude row an edge only when the module actually resolves
+a name through it, so `core/Debug.beni` — whose `log:19`, `todo:28` and `toString:37` all name
+`String` — gains a graph edge to `String` instead of to `Basics`, and `core/String.beni` gains an
+edge to nothing (it declares the type itself). §6.8's **minted** edges then cover the modules that
+never name `String` at all: a file containing a string literal gains a `core:String` edge whether or
+not it writes the word, and after the move that edge is to the module that declares the type rather
+than to `Basics`. Both halves are visible in
+`tests/corpus/check/good/TypeOwnerEdges/_expected.graph`.
 
 `Int`, `Float`, `Bool`, `Order` and `Never` **stay in `Basics`**; the well-known table (§3.2) is
 what serves them, and moving five more types is churn the spike does not need. Appendix A.6.
@@ -1126,30 +1141,99 @@ poisoned annotation — unifies the constraint's `fn_var` with `(arg₁, …, ar
 instruction `result`, and records the site's target as `evidence k` (§7.2). At a call site the
 constraint instantiates to a flex, unification makes it concrete, and §6.3 takes over.
 
-### 6.8 Parallel checking
+### 6.8 Parallel checking, and the edges the checker needs
 
-`x.m` reaches the module that declares `x`'s type, which **need not be an import edge of the
-current module**: a value can arrive through a third module without its type's home ever being
-named. `checker.md` §4 builds the graph from explicit imports plus used prelude rows, so the DAG
-would allow the declaring module to be checked concurrently with its use, and the use would read a
-half-built interface. That is a data race, not a wrong answer.
+`x.m` resolves in the module that **declares** `x`'s type, so a module that can see a type has to be
+checked after that type's module — otherwise the lookup reads a half-built interface, which is a
+data race and not merely a wrong answer. `checker.md` §4 builds the graph from explicit imports plus
+*used* prelude rows, and the question this section answers is what else that misses.
 
-The rule, applied at resolve time and to the graph only:
+**The first draft of this section was wrong twice**, and the rule below replaces it. It said a
+module gains an edge to the declaring module of every `TypeId` in its own Bir and of every `TypeId`
+reachable through the terms of any scheme it imports. That rule is:
 
-> A module gains an implicit edge to the declaring module of every `TypeId` that occurs in its own
-> Bir as an `ext_type`, and of every `TypeId` reachable through the terms of any scheme it
-> instantiates from an imported interface.
+- **not computable where it was placed.** `Graph.build` runs *before* `Resolve.run`, and
+  `Interface.build` writes no schemes and no terms at all — `Value.scheme` is `.none` until the
+  checker fills it (`src/resolve/Interface.zig`). There are no terms to walk at graph-build time.
+- **a no-op even if it were.** A type a module *writes* is already an edge: a `type_import` or a
+  `type_qualified` records an `import_type` ref, which `Graph.referencedModules`
+  (`src/resolve/Graph.zig:333-340`) already turns into a dependency. A type that reaches a module
+  through a dependency's interface is already covered by the driver's transitivity — a module starts
+  only when every dependency has *finished*, and inductively those only started when theirs had.
 
-`Graph.referencedModules` already computes an edge set of exactly this shape for conditional
-prelude rows (`checker.md` §4 step 3), so the addition is one more source of edges into a function
-that exists. Everything else is untouched: the order is still the stable topological one, ties
+**The real hole is the type an instruction mints without naming anything.** `1` is a `Basics.Int`,
+`[ … ]` a `List.List`, `"…"` a `String.String`, `'c'` a `Char.Char`, `e?` a `Maybe` or a `Result`
+— and, because §1.4 gives `method_call` no `refs` edge, `a < b` is a `Basics.Bool` written without
+the word `Basics`. A module of nothing but literals had **no import, no ref and no dependency at
+all**: `pub sizes = [ 1, 2 ]` in a module with no imports was scheduled beside `core/List` itself at
+`--jobs=8`. Dispatch made this worse rather than creating it — before §3.1, `a < b` lowered to a call
+of `Basics.lt` and *did* record a ref.
+
+**The rule that ships.** One pass over each module's Bir instruction-tag column, in `Graph.build`
+step 2 after the import edges (`src/resolve/Graph.zig:298-312`, `mintedModules` at `:386-396` and
+its bit table at `:400-435`):
+
+| Instruction tag | Module the type is minted from |
+|---|---|
+| `int`, `float`, `pat_int`, `method_call`, `type_dispatch` | `core:Basics` — `Int`, `Float` and `Bool` all live there, and a comparison is a `method_call` whose result is `Bool` (§3.1) with no `refs` edge of its own (§1.4) |
+| `list`, `pat_list`, `pat_cons` | `core:List` |
+| `string`, `chunk`, `interp`, `pat_string` | `core:String` |
+| `char`, `pat_char` | `core:Char` |
+| `try` | **both** `core:Maybe` and `core:Result` — which of the two a `?` is, is the checker's decision on that instruction (`checker.md` §6.5), so a file that writes one depends on both |
+
+Four rules govern the edges this produces:
+
+1. **Resolved with `g.lookup(.core, …)`**, against the `core` package and never against the module's
+   own. That is where `check/Types.findWellKnown` resolves these types, and the two must not
+   disagree: an app module named `List` shadows the *name* for its dependents (`checker.md` §4.3)
+   and does not move the type a list literal has out from under the checker, so it must not take the
+   edge either.
+2. **Self-edges are skipped**, so `core/List` does not depend on `core/List` for its own list
+   literals — the same rule the header already applies to a module's references to itself.
+3. **Duplicates are skipped**, against the edges already appended for this module.
+4. **Appended in fixed order after the import edges**, iterating the table
+   `{ Basics, List, String, Char, Maybe, Result }`, so the edge list is a function of the source and
+   not of a traversal (CLAUDE.md rule 5).
+
+Everything else in `checker.md` §4 is untouched: the order is still the stable topological one, ties
 still broken by `(package, path)`, a project with a cycle still runs serially, and ids are still
-assigned before any thread starts (`fast-compiler.md` §10, CLAUDE.md rule 5).
+assigned before any thread starts.
 
-**Cost.** The edge set grows, so the DAG's width shrinks: under the module rule, any module using
-`Dict String Int` now depends on `Dict`, `String` and `Basics` whether or not it imports them.
-Measurement M1 sees this as a throughput number, and it is one of the two costs the spike exists to
-put a figure on.
+**The invariant the three edge sources buy together**, by induction over the order:
+
+> Every nominal type visible while a module is checked is declared by the module itself or by a
+> transitive dependency of it.
+
+**Cost, measured.** On `zig build bench -- --generate=100000` (635 modules, 202k instructions):
+**3837 edges before, 3938 after — +2.6 %** — and `resolve` **4.93 ms before, 4.85 ms after**,
+best-of-twelve interleaved ABBA against a build of the parent commit. The scan does not show. The
+first draft of this paragraph claimed the DAG narrows because "any module using `Dict String Int`
+now depends on `Dict`, `String` and `Basics`"; that was always an edge — writing `Dict String Int`
+is an `import_type` ref — and the claim was over-stated. M1 still reports the number, but it is not
+one of the costs the spike was commissioned to weigh.
+
+**Inside `core` this rule bites, and S6 must keep it from biting.** A minted edge always points into
+`core`, so a user project can never be made cyclic by one. Inside `core` it can: a string literal in
+`core/Basics.beni` would make `Basics` depend on `String`, which already depends on `Basics`, and
+the author would get an `import_cycle` for writing `"…"`. No core module mints a type from a module
+that names it back today — `core:Basics` has no outgoing edge at all in
+`tests/corpus/check/good/TypeOwnerEdges/_expected.graph`. §5's rewrite has to keep it that way, or
+§6.8 needs a stated exemption **first**. §11 carries the constraint.
+
+**Observable surface.** `dump --stage=graph` (`src/dump/graph.zig`) prints the graph's edges, one
+per line as `package:Module -> package:Module`, sorted by the printed line. A module's identity is
+`(package, name)` and not the name alone, because the user's package and `core` may each have a
+`List`. The edges are dumped rather than the order: `order` is a topological sort of exactly these
+edges, so a golden over the edges pins the schedule *and says why*, while a golden over the order
+alone would move for either of two unrelated reasons — and what this section needs asserted is that
+the module declaring a type is an ancestor of every module that can see it, which is a statement
+about edges. There are no positions, symbol ids or file indices in the output, so it is a function
+of the sources alone.
+
+- `tests/corpus/check/good/TypeOwnerEdges/` is the fixture: `Literals.beni` (literals only, no
+  imports), `Owner.beni` (declares a type), `Middle.beni` (imports `Owner`), `User.beni` (imports
+  `Middle` and never names `Owner`), with `_expected.graph` beside `_expected.iface`.
+- A `--jobs=1` / `--jobs=8` byte-comparison scenario over `--stage=graph` joins the determinism test.
 
 ---
 
@@ -1245,9 +1329,9 @@ name it and so a mismatch is a caught bug rather than a silent miscompile.
 
 ### 7.3 `dump --stage=dispatch`
 
-`Cli.Stage` gains `dispatch`, so the CLI reads
-`tokens, ast, bir, interface, raw, types, dispatch`. Like `--stage=interface` it accepts a
-directory as well as a file. The format is line-oriented, one fact per line, with **no symbol ids,
+`Cli.Stage` gains `dispatch`, and §6.8 adds `graph`, so the CLI reads
+`tokens, ast, bir, interface, raw, types, graph, dispatch` (`src/Cli.zig:66`). Like
+`--stage=interface` it accepts a directory as well as a file. The format is line-oriented, one fact per line, with **no symbol ids,
 no positions and no module indices** — every name is text, so reformatting the input leaves a
 golden untouched and `--jobs` cannot move a byte (the rule `dump/types.zig` already states).
 
@@ -2356,6 +2440,18 @@ M5 R3 (`List.sort` of 100k `String`) is where it shows up, and if it is large th
 to change the order (a language change, not a spike decision) or to inline the loop at the call
 site, not to quietly use `<`.
 
+**A literal inside `core` can make `core` cyclic.** §6.8 gives every module an edge to the module
+that owns each type its instructions mint — `core:Basics` for a number or a comparison, `core:List`
+for a list literal, `core:String` for a string, `core:Char` for a char, both `core:Maybe` and
+`core:Result` for a `?`. A minted edge always points *into* `core`, so no user project can be made
+cyclic by one; inside `core` there is nothing below to point at, and a string literal in
+`core/Basics.beni` would make `Basics` depend on `String`, which depends on `Basics`. The author's
+diagnostic would be `import_cycle`, for writing `"…"`. No core module does this today, and §5's
+preamble makes keeping it so a condition on the S6 rewrite. The alternatives, if one is ever
+genuinely needed, are an exemption stated in §6.8 (a named list of literal kinds that mint no edge
+inside `core`, at the cost of the invariant holding only outside it), or moving the offending
+declaration into a module lower in the core graph. Neither is taken now.
+
 **A cross-module alias is opaque to dispatch.** §1.2 looks an alias through to its expansion, which
 needs the alias's body. `checker.md` §7 records that `alias_body` is **not implemented**: expanding
 a cross-module alias reads the declaring module's `Bir`, one of exactly two cross-module Bir reads
@@ -2741,3 +2837,25 @@ reader has to change; the span already points into the constraint. *Alternative:
 the section's own example — `where a.show : a -> String` under `render : Int -> String` — trips both,
 and two messages for one mistake is the thing `fast-compiler.md` §5 and every `check/bad` golden
 exist to prevent. *Alternative:* report both and let the reader work out that they are one.
+
+**A.45 — §6.8's implicit-edge rule is replaced by a minted-type scan** (§6.8, §5 preamble, §7.3,
+§11). The first draft — "an edge to the declaring module of every `TypeId` in the Bir and of every
+`TypeId` reachable through the terms of any scheme it imports" — is **not computable where it was
+placed** (`Graph.build` runs before `Resolve.run`, and `Interface.build` writes no schemes and no
+terms: `Value.scheme` is `.none` until the checker fills it) and is **a no-op even if it were** (a
+type a module writes is already an `import_type` ref and therefore already an edge; a type arriving
+through a dependency's interface is already covered by the driver's transitivity, since a module
+starts only once every dependency has finished). What ships instead is one pass over each module's
+instruction-tag column mapping the five literal/desugar families to `core:Basics`, `core:List`,
+`core:String`, `core:Char` and `{core:Maybe, core:Result}`, resolved with `g.lookup(.core, …)` and
+appended in fixed order after the import edges (`src/resolve/Graph.zig:298-312`, `:386-396`,
+`:400-435`). *Why:* that is the actual hole — `pub sizes = [ 1, 2 ]` in a module with no imports had
+**zero** dependencies and ran beside `core/List` at `--jobs=8`, and §1.4's removal of the `refs`
+edge for `method_call` took away the `Basics` edge that `Basics.lt` used to give `a < b`. *Cost,
+measured:* edges 3837 → 3938 (+2.6 %), `resolve` 4.93 → 4.85 ms best-of-twelve ABBA on
+`--generate=100000`; not measurable, and the first draft's "the DAG narrows" paragraph was
+over-stated. *Alternative:* have `Lower` record the six-bit set per file during the parallel phase
+and hand it to `Graph.build`, which removes the serial scan entirely — worth doing if that scan ever
+shows in a profile, and not worth the extra field in `Bir` before it does. *New obligation:* a
+minted edge inside `core` can create an `import_cycle` from a literal, which §5's preamble makes a
+condition on the S6 rewrite and §11 records.
