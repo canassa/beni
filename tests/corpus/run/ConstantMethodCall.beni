@@ -1,0 +1,46 @@
+-- A module-level constant whose initialiser is a method call on a type this
+-- module declares (`docs/design/static-dispatch-spike.md` §1.4, §8.5).
+--
+-- JavaScript evaluates a module top to bottom, so `bump` has to be defined
+-- above `bumped` — and `bump` is not in `bumped`'s reference list, because a
+-- `method_call` adds no `refs` edge: which function it calls is not known
+-- before the checker runs. The emitter therefore reads the dispatch table's
+-- `top` targets as edges too.
+--
+-- Source order here is the wrong order on purpose. Without those edges the
+-- constant is emitted above the function it calls and Node throws
+-- `ReferenceError: Cannot access 'ConstantMethodCall$bump' before
+-- initialization` at load — a well-typed program crashing on its own
+-- temporal dead zone, which is the one failure mode a compiler may not
+-- have. `emit/ConstantMethodCall.beni` pins the order; this pins that it
+-- runs.
+import Node exposing (Program)
+import String
+
+
+pub type Counter
+    = Counter Int
+
+
+pub bumped : Counter
+bumped =
+    (Counter 1).bump 2
+
+
+pub bump : Counter, Int -> Counter
+bump c step =
+    case c of
+        Counter n ->
+            Counter (n + step)
+
+
+pub count : Counter -> Int
+count c =
+    case c of
+        Counter n ->
+            n
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (count bumped) ]

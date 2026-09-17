@@ -1,0 +1,92 @@
+-- The comparators of `docs/design/static-dispatch-spike.md` §9.1, executed.
+--
+-- `emit/PrimitiveEvidence.beni` pins what they LOOK like; this pins that
+-- they are right. A `where`-constrained generic asks for a value of two
+-- arguments, so a primitive comparison in that position cannot be an
+-- operator (§8.2) and the module emits `$compare$prim`, `$compare$char` and
+-- `$eq$prim` instead — three functions whose answers nothing else in the
+-- suite checks.
+--
+-- `Char` and `String` are the two that must not be `<`. The last two lines
+-- are the astral case A.26 names: `\u{10000}` sorts BELOW `\u{E000}` under
+-- UTF-16 code-unit order and above it under Unicode scalar order, and the
+-- code-point comparator and `String.compare` both have to say `GT`.
+import Node exposing (Program)
+import String
+
+
+order : a, a -> String
+    where a.compare : a, a -> Order
+order x y =
+    case x.compare y of
+        LT ->
+            "LT"
+
+        EQ ->
+            "EQ"
+
+        GT ->
+            "GT"
+
+
+same : a, a -> Bool
+    where a.eq : a, a -> Bool
+same x y =
+    x == y
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+ints : Int, Int -> String
+ints a b =
+    order a b
+
+
+floats : Float, Float -> String
+floats a b =
+    order a b
+
+
+chars : Char, Char -> String
+chars a b =
+    order a b
+
+
+strings : String, String -> String
+strings a b =
+    order a b
+
+
+sameInts : Int, Int -> Bool
+sameInts a b =
+    same a b
+
+
+sameChars : Char, Char -> Bool
+sameChars a b =
+    same a b
+
+
+main : Program
+main =
+    Node.printLines
+        [ ints 1 2
+        , ints 2 2
+        , ints 3 2
+        , floats 1.5 1.25
+        , chars 'a' 'b'
+        , chars 'b' 'b'
+        , strings "apple" "banana"
+        , strings "banana" "banana"
+        , show (sameInts 1 1)
+        , show (sameChars 'a' 'b')
+        , chars '\u{10000}' '\u{E000}'
+        , strings "\u{10000}" "\u{E000}"
+        ]

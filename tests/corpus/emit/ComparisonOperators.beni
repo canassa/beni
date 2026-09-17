@@ -1,0 +1,71 @@
+-- emit: `docs/design/static-dispatch-spike.md` §8.3's operator table, which
+-- is the whole reason the surface origin of §1.3 crosses into the backend.
+--
+--   `Int`    `<` is `<`. No call, no `Basics.lt`, no `Order` value built
+--            and thrown away — the operator and nothing else
+--   `Char`   `<` is a comparison of CODE POINTS, not of the one-character
+--            strings a `Char` is
+--   `String` `<` is `String$compare(a, b) === "LT"`. Never `<`: JavaScript
+--            orders strings by UTF-16 code unit and `core/String.js` by
+--            Unicode scalar, and they disagree for astral characters
+--            (§9.1, §11, A.26)
+--   a method `<` on a `where`-constrained variable is the method applied
+--            and then TESTED, one row per operator: `=== "LT"`, `!== "GT"`,
+--            `=== "GT"`, `!== "LT"`
+--
+-- `==` is `===` on every primitive, and `/=` is `!==` — not `!(a === b)`.
+import Node exposing (Program)
+
+
+pub ints : Int, Int -> Bool
+ints a b =
+    a < b
+
+
+pub chars : Char, Char -> Bool
+chars a b =
+    a < b
+
+
+pub strings : String, String -> Bool
+strings a b =
+    a < b
+
+
+pub same : Int, Int -> Bool
+same a b =
+    a == b
+
+
+pub different : Int, Int -> Bool
+different a b =
+    a /= b
+
+
+pub before : a, a -> Bool
+    where a.compare : a, a -> Order
+before x y =
+    x < y
+
+
+pub notAfter : a, a -> Bool
+    where a.compare : a, a -> Order
+notAfter x y =
+    x <= y
+
+
+pub after : a, a -> Bool
+    where a.compare : a, a -> Order
+after x y =
+    x > y
+
+
+pub notBefore : a, a -> Bool
+    where a.compare : a, a -> Order
+notBefore x y =
+    x >= y
+
+
+main : Program
+main =
+    Node.printLines []

@@ -1,0 +1,48 @@
+-- The four ordering operators on every primitive the well-known table of
+-- `docs/design/static-dispatch-spike.md` §3.2 answers directly, executed.
+--
+-- §8.3 makes `<` on `Int` and `Float` the JavaScript operator, `<` on
+-- `Char` a comparison of CODE POINTS, and `<` on `String` a call of
+-- `String.compare` tested against `"LT"`. The last two are the ones that
+-- cost something and the ones that must not be `<`: `<` on JavaScript
+-- strings is UTF-16 code-unit order and `core/String.js` is Unicode scalar
+-- order, and they disagree for astral characters (§9.1, §11, A.26).
+--
+-- The last two lines are that disagreement. `\u{10000}` is the first astral
+-- code point, whose UTF-16 encoding starts with the surrogate 0xD800, and
+-- `\u{E000}` is the first private-use one. Under JavaScript `<` the astral
+-- character sorts BELOW the private-use one; under scalar order it sorts
+-- above. Both lines must say `False`, and both said `True` while the
+-- operator was `<`.
+import Node exposing (Program)
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (1 < 2)
+        , show (2 <= 2)
+        , show (3 > 4)
+        , show (4 >= 4)
+        , show (1.5 < 1.25)
+        , show (1.5 >= 1.5)
+        , show ('a' < 'b')
+        , show ('b' <= 'a')
+        , show ('z' > 'a')
+        , show ('a' >= 'a')
+        , show ("apple" < "banana")
+        , show ("banana" <= "apple")
+        , show ("b" > "a")
+        , show ("a" >= "a")
+        , show ("\u{10000}" < "\u{E000}")
+        , show ('\u{10000}' < '\u{E000}')
+        ]

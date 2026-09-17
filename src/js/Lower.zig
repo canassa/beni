@@ -140,6 +140,11 @@ pub fn lower(
             .ctor_arg = try interner.getOrPut(gpa, "$x"),
             .param = try interner.getOrPut(gpa, "$p"),
             .tag = try interner.getOrPut(gpa, "$"),
+            .left = try interner.getOrPut(gpa, "$x"),
+            .right = try interner.getOrPut(gpa, "$y"),
+            .cp_left = try interner.getOrPut(gpa, "$a"),
+            .cp_right = try interner.getOrPut(gpa, "$b"),
+            .code_point_at = try interner.getOrPut(gpa, "codePointAt"),
         },
     };
     defer l.diagnostics.deinit(gpa);
@@ -153,10 +158,17 @@ pub fn lower(
     var declarations: std.ArrayList(Node.Index) = .empty;
     try l.declarations(&declarations);
     try l.exports(&declarations);
+    // §9.1's primitive comparators are DISCOVERED the same way, and go in
+    // front of the declarations rather than behind them: a module-level
+    // constant whose initialiser is a call runs at module evaluation time,
+    // so a `const` it names must already be initialised (§8.5, and the same
+    // temporal dead zone `emissionOrder` exists for).
+    const primitives = try l.primitiveValues();
     const import_statements = try l.importStatements();
 
     var body: std.ArrayList(Node.Index) = .empty;
     try body.appendSlice(scratch, import_statements);
+    try body.appendSlice(scratch, primitives);
     try body.appendSlice(scratch, declarations.items);
 
     const range = try b.addRange(body.items);
@@ -173,6 +185,16 @@ const WellKnown = struct {
     ctor_arg: Symbol,
     param: Symbol,
     tag: Symbol,
+    /// The two operands of a synthesised comparator (§9.1), and the two
+    /// code points `compare$char` hoists out of them.
+    left: Symbol,
+    right: Symbol,
+    cp_left: Symbol,
+    cp_right: Symbol,
+    /// `codePointAt` — the one JavaScript method name the emitter spells,
+    /// because `Char` ordering is a code-point comparison and not `<`
+    /// (§8.3, §9.1, A.26).
+    code_point_at: Symbol,
 };
 
 /// How a constructor of one type is represented in JavaScript.
@@ -232,8 +254,24 @@ const Lowerer = struct {
     local_names: []JsIr.NameIndex = &.{},
     /// Counter behind every compiler-made name in this module.
     next_tag: u32 = 1,
+    /// Which of §9.1's primitive comparators this module has needed as a
+    /// VALUE. A `primitive` target in evidence position is a function and
+    /// not an operator (§8.2), so the module emits the two-or-three-line
+    /// `const` once and every use names it.
+    needs: Primitives = .{},
+    /// The instruction being lowered, for a diagnostic raised by something
+    /// that has no instruction of its own — the synthesised references of
+    /// §9.1 and A.51's bridge. It is the INNERMOST instruction reached, not
+    /// a span the reader chose, which is why only `internal` uses it.
+    region: Inst.Index = @enumFromInt(0),
 
     const Needed = struct { module: Graph.Index, value: u32 };
+
+    const Primitives = struct {
+        eq_prim: bool = false,
+        compare_prim: bool = false,
+        compare_char: bool = false,
+    };
 
     // ---- Small helpers ----------------------------------------------------
 
@@ -331,6 +369,29 @@ const Lowerer = struct {
         return l.interner.getOrPut(l.gpa, spelled);
     }
 
+    /// `$m$<k>`: the k-th evidence parameter of the ENCLOSING declaration
+    /// (static-dispatch-spike.md §8.1). `module` is `.none` and the tag is
+    /// `no_tag`, so the printer spells it exactly; `$` cannot start a beni
+    /// identifier, so no source name collides.
+    ///
+    /// One level, no depth (A.31): only a top-level declaration has
+    /// evidence parameters (§6.4 rule (a)), and a lambda in its body reads
+    /// `$m$k` by ordinary lexical capture.
+    fn evidenceName(l: *Lowerer, k: u16) !JsIr.NameIndex {
+        var buf: [16]u8 = undefined;
+        const spelled = std.fmt.bufPrint(&buf, "$m${d}", .{k}) catch unreachable;
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
+    /// `<Module>$<base>` for a value this module SYNTHESISES rather than
+    /// declares (§8.5): the primitive comparators of §9.1 today, the
+    /// derived functions of §9 when S5 lands.
+    fn synthesisedName(l: *Lowerer, base: []const u8) !JsIr.NameIndex {
+        const symbol = try l.interner.getOrPut(l.gpa, base);
+        return l.name(.{ .module = l.module_name.toOptional(), .base = symbol, .tag = JsIr.Name.no_tag });
+    }
+
     fn report(l: *Lowerer, code: diagnostic.Code, region: Inst.Index, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(l.gpa, fmt, args);
         errdefer l.gpa.free(message);
@@ -359,6 +420,15 @@ const Lowerer = struct {
     /// `refs` table (already the §9.1 dependency graph) puts each
     /// dependency first, and a cycle — which the checker allows only
     /// through functions — falls back to source order for its members.
+    ///
+    /// **`refs` is not the whole graph any more.** A `method_call` adds no
+    /// `refs` edge, because which function it calls is not known before the
+    /// checker runs (static-dispatch-spike.md §1.4) — so a constant whose
+    /// initialiser is `(T 1).bump 2` would be emitted above `T`'s `bump`
+    /// and throw on its own temporal dead zone. The dispatch table carries
+    /// those edges: every site of this declaration's instructions whose
+    /// target is `top d` is one more dependency, walked exactly like a
+    /// `refs` row.
     fn emissionOrder(l: *Lowerer) ![]const u32 {
         const count: u32 = @intCast(l.bir.decls.len);
         const state = try l.scratch.alloc(u8, count);
@@ -371,19 +441,31 @@ const Lowerer = struct {
         var stack: std.ArrayList(Frame) = .empty;
         for (0..count) |root| {
             if (state[root] != 0) continue;
-            try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0 });
+            try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .sites = l.declSiteRange(@intCast(root)) });
             state[root] = 1;
             while (stack.items.len != 0) {
                 const frame = &stack.items[stack.items.len - 1];
                 const d = l.bir.decls[frame.decl];
                 const refs = l.bir.refs[d.refs_start..d.refs_end];
-                if (frame.next < refs.len) {
-                    const ref = refs[frame.next];
+                // Found ONCE per frame, not once per edge: `declSites` is a
+                // binary search plus a scan of the run it finds, and a
+                // declaration with s sites would otherwise pay for it s
+                // times over.
+                const sites = l.in.dispatch.sites[frame.sites.start..][0..frame.sites.len];
+                if (frame.next < refs.len + sites.len) {
+                    const at = frame.next;
                     frame.next += 1;
-                    if (ref.kind != .top_value) continue;
-                    if (ref.a >= count or state[ref.a] != 0) continue;
-                    state[ref.a] = 1;
-                    try stack.append(l.scratch, .{ .decl = ref.a, .next = 0 });
+                    const next: u32 = if (at < refs.len) blk: {
+                        const ref = refs[at];
+                        if (ref.kind != .top_value) continue;
+                        break :blk ref.a;
+                    } else switch (sites[at - refs.len].target) {
+                        .top => |decl| decl.int(),
+                        else => continue,
+                    };
+                    if (next >= count or state[next] != 0) continue;
+                    state[next] = 1;
+                    try stack.append(l.scratch, .{ .decl = next, .next = 0, .sites = l.declSiteRange(next) });
                     continue;
                 }
                 state[frame.decl] = 2;
@@ -394,7 +476,7 @@ const Lowerer = struct {
         return order.items;
     }
 
-    const Frame = struct { decl: u32, next: usize };
+    const Frame = struct { decl: u32, next: usize, sites: Dispatch.Range };
 
     fn declaration(l: *Lowerer, out: *StmtList, index: u32) !void {
         const d = l.bir.decls[index];
@@ -420,7 +502,14 @@ const Lowerer = struct {
             .tag = JsIr.Name.no_tag,
         });
         const p = l.pos(body);
-        if (d.params == 0) {
+        // §8.1: the hidden leading parameters, one per entry of this
+        // declaration's `decl_evidence` run, in the canonical order of
+        // §7.2. A declaration of zero beni parameters that has evidence
+        // would become a function and change its type across the module
+        // boundary; the checker refuses it first (`constrained_constant`,
+        // §6.4), so the constant path below is reached only with none.
+        const evidence: u16 = @intCast(l.in.dispatch.declEvidence(index).len);
+        if (d.params == 0 and evidence == 0) {
             var stmts: StmtList = .empty;
             const value = try l.expr(&stmts, body);
             // A constant whose lowering needed statements cannot be a bare
@@ -437,7 +526,7 @@ const Lowerer = struct {
             return;
         }
         const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
-        const record = try l.functionOf(params, body, p);
+        const record = try l.functionOf(evidence, params, body, p);
         const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
         try l.constDecl(out, n, arrow, p);
     }
@@ -538,9 +627,15 @@ const Lowerer = struct {
     /// The `Func` record for `params` and `body`: what both an `arrow` and
     /// a `func_decl` carry, built once so a `let` binding can choose which
     /// of the two it becomes without lowering the body twice.
-    fn functionOf(l: *Lowerer, params: []const Inst.Index, body: Inst.Index, p: u32) !JsIr.ExtraIndex {
+    fn functionOf(l: *Lowerer, evidence: u16, params: []const Inst.Index, body: Inst.Index, p: u32) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var stmts: StmtList = .empty;
+        // The evidence parameters come FIRST, before the declaration's own
+        // (§8.1). `evidence` is zero for every lambda: §6.4 rule (a) keeps a
+        // nested binding from being generalised over a constrained
+        // variable, so only a top-level declaration ever has any (A.31).
+        var k: u16 = 0;
+        while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceName(k));
         for (params) |param| {
             // A bare variable pattern IS the JavaScript parameter; anything
             // else (a tuple, a record, a constructor) needs a name of its
@@ -764,6 +859,7 @@ const Lowerer = struct {
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
+        l.region = inst;
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -834,7 +930,7 @@ const Lowerer = struct {
             .method_call => return l.methodCallExpr(out, inst),
             .lambda => {
                 const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
-                const record = try l.functionOf(params, @enumFromInt(d.rhs), p);
+                const record = try l.functionOf(0, params, @enumFromInt(d.rhs), p);
                 return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
             },
             .let => {
@@ -857,27 +953,7 @@ const Lowerer = struct {
                 );
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            // S4: dispatch on a type variable (static-dispatch-spike.md §4,
-            // §8.4) needs the dispatch table, which S3 fills in. It is
-            // reported rather than swallowed, because an `else` arm here is
-            // how `const M$decode = (s) => undefined;` shipped with exit
-            // code 0 (the checker refuses it first, and this is the second
-            // wall).
-            .type_dispatch => {
-                try l.report(
-                    .not_implemented,
-                    inst,
-                    \\I cannot compile a dispatch on a type yet.
-                    \\
-                    \\`a.decode s` calls a method of whatever type `a` stands for at the call
-                    \\(`docs/design/static-dispatch-spike.md` §4), and the table that says which
-                    \\function that is arrives with the checker's dispatch pass. Pass the
-                    \\function as an argument for now.
-                ,
-                    .{},
-                );
-                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            },
+            .type_dispatch => return l.typeDispatchExpr(out, inst),
             // A poisoned instruction: the name did not resolve or the
             // parser could not build a node. `beni build` refuses to emit a
             // project with any error diagnostic, so this is unreachable
@@ -950,7 +1026,11 @@ const Lowerer = struct {
     }
 
     /// A reference in VALUE position: the JavaScript binding itself. Only a
-    /// constructor needs anything built, because it has no binding.
+    /// constructor needs anything built, because it has no binding — and a
+    /// CONSTRAINED value, which is its eta-expansion (§8.2, A.25): the bare
+    /// name has the evidence parameters in front and therefore the wrong
+    /// arity, so `let f = Dict.insert` is `(a, b, c) => Dict$insert(cmp, a,
+    /// b, c)` and never `Dict$insert`.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
@@ -960,7 +1040,7 @@ const Lowerer = struct {
             if (arity == 0) return l.ctorValue(rep, tag, &.{}, p);
             return l.ctorLambda(rep, tag, arity, p);
         }
-        return switch (l.bir.instTag(inst)) {
+        const value = switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             .top => try l.ident(try l.topName(d.lhs), p),
             .ext_value => blk: {
@@ -970,184 +1050,891 @@ const Lowerer = struct {
             },
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-    }
-
-    // ---- Calls ------------------------------------------------------------
-
-    /// **S4 SHIM** (static-dispatch-spike.md §8.3 replaces it with the
-    /// dispatch table the checker fills in).
-    ///
-    /// S2 changed what LOWERING emits, not what the backend knows, so this
-    /// emits exactly what the two forms a `method_call` replaced emitted: a
-    /// dot-call `x.m a` is the field call `x.m(a)` it used to be, and one
-    /// of the six operators is the call of the `Basics` function it used to
-    /// desugar to — `Basics$eq(a, b)`, the structural walk in
-    /// `core/Basics.js`, not `===`. The reference is rebuilt here because
-    /// lowering no longer emits one (§1.4): the operator has no callee
-    /// instruction any more.
-    fn methodCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
-        const d = l.bir.instData(inst);
-        const p = l.pos(inst);
-        const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
-        if (try l.refuseUnsupportedDispatch(inst, m.origin)) {
+        const sites = l.sitesOf(inst);
+        if (sites.len == 0) return value;
+        l.region = inst;
+        if (try l.refuseEvidence(inst, sites, l.valueEvidence(inst))) {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        const args_range: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
-        if (m.origin.basicsFunction()) |function| {
-            const callee = try l.basicsValue(function, inst);
-            const receiver = try l.expr(out, @enumFromInt(d.lhs));
-            const rest = try l.exprList(out, args_range);
-            const args = try l.scratch.alloc(Node.Index, rest.len + 1);
-            args[0] = receiver;
-            @memcpy(args[1..], rest);
-            return l.call(callee, args, p);
-        }
-        const target = try l.expr(out, @enumFromInt(d.lhs));
-        const callee = try l.member(target, l.bir.symbol(m.name), p);
-        const args = try l.exprList(out, args_range);
-        return l.call(callee, args, p);
+        return l.etaExpand(value, try l.evidenceArguments(sites, p), l.referenceArity(inst), p);
     }
 
-    /// **S4 SHIM, the wall half.** The shim below emits `Basics$eq` for
-    /// every `==` and `Basics$lt` and friends for every `<`, and passes no
-    /// evidence at all. That is exactly right for what `master` accepted
-    /// and exactly wrong for what this branch newly accepts: `T 1 < T 2`,
-    /// `( a, b ) < ( c, d )` and `"a" < "b"` all reach `Basics$lt`, which
-    /// compares JavaScript objects and strings and answers nonsense.
+    /// How many evidence parameters the value an instruction NAMES takes:
+    /// from `decl_evidence` for a value of this module and from the
+    /// interface scheme for an imported one — the same two records
+    /// `targetEvidence` reads, keyed by instruction instead of by target.
     ///
-    /// So every site of this instruction is checked against what the shim
-    /// can honour, and anything else is `not_implemented` — the same wall
-    /// `?` and `type_dispatch` already stand behind (`backend.md` §1: the
-    /// half of the language that is missing must SAY so). S4 lowers the
-    /// evidence parameters and S5 the derived functions, and this function
-    /// goes with them.
+    /// That count is exactly how many top-level evidence slots §7.2 puts on
+    /// a bare reference to the value, and on a `call` of it, so it is what
+    /// the wall of `evidenceShapeOk` measures those lists against. Anything
+    /// else — a local, a lambda, a constructor — takes none: §6.4 rule (a)
+    /// keeps a nested binding from being generalised over a constrained
+    /// variable, so nothing but a top-level declaration has evidence.
+    fn valueEvidence(l: *Lowerer, inst: Inst.Index) u16 {
+        const d = l.bir.instData(inst);
+        return switch (l.bir.instTag(inst)) {
+            .top => @intCast(l.in.dispatch.declEvidence(d.lhs).len),
+            .ext_value => l.externalEvidence(@enumFromInt(d.lhs), d.rhs),
+            else => 0,
+        };
+    }
+
+    /// The beni arity of the value a reference names: how many parameters
+    /// its eta-expansion has to take.
+    fn referenceArity(l: *Lowerer, inst: Inst.Index) u32 {
+        const d = l.bir.instData(inst);
+        return switch (l.bir.instTag(inst)) {
+            .top => if (d.lhs < l.bir.decls.len) l.bir.decls[d.lhs].params else 0,
+            .ext_value => l.externalArity(@enumFromInt(d.lhs), d.rhs),
+            else => 0,
+        };
+    }
+
+    // ---- Calls and dispatch (static-dispatch-spike.md §8) -----------------
+    //
+    // The checker decided which function every method call runs and which
+    // value every polymorphic site passes; §7's table is that decision as
+    // DATA, and everything below reads targets and never types
+    // (`backend.md` §3). Three shapes come out of it: hidden leading
+    // parameters on a declaration (§8.1), hidden leading arguments at a
+    // call (§8.2), and the operator itself when the target is a primitive
+    // (§8.3).
+
+    /// The dispatch sites of one instruction, in `evidence_index` order.
+    /// `dispatch.sites` is sorted by `(inst, evidence_index)` (§7.1), so
+    /// this is one binary search and a slice — never a scan. It runs once
+    /// for each instruction that can carry sites: every `call`,
+    /// `method_call` and `type_dispatch`, and every REFERENCE too, because
+    /// §7.2 gives a bare mention of a constrained value evidence of its own
+    /// (§8.2's last row). A module has as many such instructions as it has
+    /// calls and references, so a scan here would be quadratic in the size
+    /// of a declaration and a search is not.
+    fn sitesOf(l: *Lowerer, inst: Inst.Index) []const Dispatch.Site {
+        return l.siteRange(inst.int(), inst.int() + 1);
+    }
+
+    /// The dispatch sites of one declaration: its instructions are
+    /// contiguous (`Bir.Decl.inst_start`), so they are one slice too.
+    fn declSiteRange(l: *Lowerer, decl: u32) Dispatch.Range {
+        const d = l.bir.decls[decl];
+        return l.siteRangeOf(d.inst_start.int(), d.inst_end.int());
+    }
+
+    fn siteRange(l: *Lowerer, start: u32, end: u32) []const Dispatch.Site {
+        const r = l.siteRangeOf(start, end);
+        return l.in.dispatch.sites[r.start..][0..r.len];
+    }
+
+    fn siteRangeOf(l: *Lowerer, start: u32, end: u32) Dispatch.Range {
+        const sites = l.in.dispatch.sites;
+        const lo = std.sort.lowerBound(Dispatch.Site, sites, start, siteBefore);
+        var hi = lo;
+        while (hi < sites.len and sites[hi].inst.int() < end) hi += 1;
+        return .{ .start = @intCast(lo), .len = @intCast(hi - lo) };
+    }
+
+    fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
+        return std.math.order(inst, s.inst.int());
+    }
+
+    /// How many evidence parameters a target's own JavaScript function
+    /// takes. Nonzero means it is not a value of the arity its slot
+    /// promises and must be eta-expanded (§8.2, A.25).
+    fn targetEvidence(l: *Lowerer, target: Dispatch.Target) u16 {
+        return switch (target) {
+            .top => |decl| @intCast(l.in.dispatch.declEvidence(decl.int()).len),
+            .ext => |e| l.externalEvidence(e.module, @intFromEnum(e.value)),
+            // A primitive comparator and an evidence parameter are already
+            // closures of the right arity; `derived` and `ext_derived` are
+            // refused above this point until S5 emits them.
+            else => 0,
+        };
+    }
+
+    /// The beni arity of a target: how many parameters its eta-expansion
+    /// takes, which is the arity the evidence slot promised.
+    fn targetArity(l: *Lowerer, target: Dispatch.Target) u32 {
+        return switch (target) {
+            // No bounds test: a `top` target names a declaration of the
+            // module being lowered, and `targetValue` asserts exactly that
+            // before `topName` indexes the same table unguarded. One rule
+            // for one invariant, rather than a guard here that invents a
+            // zero and a panic there.
+            .top => |decl| l.bir.decls[decl.int()].params,
+            .ext => |e| l.externalArity(e.module, @intFromEnum(e.value)),
+            else => 0,
+        };
+    }
+
+    /// The JavaScript value a target names (§8.2's table), with the import
+    /// recorded for an `ext` exactly as for any other cross-module
+    /// reference.
+    fn targetValue(l: *Lowerer, target: Dispatch.Target, p: u32) !Node.Index {
+        return switch (target) {
+            // `topName` and `externalName` index `bir.decls` and the
+            // interface's value table without a bounds test, and so does
+            // `targetArity`. A target naming neither is a malformed table
+            // and not a program, so it is an assert: a guard here would
+            // emit a name for a declaration that is not there.
+            .top => |decl| blk: {
+                std.debug.assert(decl.int() < l.bir.decls.len);
+                break :blk try l.ident(try l.topName(decl.int()), p);
+            },
+            .ext => |e| blk: {
+                std.debug.assert(e.module.int() < l.in.interfaces.len);
+                std.debug.assert(@intFromEnum(e.value) < l.in.interfaces[e.module.int()].values.len);
+                try l.need(e.module, @intFromEnum(e.value));
+                break :blk try l.ident(try l.externalName(e.module, @intFromEnum(e.value)), p);
+            },
+            .evidence => |k| try l.ident(try l.evidenceName(k), p),
+            .primitive => |prim| try l.primitiveValue(prim, p),
+            // Unreachable: `field` and `err` cannot be evidence (§8.2), and
+            // a `derived` target was refused before this was called.
+            else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+        };
+    }
+
+    fn externalScheme(l: *Lowerer, module: Graph.Index, value: u32) ?Interface.Scheme {
+        if (module.int() >= l.in.interfaces.len) return null;
+        const iface = &l.in.interfaces[module.int()];
+        if (value >= iface.values.len) return null;
+        const index = iface.values[value].scheme;
+        if (index == .none or @intFromEnum(index) >= iface.schemes.len) return null;
+        return iface.scheme(index);
+    }
+
+    /// The evidence count of an imported value, computed from its
+    /// interface scheme the way §7.2's canonical order is: one slot per
+    /// constraint of each quantifier, quantifiers in the order the scheme
+    /// records them. Caller and callee derive it from the same record, so
+    /// they agree.
+    fn externalEvidence(l: *Lowerer, module: Graph.Index, value: u32) u16 {
+        const s = l.externalScheme(module, value) orelse return 0;
+        const iface = &l.in.interfaces[module.int()];
+        var n: u32 = 0;
+        var i: u32 = 0;
+        while (i < s.quantified_count) : (i += 1) n += iface.quantified(s, i).constraints_len;
+        return std.math.cast(u16, n) orelse 0;
+    }
+
+    /// The beni arity of an imported value: the parameter count of its
+    /// scheme body when that body is a function type, and zero otherwise.
+    fn externalArity(l: *Lowerer, module: Graph.Index, value: u32) u32 {
+        const s = l.externalScheme(module, value) orelse return 0;
+        const iface = &l.in.interfaces[module.int()];
+        if (s.body == .none or s.body.int() >= iface.terms.len) return 0;
+        const t = iface.term(s.body);
+        if (t.tag != .func) return 0;
+        return @intCast(iface.range(t.lhs).len);
+    }
+
+    /// The hidden leading arguments of one instruction (§8.2), in
+    /// `evidence_index` order.
     ///
-    /// What survives:
-    ///
-    ///   - `field` — a dot-call on a record, which is `language.md` §6.3
-    ///     unchanged and what the shim already emits;
-    ///   - `==` and `/=` against a STRUCTURAL answer (`primitive
-    ///     strict_eq`, a derived function, or `Basics.eq` reached through
-    ///     the `equatable` bridge), because `core/Basics.js`'s `eq` is that
-    ///     structural walk and gives the same answer;
-    ///   - `<`, `<=`, `>`, `>=` against `primitive num_compare`, which is
-    ///     `Int` and `Float` and is what `Basics.lt` does.
-    ///
-    /// Everything else refuses, including every evidence site: a call that
-    /// needs a hidden argument the shim does not pass would run with one
-    /// argument too few.
-    fn refuseUnsupportedDispatch(l: *Lowerer, inst: Inst.Index, origin: Bir.WellKnown) !bool {
-        var refused = false;
-        for (l.in.dispatch.sites) |site| {
-            if (site.inst != inst) continue;
-            if (site.evidence_index == 0 and l.shimCanEmit(origin, site.target)) continue;
-            refused = true;
-            break;
+    /// The list is FLAT and the structure is a tree: a target that takes
+    /// evidence of its own consumes the slots that follow it, which is the
+    /// eta-expansion of A.25. So the walk is a pre-order over a cursor and
+    /// not an index lookup — the indices order the slots, the counts shape
+    /// them.
+    fn evidenceArguments(l: *Lowerer, sites: []const Dispatch.Site, p: u32) ![]const Node.Index {
+        var out: std.ArrayList(Node.Index) = .empty;
+        var cursor: usize = 0;
+        while (cursor < sites.len) {
+            try out.append(l.scratch, try l.evidenceValue(sites, &cursor, p));
         }
-        if (!refused) return false;
+        return out.items;
+    }
+
+    fn evidenceValue(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize, p: u32) Allocator.Error!Node.Index {
+        const target = sites[cursor.*].target;
+        cursor.* += 1;
+        const wanted = l.targetEvidence(target);
+        var bound: std.ArrayList(Node.Index) = .empty;
+        var k: u16 = 0;
+        while (k < wanted and cursor.* < sites.len) : (k += 1) {
+            try bound.append(l.scratch, try l.evidenceValue(sites, cursor, p));
+        }
+        const value = try l.targetValue(target, p);
+        if (wanted == 0) return value;
+        return l.etaExpand(value, bound.items, l.targetArity(target), p);
+    }
+
+    /// `(a, b) => <name>(<bound…>, a, b)` — a constrained value in VALUE
+    /// position (§8.2, A.25). The bare name has the evidence parameters in
+    /// front of the beni ones, so it is a function of the wrong arity, and
+    /// `backend.md` §6 requires every function-typed value in flight to be
+    /// a closure of known arity.
+    fn etaExpand(l: *Lowerer, callee: Node.Index, bound: []const Node.Index, arity: u32, p: u32) !Node.Index {
+        var params: std.ArrayList(JsIr.NameIndex) = .empty;
+        var args: std.ArrayList(Node.Index) = .empty;
+        try args.appendSlice(l.scratch, bound);
+        for (0..arity) |_| {
+            const n = try l.fresh(l.well.param);
+            try params.append(l.scratch, n);
+            try args.append(l.scratch, try l.ident(n, p));
+        }
+        const stmts = [_]Node.Index{try l.returnStmt(try l.call(callee, args.items, p), p)};
+        return l.arrowOf(params.items, &stmts, p);
+    }
+
+    /// A primitive comparison as a VALUE (§9.1): an operator is not a
+    /// value, so the module emits the comparator once and every evidence
+    /// slot names it. `String` routes to the core function instead, because
+    /// `<` on JavaScript strings is UTF-16 code-unit order and
+    /// `String.compare` is Unicode scalar order, and the two must agree
+    /// (§3.2, A.26).
+    fn primitiveValue(l: *Lowerer, prim: Dispatch.Target.Primitive, p: u32) !Node.Index {
+        switch (prim) {
+            .strict_eq => {
+                l.needs.eq_prim = true;
+                return l.ident(try l.synthesisedName("eq$prim"), p);
+            },
+            .num_compare => {
+                l.needs.compare_prim = true;
+                return l.ident(try l.synthesisedName("compare$prim"), p);
+            },
+            .char_compare => {
+                l.needs.compare_char = true;
+                return l.ident(try l.synthesisedName("compare$char"), p);
+            },
+            .string_compare => return l.stringCompare(p),
+        }
+    }
+
+    /// `String.compare`, however this module reaches it.
+    fn stringCompare(l: *Lowerer, p: u32) !Node.Index {
+        return l.coreValue(.String, .compare, p);
+    }
+
+    /// The `const`s §9.1 asks for, in the emission order of §8.5 — by
+    /// printed name text, which is `compare$char`, `compare$prim`,
+    /// `eq$prim`. They are not exported: a structural comparison has no
+    /// owning module, so each consumer emits its own (§8.5).
+    fn primitiveValues(l: *Lowerer) ![]const Node.Index {
+        var out: StmtList = .empty;
+        if (l.needs.compare_char) try out.append(l.scratch, try l.compareCharDecl());
+        if (l.needs.compare_prim) try out.append(l.scratch, try l.comparePrimDecl());
+        if (l.needs.eq_prim) try out.append(l.scratch, try l.eqPrimDecl());
+        return out.items;
+    }
+
+    fn operandNames(l: *Lowerer) ![2]JsIr.NameIndex {
+        return .{
+            try l.name(.{ .module = .none, .base = l.well.left, .tag = JsIr.Name.no_tag }),
+            try l.name(.{ .module = .none, .base = l.well.right, .tag = JsIr.Name.no_tag }),
+        };
+    }
+
+    /// `const M$eq$prim = ($x, $y) => $x === $y;`
+    fn eqPrimDecl(l: *Lowerer) !Node.Index {
+        const p = Node.no_pos;
+        const x, const y = try l.operandNames();
+        const body = try l.binary(.strict_eq, try l.ident(x, p), try l.ident(y, p), p);
+        const stmts = [_]Node.Index{try l.returnStmt(body, p)};
+        const arrow = try l.arrowOf(&.{ x, y }, &stmts, p);
+        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("eq$prim")), arrow.int());
+    }
+
+    /// `const M$compare$prim = ($x, $y) => ($x < $y ? "LT" : $x > $y ? "GT" : "EQ");`
+    fn comparePrimDecl(l: *Lowerer) !Node.Index {
+        const p = Node.no_pos;
+        const x, const y = try l.operandNames();
+        const body = try l.orderOf(try l.ident(x, p), try l.ident(y, p), p);
+        const stmts = [_]Node.Index{try l.returnStmt(body, p)};
+        const arrow = try l.arrowOf(&.{ x, y }, &stmts, p);
+        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("compare$prim")), arrow.int());
+    }
+
+    /// `const M$compare$char = ($x, $y) => { const $a = …; const $b = …; return … };`
+    /// — a code POINT comparison, which is what `Char`'s order means and
+    /// what `<` on the one-character strings a `Char` is would not give
+    /// (§9.1, A.26).
+    fn compareCharDecl(l: *Lowerer) !Node.Index {
+        const p = Node.no_pos;
+        const x, const y = try l.operandNames();
+        const a = try l.name(.{ .module = .none, .base = l.well.cp_left, .tag = JsIr.Name.no_tag });
+        const b = try l.name(.{ .module = .none, .base = l.well.cp_right, .tag = JsIr.Name.no_tag });
+        var stmts: StmtList = .empty;
+        try l.constDecl(&stmts, a, try l.codePointCall(try l.ident(x, p), p), p);
+        try l.constDecl(&stmts, b, try l.codePointCall(try l.ident(y, p), p), p);
+        const body = try l.orderOf(try l.ident(a, p), try l.ident(b, p), p);
+        try stmts.append(l.scratch, try l.returnStmt(body, p));
+        const arrow = try l.arrowOf(&.{ x, y }, stmts.items, p);
+        return l.add(.const_decl, p, @intFromEnum(try l.synthesisedName("compare$char")), arrow.int());
+    }
+
+    /// `l < r ? "LT" : l > r ? "GT" : "EQ"` — the `Order` of two values
+    /// JavaScript's relational operators order correctly. `Order` is
+    /// all-nullary, so its constructors are bare tag strings (§9.1).
+    fn orderOf(l: *Lowerer, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
+        const gt = try l.b.addRecord(JsIr.Cond{
+            .consequent = try l.stringNode("GT", p),
+            .alternate = try l.stringNode("EQ", p),
+        });
+        const inner = try l.add(.cond, p, (try l.binary(.gt, left, right, p)).int(), @intFromEnum(gt));
+        const lt = try l.b.addRecord(JsIr.Cond{
+            .consequent = try l.stringNode("LT", p),
+            .alternate = inner,
+        });
+        return l.add(.cond, p, (try l.binary(.lt, left, right, p)).int(), @intFromEnum(lt));
+    }
+
+    fn codePointCall(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
+        const callee = try l.member(value, l.well.code_point_at, p);
+        return l.call(callee, &.{try l.numberNode("0", p)}, p);
+    }
+
+    /// `e.codePointAt(0)`, with `e` bound to a `const` first when it is not
+    /// already a name so that each operand is evaluated exactly once
+    /// (§8.3's `CP(e)`).
+    fn codePointOf(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) !Node.Index {
+        return l.codePointCall(try l.bindSubject(out, value, p), p);
+    }
+
+    /// **S5's wall.** Every row of §8 is lowered here except a `derived` or
+    /// `ext_derived` target, whose function S5 emits and this slice does
+    /// not — so a site that names one is refused rather than compiled into
+    /// a call of a name that is not there. The one exception is A.51's
+    /// bridge, kept exactly: `==` and `/=` against a structural answer
+    /// still go through `core/Basics.js`'s `eq`, which IS that structural
+    /// walk and gives the same answer.
+    fn refuseEvidence(l: *Lowerer, inst: Inst.Index, sites: []const Dispatch.Site, expected: u16) !bool {
+        for (sites) |site| {
+            switch (site.target) {
+                .derived, .ext_derived => {
+                    try l.refuseDerived(inst);
+                    return true;
+                },
+                else => {},
+            }
+        }
+        if (!l.evidenceShapeOk(sites, expected)) {
+            try l.reportEvidenceShape(inst);
+            return true;
+        }
+        return false;
+    }
+
+    /// Whether `sites` is the tree §8.2 describes, `expected` slots wide —
+    /// and the one place §7.2's promise is kept.
+    ///
+    /// The evidence list is FLAT, and the structure is implied by counts
+    /// the backend works out for itself: from `decl_evidence` for a value
+    /// of this module, from the interface scheme for an imported one. So
+    /// two records have to agree about how many hidden arguments a callee
+    /// takes, and §7.2 says the table exists so that a caller/callee
+    /// disagreement is "a caught bug rather than a silent miscompile". If
+    /// the counts did not consume the list exactly, the emitted call has
+    /// the wrong number of arguments — and JavaScript RUNS a call with the
+    /// wrong number of arguments, binding `undefined` and returning `NaN`.
+    ///
+    /// `field` and `err` are the other half: §8.2 says neither can stand in
+    /// evidence position, so meeting one is a checker bug, not a program.
+    ///
+    /// **`expected` is the third half, and the one the nesting cannot give.**
+    /// The nested counts say how the list is SHAPED; only the callee's own
+    /// evidence count says how WIDE it is. A list that nests correctly and
+    /// has one slot too many, or one too few, consumes itself just as
+    /// happily — and both emit a call of the wrong arity that JavaScript
+    /// runs: two slots for a one-evidence callee printed `NaN` and then
+    /// recursed forever, none for a two-evidence callee threw
+    /// `TypeError: $m$0 is not a function`, and the build exited 0 either
+    /// way. So the walk counts the TOP-LEVEL slots it consumed and demands
+    /// exactly `expected`.
+    fn evidenceShapeOk(l: *Lowerer, sites: []const Dispatch.Site, expected: u16) bool {
+        var cursor: usize = 0;
+        var slots: u32 = 0;
+        while (cursor < sites.len) : (slots += 1) {
+            // Too long: a further top-level slot the callee has no
+            // parameter for. Caught here rather than after the loop so a
+            // long list cannot walk off into a nested one's counts.
+            if (slots >= expected) return false;
+            if (!l.evidenceShapeOne(sites, &cursor)) return false;
+        }
+        // Too short: the list ran out before the callee's parameters did.
+        return slots == expected;
+    }
+
+    fn evidenceShapeOne(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize) bool {
+        const target = sites[cursor.*].target;
+        cursor.* += 1;
+        switch (target) {
+            .field, .err => return false,
+            else => {},
+        }
+        const wanted = l.targetEvidence(target);
+        var k: u16 = 0;
+        while (k < wanted) : (k += 1) {
+            if (cursor.* >= sites.len) return false;
+            if (!l.evidenceShapeOne(sites, cursor)) return false;
+        }
+        return true;
+    }
+
+    /// `internal`, and not `not_implemented`: nothing is missing, two
+    /// records disagree. The build stops rather than writing a call whose
+    /// arguments are off by one — `backend.md` §1's rule that the half that
+    /// is missing must say so, applied to a half that is WRONG.
+    fn reportEvidenceShape(l: *Lowerer, inst: Inst.Index) !void {
+        try l.report(
+            .internal,
+            inst,
+            \\The hidden arguments of this call do not add up.
+            \\
+            \\`docs/design/static-dispatch-spike.md` §8.2 passes one hidden argument per
+            \\evidence site, and each site that is itself constrained consumes the sites
+            \\after it. The list the checker recorded does not fit that shape — either a
+            \\site names something §8.2 cannot pass, or a callee's evidence count here
+            \\disagrees with the one in its own module.
+            \\
+            \\That is a compiler bug. Please report it with this program; `beni dump
+            \\--stage=dispatch` prints the table this reads.
+        ,
+            .{},
+        );
+    }
+
+    /// `internal`, for a `Dispatch` table that does not describe a program
+    /// this backend can emit. Same tone and same reason as
+    /// `reportEvidenceShape`: nothing is MISSING — that is
+    /// `not_implemented` — something is WRONG, and the only honest output
+    /// is a stopped build. Every one of these is reachable exactly when the
+    /// checker forgets or misplaces a site, and each used to return
+    /// `undefined` and exit 0.
+    fn reportDispatchBug(l: *Lowerer, inst: Inst.Index, detail: []const u8) !void {
+        try l.report(
+            .internal,
+            inst,
+            \\I cannot tell what this call dispatches to.
+            \\
+            \\{s}
+            \\
+            \\That is a compiler bug. Please report it with this program; `beni dump
+            \\--stage=dispatch` prints the table this reads.
+        ,
+            .{detail},
+        );
+    }
+
+    /// §7.2 gives every `method_call` and every `type_dispatch` a site at
+    /// `evidence_index` 0 naming the function it runs. None means the
+    /// checker did not record one, which no program can ask for.
+    const no_callee_site =
+        \\`docs/design/static-dispatch-spike.md` §7.2 gives every method call and every
+        \\return-type dispatch a site at `evidence_index` 0 naming the function it runs,
+        \\and the table has none here — so there is no function to call.
+    ;
+
+    /// §8.4 has no receiver, so §8.3's record-field row cannot appear.
+    const field_without_receiver =
+        \\The table dispatches this to a record field, but `docs/design/static-dispatch-spike.md`
+        \\§8.4 has no receiver to read a field from: only a method call can answer `field`.
+    ;
+
+    /// §8.3's primitive rows are the binary comparison methods.
+    const primitive_needs_two_operands =
+        \\The table dispatches this to one of `docs/design/static-dispatch-spike.md` §8.3's
+        \\primitive comparisons, and every one of those is binary — a receiver and exactly
+        \\one argument. This call has a different number of arguments.
+    ;
+
+    /// Whether a derived `eq` answers exactly what `core/Basics.js`'s `eq`
+    /// answers — which is the whole of A.51's bridge, and the reason it has
+    /// to be RECURSIVE.
+    ///
+    /// `core/Basics.js`'s `eq` is one structural walk: it compares every
+    /// reachable primitive with `===` and knows nothing about a user's own
+    /// `pub eq`. A derived function does know, because the checker put that
+    /// user method in the table as a part — so `{ k = Id 1 2 } == { k = Id
+    /// 1 99 }`, whose `derived 0` has `part 0 ext Id eq`, is `True` by the
+    /// table and `False` by the structural walk. Checking only the
+    /// top-level target accepted exactly that program and printed the wrong
+    /// answer.
+    ///
+    /// So every part must itself be structural: `primitive strict_eq`, or
+    /// another derived `eq` all of whose parts are. A `top`, `ext` or
+    /// `evidence` part is a FUNCTION the walk would not call, and refuses.
+    ///
+    /// Two halves per `derived`, because `parts` means two different things
+    /// (§7.1): the `Derived` row's parts are the BODY's positions, where
+    /// `evidence i` means "this function's own i-th parameter" and is
+    /// answered by the use; the `Target`'s parts are what the use HANDS it,
+    /// where `evidence k` would mean the enclosing declaration's parameter
+    /// and is never structural.
+    ///
+    /// The residual gap, stated because S5 closes it rather than this
+    /// slice: an `ext_derived` names another module's nominal type, whose
+    /// body positions are that module's table and not ours (A.47) — so a
+    /// user `pub eq` buried inside another module's type is invisible here
+    /// and still reaches the structural walk. That is `master`'s behaviour
+    /// for the same program, and §9's derived bodies are what fix it.
+    fn structuralEq(l: *Lowerer, target: Dispatch.Target, seen: ?*const Seen) bool {
+        switch (target) {
+            .primitive => |prim| return prim == .strict_eq,
+            // The checker could not name a function for this position —
+            // today an element whose type is still a `number` variable at
+            // generalisation. `master` compiled that program through the
+            // structural walk and got the right answer (a `number` is an
+            // `Int` or a `Float`, and `===` is both their `eq`), so the
+            // bridge keeps it rather than refusing a program that worked.
+            // It is not a licence to guess: `err` says "unknown", and the
+            // one thing the walk gets wrong — a user's own `pub eq` — is a
+            // `top` or `ext` part and refuses below.
+            //
+            // INVARIANT, and it is the CHECKER's to hold: an `err` part
+            // means "a `number` still unresolved at generalisation" and
+            // NOTHING else. The moment the checker starts writing `err` for
+            // a position it could not resolve for some other reason — a
+            // user's own method it failed to find, say — this line silently
+            // routes that position through the structural walk and answers
+            // the wrong `Bool`. Nothing in `run/` or `emit/` can see the
+            // difference, because both readings compile and only one is
+            // right; what pins it is a `dispatch/` golden over a `number`
+            // element, showing `err` in the parts list and no other `err`
+            // anywhere in the corpus.
+            .err => return true,
+            .derived => |use| {
+                const table = l.in.dispatch;
+                if (use.index >= table.derived.len) return false;
+                const row = table.derived[use.index];
+                if (row.kind != .eq) return false;
+                // A recursive type's own derived function is a part of
+                // itself; meeting it again adds no new part to judge.
+                var walk = seen;
+                while (walk) |node| : (walk = node.prev) {
+                    if (node.index == use.index) return true;
+                }
+                const here: Seen = .{ .index = use.index, .prev = seen };
+                for (table.partsAt(row.parts)) |part| {
+                    // `evidence i` in a BODY is this function's own
+                    // parameter, answered by the use's parts below.
+                    if (std.meta.activeTag(part) == .evidence) continue;
+                    if (!l.structuralEq(part, &here)) return false;
+                }
+                // `partsOf()` and not `use.parts`: `src/dump/dispatch.zig`
+                // reads a target's evidence through it, and the emitter and
+                // the dump have to read the table the same way or a dump
+                // that looks right can sit over an emission that is not.
+                for (table.partsAt(target.partsOf())) |part| {
+                    if (!l.structuralEq(part, &here)) return false;
+                }
+                return true;
+            },
+            .ext_derived => |use| {
+                if (use.kind != .eq) return false;
+                for (l.in.dispatch.partsAt(target.partsOf())) |part| {
+                    if (!l.structuralEq(part, seen)) return false;
+                }
+                return true;
+            },
+            else => return false,
+        }
+    }
+
+    const Seen = struct { index: u32, prev: ?*const Seen };
+
+    fn refuseDerived(l: *Lowerer, inst: Inst.Index) !void {
         try l.report(
             .not_implemented,
             inst,
-            \\I cannot compile this method call to JavaScript yet.
+            \\I cannot compile this comparison to JavaScript yet.
             \\
-            \\The checker resolved it (`docs/design/static-dispatch-spike.md` §6.3), but the
-            \\code generator still emits every `==` as `Basics.eq` and every `<` as
-            \\`Basics.lt`, and neither is the function this call needs. Hidden evidence
-            \\arguments and derived `eq`/`compare` land with S4 and S5 (§8, §9).
+            \\The checker resolved it to a DERIVED `eq` or `compare`
+            \\(`docs/design/static-dispatch-spike.md` §9) — a function generated from the
+            \\shape of the type — and the code generator grows those in S5. Evidence
+            \\parameters and every other target of §8 are lowered already.
             \\
             \\Hint: compare the parts by hand, or pass an ordering function, until then.
         ,
             .{},
         );
-        return true;
     }
 
-    fn shimCanEmit(l: *Lowerer, origin: Bir.WellKnown, target: Dispatch.Target) bool {
-        return switch (target) {
-            .field => origin == .none,
-            .primitive => |prim| switch (prim) {
-                .strict_eq => origin == .eq or origin == .neq,
-                .num_compare => origin == .lt or origin == .le or origin == .gt or origin == .ge,
-                .char_compare, .string_compare => false,
+    /// A method call (§8.3). The callee is site 0 of the instruction and
+    /// every further site is one hidden argument in front of the receiver.
+    fn methodCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
+        const args: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
+        const sites = l.sitesOf(inst);
+        l.region = inst;
+        // §7.2 gives every `method_call` a site 0 naming the callee. None
+        // means the checker forgot one — a program that failed to check
+        // never reaches here, because `beni build` refuses to emit a
+        // project that has an error diagnostic — so it is a compiler bug
+        // and says so rather than emitting `undefined(…)` and exiting 0.
+        if (sites.len == 0 or sites[0].evidence_index != 0) {
+            try l.reportDispatchBug(inst, no_callee_site);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const target = sites[0].target;
+        const evidence_sites = sites[1..];
+        switch (target) {
+            // A record receiver: `language.md` §6.3's field call, unchanged.
+            .field => {
+                // A field call passes no evidence — the closure in the
+                // field is already of the arity the call site wrote — so
+                // this list is empty, and a non-empty one is the same
+                // caught bug as any other wrong-length list. Checked rather
+                // than dropped: a list here means the checker instantiated
+                // a scheme it then dispatched to a field, and dropping it
+                // silently emits a call short of its arguments.
+                if (try l.refuseEvidence(inst, evidence_sites, 0)) {
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const receiver = try l.expr(out, @enumFromInt(d.lhs));
+                const callee = try l.member(receiver, l.bir.symbol(m.name), p);
+                return l.call(callee, try l.exprList(out, args), p);
             },
-            // A derived `eq` is a structural walk and so is `Basics.eq`.
-            .derived => |dd| origin != .none and l.in.dispatch.derived[dd.index].kind == .eq,
-            .ext_derived => |dd| origin != .none and dd.kind == .eq,
-            // The `equatable`-marker bridge of §3.4, which core still leans
-            // on until §5.5 rewrites `List.member`: the target IS
-            // `Basics.eq`, so the shim's own call is the right one.
-            .ext => |e| (origin == .eq or origin == .neq) and l.isBasicsEq(e),
-            .top => false,
-            .evidence, .err => false,
+            // The ONE silent `undefined` §8.3 documents: `err` is a site
+            // the checker could not resolve, and it only makes one after
+            // reporting why. A second diagnostic here would name the same
+            // program twice, so this arm emits what the `error` instruction
+            // emits and says nothing.
+            .err => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // A.51's bridge, and the only place S5's wall has a door.
+            .derived, .ext_derived => {
+                const bridged = switch (m.origin) {
+                    .eq, .neq => l.structuralEq(target, null),
+                    else => false,
+                };
+                const function = if (bridged) m.origin.basicsFunction().? else {
+                    try l.refuseDerived(inst);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                };
+                const callee = try l.coreValue(.Basics, function, p);
+                return l.receiverCall(out, callee, &.{}, @enumFromInt(d.lhs), args, p);
+            },
+            .primitive => |prim| {
+                if (try l.refuseEvidence(inst, evidence_sites, l.targetEvidence(target))) {
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const receiver = try l.expr(out, @enumFromInt(d.lhs));
+                const rest = try l.exprList(out, args);
+                if (rest.len != 1) {
+                    try l.reportDispatchBug(inst, primitive_needs_two_operands);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                // Lowering the operands moved `region` into them; the
+                // operator's own instruction is what a diagnostic from here
+                // is about.
+                l.region = inst;
+                return l.primitiveOperator(out, prim, m.origin, receiver, rest[0], p);
+            },
+            .top, .ext, .evidence => {
+                if (try l.refuseEvidence(inst, evidence_sites, l.targetEvidence(target))) {
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const evidence = try l.evidenceArguments(evidence_sites, p);
+                const callee = try l.targetValue(target, p);
+                const value = try l.receiverCall(out, callee, evidence, @enumFromInt(d.lhs), args, p);
+                // An ordering operator against a non-primitive target is
+                // the `Order` test of §8.3: the method answers `Order` and
+                // the operator answers `Bool`.
+                return l.orderTest(value, m.origin, p);
+            },
+        }
+    }
+
+    /// `callee(<evidence…>, receiver, args…)` — §8.3's shape, with the
+    /// receiver in front of the written arguments because core is
+    /// subject-first and a dot-call is the module function applied to its
+    /// receiver.
+    fn receiverCall(
+        l: *Lowerer,
+        out: *StmtList,
+        callee: Node.Index,
+        evidence: []const Node.Index,
+        receiver_inst: Inst.Index,
+        args: Bir.SubRange,
+        p: u32,
+    ) !Node.Index {
+        const receiver = try l.expr(out, receiver_inst);
+        const rest = try l.exprList(out, args);
+        const all = try l.scratch.alloc(Node.Index, evidence.len + 1 + rest.len);
+        @memcpy(all[0..evidence.len], evidence);
+        all[evidence.len] = receiver;
+        @memcpy(all[evidence.len + 1 ..], rest);
+        return l.call(callee, all, p);
+    }
+
+    /// Return-type dispatch (§8.4): §8.3 with no receiver. Inside a
+    /// constrained declaration the target is always `evidence k` (§6.7), so
+    /// in practice this is `$m$k(args…)`.
+    fn typeDispatchExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
+        const args: Bir.SubRange = .{ .start = t.args_start, .end = t.args_end };
+        const sites = l.sitesOf(inst);
+        l.region = inst;
+        if (sites.len == 0 or sites[0].evidence_index != 0) {
+            try l.reportDispatchBug(inst, no_callee_site);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const target = sites[0].target;
+        switch (target) {
+            .top, .ext, .evidence, .primitive => {},
+            .derived, .ext_derived => {
+                try l.refuseDerived(inst);
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            // There is no receiver, so `field` cannot appear at all and is
+            // a malformed table. `err` is the one silent case again: the
+            // site the checker could not resolve, already reported.
+            .field => {
+                try l.reportDispatchBug(inst, field_without_receiver);
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            .err => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+        }
+        if (try l.refuseEvidence(inst, sites[1..], l.targetEvidence(target))) {
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const evidence = try l.evidenceArguments(sites[1..], p);
+        const callee = try l.targetValue(target, p);
+        const rest = try l.exprList(out, args);
+        const all = try l.scratch.alloc(Node.Index, evidence.len + rest.len);
+        @memcpy(all[0..evidence.len], evidence);
+        @memcpy(all[evidence.len..], rest);
+        return l.call(callee, all, p);
+    }
+
+    /// §8.3's operator table: a `primitive` target plus the surface origin
+    /// of §1.3 is the JavaScript operator itself. This is the only place
+    /// the marking reaches the backend, and the reason it exists.
+    fn primitiveOperator(
+        l: *Lowerer,
+        out: *StmtList,
+        prim: Dispatch.Target.Primitive,
+        origin: Bir.WellKnown,
+        left: Node.Index,
+        right: Node.Index,
+        p: u32,
+    ) !Node.Index {
+        switch (prim) {
+            .strict_eq => return l.binary(if (origin == .neq) .strict_ne else .strict_eq, left, right, p),
+            .num_compare => {
+                if (relationalOp(origin)) |op| return l.binary(op, left, right, p);
+                // `x.compare y` written by hand: an operator is not a
+                // value, so this is the comparator of §9.1.
+                return l.call(try l.primitiveValue(.num_compare, p), &.{ left, right }, p);
+            },
+            .char_compare => {
+                if (relationalOp(origin)) |op| {
+                    const a = try l.codePointOf(out, left, p);
+                    const b = try l.codePointOf(out, right, p);
+                    return l.binary(op, a, b, p);
+                }
+                return l.call(try l.primitiveValue(.char_compare, p), &.{ left, right }, p);
+            },
+            // Never `<`: `core/String.js`'s `compare` is Unicode scalar
+            // order and `<` is UTF-16 code-unit order, and a language where
+            // `"a" < "b"` and `String.compare a b` disagree is worse than
+            // one with neither (§3.2, §9.1, A.26).
+            .string_compare => {
+                const callee = try l.stringCompare(p);
+                return l.orderTest(try l.call(callee, &.{ left, right }, p), origin, p);
+            },
+        }
+    }
+
+    fn relationalOp(origin: Bir.WellKnown) ?JsIr.BinaryOp {
+        return switch (origin) {
+            .lt => .lt,
+            .le => .le,
+            .gt => .gt,
+            .ge => .ge,
+            else => null,
         };
     }
 
-    fn isBasicsEq(l: *Lowerer, e: Dispatch.Target.Ext) bool {
-        const basics = l.in.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return false;
-        if (e.module != basics or e.module.int() >= l.in.interfaces.len) return false;
-        return l.in.interfaces[e.module.int()].valueName(e.value) == InternPool.WellKnown.eq.symbol();
+    /// The `Order` test of §8.3: `a < b` is `compare(a, b) === "LT"`,
+    /// `a <= b` is `… !== "GT"`, and `a /= b` is `!eq(a, b)`. `Order` is
+    /// all-nullary, so its constructors are bare tag strings.
+    fn orderTest(l: *Lowerer, value: Node.Index, origin: Bir.WellKnown, p: u32) !Node.Index {
+        return switch (origin) {
+            .none, .eq => value,
+            .neq => try l.unary(.not, value, p),
+            .lt => try l.binary(.strict_eq, value, try l.stringNode("LT", p), p),
+            .le => try l.binary(.strict_ne, value, try l.stringNode("GT", p), p),
+            .gt => try l.binary(.strict_eq, value, try l.stringNode("GT", p), p),
+            .ge => try l.binary(.strict_ne, value, try l.stringNode("LT", p), p),
+        };
     }
 
-    /// **S4 SHIM**: a reference to a `pub` value of `core/Basics.beni` by
-    /// name, however this module reaches it — a plain top-level name when
-    /// the module BEING lowered is `Basics` itself, an import otherwise.
-    /// This is what `Resolve` does for an `import_value` instruction; the
-    /// shim does it by hand because the operators no longer produce one.
+    /// A reference to a `pub` value of a CORE module by name, however this
+    /// module reaches it — a plain top-level name when the module being
+    /// lowered is that module itself, an import otherwise. This is what
+    /// `Resolve` does for an `import_value` instruction; it is done by hand
+    /// here because the two values §8 needs have no reference instruction
+    /// at all: `String.compare` behind `primitive string_compare` (§9.1)
+    /// and `Basics.eq` behind A.51's bridge.
     ///
     /// Each failure is REPORTED and not silently emitted as `undefined`.
     /// Before the operators stopped referencing `Basics`, a core package
     /// without `eq` failed in `Resolve` with a name error (`--core-root`
     /// makes that reachable); the reference moved here, so the failure has
     /// to be reported here too, or `a == b` compiles to `undefined(a, b)`.
-    fn basicsValue(l: *Lowerer, function: InternPool.WellKnown, inst: Inst.Index) !Node.Index {
-        const p = l.pos(inst);
+    fn coreValue(l: *Lowerer, comptime owner: InternPool.WellKnown, function: InternPool.WellKnown, p: u32) !Node.Index {
         const spelling = l.interner.slice(function.symbol());
-        const module = l.in.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse
-            return l.missingBasics(inst, spelling, "there is no `Basics` module in the core package");
+        const module = l.in.graph.lookup(.core, owner.symbol()) orelse
+            return l.missingCoreValue(p, @tagName(owner), spelling, "there is no such module in the core package");
         if (module == l.in.module) {
             for (l.bir.decls, 0..) |d, i| {
                 if (l.bir.symbol(d.name) != function.symbol()) continue;
                 return l.ident(try l.topName(@intCast(i)), p);
             }
-            return l.missingBasics(inst, spelling, "this module IS `Basics`, and it does not declare it");
+            return l.missingCoreValue(p, @tagName(owner), spelling, "this module IS that module, and it does not declare it");
+        }
+        if (module.int() >= l.in.interfaces.len) {
+            return l.missingCoreValue(p, @tagName(owner), spelling, "its interface is not available here");
         }
         const index = l.in.interfaces[module.int()].findValue(l.interner, function.symbol()) orelse
-            return l.missingBasics(inst, spelling, "`Basics` does not expose it");
+            return l.missingCoreValue(p, @tagName(owner), spelling, "that module does not expose it");
         try l.need(module, @intFromEnum(index));
         return l.ident(try l.externalName(module, @intFromEnum(index)), p);
     }
 
-    /// The one failure `basicsValue` can hit: a core package that does not
-    /// hold the function an operator needs. `internal`, because a complete
-    /// core package always does and the build cannot continue honestly.
-    fn missingBasics(l: *Lowerer, inst: Inst.Index, spelling: []const u8, why: []const u8) !Node.Index {
+    /// The one failure `coreValue` can hit: a core package that does not
+    /// hold a value the emitter needs. `internal`, because a complete core
+    /// package always does and the build cannot continue honestly.
+    fn missingCoreValue(l: *Lowerer, p: u32, owner: []const u8, spelling: []const u8, why: []const u8) !Node.Index {
+        // The position is a byte offset, not an instruction, so the
+        // diagnostic is attached to the declaration being lowered through
+        // the module it names; `region` is what `report` underlines and the
+        // nearest instruction is the one the caller was handed.
         try l.report(
             .internal,
-            inst,
-            \\I cannot find `Basics.{s}`, which this operator needs.
+            l.region,
+            \\I cannot find `{s}.{s}`, which the code generator needs.
             \\
-            \\Every comparison operator is emitted as a call of the matching function in
-            \\`core/Basics.beni` (`docs/design/static-dispatch-spike.md` §3.1), but
-            \\{s}.
+            \\`docs/design/static-dispatch-spike.md` §8 emits a call of it for a
+            \\comparison the checker resolved, but {s}.
             \\
-            \\A core package replaced with `--core-root` must declare `eq`, `neq`, `lt`,
-            \\`le`, `gt` and `ge`.
+            \\A core package replaced with `--core-root` must declare `Basics.eq`,
+            \\`Basics.neq` and `String.compare`.
         ,
-            .{ spelling, why },
+            .{ owner, spelling, why },
         );
-        return l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
+        return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
     }
 
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
-        // A call of a constrained value needs hidden arguments the shim
-        // does not pass (§8.2); `refuseUnsupportedDispatch` refuses every
-        // site here, because none of them is a `method_call`'s callee.
-        if (try l.refuseUnsupportedDispatch(inst, .none)) {
-            return l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
-        }
+        // §7.2: a `call`'s callee is already in the Bir, so every site on
+        // this instruction is an evidence ARGUMENT and they are numbered
+        // from 0.
+        const sites = l.sitesOf(inst);
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const callee_inst: Inst.Index = @enumFromInt(d.lhs);
+        // The list has to be as wide as the CALLEE's own evidence, which is
+        // the callee's record and not this call's; the two disagreeing is
+        // the miscompile §7.2 says the table exists to catch.
+        if (try l.refuseEvidence(inst, sites, l.valueEvidence(callee_inst))) {
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
 
         // `&&` and `||` before anything else, because they are the one place
@@ -1176,8 +1963,19 @@ const Lowerer = struct {
         // Everything else is one direct n-ary call (`backend.md` §6). The
         // callee is lowered FIRST because JavaScript evaluates it first,
         // and either side may need statements hoisted ahead of the call.
+        //
+        // The evidence arguments (§8.2) go in front of the written ones.
+        // They are names and closures with no statements of their own, so
+        // building them between the callee and the arguments changes no
+        // evaluation order.
         const callee = try l.expr(out, callee_inst);
-        const args = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+        l.region = inst;
+        const evidence = try l.evidenceArguments(sites, p);
+        const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+        if (evidence.len == 0) return l.call(callee, written, p);
+        const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
+        @memcpy(args[0..evidence.len], evidence);
+        @memcpy(args[evidence.len..], written);
         return l.call(callee, args, p);
     }
 
@@ -1268,7 +2066,7 @@ const Lowerer = struct {
                         try l.constDecl(out, n, value, p);
                         continue;
                     }
-                    const record = try l.functionOf(params, @enumFromInt(d.rhs), p);
+                    const record = try l.functionOf(0, params, @enumFromInt(d.rhs), p);
                     try out.append(l.scratch, try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record)));
                 },
                 .let_pattern => {
@@ -2048,6 +2846,67 @@ test "`?` is refused with a diagnostic rather than emitted wrongly" {
     defer result.deinit(gpa);
     try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.not_implemented, result.diagnostics[0].code);
+}
+
+test "the evidence wall counts the top-level slots, in both directions" {
+    // A SYNTHETIC `Dispatch` table, and that is the whole reason this test
+    // is in-source rather than in `tests/corpus/` (CLAUDE.md rule 3 makes
+    // the corpus the coverage and this the supplement it cannot reach):
+    // once the checker is right, NO beni program can produce a malformed
+    // table, so the only way to prove the wall stops one is to build one by
+    // hand.
+    //
+    // What it pins is §7.2's promise that a caller/callee disagreement is
+    // "a caught bug rather than a silent miscompile". Before the count, a
+    // list that merely NESTED correctly passed: two slots for a
+    // one-evidence callee emitted a three-argument call of a two-parameter
+    // function — JavaScript RUNS that — which printed `NaN` and then
+    // recursed forever, and zero slots for a two-evidence callee threw
+    // `TypeError: $m$0 is not a function`. The build exited 0 both times.
+    const evidence = [_]Dispatch.Evidence{
+        .{ .quantified = 0, .var_name = .none, .method = @enumFromInt(0) },
+    };
+    // Declaration 0 takes one evidence parameter of its own; declaration 1
+    // takes none. Nothing else about either is read.
+    const decl_evidence = [_]Dispatch.Range{ .{ .start = 0, .len = 1 }, .empty };
+    const table: Dispatch = .{ .decl_evidence = &decl_evidence, .evidence = &evidence };
+
+    // `evidenceShapeOk` is a predicate over the table and reads
+    // `in.dispatch` and nothing else, which is what makes a synthetic table
+    // enough and the rest of the `Lowerer` unnecessary.
+    var l: Lowerer = undefined;
+    l.in.dispatch = &table;
+
+    const constrained: Dispatch.Target = .{ .top = @enumFromInt(0) };
+    const plain: Dispatch.Target = .{ .top = @enumFromInt(1) };
+    const site = struct {
+        fn at(index: u16, target: Dispatch.Target) Dispatch.Site {
+            return .{ .inst = @enumFromInt(0), .evidence_index = index, .target = target };
+        }
+    }.at;
+
+    // One slot for a one-evidence callee, and none for a callee with none:
+    // the two shapes §8.2 describes.
+    try testing.expect(l.evidenceShapeOk(&.{site(0, plain)}, 1));
+    try testing.expect(l.evidenceShapeOk(&.{}, 0));
+    // TOO LONG: nests perfectly, one top-level slot more than the callee
+    // has parameters for.
+    try testing.expect(!l.evidenceShapeOk(&.{ site(0, plain), site(1, plain) }, 1));
+    try testing.expect(!l.evidenceShapeOk(&.{site(0, plain)}, 0));
+    // TOO SHORT: the list runs out before the callee's parameters do.
+    try testing.expect(!l.evidenceShapeOk(&.{site(0, plain)}, 2));
+    try testing.expect(!l.evidenceShapeOk(&.{}, 1));
+    // NESTING is what the count cannot be inferred from: a constrained
+    // target consumes the slot after it (A.25), so these two sites are ONE
+    // top-level slot — accepted as one, refused as two.
+    try testing.expect(l.evidenceShapeOk(&.{ site(0, constrained), site(1, plain) }, 1));
+    try testing.expect(!l.evidenceShapeOk(&.{ site(0, constrained), site(1, plain) }, 2));
+    // A nested slot that is not there at all.
+    try testing.expect(!l.evidenceShapeOk(&.{site(0, constrained)}, 1));
+    // §8.2's other half, unchanged: neither `field` nor `err` can stand in
+    // evidence position, whatever the count says.
+    try testing.expect(!l.evidenceShapeOk(&.{site(0, .field)}, 1));
+    try testing.expect(!l.evidenceShapeOk(&.{site(0, .err)}, 1));
 }
 
 test "fuzz: arbitrary bytes reach the emitter without a panic" {

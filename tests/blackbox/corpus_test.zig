@@ -14,6 +14,8 @@
 //!   check/args/X.beni + X.diag      the arity suite (checker.md §8.3)
 //!   run/X.beni        + X.expected  `build --platform=node`, then the emitted
 //!                                   program under Node; its stdout is the golden
+//!   emit/X.beni       + X.js        `build --platform=node`, then the module's
+//!                                   own `.mjs` is the golden (backend.md §12)
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
 //!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
@@ -51,6 +53,7 @@ const Kind = enum {
     check_args,
     check_depth,
     run,
+    emit,
     regress,
 
     fn dir(kind: Kind) []const u8 {
@@ -65,6 +68,7 @@ const Kind = enum {
             .check_args => corpus_root ++ "/check/args",
             .check_depth => corpus_root ++ "/check/depth",
             .run => corpus_root ++ "/run",
+            .emit => corpus_root ++ "/emit",
             .regress => corpus_root ++ "/regress",
         };
     }
@@ -141,6 +145,22 @@ test "corpus: check/depth" {
 // fails one, by name.
 test "corpus: run" {
     try walk(.run);
+}
+
+// The shape corpus (backend.md §12): what the emitter WROTE, for claims
+// running cannot observe — that a `where`-constrained declaration grew a
+// hidden parameter, that a call passed one, that `<` on `Int` is `<` and on
+// `String` is a call. `run/` stays the default and proves behaviour; a
+// fixture belongs here only when two different emissions would behave the
+// same and the difference is the point.
+//
+// The golden is the module's own `.mjs` and not the whole build: core and
+// the platform are somebody else's output, and a golden that held them
+// would fail on every unrelated change to `core/`. §12 asks for an
+// extracted declaration; one module of one tiny fixture is that extract
+// with no extractor to get wrong.
+test "corpus: emit" {
+    try walk(.emit);
 }
 
 test "corpus: regress" {
@@ -276,6 +296,7 @@ const Case = struct {
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
             .run => try c.runProgram(),
+            .emit => try c.emitted(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
                 const has_ast = c.goldenExists("ast");
@@ -429,6 +450,33 @@ const Case = struct {
             return error.ProgramFailed;
         }
         try c.expectGolden("expected", program.stdout);
+    }
+
+    /// Compile the fixture for the Node platform and golden the module it
+    /// produced. Copied into the world's project directory for the same two
+    /// reasons `run/` copies: the module name comes from the path, and a
+    /// build writes an `out/` directory that has no business in the repo.
+    fn emitted(c: Case) !void {
+        const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
+        try c.w.write(c.fixture.name, source);
+
+        const built = try c.inProject(&.{ "build", "--platform=node", "--out=out", c.fixture.name });
+        if (built.exit_code != 0) {
+            std.debug.print("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
+            return error.BuildFailed;
+        }
+        if (built.stderr.len != 0) {
+            std.debug.print("{s}: an emit fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+
+        const stem = c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
+        const emitted_path = try std.fmt.allocPrint(c.arena, "out/{s}.mjs", .{stem});
+        const js = c.w.read(emitted_path) catch |err| {
+            std.debug.print("{s}: the build wrote no {s} ({t})\n", .{ c.fixture.name, emitted_path, err });
+            return err;
+        };
+        try c.expectGolden("js", js);
     }
 
     fn lowering(c: Case) !void {

@@ -237,6 +237,130 @@ test "a build is byte-identical at every --jobs" {
     }
 }
 
+test "a build with cross-module evidence is byte-identical at every --jobs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // CLAUDE.md rule 5 and static-dispatch-spike.md §10, applied to the
+    // half S4 adds: the arguments a call passes are now a function of what
+    // the CHECKER decided, and the checker runs the module DAG in parallel.
+    // A site resolved against a module that happened to finish first, an
+    // evidence order taken from variable identity rather than from the
+    // scheme record (§7.2), or a `needed` import list built in completion
+    // order would all show up here and nowhere else — the emitted bytes
+    // would move with `--jobs` while every other test stayed green.
+    //
+    // Three modules and two edges of evidence: `Main.twice` is constrained,
+    // `Boxes.scale` answers it and is constrained ITSELF, and `Metres.scale`
+    // answers that — so the call in `grow` passes an eta-expanded closure
+    // whose own argument comes from a third module (§8.2, A.25).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Metres.beni",
+        \\pub type Metre
+        \\    = Metre Int
+        \\
+        \\
+        \\pub scale : Metre, Int -> Metre
+        \\scale m factor =
+        \\    case m of
+        \\        Metre n ->
+        \\            Metre (n * factor)
+        \\
+    );
+    try w.write("src/Boxes.beni",
+        \\pub type Box a
+        \\    = Box a
+        \\
+        \\
+        \\pub scale : Box a, Int -> Box a
+        \\    where a.scale : a, Int -> a
+        \\scale b factor =
+        \\    case b of
+        \\        Box inner ->
+        \\            Box (inner.scale factor)
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Boxes exposing (Box)
+        \\import Metres exposing (Metre)
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\twice : a, Int -> a
+        \\    where a.scale : a, Int -> a
+        \\twice x factor =
+        \\    (x.scale factor).scale factor
+        \\
+        \\
+        \\grow : Box Metre -> Box Metre
+        \\grow b =
+        \\    twice b 2
+        \\
+        \\
+        \\width : Box Metre -> Int
+        \\width b =
+        \\    case b of
+        \\        Boxes.Box m ->
+        \\            case m of
+        \\                Metres.Metre n ->
+        \\                    n
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (width (grow (Boxes.Box (Metres.Metre 3)))))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.runWith(&.{ "build", "--platform=node", "--out=one", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    const many = try w.runWith(&.{ "build", "--platform=node", "--out=many", "--jobs=8", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(one);
+    try expectBuilt(many);
+    // Every file, not a chosen few: the point is that NOTHING moved, and a
+    // list of names is a list of the places somebody thought to look.
+    const files = try w.listFiles("one");
+    try testing.expect(files.len != 0);
+    var saw_evidence = false;
+    for (files) |name| {
+        const a = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "one/{s}", .{name}));
+        const b = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "many/{s}", .{name}));
+        const a_hex = digest(a);
+        const b_hex = digest(b);
+        try testing.expectEqualStrings(&a_hex, &b_hex);
+        if (std.mem.indexOf(u8, a, "$m$0") != null) saw_evidence = true;
+    }
+    // The build really does carry evidence, so a green run means the bytes
+    // matched rather than that there was nothing to match.
+    try testing.expect(saw_evidence);
+    const main_js = try w.read("one/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main_js, "Main$twice(($p") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY STATE                            │
+    // └─────────────────────────────────────────┘
+    const program = try w.node("one/main.mjs");
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("12\n", program.stdout);
+}
+
+/// The SHA-256 of `bytes`, hex, in a per-call buffer.
+fn digest(bytes: []const u8) [64]u8 {
+    var raw: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(bytes, &raw, .{});
+    var hex: [64]u8 = undefined;
+    _ = std.fmt.bufPrint(&hex, "{x}", .{&raw}) catch unreachable;
+    return hex;
+}
+
 test "a saturated n-ary call emits a direct JavaScript call" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

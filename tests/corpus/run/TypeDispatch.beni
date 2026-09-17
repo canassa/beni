@@ -1,0 +1,56 @@
+-- Return-type dispatch, executed: a call on a TYPE with no receiver value
+-- (`docs/design/static-dispatch-spike.md` §4.1, §8.4).
+--
+-- `make` names the type variable `a` of its own `where` clause where a
+-- value would go, so `a.fromInt n` is a `type_dispatch` and not a name
+-- error. Its target is the declaration's hidden parameter, so the emitted
+-- body is `$m$0(n)` — §8.4 is §8.3 with the receiver removed.
+--
+-- Two target types, which is what makes it dispatch rather than a rename:
+-- one is this module's own `fromInt` and the other is `core/String.beni`'s,
+-- and the caller's ANNOTATION is the only thing that says which. They
+-- cannot both live here — a module's `pub` values are one namespace, so two
+-- types in one module cannot both have a `fromInt` (§11's module-rule
+-- clash) — which is itself worth having a fixture see.
+import Node exposing (Program)
+import String
+
+
+pub type Metre
+    = Metre Int
+
+
+pub fromInt : Int -> Metre
+fromInt n =
+    Metre n
+
+
+pub width : Metre -> Int
+width m =
+    case m of
+        Metre n ->
+            n
+
+
+make : Int -> a
+    where a.fromInt : Int -> a
+make n =
+    a.fromInt n
+
+
+asMetre : Metre
+asMetre =
+    make 7
+
+
+asString : String
+asString =
+    make 42
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (width asMetre)
+        , asString
+        ]

@@ -1,0 +1,13 @@
+import { String$compare } from "./core/String.mjs";
+import { Node$printLines } from "./platform/Node.mjs";
+const ComparisonOperators$ints = (a$1, b$2) => a$1 < b$2;
+const ComparisonOperators$chars = (a$1, b$2) => a$1.codePointAt(0) < b$2.codePointAt(0);
+const ComparisonOperators$strings = (a$1, b$2) => String$compare(a$1, b$2) === "LT";
+const ComparisonOperators$same = (a$1, b$2) => a$1 === b$2;
+const ComparisonOperators$different = (a$1, b$2) => a$1 !== b$2;
+const ComparisonOperators$before = ($m$0, x$1, y$2) => $m$0(x$1, y$2) === "LT";
+const ComparisonOperators$notAfter = ($m$0, x$1, y$2) => $m$0(x$1, y$2) !== "GT";
+const ComparisonOperators$after = ($m$0, x$1, y$2) => $m$0(x$1, y$2) === "GT";
+const ComparisonOperators$notBefore = ($m$0, x$1, y$2) => $m$0(x$1, y$2) !== "LT";
+const ComparisonOperators$main = Node$printLines({ $: 0, a: null, b: null });
+export { ComparisonOperators$main, ComparisonOperators$ints, ComparisonOperators$chars, ComparisonOperators$strings, ComparisonOperators$same, ComparisonOperators$different, ComparisonOperators$before, ComparisonOperators$notAfter, ComparisonOperators$after, ComparisonOperators$notBefore };

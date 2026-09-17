@@ -1947,16 +1947,25 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `==` is a method call now (`docs/design/static-dispatch-spike.md`
-    // §3.1) and the backend rebuilds the reference to `Basics.eq` itself,
-    // so the failure that used to come out of name resolution — the lowered
-    // `import_value Basics.eq` not resolving — has to come out of the
-    // backend instead. Without that report `a == b` compiled to
-    // `undefined(a, b)` and the build exited 0.
+    // The comparison operators are method calls now
+    // (`docs/design/static-dispatch-spike.md` §3.1) and the backend
+    // rebuilds the core reference each one needs itself, so the failure
+    // that used to come out of name resolution — the lowered `import_value`
+    // not resolving — has to come out of the backend instead. Without that
+    // report the operator compiled to `undefined(a, b)` and the build
+    // exited 0.
+    //
+    // `<` on `String` is the case S4 leaves: §3.2 gives it `primitive
+    // string_compare` and §8.3 emits `String$compare(a, b) === "LT"`,
+    // because `<` on JavaScript strings is UTF-16 code-unit order and
+    // `String.compare` is Unicode scalar order (A.26). `==` on `Int` is
+    // `===` now and needs no core value at all.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("mycore/Basics.beni", "pub equatable foreign type Int\n\n\npub type Bool\n    = True\n    | False\n");
     try w.write("mycore/Basics.js", "export {};\n");
+    try w.write("mycore/String.beni", "pub equatable foreign type String\n");
+    try w.write("mycore/String.js", "export {};\n");
     try w.write("myplat/beni.json",
         \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js" }
     );
@@ -1967,9 +1976,9 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\import Prog exposing (Program)
         \\
         \\
-        \\pub same : Int, Int -> Bool
-        \\same a b =
-        \\    a == b
+        \\pub before : String, String -> Bool
+        \\before a b =
+        \\    a < b
         \\
         \\
         \\main : Program
@@ -1990,12 +1999,62 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.internal, r.diagnostics[0].code);
     try testing.expectEqual(@as(u32, 6), r.diagnostics[0].span.start.line);
-    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "`Basics.eq`") != null);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "`String.compare`") != null);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY STATE                            │
     // └─────────────────────────────────────────┘
     // A refused build writes nothing (backend.md §2).
+    try testing.expect(!w.exists("out/Main.mjs"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE — the other half of the message │
+    // └─────────────────────────────────────────┘
+    // `String.compare` is one of the three values the diagnostic names;
+    // `Basics.eq` and `Basics.neq` are the other two, and they are a
+    // DIFFERENT path to the same report. `==` on a custom type resolves to
+    // a derived `eq` whose parts are all structural, which is A.51's
+    // bridge: the call goes to `core/Basics.js`'s `eq`, the one structural
+    // walk, and a core root without it has nothing to call. Without this
+    // half the whole `Basics` branch of `missingCoreValue` was unexercised.
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\type T
+        \\    = T Int
+        \\
+        \\
+        \\pub same : T, T -> Bool
+        \\same a b =
+        \\    a == b
+        \\
+        \\
+        \\pub differ : T, T -> Bool
+        \\differ a b =
+        \\    a /= b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say 1
+        \\
+    );
+    const eq = try w.run(&.{ "build", "--platform=./myplat", "--core-root=mycore", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), eq.exit_code);
+    try testing.expectEqual(@as(usize, 2), eq.diagnostics.len);
+    for (eq.diagnostics) |d| try testing.expectEqual(diagnostic.Code.internal, d.code);
+    // Sorted by position, so `same` before `differ`.
+    try testing.expect(std.mem.indexOf(u8, eq.diagnostics[0].message, "`Basics.eq`") != null);
+    try testing.expect(std.mem.indexOf(u8, eq.diagnostics[1].message, "`Basics.neq`") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY STATE                            │
+    // └─────────────────────────────────────────┘
     try testing.expect(!w.exists("out/Main.mjs"));
 }
 
@@ -2326,17 +2385,18 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     , r.stdout);
 }
 
-test "the backend refuses a method call the S4 shim cannot honour" {
-    // static-dispatch-spike.md §8 is S4's and §9 is S5's, so the code
-    // generator still emits every `==` as `Basics.eq` and every `<` as
-    // `Basics.lt` and passes no evidence at all. That is right for what
-    // `master` accepted and wrong for what this branch newly accepts: `<`
-    // on a custom type now CHECKS, and `Basics.lt` on two objects answers
-    // nonsense.
+test "the backend refuses a comparison whose function S5 owns" {
+    // static-dispatch-spike.md §8 is S4's and §9 is S5's. S4 lowers every
+    // §8 row — evidence parameters, evidence arguments, `method_call`,
+    // `type_dispatch`, the primitive operators — but a DERIVED `eq` or
+    // `compare` is a function §9 generates and S5 emits, so a site that
+    // names one has no function to call.
     //
     // `backend.md` §1 ships the language in two halves and the half that is
-    // missing must say so, so the shim refuses instead. S4 and S5 replace
-    // this refusal with the evidence parameters and the derived functions.
+    // missing must say so, so it refuses instead of emitting a call of a
+    // name that is not there. A.51 keeps one door open: `==` and `/=`
+    // against a structural answer still go through `core/Basics.js`'s `eq`,
+    // which IS that structural walk.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -2371,7 +2431,7 @@ test "the backend refuses a method call the S4 shim cannot honour" {
     try testing.expectEqual(diagnostic.Code.not_implemented, d.code);
     try testing.expectEqual(diagnostic.Severity.@"error", d.severity);
     try testing.expectEqual(@as(u32, 11), d.span.start.line);
-    try testing.expect(std.mem.indexOf(u8, d.message, "method call") != null);
+    try testing.expect(std.mem.indexOf(u8, d.message, "DERIVED") != null);
 
     // What master accepted still compiles: `==` on a custom type is a
     // structural walk either way, and `Basics.eq` is that walk.
@@ -2397,6 +2457,217 @@ test "the backend refuses a method call the S4 shim cannot honour" {
     const ok = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), ok.exit_code);
     try testing.expectEqual(@as(usize, 0), ok.diagnostics.len);
+}
+
+test "a derived eq over a user's own eq is refused, not walked structurally" {
+    // A.51's bridge is narrow on purpose, and this is the program that
+    // shows why it has to be checked RECURSIVELY.
+    //
+    // `core/Basics.js`'s `eq` is one structural walk: it compares every
+    // reachable primitive with `===` and knows nothing about a user's `pub
+    // eq`. A derived `eq` does know — the checker put that method in the
+    // table as a part — so the two functions give DIFFERENT answers here:
+    // `Id`'s own `eq` compares only the major number, so `{ k = Id 1 2 } ==
+    // { k = Id 1 99 }` is `True` by the table and `False` by the walk.
+    //
+    // Inspecting only the site's top-level target accepted it and printed
+    // `False`. The correct answer needs §9's derived body, which is S5's,
+    // so until then the only honest output is a refusal — `backend.md` §1's
+    // rule that the missing half must say so. When S5 lands, this scenario
+    // becomes `tests/corpus/run/UserEqInsideRecord.beni` with `True` as its
+    // golden; the program is kept here verbatim so the swap is mechanical.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Id.beni",
+        \\pub type Id
+        \\    = Id Int Int
+        \\
+        \\
+        \\pub eq : Id, Id -> Bool
+        \\eq a b =
+        \\    case a of
+        \\        Id majorA _ ->
+        \\            case b of
+        \\                Id majorB _ ->
+        \\                    majorA == majorB
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Id exposing (Id)
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show ({ k = Id.Id 1 2 } == { k = Id.Id 1 99 })
+        \\        ]
+        \\
+    );
+
+    // The table says the record's one field is compared with `Id`'s own
+    // `eq`, which is exactly the part the bridge must see.
+    // `dump` takes no `--platform`, so `Node` does not resolve and the
+    // command exits 1 — the table is still printed, and it is the table
+    // this scenario is about.
+    const table = try w.runWith(&.{ "dump", "--stage=dispatch", "src" }, .{ .raw_diagnostics = true });
+    try testing.expect(std.mem.indexOf(u8, table.stdout, "part 0 ext Id eq") != null);
+
+    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "src" });
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, built.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, built.diagnostics[0].message, "DERIVED") != null);
+    // A refused build writes nothing (backend.md §2).
+    try testing.expect(!w.exists("out/Main.mjs"));
+
+    // The bridge still carries what it was for: a record of PRIMITIVES has
+    // no user method anywhere inside it, so the structural walk is right
+    // and the same program compiles and runs.
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show ({ k = 1 } == { k = 1 })
+        \\        ]
+        \\
+    );
+    const ok = try w.buildAndRun(&.{"src"});
+    try testing.expectEqual(@as(u8, 0), ok.build.exit_code);
+    try testing.expectEqualStrings("True\n", ok.program.?.stdout);
+}
+
+test "a pub foreign with a where clause takes its evidence in front of its own arguments" {
+    // static-dispatch-spike.md §5.2 and A.7: a `pub foreign` may carry a `where` clause, and its
+    // sibling export's arity is then EVIDENCE COUNT + DECLARED ARITY. That
+    // rule is documented and not enforced — `boundary.md` §4's two automated
+    // checks are export coverage and import coverage
+    // (`src/js/Sibling.zig:1-33`) and neither looks at arity, and adding one
+    // needs a JavaScript parser, which is the dependency the wall exists to
+    // avoid. A.7's own amendment records that as a widening of the `foreign`
+    // surface against CLAUDE.md rule 6.
+    //
+    // So this scenario is what stands in for the missing check: it pins that
+    // the CALLER's half of the convention is real, by writing the sibling to
+    // the arity A.7 documents and running it. `Prog.twice` is declared with
+    // two beni parameters and one constraint, so its export takes three, and
+    // the hidden one comes FIRST (§8.1, §8.2). A backend that passed the
+    // evidence last, or not at all, would bind `Main$scale` to `n` and print
+    // `NaN` rather than failing — which is exactly why it is run and not
+    // merely inspected.
+    //
+    // It needs a platform of its own because only a platform package may
+    // write `foreign` at all (`boundary.md` §2, CLAUDE.md rule 6), and the
+    // shipped one has no constrained value to borrow.
+    //
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("myplat/beni.json",
+        \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js" }
+    );
+    try w.write("myplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign twice : a, Int -> a
+        \\    where a.scale : a, Int -> a
+        \\
+    );
+    // One export per `foreign` declaration, under the same name
+    // (`boundary.md` §4) — and `twice` takes three arguments for the two it
+    // declares, which is the whole of A.7.
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ out: `${line}\n` });
+        \\
+        \\export const twice = ($m$0, x, n) => $m$0($m$0(x, n), n);
+        \\
+    );
+    try w.write("myplat/run.js",
+        \\import process from "node:process";
+        \\
+        \\export const run = (program) => {
+        \\  process.stdout.write(program.out);
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\import String
+        \\
+        \\
+        \\pub type Metre
+        \\    = Metre Int
+        \\
+        \\
+        \\pub scale : Metre, Int -> Metre
+        \\scale m factor =
+        \\    case m of
+        \\        Metre n ->
+        \\            Metre (n * factor)
+        \\
+        \\
+        \\width : Metre -> Int
+        \\width m =
+        \\    case m of
+        \\        Metre n ->
+        \\            n
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say (String.fromInt (width (Prog.twice (Metre 1) 3)))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=./myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (built.exit_code != 0) {
+        std.debug.print("build failed\n--- stderr ---\n{s}\n", .{built.stderr});
+        return error.BuildFailed;
+    }
+    const main_js = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main_js, "Prog$twice(Main$scale,") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY STATE                            │
+    // └─────────────────────────────────────────┘
+    // 1 * 3 * 3. `NaN` is what a dropped or misplaced evidence argument
+    // prints, and it is the failure this scenario exists to catch.
+    const program = try w.node("out/main.mjs");
+    try testing.expectEqualStrings("9\n", program.stdout);
 }
 
 test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {

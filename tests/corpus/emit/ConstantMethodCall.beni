@@ -1,0 +1,37 @@
+-- emit: the emission order a `method_call` needs
+-- (`docs/design/static-dispatch-spike.md` §1.4, §8.5).
+--
+-- `bumped` is a module-level CONSTANT whose initialiser is a method call on
+-- a type this module declares. JavaScript evaluates a module top to bottom,
+-- so `bump` must be defined above it — and `bump` is not in `bumped`'s
+-- `refs` list, because a `method_call` adds no reference edge: which
+-- function it calls is not known before the checker runs. `emissionOrder`
+-- therefore reads the dispatch table's `top` targets as edges too.
+--
+-- Source order here is the wrong order on purpose: `bumped` is written
+-- above `bump`, so a post-order over `refs` alone emits `const
+-- ConstantMethodCall$bumped = ConstantMethodCall$bump(…)` above the
+-- function it calls, which is a ReferenceError at load — a well-typed
+-- program crashing on its own temporal dead zone.
+import Node exposing (Program)
+
+
+pub type Counter
+    = Counter Int
+
+
+pub bumped : Counter
+bumped =
+    (Counter 1).bump 2
+
+
+pub bump : Counter, Int -> Counter
+bump c step =
+    case c of
+        Counter n ->
+            Counter (n + step)
+
+
+main : Program
+main =
+    Node.printLines []

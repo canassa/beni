@@ -1,0 +1,51 @@
+-- emit: a constrained value used as a VALUE is its eta-expansion
+-- (`docs/design/static-dispatch-spike.md` §8.2, A.25).
+--
+-- `twice`'s emitted arity is one evidence parameter plus its two beni ones,
+-- so the bare name is a function of three arguments where the `apply`
+-- parameter promises two — and `backend.md` §6 requires a function-typed
+-- value in flight to be a closure of known arity. Passing the name would be
+-- silently wrong: the evidence would land in `x` and `factor` would be
+-- `undefined`. So the reference is emitted as an arrow that binds the
+-- evidence and keeps the arity the annotation says.
+--
+-- `bound` is the same rule with no call at all — a zero-parameter
+-- declaration whose whole body is that reference.
+import Node exposing (Program)
+
+
+pub type Metre
+    = Metre Int
+
+
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+twice : a, Int -> a
+    where a.scale : a, Int -> a
+twice x factor =
+    (x.scale factor).scale factor
+
+
+apply : (Metre, Int -> Metre), Metre -> Metre
+apply f m =
+    f m 2
+
+
+pub grow : Metre -> Metre
+grow m =
+    apply twice m
+
+
+pub bound : Metre, Int -> Metre
+bound =
+    twice
+
+
+main : Program
+main =
+    Node.printLines []

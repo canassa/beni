@@ -1,0 +1,54 @@
+-- Evidence read two closure levels below the parameter list that binds it
+-- (`docs/design/static-dispatch-spike.md` §6.4, §8.1, A.31).
+--
+-- Roc carries an `EvidenceChainIndex { depth, index }` because a nested
+-- callable there is a separate function that must have evidence re-passed
+-- into it. beni's `Target.evidence` is one number with no depth, and the
+-- reason is here: `tally`'s hidden `$m$0` is an ordinary JavaScript
+-- parameter, and the lambda inside the lambda inside the body is an
+-- ordinary closure that reads it. If that were wrong — if a nested lambda
+-- needed its own evidence parameter — this program would call `undefined`
+-- or compare the wrong pair, and it would do it at RUNTIME, which is why
+-- the fixture is under `run/` and not `emit/`.
+import Node exposing (Program)
+import String
+
+
+-- `a.same` is one constraint, so one hidden parameter. `List.map`'s lambda
+-- is one level down and `List.foldl`'s is two, and `$m$0` is read there.
+countEach : List a -> List Int
+    where a.same : a, a -> Bool
+countEach xs =
+    List.map xs (\x -> List.foldl xs 0 (\y n -> if x.same y then n + 1 else n))
+
+
+pub type Colour
+    = Red
+    | Green
+
+
+pub same : Colour, Colour -> Bool
+same a b =
+    case a of
+        Red ->
+            case b of
+                Red ->
+                    True
+
+                Green ->
+                    False
+
+        Green ->
+            case b of
+                Red ->
+                    False
+
+                Green ->
+                    True
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.join (List.map (countEach [ Red, Green, Red ]) String.fromInt) ","
+        ]

@@ -1,0 +1,56 @@
+-- emit: one line per row of `docs/design/static-dispatch-spike.md` §8.3's
+-- target table, so the four shapes a dot-call can take are visible side by
+-- side. Nothing here is observable by running: every one of them computes
+-- the same thing the call it replaced computed.
+--
+--   `top`      `m.scale 3` is `MethodTargets$scale(m, 3)` — the receiver is
+--              the first argument, because a method IS the module function
+--              and core is subject-first
+--   `ext`      `xs.map f` is `List$map(xs, f)`, imported like any other
+--              cross-module reference
+--   `field`    `h.run 1` on a RECORD is `h.run(1)`, `language.md` §6.3
+--              unchanged — the one row S4 did not have to change
+--   `evidence` `x.scale n` on a `where`-constrained variable is
+--              `$m$0(x, n)`: the hidden parameter IS the method
+import Node exposing (Program)
+
+
+pub type Metre
+    = Metre Int
+
+
+pub type alias Handler =
+    { name : String, run : Int -> Int }
+
+
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+pub onOwnType : Metre -> Metre
+onOwnType m =
+    m.scale 3
+
+
+pub onImportedType : List Int -> List Int
+onImportedType xs =
+    xs.map (\x -> x)
+
+
+pub onRecord : Handler -> Int
+onRecord h =
+    h.run 1
+
+
+pub onVariable : a, Int -> a
+    where a.scale : a, Int -> a
+onVariable x factor =
+    x.scale factor
+
+
+main : Program
+main =
+    Node.printLines []

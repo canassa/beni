@@ -1,0 +1,44 @@
+-- `==` on a type whose module declares its own `pub eq`
+-- (`docs/design/static-dispatch-spike.md` §3.3 step 1, §8.3).
+--
+-- A user `pub eq` in the DECLARING module wins over derivation, and this is
+-- the fixture that can tell the two apart at runtime: `Version 1 0` and
+-- `Version 1 9` are equal under the `eq` written here and are NOT equal
+-- structurally, so a backend that ignored the table's `top eq` and called
+-- `core/Basics.js`'s structural walk would print `False` on the first line.
+--
+-- The third line is the same method through `/=`, which is the same `eq`
+-- with the answer negated (§1.3: `/=` asks for `eq`, not for a `neq`).
+import Node exposing (Program)
+
+
+pub type Version
+    = Version Int Int
+
+
+-- Two versions are the same when their MAJOR numbers are.
+pub eq : Version, Version -> Bool
+eq a b =
+    case a of
+        Version majorA _ ->
+            case b of
+                Version majorB _ ->
+                    majorA == majorB
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Version 1 0 == Version 1 9)
+        , show (Version 1 0 == Version 2 0)
+        , show (Version 1 0 /= Version 1 9)
+        ]

@@ -1,0 +1,40 @@
+-- emit: return-type dispatch (`docs/design/static-dispatch-spike.md` §4.1,
+-- §8.4) — §8.3 with the receiver removed.
+--
+-- `a.fromInt n` names a TYPE where a value would go, so there is nothing to
+-- pass as a receiver and the emitted body is the hidden parameter applied
+-- to the written arguments: `$m$0(n)`. The two callers are what makes it
+-- dispatch rather than a rename — each one's ANNOTATION picks the function,
+-- and the two functions are in different modules.
+import Node exposing (Program)
+import String
+
+
+pub type Metre
+    = Metre Int
+
+
+pub fromInt : Int -> Metre
+fromInt n =
+    Metre n
+
+
+make : Int -> a
+    where a.fromInt : Int -> a
+make n =
+    a.fromInt n
+
+
+pub asMetre : Metre
+asMetre =
+    make 7
+
+
+pub asString : String
+asString =
+    make 42
+
+
+main : Program
+main =
+    Node.printLines []

@@ -1,0 +1,50 @@
+-- emit: the hidden parameters of `docs/design/static-dispatch-spike.md`
+-- §8.1 and the hidden arguments of §8.2, which running cannot see.
+--
+-- A `where` constraint is one leading parameter `$m$0`, before the
+-- declaration's own; a call at a concrete type passes the function the
+-- checker chose; and a call from inside another constrained declaration
+-- FORWARDS its own `$m$0` rather than choosing again. `outer`, `middle` and
+-- `inner` are the three-generic chain: every one of them must both take and
+-- pass the parameter, and a link that dropped it would call with one
+-- argument too few — which is a `NaN`, not a crash.
+import Node exposing (Program)
+
+
+pub type Metre
+    = Metre Int
+
+
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+inner : a, Int -> a
+    where a.scale : a, Int -> a
+inner x factor =
+    x.scale factor
+
+
+middle : a, Int -> a
+    where a.scale : a, Int -> a
+middle x factor =
+    inner x factor
+
+
+outer : a, Int -> a
+    where a.scale : a, Int -> a
+outer x factor =
+    middle x factor
+
+
+pub grow : Metre -> Metre
+grow m =
+    outer m 3
+
+
+main : Program
+main =
+    Node.printLines []

@@ -276,6 +276,11 @@ that a self-recursive function became a loop, that a constructor emits a uniform
 saturated call emitted a direct call and not an adapter. Goldens are **extracted and normalised, not
 whole-file**, which is the discipline Elm's suite lacked and resented.
 
+The one deviation, recorded rather than hidden: an `emit/` golden is the fixture's **own module**
+whole — one deliberately tiny module holding nothing but the claim — because one module of one
+tiny fixture *is* that extract, with no extractor of its own to get wrong, while core and the
+platform stay out of the file (`tests/corpus/emit/README.md`).
+
 A bug that changes emitted shape but not behaviour must not fail a `run/` test; a bug that changes
 behaviour must. That is the whole point of preferring it.
 

@@ -1,0 +1,55 @@
+-- emit: a primitive comparison in EVIDENCE position is a function, not an
+-- operator (`docs/design/static-dispatch-spike.md` §8.2, §9.1).
+--
+-- §8.3 turns `a < b` on an `Int` into `a < b`, because there is a concrete
+-- pair to apply the operator to. An evidence slot has no such pair — it
+-- wants a value of two arguments — so the module emits the comparator once
+-- and hands its name over. That is the difference between the two sections,
+-- and this fixture is where both are visible in one file.
+--
+-- Three of the four are emitted here, once each, sorted by printed name
+-- text and placed ahead of every declaration (§8.5) — a module-level
+-- constant's initialiser runs at load time and would otherwise read a
+-- `const` that is still in its temporal dead zone. `String` is the fourth
+-- and is NOT one of them: it routes to `core/String.beni`'s own `compare`,
+-- imported like any other cross-module value, because `<` on JavaScript
+-- strings is UTF-16 code-unit order and that function is Unicode scalar
+-- order (A.26).
+import Node exposing (Program)
+
+
+before : a, a -> Bool
+    where a.compare : a, a -> Order
+before x y =
+    x < y
+
+
+sameAs : a, a -> Bool
+    where a.eq : a, a -> Bool
+sameAs x y =
+    x == y
+
+
+pub ints : Int, Int -> Bool
+ints a b =
+    before a b
+
+
+pub chars : Char, Char -> Bool
+chars a b =
+    before a b
+
+
+pub strings : String, String -> Bool
+strings a b =
+    before a b
+
+
+pub sameInts : Int, Int -> Bool
+sameInts a b =
+    sameAs a b
+
+
+main : Program
+main =
+    Node.printLines []

@@ -1,0 +1,71 @@
+-- Method calls, executed. `docs/design/static-dispatch-spike.md` §8.3: a
+-- dot-call is the declaring module's `pub` value applied to its receiver,
+-- and the checker decided which one — so the four rows here are the four
+-- targets S4 lowers.
+--
+--   * `top`      — a method of a type this module declares
+--   * `ext`      — a method of a type another module declares (`List.map`)
+--   * `evidence` — the method of a `where`-constrained type variable, read
+--                  out of the hidden leading parameter `$m$0` (§8.1)
+--
+-- The last of those goes through THREE nested generics, each of which
+-- forwards the same `$m$0` to the next (§8.2): if forwarding were dropped
+-- anywhere in the chain the innermost call would run with one argument too
+-- few and `scale` would double nothing.
+import Node exposing (Program)
+import String
+
+
+pub type Metre
+    = Metre Int
+
+
+-- A method of `Metre` is a `pub` value of the module that declares it
+-- (§1.2), so this is what `m.scale 3` resolves to.
+pub scale : Metre, Int -> Metre
+scale m factor =
+    case m of
+        Metre n ->
+            Metre (n * factor)
+
+
+pub width : Metre -> Int
+width m =
+    case m of
+        Metre n ->
+            n
+
+
+-- One `where` constraint is one hidden parameter, and the body calls it.
+inner : a, Int -> a
+    where a.scale : a, Int -> a
+inner x factor =
+    x.scale factor
+
+
+middle : a, Int -> a
+    where a.scale : a, Int -> a
+middle x factor =
+    inner x factor
+
+
+outer : a, Int -> a
+    where a.scale : a, Int -> a
+outer x factor =
+    middle x factor
+
+
+show : Metre -> String
+show m =
+    String.fromInt (width m)
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (scale (Metre 2) 3)
+        , show ((Metre 2).scale 3)
+        , show (outer (Metre 2) 5)
+        , String.join (List.map [ 1, 2, 3 ] String.fromInt) ","
+        , String.join ([ 1, 2, 3 ].map String.fromInt) ","
+        ]
