@@ -15,7 +15,16 @@
 //! `.zig-cache/bench-wide`, which is what makes anything quadratic in a
 //! single module's declaration count visible — `--generate` spreads its
 //! lines over hundreds of small files and holds those terms flat),
-//! `--iterations=<n>` (default 5), `--seed=<n>`.
+//! `--iterations=<n>` (default 5), `--seed=<n>`, `--dispatch` (write the
+//! `--generate` corpus in the static-dispatch shape of
+//! `docs/design/static-dispatch-spike.md` instead — the same modules, the same
+//! declaration names, the same size, with method calls, `where` clauses,
+//! `==` on records and custom types and comparator-free `Dict`/`Set`; it is
+//! the C1 corpus of that plan's §7 and it does NOT parse until S2).
+//!
+//! `--pathological=constraint-chain=<n>` is the §7 M2 case: `n` unannotated
+//! `pub` functions, each adding one method constraint to the scheme the one
+//! before it inferred.
 //!
 //! `emit` is the back end's line (`backend.md` §13, target > 5 MB/s of
 //! JavaScript): `Bir` → `JsIr` → bytes for every module of a project that
@@ -61,11 +70,16 @@ const Options = struct {
     /// instead of a corpus. Like `--generate`, it replaces the corpus, so
     /// passing both measures whichever is applied last.
     wide: ?u32 = null,
+    /// `--dispatch`: write `--generate`'s corpus in the static-dispatch
+    /// shape (`gen.Mode`). A tree of its own, so the two corpora of §7 can
+    /// sit side by side and be measured interleaved.
+    dispatch: bool = false,
     iterations: u32 = 5,
     seed: u64 = gen.default_seed,
 };
 
 const generated_dir = ".zig-cache/bench-gen";
+const dispatch_dir = ".zig-cache/bench-gen-dispatch";
 const pathological_dir = ".zig-cache/bench-pathological";
 const wide_dir = ".zig-cache/bench-wide";
 
@@ -91,7 +105,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     const args = try init.minimal.args.toSlice(arena);
     const options = parseArgs(args[1..]) catch |err| {
-        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--wide=<declarations>] [--pathological=<name>] [--iterations=<n>] [--seed=<n>]\n", .{err});
+        try stderr.print("bench: bad arguments ({t}); usage: bench [--corpus=<dir>] [--generate=<lines>] [--dispatch] [--wide=<declarations>] [--pathological=<name>[=<n>]] [--iterations=<n>] [--seed=<n>]\n", .{err});
         return 2;
     };
 
@@ -99,10 +113,12 @@ pub fn main(init: std.process.Init) !u8 {
     if (options.generate) |lines| {
         // Regenerated every run: it is cheap, it is deterministic, and it
         // keeps the generated tree out of the repository.
-        Io.Dir.cwd().deleteTree(io, generated_dir) catch {};
-        const stats = try gen.generate(gpa, io, generated_dir, options.seed, lines);
-        try stderr.print("bench: generated {d} files, {d} lines, {d} bytes under {s}\n", .{ stats.files, stats.lines, stats.bytes, generated_dir });
-        corpus = generated_dir;
+        const mode: gen.Mode = if (options.dispatch) .dispatch else .plain;
+        const dir = if (options.dispatch) dispatch_dir else generated_dir;
+        Io.Dir.cwd().deleteTree(io, dir) catch {};
+        const stats = try gen.generateMode(gpa, io, dir, options.seed, lines, mode);
+        try stderr.print("bench: generated {d} files, {d} lines, {d} bytes ({t}) under {s}\n", .{ stats.files, stats.lines, stats.bytes, mode, dir });
+        corpus = dir;
     }
     if (options.wide) |declarations| {
         // Regenerated every run, like `--generate`, and for the same
@@ -120,7 +136,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (options.pathological) |which| {
         Io.Dir.cwd().deleteTree(io, pathological_dir) catch {};
         const stats = try gen.generatePathological(gpa, io, pathological_dir, which);
-        try stderr.print("bench: generated {s} ({d} bytes) under {s}\n", .{ @tagName(which), stats.bytes, pathological_dir });
+        try stderr.print("bench: generated {t} n={d} ({d} bytes) under {s}\n", .{ which.case, which.n, stats.bytes, pathological_dir });
         corpus = pathological_dir;
     }
 
@@ -249,6 +265,8 @@ fn parseArgs(args: []const [:0]const u8) !Options {
             options.corpus = arg["--corpus=".len..];
         } else if (std.mem.startsWith(u8, arg, "--generate=")) {
             options.generate = try std.fmt.parseInt(u64, arg["--generate=".len..], 10);
+        } else if (std.mem.eql(u8, arg, "--dispatch")) {
+            options.dispatch = true;
         } else if (std.mem.startsWith(u8, arg, "--wide=")) {
             const declarations = try std.fmt.parseInt(u32, arg["--wide=".len..], 10);
             if (declarations == 0) return error.ZeroDeclarations;
@@ -537,6 +555,14 @@ const CheckMeasurement = struct {
     generalisations: u64 = 0,
     instantiations: u64 = 0,
     obligations: u64 = 0,
+    /// `plans/static-dispatch-spike.md` §7 M1b. Zero until the checker
+    /// raises method constraints; on the line now so the baseline and the
+    /// measurement are the same fields.
+    constraints_created: u64 = 0,
+    constraints_merged: u64 = 0,
+    constraints_deferred: u64 = 0,
+    constraints_discharged: u64 = 0,
+    constraints_promoted: u64 = 0,
     diagnostics: u64 = 0,
     /// The check step alone.
     ns: u64 = 0,
@@ -564,10 +590,11 @@ fn coldCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32
         if (iteration == 0) continue; // warm-up
         best = @min(best, ns);
         counts.modules = session.graph.count();
-        counts.unifications = session.checked.counters.unifications;
-        counts.generalisations = session.checked.counters.generalisations;
-        counts.instantiations = session.checked.counters.instantiations;
-        counts.obligations = session.checked.counters.obligations;
+        // By name: `CheckMeasurement` mirrors `Solve.Counters`, and a
+        // counter added there but not copied here would print as zero.
+        inline for (@typeInfo(@TypeOf(session.checked.counters)).@"struct".fields) |f| {
+            @field(counts, f.name) = @field(session.checked.counters, f.name);
+        }
         counts.diagnostics = session.diagnostics.items.len;
     }
     return if (best == std.math.maxInt(u64)) 0 else best;
@@ -670,18 +697,28 @@ fn printEmitLine(writer: *Io.Writer, m: EmitMeasurement) !void {
     );
 }
 
+/// Every `u64` field of `CheckMeasurement`, in declaration order, then the
+/// three derived timings. Reflective in the SAME way the copy out of
+/// `Solve.Counters` is: a counter added to the struct and forgotten here
+/// used to print nothing at all, which is the one failure mode a benchmark
+/// line must not have — a missing field reads as "the feature costs
+/// nothing" rather than as a bug.
 fn printCheckLine(writer: *Io.Writer, m: CheckMeasurement) !void {
     const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
     const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);
+    try writer.writeAll("{\"phase\":\"check\"");
+    inline for (@typeInfo(CheckMeasurement).@"struct".fields) |f| {
+        // `ns` and `total_ns` are reported below as `ms` and
+        // `cold_check_ms`. Matched EXACTLY: a suffix test on "ns" also
+        // matches `unifications`, `generalisations`, `instantiations` and
+        // `obligations`, and silently dropped all four from the line.
+        if (comptime !std.mem.eql(u8, f.name, "ns") and !std.mem.eql(u8, f.name, "total_ns")) {
+            try writer.print(",\"{s}\":{d}", .{ f.name, @field(m, f.name) });
+        }
+    }
     try writer.print(
-        "{{\"phase\":\"check\",\"modules\":{d},\"lines\":{d},\"unifications\":{d},\"generalisations\":{d}," ++
-            "\"instantiations\":{d},\"obligations\":{d},\"diagnostics\":{d},\"ms\":{d:.2}," ++
-            "\"loc_per_s\":{d},\"cold_check_ms\":{d:.1}}}\n",
-        .{
-            m.modules,        m.lines,                  m.unifications, m.generalisations,
-            m.instantiations, m.obligations,            m.diagnostics,  milliseconds(m.ns),
-            loc_per_s,        milliseconds(m.total_ns),
-        },
+        ",\"ms\":{d:.2},\"loc_per_s\":{d},\"cold_check_ms\":{d:.1}}}\n",
+        .{ milliseconds(m.ns), loc_per_s, milliseconds(m.total_ns) },
     );
 }
 

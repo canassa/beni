@@ -244,12 +244,7 @@ pub fn run(
         for (per_module) |list| for (list.items) |d| gpa.free(d.message);
     }
     for (per_module) |*list| list.deinit(gpa);
-    for (counters) |c| {
-        check.counters.unifications += c.unifications;
-        check.counters.generalisations += c.generalisations;
-        check.counters.instantiations += c.instantiations;
-        check.counters.obligations += c.obligations;
-    }
+    for (counters) |c| check.counters = check.counters.add(c);
 
     check.diagnostics = try diagnostics.toOwnedSlice(gpa);
     check.modules = try kept.toOwnedSlice(gpa);
@@ -651,12 +646,7 @@ const ModuleCheck = struct {
     }
 
     fn add(a: Solve.Counters, b: Solve.Counters) Solve.Counters {
-        return .{
-            .unifications = a.unifications + b.unifications,
-            .generalisations = a.generalisations + b.generalisations,
-            .instantiations = a.instantiations + b.instantiations,
-            .obligations = a.obligations + b.obligations,
-        };
+        return a.add(b);
     }
 
     /// SCC over the module's top-level values. An edge `d → e` exists when

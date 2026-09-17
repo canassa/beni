@@ -1,0 +1,268 @@
+-- ops: 220200
+--
+-- R4 of the M5 row (`plans/static-dispatch-spike.md` §7): `==` on records of
+-- five fields, on a list of ADTs, and on a nested `Maybe (List Int)`.
+--
+-- C0 routes every one of these through `Basics.eq`, the single structural
+-- walk in `core/Basics.js:93-111` — one `Object.keys` allocation and one
+-- worklist per comparison, whatever the shape. The spike replaces it with a
+-- derived `$eq` per type (§9), which is the row report 18 §1.5 calls "grows
+-- per type x method" and which this program prices.
+--
+-- This is one of the two programs `--cpu-prof` profiles, because the
+-- question is whether V8 inlines the direct call once it is direct.
+--
+-- **`ops` is a sum of three workloads of very different per-op cost** — a
+-- five-field record, a ten-element nested list, a thousand-element list of
+-- ADTs — so `ns_per_op` here is a per-program index, not the cost of one
+-- `==`. It is comparable between C0 and C1 and with nothing else.
+--
+-- **The near-miss probes are the correctness half.** A derived `eq` that
+-- compares only the first field, only the constructor tag, or only the
+-- length of a list would still answer `True` on every equal pair, so a
+-- checksum built from equal pairs alone cannot see it. `nearMisses` counts
+-- the probes that compare things differing in exactly one place and must
+-- stay **0**; `controlsOk` counts the pairs that are equal but built
+-- independently and must stay at the number of controls. Both are in the
+-- printed checksum.
+--
+-- Both sides of every comparison are built INDEPENDENTLY, never copied, so
+-- the walk cannot exit on the first `a === b`.
+--
+-- One op is one `==` in the timed loops: 200 000 on records, 20 000 on the
+-- nested `Maybe`, 200 on the 1 000-element ADT list.
+import List
+import Node exposing (Program)
+import String
+
+
+type Shape
+    = Circle Float
+    | Rect Float Float
+    | Dot
+
+
+type alias Rec5 =
+    { a : Int, b : String, c : Bool, d : Float, e : Int }
+
+
+recordReps : Int
+recordReps =
+    400
+
+
+-- 40 x 500 rather than `List.range 1 20000`: a range that long recurses
+-- past the JavaScript stack until the tail-call loop lands.
+nestedOuter : Int
+nestedOuter =
+    40
+
+
+nestedInner : Int
+nestedInner =
+    500
+
+
+listReps : Int
+listReps =
+    200
+
+
+listLength : Int
+listLength =
+    1000
+
+
+makeRecord : Int -> Rec5
+makeRecord n =
+    { a = n, b = String.fromInt n, c = modBy n 2 == 0, d = toFloat n, e = 500 - n }
+
+
+records : List Rec5
+records =
+    List.map (List.range 1 500) makeRecord
+
+
+probe : Rec5
+probe =
+    makeRecord 499
+
+
+makeShape : Int -> Shape
+makeShape n =
+    case modBy n 3 of
+        0 ->
+            Circle (toFloat n)
+
+        1 ->
+            Rect (toFloat n) (toFloat (n + 1))
+
+        _ ->
+            Dot
+
+
+shapesLeft : List Shape
+shapesLeft =
+    List.map (List.range 1 listLength) makeShape
+
+
+shapesRight : List Shape
+shapesRight =
+    List.map (List.range 1 listLength) makeShape
+
+
+-- The same list with only its LAST element changed, and the same list one
+-- element short: a walk that stops early, or one that compares lengths
+-- instead of elements, tells these apart from `shapesLeft` and a naive one
+-- does not.
+shapesLastDiffers : List Shape
+shapesLastDiffers =
+    List.indexedMap shapesLeft
+        (\i s ->
+            if i == listLength - 1 then
+                Dot
+
+            else
+                s
+        )
+
+
+shapesShorter : List Shape
+shapesShorter =
+    List.take shapesLeft (listLength - 1)
+
+
+nestedLeft : Maybe (List Int)
+nestedLeft =
+    Just (List.map (List.range 1 10) (\n -> n * 3))
+
+
+nestedRight : Maybe (List Int)
+nestedRight =
+    Just (List.map (List.range 1 10) (\n -> n * 3))
+
+
+-- One element of the ten differs.
+nestedOneOff : Maybe (List Int)
+nestedOneOff =
+    Just
+        (List.map (List.range 1 10)
+            (\n ->
+                if n == 7 then
+                    0
+
+                else
+                    n * 3
+            )
+        )
+
+
+-- Every one of these must be False. One field at a time on the record, one
+-- element on a list, one element on the nested `Maybe`, and both halves of
+-- an ADT: same tag with a different payload, and a different tag.
+nearMissProbes : List Bool
+nearMissProbes =
+    [ probe == { probe | a = probe.a + 1 }
+    , probe == { probe | b = String.append probe.b "x" }
+    , probe == { probe | c = not probe.c }
+    , probe == { probe | d = probe.d + 1.0 }
+    , probe == { probe | e = probe.e + 1 }
+    , shapesLeft == shapesLastDiffers
+    , shapesLeft == shapesShorter
+    , nestedLeft == nestedOneOff
+    , Circle 1.0 == Circle 2.0
+    , Circle 1.0 == Dot
+    , Rect 1.0 2.0 == Rect 1.0 3.0
+    , Rect 1.0 2.0 == Rect 2.0 2.0
+    , Just 1 == Nothing
+    ]
+
+
+-- Every one of these must be True: equal values built independently, so no
+-- `a === b` shortcut can carry them.
+controlProbes : List Bool
+controlProbes =
+    [ probe == makeRecord 499
+    , shapesLeft == shapesRight
+    , nestedLeft == nestedRight
+    , Rect 1.0 2.0 == Rect 1.0 2.0
+    , Dot == Dot
+    , Nothing == nothingInt
+    ]
+
+
+nothingInt : Maybe Int
+nothingInt =
+    Nothing
+
+
+countTrue : List Bool -> Int
+countTrue bs =
+    List.foldl bs
+        0
+        (\b n ->
+            if b then
+                n + 1
+
+            else
+                n
+        )
+
+
+main : Program
+main =
+    let
+        recordHits =
+            List.foldl
+                (List.range 1 recordReps)
+                0
+                (\_ acc ->
+                    List.foldl records
+                        acc
+                        (\r n ->
+                            if r == probe then
+                                n + 1
+
+                            else
+                                n
+                        )
+                )
+
+        nestedHits =
+            List.foldl
+                (List.range 1 nestedOuter)
+                0
+                (\_ acc ->
+                    List.foldl (List.range 1 nestedInner)
+                        acc
+                        (\_ n ->
+                            if nestedLeft == nestedRight then
+                                n + 1
+
+                            else
+                                n
+                        )
+                )
+
+        listHits =
+            List.foldl
+                (List.range 1 listReps)
+                0
+                (\_ acc ->
+                    if shapesLeft == shapesRight then
+                        acc + 1
+
+                    else
+                        acc
+                )
+    in
+    Node.print
+        (String.join
+            [ String.fromInt recordHits
+            , String.fromInt nestedHits
+            , String.fromInt listHits
+            , String.fromInt (countTrue nearMissProbes)
+            , String.fromInt (countTrue controlProbes)
+            ]
+            " "
+        )

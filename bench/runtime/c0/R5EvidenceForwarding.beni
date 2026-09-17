@@ -1,0 +1,105 @@
+-- ops: 10000000
+--
+-- R5 of the M5 row (`plans/static-dispatch-spike.md` §7): an ordering used
+-- three generic levels below where it was chosen.
+--
+-- This is the **C0** form, and the row measures **lambda-passing versus
+-- evidence**, not "closure versus direct call". The ordering is a LAMBDA
+-- built in `tallyBy`, closing over the local `key`, which is itself a lambda
+-- over the parameter `scale`; it is threaded through `level1 -> level2 ->
+-- tally` as an ordinary argument, and `cmp x mark` inside `tally` is an
+-- indirect call through a parameter. That is how user code passes a
+-- comparator today — `List.sortWith people (\a b -> ...)` allocates one per
+-- call — and it is deliberately NOT a bare top-level `compare`, which would
+-- compile to the same JavaScript the C1 evidence path emits and make the
+-- comparison measure nothing.
+--
+-- The C1 form writes `where a.compare : a, a -> Order` on all three levels
+-- and passes one hidden evidence parameter, so the same call site becomes a
+-- direct call to a known function and no closure is allocated. The two
+-- programs therefore do slightly different work by construction: C0 pays for
+-- a closure and two `key` calls per comparison, C1 pays for neither. That
+-- difference IS the row.
+--
+-- The call site is MONOMORPHIC here — one element type, one ordering — which
+-- is the case V8 inlines best. R6 is the same shape gone megamorphic.
+--
+-- One op is one `cmp` call: 500 elements x 20 000 repetitions, the
+-- repetitions run as 40 x 500 because `List.range 1 20000` recurses past
+-- the JavaScript stack until the tail-call loop lands.
+import List
+import Node exposing (Program)
+import String
+
+
+outerReps : Int
+outerReps =
+    40
+
+
+innerReps : Int
+innerReps =
+    500
+
+
+pivot : Int
+pivot =
+    250
+
+
+values : List Int
+values =
+    List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+
+
+-- Level 3: the work. Everything it knows about `a` arrives in `cmp`.
+tally : List a, a, (a, a -> Order) -> Int
+tally xs mark cmp =
+    List.foldl xs
+        0
+        (\x acc ->
+            case cmp x mark of
+                LT ->
+                    acc + 1
+
+                _ ->
+                    acc
+        )
+
+
+-- Level 2 and level 1: pure forwarding, which is the point. Each one is
+-- generic in `a` and so cannot know what `cmp` is.
+level2 : List a, a, (a, a -> Order) -> Int
+level2 xs mark cmp =
+    tally xs mark cmp
+
+
+level1 : List a, a, (a, a -> Order) -> Int
+level1 xs mark cmp =
+    level2 xs mark cmp
+
+
+-- Where the ordering is chosen. `key` closes over `scale`, and the
+-- comparator closes over `key`: a fresh closure per call, handed three
+-- levels down.
+tallyBy : List Int, Int, Int -> Int
+tallyBy xs mark scale =
+    let
+        key =
+            \x -> x * scale
+    in
+    level1 xs mark (\a b -> compare (key a) (key b))
+
+
+main : Program
+main =
+    let
+        total =
+            List.foldl
+                (List.range 1 outerReps)
+                0
+                (\_ acc ->
+                    List.foldl (List.range 1 innerReps) acc (\_ n -> n + tallyBy values pivot 1)
+                )
+    in
+    Node.print (String.fromInt total)

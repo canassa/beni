@@ -59,6 +59,7 @@ const Interface = @import("resolve/Interface.zig");
 const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
+const Solve = @import("check/Solve.zig");
 const core_package = @import("core_package");
 const platform_packages = @import("platform_packages");
 const Manifest = @import("js/Manifest.zig");
@@ -794,10 +795,12 @@ fn checkSerial(session: *Session) RunError!void {
     // checker itself on the worker that took the module, with `constrain`,
     // `solve` and `exhaustive` nested inside each.
     session.checked = try runCheckOnBigStack(session, quiet);
-    session.profile.addCounter(.unifications, session.checked.counters.unifications);
-    session.profile.addCounter(.generalisations, session.checked.counters.generalisations);
-    session.profile.addCounter(.instantiations, session.checked.counters.instantiations);
-    session.profile.addCounter(.obligations, session.checked.counters.obligations);
+    // By name, so a counter added to `Solve.Counters` without a matching
+    // `Profile.Counter` is a compile error rather than a number that never
+    // reaches the trace.
+    inline for (@typeInfo(Solve.Counters).@"struct".fields) |f| {
+        session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
+    }
     try session.reportCheckDiagnostics();
 }
 

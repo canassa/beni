@@ -1,0 +1,48 @@
+-- ops: 120000
+--
+-- R1 of the static-dispatch spike's M5 row (`plans/static-dispatch-spike.md`
+-- §7): `Dict` insert then get over `String` keys. This is the **C0** form —
+-- the comparator is an explicit argument (`Dict.empty String.compare`),
+-- which is what the spike replaces with a `where k.compare` constraint and
+-- one hidden evidence parameter.
+--
+-- The key list is built by `concatMap` over two small ranges rather than one
+-- `List.range 1 100000`, because `List.rangeHelp` is a self tail call and the
+-- tail-call loop (`fast-compiler.md` §13) has not landed: a range over about
+-- 7 000 overflows the JavaScript stack. Everything else here goes through
+-- `List.foldl`, which is `foreign` and therefore a loop.
+--
+-- One op is one insert or one get, so `ops` is 2 x keys.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+blocks : Int
+blocks =
+    120
+
+
+perBlock : Int
+perBlock =
+    500
+
+
+keys : List String
+keys =
+    List.concatMap
+        (List.range 0 (blocks - 1))
+        (\block -> List.map (List.range 1 perBlock) (\i -> String.fromInt (block * perBlock + i)))
+
+
+main : Program
+main =
+    let
+        dict =
+            List.foldl keys (Dict.empty String.compare) (\k d -> Dict.insert d k (String.length k))
+
+        total =
+            List.foldl keys 0 (\k acc -> acc + Maybe.withDefault (Dict.get dict k) 0)
+    in
+    Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

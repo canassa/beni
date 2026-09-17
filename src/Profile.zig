@@ -101,6 +101,14 @@ pub const Counter = enum {
     generalisations,
     instantiations,
     obligations,
+    /// Static dispatch (`plans/static-dispatch-spike.md` §7). Zero until the
+    /// checker raises method constraints; they are here now so the before
+    /// and after of that change are the same trace fields.
+    constraints_created,
+    constraints_merged,
+    constraints_deferred,
+    constraints_discharged,
+    constraints_promoted,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

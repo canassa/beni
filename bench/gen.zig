@@ -31,6 +31,44 @@ const Allocator = std.mem.Allocator;
 
 pub const default_seed: u64 = 0xBE21;
 
+/// Which shape the many-small-files corpus is written in.
+///
+/// `dispatch` is the C1 corpus of `plans/static-dispatch-spike.md` §7: the
+/// SAME project — same module count, same paths, same declaration names —
+/// with the operations that static dispatch changes written the way
+/// `docs/design/static-dispatch-spike.md` spells them. Every `§` below is a
+/// section of THAT document; the `M` rows are the plan's §7. Every random draw is made in the same order in
+/// both modes (a mode that skips a draw renames every later declaration),
+/// so the only difference between the two trees is the text of the
+/// declarations dispatch touches, and M1b compares like with like.
+///
+/// What changes, and which row of §7 each part feeds:
+///
+///   - `helper<i>` takes its module's `Model<i>` as its first parameter, so
+///     every call to it is a method call `m.helper<i> n` (§1) — including
+///     the cross-module ones, which is the implicit graph edge of §6.8.
+///   - one declaration in four is a CONSTRAINED helper: annotated with a
+///     §2 `where` clause when the plain declaration would have been
+///     annotated, and otherwise unannotated with the same constraint
+///     INFERRED from a method call in its body (§6.4's promotion). Its
+///     visibility and its annotated-ness are the plain mode's, because
+///     writing the interface is what the `check` line is most sensitive to.
+///   - those helpers are CALLED: at a concrete type, where the evidence
+///     argument is supplied (§8.1), and from inside another constrained
+///     helper, where it is forwarded (§8.2). A constrained declaration
+///     nobody calls exercises only half the feature.
+///   - `==` is used on a record (`model == init<i>`) and on a custom type
+///     (`msg == Reset`), the two derived-`eq` shapes of §3 and §9.
+///   - one module in sixteen builds a `Dict` and a `Set` with **no**
+///     comparator argument (§5.3), through method calls `acc.insert k v`.
+///
+/// **The dispatch tree does not parse until S2 lands the `where` clause.**
+/// The dot-call form already parses (§1.1: `x.m a` needs no grammar
+/// change), so what stops it today is the annotations, not the calls. It is
+/// generated now so the harness, the baselines and the file-list comparison
+/// are in place before the language changes under them.
+pub const Mode = enum { plain, dispatch };
+
 pub const Stats = struct {
     files: u32,
     lines: u64,
@@ -40,18 +78,32 @@ pub const Stats = struct {
 /// Generate under `out_dir` (created if missing) until at least
 /// `target_lines` lines exist. Modules are written as `Gen/…/<Name>.beni`.
 pub fn generate(gpa: Allocator, io: Io, out_dir: []const u8, seed: u64, target_lines: u64) !Stats {
+    return generateMode(gpa, io, out_dir, seed, target_lines, .plain);
+}
+
+/// `generate` in a chosen `Mode`.
+///
+/// The module COUNT is always the plain mode's count, even in `dispatch`:
+/// the two trees must hold the same files or M1b compares a 623-module
+/// corpus against a 624-module one and reports the difference as a cost of
+/// the feature. Counting is a second pass of the plain generator into a
+/// discarding writer — cheap next to writing the files, and the only way to
+/// know the boundary without letting the dispatch tree's own line count
+/// move it.
+pub fn generateMode(gpa: Allocator, io: Io, out_dir: []const u8, seed: u64, target_lines: u64, mode: Mode) !Stats {
     var root = try Io.Dir.cwd().createDirPathOpen(io, out_dir, .{});
     defer root.close(io);
     try root.createDirPath(io, "Gen/Data");
     try root.createDirPath(io, "Gen/Ui");
 
+    const count = try moduleCount(seed, target_lines);
     var stats: Stats = .{ .files = 0, .lines = 0, .bytes = 0 };
     var buffer: Io.Writer.Allocating = .init(gpa);
     defer buffer.deinit();
     var index: u32 = 0;
-    while (stats.lines < target_lines or index == 0) : (index += 1) {
+    while (index < count) : (index += 1) {
         buffer.clearRetainingCapacity();
-        const lines = try writeModule(&buffer.writer, seed, index);
+        const lines = try writeModuleMode(&buffer.writer, seed, index, mode);
         var path_buf: [64]u8 = undefined;
         const rel = modulePath(&path_buf, index);
         try root.writeFile(io, .{ .sub_path = rel, .data = buffer.written() });
@@ -60,6 +112,18 @@ pub fn generate(gpa: Allocator, io: Io, out_dir: []const u8, seed: u64, target_l
         stats.bytes += buffer.written().len;
     }
     return stats;
+}
+
+/// How many modules the PLAIN generator needs to reach `target_lines`. The
+/// file list of every mode is this many modules, in `modulePath` order.
+pub fn moduleCount(seed: u64, target_lines: u64) !u32 {
+    var discard: Io.Writer.Discarding = .init(&.{});
+    var lines: u64 = 0;
+    var index: u32 = 0;
+    while (lines < target_lines or index == 0) : (index += 1) {
+        lines += try writeModule(&discard.writer, seed, index);
+    }
+    return index;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,35 +439,86 @@ const Wide = struct {
 /// 228 MB peak at M1d); the other three are here because they are the same
 /// shape one size down and are what the next regression will be measured
 /// against.
-pub const Pathological = enum {
-    /// 10 MB of `[ 1, 1, … ]` on one line. VALID: it must lex, parse and
-    /// lower clean, which is what makes it a throughput case rather than
-    /// an error case. 3.5 M tokens, 3.5 M nodes.
-    @"big-list",
-    /// 10 MB of one string literal: one token, and the case where the
-    /// lexer's inner loop is everything.
-    @"big-string",
-    /// 10 MB of one identifier: one token, interned once, and a hash of
-    /// ten megabytes.
-    @"big-ident",
-    /// 100 000 nested `\x ->`: right-nested, so the parser recurses and
-    /// the depth guard stops it at 4096 — with 4095 `shadowing` errors
-    /// under it, which is the diagnostic-volume case.
-    @"deep-lambdas",
+pub const Pathological = struct {
+    case: Case,
+    /// `constraint-chain=<n>`: how long the chain is. Ignored by every
+    /// other case, which takes no size.
+    n: u32 = default_chain,
 
-    pub fn parse(name: []const u8) ?Pathological {
-        return std.meta.stringToEnum(Pathological, name);
+    /// Big enough that the accumulation is unmistakable, small enough that
+    /// `--pathological=constraint-chain` with no size still finishes; §7
+    /// M2 sweeps {10, 100, 1000, 5000} explicitly.
+    pub const default_chain: u32 = 1000;
+
+    pub const Case = enum {
+        /// 10 MB of `[ 1, 1, … ]` on one line. VALID: it must lex, parse and
+        /// lower clean, which is what makes it a throughput case rather than
+        /// an error case. 3.5 M tokens, 3.5 M nodes.
+        @"big-list",
+        /// 10 MB of one string literal: one token, and the case where the
+        /// lexer's inner loop is everything.
+        @"big-string",
+        /// 10 MB of one identifier: one token, interned once, and a hash of
+        /// ten megabytes.
+        @"big-ident",
+        /// 100 000 nested `\x ->`: right-nested, so the parser recurses and
+        /// the depth guard stops it at 4096 — with 4095 `shadowing` errors
+        /// under it, which is the diagnostic-volume case.
+        @"deep-lambdas",
+        /// `plans/static-dispatch-spike.md` §7 M2: `n` UNANNOTATED `pub`
+        /// functions, each taking one polymorphic parameter, adding one new
+        /// method call on it and calling the one before it. `f<n>`'s
+        /// inferred scheme therefore carries `n` method constraints — and
+        /// because nothing is annotated, every one of them is promoted onto
+        /// the module's interface (§6.4). This is the shape report 18 §2.3
+        /// argues about and nobody has measured: check time against `n`,
+        /// constraints per scheme, and the length of the rendered scheme.
+        ///
+        /// Unlike its four neighbours this is not one huge line; it is
+        /// `n` small declarations, and what it stresses is the checker
+        /// rather than the lexer.
+        ///
+        /// **It parses and checks clean TODAY, and that is the point.**
+        /// `x.m<i> 1` is `apply(field_access(x, m<i>), [1])` already
+        /// (`static-dispatch-spike.md` §1.1: the call form needs no grammar
+        /// change), so on `master` this module is a chain of *row-polymorphic
+        /// field calls* — `x` is inferred as an open record of `n` function
+        /// fields — and the baseline it produces measures record extension
+        /// and field lookup, NOT method constraints. After S3 the same bytes
+        /// are a chain of `n` METHOD CONSTRAINTS on a type variable.
+        ///
+        /// The two numbers are therefore both meaningful and must never be
+        /// read as before/after of the same mechanism: the `master` run is
+        /// the row-polymorphism cost the language already pays for this
+        /// shape, and the branch run is what the constraint machinery costs
+        /// for it. §7 M2's table records both, labelled.
+        @"constraint-chain",
+    };
+
+    /// `<name>` or `<name>=<n>`. A size is only accepted by the case that
+    /// takes one, so `--pathological=big-list=7` is an error rather than a
+    /// number that is silently dropped.
+    pub fn parse(spec: []const u8) ?Pathological {
+        const split = std.mem.indexOfScalar(u8, spec, '=');
+        const name = if (split) |i| spec[0..i] else spec;
+        const case = std.meta.stringToEnum(Case, name) orelse return null;
+        const size = split orelse return .{ .case = case };
+        if (case != .@"constraint-chain") return null;
+        const n = std.fmt.parseInt(u32, spec[size + 1 ..], 10) catch return null;
+        if (n == 0) return null;
+        return .{ .case = case, .n = n };
     }
 
     /// Where the case is written under the output directory. Every path
     /// segment is an upper identifier so the file has a module name
     /// (language.md §1).
     pub fn path(which: Pathological) []const u8 {
-        return switch (which) {
+        return switch (which.case) {
             .@"big-list" => "Gen/BigList.beni",
             .@"big-string" => "Gen/BigString.beni",
             .@"big-ident" => "Gen/BigIdent.beni",
             .@"deep-lambdas" => "Gen/DeepLambdas.beni",
+            .@"constraint-chain" => "Gen/ConstraintChain.beni",
         };
     }
 };
@@ -426,7 +541,7 @@ pub fn generatePathological(gpa: Allocator, io: Io, out_dir: []const u8, which: 
 const ten_megabytes = 10 * 1024 * 1024;
 
 pub fn writePathological(w: *Io.Writer, which: Pathological) Io.Writer.Error!void {
-    switch (which) {
+    switch (which.case) {
         .@"big-list" => {
             try w.writeAll("main =\n    [ 1");
             // `, 1` is three bytes; the head and tail are negligible.
@@ -447,6 +562,57 @@ pub fn writePathological(w: *Io.Writer, which: Pathological) Io.Writer.Error!voi
             for (0..100_000) |_| try w.writeAll("\\x -> ");
             try w.writeAll("1\n");
         },
+        .@"constraint-chain" => try writeConstraintChain(w, which.n),
+    }
+}
+
+/// `f1 … fn`, unannotated and `pub`, each adding one NEW method call on its
+/// single polymorphic parameter and calling its predecessor on the same
+/// parameter (`plans/static-dispatch-spike.md` §7 M2).
+///
+/// Three properties make this the accumulation case and not a chain of
+/// unrelated declarations:
+///
+///   - Nothing is annotated, so no `where` clause can discharge a
+///     constraint early and every one of them has to ride out on the
+///     inferred scheme (§6.4). An annotation anywhere in the chain would
+///     cut it in two and measure half of it.
+///   - Every method name is DISTINCT (`m1 … mn`), so the constraint sets
+///     really grow; the same name `n` times would merge to one constraint
+///     (§6.2) and the curve would be flat for the wrong reason.
+///   - `f<i>` calls `f<i-1>` on its own parameter, so `f<i-1>`'s whole set
+///     is instantiated and unified into `f<i>`'s at every link — the
+///     quadratic term, if there is one, is here.
+///
+/// `+` pins every method's result to `Int`, which keeps the scheme readable
+/// (`a -> Int`, `n` constraints) rather than growing a result variable per
+/// link as well.
+///
+/// On `master` and on this branch before S3 the same text checks CLEAN as a
+/// chain of row-polymorphic field calls; see `Pathological.Case` for why the
+/// two baselines are not the same measurement.
+fn writeConstraintChain(w: *Io.Writer, n: u32) Io.Writer.Error!void {
+    try w.print(
+        \\--! Gen.ConstraintChain: {d} unannotated `pub` functions, each adding one
+        \\--! operation to the set the one before it inferred.
+        \\--! Generated by bench/gen.zig for plans/static-dispatch-spike.md §7 M2.
+        \\--!
+        \\--! This checks clean BEFORE static dispatch too, as a chain of
+        \\--! row-polymorphic field calls on an open record of `n` function fields.
+        \\--! After S3 the same bytes are `n` method constraints on a type variable.
+        \\--! The two runs measure different mechanisms and are labelled separately.
+        \\
+        \\
+    , .{n});
+    var i: u32 = 1;
+    while (i <= n) : (i += 1) {
+        if (i != 1) try w.writeByte('\n');
+        try w.print("pub f{d} x =\n", .{i});
+        if (i == 1) {
+            try w.print("    x.m1 1\n", .{});
+        } else {
+            try w.print("    x.m{d} 1 + f{d} x\n", .{ i, i - 1 });
+        }
     }
 }
 
@@ -470,8 +636,69 @@ pub fn moduleName(buf: []u8, index: u32) []const u8 {
 
 /// Write module `index` and return its line count.
 pub fn writeModule(writer: *Io.Writer, seed: u64, index: u32) Io.Writer.Error!u64 {
-    var prng: std.Random.DefaultPrng = .init(seed ^ (@as(u64, index) +% 1) *% 0x9E3779B97F4A7C15);
-    var g: Module = .{ .w = writer, .rng = prng.random(), .index = index };
+    return writeModuleMode(writer, seed, index, .plain);
+}
+
+/// Which declaration kind each of a module's random helpers is. Recorded by
+/// a dry run of the module and read by the real one, so the dispatch mode
+/// can tell — BEFORE writing a constrained helper — whether a later
+/// declaration will be there to call it (`oneLiner`). A constrained helper
+/// nobody calls forwards no evidence, and the §7 backend rows would then
+/// measure declarations without their call sites.
+///
+/// A dry run is honest because both modes draw from the PRNG in the same
+/// order: the plan describes the module that is about to be written.
+const Plan = struct {
+    kinds: [24]u8 = @splat(no_kind),
+    count: usize = 0,
+
+    const no_kind: u8 = 255;
+    /// `randomFn`'s first two kinds, the only ones that end in an
+    /// expression this generator can wrap a call around.
+    const one_liner: u8 = 0;
+    const let_fn: u8 = 1;
+
+    /// Declarations after slot `n` that are guaranteed to drain one pending
+    /// helper. A `oneLiner` on a slot that may itself BE a helper is not
+    /// counted: it would consume one and add one, draining nothing.
+    fn drains(plan: *const Plan, after: u32) usize {
+        var found: usize = 0;
+        for (plan.kinds[0..plan.count], 0..) |k, i| {
+            if (i <= after) continue;
+            if (k == let_fn or (k == one_liner and !isWhereSlot(@intCast(i)))) found += 1;
+        }
+        return found;
+    }
+};
+
+/// Which `randomFn` slots may carry a constrained helper in dispatch mode.
+/// One in four: enough `where` clauses and inferred constraints to measure,
+/// few enough that the dispatch tree stays inside the size budget it shares
+/// with the plain one (§7 compares per-byte and per-line work).
+fn isWhereSlot(n: u32) bool {
+    return n % 4 == 0;
+}
+
+/// `writeModule` in a chosen `Mode`. Both modes draw from the PRNG in the
+/// same order, so module `index` has the same declarations under the same
+/// names in either one; see `Mode` for what the dispatch text changes.
+pub fn writeModuleMode(writer: *Io.Writer, seed: u64, index: u32, mode: Mode) Io.Writer.Error!u64 {
+    const stream = seed ^ (@as(u64, index) +% 1) *% 0x9E3779B97F4A7C15;
+    var plan: Plan = .{};
+    if (mode == .dispatch) {
+        var discard: Io.Writer.Discarding = .init(&.{});
+        var dry_prng: std.Random.DefaultPrng = .init(stream);
+        var dry: Module = .{ .w = &discard.writer, .rng = dry_prng.random(), .index = index, .record = &plan };
+        try dry.module();
+    }
+    var prng: std.Random.DefaultPrng = .init(stream);
+    var g: Module = .{
+        .w = writer,
+        .rng = prng.random(),
+        .index = index,
+        .mode = mode,
+        .plan = if (mode == .dispatch) &plan else null,
+    };
     try g.module();
     return g.lines;
 }
@@ -482,6 +709,7 @@ const Module = struct {
     w: *Io.Writer,
     rng: std.Random,
     index: u32,
+    mode: Mode = .plain,
     lines: u64 = 0,
     /// Locals in scope in the function being generated, innermost last.
     locals: [24][]const u8 = undefined,
@@ -503,6 +731,21 @@ const Module = struct {
     /// literal is closed, so `init` must set exactly these.
     has_ratio: bool = false,
     has_selected: bool = false,
+    /// The `where`-constrained helpers this module has written, and whether
+    /// each one has a CALL SITE yet. A constrained declaration nobody calls
+    /// never forwards an evidence parameter, so the `$m$k` argument of
+    /// `static-dispatch-spike.md` §8.2 would never appear in the corpus at
+    /// all and the backend row of §7 would measure declarations only.
+    /// Names are copied in because `fnName` writes into the caller's stack
+    /// buffer.
+    where_names: [8][32]u8 = undefined,
+    where_len: [8]u8 = undefined,
+    where_called: [8]bool = undefined,
+    where_count: usize = 0,
+    /// Set on the dispatch run: what the dry run saw.
+    plan: ?*const Plan = null,
+    /// Set on the dry run: where to record it.
+    record: ?*Plan = null,
 
     const local_pool = [_][]const u8{
         "acc",   "item",  "total",  "count",  "first", "rest",  "key",   "value",
@@ -550,6 +793,83 @@ const Module = struct {
 
     fn chance(g: *Module, percent: u8) bool {
         return g.rng.uintLessThan(u8, 100) < percent;
+    }
+
+    fn dispatch(g: *const Module) bool {
+        return g.mode == .dispatch;
+    }
+
+    /// Which constraint this module's `where` helpers carry: the well-known
+    /// `compare` (§3, discharged against the derived record ordering) or
+    /// the module's own `helper<i>` method (§6.3's module-lookup path). One
+    /// kind PER MODULE, so every helper in a module carries the same
+    /// constraint and can therefore forward its evidence to the one before
+    /// it; both paths are in the corpus because the modules alternate.
+    fn wellKnownWhere(g: *const Module) bool {
+        return g.index % 2 == 0;
+    }
+
+    /// Remember a `where` helper so a later expression can call it.
+    fn recordWhere(g: *Module, name: []const u8) void {
+        if (g.where_count == g.where_names.len or name.len > 32) return;
+        @memcpy(g.where_names[g.where_count][0..name.len], name);
+        g.where_len[g.where_count] = @intCast(name.len);
+        g.where_called[g.where_count] = false;
+        g.where_count += 1;
+    }
+
+    fn whereName(g: *const Module, i: usize) []const u8 {
+        return g.where_names[i][0..g.where_len[i]];
+    }
+
+    /// The oldest `where` helper with no call site yet, marked as called.
+    /// Takes no random draw: a draw here would have to be taken in plain
+    /// mode too, and that would move the plain corpus, which is the
+    /// baseline every other number is read against.
+    /// The most recently written helper, called or not. A second
+    /// constrained helper in a module forwards into it even when the first
+    /// already has a call site: the point of the shape is the `$m$k`
+    /// argument passed from one constrained declaration to another, and it
+    /// costs two bytes over calling the constraint directly.
+    fn lastWhere(g: *const Module) ?[]const u8 {
+        if (g.where_count == 0) return null;
+        return g.whereName(g.where_count - 1);
+    }
+
+    fn pendingWhereCount(g: *const Module) usize {
+        var n: usize = 0;
+        for (g.where_called[0..g.where_count]) |called| {
+            if (!called) n += 1;
+        }
+        return n;
+    }
+
+    /// Whether a constrained helper written at slot `n` is certain to be
+    /// called. Writing one drains at most one pending helper and then adds
+    /// itself, so the module needs `max(pending, 1)` guaranteed drain slots
+    /// after `n`. This is the whole reason `Plan` exists.
+    fn canAffordWhere(g: *const Module, n: u32) bool {
+        const plan = g.plan orelse return false;
+        return plan.drains(n) >= @max(g.pendingWhereCount(), 1);
+    }
+
+    fn takeUncalledWhere(g: *Module) ?[]const u8 {
+        for (0..g.where_count) |i| {
+            if (g.where_called[i]) continue;
+            g.where_called[i] = true;
+            return g.whereName(i);
+        }
+        return null;
+    }
+
+    /// Which modules carry the comparator-free `Dict`/`Set` of §5.3, §5.4.
+    /// One module in sixteen: enough that the corpus really contains the
+    /// operations M5's R1/R2 time, few enough that the `let` block and the
+    /// two `import` lines it needs stay inside the size budget the two
+    /// corpora have to share (§7: the `check` line's LOC/s and the front
+    /// end's MB/s both compare per-byte work).
+    fn usesDict(g: *const Module) bool {
+        return g.dispatch() and g.index % 16 == 1;
     }
 
     fn pick(g: *Module, comptime T: type, items: []const T) T {
@@ -657,6 +977,11 @@ const Module = struct {
     }
 
     fn imports(g: *Module) Io.Writer.Error!void {
+        // `Dict` and `Set` are not prelude modules (language.md Appendix A),
+        // so the comparator-free shape of §5.3 needs them by name. Written
+        // around the `Gen.*` block so the whole list stays sorted by module
+        // name: `Dict` < `Gen.…` < `List` < `Set`.
+        if (g.usesDict()) try g.line(0, "import Dict", .{});
         // Earlier modules only, ascending, distinct — so imports are sorted
         // by path and never duplicated.
         var candidates: [4]u32 = undefined;
@@ -689,13 +1014,25 @@ const Module = struct {
                     g.aliased_count += 1;
                 },
                 else => {
-                    try g.line(0, "import {s} exposing (Model{d}, helper{d})", .{ name, k, k });
+                    // In dispatch mode the exposed value is `init<k>` — a
+                    // `Model<k>` — and NOT `helper<k>`: the method is found
+                    // through the receiver's type, in the module that
+                    // declares it, with no import of the value at all
+                    // (§1, §6.8). That is the edge the parallel checker
+                    // has to learn about, and it only exists if the corpus
+                    // reaches a method the importer never named.
+                    if (g.dispatch()) {
+                        try g.line(0, "import {s} exposing (Model{d}, init{d})", .{ name, k, k });
+                    } else {
+                        try g.line(0, "import {s} exposing (Model{d}, helper{d})", .{ name, k, k });
+                    }
                     g.exposed[g.exposed_count] = k;
                     g.exposed_count += 1;
                 },
             }
         }
         if (n == 0) try g.line(0, "import List", .{});
+        if (g.usesDict()) try g.line(0, "import Set", .{});
     }
 
     fn modelAlias(g: *Module) Io.Writer.Error!void {
@@ -775,19 +1112,73 @@ const Module = struct {
         const mark = g.scopeMark();
         defer g.scopeReset(mark);
         try g.line(0, "--| A small numeric helper every module exports.", .{});
-        try g.line(0, "pub helper{d} : Int -> Int", .{g.index});
-        try g.line(0, "helper{d} n =", .{g.index});
+        // The one declaration the whole corpus calls, so it is the one
+        // worth routing through dispatch: taking `Model<i>` first makes it
+        // a METHOD of a type this module declares (§1.2, the module rule),
+        // and every call site below becomes `m.helper<i> n`. The line count
+        // and the draws are the same either way.
+        if (g.dispatch()) {
+            try g.line(0, "pub helper{d} : Model{d}, Int -> Int", .{ g.index, g.index });
+            try g.line(0, "helper{d} model n =", .{g.index});
+            _ = g.pushFunction("model");
+        } else {
+            try g.line(0, "pub helper{d} : Int -> Int", .{g.index});
+            try g.line(0, "helper{d} n =", .{g.index});
+        }
         _ = g.push("n");
+        // Every arm draws exactly what it drew before, in the same order:
+        // a mode that drew one number fewer would rename every declaration
+        // after it and the two trees would stop being the same project.
         switch (g.rng.uintLessThan(u8, 3)) {
-            0 => try g.line(4, "n * {d} + {d}", .{ 1 + g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 100) }),
-            1 => try g.line(4, "max n {d} - min n {d}", .{ g.rng.uintLessThan(u32, 100), g.rng.uintLessThan(u32, 10) }),
-            else => try g.line(4, "modBy {d} (abs n)", .{2 + g.rng.uintLessThan(u32, 30)}),
+            0 => {
+                const a = 1 + g.rng.uintLessThan(u32, 9);
+                const b = g.rng.uintLessThan(u32, 100);
+                if (g.dispatch()) {
+                    // The receiver REPLACES a literal rather than being
+                    // added to one: the two corpora are compared per byte.
+                    try g.line(4, "n * {d} + model.count", .{a});
+                } else {
+                    try g.line(4, "n * {d} + {d}", .{ a, b });
+                }
+            },
+            1 => {
+                const a = g.rng.uintLessThan(u32, 100);
+                const b = g.rng.uintLessThan(u32, 10);
+                if (g.dispatch()) {
+                    try g.line(4, "max n {d} - model.count", .{a});
+                } else {
+                    try g.line(4, "max n {d} - min n {d}", .{ a, b });
+                }
+            },
+            else => {
+                const a = 2 + g.rng.uintLessThan(u32, 30);
+                if (g.dispatch()) {
+                    try g.line(4, "modBy {d} (abs model.count)", .{a});
+                } else {
+                    try g.line(4, "modBy {d} (abs n)", .{a});
+                }
+            },
         }
     }
 
     fn sumFn(g: *Module) Io.Writer.Error!void {
         const mark = g.scopeMark();
         defer g.scopeReset(mark);
+        // The comparator-free `Dict`/`Set` of §5.3 and §5.4, in a
+        // declaration that already has the right type and is already
+        // called from the pipelines: `Dict.empty` takes no ordering, and
+        // `insert`/`get` reach `k.compare` through the `where` clause on
+        // their own annotations. Draws nothing, so the stream is untouched.
+        if (g.usesDict()) {
+            try g.line(0, "pub sum{d} : List Int -> Int", .{g.index});
+            try g.line(0, "sum{d} xs =", .{g.index});
+            try g.line(4, "let", .{});
+            try g.line(8, "counts = List.foldl xs Dict.empty (\\x acc -> acc.insert x 1)", .{});
+            try g.line(8, "unique = List.foldl xs Set.empty (\\x acc -> acc.insert x)", .{});
+            try g.line(4, "in", .{});
+            try g.line(4, "Maybe.withDefault (counts.get 3) 0 + Set.size unique", .{});
+            return;
+        }
         try g.line(0, "pub sum{d} : List Int -> Int", .{g.index});
         try g.line(0, "sum{d} xs =", .{g.index});
         _ = g.push("xs");
@@ -806,6 +1197,12 @@ const Module = struct {
         defer g.scopeReset(mark);
         // Only the first kinds are "small"; the weights favour them.
         const kind = g.rng.weightedIndex(u8, &.{ 20, 14, 12, 12, 10, 8, 8, 6, 5, 4 });
+        if (g.record) |plan| {
+            if (plan.count < plan.kinds.len) {
+                plan.kinds[plan.count] = @intCast(kind);
+                plan.count += 1;
+            }
+        }
         switch (kind) {
             0 => try g.oneLiner(n),
             1 => try g.letFn(n),
@@ -827,11 +1224,66 @@ const Module = struct {
     fn oneLiner(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "scale");
-        if (g.chance(60)) try g.line(0, "{s} : Int -> Int", .{name});
+        const annotated = g.chance(60);
+        // One in four of these is a CONSTRAINED helper in dispatch mode
+        // (`isWhereSlot`), when the module can guarantee it a call site.
+        //
+        // Visibility and annotated-ness are exactly the plain mode's: these
+        // declarations are private in both trees, and this one is annotated
+        // exactly when the plain one would have been. Interface writing is
+        // what §7 M1b is most sensitive to (`fillInterface` is per exported
+        // value; the M2d entry in bench/README.md measures it at 19x), so a
+        // dispatch tree with 14 % more `pub` values would report the cost of
+        // exporting as a cost of dispatch.
+        //
+        // Annotated, the constraint is DECLARED in a §2 `where` clause.
+        // Unannotated, the same constraint is INFERRED from the method call
+        // in the body and promoted at generalisation (§6.4) — which is the
+        // case report 18 §2.3 argues about, so both belong in the corpus.
+        if (g.dispatch() and isWhereSlot(n) and g.canAffordWhere(n)) {
+            const well_known = g.wellKnownWhere();
+            if (annotated) {
+                try g.line(0, "{s} : a, Int -> Int", .{name});
+                if (well_known) {
+                    try g.line(4, "where a.compare : a, a -> Order", .{});
+                } else {
+                    try g.line(4, "where a.helper{d} : a, Int -> Int", .{g.index});
+                }
+            }
+            try g.line(0, "{s} x n =", .{name});
+            _ = g.pushFunction("x");
+            _ = g.push("n");
+            try g.w.splatByteAll(' ', 4);
+            // Forward this declaration's own evidence into the previous
+            // constrained helper when there is one (§8.2's `$m$k` argument)
+            // — which also infers the constraint in the unannotated case,
+            // through the callee's scheme. With no predecessor the body uses
+            // the constraint directly.
+            if (g.takeUncalledWhere() orelse g.lastWhere()) |previous| {
+                try g.w.print("{s} x (", .{previous});
+            } else if (well_known) {
+                try g.w.writeAll("if (x.compare x) == GT then n else (");
+            } else {
+                try g.w.print("x.helper{d} (", .{g.index});
+            }
+            try g.expr(2);
+            try g.w.writeAll(")\n");
+            g.lines += 1;
+            g.recordWhere(name);
+            return;
+        }
+        if (annotated) try g.line(0, "{s} : Int -> Int", .{name});
         try g.line(0, "{s} n =", .{name});
         _ = g.push("n");
         try g.w.splatByteAll(' ', 4);
+        // A constrained helper written earlier in this module that still has
+        // no call site is wrapped around the body. No draw is taken, so the
+        // plain stream is untouched, and it is the only place a helper in a
+        // module that writes exactly one is guaranteed to be called from.
+        const wrap = if (g.dispatch()) g.takeUncalledWhere() else null;
+        if (wrap) |helper| try g.w.print("{s} init{d} (", .{ helper, g.index });
         try g.expr(2);
+        if (wrap != null) try g.w.writeByte(')');
         try g.w.writeByte('\n');
         g.lines += 1;
     }
@@ -883,7 +1335,10 @@ const Module = struct {
         }
         try g.line(4, "in", .{});
         try g.w.splatByteAll(' ', 4);
+        const wrap = if (g.dispatch()) g.takeUncalledWhere() else null;
+        if (wrap) |helper| try g.w.print("{s} init{d} (", .{ helper, g.index });
         try g.expr(3);
+        if (wrap != null) try g.w.writeByte(')');
         try g.w.writeByte('\n');
         g.lines += 1;
     }
@@ -891,6 +1346,12 @@ const Module = struct {
     fn pipelineFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "process");
+        // A pipeline whose map step is a METHOD call on a value of a type
+        // this module declares (§1) — what `List.map xs helper<i>` becomes
+        // once `helper<i>` is a method of `Model<i>`. The receiver is the
+        // module's own `init<i>` rather than a new parameter: a parameter
+        // would change the declaration's TYPE in every pipeline, including
+        // the ones whose steps never draw a map, and pay bytes for nothing.
         try g.line(0, "{s} : List Int -> Int", .{name});
         try g.line(0, "{s} xs =", .{name});
         _ = g.push("xs");
@@ -901,7 +1362,14 @@ const Module = struct {
             switch (g.rng.uintLessThan(u8, 4)) {
                 0 => try g.line(8, "|> List.filter (\\x -> x > {d})", .{g.rng.uintLessThan(u32, 50)}),
                 1 => try g.line(8, "|> List.map (\\x -> x * {d})", .{1 + g.rng.uintLessThan(u32, 9)}),
-                2 => try g.line(8, "|> List.map helper{d}", .{g.index}),
+                2 => if (g.dispatch())
+                    // `x.m _` is the placeholder over a method call
+                    // (`static-dispatch-spike.md` §1.1, the `x.m _ b` row):
+                    // a lambda over `method_call`, and shorter than writing
+                    // the lambda out.
+                    try g.line(8, "|> List.map (init{d}.helper{d} _)", .{ g.index, g.index })
+                else
+                    try g.line(8, "|> List.map helper{d}", .{g.index}),
                 else => try g.line(8, "|> List.reverse", .{}),
             }
         }
@@ -915,10 +1383,24 @@ const Module = struct {
     fn ifFn(g: *Module, n: u32) Io.Writer.Error!void {
         var buf: [32]u8 = undefined;
         const name = g.fnName(&buf, n, "classify");
-        try g.line(0, "{s} : Int -> String", .{name});
-        try g.line(0, "{s} n =", .{name});
+        // `==` on a CUSTOM TYPE (§3): `Msg<i>` has no `pub eq`, so this
+        // is the derived `eq` of §9 over a padded constructor record, which
+        // is one of the two shapes M4 and M5's R4 are about.
+        const custom_eq = g.dispatch() and n % 3 == 0;
+        if (custom_eq) {
+            try g.line(0, "{s} : Msg{d}, Int -> String", .{ name, g.index });
+            try g.line(0, "{s} msg n =", .{name});
+            _ = g.pushFunction("msg");
+        } else {
+            try g.line(0, "{s} : Int -> String", .{name});
+            try g.line(0, "{s} n =", .{name});
+        }
         _ = g.push("n");
-        try g.line(4, "if n < 0 then", .{});
+        if (custom_eq) {
+            try g.line(4, "if msg == Reset then", .{});
+        } else {
+            try g.line(4, "if n < 0 then", .{});
+        }
         try g.line(8, "\"negative\"", .{});
         const arms = g.rng.uintLessThan(u32, 3);
         var i: u32 = 0;
@@ -942,8 +1424,17 @@ const Module = struct {
         try g.line(0, "{s} label model =", .{name});
         _ = g.push("label");
         _ = g.push("model");
+        // `==` on a RECORD (§3): five fields, one of them a `List Int`,
+        // so the derived `eq` of §9 recurses — the shape M5's R4 times and
+        // M4 measures the bytes of. Same line count as the plain form.
         if (g.chance(50)) {
-            try g.line(4, "{{ model | name = label, count = model.count + {d} }}", .{g.rng.uintLessThan(u32, 5)});
+            const bump = g.rng.uintLessThan(u32, 5);
+            try g.line(4, "{{ model | name = label, count = model.count + {d} }}", .{bump});
+        } else if (g.dispatch()) {
+            try g.line(4, "if model == init{d} then", .{g.index});
+            try g.line(8, "model", .{});
+            try g.line(4, "else", .{});
+            try g.line(8, "{{ model | name = String.toUpper label }}", .{});
         } else {
             try g.line(4, "{{ model", .{});
             try g.line(8, "| name = String.toUpper label", .{});
@@ -1067,7 +1558,24 @@ const Module = struct {
                 try g.operand(depth - 1);
             },
             2 => {
-                try g.w.print("helper{d} ", .{g.index});
+                // `helper<i>` is a method of `Model<i>` in dispatch mode, so
+                // the call goes through a receiver: `init<i>` is this
+                // module's own `Model<i>` and is always in scope.
+                //
+                // A constrained helper with no call site yet takes priority:
+                // called at the CONCRETE type `Model<i>`, it is the site
+                // that has to supply the evidence argument (§8.1), and it
+                // costs the same bytes and the same draws as the method call
+                // it displaces.
+                if (g.dispatch()) {
+                    if (g.takeUncalledWhere()) |helper| {
+                        try g.w.print("{s} init{d} ", .{ helper, g.index });
+                    } else {
+                        try g.w.print("init{d}.helper{d} ", .{ g.index, g.index });
+                    }
+                } else {
+                    try g.w.print("helper{d} ", .{g.index});
+                }
                 try g.atom();
             },
             3 => {
@@ -1125,17 +1633,49 @@ const Module = struct {
     }
 
     fn crossModuleCall(g: *Module) Io.Writer.Error!void {
+        // The cross-module method call of §6.8: the receiver's type is
+        // declared in the other module, and the method is resolved there —
+        // through an `exposing` list that does not name it, or through an
+        // alias. This is the call shape that forces an implicit graph edge,
+        // and the reason the generated corpus is worth running the checker
+        // over at all once S3 lands.
         if (g.exposed_count > 0 and g.chance(50)) {
             const k = g.exposed[g.rng.uintLessThan(usize, g.exposed_count)];
-            try g.w.print("helper{d} ", .{k});
+            if (g.dispatch()) {
+                if (g.takeUncalledWhere()) |helper| {
+                    try g.w.print("{s} init{d} ", .{ helper, g.index });
+                } else {
+                    try g.w.print("init{d}.helper{d} ", .{ k, k });
+                }
+            } else {
+                try g.w.print("helper{d} ", .{k});
+            }
             return g.atom();
         }
         if (g.aliased_count > 0) {
             const k = g.aliased[g.rng.uintLessThan(usize, g.aliased_count)];
-            try g.w.print("P{d}.helper{d} ", .{ k, k });
+            if (g.dispatch()) {
+                if (g.takeUncalledWhere()) |helper| {
+                    try g.w.print("{s} init{d} ", .{ helper, g.index });
+                } else {
+                    try g.w.print("P{d}.init{d}.helper{d} ", .{ k, k, k });
+                }
+            } else {
+                try g.w.print("P{d}.helper{d} ", .{ k, k });
+            }
             return g.atom();
         }
-        try g.w.print("helper{d} ", .{g.index});
+        // The module that imports nothing: its own method, or a constrained
+        // helper still waiting for a call site.
+        if (g.dispatch()) {
+            if (g.takeUncalledWhere()) |helper| {
+                try g.w.print("{s} init{d} ", .{ helper, g.index });
+            } else {
+                try g.w.print("init{d}.helper{d} ", .{ g.index, g.index });
+            }
+        } else {
+            try g.w.print("helper{d} ", .{g.index});
+        }
         return g.atom();
     }
 
@@ -1302,6 +1842,269 @@ fn identAt(s: []const u8) []const u8 {
     return s[0..n];
 }
 
+test "the dispatch corpus is a pure function of seed and index, and is not the plain one" {
+    var a: Io.Writer.Allocating = .init(testing.allocator);
+    defer a.deinit();
+    var b: Io.Writer.Allocating = .init(testing.allocator);
+    defer b.deinit();
+    var plain: Io.Writer.Allocating = .init(testing.allocator);
+    defer plain.deinit();
+
+    const lines_a = try writeModuleMode(&a.writer, default_seed, 7, .dispatch);
+    const lines_b = try writeModuleMode(&b.writer, default_seed, 7, .dispatch);
+    _ = try writeModuleMode(&plain.writer, default_seed, 7, .plain);
+    try testing.expectEqualStrings(a.written(), b.written());
+    try testing.expectEqual(lines_a, lines_b);
+    try testing.expectEqual(lines_a, std.mem.count(u8, a.written(), "\n"));
+    try testing.expect(!std.mem.eql(u8, a.written(), plain.written()));
+}
+
+test "dispatch modules respect the lexical rules the lexer enforces" {
+    // The same claim the plain corpus makes. It is the ONLY end-to-end
+    // statement available about the dispatch tree until S2 lands the
+    // syntax, because until then `beni check` on it cannot parse.
+    var out: Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    for (0..40) |i| {
+        out.clearRetainingCapacity();
+        _ = try writeModuleMode(&out.writer, default_seed, @intCast(i), .dispatch);
+        const text = out.written();
+        try testing.expect(std.mem.indexOfScalar(u8, text, '\t') == null);
+        try testing.expect(std.mem.indexOfScalar(u8, text, '\r') == null);
+        try testing.expect(text[text.len - 1] == '\n');
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |l| {
+            try testing.expect(l.len == 0 or l[l.len - 1] != ' ');
+        }
+        try testing.expect(std.mem.startsWith(u8, text, "--! "));
+        try testing.expect(std.mem.indexOf(u8, text, "\nimport ") != null);
+        try testing.expect(std.mem.indexOf(u8, text, "\npub type alias Model") != null);
+    }
+}
+
+test "the dispatch tree is the same project as the plain one, written with dispatch" {
+    // M1b compares the two corpora directly (§7), so anything that differs
+    // between them other than the dispatch text is a confound. Four are
+    // guarded here because each one would land on a different row of the
+    // table as if it were a cost of the feature:
+    //
+    //   - the module list and the declaration names (the project itself);
+    //   - the count of `pub` values, because writing the interface is what
+    //     the checker is most sensitive to (bench/README.md's M2d entry
+    //     measures `fillInterface` at 19x on a module whose declarations
+    //     are `pub`);
+    //   - the count of ANNOTATED declarations, because an annotation is a
+    //     written type to check against rather than one to infer;
+    //   - the size, in lines and in bytes, because `loc_per_s` and
+    //     `mb_per_s` are both per-unit-of-input rates.
+    var plain: Io.Writer.Allocating = .init(testing.allocator);
+    defer plain.deinit();
+    var disp: Io.Writer.Allocating = .init(testing.allocator);
+    defer disp.deinit();
+
+    const modules = try moduleCount(default_seed, 20_000);
+    try testing.expect(modules > 40);
+
+    var a: Shape = .{};
+    var b: Shape = .{};
+    var helpers: WhereHelpers = .{};
+    var found: struct {
+        method: bool = false,
+        cross_module: bool = false,
+        where_compare: bool = false,
+        where_method: bool = false,
+        inferred: bool = false,
+        record_eq: bool = false,
+        custom_eq: bool = false,
+        dict: bool = false,
+        set: bool = false,
+        placeholder: bool = false,
+    } = .{};
+    for (0..modules) |i| {
+        plain.clearRetainingCapacity();
+        disp.clearRetainingCapacity();
+        a.lines += try writeModuleMode(&plain.writer, default_seed, @intCast(i), .plain);
+        b.lines += try writeModuleMode(&disp.writer, default_seed, @intCast(i), .dispatch);
+        try expectSameDeclarations(plain.written(), disp.written());
+        a.count(plain.written());
+        b.count(disp.written());
+        try helpers.count(disp.written());
+
+        const text = disp.written();
+        if (std.mem.indexOf(u8, text, ".helper") != null) found.method = true;
+        if (std.mem.indexOf(u8, text, ".init") != null) found.cross_module = true;
+        if (std.mem.indexOf(u8, text, "    where a.compare : a, a -> Order") != null) found.where_compare = true;
+        if (std.mem.indexOf(u8, text, "    where a.helper") != null) found.where_method = true;
+        if (std.mem.indexOf(u8, text, "if model == init") != null) found.record_eq = true;
+        if (std.mem.indexOf(u8, text, "if msg == Reset then") != null) found.custom_eq = true;
+        if (std.mem.indexOf(u8, text, "List.foldl xs Dict.empty (\\x acc -> acc.insert x 1)") != null) found.dict = true;
+        if (std.mem.indexOf(u8, text, "List.foldl xs Set.empty (\\x acc -> acc.insert x)") != null) found.set = true;
+        if (std.mem.indexOf(u8, text, "|> List.map (init") != null) found.placeholder = true;
+    }
+    // Every part of the M1b shape is really in the tree. A flag that
+    // silently stopped firing would leave a corpus that measures the
+    // feature's cost on code that does not use it, which is M1a.
+    try testing.expect(found.method);
+    try testing.expect(found.cross_module);
+    try testing.expect(found.where_compare);
+    try testing.expect(found.where_method);
+    try testing.expect(found.record_eq);
+    try testing.expect(found.custom_eq);
+    try testing.expect(found.dict);
+    try testing.expect(found.set);
+    try testing.expect(found.placeholder);
+
+    // Interface shape: identical. See the header above for why each matters.
+    try testing.expectEqual(a.pub_values, b.pub_values);
+    try testing.expectEqual(a.annotated, b.annotated);
+
+    // Within 2 % of the lines and 3 % of the bytes. Dispatch text is
+    // genuinely longer — a method call names its receiver — so the byte
+    // budget is the looser of the two, but it is a budget: at 6 % the
+    // front end's MB/s rows would be comparing different amounts of input.
+    try expectWithin("lines", a.lines, b.lines, 2);
+    try expectWithin("bytes", a.bytes, b.bytes, 3);
+
+    // Every constrained helper is CALLED. A constrained declaration nobody
+    // calls never makes a call site pass an evidence argument, so §8.1's
+    // `$m$k` would appear in the corpus as a parameter and never as an
+    // argument, and the backend rows of §7 would measure half the feature.
+    try testing.expect(helpers.total > 20);
+    try testing.expectEqual(@as(usize, 0), helpers.uncalled);
+    // …at a concrete type, which is the site that has to SUPPLY evidence…
+    try testing.expect(helpers.concrete_sites > 10);
+    // …and from inside another constrained helper, which is the site that
+    // has to FORWARD the evidence it was given: two levels.
+    try testing.expect(helpers.forwarding_sites > 0);
+}
+
+/// The counts the two trees must agree on.
+const Shape = struct {
+    pub_values: usize = 0,
+    annotated: usize = 0,
+    lines: u64 = 0,
+    bytes: u64 = 0,
+
+    fn count(shape: *Shape, text: []const u8) void {
+        shape.bytes += text.len;
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |l| {
+            if (l.len == 0 or l[0] == ' ' or std.mem.startsWith(u8, l, "--")) continue;
+            var rest = l;
+            if (std.mem.startsWith(u8, rest, "pub ")) {
+                rest = rest["pub ".len..];
+                if (!std.mem.startsWith(u8, rest, "type ") and !std.mem.startsWith(u8, rest, "opaque type ")) {
+                    shape.pub_values += 1;
+                }
+            }
+            if (std.mem.startsWith(u8, rest, "import ")) continue;
+            if (std.mem.startsWith(u8, rest, "type ") or std.mem.startsWith(u8, rest, "opaque type ")) continue;
+            if (std.mem.indexOf(u8, rest, " : ") != null) shape.annotated += 1;
+        }
+    }
+};
+
+fn expectWithin(what: []const u8, plain: u64, dispatch: u64, percent: u64) !void {
+    const delta = @abs(@as(i64, @intCast(dispatch)) - @as(i64, @intCast(plain)));
+    const budget = plain * percent / 100;
+    if (delta > budget) {
+        std.debug.print(
+            "dispatch corpus is {d} {s} against {d} plain, over the {d} % budget of {d}\n",
+            .{ dispatch, what, plain, percent, budget },
+        );
+        return error.DispatchCorpusDrifted;
+    }
+}
+
+/// Call sites of the `where`-constrained helpers, over the whole tree.
+const WhereHelpers = struct {
+    total: usize = 0,
+    uncalled: usize = 0,
+    /// `scale<i>_<n> init<i> …`: a call at a concrete type, which is where
+    /// the evidence argument is supplied.
+    concrete_sites: usize = 0,
+    /// `scale<i>_<n> x …`: a call from inside another constrained helper,
+    /// which is where the evidence argument is forwarded.
+    forwarding_sites: usize = 0,
+
+    const marker = " x n =";
+
+    fn count(h: *WhereHelpers, text: []const u8) !void {
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |l| {
+            if (l.len == 0 or l[0] == ' ') continue;
+            if (!std.mem.endsWith(u8, l, marker)) continue;
+            const name = l[0 .. l.len - marker.len];
+            h.total += 1;
+
+            var buf: [4][48]u8 = undefined;
+            // Every occurrence of the name is followed by a space: the
+            // annotation (`name : a, …`), the definition (`name x n =`) and
+            // every call (`name init<i> …`, `name x (`). Matching the
+            // trailing space is also what keeps `scale1_1` from matching
+            // `scale1_10`.
+            const with_space = try std.fmt.bufPrint(&buf[0], "{s} ", .{name});
+            const annotation = try std.fmt.bufPrint(&buf[1], "{s} : a,", .{name});
+            const declarations: usize = if (std.mem.indexOf(u8, text, annotation) != null) 2 else 1;
+            const uses = std.mem.count(u8, text, with_space) - declarations;
+            if (uses == 0) h.uncalled += 1;
+
+            const concrete = try std.fmt.bufPrint(&buf[2], "{s} init", .{name});
+            h.concrete_sites += std.mem.count(u8, text, concrete);
+            const forwarded = try std.fmt.bufPrint(&buf[3], "{s} x (", .{name});
+            h.forwarding_sites += std.mem.count(u8, text, forwarded);
+        }
+    }
+};
+
+/// Fail unless the two texts declare the same names at column 1, in the same
+/// order. The declaration list IS the module's interface shape, and holding
+/// it fixed is what lets M1b attribute a difference to dispatch rather than
+/// to a different program.
+fn expectSameDeclarations(plain: []const u8, dispatch: []const u8) !void {
+    var a = std.mem.splitScalar(u8, plain, '\n');
+    var b = std.mem.splitScalar(u8, dispatch, '\n');
+    var last_left: []const u8 = "";
+    var last_right: []const u8 = "";
+    while (true) {
+        // An annotation and its definition both name the declaration, and
+        // whether a declaration HAS an annotation differs between the modes
+        // (the `where` helpers always do). Collapsing the repeat compares
+        // the declarations themselves rather than the lines.
+        const left = nextDeclaration(&a, &last_left);
+        const right = nextDeclaration(&b, &last_right);
+        if (left == null and right == null) return;
+        if (left == null or right == null) {
+            std.debug.print("declaration lists differ in length: {?s} vs {?s}\n", .{ left, right });
+            return error.DeclarationListsDiffer;
+        }
+        if (!std.mem.eql(u8, left.?, right.?)) {
+            std.debug.print("declaration `{s}` became `{s}`\n", .{ left.?, right.? });
+            return error.DeclarationRenamed;
+        }
+    }
+}
+
+/// The next declared NAME: a column-1 line that is not a comment, not an
+/// import and not a type declaration, with `pub` stripped, skipping a
+/// repeat of `last` (an annotation followed by its definition).
+fn nextDeclaration(lines: *std.mem.SplitIterator(u8, .scalar), last: *[]const u8) ?[]const u8 {
+    while (lines.next()) |l| {
+        if (l.len == 0 or l[0] == ' ' or std.mem.startsWith(u8, l, "--")) continue;
+        var rest = l;
+        if (std.mem.startsWith(u8, rest, "pub ")) rest = rest["pub ".len..];
+        if (std.mem.startsWith(u8, rest, "import ")) continue;
+        if (std.mem.startsWith(u8, rest, "type ")) continue;
+        if (std.mem.startsWith(u8, rest, "opaque type ")) continue;
+        const name = identAt(rest);
+        if (name.len == 0) continue;
+        if (std.mem.eql(u8, name, last.*)) continue;
+        last.* = name;
+        return name;
+    }
+    return null;
+}
+
 test "the wide module is a pure function of seed and size, and holds the shape it claims" {
     var a: Io.Writer.Allocating = .init(testing.allocator);
     defer a.deinit();
@@ -1359,19 +2162,38 @@ test "the wide shape spends its whole budget, at every size" {
     }
 }
 
-test "every pathological case is one line, the size it claims, and named by a valid module path" {
+test "every pathological case is the size and shape it claims, and named by a valid module path" {
     var out: Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
-    inline for (@typeInfo(Pathological).@"enum".fields) |field| {
-        const which: Pathological = @enumFromInt(field.value);
+    inline for (@typeInfo(Pathological.Case).@"enum".fields) |field| {
+        const case: Pathological.Case = @enumFromInt(field.value);
+        const which: Pathological = .{ .case = case };
         out.clearRetainingCapacity();
         try writePathological(&out.writer, which);
         const text = out.written();
-        // The point of every one of these is that the payload is on ONE
-        // line: a file with a million short lines is a different stress.
-        try testing.expect(std.mem.count(u8, text, "\n") <= 2);
         try testing.expect(text[text.len - 1] == '\n');
-        try testing.expect(text.len > 500_000);
+        switch (case) {
+            // The point of the four originals is that the payload is on ONE
+            // line: a file with a million short lines is a different stress.
+            .@"big-list", .@"big-string", .@"big-ident", .@"deep-lambdas" => {
+                try testing.expect(std.mem.count(u8, text, "\n") <= 2);
+                try testing.expect(text.len > 500_000);
+            },
+            // The chain is the opposite shape on purpose: many small
+            // declarations, and what it makes expensive is the checker, not
+            // the lexer. Its size assertion is therefore a DECLARATION
+            // count, and the last link has to name the one before it — a
+            // chain whose links stopped referring to each other would check
+            // instantly and measure nothing (§7 M2).
+            .@"constraint-chain" => {
+                const n = Pathological.default_chain;
+                try testing.expectEqual(@as(usize, n), std.mem.count(u8, text, "\npub f"));
+                try testing.expect(std.mem.indexOf(u8, text, "\npub f1 x =\n    x.m1 1\n") != null);
+                var buf: [64]u8 = undefined;
+                const last = try std.fmt.bufPrint(&buf, "\npub f{d} x =\n    x.m{d} 1 + f{d} x\n", .{ n, n, n - 1 });
+                try testing.expect(std.mem.indexOf(u8, text, last) != null);
+            },
+        }
         // `Pathological.parse` round-trips the name the flag takes.
         try testing.expectEqual(@as(?Pathological, which), Pathological.parse(field.name));
         // Every path segment is an upper identifier (language.md §1), so
@@ -1384,6 +2206,35 @@ test "every pathological case is one line, the size it claims, and named by a va
         }
     }
     try testing.expectEqual(@as(?Pathological, null), Pathological.parse("no-such-case"));
+    // Only the chain takes a size, and it must be a positive number: a
+    // typo has to be an error, not a silently ignored suffix.
+    try testing.expectEqual(@as(?Pathological, .{ .case = .@"constraint-chain", .n = 5000 }), Pathological.parse("constraint-chain=5000"));
+    try testing.expectEqual(@as(?Pathological, null), Pathological.parse("constraint-chain=0"));
+    try testing.expectEqual(@as(?Pathological, null), Pathological.parse("constraint-chain=x"));
+    try testing.expectEqual(@as(?Pathological, null), Pathological.parse("big-list=7"));
+}
+
+test "the constraint chain is a pure function of its length and grows one constraint per link" {
+    var out: Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    var again: Io.Writer.Allocating = .init(testing.allocator);
+    defer again.deinit();
+    try writeConstraintChain(&out.writer, 64);
+    try writeConstraintChain(&again.writer, 64);
+    try testing.expectEqualStrings(out.written(), again.written());
+
+    const text = out.written();
+    // Every method name distinct: the same name 64 times would MERGE to one
+    // constraint (§6.2) and the case would measure nothing.
+    var i: u32 = 1;
+    var buf: [32]u8 = undefined;
+    while (i <= 64) : (i += 1) {
+        const method = try std.fmt.bufPrint(&buf, "x.m{d} 1", .{i});
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, text, method));
+    }
+    // No annotation anywhere: a `:` outside the doc header would let a
+    // constraint discharge early and halve the case.
+    try testing.expect(std.mem.indexOfScalar(u8, text[std.mem.indexOf(u8, text, "pub f1").?..], ':') == null);
 }
 
 test "module paths are valid upper-identifier segments" {

@@ -1,0 +1,58 @@
+-- ops: 120000
+--
+-- R2 of the M5 row (`plans/static-dispatch-spike.md` §7): the same `Dict`
+-- workload as R1 with a RECORD key. C0 has no structural `compare`, so the
+-- ordering is written out by hand, lexicographic in field order, and passed
+-- to `Dict.empty`. The spike derives exactly this function per shape (§6)
+-- and passes it as evidence instead, so the pair of numbers says what
+-- derivation costs against a hand-written comparator.
+--
+-- Same range-depth constraint as R1: nested small ranges, `List.foldl` for
+-- every loop.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    { x : Int, y : Int }
+
+
+blocks : Int
+blocks =
+    120
+
+
+perBlock : Int
+perBlock =
+    500
+
+
+comparePoint : Point, Point -> Order
+comparePoint a b =
+    case compare a.x b.x of
+        EQ ->
+            compare a.y b.y
+
+        other ->
+            other
+
+
+points : List Point
+points =
+    List.concatMap
+        (List.range 0 (blocks - 1))
+        (\block -> List.map (List.range 1 perBlock) (\i -> { x = block, y = i }))
+
+
+main : Program
+main =
+    let
+        dict =
+            List.foldl points (Dict.empty comparePoint) (\p d -> Dict.insert d p (p.x + p.y))
+
+        total =
+            List.foldl points 0 (\p acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
+    in
+    Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

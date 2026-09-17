@@ -1014,3 +1014,461 @@ fn expectEveryFileIsEsm(w: *World, dir: []const u8) !void {
         return error.NotAnEsModule;
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// The measurement harness (plans/static-dispatch-spike.md §7, §10).
+//
+// `bench/size.mjs`, `bench/runtime.mjs` and `bench/churn.sh` are instruments,
+// and §10 asks that each be run on one tiny program here so the JSON and the
+// table cannot rot unnoticed. These scenarios assert SHAPE — the keys are
+// there, the numbers are numbers, the table has its rows — and never a
+// value, because a byte count and a millisecond are properties of the
+// machine, not of the compiler.
+//
+// Unlike every scenario above, these children keep the test process's
+// environment: `churn.sh` is a POSIX shell script and cannot find `awk`
+// without a `PATH`. `std.process.run` inherits it when no `environ_map` is
+// given, and resolves `argv[0]` on it, which is also how `sh` is found.
+// ─────────────────────────────────────────────────────────────────────────
+
+const HarnessRun = struct {
+    exit_code: u8,
+    stdout: []const u8,
+    stderr: []const u8,
+};
+
+/// Run one of the `bench/` scripts with the repository as the working
+/// directory, which is where the build step leaves this process.
+fn runHarness(w: *World, argv: []const []const u8) !HarnessRun {
+    const arena = w.arena.allocator();
+    const r = try std.process.run(w.gpa, w.io, .{
+        .argv = argv,
+        .cwd = .inherit,
+        .stdout_limit = .limited(world.max_stream_bytes),
+        .stderr_limit = .limited(world.max_stream_bytes),
+    });
+    defer w.gpa.free(r.stdout);
+    defer w.gpa.free(r.stderr);
+    return .{
+        .exit_code = switch (r.term) {
+            .exited => |code| code,
+            else => 255,
+        },
+        .stdout = try arena.dupe(u8, r.stdout),
+        .stderr = try arena.dupe(u8, r.stderr),
+    };
+}
+
+/// The absolute path of the world's project directory. The harness scripts
+/// take a corpus root as a flag and run from the repository, so a path
+/// relative to the temporary project is no use to them.
+fn projectPath(w: *World) ![]const u8 {
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try w.tmp.dir.realPath(w.io, &buffer);
+    return w.arena.allocator().dupe(u8, buffer[0..len]);
+}
+
+/// The last non-empty line of `text`.
+fn lastLine(text: []const u8) []const u8 {
+    var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, text, "\n"), '\n');
+    var last: []const u8 = "";
+    while (it.next()) |line| {
+        if (line.len != 0) last = line;
+    }
+    return last;
+}
+
+fn harnessFailed(name: []const u8, r: HarnessRun) error{HarnessFailed} {
+    std.debug.print("{s} exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ name, r.exit_code, r.stdout, r.stderr });
+    return error.HarnessFailed;
+}
+
+test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a floor, and a total" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Tiny.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt 7)
+        \\
+    );
+    const node_exe = w.node_exe orelse return error.NodeNotOnPath;
+    const arena = w.arena.allocator();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        node_exe,
+        "bench/size.mjs",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{w.exe}),
+        try std.fmt.allocPrint(arena, "--corpus={s}", .{try projectPath(&w)}),
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (r.exit_code != 0) return harnessFailed("bench/size.mjs", r);
+
+    var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
+    const floor = try parseJson(SizeFloor, arena, it.next() orelse return error.NoOutput);
+    // The floor is core plus the platform reached by a `main` that does
+    // nothing: a real build, so every one of these is positive.
+    try testing.expect(floor.floor);
+    try testing.expect(floor.files > 0);
+    try testing.expect(floor.raw_bytes > 0);
+    try testing.expect(floor.gzip_bytes > 0);
+    try testing.expect(floor.brotli_bytes > 0);
+
+    const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
+    try testing.expect(std.mem.endsWith(u8, program.program, "Tiny.beni"));
+    try testing.expect(program.files > 0);
+    try testing.expect(program.gzip_bytes <= program.raw_bytes);
+    try testing.expect(program.brotli_bytes <= program.raw_bytes);
+    // Net is the subtraction the totals are built from, so it has to be
+    // exactly that and not a second compression.
+    try testing.expectEqual(program.raw_bytes - floor.raw_bytes, program.net_raw_bytes);
+    try testing.expectEqual(program.gzip_bytes - floor.gzip_bytes, program.net_gzip_bytes);
+    try testing.expectEqual(program.brotli_bytes - floor.brotli_bytes, program.net_brotli_bytes);
+    // A program that prints one number adds bytes to the floor and does not
+    // remove any: without DCE the floor is contained in every build.
+    try testing.expect(program.net_raw_bytes > 0);
+    // Nothing derives anything until the spike does (§7 M4).
+    try testing.expectEqual(@as(u64, 0), program.derived_bytes);
+    try testing.expectEqual(@as(u32, 0), program.derived_functions);
+
+    const total = try parseJson(SizeTotal, arena, lastLine(r.stdout));
+    try testing.expect(total.total);
+    try testing.expectEqual(@as(u32, 1), total.programs);
+    // The shared tree counted ONCE plus what the program adds, and the gross
+    // sum kept beside it.
+    try testing.expectEqual(floor.raw_bytes + program.net_raw_bytes, total.raw_bytes);
+    try testing.expectEqual(floor.gzip_bytes + program.net_gzip_bytes, total.gzip_bytes);
+    try testing.expectEqual(floor.brotli_bytes + program.net_brotli_bytes, total.brotli_bytes);
+    try testing.expectEqual(program.raw_bytes, total.gross_raw_bytes);
+    try testing.expectEqual(floor.raw_bytes, total.floor_raw_bytes);
+}
+
+test "bench/size.mjs counts a derived-shaped name and not core's hand-written one" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `derived_bytes` is the whole point of M4's "grows per type x method"
+    // row, and it is 0 on every real corpus today, so a scenario that only
+    // ever saw 0 would pass with the matcher deleted. A `pub eq` in a module
+    // called `Foo` is emitted as `Foo$eq` — exactly the printed shape §8.5
+    // gives a derived `eq` — and core's own `Basics$compare` is in the same
+    // output tree and must NOT be counted.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Foo.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\pub eq : Int, Int -> Bool
+        \\eq x y =
+        \\    x == y
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt 7)
+        \\
+    );
+    const node_exe = w.node_exe orelse return error.NodeNotOnPath;
+    const arena = w.arena.allocator();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        node_exe,
+        "bench/size.mjs",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{w.exe}),
+        try std.fmt.allocPrint(arena, "--corpus={s}", .{try projectPath(&w)}),
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (r.exit_code != 0) return harnessFailed("bench/size.mjs", r);
+    var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
+    _ = it.next(); // the floor
+    const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
+    // Exactly one: `Foo$eq`. Two would mean `Basics$compare` was counted as
+    // well, and zero would mean the matcher never fires.
+    try testing.expectEqual(@as(u32, 1), program.derived_functions);
+    try testing.expect(program.derived_bytes > 0);
+    try testing.expect(program.derived_bytes < program.raw_bytes);
+}
+
+test "bench/size.mjs builds a root that declares no main behind a synthesised entry" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `bench/corpus` is a library, not a program: no module in it declares
+    // `main : Program`, so `beni build` refuses it and the script has to
+    // write an entry point of its own. That path is most of what M4 measures
+    // on that corpus, and nothing else exercises it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Alpha.beni",
+        \\pub double : Int -> Int
+        \\double n =
+        \\    n * 2
+        \\
+    );
+    const node_exe = w.node_exe orelse return error.NodeNotOnPath;
+    const arena = w.arena.allocator();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        node_exe,
+        "bench/size.mjs",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{w.exe}),
+        try std.fmt.allocPrint(arena, "--corpus={s}", .{try projectPath(&w)}),
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (r.exit_code != 0) return harnessFailed("bench/size.mjs", r);
+    var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
+    _ = it.next(); // the floor
+    const program = try parseJson(SizeSynthesised, arena, it.next() orelse return error.NoProgramLine);
+    try testing.expectEqualStrings("BenchMain (synthesised)", program.entry);
+    try testing.expectEqual(@as(u32, 1), program.modules_measured);
+    try testing.expectEqual(@as(usize, 0), program.modules_excluded.len);
+    // The module really is in the output, not merely imported and dropped:
+    // there is no DCE, so an import is enough (§11).
+    try testing.expect(program.net_raw_bytes > 0);
+}
+
+test "bench/runtime.mjs times a program against a beni floor, checks its answer and reports ns/op" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // The `-- ops:` header is what `ns_per_op` is divided by; a program
+    // without one is an error, so the smoke test carries one.
+    try w.write("c0/Tiny.beni",
+        \\-- ops: 10
+        \\import List
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (List.sum (List.range 1 10)))
+        \\
+    );
+    const node_exe = w.node_exe orelse return error.NodeNotOnPath;
+    const arena = w.arena.allocator();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        node_exe,
+        "bench/runtime.mjs",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{w.exe}),
+        try std.fmt.allocPrint(arena, "--dir={s}", .{try projectPath(&w)}),
+        "--variant=c0",
+        "--runs=2",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (r.exit_code != 0) return harnessFailed("bench/runtime.mjs", r);
+    const line = try parseJson(RuntimeLine, arena, lastLine(r.stdout));
+    try testing.expectEqualStrings("Tiny", line.program);
+    try testing.expectEqualStrings("c0", line.variant);
+    try testing.expectEqual(@as(u32, 2), line.runs);
+    try testing.expectEqual(@as(u64, 10), line.ops);
+    try testing.expect(line.best_ms > 0);
+    try testing.expect(line.median_ms >= line.best_ms);
+    // The floor is a null beni PROGRAM, so it pays for the ESM load of core
+    // and the platform as well as for starting Node. That is several
+    // milliseconds, and it is what makes the subtraction meaningful.
+    try testing.expect(line.floor_ms > 0);
+    // `ns_per_op` is the printed pair divided by the printed op count, to a
+    // tenth: the line is self-checking, and a floor that stopped being
+    // subtracted would fail here rather than quietly inflate every number.
+    const expected = @max(line.best_ms - line.floor_ms, 0) * 1e6 / @as(f64, @floatFromInt(line.ops));
+    try testing.expectApproxEqAbs(@round(expected * 10) / 10, line.ns_per_op, 0.05);
+    // The checksum is the program's own answer, which is how a run that got
+    // faster by getting the wrong result fails instead of scoring.
+    try testing.expectEqualStrings("55", line.checksum);
+}
+
+test "bench/churn.sh reports every edit class against both variants, counts a rejection, and restores the tree" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Two declarations, chosen so each column of the table has something in
+    // it. `bump` takes every edit: an integer literal for E1, `n + 1` on a
+    // parameter for E2, a parameter no `==` mentions for E3. `applyTwice`
+    // takes a FUNCTION, so E3's `f == f` is `not_equatable` — a rejection,
+    // which is the outcome `beni dump`'s exit code cannot see and which the
+    // script therefore has to read out of the JSON diagnostics.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Tiny.beni",
+        \\pub bump : Int -> Int
+        \\bump n =
+        \\    n + 1
+        \\
+        \\
+        \\pub applyTwice : (Int -> Int), Int -> Int
+        \\applyTwice f n =
+        \\    f (f n)
+        \\
+    );
+    const arena = w.arena.allocator();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runHarness(&w, &.{
+        "sh",
+        "bench/churn.sh",
+        try std.fmt.allocPrint(arena, "--beni={s}", .{w.exe}),
+        try std.fmt.allocPrint(arena, "--corpus={s}", .{try projectPath(&w)}),
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (r.exit_code != 0) return harnessFailed("bench/churn.sh", r);
+    // The tree it churned is a copy; saying so is half the contract.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "tree restored: yes") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "changed/accepted") != null);
+
+    // Every class against both variants, and every row over both
+    // declarations.
+    for ([_][]const u8{ "E1", "E2", "E3", "E3poly" }) |klass| {
+        for ([_][]const u8{ "annotated", "unannotated" }) |variant| {
+            const row = try churnRow(r.stdout, klass, variant);
+            try testing.expectEqual(@as(u32, 2), row.decls);
+            try testing.expectEqual(row.applied + row.skipped, row.decls);
+        }
+    }
+
+    // `f == f` on a function: refused by the checker, and counted as such.
+    // Before the JSON classification this scored as a successful,
+    // interface-preserving edit.
+    const e3 = try churnRow(r.stdout, "E3", "annotated");
+    try testing.expectEqual(@as(u32, 1), e3.rejected);
+    try testing.expectEqual(@as(u32, 2), e3.applied);
+    // Neither parameter is annotated with a bare type variable, so the
+    // polymorphic row has nothing to say about this module.
+    const poly = try churnRow(r.stdout, "E3poly", "annotated");
+    try testing.expectEqual(@as(u32, 2), poly.skipped);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The corpus it was pointed at is byte-identical afterwards.
+    try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "    n + 1\n") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("Tiny.beni"), "always") == null);
+}
+
+const SizeFloor = struct {
+    floor: bool,
+    files: u32,
+    raw_bytes: i64,
+    gzip_bytes: i64,
+    brotli_bytes: i64,
+};
+
+const SizeProgram = struct {
+    program: []const u8,
+    files: u32,
+    raw_bytes: i64,
+    gzip_bytes: i64,
+    brotli_bytes: i64,
+    net_raw_bytes: i64,
+    net_gzip_bytes: i64,
+    net_brotli_bytes: i64,
+    derived_bytes: u64,
+    derived_functions: u32,
+};
+
+const SizeSynthesised = struct {
+    program: []const u8,
+    entry: []const u8,
+    modules_measured: u32,
+    modules_excluded: []const []const u8,
+    net_raw_bytes: i64,
+};
+
+const SizeTotal = struct {
+    total: bool,
+    programs: u32,
+    raw_bytes: i64,
+    gzip_bytes: i64,
+    brotli_bytes: i64,
+    floor_raw_bytes: i64,
+    gross_raw_bytes: i64,
+};
+
+const RuntimeLine = struct {
+    program: []const u8,
+    variant: []const u8,
+    runs: u32,
+    ops: u64,
+    floor_ms: f64,
+    best_ms: f64,
+    median_ms: f64,
+    ns_per_op: f64,
+    checksum: []const u8,
+};
+
+fn parseJson(comptime T: type, arena: std.mem.Allocator, line: []const u8) !T {
+    return std.json.parseFromSliceLeaky(T, arena, line, .{ .ignore_unknown_fields = true }) catch |err| {
+        std.debug.print("not a {s} line ({t}): {s}\n", .{ @typeName(T), err, line });
+        return error.NotJson;
+    };
+}
+
+/// One row of `churn.sh`'s table:
+///
+///     E3poly  unannotated               4/4        7       96         3    103
+const ChurnRow = struct { changed: u32, accepted: u32, applied: u32, skipped: u32, rejected: u32, decls: u32 };
+
+fn churnRow(stdout: []const u8, klass: []const u8, variant: []const u8) !ChurnRow {
+    var lines = std.mem.splitScalar(u8, stdout, '\n');
+    while (lines.next()) |line| {
+        var fields = std.mem.tokenizeAny(u8, line, " \t");
+        const first = fields.next() orelse continue;
+        if (!std.mem.eql(u8, first, klass)) continue;
+        const second = fields.next() orelse continue;
+        if (!std.mem.eql(u8, second, variant)) continue;
+
+        const fraction = fields.next() orelse return error.MalformedRow;
+        const slash = std.mem.indexOfScalar(u8, fraction, '/') orelse return error.MalformedRow;
+        return .{
+            .changed = try std.fmt.parseInt(u32, fraction[0..slash], 10),
+            .accepted = try std.fmt.parseInt(u32, fraction[slash + 1 ..], 10),
+            .applied = try std.fmt.parseInt(u32, fields.next() orelse return error.MalformedRow, 10),
+            .skipped = try std.fmt.parseInt(u32, fields.next() orelse return error.MalformedRow, 10),
+            .rejected = try std.fmt.parseInt(u32, fields.next() orelse return error.MalformedRow, 10),
+            .decls = try std.fmt.parseInt(u32, fields.next() orelse return error.MalformedRow, 10),
+        };
+    }
+    std.debug.print("no `{s} {s}` row in:\n{s}\n", .{ klass, variant, stdout });
+    return error.MissingRow;
+}
