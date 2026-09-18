@@ -24,9 +24,9 @@ one commit each, nothing force-pushed, no history rewritten.
 
 | # | Slice | State | Notes |
 |---|---|---|---|
-| 1 | Stale "numbers only" hint in `Diagnostics.zig` | in flight | found by L1; `<` is no longer numbers-only |
-| 2 | **Tail-call loop** (M3b, `backend.md` §8) — spec, then code | spec in flight | must precede effects; lets `foldl`/`foldr` leave `foreign`; closure-capture hazard is the exit-0 risk |
-| 3 | `ambiguous_method_receiver` on by default + hard cap on inferred `where` count | todo | owed 4/5; manager decision: yes to both, cap 64; spec §10.9/§6.4 amendment first |
+| 1 | Stale "numbers only" hint in `Diagnostics.zig` | **done** `cfe4665` | found by L1; `<` is no longer numbers-only |
+| 2 | **Tail-call loop** (M3b, `backend.md` §8) — spec, then code | **done** `1cbf68e`, `bbfc869` | must precede effects; lets `foldl`/`foldr` leave `foreign`; closure-capture hazard is the exit-0 risk |
+| 3 | `ambiguous_method_receiver` on by default + hard cap on inferred `where` count | **done** `9074538`, A.83 | owed 4/5; manager decision: yes to both, cap 64; spec §10.9/§6.4 amendment first |
 | 4 | `foreign` + `where` arity check (`boundary.md` §4) | todo | owed 2; how `Sibling.zig` reads exports decides the shape |
 | 5 | Two printer defects: `Render.writeRecord` 64-link flatten drops `| r`; `Schemes.Writer.max_depth` writes `<error>` with exit 0 | todo | owed 3; each needs a fail-first fixture |
 | 6 | Decision trees (M3b, `backend.md` §7) | todo | spec is four lines; needs the same expansion §8 got |
@@ -35,8 +35,5 @@ one commit each, nothing force-pushed, no history rewritten.
 | 9 | Drop the 4×500 split in `bench/runtime` once #2 lands; re-take M5 | todo | measurement follow-up |
 | 10 | `transparent-effects-proposal.md` §10 item 1 is stale (`Func` is n-ary now) | todo | docs; found by L1 |
 
-## Known-stale statements to fix in passing
-
-- CLAUDE.md "Still to come are saturated calls in the backend" — the diary's
-  n-ary entry says the backend's currying was deleted in that slice. Verify,
-  then correct.
+| 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | todo | found by slice 3; low priority |
+| 12 | Effects: spec pass over `transparent-effects-proposal.md` §10 now that both blockers landed | todo | after M3b; a design pass, owner should read it before code |

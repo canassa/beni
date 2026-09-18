@@ -32,8 +32,9 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 ## M3 — in progress
 
-M3a emits JavaScript that runs, against the Node platform. Still to come: the
-tail-call loop, decision trees for pattern matching, reachability-driven dead
+M3a emits JavaScript that runs, against the Node platform, and M3b's tail-call
+loop has landed ([`backend.md`](docs/design/backend.md) §8). Still to come:
+decision trees for pattern matching, the rest of M3b, reachability-driven dead
 code elimination, and chunking. [`backend.md`](docs/design/backend.md) is the
 contract, [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
 
@@ -43,11 +44,11 @@ rewritten around them. It was built as a spike, measured
 ([`research/19`](docs/design/research/19-static-dispatch-spike-results.md)) and
 adopted on 2026-09-18, reversing two `fast-compiler.md` §3.1 decisions.
 
-**In flight across M3**: the no-currying change, sliced. Landed so far are the
-removal of `>>`/`<<`, the `_` placeholder, the `let x <- e` bind, n-ary
-function types through the parser, BIR and checker, and `core/` rewritten
-subject-first with `|>` flipped to pipe-first. Still to come are saturated
-calls in the backend.
+**The no-currying change has landed**, in slices: the removal of `>>`/`<<`,
+the `_` placeholder, the `let x <- e` bind, n-ary function types through the
+parser, BIR, checker and backend — every emitted call is saturated and there is
+no calling convention (`backend.md` §6) — and `core/` rewritten subject-first
+with `|>` flipped to pipe-first.
 
 ### Owed after the static-dispatch adoption
 
@@ -82,16 +83,20 @@ A.83.
 M4 is the daemon and incrementality; M5 is source maps, code splitting and LSP.
 Neither has started.
 
-## Effects, and why they are blocked
+## Effects, and what blocked them
 
 [`transparent-effects-proposal.md`](docs/design/transparent-effects-proposal.md)
 is the live design argument: two inferred bits per function, a fiber runtime, no
-surface syntax. It cannot start until the no-currying change lands, because
+surface syntax. It could not start until the no-currying change landed, because
 effect flags have nowhere to live on a curried `{param, result}` chain.
 [`research/17-platform-primitives.md`](docs/design/research/17-platform-primitives.md)
 discharges its §10 item 0. A second constraint found there: the tail-call loop
-must land **before** effects, because it is what lets `List.foldl`/`foldr` leave
-`foreign`, and until they do the proposal's own headline example miscompiles.
+had to land **before** effects, because it is what lets `List.foldl`/`foldr`
+leave `foreign`, and until they did the proposal's own headline example
+miscompiled. **Both have now landed** — no `foreign` value in the repository
+takes a function — so what stands between the proposal and a first slice is the
+proposal's own §10 list, which is stale in places (item 1 still describes a
+curried `Func`) and needs a spec pass before any code.
 
 ## Building
 
