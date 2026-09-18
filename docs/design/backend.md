@@ -46,7 +46,15 @@ beni build [options] <entry>...      compile to JavaScript
 | `--platform=<name>` | which platform package supplies `main`'s type and the runtime | required |
 | `--release` | chunks, elimination, renaming, integer tags, maps off | off |
 | `--out=<dir>` | output directory | `out/` |
-| `--source-maps` | emit `.map` files | on in dev, off in release |
+| `--source-maps` | emit `.map` files | M5; refused today, on in dev and off in release once §11 lands |
+
+**`--release` and `--source-maps` are refused, not ignored.** Neither is implemented — the optimiser
+is M3c (§1) and the source-map encoder is M5 (§11) — and a flag that is accepted while doing nothing
+makes a user believe they asked for something: a silent, successful `--source-maps` build sends them
+looking for a `.map` that was never written, exactly as a silent `--release` build would ship
+development output. Both exit `2` with `frontend.md` §1's one-line usage message naming the
+milestone. The defaults in the table above are what M5 will do; until then the only way to build is
+without the flag.
 
 Development output is **one ESM file per source module**, mirroring the source tree, with no
 elimination and readable names. Release output is **reachability chunks**. Both read one declaration

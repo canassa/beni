@@ -1408,7 +1408,7 @@ test "--release is refused rather than silently producing development output" {
     try testing.expect(!w.exists("out"));
 }
 
-test "--source-maps is accepted and changes nothing yet" {
+test "--source-maps is refused rather than silently writing no .map file" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1427,22 +1427,26 @@ test "--source-maps is accepted and changes nothing yet" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const plain = try w.runWith(&.{ "build", "--platform=node", "--out=plain", "Main.beni" }, .{ .raw_diagnostics = true });
-    const mapped = try w.runWith(&.{ "build", "--platform=node", "--out=mapped", "--source-maps", "Main.beni" }, .{ .raw_diagnostics = true });
+    const r = try w.runWith(&.{ "build", "--platform=node", "--source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectBuilt(plain);
-    try expectBuilt(mapped);
+    // Positions ride in the IR from M3a (backend.md §9.6) but the VLQ
+    // encoder is M5 (§11), so the flag has nothing to do. Accepting it in
+    // silence is how a user believes they asked for a `.map` and got one;
+    // `--release` is refused for the same reason.
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings(
+        "beni: --source-maps is not implemented until M5; this build would write no .map file\n",
+        r.stderr,
+    );
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // Positions ride in the IR from M3a (§9.6); the encoder is later, and
-    // saying so is better than writing an empty `.map`.
-    try testing.expectEqualStrings(try w.read("plain/Main.mjs"), try w.read("mapped/Main.mjs"));
-    try testing.expect(!w.exists("mapped/Main.mjs.map"));
+    try testing.expect(!w.exists("out"));
+    try testing.expectEqualStrings("", r.stdout);
 }
 
 test "an unknown platform is a usage failure that names the ones that ship" {

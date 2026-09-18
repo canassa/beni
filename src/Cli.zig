@@ -40,7 +40,7 @@ pub const usage =
     \\build options:
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
     \\  --out=<dir>               output directory (default: out)
-    \\  --source-maps             emit .map files (accepted and ignored until M3 grows them)
+    \\  --source-maps             emit .map files (not implemented until M5)
     \\  --release                 chunks, elimination, renaming (not implemented until M3c)
     \\
     \\fmt options:
@@ -99,9 +99,9 @@ pub const Build = struct {
     /// package whose manifest says `"platform": true` (boundary.md §2).
     platform: []const u8,
     out: []const u8 = default_out,
-    /// Accepted and ignored in M3a (backend.md §2): positions ride in the
-    /// IR from the first milestone (§9.6) but the VLQ encoder is later.
-    source_maps: bool = false,
+    /// No `source_maps` field, for the same reason there is no `release`
+    /// one: `parseBuild` refuses both flags outright, so nothing downstream
+    /// can be handed a setting the backend does not honour.
     paths: []const []const u8,
 };
 
@@ -332,6 +332,13 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     if (s.specific.release) {
         return .{ .usage = .init("beni: --release is not implemented until M3c; this build would be development output", .{}) };
     }
+    // Same rule, same milestone argument: source maps are M5 (backend.md
+    // §11). A flag that is accepted and does nothing makes a user believe
+    // they asked for something — they would go looking for a `.map` that a
+    // successful, silent build never wrote.
+    if (s.specific.source_maps) {
+        return .{ .usage = .init("beni: --source-maps is not implemented until M5; this build would write no .map file", .{}) };
+    }
     const platform = s.specific.platform orelse
         return .{ .usage = .init("beni: build needs --platform=<name>", .{}) };
     if (s.positionals.items.len == 0) {
@@ -342,7 +349,6 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         .common = s.common,
         .platform = platform,
         .out = s.specific.out orelse default_out,
-        .source_maps = s.specific.source_maps,
         .paths = paths,
     } } };
 }
@@ -543,15 +549,14 @@ test "dump: stage, positions, exactly one file" {
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
 }
 
-test "build: the platform is required and --release is refused" {
+test "build: the platform is required and --release and --source-maps are refused" {
     try expectCommand(.{ .build = .{ .platform = "node", .paths = &.{"src"} } }, &.{ "build", "--platform=node", "src" });
     try expectCommand(.{ .build = .{
         .common = .{ .root = "src", .jobs = 2 },
         .platform = "./platforms/node",
         .out = "dist",
-        .source_maps = true,
         .paths = &.{ "src", "vendor" },
-    } }, &.{ "build", "--platform=./platforms/node", "src", "--out=dist", "--source-maps", "--root=src", "--jobs=2", "vendor" });
+    } }, &.{ "build", "--platform=./platforms/node", "src", "--out=dist", "--root=src", "--jobs=2", "vendor" });
     try expectUsage("beni: build needs --platform=<name>", &.{ "build", "src" });
     try expectUsage("beni: build needs at least one path", &.{ "build", "--platform=node" });
     try expectUsage("beni: option '--platform' needs a value: --platform=<name>", &.{ "build", "--platform", "src" });
@@ -560,6 +565,18 @@ test "build: the platform is required and --release is refused" {
         "beni: --release is not implemented until M3c; this build would be development output",
         &.{ "build", "--platform=node", "--release", "src" },
     );
+    try expectUsage(
+        "beni: --source-maps is not implemented until M5; this build would write no .map file",
+        &.{ "build", "--platform=node", "--source-maps", "src" },
+    );
+    // Refused before the platform is missed: the flag is wrong whatever
+    // else the line says, and `--release` is refused first for the same
+    // reason.
+    try expectUsage(
+        "beni: --source-maps is not implemented until M5; this build would write no .map file",
+        &.{ "build", "--source-maps", "src" },
+    );
+    try expectUsage("beni: option '--source-maps' does not take a value", &.{ "build", "--platform=node", "--source-maps=yes", "src" });
     // `--platform` belongs to build only.
     try expectUsage("beni: unknown option '--platform'; run 'beni help' for usage", &.{ "check", "--platform=node", "src" });
 }

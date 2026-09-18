@@ -100,9 +100,9 @@ pub const Options = struct {
     platform: Platform,
     /// Files embedded in the compiler binary, by store path.
     embedded: []const Asset,
-    /// `--source-maps`. Accepted and ignored in M3a: positions are in the
-    /// IR from the start (§9.6) but the VLQ encoder is M3's later half.
-    source_maps: bool = false,
+    // No `source_maps`: the VLQ encoder is M5 (§11), so `--source-maps` is
+    // refused in `Cli.parseBuild` and never reaches here. Positions ride in
+    // the IR from M3a either way (§9.6).
 };
 
 pub const Result = struct {
