@@ -4705,7 +4705,7 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
     defer result.deinit(gpa);
     // The in-bounds invariants of `JsIr`, on every tree the tests build.
     try result.ir.verify();
-    return Print.print(gpa, &result.ir, .fromGlobal(&session.interner));
+    return Print.print(gpa, &result.ir, .fromGlobal(&session.interner), .{});
 }
 
 fn expectJs(expected: []const u8, source: [:0]const u8) !void {

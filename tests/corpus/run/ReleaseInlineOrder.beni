@@ -1,0 +1,106 @@
+-- run: the four hazards of `backend.md` §9 item 1's inlining table, each as a
+-- program whose ANSWER moves if the condition is dropped. Built twice, once
+-- as a dev build and once with `--release`, against one `.expected`.
+--
+-- Item 1 inlines a binding with exactly one use, and every row of its table
+-- is a way for that to be wrong. The rule as specified is narrow — the
+-- initialiser must be an atom or a member chain, the use must be in the same
+-- statement list, only pure-read bindings may sit between them, the chain's
+-- base may not be reassigned, and the use may not be inside a closure or a
+-- loop. A `Debug.log` is the only instrument in the language that can see an
+-- evaluation happen, so each hazard binds one and prints what ran:
+--
+--   1. `afterEffect` — the single use is behind a SURVIVING effectful call.
+--      `first` is read after `second` is bound, so a pass that moved `first`
+--      past it would reorder two evaluations that both survive, which
+--      `language.md` §6 forbids outright. Observable as the two log lines in
+--      the wrong order.
+--   2. `insideLambda` — the single use is inside a lambda that is called
+--      TWICE. A binding moved into a closure is evaluated once per call, so
+--      the log line appears twice instead of once.
+--   3. `insideLoop` — the single use is inside a §8 tail-call loop that the
+--      binding sits outside of. Moved in, it logs once per iteration: three
+--      lines instead of one.
+--   4. `swap` — the loop's own prologue, `const a = $in$1`, whose base the
+--      loop REASSIGNS. `swap` rotates its two carried values, so a read of
+--      `$in$1` taken after `$in$1` has been written for the next iteration
+--      gives the new value and the answer collapses: 10 becomes 20.
+--
+-- Every one of these is also refused by the "same statement list" condition
+-- as today's lowering happens to place the statements, which is deliberate
+-- defence in depth and not a reason to leave the fixture out: the claim being
+-- pinned is the ANSWER, and it holds however the conditions are arranged
+-- underneath it.
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    { x : Int, y : Int }
+
+
+log : String, Int -> Int
+log label v =
+    Debug.log v label
+
+
+-- Hazard 1: a surviving effectful call sits between the binding and its use.
+afterEffect : Point -> Int
+afterEffect p =
+    let
+        first =
+            log "inline.first" p.x
+
+        second =
+            log "inline.second" p.y
+    in
+    first + second
+
+
+-- Hazard 2: the single use is inside a closure, and the closure runs twice.
+insideLambda : Point -> Int
+insideLambda p =
+    let
+        v =
+            log "inline.lambda" p.x
+
+        f =
+            \_ -> v + 1
+    in
+    f () + f ()
+
+
+-- Hazard 3: the single use is inside a loop the binding sits outside of.
+insideLoop : Point -> Int
+insideLoop p =
+    let
+        v =
+            log "inline.loop" p.x
+
+        go k total =
+            if k == 0 then
+                total
+            else
+                go (k - 1) (total + v)
+    in
+    go 3 0
+
+
+-- Hazard 4: a loop prologue binding whose base the loop reassigns. `a` is
+-- read exactly once, into the slot that is written AFTER its own.
+swap : Int, Int, Int -> Int
+swap n a b =
+    if n == 0 then
+        b
+    else
+        swap (n - 1) b a
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (afterEffect { x = 1, y = 2 })
+        , String.fromInt (insideLambda { x = 10, y = 0 })
+        , String.fromInt (insideLoop { x = 5, y = 0 })
+        , String.fromInt (swap 3 10 20)
+        ]

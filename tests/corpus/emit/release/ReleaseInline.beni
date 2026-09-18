@@ -1,0 +1,57 @@
+-- emit/release: `backend.md` §9 item 1's two halves, side by side in one
+-- module, because the difference between them is invisible to a running
+-- program — both compute the same answer and only the bytes move.
+--
+-- `sum` and `swap` each bind two `case` leaves and read each of them ONCE.
+-- Both prologues fold: the `const`s disappear and the member chains are read
+-- where they are used, which is what §7's leaf bindings and §4's record
+-- temporaries were shaped for.
+--
+-- `square` reads its leaf TWICE, so its `const` stays. That is the whole
+-- rule: one use is a substitution, two is a duplicated read, and the pass
+-- refuses the second however cheap the read looks.
+--
+-- `held` is the third row and the one that is about correctness rather than
+-- bytes — a binding whose initialiser is a CALL is never folded, whatever
+-- its use count, because repeating or moving a call is work and evaluation
+-- order is a promise (`language.md` §6).
+import Node exposing (Program)
+
+
+pub type Pair
+    = Pair Int Int
+
+
+pub sum : Pair -> Int
+sum p =
+    case p of
+        Pair a b ->
+            a + b
+
+
+pub swap : Pair -> Pair
+swap p =
+    case p of
+        Pair a b ->
+            Pair b a
+
+
+pub square : Pair -> Int
+square p =
+    case p of
+        Pair a _ ->
+            a * a
+
+
+pub held : Pair -> Int
+held p =
+    let
+        once =
+            sum p
+    in
+    once + 1
+
+
+main : Program
+main =
+    Node.printLines []

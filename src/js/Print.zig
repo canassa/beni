@@ -34,6 +34,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
+const Opt = @import("Opt.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -69,9 +70,19 @@ pub const Names = struct {
     }
 };
 
+/// What `--release` changes about one module's bytes (backend.md §9's
+/// *The release optimiser*). All of it defaults to "what a dev build does",
+/// so development output cannot move by accident: the flag adds a plan and
+/// nothing else.
+pub const Options = struct {
+    /// §9 item 1's answer: the statements to skip and the names to
+    /// substitute. The empty plan is a dev build.
+    plan: *const Opt.Plan = &Opt.Plan.none,
+};
+
 /// Print `ir` as an ES module. The caller owns the returned bytes.
-pub fn print(gpa: Allocator, ir: *const JsIr, names: Names) Allocator.Error![]u8 {
-    var p: Printer = .{ .joiner = .init(gpa), .ir = ir, .names = names };
+pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Allocator.Error![]u8 {
+    var p: Printer = .{ .joiner = .init(gpa), .ir = ir, .names = names, .plan = options.plan };
     defer p.joiner.deinit();
     try p.statements(ir.body, 0);
     return p.joiner.blit();
@@ -158,6 +169,9 @@ const Printer = struct {
     joiner: Joiner,
     ir: *const JsIr,
     names: Names,
+    /// §9 item 1's plan. `Opt.Plan.none` for a development build, where every
+    /// test below is a compare against an empty slice.
+    plan: *const Opt.Plan = &Opt.Plan.none,
 
     fn indent(p: *Printer, level: u32) Allocator.Error!void {
         var left: usize = @as(usize, level) * 2;
@@ -194,7 +208,13 @@ const Printer = struct {
     // ---- Statements -------------------------------------------------------
 
     fn statements(p: *Printer, range: JsIr.SubRange, level: u32) Allocator.Error!void {
-        for (p.ir.extraSlice(range, Index)) |node| try p.statement(node, level);
+        for (p.ir.extraSlice(range, Index)) |node| {
+            // §9 item 1: a binding nothing reads, or one whose single use
+            // reads its initialiser instead. Skipped before the indentation,
+            // so the line goes whole.
+            if (p.plan.isDropped(node)) continue;
+            try p.statement(node, level);
+        }
     }
 
     fn statement(p: *Printer, node: Index, level: u32) Allocator.Error!void {
@@ -366,11 +386,30 @@ const Printer = struct {
     /// `min_prec`. `level` is the statement indentation a nested block body
     /// continues from.
     fn expression(p: *Printer, node: Index, min_prec: u8, level: u32) Allocator.Error!void {
-        const own = p.precedence(node);
+        // §9 item 1's substitution happens BEFORE the precedence is read, so
+        // the brackets are computed from what is actually printed. An inlined
+        // initialiser is an atom or a member chain, so this can only ever
+        // relax a bracket — except for a number, which `precedence` puts below
+        // a member access on purpose.
+        const resolved = p.resolve(node);
+        const own = p.precedence(resolved);
         const bracket = own < min_prec;
         if (bracket) try p.joiner.push("(");
-        try p.raw(node, level);
+        try p.raw(resolved, level);
         if (bracket) try p.joiner.push(")");
+    }
+
+    /// Follow §9 item 1's substitutions to the node that is really printed.
+    /// A chain of them — `const x = p.a; const y = x.b;` — collapses here, so
+    /// the pass itself needs neither a fixpoint nor a backward walk. The
+    /// budget makes a malformed plan a wrong spelling rather than a hang.
+    fn resolve(p: *Printer, node: Index) Index {
+        var n = node;
+        var budget: u32 = 64;
+        while (budget > 0 and p.ir.tag(n) == .ident) : (budget -= 1) {
+            n = p.plan.replacement(n) orelse return n;
+        }
+        return n;
     }
 
     fn precedence(p: *Printer, node: Index) u8 {
@@ -380,6 +419,14 @@ const Printer = struct {
             .cond => prec_cond,
             .arrow => prec_arrow,
             .call, .member, .index_get => prec_call,
+            // A numeric literal is not a primary expression for the purpose
+            // of what may follow it: `1.a` is a syntax error, because the dot
+            // reads as a decimal point. Below `prec_call` is exactly the rule
+            // — bracketed in a member, index or callee position and nowhere
+            // else, since no other position asks for more than `prec_unary`.
+            // Nothing in a dev build reaches it; §9 item 1 can, by inlining a
+            // literal into the object position of a member access.
+            .number => prec_call - 1,
             else => prec_primary,
         };
     }
@@ -500,23 +547,42 @@ const Printer = struct {
     /// An object literal returned concisely has to be bracketed, or the
     /// brace reads as the block.
     fn arrowBody(p: *Printer, f: JsIr.Func, level: u32) Allocator.Error!void {
-        const body = p.ir.extraSlice(f.body(), Index);
-        if (body.len == 1 and p.ir.tag(body[0]) == .return_stmt) {
-            if (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(body[0]).lhs)).unwrap()) |value| {
-                if (p.ir.tag(value) == .object) {
-                    try p.joiner.push("(");
-                    try p.raw(value, level);
-                    try p.joiner.push(")");
+        // The LIVE statements: §9 item 1 can leave a body that was a prologue
+        // and a `return` holding only the `return`, and a body that prints
+        // concisely should print concisely however it got that way. For a dev
+        // build the plan is empty and this is the length of the slice.
+        if (p.onlyLive(f.body())) |only| {
+            if (p.ir.tag(only) == .return_stmt) {
+                if (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(only).lhs)).unwrap()) |value| {
+                    const resolved = p.resolve(value);
+                    if (p.ir.tag(resolved) == .object) {
+                        try p.joiner.push("(");
+                        try p.raw(resolved, level);
+                        try p.joiner.push(")");
+                        return;
+                    }
+                    try p.expression(resolved, prec_arrow, level);
                     return;
                 }
-                try p.expression(value, prec_arrow, level);
-                return;
             }
         }
         try p.joiner.push("{\n");
         try p.statements(f.body(), level + 1);
         try p.indent(level);
         try p.joiner.push("}");
+    }
+
+    /// The one statement of `range` that survives §9 item 1, or null when it
+    /// holds none or more than one. For a dev build the plan is empty, so this
+    /// is "the slice has exactly one element".
+    fn onlyLive(p: *Printer, range: JsIr.SubRange) ?Index {
+        var found: ?Index = null;
+        for (p.ir.extraSlice(range, Index)) |node| {
+            if (p.plan.isDropped(node)) continue;
+            if (found != null) return null;
+            found = node;
+        }
+        return found;
     }
 
     // ---- Literal text -----------------------------------------------------
@@ -681,7 +747,7 @@ const Fixture = struct {
         var ir = try f.b.toOwned(body);
         defer ir.deinit(f.gpa);
         try ir.verify();
-        return print(f.gpa, &ir, .fromLocal(&f.interner));
+        return print(f.gpa, &ir, .fromLocal(&f.interner), .{});
     }
 };
 

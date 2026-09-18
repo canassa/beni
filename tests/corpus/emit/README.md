@@ -52,6 +52,17 @@ emitted file. An optional `_expected.absent` lists output paths the build
 must **not** have written, one per line — the only way to assert that a whole
 module vanished, there being no file to golden. It is never blessed.
 
+## `emit/release/` — the goldens whose claim IS what `--release` changes
+
+A fixture under `emit/release/` keeps `--library` and gains **`--release`**,
+so its golden is a shape claim about §9's release optimiser: short names,
+compact whitespace, a folded temporary. It has its own README.
+
+Behaviour under the flag is not its business: every `run/` fixture is already
+built and run a second time with `--release`, against the same `.expected`,
+so the corpus covers what a release build COMPUTES without one file being
+added here (`backend.md` §9's *Testing*).
+
 Bless with `BENI_WRITE_EXPECTED=1 zig build test-blackbox`, narrowed with
 `BENI_BLESS_ONLY=emit/`, and **read the blessed golden** before committing:
 a wrong golden here pins wrong JavaScript.

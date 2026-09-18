@@ -59,6 +59,7 @@ const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Lower = @import("Lower.zig");
 const Dispatch = @import("../check/Dispatch.zig");
+const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
@@ -787,7 +788,12 @@ const Emitter = struct {
             }
             if (lowered.diagnostics.len != 0) continue;
 
-            const text = try Print.print(e.gpa, &lowered.ir, .fromGlobal(&e.session.interner));
+            // §9's release optimiser, between `Lower.lower` and
+            // `Print.print`: item 1 plans, the printer spends the plan.
+            // Everything is `.{}` for a dev build, which is what makes
+            // "a golden moved" a finding (§2).
+            const plan: Opt.Plan = if (e.options.release) try Opt.run(e.scratch, &lowered.ir) else .none;
+            const text = try Print.print(e.gpa, &lowered.ir, .fromGlobal(&e.session.interner), .{ .plan = &plan });
             defer e.gpa.free(text);
             try e.produce(paths[i], text);
         }
