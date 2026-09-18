@@ -1,0 +1,16 @@
+-- check/bad: the numbers-only hint must not name `<`, `>`, `<=` or `>=`.
+-- `docs/design/static-dispatch-spike.md` §3.1 makes the four ordering
+-- operators the receiver type's `compare`, so `"a" < "b"` compiles; a hint
+-- that calls them numbers-only, or that offers `String.compare` as the only
+-- way to order text, is now false. Both arms that carry the hint are here:
+-- a `String` where an `Int` was wanted, and a `number` that met a `String`
+-- THROUGH `<` itself — the operator pins both operands to one type (A.33),
+-- which is the real mistake and has nothing to do with ordering.
+pub count : Int
+count =
+    "12"
+
+
+pub ordered : Bool
+ordered =
+    "a" < 1

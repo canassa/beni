@@ -5,8 +5,9 @@
 //! a hint where there is a known one. The hints are Elm's, minus the ones
 //! for features beni does not have: `number` against `String`, the missing
 //! `toFloat`, function equality (a compile error here rather than a runtime
-//! crash, `fast-compiler.md` §3.1 point 5), ordering text with
-//! `String.compare`, and record field typos by edit distance.
+//! crash, `fast-compiler.md` §3.1 point 5), and record field typos by edit
+//! distance. Ordering text is no longer among them: `<` is the receiver's
+//! `compare` (static-dispatch-spike.md §3.1), so `"a" < "b"` compiles.
 //!
 //! **A message is built when it is reported, not later.** The types are
 //! rendered out of the store into a string here and now, because the store
@@ -484,12 +485,15 @@ pub const Reporter = struct {
             ) catch return error.OutOfMemory;
             return;
         }
+        // Arithmetic only: `<` and the other three orderings are the
+        // receiver's `compare` since static dispatch (spike §3.1), so
+        // `"a" < "b"` compiles and neither they nor `String.compare`
+        // belong in a hint about numbers.
         if (a == wk.string and (e == wk.int or e_kind == .number)) {
             w.writeAll(
                 \\
-                \\Hint: `<`, `>`, `<=`, `>=` and the arithmetic operators work on numbers only.
-                \\To order text use `String.compare`; to read a number out of text use
-                \\`String.toInt` or `String.toFloat`.
+                \\Hint: `+`, `-`, `*` and `/` work on numbers only. To read a number out of
+                \\text use `String.toInt` or `String.toFloat`.
                 \\
             ) catch return error.OutOfMemory;
             return;
@@ -742,8 +746,7 @@ pub const Reporter = struct {
                 \\
                 \\One of those has to be a number — an `Int` or a `Float` — and it is not.
                 \\
-                \\Hint: `+`, `-`, `*`, `<`, `>`, `<=` and `>=` work on numbers only. To join
-                \\text use `++`, and to order it use `String.compare`.
+                \\Hint: `+`, `-`, `*` and `/` work on numbers only. To join text use `++`.
                 \\
             ) catch return error.OutOfMemory,
             .appendable => w.writeAll(

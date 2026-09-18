@@ -515,10 +515,14 @@ Every code below joins the catalogue in `language.md` §10 (append there first, 
 in register and structure: the title, what the compiler was looking at, the two types laid out
 one under the other with the differing part highlighted, then a hint when there is a known one
 (Elm's hints for `number` vs `String`, missing `toFloat`, function equality, and record field typos
-by edit distance). **The "to order text use `String.compare`" hint is stale** since `<` stopped
-being numbers-only: it is now reachable only from arithmetic, where naming `<` among the
-numbers-only operators is wrong. `src/check/Diagnostics.zig:491` and `:746` carry it and are owed a
-rewording.
+by edit distance). **The numbers-only hint names arithmetic and nothing else**: since `<`, `<=`,
+`>` and `>=` became the receiver's `compare` (static-dispatch-spike.md §3.1) they are not
+numbers-only and `"a" < "b"` compiles, so neither they nor "to order text use `String.compare`"
+belong in it. A comparison still reaches the hint — `"a" < 1` pins both operands to one type
+(spike A.33), so the `number` meets a `String` and `kindNotSatisfied` reports it — and there the
+hint is true of the `number` kind while the message's own opening line, *"(<) needs the 2nd
+argument to be `String`"*, carries the real cause. `<` on a type with no `compare` is
+`no_methods_on_shape` (spike §10.3) and never reaches here.
 
 ### 8.1 Codes
 
