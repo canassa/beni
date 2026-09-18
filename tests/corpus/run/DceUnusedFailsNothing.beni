@@ -1,0 +1,75 @@
+-- A module full of `pub` declarations that nothing reaches, beside a `main`
+-- that prints (`docs/design/backend.md` §9).
+--
+-- It prints. That is the whole assertion, and it is worth a fixture: it
+-- proves the build does not need what it deleted. Everything above `main`
+-- is `pub`, every one of them names something else in the module or in
+-- core, and `main` reaches none of them — so a pass that eliminated one
+-- declaration too many would take `greet` or `Node.printLines` with it and
+-- the program would not start.
+--
+-- The unreachable half is deliberately varied, because each shape leaves a
+-- different kind of debris behind if the pass is wrong about it: a type
+-- with derived methods, a `where`-constrained function that takes evidence,
+-- a constant whose initialiser is a call, a recursive function, and a
+-- mutually recursive pair.
+import Node exposing (Program)
+import String
+
+
+pub type Unused
+    = One Int
+    | Two String
+
+
+pub unusedEqual : Unused, Unused -> Bool
+unusedEqual a b =
+    a == b
+
+
+pub unusedGeneric : a, a -> Bool
+    where a.eq : a, a -> Bool
+unusedGeneric x y =
+    x.eq y
+
+
+pub unusedConstant : String
+unusedConstant =
+    String.fromInt (String.length "abc")
+
+
+pub unusedRecursive : Int -> Int
+unusedRecursive n =
+    if n <= 0 then
+        0
+
+    else
+        1 + unusedRecursive (n - 1)
+
+
+pub unusedEven : Int -> Bool
+unusedEven n =
+    if n == 0 then
+        True
+
+    else
+        unusedOdd (n - 1)
+
+
+pub unusedOdd : Int -> Bool
+unusedOdd n =
+    if n == 0 then
+        False
+
+    else
+        unusedEven (n - 1)
+
+
+greet : String -> String
+greet who =
+    "hello, " ++ who
+
+
+main : Program
+main =
+    Node.printLines [ greet "world", String.fromInt 1 ]

@@ -62,9 +62,12 @@ milestone. The defaults in the table above are what M5 will do; until then the o
 without the flag.
 
 **`--library` is not in that company**: it lands with §9 and does something the day it lands. It
-turns off exactly two things — the search for `main` (`missing_main` does not fire, and a `main`
-that happens to exist is not special) and the entry file — and turns on one, the root rule. It is
-not a second output mode; a library build emits the same `.mjs` per module as any other.
+turns off exactly two things — the REQUIREMENT for a `main` (`missing_main` does not fire, a second
+`main` is not an error, and a `main` that is there is not checked against the platform's `Program`)
+and the entry file — and turns on one, the root rule. A `main` that happens to exist is still
+exported and still a root, because §5's export list has the entry declaration in it and §9 roots a
+library at its export list; §9's "Roots" says why at length. It is not a second output mode; a
+library build emits the same `.mjs` per module as any other.
 
 Development output is **one ESM file per source module**, mirroring the source tree, with readable
 names — but not with everything the source declared. Release output is **reachability chunks**. Both
@@ -976,7 +979,14 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
 
 1. every `Bir.refs` row of `d` whose kind is `top_value` → `(m, ref.a)`. This is the §9.1 byproduct,
    already deduplicated per declaration and in source order, already walked by `emissionOrder`
-   (`:524`).
+   (`:524`). **`refs` is not enough on its own, and leg 2's instruction walk reads `.top` as well.**
+   `refs` records a reference by the NAME the source wrote, and an operator writes none: `0 - n`
+   lowers to `call(import_value Basics.sub, …)` with an `import_value` row, and inside `core/Basics`
+   itself `Resolve` rewrites that instruction to a plain `top` while the row stays symbolic — the
+   same asymmetry leg 2 is about, one module further in. Reading `refs` alone leaves `Basics.negate`
+   naming a `Basics.sub` this pass deleted; six `run/` fixtures fail without it. *(Found in
+   implementation; the `refs` walk stays, being the cheaper half, and a duplicate edge costs one
+   bitset test.)*
 2. every `ext_value` instruction in `bir.insts[d.inst_start .. d.inst_end]` → the declaration behind
    that interface value: `Resolve` has already rewritten the instruction to carry
    `(Graph.Index, Interface.ValueIndex)` (`src/resolve/Resolve.zig:303-309`), and
@@ -993,8 +1003,20 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    until the checker runs, and evidence arguments are references that no source line spells. Target
    by target: `top {decl}` → `(m, decl)`; `ext {module, value}` → that module's declaration, through
    the same provenance as leg 2; `derived {index}` → `(m, index)`; `ext_derived {module, type,
-   kind}` → that module's `Derived` row for the pair; `evidence k`, `primitive`, `field` and `err`
-   add no edge, because each is a parameter, an operator, a property read or a poisoned table.
+   kind}` → that module's `Derived` row for the pair; `evidence k` and `field`
+   add no edge, because each is a parameter or a property read.
+
+   **`primitive` and `err` DO add one, and that is a correction to this list.** Both were written
+   here as edgeless, "an operator" and "a poisoned table". That holds for `strict_eq`,
+   `num_compare` and `char_compare`, which the module synthesises for itself — but `primitive
+   string_compare` lowers to a CALL of core's hand-written `String.compare` (`Lower.stringCompare`
+   → `Lower.coreValue`; §3.2 and A.26 route it there on purpose, because `<` on JavaScript strings
+   is UTF-16 code-unit order and `String.compare` is Unicode scalar order and the two must agree),
+   and `err` lowers to a call of `Basics.eq` (`Lower.partEq`'s `err` arm, the position A.66 names).
+   Each is a reference to another module's declaration that no `refs` row and no `top`/`ext` target
+   records. So: `primitive string_compare` → core `String`'s `compare`; `err` → core `Basics`' `eq`.
+   Twelve `run/` fixtures fail without the first — every program that puts a `String` in a `Dict` —
+   with a `ReferenceError` at load, after a build that exited 0. *(Found in implementation.)*
 
 Out of a **derived function** row `r` of `m`: every target in `partsAt(r.parts)`, recursively, by the
 same mapping — that is how a derived `eq` for `type T = T (Maybe U)` reaches `Maybe`'s row and `U`'s.
@@ -1006,7 +1028,9 @@ eta-expansion is built from a site's targets, and the targets are the edges.
 
 **Where it runs.** A new whole-program pass in `src/js/`, called from `Emit.run` between `findEntry`
 and `emitModules` (`src/js/Emit.zig:147`, `:155`), producing one bitset per module over each of the
-three node kinds. `Lower.Input` gains that per-module triple; nothing else about lowering
+three node kinds — **two bitsets, not three**: a value declaration and a foreign binding are both
+`(Graph.Index, Bir.DeclIndex)` and cannot collide, so the count above is of KINDS and not of sets.
+`Lower.Input` gains that per-module pair; nothing else about lowering
 changes. It runs **before lowering, not after**, for three reasons: an unreachable declaration is
 then never lowered at all, which makes the pass pay for itself in emit time rather than cost
 anything; the graph is a function of `Bir` and the dispatch table, both of which M4 can cache per
@@ -1014,7 +1038,11 @@ module, where `JsIr` is the emit unit itself; and §10's colouring wants the sam
 anything has been assigned to a file.
 
 **Determinism and parallelism.** Per-module edge lists are built **in parallel**, one job per
-module, each writing only its own slot — the same shape as every other per-file phase. The
+module, each writing only its own slot — the same shape as every other per-file phase. *(As landed
+they are built the way that asks for — each list is a pure function of that module's `Bir` and
+dispatch table and is written only into its own slot — but the jobs are not dispatched to workers:
+`Emit` is serial end to end today, lowering included, and this pass is microseconds. The fan-out is
+a drop-in when emit itself parallelises.)* The
 **reachability walk is serial**, because a fixpoint over a whole-program graph is, and it is
 nothing: 278 nodes for the null program, O(declarations) at any size, microseconds against §13's
 800 ms budget. Node identity is input-derived end to end — `Graph.Index` comes from the sorted path
@@ -1033,8 +1061,19 @@ visit order cannot reach the bytes. `--jobs=1` against `--jobs=8` covers it with
   keep alive.
 - **`--library`: every name the root package's modules export.** A library has no `main` and its
   callers are not in the build, so its public surface is its root set — which is exactly the export
-  list §5 already computes: `pub` values with a body, every nominal `derived` row, and nothing else.
-  `--library` also makes `main` optional and writes no `main.mjs`.
+  list §5 already computes: `pub` values with a body, every nominal `derived` row, **and the entry
+  declaration when a module happens to have one**. `--library` also makes `main` optional and writes
+  no `main.mjs`.
+
+  **That last clause is a correction, and §2's "a `main` that happens to exist is not special" is
+  wrong as written.** §5's export list has three sources and the entry declaration is the third; a
+  library build roots at the export list, so it roots at all three. What `--library` turns off is
+  the REQUIREMENT for a `main` — `missing_main` does not fire, a second one is not an error, and the
+  type is not checked against the platform's `Program` — and the entry file. It does not turn off
+  finding one. The evidence is this section's own acceptance: `main` is not `pub` in a single
+  fixture of the corpus, so a rule that excluded it would take `main` and its `import Node` out of
+  every `emit/` golden, against the measured and thrice-stated "0 of 14 change". *(Found in
+  implementation.)*
 
 **`pub` means nothing to DCE in an application build, and that is a decision.** A `pub` declaration
 that nothing in this program reaches is deleted, in `Main.beni` as much as in `core/List.beni`.
@@ -1192,6 +1231,16 @@ Each is fail-first in the ordinary way: every `emit/app/` golden differs before 
 `run/` row above either throws or prints the wrong thing if the matching edge is missing. The
 existing fourteen `emit/` goldens are the regression half — **none of them may move** (`--library`,
 measured 0 of 14), and one that does is a finding.
+
+*As landed: the `emit/` corpus had grown to seventeen by the time the pass was written (decision
+trees added `MatchNested`, `MatchSharedLeaf` and `MatchSwitch`) and **0 of 17 moved**. Two rows
+above read differently from their intent, honestly rather than by construction. `DceEvidenceDepth`'s
+three generic levels are numbered into ONE flat site list by §7.2, so what it isolates is leg 3
+entire and not the nested-`parts` recursion; `DceEtaEvidence` is the row that isolates the
+recursion, every `==` in it being written on a `Maybe` or a record so that the module's own `eq`
+sits one level down inside another target's `parts`. And `DceOrderTable` reaches its `compare`
+through its own `where`-constrained helpers rather than through `List.sortWith`, which takes a
+comparator as an ordinary argument and would have made the edge an ordinary one.*
 
 ## 10. Chunking
 

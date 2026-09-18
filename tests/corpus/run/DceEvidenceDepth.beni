@@ -1,0 +1,76 @@
+-- Reachability elimination keeps a function reached only through a NESTED
+-- `parts` target (`docs/design/backend.md` §9's third edge leg;
+-- `static-dispatch-spike.md` §7.1's amendment, §8.2, A.46).
+--
+-- Three generic levels, each constrained, each answering the next:
+--
+--     main -> outer (where a.eq) -> middle (where a.eq) -> inner (where a.eq)
+--
+-- and at the bottom the comparator is `Version.eq`, which this file never
+-- calls by name. It reaches the emitted output only as a `Target` inside
+-- the `parts` range of the evidence `outer`'s call site hands over, and
+-- that range NESTS: `outer`'s site carries `middle`'s evidence, which
+-- carries `inner`'s, which carries `Version$eq`. §9's walk has to recurse
+-- through `Dispatch.partsAt` to see it.
+--
+-- **A missing nested-`parts` edge is a `ReferenceError` at the innermost
+-- call**, not a wrong answer: the emitted `outer(DceEvidenceDepth$eq, …)`
+-- names a `const` the build deleted, and Node refuses to load the module.
+-- That is why this is a `run/` fixture and not a golden — over-elimination
+-- has to be caught by running.
+--
+-- `Version` compares its MAJOR number only, so every line here answers
+-- differently from a structural walk of both fields: a build that
+-- substituted a derived `eq` for the one it deleted would print the
+-- opposite.
+import Node exposing (Program)
+
+
+pub type Version
+    = Version Int Int
+
+
+pub eq : Version, Version -> Bool
+eq a b =
+    case a of
+        Version majorA _ ->
+            case b of
+                Version majorB _ ->
+                    majorA == majorB
+
+
+pub inner : a, a -> Bool
+    where a.eq : a, a -> Bool
+inner x y =
+    x.eq y
+
+
+pub middle : a, a -> Bool
+    where a.eq : a, a -> Bool
+middle x y =
+    inner x y
+
+
+pub outer : a, a -> Bool
+    where a.eq : a, a -> Bool
+outer x y =
+    middle x y
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (outer (Version 3 4) (Version 3 99))
+        , show (outer (Version 3 4) (Version 7 4))
+        , show (middle (Version 1 1) (Version 1 2))
+        , show (inner (Version 1 1) (Version 2 1))
+        ]

@@ -23,6 +23,35 @@ smallest one that says nothing.
 A fixture that fails to compile, or that produces any diagnostic, is a
 failure.
 
+## `--library`, and why an `emit/` golden is not contingent on a call
+
+Reachability elimination (`backend.md` §9) is always on, and an application
+build is rooted at `main` alone. **So an `emit/` golden is a claim about the
+shape of a declaration and must not be contingent on something calling it**:
+the harness appends `--library` to every fixture directly under `emit/`, the
+same per-fixture mechanism `core/` already uses for `--core`, which roots the
+build at every name the module exports instead.
+
+Without that flag all seventeen goldens here would be gutted rather than
+merely re-blessed. `DerivedCompareNominal.js` is the sharpest case: 115 lines
+of which 114 are derived code and one is `main`, and its intent comment says
+in so many words that *nothing below uses these and they are all emitted
+anyway* — a claim about eager derivation in the declaring module that is
+still true and that a `main`-only build would delete the evidence for.
+
+## `emit/app/` — the goldens whose claim IS what elimination removes
+
+A fixture under `emit/app/` is built as an **application**, with no
+`--library`, because what it pins is what a `main`-rooted build drops. Those
+are `backend.md` §9's own goldens and nothing else belongs there.
+
+A fixture there may also be a **directory**, which is a multi-module project:
+every `.beni` in it is copied and handed to one build, the entry module is
+the one named after the directory, and `_expected.js` is that module's
+emitted file. An optional `_expected.absent` lists output paths the build
+must **not** have written, one per line — the only way to assert that a whole
+module vanished, there being no file to golden. It is never blessed.
+
 Bless with `BENI_WRITE_EXPECTED=1 zig build test-blackbox`, narrowed with
 `BENI_BLESS_ONLY=emit/`, and **read the blessed golden** before committing:
 a wrong golden here pins wrong JavaScript.

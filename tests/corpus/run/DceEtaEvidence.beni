@@ -1,0 +1,60 @@
+-- Evidence that itself takes evidence, so §6 eta-expands it — and the
+-- closure names a function that has to have survived (`backend.md` §9;
+-- `static-dispatch-spike.md` §8.2, A.25).
+--
+-- `Pair.eq` carries a `where` clause of its own, so §8.1 gives it a hidden
+-- leading parameter and the bare name `DceEtaEvidence$eq` is a function of
+-- the WRONG arity for an evidence slot. §6 therefore passes
+-- `($p$1, $p$2) => DceEtaEvidence$eq(<inner evidence>, $p$1, $p$2)` — a
+-- closure built out of the site's targets, which is exactly why §9 needs no
+-- rule for eta-expansion: *an eta-expansion is built from a site's targets,
+-- and the targets are the edges.*
+--
+-- **Every `==` here is written on a `Maybe` or on a record**, never on a
+-- bare `Pair`, and that is what makes the fixture sharp. The site's own
+-- target is `Maybe`'s derived `eq` (or the record shape's); this module's
+-- `eq` is one level DOWN, inside that target's `parts` range, which is the
+-- edge §9's walk only sees by recursing through `Dispatch.partsAt`. Nothing
+-- in this file calls `eq` by name, no site names it, and `Bir.refs` has no
+-- row for it — so without the recursion it is deleted, and the emitted
+-- `Maybe$Maybe$$eq(($p$1, $p$2) => DceEtaEvidence$eq(…), x, y)` names a
+-- `const` that is not there.
+--
+-- `Pair` compares its FIRST slot only, so a build that silently substituted
+-- a structural walk would print the opposite on every line.
+import Node exposing (Program)
+import Maybe exposing (Maybe)
+
+
+pub type Pair a
+    = Pair a a
+
+
+pub eq : Pair a, Pair a -> Bool
+    where a.eq : a, a -> Bool
+eq x y =
+    case x of
+        Pair firstX _ ->
+            case y of
+                Pair firstY _ ->
+                    firstX == firstY
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Just (Pair 1 2) == Just (Pair 1 9))
+        , show (Just (Pair 1 2) == Just (Pair 7 2))
+        , show (Just (Pair "a" "b") == Just (Pair "a" "z"))
+        , show (Just (Pair 1 2) == Nothing)
+        , show ({ item = Pair 1 2 } == { item = Pair 1 9 })
+        ]

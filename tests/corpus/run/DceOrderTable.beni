@@ -1,0 +1,68 @@
+-- A `$$order` table is not a node of the graph: it lives and dies with the
+-- `compare` whose row it hangs off (`docs/design/backend.md` §9;
+-- `static-dispatch-spike.md` §9.4, §8.5).
+--
+-- `Priority`'s constructors are DECLARATION-ordered `Low < Medium < High`
+-- and alphabetically ordered `High < Low < Medium`. A derived `compare` on
+-- an all-nullary type compares the bare tag STRINGS through the `$$order`
+-- table, and without the table `Priority$$order[x]` is `undefined[x]` — or,
+-- worse, a `compare` that fell back to `<` on the strings would answer
+-- alphabetically and this file would print the wrong order while exiting 0.
+-- **That is the worst failure mode this pass has**, which is why the
+-- assertion is the printed order and not the presence of a name.
+--
+-- And the `compare` is reached only through a generic, `where`-constrained
+-- path — `highest`, which is `List.foldl`-shaped over a comparator it never
+-- names — so the edge that keeps it is the evidence argument and not a
+-- written call. Nothing in this file writes `Priority` and `<` in the same
+-- expression.
+import Node exposing (Program)
+
+
+pub type Priority
+    = Low
+    | Medium
+    | High
+
+
+pub name : Priority -> String
+name p =
+    case p of
+        Low ->
+            "Low"
+
+        Medium ->
+            "Medium"
+
+        High ->
+            "High"
+
+
+-- The generic path: `a` is constrained by `compare` and the caller supplies
+-- it, so `Priority`'s derived `compare` — and with it the `$$order` table —
+-- is reached through an evidence position alone.
+pub larger : a, a -> a
+    where a.compare : a, a -> Order
+larger x y =
+    if x < y then
+        y
+
+    else
+        x
+
+
+pub highest : a, a, a -> a
+    where a.compare : a, a -> Order
+highest x y z =
+    larger (larger x y) z
+
+
+main : Program
+main =
+    Node.printLines
+        [ name (highest Low Medium High)
+        , name (highest High Low Medium)
+        , name (highest Low Low Medium)
+        , name (larger Medium High)
+        , name (larger High Low)
+        ]

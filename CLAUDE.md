@@ -32,11 +32,15 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 ## M3 — in progress
 
-M3a emits JavaScript that runs, against the Node platform, and M3b's tail-call
-loop has landed ([`backend.md`](docs/design/backend.md) §8). Still to come:
-decision trees for pattern matching, the rest of M3b, reachability-driven dead
-code elimination, and chunking. [`backend.md`](docs/design/backend.md) is the
-contract, [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
+M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop
+and its decision trees for pattern matching have landed
+([`backend.md`](docs/design/backend.md) §8, §7); and M3c's first piece,
+**reachability-driven dead code elimination**, has landed with it (§9,
+`src/js/Reach.zig`) — an empty program went from 70 684 bytes in 19 files to
+2 147 in 5, with `derived_bytes` exactly 0. Still to come: the rest of M3b, the
+rest of M3c's optimiser, and chunking.
+[`backend.md`](docs/design/backend.md) is the contract,
+[`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
 
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`
@@ -52,18 +56,23 @@ with `|>` flipped to pipe-first.
 
 ### Owed after the static-dispatch adoption
 
-Report 19 §14, items 1–5. None is optional; the first is the only blocker.
-Items 2, 4 and 5 are **done** (2026-09-18): the `foreign` arity rule is
-enforced as `boundary.md` §4's check 4 (A.84), and the inferred-`where` suffix is capped
-at 64 constraints and an unannotated declaration over the cap is
-`too_many_inferred_constraints`, which bounds the n² with it —
+Report 19 §14, items 1–5. Only item 3 is left; 1, 2, 4 and 5 are **done**
+(2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
+(A.84), the inferred-`where` suffix is capped at 64 constraints and an
+unannotated declaration over the cap is `too_many_inferred_constraints`, which
+bounds the n² with it —
 [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) §6.4, §10.11,
-A.83.
+A.83 — and dead-code elimination has landed.
 
-1. **Dead-code elimination** (already M3c). Derivation is eager, so every type
-   ships an `eq` and a `compare` whether or not anything calls them — 216 942
-   bytes across 61 programs, mostly dead. Every output-size figure taken before
-   DCE is an upper bound, and eager derivation without DCE is not shippable.
+1. ~~**Dead-code elimination** (already M3c).~~ **Done**: it is
+   [`backend.md`](docs/design/backend.md) §9's reachability elimination,
+   `src/js/Reach.zig`, always on for every build. Derivation is still eager, so
+   every type ships an `eq` and a `compare` whether or not anything calls them;
+   what changed is that a build no longer WRITES the ones it cannot reach. The
+   floor went from 70 684 bytes in 19 files to 2 147 in 5 and its
+   `derived_bytes` from 3 159 to 0, so an output-size figure is no longer an
+   upper bound. `--library` roots a build at its exported surface instead
+   (§2), which is what `bench/corpus` and the `emit/` corpus are measured with.
 2. ~~**An arity check for a `foreign` carrying a `where` clause**, or
    withdrawal of that combination.~~ **Done** (2026-09-18): it is
    [`boundary.md`](docs/design/boundary.md) §4's **check 4** — every

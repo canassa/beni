@@ -296,11 +296,41 @@ test "a build is byte-identical at every --jobs" {
     // └─────────────────────────────────────────┘
     try expectBuilt(one);
     try expectBuilt(many);
-    for ([_][]const u8{ "Main.mjs", "main.mjs", "core/List.mjs", "platform/Node.mjs" }) |name| {
+    // The WHOLE tree, file for file, rather than a hand-written list of
+    // four names. Elimination (`backend.md` §9) decides which modules a
+    // build writes at all, so a fixed list either names a file that is no
+    // longer there — `core/List.mjs` was, until this program stopped
+    // reaching it — or quietly stops covering the ones that are. The set of
+    // paths is itself part of what must not move with `--jobs`.
+    const written = try treeOf(&w, "one");
+    try testing.expectEqualDeep(written, try treeOf(&w, "many"));
+    try testing.expect(written.len >= 4);
+    for (written) |name| {
         const a = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "one/{s}", .{name}));
         const b = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "many/{s}", .{name}));
         try testing.expectEqualStrings(a, b);
     }
+}
+
+/// Every file under one output directory of the world, as sorted paths
+/// relative to it.
+fn treeOf(w: *World, out_dir: []const u8) ![]const []const u8 {
+    const arena = w.arena.allocator();
+    var dir = try w.tmp.dir.openDir(testing.io, out_dir, .{ .iterate = true });
+    defer dir.close(testing.io);
+    var walker = try dir.walk(arena);
+    defer walker.deinit();
+    var out: std.ArrayList([]const u8) = .empty;
+    while (try walker.next(testing.io)) |entry| {
+        if (entry.kind != .file) continue;
+        try out.append(arena, try arena.dupe(u8, entry.path));
+    }
+    std.mem.sort([]const u8, out.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    return out.items;
 }
 
 test "a build with cross-module evidence is byte-identical at every --jobs" {
@@ -1246,6 +1276,76 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
     try testing.expectEqualStrings("", program.stderr);
 }
 
+test "--library needs no main, writes no entry file, and roots at the exported surface" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §2 and §9's third root bullet. A library has no `main`
+    // and its callers are not in the build, so its public surface is its
+    // root set — and `--library` is not in `--release`'s and
+    // `--source-maps`' company: it lands with §9 and does something the day
+    // it lands.
+    //
+    // Three claims in one build, and each of them is a thing an
+    // application build does differently:
+    //
+    //   1. `missing_main` does not fire, though nothing here declares one;
+    //   2. no `out/main.mjs` is written — it is the entry file and there is
+    //      no entry;
+    //   3. `exported` survives although nothing in the build calls it,
+    //      while `private`, which is not exported and which nothing
+    //      reaches, does not. `helper` is the control in the other
+    //      direction: not exported either, but reached FROM `exported`, so
+    //      it stays.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Lib.beni",
+        \\import String
+        \\
+        \\
+        \\helper : Int -> Int
+        \\helper n =
+        \\    n + 1
+        \\
+        \\
+        \\pub exported : Int -> String
+        \\exported n =
+        \\    String.fromInt (helper n)
+        \\
+        \\
+        \\private : Int -> Int
+        \\private n =
+        \\    n * 2
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--library", "--out=out", "Lib.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out/main.mjs"));
+    const js = try w.read("out/Lib.mjs");
+    try testing.expect(std.mem.indexOf(u8, js, "Lib$exported") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "Lib$helper") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "Lib$private") == null);
+    // The same program built as an APPLICATION is the contrast, and it is
+    // the whole reason the flag exists: with no `main` there is nothing to
+    // root at, so the build refuses rather than emitting an empty tree.
+    const app = try w.run(&.{ "build", "--platform=node", "--out=app", "Lib.beni" });
+    try testing.expectEqual(@as(u8, 1), app.exit_code);
+    try testing.expectEqual(diagnostic.Code.missing_main, app.diagnostics[0].code);
+}
+
 test "`main` is resolved per platform: it must exist and have the platform's Program type" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1307,7 +1407,12 @@ test "`?` says it is not implemented rather than emitting the wrong program" {
         \\
         \\main : Program
         \\main =
-        \\    Node.print "x"
+        \\    case parse "1" of
+        \\        Just n ->
+        \\            Node.print (String.fromInt n)
+        \\
+        \\        Nothing ->
+        \\            Node.print "x"
         \\
     );
 
@@ -1333,6 +1438,56 @@ test "`?` says it is not implemented rather than emitting the wrong program" {
     // build that emitted the modules it could would leave an `out/` that
     // looks fresh and is missing the one thing the program needs.
     try testing.expect(!w.exists("out"));
+}
+
+test "a `?` nothing reaches is not lowered, so it does not stop the build" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §5's one visible behaviour change: elimination decides
+    // what is WRITTEN, never what is CHECKED, but a LOWERING diagnostic in
+    // a declaration nobody reaches is never raised, because the declaration
+    // is never lowered. `?` is the construct that makes that observable
+    // today (§1 assigns it to M3b) and it is deliberate — code that is not
+    // emitted cannot miscompile. Same module, same `parse`, same `?`; the
+    // only difference from the test above is that `main` does not call it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\pub parse : String -> Maybe Int
+        \\parse text =
+        \\    Just (String.toInt text? + 1)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "x"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // And `pub` bought `parse` nothing: §9 roots an application build at
+    // `main` alone, because `pub` is a MODULE boundary and not a PROGRAM
+    // one, and rooting at it would pin all of core forever.
+    const js = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, js, "parse") == null);
 }
 
 test "a project that does not check writes nothing" {
@@ -1650,17 +1805,27 @@ test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a fl
     try testing.expectEqual(program.gzip_bytes - floor.gzip_bytes, program.net_gzip_bytes);
     try testing.expectEqual(program.brotli_bytes - floor.brotli_bytes, program.net_brotli_bytes);
     // A program that prints one number adds bytes to the floor and does not
-    // remove any: without DCE the floor is contained in every build.
+    // remove any: the floor is the MINIMUM a program can ship
+    // (`backend.md` §9), so nothing can come in under it.
     try testing.expect(program.net_raw_bytes > 0);
-    // Derivation is EAGER (§8.5, A.23), so the floor every program carries
-    // now holds one derived `eq` per nominal type core declares —
-    // `Maybe$Maybe$eq`, `Result$Result$eq`, `Dict$Tree$eq`,
-    // `Dict$NColor$eq` — whether or not anything compares one. That is
-    // exactly the "grows per type x method" row M4 reports, and it is a
-    // floor cost until DCE exists (§11). `Tiny.beni` itself derives
-    // nothing, so this counts what core ships.
-    try testing.expect(program.derived_bytes > 0);
-    try testing.expect(program.derived_functions >= 4);
+    // **§9's acceptance, first half: `derived_bytes` is 0 on the floor and
+    // on any program that uses no `==` and no `compare`.** Derivation is
+    // still EAGER (§8.5, A.23) — core declares a nominal `eq` and `compare`
+    // for every type it has, whether or not anything calls them — and
+    // reachability elimination is what keeps them out of a build that does
+    // not. Before §9 this same line asserted the opposite, `> 0` and at
+    // least four functions, and that was the cost the pass exists to
+    // remove.
+    try testing.expectEqual(@as(u64, 0), floor.derived_bytes);
+    try testing.expectEqual(@as(u32, 0), floor.derived_functions);
+    try testing.expectEqual(@as(u64, 0), program.derived_bytes);
+    try testing.expectEqual(@as(u32, 0), program.derived_functions);
+    // And the floor really is ~2 kB rather than ~70 kB: the number §9
+    // predicted by hand before the pass was written. Generous bounds, so
+    // that an unrelated core edit does not move the test, but tight enough
+    // that a build which stopped eliminating fails here.
+    try testing.expect(floor.raw_bytes < 8 * 1024);
+    try testing.expect(floor.files <= 8);
 
     const total = try parseJson(SizeTotal, arena, lastLine(r.stdout));
     try testing.expect(total.total);
@@ -1674,19 +1839,55 @@ test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a fl
     try testing.expectEqual(floor.raw_bytes, total.floor_raw_bytes);
 }
 
-test "bench/size.mjs counts a derived-shaped name and not core's hand-written one" {
+test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `derived_bytes` is the whole point of M4's "grows per type x method"
-    // row. A `pub eq` in a module called `Foo` is emitted as `Foo$eq` —
-    // exactly the printed shape §8.5 gives a derived `eq` — and core's own
-    // `Basics$compare`, `Basics$eq` and `String$compare` are in the same
-    // output tree and must NOT be counted, being hand-written values the
-    // shape would otherwise claim.
+    // row, and it is worth something only if it counts DERIVED code and
+    // nothing else. Two programs in one corpus root, and the pair is the
+    // assertion:
+    //
+    //   - `DerivesCompare` orders a three-constructor type, so §8.5 emits
+    //     `DerivesCompare$Colour$$compare` and its §9.4 `$$order` table —
+    //     and NOT `Colour$$eq`, which is derived eagerly and then
+    //     eliminated, nothing having compared a `Colour` for equality
+    //     (`backend.md` §9).
+    //   - `UserWrittenEq` writes `pub eq` by hand. It is emitted as
+    //     `UserWrittenEq$eq`, which is the shape the old matcher —
+    //     `$(eq|compare|order)($|end)` — charged to derivation, and which
+    //     §8.5 cannot produce: a derived nominal name takes a DOUBLE
+    //     separator (`Colour$$eq`) and a structural one an enumerated
+    //     suffix (`eq$r$…`, `eq$t2`, `eq$unit`, `eq$prim`). So the answer
+    //     is zero, where it used to be one.
+    //
+    // The same exactness retires the list of nine hand-written core values
+    // (`Basics$compare`, `String$compare`, `List$eq`, …) the matcher needed
+    // in order to stop claiming those as well: none of them matches now.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.write("Foo.beni",
+    try w.write("DerivesCompare.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\pub type Colour
+        \\    = Red
+        \\    | Green
+        \\    | Blue
+        \\
+        \\
+        \\pub rank : Colour, Colour -> Bool
+        \\rank a b =
+        \\    a < b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (if rank Red Blue then 1 else 0))
+        \\
+    );
+    try w.write("UserWrittenEq.beni",
         \\import Node exposing (Program)
         \\import String
         \\
@@ -1698,7 +1899,7 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
         \\
         \\main : Program
         \\main =
-        \\    Node.print (String.fromInt 7)
+        \\    Node.print (String.fromInt (if eq 1 1 then 1 else 0))
         \\
     );
     const node_exe = w.node_exe orelse return error.NodeNotOnPath;
@@ -1720,80 +1921,51 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     if (r.exit_code != 0) return harnessFailed("bench/size.mjs", r);
     var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
     _ = it.next(); // the floor
-    const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
-    // Exactly twenty-three, and the list is the assertion:
+    // Sorted by path, so `DerivesCompare` comes first.
+    const derives = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
+    try testing.expect(std.mem.endsWith(u8, derives.program, "DerivesCompare.beni"));
+    try testing.expectEqualStrings("main", derives.roots);
+    // Exactly two, and the list is the assertion:
     //
-    //     Foo$eq
-    //     Basics$Never$$compare   Basics$Never$$eq
-    //     Basics$Order$$compare   Basics$Order$$order
-    //     Dict$Dict$$compare      Dict$Dict$$eq
-    //     Dict$NColor$$compare    Dict$NColor$$eq     Dict$NColor$$order
-    //     Dict$Tree$$compare      Dict$Tree$$eq       Dict$Tree$$order
-    //     Maybe$Maybe$$compare    Maybe$Maybe$$eq     Maybe$Maybe$$order
-    //     Result$Result$$compare  Result$Result$$eq   Result$Result$$order
-    //     Set$Set$$compare        Set$Set$$eq
-    //     Set$compare$unit        Set$eq$unit
+    //     DerivesCompare$Colour$$compare
+    //     DerivesCompare$Colour$$order
     //
-    // Twenty-four would mean a hand-written `Basics$compare`, `Basics$eq`,
-    // `List$eq` or `List$compare` was counted as well; twenty-two would mean
-    // the matcher missed the module's own `Foo$eq`.
-    //
-    // **Six of them are new with the comparator rewrite (§5.3, §5.4), and
-    // they are the sharpest single number M4 has.** `Dict k v` used to be
-    // `Dict (k, k -> Order) (Tree k v)` — it HELD A FUNCTION, so §6.3.1
-    // step 4 gave it neither method, and `Set t = Set (Dict t ())` inherited
-    // the exclusion. Taking the comparator out of the data structure makes
-    // both derivable, so core now ships four more nominal functions plus
-    // the two structural ones `Set` needs for the `()` inside its `Dict`.
-    // Nothing calls any of the six.
-    //
-    // Nothing in core calls one of them. §8.5 emits every declared nominal
-    // type's two methods, and a `$$order` table with each `compare` of two
-    // or more constructors, whether or not anything calls them — which is
-    // exactly the eager rule §11's "no DCE yet" row is the price of, and
-    // what M4 is there to measure. `Basics$Never$$eq` is the sharpest case:
-    // §3.2's row for a type that has no values at all. `Basics$Order$$eq`
-    // is absent for the opposite reason — the table answers `primitive`
-    // for it, and a primitive is not a function anyone emits (A.18).
-    try testing.expectEqual(@as(u32, 23), program.derived_functions);
-    try testing.expect(program.derived_bytes > 0);
-    try testing.expect(program.derived_bytes < program.raw_bytes);
-
-    // And the SPLIT, which is the number M4 reports and §11/A.38 forbid
-    // summing. The twenty-three above break down as nine `$eq` (the eight
-    // core ships plus this module's own `Foo$eq`), nine `$compare` and five
-    // `$order` tables — the same partition the list above is written in, read
-    // down the three columns:
-    //
-    //   eq       Foo$eq  Basics$Never$$eq  Dict$Dict$$eq  Dict$NColor$$eq
-    //            Dict$Tree$$eq  Maybe$Maybe$$eq  Result$Result$$eq
-    //            Set$Set$$eq  Set$eq$unit
-    //   compare  Basics$Never$$compare  Basics$Order$$compare
-    //            Dict$Dict$$compare  Dict$NColor$$compare  Dict$Tree$$compare
-    //            Maybe$Maybe$$compare  Result$Result$$compare
-    //            Set$Set$$compare  Set$compare$unit
-    //   order    Basics$Order$$order  Dict$NColor$$order  Dict$Tree$$order
-    //            Maybe$Maybe$$order  Result$Result$$order
-    //
-    // `$order` is five and not nine because §8.5 emits a table only for a
-    // type with two or more constructors: `Never` has none and `Dict`/`Set`
-    // are one-constructor wrappers.
-    try testing.expectEqual(@as(u32, 9), program.eq_functions);
-    try testing.expectEqual(@as(u32, 9), program.compare_functions);
-    try testing.expectEqual(@as(u32, 5), program.order_tables);
+    // Three would mean `Colour$$eq` survived an elimination nothing reaches
+    // it through — derivation is eager and the type is never compared for
+    // equality. One would mean the `$$order` table stopped being charged to
+    // derivation. Twenty-something would mean core's own eager rows were
+    // shipped again, which is the whole cost §9 exists to remove. And a
+    // number that moves when core changes would mean the matcher had gone
+    // back to guessing from a name's family resemblance.
+    try testing.expectEqual(@as(u32, 2), derives.derived_functions);
+    try testing.expectEqual(@as(u32, 0), derives.eq_functions);
+    try testing.expectEqual(@as(u32, 1), derives.compare_functions);
+    try testing.expectEqual(@as(u32, 1), derives.order_tables);
+    try testing.expect(derives.derived_bytes > 0);
+    try testing.expect(derives.derived_bytes < derives.raw_bytes);
     // The split is a partition of the same walk, so it adds up on both
-    // axes — that is what makes it safe to report the three separately.
+    // axes — that is what makes it safe to report the three separately
+    // (§11, A.38).
     try testing.expectEqual(
-        program.derived_functions,
-        program.eq_functions + program.compare_functions + program.order_tables,
+        derives.derived_functions,
+        derives.eq_functions + derives.compare_functions + derives.order_tables,
     );
     try testing.expectEqual(
-        program.derived_bytes,
-        program.eq_bytes + program.compare_bytes + program.order_bytes,
+        derives.derived_bytes,
+        derives.eq_bytes + derives.compare_bytes + derives.order_bytes,
     );
-    try testing.expect(program.eq_bytes > 0);
-    try testing.expect(program.compare_bytes > 0);
-    try testing.expect(program.order_bytes > 0);
+    try testing.expect(derives.compare_bytes > 0);
+    try testing.expect(derives.order_bytes > 0);
+
+    const user = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
+    try testing.expect(std.mem.endsWith(u8, user.program, "UserWrittenEq.beni"));
+    // The claim. `UserWrittenEq$eq` IS in the output — it is what `main`
+    // calls — and it is not derived code, so none of it is counted.
+    try testing.expectEqual(@as(u32, 0), user.derived_functions);
+    try testing.expectEqual(@as(u64, 0), user.derived_bytes);
+    try testing.expectEqual(@as(u32, 0), user.eq_functions);
+    try testing.expectEqual(@as(u32, 0), user.compare_functions);
+    try testing.expectEqual(@as(u32, 0), user.order_tables);
 }
 
 test "bench/size.mjs builds a root that declares no main behind a synthesised entry" {
@@ -2038,10 +2210,16 @@ const SizeFloor = struct {
     raw_bytes: i64,
     gzip_bytes: i64,
     brotli_bytes: i64,
+    /// §9's acceptance number, and the reason the floor line carries the
+    /// split at all: a program that compares nothing ships no derived code.
+    derived_bytes: u64,
+    derived_functions: u32,
 };
 
 const SizeProgram = struct {
     program: []const u8,
+    /// Which §9 root rule built this line: `main` or `library`.
+    roots: []const u8 = "",
     files: u32,
     raw_bytes: i64,
     gzip_bytes: i64,

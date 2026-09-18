@@ -1,0 +1,46 @@
+-- emit/app: the plainest thing reachability elimination does
+-- (`docs/design/backend.md` §9, §5).
+--
+-- Four top-level values and one `main`:
+--
+--   - `used` is reached from `main`, so it is emitted;
+--   - `helper` is reached from `used`, so it is emitted — a private value
+--     kept by an edge and not by `pub`;
+--   - `orphan` is `pub` and nothing reaches it. **It is gone**, and that is
+--     §9's decision and not an oversight: `pub` is a MODULE boundary, not a
+--     PROGRAM one, and a whole-program compiler knows the program. Rooting
+--     at `pub` would pin all of core forever, every core value being `pub`.
+--   - `orphanHelper` is private and reached only from `orphan`, so it goes
+--     with it — the transitive half.
+--
+-- The `import` line is the second half of the claim. `String.fromInt` is
+-- named by `used` and survives; `String.length`, named only by `orphan`,
+-- takes its import with it, because cross-module imports are use-driven and
+-- a dropped declaration takes its imports with it (§5).
+import Node exposing (Program)
+import String
+
+
+helper : Int -> Int
+helper n =
+    n + 1
+
+
+pub used : Int -> String
+used n =
+    String.fromInt (helper n)
+
+
+orphanHelper : String -> Int
+orphanHelper text =
+    String.length text
+
+
+pub orphan : String -> String
+orphan text =
+    String.fromInt (orphanHelper text)
+
+
+main : Program
+main =
+    Node.printLines [ used 1 ]

@@ -1,0 +1,58 @@
+-- emit/app: a function referenced ONLY as an evidence argument survives
+-- (`docs/design/backend.md` §9's third edge leg;
+-- `static-dispatch-spike.md` §1.4, §8.2).
+--
+-- `eq` is the `eq` OF `Tagged`: a `pub` value of the module that declares
+-- the type, which is what makes it that type's method (§1.2).
+-- **Nothing in this file calls it by name.** `anyEqual` is
+-- `where a.eq : a, a -> Bool`, so the call in `main` passes `eq` as a
+-- hidden leading argument — a reference that no source line spells and that
+-- `Bir.refs` therefore does not record.
+--
+-- The golden is that `DceEvidenceOnly$eq` is still emitted, that
+-- `DceEvidenceOnly$anyEqual` is called with it in front of its own
+-- arguments (§8.1), and that `byLength` came along with it on an ordinary
+-- edge out of a declaration that only the evidence edge kept alive. Without
+-- §9's dispatch-site leg the only edge out of `main` would be `anyEqual`,
+-- both would be deleted, and the emitted call would name a `const` that is
+-- not there — `ReferenceError` at load, after a build that exited 0.
+-- `run/DceEvidenceDepth` is the same edge two levels deeper, where the
+-- failure is observable by running.
+--
+-- `unusedMethod` is the control: a `pub` value of the same module, reaching
+-- the same `byLength`, that no evidence position ever answers. It is gone,
+-- and `byLength` is not.
+import Node exposing (Program)
+import String
+
+
+pub type Tagged
+    = Tagged String
+
+
+pub eq : Tagged, Tagged -> Bool
+eq a b =
+    byLength a == byLength b
+
+
+pub byLength : Tagged -> Int
+byLength t =
+    case t of
+        Tagged text ->
+            String.length text
+
+
+pub unusedMethod : Tagged -> Int
+unusedMethod t =
+    byLength t + 1
+
+
+pub anyEqual : a, a -> Bool
+    where a.eq : a, a -> Bool
+anyEqual x y =
+    x.eq y
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (if anyEqual (Tagged "a") (Tagged "b") then 1 else 0) ]

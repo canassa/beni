@@ -41,8 +41,9 @@ pub const usage =
     \\build options:
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
     \\  --out=<dir>               output directory (default: out)
+    \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
     \\  --source-maps             emit .map files (not implemented until M5)
-    \\  --release                 chunks, elimination, renaming (not implemented until M3c)
+    \\  --release                 chunks, renaming, integer tags (not implemented until M3c)
     \\
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
@@ -108,6 +109,14 @@ pub const Build = struct {
     /// package whose manifest says `"platform": true` (boundary.md §2).
     platform: []const u8,
     out: []const u8 = default_out,
+    /// `--library` (backend.md §2): no `main` is required, no entry file is
+    /// written, and §9's reachability roots are every name the root
+    /// package's modules export.
+    ///
+    /// **It is not in `--release`'s and `--source-maps`' company**: those
+    /// two are refused because they are not implemented, and this one lands
+    /// with §9 and does something the day it lands.
+    library: bool = false,
     /// No `source_maps` field, for the same reason there is no `release`
     /// one: `parseBuild` refuses both flags outright, so nothing downstream
     /// can be handed a setting the backend does not honour.
@@ -309,6 +318,7 @@ const BuildSpecific = struct {
     out: ?[]const u8 = null,
     source_maps: bool = false,
     release: bool = false,
+    library: bool = false,
 
     fn apply(self: *BuildSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
@@ -328,6 +338,10 @@ const BuildSpecific = struct {
         } else if (std.mem.eql(u8, name, "--release")) {
             if (value != null) return noValue(name);
             self.release = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--library")) {
+            if (value != null) return noValue(name);
+            self.library = true;
             self.consumed = true;
         }
         return null;
@@ -365,6 +379,7 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         .common = s.common,
         .platform = platform,
         .out = s.specific.out orelse default_out,
+        .library = s.specific.library,
         .paths = paths,
     } } };
 }
@@ -598,7 +613,7 @@ test "build: the platform is required and --release and --source-maps are refuse
 }
 
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release" }) |word| {
+    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release", "--library" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
 }

@@ -6,25 +6,35 @@
 // Builds every program of every corpus root with `beni build` and prints a
 // `{"floor":…}` line, one JSON line per program, and a `{"total":…}` line:
 //
-//     {"floor":true,"entry":"Empty","files":20,"raw_bytes":65111, …}
-//     {"program":"tests/corpus/run/Adt.beni","files":21,"raw_bytes":66350,
-//      "gzip_bytes":15694,"brotli_bytes":13196,
-//      "net_raw_bytes":1239,"net_gzip_bytes":294,"net_brotli_bytes":213,
+//     {"floor":true,"entry":"Empty","files":5,"raw_bytes":2147, …}
+//     {"program":"tests/corpus/run/Adt.beni","entry":"Adt","roots":"main",
+//      "files":6,"raw_bytes":3520,"gzip_bytes":1584,"brotli_bytes":1318,
+//      "net_raw_bytes":1373,"net_gzip_bytes":294,"net_brotli_bytes":213,
 //      "derived_bytes":0,"derived_functions":0}
 //     {"total":true,"programs":35,"raw_bytes":…,"gross_raw_bytes":…, …}
 //
-// **The floor.** Every program drags in the whole of `core/` and the
-// platform, because there is no dead-code elimination yet (§11, "No DCE").
-// On the `run/` corpus that shared tree is ~65 kB of the ~66 kB each program
-// emits, so a gross total over 34 programs is 34 copies of one number and
-// says nothing about any of them. The script therefore builds an EMPTY
-// program — a `main` that is `Node.done` — in the same run, reports it as
-// the `floor` line, and gives every program its bytes NET of that floor.
-// The total counts the shared tree ONCE plus the net of each program, and
-// keeps the gross sums beside it as `gross_*`. Net compressed bytes are a
-// subtraction, not a separate compression, so that the totals add up; a
-// program's own bytes compress against the floor's dictionary, which is
-// exactly how they would ship.
+// **The floor, and what it means now that §9 exists.** It is still an EMPTY
+// program — a `main` that is `Node.done` — built in the same run and
+// reported as the `floor` line, with every program's bytes given NET of it.
+// What it MEASURES changed with reachability elimination (`backend.md` §9):
+// it used to be the shared tree every program drags in whole, ~65 kB of the
+// ~66 kB each one emitted, and it is now **the minimum a program can ship**,
+// ~2 kB. So `net_*` is a subtraction against a minimum rather than against
+// common code, and **`gross_*` is the number that matters**, because after
+// elimination no two programs ship the same tree and the "shared tree
+// counted once" arithmetic no longer describes anything. The `raw_bytes`,
+// `gzip_bytes` and `brotli_bytes` of the total keep that arithmetic because
+// it still adds up; read `gross_*` beside them.
+//
+// Net compressed bytes are a subtraction, not a separate compression, so
+// that the totals add up; a program's own bytes compress against the
+// floor's dictionary, which is exactly how they would ship.
+//
+// **`roots` on every program line says which §9 root rule built it** —
+// `"main"` for a program, `"library"` for a corpus root that declares none
+// and is built behind a synthesised entry with `--library`. The rule is not
+// a detail: under `main`-only roots `bench/corpus` keeps 1 declaration of
+// 336 and the line stops meaning anything.
 //
 // Compressed size is measured over the CONCATENATION of the emitted files in
 // sorted path order, not over the sum of per-file compressions, because what
@@ -34,14 +44,10 @@
 //
 // `derived_bytes` is the part of the output attributable to DERIVED `eq` and
 // `compare` functions, which is the "grows per type x method" row of report
-// 18 §1.5. It is **0 today** — nothing derives anything yet — and the names
-// it looks for are the ones the spec prints (§8.5): a derived function is an
-// ordinary module-level `const` spelled `Module$base`, with `base` one of
-// `<T>$eq`, `<T>$compare`, `<T>$order`, `eq$r$<fields>`, `eq$t<n>`,
-// `eq$unit`, `eq$prim`, `compare$prim`, `compare$char`. Hand-written core
-// values that happen to share the shape (`Basics$compare`, `String$compare`,
-// `List$eq`, …) are excluded by an explicit list, never by name shape, which
-// is what makes the number 0 on `master` rather than a handful.
+// 18 §1.5, and §9's acceptance number: **0 on the floor and on any program
+// that uses no `==` and no `compare`**. The names it looks for are exactly
+// the ones §8.5 prints — see `derivedKind` below, which matches them by
+// spelling and no longer needs a list of hand-written exceptions.
 //
 // The same walk also reports the SPLIT — `eq_functions`/`eq_bytes`,
 // `compare_functions`/`compare_bytes`, `order_tables`/`order_bytes` — on the
@@ -199,39 +205,40 @@ function topLevelStatements(text) {
 
 const declared = /^(?:export\s+)?(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/;
 
-/// §8.5 prints every derived function as `Module$base`, where `base` is one
-/// of `<T>$eq`, `<T>$compare`, `<T>$order`, `eq$r$<f1>$<f2>$…`, `eq$t<n>`,
-/// `eq$unit`, `eq$prim`, `compare$prim`, `compare$char` — so the printed
-/// names are `Shapes$Shape$eq`, `Shapes$Colour$order`, `Main$eq$r$x$y`,
-/// `Main$compare$t2`, `Main$eq$unit`, `Main$compare$prim`. What they have in
-/// common is a `$eq`, `$compare` or `$order` segment that is followed by `$`
-/// or by the end of the name.
-const derived_shape = /^[A-Za-z_$][\w$]*\$(eq|compare|order)(\$|$)/;
-
-/// Values core writes BY HAND that the shape above would otherwise claim.
-/// An explicit list, because there is no spelling that separates
-/// `Basics$compare` (a real beni function) or `String$compare` (a real
-/// foreign) from a derived one — §9.1 even routes `String`'s `compare` to
-/// the hand-written core function on purpose.
-const hand_written = new Set([
-  "Basics$eq",
-  "Basics$neq",
-  "Basics$compare",
-  "String$eq",
-  "String$compare",
-  "Char$eq",
-  "Char$compare",
-  "List$eq",
-  "List$compare",
-]);
+/// §8.5's names, matched EXACTLY rather than by family resemblance. A
+/// printed name is `<module path with `.` as `$`>$<base>`, and a derived
+/// declaration's base is one of:
+///
+///   - `<Type>$$eq` / `<Type>$$compare` for a nominal type, and
+///     `<Type>$$order` for its §9.4 tag table. The separator is DOUBLE, and
+///     that is the whole of why the name cannot collide (A.61): a beni
+///     identifier holds no `$` and a module path has no empty segment, so
+///     the empty segment between the two `$` is unspellable by a user.
+///   - `eq$r$<f1>$<f2>…` / `compare$r$…` for a record shape, `eq$t<n>` /
+///     `compare$t<n>` for a tuple, `eq$unit` / `compare$unit` for `()`.
+///   - `eq$prim`, `compare$prim`, `compare$char` — §9.1's comparators.
+///
+/// **The old matcher was `\$(eq|compare|order)(\$|$)` and it was wrong in
+/// both directions.** It charged a user's own `pub eq` to derivation —
+/// `tests/corpus/run/UserEquality.beni` declares one, and it prints as
+/// `UserEquality$eq`, exactly that shape — and it needed an explicit list of
+/// nine hand-written core values (`Basics$compare`, `String$compare`,
+/// `List$eq`, …) to stop claiming those as well. The double separator and
+/// the enumerated structural suffixes tell the two apart by SPELLING, so
+/// the list goes with the guesswork: nothing core writes by hand matches,
+/// and nothing a user can spell matches either.
+const nominal_derived = /\$\$(eq|compare|order)$/;
+const structural_derived = /\$(eq|compare)\$(?:r(?:\$[A-Za-z_]\w*)*|t\d+|unit|prim)$/;
+const char_comparator = /\$compare\$char$/;
 
 /// `null` if the name is not a derived one; otherwise which of the three
-/// §8.5 spellings it is — `eq`, `compare` or `order` — which is the segment
-/// the name's LAST `$eq` / `$compare` / `$order` carries.
+/// §8.5 spellings it is — `eq`, `compare` or `order`.
 function derivedKind(name) {
-  if (hand_written.has(name)) return null;
-  const match = name.match(derived_shape);
-  return match === null ? null : match[1];
+  const nominal = name.match(nominal_derived);
+  if (nominal !== null) return nominal[1];
+  if (char_comparator.test(name)) return "compare";
+  const structural = name.match(structural_derived);
+  return structural === null ? null : structural[1];
 }
 
 function measureTree(outDir) {
@@ -283,7 +290,13 @@ function measureTree(outDir) {
 
 /// Build one project. Each program gets a project of its own, because two of
 /// them in one tree would each pull the other's modules into `out/`.
-function buildProject(beni, work, projectDir, sources) {
+///
+/// `library` passes `--library`, which makes every exported name of the
+/// root package a reachability root instead of `main` (`backend.md` §2,
+/// §9). A corpus root that declares no `main` IS a library, and under
+/// `main`-only roots elimination would keep 1 declaration of 336 and the
+/// line would stop measuring anything.
+function buildProject(beni, work, projectDir, sources, library = false) {
   const projectRel = relative(work, projectDir).split(sep).join("/");
   rmSync(join(projectDir, "out"), { recursive: true, force: true });
   return runBeni(
@@ -294,6 +307,7 @@ function buildProject(beni, work, projectDir, sources) {
       "--diagnostics=json",
       `--out=${projectRel}/out`,
       `--root=${projectRel}`,
+      ...(library ? ["--library"] : []),
       ...sources.map((s) => `${projectRel}/${s}`),
     ],
     work,
@@ -408,14 +422,19 @@ function main() {
     }
 
     const programs = modules.filter((m) => declaresMain(readFileSync(join(root, m), "utf8")));
-    const build = (projectDir, sources) => buildProject(beni, work, projectDir, sources);
+    // A root whose modules declare `main` is measured as the PROGRAMS it
+    // holds, rooted at `main`; a root that declares none is a library and
+    // is measured as one. `library` says which, and it is recorded on the
+    // line, because after §9 the rule is the difference between measuring a
+    // library and measuring one declaration.
+    const build = (projectDir, sources, library) => buildProject(beni, work, projectDir, sources, library);
 
     if (programs.length !== 0) {
       for (const program of programs) {
         const projectDir = join(work, `${corpus.replace(/[^\w]/g, "_")}__${program.replace(/[^\w]/g, "_")}`);
         mkdirSync(join(projectDir, dirname(program) === "." ? "" : dirname(program)), { recursive: true });
         cpSync(join(root, program), join(projectDir, program));
-        const run = build(projectDir, [program]);
+        const run = build(projectDir, [program], false);
         if (run.status !== 0) {
           process.stderr.write(
             `bench/size.mjs: ${corpus}/${program} did not build\n${run.stdout ?? ""}${run.stderr ?? ""}\n`,
@@ -424,7 +443,7 @@ function main() {
           continue;
         }
         record(
-          { program: `${corpus}/${program}`, entry: moduleNameOf(program) },
+          { program: `${corpus}/${program}`, entry: moduleNameOf(program), roots: "main" },
           measureTree(join(projectDir, "out")),
         );
       }
@@ -457,7 +476,7 @@ function main() {
     let ok = false;
     for (let round = 0; round <= modules.length && kept.length !== 0; round++) {
       writeEntry(kept);
-      const run = build(projectDir, [entry, ...kept]);
+      const run = build(projectDir, [entry, ...kept], true);
       if (run.status === 0) {
         ok = true;
         break;
@@ -488,6 +507,7 @@ function main() {
       {
         program: corpus,
         entry: "BenchMain (synthesised)",
+        roots: "library",
         modules_measured: kept.length,
         modules_excluded: dropped,
       },

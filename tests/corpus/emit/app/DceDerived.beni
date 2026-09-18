@@ -1,0 +1,54 @@
+-- emit/app: derivation is EAGER and elimination is what makes it shippable
+-- (`docs/design/backend.md` §9; `static-dispatch-spike.md` §8.5, §9.4).
+--
+-- Three nominal types, and the compiler derives an `eq` and a `compare` for
+-- every one of them whether or not anything calls them — six functions and
+-- three `$$order` tables before this pass runs. What the golden shows is
+-- which of the nine a `main`-rooted build keeps:
+--
+--   - `Kept` is compared with `==`, so `Kept$$eq` is emitted. Its payload is
+--     a `Payload`, so the derived body names `Payload$$eq` as one of its
+--     structural positions — **the transitive edge**, and the one that no
+--     `Bir.refs` row and no source line spells. It comes from the `parts`
+--     range of the `derived` row, which is §9's third leg read out of a
+--     `Derived` row rather than out of a declaration.
+--   - `Kept$$compare` and `Payload$$compare` are gone: nothing orders
+--     either type. So are the two `$$order` tables that would have gone
+--     with those `compare`s — a table is not a node of the graph, it lives
+--     and dies with the `compare` whose row it hangs off.
+--   - `Unused` is compared nowhere at all, so both of its methods and its
+--     `$$order` table are gone entire.
+--
+-- `Kept` has two constructors, so a surviving `eq` still needs no `$$order`
+-- table: only `compare` reads one (§9.4).
+import Node exposing (Program)
+import String
+
+
+pub type Payload
+    = Payload Int
+
+
+pub type Kept
+    = Empty
+    | Holds Payload
+
+
+pub type Unused
+    = Red
+    | Green
+    | Blue
+
+
+pub same : Kept, Kept -> String
+same a b =
+    if a == b then
+        "yes"
+
+    else
+        "no"
+
+
+main : Program
+main =
+    Node.printLines [ same Empty (Holds (Payload 1)), String.fromInt 0 ]

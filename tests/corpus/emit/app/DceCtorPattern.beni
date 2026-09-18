@@ -1,0 +1,41 @@
+-- emit/app: a constructor is NOT a node of the graph
+-- (`docs/design/backend.md` §9, "four things that are not nodes").
+--
+-- `Signal` is matched on, constructed and destructured, and not one of its
+-- constructors is a declaration anything could keep or drop: a constructor
+-- is an object literal at its use site, so a constructor mentioned only in
+-- a PATTERN needs no edge to survive. `Amber` is exactly that — it appears
+-- in `describe`'s `case` and nowhere else — and the match compiles
+-- unchanged, with the same decision tree it would have without this pass.
+--
+-- The other half of the same claim: `Signal`'s derived methods are gone.
+-- Nothing compares a `Signal` with `==` or `<`, so `Signal$$eq`,
+-- `Signal$$compare` and the `$$order` table the `compare` would have read
+-- are all deleted — while the type itself goes on being matched. A pass
+-- that treated a constructor as a node would have kept them alive through
+-- the pattern, which is the mistake this fixture exists to catch.
+import Node exposing (Program)
+
+
+pub type Signal
+    = Red
+    | Amber
+    | Go Int
+
+
+pub describe : Signal -> String
+describe s =
+    case s of
+        Red ->
+            "stop"
+
+        Amber ->
+            "wait"
+
+        Go _ ->
+            "go"
+
+
+main : Program
+main =
+    Node.printLines [ describe Red, describe Amber, describe (Go 3) ]

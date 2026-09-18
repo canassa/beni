@@ -1987,13 +1987,18 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\
         \\main : Program
         \\main =
-        \\    Prog.say 1
+        \\    if before "a" "b" then Prog.say 1 else Prog.say 0
         \\
     );
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
+    // `main` CALLS `before`, and that is load-bearing since `backend.md`
+    // §9: elimination decides what is written, and a declaration nothing
+    // reaches is never lowered, so its lowering diagnostic is never raised
+    // (§5). `pub` is not a root in an application build. A version of this
+    // fixture whose `main` ignored `before` would exit 0 and prove nothing.
     const r = try w.run(&.{ "build", "--platform=./myplat", "--core-root=mycore", "--out=out", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
@@ -2052,7 +2057,7 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\
         \\main : Program
         \\main =
-        \\    Prog.say 1
+        \\    if same then Prog.say 1 else if differ then Prog.say 2 else Prog.say 0
         \\
     );
     const eq = try w.run(&.{ "build", "--platform=./myplat", "--core-root=mycore", "--out=out", "Main.beni" });
@@ -2821,7 +2826,12 @@ test "a private eq wins inside its module and still lets every other module deri
     // wrote, which is the half that used to be missing.
     const ids = try w.read("out/Ids.mjs");
     try testing.expect(std.mem.indexOf(u8, ids, "const Ids$Id$$eq = ") != null);
-    try testing.expect(std.mem.indexOf(u8, ids, "export { Ids$Id$$compare, Ids$Id$$eq,") != null);
+    try testing.expect(std.mem.indexOf(u8, ids, "export { Ids$Id$$eq,") != null);
+    // And `Ids$Id$$compare` is NOT there, though derivation wrote it: the
+    // program compares an `Id` for equality and never orders one, so
+    // `backend.md` §9 drops the row and its export with it. The export list
+    // shrinks to exactly the surviving names it used to hold (§5).
+    try testing.expect(std.mem.indexOf(u8, ids, "Ids$Id$$compare") == null);
     const main = try w.read("out/Main.mjs");
     try testing.expect(std.mem.indexOf(u8, main, "Ids$Id$$eq") != null);
     try testing.expect(std.mem.indexOf(u8, main, "from \"./Ids.mjs\";") != null);
@@ -2867,28 +2877,50 @@ test "core/Basics carries the derived rows §3.2's table asks it for" {
     // show: a target naming a function no module writes is exit 0 and a
     // `ReferenceError` at load. `Order`'s `compare` reads its `$$order`
     // table, so the table has to be there too, and ahead of it (§8.5).
+    //
+    // **The program has to ORDER two `Order`s for that to be observable**,
+    // and since `backend.md` §9 that is a fact about this test and not a
+    // detail: an empty `main` used to ship every row core derived, and now
+    // ships none of them. `compare 1 2 < compare 3 3` is `LT < EQ`, which
+    // is exactly the comparison §9.4's table exists for — alphabetically
+    // `EQ < GT < LT`, so a `compare` that did not read the table would
+    // answer `False`.
     try w.write("Main.beni",
         \\import Node exposing (Program)
         \\
         \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
         \\main : Program
         \\main =
-        \\    Node.printLines []
+        \\    Node.printLines [ show (compare 1 2 < compare 3 3) ]
         \\
     );
-    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
-    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    const built = try w.buildAndRun(&.{"Main.beni"});
+    try testing.expectEqual(@as(u8, 0), built.build.exit_code);
+    try testing.expectEqualStrings("True\n", built.program.?.stdout);
     const basics = try w.read("out/core/Basics.mjs");
     const table = std.mem.indexOf(u8, basics, "const Basics$Order$$order = ");
     const compare = std.mem.indexOf(u8, basics, "const Basics$Order$$compare = ");
     try testing.expect(table != null);
     try testing.expect(compare != null);
     try testing.expect(table.? < compare.?);
-    try testing.expect(std.mem.indexOf(u8, basics, "const Basics$Never$$compare = ") != null);
-    try testing.expect(std.mem.indexOf(u8, basics, "const Basics$Never$$eq = ") != null);
     // `Order`'s `eq` is `===` at the use, so no module writes a function
     // for it (A.18).
     try testing.expect(std.mem.indexOf(u8, basics, "Basics$Order$$eq") == null);
+    // `Never`'s two rows are in the TABLE — the first half of this test
+    // reads them straight out of `dump --stage=dispatch` — and no program
+    // can ever reach them, because `Never` has no values to compare. So
+    // they are the purest case of what §9 removes, and they are not here.
+    try testing.expect(std.mem.indexOf(u8, basics, "Basics$Never$$compare") == null);
+    try testing.expect(std.mem.indexOf(u8, basics, "Basics$Never$$eq") == null);
 }
 
 test "a derived method of a submodule's namesake type does not collide with its values" {
@@ -3008,7 +3040,12 @@ test "a type that is not pub still exports the method another module derives for
     try testing.expectEqual(@as(u8, 0), built.build.exit_code);
     try testing.expectEqualStrings("True\nFalse\n", built.program.?.stdout);
     const hidden = try w.read("out/Hidden.mjs");
-    try testing.expect(std.mem.indexOf(u8, hidden, "export { Hidden$Wrapped$$compare, Hidden$Wrapped$$eq,") != null);
+    try testing.expect(std.mem.indexOf(u8, hidden, "export { Hidden$Wrapped$$eq,") != null);
+    // `Hidden$Wrapped$$compare` was derived as eagerly as its `eq` and is
+    // gone: nothing orders a `Wrapped` (`backend.md` §9). What the pin is
+    // about is unchanged — the surviving row is exported although its type
+    // is not `pub`.
+    try testing.expect(std.mem.indexOf(u8, hidden, "Hidden$Wrapped$$compare") == null);
 }
 
 test "a pub foreign with a where clause takes its evidence in front of its own arguments" {

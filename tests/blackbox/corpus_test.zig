@@ -190,6 +190,19 @@ fn walk(kind: Kind) !void {
     // not exist, and the one that wanted to be one carried an unrelated
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
+    // `emit/app/`: the goldens whose claim IS what elimination removes
+    // (`backend.md` §9, §12). Everything else under `emit/` is built with
+    // `--library`, so a golden is a claim about the shape of a declaration
+    // and not about whether the fixture's own `main` happens to call it;
+    // these are the application builds that `--library` would hide. It
+    // takes PROJECTS as well as files, because "a module vanishes" needs a
+    // second module to vanish.
+    if (kind == .emit) {
+        const app_dir = try std.fs.path.join(arena, &.{ kind.dir(), "app" });
+        const start = fixtures.items.len;
+        try collect(arena, app_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.app = true;
+    }
 
     if (fixtures.items.len == 0) {
         std.debug.print("corpus {s} is empty (M1 fills it)\n", .{kind.dir()});
@@ -229,6 +242,10 @@ const Fixture = struct {
     core: bool,
     /// `name` is a directory holding a multi-module project (checker.md §3).
     project: bool = false,
+    /// Under `emit/app/`: built as an APPLICATION, rooted at `main`, so the
+    /// golden can be a claim about what elimination removes (backend.md
+    /// §9). Everything else under `emit/` gets `--library`.
+    app: bool = false,
 };
 
 /// Append the `.beni` files directly under `dir`, sorted by name — plus,
@@ -465,11 +482,56 @@ const Case = struct {
     /// produced. Copied into the world's project directory for the same two
     /// reasons `run/` copies: the module name comes from the path, and a
     /// build writes an `out/` directory that has no business in the repo.
+    ///
+    /// **Built with `--library` unless it is under `emit/app/`**
+    /// (`backend.md` §9, §12, the same per-fixture mechanism `core/` uses
+    /// for `--core`). An `emit/` golden is a claim about the SHAPE of a
+    /// declaration and must not be contingent on something calling it: with
+    /// `main` as the only root, all seventeen goldens here would be gutted
+    /// and `DerivedCompareNominal.js` — 115 lines of which 114 are derived
+    /// code and one is `main` — would lose the very evidence its intent
+    /// comment is about. `emit/app/` is where elimination's own goldens go,
+    /// because their claim IS what an application build removes.
+    ///
+    /// A fixture that is a DIRECTORY is a multi-module project: every
+    /// `.beni` in it is copied and passed to one build, the entry is the
+    /// module named after the directory, and `_expected.js` is that
+    /// module's emitted file. `_expected.absent`, if present, lists output
+    /// paths the build must NOT have written, one per line — which is how
+    /// "a module vanishes" is asserted, there being no other way to golden
+    /// a file that is not there.
     fn emitted(c: Case) !void {
-        const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
-        try c.w.write(c.fixture.name, source);
+        var sources: std.ArrayList([]const u8) = .empty;
+        if (c.fixture.project) {
+            const dir_path = try c.fixturePath();
+            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+            defer dir.close(testing.io);
+            var it = dir.iterate();
+            while (try it.next(testing.io)) |entry| {
+                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                try sources.append(c.arena, try c.arena.dupe(u8, entry.name));
+            }
+            std.mem.sort([]const u8, sources.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.lessThan(u8, a, b);
+                }
+            }.lessThan);
+            for (sources.items) |name| {
+                const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+            }
+        } else {
+            const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
+            try c.w.write(c.fixture.name, source);
+            try sources.append(c.arena, c.fixture.name);
+        }
 
-        const built = try c.inProject(&.{ "build", "--platform=node", "--out=out", c.fixture.name });
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
+        if (!c.fixture.app) try args.append(c.arena, "--library");
+        try args.appendSlice(c.arena, sources.items);
+
+        const built = try c.inProject(args.items);
         if (built.exit_code != 0) {
             std.debug.print("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
             return error.BuildFailed;
@@ -479,13 +541,35 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
 
-        const stem = c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
+        const stem = if (c.fixture.project)
+            c.fixture.name
+        else
+            c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
         const emitted_path = try std.fmt.allocPrint(c.arena, "out/{s}.mjs", .{stem});
         const js = c.w.read(emitted_path) catch |err| {
             std.debug.print("{s}: the build wrote no {s} ({t})\n", .{ c.fixture.name, emitted_path, err });
             return err;
         };
         try c.expectGolden("js", js);
+        try c.expectAbsent();
+    }
+
+    /// The `_expected.absent` half of a project fixture: every non-empty,
+    /// non-comment line is an output path the build must not have written.
+    /// It is never blessed — a file that should not exist cannot be
+    /// captured from a run, only asserted.
+    fn expectAbsent(c: Case) !void {
+        if (!c.fixture.project or !c.goldenExists("absent")) return;
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("absent"), c.arena, .limited(world.max_stream_bytes));
+        var it = std.mem.splitScalar(u8, text, '\n');
+        while (it.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (line.len == 0 or line[0] == '#') continue;
+            if (c.w.read(line)) |_| {
+                std.debug.print("{s}: the build wrote {s}, which elimination should have removed\n", .{ c.fixture.name, line });
+                return error.UnexpectedOutputFile;
+            } else |_| {}
+        }
     }
 
     fn lowering(c: Case) !void {

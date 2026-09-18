@@ -1,0 +1,8 @@
+pub greeting : String
+greeting =
+    "hello"
+
+
+pub unreachedFromHere : String
+unreachedFromHere =
+    "nobody calls me"

@@ -1,0 +1,51 @@
+-- `Debug.log` follows the EDGE and not the declaration
+-- (`docs/design/backend.md` §9's "Purity, and what may be dropped").
+--
+-- §9 drops an unreachable declaration entire, initialiser included, and the
+-- rule is total because the premise is: a top-level beni value is pure to
+-- evaluate. `Debug.log` is the one deliberate violation of that in the
+-- language (`boundary.md` §4) — and it is a FUNCTION, so its effect happens
+-- when it is CALLED, and a call is an edge. A `Debug.log` reachable from
+-- `main` keeps everything it names; a `Debug.log` in a declaration nothing
+-- reaches is deleted with it and never runs.
+--
+-- So: exactly one line of log output, from `reached`. Two other
+-- declarations could add one and neither does:
+--
+--   - `neverCalled` is `pub`, is a perfectly good call of `Debug.log`, and
+--     prints nothing, because nothing calls it;
+--   - `neverEvaluated` is a top-level CONSTANT whose initialiser calls
+--     `Debug.log`. It is the sharp one: a constant's initialiser runs at
+--     module evaluation time, so a pass that kept the declaration — or that
+--     kept the declaration and dropped only its body — would print a second
+--     line before `main` ran. §9 drops it entire, initialiser included.
+--
+-- Three lines would mean the pass kept a declaration it should not have;
+-- zero would mean it dropped one it should have kept, and the arithmetic
+-- below would be missing too.
+--
+-- `Debug.log` takes the value first and the label second and returns the
+-- value unchanged, so the logged line and the printed line come from one
+-- expression.
+import Node exposing (Program)
+import String
+
+
+reached : Int -> Int
+reached n =
+    Debug.log n "reached" * 2
+
+
+pub neverCalled : Int -> Int
+neverCalled n =
+    Debug.log n "neverCalled" + 1
+
+
+pub neverEvaluated : Int
+neverEvaluated =
+    Debug.log 1 "neverEvaluated" + 1
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (reached 21) ]

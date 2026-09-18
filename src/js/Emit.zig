@@ -60,6 +60,8 @@ const SourceStore = @import("../SourceStore.zig");
 const Lower = @import("Lower.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Print = @import("Print.zig");
+const Profile = @import("../Profile.zig");
+const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
 
 const Emit = @This();
@@ -100,6 +102,12 @@ pub const Options = struct {
     platform: Platform,
     /// Files embedded in the compiler binary, by store path.
     embedded: []const Asset,
+    /// `--library` (§2): no `main` is required and no entry file is
+    /// written, and §9's root set is every name the root package's modules
+    /// export rather than `main` alone. It is not a second output mode — a
+    /// library build emits the same `.mjs` per module as any other — and it
+    /// never changes WHETHER elimination runs, only what it starts from.
+    library: bool = false,
     // No `source_maps`: the VLQ encoder is M5 (§11), so `--source-maps` is
     // refused in `Cli.parseBuild` and never reaches here. Positions ride in
     // the IR from M3a either way (§9.6).
@@ -144,17 +152,29 @@ pub fn run(
 
     try e.checkForeignShapes();
     try e.checkSiblings();
-    const entry = try e.findEntry();
-    if (e.diagnostics.items.len != 0 or entry == null) return e.nothingWritten(gpa);
+    // A library has no entry point and is not asked for one (§2): the
+    // search is off, so `missing_main` does not fire and a `main` that
+    // happens to be there is not type-checked against the platform's
+    // `Program`. It is still EXPORTED and still a root, because §5's export
+    // list has the entry declaration in it and §9 roots a library at its
+    // export list — `Reach.collectRoots` says why at length.
+    const entry = if (options.library) null else try e.findEntry();
+    if (e.diagnostics.items.len != 0 or (entry == null and !options.library)) return e.nothingWritten(gpa);
+
+    // §9's reachability walk, between `findEntry` and `emitModules` and
+    // BEFORE lowering: an unreachable declaration is then never lowered at
+    // all, so the pass pays for itself in emit time rather than costing
+    // anything.
+    try e.eliminate(entry);
 
     // Everything is produced into `pending` first and written afterwards.
     // A diagnostic can still appear here — `?` is not compiled yet
     // (backend.md §1) and says so — and a build that wrote half its modules
     // before finding out would leave an `out/` that looks fresh and is not.
     // Nothing is emitted until the whole project is known to emit.
-    try e.emitModules(entry.?);
+    try e.emitModules(entry);
     try e.copyAssets();
-    try e.emitEntry(entry.?);
+    if (entry) |at| try e.emitEntry(at);
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
 
     try e.flush();
@@ -172,6 +192,10 @@ const Emitter = struct {
     options: Options,
     io_failure: *?Session.IoFailure,
     diagnostics: std.ArrayList(Item) = .empty,
+    /// §9's answer: which declarations and derived rows this build ships.
+    /// Scratch-owned, filled by `eliminate` before the first module is
+    /// lowered.
+    live: Reach.Result = .empty,
     /// What the build produced, path and bytes, before any of it reaches
     /// the disk. Scratch-owned.
     pending: std.ArrayList(Output) = .empty,
@@ -668,9 +692,51 @@ const Emitter = struct {
         return @enumFromInt(0);
     }
 
+    // ---- backend.md §9: reachability elimination --------------------------
+
+    /// Walk §9's declaration graph and keep the answer. **Always on, for
+    /// every `beni build`** (§9): not release-only, because eager
+    /// derivation is the difference between an empty program shipping 70 kB
+    /// and shipping 2 kB, and a development build that ships fifty times
+    /// what it needs is not a development build anyone would run.
+    fn eliminate(e: *Emitter, entry: ?Entry) !void {
+        const token = e.session.profile.begin();
+        defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
+        const count = e.graph().count();
+        const birs = try e.scratch.alloc(*const Bir, count);
+        const tables = try e.scratch.alloc(*const Dispatch, count);
+        for (birs, tables, 0..) |*b, *d, i| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            b.* = e.bir(m);
+            d.* = e.dispatchOf(m);
+        }
+        e.live = try Reach.run(e.scratch, .{
+            .graph = e.graph(),
+            .store = &e.session.store,
+            .birs = birs,
+            .dispatch = tables,
+            .interfaces = e.session.resolution.interfaces,
+            .provenance = e.session.resolution.provenance,
+            .types = &e.session.checked.types,
+            .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
+            .library = e.options.library,
+        });
+    }
+
+    /// The declaration a module exports as its entry point (§5): `main` of
+    /// the build's entry module in an application build, and every root
+    /// module's own `main` in a library one, where there is no single entry
+    /// and a `main` is just another exported name.
+    fn entryDeclOf(e: *Emitter, m: Graph.Index, entry: ?Entry) ?u32 {
+        if (entry) |at| return if (at.module == m) at.decl.int() else null;
+        if (!e.options.library) return null;
+        if (e.session.store.package(e.graph().moduleFile(m)) != .app) return null;
+        return Reach.mainOf(e.bir(m));
+    }
+
     // ---- Emission ---------------------------------------------------------
 
-    fn emitModules(e: *Emitter, entry: Entry) !void {
+    fn emitModules(e: *Emitter, entry: ?Entry) !void {
         const count = e.graph().count();
         // The output path of every module, so a specifier is a string join
         // and not a second walk.
@@ -679,6 +745,10 @@ const Emitter = struct {
 
         for (0..count) |i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            // §5: a module with nothing reachable is not written at all,
+            // and nothing imports it, because imports are use-driven and a
+            // use is an edge.
+            if (!e.live.of(m).any()) continue;
             const file = e.graph().moduleFile(m);
             const specifiers = try e.scratch.alloc([]const u8, count);
             for (specifiers, paths) |*slot, to| slot.* = try relativeSpecifier(e.scratch, paths[i], to);
@@ -697,7 +767,8 @@ const Emitter = struct {
                 .types = &e.session.checked.types,
                 .specifiers = specifiers,
                 .sibling = sibling,
-                .entry_decl = if (m == entry.module) entry.decl.int() else null,
+                .entry_decl = e.entryDeclOf(m, entry),
+                .live = &e.live,
             });
             defer lowered.ir.deinit(e.gpa);
             defer e.gpa.free(lowered.diagnostics);
@@ -722,9 +793,15 @@ const Emitter = struct {
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
             const b = e.bir(m);
+            // §5: a sibling file is copied iff the module has a SURVIVING
+            // `foreign_value`, which replaces the old "declares any
+            // `foreign`" test. A sibling is hand-written JavaScript copied
+            // whole, so the unit is the file and not the export — §9 leaves
+            // per-export elimination on the table deliberately, with the
+            // number.
             var has_foreign = false;
-            for (b.decls) |d| {
-                if (d.kind == .foreign_value) has_foreign = true;
+            for (b.decls, 0..) |d, index| {
+                if (d.kind == .foreign_value and e.live.decl(m, index)) has_foreign = true;
             }
             if (!has_foreign) continue;
             const source_path = e.session.store.path(e.graph().moduleFile(m));

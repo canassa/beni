@@ -52,6 +52,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
+const Reach = @import("Reach.zig");
 const Types = @import("../check/Types.zig");
 
 const Inst = Bir.Inst;
@@ -139,6 +140,16 @@ pub const Input = struct {
     /// a program's own modules call — the same reason M3d's `lazy`
     /// declarations will be exported from their chunks.
     entry_decl: ?u32 = null,
+    /// §9's survivor sets, for the WHOLE program: what this module lowers,
+    /// exports and imports is restricted to them, and the debug self-check
+    /// below reads the other modules' to prove that no reference leaves the
+    /// set.
+    ///
+    /// `null` means "eliminate nothing", which is not a build mode —
+    /// elimination is always on (`backend.md` §2) — but the state of the
+    /// in-source tests below, which lower one module with no whole-program
+    /// graph to walk.
+    live: ?*const Reach.Result = null,
 };
 
 /// Lower one checked module. `scratch` is the caller's arena — every
@@ -472,6 +483,49 @@ const Lowerer = struct {
         });
     }
 
+    // ---- §9's survivor set ------------------------------------------------
+    //
+    // Three questions and one wall. The questions restrict what this module
+    // lowers, exports and imports; the wall is a DEBUG check that nothing
+    // which survived names something that did not, because over-elimination
+    // is a `ReferenceError` at load or a wrong answer at a call, where
+    // under-elimination is only bytes.
+
+    fn liveDecl(l: *Lowerer, index: u32) bool {
+        const r = l.in.live orelse return true;
+        return r.decl(l.in.module, index);
+    }
+
+    fn liveDerived(l: *Lowerer, index: u32) bool {
+        const r = l.in.live orelse return true;
+        return r.derivedRow(l.in.module, index);
+    }
+
+    /// The wall. Compiled away outside a safety build (`runtime_safety` is
+    /// comptime-known), and one bitset test where it is compiled in — the
+    /// cheapest place to turn "the graph missed an edge" from a Node
+    /// `ReferenceError` in somebody's program into a stopped build with the
+    /// name in it.
+    fn requireLive(l: *Lowerer, alive: bool, what: []const u8) !void {
+        if (!std.debug.runtime_safety) return;
+        if (l.in.live == null or alive) return;
+        try l.report(
+            .internal,
+            l.region,
+            \\I emitted a reference to `{s}`, which this build eliminated.
+            \\
+            \\`docs/design/backend.md` §9 decides what a build ships by walking a graph of
+            \\top-level declarations, and every reference the code generator writes has to
+            \\be an edge of that graph. This one is not, so the name would have been
+            \\missing from the output and the program would have failed to load.
+            \\
+            \\That is a compiler bug — a missing edge, not a missing feature. Please report
+            \\it with this program.
+        ,
+            .{what},
+        );
+    }
+
     // ---- Module structure -------------------------------------------------
 
     fn declarations(l: *Lowerer, out: *StmtList) !void {
@@ -512,6 +566,13 @@ const Lowerer = struct {
         // rather than by the input (`bench --wide` builds exactly that).
         var stack: std.ArrayList(Frame) = .empty;
         for (0..count) |root| {
+            // §5: the outer loop is restricted to the survivors, and it can
+            // reach nothing else — every edge it walks (a `top_value` ref,
+            // a site's `top` target, a `top` inside one's evidence) is also
+            // a §9 reachability edge, so the survivors come out in the same
+            // relative order they have today and the temporal dead zone
+            // stays closed. `requireLive` is the proof, not this loop.
+            if (!l.liveDecl(@intCast(root))) continue;
             if (state[root] != 0) continue;
             try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .tops = try l.siteTops(@intCast(root)) });
             state[root] = 1;
@@ -662,12 +723,20 @@ const Lowerer = struct {
         // write. Exporting on `is_pub` would make that build emit an import
         // of a name the declaring module kept to itself. The type stays
         // unnameable either way: what crosses is the method, not the type.
-        for (l.in.dispatch.derived) |row| {
+        //
+        // **Each of the three sources is filtered by §9's survivor set**,
+        // so an export list shrinks to exactly the surviving names it used
+        // to hold (§5). It does NOT shrink to what someone imports: a `pub`
+        // value that survives stays exported under its own name, because an
+        // export costs the name once and a consumer-driven export list
+        // would make one module's bytes depend on another's.
+        for (l.in.dispatch.derived, 0..) |row, index| {
             if (row.shape != .nominal) continue;
+            if (!l.liveDerived(@intCast(index))) continue;
             try names.append(l.scratch, try l.synthesisedName(try l.derivedBase(row.kind, row.shape)));
         }
         if (l.in.entry_decl) |index| {
-            if (index < l.bir.decls.len and !l.bir.decls[index].is_pub) {
+            if (index < l.bir.decls.len and !l.bir.decls[index].is_pub and l.liveDecl(index)) {
                 try names.append(l.scratch, try l.topName(index));
             }
         }
@@ -676,6 +745,7 @@ const Lowerer = struct {
             if (!d.kind.isValue()) continue;
             if (d.kind == .annotation_only) continue;
             if (d.kind == .value and d.body == .none) continue;
+            if (!l.liveDecl(decl_index.int())) continue;
             try names.append(l.scratch, try l.name(.{
                 .module = l.module_name.toOptional(),
                 .base = l.bir.symbol(d.name),
@@ -693,8 +763,13 @@ const Lowerer = struct {
         var out: std.ArrayList(Node.Index) = .empty;
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
-        for (l.bir.decls) |d| {
+        for (l.bir.decls, 0..) |d, index| {
             if (d.kind != .foreign_value) continue;
+            // §5: the one import leg that is not use-driven. Every other
+            // `import` shrinks for free with the declaration that wanted
+            // it; this loop walks `bir.decls` and would otherwise import
+            // every `foreign` whether anything reached it or not.
+            if (!l.liveDecl(@intCast(index))) continue;
             const base = l.bir.symbol(d.name);
             try siblings.append(l.scratch, .{
                 .imported = try l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag }),
@@ -748,8 +823,26 @@ const Lowerer = struct {
         return l.name(.{ .module = l.in.graph.moduleName(module).toOptional(), .base = base, .tag = JsIr.Name.no_tag });
     }
 
+    /// Every cross-module VALUE reference goes through here — an
+    /// `ext_value` instruction, an `ext` dispatch target, `coreValue`'s
+    /// import path — which makes it §9's wall for leg 2.
     fn need(l: *Lowerer, module: Graph.Index, value: u32) !void {
+        if (std.debug.runtime_safety) {
+            if (l.in.live) |r| {
+                try l.requireLive(r.extValue(module, value), l.externalText(module, value));
+            }
+        }
         try l.needName(.{ .module = module, .value = value });
+    }
+
+    /// The printed base of another module's interface value, for the wall's
+    /// message. Empty when the interface is not available, which is a
+    /// module that failed to lower and has its own diagnostic.
+    fn externalText(l: *Lowerer, module: Graph.Index, value: u32) []const u8 {
+        if (module.int() >= l.in.interfaces.len) return "";
+        const iface = &l.in.interfaces[module.int()];
+        if (value >= iface.values.len) return "";
+        return l.text(iface.symbols[@intFromEnum(iface.values[value].name)]);
     }
 
     /// A derived function of another module (§8.5): named by its base text
@@ -1177,10 +1270,17 @@ const Lowerer = struct {
         return n;
     }
 
+    /// Every reference to a declaration of THIS module goes through here —
+    /// a `top` instruction, a `top` dispatch target, a `foreign_value`
+    /// bound by the sibling import, `coreValue`'s self-module path — which
+    /// is what makes it the one place §9's wall has to stand for leg 1 and
+    /// leg 3.
     fn topName(l: *Lowerer, decl: u32) !JsIr.NameIndex {
+        const base = l.bir.symbol(l.bir.decls[decl].name);
+        try l.requireLive(l.liveDecl(decl), l.text(base));
         return l.name(.{
             .module = l.module_name.toOptional(),
-            .base = l.bir.symbol(l.bir.decls[decl].name),
+            .base = base,
             .tag = JsIr.Name.no_tag,
         });
     }
@@ -1865,7 +1965,11 @@ const Lowerer = struct {
         // resetting it here keeps a leftover from the declaration pass out
         // of the message.
         l.region = @enumFromInt(0);
-        for (l.in.dispatch.derived) |row| {
+        for (l.in.dispatch.derived, 0..) |row, index| {
+            // §5: only the surviving rows, and the `$$order` table goes
+            // with its own `compare` because it is built inside this
+            // iteration and nowhere else.
+            if (!l.liveDerived(@intCast(index))) continue;
             const base = try l.derivedBase(row.kind, row.shape);
             const arrow = (try l.derivedArrow(row)) orelse continue;
             const bound = try l.synthesisedName(base);
@@ -2608,7 +2712,9 @@ const Lowerer = struct {
         switch (target) {
             .derived => |use| {
                 const row = l.in.dispatch.derived[use.index];
-                return l.ident(try l.synthesisedName(try l.derivedBase(row.kind, row.shape)), p);
+                const base = try l.derivedBase(row.kind, row.shape);
+                try l.requireLive(l.liveDerived(use.index), base);
+                return l.ident(try l.synthesisedName(base), p);
             },
             .ext_derived => |use| {
                 const entry = l.in.types.entry(use.type);
@@ -2618,6 +2724,11 @@ const Lowerer = struct {
                     l.text(entry.name),
                     @tagName(use.kind),
                 }));
+                if (std.debug.runtime_safety) {
+                    if (l.in.live) |r| {
+                        try l.requireLive(r.extDerived(entry.module, use.type, use.kind), l.text(base));
+                    }
+                }
                 const module_name = l.in.graph.moduleName(entry.module);
                 try l.needDerived(entry.module, base);
                 return l.ident(try l.name(.{

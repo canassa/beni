@@ -61,6 +61,13 @@ pub const Phase = enum {
     /// clean, and a regression in one must not be read as a regression in
     /// the other.
     exhaustive,
+    /// Reachability elimination, once per build (`backend.md` §9): the
+    /// declaration graph and the walk over it, inside `emit` and before a
+    /// byte is lowered. Its own row because it is the pass that decides how
+    /// much work `emit` then does — a build whose `emit` grew wants to know
+    /// whether this grew with it or in spite of it — and because §9's
+    /// throughput acceptance is stated about the two together.
+    eliminate,
     /// Code generation, once per build (`backend.md` §13): `Bir` → `JsIr` →
     /// bytes for every module, plus the platform checks and the writes.
     /// `bench`'s `emit` line measures the same work without the I/O.

@@ -1,0 +1,586 @@
+//! Reachability elimination (docs/design/backend.md §9): which top-level
+//! declarations a build actually ships.
+//!
+//! **The unit is a top-level declaration** (§9, `boundary.md` §7.1), and
+//! there are three kinds of node — a `.value` declaration with a body, a
+//! `.foreign_value` binding, and a `Dispatch.Derived` row. The first two are
+//! both `(Graph.Index, Bir.DeclIndex)` and cannot collide, so a module needs
+//! **two** bitsets and not three; §9's "one bitset per module over each of
+//! the three node kinds" counts kinds and not sets.
+//!
+//! Four things are deliberately NOT nodes, each because it has no separate
+//! existence in the output: a `type`, a `type alias` and a `foreign type`
+//! emit nothing; a **constructor** is an object literal at its use site, so
+//! a constructor named only in a pattern needs no edge; a **`$$order`
+//! table** lives and dies with the `compare` whose row it hangs off
+//! (`Lower.orderTable` is reached only from a row whose arrow was built);
+//! and the three **primitive comparators** are discovered by
+//! `Lowerer.needs` while a surviving body is lowered, so they are emitted
+//! exactly when one wanted them.
+//!
+//! **The edges, in three legs** (§9), out of a value declaration `d` of
+//! module `m`:
+//!
+//!   1. every `Bir.refs` row of `d` whose kind is `top_value`;
+//!   2. every `ext_value` instruction in `d`'s contiguous instruction range,
+//!      through `Interface.Provenance.valueDecl` — `Resolve` has already
+//!      rewritten the instruction to carry `(Graph.Index, ValueIndex)`,
+//!      where the `refs` table's `import_value` rows stay symbolic and
+//!      re-deriving that lookup here would be a second copy of resolution;
+//!   3. every dispatch site of `d`, and recursively every target nested in
+//!      one through `Dispatch.partsAt`. These are the edges `Bir`
+//!      deliberately does not have (`frontend.md` §3.6): a method call's
+//!      callee is not known until the checker runs, and an evidence argument
+//!      is a reference no source line spells.
+//!
+//! Out of a `Derived` row: every target in its `parts`, recursively — that
+//! is how a derived `eq` for `type T = T (Maybe U)` reaches `Maybe`'s row.
+//! Out of a foreign binding: nothing; its body is in a sibling file this
+//! pass does not read.
+//!
+//! **Two targets §9 calls edgeless are edges, and the spec is corrected
+//! here.** §9 says `primitive` and `err` add none "because each is an
+//! operator or a poisoned table". That is true of `strict_eq`,
+//! `num_compare` and `char_compare`, which the module synthesises for
+//! itself — but `primitive string_compare` lowers to a CALL of core's
+//! hand-written `String.compare` (`Lower.stringCompare` →
+//! `Lower.coreValue`, §3.2/A.26: `<` on JavaScript strings is UTF-16
+//! code-unit order and `String.compare` is Unicode scalar order, and the
+//! two must agree), and `err` lowers to a call of `Basics.eq`
+//! (`Lower.partEq`'s `err` arm). Both are references to another module's
+//! declaration that no `refs` row and no `top`/`ext` target records, so
+//! without them a program that orders `String`s inside a derived function
+//! ships a call to a name its build never wrote — a `ReferenceError` at
+//! load, which is exactly the failure this pass has to fear.
+//!
+//! **Where it runs.** Between `Emit.findEntry` and `Emit.emitModules`, over
+//! `Bir` and the dispatch table and BEFORE lowering, so an unreachable
+//! declaration is never lowered at all and the pass pays for itself in emit
+//! time. §10's colouring wants the same graph, before anything has been
+//! assigned to a file, and M4 can cache a module's edge list against the
+//! §8.1 key.
+//!
+//! **Determinism.** Every node identity is input-derived end to end: a
+//! `Graph.Index` comes from the sorted path (CLAUDE.md rule 5), a
+//! declaration index is source order, and a `Derived` index is the
+//! sorted-by-name order §7.1 of the spike fixes before anything indexes it.
+//! The output is a SET, so visit order cannot reach the bytes.
+//!
+//! **Parallelism, and what is not done yet.** §9 asks for the per-module
+//! edge lists to be built in parallel, one job per module. They are built
+//! the way that asks for — each module's list is a pure function of its own
+//! `Bir` and dispatch table and is written only into its own slot — but the
+//! jobs are not dispatched to workers, because `Emit` is serial end to end
+//! today (lowering, the expensive half, runs one module at a time in
+//! `emitModules`) and this pass is microseconds: 278 nodes for the null
+//! program, O(declarations) at any size. Fanning it out is a drop-in when
+//! emit itself parallelises.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Bir = @import("../bir/Bir.zig");
+const Dispatch = @import("../check/Dispatch.zig");
+const Graph = @import("../resolve/Graph.zig");
+const Interface = @import("../resolve/Interface.zig");
+const InternPool = @import("../InternPool.zig");
+const SourceStore = @import("../SourceStore.zig");
+const Types = @import("../check/Types.zig");
+
+const Reach = @This();
+
+/// Which of the two per-module tables a node lives in.
+pub const Kind = enum(u8) { decl, derived };
+
+/// One node of the graph: a declaration of a module, or one of its derived
+/// rows. Flat and comparable; nothing here is a pointer.
+pub const Node = struct {
+    module: Graph.Index,
+    kind: Kind,
+    index: u32,
+};
+
+/// The survivors of one module.
+pub const Live = struct {
+    decls: std.DynamicBitSetUnmanaged,
+    derived: std.DynamicBitSetUnmanaged,
+
+    pub const empty: Live = .{ .decls = .{}, .derived = .{} };
+
+    pub fn decl(l: *const Live, index: usize) bool {
+        return index < l.decls.bit_length and l.decls.isSet(index);
+    }
+
+    pub fn derivedRow(l: *const Live, index: usize) bool {
+        return index < l.derived.bit_length and l.derived.isSet(index);
+    }
+
+    /// Whether the module has anything left to write (§5, "a module with
+    /// nothing reachable is not written at all").
+    pub fn any(l: *const Live) bool {
+        return l.decls.count() != 0 or l.derived.count() != 0;
+    }
+};
+
+/// What the pass produced, indexed by `Graph.Index`.
+pub const Result = struct {
+    modules: []Live,
+    /// Kept for the debug self-check, which has to answer "is the
+    /// declaration behind THIS interface value alive?" at every cross-module
+    /// reference the lowerer emits — and the same question about another
+    /// module's derived row, which only that module's table can answer.
+    provenance: []const Interface.Provenance,
+    dispatch: []const *const Dispatch,
+
+    pub const empty: Result = .{ .modules = &.{}, .provenance = &.{}, .dispatch = &.{} };
+
+    pub fn of(r: *const Result, m: Graph.Index) *const Live {
+        if (m.int() >= r.modules.len) return &no_module;
+        return &r.modules[m.int()];
+    }
+
+    pub fn decl(r: *const Result, m: Graph.Index, index: usize) bool {
+        return r.of(m).decl(index);
+    }
+
+    pub fn derivedRow(r: *const Result, m: Graph.Index, index: usize) bool {
+        return r.of(m).derivedRow(index);
+    }
+
+    /// Whether the declaration behind another module's interface value
+    /// survived. A value whose provenance is missing answers `true`: the
+    /// self-check reports what it is SURE is wrong and never invents a bug
+    /// out of a table it cannot read.
+    pub fn extValue(r: *const Result, m: Graph.Index, value: u32) bool {
+        if (m.int() >= r.provenance.len) return true;
+        const d = r.provenance[m.int()].valueDecl(value) orelse return true;
+        return r.decl(m, d.int());
+    }
+
+    /// Whether another module's derived function for `(id, kind)` survived.
+    /// A row that is not in that module's table answers `true`: whether the
+    /// module emits a body at all is `Lower.derivedBodyExists`' question,
+    /// and this one must not double as it.
+    pub fn extDerived(r: *const Result, m: Graph.Index, id: Dispatch.TypeId, kind: Dispatch.Derived.Kind) bool {
+        if (m.int() >= r.dispatch.len) return true;
+        for (r.dispatch[m.int()].derived, 0..) |row, i| {
+            if (row.kind != kind) continue;
+            switch (row.shape) {
+                .nominal => |other| if (other != id) continue,
+                else => continue,
+            }
+            return r.derivedRow(m, i);
+        }
+        return true;
+    }
+
+    const no_module: Live = .empty;
+};
+
+/// The whole-program input. Every slice is indexed by `Graph.Index`.
+pub const Input = struct {
+    graph: *const Graph,
+    store: *const SourceStore,
+    birs: []const *const Bir,
+    dispatch: []const *const Dispatch,
+    interfaces: []const Interface,
+    provenance: []const Interface.Provenance,
+    types: *const Types,
+    /// `main`, when this build has one. The only root of an application
+    /// build (§9's "Roots").
+    entry: ?Node = null,
+    /// `--library`: every name the ROOT PACKAGE's modules export is a root
+    /// (§2, §9). A library's callers are not in the build, so its public
+    /// surface is its root set.
+    library: bool = false,
+
+    fn birOf(in: Input, m: Graph.Index) *const Bir {
+        if (m.int() >= in.birs.len) return &Bir.empty;
+        return in.birs[m.int()];
+    }
+
+    fn dispatchOf(in: Input, m: Graph.Index) *const Dispatch {
+        if (m.int() >= in.dispatch.len) return &Dispatch.empty;
+        return in.dispatch[m.int()];
+    }
+
+    /// A named value of a core module, as a node: how `Lower.coreValue`
+    /// reaches `String.compare` and `Basics.eq`, resolved once. The
+    /// declaration is found in the module's own `Bir` rather than through
+    /// its interface, because `coreValue` takes the local path when the
+    /// module being lowered IS that module and both paths name one
+    /// declaration.
+    fn coreDecl(in: Input, owner: InternPool.WellKnown, value: InternPool.WellKnown) ?Node {
+        const m = in.graph.lookup(.core, owner.symbol()) orelse return null;
+        const bir = in.birOf(m);
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue()) continue;
+            if (bir.symbol(d.name) != value.symbol()) continue;
+            return .{ .module = m, .kind = .decl, .index = @intCast(i) };
+        }
+        return null;
+    }
+
+    /// §9's root set.
+    ///
+    /// An application build has exactly ONE root, `main` of the entry
+    /// module: `pub` means nothing to elimination in a program, because
+    /// `pub` is a MODULE boundary and a whole-program compiler knows the
+    /// program — and treating it as a root would pin all of core forever,
+    /// every core value being `pub`.
+    ///
+    /// A `--library` build roots **every name the root package's modules
+    /// export**, which is the list `Lower.exports` already builds: `pub`
+    /// values with a body, every nominal `derived` row, and the entry
+    /// declaration. Core and the platform are dependencies, not public
+    /// surface, so their exports root nothing.
+    ///
+    /// **The entry declaration is part of that list, and §2's parenthetical
+    /// "a `main` that happens to exist is not special" is wrong.** §5 gives
+    /// the export list three sources and the entry is the third; `main` is
+    /// not `pub` in any fixture of the corpus, so a rule that dropped it
+    /// would take `main` and its `import Node` out of all seventeen `emit/`
+    /// goldens — against §9's own measured, thrice-stated acceptance that
+    /// none of them moves. What `--library` turns off is the REQUIREMENT
+    /// for a `main` (`missing_main` does not fire, and its type is not
+    /// checked against the platform's `Program`) and the entry file.
+    fn collectRoots(in: Input, scratch: Allocator, out: *std.ArrayList(Node)) Allocator.Error!void {
+        if (!in.library) {
+            if (in.entry) |node| try out.append(scratch, node);
+            return;
+        }
+        for (0..in.graph.count()) |i| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            if (in.store.package(in.graph.moduleFile(m)) != .app) continue;
+            const bir = in.birOf(m);
+            for (bir.interface) |index| {
+                const d = bir.decl(index);
+                if (!d.kind.isValue()) continue;
+                if (d.kind == .annotation_only) continue;
+                if (d.kind == .value and d.body == .none) continue;
+                try out.append(scratch, .{ .module = m, .kind = .decl, .index = index.int() });
+            }
+            for (in.dispatchOf(m).derived, 0..) |row, index| {
+                if (row.shape != .nominal) continue;
+                try out.append(scratch, .{ .module = m, .kind = .derived, .index = @intCast(index) });
+            }
+            if (mainOf(bir)) |index| try out.append(scratch, .{ .module = m, .kind = .decl, .index = index });
+        }
+    }
+};
+
+/// The module's `main`, if it declares one with a body: the entry
+/// declaration `Lower.exports` exports whether or not it is `pub`.
+pub fn mainOf(bir: *const Bir) ?u32 {
+    for (bir.decls, 0..) |d, i| {
+        if (d.kind != .value or d.body == .none) continue;
+        if (bir.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
+        return @intCast(i);
+    }
+    return null;
+}
+
+/// Build the graph, walk it from the roots, and answer with one survivor
+/// set per module. Everything lives in `scratch`, the caller's arena: the
+/// answer is read by `Lower` during the same `Emit.run` and by nothing
+/// afterwards.
+pub fn run(scratch: Allocator, in: Input) Allocator.Error!Result {
+    const count = in.graph.count();
+    const modules = try scratch.alloc(Live, count);
+    for (modules, 0..) |*slot, i| {
+        const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+        slot.* = .{
+            .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
+            .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
+        };
+    }
+
+    var b: Builder = .{ .in = in, .scratch = scratch };
+    // The two corrected `primitive`/`err` legs name one declaration each,
+    // the same one for every module, so they are resolved once here rather
+    // than at every edge.
+    b.string_compare = in.coreDecl(.String, .compare);
+    b.basics_eq = in.coreDecl(.Basics, .eq);
+
+    const edges = try scratch.alloc(Edges, count);
+    for (edges, 0..) |*slot, i| slot.* = try b.module(@enumFromInt(@as(u32, @intCast(i))));
+
+    // ---- The walk. Serial, because a fixpoint over a whole-program graph
+    // is, and it is nothing: O(declarations), microseconds against §13's
+    // 800 ms budget.
+    var stack: std.ArrayList(Node) = .empty;
+    var roots: std.ArrayList(Node) = .empty;
+    try in.collectRoots(scratch, &roots);
+    for (roots.items) |root| {
+        if (mark(modules, root)) try stack.append(scratch, root);
+    }
+    while (stack.pop()) |node| {
+        const list = edges[node.module.int()].targets(node);
+        for (list) |next| {
+            if (mark(modules, next)) try stack.append(scratch, next);
+        }
+    }
+
+    return .{ .modules = modules, .provenance = in.provenance, .dispatch = in.dispatch };
+}
+
+/// Set a node's bit, and say whether this call is the one that set it. A
+/// node outside its module's table is silently dropped: the tables are
+/// sized from the same `Bir` and `Dispatch` the edges were read out of, so
+/// only a poisoned index gets here and following it would be worse.
+fn mark(modules: []Live, node: Node) bool {
+    if (node.module.int() >= modules.len) return false;
+    const live = &modules[node.module.int()];
+    const set = switch (node.kind) {
+        .decl => &live.decls,
+        .derived => &live.derived,
+    };
+    if (node.index >= set.bit_length) return false;
+    if (set.isSet(node.index)) return false;
+    set.set(node.index);
+    return true;
+}
+
+/// One module's edge lists: two flat target arrays with a start offset per
+/// node, the same shape every other sidecar table here has.
+const Edges = struct {
+    decl_at: []const u32 = &.{},
+    decl_targets: []const Node = &.{},
+    derived_at: []const u32 = &.{},
+    derived_targets: []const Node = &.{},
+
+    fn targets(e: Edges, node: Node) []const Node {
+        const at, const list = switch (node.kind) {
+            .decl => .{ e.decl_at, e.decl_targets },
+            .derived => .{ e.derived_at, e.derived_targets },
+        };
+        if (node.index + 1 >= at.len) return &.{};
+        return list[at[node.index]..at[node.index + 1]];
+    }
+};
+
+const Builder = struct {
+    in: Input,
+    scratch: Allocator,
+    /// `core.String`'s `compare` and `core.Basics`' `eq`, the two
+    /// declarations the lowerer names with no target of its own (see the
+    /// header).
+    string_compare: ?Node = null,
+    basics_eq: ?Node = null,
+    /// A poisoned `parts` range could point back at itself; the walk that
+    /// reads one is recursive, so it is capped exactly as
+    /// `Lower.derivedValue` and `dump/dispatch.zig` cap theirs.
+    const max_depth: u8 = 32;
+
+    /// Every edge out of every node of one module. Writes nothing outside
+    /// its own return value, which is what makes the loop above a parallel
+    /// fan-out the day emit becomes one.
+    fn module(b: *Builder, m: Graph.Index) Allocator.Error!Edges {
+        const bir = b.in.birOf(m);
+        const dispatch = b.in.dispatchOf(m);
+
+        const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
+        var decl_targets: std.ArrayList(Node) = .empty;
+        for (bir.decls, 0..) |d, i| {
+            decl_at[i] = @intCast(decl_targets.items.len);
+            switch (d.kind) {
+                // A foreign binding's body is in a sibling file; a type, an
+                // alias and a foreign type emit nothing at all.
+                .value => {},
+                .foreign_value, .type, .type_alias, .foreign_type, .annotation_only => continue,
+            }
+            // Leg 1: the reference table, already deduplicated per
+            // declaration and in source order.
+            for (bir.refs[d.refs_start..d.refs_end]) |ref| {
+                if (ref.kind != .top_value) continue;
+                try decl_targets.append(b.scratch, .{ .module = m, .kind = .decl, .index = ref.a });
+            }
+            // Leg 2: the references `Resolve` rewrote into the
+            // instructions. A declaration's instructions are contiguous, so
+            // this is a slice walk and not a tree traversal.
+            //
+            // **`.top` is read here as well as from `refs`, and §9's leg 1
+            // is wrong without it.** `refs` records a reference by the NAME
+            // the source wrote, and an operator writes none: `0 - n` lowers
+            // to `call(import_value Basics.sub, …)` with an `import_value`
+            // row, and inside `core/Basics` itself `Resolve` turns that
+            // instruction into a plain `top` while the row stays symbolic
+            // (the same asymmetry §9 cites for leg 2, one module further
+            // in). Reading `refs` alone left `Basics.negate` naming a
+            // `Basics.sub` this pass had deleted — caught by the wall in
+            // `Lower.topName`, which is what it is for. The `refs` walk
+            // above stays: it is the cheaper half and a duplicate edge
+            // costs one bitset test.
+            const tags = bir.insts.items(.tag);
+            const data = bir.insts.items(.data);
+            const start = @min(d.inst_start.int(), bir.insts.len);
+            const end = @min(d.inst_end.int(), bir.insts.len);
+            for (tags[start..end], data[start..end]) |tag, payload| {
+                switch (tag) {
+                    .top => try decl_targets.append(b.scratch, .{ .module = m, .kind = .decl, .index = payload.lhs }),
+                    .ext_value => try b.extValue(&decl_targets, @enumFromInt(payload.lhs), payload.rhs),
+                    else => {},
+                }
+            }
+            // Leg 3: the dispatch sites, and everything nested in one.
+            const range = siteRange(dispatch.sites, d.inst_start.int(), d.inst_end.int());
+            for (dispatch.sites[range.start..][0..range.len]) |site| {
+                try b.target(m, site.target, &decl_targets, 0);
+            }
+        }
+        decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
+
+        const derived_at = try b.scratch.alloc(u32, dispatch.derived.len + 1);
+        var derived_targets: std.ArrayList(Node) = .empty;
+        for (dispatch.derived, 0..) |row, i| {
+            derived_at[i] = @intCast(derived_targets.items.len);
+            for (dispatch.partsAt(row.parts)) |part| {
+                try b.target(m, part, &derived_targets, 0);
+            }
+        }
+        derived_at[dispatch.derived.len] = @intCast(derived_targets.items.len);
+
+        return .{
+            .decl_at = decl_at,
+            .decl_targets = decl_targets.items,
+            .derived_at = derived_at,
+            .derived_targets = derived_targets.items,
+        };
+    }
+
+    /// One dispatch target's edges, and recursively its evidence arguments.
+    fn target(b: *Builder, m: Graph.Index, t: Dispatch.Target, out: *std.ArrayList(Node), depth: u8) Allocator.Error!void {
+        if (depth > max_depth) return;
+        switch (t) {
+            .top => |use| try out.append(b.scratch, .{ .module = m, .kind = .decl, .index = use.decl.int() }),
+            .ext => |e| try b.extValue(out, e.module, @intFromEnum(e.value)),
+            .derived => |use| try out.append(b.scratch, .{ .module = m, .kind = .derived, .index = use.index }),
+            .ext_derived => |use| try b.extDerived(out, use),
+            // `String.compare` and `Basics.eq`: real cross-module calls the
+            // lowerer writes with no target of their own (see the header).
+            // The other three primitives are this module's own synthesised
+            // comparators and are discovered during lowering.
+            .primitive => |prim| if (prim == .string_compare) {
+                if (b.string_compare) |node| try out.append(b.scratch, node);
+            },
+            .err => if (b.basics_eq) |node| try out.append(b.scratch, node),
+            // A parameter and a property read name nothing that is emitted.
+            .evidence, .field => {},
+        }
+        for (b.in.dispatchOf(m).partsAt(t.partsOf())) |part| try b.target(m, part, out, depth + 1);
+    }
+
+    fn extValue(b: *Builder, out: *std.ArrayList(Node), m: Graph.Index, value: u32) Allocator.Error!void {
+        if (m.int() >= b.in.provenance.len) return;
+        const d = b.in.provenance[m.int()].valueDecl(value) orelse return;
+        try out.append(b.scratch, .{ .module = m, .kind = .decl, .index = d.int() });
+    }
+
+    /// The `Derived` row another module emits for one of its nominal types.
+    /// That table is exactly what its module EMITS (A.47), so the row is
+    /// found by `(kind, nominal type)` — the same pair `Lower.derivedName`
+    /// spells `<Module>$<Type>$$<kind>` from.
+    ///
+    /// **Both spellings of "which module" are followed**, because the table
+    /// carries one and the lowerer reads the other: `ExtDerivedUse.module`
+    /// is what the checker wrote, and `Lower.derivedName` names
+    /// `types.entry(use.type).module`. They agree in every program, and an
+    /// extra edge costs bytes where a missing one costs a `ReferenceError`.
+    fn extDerived(b: *Builder, out: *std.ArrayList(Node), use: Dispatch.Target.ExtDerivedUse) Allocator.Error!void {
+        try b.derivedRowOf(out, use.module, use.type, use.kind);
+        const owner = b.in.types.entry(use.type).module;
+        if (owner != use.module) try b.derivedRowOf(out, owner, use.type, use.kind);
+    }
+
+    fn derivedRowOf(b: *Builder, out: *std.ArrayList(Node), m: Graph.Index, id: Dispatch.TypeId, kind: Dispatch.Derived.Kind) Allocator.Error!void {
+        if (m.int() >= b.in.dispatch.len) return;
+        for (b.in.dispatchOf(m).derived, 0..) |row, i| {
+            if (row.kind != kind) continue;
+            switch (row.shape) {
+                .nominal => |other| if (other != id) continue,
+                else => continue,
+            }
+            try out.append(b.scratch, .{ .module = m, .kind = .derived, .index = @intCast(i) });
+            return;
+        }
+    }
+};
+
+/// The dispatch sites of one instruction range. `Dispatch.sites` is grouped
+/// by `inst` and a declaration's instructions are contiguous, so this is a
+/// lower bound plus a scan — `Lower.siteRangeOf` reads the same table the
+/// same way.
+fn siteRange(sites: []const Dispatch.Site, start: u32, end: u32) Dispatch.Range {
+    const lo = std.sort.lowerBound(Dispatch.Site, sites, start, siteBefore);
+    var hi = lo;
+    while (hi < sites.len and sites[hi].inst.int() < end) hi += 1;
+    return .{ .start = @intCast(lo), .len = @intCast(hi - lo) };
+}
+
+fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
+    return std.math.order(inst, s.inst.int());
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+//
+// A SUPPLEMENT and never the coverage (CLAUDE.md rule 3): what this pass
+// does is visible in emitted JavaScript, so its evidence is
+// `tests/corpus/emit/app/` and the six `run/Dce*` programs. What is here is
+// the arithmetic those cannot reach — an out-of-range node index, and the
+// empty tables a module that failed to lower contributes.
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "a node outside its module's tables is dropped rather than followed" {
+    var live = [_]Live{.{
+        .decls = try .initEmpty(testing.allocator, 2),
+        .derived = try .initEmpty(testing.allocator, 1),
+    }};
+    defer live[0].decls.deinit(testing.allocator);
+    defer live[0].derived.deinit(testing.allocator);
+
+    const m: Graph.Index = @enumFromInt(0);
+    try testing.expect(mark(&live, .{ .module = m, .kind = .decl, .index = 1 }));
+    // Twice is once: the walk pushes a node only on the call that set it,
+    // which is what stops a cycle.
+    try testing.expect(!mark(&live, .{ .module = m, .kind = .decl, .index = 1 }));
+    // Past the end of the table, and past the end of the graph. A poisoned
+    // index is refused, not followed into memory that is not there.
+    try testing.expect(!mark(&live, .{ .module = m, .kind = .decl, .index = 2 }));
+    try testing.expect(!mark(&live, .{ .module = m, .kind = .derived, .index = 1 }));
+    try testing.expect(!mark(&live, .{ .module = @enumFromInt(7), .kind = .decl, .index = 0 }));
+
+    try testing.expect(live[0].decl(1));
+    try testing.expect(!live[0].decl(0));
+    try testing.expect(!live[0].derivedRow(0));
+    try testing.expect(live[0].any());
+}
+
+test "a module with no survivor answers `any` false, and an absent one answers nothing" {
+    var live = [_]Live{.{
+        .decls = try .initEmpty(testing.allocator, 3),
+        .derived = try .initEmpty(testing.allocator, 2),
+    }};
+    defer live[0].decls.deinit(testing.allocator);
+    defer live[0].derived.deinit(testing.allocator);
+    // Nothing set: §5's "a module with nothing reachable is not written at
+    // all" is this answer and `Emit.emitModules` reads exactly it.
+    try testing.expect(!live[0].any());
+    live[0].derived.set(1);
+    try testing.expect(live[0].any());
+
+    // A module past the end of the result — which is every module of a
+    // build that produced no result at all — is dead, not alive: the empty
+    // `Result` eliminates everything, so it can only ever be the state of a
+    // build that writes nothing.
+    const r: Result = .empty;
+    try testing.expect(!r.decl(@enumFromInt(0), 0));
+    try testing.expect(!r.derivedRow(@enumFromInt(0), 0));
+    try testing.expect(!r.of(@enumFromInt(0)).any());
+    // The two self-check questions answer TRUE on a table they cannot read,
+    // because the wall reports what it is sure of and never invents a bug
+    // out of a missing record.
+    try testing.expect(r.extValue(@enumFromInt(0), 0));
+    try testing.expect(r.extDerived(@enumFromInt(0), .none, .eq));
+}

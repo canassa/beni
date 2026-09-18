@@ -1,0 +1,22 @@
+-- emit/app: a module with nothing reachable is not written at all
+-- (`docs/design/backend.md` §5, §9).
+--
+-- Two modules. `Reached` has one value `main` calls, so it is emitted with
+-- exactly that value in it — its other `pub` declaration is dropped like
+-- any other unreachable one. `Gone` is imported by nobody: the entry module
+-- does not name it, nothing in `Reached` names it, and `_expected.absent`
+-- asserts that `out/Gone.mjs` was never written.
+--
+-- The two halves are one mechanism. Imports are use-driven — `need` and
+-- `needDerived` collect them as lowering discovers them — so a module with
+-- no surviving reference to another emits no `import` of it, and a module
+-- nothing imports is a module nothing can miss. There is no separate
+-- "is this module used" question and no risk of the two answers
+-- disagreeing.
+import Node exposing (Program)
+import Reached
+
+
+main : Program
+main =
+    Node.printLines [ Reached.greeting ]

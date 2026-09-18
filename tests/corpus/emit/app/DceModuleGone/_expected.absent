@@ -1,0 +1,4 @@
+# Output paths this build must NOT have written (`backend.md` §5, §9).
+# `Gone` is in the project and nothing reaches it, so no file is produced
+# for it — and no `import` of it appears in `_expected.js` either.
+out/Gone.mjs

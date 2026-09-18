@@ -1,0 +1,15 @@
+-- Nothing in this project imports this module. `out/Gone.mjs` is never
+-- written, and `_expected.absent` is what says so.
+pub type Shade
+    = Pale
+    | Deep
+
+
+pub name : Shade -> String
+name s =
+    case s of
+        Pale ->
+            "pale"
+
+        Deep ->
+            "deep"
