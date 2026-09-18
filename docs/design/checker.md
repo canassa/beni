@@ -898,9 +898,18 @@ to back; `Dict` and `Set`'s `map`, `filter`, `partition`, `foldl` and `merge` wa
 order; `String`'s walk the string left to right; `Maybe` and `Result`'s callbacks are called at most
 once. **`foldr` is the exception, by definition**: `List.foldr`, `String.foldr`, `Dict.foldr` and
 `Set.foldr` call their callback last element first, and that — not an accident of an implementation
-built on `reverse` — is their contract. The sort family is outside the rule: `sort`, `sortBy` and
-`sortWith` call their comparator (and `sortBy` its key function) in whatever order the merge sort
-reaches, as many times as it needs, and that order is deliberately unspecified.
+built on `reverse` — is their contract. The sort family splits the question in two. A
+**comparator** is outside the rule: `sort`, `sortBy` and `sortWith` call theirs in whatever order
+the merge sort reaches, as many times as it needs, and that order and count are deliberately
+unspecified, because they are inherent to a sort. A **key function** is not a comparator and is
+inside it: **`List.sortBy` calls its key exactly once per element, in list order, first element
+first**, which is what decorate–sort–undecorate buys — `map` to `( key x, x )` pairs with the
+left-to-right `map`, sort the pairs on the first component with the evidence `compare`, `map` back.
+It used to call the key once per comparison, six times for a three-element list and not at all for
+a one-element one; an expensive key was recomputed, and once effects land an effectful one would
+run its effect a number of times nobody can predict. All three sorts are **stable** — `mergeWith`
+takes the left element on anything but `GT`, and `splitHalf` keeps the front half in front — and
+that is a contract too, not an accident, because a record-keyed `sortBy` depends on it.
 
 - `Basics`: `equatable foreign type Int`, `Float`; `type Bool = True | False`; `type Order =
   LT | EQ | GT`; `type Never = JustOneMore Never`; the arithmetic, comparison and logic foreigns

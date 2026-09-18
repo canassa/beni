@@ -448,10 +448,32 @@ sort xs =
 --| type that has a `compare`, not only a number.
 --|
 --|     sortBy [ { age = 30 }, { age = 20 } ] .age == [ { age = 20 }, { age = 30 } ]
+--|
+--| `toKey` is called **exactly once per element, on the first element
+--| first** (`checker.md` Appendix B), which is what decorate–sort–undecorate
+--| buys: `map` reads the keys in list order, the pairs are sorted by their
+--| first component alone, and `map` reads the elements back out. The
+--| spelling this replaced, `sortWith xs (\x y -> (toKey x).compare (toKey
+--| y))`, called `toKey` once per COMPARISON — six times for a three-element
+--| list, and not at all for a one-element one — so an expensive key was
+--| recomputed and an effectful one would run its effect a number of times
+--| nobody could predict. The COMPARATOR's order and count stay unspecified,
+--| which is inherent to a sort. Both `map`s are `foldl` underneath, so the
+--| decoration is as stack-safe as the merge.
+--|
+--| Ties are `EQ` on the key, and `mergeWith` takes the left element on `EQ`,
+--| so this is as stable as `sortWith` is.
 pub sortBy : List a, (a -> b) -> List a
     where b.compare : b, b -> Order
 sortBy xs toKey =
-    sortWith xs (\x y -> (toKey x).compare (toKey y))
+    let
+        decorated =
+            map xs (\x -> ( toKey x, x ))
+
+        sorted =
+            sortWith decorated (\( left, _ ) ( right, _ ) -> left.compare right)
+    in
+    map sorted (\( _, x ) -> x)
 
 
 --| Sort values with an ordering function you write yourself, which is how
@@ -460,7 +482,10 @@ sortBy xs toKey =
 --|     sortWith [ 1, 2, 3 ] (\x y -> compare y x) == [ 3, 2, 1 ]
 --|
 --| The sort is a stable merge sort: equal elements keep the order they were
---| given in.
+--| given in, and that is a contract rather than an accident of the merge
+--| (`checker.md` Appendix B) — `mergeWith` takes the LEFT element on
+--| anything but `GT`, and `splitHalf` keeps the front half in front. The
+--| order in which `cmp` is asked, and how many times, stays unspecified.
 pub sortWith : List a, (a, a -> Order) -> List a
 sortWith list cmp =
     case list of

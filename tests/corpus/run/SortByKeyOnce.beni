@@ -1,0 +1,98 @@
+-- run: `List.sortBy` calls its key function EXACTLY ONCE per element, in list
+-- order, first element first (`checker.md` Appendix B). It was
+-- `sortWith xs (\x y -> (toKey x).compare (toKey y))`, which calls the key
+-- once per comparison — four times for a three-element list, in merge order
+-- — so an expensive key is recomputed, and once effects land an effectful
+-- one would perform its effect a non-obvious number of times. `Debug.log` is
+-- the only instrument that can see the count today, and it is exactly the
+-- instrument effects will replace. The fix is decorate–sort–undecorate over
+-- the left-to-right `map`.
+--
+-- The COMPARATOR's order and count stay deliberately unspecified — that is
+-- inherent to a sort — so nothing here logs from one. The trailing lines pin
+-- the results, because the fix must not move a single element: the merge
+-- sort is STABLE, so records that tie on the key keep the order they were
+-- given in and `sortBy` agrees with the `sortWith` that spells the same
+-- ordering out. The last two lines are stack safety — decorate and
+-- undecorate are `foldl`, and the merge sort's own recursion is log n deep,
+-- so 200 000 elements do not overflow.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Row =
+    { rank : Int, tag : String }
+
+
+note : String, Int -> Int
+note tag n =
+    Debug.log n tag
+
+
+tags : List Row -> String
+tags rs =
+    String.join (List.map rs (\r -> r.tag)) ""
+
+
+ints : List Int -> String
+ints xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+three : List Int
+three =
+    [ 3, 1, 3 ]
+
+
+eight : List Int
+eight =
+    [ 5, 3, 8, 1, 5, 9, 2, 8 ]
+
+
+rows : List Row
+rows =
+    [ { rank = 2, tag = "a" }
+    , { rank = 1, tag = "b" }
+    , { rank = 2, tag = "c" }
+    , { rank = 1, tag = "d" }
+    , { rank = 2, tag = "e" }
+    ]
+
+
+main : Program
+main =
+    let
+        none =
+            List.sortBy [] (\x -> note "zero" x)
+
+        one =
+            List.sortBy [ 5 ] (\x -> note "one" x)
+
+        few =
+            List.sortBy three (\x -> note "three" x)
+
+        many =
+            List.sortBy eight (\x -> note "eight" x)
+
+        stable =
+            List.sortBy rows (\r -> r.rank)
+
+        spelled =
+            List.sortWith rows (\x y -> compare x.rank y.rank)
+
+        huge =
+            List.sortBy (List.range 1 200000) (\n -> 0 - n)
+    in
+    Node.printLines
+        [ ints none
+        , ints one
+        , ints few
+        , ints many
+        , tags stable
+        , tags spelled
+        , ints (List.sortBy eight (\x -> 0 - x))
+        , ints (List.sortWith eight (\x y -> compare y x))
+        , String.fromInt (List.length huge)
+        , ints (List.take huge 3)
+        ]
