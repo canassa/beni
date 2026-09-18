@@ -40,6 +40,19 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
   nothing calls, and `fast-compiler.md` §13 moved this pass from an optimisation to a prerequisite
   on that evidence. Its own acceptance is separate and exact: the floor's `derived_bytes` is **0**
   for a program that compares nothing (§9).
+
+  **M3c ships in two slices, and the first one is what `--release` means.** The first is §9 items
+  **1, 2, 3 and 5** — local dead-binding elimination, short names, compact printing and variable
+  joining — together with the flag itself; it is one pass over `JsIr`, one name table and one
+  printer boolean, and it stands alone because none of the four needs anything the backend does not
+  already have. The second is item **4**, type-directed field ambiguation, which needs an artifact
+  §3 says the backend does not receive, plus anything chunk-facing (§10). Sliced that way because
+  the first is worth a measured **31% of `bench/corpus`'s compressed bytes** and the second is
+  worth report 12's 4% (§9), and because a `--release` that is refused is worse than a `--release`
+  that is not yet perfect. The one entry in this bullet's own list that is in neither slice is
+  **"reachability-driven inlining"**, which was never a §9 item and has no measurement behind it;
+  what §9 now specifies under item 1 is single-use inlining of the temporaries §4, §7 and §8
+  generate, which is a different and measured thing.
 - **M3d — chunking and `lazy`.** The keyword, entry-set colouring, the merge pass, cross-chunk
   bindings. *Acceptance: a two-route program splits and both routes run.*
 
@@ -54,7 +67,7 @@ beni build [options] <entry>...      compile to JavaScript
 | Flag | Meaning | Default |
 |---|---|---|
 | `--platform=<name>` | which platform package supplies `main`'s type and the runtime | required |
-| `--release` | chunks, renaming, integer tags, maps off | off |
+| `--release` | dead bindings out, short names, compact printing, joined `const`s (§9); later chunks (§10), integer tags, maps off | off |
 | `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (§9) | off |
 | `--out=<dir>` | output directory | `out/` |
 | `--source-maps` | emit `.map` files | M5; refused today, on in dev and off in release once §11 lands |
@@ -66,6 +79,19 @@ looking for a `.map` that was never written, exactly as a silent `--release` bui
 development output. Both exit `2` with `frontend.md` §1's one-line usage message naming the
 milestone. The defaults in the table above are what M5 will do; until then the only way to build is
 without the flag.
+
+**`--release` stops being refused with M3c's first slice, and `--source-maps` does not.** The
+refusal is one branch (`src/Cli.zig:362-364`); it goes, the `release: bool` already parsed at
+`:338-341` reaches `Emit.Options`, and the usage line at `:46` states what the flag does rather than
+what it does not. Nothing else about the command changes: `--release` takes no value, composes with
+`--library` and `--out` and `--jobs` exactly as `--library` does, and **implies nothing** — in
+particular it does not switch elimination on, because elimination is always on (§9), and it does not
+switch source maps off, because there are none to switch. `--source-maps` keeps its own refusal at
+`:369-371` and keeps it in a `--release` build too, so the pair `--release --source-maps` exits 2 on
+the source-map line. `dump --stage=…` is untouched for the same reason §9 gives: every stage is
+before the backend. **Development output does not move by one byte** — every `emit/` golden, every
+`run/` `.expected` and every `bench/size.mjs` figure in this document is a dev-build figure and stays
+one — which is what makes "a golden moved" a finding rather than a blessing for the whole slice.
 
 **`--library` is not in that company**: it lands with §9 and does something the day it lands. It
 turns off exactly two things — the REQUIREMENT for a `main` (`missing_main` does not fire, a second
@@ -1342,6 +1368,355 @@ sits one level down inside another target's `parts`. And `DceOrderTable` reaches
 through its own `where`-constrained helpers rather than through `List.sortWith`, which takes a
 comparator as an ordinary argument and would have made the edge an ordinary one.*
 
+### The release optimiser — items 1, 2, 3 and 5
+
+**One slice, four passes, one flag** (§1). Everything here runs **only under `--release`**; the dev
+build is byte-identical to today's. The measurements are
+[`plans/release-notes.md`](../../plans/release-notes.md), taken by hand-applying each candidate to
+the emitted `.mjs` of the corpus built at `e407c10` and re-compressing — and by running every one of
+the 100 `run/` programs afterwards to prove the transformed output still prints its `.expected`.
+
+| | dev | release | |
+|---|---:|---:|---|
+| floor (`Empty`), raw / brotli | 2 147 / 833 | 1 874 / 783 | −6.0% |
+| `run/Dictionaries.beni` | 31 495 / 7 008 | 19 971 / 5 847 | **−16.6%** |
+| `bench/corpus` (`--library`) | 126 436 / 21 840 | 57 069 / 15 055 | **−31.1%**, raw −55% |
+
+**Why the floor barely moves is the one number to read first.** A sibling is hand-written JavaScript
+copied verbatim (§2) and **is never minified — not renamed, not reprinted, not parsed**, because
+reading it exactly needs a JavaScript parser and that is the dependency `boundary.md` §4's wall
+exists to avoid. It costs **1 643 of the floor's 2 147 bytes (76%)**, **13 773 of `Dictionaries`'
+31 495 (44%)** and 14 980 of `bench/corpus`' 126 436 (12%). After this slice the generated half of
+`Dictionaries` has fallen 17 722 → 6 198 bytes, −65%, and the siblings are **69% of what ships** —
+the same answer §9's *Purity* paragraph reached about sibling-level elimination, for the same reason.
+
+#### Item 1 — local dead bindings, and the single use that follows them
+
+One pass over `JsIr`, **per function body**, after lowering and before printing. `Reach` decided
+which declarations exist; this decides what is left inside one. Two rules, one walk.
+
+**A use count per binding.** Walk a function's statements once, counting `ident` reads of every
+`NameIndex` a `const_decl` or `let_decl` introduces in that body, nested functions included — a
+closure reading an outer binding is a use. `JsIr` names are `NameIndex`es and two names are equal
+exactly when their indices are (`src/js/JsIr.zig:300-330`), so the count is an array indexed by
+name and needs no map and no scope stack: `localName` gives every local of one declaration a
+distinct disambiguator already (`src/js/Lower.zig:1255-1271`), and the compiler-made names are
+positional or depth-derived (`$m$k` `:447`, `$in$i` `:463`, `$t$n`/`$p$n` through `fresh` `:365`,
+`$j$<d>$<b>` and `$c$<d>` `:4494`, `:4503`).
+
+**Zero uses: the binding is dropped WHOLE, initialiser included, whatever the initialiser is.**
+`language.md` §6's *What an optimiser may assume* is the licence, in so many words: "a binding whose
+value is never used may be dropped whole, everything inside it included, a `Debug.log` among it".
+The pass therefore asks nothing about the right-hand side. **A call of a `foreign` is droppable**,
+and the reason is not a special case: `boundary.md` §4 confines a `foreign` to a total pure function
+over admitted types or an effect *value*, and an effect value is data — `Node.printLines` returns
+`{code, out}` having written nothing, and the write happens in `platform/runtime.foreign.mjs`'s
+`run`, which only the entry file reaches. The two values that *can* notice are `Debug.log`, which
+writes when called, and `Debug.todo`, which throws when called; both are the violations
+`boundary.md` §4 names, and `language.md` §6 spends exactly this licence on them. *Alternative
+rejected: a "does the initialiser call a `foreign`?" test, which would pin `Node.done` in every
+platform module and is the `sideEffects: false` guesswork §9's purity paragraph exists to replace.*
+Measured: **39 raw bytes across the whole corpus, in one declaration** — `bench/corpus`'s
+`ExprParser.tokenizeChars`, where a `c :: rest` row binds `rest` and the body reads the list whole.
+Nearly worthless today and specified anyway: it is the half that is about correctness rather than
+bytes, and §7's leaf bindings are the construct that makes more of them.
+
+**Exactly one use: the binding is inlined**, under a rule that is narrow on purpose.
+
+| Condition | Why |
+|---|---|
+| the initialiser is an **atom or a member chain** — a name, a literal, or `a.b.c` on one | re-reading one repeats no work and shows nothing (§4's record-literal rule, §7's "an occurrence is a member chain, not a name") |
+| the use is in the **same statement list** as the binding | crossing into a nested `if`, `switch` case or block would sink an evaluation into a branch, and crossing out is worse |
+| every statement **between** them is another such binding | `language.md` §6: two evaluations that both survive may not be reordered against each other. Nothing that survives is evaluated in between, so nothing is reordered |
+| no `assign_stmt` in the body targets the chain's base name | the base may be an `$in$<i>` slot, which §8 reassigns per iteration; a read of it is not a stable read |
+| the use is **not inside an `arrow` or `func_decl`** nested below the binding, and not inside a `while_true` the binding sits outside of | a closure or a loop body evaluates its contents a different number of times than the table in `language.md` §6 gives |
+
+That is the whole rule, and it is what §7's and §8's temporaries were shaped for:
+`const $t$1 = $p$1.a; return f($m$0, $t$1, k$2);` becomes `return f($m$0, $p$1.a, k$2);`, and
+`const key$2 = t$1.b; const value$3 = t$1.c; … return {…b: key$2, c: value$3…};` folds the whole
+prologue into the literal.
+
+**This reopens §9's "explicitly not built" list, and the measurement is why.** That list retired
+`inlining` and `collapse_vars` on report 12 §2.5, where they were worth −87 and **+60** brotli bytes
+on Elm's output. Elm's output had no such temporaries; §7's decision trees, §8's loop prologue and
+§4's written-order record temporaries all landed afterwards and all generate them. Measured on the
+stack, everything else held equal: **−412 brotli on `bench/corpus` (−2.7%)**, −123 on `Dictionaries`
+(−2.1%), −1 856 over all 102 trees; before renaming and compaction it is −4.8% on its own. It is in.
+**What stays out is the wider licence**: allowing any initialiser and requiring the use on the very
+next statement buys −90 brotli on `bench/corpus` and **loses 15 on `Dictionaries`**, at the cost of
+the one condition above that is easy to state and hard to get wrong. So the rule stays "an atom or a
+member chain", and `collapse_vars`, constant evaluation and body inlining stay off the list.
+
+**Determinism.** The pass reads only `JsIr`, visits statements in emission order, and its output is
+a subset of its input with substitutions at fixed positions; no map is iterated and no counter is
+shared. **Cost:** two linear walks of each function body and no sort. **No fixpoint either**, as long
+as the rewriting walk runs backwards: a substitution never raises anyone's use count, and a chain —
+`const x = p.a; const y = x.b; return f(y);` — collapses in one backward pass because `y` is
+resolved before `x` is looked at.
+**Where:** inside `Emit.emitModules`, between `Lower.lower` and `Print.print`
+(`src/js/Emit.zig:760-786`), on the `JsIr` the lowering just produced.
+
+#### Item 2 — short names, emitted directly
+
+Identifiers are 66.8% of unminified bytes and qualified globals 26.6% (report 12 §5.2), and this is
+the largest single win in the slice: **−4 941 brotli on `bench/corpus` alone, −22.6%.** Names in
+`JsIr` are `Name` records in one column (`src/js/JsIr.zig:52-54`, `:300-330`) and the printer is the only
+thing that turns one into bytes (`src/js/Print.zig:172-192`), so this is a rewrite of that column
+and of nothing else — no second traversal, no mangler, no string building on the hot path.
+
+**Two namespaces, and the split is measured, not assumed.**
+
+- **One whole-program namespace for names that cross a file**: every top-level declaration, every
+  derived function, every synthesised comparator. They appear in an `import` or `export` specifier
+  and the two files must agree, so one table for the build assigns them and both ends read it.
+- **One namespace per top-level declaration for its locals**: parameters, `let` `const`s, leaf
+  bindings, `$t$n`, `$p$n`, `$in$<i>`, `$m$k`, and the `$j$<d>$<b>` / `$c$<d>` / loop labels. The
+  alphabet restarts in every declaration, skipping only the short names the globals *this
+  declaration mentions* were given. Labels share the binding namespace rather than getting their own
+  — JavaScript keeps them apart, and giving a label the same letter as a binding is legal and one
+  table simpler.
+
+Reusing the alphabet per declaration is worth **4 878 brotli bytes** over a single flat namespace
+across the corpus. *Alternative rejected: one namespace for the whole program, which is simpler and
+measurably worse, because it pushes locals into two-character names for no reason.*
+
+**Assignment is in emission order, not frequency order, and that is a departure from the list
+above.** §9 item 2 says "frequency-ranked", after report 12 §5.2, where Closure, dart2js, Scala.js
+and Elm all sort by frequency. Measured on our own output, frequency ranking **loses**: 409 338
+brotli against 408 538 for emission order over the corpus, 17 086 against 16 899 on `bench/corpus`,
+and the same sign inside the full stack. Closure's own source says why — `RenameVars` assigns
+same-length names in source order so that *"symbols declared close together are assigned names that
+are quite similar. With this heuristic, the output is more compressible"* — and that effect
+dominates once a local namespace is small enough that everything gets one character either way.
+Emission order also discharges report 12 §5.2's stability obligation for free, where dart2js
+over-allocates its pool 3× and hashes into preferred slots to buy the same property.
+**What is promised is exactly this:** a name is a function of the declaration's
+position in `emissionOrder` (§5) and of the binding's position inside it, both input-derived
+(CLAUDE.md rule 5), so `--jobs=1` and `--jobs=8` agree and two builds of one tree agree. What is
+**not** promised is that an edit renames nothing else: inserting a declaration shifts the global
+names after it. That is the honest guarantee, it is what §10's cross-chunk naming needs, and
+buying more is dart2js's 3× pool, which costs bytes for a property no test asserts.
+
+**The alphabet** is 54 first characters — `a`–`z`, `A`–`Z`, `$`, `_` — and those 54 plus `0`–`9`
+afterwards, ordered so the two sets stay as close as possible (`DefaultNameGenerator`'s reason, quoted
+in report 12 §2.2: putting digits first in the non-first set *"would end up balancing the huffman
+tree"*). A generated name that is a reserved word is skipped, using `Print.isReservedWord`
+(`src/js/Print.zig:584`) plus `eval`/`arguments`, which that list already carries. No global to
+avoid: the emitted module references no host global at all — `boundary.md` §4's third check is what
+keeps the siblings from reaching one and the generated half never had any.
+
+**What is NOT renamed**, and the list is closed:
+
+| | Why |
+|---|---|
+| the `imported` half of a sibling specifier — `add` in `import { add as Basics$add } from "./Basics.foreign.mjs"` | it is the sibling's own export name, fixed by `language.md` §5.4 and enforced by `boundary.md` §4's second check. The `local` half moves freely, which is the whole point of the `as` |
+| `run` in the entry file | the platform manifest's `runtime` export (`boundary.md` §5.2), read by hand-written JavaScript; `Emit.emitEntry` writes both ends (`src/js/Emit.zig:840-857`) and the `main` side of it is an ordinary global that renames |
+| every property name — the `$` tag, the `a`/`b`/`c`… slots, record fields | item 4's territory, and the second slice's. `runtime.foreign.mjs` reads `program.out` and `program.code`, and `Node.foreign.mjs` walks `.$`/`.a`/`.b`, so a field can cross into hand-written code and the rule that decides which is the artifact item 4 is waiting for |
+| anything inside a `*.foreign.mjs` | copied verbatim, never parsed |
+
+Cross-module agreement needs no new machinery: both the `import` specifier and the `export` list are
+built from the same `NameIndex`es the declaration uses (`Lower.exports`, `src/js/Lower.zig:637-680`;
+`need`/`needDerived`, `:743-759`), so renaming the column renames both ends. **Emission order and
+grouping do not change** — report 12 §2.1 measures up to 7% of gzipped bytes for keeping related
+declarations adjacent, at identical raw size, and this slice must not spend it.
+
+M5's source maps read the mapping the other way: `addSourceMappingForName` carries the *original*
+name in the fifth VLQ field, which is what makes a minified stack trace readable, and the printer
+already asks for a name at print time — so §11's "fused into the print pass" is what keeps this
+free (report 12 §6.2). Pointer only.
+
+#### Item 3 — compact printing
+
+One boolean on `Print.Printer`, threaded to the places that push whitespace — esbuild does it in 35
+branch points and measures it as free at run time (report 12 §6.1). Worth **−1 426 brotli on
+`bench/corpus` (−6.5%)** and −24% of raw. What goes:
+
+- `indent` emits nothing (`src/js/Print.zig:162-166`).
+- `" = "` → `"="`, `", "` → `","`, `" ? "`/`" : "` → `"?"`/`":"`, `": "` → `":"` in a `property`,
+  `" => "` → `"=>"`, `"{ "`/`" }"` → `"{"`/`"}"` in an `object`, and the space either side of a
+  `binary`'s operator (`:230-232`, `:439-449`, `:472-475`, `:482-487`).
+- `"} else {"` → `"}else{"`; a keyword keeps exactly the space that separates it from what follows —
+  `return x`, `const x`, `case 1:`, `typeof x`, `throw x`, `break L`, `continue L`.
+- The newline after every statement goes, **except one**: a newline after each top-level statement
+  stays. Measured cost: **21 brotli bytes on `bench/corpus`, 40 over the corpus, ~0.1%** — for which
+  a stack trace still names a declaration by line and a diff of two builds is readable. Closure
+  places newlines in similar contexts for the same reason (report 12 §2.2).
+
+**Two adjacencies must not close up, and they are the whole of the tokenisation risk.** An
+identifier, keyword or number followed by another is one token when the space goes, which is what
+the keyword rule above is; and `a - -1` closing to `a--1` is a decrement. So the printer keeps one
+space between two tokens whose last and first characters are both identifier characters, and between
+a `binary` `+`/`-` and a `unary` `+`/`-` that follows it. Nothing else in `BinaryOp.text` or
+`UnaryOp.text` (`src/js/JsIr.zig:263-298`) can merge — `typeof ` already carries its own space.
+
+**Semicolons stay, all of them.** Every newline the release printer emits comes immediately after a
+`;`, so no newline is ever in a position where ASI could stand in for a semicolon and there is
+nothing to elide. Dropping the last semicolon of a block would save one byte per block and
+reintroduce the whole question. *Alternative rejected: omitting a semicolon before `}`, which is what
+every general minifier does and what obliges it to know that a statement beginning `(`, `[`,
+`` ` ``, `+`, `-` or `/` must be prefixed.* The corpus still gets fixtures for the traps, because the
+claim being pinned is that the printer never creates one (below).
+
+**Number and string literal forms do not change.** A `number` node is the source spelling verbatim
+(`src/js/JsIr.zig:170-174`) and beni's numeric syntax is a subset of JavaScript's, so nothing in the
+compiler re-formats a number; turning `1000` into `1e3` would touch a value the front end promised
+not to, for a family report 12 measured at noise. Strings keep `Print.quoted`'s escapes (`:527-557`)
+and templates `templateChunk` (`:561-577`): picking a quote character by content is worth a byte per
+apostrophe and costs a scan.
+
+**Parenthesisation is already minimal and must stay that way.** The printer computes brackets from a
+precedence table and carries no `paren` node (`src/js/Print.zig:368-385`, the header at `:20-24`),
+bracketing a child strictly below its parent and a left-associative operator's right operand at
+`prec + 1`. There is nothing to remove. **Arrow bodies are already concise too**: `arrowBody`
+(`:502-520`) prints `(a) => a` when the body is one `return`, and brackets an object literal so the
+brace does not read as a block. Neither is item 5's conditional lowering and neither is new work —
+they are recorded here so the implementer does not go looking.
+
+*What compact printing must not do: reorder anything, merge adjacent `switch` labels (§7 files that
+under "a printer-level win, and M3c's" — it is item 5's family and measured with it), or change
+which node is printed. It is a whitespace decision and nothing else.*
+
+#### Item 5 — variable joining, and the three rewrites that did not earn their place
+
+All four are printer decisions over statement runs, measured marginally against the rest of the
+slice over all 102 trees. Report 12's discipline is to drop anything that does not clearly earn its
+bytes after compression, and three of the four do not.
+
+| Rewrite | Δ raw | Δ gzip | Δ brotli | verdict |
+|---|---:|---:|---:|---|
+| a run of `const_decl`s at one level → `const a=1,b=2;` | −3 024 | −229 | **−274** | **in** |
+| `if (c) { return a; } else { return b; }` → `return c?a:b;` | −446 | +30 | **+38** | out |
+| `if (c) { x = a; } else { x = b; }` → `x = c?a:b;` | −13 | −10 | −8 | out |
+| `if (c) { return a; } return b;` → `return c?a:b;` (`if_return`) | −359 | −4 | **+18** | out |
+
+**Variable joining is in**, and it is what §8 reserved: the loop prologue deliberately emits one
+`const` per carried parameter and points here, so `const xs$1 = $in$0; const acc$2 = $in$1;` becomes
+`const xs$1=$in$0,acc$2=$in$1;`. The rule: a maximal run of adjacent `const_decl` nodes in one
+statement list, each with an initialiser, joins into one. It reorders nothing — the run keeps its
+order and a comma declaration evaluates left to right, which is the `let` bindings row of
+`language.md` §6 unchanged — and it is a printing decision, so no `JsIr` node moves. A `let_decl`
+does not join a `const` run and an uninitialised `let_decl` does not join at all: §7's `let $t$n;`
+sits above an `if`/`else` chain and joining it with a later `const` would move a declaration past
+the statements between them.
+
+**The three conditional rewrites are out.** The return form measures **worse** after compression on
+every reading — +38 over the corpus, +18 on `bench/corpus`, +7 on `Dictionaries` — and the reason it
+loses here while report 12 §2.5 measured `conditionals` at a small win is §7: a tail-position `case`
+now lowers straight into statements, so the arms it would collapse routinely hold a `const` prologue
+or a `return` that a ternary cannot take, and what is left is the handful where it fires and costs
+entropy. The assign form is indistinguishable from zero — 13 raw bytes — because it **fires three
+times in the whole corpus**, §7 having deleted the `let $t$n` / assign / `return $t$n` triple it
+used to live in; building a rewrite for three sites is how a printer grows a pass nobody can retire.
+`if_return` loses in both measurements, ours at +18 and report 12's at +6, and `booleans`
+(`true` → `!0`), `sequences`, `comparisons` and `switches` were never on the list. Merging adjacent
+`switch` labels that reach one body (§7's last bullet) is measured with this family and is **not
+built**: §7's `default:` rule already removes the case that would fire most.
+
+#### Throughput, and where the four passes sit
+
+Measured today on this machine, `bench -- --generate=100000`, ReleaseFast: emit is **54.15 ms for
+633 modules and 3 086 421 bytes of JavaScript — 54.4 MB/s, 1 914 880 lines/s** — inside a **179.6 ms**
+cold build of 100 159 lines, against §13's 5 MB/s and 800 ms. The budget for `--release` is that it
+**stays above §13's 5 MB/s with a factor of five in hand** — a ceiling of roughly 4× today's emit
+time, which is not a real constraint: the dead-binding pass is two linear walks per body, renaming
+is one pass to count and one to assign over a column already built, compact printing is strictly
+less work than indented printing, and joining is a lookahead of one node. Report 12 §6.1 measured
+esbuild's `--minify` as *not slower than plain printing*. **What would breach it is a sort per
+function or a fixpoint**, and neither is specified. Read `--self-profile`'s `emitted_bytes` (§2)
+rather than `mb_per_s`: §7 records why that metric reads backwards when output shrinks, and here it
+shrinks by 55%.
+
+#### Testing
+
+§12 is the rule and this is its release half. **A `run/` fixture is only a behaviour guard if it is
+built under `--release` too**, so the whole `run/` corpus gets a second pass: the same fixture, built
+with `--release`, run under Node, asserted against the same `.expected`. Not a marked subset — the
+failure mode of a minifier is a wrong answer in a program nobody thought to mark, and the corpus is
+the asset precisely because nobody has to guess in advance (CLAUDE.md rule 3). **Measured cost:** one
+serial pass of all 100 programs is 15.4 s (11.1 s compiler, 4.3 s Node); `zig build test-blackbox` is
+67 s wall at about 2.1× parallelism, so the second pass adds roughly **7 s, +11%**. That is the price
+and it is worth it.
+
+- **`emit/release/`** is the new golden directory, for shape claims about the optimiser itself, by
+  the same per-fixture mechanism `emit/app/` uses for `--library` (`tests/blackbox/corpus_test.zig:193-205`,
+  `:531`): a `release: bool` on `Fixture`, set for anything collected under `emit/release/`, appending
+  `--release`. Everything under `emit/` keeps `--library` and its dev golden, and **none of the
+  seventeen may move**.
+- **Determinism** covers `--release`: `tests/blackbox/build_test.zig:292` and `:417` build the same
+  project at `--jobs=1` and `--jobs=8` and compare the whole output tree file for file; each gains a
+  `--release` pair. The pass-level arguments are above; this is the machinery that proves them.
+
+The fixtures, by intent:
+
+| Fixture | Intent | Observable |
+|---|---|---|
+| `run/ReleaseDeadDebug` | a `Debug.log` in a binding nothing reads, beside one in a binding that is read, beside one in a dropped declaration (`run/DceDebugLog`'s other half) | exactly the live lines, in order — pins that the dead binding goes whole and that the surviving order did not move |
+| `run/ReleaseNameCollision` | locals whose source names are JavaScript reserved words (`new`, `class`, `let`, `eval`); more than 54 locals in one declaration, so the alphabet spills to two characters; two sibling `case` branches binding the same source name; a §8 loop label beside a binding of the same source name; a declaration that mentions enough globals to push its locals past the ones they may not take | the answers; a collision is a `SyntaxError` at load or a silently wrong value |
+| `run/ReleaseAsiTraps` | expressions whose printed form starts with `(`, `[`, `` ` ``, `+`, `-` and `/`, in statement position and after a `return`; `a - -1` and `a + +b` in one expression | the values; pins that the printer never needs ASI and never merges two operators |
+| `run/ReleaseInlineOrder` | the inliner's own hazard: a binding whose one use is behind a surviving `Debug.log`, one whose use is inside a lambda, one whose use is inside a §8 loop body while the binding is outside it, and one reading an `$in$<i>` slot that the loop reassigns | the printed order and the values; each is a wrong answer if a condition of item 1's table is dropped |
+| `run/ReleaseEverything` | one big program using every construct — reuse `bench/corpus`'s `ExprParser` or `Dictionaries` rather than writing a new one | its `.expected`, unchanged |
+| the whole existing `EvalOrder*` and `CallbackOrder*` set | the regression half, run again under the flag rather than copied | unchanged `.expected`; an optimiser that reorders two surviving evaluations moves one of them |
+| `emit/release/ReleaseNames` | the shape: short names, the sibling specifier's `imported` half untouched, `import`/`export` agreeing across two modules | golden |
+| `emit/release/ReleaseCompact` | the shape: one line per top-level declaration, no indentation, every semicolon present, joined `const` run | golden |
+| `emit/release/ReleaseInline` | the shape: a leaf prologue folded into the literal that reads it, and a binding read twice NOT folded | golden |
+
+Fail-first is ordinary: every `emit/release/` golden does not exist before the slice and every `run/`
+row above either throws, prints the wrong thing, or fails to build today (`--release` exits 2). The
+`run/` rows that are re-runs of existing fixtures are the regression half, and one that moves is a
+finding.
+
+#### Acceptance
+
+§1's M3c acceptance is §9's size and throughput numbers alone. For this slice, all five:
+
+1. **`bench/corpus` under `--release` is at or below 15 055 brotli bytes** and `Dictionaries` at or
+   below 5 847, against 21 840 and 7 008 today — the hand-applied predictions above. A real
+   implementation may beat them (the measurement's renamer is conservative about scope reuse) and
+   must not lose to them by more than noise.
+2. **Every `run/` fixture passes under `--release` with no `.expected` change**, and every `emit/`
+   golden and every `run/` fixture built without the flag is **byte-identical to today**.
+3. **Sizes are reported through `bench/size.mjs`**, which gains a `--release` column measured in the
+   same run as the dev one — both directions recorded whichever way they come out.
+4. **Emit throughput stays above 5 MB/s of JavaScript** (§13) with the margin above; `emitted_bytes`
+   is the counter that should fall.
+5. **The determinism test is green** at `--jobs=1` and `--jobs=8`, twice each, byte-compared, with
+   `--release` in the matrix.
+
+Report 12 §7 item 7's exit criterion is the outer one and is not this slice's: beni's own brotli
+within ~10% of beni's output piped through `esbuild --minify`. Neither `esbuild` nor `terser` is in
+the flake today, so that comparison wants a pinned binary and is the measurement to run once
+`--release` exists.
+
+#### What the second slice owes
+
+**Item 4, type-directed field ambiguation** — two fields that never co-occur on a type share one
+short name, shrinking the *alphabet* rather than the lengths, which is the quantity the compressor
+charges for (report 12 §2.2, §5.4). Report 12 §5.3 bounds it at **~4% of brotli'd bytes**, from
+`terser --mangle-props` on Elm's bundle, and Evan's own 5–10% for Elm's field shortening.
+
+It needs something the backend does not have. §3 is explicit: the backend sees no types, and static
+dispatch did not change that — `Lower.Input` carries a *dispatch table* of resolved targets, not
+solved types. What item 4 wants is a **per-build field-interference artifact**: for each record field
+name, the set of record types it occurs on, so that two names may share a colour iff their type sets
+are disjoint. That is a checker product, computed where the record types are, delivered the way the
+dispatch table is delivered — flat, index-based, one per module, merged whole-program before
+lowering, exactly as `Reach` merges edge lists. Two constraints it must respect and this section
+records now rather than discovering later: **a field that a sibling reads by name may not be
+renamed at all** (`runtime.foreign.mjs` reads `program.out` and `program.code`; `Node.foreign.mjs`
+walks `.$`, `.a`, `.b`), and the `$` tag and the positional `a`/`b`/`c`… slots are the emitter's own
+representation (`slotName`, `src/js/Lower.zig:430-437`) and are already one character.
+
+**Integer constructor tags** (§4: "tag is a string in dev, an integer in release") ride with item 4,
+because both are a representation change under the flag and both are visible to a sibling —
+`core/List.js` and `Node.foreign.mjs` already build and walk `{$:0}`/`{$:1}` by contract (§4's *where
+the empty list comes from*), so a `$` that means something different under `--release` is a change to
+that contract and needs the same artifact-shaped answer.
+
+**Everything chunk-facing is §10's**, and it inherits two things from this slice rather than
+inventing them: the whole-program name table, which is what makes a cross-chunk binding nameable at
+all (report 12 §8 item 10 — stable names are what Elm gave up), and §9's graph with more than one
+seed. §10 is where that lives.
+
 ## 10. Chunking
 
 Entry points are `main` and every `lazy` declaration. Each declaration's colour is the set of entry
@@ -1395,6 +1770,13 @@ A second deviation arrives with §9: **`emit/` builds with `--library`**, so a g
 the shape of a declaration and not about whether the fixture's own `main` happens to call it, and
 `emit/app/` is the subdirectory that does not — for the goldens whose claim *is* what elimination
 removes. Same mechanism as `core/`, which already appends `--core`.
+
+A third arrives with §9's release optimiser, and it is the same mechanism a third time:
+**`emit/release/` builds with `--release`**, for shape claims about names, whitespace and inlining.
+The behaviour half is bigger and is stated there rather than here — **the whole `run/` corpus is
+built and run a second time under `--release`**, not a marked subset, because the failure mode of a
+minifier is a wrong answer in a program nobody thought to mark. Measured cost: about 7 seconds of
+wall clock, +11% of `zig build test-blackbox`. §9's *Testing* has the fixture list and the number.
 
 A bug that changes emitted shape but not behaviour must not fail a `run/` test; a bug that changes
 behaviour must. That is the whole point of preferring it.
