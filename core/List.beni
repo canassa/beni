@@ -13,7 +13,7 @@
 --! first, with the value repeated before the count, exactly as `String.repeat`
 --! is, while `range lo hi` has no subject to put first.
 --!
---! Three declarations here are `foreign`, and nothing else is:
+--! Four declarations here are `foreign`, and nothing else is:
 --!
 --!   - `cons : a, List a -> List a` — `::` desugars to a call of this
 --!     function, so a beni definition of it would call itself. Its order is
@@ -24,9 +24,15 @@
 --!   - `foldr : List a, b, (a, b -> b) -> b` — the same, and it recurses to
 --!     the depth of the list, which the JavaScript stack cannot take for a
 --!     long one.
+--!   - `eq : List a, List a -> Bool where a.eq` — what `==` on a list means.
+--!     `List a` has no constructors, so the compiler has nothing to derive a
+--!     body from, and the shape of a cons cell belongs to the code generator
+--!     rather than to beni.
 --!
---! `List a` is equatable exactly when `a` is: two lists are equal when they
---! have the same elements in the same order.
+--! `List a` is equal to another list when they have the same elements in the
+--! same order, by each element's own `eq` — which is what makes `==` on a
+--! list of a type with an `eq` of its own answer that type's question and not
+--! a structural walk's.
 --!
 --! There is no `comparable` (`fast-compiler.md` §3.1), so the ordering
 --! functions come in three flavours: `sort` for numbers, `sortBy` for
@@ -61,6 +67,19 @@ pub foreign foldl : List a, b, (a, b -> b) -> b
 --|
 --|     foldr [ 1, 2, 3 ] [] cons == [ 1, 2, 3 ]
 pub foreign foldr : List a, b, (a, b -> b) -> b
+
+
+--| Two lists are equal when they have the same elements, in the same order,
+--| by each element's own `eq`.
+--|
+--|     [ 1, 2 ] == [ 1, 2 ]
+--|
+--| This is what `==` on a list calls. It is written here rather than derived
+--| because `List a` has no constructors for the compiler to walk, and it is
+--| written in JavaScript because the representation of a list is the code
+--| generator's rather than beni's.
+pub foreign eq : List a, List a -> Bool
+    where a.eq : a, a -> Bool
 
 
 --| Create a list with only one element.

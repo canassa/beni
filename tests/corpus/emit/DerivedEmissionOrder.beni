@@ -1,0 +1,56 @@
+-- emit: §8.5's emission order — TWO sorted runs, every `$$order` table
+-- first and then every function (`docs/design/static-dispatch-spike.md`
+-- §8.5, §9.6, A.29).
+--
+-- Ordering within the function run never matters: every derived function
+-- is an arrow, so a reference from one to another is resolved when it is
+-- CALLED and a forward reference is fine.
+--
+-- The `$$order` tables are the one exception §8.5 names, because they are
+-- object literals rather than arrows. One sort cannot give it:
+-- `Amber$$compare` sorts BEFORE `Amber$$order` by name text — `c` before
+-- `o` — which is precisely the wrong way round, and here both tables come
+-- first. Hence two runs, each sorted by printed name text.
+--
+-- What the interleaving shows. By name text the eleven synthesised values
+-- would be, in one run:
+--
+--     Amber$$compare  Amber$$eq  Amber$$order  Zinc$$compare  Zinc$$eq
+--     Zinc$$order  compare$prim  compare$r$hue$name  eq$prim
+--     eq$r$hue$name
+--
+-- and the file below is that list with the two `$$order` rows lifted out
+-- in front, in their own sorted run. Nominal bases sort ahead of
+-- structural ones for free: a module path segment is upper-case and every
+-- structural base is lower-case (A.61).
+--
+-- Sorted by NAME and not by the order the rows were discovered in, which
+-- is deterministic today but not obviously so, and CLAUDE.md rule 5 asks
+-- for an order a reader can check.
+import Node exposing (Program)
+import String
+
+
+pub type Amber
+    = Dawn
+    | Dusk
+
+
+pub type Zinc
+    = Plate Int
+    | Ingot Int Int
+
+
+pub sorted : { hue : Int, name : String }, { hue : Int, name : String } -> Bool
+sorted a b =
+    a < b
+
+
+pub same : { hue : Int, name : String }, { hue : Int, name : String } -> Bool
+same a b =
+    a == b
+
+
+main : Program
+main =
+    Node.printLines []

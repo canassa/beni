@@ -1,0 +1,26 @@
+-- dispatch (project): §7.1's amendment — an `ext` target in a PART
+-- position carries its own evidence (A.64).
+--
+-- `Boxes.eq` takes one hidden argument (§8.1). At a CALL site that
+-- argument rides on the site that follows the callee's, because §7.2
+-- numbers every evidence slot of one instruction into one flat list; that
+-- is `same` below, `site 9 0 ext Boxes eq` with `site 9 1` under it.
+--
+-- `sameRow` is the case the flat list cannot reach. The record's `eq` is a
+-- derived function keyed on the shape `r$flag$item`, and its second
+-- position is answered by `Boxes.eq` — inside a `parts` tree, where there
+-- is no instruction to number a site against. Without a `parts` range on
+-- `Target.ext` the row read `part 1 ext Boxes eq` with nothing under it,
+-- and the emitted call to `Boxes$eq` was one argument short: JavaScript
+-- runs that, binds `undefined` and compares against it.
+import Boxes exposing (Box)
+
+
+pub same : Box Int, Box Int -> Bool
+same a b =
+    a == b
+
+
+pub sameRow : { flag : Bool, item : Box Int }, { flag : Bool, item : Box Int } -> Bool
+sameRow a b =
+    a == b

@@ -569,7 +569,6 @@ pub fn instantiate(
     // one the body uses (static-dispatch-spike.md §6.5 rule 3). Each
     // quantifier gets a FRESH set; the evidence index runs across
     // quantifiers in canonical order (§7.2).
-    var evidence_index: u16 = if (site) |sp| sp.first_index else 0;
     for (fresh, 0..) |v, i| {
         const q = iface.quantified(s, @intCast(i));
         if (q.constraints_len == 0) continue;
@@ -579,9 +578,9 @@ pub fn instantiate(
             const qc = iface.quantifiedConstraint(q, @intCast(j));
             const sites: TypeStore.Range = if (site) |sp| try store.addConstraintSites(&.{.{
                 .inst = sp.inst,
-                .evidence_index = evidence_index,
+                .evidence_index = sp.next.*,
             }}) else .empty;
-            evidence_index += 1;
+            if (site) |sp| sp.next.* +|= 1;
             c.* = .{
                 .name = iface.symbol(qc.name),
                 .fn_var = try reader.read(qc.type),
@@ -604,11 +603,20 @@ pub fn instantiate(
 
 /// Where an instantiation happened, so every constraint it creates can be
 /// tagged with the dispatch site it answers (static-dispatch-spike.md §7.2).
-/// `first_index` is 1 for a `method_call` — whose site 0 names the callee —
-/// and 0 for everything else.
+///
+/// `next` is the instruction's **running** evidence cursor, not a fixed
+/// base: one instruction can instantiate more than one scheme — a
+/// `method_call`'s site 0 names the callee and its evidence starts at 1, and
+/// resolving an evidence slot can instantiate the scheme that answers it, a
+/// nesting `List (List (Box a))` reaches three deep. Every slot of one
+/// instruction has to have its OWN index (§7.2, §7.3), so each instantiation
+/// continues where the last one stopped rather than restarting at a
+/// hard-coded 1. The caller owns the cell and writes it back when the
+/// instantiation is done; `+|=` saturates rather than wrapping, because a
+/// wrapped index would collide with slot 0.
 pub const Site = struct {
     inst: @import("../bir/Bir.zig").Inst.Index,
-    first_index: u16,
+    next: *u16,
 };
 
 /// Copy an imported constructor's type into `store` at `rank`:

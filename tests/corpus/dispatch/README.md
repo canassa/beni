@@ -39,6 +39,14 @@ one for, and what `Lower.structuralEq` may assume when it reads one.
 `PrivateEqStillDerives` the half of that step a `pub` makes the difference to — a private `eq`
 wins inside its own module and still leaves the derived row every dependent names (A.63),
 `FieldCall` the `field` target S4 must keep, `ImportedMethod` the `ext` and
-`ext_derived` targets across a module boundary, and `core/ForeignWithWhere`
-a `pub foreign` with a `where` clause (§5.2, A.7), which has no body and so
-never reaches a binding group.
+`ext_derived` targets across a module boundary, `ExtWithParts` §7.1's
+amendment — an `ext` in a PART position carries its own evidence range, so
+`Boxes.eq`, which takes one hidden argument, is not called one short
+(A.64) — and `core/ForeignWithWhere` a `pub foreign` with a `where` clause
+(§5.2, A.7), which has no body and so never reaches a binding group.
+`NestedEvidenceIndices` is §7.2's other half of that amendment: the slots of
+ONE instruction each have their own `evidence_index` however deep the
+instantiation nests (A.68). It is the only fixture that can see it — the
+emitted JavaScript is the same either way, because the walk reads the order
+and not the numbers, and what a repeated index threatens is the two places
+that deduplicate on `(inst, evidence_index)`.

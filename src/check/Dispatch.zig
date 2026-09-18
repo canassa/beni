@@ -55,8 +55,8 @@ pub const Shape = union(enum(u8)) {
 
 /// Which function a site calls, or which value it passes.
 pub const Target = union(enum(u8)) {
-    /// A value of this module.
-    top: Bir.DeclIndex,
+    /// A value of this module, and the evidence this use passes it.
+    top: TopUse,
     ext: Ext,
     /// The `k`th evidence parameter of the ENCLOSING declaration. One
     /// level, no depth — §6.4 proves why.
@@ -74,7 +74,29 @@ pub const Target = union(enum(u8)) {
     field,
     err,
 
-    pub const Ext = struct { module: Graph.Index, value: Interface.ValueIndex };
+    /// **A `top` or `ext` in a PART position carries its own evidence**
+    /// (§7.1 amendment, A.64). At a call site the evidence of a
+    /// constrained value rides on the sites that follow it (§8.2), because
+    /// §7.2 numbers them into one flat list; inside a `parts` tree there
+    /// is no site to number, so the tree has to carry it. Without the
+    /// range, `{ p : { x : Int }, q : List Int } == …` wrote
+    /// `part 1 ext List eq` with nothing under it and the emitted call to
+    /// `List$eq` — which takes `(m0, xs, ys)` once §5.2 lands — was one
+    /// argument short.
+    ///
+    /// EMPTY at a call site, where the site list carries the same
+    /// evidence: a target is never handed both, and the emitter reads
+    /// `partsOf()` first for exactly that reason.
+    pub const TopUse = struct {
+        decl: Bir.DeclIndex,
+        parts: Range = .empty,
+    };
+
+    pub const Ext = struct {
+        module: Graph.Index,
+        value: Interface.ValueIndex,
+        parts: Range = .empty,
+    };
 
     /// **The evidence is per USE, never per function** (A.11, A.46). A
     /// structural derived function is keyed on its shape alone — the field
@@ -106,6 +128,8 @@ pub const Target = union(enum(u8)) {
         return switch (t) {
             .derived => |d| d.parts,
             .ext_derived => |d| d.parts,
+            .top => |d| d.parts,
+            .ext => |e| e.parts,
             else => .empty,
         };
     }

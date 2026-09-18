@@ -8,15 +8,15 @@ module ErrParts
   derived 0 compare t2 evidence=2
   derived 1 eq r$a evidence=1
   derived 2 eq t2 evidence=2
-  site 3 0 ext_derived List.List eq
-    part 0 err
+  site 3 0 ext List eq
+  site 3 1 ext Basics eq
   site 7 0 ext_derived Maybe.Maybe eq
     part 0 err
   site 15 0 ext_derived Result.Result eq
     part 0 err
     part 1 primitive strict_eq
   site 21 0 derived 1
-    part 0 ext_derived List.List eq
+    part 0 ext List eq
       part 0 err
   site 29 0 derived 2
     part 0 primitive strict_eq

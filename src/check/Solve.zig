@@ -172,6 +172,11 @@ pub const Solver = struct {
     /// variables, so without this each of them emits the same
     /// `(inst, evidence_index)` row — an argument passed twice.
     ///
+    /// **That reading needs `evidence_next` to hold**: "the same row" is
+    /// only "the same argument" while one instruction's slots each have
+    /// their own index. `joinConstraint` and `appendSite` deduplicate on the
+    /// same pair and inherit the same dependency.
+    ///
     /// Keyed on the VARIABLE and not on the constraint: two headers of one
     /// group share their generalised variables wholesale, so one entry per
     /// quantifier settles every constraint on it — and a group has a
@@ -206,6 +211,26 @@ pub const Solver = struct {
     /// takes back exactly what it decided and nothing else (A.35's
     /// journal-by-length, applied to one more table).
     resolved_journal: std.ArrayList(u32) = .empty,
+    /// Every method constraint a drain folded back onto a flex variable
+    /// (§6.4), so `settleUndetermined` can revisit the ones generalisation
+    /// then failed to quantify. Journalled by length like everything else a
+    /// probe can retract (A.35).
+    deferred: std.ArrayList(Deferred) = .empty,
+    /// The next free `evidence_index` on an instruction (§7.2), keyed on the
+    /// Bir instruction index.
+    ///
+    /// **One instruction's slots are numbered once, across every scheme it
+    /// instantiates.** A `method_call` takes 0 for the callee and its
+    /// evidence from 1; resolving one of those slots can instantiate the
+    /// scheme that ANSWERS it — `[ [ [ Box "a" "b" ] ] ] == …` goes three
+    /// deep through `List.eq … where a.eq` — and each of those nested
+    /// instantiations used to restart at a hard-coded 1, so five slots of
+    /// one instruction all read `evidence_index = 1`. The emission was right
+    /// only because the sort is stable and insertion happened to be
+    /// pre-order, while `joinConstraint` and `appendSite` both DEDUPLICATE
+    /// on `(inst, evidence_index)` and would have dropped a different slot's
+    /// site.
+    evidence_next: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     depth: u32 = 0,
     /// Set by a sub-unification that knows more than "they differ"; read
     /// and cleared by the `unify` that owns the region.
@@ -265,7 +290,32 @@ pub const Solver = struct {
         s.promoted.deinit(s.gpa);
         s.resolved_methods.deinit(s.gpa);
         s.resolved_journal.deinit(s.gpa);
+        s.deferred.deinit(s.gpa);
+        s.evidence_next.deinit(s.gpa);
     }
+
+    /// The instruction's evidence cursor, created at 0 the first time it is
+    /// asked for. The caller threads the value it gets through whatever
+    /// numbers slots and hands it back to `commitEvidence`; the ENTRY is
+    /// what is allocated here, so the write back cannot fail.
+    fn evidenceCursor(s: *Solver, inst: Bir.Inst.Index) Error!u16 {
+        const gop = try s.evidence_next.getOrPut(s.gpa, @intFromEnum(inst));
+        if (!gop.found_existing) gop.value_ptr.* = 0;
+        return gop.value_ptr.*;
+    }
+
+    /// Give back a cursor `evidenceCursor` handed out. Infallible by
+    /// construction: the entry exists, and nothing between the two calls
+    /// adds another — a numbering walk instantiates schemes and appends
+    /// obligations, it never discharges one.
+    fn commitEvidence(s: *Solver, inst: Bir.Inst.Index, next: u16) void {
+        const slot = s.evidence_next.getPtr(@intFromEnum(inst)) orelse return;
+        slot.* = next;
+    }
+
+    /// One constraint held on a variable that is still flex: the variable
+    /// and the constraint's index in the store's table.
+    const Deferred = struct { v: Var, index: u32 };
 
     fn store(s: *const Solver) *TypeStore {
         return s.env.store;
@@ -1042,7 +1092,17 @@ pub const Solver = struct {
         const target: Var = @enumFromInt(node.a);
         const owner: Bir.Inst.OptionalIndex = @enumFromInt(node.b);
         const site = owner.unwrap() orelse node.region;
-        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .first_index = 0 })) orelse {
+        // Both halves number the SAME slots, from the same base: an
+        // imported scheme has its constraints numbered by
+        // `Schemes.instantiate` as it copies them, and `tagInstantiated`
+        // then walks the copy and re-derives the same indices (its
+        // constraints are all below `mark`, so it writes nothing). Two
+        // cursors off one base, and the cursor the instruction keeps is
+        // whichever went further.
+        const base = try s.evidenceCursor(site);
+        var read_cursor = base;
+        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .next = &read_cursor })) orelse {
+            s.commitEvidence(site, read_cursor);
             s.poison(target);
             return;
         };
@@ -1055,7 +1115,9 @@ pub const Solver = struct {
         // shared constraint instead — which is how `even`/`odd` with an
         // inferred `where` get the arguments their recursion needs.
         const shared = s.env.bir.instTag(node.region) == .top;
-        try s.tagInstantiated(copy, site, 0, mark, shared);
+        var tag_cursor = base;
+        try s.tagInstantiated(copy, site, &tag_cursor, mark, shared);
+        s.commitEvidence(site, @max(read_cursor, tag_cursor));
         try s.unify(target, copy, node.region, node.category);
     }
 
@@ -1376,6 +1438,7 @@ pub const Solver = struct {
             const pool_len = (try s.pool(s.rank)).items.len;
             const obligation_len = (try s.obligationsAt(s.rank)).items.len;
             const resolved_len = s.resolved_journal.items.len;
+            const deferred_len = s.deferred.items.len;
             // The dispatch builder and the diagnostics are the other two
             // things a retracted probe must not leave behind (A.35, B3):
             // §6.2 registers obligations from INSIDE `unify`, so
@@ -1399,6 +1462,7 @@ pub const Solver = struct {
             // table and their indices will be handed to other constraints,
             // so what this run decided about them has to go too (A.57).
             s.forgetResolvedSince(resolved_len);
+            s.deferred.shrinkRetainingCapacity(deferred_len);
             s.env.dispatch.shrink(dispatch_len);
             s.reporter.rollbackTo(report_mark);
             // An inexact rollback (the journal could not allocate) leaves
@@ -1747,7 +1811,10 @@ pub const Solver = struct {
         const info = s.tree.extraData(node.b, Constrain.Method);
         const receiver: Var = @enumFromInt(node.a);
         const st = s.store();
-        const first_index: u16 = 0;
+        // Site 0, the callee (§7.2) — and the first slot this instruction
+        // hands out, so it opens the cursor every later one continues.
+        const first_index = try s.evidenceCursor(node.region);
+        s.commitEvidence(node.region, first_index +| 1);
         const sites = try st.addConstraintSites(&.{.{ .inst = node.region, .evidence_index = first_index }});
         const c: TypeStore.MethodConstraint = .{
             .name = info.name,
@@ -2063,6 +2130,7 @@ pub const Solver = struct {
                     return;
                 }
                 try s.attachConstraint(root, c, o.origin);
+                try s.deferred.append(s.gpa, .{ .v = root, .index = o.index });
             },
             else => {
                 try s.markResolved(o.index);
@@ -2433,15 +2501,20 @@ pub const Solver = struct {
                 const mark: u32 = @intCast(s.store().constraints.items.len);
                 const copy = try s.makeCopy(scheme);
                 // A `method_call`'s site 0 names the CALLEE, so its evidence
-                // slots start at 1 (§7.2).
-                try s.tagInstantiated(copy, origin, 1, mark, false);
+                // slots start at 1 (§7.2) — which is where the cursor
+                // already stands. It is not always 1: this same arm answers
+                // a slot of an OUTER instantiation, and then it continues
+                // that instruction's numbering instead of colliding with it.
+                var cursor = try s.evidenceCursor(origin);
+                try s.tagInstantiated(copy, origin, &cursor, mark, false);
+                s.commitEvidence(origin, cursor);
                 if (!try s.unifyQuiet(copy, c.fn_var)) {
                     try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
                     try s.emitSites(c, .err);
                     s.poison(c.fn_var);
                     return;
                 }
-                try s.emitSites(c, .{ .top = @enumFromInt(decl) });
+                try s.emitSites(c, .{ .top = .{ .decl = @enumFromInt(decl) } });
                 return;
             }
         } else if (entry.module.int() >= s.env.interfaces.len) {
@@ -2459,10 +2532,17 @@ pub const Solver = struct {
         } else {
             const iface = &s.env.interfaces[entry.module.int()];
             if (iface.findValue(s.env.interner, c.name)) |value| {
-                const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{ .inst = origin, .first_index = 1 })) orelse {
+                // The same continuation as the arm above: `List (List Int)`
+                // resolves `List.eq`, whose `where a.eq` slot resolves
+                // `List.eq` again, and each level takes the next free index
+                // of the one instruction rather than 1 over and over.
+                var cursor = try s.evidenceCursor(origin);
+                const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{ .inst = origin, .next = &cursor })) orelse {
+                    s.commitEvidence(origin, cursor);
                     try s.emitSites(c, .err);
                     return;
                 };
+                s.commitEvidence(origin, cursor);
                 if (!try s.unifyQuiet(copy, c.fn_var)) {
                     try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
                     try s.emitSites(c, .err);
@@ -2722,15 +2802,142 @@ pub const Solver = struct {
         }
         const entry = s.env.types.entry(a.type);
         if (entry.module == s.env.module) {
-            if (s.ownDeclNamed(c.name)) |decl| return .{ .top = @enumFromInt(decl) };
+            if (s.ownDeclNamed(c.name)) |decl| {
+                const scheme = s.env.decl_scheme[decl].unwrap();
+                const parts = if (scheme) |v|
+                    try s.ownValueParts(c, v, a, origin, depth)
+                else
+                    Dispatch.Range.empty;
+                return .{ .top = .{ .decl = @enumFromInt(decl), .parts = parts } };
+            }
         } else if (entry.module.int() < s.env.interfaces.len) {
             const iface = &s.env.interfaces[entry.module.int()];
             if (iface.findValue(s.env.interner, c.name)) |value| {
-                return .{ .ext = .{ .module = entry.module, .value = value } };
+                const parts = try s.importedValueParts(c, entry.module, value, a, origin, depth);
+                return .{ .ext = .{ .module = entry.module, .value = value, .parts = parts } };
             }
         }
         if (!s.derivesForNominal(c, a.type)) return .err;
         return s.nominalTarget(c, a, origin, depth);
+    }
+
+    /// **§7.1's amendment: a `top`/`ext` in a PART position carries its own
+    /// evidence** (A.64), one target per constraint the named value's
+    /// scheme puts on a type parameter.
+    ///
+    /// The mapping is the one `nominalTarget` already uses, and it is a
+    /// mapping only because of what the value IS: a method of `T`, whose
+    /// first parameter is `T a1 … an`. §7.2's canonical order walks the
+    /// scheme body, so it meets `a1 … an` in the application's own order,
+    /// and quantifier `i` is therefore argument `i`. What the scheme adds
+    /// is WHICH parameters carry a constraint and how many each carries —
+    /// `where a.eq` on a `Box a b` is one slot, answered by `a` alone.
+    ///
+    /// A scheme whose quantifier count does not match the type's arity has
+    /// no such mapping — a `where` clause over a variable the receiver does
+    /// not supply — so it gets NO parts and the backend refuses the call
+    /// rather than passing evidence for the wrong parameter.
+    fn constrainedParts(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        counts: []const u32,
+        names: []const Symbol,
+        a: TypeStore.Structure.App,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Range {
+        if (names.len == 0) return .empty;
+        const args = try s.env.scratch.dupe(Var, s.store().vars(a.args));
+        defer s.env.scratch.free(args);
+        if (counts.len != args.len) return .empty;
+        const range = try s.env.dispatch.reserveParts(names.len);
+        var slot: usize = 0;
+        for (counts, 0..) |n, i| {
+            var j: u32 = 0;
+            while (j < n) : (j += 1) {
+                const inner = try s.renamedConstraint(c, names[slot], args[i]);
+                s.env.dispatch.setPart(range, slot, try s.targetFor(inner, args[i], origin, depth + 1));
+                slot += 1;
+            }
+        }
+        return range;
+    }
+
+    /// The per-quantifier constraint counts and names of an IMPORTED
+    /// value's scheme, read straight from the interface record: the same
+    /// record `Lower.externalEvidence` counts, so caller and callee derive
+    /// one order from one place (§7.2).
+    fn importedValueParts(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        module: Graph.Index,
+        value: Interface.ValueIndex,
+        a: TypeStore.Structure.App,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Range {
+        const iface = &s.env.interfaces[module.int()];
+        if (@intFromEnum(value) >= iface.values.len) return .empty;
+        const index = iface.values[@intFromEnum(value)].scheme;
+        if (index == .none or @intFromEnum(index) >= iface.schemes.len) return .empty;
+        const scheme = iface.scheme(index);
+        const counts = try s.env.scratch.alloc(u32, scheme.quantified_count);
+        defer s.env.scratch.free(counts);
+        var names: std.ArrayList(Symbol) = .empty;
+        defer names.deinit(s.env.scratch);
+        for (counts, 0..) |*slot, i| {
+            const q = iface.quantified(scheme, @intCast(i));
+            slot.* = q.constraints_len;
+            var j: u32 = 0;
+            while (j < q.constraints_len) : (j += 1) {
+                const qc = iface.quantifiedConstraint(q, j);
+                if (@intFromEnum(qc.name) >= iface.symbols.len) return .empty;
+                try names.append(s.env.scratch, iface.symbol(qc.name));
+            }
+        }
+        return s.constrainedParts(c, counts, names.items, a, origin, depth);
+    }
+
+    /// The same, for a value of THIS module: the scheme is a live type
+    /// variable, so the order comes from `Schemes.quantifierOrder` — the
+    /// one walk §7.2 names, and the one `tagInstantiated` uses on a copy of
+    /// the same scheme.
+    fn ownValueParts(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        scheme: Var,
+        a: TypeStore.Structure.App,
+        origin: Bir.Inst.Index,
+        depth: u32,
+    ) Error!Dispatch.Range {
+        const st = s.store();
+        var order: std.ArrayList(Var) = .empty;
+        defer order.deinit(s.env.scratch);
+        try Schemes.quantifierOrder(st, s.env.interner, scheme, &order, s.env.scratch);
+        const counts = try s.env.scratch.alloc(u32, order.items.len);
+        defer s.env.scratch.free(counts);
+        var names: std.ArrayList(Symbol) = .empty;
+        defer names.deinit(s.env.scratch);
+        for (order.items, counts) |root, *slot| {
+            const set = st.flagsOf(root).constraints;
+            const n = st.constraintCount(set);
+            slot.* = @intCast(n);
+            if (n == 0) continue;
+            const sorted = try s.env.scratch.alloc(TypeStore.MethodConstraint, n);
+            defer s.env.scratch.free(sorted);
+            for (sorted, 0..) |*item, j| item.* = st.constraintAt(set, @intCast(j));
+            std.mem.sort(TypeStore.MethodConstraint, sorted, s.env.interner, constraintNameLessThan);
+            for (sorted) |item| try names.append(s.env.scratch, item.name);
+        }
+        return s.constrainedParts(c, counts, names.items, a, origin, depth);
+    }
+
+    fn constraintNameLessThan(
+        interner: *const InternPool.Global,
+        x: TypeStore.MethodConstraint,
+        y: TypeStore.MethodConstraint,
+    ) bool {
+        return std.mem.lessThan(u8, interner.slice(x.name), interner.slice(y.name));
     }
 
     /// A use of a nominal type's derived method. The function itself is
@@ -2874,9 +3081,24 @@ pub const Solver = struct {
         c: TypeStore.MethodConstraint,
         v: Var,
     ) Error!TypeStore.MethodConstraint {
-        const result = try s.applied(s.wellKnownResult(c), &.{});
+        return s.renamedConstraint(c, c.name, v);
+    }
+
+    /// The same, under a name the ENCLOSING value's `where` clause chose.
+    /// `List.eq`'s clause happens to be `a.eq`, but nothing makes a
+    /// method's own name and its constraint's name the same word, and a
+    /// part resolved under the wrong one would name the wrong function.
+    fn renamedConstraint(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        name: Symbol,
+        v: Var,
+    ) Error!TypeStore.MethodConstraint {
+        const is_eq = name == InternPool.WellKnown.eq.symbol();
+        const result_type = if (is_eq) s.env.types.well_known.bool else s.env.types.well_known.order;
+        const result = try s.applied(result_type, &.{});
         return .{
-            .name = c.name,
+            .name = name,
             .fn_var = try s.func(&.{ v, v }, result),
             .region = c.region,
             .origin = c.origin,
@@ -2924,12 +3146,11 @@ pub const Solver = struct {
     /// gives the same order on both sides of a module boundary. The entries
     /// were appended by this very call, so writing their `sites` is not a
     /// mutation of anything already committed (§6.1 invariant 2).
-    fn tagInstantiated(s: *Solver, copy: Var, origin: Bir.Inst.Index, first_index: u16, from: u32, shared: bool) Error!void {
+    fn tagInstantiated(s: *Solver, copy: Var, origin: Bir.Inst.Index, next: *u16, from: u32, shared: bool) Error!void {
         const st = s.store();
         var order: std.ArrayList(Var) = .empty;
         defer order.deinit(s.env.scratch);
         try Schemes.quantifierOrder(st, s.env.interner, copy, &order, s.env.scratch);
-        var index: u16 = first_index;
         for (order.items) |root| {
             const set = st.flagsOf(root).constraints;
             const n = st.constraintCount(set);
@@ -2948,12 +3169,12 @@ pub const Solver = struct {
                 // same-group top reference still needs its forwarding site,
                 // so there the site is appended rather than written.
                 if (at < from) {
-                    if (shared) try s.appendSite(at, .{ .inst = origin, .evidence_index = index });
-                    index += 1;
+                    if (shared) try s.appendSite(at, .{ .inst = origin, .evidence_index = next.* });
+                    next.* +|= 1;
                     continue;
                 }
-                st.constraints.items[at].sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = index }});
-                index += 1;
+                st.constraints.items[at].sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = next.* }});
+                next.* +|= 1;
                 // **Every constraint an instantiation creates gets an
                 // obligation**, and not only the ones a later unification
                 // happens to carry into `deferConstraints` (Rule U3, A.57).
@@ -3139,6 +3360,67 @@ pub const Solver = struct {
             try s.reporter.infiniteType(h.region, h.name);
         }
         for (headers) |h| try s.promote(h);
+        try s.settleUndetermined();
+    }
+
+    /// **An evidence slot whose receiver type nothing ever determines**
+    /// (§7.2, §8.2).
+    ///
+    /// `[] == []` is the whole of it. `List.eq` takes one hidden argument
+    /// — the element's own `eq` (§5.2) — and §7.2 numbers a site for it at
+    /// the `==`. The element type of two empty lists is a variable no use
+    /// constrains, so the constraint is neither DISCHARGED, there being no
+    /// type to discharge it against, nor PROMOTED, the declaration's own
+    /// type not mentioning it. The site stayed empty and the emitted call
+    /// was one argument short — which `Lower.evidenceShapeOk` catches as a
+    /// table that does not add up, so it is a stopped build and not a
+    /// miscompile, but it is a stopped build on a program that is fine.
+    ///
+    /// The answer is the A.53 bridge, and it is answerable *because* the
+    /// type is undetermined: the function handed over can only be called on
+    /// a value of that type, and no such value exists in any execution that
+    /// gets here — the list is empty, the `Maybe` is `Nothing`. So
+    /// `core/Basics.js`'s one structural walk answers `eq`, and §9.1's
+    /// comparator answers `compare`. Both are total functions of the right
+    /// arity and the right result type, which is all §8.2 asks of an
+    /// evidence value.
+    ///
+    /// It runs after `promote` because "generalisation did not quantify it"
+    /// is not known before `promote` has had its chance at it.
+    fn settleUndetermined(s: *Solver) Error!void {
+        const st = s.store();
+        for (s.deferred.items) |d| {
+            if (d.index >= st.constraints.items.len) continue;
+            if (s.resolved_methods.contains(d.index)) continue;
+            const c = st.constraints.items[d.index];
+            // No site is no call: a constraint raised by the eager pass or
+            // by a `where` clause answers nothing an instruction passes.
+            if (st.constraintSites(c).len == 0) continue;
+            const root, const content = st.resolved(d.v);
+            if (content != .flex) continue;
+            // Promoted after all: `promote` gave it `evidence k`, and a
+            // second target here would pass the argument twice. The RANK
+            // cannot say this — `generalize` sets every young variable to
+            // `generalized` whether or not the declaration's type mentions
+            // it, and the one `[] == []` strands is generalised and
+            // unquantifiable at once — so the answer is the list `promote`
+            // keeps of what it actually claimed.
+            if (std.mem.indexOfScalar(Var, s.promoted.items, root) != null) continue;
+            const target = undeterminedTarget(s, c) orelse continue;
+            try s.markResolved(d.index);
+            try s.emitSites(c, target);
+        }
+        s.deferred.clearRetainingCapacity();
+    }
+
+    /// What answers a well-known method on a receiver type nothing pins.
+    /// A name that is not well known gets nothing: the value that raised it
+    /// is a user's own `where` clause, and inventing a function for it
+    /// would be inventing a meaning.
+    fn undeterminedTarget(s: *Solver, c: TypeStore.MethodConstraint) ?Dispatch.Target {
+        if (c.name == InternPool.WellKnown.eq.symbol()) return s.structuralEqTarget();
+        if (c.name == InternPool.WellKnown.compare.symbol()) return .{ .primitive = .num_compare };
+        return null;
     }
 
     /// **Promotion** (§6.4): a constraint still sitting on a generalised

@@ -130,7 +130,8 @@ const Context = struct {
 
     fn writeTarget(cx: Context, w: *std.Io.Writer, target: Dispatch.Target) Error!void {
         switch (target) {
-            .top => |d| {
+            .top => |use| {
+                const d = use.decl;
                 const name = if (d.int() < cx.bir.decls.len)
                     cx.interner.slice(cx.bir.symbol(cx.bir.decls[d.int()].name))
                 else

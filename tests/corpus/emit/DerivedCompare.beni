@@ -1,0 +1,84 @@
+-- emit: the derived `compare` of a STRUCTURAL shape — a record, a tuple,
+-- `()` (`docs/design/static-dispatch-spike.md` §9.2, §9.3, §8.5, A.46).
+--
+-- The `eq` half is `emit/DerivedEqShapes.beni`; this is what the other
+-- half looks like, and the difference is not cosmetic. `eq` conjoins its
+-- positions and is one expression; `compare` is LEXICOGRAPHIC, so every
+-- position but the last is bound to a `const` and returned early unless it
+-- is `"EQ"`. Fields go in name-text order, which is the order the object's
+-- keys are already in (§4); tuple slots go `a`, `b`, `c`.
+--
+-- **The golden is §9's SHAPE, not its listing.** §9.2 names the
+-- intermediates `o0`, `o1` and braces each block; the emitter writes
+-- `$o$0`, `$o$1` and numbers them per FUNCTION rather than per block,
+-- because the printer gives a `switch` arm no braces of its own and two
+-- arms of one `switch` share a block scope. The structure is the spec's;
+-- the spelling is this file's.
+--
+-- Four things to read here:
+--
+--   - one function per shape, keyed on the shape alone — `( Int, Int )`
+--     and `( Char, Float )` share `compare$t2` and differ only in the
+--     evidence each use hands it (A.46);
+--   - `compare$unit` answers `"EQ"` and takes no evidence: `()` is `null`
+--     at runtime and both operands hold the same value;
+--   - a `String` position takes `String$compare` — the core function, a
+--     CALL and never `<` — and a `Char` one takes `compare$char`, the
+--     code-point comparator of §9.1: the two rows of §3.2 JavaScript's
+--     `<` gets wrong, and both are FUNCTIONS here because every position
+--     of a structural shape is answered by the evidence a use hands it
+--     (the inline operators are `emit/DerivedCompareNominal.beni`);
+--   - `rank` puts the record's comparator in VALUE position, so it is the
+--     eta-expansion of §8.2 and not the bare name: `compare$r$x$y` is a
+--     function of four arguments and the evidence slot promised one of
+--     two.
+--
+-- The `$order` pass of §8.5 is empty here: no shape has tags.
+import Node exposing (Program)
+import String
+
+
+pub before : { x : Int, y : String }, { x : Int, y : String } -> Bool
+before a b =
+    a < b
+
+
+pub atLeast : { x : Int, y : String }, { x : Int, y : String } -> Bool
+atLeast a b =
+    a >= b
+
+
+pub pairAtMost : ( Int, Int ), ( Int, Int ) -> Bool
+pairAtMost a b =
+    a <= b
+
+
+pub mixedAfter : ( Char, Float ), ( Char, Float ) -> Bool
+mixedAfter a b =
+    a > b
+
+
+pub tripleBefore : ( Int, Char, String ), ( Int, Char, String ) -> Bool
+tripleBefore a b =
+    a < b
+
+
+pub unitAtMost : (), () -> Bool
+unitAtMost a b =
+    a <= b
+
+
+order : a, a -> Order
+    where a.compare : a, a -> Order
+order x y =
+    x.compare y
+
+
+pub rank : { x : Int, y : String } -> Order
+rank r =
+    order r r
+
+
+main : Program
+main =
+    Node.printLines []

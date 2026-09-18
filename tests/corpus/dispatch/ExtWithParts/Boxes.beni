@@ -1,0 +1,18 @@
+-- dispatch (project): the module that owns the constrained method.
+--
+-- `Box a` is an ordinary type, so `eq` would DERIVE — except that §3.3
+-- step 1 says the declaring module's own `pub eq` wins, and this one has a
+-- `where` clause. §8.1 therefore gives `Boxes$eq` one hidden leading
+-- parameter, and every use of it has to pass one.
+pub type Box a
+    = Box a a
+
+
+pub eq : Box a, Box a -> Bool
+    where a.eq : a, a -> Bool
+eq x y =
+    case x of
+        Box first _ ->
+            case y of
+                Box other _ ->
+                    first == other

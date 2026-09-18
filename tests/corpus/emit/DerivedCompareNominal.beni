@@ -1,0 +1,79 @@
+-- emit: the derived `compare` of a NOMINAL type, every shape §9.4 lists
+-- (`docs/design/static-dispatch-spike.md` §9.4, §8.5, A.12, A.20, A.61).
+--
+-- Nothing below uses `<` or `==` on any of these types. They are all
+-- emitted anyway, because derivation for a nominal type is EAGER and
+-- happens in the declaring module (§8.5): it is the only module that may
+-- read a `pub opaque type`'s constructors, and the only one whose output
+-- does not then depend on which other module asked first.
+--
+-- Six shapes, and one claim each:
+--
+--   - `Colour` — all nullary, so a value IS its tag string and `<` on the
+--     tags would be ALPHABETIC. The `$order` table is what makes
+--     declaration order the answer, and it is emitted in a pass of its own
+--     AHEAD of every function (§8.5): it is an object literal, not an
+--     arrow, so it has to precede its reader. `Colour$$eq` is still
+--     written, and is `===`: a USE of `==` on a `Colour` gets
+--     `primitive strict_eq` and never calls it (A.18), but a `Colour`
+--     nested inside another shape names it as that position's evidence,
+--     and an operator is not a value (§9.1).
+--   - `Shape` — a payload, so every constructor is padded to `{$, a, b}`
+--     and `Circle`'s `b` is `null`. Padding slots are NOT compared (A.12):
+--     `Circle`'s arm reads `a` alone. The tag test comes first and orders
+--     two different constructors through `$order`.
+--   - `Wrapper` — one constructor, so no `$order` table and no tag test:
+--     there is nothing to disagree about.
+--   - `Tree` — recursive, and its own derived function is a position of
+--     itself. A top-level `const` arrow may name itself from inside its
+--     body, which is why the emission order of §8.5 never has to be a
+--     dependency order.
+--   - `Outcome x a` — one evidence parameter per type parameter in
+--     DECLARATION order, used or not (A.20). `x` is quantified first, so
+--     `$m$0` is `x`'s and `$m$1` is `a`'s — and `Ok a`, declared FIRST and
+--     therefore `order.Ok = 0`, uses `$m$1`. Getting that pairing wrong is
+--     the bug the `dispatch/` `part` lines exist to catch.
+--   - `Label` — the two positions JavaScript's `<` gets wrong, INLINE.
+--     Inside a body a `primitive` part is the operator itself (§9's parts
+--     contract), so `Char` is a code-point comparison hoisted into two
+--     `const`s and `String` is a call of `String$compare` — never `<`
+--     (§3.2, A.26).
+--
+-- The `$$order` and `$$compare` bases take a double separator, which is
+-- the one name no module path can spell (A.61).
+import Node exposing (Program)
+
+
+pub type Colour
+    = Red
+    | Green
+    | Blue
+
+
+pub type Shape
+    = Circle Float
+    | Rect Float Float
+
+
+pub type Wrapper
+    = Wrapper Int
+
+
+pub type Tree
+    = Leaf
+    | Node Tree Tree
+
+
+pub type Outcome x a
+    = Ok a
+    | Err x
+
+
+pub type Label
+    = Initial Char
+    | Named String
+
+
+main : Program
+main =
+    Node.printLines []

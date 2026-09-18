@@ -1,0 +1,42 @@
+-- dispatch: every evidence slot of ONE instruction has its own
+-- `evidence_index`, however deep the nesting goes
+-- (`docs/design/static-dispatch-spike.md` §7.2, §7.3).
+--
+-- Since §5.2 gave `List` a `pub foreign eq … where a.eq`, resolving one
+-- evidence slot can INSTANTIATE the scheme that answers it, and that
+-- scheme has a slot of its own: `List (List (List (Box String)))` is four
+-- levels, and every one of them is a slot of the same `==`. Each of those
+-- nested instantiations used to restart the numbering at a hard-coded 1,
+-- so this instruction wrote `site N 1` five times over.
+--
+-- Nothing printed the wrong answer, and that is why it needed a fixture of
+-- its own rather than a `run/` one: the emitter walks the site list in
+-- sorted order as a pre-order tree and reads the indices only for the
+-- callee's site 0, so a stable sort over insertion order happened to put
+-- the five slots back in the right places. What the repetition threatened
+-- is the two places that DEDUPLICATE on `(inst, evidence_index)` —
+-- `Solve.joinConstraint`, when two constraints of one name meet on a
+-- variable, and `Solve.appendSite`, which forwards a shared group's
+-- constraint — either of which would have dropped a DIFFERENT slot's site
+-- as a duplicate of this one and emitted a call an argument short.
+--
+-- `deep` is the four-level case and `three` the three-level one; `pairs`
+-- is the shape that shows the numbering is per INSTRUCTION and not per
+-- module, since its own sites start at 0 again.
+pub type Box a
+    = Box a a
+
+
+pub deep : Bool
+deep =
+    [ [ [ Box "a" "b" ] ] ] == [ [ [ Box "a" "c" ] ] ]
+
+
+pub three : Bool
+three =
+    [ [ [ 1 ] ] ] == [ [ [ 2 ] ] ]
+
+
+pub pairs : Bool
+pairs =
+    [ [ ( 1, "a" ) ] ] == [ [ ( 2, "b" ) ] ]

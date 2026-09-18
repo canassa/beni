@@ -540,7 +540,7 @@ const Lowerer = struct {
     fn collectTops(l: *Lowerer, target: Dispatch.Target, out: *std.ArrayList(u32), depth: u8) Allocator.Error!void {
         if (depth > 32) return; // a poisoned table cannot spin here
         switch (target) {
-            .top => |d| try out.append(l.scratch, d.int()),
+            .top => |use| try out.append(l.scratch, use.decl.int()),
             else => {},
         }
         for (l.in.dispatch.partsAt(target.partsOf())) |part| try l.collectTops(part, out, depth + 1);
@@ -620,7 +620,6 @@ const Lowerer = struct {
         // of a name the declaring module kept to itself. The type stays
         // unnameable either way: what crosses is the method, not the type.
         for (l.in.dispatch.derived) |row| {
-            if (row.kind != .eq) continue;
             if (row.shape != .nominal) continue;
             try names.append(l.scratch, try l.synthesisedName(try l.derivedBase(row.kind, row.shape)));
         }
@@ -1258,7 +1257,7 @@ const Lowerer = struct {
     /// difference is what `evidenceShapeOk` measures the site list against.
     fn targetEvidence(l: *Lowerer, target: Dispatch.Target) u16 {
         return switch (target) {
-            .top => |decl| @intCast(l.in.dispatch.declEvidence(decl.int()).len),
+            .top => |use| @intCast(l.in.dispatch.declEvidence(use.decl.int()).len),
             .ext => |e| l.externalEvidence(e.module, @intFromEnum(e.value)),
             // A primitive comparator and an evidence parameter are already
             // closures of the right arity; a `derived` or `ext_derived`
@@ -1277,7 +1276,7 @@ const Lowerer = struct {
             // before `topName` indexes the same table unguarded. One rule
             // for one invariant, rather than a guard here that invents a
             // zero and a panic there.
-            .top => |decl| l.bir.decls[decl.int()].params,
+            .top => |use| l.bir.decls[use.decl.int()].params,
             .ext => |e| l.externalArity(e.module, @intFromEnum(e.value)),
             // A derived `eq` or `compare` is binary: the two values being
             // compared, after whatever evidence it takes (§9).
@@ -1296,9 +1295,9 @@ const Lowerer = struct {
             // `targetArity`. A target naming neither is a malformed table
             // and not a program, so it is an assert: a guard here would
             // emit a name for a declaration that is not there.
-            .top => |decl| blk: {
-                std.debug.assert(decl.int() < l.bir.decls.len);
-                break :blk try l.ident(try l.topName(decl.int()), p);
+            .top => |use| blk: {
+                std.debug.assert(use.decl.int() < l.bir.decls.len);
+                break :blk try l.ident(try l.topName(use.decl.int()), p);
             },
             .ext => |e| blk: {
                 std.debug.assert(e.module.int() < l.in.interfaces.len);
@@ -1368,12 +1367,40 @@ const Lowerer = struct {
     fn evidenceValue(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize, p: u32) Allocator.Error!Node.Index {
         const target = sites[cursor.*].target;
         cursor.* += 1;
-        // A derived function's evidence rides on the TARGET's own `parts`
-        // and never on the site list (A.46), so this one is a leaf here and
-        // a tree of its own underneath.
+        // A target that carries its own `parts` is a leaf HERE and a tree
+        // of its own underneath: a derived function always (A.46), and a
+        // constrained `top`/`ext` in a part position since §7.1's
+        // amendment (A.64). Either way it consumes no further site.
         switch (target) {
             .derived, .ext_derived => return l.derivedValue(target, p),
-            else => {},
+            else => if (target.partsOf().len != 0) {
+                // **A `top`/`ext` target with parts, on a SITE.** The
+                // checker fills those parts in `targetFor`, and `targetFor`
+                // is reached two ways, not one: from inside a parts tree
+                // (`constrainedParts`, depth > 0), and from `finishDerived`
+                // at depth 0 (`Solve.zig`'s "receiver's own derived
+                // target"), whose answer goes straight onto a site. The
+                // depth-0 route cannot produce this shape today —
+                // `methodOnApp` answers a nominal type's own module rule
+                // and the imported-value rule BEFORE it derives, so by the
+                // time `finishDerived` runs, `appTarget`'s `top` and `ext`
+                // arms cannot match — but that is a fact about the ORDER of
+                // two tables, not an invariant of the parts range, so this
+                // stays handled.
+                //
+                // Handled by REFUSING, and that is the change: the kind of
+                // the method a slot answers is what an `err` part inside it
+                // has to be answered by (A.67), and a site carries no kind
+                // — `derivedTargetKind` says `.eq` for a `top` or an `ext`
+                // because it has nothing else to say. Guessing `.eq` here
+                // would put `Basics.eq` into an `Order` slot exactly as
+                // `derivedValue` used to. The slot's own method name is
+                // recoverable — it is the callee's `where` clause, in
+                // §7.2's order — and threading it through this walk is what
+                // this arm needs the day it becomes reachable.
+                try l.reportDispatchBug(l.region, parts_on_site_target);
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
         }
         const wanted = l.targetEvidence(target);
         var bound: std.ArrayList(Node.Index) = .empty;
@@ -1472,6 +1499,7 @@ const Lowerer = struct {
     /// them reads. S5 emits no `$order` table because it emits no
     /// `compare`; the run is where S6 puts them.
     fn synthesisedValues(l: *Lowerer) ![]const Node.Index {
+        var tables: std.ArrayList(Synth) = .empty;
         var list: std.ArrayList(Synth) = .empty;
         // The derived functions FIRST, before the comparators are built:
         // building one can need a primitive comparator as a value (§9.1),
@@ -1479,15 +1507,11 @@ const Lowerer = struct {
         // are asked for.
         // A derived function has no instruction of its own, so a
         // diagnostic raised while building one has no span the reader
-        // chose. `nominalEqArrow` moves this to the type's declaration;
+        // chose. `nominalArrow` moves this to the type's declaration;
         // resetting it here keeps a leftover from the declaration pass out
         // of the message.
         l.region = @enumFromInt(0);
         for (l.in.dispatch.derived) |row| {
-            // S6 owns `compare`. Skipping the row here and refusing the
-            // site that names it are one decision: neither half of a
-            // missing function may be emitted (`backend.md` §1).
-            if (row.kind != .eq) continue;
             const base = try l.derivedBase(row.kind, row.shape);
             const arrow = (try l.derivedArrow(row)) orelse continue;
             const bound = try l.synthesisedName(base);
@@ -1495,14 +1519,79 @@ const Lowerer = struct {
                 .base = base,
                 .node = try l.add(.const_decl, Node.no_pos, @intFromEnum(bound), arrow.int()),
             });
+            // The `$order` table of §9.4 goes in the OTHER run, and only
+            // after its function was written: it is a plain object literal
+            // and not an arrow, so unlike every function here it has to
+            // precede the `compare` that indexes it (§8.5).
+            if (try l.orderTable(row)) |table| try tables.append(l.scratch, table);
         }
         if (l.needs.compare_char) try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
         if (l.needs.compare_prim) try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
         if (l.needs.eq_prim) try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
+        std.mem.sort(Synth, tables.items, {}, Synth.before);
         std.mem.sort(Synth, list.items, {}, Synth.before);
-        const out = try l.scratch.alloc(Node.Index, list.items.len);
-        for (list.items, out) |synth, *slot| slot.* = synth.node;
+        const out = try l.scratch.alloc(Node.Index, tables.items.len + list.items.len);
+        for (tables.items, out[0..tables.items.len]) |synth, *slot| slot.* = synth.node;
+        for (list.items, out[tables.items.len..]) |synth, *slot| slot.* = synth.node;
         return out;
+    }
+
+    /// §9.4's tag-order table, `const <M>$<T>$$order = { A: 0, B: 1 };` —
+    /// the one thing that makes `compare` follow DECLARATION order, since
+    /// the tags themselves are strings and `"EQ" < "GT" < "LT"` is not
+    /// `LT < EQ < GT`.
+    ///
+    /// Only for a nominal `compare` of two or more constructors: a
+    /// one-constructor type has nothing to disagree about (§9.4) and a
+    /// structural shape has no tags at all.
+    ///
+    /// **The malformed-table case is `nominalArrow`'s to report, not this
+    /// one's.** A `derived` row whose nominal type another module declares
+    /// is a bug in the table (A.47), and `null` here would be a `compare`
+    /// body emitted beside no `$$order` object — `M$T$$order[x]` against an
+    /// undefined name, a `ReferenceError` after a build that exited 0.
+    /// What makes the silence safe is an ORDERING in `synthesisedValues`:
+    /// `derivedArrow` runs for the row first and `orelse continue` skips
+    /// the rest of the iteration, so a row this would refuse never reaches
+    /// it — `nominalArrow` has already raised `derived_not_declared_here`
+    /// on exactly the same test, and the build emits nothing. Call this
+    /// without `derivedArrow` in front of it, or make that `orelse` keep
+    /// going, and it needs the report itself.
+    fn orderTable(l: *Lowerer, row: Dispatch.Derived) !?Synth {
+        if (row.kind != .compare) return null;
+        const id = switch (row.shape) {
+            .nominal => |id| id,
+            else => return null,
+        };
+        const entry = l.in.types.entry(id);
+        if (entry.module != l.in.module or entry.decl.int() >= l.bir.decls.len) return null;
+        const ctors = l.bir.declCtors(l.bir.decls[entry.decl.int()]);
+        if (ctors.len < 2) return null;
+        const p = Node.no_pos;
+        var properties: std.ArrayList(Node.Index) = .empty;
+        for (ctors, 0..) |ctor, i| {
+            const index = try std.fmt.allocPrint(l.scratch, "{d}", .{i});
+            try properties.append(l.scratch, try l.property(l.bir.symbol(ctor.name), try l.numberNode(index, p), p));
+        }
+        const base = try l.orderBase(id);
+        const bound = try l.synthesisedName(base);
+        const value = try l.object(properties.items, p);
+        return .{
+            .base = base,
+            .node = try l.add(.const_decl, Node.no_pos, @intFromEnum(bound), value.int()),
+        };
+    }
+
+    /// `<T>$$order`, the same double separator §8.5 gives `<T>$$compare`
+    /// and for the same reason (A.61).
+    fn orderBase(l: *Lowerer, id: Dispatch.TypeId) ![]const u8 {
+        return std.fmt.allocPrint(l.scratch, "{s}$$order", .{l.text(l.in.types.entry(id).name)});
+    }
+
+    /// `<T>$$order[subject]` — the tag's rank.
+    fn orderLookup(l: *Lowerer, id: Dispatch.TypeId, subject: Node.Index, p: u32) !Node.Index {
+        const table = try l.ident(try l.synthesisedName(try l.orderBase(id)), p);
+        return l.add(.index_get, p, table.int(), subject.int());
     }
 
     /// §8.5's names: `<Type>$$eq` for a nominal type, `eq$r$<f1>$<f2>$…`
@@ -1543,13 +1632,18 @@ const Lowerer = struct {
         }
     }
 
-    /// The arrow of one derived `eq`, or `null` when the body could not be
-    /// written and a diagnostic has been reported.
+    /// The arrow of one derived method, or `null` when the body could not
+    /// be written and a diagnostic has been reported.
     ///
     /// The evidence parameters come first and are the function's OWN
     /// (§9.2–§9.4): inside a derived body `$m$k` is the k-th element,
     /// field or type parameter, never the enclosing declaration's — a
     /// derived function has no enclosing declaration.
+    ///
+    /// The two kinds share every parameter list and differ only in what a
+    /// position becomes: `eq` conjoins its positions, `compare` is
+    /// LEXICOGRAPHIC and therefore a statement sequence with an early
+    /// return (§9.2, §9.3).
     fn derivedArrow(l: *Lowerer, row: Dispatch.Derived) !?Node.Index {
         const p = Node.no_pos;
         const x, const y = try l.operandNames();
@@ -1557,55 +1651,123 @@ const Lowerer = struct {
         var k: u16 = 0;
         while (k < row.evidence_count) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
         switch (row.shape) {
-            // §9.3: `(x, y) => true`. `()` is `null` at runtime, so the two
-            // operands hold the same value and there is nothing to test.
+            // §9.3: `(x, y) => true` / `(x, y) => "EQ"`. `()` is `null` at
+            // runtime, so the two operands hold the same value and there is
+            // nothing to test.
             .unit => {
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
-                return try l.trueArrow(params.items, p);
+                return try l.emptyArrow(row.kind, params.items, p);
             },
             // §9.2: one evidence parameter per field, fields in name-text
             // order, applied to the two values' fields position by
-            // position. The empty record derives `() => true`, which is
-            // §9.2's own spelling: there is no field to read and so no
-            // operand to name.
+            // position. The empty record derives `() => true` and
+            // `() => "EQ"`, which is §9.2's own spelling: there is no field
+            // to read and so no operand to name.
             .record => |names| {
                 const fields = l.in.dispatch.shapeNames(names);
-                if (fields.len == 0) return try l.trueArrow(params.items, p);
+                if (fields.len == 0) return try l.emptyArrow(row.kind, params.items, p);
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
-                var value: ?Node.Index = null;
-                for (fields, 0..) |field, i| {
-                    const left = try l.member(try l.ident(x, p), field, p);
-                    const right = try l.member(try l.ident(y, p), field, p);
-                    value = try l.conjoin(value, try l.evidenceCall(@intCast(i), left, right, p), p);
-                }
-                return try l.returnArrow(params.items, value.?, p);
+                return l.structuralArrow(row.kind, params.items, x, y, fields, p);
             },
             // §9.3: the same, over the slot names `a`, `b`, `c`… of
             // `backend.md` §4. Keyed on the arity alone, so `( Int, Int )`
             // and `( String, String )` share one function (A.46).
             .tuple => |arity| {
-                if (arity == 0) return try l.trueArrow(params.items, p);
+                if (arity == 0) return try l.emptyArrow(row.kind, params.items, p);
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
-                var value: ?Node.Index = null;
-                var i: u8 = 0;
-                while (i < arity) : (i += 1) {
-                    const slot = try l.slotName(i);
-                    const left = try l.member(try l.ident(x, p), slot, p);
-                    const right = try l.member(try l.ident(y, p), slot, p);
-                    value = try l.conjoin(value, try l.evidenceCall(i, left, right, p), p);
-                }
-                return try l.returnArrow(params.items, value.?, p);
+                const slots = try l.scratch.alloc(Symbol, arity);
+                for (slots, 0..) |*slot, i| slot.* = try l.slotName(@intCast(i));
+                return l.structuralArrow(row.kind, params.items, x, y, slots, p);
             },
             .nominal => |id| {
                 try params.appendSlice(l.scratch, &[_]JsIr.NameIndex{ x, y });
-                return l.nominalEqArrow(row, id, params.items, x, y, p);
+                return l.nominalArrow(row, id, params.items, x, y, p);
             },
         }
     }
 
-    /// `(params…) => true` — the empty shapes of §9.2 and §9.3.
-    fn trueArrow(l: *Lowerer, params: []const JsIr.NameIndex, p: u32) !Node.Index {
-        return l.returnArrow(params, try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused), p);
+    /// `(params…) => true` / `(params…) => "EQ"` — the empty shapes of
+    /// §9.2 and §9.3, and the arm of a nullary constructor.
+    fn emptyArrow(l: *Lowerer, kind: Dispatch.Derived.Kind, params: []const JsIr.NameIndex, p: u32) !Node.Index {
+        return l.returnArrow(params, try l.emptyValue(kind, p), p);
+    }
+
+    fn emptyValue(l: *Lowerer, kind: Dispatch.Derived.Kind, p: u32) !Node.Index {
+        return switch (kind) {
+            .eq => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
+            .compare => l.stringNode("EQ", p),
+        };
+    }
+
+    /// A record or a tuple (§9.2, §9.3): position `i` is answered by the
+    /// function's own `$m$i`, and the two kinds combine those answers
+    /// differently.
+    fn structuralArrow(
+        l: *Lowerer,
+        kind: Dispatch.Derived.Kind,
+        params: []const JsIr.NameIndex,
+        x: JsIr.NameIndex,
+        y: JsIr.NameIndex,
+        slots: []const Symbol,
+        p: u32,
+    ) !?Node.Index {
+        if (kind == .eq) {
+            var value: ?Node.Index = null;
+            for (slots, 0..) |slot, i| {
+                const left = try l.member(try l.ident(x, p), slot, p);
+                const right = try l.member(try l.ident(y, p), slot, p);
+                value = try l.conjoin(value, try l.evidenceCall(@intCast(i), left, right, p), p);
+            }
+            return try l.returnArrow(params, value.?, p);
+        }
+        var stmts: StmtList = .empty;
+        var counter: u32 = 0;
+        for (slots, 0..) |slot, i| {
+            const left = try l.member(try l.ident(x, p), slot, p);
+            const right = try l.member(try l.ident(y, p), slot, p);
+            const one = try l.evidenceCall(@intCast(i), left, right, p);
+            try l.lexicographic(&stmts, one, i + 1 == slots.len, &counter, p);
+        }
+        return try l.arrowOf(params, stmts.items, p);
+    }
+
+    /// One position of a LEXICOGRAPHIC comparison (§9.2): the last is
+    /// returned outright, and every earlier one is bound to a `const` and
+    /// returned unless it is `"EQ"`.
+    ///
+    /// The `const` is numbered by a counter the whole function shares, and
+    /// not per block, because the printer gives a `switch` arm no braces of
+    /// its own (`backend.md` §7's shape): two arms of one `switch` are one
+    /// block scope in JavaScript, so `const $o$0` in each would be
+    /// `SyntaxError: Identifier '$o$0' has already been declared`. The
+    /// spec's listings show the arms braced; the names here are what makes
+    /// the same program legal without them.
+    fn lexicographic(
+        l: *Lowerer,
+        out: *StmtList,
+        value: Node.Index,
+        last: bool,
+        counter: *u32,
+        p: u32,
+    ) !void {
+        if (last) {
+            try out.append(l.scratch, try l.returnStmt(value, p));
+            return;
+        }
+        const bound = try l.orderName(counter.*);
+        counter.* += 1;
+        try l.constDecl(out, bound, value, p);
+        const differs = try l.binary(.strict_ne, try l.ident(bound, p), try l.stringNode("EQ", p), p);
+        const then = [_]Node.Index{try l.returnStmt(try l.ident(bound, p), p)};
+        try l.ifStatement(out, differs, &then, p);
+    }
+
+    /// `$o$<i>`: one intermediate `Order` inside a derived `compare`.
+    fn orderName(l: *Lowerer, index: u32) !JsIr.NameIndex {
+        var buf: [16]u8 = undefined;
+        const spelled = std.fmt.bufPrint(&buf, "$o${d}", .{index}) catch unreachable;
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
     }
 
     fn returnArrow(l: *Lowerer, params: []const JsIr.NameIndex, value: Node.Index, p: u32) !Node.Index {
@@ -1625,13 +1787,18 @@ const Lowerer = struct {
         return l.binary(.logical_and, first, right, p);
     }
 
+    fn condOf(l: *Lowerer, test_expr: Node.Index, consequent: Node.Index, alternate: Node.Index, p: u32) !Node.Index {
+        const record = try l.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = alternate });
+        return l.add(.cond, p, test_expr.int(), @intFromEnum(record));
+    }
+
     /// §9.4's nominal body: the tag test, then a `switch` whose last
     /// constructor is the `default` arm.
     ///
     /// The parts are the type's constructor arguments in DECLARATION order,
     /// arguments left to right, so the walk keeps one cursor over them and
     /// never indexes by constructor.
-    fn nominalEqArrow(
+    fn nominalArrow(
         l: *Lowerer,
         row: Dispatch.Derived,
         id: Dispatch.TypeId,
@@ -1664,10 +1831,38 @@ const Lowerer = struct {
         // still emitted, because §8.5 derives every declared nominal type
         // eagerly and another module may name it as evidence.
         if (ctors.len == 0 or widest == 0) {
-            return try l.returnArrow(params, try l.binary(.strict_eq, try l.ident(x, p), try l.ident(y, p), p), p);
+            if (row.kind == .eq) {
+                return try l.returnArrow(params, try l.binary(.strict_eq, try l.ident(x, p), try l.ident(y, p), p), p);
+            }
+            // `compare` on the same shape cannot be `<`: the tags are
+            // strings and alphabetic order is not declaration order, so it
+            // reads the `$order` table (§9.4). With fewer than two
+            // constructors there is no table and every value is the same
+            // one.
+            if (ctors.len < 2) return try l.returnArrow(params, try l.stringNode("EQ", p), p);
+            var stmts: StmtList = .empty;
+            const a = try l.name(.{ .module = .none, .base = l.well.cp_left, .tag = JsIr.Name.no_tag });
+            const b = try l.name(.{ .module = .none, .base = l.well.cp_right, .tag = JsIr.Name.no_tag });
+            try l.constDecl(&stmts, a, try l.orderLookup(id, try l.ident(x, p), p), p);
+            try l.constDecl(&stmts, b, try l.orderLookup(id, try l.ident(y, p), p), p);
+            const lt = try l.condOf(
+                try l.binary(.lt, try l.ident(a, p), try l.ident(b, p), p),
+                try l.stringNode("LT", p),
+                try l.stringNode("GT", p),
+                p,
+            );
+            const body = try l.condOf(
+                try l.binary(.strict_eq, try l.ident(a, p), try l.ident(b, p), p),
+                try l.stringNode("EQ", p),
+                lt,
+                p,
+            );
+            try stmts.append(l.scratch, try l.returnStmt(body, p));
+            return try l.arrowOf(params, stmts.items, p);
         }
 
         var cursor: usize = 0;
+        var counter: u32 = 0;
         var arms: std.ArrayList(Node.Index) = .empty;
         var stmts: StmtList = .empty;
         // A one-constructor type emits no tag test: there is nothing to
@@ -1676,11 +1871,28 @@ const Lowerer = struct {
             const tag_left = try l.member(try l.ident(x, p), l.well.tag, p);
             const tag_right = try l.member(try l.ident(y, p), l.well.tag, p);
             const differs = try l.binary(.strict_ne, tag_left, tag_right, p);
-            const then = [_]Node.Index{try l.returnStmt(try l.add(.false_lit, p, Node.Data.unused, Node.Data.unused), p)};
+            // Two different constructors are ordered by the DECLARATION
+            // order the `$order` table records, and never by their tags.
+            const answer = switch (row.kind) {
+                .eq => try l.add(.false_lit, p, Node.Data.unused, Node.Data.unused),
+                .compare => try l.condOf(
+                    try l.binary(
+                        .lt,
+                        try l.orderLookup(id, tag_left, p),
+                        try l.orderLookup(id, tag_right, p),
+                        p,
+                    ),
+                    try l.stringNode("LT", p),
+                    try l.stringNode("GT", p),
+                    p,
+                ),
+            };
+            const then = [_]Node.Index{try l.returnStmt(answer, p)};
             try l.ifStatement(&stmts, differs, &then, p);
         }
         for (ctors, 0..) |ctor, i| {
             const arity = Bir.SubRange.len(.{ .start = ctor.args_start, .end = ctor.args_end });
+            var body: StmtList = .empty;
             var value: ?Node.Index = null;
             var arg: u32 = 0;
             while (arg < arity) : (arg += 1) {
@@ -1693,17 +1905,28 @@ const Lowerer = struct {
                 const slot = try l.slotName(arg);
                 const left = try l.member(try l.ident(x, p), slot, p);
                 const right = try l.member(try l.ident(y, p), slot, p);
-                const one = (try l.partEq(part, left, right, region, p)) orelse return null;
-                value = try l.conjoin(value, one, p);
+                switch (row.kind) {
+                    .eq => {
+                        const one = (try l.partEq(part, left, right, region, p)) orelse return null;
+                        value = try l.conjoin(value, one, p);
+                    },
+                    .compare => {
+                        const one = (try l.partCompare(&body, part, left, right, region, p)) orelse return null;
+                        try l.lexicographic(&body, one, arg + 1 == arity, &counter, p);
+                    },
+                }
             }
             // A padded nullary constructor carries only `null`s, and
             // padding slots are NOT compared (§9.4, A.12): one slot can
             // hold a different type in a different constructor, and a
             // part's target is per POSITION and not per slot.
-            const result = value orelse try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused);
-            if (ctors.len == 1) return try l.returnArrow(params, result, p);
-            const body = [_]Node.Index{try l.returnStmt(result, p)};
-            const body_range = try l.b.addRange(&body);
+            if (arity == 0) {
+                try body.append(l.scratch, try l.returnStmt(try l.emptyValue(row.kind, p), p));
+            } else if (row.kind == .eq) {
+                try body.append(l.scratch, try l.returnStmt(value.?, p));
+            }
+            if (ctors.len == 1) return try l.arrowOf(params, body.items, p);
+            const body_range = try l.b.addRange(body.items);
             const record = try l.b.addRecord(body_range);
             // The LAST constructor is the `default` arm and gets no `case`:
             // a well-typed match needs no default (`backend.md` §7) and
@@ -1758,17 +1981,7 @@ const Lowerer = struct {
                 return try l.binary(.strict_eq, left, right, p);
             },
             .evidence => |k| return try l.evidenceCall(k, left, right, p),
-            .top, .ext => {
-                // A value with evidence of its own in a BODY position: the
-                // `parts` tree has nowhere to put that evidence (§7.1), so
-                // the honest output is a refusal rather than a call one
-                // argument short.
-                if (l.targetEvidence(part) != 0) {
-                    try l.refuseConstrainedPart(region);
-                    return null;
-                }
-                return try l.call(try l.targetValue(part, p), &.{ left, right }, p);
-            },
+            .top, .ext => return l.namedPartCall(part, .eq, left, right, region, p),
             // The checker could not name a function for this position —
             // by the invariant `structuralEq` states, a `number` still
             // unresolved at generalisation, whose `eq` is `===` whichever
@@ -1783,13 +1996,7 @@ const Lowerer = struct {
                     }
                     return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p);
                 }
-                const callee = try l.derivedName(part, p);
-                const evidence = try l.partValues(part.partsOf(), p);
-                const args = try l.scratch.alloc(Node.Index, evidence.len + 2);
-                @memcpy(args[0..evidence.len], evidence);
-                args[evidence.len] = left;
-                args[evidence.len + 1] = right;
-                return try l.call(callee, args, p);
+                return try l.derivedPartCall(part, .eq, left, right, p);
             },
             .field => {
                 try l.reportDispatchBug(region, field_inside_derived);
@@ -1798,37 +2005,189 @@ const Lowerer = struct {
         }
     }
 
+    /// `CMP(l, r)` for one BODY position (§9's parts table), the `compare`
+    /// column of the same row.
+    ///
+    /// It takes a statement list and `partEq` does not, because one row
+    /// needs it: `primitive char_compare` is a comparison of CODE POINTS,
+    /// and reading each operand's once means binding it (§8.3's `CP(e)`).
+    /// The two consts land in whatever block this position is in — the
+    /// function's own, or one `switch` arm's — ahead of the `const` the
+    /// lexicographic sequence then binds the `Order` to.
+    fn partCompare(
+        l: *Lowerer,
+        out: *StmtList,
+        part: Dispatch.Target,
+        left: Node.Index,
+        right: Node.Index,
+        region: Inst.Index,
+        p: u32,
+    ) !?Node.Index {
+        switch (part) {
+            .primitive => |prim| switch (prim) {
+                // `strict_eq` is `eq`'s one answer and has no ordering
+                // meaning at all; meeting it here is a table that crossed
+                // its two kinds.
+                .strict_eq => {
+                    try l.reportDispatchBug(region, derived_wrong_primitive);
+                    return null;
+                },
+                .num_compare => return try l.orderOf(left, right, p),
+                .char_compare => {
+                    // The CODE POINTS are bound, not the operands: an
+                    // `Order` reads each of them twice (§9.1's own
+                    // `compare$char` is this function inlined), so binding
+                    // the operand alone would still call `codePointAt`
+                    // four times.
+                    const a = try l.bindSubject(out, try l.codePointCall(left, p), p);
+                    const b = try l.bindSubject(out, try l.codePointCall(right, p), p);
+                    return try l.orderOf(a, b, p);
+                },
+                // Never `<`: `core/String.js`'s `compare` is Unicode scalar
+                // order and `<` is UTF-16 code-unit order (§3.2, A.26).
+                .string_compare => return try l.call(try l.stringCompare(p), &.{ left, right }, p),
+            },
+            .evidence => |k| return try l.evidenceCall(k, left, right, p),
+            .top, .ext => return l.namedPartCall(part, .compare, left, right, region, p),
+            // A position nothing ever inhabits — `Nothing < Nothing` at an
+            // element type no use constrains. There is no ordering to get
+            // wrong, and `"EQ"` is the one answer that leaves a
+            // lexicographic sequence reading the position after it.
+            // (A `number` is NOT this case: A.59 answers it with
+            // `num_compare` before the checker gives up.)
+            .err => return try l.stringNode("EQ", p),
+            .derived, .ext_derived => {
+                // There is no structural walk for `compare` and there never
+                // was: `core/Basics.js` has one `eq` and nothing that
+                // orders (A.51, A.53). So a `compare` no module writes a
+                // function for is refused outright — `List a` until §5.2
+                // gives it a `pub foreign compare`.
+                if (!l.derivedBodyExists(part)) {
+                    try l.refuseDerived(region, l.missingDerivedDetail(part));
+                    return null;
+                }
+                return try l.derivedPartCall(part, .compare, left, right, p);
+            },
+            .field => {
+                try l.reportDispatchBug(region, field_inside_derived);
+                return null;
+            },
+        }
+    }
+
+    /// `<name>(<its evidence…>, l, r)` — a derived function applied at one
+    /// body position.
+    fn derivedPartCall(
+        l: *Lowerer,
+        part: Dispatch.Target,
+        kind: Dispatch.Derived.Kind,
+        left: Node.Index,
+        right: Node.Index,
+        p: u32,
+    ) !Node.Index {
+        const callee = try l.derivedName(part, p);
+        return l.applyEvidence(callee, try l.partValues(part.partsOf(), kind, p), left, right, p);
+    }
+
+    /// `M$m(<its evidence…>, l, r)` — a `top` or `ext` value at one body
+    /// position.
+    ///
+    /// **A constrained one is answered by its own `parts`** (§7.1's
+    /// amendment, A.64): `List.eq` takes one hidden argument, and before
+    /// the range existed the emitted call was one argument short. A target
+    /// whose evidence count and part count disagree has no honest call at
+    /// all, so it is refused rather than guessed at.
+    fn namedPartCall(
+        l: *Lowerer,
+        part: Dispatch.Target,
+        kind: Dispatch.Derived.Kind,
+        left: Node.Index,
+        right: Node.Index,
+        region: Inst.Index,
+        p: u32,
+    ) !?Node.Index {
+        const wanted = l.targetEvidence(part);
+        const parts = part.partsOf();
+        // Equal, or there is no honest call: one range says how many hidden
+        // arguments the callee takes and the other says which values they
+        // are, and a disagreement is a call of the wrong arity — which
+        // JavaScript runs.
+        if (wanted != parts.len) {
+            try l.refuseConstrainedPart(region);
+            return null;
+        }
+        const evidence = try l.partValues(parts, kind, p);
+        return try l.applyEvidence(try l.targetValue(part, p), evidence, left, right, p);
+    }
+
+    fn applyEvidence(
+        l: *Lowerer,
+        callee: Node.Index,
+        evidence: []const Node.Index,
+        left: Node.Index,
+        right: Node.Index,
+        p: u32,
+    ) !Node.Index {
+        const args = try l.scratch.alloc(Node.Index, evidence.len + 2);
+        @memcpy(args[0..evidence.len], evidence);
+        args[evidence.len] = left;
+        args[evidence.len + 1] = right;
+        return l.call(callee, args, p);
+    }
+
     /// The evidence a USE hands a derived function, one value per position
     /// (§7.1, A.46). Ranges nest: a position that is itself a derived
     /// function carries its own.
-    fn partValues(l: *Lowerer, range: Dispatch.Range, p: u32) Allocator.Error![]const Node.Index {
+    ///
+    /// `kind` is the method the OWNING target is, and the one thing a
+    /// `Target` alone cannot say: an `err` position has to be answered by a
+    /// function of the right return type, and `Basics.eq` in a `compare`
+    /// slot is a `Bool` where an `Order` was promised.
+    fn partValues(
+        l: *Lowerer,
+        range: Dispatch.Range,
+        kind: Dispatch.Derived.Kind,
+        p: u32,
+    ) Allocator.Error![]const Node.Index {
         const parts = l.in.dispatch.partsAt(range);
         const out = try l.scratch.alloc(Node.Index, parts.len);
-        for (parts, out) |part, *slot| slot.* = try l.partValue(part, p);
+        for (parts, out) |part, *slot| slot.* = try l.partValue(part, kind, p);
         return out;
     }
 
     /// One position's evidence, in VALUE position.
     ///
-    /// The `top`/`ext` arm refuses for the same reason `partEq`'s does and
-    /// not a weaker one: §7.1's `parts` tree carries no range for a
-    /// target's OWN evidence, so a constrained `pub` value named here would
-    /// be called one argument short. `partEq` had the guard and this did
-    /// not, and the difference was a build that exited 0 and emitted
-    /// `Main$eq$r$k(Lib$eq, …)` against a `Lib$eq` of arity three — a
-    /// `TypeError` at run time, which is the one outcome `backend.md` §1
-    /// forbids.
-    fn partValue(l: *Lowerer, part: Dispatch.Target, p: u32) Allocator.Error!Node.Index {
+    /// The `top`/`ext` arm passes the target's OWN parts as evidence and
+    /// eta-expands, exactly as `namedPartCall` does in body position —
+    /// §7.1's amendment (A.64). Before the range existed this arm could
+    /// only refuse, and before THAT it emitted `Main$eq$r$k(Lib$eq, …)`
+    /// against a `Lib$eq` of arity three: a `TypeError` at run time, which
+    /// is the one outcome `backend.md` §1 forbids.
+    fn partValue(
+        l: *Lowerer,
+        part: Dispatch.Target,
+        kind: Dispatch.Derived.Kind,
+        p: u32,
+    ) Allocator.Error!Node.Index {
         return switch (part) {
             .derived, .ext_derived => l.derivedValue(part, p),
             .primitive => |prim| l.primitiveValue(prim, p),
-            .err => l.coreValue(.Basics, .eq, p),
+            // A position nothing inhabits, in value position: the same
+            // answer `partEq`/`partCompare` give it, as a function.
+            .err => switch (kind) {
+                .eq => l.coreValue(.Basics, .eq, p),
+                .compare => l.primitiveValue(.num_compare, p),
+            },
             .top, .ext => blk: {
-                if (l.targetEvidence(part) != 0) {
+                const wanted = l.targetEvidence(part);
+                const parts = part.partsOf();
+                if (wanted != parts.len) {
                     try l.refuseConstrainedPart(l.region);
                     break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
-                break :blk l.targetValue(part, p);
+                const value = try l.targetValue(part, p);
+                if (wanted == 0) break :blk value;
+                break :blk l.etaExpand(value, try l.partValues(parts, kind, p), l.targetArity(part), p);
             },
             else => l.targetValue(part, p),
         };
@@ -1837,7 +2196,24 @@ const Lowerer = struct {
     /// A derived function in VALUE position: the bare name when it takes no
     /// evidence, its eta-expansion when it does (§8.2, A.25), and
     /// `Basics.eq` when no module emits it at all — A.51's door, and what
-    /// is left behind it after S5.
+    /// is left behind it after S6a.
+    ///
+    /// **The door is A.67's, and it is `eq`-only, exactly as
+    /// `methodCallExpr`'s is.** `core/Basics.js`'s structural walk answers a
+    /// missing `eq` when every part says it would answer the same thing, and
+    /// there is no function in core that orders structurally, so a missing
+    /// `compare` refuses. Answering both with `Basics.eq` — which is what
+    /// this did — puts a `Bool`-returning function into an `Order` slot: the
+    /// build exits 0 and the comparator it handed over returns `true`, which
+    /// `Order`'s own `case` then reads as no branch at all.
+    ///
+    /// **Not reachable today**, and there is no corpus fixture because there
+    /// is no program that gets here: the checker refuses `compare` on a type
+    /// whose method has no body before the backend is asked
+    /// (`check/bad/CompareOnForeignType`, `check/bad/CompareOnTypeHoldingFunction`),
+    /// so the only route is a table the checker did not write. The in-source
+    /// test "a derived `compare` with no body refuses in value position" is
+    /// what holds it, over exactly such a table.
     fn derivedValue(l: *Lowerer, target: Dispatch.Target, p: u32) Allocator.Error!Node.Index {
         if (l.part_depth > max_part_depth) {
             try l.reportDispatchBug(l.region, parts_too_deep);
@@ -1845,10 +2221,38 @@ const Lowerer = struct {
         }
         l.part_depth += 1;
         defer l.part_depth -= 1;
-        if (!l.derivedBodyExists(target)) return l.coreValue(.Basics, .eq, p);
+        const kind = l.derivedTargetKind(target);
+        if (!l.derivedBodyExists(target)) {
+            const bridged = kind == .eq and l.structuralEq(target, null);
+            if (!bridged) {
+                try l.refuseDerived(l.region, l.missingDerivedDetail(target));
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            }
+            return l.coreValue(.Basics, .eq, p);
+        }
         const callee = try l.derivedName(target, p);
         if (l.ownEvidence(target) == 0) return callee;
-        return l.etaExpand(callee, try l.partValues(target.partsOf(), p), 2, p);
+        return l.etaExpand(callee, try l.partValues(target.partsOf(), kind, p), 2, p);
+    }
+
+    /// Which of §9's two methods a derived target is.
+    ///
+    /// **Ask it only about a `derived` or an `ext_derived`.** Every other
+    /// target gets `.eq`, and that is a default and not an answer: a `top`
+    /// or an `ext` names a value whose kind lives in its signature, which
+    /// this file does not read (§8.0). The one caller that used to ask
+    /// about a `top`/`ext` — the site whose target carries `parts` — now
+    /// refuses instead, because `.eq` there is a `Bool` in an `Order` slot
+    /// (A.67).
+    fn derivedTargetKind(l: *Lowerer, target: Dispatch.Target) Dispatch.Derived.Kind {
+        return switch (target) {
+            .derived => |use| if (use.index < l.in.dispatch.derived.len)
+                l.in.dispatch.derived[use.index].kind
+            else
+                .eq,
+            .ext_derived => |use| use.kind,
+            else => .eq,
+        };
     }
 
     /// The NAME §8.5 gives a derived function: `<Type>$$<kind>` in the
@@ -1896,39 +2300,59 @@ const Lowerer = struct {
     ///   - a derived `compare`, which is S6's half of §9;
     ///   - a `foreign type`'s method: there are no constructors to walk, so
     ///     no module derives one (A.55, A.60). `List a` is the live case,
-    ///     and §5.2 gives it a `pub foreign eq` of its own in S6;
+    ///     and §5.2 gives it a `pub foreign compare` of its own in S6b;
     ///   - a nominal type whose own module supplies a `pub` value of that
     ///     name: the module rule won there and the eager pass wrote
     ///     nothing (§3.3 step 1, §6.3.1 step 4).
+    ///
+    /// **It has to be the same three questions `Solve.deriveOne` asks, in
+    /// the same order**, or the emitter names a row the declaring module
+    /// did not write — and §3.2's table comes FIRST (A.63). `core/Basics`
+    /// declares a `pub compare` of its own, so asking the module rule first
+    /// would say that `Basics$Order$$compare` is not there while the eager
+    /// pass writes it.
     fn derivedBodyExists(l: *Lowerer, target: Dispatch.Target) bool {
         switch (target) {
-            .derived => |use| {
-                if (use.index >= l.in.dispatch.derived.len) return false;
-                return l.in.dispatch.derived[use.index].kind == .eq;
-            },
+            .derived => |use| return use.index < l.in.dispatch.derived.len,
             .ext_derived => |use| {
-                if (use.kind != .eq) return false;
                 const entry = l.in.types.entry(use.type);
-                if (entry.kind != .adt or !entry.equatable) return false;
-                if (entry.module.int() >= l.in.interfaces.len) return false;
-                return l.in.interfaces[entry.module.int()].findValue(l.interner, InternPool.WellKnown.eq.symbol()) == null;
+                if (entry.kind != .adt) return false;
+                if (!l.wellKnownDerivedRow(use.type, use.kind)) {
+                    if (entry.module.int() >= l.in.interfaces.len) return false;
+                    const spelling = switch (use.kind) {
+                        .eq => InternPool.WellKnown.eq,
+                        .compare => InternPool.WellKnown.compare,
+                    };
+                    if (l.in.interfaces[entry.module.int()].findValue(l.interner, spelling.symbol()) != null) return false;
+                }
+                return switch (use.kind) {
+                    .eq => entry.equatable,
+                    .compare => entry.comparable,
+                };
             },
             else => return false,
         }
     }
 
+    /// Whether §3.2's table answers `(T, kind)` with a DERIVED function
+    /// rather than a primitive — the two rows that do: `Order`'s `compare`,
+    /// which cannot be alphabetic on its own tags, and both of `Never`'s.
+    /// The declaring module writes these whatever else it declares, which
+    /// is the whole point of the table being consulted first (§3.2, A.63).
+    fn wellKnownDerivedRow(l: *Lowerer, id: Dispatch.TypeId, kind: Dispatch.Derived.Kind) bool {
+        const wk = l.in.types.well_known;
+        if (id == .none) return false;
+        if (id == wk.order) return kind == .compare;
+        return id == wk.never;
+    }
+
     /// Which of the two methods a derived target is, for the message that
     /// says why it was not emitted.
     fn missingDerivedDetail(l: *Lowerer, target: Dispatch.Target) []const u8 {
-        const kind: Dispatch.Derived.Kind = switch (target) {
-            .derived => |use| if (use.index < l.in.dispatch.derived.len)
-                l.in.dispatch.derived[use.index].kind
-            else
-                .eq,
-            .ext_derived => |use| use.kind,
-            else => .eq,
-        };
-        return if (kind == .compare) derived_compare_missing else foreign_derived_missing;
+        return if (l.derivedTargetKind(target) == .compare)
+            derived_compare_missing
+        else
+            foreign_derived_missing;
     }
 
     /// How many evidence parameters the function a target NAMES takes —
@@ -2096,6 +2520,9 @@ const Lowerer = struct {
             .field, .err => return false,
             else => {},
         }
+        // A target holding its own `parts` is answered by them and takes
+        // nothing from the site list (§7.1's amendment, A.64).
+        if (target.partsOf().len != 0) return true;
         const wanted = l.targetEvidence(target);
         var k: u16 = 0;
         while (k < wanted) : (k += 1) {
@@ -2157,6 +2584,20 @@ const Lowerer = struct {
         \\`docs/design/static-dispatch-spike.md` §7.2 gives every method call and every
         \\return-type dispatch a site at `evidence_index` 0 naming the function it runs,
         \\and the table has none here — so there is no function to call.
+    ;
+
+    /// A SITE whose target carries its own `parts` (§7.1's amendment,
+    /// A.64). The amendment is about a part POSITION, where there is no
+    /// instruction to number a site against; a site has one, so its
+    /// target's evidence is the sites that follow it and its `parts` range
+    /// is empty. A non-empty one means the two ways of carrying evidence
+    /// were both used for one slot, and the walk cannot tell which method
+    /// the slot answers — which is what an `err` inside it would need
+    /// (A.67).
+    const parts_on_site_target =
+        \\This call's evidence is carried twice over: `docs/design/static-dispatch-spike.md`
+        \\§7.1's `parts` range belongs to a target in a PART position, and this one is on
+        \\a site, whose evidence is the sites that follow it instead (§7.2, A.64).
     ;
 
     /// §8.4 has no receiver, so §8.3's record-field row cannot appear.
@@ -2324,23 +2765,31 @@ const Lowerer = struct {
 
     const Seen = struct { index: u32, prev: ?*const Seen };
 
-    /// The two derived functions S5 does not write, each naming the method
-    /// it is about and the slice that grows it (`backend.md` §1: the half
-    /// that is missing must say so).
+    /// The methods no module writes a function for, each naming what it is
+    /// about and the slice that grows it (`backend.md` §1: the half that is
+    /// missing must say so).
+    ///
+    /// Both are now about `foreign type`s alone: every shape §9 describes
+    /// has a body for both methods after S6a, and a `foreign type` has no
+    /// constructors to write one from (A.55, A.60). `List a` is the one in
+    /// core, and §5.2 gives it a `pub foreign eq` in S6a and a
+    /// `pub foreign compare` in S6b.
     const derived_compare_missing =
-        \\The checker resolved it to a DERIVED `compare`
-        \\(`docs/design/static-dispatch-spike.md` §9) — a function generated from the
-        \\shape of the type — and the code generator grows `compare` in S6. Derived
-        \\`eq` is emitted already, and so is every other target of §8.
+        \\The checker resolved it to the `compare` of a `foreign type`
+        \\(`docs/design/static-dispatch-spike.md` §9.5) — `List a` is the one in core —
+        \\and a `foreign type` has no constructors to derive a body from, so no module
+        \\emits one. §5.2 gives `List` a `pub foreign compare` of its own in S6b, and
+        \\there is no structural walk to stand in for it: `core/Basics.js` has an `eq`
+        \\and nothing that orders.
         \\
         \\Hint: pass an ordering function, or compare the parts by hand, until then.
     ;
 
     const foreign_derived_missing =
         \\The checker resolved it to a derived method of a `foreign type`
-        \\(`docs/design/static-dispatch-spike.md` §9.5) — `List a` is the one in core —
-        \\and a `foreign type` has no constructors to derive a body from, so no module
-        \\emits one. §5.2 gives `List` a `pub foreign eq` of its own in S6.
+        \\(`docs/design/static-dispatch-spike.md` §9.5) — and a `foreign type` has no
+        \\constructors to derive a body from, so no module emits one. A platform
+        \\package gives its own types a `pub eq` the way §5.2 gives `List` one.
         \\
         \\`core/Basics.js`'s `eq` answers this one everywhere the walk it makes is the
         \\answer the table asks for; here it is not, because something inside has an
@@ -2455,7 +2904,7 @@ const Lowerer = struct {
                     const walked = try l.receiverCall(out, bridge, &.{}, @enumFromInt(d.lhs), args, p);
                     return l.orderTest(walked, if (m.origin == .neq) .neq else .none, p);
                 }
-                const evidence = try l.partValues(target.partsOf(), p);
+                const evidence = try l.partValues(target.partsOf(), l.derivedTargetKind(target), p);
                 const callee = try l.derivedName(target, p);
                 const value = try l.receiverCall(out, callee, evidence, @enumFromInt(d.lhs), args, p);
                 // `a /= b` is `!eq(a, b)`; an ordering operator wraps the
@@ -2534,10 +2983,25 @@ const Lowerer = struct {
             .top, .ext, .evidence, .primitive => {},
             .derived, .ext_derived => {
                 // §6.7 makes a return-type dispatch's target `evidence k`
-                // inside a constrained declaration, so a derived one is a
-                // shape with no receiver to apply it to.
-                try l.refuseDerived(inst, l.missingDerivedDetail(target));
-                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                // inside a constrained declaration, so in practice this is
+                // a concrete receiver-less call of a shape's own method.
+                // It is the same call §8.3 makes, minus the receiver: the
+                // evidence the USE passes rides on the target's parts
+                // (A.46) and the written arguments follow.
+                if (!l.derivedBodyExists(target)) {
+                    try l.refuseDerived(inst, l.missingDerivedDetail(target));
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                if (try l.refuseEvidence(inst, sites[1..], 0)) {
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const evidence = try l.partValues(target.partsOf(), l.derivedTargetKind(target), p);
+                const callee = try l.derivedName(target, p);
+                const rest = try l.exprList(out, args);
+                const all = try l.scratch.alloc(Node.Index, evidence.len + rest.len);
+                @memcpy(all[0..evidence.len], evidence);
+                @memcpy(all[evidence.len..], rest);
+                return l.call(callee, all, p);
             },
             // There is no receiver, so `field` cannot appear at all and is
             // a malformed table. `err` is the one silent case again: the
@@ -3358,6 +3822,18 @@ test "a constructor of a payload-carrying type is padded to one shape" {
     // and padding it measured ~11% on Firefox. `None` has no argument and
     // still gets the slot.
     try expectJs(
+        \\const M$Box$$order = { Some: 0, None: 1 };
+        \\const M$Box$$compare = ($x, $y) => {
+        \\  if ($x.$ !== $y.$) {
+        \\    return M$Box$$order[$x.$] < M$Box$$order[$y.$] ? "LT" : "GT";
+        \\  }
+        \\  switch ($x.$) {
+        \\    case "Some":
+        \\      return $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
+        \\    default:
+        \\      return "EQ";
+        \\  }
+        \\};
         \\const M$Box$$eq = ($x, $y) => {
         \\  if ($x.$ !== $y.$) {
         \\    return false;
@@ -3381,7 +3857,7 @@ test "a constructor of a payload-carrying type is padded to one shape" {
         \\  }
         \\  return $t$1;
         \\};
-        \\export { M$Box$$eq, M$some, M$none, M$unwrap };
+        \\export { M$Box$$compare, M$Box$$eq, M$some, M$none, M$unwrap };
         \\
     ,
         \\pub type Box
@@ -3413,11 +3889,17 @@ test "a constructor of a payload-carrying type is padded to one shape" {
 
 test "a type whose constructors are all nullary is a bare tag, and Bool is a JavaScript boolean" {
     try expectJs(
+        \\const M$Colour$$order = { Red: 0, Green: 1 };
+        \\const M$Colour$$compare = ($x, $y) => {
+        \\  const $a = M$Colour$$order[$x];
+        \\  const $b = M$Colour$$order[$y];
+        \\  return $a === $b ? "EQ" : $a < $b ? "LT" : "GT";
+        \\};
         \\const M$Colour$$eq = ($x, $y) => $x === $y;
         \\const M$first = "Red";
         \\const M$isRed = (c$1) => c$1 === "Red" ? true : false;
         \\const M$yes = true;
-        \\export { M$Colour$$eq, M$first, M$isRed, M$yes };
+        \\export { M$Colour$$compare, M$Colour$$eq, M$first, M$isRed, M$yes };
         \\
     ,
         \\pub type Colour
@@ -3650,8 +4132,8 @@ test "the evidence wall counts the top-level slots, in both directions" {
     var l: Lowerer = undefined;
     l.in.dispatch = &table;
 
-    const constrained: Dispatch.Target = .{ .top = @enumFromInt(0) };
-    const plain: Dispatch.Target = .{ .top = @enumFromInt(1) };
+    const constrained: Dispatch.Target = .{ .top = .{ .decl = @enumFromInt(0) } };
+    const plain: Dispatch.Target = .{ .top = .{ .decl = @enumFromInt(1) } };
     const site = struct {
         fn at(index: u16, target: Dispatch.Target) Dispatch.Site {
             return .{ .inst = @enumFromInt(0), .evidence_index = index, .target = target };
@@ -3680,6 +4162,83 @@ test "the evidence wall counts the top-level slots, in both directions" {
     // evidence position, whatever the count says.
     try testing.expect(!l.evidenceShapeOk(&.{site(0, .field)}, 1));
     try testing.expect(!l.evidenceShapeOk(&.{site(0, .err)}, 1));
+}
+
+test "a derived function with no body refuses in value position unless the structural walk answers" {
+    // A SYNTHETIC `Dispatch` table, for the reason the test above gives and
+    // one more: no beni program reaches this arm. The checker's
+    // `comparable` gate refuses `compare` on a type no module writes a body
+    // for before the backend is ever asked (§3.3, A.54 —
+    // `tests/corpus/check/bad/CompareOnForeignType` and
+    // `CompareOnTypeHoldingFunction` are the fixtures), so a `compare`
+    // target with no body can only come from a table the checker did not
+    // write, and only a hand-built one can show what the emitter does with
+    // it. That is why there is no corpus fixture beside this test.
+    //
+    // What it pins is A.67's asymmetry in VALUE position. `derivedValue`
+    // answered BOTH kinds with `core/Basics.js`'s `eq` and made no test at
+    // all: an `Order` slot would have been handed a function returning
+    // `true`, after a build that exited 0. `methodCallExpr` has asked the
+    // structural question since S5; this is the same question in the other
+    // position.
+    const gpa = testing.allocator;
+    const table: Dispatch = .{};
+    const types: Types = .empty;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+
+    // Only the fields this path reads, exactly as the test above does: the
+    // table, the type service `derivedBodyExists` asks, and what `report`
+    // and `add` need.
+    var l: Lowerer = undefined;
+    l.gpa = gpa;
+    l.b = &b;
+    l.in.dispatch = &table;
+    l.in.types = &types;
+    l.in.module = @enumFromInt(0);
+    l.diagnostics = .empty;
+    l.part_depth = 0;
+    l.region = @enumFromInt(0);
+    defer {
+        for (l.diagnostics.items) |d| gpa.free(d.message);
+        l.diagnostics.deinit(gpa);
+    }
+
+    // A `compare` no module derives a body for: refused, and with the
+    // message that names `compare` rather than the `eq` one.
+    const compare: Dispatch.Target = .{ .ext_derived = .{
+        .module = @enumFromInt(0),
+        .type = .none,
+        .kind = .compare,
+    } };
+    _ = try l.derivedValue(compare, Node.no_pos);
+    try testing.expectEqual(@as(usize, 1), l.diagnostics.items.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, l.diagnostics.items[0].code);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        l.diagnostics.items[0].message,
+        "the `compare` of a `foreign type`",
+    ) != null);
+
+    // An `eq` the structural walk cannot answer for — here a `derived` row
+    // that is not in the table at all — is refused as well, rather than
+    // silently answered with `Basics.eq`.
+    const missing_eq: Dispatch.Target = .{ .derived = .{ .index = 0 } };
+    _ = try l.derivedValue(missing_eq, Node.no_pos);
+    try testing.expectEqual(@as(usize, 2), l.diagnostics.items.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, l.diagnostics.items[1].code);
+
+    // And the door A.51 leaves open is still open: an `ext_derived` `eq`
+    // with no parts is what `core/Basics.js`'s walk answers exactly, so it
+    // does NOT refuse. (What it returns needs the import machinery, so only
+    // the absence of a third diagnostic is asserted here; `run/ListElementEq`
+    // is what runs the value it produces.)
+    const bridged: Dispatch.Target = .{ .ext_derived = .{
+        .module = @enumFromInt(0),
+        .type = .none,
+        .kind = .eq,
+    } };
+    try testing.expect(l.structuralEq(bridged, null));
 }
 
 test "fuzz: arbitrary bytes reach the emitter without a panic" {

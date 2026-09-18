@@ -1262,8 +1262,10 @@ pub const Dispatch = struct {
     };                                  // there is no `prim` shape: a primitive is a `Target`
 
     pub const Target = union(enum(u8)) {
-        top: Bir.DeclIndex,                                       // a value of this module
-        ext: struct { module: Graph.Index, value: Interface.ValueIndex },
+        top: struct { decl: Bir.DeclIndex, parts: Range },        // a value of this module, and the
+                                                                  // evidence a PART position hands it
+        ext: struct { module: Graph.Index, value: Interface.ValueIndex,
+                      parts: Range },                             // likewise (A.64)
         evidence: u16,                                            // the k-th evidence parameter of the
                                                                   // ENCLOSING DECLARATION. One level, no
                                                                   // depth — §6.4 proves why
@@ -1308,6 +1310,17 @@ JavaScript `<`, which is the UTF-16 order A.26 refuses, and a record whose secon
 would compare that tuple with `===`.
 ```
 
+**A `top` or an `ext` carries a `parts` range too, and it is EMPTY at a call site** (A.64). At a
+call site the evidence of a constrained value rides on the sites that follow it, because §7.2
+numbers every evidence slot of one instruction into one flat list and §8.2's eta-expansion reads
+them back. Inside a `parts` tree there is no instruction to number a site against, so the tree has
+to carry it: `{ p : { x : Int }, q : List Int } == …` writes `part 1 ext List eq`, and `List.eq`
+takes one hidden argument. The two are never both used — `partsOf()` is consulted first, and a
+target that has parts consumes no site — and the checker fills the range from the same rule
+`derived` uses: one target per constraint the named value's scheme puts on a type parameter, in the
+canonical order of §7.2. A scheme whose quantifier count does not match the type's arity gets no
+parts, and the backend refuses the call rather than pass evidence for the wrong parameter.
+
 `derived` is sorted **before** anything indexes it: `Target.derived: u32` and `Derived.parts` are
 indices into the *sorted* arrays, so the table a dump prints and the table the emitter walks are the
 same table in the same order, and `--jobs` cannot move a byte of either. A builder that appends
@@ -1327,6 +1340,16 @@ store is still alive, kept regardless of `keep_stores`, and handed to `Lower.Inp
 
 Every constraint created by an instantiation is tagged with the `(inst, evidence_index)` of the
 instruction that created it, which is how a target found at discharge finds its way back to a site.
+
+**One instruction numbers its slots once, and an index is never reused.** Resolving a slot can
+instantiate the scheme that ANSWERS it — `[ [ [ Box "a" "b" ] ] ] == …` resolves `List.eq`, whose
+`where a.eq` resolves `List.eq` again, four levels of one `==` — and every level is a slot of the
+same instruction. So the numbering is a running cursor per instruction (`Solve.evidence_next`), and
+a nested instantiation continues it rather than starting again at 1. The pair
+`(inst, evidence_index)` is a key, and two of the checker's own tables treat it as one:
+`joinConstraint`, when two constraints of a name meet on a variable, and `appendSite`, which
+forwards a mutually recursive group's shared constraint. Both drop a row they have already seen, so
+a repeated index is a dropped argument. Appendix A.68.
 
 **Canonical order** is a function of the scheme record alone, never of variable identity, because
 callee and caller compute it independently — Roc's contract:
@@ -1381,9 +1404,13 @@ module <ModuleName>
   the **body's** positions — every constructor argument of a nominal type, in declaration order
   (§9's parts contract). A record, a tuple and `()` have none: `evidence=<n>` is the whole of it.
 - `site` lines are sorted by `(inst, evidence_index)`, `inst` printed as the decimal Bir
-  instruction index. Their `part` lines are the **evidence this use passes**, one per evidence
+  instruction index. The indices of one instruction are **distinct** and cover its whole nest, so
+  `[ [ [ 1 ] ] ] == …` prints `0 1 2 3` and not `0 1 1 1`
+  (`tests/corpus/dispatch/NestedEvidenceIndices`). Their `part` lines are the **evidence this use passes**, one per evidence
   parameter in shape order, and they NEST: a position that is itself a derived function has its own
-  underneath it, indented two more spaces (A.46).
+  underneath it, indented two more spaces (A.46). A `top` or `ext` position prints its `part` lines
+  the same way when it is a constrained value inside a parts tree (A.64); at a call site it has
+  none, and the evidence is the `site` lines that follow instead.
 - Like `--stage=interface`, the stage accepts a **directory** as well as a file, and then prints
   every module under it in path order.
 
@@ -2572,6 +2599,18 @@ into functions. `Dict.empty` is unaffected — it has no constraint (§5.3).
 
 **`equatable` and `eq` overlap** after S5. Left in place, recorded (§3.4).
 
+**A part is written when the RECEIVER is resolved, not when both operands are.** `Ok 1 == Err "a"`
+is a `Result String Int`, so the `x` position is `String` and not a variable at all — and the table
+records `err` for it. The reason is §6.2's Rule U0: the constraint is discharged from inside the
+unification that made the receiver concrete, and the receiver (`Ok 1`) pins only `a`; the `String`
+arrives from the argument afterwards, by which time `nominalTarget` has already written the range.
+Fixing it means resolving a target's parts in a second pass at the end of the declaration rather
+than at discharge, which is a change to §6.3 and §7.1 together and not a local one, so S6a left it.
+It is harmless for the same reason an unconstrained position is: the receiver always pins the
+position its OWN constructor carries, so the position left `err` is the one the tag test rejects
+before either side is read. `dispatch/ErrParts` is the pin, and A.67 is what the backend does with
+the `err` it sees.
+
 ### Stretch, only after S8
 
 1. **Partition same-name constraints by origin class** — Roc's shipped principality fix, and not
@@ -3187,3 +3226,80 @@ invisible to its own module too, which would change what §3.3 step 1 means for 
 nothing to do with derivation. Fixtures: `dispatch/PrivateEqStillDerives`, and in `blackbox_test`
 "a private eq wins inside its module and still lets every other module derive" and "core/Basics
 carries the derived rows §3.2's table asks it for".
+
+**A.64 — `Target.top` and `Target.ext` carry a `parts` range, EMPTY at a call site** (§7.1, §7.3,
+§8.2) [S6a]. A constrained value named from inside a `parts` tree has nowhere to put its own
+evidence: §7.2 numbers evidence slots against an INSTRUCTION, and a part position has none.
+`{ p : { x : Int }, q : List Int } == …` wrote `part 1 ext List eq` with nothing under it, and once
+§5.2 gave `List` a `pub foreign eq … where a.eq` the emitted call to `List$eq` was one argument
+short — which JavaScript runs, binding `undefined`. The range is filled by the same rule
+`nominalTarget` uses: one target per constraint the named value's scheme puts on a type parameter,
+in the canonical order of §7.2, which for a method of `T a1 … an` is the application's own argument
+order because the scheme's body meets the parameters there. *Why not extend the SITE list instead:*
+a site is keyed on `(inst, evidence_index)` and a part has no instruction, so the flat list would
+need a second numbering space; the tree already nests. *Limit, deliberate:* a scheme whose
+quantifier count does not match the type's arity — a `where` clause over a variable the receiver
+does not supply — gets no parts, and the backend refuses the call rather than pass evidence for the
+wrong parameter. Fixtures: `dispatch/ExtWithParts`, `run/ConstrainedPartEvidence`,
+`run/ListElementEq`, and in `blackbox_test` "a constrained value in a part position is handed its
+own evidence".
+
+**A.65 — the intermediate `Order` of a lexicographic body is numbered per FUNCTION, not per block**
+(§9.2, §9.3, §9.4) [S6a]. §9's listings write `const o0` in each `switch` arm and brace the arms;
+the printer gives a `switch` arm no braces (`js/Print.zig`'s `switch_case`), so two arms of one
+`switch` are one block scope in JavaScript and `const $o$0` in each is
+`SyntaxError: Identifier '$o$0' has already been declared` — after a build that exited 0. A counter
+the whole arrow shares gives `$o$0`, `$o$1`, … across arms and needs no braces. *Alternative:*
+teach the printer to brace a `switch` arm whose body declares anything, which is a change to
+`backend.md` §7's shape for one caller's benefit. Fixtures: `emit/DerivedCompareNominal`,
+`run/DerivedOrdering`.
+
+**A.66 — an evidence slot whose receiver type nothing ever determines is answered by the A.53
+bridge** (§6.4, §7.2, §8.2) [S6a]. `[] == []` is the whole of it. Once `List` declares
+`pub foreign eq … where a.eq`, §7.2 numbers a site for the element's `eq` — and the element type of
+two empty lists is a variable no use constrains, so the constraint is neither DISCHARGED, there
+being no type to discharge it against, nor PROMOTED, the declaration's own type not mentioning it.
+The site stayed empty and the emitted call was one argument short. `Solve.settleUndetermined` runs
+after `promote`, because "generalisation did not quantify it" is not knowable before then — the
+RANK cannot say it, since `generalize` marks every young variable `generalized` whether or not the
+declaration's type mentions it — and gives the slot `core/Basics.js`'s structural `eq` for `eq` and
+§9.1's comparator for `compare`. It is answerable BECAUSE the type is undetermined: the function
+handed over can only be called on a value of that type, and no such value exists in any execution
+that gets there. *Alternative:* report the program as ambiguous, which would reject `[] == []`.
+*Not done for a name that is not well known:* a user's own `where` clause on an undetermined
+receiver gets nothing, because inventing a function for it would be inventing a meaning. Fixtures:
+`run/ListElementEq` (the `[] == []` line), `dispatch/ErrParts`.
+
+**A.67 — an `err` part is answered by KIND, and `compare` has no structural walk to fall back on**
+(§9, A.51, A.53, A.59) [S6a]. `err` means a position nothing ever inhabits, and S5 answered one
+with `Basics.eq` everywhere — a `Bool` where a `compare` body promised an `Order`, and a function
+of the wrong result type in an evidence slot. Inside a `compare` body an `err` position is the
+string `"EQ"`, which is what leaves a lexicographic sequence reading the position after it; in
+value position it is §9.1's `compare$prim`, a total function of two arguments returning an `Order`.
+The second half is the asymmetry that follows: a `derived`/`ext_derived` `eq` with no body may fall
+back on `core/Basics.js`'s one structural walk when every part says the walk would answer the same
+thing (A.51's door), and a `compare` may not, because core has no function that ORDERS
+structurally. So the `compare` arm refuses outright. Fixture: `run/DerivedOrdering`'s `Outcome`
+lines, whose `x` slot is an `err` the program never reaches.
+
+**A.68 — one instruction's evidence slots are numbered by a running cursor, never restarted**
+(§7.2, §7.3) [S6a]. A nested instantiation used to begin again at a hard-coded 1, so
+`[ [ [ Box "a" "b" ] ] ] == …` wrote five `site N 1` rows on one instruction. The EMISSION was
+right: `Lower.evidenceArguments` walks the sorted list as a pre-order tree and reads no index but
+the callee's 0, and the sort is stable over an insertion order that happened to be pre-order. What
+was wrong is the KEY. `Solve.joinConstraint` and `Solve.appendSite` both deduplicate on
+`(inst, evidence_index)` — the first when two constraints of one name meet on a variable, the
+second when a mutually recursive group forwards its shared constraint — so either could have
+dropped a DIFFERENT slot's site as a repeat of this one and emitted a call an argument short.
+`Schemes.Site` therefore carries the instruction's cursor rather than a base, and
+`Solve.evidence_next` owns one per instruction. *Why record it:* the defect was invisible in every
+`run/` and `emit/` golden and pre-existing on `cb63a46`; what made it worth fixing now is that
+§5.2's `pub foreign eq … where a.eq` on `List` made it reachable from every list equality with a
+constrained element, which is most of them. *Owed, and NOT fixed here:* the numbering is a running
+cursor and therefore ALLOCATION order, which is breadth-first — an instruction with two top-level
+slots that each nest, `pair [ [ 1 ] ] [ [ 2 ] ]` under
+`pair : a, b -> Bool where a.eq : a, a -> Bool, b.eq : b, b -> Bool`, numbers `a`'s children after
+`b` instead of between `a` and `b`, and the pre-order walk then reads them as `a`'s grandchildren.
+Distinct indices make that visible in `--stage=dispatch` where the repeated `1`s hid it; the fix is
+a depth-first discharge, which is a change to the obligation drain and not to the numbering.
+Fixture: `dispatch/NestedEvidenceIndices`.

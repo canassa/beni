@@ -1,0 +1,68 @@
+-- `==` on a list calls each element's OWN `eq`
+-- (`docs/design/static-dispatch-spike.md` §5.2, §9.5, A.50, A.60).
+--
+-- `List a` is a `foreign type`: it has no constructors, so no module can
+-- derive a body for it, and until §5.2 landed the only function that could
+-- answer `xs == ys` was `core/Basics.js`'s structural walk. That walk is
+-- WRONG here, and the first line is the case that shows it: `Id`'s own `eq`
+-- compares the major number and ignores the minor one, so `[ Id 1 2 ]` and
+-- `[ Id 1 99 ]` are equal by the language and different by a walk over
+-- their payloads. The backend refused the program rather than print the
+-- wrong answer (A.51); now `List.eq` takes the element's `eq` as the hidden
+-- argument of §8.1 and calls it.
+--
+-- The sibling export in `core/List.js` is written `(m0, xs, ys)` —
+-- evidence count plus declared arity (§5.2, A.7) — and NOTHING checks that
+-- count at build time: `Sibling.zig` checks export and import coverage and
+-- never arity. A forgotten leading parameter compiles and then compares a
+-- function against a list, so these lines are the only thing between that
+-- mistake and a shipped build.
+--
+-- The rest are the cases the loop of §9.5 has to get right by itself:
+-- unequal lengths with a common prefix, either way round; two empty lists;
+-- and nesting — `List (List Int)` and `List (Maybe Id)`, where the
+-- evidence handed to the outer `List$eq` is itself a function that takes
+-- evidence and must therefore be the eta-expansion of §8.2.
+import Node exposing (Program)
+import Maybe exposing (Maybe)
+
+
+pub type Id
+    = Id Int Int
+
+
+-- Two ids are the same when their MAJOR numbers are.
+pub eq : Id, Id -> Bool
+eq a b =
+    case a of
+        Id majorA _ ->
+            case b of
+                Id majorB _ ->
+                    majorA == majorB
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show ([ Id 1 2 ] == [ Id 1 99 ])
+        , show ([ Id 1 2 ] == [ Id 7 2 ])
+        , show ([ Id 1 2, Id 3 4 ] == [ Id 1 2 ])
+        , show ([ Id 1 2 ] == [ Id 1 2, Id 3 4 ])
+        , show ([ 1, 2 ] == [ 1, 2 ])
+        , show ([ 1, 2 ] == [ 1, 3 ])
+        , show ([] == [])
+        , show ([ [ 1 ], [ 2, 3 ] ] == [ [ 1 ], [ 2, 3 ] ])
+        , show ([ [ 1 ], [ 2, 3 ] ] == [ [ 1 ], [ 2, 4 ] ])
+        , show ([ Just (Id 1 2), Nothing ] == [ Just (Id 1 99), Nothing ])
+        , show ([ Just (Id 1 2) ] == [ Nothing ])
+        , show ([ "a", "b" ] /= [ "a", "b" ])
+        ]

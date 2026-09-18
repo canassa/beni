@@ -1,0 +1,67 @@
+-- A constrained value in a PART position gets its own evidence
+-- (`docs/design/static-dispatch-spike.md` §7.1, §8.1, §8.2, A.64).
+--
+-- `Box`'s own `eq` carries a `where` clause, so §8.1 gives it one hidden
+-- leading parameter and it compares the FIRST slot only. Every line below
+-- turns on that: a structural walk would read both slots and answer the
+-- opposite.
+--
+-- At a call site the hidden argument rides on the site that follows the
+-- callee's, because §7.2 numbers every evidence slot of one instruction
+-- into one flat list — that is `sameBox`. Inside a `parts` tree there is no
+-- instruction to number a site against, and until §7.1's amendment a
+-- `Target.top` carried no range of its own: the record shape's derived
+-- function was handed the bare name `ConstrainedPartEvidence$eq` and called
+-- it with two arguments, so `$m$0` was the first `Box` and `x` was the
+-- second and `x.a` was `undefined`. JavaScript RUNS that.
+--
+-- The rows here walk outwards from the call site: a bare `Box`, a `Box`
+-- inside a record, inside a tuple, inside a `Maybe`, and two deep. The last
+-- two put the constrained value's own evidence one and two levels down, so
+-- they are the nesting §7.1 says the `parts` ranges do.
+import Node exposing (Program)
+import Maybe exposing (Maybe)
+
+
+pub type Box a
+    = Box a a
+
+
+-- Two boxes are equal when their FIRST slots are.
+pub eq : Box a, Box a -> Bool
+    where a.eq : a, a -> Bool
+eq x y =
+    case x of
+        Box first _ ->
+            case y of
+                Box other _ ->
+                    first == other
+
+
+sameBox : Box Int, Box Int -> Bool
+sameBox a b =
+    a == b
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (sameBox (Box 1 2) (Box 1 9))
+        , show (sameBox (Box 1 2) (Box 7 2))
+        , show ({ flag = True, item = Box 1 2 } == { flag = True, item = Box 1 9 })
+        , show ({ flag = True, item = Box 1 2 } == { flag = False, item = Box 1 2 })
+        , show (( 0, Box 1 2 ) == ( 0, Box 1 9 ))
+        , show (Just (Box 1 2) == Just (Box 1 9))
+        , show (Just (Box 1 2) == Nothing)
+        , show ([ Box "a" "b" ] == [ Box "a" "z" ])
+        , show (Just { item = Box 1 2 } == Just { item = Box 1 9 })
+        ]

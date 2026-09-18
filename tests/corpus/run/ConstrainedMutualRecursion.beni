@@ -1,0 +1,61 @@
+-- Two mutually recursive declarations that carry the SAME `where` clause
+-- (`docs/design/static-dispatch-spike.md` §6.4, §7.2, §8.1, §8.2).
+--
+-- `core/Dict.beni`'s `removeHelp` and `removeHelpEQGT` are this shape, and
+-- they are the pair the C1 rewrite of §5.3 cannot avoid: each one's
+-- annotation promises `k.compare`, each one calls the other, and neither
+-- can be checked before the other. So the evidence parameter of §8.1 has to
+-- be on BOTH before either body is lowered, and the call each makes to the
+-- other has to pass its own `$m$0` straight through.
+--
+-- What a mistake here looks like: `$m$0` passed as a beni argument rather
+-- than in front of it, so `largest` receives the comparator where it
+-- expects the list; or an evidence parameter on one of the two and not the
+-- other, so the call is one argument short and JavaScript runs it anyway,
+-- binding `undefined` and comparing against it. Neither is visible in
+-- `--stage=types`; both print the wrong answer here.
+--
+-- **A PIN, not a regression test.** This shape already worked on `cb63a46`,
+-- before S6a: it was added because nothing in the corpus covered it, not
+-- because anything broke. `appendSite`'s forwarding of a shared group's
+-- constraint (§6.4) and the evidence parameter on both headers are what it
+-- holds still, and they are the two things a change to §7.2's numbering
+-- would move first.
+import Node exposing (Program)
+import String
+
+
+-- `largest xs best` is the biggest of `best` and everything in `xs`.
+largest : List a, a -> a
+    where a.compare : a, a -> Order
+largest xs best =
+    case xs of
+        [] ->
+            best
+
+        x :: rest ->
+            step rest x best
+
+
+-- One step of `largest`, split out so the recursion is mutual rather than
+-- direct — and written with the dot-call rather than `>`, so the pair
+-- exercises both surfaces of §1.3 through one evidence parameter.
+step : List a, a, a -> a
+    where a.compare : a, a -> Order
+step xs x best =
+    case x.compare best of
+        GT ->
+            largest xs x
+
+        _ ->
+            largest xs best
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (largest [ 3, 9, 4 ] 0)
+        , String.fromInt (largest [] 7)
+        , largest [ "pear", "apple", "fig" ] ""
+        , largest [ "a" ] "b"
+        ]

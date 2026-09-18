@@ -1,0 +1,17 @@
+module Boxes
+  decl eq evidence=1
+    evidence 0 quantified=0 var=a method=eq
+  derived 0 compare Boxes.Box evidence=1
+    part 0 evidence 0
+    part 1 evidence 0
+  site 28 0 evidence 0
+module Main
+  decl same evidence=0
+  decl sameRow evidence=0
+  derived 0 eq r$flag$item evidence=2
+  site 12 0 ext Boxes eq
+  site 12 1 primitive strict_eq
+  site 29 0 derived 0
+    part 0 primitive strict_eq
+    part 1 ext Boxes eq
+      part 0 primitive strict_eq

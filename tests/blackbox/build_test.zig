@@ -1333,19 +1333,29 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
     _ = it.next(); // the floor
     const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
-    // Exactly six, and the list is the assertion: `Foo$eq`, plus the five
-    // core derives eagerly (`Maybe$Maybe$$eq`, `Result$Result$$eq`,
-    // `Dict$Tree$$eq`, `Dict$NColor$$eq`, `Basics$Never$$eq`). Seven would
-    // mean a hand-written `Basics$compare` or `Basics$eq` was counted as
-    // well; five would mean the matcher missed the module's own `Foo$eq`.
+    // Exactly seventeen, and the list is the assertion:
     //
-    // `Basics$Never$$eq` is §3.2's row for a type that has no values, so it
-    // can never be called — and §8.5 emits every declared nominal type's
-    // method whether or not anything calls it, which is exactly the eager
-    // rule §11's "no DCE yet" row is the price of. It joined the count when
-    // `deriveOne` started consulting §3.2's table before §3.3's module
-    // rule; before that `Basics`' own `pub foreign eq` suppressed it.
-    try testing.expectEqual(@as(u32, 6), program.derived_functions);
+    //     Foo$eq
+    //     Basics$Never$$compare   Basics$Never$$eq
+    //     Basics$Order$$compare   Basics$Order$$order
+    //     Dict$NColor$$compare    Dict$NColor$$eq     Dict$NColor$$order
+    //     Dict$Tree$$compare      Dict$Tree$$eq       Dict$Tree$$order
+    //     Maybe$Maybe$$compare    Maybe$Maybe$$eq     Maybe$Maybe$$order
+    //     Result$Result$$compare  Result$Result$$eq   Result$Result$$order
+    //
+    // Eighteen would mean a hand-written `Basics$compare`, `Basics$eq` or
+    // `List$eq` was counted as well; sixteen would mean the matcher missed
+    // the module's own `Foo$eq`.
+    //
+    // Nothing in core calls one of them. §8.5 emits every declared nominal
+    // type's two methods, and a `$$order` table with each `compare` of two
+    // or more constructors, whether or not anything calls them — which is
+    // exactly the eager rule §11's "no DCE yet" row is the price of, and
+    // what M4 is there to measure. `Basics$Never$$eq` is the sharpest case:
+    // §3.2's row for a type that has no values at all. `Basics$Order$$eq`
+    // is absent for the opposite reason — the table answers `primitive`
+    // for it, and a primitive is not a function anyone emits (A.18).
+    try testing.expectEqual(@as(u32, 17), program.derived_functions);
     try testing.expect(program.derived_bytes > 0);
     try testing.expect(program.derived_bytes < program.raw_bytes);
 }

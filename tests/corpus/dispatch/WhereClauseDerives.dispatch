@@ -31,6 +31,6 @@ module WhereClauseDerives
   site 61 0 derived 4
     part 0 primitive num_compare
     part 1 primitive num_compare
-  site 69 0 ext_derived List.List eq
-    part 0 primitive strict_eq
+  site 69 0 ext List eq
+  site 69 1 primitive strict_eq
   site 73 0 primitive strict_eq

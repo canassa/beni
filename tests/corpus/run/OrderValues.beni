@@ -1,0 +1,52 @@
+-- `Order` is a value with an order of its own
+-- (`docs/design/static-dispatch-spike.md` §3.2, §9.4, A.63).
+--
+-- `Order`'s row in §3.2's table is `derived compare` and not a primitive,
+-- and the reason is one line of JavaScript: its constructors are bare tag
+-- strings (`backend.md` §4), so `<` on them is ALPHABETIC —
+-- `"EQ" < "GT" < "LT"` — where the language means `LT < EQ < GT`. The
+-- `$order` table of §9.4 is what makes the declaration order the answer,
+-- and these lines are what a wrong one prints: `LT < GT` would be `False`
+-- and `EQ < GT` would be `True` either way, so the first two lines alone
+-- would not catch it.
+--
+-- `core/Basics.beni` declares a `pub compare` of its own, which is exactly
+-- why the table is consulted BEFORE the module rule (§3.2's opening
+-- paragraph, A.63): asking the module rule first left `Basics.Order` with
+-- no derived row at all while every other module's `<` on an `Order` named
+-- `ext_derived Basics.Order compare` — a call to a function that was never
+-- written.
+--
+-- The record is the second half: an `Order` reached through a derived
+-- shape, so the evidence slot of §8.2 holds `Basics$Order$$compare` by
+-- name rather than the comparison being inlined.
+import Node exposing (Program)
+
+
+type alias Step =
+    { name : String, verdict : Order }
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (LT < GT)
+        , show (GT < LT)
+        , show (LT < EQ)
+        , show (EQ < GT)
+        , show (GT <= GT)
+        , show (LT == LT)
+        , show (LT /= GT)
+        , show ({ name = "a", verdict = LT } < { name = "a", verdict = GT })
+        , show ({ name = "a", verdict = GT } < { name = "a", verdict = LT })
+        , show ({ name = "a", verdict = EQ } == { name = "a", verdict = EQ })
+        ]
