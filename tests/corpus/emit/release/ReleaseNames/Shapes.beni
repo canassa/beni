@@ -1,0 +1,30 @@
+-- The other half of `ReleaseNames`: the module that DECLARES the names the
+-- golden's `import` reads. Its own emitted file is not the golden — only
+-- `ReleaseNames.mjs` is — but this file is what makes the claim testable at
+-- all, because a whole-program namespace is only interesting across a file.
+import Node exposing (Program)
+
+
+pub type Shape
+    = Circle Int
+    | Square Int
+
+
+pub area : Shape -> Int
+area s =
+    case s of
+        Circle r ->
+            3 * r * r
+
+        Square w ->
+            w * w
+
+
+pub double : Int -> Int
+double n =
+    n * 2
+
+
+main : Program
+main =
+    Node.printLines []

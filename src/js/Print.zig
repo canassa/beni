@@ -35,6 +35,7 @@ const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
+const Rename = @import("Rename.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -78,13 +79,29 @@ pub const Options = struct {
     /// §9 item 1's answer: the statements to skip and the names to
     /// substitute. The empty plan is a dev build.
     plan: *const Opt.Plan = &Opt.Plan.none,
+    /// §9 item 2's namespaces. Null is a dev build, where every name comes
+    /// out as `Module$base$tag`.
+    rename: ?*Rename.Module = null,
 };
 
 /// Print `ir` as an ES module. The caller owns the returned bytes.
 pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Allocator.Error![]u8 {
-    var p: Printer = .{ .joiner = .init(gpa), .ir = ir, .names = names, .plan = options.plan };
+    var p: Printer = .{
+        .joiner = .init(gpa),
+        .ir = ir,
+        .names = names,
+        .plan = options.plan,
+        .rename = options.rename,
+    };
     defer p.joiner.deinit();
-    try p.statements(ir.body, 0);
+    // The module body is walked here rather than through `statements`,
+    // because §9 item 2's local alphabet RESTARTS at every top-level
+    // declaration and this is the only place that boundary is visible.
+    for (ir.extraSlice(ir.body, Index)) |node| {
+        if (p.plan.isDropped(node)) continue;
+        if (p.rename) |m| try m.enter(node);
+        try p.statement(node, 0);
+    }
     return p.joiner.blit();
 }
 
@@ -172,6 +189,8 @@ const Printer = struct {
     /// §9 item 1's plan. `Opt.Plan.none` for a development build, where every
     /// test below is a compare against an empty slice.
     plan: *const Opt.Plan = &Opt.Plan.none,
+    /// §9 item 2's namespaces, or null for a development build.
+    rename: ?*Rename.Module = null,
 
     fn indent(p: *Printer, level: u32) Allocator.Error!void {
         var left: usize = @as(usize, level) * 2;
@@ -182,8 +201,26 @@ const Printer = struct {
     // ---- Names ------------------------------------------------------------
 
     /// `Module$base`, with the module's dots turned into `$`, plus a
-    /// `$<tag>` suffix when the name carries a disambiguator.
-    fn name(p: *Printer, index: JsIr.NameIndex, escape_reserved: bool) Allocator.Error!void {
+    /// `$<tag>` suffix when the name carries a disambiguator — or, under
+    /// `--release`, the one-to-three bytes §9 item 2 assigned it.
+    ///
+    /// `role` is the whole of §9's "what is NOT renamed" list: a `.fixed`
+    /// slot is a property key or a sibling's own export name and comes out
+    /// exactly as it went in, in either mode.
+    fn name(p: *Printer, index: JsIr.NameIndex, role: Rename.Role) Allocator.Error!void {
+        const escape_reserved = role == .binding;
+        if (p.rename) |m| {
+            if (role == .binding) {
+                if (m.ordinal(index)) |o| {
+                    var buf: [8]u8 = undefined;
+                    return p.joiner.pushOwned(Rename.spell(o, &buf));
+                }
+                // Nothing assigned this one. The safety build turns that into
+                // a stopped build with the name in it; every build prints the
+                // long name, so the output stays loadable either way.
+                m.unresolved(index);
+            }
+        }
         const n = p.ir.name(index);
         if (n.module.unwrap()) |module| {
             const text = p.names.text(module);
@@ -227,11 +264,20 @@ const Printer = struct {
                 const specs = p.ir.extraSlice(imp.specs(), JsIr.Specifier);
                 for (specs, 0..) |spec, i| {
                     if (i != 0) try p.joiner.push(", ");
-                    try p.name(spec.imported, false);
-                    if (spec.imported != spec.local) {
-                        try p.joiner.push(" as ");
-                        try p.name(spec.local, false);
+                    // The two halves differ exactly for a SIBLING binding —
+                    // `import { add as Basics$add } from "./Basics.foreign.mjs"`
+                    // — and then the `imported` half is the sibling's own
+                    // bare export name, which `boundary.md` §4 fixes and §9
+                    // item 2 may not move. When they are equal this is an
+                    // import from another EMITTED module and the one name is
+                    // a binding at both ends.
+                    if (spec.imported == spec.local) {
+                        try p.name(spec.local, .binding);
+                        continue;
                     }
+                    try p.name(spec.imported, .fixed);
+                    try p.joiner.push(" as ");
+                    try p.name(spec.local, .binding);
                 }
                 try p.joiner.push(" } from \"");
                 try p.joiner.push(p.ir.string_bytes[imp.source_start..][0..imp.source_len]);
@@ -241,20 +287,20 @@ const Printer = struct {
                 try p.joiner.push("export { ");
                 for (p.ir.extraSlice(JsIr.inlineRange(d), JsIr.NameIndex), 0..) |n, i| {
                     if (i != 0) try p.joiner.push(", ");
-                    try p.name(n, false);
+                    try p.name(n, .binding);
                 }
                 try p.joiner.push(" };\n");
             },
             .const_decl => {
                 try p.joiner.push("const ");
-                try p.name(@enumFromInt(d.lhs), true);
+                try p.name(@enumFromInt(d.lhs), .binding);
                 try p.joiner.push(" = ");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
                 try p.joiner.push(";\n");
             },
             .let_decl => {
                 try p.joiner.push("let ");
-                try p.name(@enumFromInt(d.lhs), true);
+                try p.name(@enumFromInt(d.lhs), .binding);
                 if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |value| {
                     try p.joiner.push(" = ");
                     try p.expression(value, 0, level);
@@ -263,7 +309,7 @@ const Printer = struct {
             },
             .func_decl => {
                 try p.joiner.push("function ");
-                try p.name(@enumFromInt(d.lhs), true);
+                try p.name(@enumFromInt(d.lhs), .binding);
                 const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
                 try p.params(f);
                 try p.joiner.push(" {\n");
@@ -303,7 +349,7 @@ const Printer = struct {
             },
             .while_true => {
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
-                    try p.name(@enumFromInt(d.lhs), true);
+                    try p.name(@enumFromInt(d.lhs), .binding);
                     try p.joiner.push(": ");
                 }
                 try p.joiner.push("while (true) {\n");
@@ -315,7 +361,7 @@ const Printer = struct {
                 try p.joiner.push(if (p.ir.tag(node) == .break_stmt) "break" else "continue");
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
                     try p.joiner.push(" ");
-                    try p.name(@enumFromInt(d.lhs), true);
+                    try p.name(@enumFromInt(d.lhs), .binding);
                 }
                 try p.joiner.push(";\n");
             },
@@ -341,7 +387,7 @@ const Printer = struct {
             },
             .block_stmt => {
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
-                    try p.name(@enumFromInt(d.lhs), true);
+                    try p.name(@enumFromInt(d.lhs), .binding);
                     try p.joiner.push(": ");
                 }
                 try p.joiner.push("{\n");
@@ -375,7 +421,7 @@ const Printer = struct {
         try p.joiner.push("(");
         for (p.ir.extraSlice(f.params(), JsIr.NameIndex), 0..) |n, i| {
             if (i != 0) try p.joiner.push(", ");
-            try p.name(n, true);
+            try p.name(n, .binding);
         }
         try p.joiner.push(")");
     }
@@ -434,7 +480,7 @@ const Printer = struct {
     fn raw(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
-            .ident => try p.name(@enumFromInt(d.lhs), true),
+            .ident => try p.name(@enumFromInt(d.lhs), .binding),
             .number => try p.joiner.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
             .template => {
@@ -469,7 +515,7 @@ const Printer = struct {
                 // syntax error), and so does an arrow or a conditional.
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
                 try p.joiner.push(".");
-                try p.name(@enumFromInt(d.rhs), false);
+                try p.name(@enumFromInt(d.rhs), .fixed);
             },
             .index_get => {
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
@@ -491,7 +537,7 @@ const Printer = struct {
                 try p.joiner.push(" }");
             },
             .property => {
-                try p.name(@enumFromInt(d.lhs), false);
+                try p.name(@enumFromInt(d.lhs), .fixed);
                 try p.joiner.push(": ");
                 try p.expression(@enumFromInt(d.rhs), prec_arrow, level);
             },

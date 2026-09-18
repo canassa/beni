@@ -1,0 +1,61 @@
+-- emit/release: `backend.md` §9 item 2's whole-program namespace, which is
+-- the half a single-module golden cannot show. Two modules, one build.
+--
+-- The claims, all of them visible in the bytes below:
+--
+--   * `Shapes.area` and `Shapes.double` come out short, and the `import`
+--     specifier here spells them exactly as `Shapes.mjs`' `export` list does.
+--     A whole-program table is the only thing that can promise that, and
+--     getting it wrong is a `SyntaxError` at load — "does not provide an
+--     export named …" — which is why the two ends are goldened together.
+--     A sibling specifier's `imported` half — `add` in
+--     `import { add as a } from "./Basics.foreign.mjs"` — may not move
+--     either, and cannot be shown here: only `core/` and a platform may write
+--     `foreign`, so no app module emits one. That claim is pinned by the
+--     whole `run/` corpus instead, every program of which imports a core
+--     sibling and would fail to LOAD if the bare name were renamed.
+--   * Every PROPERTY name survives untouched: the `$` tag, the `a`/`b` slots
+--     and the record field `size`. That is item 4's territory and the second
+--     slice's (§9), and this golden is where "we did not touch it yet" is
+--     written down.
+--   * `describe`'s locals restart the alphabet, skipping only the short names
+--     of the globals `describe` itself mentions.
+import Node exposing (Program)
+import Shapes exposing (Shape)
+import String
+
+
+type alias Sized =
+    { size : Int, label : String }
+
+
+pub describe : Shape -> Sized
+describe s =
+    let
+        measured =
+            Shapes.area s
+
+        twice =
+            Shapes.double measured
+    in
+    { size = twice, label = String.fromInt measured }
+
+
+pub biggest : Shape, Shape -> Int
+biggest one other =
+    let
+        a =
+            Shapes.area one
+
+        b =
+            Shapes.area other
+    in
+    if a > b then
+        a
+    else
+        b
+
+
+main : Program
+main =
+    Node.printLines []

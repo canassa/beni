@@ -1,0 +1,198 @@
+-- run: every way `backend.md` §9 item 2's two namespaces could collide, in
+-- one program whose ANSWER moves if one of them does. Built twice, once as a
+-- dev build and once with `--release`.
+--
+-- Renaming is the largest win in the slice and the one with the sharpest
+-- failure mode: two names given one spelling in one scope is a `SyntaxError`
+-- at load if they are both declared, and a silently wrong value if one merely
+-- shadows the other. None of that is visible in a golden — a golden pins the
+-- spelling somebody blessed — so it is pinned here, by arithmetic.
+--
+--   * `newClass` binds locals whose SOURCE names are JavaScript reserved
+--     words (`new`, `class`, `eval`, `arguments`, `typeof`, `var`). In a dev
+--     build the printer escapes each with a `$`; under `--release` the source
+--     spelling is gone entirely and the alphabet must not hand one back — the
+--     generated names skip `do`, `if`, `in` and the rest, and `undefined`,
+--     which is not a reserved word and IS written by the emitter.
+--   * `sixtyOne` holds sixty-one locals in one declaration, so the
+--     per-declaration alphabet rolls over from its 54 one-character names
+--     into two-character ones. The sum is the assertion: one repeated name
+--     and the chain reads the wrong link.
+--   * `siblings` binds the same source name `v` in two sibling `case`
+--     branches. They are two bindings and JavaScript gives a `switch` one
+--     scope for all its cases, so they must not collide — §7 puts each case
+--     body in a block for exactly this reason and renaming must not undo it.
+--   * `labelled` is a §8 tail-call loop whose LABEL is the declaration's own
+--     name beside a local bound from the same source name. A label and a
+--     binding may legally share a spelling in JavaScript; what may not happen
+--     is the local taking the name of a GLOBAL this declaration mentions.
+--   * `crowded` mentions eight imported globals and binds locals beside them,
+--     which is the case where the local alphabet has to start past the short
+--     names the globals took. Get the skip set wrong and a local shadows a
+--     function this very declaration calls.
+import Node exposing (Program)
+import String
+import List
+
+
+-- Source names that are JavaScript reserved words, and one that is `eval`.
+newClass : Int -> Int
+newClass class =
+    let
+        new =
+            class + 1
+
+        eval =
+            new * 2
+
+        arguments =
+            eval - 1
+
+        typeof =
+            arguments + 3
+
+        var =
+            typeof * 2
+    in
+    var
+
+
+-- Sixty-one locals in one declaration: past the 54 one-character names.
+sixtyOne : Int -> Int
+sixtyOne seed =
+    let
+        v01 = seed + 1
+        v02 = v01 + 1
+        v03 = v02 + 1
+        v04 = v03 + 1
+        v05 = v04 + 1
+        v06 = v05 + 1
+        v07 = v06 + 1
+        v08 = v07 + 1
+        v09 = v08 + 1
+        v10 = v09 + 1
+        v11 = v10 + 1
+        v12 = v11 + 1
+        v13 = v12 + 1
+        v14 = v13 + 1
+        v15 = v14 + 1
+        v16 = v15 + 1
+        v17 = v16 + 1
+        v18 = v17 + 1
+        v19 = v18 + 1
+        v20 = v19 + 1
+        v21 = v20 + 1
+        v22 = v21 + 1
+        v23 = v22 + 1
+        v24 = v23 + 1
+        v25 = v24 + 1
+        v26 = v25 + 1
+        v27 = v26 + 1
+        v28 = v27 + 1
+        v29 = v28 + 1
+        v30 = v29 + 1
+        v31 = v30 + 1
+        v32 = v31 + 1
+        v33 = v32 + 1
+        v34 = v33 + 1
+        v35 = v34 + 1
+        v36 = v35 + 1
+        v37 = v36 + 1
+        v38 = v37 + 1
+        v39 = v38 + 1
+        v40 = v39 + 1
+        v41 = v40 + 1
+        v42 = v41 + 1
+        v43 = v42 + 1
+        v44 = v43 + 1
+        v45 = v44 + 1
+        v46 = v45 + 1
+        v47 = v46 + 1
+        v48 = v47 + 1
+        v49 = v48 + 1
+        v50 = v49 + 1
+        v51 = v50 + 1
+        v52 = v51 + 1
+        v53 = v52 + 1
+        v54 = v53 + 1
+        v55 = v54 + 1
+        v56 = v55 + 1
+        v57 = v56 + 1
+        v58 = v57 + 1
+        v59 = v58 + 1
+        v60 = v59 + 1
+    in
+    v60
+
+
+-- The same source name in two sibling `case` branches.
+siblings : List Int -> Int
+siblings xs =
+    case xs of
+        [ v ] ->
+            v * 100
+
+        v :: rest ->
+            v + List.length rest
+
+        [] ->
+            0
+
+
+-- A loop whose label is the declaration's own name, beside a local bound
+-- from the same source name.
+labelled : Int, Int -> Int
+labelled labelledN acc =
+    if labelledN <= 0 then
+        acc
+    else
+        let
+            step =
+                acc + labelledN
+        in
+        labelled (labelledN - 1) step
+
+
+-- Eight globals mentioned in one declaration, with locals beside them.
+crowded : List Int -> String
+crowded xs =
+    let
+        total =
+            List.foldl xs 0 (\x sum -> sum + x)
+
+        count =
+            List.length xs
+
+        biggest =
+            List.foldl xs 0 (\x best -> if x > best then x else best)
+
+        shown =
+            String.join (List.map xs String.fromInt) ","
+
+        reversed =
+            String.join (List.map (List.reverse xs) String.fromInt) ","
+    in
+    String.concat
+        [ String.fromInt total
+        , "/"
+        , String.fromInt count
+        , "/"
+        , String.fromInt biggest
+        , "/"
+        , shown
+        , "/"
+        , reversed
+        ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (newClass 1)
+        , String.fromInt (sixtyOne 0)
+        , String.fromInt (siblings [ 7 ])
+        , String.fromInt (siblings [ 7, 8, 9 ])
+        , String.fromInt (siblings [])
+        , String.fromInt (labelled 4 0)
+        , crowded [ 3, 1, 2 ]
+        ]
