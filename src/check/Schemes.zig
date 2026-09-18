@@ -579,6 +579,7 @@ pub fn instantiate(
             const sites: TypeStore.Range = if (site) |sp| try store.addConstraintSites(&.{.{
                 .inst = sp.inst,
                 .evidence_index = sp.next.*,
+                .parent = sp.parent,
             }}) else .empty;
             if (site) |sp| sp.next.* +|= 1;
             c.* = .{
@@ -614,9 +615,15 @@ pub fn instantiate(
 /// hard-coded 1. The caller owns the cell and writes it back when the
 /// instantiation is done; `+|=` saturates rather than wrapping, because a
 /// wrapped index would collide with slot 0.
+/// `parent` is the slot of the same instruction whose resolution reached
+/// this instantiation, or `Dispatch.Site.no_parent` at a slot the
+/// instruction owns outright. The cursor is breadth-first and the emitter
+/// reads the list depth-first, so the parent is what puts the two back in
+/// agreement (`Dispatch.Site.parent`, A.68).
 pub const Site = struct {
     inst: @import("../bir/Bir.zig").Inst.Index,
     next: *u16,
+    parent: u16 = @import("Dispatch.zig").Site.no_parent,
 };
 
 /// Copy an imported constructor's type into `store` at `rank`:

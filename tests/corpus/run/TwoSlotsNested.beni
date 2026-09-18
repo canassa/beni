@@ -1,0 +1,73 @@
+-- two evidence slots of one call that EACH nest get their own evidence,
+-- and not each other's (`docs/design/static-dispatch-spike.md` §7.2, §8.2,
+-- A.68).
+--
+-- The site list of one instruction is FLAT and the evidence it describes is
+-- a TREE: a slot answered by a function that takes evidence of its own
+-- consumes the slots that follow it. §7.2 numbers the slots with a running
+-- cursor, which is allocation order, and allocation is breadth-first — one
+-- instantiation numbers every slot of its own `where` clause before any of
+-- them is discharged. With one nesting chain that is still pre-order by
+-- accident; with TWO slots that each nest it is not, and the walk read
+-- `a`'s children as `b`'s.
+--
+-- `pair [ [ 1 ] ] [ [ 1 ] ] [ [ 2 ] ] [ [ 2 ] ]` is the whole of it. The
+-- emitted call handed `a` a `List$eq` nested FOUR deep and handed `b` a
+-- bare `===`, which on two distinct arrays is `false` — so line 1 printed
+-- `False` where the language says `True`, and lines 4 and 6 crashed
+-- `List.eq` on a number with `TypeError: Cannot read properties of
+-- undefined`, after a build that exited 0.
+--
+-- Every line here needs BOTH slots' evidence to be its own. Lines 2 and 3
+-- differ in exactly one slot, so a program that wired one slot's evidence
+-- into the other still has to disagree with one of them; line 4 gives the
+-- two slots different SHAPES, `List (List Int)` against `List (Maybe Int)`,
+-- so swapping them is a type the other could not survive; line 6 makes
+-- slot `b` a tuple, whose evidence rides on the target's own `part` tree
+-- (§7.1) rather than on the site list, and slot `a`'s element evidence has
+-- to land between the two all the same. The last three are the same shape
+-- through `compare` and `<`, where the nesting is a derived `Maybe$compare`
+-- taking the inner `Maybe`'s comparator rather than a `foreign` List.
+import Maybe exposing (Maybe)
+import Node exposing (Program)
+
+
+pub pair : a, a, b, b -> Bool
+    where
+        a.eq : a, a -> Bool
+        , b.eq : b, b -> Bool
+pair x1 x2 y1 y2 =
+    x1 == x2 && y1 == y2
+
+
+pub less : a, a, b, b -> Bool
+    where
+        a.compare : a, a -> Order
+        , b.compare : b, b -> Order
+less x1 x2 y1 y2 =
+    x1 < x2 && y1 < y2
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (pair [ [ 1 ] ] [ [ 1 ] ] [ [ 2 ] ] [ [ 2 ] ])
+        , show (pair [ [ 1 ] ] [ [ 9 ] ] [ [ 2 ] ] [ [ 2 ] ])
+        , show (pair [ [ 1 ] ] [ [ 1 ] ] [ [ 2 ] ] [ [ 9 ] ])
+        , show (pair [ [ 1, 2 ] ] [ [ 1, 2 ] ] [ Just 3 ] [ Just 3 ])
+        , show (pair [ [ 1, 2 ] ] [ [ 1, 2 ] ] [ Just 3 ] [ Just 4 ])
+        , show (pair [ 1 ] [ 1 ] ( [ [ 2 ] ], [ [ 3 ] ] ) ( [ [ 2 ] ], [ [ 3 ] ] ))
+        , show (pair [ 1 ] [ 1 ] ( [ [ 2 ] ], [ [ 3 ] ] ) ( [ [ 2 ] ], [ [ 9 ] ] ))
+        , show (less (Just (Just 1)) (Just (Just 2)) (Just (Just 3)) (Just (Just 4)))
+        , show (less (Just (Just 1)) (Just (Just 2)) (Just (Just 5)) (Just (Just 4)))
+        , show (less (Just (Just 2)) (Just (Just 2)) (Just (Just 3)) (Just (Just 4)))
+        ]

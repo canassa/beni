@@ -1,0 +1,37 @@
+-- check/bad: §10.1's other arm — a `where` name that is NOT well known,
+-- on a receiver whose type nothing ever determines (§7.2, A.66).
+--
+-- `Box 1 2 == Box 3 4` resolves `==` to this module's own `eq`, whose
+-- `where` clause asks the payload for `describe`. The payload is an
+-- integer literal nobody ever uses at `Int` or at `Float`, so its type
+-- stays `number`, and `Solve.settleUndetermined` has to answer the slot
+-- with something. For `eq` and `compare` it can — A.66's bridge, which is
+-- what makes `[] == []` compile — because those mean the same thing at
+-- every type and no value of an undetermined one ever reaches the function
+-- handed over. For `describe` it cannot: there is no type to look the name
+-- up in, and inventing a function would be inventing a meaning.
+--
+-- It used to answer NOTHING, in silence. The check exited 0, the evidence
+-- slot stayed empty, and the emitted call to `eq` was one argument short —
+-- caught only by `Lower.evidenceShapeOk`, which reports an `internal`
+-- compiler bug about a program whose only fault is that it never says
+-- which type it means. Adding `Box 1 2 == Box (Id 3) (Id 4)`, or
+-- annotating the literals, is all it takes to make this program legal, and
+-- neither is something an `internal` tells an author to do.
+pub type Box a
+    = Box a a
+
+
+pub eq : Box a, Box a -> Bool
+    where a.describe : a, Int -> String
+eq p q =
+    case p of
+        Box x _ ->
+            case q of
+                Box y _ ->
+                    x.describe 1 == y.describe 2
+
+
+pub same : Bool
+same =
+    Box 1 2 == Box 3 4

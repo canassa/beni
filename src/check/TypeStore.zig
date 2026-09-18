@@ -194,6 +194,13 @@ pub const MethodConstraint = struct {
 pub const ConstraintSite = struct {
     inst: Bir.Inst.Index,
     evidence_index: u16,
+    /// The slot of the SAME instruction whose own resolution asked for this
+    /// one, or `Dispatch.Site.no_parent` for a slot the instruction owns
+    /// outright. See `Dispatch.Site.parent`: the cursor of §7.2 numbers
+    /// slots in ALLOCATION order, which is breadth-first, and this is what
+    /// lets `Dispatch.finish` put the flat list back into the pre-order the
+    /// emitter reads it as (A.68).
+    parent: u16 = std.math.maxInt(u16),
 };
 
 /// A run of `constraints`, named by its index in `constraint_sets`.

@@ -7,11 +7,12 @@
 //! index resolved before anything reads them.
 //!
 //! **Sorted before anything indexes it.** `derived` is sorted by emitted
-//! name text and `sites` by `(inst, evidence_index)` at the end of the
-//! module's check, and `Target.derived` / `Derived.parts` index the SORTED
-//! arrays — so the table a dump prints and the table the emitter walks are
-//! one table in one order, and `--jobs` cannot move a byte of either
-//! (§7.1, A.29, CLAUDE.md rule 5).
+//! name text at the end of the module's check, and `Target.derived` /
+//! `Derived.parts` index the SORTED arrays — so the table a dump prints and
+//! the table the emitter walks are one table in one order, and `--jobs`
+//! cannot move a byte of either (§7.1, A.29, CLAUDE.md rule 5). `sites` is
+//! grouped by `inst` and then put into the PRE-ORDER of §7.2's evidence
+//! tree, which is not the order its indices run in; `Site.parent` says why.
 //!
 //! **One level of evidence, no depth.** `Target.evidence` is a single `u16`
 //! because §6.4 rule (a) keeps a `let` binding from being generalised over
@@ -138,7 +139,28 @@ pub const Target = union(enum(u8)) {
 pub const Site = struct {
     inst: Bir.Inst.Index,
     evidence_index: u16,
+    /// Which slot of the same instruction this one hangs under, or
+    /// `no_parent` for a slot the instruction owns outright.
+    ///
+    /// **The list is flat and the tree is real** (§7.2, §8.2). Resolving a
+    /// slot can instantiate the scheme that ANSWERS it, and that scheme's
+    /// own `where` clause is a further slot of the SAME instruction; the
+    /// emitter reads the flat list as a pre-order walk of that tree, a
+    /// target consuming the slots that follow it. The cursor that numbers
+    /// them runs in ALLOCATION order, which is breadth-first — an
+    /// instantiation numbers all of its own slots at once, before any of
+    /// them is discharged — so `pair [ [ 1 ] ] [ [ 2 ] ]` under
+    /// `pair : a, b -> Bool where a.eq : …, b.eq : …` numbered `a`'s child
+    /// AFTER `b` and the pre-order walk then read it as `a`'s grandchild
+    /// (A.68). The parent is what `Builder.finish` orders the list by, so
+    /// the ORDER is the tree and `evidence_index` is only the identity the
+    /// checker's two deduplicating tables key on.
+    parent: u16 = no_parent,
     target: Target,
+
+    /// A slot no other slot of its instruction asked for: a root of the
+    /// forest `finish` walks.
+    pub const no_parent: u16 = std.math.maxInt(u16);
 };
 
 /// One evidence parameter of one declaration: which quantifier of its
@@ -423,6 +445,7 @@ pub const Builder = struct {
         errdefer gpa.free(sites);
         for (sites) |*s| remapTarget(&s.target, remap);
         std.mem.sort(Site, sites, {}, siteLessThan);
+        try preorderSites(sites, scratch);
 
         while (b.decl_evidence.items.len < decl_count) try b.decl_evidence.append(b.gpa, .{});
         return .{
@@ -445,6 +468,90 @@ pub const Builder = struct {
     fn siteLessThan(_: void, a: Site, c: Site) bool {
         if (a.inst != c.inst) return a.inst.int() < c.inst.int();
         return a.evidence_index < c.evidence_index;
+    }
+
+    /// Put each instruction's slots into the PRE-ORDER of §7.2's evidence
+    /// tree, which is the order `Lower.evidenceArguments` reads the flat
+    /// list in.
+    ///
+    /// Called on a list already sorted by `(inst, evidence_index)`, so the
+    /// instructions are contiguous — which `Lower.siteRangeOf`'s binary
+    /// search needs and this must not disturb — and within one instruction
+    /// a slot's parent, numbered before it was, always sits EARLIER in the
+    /// group. That one fact is what makes the whole walk a forward pass:
+    /// each slot's path from its root is its parent's path with its own
+    /// index appended, and sorting the group by that path lexicographically
+    /// is the pre-order. A parent's path is a strict prefix of its child's,
+    /// so a parent always precedes every descendant; two siblings differ
+    /// first at their own indices, so they keep the cursor's order.
+    ///
+    /// Deterministic without qualification: the paths are a function of the
+    /// (already deterministic) site list alone, the comparison is total —
+    /// ties, which unique indices make unreachable, fall back on the
+    /// position — and nothing here reads a clock, a pointer or a thread id
+    /// (CLAUDE.md rule 5).
+    fn preorderSites(sites: []Site, scratch: Allocator) Allocator.Error!void {
+        var start: usize = 0;
+        while (start < sites.len) {
+            var end = start + 1;
+            while (end < sites.len and sites[end].inst == sites[start].inst) end += 1;
+            try preorderGroup(sites[start..end], scratch);
+            start = end;
+        }
+    }
+
+    fn preorderGroup(group: []Site, scratch: Allocator) Allocator.Error!void {
+        if (group.len < 2) return;
+
+        // `paths[i]` is the chain of evidence indices from `group[i]`'s root
+        // down to `group[i]`, as a run of `flat`.
+        var flat: std.ArrayList(u16) = .empty;
+        defer flat.deinit(scratch);
+        const paths = try scratch.alloc(Range, group.len);
+        defer scratch.free(paths);
+        for (group, 0..) |s, i| {
+            const parent: ?usize = if (s.parent == Site.no_parent) null else slotAt(group[0..i], s.parent);
+            const inherited: Range = if (parent) |j| paths[j] else .empty;
+            try flat.ensureUnusedCapacity(scratch, inherited.len + 1);
+            flat.appendSliceAssumeCapacity(flat.items[inherited.start..][0..inherited.len]);
+            flat.appendAssumeCapacity(s.evidence_index);
+            paths[i] = .{ .start = @intCast(flat.items.len - inherited.len - 1), .len = inherited.len + 1 };
+        }
+
+        const order = try scratch.alloc(u32, group.len);
+        defer scratch.free(order);
+        for (order, 0..) |*o, i| o.* = @intCast(i);
+        const Sorter = struct {
+            flat: []const u16,
+            paths: []const Range,
+            fn lessThan(self: @This(), x: u32, y: u32) bool {
+                const a = self.flat[self.paths[x].start..][0..self.paths[x].len];
+                const c = self.flat[self.paths[y].start..][0..self.paths[y].len];
+                for (a[0..@min(a.len, c.len)], c[0..@min(a.len, c.len)]) |p, q| {
+                    if (p != q) return p < q;
+                }
+                if (a.len != c.len) return a.len < c.len;
+                return x < y;
+            }
+        };
+        std.mem.sort(u32, order, Sorter{ .flat = flat.items, .paths = paths }, Sorter.lessThan);
+
+        const sorted = try scratch.alloc(Site, group.len);
+        defer scratch.free(sorted);
+        for (order, 0..) |old, new| sorted[new] = group[old];
+        @memcpy(group, sorted);
+    }
+
+    /// Where in `group` the slot numbered `index` sits. Linear, over a list
+    /// that is the evidence of ONE instruction; a slot's parent is usually
+    /// the slot just before it, so the scan runs backwards.
+    fn slotAt(group: []const Site, index: u16) ?usize {
+        var i = group.len;
+        while (i > 0) {
+            i -= 1;
+            if (group[i].evidence_index == index) return i;
+        }
+        return null;
     }
 };
 
@@ -495,6 +602,53 @@ test "the builder's lengths and shrink are an exact rollback" {
     // by one that does not.
     _ = try b.derive(.compare, .unit, 0);
     try testing.expectEqual(@as(usize, 1), b.derived.items.len);
+}
+
+test "one instruction's sites come out in pre-order, not in index order" {
+    // static-dispatch-spike.md §7.2 and A.68: the cursor numbers slots in
+    // ALLOCATION order, which is breadth-first — `pair [ [ 1 ] ] [ [ 2 ] ]`
+    // under `pair : a, b -> Bool where a.eq : …, b.eq : …` numbers `a` and
+    // `b` together, then their children, then their grandchildren — while
+    // `Lower.evidenceArguments` reads the flat list as a pre-order tree.
+    // The parent links are what reconcile the two.
+    var b: Builder = .{ .gpa = testing.allocator };
+    defer b.deinit();
+
+    // 0:a 1:b 2:a's child 3:b's child 4:a's grandchild 5:b's grandchild,
+    // appended in that (breadth-first) order, plus one site of a LATER
+    // instruction to prove the grouping survives.
+    const parents = [_]u16{ Site.no_parent, Site.no_parent, 0, 1, 2, 3 };
+    for (parents, 0..) |parent, i| {
+        try b.addSite(.{
+            .inst = @enumFromInt(9),
+            .evidence_index = @intCast(i),
+            .parent = parent,
+            .target = .{ .evidence = @intCast(i) },
+        });
+    }
+    try b.addSite(.{ .inst = @enumFromInt(4), .evidence_index = 0, .target = .{ .evidence = 99 } });
+
+    const Name = struct {
+        fn write(_: *anyopaque, _: Derived, _: *std.ArrayList(u8), _: Allocator) Allocator.Error!void {}
+    };
+    var ctx: u8 = 0;
+    var d = try b.finish(testing.allocator, 0, testing.allocator, Name.write, &ctx);
+    defer d.deinit(testing.allocator);
+
+    // Instructions stay contiguous and in order — `Lower.siteRangeOf`
+    // binary-searches them — and within the one that nests, the rows are
+    // the depth-first walk: a, a's child, a's grandchild, then b's.
+    var got: [7]u32 = undefined;
+    for (d.sites, 0..) |s, i| got[i] = (@as(u32, s.inst.int()) << 8) | s.evidence_index;
+    try testing.expectEqualSlices(u32, &.{
+        (4 << 8) | 0,
+        (9 << 8) | 0,
+        (9 << 8) | 2,
+        (9 << 8) | 4,
+        (9 << 8) | 1,
+        (9 << 8) | 3,
+        (9 << 8) | 5,
+    }, &got);
 }
 
 test "a derived function is deduplicated on its shape alone" {

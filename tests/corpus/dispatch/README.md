@@ -14,9 +14,12 @@ slices lower against.
 
 The format carries **no symbol ids, no positions and no module indices** —
 every name is text — so reformatting a fixture leaves its golden untouched
-and `--jobs` cannot move a byte. `site` lines are sorted by
-`(inst, evidence_index)` and `derived` lines by the emitted name text, both
-before anything indexes them (§7.1, A.29).
+and `--jobs` cannot move a byte. `derived` lines are sorted by the emitted
+name text before anything indexes them (§7.1, A.29). `site` lines are
+grouped by `inst` and then in the **pre-order** of §7.2's evidence tree,
+which is the order the emitter reads them in and NOT ascending by index:
+read down the rows, where a target takes the slots that follow it, rather
+than across the index column (§7.3, A.68).
 
 Both halves of a fixture matter. The `check` must be clean because a table
 describing a program the compiler rejected describes nothing; the golden is
@@ -49,4 +52,8 @@ ONE instruction each have their own `evidence_index` however deep the
 instantiation nests (A.68). It is the only fixture that can see it — the
 emitted JavaScript is the same either way, because the walk reads the order
 and not the numbers, and what a repeated index threatens is the two places
-that deduplicate on `(inst, evidence_index)`.
+that deduplicate on `(inst, evidence_index)`. `TwoSlotsNested` is the ORDER
+half of the same appendix: two slots of one instruction that EACH nest, where
+the breadth-first numbering and the depth-first reading part company and the
+emitted JavaScript is not the same either way — `run/TwoSlotsNested` is what
+it did to the answers.

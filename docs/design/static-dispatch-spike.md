@@ -1278,7 +1278,13 @@ pub const Dispatch = struct {
         err,
     };
 
-    pub const Site = struct { inst: Bir.Inst.Index, evidence_index: u16, target: Target };
+    pub const Site = struct {
+        inst: Bir.Inst.Index, evidence_index: u16,
+        parent: u16,                   // the slot of the SAME instruction this one hangs
+                                       // under, or `no_parent`. The ORDER of the list is the
+                                       // tree; the index is only the identity (§7.2, A.68)
+        target: Target,
+    };
     pub const Evidence = struct { quantified: u16, var_name: SymbolIndex, method: SymbolIndex };
     pub const Derived = struct {
         kind: enum(u8) { eq, compare },
@@ -1289,7 +1295,8 @@ pub const Dispatch = struct {
                                // `$m$0 … $m$n-1` applied position by position (§9.2, §9.3)
     };
 
-    sites: []Site,                     // sorted by (inst, evidence_index)
+    sites: []Site,                     // grouped by `inst`, and within one instruction in the
+                                       // PRE-ORDER of §7.2's evidence tree
     decl_evidence: []Range,            // per declaration, into `evidence`
     evidence: []Evidence,              // canonical order within each declaration
     derived: []Derived,                // SORTED by emitted name text (§8.5). Exactly what this
@@ -1325,7 +1332,17 @@ parts, and the backend refuses the call rather than pass evidence for the wrong 
 indices into the *sorted* arrays, so the table a dump prints and the table the emitter walks are the
 same table in the same order, and `--jobs` cannot move a byte of either. A builder that appends
 while discharging must therefore sort and remap once, at the end of `ModuleCheck.run`, together
-with the `(inst, evidence_index)` sort of `sites`.
+with the ordering of `sites`.
+
+**`sites` is ordered by the TREE, not by the index.** The list is sorted by `(inst,
+evidence_index)` first — `Lower.siteRangeOf` binary-searches one instruction's run, so the
+instructions have to stay contiguous — and each instruction's run is then put into the pre-order of
+§7.2's evidence tree, which is the order §8.2 reads it in. The two disagree: the cursor that numbers
+slots runs in ALLOCATION order, and allocation is breadth-first, because one instantiation numbers
+every slot of its own `where` clause before any of them is discharged. `Site.parent` is what closes
+the gap, and the ordering is a forward pass over it — a slot's parent, numbered before it was, is
+always earlier in the run, so each slot's path from its root is its parent's path with its own index
+appended, and sorting a run by that path lexicographically *is* the pre-order. Appendix A.68.
 
 `Check.Module` gains `dispatch: Dispatch`. It is filled at the end of `ModuleCheck.run` while the
 store is still alive, kept regardless of `keep_stores`, and handed to `Lower.Input` beside
@@ -1350,6 +1367,18 @@ a nested instantiation continues it rather than starting again at 1. The pair
 `joinConstraint`, when two constraints of a name meet on a variable, and `appendSite`, which
 forwards a mutually recursive group's shared constraint. Both drop a row they have already seen, so
 a repeated index is a dropped argument. Appendix A.68.
+
+**The flat list is a PRE-ORDER walk of that tree, and the numbering is not.** §8.2 reads the list
+with a cursor — a slot answered by a function that takes evidence of its own consumes the slots that
+follow it — so the list has to be the tree written down depth-first. The cursor above numbers in
+allocation order, which is breadth-first: an instantiation numbers `a`'s slot and `b`'s slot
+together, and only then is `a` discharged and `a`'s child numbered, *after* `b`. With one chain of
+nesting the two orders coincide and nothing shows; with two slots that each nest they do not, and
+`pair [ [ 1 ] ] [ [ 2 ] ]` under `pair : a, b -> Bool where a.eq : …, b.eq : …` read `a`'s child as
+`a`'s grandchild and gave `b` whatever was left. So every site records its PARENT slot — the slot of
+the same instruction whose own resolution asked for it, or `no_parent` — and `Dispatch.finish`
+orders each instruction's run by it (§7.1). The order is the tree; `evidence_index` is only the
+identity the two deduplicating tables key on. Appendix A.68.
 
 **Canonical order** is a function of the scheme record alone, never of variable identity, because
 callee and caller compute it independently — Roc's contract:
@@ -1403,10 +1432,14 @@ module <ModuleName>
 - `derived` lines are in the emission order of §8.5 (by emitted name text). Their `part` lines are
   the **body's** positions — every constructor argument of a nominal type, in declaration order
   (§9's parts contract). A record, a tuple and `()` have none: `evidence=<n>` is the whole of it.
-- `site` lines are sorted by `(inst, evidence_index)`, `inst` printed as the decimal Bir
-  instruction index. The indices of one instruction are **distinct** and cover its whole nest, so
-  `[ [ [ 1 ] ] ] == …` prints `0 1 2 3` and not `0 1 1 1`
-  (`tests/corpus/dispatch/NestedEvidenceIndices`). Their `part` lines are the **evidence this use passes**, one per evidence
+- `site` lines are grouped by `inst`, printed as the decimal Bir instruction index, and within one
+  instruction they are in the **pre-order** of §7.2's evidence tree — the order §8.2 reads them in,
+  a target taking the slots that follow it. The indices of one instruction are **distinct** and
+  cover its whole nest, so `[ [ [ 1 ] ] ] == …` prints `0 1 2 3` and not `0 1 1 1`
+  (`tests/corpus/dispatch/NestedEvidenceIndices`), but they are not in ASCENDING order when two
+  slots each nest: the numbering is breadth-first and the rows are depth-first, so
+  `pair [ [ 1 ] ] [ [ 2 ] ]` prints `0 2 4 1 3 5`
+  (`tests/corpus/dispatch/TwoSlotsNested`). Read down the rows, not across the column. Their `part` lines are the **evidence this use passes**, one per evidence
   parameter in shape order, and they NEST: a position that is itself a derived function has its own
   underneath it, indented two more spaces (A.46). A `top` or `ext` position prints its `part` lines
   the same way when it is a constrained value inside a parts tree (A.64); at a call site it has
@@ -2210,6 +2243,26 @@ the `.diag` golden has **one** span, at `.volume` on line 7. The two-span form i
 `pub render : a -> String where a.draw : a -> String`, `Main.beni` calls `Lib.render shape` on a
 `Shape` with no `draw`. Primary is `Lib.render shape` in `Main.beni`; secondary is the `where`
 clause in `Lib.beni`, as *"`draw` was required by `Lib.render`'s annotation"*.
+
+**The undetermined-receiver arm.** Same code, and the receiver rather than the name is what could
+not be found. `Solve.settleUndetermined` answers a well-known method on a type nothing ever
+determines with the A.53 bridge (A.66); a name that is not well known has no such answer, and the
+slot it leaves empty is an emitted call one argument short. **Region** the instruction of the
+constraint's first site — the call the author wrote.
+
+> **UNKNOWN METHOD** — I cannot tell which type `<m>` is being asked of here.
+>
+> A method is resolved in the module that declares its receiver's type, and nothing in this program
+> ever says what that type is:
+>
+>     `number` — a literal I never had to choose between `Int` and `Float` for
+>
+> `eq` and `compare` I could still answer, because they mean the same thing at every type. `<m>` I
+> cannot — it is declared for some type, and there is no type here to look it up in.
+>
+> Hint: annotate the value at the type you mean.
+
+Fixture: `tests/corpus/check/bad/WhereNonWellKnownAtLiteral.beni`.
 
 ### 10.2 `private_method`
 
@@ -3268,7 +3321,12 @@ handed over can only be called on a value of that type, and no such value exists
 that gets there. *Alternative:* report the program as ambiguous, which would reject `[] == []`.
 *Not done for a name that is not well known:* a user's own `where` clause on an undetermined
 receiver gets nothing, because inventing a function for it would be inventing a meaning. Fixtures:
-`run/ListElementEq` (the `[] == []` line), `dispatch/ErrParts`.
+`run/ListElementEq` (the `[] == []` line), `dispatch/ErrParts`. **It gets a MESSAGE, though** [S6b]:
+"nothing" was a silent `null`, so `pub eq : Box a, Box a -> Bool where a.describe : a, Int -> String`
+applied at `Box 1 2` checked clean and emitted a call one argument short, and the only wall left was
+`Lower.evidenceShapeOk`'s `internal` — a compiler bug reported about a program whose only fault is
+that it never says which type it means. It is now §10.1's undetermined-receiver arm. Fixture:
+`check/bad/WhereNonWellKnownAtLiteral`.
 
 **A.67 — an `err` part is answered by KIND, and `compare` has no structural walk to fall back on**
 (§9, A.51, A.53, A.59) [S6a]. `err` means a position nothing ever inhabits, and S5 answered one
@@ -3302,4 +3360,18 @@ slots that each nest, `pair [ [ 1 ] ] [ [ 2 ] ]` under
 `b` instead of between `a` and `b`, and the pre-order walk then reads them as `a`'s grandchildren.
 Distinct indices make that visible in `--stage=dispatch` where the repeated `1`s hid it; the fix is
 a depth-first discharge, which is a change to the obligation drain and not to the numbering.
-Fixture: `dispatch/NestedEvidenceIndices`.
+Fixture: `dispatch/NestedEvidenceIndices`. **Now fixed, and not by the drain** [S6b]: the drain is
+pre-order where it counts — each site records its PARENT slot and `Dispatch.finish` orders one
+instruction's run by the path from its root, so the flat list is the pre-order §8.2 reads however
+the cursor numbered it (§7.1, §7.2). A depth-first discharge would NOT have been enough on its own,
+which is what reading the repro's dump showed: `pair`'s two slots are numbered `0` and `1` by ONE
+instantiation, before either is discharged, so `a`'s child is `2` whatever order the drain then
+runs in and the ascending list still reads `b` as `a`'s child. Ordering by the parent is
+independent of the drain, needs no change to the numbering the two deduplicating tables key on, and
+is deterministic by construction — the paths are a function of the site list alone. What it does
+cost is that the dump's index column is no longer ascending; §7.3 says so, and that is the
+breadth-first numbering made visible rather than hidden. The wrong program was silent: `pair [ [ 1 ] ]
+[ [ 2 ] ]` emitted a four-deep `List$eq` for `a` and a bare `===` for `b`, exit 0, and the answers
+came out `False` where the language says `True` — or, where a slot's evidence was applied to a
+number, `TypeError: Cannot read properties of undefined` from inside `core/List.js`. Fixtures:
+`dispatch/TwoSlotsNested`, `run/TwoSlotsNested`.

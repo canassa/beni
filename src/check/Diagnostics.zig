@@ -924,6 +924,61 @@ pub const Reporter = struct {
         try r.emit(.unknown_method, origin, &out);
     }
 
+    /// §10.1, the arm for a receiver whose type nothing ever determines
+    /// (§7.2, A.66).
+    ///
+    /// `[] == []` is answerable without knowing the element type, because
+    /// `eq` and `compare` mean the same thing at every type and no value of
+    /// an undetermined one ever reaches the function handed over. A name
+    /// that is NOT well known is not: `Solve.undeterminedTarget` has
+    /// nothing to hand the slot, and inventing a function for it would be
+    /// inventing a meaning. It used to return null in silence, which left
+    /// the site empty, the emitted call one argument short, and the only
+    /// wall between that and a shipped build was `Lower.evidenceShapeOk`'s
+    /// `internal` — a compiler bug reported about a program the author
+    /// merely failed to annotate.
+    ///
+    /// It is `unknown_method` and not a code of its own: §10's catalogue is
+    /// closed, and the problem really is that there is no such method to
+    /// call. What the prose adds is that the RECEIVER, not the name, is
+    /// what could not be pinned down.
+    pub fn undeterminedMethodReceiver(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        method: Symbol,
+        kind: TypeStore.Kind,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        const method_text = r.env.interner.slice(method);
+        w.print(
+            \\I cannot tell which type `{s}` is being asked of here.
+            \\
+            \\A method is resolved in the module that declares its receiver's type, and
+            \\nothing in this program ever says what that type is:
+            \\
+            \\    {s}
+            \\
+            \\`eq` and `compare` I could still answer, because they mean the same thing
+            \\at every type. `{s}` I cannot — it is declared for some type, and there
+            \\is no type here to look it up in.
+            \\
+            \\Hint: annotate the value at the type you mean.
+            \\
+        , .{
+            method_text,
+            switch (kind) {
+                .number => "`number` — a literal I never had to choose between `Int` and `Float` for",
+                .appendable => "`appendable` — either a `String` or a `List`",
+                .any => "a type variable no use of this value determines",
+            },
+            method_text,
+        }) catch return error.OutOfMemory;
+        try r.emit(.unknown_method, region, &out);
+    }
+
     /// The module rule found a method of the right NAME whose type does not
     /// fit — which, when the receiver's module declares more than one type,
     /// is §11's namespace clash and not a mistake in the call.

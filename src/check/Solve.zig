@@ -225,11 +225,17 @@ pub const Solver = struct {
     /// scheme that ANSWERS it — `[ [ [ Box "a" "b" ] ] ] == …` goes three
     /// deep through `List.eq … where a.eq` — and each of those nested
     /// instantiations used to restart at a hard-coded 1, so five slots of
-    /// one instruction all read `evidence_index = 1`. The emission was right
-    /// only because the sort is stable and insertion happened to be
-    /// pre-order, while `joinConstraint` and `appendSite` both DEDUPLICATE
-    /// on `(inst, evidence_index)` and would have dropped a different slot's
-    /// site.
+    /// one instruction all read `evidence_index = 1`, and `joinConstraint`
+    /// and `appendSite`, which both DEDUPLICATE on `(inst, evidence_index)`,
+    /// would have dropped a different slot's site.
+    ///
+    /// **It is an ALLOCATION order and therefore breadth-first**, which is
+    /// not the pre-order §8.2 reads the site list in: one instantiation
+    /// numbers every slot of its own `where` clause before any of them is
+    /// discharged, so a nested instantiation's slots land after the next
+    /// top-level one's. `Dispatch.Site.parent` is what puts the list back in
+    /// order, and this cursor stays what it is — the identity of a slot, not
+    /// its position (A.68).
     evidence_next: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     depth: u32 = 0,
     /// Set by a sub-unification that knows more than "they differ"; read
@@ -1101,7 +1107,10 @@ pub const Solver = struct {
         // whichever went further.
         const base = try s.evidenceCursor(site);
         var read_cursor = base;
-        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .next = &read_cursor })) orelse {
+        // A slot this instruction owns outright: nothing of its own
+        // resolution asked for it, so it is a ROOT of the pre-order forest
+        // `Dispatch.finish` walks (A.68).
+        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .next = &read_cursor, .parent = Dispatch.Site.no_parent })) orelse {
             s.commitEvidence(site, read_cursor);
             s.poison(target);
             return;
@@ -1116,7 +1125,7 @@ pub const Solver = struct {
         // inferred `where` get the arguments their recursion needs.
         const shared = s.env.bir.instTag(node.region) == .top;
         var tag_cursor = base;
-        try s.tagInstantiated(copy, site, &tag_cursor, mark, shared);
+        try s.tagInstantiated(copy, site, &tag_cursor, mark, shared, Dispatch.Site.no_parent);
         s.commitEvidence(site, @max(read_cursor, tag_cursor));
         try s.unify(target, copy, node.region, node.category);
     }
@@ -2506,7 +2515,7 @@ pub const Solver = struct {
                 // a slot of an OUTER instantiation, and then it continues
                 // that instruction's numbering instead of colliding with it.
                 var cursor = try s.evidenceCursor(origin);
-                try s.tagInstantiated(copy, origin, &cursor, mark, false);
+                try s.tagInstantiated(copy, origin, &cursor, mark, false, s.parentSlot(c, origin));
                 s.commitEvidence(origin, cursor);
                 if (!try s.unifyQuiet(copy, c.fn_var)) {
                     try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
@@ -2537,7 +2546,11 @@ pub const Solver = struct {
                 // `List.eq` again, and each level takes the next free index
                 // of the one instruction rather than 1 over and over.
                 var cursor = try s.evidenceCursor(origin);
-                const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{ .inst = origin, .next = &cursor })) orelse {
+                const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{
+                    .inst = origin,
+                    .next = &cursor,
+                    .parent = s.parentSlot(c, origin),
+                })) orelse {
                     s.commitEvidence(origin, cursor);
                     try s.emitSites(c, .err);
                     return;
@@ -3120,8 +3133,28 @@ pub const Solver = struct {
         const copied = try s.env.scratch.dupe(TypeStore.ConstraintSite, view);
         defer s.env.scratch.free(copied);
         for (copied) |site| {
-            try s.env.dispatch.addSite(.{ .inst = site.inst, .evidence_index = site.evidence_index, .target = target });
+            try s.env.dispatch.addSite(.{
+                .inst = site.inst,
+                .evidence_index = site.evidence_index,
+                .parent = site.parent,
+                .target = target,
+            });
         }
+    }
+
+    /// The slot of `origin` that `c` itself answers — the PARENT of every
+    /// slot the resolution of `c` goes on to ask for (`Dispatch.Site.parent`,
+    /// A.68).
+    ///
+    /// `no_parent` when the constraint answers no slot of this instruction,
+    /// which is what a `where` clause raised by the eager pass looks like:
+    /// there is no call, so there is nothing for a child to hang under
+    /// either.
+    fn parentSlot(s: *Solver, c: TypeStore.MethodConstraint, origin: Bir.Inst.Index) u16 {
+        for (s.store().constraintSites(c)) |site| {
+            if (site.inst == origin) return site.evidence_index;
+        }
+        return Dispatch.Site.no_parent;
     }
 
     /// Which evidence parameter of the enclosing declaration answers
@@ -3146,7 +3179,7 @@ pub const Solver = struct {
     /// gives the same order on both sides of a module boundary. The entries
     /// were appended by this very call, so writing their `sites` is not a
     /// mutation of anything already committed (§6.1 invariant 2).
-    fn tagInstantiated(s: *Solver, copy: Var, origin: Bir.Inst.Index, next: *u16, from: u32, shared: bool) Error!void {
+    fn tagInstantiated(s: *Solver, copy: Var, origin: Bir.Inst.Index, next: *u16, from: u32, shared: bool, parent: u16) Error!void {
         const st = s.store();
         var order: std.ArrayList(Var) = .empty;
         defer order.deinit(s.env.scratch);
@@ -3169,11 +3202,11 @@ pub const Solver = struct {
                 // same-group top reference still needs its forwarding site,
                 // so there the site is appended rather than written.
                 if (at < from) {
-                    if (shared) try s.appendSite(at, .{ .inst = origin, .evidence_index = next.* });
+                    if (shared) try s.appendSite(at, .{ .inst = origin, .evidence_index = next.*, .parent = parent });
                     next.* +|= 1;
                     continue;
                 }
-                st.constraints.items[at].sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = next.* }});
+                st.constraints.items[at].sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = next.*, .parent = parent }});
                 next.* +|= 1;
                 // **Every constraint an instantiation creates gets an
                 // obligation**, and not only the ones a later unification
@@ -3395,7 +3428,11 @@ pub const Solver = struct {
             const c = st.constraints.items[d.index];
             // No site is no call: a constraint raised by the eager pass or
             // by a `where` clause answers nothing an instruction passes.
-            if (st.constraintSites(c).len == 0) continue;
+            const sites = st.constraintSites(c);
+            if (sites.len == 0) continue;
+            // Read before anything else appends to `constraint_sites`: the
+            // view is a slice of a list that grows.
+            const region = sites[0].inst;
             const root, const content = st.resolved(d.v);
             if (content != .flex) continue;
             // Promoted after all: `promote` gave it `evidence k`, and a
@@ -3406,7 +3443,19 @@ pub const Solver = struct {
             // unquantifiable at once — so the answer is the list `promote`
             // keeps of what it actually claimed.
             if (std.mem.indexOfScalar(Var, s.promoted.items, root) != null) continue;
-            const target = undeterminedTarget(s, c) orelse continue;
+            const target = undeterminedTarget(s, c) orelse {
+                // **A name that is not well known gets a MESSAGE, not a
+                // function** (A.66's "not done for a name that is not well
+                // known"). Returning null in silence left the slot empty
+                // and the emitted call one argument short, which only
+                // `Lower.evidenceShapeOk` stopped — an `internal` about a
+                // compiler bug, on a program whose only fault is that
+                // nothing pins the receiver's type down.
+                try s.markResolved(d.index);
+                try s.reporter.undeterminedMethodReceiver(region, c.name, content.flex.kind);
+                try s.emitSites(c, .err);
+                continue;
+            };
             try s.markResolved(d.index);
             try s.emitSites(c, target);
         }
@@ -3416,7 +3465,9 @@ pub const Solver = struct {
     /// What answers a well-known method on a receiver type nothing pins.
     /// A name that is not well known gets nothing: the value that raised it
     /// is a user's own `where` clause, and inventing a function for it
-    /// would be inventing a meaning.
+    /// would be inventing a meaning. The caller reports that null — see
+    /// `Diagnostics.undeterminedMethodReceiver`; returning it in silence
+    /// left the slot empty and the call one argument short.
     fn undeterminedTarget(s: *Solver, c: TypeStore.MethodConstraint) ?Dispatch.Target {
         if (c.name == InternPool.WellKnown.eq.symbol()) return s.structuralEqTarget();
         if (c.name == InternPool.WellKnown.compare.symbol()) return .{ .primitive = .num_compare };

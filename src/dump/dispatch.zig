@@ -72,7 +72,11 @@ pub fn write(
         try w.print(" evidence={d}\n", .{d.evidence_count});
         try cx.writeParts(w, d.parts, 2);
     }
-    // Sites sorted by `(inst, evidence_index)`. A site whose target is a
+    // Sites grouped by `inst`, and within an instruction in the PRE-ORDER
+    // of §7.2's evidence tree — the order §8.2 reads them in, which is NOT
+    // ascending by index once two slots of one instruction each nest
+    // (§7.3, A.68). Read down the rows, not across the index column.
+    // A site whose target is a
     // derived function carries its OWN evidence arguments, one per
     // position, because the function is keyed on its shape alone and
     // parameterised by them (A.11, A.46) — these are what tell

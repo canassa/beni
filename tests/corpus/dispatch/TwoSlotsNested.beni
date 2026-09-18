@@ -1,0 +1,60 @@
+-- dispatch: two evidence slots of ONE instruction that EACH nest, and the
+-- pre-order the flat site list has to be in
+-- (`docs/design/static-dispatch-spike.md` §7.2, §7.3, §8.2, A.68).
+--
+-- `NestedEvidenceIndices` is one slot nesting four deep, which the running
+-- cursor of A.68 numbers correctly by accident: a single chain has no
+-- sibling to be confused with. This is the shape that does. The cursor runs
+-- in ALLOCATION order, and allocation is breadth-first — one instantiation
+-- numbers ALL of its own slots before any of them is discharged — so `two`
+-- numbered `a`'s element AFTER `b`, and `Lower.evidenceArguments`, which
+-- reads the flat list as a pre-order tree, then took it for `a`'s
+-- grandchild. `pair [ [ 1 ] ] [ [ 2 ] ]` compiled to a four-deep `List$eq`
+-- for `a` and a bare `strict_eq` for `b`, exit 0, and `run/TwoSlotsNested`
+-- is what that does to the answers.
+--
+-- So the ORDER of these rows is the tree and the `evidence_index` column is
+-- only the identity the checker's two deduplicating tables key on
+-- (`Solve.joinConstraint`, `Solve.appendSite`). Reading a golden here means
+-- reading down the rows: a target takes the slots that follow it, one per
+-- evidence parameter of its own.
+--
+-- `two` is the repro. `middle` is three slots where the MIDDLE one nests
+-- three deep, so the walk has to come back out of a subtree to a sibling
+-- rather than only descend — its rows run 0, 3, 1, 4, 6, 7, 2, 5, which is
+-- the breadth-first numbering read depth-first. `tupled` is the other
+-- half: slot 1 is a tuple of two nested lists, whose evidence rides on the
+-- TARGET's `part` tree (§7.1) and not on the site list at all, so slot 0's
+-- child must still land between the two — before the fix it landed after,
+-- and the tuple's `eq` was handed to `List$eq` as the element comparison of
+-- `[ 1 ]`.
+pub pair : a, b -> Bool
+    where
+        a.eq : a, a -> Bool
+        , b.eq : b, b -> Bool
+pair x y =
+    x == x && y == y
+
+
+pub three : a, b, c -> Bool
+    where
+        a.eq : a, a -> Bool
+        , b.eq : b, b -> Bool
+        , c.eq : c, c -> Bool
+three x y z =
+    x == x && y == y && z == z
+
+
+pub two : Bool
+two =
+    pair [ [ 1 ] ] [ [ 2 ] ]
+
+
+pub middle : Bool
+middle =
+    three [ 1 ] [ [ [ 2 ] ] ] [ 3 ]
+
+
+pub tupled : Bool
+tupled =
+    pair [ 1 ] ( [ [ 2 ] ], [ [ 3 ] ] )

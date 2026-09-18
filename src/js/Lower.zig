@@ -1213,8 +1213,8 @@ const Lowerer = struct {
     // call (§8.2), and the operator itself when the target is a primitive
     // (§8.3).
 
-    /// The dispatch sites of one instruction, in `evidence_index` order.
-    /// `dispatch.sites` is sorted by `(inst, evidence_index)` (§7.1), so
+    /// The dispatch sites of one instruction, in the pre-order of §7.2's
+    /// evidence tree. `dispatch.sites` is grouped by `inst` (§7.1), so
     /// this is one binary search and a slice — never a scan. It runs once
     /// for each instruction that can carry sites: every `call`,
     /// `method_call` and `type_dispatch`, and every REFERENCE too, because
@@ -1347,14 +1347,16 @@ const Lowerer = struct {
         return @intCast(iface.range(t.lhs).len);
     }
 
-    /// The hidden leading arguments of one instruction (§8.2), in
-    /// `evidence_index` order.
+    /// The hidden leading arguments of one instruction (§8.2), in the
+    /// order the site list is in.
     ///
     /// The list is FLAT and the structure is a tree: a target that takes
     /// evidence of its own consumes the slots that follow it, which is the
     /// eta-expansion of A.25. So the walk is a pre-order over a cursor and
-    /// not an index lookup — the indices order the slots, the counts shape
-    /// them.
+    /// not an index lookup — the ORDER shapes the slots and the counts
+    /// measure them, and no index but the callee's own 0 is ever read.
+    /// `Dispatch.finish` is what puts the list in that order, which the
+    /// numbering alone does not give (A.68).
     fn evidenceArguments(l: *Lowerer, sites: []const Dispatch.Site, p: u32) ![]const Node.Index {
         var out: std.ArrayList(Node.Index) = .empty;
         var cursor: usize = 0;
