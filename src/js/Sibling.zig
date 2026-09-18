@@ -1,14 +1,28 @@
 //! The sibling JavaScript file of a module that declares `foreign` values,
-//! and the two checks `boundary.md` §4 makes of it that Elm does not make of
-//! its kernel code:
+//! and the three checks `boundary.md` §4 makes of it that Elm does not make
+//! of its kernel code — the second, the third, and half of the fourth:
 //!
 //!  2. **It exports exactly the declared names** — no more, no fewer.
 //!  3. **Its references are covered by its own imports** (§7.1).
+//!  4. **Each export takes evidence count + declared arity parameters.**
 //!
 //! Check 1 — the two-shape type rule — is about the beni annotation and
-//! lives in `js/Emit.zig`, next to the `Bir` that holds it.
+//! lives in `js/Emit.zig`, next to the `Bir` that holds it. So does check
+//! 4's comparison: what this file supplies is the left-hand side of it, the
+//! parameter count each export is WRITTEN with, because only the `Bir` and
+//! the dispatch table know what the count should be.
 //!
-//! **Why check 3 exists**, because it is the least obvious of the three:
+//! **Why check 4 exists.** Since static dispatch a `pub foreign` may carry
+//! a `where` clause, and its sibling then takes the evidence parameters of
+//! `static-dispatch-spike.md` §8.1 in front of its declared ones —
+//! `core/List.js` writes `eq` as `(m0, xs, ys)` for a declaration that is
+//! 2-ary in beni. Nothing used to check that count, so a sibling that
+//! forgot the leading parameter built cleanly and produced a program that
+//! silently compared the wrong things. Every call the backend emits is
+//! saturated (`backend.md` §6), so an arity mistake is never a partial
+//! application: it is an argument that arrives nowhere.
+//!
+//! **Why check 3 exists**, because it is the least obvious of the four:
 //! Elm's compiler *can* see through its own kernel code — a kernel file is a
 //! template parsed into chunks and every variable reference becomes an edge
 //! in the same whole-program graph — but every kernel FILE is one graph
@@ -35,10 +49,40 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+/// How many parameters an export is written with — check 4's left-hand
+/// side, and the whole of what this scanner claims about a function.
+///
+/// The three cases are a deliberate closed set. A sibling is privileged,
+/// first-party code, so `boundary.md` §4 may restrict how it spells an
+/// export, and the restriction is the one that keeps the answer readable
+/// BY EYE: the parameter list must be at the export. Anything else is
+/// `.opaque_value` or `.uncountable` and is refused there, rather than
+/// waved through as "unknown" — waving it through is what the check exists
+/// to stop.
+pub const Arity = union(enum) {
+    /// A function literal: an arrow or a `function`, with this many
+    /// parameter POSITIONS. A destructuring or defaulted parameter is one
+    /// position like any other, because the emitted call fills positions.
+    function: u32,
+    /// Not written as a function here: a constant (`export const pi =
+    /// Math.PI`), or a name whose definition this scanner cannot see —
+    /// `export const f = g` and a re-export both land here.
+    opaque_value,
+    /// A function literal whose parameter list has no fixed length: a rest
+    /// parameter. Nothing in `core/` or `platforms/` uses one.
+    uncountable,
+};
+
+/// One export, with the parameter count it is written with.
+pub const Export = struct {
+    name: []const u8,
+    arity: Arity,
+};
+
 /// What the scan found. All slices point into the scanned bytes.
 pub const Scan = struct {
-    /// Names the file exports, in source order, deduplicated.
-    exports: []const []const u8,
+    /// Names the file exports, in source order, with their arities.
+    exports: []const Export,
     /// Identifiers referenced that are neither bound in the file, nor
     /// imported by it, nor a standard global.
     unbound: []const []const u8,
@@ -59,12 +103,18 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
     var tokens: std.ArrayList(Token) = .empty;
     try tokenize(arena, source, &tokens);
 
-    var exports: std.ArrayList([]const u8) = .empty;
+    var exports: std.ArrayList(Export) = .empty;
     var bound: std.StringHashMapUnmanaged(void) = .empty;
     var referenced: std.ArrayList([]const u8) = .empty;
     var relative: std.ArrayList([]const u8) = .empty;
 
     const items = tokens.items;
+    // Check 4's table, built before the walk below so that `export { a, b
+    // as c }` can look its LOCAL name up: the exported name is `c`, and the
+    // parameter list belongs to `b`.
+    var arities: std.StringHashMapUnmanaged(Arity) = .empty;
+    try collectArities(arena, items, &arities);
+
     var i: usize = 0;
     while (i < items.len) : (i += 1) {
         const token = items[i];
@@ -79,7 +129,7 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
             continue;
         }
         if (eql(token.text, "export")) {
-            i = try collectExport(arena, items, i, &exports, &bound);
+            i = try collectExport(arena, items, i, &exports, &bound, &arities);
             continue;
         }
         if (isDeclarator(token.text)) {
@@ -212,18 +262,23 @@ fn collectExport(
     arena: Allocator,
     items: []const Token,
     start: usize,
-    exports: *std.ArrayList([]const u8),
+    exports: *std.ArrayList(Export),
     bound: *std.StringHashMapUnmanaged(void),
+    arities: *const std.StringHashMapUnmanaged(Arity),
 ) Allocator.Error!usize {
     var i = start + 1;
     if (i >= items.len) return i;
     if (items[i].kind == .ident and eql(items[i].text, "default")) {
-        try exports.append(arena, "default");
+        // A `default` export can never match a `foreign` name, so check 2
+        // refuses it before check 4 has anything to say.
+        try exports.append(arena, .{ .name = "default", .arity = .opaque_value });
         return i;
     }
     if (items[i].kind == .punct and eql(items[i].text, "{")) {
-        // `export { a, b as c }`: the EXPORTED name is the one after `as`.
-        var pending: ?[]const u8 = null;
+        // `export { a, b as c }`: the EXPORTED name is the one after `as`,
+        // and the ARITY belongs to the local name in front of it.
+        var local: ?[]const u8 = null;
+        var exported: ?[]const u8 = null;
         var renamed = false;
         i += 1;
         while (i < items.len and !(items[i].kind == .punct and eql(items[i].text, "}"))) : (i += 1) {
@@ -234,28 +289,142 @@ fn collectExport(
             }
             if (token.kind == .ident) {
                 if (renamed) {
-                    pending = token.text;
+                    exported = token.text;
                     renamed = false;
                 } else {
-                    if (pending) |name| try exports.append(arena, name);
-                    pending = token.text;
+                    try flushClause(arena, exports, arities, local, exported);
+                    local = token.text;
+                    exported = null;
                 }
                 continue;
             }
             if (token.kind == .punct and eql(token.text, ",")) {
-                if (pending) |name| try exports.append(arena, name);
-                pending = null;
+                try flushClause(arena, exports, arities, local, exported);
+                local = null;
+                exported = null;
             }
         }
-        if (pending) |name| try exports.append(arena, name);
+        try flushClause(arena, exports, arities, local, exported);
         return i;
     }
     if (items[i].kind == .ident and isDeclarator(items[i].text)) {
-        // `export const a = …` / `export function f(…)`.
-        if (i + 1 < items.len and items[i + 1].kind == .ident) try exports.append(arena, items[i + 1].text);
+        // `export const a = …` / `export function f(…)`. The arity came
+        // from `collectArities`, which saw this same declaration.
+        if (i + 1 < items.len and items[i + 1].kind == .ident) {
+            const name = items[i + 1].text;
+            try exports.append(arena, .{ .name = name, .arity = arityOf(arities, name) });
+        }
         return collectDeclaration(arena, items, i, bound);
     }
     return i;
+}
+
+/// One entry of an `export { … }` clause, once its two halves are known.
+fn flushClause(
+    arena: Allocator,
+    exports: *std.ArrayList(Export),
+    arities: *const std.StringHashMapUnmanaged(Arity),
+    local: ?[]const u8,
+    exported: ?[]const u8,
+) Allocator.Error!void {
+    const name = local orelse return;
+    try exports.append(arena, .{
+        .name = exported orelse name,
+        .arity = arityOf(arities, name),
+    });
+}
+
+fn arityOf(arities: *const std.StringHashMapUnmanaged(Arity), name: []const u8) Arity {
+    // A name with no binder in this file is an import re-exported, and its
+    // parameter list is in another file. `.opaque_value` refuses it, which
+    // is the rule §4 states: the parameter list is written at the export.
+    return arities.get(name) orelse .opaque_value;
+}
+
+// ---------------------------------------------------------------------------
+// Check 4: what each export is written with
+// ---------------------------------------------------------------------------
+
+/// Every TOP-LEVEL binder in the file, with the arity of what it is bound
+/// to. Depth is tracked so that a `const` inside a function body cannot
+/// claim an export's name; the count saturates at zero so that an
+/// unbalanced bracket loses one binding rather than every binding after it.
+fn collectArities(
+    arena: Allocator,
+    items: []const Token,
+    out: *std.StringHashMapUnmanaged(Arity),
+) Allocator.Error!void {
+    var depth: u32 = 0;
+    for (items, 0..) |token, i| {
+        if (token.kind == .punct) {
+            if (eql(token.text, "(") or eql(token.text, "[") or eql(token.text, "{")) depth += 1;
+            if (eql(token.text, ")") or eql(token.text, "]") or eql(token.text, "}")) depth -|= 1;
+            continue;
+        }
+        if (depth != 0 or token.kind != .ident) continue;
+        if (i + 1 >= items.len or items[i + 1].kind != .ident) continue;
+        const name = items[i + 1].text;
+        if (eql(token.text, "function")) {
+            try out.put(arena, name, countParams(items, i + 2));
+            continue;
+        }
+        if (!isDeclarator(token.text) or eql(token.text, "class")) continue;
+        // `const x = <value>`; `const [a, b] = …` is not a shape an export
+        // of a foreign value may take and is simply not recorded.
+        if (i + 2 < items.len and items[i + 2].kind == .punct and eql(items[i + 2].text, "=")) {
+            try out.put(arena, name, classifyValue(items, i + 3));
+        }
+    }
+}
+
+/// The arity of the expression starting at `at`, which is a function only
+/// when it is written as one right here.
+fn classifyValue(items: []const Token, at: usize) Arity {
+    if (at >= items.len) return .opaque_value;
+    // `async (a, b) => …`: the modifier does not change the parameters.
+    const head = if (items[at].kind == .ident and eql(items[at].text, "async")) at + 1 else at;
+    if (head >= items.len) return .opaque_value;
+    if (items[head].kind == .ident and eql(items[head].text, "function")) {
+        // `function (a, b) {}` and `function named(a, b) {}`.
+        const open = if (head + 1 < items.len and items[head + 1].kind == .ident) head + 2 else head + 1;
+        return countParams(items, open);
+    }
+    if (items[head].kind == .punct and eql(items[head].text, "(")) {
+        const close = matching(items, head) orelse return .opaque_value;
+        // A parenthesised expression is not a parameter list; only the
+        // `=>` makes it one.
+        if (close + 1 >= items.len or !eql(items[close + 1].text, "=>")) return .opaque_value;
+        return countParams(items, head);
+    }
+    // `x => …`, the one arrow form that needs no parentheses.
+    if (items[head].kind == .ident and !isKeyword(items[head].text) and
+        head + 1 < items.len and eql(items[head + 1].text, "=>")) return .{ .function = 1 };
+    return .opaque_value;
+}
+
+/// The parameter POSITIONS of the list that opens at `open`: one more than
+/// the commas at its own depth. A rest parameter makes the list unbounded
+/// and is reported as such rather than counted.
+fn countParams(items: []const Token, open: usize) Arity {
+    if (open >= items.len or !(items[open].kind == .punct and eql(items[open].text, "("))) return .opaque_value;
+    const close = matching(items, open) orelse return .opaque_value;
+    var count: u32 = 0;
+    var depth: u32 = 0;
+    var dots: u32 = 0;
+    for (items[open + 1 .. close]) |token| {
+        if (token.kind != .punct) {
+            dots = 0;
+            continue;
+        }
+        if (eql(token.text, "(") or eql(token.text, "[") or eql(token.text, "{")) depth += 1;
+        if (eql(token.text, ")") or eql(token.text, "]") or eql(token.text, "}")) depth -|= 1;
+        if (depth == 0 and eql(token.text, ",")) count += 1;
+        // `...` is three one-byte tokens (the lexer spells only `=>` long).
+        dots = if (eql(token.text, ".")) dots + 1 else 0;
+        if (dots == 3) return .uncountable;
+    }
+    if (close == open + 1) return .{ .function = 0 };
+    return .{ .function = count + 1 };
 }
 
 /// The names a `const`/`let`/`var`/`function`/`class` binds: every
@@ -481,7 +650,7 @@ fn scanOnce(arena: Allocator, source: []const u8) !Scan {
     return scan(arena, source);
 }
 
-test "exports: every form boundary.md's recipe uses" {
+test "exports: every form boundary.md's recipe uses, with its arity" {
     var a: std.heap.ArenaAllocator = .init(testing.allocator);
     defer a.deinit();
     const result = try scanOnce(a.allocator(),
@@ -493,11 +662,68 @@ test "exports: every form boundary.md's recipe uses" {
         \\export { one, two as pair };
     );
     try testing.expectEqual(@as(usize, 4), result.exports.len);
-    try testing.expectEqualStrings("add", result.exports[0]);
-    try testing.expectEqualStrings("sub", result.exports[1]);
-    try testing.expectEqualStrings("one", result.exports[2]);
-    try testing.expectEqualStrings("pair", result.exports[3]);
+    try testing.expectEqualStrings("add", result.exports[0].name);
+    try testing.expectEqual(@as(Arity, .{ .function = 2 }), result.exports[0].arity);
+    try testing.expectEqualStrings("sub", result.exports[1].name);
+    try testing.expectEqual(@as(Arity, .{ .function = 2 }), result.exports[1].arity);
+    // A renamed export takes the LOCAL name's parameter list and the
+    // exported name.
+    try testing.expectEqualStrings("one", result.exports[2].name);
+    try testing.expectEqual(@as(Arity, .opaque_value), result.exports[2].arity);
+    try testing.expectEqualStrings("pair", result.exports[3].name);
+    try testing.expectEqual(@as(Arity, .opaque_value), result.exports[3].arity);
     try testing.expectEqual(@as(usize, 0), result.unbound.len);
+}
+
+test "check 4: the parameter list has to be at the export" {
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const result = try scanOnce(a.allocator(),
+        \\const impl = (a, b) => a + b;
+        \\export const zero = () => 0;
+        \\export const one = (x) => x;
+        \\export const named = function (a, b, c) { return a; };
+        \\export const bare = x => x;
+        \\export const spread = (...args) => args;
+        \\export const alias = impl;
+        \\export const pi = Math.PI;
+        \\export const grouped = (1 + 2);
+        \\export const pair = ({ a, b }, fallback = 0) => a + b + fallback;
+    );
+    const expected = [_]Arity{
+        .{ .function = 0 },
+        .{ .function = 1 },
+        .{ .function = 3 },
+        .{ .function = 1 },
+        .uncountable,
+        // `impl` IS a function, and the scanner still refuses: the rule is
+        // that the parameter list is written at the export, so that a
+        // reader can count it against the declaration.
+        .opaque_value,
+        .opaque_value,
+        .opaque_value,
+        // A destructuring and a defaulted parameter are one POSITION each,
+        // because the emitted call fills positions.
+        .{ .function = 2 },
+    };
+    try testing.expectEqual(expected.len, result.exports.len);
+    for (expected, result.exports) |want, got| try testing.expectEqual(want, got.arity);
+}
+
+test "check 4: a nested binder does not claim an export's name" {
+    // The scanner is not a scope analysis (see the header), so the arity
+    // table is the one place it tracks depth: a `const eq` inside a body
+    // must not answer for the `eq` the module exports.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const result = try scanOnce(a.allocator(),
+        \\export const eq = (m0, xs, ys) => {
+        \\  const eq = (a) => a;
+        \\  return eq(m0(xs, ys));
+        \\};
+    );
+    try testing.expectEqual(@as(usize, 1), result.exports.len);
+    try testing.expectEqual(@as(Arity, .{ .function = 3 }), result.exports[0].arity);
 }
 
 test "check 3: a host global that was never imported is unbound" {
@@ -573,7 +799,18 @@ test "object keys and property accesses are not references" {
     try testing.expectEqual(@as(usize, 0), result.unbound.len);
 }
 
-test "every sibling that ships in the box passes check 3" {
+/// Check 4's left-hand side, for the embedded siblings: every export is
+/// written so that its parameters can be counted. Whether the count is the
+/// RIGHT one is `js/Emit.zig`'s question and every corpus build asks it.
+fn expectCountable(path: []const u8, result: Scan) !void {
+    for (result.exports) |entry| {
+        if (entry.arity != .uncountable) continue;
+        std.debug.print("{s} writes `{s}` with a parameter list nothing can count\n", .{ path, entry.name });
+        return error.UncountableExport;
+    }
+}
+
+test "every sibling that ships in the box passes checks 3 and 4" {
     var a: std.heap.ArenaAllocator = .init(testing.allocator);
     defer a.deinit();
     const core_package = @import("core_package");
@@ -587,6 +824,7 @@ test "every sibling that ships in the box passes check 3" {
             return error.UnboundReference;
         }
         try testing.expect(result.exports.len != 0);
+        try expectCountable(asset.path, result);
         scanned += 1;
     }
     for (platform_packages.platforms) |platform| {
@@ -598,6 +836,7 @@ test "every sibling that ships in the box passes check 3" {
                 return error.UnboundReference;
             }
             try testing.expect(result.exports.len != 0);
+            try expectCountable(asset.path, result);
             scanned += 1;
         }
     }

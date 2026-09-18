@@ -26,10 +26,10 @@ export const cons = (head, tail) => ({ $: 1, a: head, b: tail });
 // `eq`, §9.5's loop. The evidence parameter of static-dispatch-spike.md §8.1
 // comes FIRST and the declared arguments follow, so a sibling of a
 // `pub foreign … where` is written with evidence count + declared arity
-// parameters (§5.2, A.7). Nothing checks that count at build time —
-// `Sibling.zig` checks export and import coverage and not arity — so this
-// line is the contract, and `tests/corpus/run/ListElementEq.beni` is what
-// catches it if it moves.
+// parameters (§5.2, A.7). That count is boundary.md §4's check 4 since
+// 2026-09-18 (A.84), so dropping `m0` is now a build error rather than a
+// program that quietly answers `False`;
+// `tests/corpus/run/ListElementEq.beni` still asserts the answer.
 //
 // A LOOP and not recursion: a list long enough to be interesting is longer
 // than the JavaScript stack, and nothing turns a self-call in a hand-written
@@ -46,8 +46,8 @@ export const eq = (m0, xs, ys) => {
 };
 
 // `compare`, §9.5's other loop, and the same contract as `eq` above: the
-// evidence parameter comes FIRST, nothing checks the count at build time,
-// and `tests/corpus/run/ListOrdering.beni` is what catches it if it moves.
+// evidence parameter comes FIRST, check 4 counts it, and
+// `tests/corpus/run/ListOrdering.beni` asserts the answer.
 //
 // An `Order` is a bare tag string, because a type whose constructors are
 // all nullary has no payload to carry (backend.md §4). The first pair that

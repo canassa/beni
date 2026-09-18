@@ -181,6 +181,11 @@ pub const Code = enum {
     /// unannotated declaration whose inferred scheme would carry more than
     /// `Solve.Solver.max_inferred_constraints` of them.
     too_many_inferred_constraints,
+    /// `boundary.md` §4's fourth check, appended on 2026-09-18 (queue slice
+    /// 4, `static-dispatch-spike.md` A.84): a sibling export whose parameter
+    /// count is not evidence count + declared arity, or whose parameter list
+    /// the scanner may not count.
+    foreign_arity_mismatch,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -274,6 +279,7 @@ pub fn title(code: Code) []const u8 {
         .foreign_sibling_missing => "MISSING JAVASCRIPT FILE",
         .foreign_export_mismatch => "FOREIGN EXPORT MISMATCH",
         .foreign_unbound_reference => "UNBOUND JAVASCRIPT REFERENCE",
+        .foreign_arity_mismatch => "FOREIGN ARITY MISMATCH",
         .missing_main => "MISSING MAIN",
         .main_not_program => "MAIN IS NOT A PROGRAM",
         .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",

@@ -40,10 +40,13 @@
 //! with `.` turned into `/`, and every segment of a module name is an upper
 //! identifier, so no generated file has two dots in its base name.
 //!
-//! **The three checks of boundary.md §4 run before a byte is written**, and
-//! all three are things Elm does not do. Check 1 (the two-shape type rule)
+//! **The four checks of boundary.md §4 run before a byte is written**, and
+//! all four are things Elm does not do. Check 1 (the two-shape type rule)
 //! is here because it reads the `Bir` annotation; checks 2 and 3 are
-//! `js/Sibling.zig`'s, because they read JavaScript.
+//! `js/Sibling.zig`'s, because they read JavaScript. Check 4 — the sibling
+//! export's arity — is split: `Sibling.zig` counts what is written and
+//! `checkArity` below compares it against evidence count + declared arity,
+//! because only the `Bir` and the dispatch table know the second number.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -187,7 +190,29 @@ const Emitter = struct {
 
     /// A `foreign` value's name and the token that declared it, so a
     /// mismatch points at the declaration and not at the module.
-    const Declared = struct { name: []const u8, token: u32 };
+    const Declared = struct {
+        name: []const u8,
+        token: u32,
+        /// Check 4's right-hand side: the hidden leading parameters of
+        /// `static-dispatch-spike.md` §8.1, one per entry of this
+        /// declaration's evidence list.
+        evidence: u32,
+        /// The parameters the annotation lists, or `null` when there is no
+        /// annotation to read — the parser has already reported that, and a
+        /// second diagnostic about the sibling would be noise.
+        params: ?u32,
+        /// Whether the annotation is a function type at all. A `foreign`
+        /// that is not one binds to a VALUE, so `() => …` is wrong for it
+        /// even though both sides count zero parameters.
+        is_function: bool,
+
+        /// Whether the export has to be written as a function: a function
+        /// type, or a `where` clause, which gives even a non-function one
+        /// leading parameters.
+        fn wantsFunction(d: Declared) bool {
+            return d.is_function or d.evidence != 0;
+        }
+    };
 
     fn graph(e: *Emitter) *const Graph {
         return &e.session.graph;
@@ -252,20 +277,24 @@ const Emitter = struct {
         }
     }
 
-    // ---- boundary.md §4, checks 2 and 3 -----------------------------------
+    // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn checkSiblings(e: *Emitter) !void {
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @enumFromInt(i);
             const file = e.graph().moduleFile(m);
             const b = e.bir(m);
+            const dispatch = e.dispatchOf(m);
 
             var declared: std.ArrayList(Declared) = .empty;
-            for (b.decls) |d| {
+            for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
                 try declared.append(e.scratch, .{
                     .name = e.session.interner.slice(b.symbol(d.name)),
                     .token = d.name_token,
+                    .evidence = @intCast(dispatch.declEvidence(@intCast(index)).len),
+                    .params = annotationArity(b, d),
+                    .is_function = isFunctionAnnotation(b, d),
                 });
             }
             if (declared.items.len == 0) continue;
@@ -334,11 +363,14 @@ const Emitter = struct {
         token: u32,
         sibling_path: []const u8,
         declared: []const Declared,
-        exported: []const []const u8,
+        exported: []const Sibling.Export,
     ) !void {
         for (declared) |entry| {
             const name = entry.name;
-            if (contains(exported, name)) continue;
+            if (find(exported, name)) |found| {
+                try e.checkArity(file, sibling_path, entry, found.arity);
+                continue;
+            }
             try e.report(
                 .foreign_export_mismatch,
                 file,
@@ -352,7 +384,8 @@ const Emitter = struct {
                 .{ sibling_path, name, name },
             );
         }
-        for (exported) |name| {
+        for (exported) |entry| {
+            const name = entry.name;
             if (containsDeclared(declared, name)) continue;
             try e.report(
                 .foreign_export_mismatch,
@@ -369,6 +402,131 @@ const Emitter = struct {
                 .{ sibling_path, name, name },
             );
         }
+    }
+
+    /// Check 4: the export takes evidence count + declared arity
+    /// parameters, and a `foreign` that is not a function is not written as
+    /// one. A declaration with no annotation is skipped — the parser
+    /// reported that already and the sibling is not the problem.
+    fn checkArity(
+        e: *Emitter,
+        file: SourceStore.Index,
+        sibling_path: []const u8,
+        entry: Declared,
+        arity: Sibling.Arity,
+    ) !void {
+        const params = entry.params orelse return;
+        const expected = entry.evidence + params;
+        // A `foreign` that is not a function binds to a VALUE, so any
+        // function literal is wrong for it and the count never comes into
+        // it — `() => …` and `(...xs) => …` are the same mistake.
+        if (!entry.wantsFunction()) {
+            if (arity == .opaque_value) return;
+            try e.report(
+                .foreign_arity_mismatch,
+                file,
+                entry.token,
+                \\`{s}` writes `{s}` as a function, and `{s}` is not one.
+                \\
+                \\This declaration's type is a value, not a function, so the export is the
+                \\value itself — `export const {s} = …;` and never `() => …`
+                \\(`docs/design/boundary.md` §4, check 4). `core/Basics.js` writes `pi` as
+                \\`Math.PI` for exactly this reason.
+            ,
+                .{ sibling_path, entry.name, entry.name, entry.name },
+            );
+            return;
+        }
+        switch (arity) {
+            .function => |written| {
+                if (written == expected) return;
+                try e.report(
+                    .foreign_arity_mismatch,
+                    file,
+                    entry.token,
+                    \\`{s}` writes `{s}` with {d} parameter{s}, and `{s}` takes {d}.
+                    \\
+                    \\{s}
+                ,
+                    .{
+                        sibling_path,
+                        entry.name,
+                        written,
+                        plural(written),
+                        entry.name,
+                        expected,
+                        try e.arityRule(entry),
+                    },
+                );
+            },
+            .opaque_value => {
+                try e.report(
+                    .foreign_arity_mismatch,
+                    file,
+                    entry.token,
+                    \\`{s}` exports `{s}` as a value, and `{s}` takes {d} parameter{s}.
+                    \\
+                    \\{s}
+                    \\
+                    \\The parameter list has to be written AT the export, so that a reader can
+                    \\count it against the declaration. `export const {s} = other;` does not say
+                    \\how many parameters `other` has, and neither does re-exporting an import:
+                    \\write `export const {s} = (…) => other(…);` instead.
+                ,
+                    .{
+                        sibling_path,
+                        entry.name,
+                        entry.name,
+                        expected,
+                        plural(expected),
+                        try e.arityRule(entry),
+                        entry.name,
+                        entry.name,
+                    },
+                );
+            },
+            .uncountable => {
+                try e.report(
+                    .foreign_arity_mismatch,
+                    file,
+                    entry.token,
+                    \\`{s}` writes `{s}` with a rest parameter, so I cannot count its parameters.
+                    \\
+                    \\{s}
+                    \\
+                    \\A sibling is privileged code and its exports are checked by counting, so a
+                    \\parameter list with no fixed length is refused rather than trusted
+                    \\(`docs/design/boundary.md` §4, check 4). Write the {d} parameter{s} out.
+                ,
+                    .{ sibling_path, entry.name, try e.arityRule(entry), expected, plural(expected) },
+                );
+            },
+        }
+    }
+
+    /// The paragraph that says where the expected count comes from. A
+    /// declaration with a `where` clause has hidden leading parameters and
+    /// nothing in its own text shows them, so the split is spelled out;
+    /// one without needs only the rule.
+    fn arityRule(e: *Emitter, entry: Declared) ![]const u8 {
+        if (entry.evidence == 0) return
+        \\A sibling export takes exactly the parameters its `foreign` declaration promises
+        \\(`docs/design/boundary.md` §4, check 4). Every call the compiler emits is
+        \\saturated (`docs/design/backend.md` §6), so a miscount is never a partial
+        \\application: it is an argument that arrives nowhere.
+        ;
+        return std.fmt.allocPrint(e.scratch,
+            \\`{s}`'s annotation carries a `where` clause, so its export takes the EVIDENCE
+            \\parameters first and the declared ones after
+            \\(`docs/design/static-dispatch-spike.md` §8.1): {d} for the `where` clause and
+            \\{d} declared, {d} in all. `core/List.js` writes a 2-ary `eq` with one
+            \\constraint as `(m0, xs, ys)` for exactly this reason.
+        , .{ entry.name, entry.evidence, entry.params.?, entry.evidence + entry.params.? });
+    }
+
+    fn dispatchOf(e: *Emitter, m: Graph.Index) *const Dispatch {
+        if (m.int() >= e.session.checked.dispatch.len) return &Dispatch.empty;
+        return &e.session.checked.dispatch[m.int()];
     }
 
     // ---- boundary.md §5: `main`, resolved per platform --------------------
@@ -535,10 +693,7 @@ const Emitter = struct {
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
-                .dispatch = if (m.int() < e.session.checked.dispatch.len)
-                    &e.session.checked.dispatch[m.int()]
-                else
-                    &Dispatch.empty,
+                .dispatch = e.dispatchOf(m),
                 .types = &e.session.checked.types,
                 .specifiers = specifiers,
                 .sibling = sibling,
@@ -732,11 +887,30 @@ fn stripExtension(name: []const u8, extension: []const u8) []const u8 {
 /// mistake worth failing on rather than allocating for.
 pub const max_asset_bytes = 8 * 1024 * 1024;
 
-fn contains(haystack: []const []const u8, needle: []const u8) bool {
+fn find(haystack: []const Sibling.Export, needle: []const u8) ?Sibling.Export {
     for (haystack) |item| {
-        if (std.mem.eql(u8, item, needle)) return true;
+        if (std.mem.eql(u8, item.name, needle)) return item;
     }
-    return false;
+    return null;
+}
+
+fn plural(n: u32) []const u8 {
+    return if (n == 1) "" else "s";
+}
+
+/// How many parameters a `foreign` declaration's annotation lists, or null
+/// when it has none to read. A non-function annotation is zero: `foreign pi
+/// : Float` binds to a value and not to a `() => …`.
+fn annotationArity(b: *const Bir, d: Bir.Decl) ?u32 {
+    const annotation = d.annotation.unwrap() orelse return null;
+    if (b.instTag(annotation) != .type_fn) return 0;
+    const data = b.instData(annotation);
+    return @intCast(b.extraSlice(b.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index).len);
+}
+
+fn isFunctionAnnotation(b: *const Bir, d: Bir.Decl) bool {
+    const annotation = d.annotation.unwrap() orelse return false;
+    return b.instTag(annotation) == .type_fn;
 }
 
 fn containsDeclared(haystack: []const Emitter.Declared, needle: []const u8) bool {

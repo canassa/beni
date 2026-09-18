@@ -928,6 +928,324 @@ test "a concrete foreign constant is allowed, because core's own `pi` is one" {
     try testing.expectEqualStrings("6.283185307179586!\n", program.stdout);
 }
 
+test "check 4: a constrained foreign whose sibling forgot the evidence parameter" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The defect this check was added for (boundary.md §4 check 4,
+    // static-dispatch-spike.md §5.2, A.84). A `pub foreign` with a `where`
+    // clause takes its evidence parameters FIRST, and nothing used to count
+    // them: this project used to build, exit 0, and then compare the
+    // evidence function against a list at run time.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign allEq : List a, List a -> Bool
+        \\    where a.eq : a, a -> Bool
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\
+        \\export const allEq = (xs, ys) => xs.$ === ys.$;
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    if Prog.allEq [ 1, 2 ] [ 1, 2 ] then
+        \\        Prog.say "same"
+        \\
+        \\    else
+        \\        Prog.say "different"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    const d = r.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.foreign_arity_mismatch, d.code);
+    try testing.expectEqualStrings("FOREIGN ARITY MISMATCH", d.title);
+    // The span is the DECLARATION, not the module: the beni side is where
+    // the expected count is written down.
+    try testing.expectEqualStrings("myplat/Prog.beni", d.span.file);
+    try testing.expect(std.mem.indexOf(u8, d.message, "with 2 parameters, and `allEq` takes 3") != null);
+    // The message has to say where the third one came from, because nothing
+    // in the sibling shows it.
+    try testing.expect(std.mem.indexOf(u8, d.message, "1 for the `where` clause") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+}
+
+test "check 4: a plain arity mismatch is the same defect and the same diagnostic" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // An unconstrained `foreign` is checked too: every emitted call is
+    // saturated (backend.md §6), so a parameter that is never filled is the
+    // same `undefined` arriving in the same place.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String, String -> Program
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello" "world"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.foreign_arity_mismatch, r.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "with 1 parameter, and `say` takes 2") != null);
+    // No `where` clause, so no evidence paragraph.
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "`where` clause") == null);
+    try testing.expect(!w.exists("out"));
+}
+
+test "check 4: a foreign that is not a function may not be written as one" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The other direction of the same rule. `foreign pi : Float` binds to a
+    // VALUE (`core/Basics.js` writes `Math.PI`); a `() => …` would put a
+    // function where the type says a number.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("beni.json",
+        \\{ "platform": true }
+    );
+    try w.write("Tau.beni", "pub foreign tau : Float\n");
+    try w.write("Tau.js", "export const tau = () => 6.283185307179586;\n");
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\import String
+        \\import Tau
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say (String.fromFloat Tau.tau)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni", "Tau.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.foreign_arity_mismatch, r.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "writes `tau` as a function") != null);
+    try testing.expect(!w.exists("out"));
+}
+
+test "check 4: a parameter list that is not at the export is refused" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The two forms boundary.md §4 refuses rather than guessing at. Both
+    // are legal JavaScript and neither is used by `core/` or
+    // `platforms/node`: a sibling is privileged code, so the rule is that
+    // the parameter list is written where the arity can be counted against
+    // the declaration.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign shout : String -> Program
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\const impl = (line) => ({ text: line });
+        \\
+        \\export const say = impl;
+        \\export const shout = (...parts) => ({ text: parts.join("") });
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 2), r.diagnostics.len);
+    var aliased = false;
+    var spread = false;
+    for (r.diagnostics) |d| {
+        try testing.expectEqual(diagnostic.Code.foreign_arity_mismatch, d.code);
+        if (std.mem.indexOf(u8, d.message, "exports `say` as a value") != null) aliased = true;
+        if (std.mem.indexOf(u8, d.message, "writes `shout` with a rest parameter") != null) spread = true;
+    }
+    try testing.expect(aliased);
+    try testing.expect(spread);
+    try testing.expect(!w.exists("out"));
+}
+
+test "check 4: every export form a sibling may use, at the right arity, builds and runs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The accepted set of boundary.md §4 check 4, each one at the arity its
+    // declaration promises: an arrow, a bare-parameter arrow, a `function`
+    // declaration, a `function` expression, a renamed `export { … }`, and a
+    // constant for a `foreign` that is not a function. The evidence-carrying
+    // one is last and is the reason the check exists.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign zero : Int
+        \\
+        \\
+        \\pub foreign twice : Int -> Int
+        \\
+        \\
+        \\pub foreign plus : Int, Int -> Int
+        \\
+        \\
+        \\pub foreign pick : Int -> Int
+        \\
+        \\
+        \\pub foreign thrice : Int -> Int
+        \\
+        \\
+        \\pub foreign allEq : List a, List a -> Bool
+        \\    where a.eq : a, a -> Bool
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\export const zero = 0;
+        \\export function twice(n) {
+        \\  return n + n;
+        \\}
+        \\export const plus = function (a, b) {
+        \\  return a + b;
+        \\};
+        \\export const pick = n => n;
+        \\
+        \\const triple = (n) => n * 3;
+        \\export { triple as thrice };
+        \\
+        \\export const allEq = (m0, xs, ys) => {
+        \\  let a = xs;
+        \\  let b = ys;
+        \\  while (a.$ === 1 && b.$ === 1) {
+        \\    if (!m0(a.a, b.a)) return false;
+        \\    a = a.b;
+        \\    b = b.b;
+        \\  }
+        \\  return a.$ === b.$;
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    if Prog.allEq [ 1, 2 ] [ 1, 2 ] then
+        \\        Prog.say (String.fromInt (Prog.plus (Prog.twice 2) (Prog.thrice (Prog.pick 5))))
+        \\
+        \\    else
+        \\        Prog.say (String.fromInt Prog.zero)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // `twice 2` is 4 and `thrice (pick 5)` is 15, so the sum is 19 — which
+    // is only reached when `allEq` received its evidence parameter in front
+    // and compared elements rather than a function against a list.
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("19!\n", program.stdout);
+    try testing.expectEqualStrings("", program.stderr);
+}
+
 test "`main` is resolved per platform: it must exist and have the platform's Program type" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

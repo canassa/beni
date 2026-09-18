@@ -20,7 +20,8 @@ is listed in Appendix A.
 What the adoption did to the other documents is A.82. What it left **owed** — dead-code
 elimination, the unenforced `foreign` arity rule of §5.2, the two `master` printer defects, a cap on
 the inferred `where` suffix and a position on the n² obligation count — is report 19 §14, carried in
-CLAUDE.md as "Owed after the static-dispatch adoption".
+CLAUDE.md as "Owed after the static-dispatch adoption". The arity rule is discharged (A.84), as are
+the cap and the n² position (A.83).
 
 ## 0. How to read this, and what it extends
 
@@ -36,7 +37,7 @@ CLAUDE.md as "Owed after the static-dispatch adoption".
 | §8 backend | `backend.md` §4, §5, §6 | hidden leading parameters; four call shapes; **§6's "a function-typed value in flight is always a closure of known arity" (`backend.md:216`) is extended**: evidence in value position is an eta-expanded closure, §8.2 |
 | §9 derived functions | `backend.md` §4 | the exact JavaScript for `eq` and `compare` per representation |
 | §10 diagnostics | `language.md` §10, `checker.md` §8.1 | ten new codes, appended to the catalogue; one new flag, `--explain` |
-| §5.2 `foreign` with a `where` clause | `boundary.md` §4 | the sibling export's arity becomes evidence count + declared arity. `boundary.md` §4's checks are *export coverage* and *import coverage* (`src/js/Sibling.zig:1-33`); neither checks arity, so this rule is **documented and not enforced** — §11 records it as a widening of the `foreign` surface, and report 19 §14 item 2 as an owed item |
+| §5.2 `foreign` with a `where` clause | `boundary.md` §4 | the sibling export's arity becomes evidence count + declared arity, which is `boundary.md` §4's **check 4** since 2026-09-18 (A.84). It was documented and unenforced for a day, which §11 records as a widening of the `foreign` surface and report 19 §14 item 2 as an owed item; both are discharged |
 | §11 known limits | — | what the spike knowingly does not solve |
 
 [`research/20-roc-static-dispatch-implementation.md`](research/20-roc-static-dispatch-implementation.md)
@@ -634,13 +635,14 @@ therefore found by the ordinary module rule and need no table row.
 
 **A `pub foreign` may carry a `where` clause**, and its sibling export's arity is then **evidence
 count + declared arity** — `eq` above is declared 2-ary in beni and must be written `(m0, xs, ys)`
-in `core/List.js`. This rule is **documented and not enforced**: [`boundary.md`](boundary.md) §4's
-two automated checks are export coverage and import coverage (`src/js/Sibling.zig:1-33`) and
-neither inspects arity, so a sibling that forgot the leading parameter fails at runtime rather than
-at build time. That is a widening of the `foreign` surface against CLAUDE.md rule 6, forced by the
-list representation being the emitter's rather than beni's; §11 records it as a finding, the
-adoption weighed it and left it **owed** (report 19 §14 item 2, `boundary.md` §4), and Appendix A.7
-records the alternatives.
+in `core/List.js`. This rule is **[`boundary.md`](boundary.md) §4's check 4** and is enforced since
+2026-09-18 (A.84). It was documented and unenforced on the branch and for one day after the
+adoption, which was a widening of the `foreign` surface against CLAUDE.md rule 6, forced by the
+list representation being the emitter's rather than beni's; §11 records the finding and report 19
+§14 item 2 the owed item, and both are now discharged. The check needs no JavaScript parser: it
+counts the parameter list lexically and refuses the two forms that reading cannot settle — a bare
+name and a rest parameter, neither of which appears in `core/` or `platforms/node`. `boundary.md`
+§4 has the accepted forms; Appendix A.7 and A.84 record the decision.
 
 ### 5.3 `Dict` — the comparator leaves the data structure
 
@@ -2808,17 +2810,19 @@ exactly as it walks a same-module one and `store.resolved` is all §6.3's alias 
 `tests/corpus/check/good/AliasAcrossModulesMethod/` pins it: `==` on an imported record alias
 derives over the record shape, and `p.field` is the field access it always was.
 
-**The `foreign` surface is wider.** §5.2 lets a `pub foreign` carry a `where` clause, which makes the
-sibling export's arity depend on the checker's answer rather than on the declaration's text.
-`boundary.md` §4's two automated checks are export coverage and import coverage
-(`src/js/Sibling.zig:1-33`); neither checks arity, so the rule is documented and **not enforced**,
-and a `core/List.js` whose `eq` forgot its leading evidence parameter would fail at runtime rather
-than at build time. CLAUDE.md rule 6 says not to widen that surface for convenience; this widening
-is not for convenience — the list representation is the emitter's, so `List.eq` cannot be written in
-beni — but it is a widening, and the adoption decision has to weigh it. The alternatives are to add
-an arity check to `Sibling.zig` (real work, and it needs a JavaScript parser to do properly, which
-is the dependency the wall exists to avoid) or to refuse `where` on `foreign` and give `List` an
-uncons primitive instead.
+**The `foreign` surface was wider, and is not any more.** §5.2 lets a `pub foreign` carry a `where`
+clause, which makes the sibling export's arity depend on the checker's answer rather than on the
+declaration's text. `boundary.md` §4's automated checks were export coverage and import coverage;
+neither checked arity, so the rule was documented and **not enforced**, and a `core/List.js` whose
+`eq` forgot its leading evidence parameter failed at runtime rather than at build time. CLAUDE.md
+rule 6 says not to widen that surface for convenience; this widening was not for convenience — the
+list representation is the emitter's, so `List.eq` cannot be written in beni — but it was a
+widening, and the adoption decision weighed it and left it owed. **Closed on 2026-09-18** as
+`boundary.md` §4's check 4 (A.84): the third alternative this row did not consider turned out to be
+the answer — count the parameter list lexically, as check 3 already reads imports, and refuse the
+two forms that reading cannot settle. No JavaScript parser, and neither of the alternatives this row
+named (an approximate arity check, or refusing `where` on `foreign` and giving `List` an uncons
+primitive) was taken.
 
 **Cross-module recursive derivation is refused before it can happen.** The shape this row was
 written for — a type in module `A` whose payload mentions a type in module `B` whose payload
@@ -2989,7 +2993,9 @@ because `boundary.md` §4's two automated checks are export coverage and import 
 enforced** on the branch, which widens the `foreign` surface against CLAUDE.md rule 6; §11 records
 it as a finding the adoption decision must weigh. *Alternative:* forbid it and write `List.eq` in
 beni over a `foreign` uncons, or add an arity check to `Sibling.zig` — which needs a JavaScript
-parser to do properly, the dependency the wall exists to avoid.
+parser to do properly, the dependency the wall exists to avoid. **Superseded 2026-09-18 by A.84:**
+the arity check landed and needed no parser, so the rule is `boundary.md` §4's check 4 and this
+row's "not enforced" is history.
 
 **A.8 — `Dict.empty : Dict k v` stays a constant**, against the plan's `() -> Dict k v`. *Why:* it
 has no constraint, so it has no evidence parameter and `constrained_constant` does not apply. The
@@ -3627,11 +3633,11 @@ number, `TypeError: Cannot read properties of undefined` from inside `core/List.
 evidence count + declared arity** (§5.2, §9.5) [S6b]. *Why:* `List a` is a `foreign type` with no
 constructors, so there is nothing to derive a body from, and the shape of a cons cell is the
 emitter's. The loop rather than recursion is `foldr`'s reason: a list long enough to be interesting
-is longer than the JavaScript stack. *The risk, stated because nothing checks it:* the export is
-written `(m0, xs, ys)` and `Sibling.zig` checks export and import coverage and never arity
-(`boundary.md` §4), so a forgotten leading parameter compiles and then compares a function against a
-list. `tests/corpus/run/ListOrdering.beni` is what catches it, as `run/ListElementEq.beni` is for
-`eq`. *Alternative rejected:* deriving `compare` for `List` from a synthetic two-constructor shape,
+is longer than the JavaScript stack. *The risk this row stated because nothing checked it* — the
+export is written `(m0, xs, ys)`, and a forgotten leading parameter used to compile and then compare
+a function against a list — **is checked since 2026-09-18** (`boundary.md` §4 check 4, A.84).
+`tests/corpus/run/ListOrdering.beni` still catches it at run time, as `run/ListElementEq.beni` does
+for `eq`, and the build now refuses it first. *Alternative rejected:* deriving `compare` for `List` from a synthetic two-constructor shape,
 which would put the emitter's cons-cell layout into the checker's table.
 
 **A.70 — `Dict.empty` is a constant and `Dict.singleton` is unconstrained** (§5.3, O-1) [S6b].
@@ -3834,7 +3840,7 @@ section number, and the other documents gain pointers. What changed elsewhere:
 | [`language.md`](language.md) | §0 gains four departures (dot-call, `where`, well-known `eq`/`compare`, return-type dispatch) and its `comparable` row is corrected; pointer paragraphs at §3, §4, §5.4, §6.2, §6.3, §6.5, §8, §9, §10 and Appendix A |
 | [`checker.md`](checker.md) | pointers at §1, §2, §3, §5, §6.1–§6.4, §7, §8.1; Appendix B's `Basics`, `List`, `String`, `Char`, `Dict` and `Set` rows brought in line with `core/` |
 | [`backend.md`](backend.md) | pointers at §3, §4, §5, §6; §6's "a function-typed value in flight is always a closure of known arity" recorded as extended by §8.2 here |
-| [`boundary.md`](boundary.md) | §4 records the `foreign` + `where` arity rule as **documented and not enforced**, and names it an owed item |
+| [`boundary.md`](boundary.md) | §4 carries the `foreign` + `where` arity rule as **check 4**, enforced since 2026-09-18 with the accepted export forms and the refused ones (A.84); it was recorded there as documented-and-not-enforced and as an owed item until then |
 | [`frontend.md`](frontend.md) | §1, §1.2, §2 and §8 pointers: the `where` tail, the two new BIR tags, the formatter rule, the new dump stages |
 | CLAUDE.md | the language bullet, the M3 status, rule 1's contract list, and an "Owed after the static-dispatch adoption" list (report 19 §14 items 1–5) |
 
@@ -3877,3 +3883,31 @@ waves into one array. Without it, `beni build` **panicked** on a program whose o
 missing `main` and an unannotated `pub` declaration — reachable under `--explain` since the
 adoption, and unconditionally after it. Fixture: the `blackbox_test.zig` scenario "a build that
 warns and then fails in the emit phase prints one diagnostics array, not two".
+
+**A.84 — the `foreign` + `where` arity rule becomes `boundary.md` §4's check 4** (§5.2, §11, A.7)
+[queue slice 4, 2026-09-18]. Report 19 §14 item 2 left the rule of §5.2 documented and unenforced:
+a sibling whose `eq` forgot its leading evidence parameter built cleanly, exited 0, and compared
+the evidence function against a list at run time. A.7 named two alternatives, both unattractive —
+withdraw `where` on `foreign`, or write an arity check that "needs a JavaScript parser to do
+properly, the dependency the wall exists to avoid". **Decision: neither. The check lands, and it
+counts rather than parses.**
+
+| | Decision | Why | *Alternative* |
+|---|---|---|---|
+| 1 | every `foreign` is checked, not only a constrained one: the export's parameter count must equal **evidence count + declared arity** | a plain arity mismatch is the same defect class and the same exit-0 wrongness. `foreign say : String, String -> Program` bound to `(line)` built, ran, and dropped its second argument silently; there is no reason to catch one and not the other | check only the declarations that carry a `where` clause, which would leave the larger and older hole open |
+| 2 | a `foreign` whose type is **not** a function must export a value, not a `() => …` | the other half of the same rule, and it is reachable: `foreign tau : Float` bound to `() => 6.28…` built and printed the function's own source text | say nothing about non-functions, and let a constant that is secretly a thunk through |
+| 3 | the parameter list must be written **at the export**. `export const f = g;` and a re-exported import are refused, because neither says how many parameters `f` has | this is what lets the check be a count instead of a parse, and it is the restriction CLAUDE.md rule 6 asks for rather than forbids: a sibling is privileged first-party code, so a rule about how it spells an export costs a platform author one line — `export const f = (a, b) => g(a, b);` — and buys a check that cannot be fooled. Nothing in `core/` or `platforms/node` uses the refused form | accept it as "arity unknown" and wave it through, which reopens the hole for exactly the files most likely to be written carelessly |
+| 4 | a **rest parameter** is refused for the same reason; a destructuring or defaulted parameter is one POSITION and is counted | `(...args)` has no fixed count, so there is nothing to compare. A destructured or defaulted parameter does have a position, and the emitted call fills positions | count `(...args)` as its fixed prefix, which is a guess the call site does not share |
+| 5 | the diagnostic is one new code, `foreign_arity_mismatch`, appended to the catalogue, and it points at the beni DECLARATION | `foreign_export_mismatch` is already one code with two messages for the same reason: the code names the rule, the message names the case. The declaration is where the expected count is written down, and a sibling has no beni span | a code per case, which multiplies the catalogue for no reader's benefit |
+
+**Where it lives.** Split, like check 1: `src/js/Sibling.zig` counts what each export is WRITTEN
+with (a `Sibling.Arity` of `function n`, `opaque_value` or `uncountable`) because that is the file
+that reads JavaScript, and `src/js/Emit.zig`'s `checkArity` compares it against evidence count +
+declared arity, because only the `Bir` annotation and `Dispatch.declEvidence` know the second
+number. The arity table is the one place the scanner tracks brace depth — a `const eq` inside a body
+must not answer for the `eq` the module exports — and that is a deliberate exception to the header's
+"not a scope analysis", cheap because it is one counter.
+
+**Every sibling in the repository passed unchanged**: five in `core/` and one in `platforms/node`,
+65 foreign values, including `List.eq` and `List.compare` with their evidence parameter. No `.js`
+file was edited to land this.

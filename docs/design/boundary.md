@@ -112,7 +112,7 @@ native code, ours is a module import.
 A `foreign` declaration binds to a sibling JavaScript file, one export per foreign value, under the
 same name — already specified in `language.md` §5.4 and load-bearing for §7 below.
 
-Three checks run at build time, and all three are things Elm does not do:
+Four checks run at build time, and all four are things Elm does not do:
 
 1. **The type must be one of exactly two shapes.** Either (a) a total pure function over
    already-admitted types, or (b) an effect value — `Task e a`, `Cmd msg`, `Sub msg`. The dangerous
@@ -136,19 +136,50 @@ Three checks run at build time, and all three are things Elm does not do:
    nothing finer. The free set is ECMAScript's intrinsics plus the web-standard common set of
    §5.1, derived from that section rather than from taste.
 
-**A fourth rule, documented and NOT enforced — an owed item, recorded here so it is not mistaken
-for a check.** Since static dispatch (2026-09-18), a `pub foreign` may carry a `where` clause, and
-its sibling export's arity is then **evidence count + declared arity**: `core/List.beni`'s
-`eq : List a, List a -> Bool where a.eq : a, a -> Bool` is 2-ary in beni and must be written
-`(m0, xs, ys)` in `core/List.js`. **None of the three checks above looks at arity**
-(`src/js/Sibling.zig`), so a sibling that forgot its leading evidence parameter fails at runtime
-rather than at build time. That is a real widening of the `foreign` surface against CLAUDE.md rule
-6, and it was taken knowingly: the alternatives are an arity check, which needs the JavaScript
-parser this wall exists to avoid, or refusing `where` on `foreign` and giving `List` an uncons
-primitive to write `eq` and `compare` in beni over. The adoption weighed it and left it owed —
+4. **The sibling export takes evidence count + declared arity parameters.** Since static dispatch
+   (2026-09-18) a `pub foreign` may carry a `where` clause, and the evidence parameters of
+   [`static-dispatch-spike.md`](static-dispatch-spike.md) §8.1 come FIRST:
+   `core/List.beni`'s `eq : List a, List a -> Bool where a.eq : a, a -> Bool` is 2-ary in beni and
+   is written `(m0, xs, ys)` in `core/List.js`. A `foreign` whose type is **not** a function binds
+   to a value and not to a `() => …`, which is the other half of the same rule — `core/Basics.js`
+   writes `pi` as `Math.PI`. The diagnostic is `foreign_arity_mismatch`, and it points at the beni
+   DECLARATION, because that is where the expected count is written down.
+
+   **Which export forms are accepted, and why the list is closed.** The parameter list must be
+   written AT the export, so that a reader can count it against the declaration by eye and so that
+   the compiler can count it without a JavaScript parser:
+
+   | Form | Arity |
+   |---|---|
+   | `export const f = (a, b) => …` | 2 |
+   | `export const f = a => …` | 1 |
+   | `export const f = function (a, b) { … }` | 2 |
+   | `export function f(a, b) { … }` | 2 |
+   | `export { g as f }`, with `const g = (a, b) => …` in the same file | 2 |
+   | `export const f = <anything else>` | a value, for a `foreign` that is not a function |
+
+   A destructuring or defaulted parameter is one position like any other, because the emitted call
+   fills positions. **Two forms are refused rather than guessed at**: an export that is a bare name
+   (`export const f = g;`, or a re-exported import), which says nothing about how many parameters
+   `g` has, and a **rest parameter** (`export const f = (...args) => …`), which has no fixed count.
+   Both are legal JavaScript and neither appears in `core/` or `platforms/node`. Refusing them is
+   the choice CLAUDE.md rule 6 asks for: a sibling is privileged first-party code, so a restriction
+   on how it spells an export costs a platform author one line and buys a check that cannot be
+   fooled. The fix is always the same — write the parameter list out:
+   `export const f = (a, b) => g(a, b);`.
+
+**This rule was documented and unenforced for one day and is now check 4** (2026-09-18, queue slice
+4). While it was unenforced a sibling that forgot its leading evidence parameter built cleanly and
+failed at run time — the `List.eq` shape above, with the evidence function arriving where the first
+list belonged, compares nothing and answers `false`. That was a real widening of the `foreign`
+surface against CLAUDE.md rule 6, taken knowingly and now closed. The alternative the adoption
+recorded — refusing `where` on `foreign` and giving `List` an uncons primitive to write `eq` and
+`compare` in beni over — is not taken, and the third possibility it feared, a JavaScript parser, is
+not needed: the check reads the parameter list lexically, exactly as check 3 reads imports, and
+refuses the forms that reading cannot settle.
 [`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md) §14
-item 2, and CLAUDE.md's owed list.
-→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §5.2, A.7.
+item 2 is discharged.
+→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §5.2, A.7, A.84.
 
 ### 4.1 The recipe for privileged code, written down and tested
 
@@ -387,7 +418,8 @@ not only `.beni` files.
 
 - **B1 — the platform contract in the compiler.** *Shipped with M3a.* The manifest key
   (`beni.json`, `"platform": true`) that marks a platform package; `foreign_outside_platform`; the
-  three build-time checks of §4; `Program` as a platform-owned opaque type; `main` resolved per
+  first three build-time checks of §4 (check 4 arrived with static dispatch and landed on
+  2026-09-18); `Program` as a platform-owned opaque type; `main` resolved per
   platform. Two corrections the implementation forced:
   - **§4's shape rule as written rejects core.** It says "all 65 of core's current foreign values
     are shape (a)", a total pure function. `Basics.e` and `Basics.pi` are not functions and never

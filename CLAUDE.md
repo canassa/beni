@@ -53,7 +53,8 @@ with `|>` flipped to pipe-first.
 ### Owed after the static-dispatch adoption
 
 Report 19 §14, items 1–5. None is optional; the first is the only blocker.
-Items 4 and 5 are **done** (2026-09-18): the inferred-`where` suffix is capped
+Items 2, 4 and 5 are **done** (2026-09-18): the `foreign` arity rule is
+enforced as `boundary.md` §4's check 4 (A.84), and the inferred-`where` suffix is capped
 at 64 constraints and an unannotated declaration over the cap is
 `too_many_inferred_constraints`, which bounds the n² with it —
 [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) §6.4, §10.11,
@@ -63,10 +64,16 @@ A.83.
    ships an `eq` and a `compare` whether or not anything calls them — 216 942
    bytes across 61 programs, mostly dead. Every output-size figure taken before
    DCE is an upper bound, and eager derivation without DCE is not shippable.
-2. **An arity check for a `foreign` carrying a `where` clause**, or withdrawal
-   of that combination ([`boundary.md`](docs/design/boundary.md) §4). A sibling
-   that forgot its leading evidence parameter fails at runtime, not at build
-   time — a real widening of rule 6's surface, taken knowingly.
+2. ~~**An arity check for a `foreign` carrying a `where` clause**, or
+   withdrawal of that combination.~~ **Done** (2026-09-18): it is
+   [`boundary.md`](docs/design/boundary.md) §4's **check 4** — every
+   `foreign`'s sibling export must take evidence count + declared arity
+   parameters, a non-function `foreign` must export a value, and the two
+   export forms whose parameter list cannot be counted (a bare name, a rest
+   parameter) are refused. `foreign_arity_mismatch`; no JavaScript parser;
+   every existing sibling passed unchanged
+   ([`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) §5.2,
+   §11, A.7, A.84).
 3. **The two `master` printer defects** report 19 §3.1 reproduces:
    `Render.writeRecord`'s 64-link flatten dropping the `| r` tail, and
    `Schemes.Writer.max_depth` writing `<error>` into an interface that
@@ -172,9 +179,12 @@ bug, not a trade-off ([`fast-compiler.md`](docs/design/fast-compiler.md) §10).
 
 Only platform packages may write `foreign`, and `core/` is compiled into the
 binary. A `foreign` value binds to a sibling `.js` file by name, one export per
-declaration, and three build-time checks enforce the shape
-([`boundary.md`](docs/design/boundary.md) §4). Do not widen that surface to make
-something convenient.
+declaration, and four build-time checks enforce the shape
+([`boundary.md`](docs/design/boundary.md) §4): the two-shape type rule, exact
+export coverage, import coverage, and the export's arity. Do not widen that
+surface to make something convenient — and note that §4's list of accepted
+export FORMS is part of the contract, so a sibling writes its parameter list at
+the export.
 
 ## Operational
 
