@@ -28,7 +28,7 @@ one commit each, nothing force-pushed, no history rewritten.
 | 2 | **Tail-call loop** (M3b, `backend.md` §8) — spec, then code | **done** `1cbf68e`, `bbfc869` | must precede effects; lets `foldl`/`foldr` leave `foreign`; closure-capture hazard is the exit-0 risk |
 | 3 | `ambiguous_method_receiver` on by default + hard cap on inferred `where` count | **done** `9074538`, A.83 | owed 4/5; manager decision: yes to both, cap 64; spec §10.9/§6.4 amendment first |
 | 4 | `foreign` + `where` arity check (`boundary.md` §4) | todo | owed 2; how `Sibling.zig` reads exports decides the shape |
-| 5 | Two printer defects: `Render.writeRecord` 64-link flatten drops `| r`; `Schemes.Writer.max_depth` writes `<error>` with exit 0 | todo | owed 3; each needs a fail-first fixture |
+| 5 | Two printer defects: `Render.writeRecord` 64-link flatten drops `| r`; `Schemes.Writer.max_depth` writes `<error>` with exit 0 | **done** | owed 3; each needs a fail-first fixture |
 | 6 | Decision trees (M3b, `backend.md` §7) | spec **done** `ebacb5b`; code in flight (worktree) | spec is four lines; needs the same expansion §8 got |
 | 7 | Rest of M3b — audit **done** (`plans/m3b-audit.md`): left are `?`, `Int32` (a language gap: owner decision), `--source-maps` honesty, sibling-import rewrite | todo | interpolation, tuples, record update already work |
 | 8 | **Reachability DCE** (M3c) | todo | the adoption's only blocker (report 19 §14.1); re-take M4 after |
