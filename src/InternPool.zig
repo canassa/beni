@@ -316,6 +316,24 @@ const Pool = struct {
         return @enumFromInt(index);
     }
 
+    /// The symbol whose bytes are `bytes`, or null. Reads the table and
+    /// writes nothing — see `Global.find` for why that distinction is worth
+    /// a second function.
+    fn find(pool: *const Pool, bytes: []const u8) ?Symbol {
+        if (pool.slots.len == 0) return null;
+        const hash = Hasher.hash(bytes);
+        const mask = pool.slots.len - 1;
+        var i: usize = @intCast(hash & mask);
+        while (true) : (i = (i + 1) & mask) {
+            const slot = pool.slots[i];
+            if (slot == empty_slot) return null;
+            const e = pool.entries.get(slot);
+            if (e.hash == hash and std.mem.eql(u8, pool.bytes.items[e.offset..][0..e.len], bytes)) {
+                return @enumFromInt(slot);
+            }
+        }
+    }
+
     /// Double the slot table and reinsert from the stored hashes.
     fn grow(pool: *Pool, gpa: Allocator) Allocator.Error!void {
         const new_len = @max(min_slots, pool.slots.len * 2);
@@ -409,6 +427,24 @@ pub const Global = struct {
 
     pub fn getOrPut(global: *Global, gpa: Allocator, bytes: []const u8) Allocator.Error!Symbol {
         return global.pool.getOrPut(gpa, bytes);
+    }
+
+    /// The symbol for `bytes` if this pool already has it, and null
+    /// otherwise — a LOOKUP, never an insertion.
+    ///
+    /// It exists for `resolve/iface_bytes.zig`. Loading a serialized record
+    /// turns its `strings` blob back into symbols, and that load runs on a
+    /// worker thread, where `getOrPut` would append to a pool this header
+    /// declares thread-confined: two workers loading two records at once
+    /// would race on `bytes`, `entries` and `slots` alike. Within one
+    /// session the lookup cannot legitimately miss — every string in a
+    /// record that session wrote was interned by that session — so the
+    /// caller turns a miss into `internal` rather than growing the pool.
+    ///
+    /// M4-1's cross-process load is the case that CAN miss, and it runs
+    /// serially before any worker starts, which is where `getOrPut` belongs.
+    pub fn find(global: *const Global, bytes: []const u8) ?Symbol {
+        return global.pool.find(bytes);
     }
 
     /// Fold `local` into the global pool and return the remap table:
@@ -530,6 +566,50 @@ test "merge remaps every local symbol and shares across workers" {
     try testing.expectEqual(@as(u32, WellKnown.count + 2), global.count());
     for (remap0, 0..) |g, i| try testing.expectEqualStrings(w0.slice(@enumFromInt(i)), global.slice(g));
     for (remap1, 0..) |g, i| try testing.expectEqualStrings(w1.slice(@enumFromInt(i)), global.slice(g));
+}
+
+test "Global.find looks up without inserting" {
+    var global = try Global.init(testing.allocator);
+    defer global.deinit(testing.allocator);
+    const before = global.count();
+    // A name that is not there stays not there.
+    try testing.expectEqual(@as(?Symbol, null), global.find("Json.Decode"));
+    try testing.expectEqual(before, global.count());
+    // One that is, at its own index, still without inserting.
+    try testing.expectEqual(WellKnown.compare.symbol(), global.find("compare").?);
+    try testing.expectEqual(before, global.count());
+    // And after an insertion the lookup sees it.
+    const view = try global.getOrPut(testing.allocator, "Json.Decode");
+    try testing.expectEqual(view, global.find("Json.Decode").?);
+    try testing.expectEqual(before + 1, global.count());
+    // The empty string is a legal key and is not confused with "absent".
+    try testing.expectEqual(@as(?Symbol, null), global.find(""));
+    const empty_symbol = try global.getOrPut(testing.allocator, "");
+    try testing.expectEqual(empty_symbol, global.find("").?);
+}
+
+test "randomized: Global.find agrees with getOrPut over the whole pool" {
+    var global = try Global.init(testing.allocator);
+    defer global.deinit(testing.allocator);
+    var prng: std.Random.DefaultPrng = .init(0x1FACE);
+    const random = prng.random();
+    var keys: std.ArrayList(Symbol) = .empty;
+    defer keys.deinit(testing.allocator);
+    var buf: [12]u8 = undefined;
+    for (0..4_000) |_| {
+        const len = random.intRangeAtMost(usize, 1, buf.len);
+        for (buf[0..len]) |*b| b.* = 'a' + random.uintLessThan(u8, 5);
+        const key = buf[0..len];
+        const hit = global.find(key);
+        const symbol = try global.getOrPut(testing.allocator, key);
+        if (hit) |h| try testing.expectEqual(symbol, h);
+        try keys.append(testing.allocator, symbol);
+    }
+    // Everything interned is findable, at the index it was given.
+    for (0..global.count()) |i| {
+        const s: Symbol = @enumFromInt(i);
+        try testing.expectEqual(s, global.find(global.slice(s)).?);
+    }
 }
 
 test "randomized: Local agrees with a StringHashMap oracle across table growth" {

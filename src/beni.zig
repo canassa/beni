@@ -56,6 +56,7 @@ pub const resolve = struct {
     pub const Graph = @import("resolve/Graph.zig");
     pub const Interface = @import("resolve/Interface.zig");
     pub const Resolve = @import("resolve/Resolve.zig");
+    pub const iface_bytes = @import("resolve/iface_bytes.zig");
     pub const Diagnostics = @import("resolve/Diagnostics.zig");
 };
 pub const check = struct {
