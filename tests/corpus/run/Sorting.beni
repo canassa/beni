@@ -1,6 +1,8 @@
--- There is no `comparable` (`fast-compiler.md` §3.1), so ordering is an
--- argument: `sort` for numbers, `sortBy` for a numeric key, `sortWith` for
--- an ordering you write. `String.compare` is the replacement for `"a" < "b"`.
+-- There is no `comparable` (`fast-compiler.md` §3.1); the `compare` method
+-- is what replaced it. `sort` orders anything that has one, `sortBy` takes
+-- a key that has one — a `String` key as readily as a number — and
+-- `sortWith` takes an ordering you write, for sorting by something that is
+-- not the type's own order. `"a" < "b"` now works too.
 import List
 import Node exposing (Program)
 import String
@@ -27,4 +29,5 @@ main =
         , names (List.sortBy people (\p -> p.age))
         , names (List.sortWith people (\a b -> String.compare a.name b.name))
         , names (List.sortWith people (\a b -> compare b.age a.age))
+        , names (List.sortBy people (\p -> p.name))
         ]

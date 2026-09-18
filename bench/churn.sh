@@ -552,10 +552,10 @@ spawn_failures="$work/spawn-failures"
 dump_root() {
     status=0
     if [ -n "$core_flag" ]; then
-        (cd "$work" && "$beni_abs" dump --stage=raw --core --diagnostics=json --root="$src_name" "$src_name" \
+        (cd "$work" && "$beni_abs" dump --stage=raw --core --diagnostics=json --root="$src_name" -- "$src_name" \
             >"$work/dump.out" 2>"$work/dump.err") || status=$?
     else
-        (cd "$work" && "$beni_abs" dump --stage=raw --diagnostics=json --root="$src_name" "$src_name" \
+        (cd "$work" && "$beni_abs" dump --stage=raw --diagnostics=json --root="$src_name" -- "$src_name" \
             >"$work/dump.out" 2>"$work/dump.err") || status=$?
     fi
     if [ "$status" != 0 ]; then

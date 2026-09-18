@@ -1,0 +1,9 @@
+-- check/args: `Set.map` used to take an ordering AND a callback, so it had
+-- three arguments and the ordering came in the middle. It now takes the set
+-- and the function, and this call gives it only the set.
+import Set exposing (Set)
+
+
+pub shouted : Set String -> Set String
+shouted names =
+    Set.map names

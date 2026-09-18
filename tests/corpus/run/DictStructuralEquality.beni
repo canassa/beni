@@ -1,0 +1,56 @@
+-- What `==` on a `Dict` actually answers, printed rather than argued about
+-- (`docs/design/static-dispatch-spike.md` §3.3, §8.5, §11; S6 decision
+-- O-5).
+--
+-- `Dict` is `pub opaque type Dict k v = Dict (Tree k v)` and module `Dict`
+-- declares no `pub eq`, so §3.3 falls through to derivation and derives
+-- over the SHAPE — the red-black tree, node by node, colour and all. Two
+-- dictionaries holding the same pairs are therefore equal only when the
+-- insertions happened to build the same tree, and `Dict.insert` rebalances,
+-- so insertion order can decide it.
+--
+-- This fixture is the evidence for that sentence and nothing more. It
+-- builds one dictionary forwards and one backwards from the same four
+-- pairs — `fromList` inserts left to right, so the two trees are built in
+-- opposite orders — and prints, in order: the two sizes, whether the two
+-- dictionaries are `==`, whether their `toList`s are `==`, and whether a
+-- dictionary equals itself.
+--
+-- **Lines three and four are the finding**: the two hold exactly the same
+-- four pairs and answer `False` to `==` while their association lists
+-- answer `True`. Four is the smallest number of keys that shows it — with
+-- three the red-black tree comes out the same shape whichever end you
+-- start from, and the answer is `True` for a reason that has nothing to do
+-- with the contents.
+--
+-- Giving `Dict` a `pub eq` that compares `toList` is NOT in the spike's
+-- scope (O-5); the finding is.
+import Dict
+import Node exposing (Program)
+import String
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    let
+        forwards =
+            Dict.fromList [ ( "a", 1 ), ( "b", 2 ), ( "c", 3 ), ( "d", 4 ) ]
+
+        backwards =
+            Dict.fromList [ ( "d", 4 ), ( "c", 3 ), ( "b", 2 ), ( "a", 1 ) ]
+    in
+    Node.printLines
+        [ String.fromInt (Dict.size forwards)
+        , String.fromInt (Dict.size backwards)
+        , show (forwards == backwards)
+        , show (Dict.toList forwards == Dict.toList backwards)
+        , show (forwards == forwards)
+        ]

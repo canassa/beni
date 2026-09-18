@@ -3,7 +3,6 @@
 --! `oneOf` fallbacks, and round-trip helpers.
 
 import Dict exposing (Dict)
-import Dict.String
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 
@@ -156,7 +155,7 @@ orderDecoder =
         (Decode.field "customer" customerDecoder)
         (Decode.field "items" (Decode.list lineItemDecoder))
         (Decode.field "status" statusDecoder)
-        (optionalField "notes" (Decode.dict Decode.string) Dict.String.empty)
+        (optionalField "notes" (Decode.dict Decode.string) Dict.empty)
         (Decode.field "placed_at" Decode.int)
         Order
 
@@ -310,4 +309,4 @@ summarize json =
                 Cancelled _ ->
                     "cancelled"
     in
-    Ok (List.foldl orders Dict.String.empty (\order counts -> bump counts (statusKey order)))
+    Ok (List.foldl orders Dict.empty (\order counts -> bump counts (statusKey order)))

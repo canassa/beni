@@ -1,49 +1,44 @@
---! A dictionary mapping unique keys to values. The keys can be any type, and
---! the ordering that arranges them is an argument rather than a constraint:
---! `empty` takes the comparison function, stores it, and every other function
---! uses the one the dictionary already has.
+--! A dictionary mapping unique keys to values. The keys can be any type that
+--! has a `compare` method, and that method is what arranges them: the
+--! dictionary carries nothing but its tree, and a `where` clause on every
+--! function that has to look a key up says which method it needs.
 --!
---! That is the trade `fast-compiler.md` §3.1 makes. Elm writes
+--! That is what replaced `comparable` (`fast-compiler.md` §3.1). Elm writes
 --! `Dict comparable v` and lets the compiler walk the key type at every
---! unification; beni has no `comparable`, so the ordering is a value you pass
---! once:
+--! unification; beni resolves `compare` on the key type once at each call
+--! site and passes the function it found as a hidden argument, so the
+--! ordering is never something you write down:
 --!
 --!     scores : Dict String Int
 --!     scores =
---!         Dict.fromList [ ( "Alice", 3 ), ( "Bob", 5 ) ] String.compare
+--!         Dict.fromList [ ( "Alice", 3 ), ( "Bob", 5 ) ]
 --!
 --! Argument order here is **subject first and function last**: the dictionary
 --! comes first, so `scores |> Dict.insert "Carol" 7` is
 --! `Dict.insert scores "Carol" 7` — `|>` is pipe-first, it inserts its left
 --! operand as the callee's first argument. A function argument comes last, so
---! a lambda you write inline is the final one, and where there are two it is
---! the *ordering* function that goes before the callback. The functions that
---! build a dictionary from nothing — `empty`, `singleton`, `fromList` — take
---! the comparison function last for the same reason.
---!
---! For the two key types that come up most, `Dict.String` and `Dict.Int` pass
---! the comparison function for you.
+--! a lambda you write inline is the final one. The functions that build a
+--! dictionary from nothing compare nothing on the way: `empty` is a constant
+--! and `singleton` is unconstrained.
 --!
 --! Insert, remove and query take *O(log n)* time. The implementation is the
 --! left-leaning red-black tree of Elm's `Dict`, translated function by
---! function, with the comparison function threaded through the places Elm
---! used `compare`.
+--! function, with the key's own `compare` in the places Elm used `compare`.
 --!
 --! Nothing here is `foreign`.
 
 import List
 
 
---| A dictionary of keys and values, carrying the ordering on its keys. So a
---| `Dict String User` is a dictionary that lets you look up a `String` (such
---| as a user name) and find the associated `User`.
+--| A dictionary of keys and values, ordered by the key type's own `compare`.
+--| So a `Dict String User` is a dictionary that lets you look up a `String`
+--| (such as a user name) and find the associated `User`.
 pub opaque type Dict k v
-    = Dict (k, k -> Order) (Tree k v)
+    = Dict (Tree k v)
 
 
---| The tree itself, without the comparison function. Every recursive helper
---| works on this, so the comparison function is passed down only to the
---| helpers that actually compare — as the last argument, like everywhere else.
+--| The tree itself. Every recursive helper works on this; the ones that
+--| compare keys carry the same `where k.compare` constraint their callers do.
 type Tree k v
     = Node NColor k v (Tree k v) (Tree k v)
     | Leaf
@@ -54,21 +49,22 @@ type NColor
     | Black
 
 
---| Create an empty dictionary whose keys are ordered by the given function.
+--| The empty dictionary. It compares nothing, so it needs no `compare` and
+--| is a constant rather than a function.
 --|
---|     Dict.empty String.compare
-pub empty : (k, k -> Order) -> Dict k v
-empty cmp =
-    Dict cmp Leaf
+--|     Dict.empty
+pub empty : Dict k v
+empty =
+    Dict Leaf
 
 
---| Create a dictionary with one key-value pair, ordered by the given
---| function.
+--| Create a dictionary with one key-value pair. One pair needs no ordering
+--| either, so this one is unconstrained too.
 --|
---|     Dict.singleton "Tom" 42 String.compare
-pub singleton : k, v, (k, k -> Order) -> Dict k v
-singleton key value cmp =
-    Dict cmp (Node Black key value Leaf Leaf)
+--|     Dict.singleton "Tom" 42
+pub singleton : k, v -> Dict k v
+singleton key value =
+    Dict (Node Black key value Leaf Leaf)
 
 
 --| Get the value associated with a key. If the key is not found, return
@@ -78,32 +74,35 @@ singleton key value cmp =
 --|     get animals "Tom" == Just Cat
 --|     get animals "Jerry" == Nothing
 pub get : Dict k v, k -> Maybe v
-get (Dict cmp tree) targetKey =
-    getHelp tree targetKey cmp
+    where k.compare : k, k -> Order
+get (Dict tree) targetKey =
+    getHelp tree targetKey
 
 
-getHelp : Tree k v, k, (k, k -> Order) -> Maybe v
-getHelp tree targetKey cmp =
+getHelp : Tree k v, k -> Maybe v
+    where k.compare : k, k -> Order
+getHelp tree targetKey =
     case tree of
         Leaf ->
             Nothing
 
         Node _ key value left right ->
-            case cmp targetKey key of
+            case targetKey.compare key of
                 LT ->
-                    getHelp left targetKey cmp
+                    getHelp left targetKey
 
                 EQ ->
                     Just value
 
                 GT ->
-                    getHelp right targetKey cmp
+                    getHelp right targetKey
 
 
 --| Determine if a key is in a dictionary.
 --|
 --|     member animals "Tom" == True
 pub member : Dict k v, k -> Bool
+    where k.compare : k, k -> Order
 member dict key =
     case get dict key of
         Just _ ->
@@ -115,7 +114,7 @@ member dict key =
 
 --| Determine the number of key-value pairs in the dictionary.
 pub size : Dict k v -> Int
-size (Dict _ tree) =
+size (Dict tree) =
     sizeHelp 0 tree
 
 
@@ -131,9 +130,9 @@ sizeHelp n tree =
 
 --| Determine if a dictionary is empty.
 --|
---|     isEmpty (empty String.compare) == True
+--|     isEmpty empty == True
 pub isEmpty : Dict k v -> Bool
-isEmpty (Dict _ tree) =
+isEmpty (Dict tree) =
     case tree of
         Leaf ->
             True
@@ -145,10 +144,11 @@ isEmpty (Dict _ tree) =
 --| Insert a key-value pair into a dictionary. Replaces the value when there
 --| is a collision.
 --|
---|     insert (empty String.compare) "Tom" 42
+--|     insert empty "Tom" 42
 pub insert : Dict k v, k, v -> Dict k v
-insert (Dict cmp tree) key value =
-    Dict cmp (blacken (insertHelp tree key value cmp))
+    where k.compare : k, k -> Order
+insert (Dict tree) key value =
+    Dict (blacken (insertHelp tree key value))
 
 
 -- The root node is always black.
@@ -162,8 +162,9 @@ blacken tree =
             tree
 
 
-insertHelp : Tree k v, k, v, (k, k -> Order) -> Tree k v
-insertHelp tree key value cmp =
+insertHelp : Tree k v, k, v -> Tree k v
+    where k.compare : k, k -> Order
+insertHelp tree key value =
     case tree of
         -- New nodes are always red. If it violates the rules, it will be
         -- fixed when balancing.
@@ -171,15 +172,15 @@ insertHelp tree key value cmp =
             Node Red key value Leaf Leaf
 
         Node nColor nKey nValue nLeft nRight ->
-            case cmp key nKey of
+            case key.compare nKey of
                 LT ->
-                    balance nColor nKey nValue (insertHelp nLeft key value cmp) nRight
+                    balance nColor nKey nValue (insertHelp nLeft key value) nRight
 
                 EQ ->
                     Node nColor nKey value nLeft nRight
 
                 GT ->
-                    balance nColor nKey nValue nLeft (insertHelp nRight key value cmp)
+                    balance nColor nKey nValue nLeft (insertHelp nRight key value)
 
 
 balance : NColor, k, v, Tree k v, Tree k v -> Tree k v
@@ -217,27 +218,29 @@ balance color key value left right =
 --|
 --|     remove animals "Tom"
 pub remove : Dict k v, k -> Dict k v
-remove (Dict cmp tree) key =
-    Dict cmp (blacken (removeHelp tree key cmp))
+    where k.compare : k, k -> Order
+remove (Dict tree) key =
+    Dict (blacken (removeHelp tree key))
 
 
 -- The easiest thing to remove from the tree, other than a red node, is a
 -- black node with a red child. So the deletion walks down rearranging as it
 -- goes, so that the node it finally removes is one of those.
-removeHelp : Tree k v, k, (k, k -> Order) -> Tree k v
-removeHelp tree targetKey cmp =
+removeHelp : Tree k v, k -> Tree k v
+    where k.compare : k, k -> Order
+removeHelp tree targetKey =
     case tree of
         Leaf ->
             Leaf
 
         Node color key value left right ->
-            case cmp targetKey key of
+            case targetKey.compare key of
                 LT ->
                     case left of
                         Node Black _ _ lLeft _ ->
                             case lLeft of
                                 Node Red _ _ _ _ ->
-                                    Node color key value (removeHelp left targetKey cmp) right
+                                    Node color key value (removeHelp left targetKey) right
 
                                 _ ->
                                     case moveRedLeft tree of
@@ -246,20 +249,19 @@ removeHelp tree targetKey cmp =
                                                 nColor
                                                 nKey
                                                 nValue
-                                                (removeHelp nLeft targetKey cmp)
+                                                (removeHelp nLeft targetKey)
                                                 nRight
 
                                         Leaf ->
                                             Leaf
 
                         _ ->
-                            Node color key value (removeHelp left targetKey cmp) right
+                            Node color key value (removeHelp left targetKey) right
 
                 _ ->
                     removeHelpEQGT
                         (removeHelpPrepEQGT tree color key value left right)
                         targetKey
-                        cmp
 
 
 -- Rearrange the node so that the `EQ` and `GT` cases can proceed: either
@@ -284,11 +286,12 @@ removeHelpPrepEQGT tree color key value left right =
 
 -- When we find the node to delete, we replace it with the minimum of its
 -- right subtree and then delete that minimum instead.
-removeHelpEQGT : Tree k v, k, (k, k -> Order) -> Tree k v
-removeHelpEQGT tree targetKey cmp =
+removeHelpEQGT : Tree k v, k -> Tree k v
+    where k.compare : k, k -> Order
+removeHelpEQGT tree targetKey =
     case tree of
         Node color key value left right ->
-            case cmp targetKey key of
+            case targetKey.compare key of
                 EQ ->
                     case getMin right of
                         Node _ minKey minValue _ _ ->
@@ -298,7 +301,7 @@ removeHelpEQGT tree targetKey cmp =
                             Leaf
 
                 _ ->
-                    balance color key value left (removeHelp right targetKey cmp)
+                    balance color key value left (removeHelp right targetKey)
 
         Leaf ->
             Leaf
@@ -391,6 +394,7 @@ moveRedRight tree =
 --|
 --|     update animals "Tom" (\_ -> Just Cat)
 pub update : Dict k v, k, (Maybe v -> Maybe v) -> Dict k v
+    where k.compare : k, k -> Order
 update dict targetKey alter =
     case alter (get dict targetKey) of
         Just value ->
@@ -401,15 +405,16 @@ update dict targetKey alter =
 
 
 --| Combine two dictionaries. If there is a collision, preference is given to
---| the first dictionary. The ordering of the second dictionary is the one the
---| result keeps, since that is the dictionary being added to.
+--| the first dictionary.
 pub union : Dict k v, Dict k v -> Dict k v
+    where k.compare : k, k -> Order
 union t1 t2 =
     foldl t1 t2 (\key value dict -> insert dict key value)
 
 
 --| Keep a key-value pair when its key appears in the second dictionary.
 pub intersect : Dict k v, Dict k v -> Dict k v
+    where k.compare : k, k -> Order
 intersect t1 t2 =
     filter t1 (\key _ -> member t2 key)
 
@@ -417,6 +422,7 @@ intersect t1 t2 =
 --| Keep a key-value pair when its key does not appear in the second
 --| dictionary.
 pub diff : Dict k a, Dict k b -> Dict k a
+    where k.compare : k, k -> Order
 diff t1 t2 =
     foldl t2 t1 (\key _ t -> remove t key)
 
@@ -430,7 +436,7 @@ diff t1 t2 =
 --|   3. Only in the right dictionary.
 --|
 --| You then traverse all the keys from lowest to highest, building up
---| whatever you want. The ordering used is the left dictionary's.
+--| whatever you want.
 pub merge :
     Dict k a
     , Dict k b
@@ -439,18 +445,16 @@ pub merge :
     , (k, a, b, result -> result)
     , (k, b, result -> result)
     -> result
+    where k.compare : k, k -> Order
 merge leftDict rightDict initialResult leftStep bothStep rightStep =
     let
-        cmp =
-            comparatorOf leftDict
-
         stepState rKey rValue ( list, result ) =
             case list of
                 [] ->
                     ( list, rightStep rKey rValue result )
 
                 ( lKey, lValue ) :: rest ->
-                    case cmp lKey rKey of
+                    case lKey.compare rKey of
                         LT ->
                             stepState rKey rValue ( rest, leftStep lKey lValue result )
 
@@ -466,18 +470,13 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
     List.foldl leftovers intermediateResult (\( key, value ) result -> leftStep key value result)
 
 
-comparatorOf : Dict k v -> k, k -> Order
-comparatorOf (Dict cmp _) =
-    cmp
-
-
 --| Apply a function to all values in a dictionary. The keys, and therefore
 --| the ordering, are untouched.
 --|
---|     map (fromList [ ( "a", 1 ) ] String.compare) (\_ value -> value + 1)
+--|     map (fromList [ ( "a", 1 ) ]) (\_ value -> value + 1)
 pub map : Dict k a, (k, a -> b) -> Dict k b
-map (Dict cmp tree) func =
-    Dict cmp (mapTree tree func)
+map (Dict tree) func =
+    Dict (mapTree tree func)
 
 
 mapTree : Tree k a, (k, a -> b) -> Tree k b
@@ -495,7 +494,7 @@ mapTree tree func =
 --|
 --|     foldl animals 0 (\_ _ count -> count + 1) == size animals
 pub foldl : Dict k v, b, (k, v, b -> b) -> b
-foldl (Dict _ tree) acc func =
+foldl (Dict tree) acc func =
     foldlTree tree acc func
 
 
@@ -514,7 +513,7 @@ foldlTree tree acc func =
 --|
 --|     foldr animals [] (\key _ names -> key :: names) == keys animals
 pub foldr : Dict k v, b, (k, v, b -> b) -> b
-foldr (Dict _ tree) acc func =
+foldr (Dict tree) acc func =
     foldrTree tree acc func
 
 
@@ -532,10 +531,11 @@ foldrTree tree acc func =
 --|
 --|     filter animals (\_ animal -> animal == Cat)
 pub filter : Dict k v, (k, v -> Bool) -> Dict k v
-filter (Dict cmp tree) isGood =
+    where k.compare : k, k -> Order
+filter (Dict tree) isGood =
     foldlTree
         tree
-        (Dict cmp Leaf)
+        empty
         (\key value dict ->
             if isGood key value then
                 insert dict key value
@@ -550,7 +550,8 @@ filter (Dict cmp tree) isGood =
 --|
 --|     partition animals (\_ animal -> animal == Cat)
 pub partition : Dict k v, (k, v -> Bool) -> ( Dict k v, Dict k v )
-partition (Dict cmp tree) isGood =
+    where k.compare : k, k -> Order
+partition (Dict tree) isGood =
     let
         step key value ( trues, falses ) =
             if isGood key value then
@@ -558,12 +559,12 @@ partition (Dict cmp tree) isGood =
             else
                 ( trues, insert falses key value )
     in
-    foldlTree tree ( Dict cmp Leaf, Dict cmp Leaf ) step
+    foldlTree tree ( empty, empty ) step
 
 
 --| Get all of the keys in a dictionary, sorted from lowest to highest.
 --|
---|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ] String.compare) == [ "a", "b" ]
+--|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ "a", "b" ]
 pub keys : Dict k v -> List k
 keys dict =
     foldr dict [] (\key _ keyList -> key :: keyList)
@@ -571,7 +572,7 @@ keys dict =
 
 --| Get all of the values in a dictionary, in the order of their keys.
 --|
---|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ] String.compare) == [ 0, 1 ]
+--|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ 0, 1 ]
 pub values : Dict k v -> List v
 values dict =
     foldr dict [] (\_ value valueList -> value :: valueList)
@@ -580,17 +581,18 @@ values dict =
 --| Convert a dictionary into an association list of key-value pairs, sorted
 --| by keys.
 --|
---|     toList (fromList [ ( "b", 1 ), ( "a", 0 ) ] String.compare)
+--|     toList (fromList [ ( "b", 1 ), ( "a", 0 ) ])
 --|         == [ ( "a", 0 ), ( "b", 1 ) ]
 pub toList : Dict k v -> List ( k, v )
 toList dict =
     foldr dict [] (\key value list -> ( key, value ) :: list)
 
 
---| Convert an association list into a dictionary ordered by the given
---| function.
+--| Convert an association list into a dictionary, ordered by the key type's
+--| own `compare`.
 --|
---|     fromList [ ( "a", 0 ), ( "b", 1 ) ] String.compare
-pub fromList : List ( k, v ), (k, k -> Order) -> Dict k v
-fromList assocs cmp =
-    List.foldl assocs (empty cmp) (\( key, value ) dict -> insert dict key value)
+--|     fromList [ ( "a", 0 ), ( "b", 1 ) ]
+pub fromList : List ( k, v ) -> Dict k v
+    where k.compare : k, k -> Order
+fromList assocs =
+    List.foldl assocs empty (\( key, value ) dict -> insert dict key value)

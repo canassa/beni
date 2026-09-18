@@ -1,6 +1,6 @@
--- `Dict` is written in beni over an explicit comparator, which is what
--- dropping `comparable` costs and buys. This exercises a large chunk of
--- core through one program.
+-- `Dict` is written in beni and ordered by the key type's own `compare`
+-- method, which is what replaced `comparable`. This exercises a large chunk
+-- of core through one program.
 import Dict
 import List
 import Node exposing (Program)
@@ -11,7 +11,7 @@ main : Program
 main =
     let
         empty =
-            Dict.empty String.compare
+            Dict.empty
 
         counts =
             Dict.insert (Dict.insert empty "a" 1) "b" 2

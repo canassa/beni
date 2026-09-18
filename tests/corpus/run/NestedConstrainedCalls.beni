@@ -1,0 +1,84 @@
+-- One constrained call NESTED inside another, executed
+-- (`docs/design/static-dispatch-spike.md` §6.2 Rule U1, §8.2, A.57, A.75).
+--
+-- `keepLarger (keepLarger empty "b") "q"` instantiates `keepLarger` twice,
+-- and the inner call's result `Box k1` meets the outer call's parameter
+-- `Box k2` only after BOTH `k.compare` constraints are in the table —
+-- which is what the `let`-bound `empty` buys: the receiver is still a
+-- variable when the second call is instantiated, so Rule U1 has two
+-- constraints to join on one root rather than one already-discharged one.
+--
+-- A join COPIES its inputs onto a fresh range, because a constraint set is
+-- a range of an append-only table and is never edited (§6.1 invariant 2).
+-- Before A.75 the copy and the input it superseded were two live
+-- obligations over one site list, so each call wrote its site twice and
+-- the emitted call would have passed the comparator twice:
+-- `Lower.evidenceShapeOk` counts two top-level slots against the one
+-- parameter `keepLarger` declares and stops the build with `internal`,
+-- which is what this program did on a checker without the redirect.
+--
+-- The same nesting through `Dict.insert` is `run/Dictionaries`; this
+-- fixture owns the shape with a type of its own, so the pin stays put when
+-- `core/Dict` moves. `dispatch/JoinedConstraintSites` is the table
+-- underneath it, and the reason both exist is that this one cannot see the
+-- difference between a right table and a table that is right twice over.
+--
+-- Two deep and three deep, because the chain is what the join walks; the
+-- `reversed` line puts the winner in the OTHER operand, so a comparator
+-- wired to the wrong argument still has to disagree with one of them; and
+-- `numbers` reaches the same join with the receiver still a `number`,
+-- through the A.53 bridge rather than through a structure.
+import Node exposing (Program)
+import String
+
+
+pub type Box k
+    = Empty
+    | Holding k
+
+
+pub keepLarger : Box k, k -> Box k
+    where k.compare : k, k -> Order
+keepLarger box candidate =
+    case box of
+        Empty ->
+            Holding candidate
+
+        Holding held ->
+            if held < candidate then
+                Holding candidate
+
+            else
+                Holding held
+
+
+unwrap : Box k, k -> k
+unwrap box fallback =
+    case box of
+        Empty ->
+            fallback
+
+        Holding held ->
+            held
+
+
+main : Program
+main =
+    let
+        empty =
+            Empty
+
+        letters =
+            keepLarger (keepLarger (keepLarger empty "b") "q") "f"
+
+        reversed =
+            keepLarger (keepLarger empty "z") "a"
+
+        numbers =
+            keepLarger (keepLarger empty 5) 3
+    in
+    Node.printLines
+        [ unwrap letters "?"
+        , unwrap reversed "?"
+        , String.fromInt (unwrap numbers 0)
+        ]

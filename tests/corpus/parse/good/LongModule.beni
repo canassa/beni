@@ -82,12 +82,12 @@ pub type Msg
 
 pub init : Model
 init =
-    { cards = Dict.empty compare
+    { cards = Dict.empty
     , nextId = 1
     , editing = NotEditing
     , drag = Nothing
     , filter = ""
-    , collapsed = Set.empty String.compare
+    , collapsed = Set.empty
     , newCardTitle = ""
     , errors = []
     }
@@ -282,7 +282,7 @@ update msg model =
             case result of
                 Ok cards ->
                     { model
-                        | cards = cards |> List.map (\c -> ( c.id, c )) |> Dict.fromList compare
+                        | cards = cards |> List.map (\c -> ( c.id, c )) |> Dict.fromList
                         , nextId = 1 + List.foldl cards 0 (\c acc -> max acc c.id)
                     }
 
@@ -741,7 +741,7 @@ labelsInUse model =
     model.cards
         |> Dict.values
         |> List.concatMap .labels
-        |> Set.fromList String.compare
+        |> Set.fromList
         |> Set.toList
 
 

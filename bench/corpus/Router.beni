@@ -2,7 +2,6 @@
 --! printing a route back to a URL, breadcrumbs and navigation guards.
 
 import Dict exposing (Dict)
-import Dict.String
 
 
 pub type Route
@@ -155,7 +154,7 @@ parseQuery query =
     query
         |> String.split "&"
         |> List.filterMap parsePair
-        |> Dict.String.fromList
+        |> Dict.fromList
 
 
 parsePair : String -> Maybe ( String, String )

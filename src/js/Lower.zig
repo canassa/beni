@@ -116,8 +116,9 @@ pub const Input = struct {
     /// `derivedBodyExists` reads `Entry.kind` and `Entry.equatable` to
     /// answer whether the module that owns an `ext_derived` target actually
     /// emitted a body for it — a `foreign type` has no constructors and so
-    /// no module wrote one (A.55, A.60) — which is A.51's refusal and the
-    /// wall S5 leaves standing. That is still a question about the TABLE
+    /// no module wrote one (A.55, A.60). After §5.2 no program can make
+    /// that answer `false`, so what is left is the guard against a table
+    /// the checker did not write. That is still a question about the TABLE
     /// and not about a value, but it is a judgement and not a lookup, and
     /// pretending otherwise in this comment hid it. §8.0 records it.
     ///
@@ -297,8 +298,9 @@ const Lowerer = struct {
     part_depth: u8 = 0,
     /// The instruction being lowered, for a diagnostic raised by something
     /// that has no instruction of its own — the synthesised references of
-    /// §9.1 and A.51's bridge. It is the INNERMOST instruction reached, not
-    /// a span the reader chose, which is why only `internal` uses it.
+    /// §9.1, and `partEq`'s `err` arm. It is the INNERMOST instruction
+    /// reached, not a span the reader chose, which is why only `internal`
+    /// uses it.
     region: Inst.Index = @enumFromInt(0),
 
     /// One name this module has to import. `value` indexes the other
@@ -1984,19 +1986,24 @@ const Lowerer = struct {
             },
             .evidence => |k| return try l.evidenceCall(k, left, right, p),
             .top, .ext => return l.namedPartCall(part, .eq, left, right, region, p),
-            // The checker could not name a function for this position —
-            // by the invariant `structuralEq` states, a `number` still
-            // unresolved at generalisation, whose `eq` is `===` whichever
-            // of `Int` and `Float` it settles on. `Basics.eq` IS that
-            // answer, and the one the S4 shim gave the whole comparison.
+            // The checker could not name a function for this position: a
+            // slot nothing ever inhabits, or a `number` still unresolved at
+            // generalisation whose `eq` is `===` whichever of `Int` and
+            // `Float` it settles on. `Basics.eq` IS that answer, and the
+            // one the S4 shim gave the whole comparison.
+            //
+            // INVARIANT, and it is the CHECKER's to hold: `err` means
+            // exactly that and nothing else. The moment the checker writes
+            // `err` for a position it could not resolve for some OTHER
+            // reason — a user's own method it failed to find, say — this
+            // line silently answers the wrong `Bool`. What pins it is
+            // `tests/corpus/dispatch/ErrParts`, which shows every `err` a
+            // clean program makes.
             .err => return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p),
             .derived, .ext_derived => {
                 if (!l.derivedBodyExists(part)) {
-                    if (!l.structuralEq(part, null)) {
-                        try l.refuseDerived(region, foreign_derived_missing);
-                        return null;
-                    }
-                    return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p);
+                    try l.reportDispatchBug(region, derived_body_missing);
+                    return null;
                 }
                 return try l.derivedPartCall(part, .eq, left, right, p);
             },
@@ -2059,13 +2066,8 @@ const Lowerer = struct {
             // `num_compare` before the checker gives up.)
             .err => return try l.stringNode("EQ", p),
             .derived, .ext_derived => {
-                // There is no structural walk for `compare` and there never
-                // was: `core/Basics.js` has one `eq` and nothing that
-                // orders (A.51, A.53). So a `compare` no module writes a
-                // function for is refused outright — `List a` until §5.2
-                // gives it a `pub foreign compare`.
                 if (!l.derivedBodyExists(part)) {
-                    try l.refuseDerived(region, l.missingDerivedDetail(part));
+                    try l.reportDispatchBug(region, derived_body_missing);
                     return null;
                 }
                 return try l.derivedPartCall(part, .compare, left, right, p);
@@ -2196,26 +2198,21 @@ const Lowerer = struct {
     }
 
     /// A derived function in VALUE position: the bare name when it takes no
-    /// evidence, its eta-expansion when it does (§8.2, A.25), and
-    /// `Basics.eq` when no module emits it at all — A.51's door, and what
-    /// is left behind it after S6a.
+    /// evidence, its eta-expansion when it does (§8.2, A.25).
     ///
-    /// **The door is A.67's, and it is `eq`-only, exactly as
-    /// `methodCallExpr`'s is.** `core/Basics.js`'s structural walk answers a
-    /// missing `eq` when every part says it would answer the same thing, and
-    /// there is no function in core that orders structurally, so a missing
-    /// `compare` refuses. Answering both with `Basics.eq` — which is what
-    /// this did — puts a `Bool`-returning function into an `Order` slot: the
-    /// build exits 0 and the comparator it handed over returns `true`, which
-    /// `Order`'s own `case` then reads as no branch at all.
+    /// **A target with no body is a table the checker did not write.** Every
+    /// shape §9 describes has a body for both methods, `List a` has its own
+    /// `pub foreign eq` and `pub foreign compare` (§5.2), and `equatable` is
+    /// core's alone — so the A.51 bridge that used to answer a missing `eq`
+    /// with `core/Basics.js`'s structural walk has no customer left and is
+    /// gone with S6b. Nothing is MISSING here any more; something would be
+    /// WRONG, so it reports `internal` rather than `not_implemented`.
     ///
-    /// **Not reachable today**, and there is no corpus fixture because there
-    /// is no program that gets here: the checker refuses `compare` on a type
-    /// whose method has no body before the backend is asked
-    /// (`check/bad/CompareOnForeignType`, `check/bad/CompareOnTypeHoldingFunction`),
-    /// so the only route is a table the checker did not write. The in-source
-    /// test "a derived `compare` with no body refuses in value position" is
-    /// what holds it, over exactly such a table.
+    /// **Not reachable by any program**: the checker refuses `eq` and
+    /// `compare` on a type whose method has no body before the backend is
+    /// asked (§3.3, A.54 — `check/bad/CompareOnTypeHoldingFunction`,
+    /// `check/bad/core/CompareOnWrappedForeign`), so only a hand-built table
+    /// gets here, and the in-source test below is what holds it.
     fn derivedValue(l: *Lowerer, target: Dispatch.Target, p: u32) Allocator.Error!Node.Index {
         if (l.part_depth > max_part_depth) {
             try l.reportDispatchBug(l.region, parts_too_deep);
@@ -2225,12 +2222,8 @@ const Lowerer = struct {
         defer l.part_depth -= 1;
         const kind = l.derivedTargetKind(target);
         if (!l.derivedBodyExists(target)) {
-            const bridged = kind == .eq and l.structuralEq(target, null);
-            if (!bridged) {
-                try l.refuseDerived(l.region, l.missingDerivedDetail(target));
-                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            }
-            return l.coreValue(.Basics, .eq, p);
+            try l.reportDispatchBug(l.region, derived_body_missing);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const callee = try l.derivedName(target, p);
         if (l.ownEvidence(target) == 0) return callee;
@@ -2348,15 +2341,6 @@ const Lowerer = struct {
         return id == wk.never;
     }
 
-    /// Which of the two methods a derived target is, for the message that
-    /// says why it was not emitted.
-    fn missingDerivedDetail(l: *Lowerer, target: Dispatch.Target) []const u8 {
-        return if (l.derivedTargetKind(target) == .compare)
-            derived_compare_missing
-        else
-            foreign_derived_missing;
-    }
-
     /// How many evidence parameters the function a target NAMES takes —
     /// which is not `targetEvidence`, whose answer is how many SITES the
     /// target consumes. A derived function's evidence rides on the target's
@@ -2448,21 +2432,17 @@ const Lowerer = struct {
         return l.codePointCall(try l.bindSubject(out, value, p), p);
     }
 
-    /// **The wall S5 leaves standing.** Every row of §8 is lowered, and
-    /// every `eq` of §9 is emitted — what is refused here is what no module
-    /// writes a function for: a derived `compare`, which is S6's half of
-    /// §9, and a `foreign type`'s `eq`, which has no constructors to derive
-    /// from (A.55, A.60) and gets its own `pub foreign` in §5.2. Both fall
-    /// back to `core/Basics.js`'s `eq` when the structural walk answers
-    /// exactly what the table asks for — A.51's door, now the only one —
-    /// and are refused when it does not.
+    /// **The wall is down.** Every row of §8 is lowered and every shape of
+    /// §9 has a body for both methods, so what this checks is no longer a
+    /// slice that has not landed: a target with no body, or a site list
+    /// that is not the tree §8.2 describes, is a table the checker did not
+    /// write. Both say `internal`.
     fn refuseEvidence(l: *Lowerer, inst: Inst.Index, sites: []const Dispatch.Site, expected: u16) !bool {
         for (sites) |site| {
             switch (site.target) {
                 .derived, .ext_derived => {
                     if (l.derivedBodyExists(site.target)) continue;
-                    if (l.structuralEq(site.target, null)) continue;
-                    try l.refuseDerived(inst, l.missingDerivedDetail(site.target));
+                    try l.reportDispatchBug(inst, derived_body_missing);
                     return true;
                 },
                 else => {},
@@ -2667,151 +2647,23 @@ const Lowerer = struct {
         \\one argument. This call has a different number of arguments.
     ;
 
-    /// Whether a derived `eq` answers exactly what `core/Basics.js`'s `eq`
-    /// answers — which is the whole of A.51's bridge, and the reason it has
-    /// to be RECURSIVE.
+    /// A derived target the emitting module writes no function for.
     ///
-    /// `core/Basics.js`'s `eq` is one structural walk: it compares every
-    /// reachable primitive with `===` and knows nothing about a user's own
-    /// `pub eq`. A derived function does know, because the checker put that
-    /// user method in the table as a part — so `{ k = Id 1 2 } == { k = Id
-    /// 1 99 }`, whose `derived 0` has `part 0 ext Id eq`, is `True` by the
-    /// table and `False` by the structural walk. Checking only the
-    /// top-level target accepted exactly that program and printed the wrong
-    /// answer.
-    ///
-    /// So every part must itself be structural: `primitive strict_eq`, or
-    /// another derived `eq` all of whose parts are. A `top`, `ext` or
-    /// `evidence` part is a FUNCTION the walk would not call, and refuses.
-    ///
-    /// Two halves per `derived`, because `parts` means two different things
-    /// (§7.1): the `Derived` row's parts are the BODY's positions, where
-    /// `evidence i` means "this function's own i-th parameter" and is
-    /// answered by the use; the `Target`'s parts are what the use HANDS it,
-    /// where `evidence k` would mean the enclosing declaration's parameter
-    /// and is never structural.
-    ///
-    /// **What still asks.** S5 emits a body for every shape a module owns,
-    /// so a `derived` target never comes here and an `ext_derived` one only
-    /// when no module writes its function: a `foreign type`'s `eq` (A.55,
-    /// A.60), which is `List a` until §5.2 gives it a `pub foreign eq` of
-    /// its own in S6. That is the whole of what is left behind A.51's door.
-    ///
-    /// The residual gap, unchanged and stated: an `ext_derived` names
-    /// another module's nominal type, whose body positions are that
-    /// module's table and not ours (A.47) — but a nominal type now HAS a
-    /// body, so the only parts this walk judges are the ones the use hands
-    /// over, which is exactly what it is given.
-    fn structuralEq(l: *Lowerer, target: Dispatch.Target, seen: ?*const Seen) bool {
-        switch (target) {
-            .primitive => |prim| return prim == .strict_eq,
-            // The checker could not name a function for this position, and
-            // in a clean program that means one thing: a position nothing
-            // ever inhabits. `[] == []` compares two empty lists, so the
-            // element type is a variable no use constrains, and `Nothing ==
-            // Nothing` carries no payload — the function named there is
-            // never called, so the walk is as right as anything else. (A
-            // `number` element is NOT this case any more: A.59 answers it
-            // with `strict_eq`/`num_compare` before the checker gives up.)
-            //
-            // INVARIANT, and it is the CHECKER's to hold: `err` means
-            // exactly that and nothing else. The moment the checker starts
-            // writing `err` for a position it could not resolve for some
-            // other reason — a user's own method it failed to find, say —
-            // this line silently routes that position through the
-            // structural walk and answers the wrong `Bool`, and `partEq`
-            // emits `Basics$eq` there for the same reason. Nothing in
-            // `run/` or `emit/` can see the difference, because both
-            // readings compile and only one is right; what pins it is
-            // `tests/corpus/dispatch/ErrParts`, which shows every `err` a
-            // clean program makes and shows the literal positions beside
-            // them answering something else.
-            .err => return true,
-            .derived => |use| {
-                const table = l.in.dispatch;
-                if (use.index >= table.derived.len) return false;
-                const row = table.derived[use.index];
-                if (row.kind != .eq) return false;
-                // A recursive type's own derived function is a part of
-                // itself; meeting it again adds no new part to judge.
-                var walk = seen;
-                while (walk) |node| : (walk = node.prev) {
-                    if (node.index == use.index) return true;
-                }
-                const here: Seen = .{ .index = use.index, .prev = seen };
-                for (table.partsAt(row.parts)) |part| {
-                    // `evidence i` in a BODY is this function's own
-                    // parameter, answered by the use's parts below.
-                    if (std.meta.activeTag(part) == .evidence) continue;
-                    if (!l.structuralEq(part, &here)) return false;
-                }
-                // `partsOf()` and not `use.parts`: `src/dump/dispatch.zig`
-                // reads a target's evidence through it, and the emitter and
-                // the dump have to read the table the same way or a dump
-                // that looks right can sit over an emission that is not.
-                for (table.partsAt(target.partsOf())) |part| {
-                    if (!l.structuralEq(part, &here)) return false;
-                }
-                return true;
-            },
-            .ext_derived => |use| {
-                if (use.kind != .eq) return false;
-                for (l.in.dispatch.partsAt(target.partsOf())) |part| {
-                    if (!l.structuralEq(part, seen)) return false;
-                }
-                return true;
-            },
-            else => return false,
-        }
-    }
-
-    const Seen = struct { index: u32, prev: ?*const Seen };
-
-    /// The methods no module writes a function for, each naming what it is
-    /// about and the slice that grows it (`backend.md` §1: the half that is
-    /// missing must say so).
-    ///
-    /// Both are now about `foreign type`s alone: every shape §9 describes
-    /// has a body for both methods after S6a, and a `foreign type` has no
-    /// constructors to write one from (A.55, A.60). `List a` is the one in
-    /// core, and §5.2 gives it a `pub foreign eq` in S6a and a
-    /// `pub foreign compare` in S6b.
-    const derived_compare_missing =
-        \\The checker resolved it to the `compare` of a `foreign type`
-        \\(`docs/design/static-dispatch-spike.md` §9.5) — `List a` is the one in core —
-        \\and a `foreign type` has no constructors to derive a body from, so no module
-        \\emits one. §5.2 gives `List` a `pub foreign compare` of its own in S6b, and
-        \\there is no structural walk to stand in for it: `core/Basics.js` has an `eq`
-        \\and nothing that orders.
-        \\
-        \\Hint: pass an ordering function, or compare the parts by hand, until then.
+    /// **Nothing reaches this from a program.** Every shape §9 describes
+    /// has a body for both methods, `List a` has its own `pub foreign eq`
+    /// and `pub foreign compare` (§5.2), and `equatable` — the marker that
+    /// let a `foreign type` answer `eq` without one — is core's alone, so
+    /// core is the only place that could declare such a type and core no
+    /// longer does. The A.51 bridge that answered a missing `eq` with
+    /// `core/Basics.js`'s structural walk went with it in S6b: keeping it
+    /// would mean keeping a recursive test of whether the walk happens to
+    /// agree with the table, for a case no program can produce.
+    const derived_body_missing =
+        \\The table resolves this to a derived method of a type whose module emits no
+        \\function for it, and after `docs/design/static-dispatch-spike.md` §5.2 there is
+        \\no such type: every shape §9 describes has a body, and `List a` has a
+        \\`pub foreign eq` and a `pub foreign compare` of its own.
     ;
-
-    const foreign_derived_missing =
-        \\The checker resolved it to a derived method of a `foreign type`
-        \\(`docs/design/static-dispatch-spike.md` §9.5) — and a `foreign type` has no
-        \\constructors to derive a body from, so no module emits one. A platform
-        \\package gives its own types a `pub eq` the way §5.2 gives `List` one.
-        \\
-        \\`core/Basics.js`'s `eq` answers this one everywhere the walk it makes is the
-        \\answer the table asks for; here it is not, because something inside has an
-        \\`eq` of its OWN and a structural walk would ignore it.
-        \\
-        \\Hint: compare the elements by hand — `List.all` over a zip, or a `case` —
-        \\until then.
-    ;
-
-    fn refuseDerived(l: *Lowerer, inst: Inst.Index, detail: []const u8) !void {
-        try l.report(
-            .not_implemented,
-            inst,
-            \\I cannot compile this comparison to JavaScript yet.
-            \\
-            \\{s}
-        ,
-            .{detail},
-        );
-    }
 
     /// A constrained value in a PART position (§7.1): a `top` or `ext`
     /// target with evidence parameters of its own, which the `parts` tree
@@ -2886,25 +2738,12 @@ const Lowerer = struct {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
                 if (!l.derivedBodyExists(target)) {
-                    // A.51's door, and what is left behind it after S5: a
-                    // method no module writes a function for. The
-                    // structural walk of `core/Basics.js` answers for it
-                    // exactly when every part says it would answer the same
-                    // thing — which is why that test is RECURSIVE: a user's
-                    // own `pub eq` anywhere inside is a part the walk would
-                    // ignore, and printing the wrong `Bool` is worse than
-                    // refusing (A.60).
-                    const bridged = switch (m.origin) {
-                        .eq, .neq, .none => l.structuralEq(target, null),
-                        else => false,
-                    };
-                    const function = if (bridged) InternPool.WellKnown.eq else {
-                        try l.refuseDerived(inst, l.missingDerivedDetail(target));
-                        return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                    };
-                    const bridge = try l.coreValue(.Basics, function, p);
-                    const walked = try l.receiverCall(out, bridge, &.{}, @enumFromInt(d.lhs), args, p);
-                    return l.orderTest(walked, if (m.origin == .neq) .neq else .none, p);
+                    // A.51's door, closed with S6b: every shape of §9 has a
+                    // body for both methods and `List a` has its own
+                    // `pub foreign eq`/`compare` (§5.2), so there is no
+                    // method left that no module writes a function for.
+                    try l.reportDispatchBug(inst, derived_body_missing);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
                 const evidence = try l.partValues(target.partsOf(), l.derivedTargetKind(target), p);
                 const callee = try l.derivedName(target, p);
@@ -2991,7 +2830,7 @@ const Lowerer = struct {
                 // evidence the USE passes rides on the target's parts
                 // (A.46) and the written arguments follow.
                 if (!l.derivedBodyExists(target)) {
-                    try l.refuseDerived(inst, l.missingDerivedDetail(target));
+                    try l.reportDispatchBug(inst, derived_body_missing);
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
                 if (try l.refuseEvidence(inst, sites[1..], 0)) {
@@ -3095,7 +2934,8 @@ const Lowerer = struct {
     /// `Resolve` does for an `import_value` instruction; it is done by hand
     /// here because the two values §8 needs have no reference instruction
     /// at all: `String.compare` behind `primitive string_compare` (§9.1)
-    /// and `Basics.eq` behind A.51's bridge.
+    /// and `Basics.eq` behind `partEq`'s `err` arm, the position nothing
+    /// ever inhabits (A.66).
     ///
     /// Each failure is REPORTED and not silently emitted as `undefined`.
     /// Before the operators stopped referencing `Basics`, a core package
@@ -4166,23 +4006,26 @@ test "the evidence wall counts the top-level slots, in both directions" {
     try testing.expect(!l.evidenceShapeOk(&.{site(0, .err)}, 1));
 }
 
-test "a derived function with no body refuses in value position unless the structural walk answers" {
+test "a derived function with no body is a table bug in value position, either kind" {
     // A SYNTHETIC `Dispatch` table, for the reason the test above gives and
-    // one more: no beni program reaches this arm. The checker's
-    // `comparable` gate refuses `compare` on a type no module writes a body
-    // for before the backend is ever asked (§3.3, A.54 —
-    // `tests/corpus/check/bad/CompareOnForeignType` and
-    // `CompareOnTypeHoldingFunction` are the fixtures), so a `compare`
+    // one more: no beni program reaches this arm. The checker refuses `eq`
+    // and `compare` on a type no module writes a body for before the
+    // backend is ever asked (§3.3, A.54 —
+    // `tests/corpus/check/bad/CompareOnTypeHoldingFunction` and
+    // `check/bad/core/CompareOnWrappedForeign` are the fixtures), so a
     // target with no body can only come from a table the checker did not
     // write, and only a hand-built one can show what the emitter does with
     // it. That is why there is no corpus fixture beside this test.
     //
-    // What it pins is A.67's asymmetry in VALUE position. `derivedValue`
-    // answered BOTH kinds with `core/Basics.js`'s `eq` and made no test at
-    // all: an `Order` slot would have been handed a function returning
-    // `true`, after a build that exited 0. `methodCallExpr` has asked the
-    // structural question since S5; this is the same question in the other
-    // position.
+    // **What changed with S6b.** This used to assert A.51's door: a missing
+    // `eq` whose parts were all structural was answered with
+    // `core/Basics.js`'s walk instead of refused, because `List a` had no
+    // `pub foreign eq` and that walk was the only thing that could answer
+    // `xs == ys`. §5.2 gives `List` both methods, `equatable` is core's
+    // alone so no other module can declare a `foreign type` that derives
+    // without a body, and the door has no customer left. Both kinds are now
+    // `internal` — nothing is MISSING, the table is WRONG — and the test
+    // asserts that symmetry.
     const gpa = testing.allocator;
     const table: Dispatch = .{};
     const types: Types = .empty;
@@ -4206,8 +4049,6 @@ test "a derived function with no body refuses in value position unless the struc
         l.diagnostics.deinit(gpa);
     }
 
-    // A `compare` no module derives a body for: refused, and with the
-    // message that names `compare` rather than the `eq` one.
     const compare: Dispatch.Target = .{ .ext_derived = .{
         .module = @enumFromInt(0),
         .type = .none,
@@ -4215,32 +4056,30 @@ test "a derived function with no body refuses in value position unless the struc
     } };
     _ = try l.derivedValue(compare, Node.no_pos);
     try testing.expectEqual(@as(usize, 1), l.diagnostics.items.len);
-    try testing.expectEqual(diagnostic.Code.not_implemented, l.diagnostics.items[0].code);
+    try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[0].code);
     try testing.expect(std.mem.indexOf(
         u8,
         l.diagnostics.items[0].message,
-        "the `compare` of a `foreign type`",
+        "a derived method of a type whose module emits no",
     ) != null);
 
-    // An `eq` the structural walk cannot answer for — here a `derived` row
-    // that is not in the table at all — is refused as well, rather than
-    // silently answered with `Basics.eq`.
+    // A `derived` row that is not in the table at all: the same answer.
     const missing_eq: Dispatch.Target = .{ .derived = .{ .index = 0 } };
     _ = try l.derivedValue(missing_eq, Node.no_pos);
     try testing.expectEqual(@as(usize, 2), l.diagnostics.items.len);
-    try testing.expectEqual(diagnostic.Code.not_implemented, l.diagnostics.items[1].code);
+    try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[1].code);
 
-    // And the door A.51 leaves open is still open: an `ext_derived` `eq`
-    // with no parts is what `core/Basics.js`'s walk answers exactly, so it
-    // does NOT refuse. (What it returns needs the import machinery, so only
-    // the absence of a third diagnostic is asserted here; `run/ListElementEq`
-    // is what runs the value it produces.)
-    const bridged: Dispatch.Target = .{ .ext_derived = .{
+    // And the `eq` that used to go through A.51's door — an `ext_derived`
+    // with no parts, exactly what `core/Basics.js`'s walk answered — is
+    // refused now like any other, which is the whole of the change.
+    const was_bridged: Dispatch.Target = .{ .ext_derived = .{
         .module = @enumFromInt(0),
         .type = .none,
         .kind = .eq,
     } };
-    try testing.expect(l.structuralEq(bridged, null));
+    _ = try l.derivedValue(was_bridged, Node.no_pos);
+    try testing.expectEqual(@as(usize, 3), l.diagnostics.items.len);
+    try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[2].code);
 }
 
 test "fuzz: arbitrary bytes reach the emitter without a panic" {

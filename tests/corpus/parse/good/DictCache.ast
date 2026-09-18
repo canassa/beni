@@ -20,9 +20,7 @@
       (field misses
         (int 0))
       (field table
-        (apply
-          (ident Dict.empty)
-          (ident compare)))))
+        (ident Dict.empty))))
   (annotation pub fib
     (type_fn
       (type_con Int)

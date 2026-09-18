@@ -2,8 +2,6 @@
 --! tagging, and a view. Real-application shape for the benchmark corpus.
 
 import Dict exposing (Dict)
-import Dict.Int
-import Dict.String
 import Html exposing (Html, button, div, h1, input, li, span, text, textarea, ul)
 import Html.Attributes exposing (class, classList, placeholder, value)
 import Html.Events exposing (onClick, onInput)
@@ -60,7 +58,7 @@ pub type Msg
 
 pub init : Int -> Model
 init now =
-    { notes = Dict.Int.empty
+    { notes = Dict.empty
     , nextId = 1
     , selected = Nothing
     , query = ""
@@ -81,7 +79,7 @@ update msg model =
                     { id = model.nextId
                     , title = "Untitled"
                     , body = ""
-                    , tags = Set.empty String.compare
+                    , tags = Set.empty
                     , pinned = False
                     , updatedAt = model.now
                     }
@@ -280,7 +278,7 @@ allTags model =
                 String.compare tag1 tag2
     in
     Dict.values model.notes
-        |> List.foldl Dict.String.empty countNote
+        |> List.foldl Dict.empty countNote
         |> Dict.toList
         |> List.sortWith commonestFirst
 

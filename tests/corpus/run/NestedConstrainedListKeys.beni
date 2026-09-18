@@ -1,0 +1,146 @@
+-- A joined constraint whose callee is ITSELF constrained, executed
+-- (`docs/design/static-dispatch-spike.md` §6.2 Rule U1, §7.2, §8.2, A.68,
+-- A.75).
+--
+-- `run/NestedConstrainedCalls` nests two calls of one constrained function
+-- over a `let`-bound seed, which joins their two `k.compare` constraints
+-- onto one. This one makes the KEY a type whose own method is constrained
+-- — `List Int`, `Pair Int`, a `Dict` keyed on a list — so resolving the
+-- joined constraint has to instantiate the callee's own `where` clause
+-- once per instruction the constraint answers. Instantiating it for the
+-- first instruction alone left the inner call one hidden argument short:
+-- `Lower.evidenceShapeOk` refused the build as `internal`, so every line
+-- below is one the compiler would not emit at all.
+--
+-- What each line is for. `lists` and `listsReversed` put the winner in a
+-- different operand, so evidence wired to the wrong argument disagrees
+-- with one of them; `[ 9 ]` against `[ 1, 3 ]` also needs the ELEMENT
+-- comparison and not a length or an identity, since `9 > 1` while
+-- `1 < 3`. `pairs` reaches the same join through a type declared in this
+-- module, whose `pub compare … where a.compare` is the `top` arm rather
+-- than the `ext` one. `same` and `different` are the same nesting under
+-- `eq`, and they differ in the answer, so a comparison that always says
+-- `True` fails one of them. The `Dict` lines are where a user meets it:
+-- two inserts over a `let`-bound `Dict.empty`, then a hit on each key and
+-- a miss on a third.
+--
+-- `dispatch/JoinedConstraintNested` is the table underneath, and it is the
+-- one that can tell a right table from a table that is right twice over.
+import Dict exposing (Dict)
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+pub type Box k
+    = Empty
+    | Holding k
+
+
+pub keepLarger : Box k, k -> Box k
+    where k.compare : k, k -> Order
+keepLarger box candidate =
+    case box of
+        Empty ->
+            Holding candidate
+
+        Holding held ->
+            if held < candidate then
+                Holding candidate
+            else
+                Holding held
+
+
+pub keepEqual : Box k, k -> Box k
+    where k.eq : k, k -> Bool
+keepEqual box candidate =
+    case box of
+        Empty ->
+            Holding candidate
+
+        Holding held ->
+            if held == candidate then
+                Holding held
+            else
+                Empty
+
+
+pub type Pair a
+    = Pair a a
+
+
+pub compare : Pair a, Pair a -> Order
+    where a.compare : a, a -> Order
+compare (Pair leftHigh leftLow) (Pair rightHigh rightLow) =
+    case leftHigh.compare rightHigh of
+        EQ ->
+            leftLow.compare rightLow
+
+        other ->
+            other
+
+
+showList : List Int -> String
+showList xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+showBoxList : Box (List Int) -> String
+showBoxList box =
+    case box of
+        Empty ->
+            "empty"
+
+        Holding held ->
+            showList held
+
+
+showBoxPair : Box (Pair Int) -> String
+showBoxPair box =
+    case box of
+        Empty ->
+            "empty"
+
+        Holding (Pair high low) ->
+            String.join [ String.fromInt high, String.fromInt low ] "/"
+
+
+main : Program
+main =
+    let
+        seed =
+            Empty
+
+        lists =
+            keepLarger (keepLarger seed [ 1, 2 ]) [ 1, 3 ]
+
+        listsReversed =
+            keepLarger (keepLarger seed [ 9 ]) [ 1, 3 ]
+
+        pairs =
+            keepLarger (keepLarger seed (Pair 1 2)) (Pair 1 4)
+
+        same =
+            keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 2 ]
+
+        different =
+            keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 3 ]
+
+        emptyDict =
+            Dict.empty
+
+        dict =
+            Dict.insert (Dict.insert emptyDict [ 1, 2 ] "a") [ 3 ] "b"
+    in
+    Node.printLines
+        [ showBoxList lists
+        , showBoxList listsReversed
+        , showBoxPair pairs
+        , showBoxList same
+        , showBoxList different
+        , Maybe.withDefault (Dict.get dict [ 1, 2 ]) "?"
+        , Maybe.withDefault (Dict.get dict [ 3 ]) "?"
+        , Maybe.withDefault (Dict.get dict [ 9 ]) "?"
+        , String.fromInt (Dict.size dict)
+        ]

@@ -1,0 +1,73 @@
+-- Ordering a list calls each element's OWN `compare`
+-- (`docs/design/static-dispatch-spike.md` §5.2, §5.5, §9.5, A.7, A.50).
+--
+-- `List a` is a `foreign type`, so there are no constructors to derive a
+-- body from and `core/List.js` writes the comparison by hand, as a loop
+-- rather than recursion because a list long enough to be interesting is
+-- longer than the JavaScript stack. Until `pub foreign compare` landed the
+-- backend refused `xs < ys` outright — there is no structural walk in
+-- `core/Basics.js` that orders, only one that equates. What still pins
+-- that rule, for the `foreign type`s `List` is no longer an example of,
+-- is `check/bad/core/CompareOnWrappedForeign` and
+-- `check/bad/core/PrivateForeignCompare`.
+--
+-- The first five lines are the loop's own cases: a common prefix with the
+-- shorter list first (Elm's order, and the one `List.sort` on a
+-- `List (List Int)` has to produce), the same pair the other way round,
+-- two equal lists through `<=`, a first element that decides before the
+-- lengths can, and the empty list against a non-empty one. The sixth sends
+-- the element's evidence to `String$compare` rather than to `<`, because
+-- `<` on JavaScript strings is UTF-16 code-unit order (§3.2, A.26).
+--
+-- The last two are the payoff of §5.5: `List.sort` is `where a.compare`
+-- now, so it sorts a `List (List Int)` — the element's `compare` is
+-- `List.compare` itself, handed `Int`'s as ITS evidence — and a list of
+-- records, whose `compare` is derived field by field in sorted field-name
+-- order (§9.2). The sibling export in `core/List.js` is written
+-- `(m0, xs, ys)`, evidence count plus declared arity (§5.2, A.7), and
+-- nothing checks that count at build time, so these lines are what catches
+-- a forgotten leading parameter.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    { x : Int, y : Int }
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+ints : List Int -> String
+ints xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+nested : List (List Int) -> String
+nested xss =
+    String.join (List.map xss ints) " | "
+
+
+points : List Point -> String
+points ps =
+    String.join (List.map ps (\p -> ints [ p.x, p.y ])) " | "
+
+
+main : Program
+main =
+    Node.printLines
+        [ show ([ 1, 2 ] < [ 1, 2, 3 ])
+        , show ([ 1, 2, 3 ] < [ 1, 2 ])
+        , show ([ 1, 2 ] <= [ 1, 2 ])
+        , show ([ 2 ] > [ 1, 9, 9 ])
+        , show ([] < [ 1 ])
+        , show ([ "a", "b" ] < [ "a", "c" ])
+        , nested (List.sort [ [ 2 ], [ 1, 5 ], [ 1 ] ])
+        , points (List.sort [ { x = 2, y = 0 }, { x = 1, y = 9 }, { x = 1, y = 2 } ])
+        ]

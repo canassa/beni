@@ -91,7 +91,6 @@ test "a program computes something and prints the right answer" {
         "out/core/Basics.foreign.mjs",
         "out/core/List.mjs",
         "out/core/List.foreign.mjs",
-        "out/core/Dict/Int.mjs",
         "out/platform/Node.mjs",
         "out/platform/Node.foreign.mjs",
         "out/platform/runtime.foreign.mjs",
@@ -102,6 +101,73 @@ test "a program computes something and prints the right answer" {
         }
     }
     try expectEveryFileIsEsm(&w, "out");
+}
+
+test "a module in a subdirectory comes out in a subdirectory of out/" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // backend.md §5, boundary.md §5.2: one `.mjs` per source module,
+    // MIRRORING the source tree, because a module's name comes from its
+    // path and `Util/Math.beni` is `Util.Math`.
+    //
+    // The assertion used to ride on core's own `Dict.Int`, which was
+    // deleted with the comparator argument
+    // (`docs/design/static-dispatch-spike.md` §5.7). The claim is about the
+    // emitter and not about core, so the test owns its nested module now —
+    // and it also gets a proper subject: an import ACROSS the subdirectory
+    // boundary, which the old assertion never had, since nothing in the
+    // project imported `Dict.Int`.
+    //
+    // It is a RELOCATION and not a fail-first pin: no defect of this slice
+    // is caught here, and nothing in it failed before the slice — every
+    // S6b defect is pinned by a fixture under `tests/corpus/dispatch/` or
+    // `tests/corpus/run/` instead.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Util/Math.beni",
+        \\pub double : Int -> Int
+        \\double n =
+        \\    n * 2
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\import Util.Math
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (Util.Math.double 21))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("42\n", program.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "out/Main.mjs", "out/Util/Math.mjs" }) |path| {
+        if (!w.exists(path)) {
+            std.debug.print("expected {s} to exist\n", .{path});
+            return error.MissingOutput;
+        }
+    }
+    // The importer reaches it down a relative specifier, not a bare one.
+    const main_mjs = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main_mjs, "./Util/Math.mjs") != null);
 }
 
 test "every emitted file is .mjs, the hand-written ones included" {
@@ -1333,19 +1399,31 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     var it = std.mem.splitScalar(u8, std.mem.trimEnd(u8, r.stdout, "\n"), '\n');
     _ = it.next(); // the floor
     const program = try parseJson(SizeProgram, arena, it.next() orelse return error.NoProgramLine);
-    // Exactly seventeen, and the list is the assertion:
+    // Exactly twenty-three, and the list is the assertion:
     //
     //     Foo$eq
     //     Basics$Never$$compare   Basics$Never$$eq
     //     Basics$Order$$compare   Basics$Order$$order
+    //     Dict$Dict$$compare      Dict$Dict$$eq
     //     Dict$NColor$$compare    Dict$NColor$$eq     Dict$NColor$$order
     //     Dict$Tree$$compare      Dict$Tree$$eq       Dict$Tree$$order
     //     Maybe$Maybe$$compare    Maybe$Maybe$$eq     Maybe$Maybe$$order
     //     Result$Result$$compare  Result$Result$$eq   Result$Result$$order
+    //     Set$Set$$compare        Set$Set$$eq
+    //     Set$compare$unit        Set$eq$unit
     //
-    // Eighteen would mean a hand-written `Basics$compare`, `Basics$eq` or
-    // `List$eq` was counted as well; sixteen would mean the matcher missed
-    // the module's own `Foo$eq`.
+    // Twenty-four would mean a hand-written `Basics$compare`, `Basics$eq`,
+    // `List$eq` or `List$compare` was counted as well; twenty-two would mean
+    // the matcher missed the module's own `Foo$eq`.
+    //
+    // **Six of them are new with the comparator rewrite (§5.3, §5.4), and
+    // they are the sharpest single number M4 has.** `Dict k v` used to be
+    // `Dict (k, k -> Order) (Tree k v)` — it HELD A FUNCTION, so §6.3.1
+    // step 4 gave it neither method, and `Set t = Set (Dict t ())` inherited
+    // the exclusion. Taking the comparator out of the data structure makes
+    // both derivable, so core now ships four more nominal functions plus
+    // the two structural ones `Set` needs for the `()` inside its `Dict`.
+    // Nothing calls any of the six.
     //
     // Nothing in core calls one of them. §8.5 emits every declared nominal
     // type's two methods, and a `$$order` table with each `compare` of two
@@ -1355,7 +1433,7 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     // §3.2's row for a type that has no values at all. `Basics$Order$$eq`
     // is absent for the opposite reason — the table answers `primitive`
     // for it, and a primitive is not a function anyone emits (A.18).
-    try testing.expectEqual(@as(u32, 17), program.derived_functions);
+    try testing.expectEqual(@as(u32, 23), program.derived_functions);
     try testing.expect(program.derived_bytes > 0);
     try testing.expect(program.derived_bytes < program.raw_bytes);
 }

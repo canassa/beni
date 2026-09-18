@@ -1,19 +1,18 @@
---! A set of unique values. The values can be any type, and the ordering that
---! arranges them is an argument, exactly as it is for `Dict`: `empty`,
---! `singleton` and `fromList` take the comparison function, and every other
---! function uses the one the set already holds.
+--! A set of unique values. The values can be any type that has a `compare`
+--! method, and that method is what arranges them, exactly as it is for
+--! `Dict`: a `where` clause on each function that has to look a value up
+--! says so, and the set itself carries nothing but its dictionary.
 --!
 --!     names : Set String
 --!     names =
---!         Set.fromList [ "Alice", "Bob" ] String.compare
+--!         Set.fromList [ "Alice", "Bob" ]
 --!
 --! Argument order here is **subject first and function last**, as it is
 --! everywhere in core: the set comes first, so `names |> Set.insert "Carol"`
 --! is `Set.insert names "Carol"` — `|>` is pipe-first, it inserts its left
 --! operand as the callee's first argument. A function argument comes last, so
---! a lambda you write inline is the final one; where a function takes both an
---! *ordering* and a *callback*, as `map` does, the ordering comes first and
---! the callback stays last.
+--! a lambda you write inline is the final one, and `map` now has only the
+--! one to place.
 --!
 --! Insert, remove and query take *O(log n)* time. A `Set` is a `Dict` whose
 --! values are all `()`, which is how Elm builds it too.
@@ -30,26 +29,29 @@ pub opaque type Set t
     = Set (Dict t ())
 
 
---| Create an empty set whose values are ordered by the given function.
+--| The empty set. It compares nothing, so it needs no `compare` and is a
+--| constant rather than a function.
 --|
---|     Set.empty String.compare
-pub empty : (t, t -> Order) -> Set t
-empty cmp =
-    Set (Dict.empty cmp)
+--|     Set.empty
+pub empty : Set t
+empty =
+    Set Dict.empty
 
 
---| Create a set with one value, ordered by the given function.
+--| Create a set with one value. One value needs no ordering either, so this
+--| one is unconstrained too.
 --|
---|     Set.singleton "Tom" String.compare
-pub singleton : t, (t, t -> Order) -> Set t
-singleton value cmp =
-    Set (Dict.singleton value () cmp)
+--|     Set.singleton "Tom"
+pub singleton : t -> Set t
+singleton value =
+    Set (Dict.singleton value ())
 
 
 --| Insert a value into a set.
 --|
---|     Set.insert (Set.empty String.compare) "Tom"
+--|     Set.insert Set.empty "Tom"
 pub insert : Set t, t -> Set t
+    where t.compare : t, t -> Order
 insert (Set dict) value =
     Set (Dict.insert dict value ())
 
@@ -58,13 +60,14 @@ insert (Set dict) value =
 --|
 --|     Set.remove names "Tom"
 pub remove : Set t, t -> Set t
+    where t.compare : t, t -> Order
 remove (Set dict) value =
     Set (Dict.remove dict value)
 
 
 --| Determine if a set is empty.
 --|
---|     isEmpty (empty String.compare) == True
+--|     isEmpty empty == True
 pub isEmpty : Set t -> Bool
 isEmpty (Set dict) =
     Dict.isEmpty dict
@@ -74,6 +77,7 @@ isEmpty (Set dict) =
 --|
 --|     Set.member names "Alice" == True
 pub member : Set t, t -> Bool
+    where t.compare : t, t -> Order
 member (Set dict) value =
     Dict.member dict value
 
@@ -84,15 +88,16 @@ size (Set dict) =
     Dict.size dict
 
 
---| Get the union of two sets. Keep all values. The ordering of the second
---| set is the one the result keeps, as it is the set being added to.
+--| Get the union of two sets. Keep all values.
 pub union : Set t, Set t -> Set t
+    where t.compare : t, t -> Order
 union (Set d1) (Set d2) =
     Set (Dict.union d1 d2)
 
 
 --| Get the intersection of two sets. Keeps values that appear in both sets.
 pub intersect : Set t, Set t -> Set t
+    where t.compare : t, t -> Order
 intersect (Set d1) (Set d2) =
     Set (Dict.intersect d1 d2)
 
@@ -100,6 +105,7 @@ intersect (Set d1) (Set d2) =
 --| Get the difference between the first set and the second. Keeps values
 --| that do not appear in the second set.
 pub diff : Set t, Set t -> Set t
+    where t.compare : t, t -> Order
 diff (Set d1) (Set d2) =
     Set (Dict.diff d1 d2)
 
@@ -110,24 +116,25 @@ toList (Set dict) =
     Dict.keys dict
 
 
---| Convert a list into a set, removing any duplicates, ordered by the given
---| function.
+--| Convert a list into a set, removing any duplicates. The values are
+--| ordered by their own `compare`.
 --|
---|     Set.fromList [ "a", "b", "a" ] String.compare
-pub fromList : List t, (t, t -> Order) -> Set t
-fromList list cmp =
-    List.foldl list (empty cmp) (\value set -> insert set value)
+--|     Set.fromList [ "a", "b", "a" ]
+pub fromList : List t -> Set t
+    where t.compare : t, t -> Order
+fromList list =
+    List.foldl list empty (\value set -> insert set value)
 
 
 --| Map a function onto a set, creating a new set with no duplicates. The
---| ordering comes before the function, because the values the result holds
---| have a new type and the old ordering no longer applies to them — and
---| because the function you write inline belongs last.
+--| result holds values of a NEW type, so the constraint is on that type's
+--| `compare` and not on the one the set came in with.
 --|
---|     Set.map names compare String.length
-pub map : Set a, (b, b -> Order), (a -> b) -> Set b
-map set cmp func =
-    fromList (List.map (toList set) func) cmp
+--|     Set.map names String.length
+pub map : Set a, (a -> b) -> Set b
+    where b.compare : b, b -> Order
+map set func =
+    fromList (List.map (toList set) func)
 
 
 --| Fold over the values in a set, in order from lowest to highest.
@@ -150,6 +157,7 @@ foldr (Set dict) initial func =
 --|
 --|     Set.filter numbers (\n -> n > 0)
 pub filter : Set t, (t -> Bool) -> Set t
+    where t.compare : t, t -> Order
 filter (Set dict) isGood =
     Set (Dict.filter dict (\key _ -> isGood key))
 
@@ -159,6 +167,7 @@ filter (Set dict) isGood =
 --|
 --|     Set.partition numbers (\n -> n > 0)
 pub partition : Set t, (t -> Bool) -> ( Set t, Set t )
+    where t.compare : t, t -> Order
 partition (Set dict) isGood =
     let
         ( trues, falses ) =

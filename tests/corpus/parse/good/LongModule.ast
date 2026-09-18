@@ -133,9 +133,7 @@
   (definition init
     (record
       (field cards
-        (apply
-          (ident Dict.empty)
-          (ident compare)))
+        (ident Dict.empty))
       (field nextId
         (int 1))
       (field editing
@@ -145,9 +143,7 @@
       (field filter
         (string))
       (field collapsed
-        (apply
-          (ident Set.empty)
-          (ident String.compare)))
+        (ident Set.empty))
       (field newCardTitle
         (string))
       (field errors
@@ -579,9 +575,7 @@
                             (field_access .id
                               (ident c))
                             (ident c))))))
-                  (apply
-                    (ident Dict.fromList)
-                    (ident compare))))
+                  (ident Dict.fromList)))
               (field nextId
                 (add
                   (int 1)
@@ -2084,9 +2078,7 @@
           (apply
             (ident List.concatMap)
             (accessor .labels)))
-        (apply
-          (ident Set.fromList)
-          (ident String.compare)))
+        (ident Set.fromList))
       (ident Set.toList)))
   (annotation pub oldestCard
     (type_fn

@@ -441,11 +441,15 @@ that reaches the table. A function type never does (`not_equatable` for `eq`,
 `no_methods_on_shape` for `compare`), and a `foreign type` that is neither in the table nor given a
 `pub eq` by its module does not either — `unknown_method`.
 
-**One exception, and it expires with S6** (A.50). A `foreign type` marked `equatable` answers `eq`
-through the marker, which §3.4 says means exactly "has an `eq`": `xs == ys` on a `List a` therefore
-resolves while `core/List.beni` still has no `pub foreign eq`. `compare` gets no such bridge — there
-is no marker for it — so `xs < ys` is `unknown_method` until §5.2 lands, which is what
-`tests/corpus/check/bad/CompareOnForeignType.beni` pins. §5.2 is S6's obligation and removes both.
+**One exception, and it expired with S6** (A.50). A `foreign type` marked `equatable` answers `eq`
+through the marker, which §3.4 says means exactly "has an `eq`": `xs == ys` on a `List a` resolved
+while `core/List.beni` still had no `pub foreign eq`. `compare` got no such bridge — there is no
+marker for it — so `xs < ys` was `unknown_method` until §5.2 landed. §5.2 has landed, `List` answers
+both names at step 1, and `tests/corpus/check/bad/CompareOnForeignType.beni`, which pinned the
+`compare` half, is retired with it. What still pins the rule for a `foreign type` with no `pub
+compare` is `check/bad/core/CompareOnWrappedForeign` and `check/bad/core/PrivateForeignCompare`;
+`equatable` is core's alone (`language.md` §3), so after §5.2 no declarable type reaches the marker
+bridge at all and the backend's side of it is gone (A.72).
 
 Derivation is **structural and recursive**: each position inside `T` resolves the same well-known
 name by the same three rules, so a record of `Maybe (List Point)` derives down to `Point`'s own
@@ -2664,6 +2668,58 @@ position its OWN constructor carries, so the position left `err` is the one the 
 before either side is read. `dispatch/ErrParts` is the pin, and A.67 is what the backend does with
 the `err` it sees.
 
+**Two constraints joined on one variable emitted one instruction's slot twice — now FIXED**
+(A.75). This was a DEFECT and not an accepted limit; the row stays because §11 is where a reader
+looks. `Solve.unionConstraints` and `Solve.attachConstraint` rebuild a constraint set onto a FRESH
+range (§6.1 invariant 2), so each input is copied to a new index and left behind at the old one —
+and the obligation's `index`, `resolved_methods` and `deferred` are all keyed on that index. The
+superseded constraint and its replacement were therefore two live obligations over one site list:
+each called `emitSites` over the list it held and the joined one over the union, so one
+instruction's slot 0 was written twice and `Lower.evidenceShapeOk` refused the call as `internal`.
+It bit when two nested calls of a constrained function had their receiver variables unified *after*
+both were instantiated, which is exactly `Dict.insert (Dict.insert d k v) k v`:
+
+```elm
+pub type Box k = Box k
+pub put : Box k, k -> Box k where k.compare : k, k -> Order
+
+nested : Int
+nested = size (put (put (Box "z") "a") "b")     -- two sites per instruction, one expected
+```
+
+Pinning the outer result with an annotation (`annotated : Box String`) hid it, because each
+constraint was discharged and marked before the join happened. It was pre-existing on `8081b5f`,
+reproduced with no core change, and `tests/corpus/run/Dictionaries.beni` is the program that found
+it. The fix is A.75: a rebuild REDIRECTS every index it superseded to the constraint that replaced
+it, and everything keyed on a constraint index reads through the redirect, so the replacement is
+what answers and it answers exactly once (A.57). Pinned by
+`tests/corpus/dispatch/JoinedConstraintSites` and `tests/corpus/run/NestedConstrainedCalls`.
+
+**A `where` constraint that meets a record only after a field access is refused.** §6.2's Rule U0
+resolves a method against a receiver that is already concrete and never retries one that was still
+a variable; §6.3 refuses an OPEN record, and reading a field off a lambda parameter is what opens
+one. So `List.foldl points Dict.empty (\p d -> Dict.insert d p (p.x + p.y))` is
+`no_methods_on_shape` on a record the author wrote closed, while the same fold with the value
+behind an annotated helper compiles. This is A.28 and §6.2's "what it does not buy" meeting in a
+program a user would plausibly write, and `bench/runtime/c1/R2DictRecord.beni` is the first
+program in the tree to hit it — its `weight` helper is the workaround, written out and explained
+in the file.
+
+**`Dict` and `Set` now derive both methods, and nothing calls them.** `Dict k v` held a comparator
+before §5.3, so §6.3.1 step 4's function-payload exclusion gave it neither `eq` nor `compare`, and
+`Set t = Set (Dict t ())` inherited the exclusion. Taking the comparator out makes both derivable,
+so core ships four more nominal functions plus the two structural ones `Set` needs for the `()`
+inside its `Dict` — six, none of them called, on top of the seventeen that were there. That is the
+eager rule of §8.5 meeting the "no DCE yet" row, it is the sharpest single number M4 has, and
+`tests/blackbox/build_test.zig`'s `bench/size.mjs` scenario is what counts it.
+
+**`==` on a `Dict` is a comparison of red-black trees.** Module `Dict` declares no `pub eq`, so
+§3.3 falls through to derivation over the shape, and two dictionaries holding the same four pairs
+answer `False` to `==` while their `toList`s answer `True`. Giving `Dict` and `Set` methods of
+their own is out of the spike's scope (S6 decision O-5); `tests/corpus/run/DictStructuralEquality.beni`
+prints the answer so that the finding is a fact rather than an argument, and report 19 is where it
+goes.
+
 ### Stretch, only after S8
 
 1. **Partition same-name constraints by origin class** — Roc's shipped principality fix, and not
@@ -3375,3 +3431,112 @@ breadth-first numbering made visible rather than hidden. The wrong program was s
 came out `False` where the language says `True` — or, where a slot's evidence was applied to a
 number, `TypeError: Cannot read properties of undefined` from inside `core/List.js`. Fixtures:
 `dispatch/TwoSlotsNested`, `run/TwoSlotsNested`.
+
+**A.69 — `List`'s `compare` is a hand-written loop in `core/List.js`, and its sibling takes
+evidence count + declared arity** (§5.2, §9.5) [S6b]. *Why:* `List a` is a `foreign type` with no
+constructors, so there is nothing to derive a body from, and the shape of a cons cell is the
+emitter's. The loop rather than recursion is `foldr`'s reason: a list long enough to be interesting
+is longer than the JavaScript stack. *The risk, stated because nothing checks it:* the export is
+written `(m0, xs, ys)` and `Sibling.zig` checks export and import coverage and never arity
+(`boundary.md` §4), so a forgotten leading parameter compiles and then compares a function against a
+list. `tests/corpus/run/ListOrdering.beni` is what catches it, as `run/ListElementEq.beni` is for
+`eq`. *Alternative rejected:* deriving `compare` for `List` from a synthetic two-constructor shape,
+which would put the emitter's cons-cell layout into the checker's table.
+
+**A.70 — `Dict.empty` is a constant and `Dict.singleton` is unconstrained** (§5.3, O-1) [S6b].
+*Why:* neither compares anything, so neither raises `k.compare`, and §6.4's `constrained_constant`
+— which is what the plan's `Dict.empty : () -> Dict k v` was a precaution against — never applies.
+The same holds for `Set.empty` and `Set.singleton`. *What it buys:* `Dict.empty` reads as a value
+in a `foldl` seed, which is where the corpus uses it eight times over.
+
+**A.71 — `Dict`'s private helpers keep their annotations and spell the `where` clause out**
+(§5.3, O-3) [S6b]. `getHelp`, `insertHelp`, `removeHelp` and `removeHelpEQGT` could have dropped
+their annotations and let the constraint arrive by inference, as §5.3's prose suggests. They keep
+them. *Why:* `removeHelp` and `removeHelpEQGT` are mutually recursive and both constrained, which
+is the case `run/ConstrainedMutualRecursion.beni` exists for — an inferred `where` on a binding
+group is the least-tested path in §6.4, and core is not where to exercise it. A written clause is
+also what a reader needs: the four helpers are where the comparator argument used to be threaded,
+and the clause is what replaced it.
+
+**A.72 — the backend's derived-method refusals and A.51's bridge are deleted** (§8, O-8) [S6b].
+`Lower.refuseDerived`, `Lower.structuralEq` and their two `not_implemented` messages are gone, and
+every site that called them reports `internal` with one message instead. *Why:* both existed for a
+derived target no module writes a function for, and after §5.2 there is none. Every shape §9
+describes has a body for both methods; `List a` has its own `pub foreign eq` and `pub foreign
+compare`; and `equatable` — the marker that let a `foreign type` answer `eq` without one — is
+core's alone (`language.md` §3), so core was the only place that could declare such a type and core
+no longer does. *What went with it:* the recursive test of whether `core/Basics.js`'s structural
+walk happens to agree with the table, which was the subtlest code in the file and which existed
+only to decide that question. The one position still answered by that walk is `partEq`'s `err` arm,
+the slot nothing ever inhabits (A.66), and the `--core-root` scenario in `blackbox_test.zig` reaches
+it through `None == None` now rather than through a list.
+
+**A.73 — the nested-module build assertion moved into the test's own world** (O-12) [S6b].
+`build_test.zig` asserted `out/core/Dict/Int.mjs` to prove that a module in a subdirectory comes out
+in a subdirectory of `out/`; §5.7 deletes that module. *Why a new test rather than a new path in the
+old one:* the claim is about the emitter and not about core, and the old assertion never had a
+subject — nothing in the project imported `Dict.Int`, so it proved only that core was copied out
+whole. The replacement builds `src/Util/Math.beni` and `src/Main.beni` with `--root=src src`,
+imports ACROSS the subdirectory boundary, and asserts both the output path and the relative
+specifier the importer reaches it by. `build.zig`'s comment about why embedded core paths keep their
+subdirectories is left standing and made hypothetical: the mechanism outlives the modules that used
+it.
+
+**A.74 — `Dict` and `Set` get no `eq` and no `compare` of their own** (§11, O-5) [S6b]. *Why:* a
+`pub eq` comparing `toList` would be correct and is two lines, but it is a change to what the
+language's standard library promises rather than to static dispatch, and the spike is measuring the
+latter. The derived answer — a walk of the red-black tree, insertion order and all — is left in
+place and printed by `tests/corpus/run/DictStructuralEquality.beni`, so the adoption decision is
+made against a number rather than against a guess. §11 carries the row and report 19 is where it
+goes.
+
+**A.75 — a rebuilt constraint set REDIRECTS the indices it superseded** (§6.2, §6.3, A.57) [S6b].
+A set is a half-open range of an append-only table and is never edited (§6.1 invariant 2), so Rule
+U1's union, an attach that joins two constraints of one name, and an extend that cannot append in
+place all COPY their inputs onto a fresh range. Everything that answers a constraint is keyed on
+its INDEX — the obligation's own `index`, `resolved_methods`, `deferred` — so a copy left its input
+behind as a live obligation over the same sites, and "answered exactly once" was answered twice:
+`put (put (Box "z") "a") "b"` wrote `site 46 0` and `site 48 0` twice each, and
+`Lower.evidenceShapeOk` then refused the call as `internal` — a compiler bug reported about a
+program whose only fault is that it nests. `Solve.superseded` maps each superseded index to the
+constraint that took its place; `dischargeMethod` and `settleUndetermined` follow it BEFORE they
+read or mark anything; and it is journalled by length exactly as `resolved_methods` is, so a
+`tryShape` probe that joins and then rolls back leaves no redirect pointing at an index the
+rollback has already handed to something else (A.35). *Two halves of it are not obvious.* The
+ANSWER is carried across as well as the obligation: a replacement whose every input was already
+answered is marked answered itself, and `joinConstraint` drops the sites of an input that was,
+so a join of an answered constraint with an unanswered one answers the second alone. And a COPY is
+as dangerous as a join — `put`'s `k.compare` and `tag`'s `k.eq` are different names on different
+variables, so nothing is joined, and the union that copies both onto one range stranded both
+inputs just the same. *Alternative rejected:* collapsing duplicate rows at `emitSites` or in
+`Dispatch.finish`, which hides a disagreement as readily as a repetition — the same alternative
+A.57 rejected and the same dedup S3 removed. *One more defect it closed:* the obligation a `method`
+node registers named `lastConstraintIndex`, the last constraint of the rebuilt SET, which is the
+one just attached only when its name happens to sort last; `attachConstraint` now returns the index
+its constraint's sites live at and the obligation names that. Fixtures:
+`dispatch/JoinedConstraintSites`, `run/NestedConstrainedCalls`, and `run/Dictionaries`, which is
+where it was found. *Two corners of the journalling, added on review:* the journal records the
+PREVIOUS value and not only the key, because a key a second rebuild re-points inside a probe was
+already pointing somewhere before it and removing it would lose a redirect the probe never made;
+and `detachConstraint` redirects what it KEEPS, because dropping one constraint rebuilds the set
+and copies the others exactly as a join does.
+
+**A.76 — a resolution instantiates the callee's `where` clause once per INSTRUCTION the constraint
+answers** (§6.3.1, §7.2, A.68, A.75) [S6b]. `methodOnApp`'s two instantiating arms — the module
+rule's `top` and the interface's `ext` — used to take the single `origin` the obligation was
+registered at and number one set of evidence slots against it. That was right while a constraint
+answered one instruction, and A.75 is exactly the change that made one constraint answer several:
+Rule U1 joins the two calls of `size (put (put seed [ 1, 2 ]) [ 3 ])` onto one `k.compare` whose
+sites are on both instructions, and `List.compare` has a `where a.compare` of its own whose slot is
+numbered by a cursor the INSTRUCTION owns (§7.2). One instantiation therefore gave one instruction
+a nested slot and left the other an argument short — `site 73 0 ext List compare` with no
+`site 73 1` — and `Lower.evidenceShapeOk` refused the build as `internal`: a compiler bug reported
+about a program whose only fault is that it nests twice over a constrained element. The loop runs
+in SITE order, so the numbering is a function of the input and not of the drain (`fast-compiler.md`
+§10), and the copies it makes unify with one another through the constraint's own `fn_var`, which
+is what lets their nested constraints join and answer both instructions at once. *Why not carry a
+list of origins into `tagInstantiated` instead:* the slots of one instruction are numbered by that
+instruction's cursor and parented on that instruction's slot, so there is nothing shared between
+two origins to hoist — the loop IS the shared part. *An annotation hides it*, which is why the
+fixture carries `annotatedDict` beside `nestedDict`: pinning `k` discharges each constraint before
+any join happens. Fixtures: `dispatch/JoinedConstraintNested`, `run/NestedConstrainedListKeys`.

@@ -6,8 +6,10 @@
 -- used to give `[]` where `repeat 3 0` gave three zeros), and `modBy`,
 -- `remainderBy`, `clamp` and `replace` are the rest of that class.
 import Basics
+import Dict
 import List
 import Node exposing (Program)
+import Set
 import String
 
 
@@ -52,4 +54,14 @@ main =
         -- subject first, function last, so the lambda is the final word.
         , String.foldl "time" "" (\char acc -> String.cons acc char)
         , String.join (String.split "a,b,c" ",") "-"
+        -- The three builders that LOST an argument when the comparator
+        -- left: `Dict.fromList` and `Set.fromList` took an ordering last,
+        -- and `Set.map` took one BEFORE the callback — the one place in
+        -- core where "function last" had to share the tail with something
+        -- else. All three now take the subject and the function and
+        -- nothing more, so a stale call is one argument long rather than
+        -- silently mis-ordered.
+        , String.join (Dict.keys (Dict.fromList [ ( "b", 1 ), ( "a", 0 ) ])) ","
+        , String.join (Set.toList (Set.fromList [ "b", "a", "b" ])) ","
+        , show (Set.toList (Set.map (Set.fromList [ 3, 1, 2 ]) (\n -> n * 10)))
         ]

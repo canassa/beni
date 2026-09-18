@@ -3,7 +3,6 @@
 --! Deep recursion and many small functions, as in real library code.
 
 import Dict exposing (Dict)
-import Dict.String
 
 
 pub type Doc
@@ -258,13 +257,13 @@ printValue w value =
 pub sample : Value
 sample =
     Object
-        (Dict.String.fromList
+        (Dict.fromList
             [ ( "name", String "beni" )
             , ( "version", Number 0.1 )
             , ( "stable", Bool False )
             , ( "tags", Array [ String "elm", String "javascript", String "compiler" ] )
             , ( "author"
-              , Object (Dict.String.fromList [ ( "name", String "anon" ), ( "email", Null ) ])
+              , Object (Dict.fromList [ ( "name", String "anon" ), ( "email", Null ) ])
               )
             ]
         )

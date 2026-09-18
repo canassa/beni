@@ -3,7 +3,6 @@
 --! Typical business-logic shape: many small functions, some long records.
 
 import Dict exposing (Dict)
-import Dict.String
 import Set exposing (Set)
 
 
@@ -201,7 +200,7 @@ emptyForm =
 
 countries : Set String
 countries =
-    Set.fromList [ "BR", "DE", "FR", "GB", "JP", "US" ] String.compare
+    Set.fromList [ "BR", "DE", "FR", "GB", "JP", "US" ]
 
 
 pub validateSignUp : SignUpForm -> Validation SignUp
@@ -288,11 +287,11 @@ pub errorsByField : Validation a -> Dict String (List String)
 errorsByField validation =
     case validation of
         Valid _ ->
-            Dict.String.empty
+            Dict.empty
 
         Invalid errors ->
             List.foldl errors
-                Dict.String.empty
+                Dict.empty
                 (\( field, message ) acc ->
                     Dict.update acc
                         field

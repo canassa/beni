@@ -11,12 +11,6 @@ core:Debug -> core:String
 core:Dict -> core:Basics
 core:Dict -> core:List
 core:Dict -> core:Maybe
-core:Dict.Int -> core:Basics
-core:Dict.Int -> core:Dict
-core:Dict.Int -> core:List
-core:Dict.String -> core:Dict
-core:Dict.String -> core:List
-core:Dict.String -> core:String
 core:List -> core:Basics
 core:List -> core:Maybe
 core:Result -> core:Maybe

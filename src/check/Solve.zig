@@ -211,6 +211,26 @@ pub const Solver = struct {
     /// takes back exactly what it decided and nothing else (A.35's
     /// journal-by-length, applied to one more table).
     resolved_journal: std.ArrayList(u32) = .empty,
+    /// Constraint indices a REBUILT set superseded, each mapped to the
+    /// index that took the constraint's place (A.75).
+    ///
+    /// A set is a range of an append-only table and is never edited (§6.1
+    /// invariant 2), so every rebuild — Rule U1's union, an attach that
+    /// joins two constraints of one name, an extend that could not append
+    /// in place — COPIES its inputs to fresh indices and leaves the old
+    /// ones behind. Obligations already registered still name those old
+    /// indices and `resolved_methods` is keyed on the index, so without
+    /// this map the input and its replacement are two live obligations
+    /// over one site list: `put (put (Box "z") "a") "b"` wrote both of its
+    /// call sites twice and `Lower.evidenceShapeOk` refused the call as
+    /// `internal` (`dispatch/JoinedConstraintSites`).
+    ///
+    /// Everything keyed on a constraint index reads through
+    /// `followConstraint`, so the replacement is the one that answers, and
+    /// it answers exactly once (A.57). The chain only ever points FORWARD
+    /// — a replacement is appended after its inputs — so following it
+    /// terminates.
+    superseded: Redirects = .{},
     /// Every method constraint a drain folded back onto a flex variable
     /// (§6.4), so `settleUndetermined` can revisit the ones generalisation
     /// then failed to quantify. Journalled by length like everything else a
@@ -296,6 +316,7 @@ pub const Solver = struct {
         s.promoted.deinit(s.gpa);
         s.resolved_methods.deinit(s.gpa);
         s.resolved_journal.deinit(s.gpa);
+        s.superseded.deinit(s.gpa);
         s.deferred.deinit(s.gpa);
         s.evidence_next.deinit(s.gpa);
     }
@@ -409,6 +430,133 @@ pub const Solver = struct {
             const at = s.resolved_journal.pop().?;
             _ = s.resolved_methods.remove(at);
         }
+    }
+
+    /// The A.75 redirect table: a superseded constraint index mapped to the
+    /// one that took its place, journalled so a `tryShape` probe can take
+    /// back exactly what it decided (A.35).
+    ///
+    /// **The journal records the PREVIOUS value and not only the key.** A
+    /// key can be re-pointed — a second rebuild supersedes a constraint
+    /// the first one already moved — and when the first write happened
+    /// before the probe's mark and the second inside it, removing the key
+    /// would lose a redirect the probe never made while keeping the value
+    /// would keep one it did. Restoring the pair is the only rollback that
+    /// is exact either way.
+    const Redirects = struct {
+        map: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+        journal: std.ArrayList(Entry) = .empty,
+
+        /// The key was not in the map at all before the write, so the
+        /// rollback removes it.
+        const absent: u32 = std.math.maxInt(u32);
+
+        const Entry = struct { key: u32, previous: u32 };
+
+        fn deinit(r: *Redirects, gpa: Allocator) void {
+            r.map.deinit(gpa);
+            r.journal.deinit(gpa);
+        }
+
+        /// What `forgetSince` takes the table back to.
+        fn mark(r: *const Redirects) usize {
+            return r.journal.items.len;
+        }
+
+        fn set(r: *Redirects, gpa: Allocator, old: u32, at: u32) Error!void {
+            const gop = try r.map.getOrPut(gpa, old);
+            const previous: u32 = if (gop.found_existing) gop.value_ptr.* else absent;
+            r.journal.append(gpa, .{ .key = old, .previous = previous }) catch |e| {
+                if (!gop.found_existing) _ = r.map.remove(old);
+                return e;
+            };
+            gop.value_ptr.* = at;
+        }
+
+        fn forgetSince(r: *Redirects, to: usize) void {
+            while (r.journal.items.len > to) {
+                const entry = r.journal.pop().?;
+                if (entry.previous == absent) {
+                    _ = r.map.remove(entry.key);
+                } else {
+                    // The key was there before this mark, so the rollback
+                    // is a write and not a removal. Infallible: the entry
+                    // exists, so nothing is allocated.
+                    r.map.putAssumeCapacity(entry.key, entry.previous);
+                }
+            }
+        }
+
+        fn follow(r: *const Redirects, at: u32) u32 {
+            var current = at;
+            // Forward-only by construction — a replacement is APPENDED
+            // after its inputs — so this is a bound and not a cycle
+            // guard.
+            while (r.map.get(current)) |next| {
+                if (next <= current) break;
+                current = next;
+            }
+            return current;
+        }
+    };
+
+    /// Record that `old` has been replaced by `at` (A.75): a rebuilt set
+    /// copied it to a fresh index, and the obligations that name `old`
+    /// belong to the copy.
+    fn markSuperseded(s: *Solver, old: u32, at: u32) Error!void {
+        if (old == at) return;
+        try s.superseded.set(s.gpa, old, at);
+    }
+
+    /// Unwind `superseded` to the length `mark`, for a probe whose joins
+    /// have been retracted along with the constraints they were about.
+    fn forgetSupersededSince(s: *Solver, mark: usize) void {
+        s.superseded.forgetSince(mark);
+    }
+
+    /// The constraint that answers for `at` today: `at` itself, or
+    /// whatever a rebuild replaced it with (A.75).
+    fn followConstraint(s: *const Solver, at: u32) u32 {
+        return s.superseded.follow(at);
+    }
+
+    /// Where a constraint of a rebuilt set came from: the indices it takes
+    /// over, and whether one of its inputs was minted by the caller and is
+    /// not in the table at all — which makes it unanswered by
+    /// construction.
+    const Sources = struct {
+        a: u32 = none,
+        b: u32 = none,
+        fresh: bool = false,
+
+        const none: u32 = std.math.maxInt(u32);
+    };
+
+    /// Hand the constraint at `at` everything its inputs were: their
+    /// obligations, by redirect, and their ANSWER, when every one of them
+    /// had one already (A.57, A.75). A rebuild that supersedes an answered
+    /// input and an unanswered one is answered for the second alone, and
+    /// `joinConstraint` has already dropped the first's sites.
+    fn adopt(s: *Solver, at: u32, from: Sources) Error!void {
+        var answered = !from.fresh and from.a != Sources.none;
+        for ([_]u32{ from.a, from.b }) |old| {
+            if (old == Sources.none) continue;
+            if (!s.resolved_methods.contains(old)) answered = false;
+            try s.markSuperseded(old, at);
+        }
+        if (answered) try s.markResolved(at);
+    }
+
+    /// `name`'s POSITION in `set`. `TypeStore.findConstraint` hands back
+    /// the constraint itself; a rebuild needs the index too, to hand the
+    /// obligations on (`adopt`).
+    fn findConstraintSlot(st: *const TypeStore, set: TypeStore.ConstraintSet.Optional, name: Symbol) ?u32 {
+        const n = st.constraintCount(set);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            if (st.constraintAt(set, i).name == name) return i;
+        }
+        return null;
     }
 
     fn register(s: *Solver, o: Obligation) Error!void {
@@ -1447,6 +1595,7 @@ pub const Solver = struct {
             const pool_len = (try s.pool(s.rank)).items.len;
             const obligation_len = (try s.obligationsAt(s.rank)).items.len;
             const resolved_len = s.resolved_journal.items.len;
+            const superseded_len = s.superseded.mark();
             const deferred_len = s.deferred.items.len;
             // The dispatch builder and the diagnostics are the other two
             // things a retracted probe must not leave behind (A.35, B3):
@@ -1471,6 +1620,10 @@ pub const Solver = struct {
             // table and their indices will be handed to other constraints,
             // so what this run decided about them has to go too (A.57).
             s.forgetResolvedSince(resolved_len);
+            // A redirect outlives neither: it points at an index the
+            // rollback has truncated away and will hand to some other
+            // constraint (A.75).
+            s.forgetSupersededSince(superseded_len);
             s.deferred.shrinkRetainingCapacity(deferred_len);
             s.env.dispatch.shrink(dispatch_len);
             s.reporter.rollbackTo(report_mark);
@@ -1840,24 +1993,23 @@ pub const Solver = struct {
         const root, const content = st.resolved(receiver);
         switch (content) {
             .flex => {
-                try s.attachConstraint(root, c, node.region);
+                // The obligation names the index `c`'s sites ended up at,
+                // which a join makes a different constraint from the one
+                // that was just appended (A.75).
+                const at = try s.attachConstraint(root, c, node.region, null);
                 try s.register(.{
                     .kind = .method,
                     .v = root,
                     .region = node.region,
                     .origin = node.region,
-                    .index = s.lastConstraintIndex(),
+                    .index = at,
                 });
                 s.counters.constraints_deferred += 1;
             },
             // Concrete — or rigid, which is what a `type_dispatch`'s
             // variable always is. Resolve now (Rule U0).
-            else => try s.resolveMethod(c, root, content, node.region, true, info),
+            else => try s.resolveMethod(c, root, content, node.region, true, info, null),
         }
-    }
-
-    fn lastConstraintIndex(s: *const Solver) u32 {
-        return @intCast(s.store().constraints.items.len - 1);
     }
 
     /// Add one constraint to a flex root's set, by Rule U1: a name already
@@ -1871,40 +2023,84 @@ pub const Solver = struct {
     /// the tail the new set is "that range, one longer" and costs one
     /// append; otherwise it costs one copy, which happens only when
     /// something else appended in between.
-    fn attachConstraint(s: *Solver, root: Var, c: TypeStore.MethodConstraint, region: Bir.Inst.Index) Error!void {
+    ///
+    /// `at` is `c`'s own index when the caller has one — an obligation
+    /// being folded back (§6.3's `flex` row) — and null when `c` was
+    /// minted for this call and is not in the table yet. Either way the
+    /// answer is the index `c`'s sites live at afterwards, which is what
+    /// the obligation for them must name (A.75).
+    fn attachConstraint(
+        s: *Solver,
+        root: Var,
+        c: TypeStore.MethodConstraint,
+        region: Bir.Inst.Index,
+        at: ?u32,
+    ) Error!u32 {
         const st = s.store();
         const flags = st.flagsOf(root);
         const n = st.constraintCount(flags.constraints);
+        const old_base: u32 = if (flags.constraints.unwrap()) |existing_set|
+            st.constraint_sets.items[existing_set.int()].start
+        else
+            0;
 
         // The common case by far: a name this variable does not carry yet.
         if (st.findConstraint(flags.constraints, c.name) == null) {
             const set = try st.extendConstraints(flags.constraints, c);
             s.counters.constraints_created += 1;
             s.setConstraints(root, flags, set);
-            return;
+            const range = st.constraint_sets.items[set.unwrap().?.int()];
+            // `extendConstraints` appends in place when the old range ends
+            // at the tail, and COPIES the range otherwise — and a copy
+            // leaves every input behind at an index obligations still name
+            // (A.75).
+            if (range.start != old_base) {
+                var j: u32 = 0;
+                while (j < n) : (j += 1) try s.adopt(range.start + j, .{ .a = old_base + j });
+            }
+            const index = range.start + range.len - 1;
+            try s.adopt(index, if (at) |x| .{ .a = x } else .{ .fresh = true });
+            return index;
         }
 
         var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
         defer built.deinit(s.env.scratch);
         var pending: std.ArrayList(Pending) = .empty;
         defer pending.deinit(s.env.scratch);
+        // One entry per position of `built`, in the same order: what each
+        // constraint of the rebuilt set takes over (A.75).
+        var sources: std.ArrayList(Sources) = .empty;
+        defer sources.deinit(s.env.scratch);
+        var joined_slot: u32 = 0;
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const existing = st.constraintAt(flags.constraints, i);
+            const existing_at = old_base + i;
             if (existing.name != c.name) {
                 try built.append(s.env.scratch, existing);
+                try sources.append(s.env.scratch, .{ .a = existing_at });
                 continue;
             }
-            const first, const second = if (existing.region.int() <= c.region.int())
-                .{ existing, c }
+            const first, const second, const first_at, const second_at = if (existing.region.int() <= c.region.int())
+                .{ existing, c, @as(?u32, existing_at), at }
             else
-                .{ c, existing };
-            try built.append(s.env.scratch, try s.joinConstraint(first, second));
+                .{ c, existing, at, @as(?u32, existing_at) };
+            joined_slot = i;
+            try built.append(s.env.scratch, try s.joinConstraint(first, second, first_at, second_at));
+            try sources.append(s.env.scratch, if (at) |x|
+                .{ .a = existing_at, .b = x }
+            else
+                .{ .a = existing_at, .fresh = true });
             try pending.append(s.env.scratch, .{ .younger = second, .older = first });
         }
         const set = try st.addConstraints(built.items);
         s.counters.constraints_merged += 1;
         s.setConstraints(root, flags, set.toOptional());
+        // Before anything re-enters: `unifyPending` can rebuild this very
+        // set again, and the second rebuild has to find the first one's
+        // redirects already in place.
+        const base = st.constraint_sets.items[set.int()].start;
+        for (sources.items, 0..) |from, slot| try s.adopt(base + @as(u32, @intCast(slot)), from);
         // After the set is in place, for the same reason Rule U1 merges
         // before it unifies: unifying two method types unifies the variables
         // they are about, and that re-enters here.
@@ -1912,6 +2108,7 @@ pub const Solver = struct {
         defer s.region = outer;
         s.region = region;
         try s.unifyPending(pending.items);
+        return base + joined_slot;
     }
 
     fn setConstraints(s: *Solver, root: Var, flags: TypeStore.Flags, set: TypeStore.ConstraintSet.Optional) void {
@@ -1934,41 +2131,73 @@ pub const Solver = struct {
     /// invariant 2); leaving the constraint on would promote it, and
     /// `isEven n = n < 1` would publish
     /// `number -> Bool where number.compare : …` in its interface.
+    ///
+    /// Everything it KEEPS is copied to a fresh index, exactly as a join or
+    /// a union copies, so every kept constraint's old index is superseded
+    /// by its new one (A.75) — otherwise the obligations already
+    /// registered over the old range stay live beside the ones over the
+    /// new one and answer the same sites twice. The dropped constraint is
+    /// not redirected: the caller has just answered it.
     fn detachConstraint(s: *Solver, root: Var, name: Symbol) Error!void {
         const st = s.store();
         const flags = st.flagsOf(root);
         const n = st.constraintCount(flags.constraints);
         if (n == 0) return;
+        const old_base: u32 = if (flags.constraints.unwrap()) |existing|
+            st.constraint_sets.items[existing.int()].start
+        else
+            0;
         var kept: std.ArrayList(TypeStore.MethodConstraint) = .empty;
         defer kept.deinit(s.env.scratch);
+        // The old index of each kept constraint, in the order they are
+        // rebuilt in, so the redirects can be written once the new range
+        // exists.
+        var kept_from: std.ArrayList(u32) = .empty;
+        defer kept_from.deinit(s.env.scratch);
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const c = st.constraintAt(flags.constraints, i);
             if (c.name == name) continue;
             try kept.append(s.env.scratch, c);
+            try kept_from.append(s.env.scratch, old_base + i);
         }
         const set: TypeStore.ConstraintSet.Optional = if (kept.items.len == 0)
             .none
         else
             (try st.addConstraints(kept.items)).toOptional();
         s.setConstraints(root, flags, set);
+        if (set.unwrap()) |built| {
+            const base = st.constraint_sets.items[built.int()].start;
+            for (kept_from.items, 0..) |from, slot| {
+                try s.adopt(base + @as(u32, @intCast(slot)), .{ .a = from });
+            }
+        }
     }
 
     /// Two constraints of the same name on one variable: one constraint per
     /// `(variable, name)` (§6.1 invariant 3), so the two method types have
     /// to agree. The surviving constraint answers BOTH sites.
+    ///
+    /// The two indices are the inputs' own, or null for an input the
+    /// caller minted and has not stored. An input that was ALREADY
+    /// answered contributes its obligation, through `adopt`, and not its
+    /// sites: a target was emitted for them, and emitting one again is the
+    /// same argument passed twice (A.57, A.75).
     fn joinConstraint(
         s: *Solver,
         older: TypeStore.MethodConstraint,
         younger: TypeStore.MethodConstraint,
+        older_at: ?u32,
+        younger_at: ?u32,
     ) Error!TypeStore.MethodConstraint {
         const st = s.store();
         // Deduplicated: the same constraint is folded into its own set
         // again when its obligation is discharged against a still-flex
         // receiver (§6.3's `flex` row), and a site emitted twice is an
         // argument passed twice.
-        const old_sites = st.constraintSites(older);
-        const new_sites = st.constraintSites(younger);
+        const answered: []const TypeStore.ConstraintSite = &.{};
+        const old_sites = if (s.isAnswered(older_at)) answered else st.constraintSites(older);
+        const new_sites = if (s.isAnswered(younger_at)) answered else st.constraintSites(younger);
         var buffer = try s.env.scratch.alloc(TypeStore.ConstraintSite, old_sites.len + new_sites.len);
         defer s.env.scratch.free(buffer);
         var len: usize = 0;
@@ -1991,6 +2220,13 @@ pub const Solver = struct {
         };
     }
 
+    /// Whether the constraint at `at` has been answered already. A null
+    /// index is one the caller minted and has not stored, which no route
+    /// can have answered yet.
+    fn isAnswered(s: *const Solver, at: ?u32) bool {
+        return if (at) |x| s.resolved_methods.contains(x) else false;
+    }
+
     /// One method type pair the caller must unify once the roots are
     /// merged, and where to report if it does not fit.
     const Pending = struct { younger: TypeStore.MethodConstraint, older: TypeStore.MethodConstraint };
@@ -2011,29 +2247,46 @@ pub const Solver = struct {
         defer built.deinit(s.env.scratch);
         var pending: std.ArrayList(Pending) = .empty;
         errdefer pending.deinit(s.env.scratch);
+        // One entry per position of `built`: both sides are COPIED onto
+        // the fresh range, so every index either side held is superseded
+        // by one of them (A.75).
+        var sources: std.ArrayList(Sources) = .empty;
+        defer sources.deinit(s.env.scratch);
+        const a_base = st.constraint_sets.items[a.unwrap().?.int()].start;
+        const b_base = st.constraint_sets.items[b.unwrap().?.int()].start;
         const na = st.constraintCount(a);
         var i: u32 = 0;
         while (i < na) : (i += 1) {
             const left = st.constraintAt(a, i);
-            if (st.findConstraint(b, left.name)) |right| {
-                const first, const second = if (left.region.int() <= right.region.int())
-                    .{ left, right }
+            const left_at = a_base + i;
+            if (findConstraintSlot(st, b, left.name)) |slot| {
+                const right = st.constraintAt(b, slot);
+                const right_at = b_base + slot;
+                const first, const second, const first_at, const second_at = if (left.region.int() <= right.region.int())
+                    .{ left, right, left_at, right_at }
                 else
-                    .{ right, left };
+                    .{ right, left, right_at, left_at };
                 try pending.append(s.env.scratch, .{ .younger = second, .older = first });
-                try built.append(s.env.scratch, try s.joinConstraint(first, second));
+                try built.append(s.env.scratch, try s.joinConstraint(first, second, first_at, second_at));
+                try sources.append(s.env.scratch, .{ .a = left_at, .b = right_at });
             } else {
                 try built.append(s.env.scratch, left);
+                try sources.append(s.env.scratch, .{ .a = left_at });
             }
         }
         const nb = st.constraintCount(b);
         var j: u32 = 0;
         while (j < nb) : (j += 1) {
             const right = st.constraintAt(b, j);
-            if (st.findConstraint(a, right.name) == null) try built.append(s.env.scratch, right);
+            if (st.findConstraint(a, right.name) == null) {
+                try built.append(s.env.scratch, right);
+                try sources.append(s.env.scratch, .{ .a = b_base + j });
+            }
         }
-        const set = (try st.addConstraints(built.items)).toOptional();
-        return .{ set, try pending.toOwnedSlice(s.env.scratch) };
+        const set = try st.addConstraints(built.items);
+        const base = st.constraint_sets.items[set.int()].start;
+        for (sources.items, 0..) |from, slot| try s.adopt(base + @as(u32, @intCast(slot)), from);
+        return .{ set.toOptional(), try pending.toOwnedSlice(s.env.scratch) };
     }
 
     fn unifyPending(s: *Solver, pairs: []const Pending) Error!void {
@@ -2113,12 +2366,17 @@ pub const Solver = struct {
 
     fn dischargeMethod(s: *Solver, o: Obligation) Error!void {
         const st = s.store();
-        if (o.index >= st.constraints.items.len) return;
+        // A rebuilt set moved the constraint this obligation was
+        // registered for, and the copy is what answers now (A.75) —
+        // followed BEFORE the answered test, or the copy of an answered
+        // constraint answers its sites a second time.
+        const at = s.followConstraint(o.index);
+        if (at >= st.constraints.items.len) return;
         // **Answered once** (A.57): see `resolved_methods`. Emitting the
         // site twice is an argument passed twice and reporting the failure
         // twice is two copies of one message.
-        if (s.resolved_methods.contains(o.index)) return;
-        const c = st.constraints.items[o.index];
+        if (s.resolved_methods.contains(at)) return;
+        const c = st.constraints.items[at];
         const root, const content = st.resolved(o.v);
         switch (content) {
             .err => {},
@@ -2133,20 +2391,20 @@ pub const Solver = struct {
                 // discharge. `isEven n = n < 2` would otherwise infer
                 // `number -> Bool where number.compare : …`.
                 if (s.builtinRigidTarget(flags, c)) |target| {
-                    try s.markResolved(o.index);
+                    try s.markResolved(at);
                     try s.emitSites(c, target);
                     try s.detachConstraint(root, c.name);
                     return;
                 }
-                try s.attachConstraint(root, c, o.origin);
-                try s.deferred.append(s.gpa, .{ .v = root, .index = o.index });
+                const folded = try s.attachConstraint(root, c, o.origin, at);
+                try s.deferred.append(s.gpa, .{ .v = root, .index = folded });
             },
             else => {
-                try s.markResolved(o.index);
+                try s.markResolved(at);
                 const outer = s.region;
                 defer s.region = outer;
                 s.region = o.origin;
-                try s.resolveMethod(c, root, content, o.origin, false, null);
+                try s.resolveMethod(c, root, content, o.origin, false, null, at);
             },
         }
     }
@@ -2168,6 +2426,7 @@ pub const Solver = struct {
         origin: Bir.Inst.Index,
         immediate: bool,
         info: ?Constrain.Method,
+        at: ?u32,
     ) Error!void {
         s.counters.constraints_discharged += 1;
         const st = s.store();
@@ -2179,7 +2438,7 @@ pub const Solver = struct {
                     try s.detachConstraint(root, c.name);
                     return;
                 }
-                try s.attachConstraint(root, c, origin);
+                _ = try s.attachConstraint(root, c, origin, at);
                 return;
             },
             .rigid => |flags| {
@@ -2507,21 +2766,34 @@ pub const Solver = struct {
                     try s.emitSites(c, .err);
                     return;
                 };
-                const mark: u32 = @intCast(s.store().constraints.items.len);
-                const copy = try s.makeCopy(scheme);
-                // A `method_call`'s site 0 names the CALLEE, so its evidence
-                // slots start at 1 (§7.2) — which is where the cursor
-                // already stands. It is not always 1: this same arm answers
-                // a slot of an OUTER instantiation, and then it continues
-                // that instruction's numbering instead of colliding with it.
-                var cursor = try s.evidenceCursor(origin);
-                try s.tagInstantiated(copy, origin, &cursor, mark, false, s.parentSlot(c, origin));
-                s.commitEvidence(origin, cursor);
-                if (!try s.unifyQuiet(copy, c.fn_var)) {
-                    try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
-                    try s.emitSites(c, .err);
-                    s.poison(c.fn_var);
-                    return;
+                // ONE instantiation per instruction this constraint
+                // answers, and not one for `origin` alone: after A.75 a
+                // join carries several instructions' sites on one
+                // constraint, and the callee's own `where` clause needs a
+                // slot — numbered by THAT instruction's cursor, parented
+                // on THAT instruction's slot — on each of them (§7.2,
+                // A.68).
+                var origins: std.ArrayList(SiteOrigin) = .empty;
+                defer origins.deinit(s.env.scratch);
+                try s.siteOrigins(c, origin, &origins);
+                for (origins.items) |site| {
+                    const mark: u32 = @intCast(s.store().constraints.items.len);
+                    const copy = try s.makeCopy(scheme);
+                    // A `method_call`'s site 0 names the CALLEE, so its
+                    // evidence slots start at 1 (§7.2) — which is where
+                    // the cursor already stands. It is not always 1: this
+                    // same arm answers a slot of an OUTER instantiation,
+                    // and then it continues that instruction's numbering
+                    // instead of colliding with it.
+                    var cursor = try s.evidenceCursor(site.inst);
+                    try s.tagInstantiated(copy, site.inst, &cursor, mark, false, site.parent);
+                    s.commitEvidence(site.inst, cursor);
+                    if (!try s.unifyQuiet(copy, c.fn_var)) {
+                        try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
+                        try s.emitSites(c, .err);
+                        s.poison(c.fn_var);
+                        return;
+                    }
                 }
                 try s.emitSites(c, .{ .top = .{ .decl = @enumFromInt(decl) } });
                 return;
@@ -2545,22 +2817,32 @@ pub const Solver = struct {
                 // resolves `List.eq`, whose `where a.eq` slot resolves
                 // `List.eq` again, and each level takes the next free index
                 // of the one instruction rather than 1 over and over.
-                var cursor = try s.evidenceCursor(origin);
-                const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{
-                    .inst = origin,
-                    .next = &cursor,
-                    .parent = s.parentSlot(c, origin),
-                })) orelse {
-                    s.commitEvidence(origin, cursor);
-                    try s.emitSites(c, .err);
-                    return;
-                };
-                s.commitEvidence(origin, cursor);
-                if (!try s.unifyQuiet(copy, c.fn_var)) {
-                    try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
-                    try s.emitSites(c, .err);
-                    s.poison(c.fn_var);
-                    return;
+                // Once per instruction, for the reason the arm above is:
+                // `size (put (put seed [ 1, 2 ]) [ 3 ])` joins the two
+                // calls' `k.compare` onto one constraint, and the inner
+                // call needs its own `List.compare … where a.compare` slot
+                // as much as the outer one does (A.75, A.68).
+                var origins: std.ArrayList(SiteOrigin) = .empty;
+                defer origins.deinit(s.env.scratch);
+                try s.siteOrigins(c, origin, &origins);
+                for (origins.items) |site| {
+                    var cursor = try s.evidenceCursor(site.inst);
+                    const copy = (try s.importedValue(entry.module, @intFromEnum(value), .{
+                        .inst = site.inst,
+                        .next = &cursor,
+                        .parent = site.parent,
+                    })) orelse {
+                        s.commitEvidence(site.inst, cursor);
+                        try s.emitSites(c, .err);
+                        return;
+                    };
+                    s.commitEvidence(site.inst, cursor);
+                    if (!try s.unifyQuiet(copy, c.fn_var)) {
+                        try s.reporter.methodSignatureMismatch(origin, entry.module, entry.name, c.name, copy, c.fn_var);
+                        try s.emitSites(c, .err);
+                        s.poison(c.fn_var);
+                        return;
+                    }
                 }
                 try s.emitSites(c, .{ .ext = .{ .module = entry.module, .value = value } });
                 return;
@@ -2763,7 +3045,7 @@ pub const Solver = struct {
                 const flags = st.flagsOf(root);
                 if (s.builtinRigidTarget(flags, c)) |t| return t;
                 const inner = try s.freshMethodConstraint(c, root);
-                try s.attachConstraint(root, inner, origin);
+                _ = try s.attachConstraint(root, inner, origin, null);
                 return .err;
             },
             .rigid => |flags| {
@@ -3142,19 +3424,47 @@ pub const Solver = struct {
         }
     }
 
-    /// The slot of `origin` that `c` itself answers — the PARENT of every
-    /// slot the resolution of `c` goes on to ask for (`Dispatch.Site.parent`,
+    /// An instruction whose evidence a resolution has to number, and the
+    /// slot of it that `c` itself answers — the PARENT of every slot the
+    /// resolution of `c` goes on to ask for (`Dispatch.Site.parent`,
     /// A.68).
+    const SiteOrigin = struct { inst: Bir.Inst.Index, parent: u16 };
+
+    /// Every instruction `c` answers a slot of, once each, in site order
+    /// (A.75). A constraint carries one site per instruction until a join
+    /// gives it several, and a resolution that instantiates the callee's
+    /// own `where` clause has to do it once per instruction: the slots are
+    /// numbered by a cursor the INSTRUCTION owns (§7.2, A.68), so one
+    /// instantiation against one of them leaves the others a call short.
     ///
-    /// `no_parent` when the constraint answers no slot of this instruction,
-    /// which is what a `where` clause raised by the eager pass looks like:
-    /// there is no call, so there is nothing for a child to hang under
-    /// either.
-    fn parentSlot(s: *Solver, c: TypeStore.MethodConstraint, origin: Bir.Inst.Index) u16 {
+    /// Site order, which is the order the sites were appended in, so the
+    /// numbering is a function of the input and not of the drain (§10 of
+    /// `fast-compiler.md`).
+    ///
+    /// A constraint with NO sites still gets one entry — `fallback`, with
+    /// `no_parent` — because the method type still has to be unified. That
+    /// is what a `where` clause raised by the eager pass looks like: there
+    /// is no call, so there is nothing for a child to hang under either.
+    fn siteOrigins(
+        s: *Solver,
+        c: TypeStore.MethodConstraint,
+        fallback: Bir.Inst.Index,
+        out: *std.ArrayList(SiteOrigin),
+    ) Error!void {
         for (s.store().constraintSites(c)) |site| {
-            if (site.inst == origin) return site.evidence_index;
+            var seen = false;
+            for (out.items) |already| {
+                if (already.inst == site.inst) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) continue;
+            try out.append(s.env.scratch, .{ .inst = site.inst, .parent = site.evidence_index });
         }
-        return Dispatch.Site.no_parent;
+        if (out.items.len == 0) {
+            try out.append(s.env.scratch, .{ .inst = fallback, .parent = Dispatch.Site.no_parent });
+        }
     }
 
     /// Which evidence parameter of the enclosing declaration answers
@@ -3423,9 +3733,12 @@ pub const Solver = struct {
     fn settleUndetermined(s: *Solver) Error!void {
         const st = s.store();
         for (s.deferred.items) |d| {
-            if (d.index >= st.constraints.items.len) continue;
-            if (s.resolved_methods.contains(d.index)) continue;
-            const c = st.constraints.items[d.index];
+            // A join after the fold moved it (A.75): the replacement is
+            // what carries the sites, and what must be marked.
+            const at = s.followConstraint(d.index);
+            if (at >= st.constraints.items.len) continue;
+            if (s.resolved_methods.contains(at)) continue;
+            const c = st.constraints.items[at];
             // No site is no call: a constraint raised by the eager pass or
             // by a `where` clause answers nothing an instruction passes.
             const sites = st.constraintSites(c);
@@ -3451,12 +3764,12 @@ pub const Solver = struct {
                 // `Lower.evidenceShapeOk` stopped — an `internal` about a
                 // compiler bug, on a program whose only fault is that
                 // nothing pins the receiver's type down.
-                try s.markResolved(d.index);
+                try s.markResolved(at);
                 try s.reporter.undeterminedMethodReceiver(region, c.name, content.flex.kind);
                 try s.emitSites(c, .err);
                 continue;
             };
-            try s.markResolved(d.index);
+            try s.markResolved(at);
             try s.emitSites(c, target);
         }
         s.deferred.clearRetainingCapacity();
@@ -3753,4 +4066,36 @@ test "adjustRank pulls a structure's rank down to the outermost it reaches" {
     try testing.expectEqual(@as(u32, 3), rank);
     try testing.expectEqual(@as(u32, 1), store.rank(outer));
     try testing.expectEqual(@as(u32, 3), store.rank(inner));
+}
+
+// A.75, and the half of it a corpus fixture cannot reach: a `tryShape`
+// probe rolls the redirect table back by LENGTH, and a key the probe
+// re-pointed has to go back to the value it had before the probe — not be
+// removed, which would strand the obligations the earlier rebuild moved.
+test "the redirect journal restores an overwritten value, not just the key" {
+    var r: Solver.Redirects = .{};
+    defer r.deinit(testing.allocator);
+
+    // Before the probe: 1 was superseded by 4, and 2 by 5.
+    try r.set(testing.allocator, 1, 4);
+    try r.set(testing.allocator, 2, 5);
+    const mark = r.mark();
+
+    // Inside it: 1 is re-pointed at 7 by a second rebuild, and 3 — a key
+    // the probe minted — at 8.
+    try r.set(testing.allocator, 1, 7);
+    try r.set(testing.allocator, 3, 8);
+    try testing.expectEqual(@as(u32, 7), r.follow(1));
+    try testing.expectEqual(@as(u32, 8), r.follow(3));
+
+    r.forgetSince(mark);
+    try testing.expectEqual(@as(u32, 4), r.follow(1));
+    try testing.expectEqual(@as(u32, 5), r.follow(2));
+    // Minted inside the probe, so it goes with it: an index the rollback
+    // has truncated away will be handed to some other constraint.
+    try testing.expectEqual(@as(u32, 3), r.follow(3));
+
+    // The chain is followed to its end, and only forwards.
+    try r.set(testing.allocator, 4, 9);
+    try testing.expectEqual(@as(u32, 9), r.follow(1));
 }

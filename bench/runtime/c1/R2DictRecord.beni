@@ -1,0 +1,69 @@
+-- ops: 120000
+--
+-- R2 of the M5 row (`plans/static-dispatch-spike.md` §7): the same `Dict`
+-- workload as R1 with a RECORD key. This is the **C1** form: the
+-- hand-written `comparePoint` of `c0/R2DictRecord.beni` is gone, and what
+-- orders the dictionary is the record shape's DERIVED `compare` (§9.2),
+-- passed as evidence. So the pair of numbers says what derivation costs
+-- against a comparator written by hand.
+--
+-- The derived function compares the fields in SORTED FIELD-NAME order — `x`
+-- then `y` — which for this shape is the same order `comparePoint` used, so
+-- the two programs sort identically and their checksums have to match.
+--
+-- Same range-depth constraint as R1: nested small ranges, `List.foldl` for
+-- every loop.
+--
+-- **`weight` is not decoration, and `c0/R2DictRecord.beni` does not have
+-- it.** `c0` writes the inserted value inline as `(p.x + p.y)`, and in C1
+-- that does not compile: the field access makes `p` an OPEN record while
+-- the `where k.compare` obligation from `Dict.insert` is still waiting, and
+-- §6.3's open-record row refuses it — Rule U0 resolves a method against a
+-- concrete receiver but never retries one that was still a variable (§6.2,
+-- "what it does not buy"; A.28). Reading the fields behind an annotated
+-- helper keeps `p` closed. The arithmetic and the checksum are unchanged;
+-- what the two programs do not share is one direct call per insert, which
+-- is the honest cost of the workaround and is recorded next to the M5
+-- number.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    { x : Int, y : Int }
+
+
+blocks : Int
+blocks =
+    120
+
+
+perBlock : Int
+perBlock =
+    500
+
+
+weight : Point -> Int
+weight p =
+    p.x + p.y
+
+
+points : List Point
+points =
+    List.concatMap
+        (List.range 0 (blocks - 1))
+        (\block -> List.map (List.range 1 perBlock) (\i -> { x = block, y = i }))
+
+
+main : Program
+main =
+    let
+        dict =
+            List.foldl points Dict.empty (\p d -> Dict.insert d p (weight p))
+
+        total =
+            List.foldl points 0 (\p acc -> acc + Maybe.withDefault (Dict.get dict p) 0)
+    in
+    Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

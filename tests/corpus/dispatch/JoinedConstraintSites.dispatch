@@ -1,0 +1,19 @@
+module JoinedConstraintSites
+  decl put evidence=1
+    evidence 0 quantified=0 var=k method=compare
+  decl tag evidence=1
+    evidence 0 quantified=0 var=k method=eq
+  decl size evidence=0
+  decl nested evidence=0
+  decl annotated evidence=0
+  decl twoNames evidence=0
+  derived 0 compare JoinedConstraintSites.Box evidence=1
+    part 0 evidence 0
+  derived 1 eq JoinedConstraintSites.Box evidence=1
+    part 0 evidence 0
+  site 46 0 primitive string_compare
+  site 48 0 primitive string_compare
+  site 59 0 primitive string_compare
+  site 61 0 primitive string_compare
+  site 70 0 primitive string_compare
+  site 72 0 primitive strict_eq

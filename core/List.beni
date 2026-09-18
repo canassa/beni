@@ -13,7 +13,7 @@
 --! first, with the value repeated before the count, exactly as `String.repeat`
 --! is, while `range lo hi` has no subject to put first.
 --!
---! Four declarations here are `foreign`, and nothing else is:
+--! Five declarations here are `foreign`, and nothing else is:
 --!
 --!   - `cons : a, List a -> List a` — `::` desugars to a call of this
 --!     function, so a beni definition of it would call itself. Its order is
@@ -28,15 +28,23 @@
 --!     `List a` has no constructors, so the compiler has nothing to derive a
 --!     body from, and the shape of a cons cell belongs to the code generator
 --!     rather than to beni.
+--!   - `compare : List a, List a -> Order where a.compare` — what `<` and
+--!     its three relatives on a list mean, for the same two reasons, and a
+--!     loop for the same reason `foldr` is one.
 --!
 --! `List a` is equal to another list when they have the same elements in the
 --! same order, by each element's own `eq` — which is what makes `==` on a
 --! list of a type with an `eq` of its own answer that type's question and not
---! a structural walk's.
+--! a structural walk's. It is ordered the same way, element by element by
+--! each element's own `compare`, with a shorter list `LT` against a longer
+--! one that starts the same.
 --!
---! There is no `comparable` (`fast-compiler.md` §3.1), so the ordering
---! functions come in three flavours: `sort` for numbers, `sortBy` for
---! anything with a numeric key, and `sortWith` for an ordering you write.
+--! There is no `comparable` (`fast-compiler.md` §3.1). What replaced it is
+--! the `compare` method, so the ordering functions ask for one rather than
+--! for a number: `sort` for anything that has a `compare`, `sortBy` for
+--! anything with a key that does, and `sortWith` for an ordering you write
+--! yourself, which is how you sort by something that is not the type's own
+--! order.
 
 --| A list of values, all of the same type. `[]` is the empty list and `::`
 --| puts one more value on the front.
@@ -80,6 +88,20 @@ pub foreign foldr : List a, b, (a, b -> b) -> b
 --| generator's rather than beni's.
 pub foreign eq : List a, List a -> Bool
     where a.eq : a, a -> Bool
+
+
+--| Order two lists element by element, by each element's own `compare`.
+--| The first pair that differs decides; if one list runs out first while
+--| everything before matched, the shorter one is `LT`.
+--|
+--|     compare [ 1, 2 ] [ 1, 2, 3 ] == LT
+--|
+--| This is what `<`, `<=`, `>` and `>=` on a list call. Like `eq` it is
+--| written here rather than derived, for the same two reasons: `List a` has
+--| no constructors to walk, and the shape of a cons cell belongs to the
+--| code generator.
+pub foreign compare : List a, List a -> Order
+    where a.compare : a, a -> Order
 
 
 --| Create a list with only one element.
@@ -379,26 +401,30 @@ map5 xs ys zs ws vs func =
             []
 
 
---| Sort a list of numbers from lowest to highest.
+--| Sort a list from lowest to highest, by the element type's own `compare`.
 --|
 --|     sort [ 3, 1, 5 ] == [ 1, 3, 5 ]
 --|
---| Elm sorts any `comparable`; beni has none, so this one is numbers and the
---| other two take the ordering as an argument.
-pub sort : List number -> List number
+--| Elm sorts any `comparable`; beni has none, so this one asks the element
+--| type for its `compare` method and sorts by what it answers.
+pub sort : List a -> List a
+    where a.compare : a, a -> Order
 sort xs =
-    sortWith xs compare
+    sortWith xs (\x y -> x.compare y)
 
 
---| Sort values by a derived number.
+--| Sort values by a key read out of each of them. The key can be of any
+--| type that has a `compare`, not only a number.
 --|
 --|     sortBy [ { age = 30 }, { age = 20 } ] .age == [ { age = 20 }, { age = 30 } ]
-pub sortBy : List a, (a -> number) -> List a
+pub sortBy : List a, (a -> b) -> List a
+    where b.compare : b, b -> Order
 sortBy xs toKey =
-    sortWith xs (\x y -> compare (toKey x) (toKey y))
+    sortWith xs (\x y -> (toKey x).compare (toKey y))
 
 
---| Sort values with a custom ordering function.
+--| Sort values with an ordering function you write yourself, which is how
+--| you sort by something that is not the type's own order.
 --|
 --|     sortWith [ 1, 2, 3 ] (\x y -> compare y x) == [ 3, 2, 1 ]
 --|

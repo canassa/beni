@@ -728,3 +728,423 @@ build carries, plus one per nominal type and one per structural shape the
 program itself uses. `bench/size.mjs` counts them today
 (`tests/blackbox/build_test.zig`, the two `size.mjs` scenarios); the full M4
 table is S8's.
+
+---
+
+## 2026-09-18 — S6, C1: the corpus with the comparator removed
+
+**Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory
+channel, 16 GB RAM, Linux 7.2.2, Zig 0.16.0, Node v24.19.0, ReleaseFast.
+
+**Binary under test:** a `-Doptimize=ReleaseFast` build of the working tree at
+S6b (`8081b5f` plus the C1 rewrite), installed to `/tmp/rf/bin/beni` so that
+`zig-out/bin/beni` — the Debug binary the black-box gates drive — was not
+disturbed. The **C0** side of M5 is `../beni-s1` at `c870e9a`, the same
+ReleaseFast binary the S1 baselines were taken with, run back to back with the
+C1 side in the same minutes; the C0 sides of M3, M4 and M8 are the rows already
+in this file at `:220`, `:293` and `:448` and are **not** re-run or edited here.
+
+**Corpus:** C1 — `core/` with the comparator argument gone from `Dict`, `Set`
+and the `List` sort family, `core/Dict/String.beni` and `core/Dict/Int.beni`
+deleted, the six `bench/corpus/` modules and the `tests/corpus/` fixtures
+rewritten by hand, and `bench/runtime/c1/`.
+
+`uptime` is recorded immediately before each instrument; per `bench/README.md`
+no number is recorded while the 1-minute load average is above 2.0.
+
+**Two rows were re-taken after S6b's review fixes and say so where they sit**:
+the M1b `--dispatch` block and the whole of M4. They are the two the fixes
+could move — the checker instantiates a callee's `where` clause once per
+instruction now, and `tests/corpus/run/Dictionaries.beni` builds again — so
+they are measured on the finished tree rather than on the tree the rest of
+this entry was taken from. Every other row is the earlier binary's and is not
+edited.
+
+---
+
+### M1b — what USING the feature costs (C1 side)
+
+`plans/static-dispatch-spike.md` §7 M1b. Instrument: `zig build bench`, best of
+5 after one warm-up, `jobs = 1` throughout. Read against M1a's C0 rows at `:37`
+and `:66`, which were taken on the same machine with the same generator.
+
+**Load before:** ` 03:39:44 up 4 days, 10:20,  3 users,  load average: 0.64, 1.08, 0.98`
+
+```
+$ direnv exec . zig build bench -- --generate=100000 --iterations=5
+bench: generated 624 files, 100159 lines, 1835619 bytes (plain) under .zig-cache/bench-gen
+{"phase":"read","files":624,"bytes":1835619,"tokens":0,"nodes":0,"insts":0,"ms":2.1,"mb_per_s":824.7,"loc_per_s":47185451}
+{"phase":"lex","files":624,"bytes":1835619,"tokens":302615,"nodes":0,"insts":0,"ms":9.5,"mb_per_s":183.7,"loc_per_s":10509786}
+{"phase":"parse","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":0,"ms":7.2,"mb_per_s":243.4,"loc_per_s":13928665}
+{"phase":"lower","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":202303,"ms":9.8,"mb_per_s":179.2,"loc_per_s":10254820}
+{"phase":"resolve","modules":633,"edges":3932,"interfaces":633,"ms":5.40,"cold_check_ms":41.4}
+{"phase":"check","modules":633,"lines":100159,"unifications":228149,"generalisations":104086,"instantiations":52346,"obligations":3486,"constraints_created":281,"constraints_merged":4,"constraints_deferred":476,"constraints_discharged":2713,"constraints_promoted":1,"diagnostics":0,"ms":87.63,"loc_per_s":1142937,"cold_check_ms":129.1}
+{"phase":"emit","modules":633,"js_bytes":3869809,"nodes":347646,"lines":103650,"ms":50.31,"mb_per_s":73.4,"loc_per_s":2060078}
+{"phase":"total","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":202303,"ms":172.0,"mb_per_s":10.2,"loc_per_s":582462}
+```
+
+**Load before:** ` 04:58:47 up 4 days, 11:39,  3 users,  load average: 0.80, 0.85, 0.58` (re-taken after the S6b review fixes)
+
+```
+$ direnv exec . zig build bench -- --generate=100000 --dispatch --iterations=5
+bench: generated 624 files, 100327 lines, 1885570 bytes (dispatch) under .zig-cache/bench-gen-dispatch
+{"phase":"read","files":624,"bytes":1885570,"tokens":0,"nodes":0,"insts":0,"ms":2.2,"mb_per_s":835.4,"loc_per_s":46609805}
+{"phase":"lex","files":624,"bytes":1885570,"tokens":317281,"nodes":0,"insts":0,"ms":10.2,"mb_per_s":176.1,"loc_per_s":9825863}
+{"phase":"parse","files":624,"bytes":1885570,"tokens":317281,"nodes":231896,"insts":0,"ms":7.2,"mb_per_s":248.8,"loc_per_s":13878508}
+{"phase":"lower","files":624,"bytes":1885570,"tokens":317281,"nodes":231896,"insts":209801,"ms":9.9,"mb_per_s":182.4,"loc_per_s":10173992}
+{"phase":"resolve","modules":633,"edges":4018,"interfaces":633,"ms":5.34,"cold_check_ms":43.4}
+{"phase":"check","modules":633,"lines":100327,"unifications":238018,"generalisations":115730,"instantiations":56199,"obligations":4213,"constraints_created":347,"constraints_merged":80,"constraints_deferred":1203,"constraints_discharged":5134,"constraints_promoted":77,"diagnostics":0,"ms":93.11,"loc_per_s":1077565,"cold_check_ms":136.5}
+{"phase":"emit","modules":633,"js_bytes":4086222,"nodes":372018,"lines":103818,"ms":56.64,"mb_per_s":68.8,"loc_per_s":1832944}
+{"phase":"total","files":624,"bytes":1885570,"tokens":317281,"nodes":231896,"insts":209801,"ms":184.5,"mb_per_s":9.7,"loc_per_s":543673}
+```
+
+Reading, in the order the numbers matter.
+
+**`diagnostics` on the `--dispatch` tree is 0.** S1 recorded **1 682** for the
+same generator (`:66`) — every dot-call and every `where` clause failing to
+resolve. This line is the spike's acceptance test and it is the single most
+important number in this entry: 100 327 lines of generated code written in the
+dot-call style compile clean.
+
+**`check` costs 8 % on the plain tree and 12 % on the dispatch tree.** 87.63 ms
+against M1a's 71.77 ms plain, 93.11 ms against 83.39 ms dispatch — but the
+second pair is not a like-for-like: S1's 83.39 ms was the cost of *failing* on
+1 682 diagnostics, and this one is the cost of checking the same program
+successfully. The honest reading is the first: **a tree with no dot-call
+anywhere pays 8 % in `check`** for the machinery being present, and the
+counters say where it goes — 281 constraints created, 476 deferred, 2 713
+discharged on a corpus that never writes a `where` clause, which is `==` and
+`<` on the generated code lowering to method calls (§3.1).
+
+**`emit` costs 48 %**: 50.31 ms against 33.87 ms, and `js_bytes` 3 869 809
+against 3 075 595 — **+26 % of output**. That is eager derivation (§8.5) with
+no DCE, and it is the same number M4 measures from the other side.
+
+**The front end is flat**, as it was for S1: `lex`/`parse`/`lower` at
+9.5 / 7.2 / 9.8 ms plain against S1's 9.8 / 6.9 / 9.7.
+
+---
+
+### M3 — interface churn (C1 side)
+
+`plans/static-dispatch-spike.md` §7 M3, same instrument and same four edit
+classes as the C0 run at `:220`. Read against it directly; the `decls` column
+differs because C1 has fewer declarations (`Dict.comparatorOf` is deleted, and
+`core/Dict/{String,Int}.beni` with it).
+
+**Load before:** ` 03:41:31 up 4 days, 10:22,  3 users,  load average: 0.79, 1.02, 0.98`
+
+```
+$ direnv exec . sh bench/churn.sh --corpus=bench/corpus --beni=/tmp/rf/bin/beni
+corpus: bench/corpus
+modules excluded (the pristine root does not resolve them): JsonCodecs.beni NotesApp.beni
+tree restored: yes
+
+edit    variant       changed/accepted  applied  skipped  rejected  decls
+------  ------------  ----------------  -------  -------  --------  -----
+E1      annotated               0/20       20       83         0    103
+E1      unannotated             0/19       25       78         6    103
+E2      annotated                0/1        2      101         1    103
+E2      unannotated              0/1        8       95         7    103
+E3      annotated               0/70       84       19        14    103
+E3      unannotated            29/68       85       18        17    103
+E3poly  annotated                0/0        5       98         5    103
+E3poly  unannotated              4/4       11       92         7    103
+
+real	0m10.134s
+user	0m7.612s
+sys	0m5.262s
+```
+
+**Load before:** ` 03:41:46 up 4 days, 10:22,  3 users,  load average: 0.82, 1.02, 0.98`
+
+```
+$ direnv exec . sh bench/churn.sh --corpus=core --core --beni=/tmp/rf/bin/beni
+corpus: core
+tree restored: yes
+
+edit    variant       changed/accepted  applied  skipped  rejected  decls
+------  ------------  ----------------  -------  -------  --------  -----
+E1      annotated               0/15       15      123         0    138
+E1      unannotated             0/15       15      123         0    138
+E2      annotated                0/7        8      130         1    138
+E2      unannotated              0/7        8      130         1    138
+E3      annotated               0/74      105       33        31    138
+E3      unannotated            50/90      105       33        15    138
+E3poly  annotated                0/0       13      125        13    138
+E3poly  unannotated            12/12       13      125         1    138
+
+real	0m12.905s
+user	0m8.388s
+sys	0m6.485s
+```
+
+Reading — and this is the row report 18 §2.3 is about.
+
+**Every `annotated` row is still 0.** E1, E2, E3 and E3poly alike, on both
+corpora. An annotation is the whole interface (§6.4's promotion table: an
+annotated declaration never promotes), so a body edit cannot move it, and
+static dispatch has not changed that. **This is the answer to the objection**:
+the interface churn report 18 §2.3 predicts is confined to unannotated `pub`
+declarations, exactly as it was on C0.
+
+**The `unannotated` rows got worse, and by how much is the finding.** E3 on
+`core` moves the interface **50/90** against C0's **8/94** — 5.6×. On
+`bench/corpus` it is **29/68** against **5/52**. The mechanism is not a
+surprise: on C0 a new `==` on a parameter adds an `equatable` flag the
+interface may or may not already carry, and on C1 it adds a **`where` clause**
+that the interface always prints. E3poly — the bare-type-variable row — was
+already 100 % on C0 (4/4, 14/14) and stays 100 % (4/4, 12/12), so the
+polymorphic case was never the difference.
+
+**E3's `accepted` and `rejected` columns move in opposite directions on the
+two corpora, and the reason is worth stating rather than averaging.** On
+`bench/corpus` more E3 edits now type-check — `annotated` accepted 70 against
+C0's 52, rejected 14 against 32 — because `p == p` on a bare type variable is
+legal under an inferred or written `where` clause and was not legal before.
+That is the ergonomic half of the same row. On `core` it goes the other way,
+`annotated` accepted 74 against 88 and rejected 31 against 23, and the
+`decls` denominator itself fell from 144 to 138: `core/Dict/String.beni` and
+`core/Dict/Int.beni` are deleted with six `pub` values between them and
+`Dict.comparatorOf` with them, so the two runs are not over the same
+declaration set. **Only the `changed/accepted` ratios are comparable between
+the two runs, not the raw counts**, which is why the reading above is stated
+as 50/90 against 8/94 rather than as a difference of fifty.
+
+---
+
+### M4 — output size (C1 side)
+
+`plans/static-dispatch-spike.md` §7 M4, same instrument as the C0 run at
+`:293`. `derived_bytes` and `derived_functions` are **0 by construction on C0**
+and are the point of this run.
+
+**Load before:** ` 04:58:33 up 4 days, 11:39,  3 users,  load average: 0.95, 0.87, 0.58`
+
+```
+$ direnv exec . node bench/size.mjs --beni=/tmp/rf/bin/beni
+{"floor":true,"entry":"Empty","files":19,"raw_bytes":68791,"gzip_bytes":16399,"brotli_bytes":13838,"derived_bytes":3159,"derived_functions":22}
+{"program":"bench/corpus","entry":"BenchMain (synthesised)","modules_measured":7,"modules_excluded":["Data/Parser.beni","ExprParser.beni","JsonCodecs.beni","NotesApp.beni"],"files":26,"raw_bytes":121965,"gzip_bytes":26465,"brotli_bytes":22507,"derived_bytes":11659,"derived_functions":59,"net_raw_bytes":53174,"net_gzip_bytes":10066,"net_brotli_bytes":8669}
+{"program":"tests/corpus/run/Adt.beni","entry":"Adt","files":19,"raw_bytes":71039,"gzip_bytes":16827,"brotli_bytes":14245,"derived_bytes":4199,"derived_functions":28,"net_raw_bytes":2248,"net_gzip_bytes":428,"net_brotli_bytes":407}
+{"program":"tests/corpus/run/Arithmetic.beni","entry":"Arithmetic","files":19,"raw_bytes":69795,"gzip_bytes":16579,"brotli_bytes":14000,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1004,"net_gzip_bytes":180,"net_brotli_bytes":162}
+{"program":"tests/corpus/run/BindPipeRhs.beni","entry":"BindPipeRhs","files":19,"raw_bytes":69649,"gzip_bytes":16573,"brotli_bytes":13968,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":858,"net_gzip_bytes":174,"net_brotli_bytes":130}
+{"program":"tests/corpus/run/CaseLiterals.beni","entry":"CaseLiterals","files":19,"raw_bytes":69505,"gzip_bytes":16579,"brotli_bytes":13982,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":714,"net_gzip_bytes":180,"net_brotli_bytes":144}
+{"program":"tests/corpus/run/CharOps.beni","entry":"CharOps","files":19,"raw_bytes":69681,"gzip_bytes":16603,"brotli_bytes":14012,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":890,"net_gzip_bytes":204,"net_brotli_bytes":174}
+{"program":"tests/corpus/run/Closures.beni","entry":"Closures","files":19,"raw_bytes":69947,"gzip_bytes":16683,"brotli_bytes":14069,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1156,"net_gzip_bytes":284,"net_brotli_bytes":231}
+{"program":"tests/corpus/run/Comparison.beni","entry":"Comparison","files":19,"raw_bytes":69864,"gzip_bytes":16588,"brotli_bytes":13973,"derived_bytes":3208,"derived_functions":23,"net_raw_bytes":1073,"net_gzip_bytes":189,"net_brotli_bytes":135}
+{"program":"tests/corpus/run/ConsPatterns.beni","entry":"ConsPatterns","files":19,"raw_bytes":70375,"gzip_bytes":16690,"brotli_bytes":14083,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1584,"net_gzip_bytes":291,"net_brotli_bytes":245}
+{"program":"tests/corpus/run/ConstantMethodCall.beni","entry":"ConstantMethodCall","files":19,"raw_bytes":69750,"gzip_bytes":16606,"brotli_bytes":14021,"derived_bytes":3327,"derived_functions":24,"net_raw_bytes":959,"net_gzip_bytes":207,"net_brotli_bytes":183}
+{"program":"tests/corpus/run/ConstrainedMutualRecursion.beni","entry":"ConstrainedMutualRecursion","files":19,"raw_bytes":70255,"gzip_bytes":16673,"brotli_bytes":14090,"derived_bytes":3258,"derived_functions":23,"net_raw_bytes":1464,"net_gzip_bytes":274,"net_brotli_bytes":252}
+{"program":"tests/corpus/run/ConstrainedPartEvidence.beni","entry":"ConstrainedPartEvidence","files":19,"raw_bytes":72258,"gzip_bytes":16919,"brotli_bytes":14262,"derived_bytes":3884,"derived_functions":28,"net_raw_bytes":3467,"net_gzip_bytes":520,"net_brotli_bytes":424}
+{"program":"tests/corpus/run/DebugLog.beni","entry":"DebugLog","files":19,"raw_bytes":69414,"gzip_bytes":16545,"brotli_bytes":13918,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":623,"net_gzip_bytes":146,"net_brotli_bytes":80}
+{"program":"tests/corpus/run/DerivedEquality.beni","entry":"DerivedEquality","files":19,"raw_bytes":74108,"gzip_bytes":16993,"brotli_bytes":14385,"derived_bytes":5396,"derived_functions":35,"net_raw_bytes":5317,"net_gzip_bytes":594,"net_brotli_bytes":547}
+{"program":"tests/corpus/run/DerivedEqualityEdges.beni","entry":"DerivedEqualityEdges","files":19,"raw_bytes":72006,"gzip_bytes":16805,"brotli_bytes":14183,"derived_bytes":3652,"derived_functions":28,"net_raw_bytes":3215,"net_gzip_bytes":406,"net_brotli_bytes":345}
+{"program":"tests/corpus/run/DerivedOrdering.beni","entry":"DerivedOrdering","files":19,"raw_bytes":75205,"gzip_bytes":17218,"brotli_bytes":14578,"derived_bytes":6281,"derived_functions":39,"net_raw_bytes":6414,"net_gzip_bytes":819,"net_brotli_bytes":740}
+{"program":"tests/corpus/run/DictRecordKey.beni","entry":"DictRecordKey","files":19,"raw_bytes":70804,"gzip_bytes":16819,"brotli_bytes":14192,"derived_bytes":3440,"derived_functions":24,"net_raw_bytes":2013,"net_gzip_bytes":420,"net_brotli_bytes":354}
+{"program":"tests/corpus/run/DictStructuralEquality.beni","entry":"DictStructuralEquality","files":19,"raw_bytes":70437,"gzip_bytes":16689,"brotli_bytes":14076,"derived_bytes":3318,"derived_functions":24,"net_raw_bytes":1646,"net_gzip_bytes":290,"net_brotli_bytes":238}
+{"program":"tests/corpus/run/Dictionaries.beni","entry":"Dictionaries","files":19,"raw_bytes":69786,"gzip_bytes":16627,"brotli_bytes":14016,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":995,"net_gzip_bytes":228,"net_brotli_bytes":178}
+{"program":"tests/corpus/run/EvidenceCapture.beni","entry":"EvidenceCapture","files":19,"raw_bytes":69971,"gzip_bytes":16625,"brotli_bytes":14008,"derived_bytes":3475,"derived_functions":25,"net_raw_bytes":1180,"net_gzip_bytes":226,"net_brotli_bytes":170}
+{"program":"tests/corpus/run/ExitCode.beni","entry":"ExitCode","files":19,"raw_bytes":68984,"gzip_bytes":16459,"brotli_bytes":13868,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":193,"net_gzip_bytes":60,"net_brotli_bytes":30}
+{"program":"tests/corpus/run/HigherOrder.beni","entry":"HigherOrder","files":19,"raw_bytes":70046,"gzip_bytes":16715,"brotli_bytes":14098,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1255,"net_gzip_bytes":316,"net_brotli_bytes":260}
+{"program":"tests/corpus/run/ImportedModule.beni","entry":"ImportedModule","files":19,"raw_bytes":69424,"gzip_bytes":16541,"brotli_bytes":13956,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":633,"net_gzip_bytes":142,"net_brotli_bytes":118}
+{"program":"tests/corpus/run/Interpolation.beni","entry":"Interpolation","files":19,"raw_bytes":69456,"gzip_bytes":16622,"brotli_bytes":14012,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":665,"net_gzip_bytes":223,"net_brotli_bytes":174}
+{"program":"tests/corpus/run/LetNesting.beni","entry":"LetNesting","files":19,"raw_bytes":69496,"gzip_bytes":16588,"brotli_bytes":14013,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":705,"net_gzip_bytes":189,"net_brotli_bytes":175}
+{"program":"tests/corpus/run/LibraryArgumentOrder.beni","entry":"LibraryArgumentOrder","files":19,"raw_bytes":71377,"gzip_bytes":16941,"brotli_bytes":14341,"derived_bytes":3252,"derived_functions":23,"net_raw_bytes":2586,"net_gzip_bytes":542,"net_brotli_bytes":503}
+{"program":"tests/corpus/run/ListBuild.beni","entry":"ListBuild","files":19,"raw_bytes":69962,"gzip_bytes":16603,"brotli_bytes":13985,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1171,"net_gzip_bytes":204,"net_brotli_bytes":147}
+{"program":"tests/corpus/run/ListElementEq.beni","entry":"ListElementEq","files":19,"raw_bytes":72715,"gzip_bytes":16843,"brotli_bytes":14235,"derived_bytes":3600,"derived_functions":25,"net_raw_bytes":3924,"net_gzip_bytes":444,"net_brotli_bytes":397}
+{"program":"tests/corpus/run/ListFold.beni","entry":"ListFold","files":19,"raw_bytes":70250,"gzip_bytes":16694,"brotli_bytes":14080,"derived_bytes":3240,"derived_functions":23,"net_raw_bytes":1459,"net_gzip_bytes":295,"net_brotli_bytes":242}
+{"program":"tests/corpus/run/ListMemberEq.beni","entry":"ListMemberEq","files":19,"raw_bytes":70425,"gzip_bytes":16685,"brotli_bytes":14086,"derived_bytes":3597,"derived_functions":25,"net_raw_bytes":1634,"net_gzip_bytes":286,"net_brotli_bytes":248}
+{"program":"tests/corpus/run/ListOrdering.beni","entry":"ListOrdering","files":19,"raw_bytes":71601,"gzip_bytes":16803,"brotli_bytes":14208,"derived_bytes":3408,"derived_functions":24,"net_raw_bytes":2810,"net_gzip_bytes":404,"net_brotli_bytes":370}
+{"program":"tests/corpus/run/MaybeResult.beni","entry":"MaybeResult","files":19,"raw_bytes":70181,"gzip_bytes":16687,"brotli_bytes":14073,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1390,"net_gzip_bytes":288,"net_brotli_bytes":235}
+{"program":"tests/corpus/run/MethodCalls.beni","entry":"MethodCalls","files":19,"raw_bytes":70387,"gzip_bytes":16696,"brotli_bytes":14106,"derived_bytes":3309,"derived_functions":24,"net_raw_bytes":1596,"net_gzip_bytes":297,"net_brotli_bytes":268}
+{"program":"tests/corpus/run/NestedConstrainedCalls.beni","entry":"NestedConstrainedCalls","files":19,"raw_bytes":71119,"gzip_bytes":16822,"brotli_bytes":14172,"derived_bytes":3828,"derived_functions":26,"net_raw_bytes":2328,"net_gzip_bytes":423,"net_brotli_bytes":334}
+{"program":"tests/corpus/run/NestedConstrainedListKeys.beni","entry":"NestedConstrainedListKeys","files":19,"raw_bytes":74993,"gzip_bytes":17379,"brotli_bytes":14686,"derived_bytes":4006,"derived_functions":27,"net_raw_bytes":6202,"net_gzip_bytes":980,"net_brotli_bytes":848}
+{"program":"tests/corpus/run/NumericEdge.beni","entry":"NumericEdge","files":19,"raw_bytes":70198,"gzip_bytes":16636,"brotli_bytes":14037,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1407,"net_gzip_bytes":237,"net_brotli_bytes":199}
+{"program":"tests/corpus/run/OrderValues.beni","entry":"OrderValues","files":19,"raw_bytes":70404,"gzip_bytes":16664,"brotli_bytes":14063,"derived_bytes":3516,"derived_functions":25,"net_raw_bytes":1613,"net_gzip_bytes":265,"net_brotli_bytes":225}
+{"program":"tests/corpus/run/OrderingPrimitives.beni","entry":"OrderingPrimitives","files":19,"raw_bytes":70133,"gzip_bytes":16632,"brotli_bytes":14002,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1342,"net_gzip_bytes":233,"net_brotli_bytes":164}
+{"program":"tests/corpus/run/ParametricEquality.beni","entry":"ParametricEquality","files":19,"raw_bytes":73192,"gzip_bytes":16864,"brotli_bytes":14241,"derived_bytes":3628,"derived_functions":27,"net_raw_bytes":4401,"net_gzip_bytes":465,"net_brotli_bytes":403}
+{"program":"tests/corpus/run/Patterns.beni","entry":"Patterns","files":19,"raw_bytes":70419,"gzip_bytes":16758,"brotli_bytes":14161,"derived_bytes":3476,"derived_functions":26,"net_raw_bytes":1628,"net_gzip_bytes":359,"net_brotli_bytes":323}
+{"program":"tests/corpus/run/PipeFirst.beni","entry":"PipeFirst","files":19,"raw_bytes":69801,"gzip_bytes":16601,"brotli_bytes":13994,"derived_bytes":3241,"derived_functions":23,"net_raw_bytes":1010,"net_gzip_bytes":202,"net_brotli_bytes":156}
+{"program":"tests/corpus/run/PipeNestedGrouping.beni","entry":"PipeNestedGrouping","files":19,"raw_bytes":69639,"gzip_bytes":16541,"brotli_bytes":13961,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":848,"net_gzip_bytes":142,"net_brotli_bytes":123}
+{"program":"tests/corpus/run/Placeholder.beni","entry":"Placeholder","files":19,"raw_bytes":69897,"gzip_bytes":16624,"brotli_bytes":14016,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1106,"net_gzip_bytes":225,"net_brotli_bytes":178}
+{"program":"tests/corpus/run/PlaceholderAndBind.beni","entry":"PlaceholderAndBind","files":19,"raw_bytes":70221,"gzip_bytes":16713,"brotli_bytes":14100,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1430,"net_gzip_bytes":314,"net_brotli_bytes":262}
+{"program":"tests/corpus/run/PrimitiveEvidence.beni","entry":"PrimitiveEvidence","files":19,"raw_bytes":70884,"gzip_bytes":16712,"brotli_bytes":14118,"derived_bytes":3615,"derived_functions":26,"net_raw_bytes":2093,"net_gzip_bytes":313,"net_brotli_bytes":280}
+{"program":"tests/corpus/run/Records.beni","entry":"Records","files":19,"raw_bytes":69444,"gzip_bytes":16565,"brotli_bytes":13998,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":653,"net_gzip_bytes":166,"net_brotli_bytes":160}
+{"program":"tests/corpus/run/Recursion.beni","entry":"Recursion","files":19,"raw_bytes":69824,"gzip_bytes":16626,"brotli_bytes":14042,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1033,"net_gzip_bytes":227,"net_brotli_bytes":204}
+{"program":"tests/corpus/run/RestOfBlockBind.beni","entry":"RestOfBlockBind","files":19,"raw_bytes":69824,"gzip_bytes":16667,"brotli_bytes":14063,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1033,"net_gzip_bytes":268,"net_brotli_bytes":225}
+{"program":"tests/corpus/run/SaturatedCalls.beni","entry":"SaturatedCalls","files":19,"raw_bytes":70623,"gzip_bytes":16786,"brotli_bytes":14179,"derived_bytes":3450,"derived_functions":24,"net_raw_bytes":1832,"net_gzip_bytes":387,"net_brotli_bytes":341}
+{"program":"tests/corpus/run/ShortCircuit.beni","entry":"ShortCircuit","files":19,"raw_bytes":69212,"gzip_bytes":16509,"brotli_bytes":13923,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":421,"net_gzip_bytes":110,"net_brotli_bytes":85}
+{"program":"tests/corpus/run/Sorting.beni","entry":"Sorting","files":19,"raw_bytes":69993,"gzip_bytes":16673,"brotli_bytes":14089,"derived_bytes":3239,"derived_functions":23,"net_raw_bytes":1202,"net_gzip_bytes":274,"net_brotli_bytes":251}
+{"program":"tests/corpus/run/StringBuilding.beni","entry":"StringBuilding","files":19,"raw_bytes":69629,"gzip_bytes":16619,"brotli_bytes":14004,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":838,"net_gzip_bytes":220,"net_brotli_bytes":166}
+{"program":"tests/corpus/run/StringOps.beni","entry":"StringOps","files":19,"raw_bytes":69927,"gzip_bytes":16693,"brotli_bytes":14079,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1136,"net_gzip_bytes":294,"net_brotli_bytes":241}
+{"program":"tests/corpus/run/StringOrdering.beni","entry":"StringOrdering","files":19,"raw_bytes":70085,"gzip_bytes":16676,"brotli_bytes":14061,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1294,"net_gzip_bytes":277,"net_brotli_bytes":223}
+{"program":"tests/corpus/run/Tuples.beni","entry":"Tuples","files":19,"raw_bytes":69979,"gzip_bytes":16712,"brotli_bytes":14087,"derived_bytes":3159,"derived_functions":22,"net_raw_bytes":1188,"net_gzip_bytes":313,"net_brotli_bytes":249}
+{"program":"tests/corpus/run/TwoSlotsNested.beni","entry":"TwoSlotsNested","files":19,"raw_bytes":75897,"gzip_bytes":17197,"brotli_bytes":14466,"derived_bytes":3389,"derived_functions":25,"net_raw_bytes":7106,"net_gzip_bytes":798,"net_brotli_bytes":628}
+{"program":"tests/corpus/run/TypeDispatch.beni","entry":"TypeDispatch","files":19,"raw_bytes":69641,"gzip_bytes":16600,"brotli_bytes":14020,"derived_bytes":3311,"derived_functions":24,"net_raw_bytes":850,"net_gzip_bytes":201,"net_brotli_bytes":182}
+{"program":"tests/corpus/run/UserEqInsideParametric.beni","entry":"UserEqInsideParametric","files":19,"raw_bytes":70845,"gzip_bytes":16735,"brotli_bytes":14104,"derived_bytes":3627,"derived_functions":25,"net_raw_bytes":2054,"net_gzip_bytes":336,"net_brotli_bytes":266}
+{"program":"tests/corpus/run/UserEqInsideRecord.beni","entry":"UserEqInsideRecord","files":19,"raw_bytes":70800,"gzip_bytes":16745,"brotli_bytes":14146,"derived_bytes":3778,"derived_functions":27,"net_raw_bytes":2009,"net_gzip_bytes":346,"net_brotli_bytes":308}
+{"program":"tests/corpus/run/UserEquality.beni","entry":"UserEquality","files":19,"raw_bytes":69710,"gzip_bytes":16609,"brotli_bytes":13997,"derived_bytes":3551,"derived_functions":24,"net_raw_bytes":919,"net_gzip_bytes":210,"net_brotli_bytes":159}
+{"total":true,"programs":60,"files":1147,"raw_bytes":227782,"gzip_bytes":44800,"brotli_bytes":37996,"floor_raw_bytes":68791,"floor_gzip_bytes":16399,"floor_brotli_bytes":13838,"net_raw_bytes":158991,"net_gzip_bytes":28401,"net_brotli_bytes":24158,"gross_raw_bytes":4286451,"gross_gzip_bytes":1012341,"gross_brotli_bytes":854438,"derived_bytes":213610,"derived_functions":1472}
+```
+
+`bench/size.mjs` reports one `derived_bytes` figure. §11 and A.38 require the
+per-method split to be reported as **two numbers and never a sum**, so it was
+taken separately over the floor tree — the embedded `core/` that every program
+ships — by the same statement walk and the same `hand_written` exclusion list:
+
+```
+$ node -e '<the size.mjs statement walk, split by the $eq / $compare / $order segment>'
+{"floor":true,"eq_functions":8,"eq_bytes":1050,"compare_functions":9,"compare_bytes":1889,"order_tables":5,"order_bytes":244}
+eq:      Basics$Never$$eq Dict$Dict$$eq Dict$NColor$$eq Dict$Tree$$eq Maybe$Maybe$$eq Result$Result$$eq Set$Set$$eq Set$eq$unit
+compare: Basics$Never$$compare Basics$Order$$compare Dict$Dict$$compare Dict$NColor$$compare Dict$Tree$$compare Maybe$Maybe$$compare Result$Result$$compare Set$Set$$compare Set$compare$unit
+order:   Basics$Order$$order Dict$NColor$$order Dict$Tree$$order Maybe$Maybe$$order Result$Result$$order
+```
+
+Reading.
+
+**The floor grew 3 577 raw bytes, 5.5 %**: 68 791 against C0's 65 214, on two
+fewer files (19 against 21 — `Dict.String` and `Dict.Int` are gone). Gzip 16 399
+against 15 410 (+6.4 %), brotli 13 838 against 12 932 (+7.0 %). Of that,
+**3 159 bytes are derived functions** — so eager derivation is 4.6 % of
+everything an empty program ships, and the rest of the growth is `core/List.js`
+gaining two loops and `core/Dict.beni` gaining seventeen `where` clauses,
+against the two deleted modules.
+
+**Derived `eq` is 1 050 bytes over 8 functions; derived `compare` is 1 889
+bytes over 9, plus 244 bytes of `$$order` table over 5.** Three numbers, not
+one: `compare` costs roughly **1.8× what `eq` costs per function** (210 bytes
+against 131), which is §9's lexicographic-with-early-return shape against a
+chain of `&&`, and the `$order` tables are the part that has no `eq`
+counterpart at all.
+
+**Six of the twenty-two floor functions are new with this slice and nothing
+calls them**: `Dict$Dict$$eq`, `Dict$Dict$$compare`, `Set$Set$$eq`,
+`Set$Set$$compare`, `Set$eq$unit`, `Set$compare$unit`. `Dict k v` held a
+comparator before §5.3, so §6.3.1 step 4's function-payload exclusion gave it
+neither method and `Set t = Set (Dict t ())` inherited the exclusion; taking
+the comparator out of the data structure made both derivable. That is eager
+derivation plus no DCE, priced: **removing one function-typed field from one
+core type added six functions to every program in the language.**
+
+**Per program the net cost is small and uniform.** `run/Sorting` is 1 202 net
+raw against C0's 982, `run/LibraryArgumentOrder` 2 586 against 1 734 (it gained
+three lines of source), and the median `run/` fixture moves by a few hundred
+bytes of which nearly all is the shared floor. `bench/corpus` is 121 965 raw
+against 109 053 (+11.8 %) with **11 659 derived bytes over 59 functions** — the
+first real measurement of "grows per type × method" (report 18 §1.5), and it
+says the answer is **~198 bytes per derived function** before any minification
+or elimination.
+
+**The totals cover 60 programs, and the three that are new are the only lines
+that moved.** This block was re-taken after the S6b review fixes, and every
+program the earlier run measured comes out byte-identical — same raw, gzip,
+brotli, `derived_bytes` and `derived_functions` — so the checker fixes changed
+no output except where a program nests a constrained call, which is what they
+are about. The three additions are `run/Dictionaries` (995 net raw), which the
+earlier run could not build at all and which is why it covered 57,
+`run/NestedConstrainedCalls` (2 328) and `run/NestedConstrainedListKeys`
+(6 202). The last is the third largest net figure in the `run/` corpus, behind
+`TwoSlotsNested` (7 106) and `DerivedOrdering` (6 414), and for a related
+reason: nested evidence means a derived or foreign method per level, and this
+program has four such nestings over three element types.
+
+---
+
+### M5 — runtime of the emitted JavaScript, R1–R3 (C0 and C1 interleaved)
+
+`plans/static-dispatch-spike.md` §7 M5. `bench/runtime.mjs --variant=c0|c1`
+builds each `bench/runtime/<variant>/*.beni` program and runs it under Node,
+20 runs, best / median / ns per op net of a measured process floor. The C0 side
+is the S1 binary at `c870e9a` against `bench/runtime/c0/`, which is untouched;
+the C1 side is this tree against the new `bench/runtime/c1/`. **Two rounds,
+interleaved C1→C0→C1→C0**, all four inside three minutes.
+
+`checksum` is printed by the program itself, and **all six lines of each
+program agree across both variants and both rounds** — `60000 288894`,
+`60000 18600000`, `4000 499313`. That is the assertion that C1 is the same
+three programs and not three new ones.
+
+**Load before:** ` 03:43:08 up 4 days, 10:24,  3 users,  load average: 0.36, 0.84, 0.92`
+
+```
+$ direnv exec . node bench/runtime.mjs --variant=c1 --runs=20 --beni=/tmp/rf/bin/beni --program=R1DictString --program=R2DictRecord --program=R3Sorting
+{"program":"R1DictString","variant":"c1","runs":20,"ops":120000,"floor_ms":35.79,"best_ms":315.99,"median_ms":334.81,"ns_per_op":2335,"checksum":"60000 288894"}
+{"program":"R2DictRecord","variant":"c1","runs":20,"ops":120000,"floor_ms":35.8,"best_ms":143.68,"median_ms":146.72,"ns_per_op":899,"checksum":"60000 18600000"}
+{"program":"R3Sorting","variant":"c1","runs":20,"ops":120000,"floor_ms":36.08,"best_ms":184.54,"median_ms":187.48,"ns_per_op":1237.2,"checksum":"4000 499313"}
+
+$ (in ../beni-s1) node bench/runtime.mjs --variant=c0 --runs=20 --beni=…/beni-s1/zig-out/bin/beni --program=R1DictString --program=R2DictRecord --program=R3Sorting
+{"program":"R1DictString","variant":"c0","runs":20,"ops":120000,"floor_ms":35.2,"best_ms":317.85,"median_ms":336.13,"ns_per_op":2355.4,"checksum":"60000 288894"}
+{"program":"R2DictRecord","variant":"c0","runs":20,"ops":120000,"floor_ms":35.29,"best_ms":141.29,"median_ms":147.93,"ns_per_op":883.3,"checksum":"60000 18600000"}
+{"program":"R3Sorting","variant":"c0","runs":20,"ops":120000,"floor_ms":35.84,"best_ms":181.6,"median_ms":185.85,"ns_per_op":1214.7,"checksum":"4000 499313"}
+
+$ (round two, same two commands)
+{"program":"R1DictString","variant":"c1","runs":20,"ops":120000,"floor_ms":34.94,"best_ms":318.99,"median_ms":332.92,"ns_per_op":2367.1,"checksum":"60000 288894"}
+{"program":"R2DictRecord","variant":"c1","runs":20,"ops":120000,"floor_ms":35.57,"best_ms":143.48,"median_ms":146.22,"ns_per_op":899.3,"checksum":"60000 18600000"}
+{"program":"R3Sorting","variant":"c1","runs":20,"ops":120000,"floor_ms":35.81,"best_ms":185.55,"median_ms":190.34,"ns_per_op":1247.8,"checksum":"4000 499313"}
+{"program":"R1DictString","variant":"c0","runs":20,"ops":120000,"floor_ms":36.12,"best_ms":320.36,"median_ms":341.34,"ns_per_op":2368.7,"checksum":"60000 288894"}
+{"program":"R2DictRecord","variant":"c0","runs":20,"ops":120000,"floor_ms":35.22,"best_ms":144.72,"median_ms":149.85,"ns_per_op":912.5,"checksum":"60000 18600000"}
+{"program":"R3Sorting","variant":"c0","runs":20,"ops":120000,"floor_ms":35.41,"best_ms":183.53,"median_ms":186.66,"ns_per_op":1234.3,"checksum":"4000 499313"}
+```
+
+| program | C0 ns/op (r1, r2) | C1 ns/op (r1, r2) | Δ |
+|---|---|---|---|
+| R1 `Dict` over `String` keys | 2 355.4, 2 368.7 | 2 335.0, 2 367.1 | −0.9 %, −0.1 % |
+| R2 `Dict` over a record key | 883.3, 912.5 | 899.0, 899.3 | +1.8 %, −1.4 % |
+| R3 `List.sort` ×3 | 1 214.7, 1 234.3 | 1 237.2, 1 247.8 | +1.9 %, +1.1 % |
+
+**The answer is that it costs nothing measurable.** Every difference is inside
+the round-to-round spread of the same variant (C0's own R2 moves 3.3 % between
+rounds, C1's R1 1.4 %), and the sign flips between rounds on two of the three.
+An evidence parameter passed as a hidden first argument and called directly is
+**the same work V8 was already doing** when the comparator was an explicit
+parameter — which is what §8.1 predicted and what R5's evidence-forwarding row
+already suggested on C0.
+
+**R2 carries one deliberate difference, and it is not dispatch's.**
+`c1/R2DictRecord.beni` reads the point's fields through a `weight : Point -> Int`
+helper where `c0/R2DictRecord.beni` writes `(p.x + p.y)` inline, because the
+inline form does not compile: the field access makes the lambda's parameter an
+open record while the `where k.compare` obligation is still waiting, and §6.3
+refuses an open record. So R2's C1 side pays one extra direct call per insert
+— 60 000 of them — and still lands inside the noise. §11 carries the row.
+
+**R2 also swaps a hand-written comparator for a derived one**, which was the
+whole point of the program: `comparePoint` is deleted and the record shape's
+own `compare` (§9.2) is what `Dict.insert` receives. The two are the same
+lexicographic comparison in the same field order and, on this evidence, the
+same speed.
+
+---
+
+### M8 — ergonomics (C1 side), recounted by grep on the finished tree
+
+`plans/static-dispatch-spike.md` §7 M8. The C0 column is the hand count at
+`:448`; this column is a **re-count on the tree as it now stands**, not a
+restatement of the plan's prediction.
+
+| Measure | C0 (`:448`) | C1, counted | Verdict |
+|---|---:|---:|---|
+| call sites passing an ordering function to a `Dict`/`Set`/`List` builder | 17 | **0** | met |
+| declarations taking a comparator parameter | 15 | **4** | met |
+| `Dict.String` / `Dict.Int` import lines | 7 | **0** | met |
+| `Dict.String` / `Dict.Int` use sites | 17 | **0** | met |
+| core modules deleted | — | **2** | met |
+
+The four surviving comparator parameters are the ones rule 2 of the rewrite
+plan protects — they order by something that is **not** the type's own order:
+
+```
+$ grep -rnE '\(\w+, ?\w+ -> Order\)' --include='*.beni' core bench/corpus tests/corpus
+core/List.beni:433:pub sortWith : List a, (a, a -> Order) -> List a
+core/List.beni:477:mergeWith : List a, List a, (a, a -> Order) -> List a
+core/List.beni:482:mergeWithHelp : List a, List a, List a, (a, a -> Order) -> List a
+bench/corpus/DictExtra.beni:144:pub toSortedList : Dict String v, (v, v -> Order) -> List ( String, v )
+
+$ grep -rn 'Dict\.String\|Dict\.Int' --include='*.beni' core bench/corpus tests/corpus | wc -l
+0
+```
+
+The headline for report 19 therefore stands as the rewrite plan predicted it:
+**17 ordering arguments → 0, and 15 comparator parameters → 4.** The
+"modules declaring ≥ 2 nominal types" row is unchanged at 21 and is not
+re-counted here: no module gained or lost a type.

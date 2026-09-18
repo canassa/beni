@@ -1966,8 +1966,8 @@ test "--core-root without the operators' functions is reported, not emitted as u
     try w.write("mycore/Basics.js", "export {};\n");
     try w.write("mycore/String.beni", "pub equatable foreign type String\n");
     try w.write("mycore/String.js", "export {};\n");
-    // `List` is here for the second half below: it is the one type whose
-    // `eq` still routes to `core/Basics.js`'s structural walk after S5.
+    // `List` is here because a core root has to have one; nothing below
+    // compares a list any more (§5.2 gives `List` its own `pub foreign eq`).
     try w.write("mycore/List.beni", "pub equatable foreign type List a\n");
     try w.write("mycore/List.js", "export {};\n");
     try w.write("myplat/beni.json",
@@ -2016,14 +2016,17 @@ test "--core-root without the operators' functions is reported, not emitted as u
     // └─────────────────────────────────────────┘
     // `String.compare` is one of the two values the diagnostic names;
     // `Basics.eq` is the other, and it is a DIFFERENT path to the same
-    // report. After S5 a custom type compares through its OWN derived body
-    // (§9.4), so the one comparison still routed to `core/Basics.js`'s `eq`
-    // is the one no module writes a function for: a `List`, whose `eq` is a
-    // `foreign type`'s and waits for §5.2 (A.55, A.60). Its elements here
-    // are `Int`s, so the structural walk answers exactly what the table
-    // asks, the bridge takes it, and a core root without `eq` has nothing
-    // to call. Without this half the `Basics` branch of `missingCoreValue`
-    // is unexercised.
+    // report. After S6b a type compares through its OWN derived body (§9.4)
+    // and `List a` has a `pub foreign eq` of its own (§5.2), so the ONE
+    // position still answered by `core/Basics.js`'s walk is the one A.66
+    // names: a slot no use ever pins. `None == None` never inhabits `Opt`'s
+    // parameter, so the part is `err`, and `partEq`'s `err` arm reaches for
+    // `Basics.eq` — which a core root without one cannot supply. Without
+    // this half the `Basics` branch of `missingCoreValue` is unexercised.
+    //
+    // (This used to be `xs == ys` on a `List Int` through A.51's bridge.
+    // That bridge is gone with S6b: a derived target with no body is now a
+    // table bug and says so.)
     //
     // Both declarations name `Basics.eq` and neither names `Basics.neq`:
     // §8.3 makes `a /= b` the NEGATION of the method, `!eq(a, b)`, so the
@@ -2032,14 +2035,19 @@ test "--core-root without the operators' functions is reported, not emitted as u
         \\import Prog exposing (Program)
         \\
         \\
-        \\pub same : List Int, List Int -> Bool
-        \\same a b =
-        \\    a == b
+        \\pub type Opt a
+        \\    = Some a
+        \\    | None
         \\
         \\
-        \\pub differ : List Int, List Int -> Bool
-        \\differ a b =
-        \\    a /= b
+        \\pub same : Bool
+        \\same =
+        \\    None == None
+        \\
+        \\
+        \\pub differ : Bool
+        \\differ =
+        \\    None /= None
         \\
         \\
         \\main : Program
@@ -2391,18 +2399,22 @@ test "dump --stage=types prints every declaration's scheme and every local's typ
     , r.stdout);
 }
 
-test "a derived compare compiles, and List's is still refused" {
-    // The two ends of §9's `compare`, after S6a emits every derived body.
+test "a derived compare compiles, and so does List's" {
+    // The two ends of §9's `compare`, both closed: S6a emits every derived
+    // body and S6b gives `List a` the `pub foreign compare` of §5.2.
     //
     // `List a` is the one type in core with no shape to derive from — no
-    // constructors — and §5.2 gives it a `pub foreign compare` in S6b.
-    // Until then `a < b` on a `List Int` is refused; what this pins is
-    // WHICH half refuses it.
+    // constructors — so it was the last program in the language that `<`
+    // refused. It refused in the CHECKER and not in the backend, which is
+    // the half worth remembering: a `foreign type` with no `pub compare`
+    // fails §3.3's "shape supports it" test (A.50, A.54), so
+    // `unknown_method` arrived before a dispatch site was ever written.
+    // A `pub foreign compare … where a.compare` answers §3.3 at step 1, so
+    // both halves are gone at once.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
         \\import Node exposing (Program)
-        \\import String
         \\
         \\
         \\shorter : List Int, List Int -> Bool
@@ -2412,32 +2424,32 @@ test "a derived compare compiles, and List's is still refused" {
         \\
         \\main : Program
         \\main =
-        \\    Node.printLines [ String.fromInt 1 ]
+        \\    Node.printLines
+        \\        [ if shorter [ 1, 2 ] [ 1, 2, 3 ] then
+        \\            "True"
+        \\
+        \\          else
+        \\            "False"
+        \\        ]
         \\
     );
 
-    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
-
-    // And the refusal is the CHECKER's, not the backend's, which is the
-    // finding worth pinning: a `foreign type` with no `pub compare` fails
-    // §3.3's "shape supports it" test (A.50, A.54), so `unknown_method`
-    // arrives before a dispatch site is ever written. After S6a there is
-    // therefore no program left that reaches the backend's own
-    // "derived `compare`" refusal — the two halves close from opposite
-    // ends, and S6b's `pub foreign compare` removes both at once.
-    try testing.expectEqual(@as(u8, 1), built.exit_code);
-    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
-    const d = built.diagnostics[0];
-    try testing.expectEqual(diagnostic.Code.unknown_method, d.code);
-    try testing.expectEqual(diagnostic.Severity.@"error", d.severity);
-    try testing.expect(std.mem.indexOf(u8, d.message, "`List` has no method called `compare`") != null);
-    // A refused build writes nothing (backend.md §2).
-    try testing.expect(!w.exists("out/Main.mjs"));
+    const listed = try w.buildAndRun(&.{"Main.beni"});
+    try testing.expectEqual(@as(u8, 0), listed.build.exit_code);
+    try testing.expectEqual(@as(usize, 0), listed.build.diagnostics.len);
+    // A shorter list is `LT` against a longer one with the same prefix
+    // (§9.5), which is Elm's order.
+    try testing.expectEqualStrings("True\n", listed.program.?.stdout);
+    // And the call is `List$compare` with the ELEMENT's comparator as the
+    // hidden first argument (§8.1, A.7) — not a structural walk, and not
+    // the JavaScript `<`.
+    const main_mjs = try w.read("out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, main_mjs, "List$compare(") != null);
 
     // A DERIVED `compare` — what this test asserted was refused before S6a
-    // — now compiles and runs. `T`'s own `compare` is written from its
-    // shape (§9.4) and `<` is that function's answer tested against "LT"
-    // (§8.3).
+    // — compiles and runs the same way. `T`'s own `compare` is written from
+    // its shape (§9.4) and `<` is that function's answer tested against
+    // "LT" (§8.3).
     try w.write("Main.beni",
         \\import Node exposing (Program)
         \\

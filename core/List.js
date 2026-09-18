@@ -55,3 +55,25 @@ export const eq = (m0, xs, ys) => {
   }
   return a.$ === b.$;
 };
+
+// `compare`, §9.5's other loop, and the same contract as `eq` above: the
+// evidence parameter comes FIRST, nothing checks the count at build time,
+// and `tests/corpus/run/ListOrdering.beni` is what catches it if it moves.
+//
+// An `Order` is a bare tag string, because a type whose constructors are
+// all nullary has no payload to carry (backend.md §4). The first pair that
+// differs decides; if the loop runs off the end of one list with everything
+// before it equal, the SHORTER list is `LT`, which is Elm's order and the
+// one `List.sort` on a `List (List Int)` has to produce.
+export const compare = (m0, xs, ys) => {
+  let a = xs;
+  let b = ys;
+  while (a.$ === 1 && b.$ === 1) {
+    const o = m0(a.a, b.a);
+    if (o !== "EQ") return o;
+    a = a.b;
+    b = b.b;
+  }
+  if (a.$ === b.$) return "EQ";
+  return a.$ === 0 ? "LT" : "GT";
+};

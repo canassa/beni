@@ -206,8 +206,9 @@ fn embedCorpus(b: *std.Build, dir: []const u8) *std.Build.Module {
 /// `boundary.md` §4, which `beni build` copies next to the module that
 /// imports it. Same mechanism as `embedCorpus` — the files are copied next to
 /// a generated manifest so `@embedFile` resolves inside the generated module
-/// — but the paths keep their subdirectories, because `core/Dict/Int.beni` is
-/// the module `Dict.Int` and the path IS the name.
+/// — but the paths keep their subdirectories, because a `core/Dict/Int.beni`
+/// would be the module `Dict.Int` and the path IS the name. Nothing under
+/// `core/` is nested today; the mechanism outlives the modules that used it.
 fn embedCore(b: *std.Build, dir: []const u8) *std.Build.Module {
     var paths: std.ArrayList([]const u8) = .empty;
     var assets: std.ArrayList([]const u8) = .empty;
@@ -223,7 +224,8 @@ fn embedCore(b: *std.Build, dir: []const u8) *std.Build.Module {
         \\//! boundary.md §4).
         \\
         \\pub const File = struct {
-        \\    /// Relative to `dir`, with `/` separators: `Dict/Int.beni`.
+        \\    /// Relative to `dir`, with `/` separators: `Dict/Int.beni`
+        \\    /// would be one, were any core module nested.
         \\    rel: []const u8,
         \\    source: [:0]const u8,
         \\};

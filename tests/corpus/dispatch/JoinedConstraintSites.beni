@@ -1,0 +1,66 @@
+-- dispatch: a constraint that a REBUILT set superseded answers its sites
+-- ONCE (`docs/design/static-dispatch-spike.md` §6.2 Rule U1, §6.3, A.57,
+-- A.75).
+--
+-- A constraint set is a RANGE of an append-only table and is never edited
+-- (§6.1 invariant 2), so joining two sets, or two constraints of one name,
+-- copies the inputs to fresh indices and leaves the old ones behind. The
+-- obligations already registered still name the old indices and
+-- `resolved_methods` is keyed on the index, so before A.75 the input and
+-- its replacement were two live obligations over one site list: each
+-- called `emitSites` over the sites it held and wrote the same
+-- `(inst, evidence_index)` twice, which is one argument passed twice at a
+-- call whose slot count the emitter checks (`Lower.evidenceShapeOk`).
+--
+-- It takes two calls of a constrained function whose receiver variables
+-- unify AFTER both were instantiated, which is what NESTING one inside the
+-- other does:
+--
+--   - `nested` is the join of two constraints of ONE name. `put`'s `k` is
+--     fresh at each call, and the inner call's result `Box k1` meets the
+--     outer call's parameter `Box k2` only once both are in the table, so
+--     Rule U1 joins `k1.compare` and `k2.compare` on the surviving root.
+--     Both `site 46 0` and `site 48 0` were written twice.
+--   - `annotated` is the control: the annotation pins `k` to `String`
+--     before the nesting is checked, so each constraint is discharged and
+--     marked before any join happens, and its two sites (59, 61) were
+--     right all along.
+--   - `twoNames` is the same defect through the OTHER half of a rebuild.
+--     `put`'s `k.compare` and `tag`'s `k.eq` are different names on
+--     different variables, so nothing is joined — the union simply COPIES
+--     both onto a fresh range, and a copy strands its input exactly as a
+--     join does. Both `site 70 0` and `site 72 0` were written twice.
+pub type Box k
+    = Box k
+
+
+pub put : Box k, k -> Box k
+    where k.compare : k, k -> Order
+put box _ =
+    box
+
+
+pub tag : Box k, k -> Box k
+    where k.eq : k, k -> Bool
+tag box _ =
+    box
+
+
+pub size : Box k -> Int
+size _ =
+    1
+
+
+pub nested : Int
+nested =
+    size (put (put (Box "z") "a") "b")
+
+
+pub annotated : Box String
+annotated =
+    put (put (Box "z") "a") "b"
+
+
+pub twoNames : Int
+twoNames =
+    size (tag (put (Box "z") "a") "b")

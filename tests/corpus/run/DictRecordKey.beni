@@ -1,0 +1,51 @@
+-- A dictionary keyed by a RECORD, which has no `compare` of its own to
+-- name: the key's ordering is derived, and the derived function is what
+-- `Dict`'s `where k.compare : k, k -> Order` receives as evidence
+-- (`docs/design/static-dispatch-spike.md` §5.3, §8.1, §9.2).
+--
+-- Before the rewrite this program could not be written at all without
+-- spelling the comparator out by hand — a lambda that picked the fields
+-- apart in the right order and chained two `compare` calls — and passing it
+-- to every `Dict` call in the file. Here it is inferred once at each call
+-- and threaded as the hidden first argument of §8.1.
+--
+-- The KEY ORDER is the assertion, and it is deliberately not the order the
+-- fields are written in: §9.2 keys a derived record `compare` on the field
+-- names sorted by TEXT, so `index` is compared before `section` even though
+-- the literal writes `section` first. The three keys therefore come back
+-- `a#1, b#1, a#2` and not `a#1, a#2, b#1`. A derived `compare` that walked
+-- the fields in source order would print the second, and nothing in
+-- `emit/` can tell the two apart.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Slot =
+    { section : String, index : Int }
+
+
+label : Slot -> String
+label slot =
+    slot.section ++ "#" ++ String.fromInt slot.index
+
+
+main : Program
+main =
+    let
+        table =
+            Dict.fromList
+                [ ( { section = "b", index = 1 }, "beta-one" )
+                , ( { section = "a", index = 2 }, "alpha-two" )
+                , ( { section = "a", index = 1 }, "alpha-one" )
+                ]
+    in
+    Node.printLines
+        [ String.fromInt (Dict.size table)
+        , String.join (List.map (Dict.keys table) label) ","
+        , String.join (Dict.values table) ","
+        , Maybe.withDefault (Dict.get table { section = "a", index = 2 }) "?"
+        , Maybe.withDefault (Dict.get table { section = "z", index = 0 }) "?"
+        , String.fromInt (Dict.size (Dict.remove table { section = "b", index = 1 }))
+        ]

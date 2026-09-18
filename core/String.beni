@@ -7,9 +7,10 @@
 --! "split this string on commas", and a function argument comes last, so a
 --! lambda you write inline is the final argument.
 --!
---! Strings are not ordered by `<` (`fast-compiler.md` §3.1); `compare` below
---! is the replacement, and it is what you hand to `Dict.String` or
---! `List.sortWith`.
+--! `compare` below is `String`'s own `compare` method, so `<`, `>`, `<=`
+--! and `>=` on two strings call it and `"a" < "b"` means what it reads as.
+--! It stays callable by name as well, which is what you want when you are
+--! ordering by something other than the string itself.
 --!
 --! The `foreign` declarations here are the ones that reach into the
 --! platform's own string type, and nothing more:

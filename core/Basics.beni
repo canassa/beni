@@ -13,10 +13,15 @@
 --! types and what the code generator emits.
 --!
 --! Two things Elm has are gone (`fast-compiler.md` §3.1): `comparable` and
---! `compappend`. `<`, `>`, `<=` and `>=` are numbers only; to order anything
---! else, pass an ordering function, or use `String.compare`.
+--! `compappend`. What replaced them is the `compare` method: `<`, `>`, `<=`
+--! and `>=` call the `compare` of whatever type they are given, so they
+--! order a `String`, a record or a list as readily as a number, and `==`
+--! calls that type's `eq` the same way.
 --!
---! The `foreign` declarations here, and why each one cannot be beni:
+--! The `foreign` declarations here, and why each one cannot be beni. The
+--! operators no longer route through `eq`, `neq`, `lt`, `gt`, `le` or `ge`
+--! — they dispatch on the receiver's type instead — but all seven, `compare`
+--! included, stay declared, exported and callable by name:
 --!
 --!   - `add` `sub` `mul` `fdiv` `idiv` `pow` — machine arithmetic.
 --!   - `lt` `gt` `le` `ge` — machine comparison.

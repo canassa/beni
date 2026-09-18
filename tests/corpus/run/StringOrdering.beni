@@ -1,0 +1,47 @@
+-- `String` ordering, end to end: the operator, `List.sort`, and a
+-- `Dict String v` built with no comparator at all
+-- (`docs/design/static-dispatch-spike.md` §3.2, §5.3, §5.5, A.26).
+--
+-- `"a" < "b"` was `unknown_method` before the well-known table gave
+-- `String` a `compare`, and the replacement for it was `String.compare a b`
+-- written out by hand. The first three lines are the operator; the fourth
+-- is the one that matters for §3.2's row, because `<` on JavaScript strings
+-- is UTF-16 code-unit order and `core/String.js`'s `compare` is Unicode
+-- scalar order. They disagree for an astral character, and `List.sort` has
+-- to take the function's answer like the operator does — so `\u{10000}`
+-- sorts ABOVE `\u{E000}` here, which JavaScript's own `Array.sort` would
+-- not do.
+--
+-- The last two lines are §5.3: `Dict.empty` is a constant and `Dict.insert`
+-- carries `where k.compare`, so a dictionary keyed by `String` needs no
+-- `String.compare` argument threaded into it and `Dict.keys` still comes
+-- back in key order.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    let
+        fruit =
+            Dict.fromList [ ( "pear", 2 ), ( "apple", 1 ), ( "fig", 3 ) ]
+    in
+    Node.printLines
+        [ show ("a" < "b")
+        , show ("b" >= "a")
+        , show ("a" < "A")
+        , String.join (List.sort [ "pear", "apple", "fig" ]) ","
+        , String.join (List.sort [ "\u{10000}", "\u{E000}", "a" ]) ","
+        , String.join (Dict.keys fruit) ","
+        , String.fromInt (Maybe.withDefault (Dict.get fruit "apple") 0)
+        ]

@@ -1,0 +1,116 @@
+-- dispatch: a joined constraint instantiates its callee's `where` clause
+-- ONCE PER INSTRUCTION it answers, not once for the first
+-- (`docs/design/static-dispatch-spike.md` §6.2 Rule U1, §7.2, A.68, A.75).
+--
+-- A.75 made one constraint answer sites on SEVERAL instructions: nesting
+-- two calls of a constrained function over a `let`-bound seed leaves both
+-- receivers flex until the inner call's result meets the outer call's
+-- parameter, and Rule U1 then joins the two `k.compare` constraints onto
+-- one. Resolving that one constraint instantiates the callee — and the
+-- callee has a `where` clause of its own, whose slot is numbered by a
+-- cursor the INSTRUCTION owns (§7.2). Instantiating it against a single
+-- `origin` therefore gave ONE instruction a nested slot and left every
+-- other one an argument short: `nestedList` dumped `site 73 0 ext List
+-- compare` with no `site 73 1` beside the outer call's `site 76 0` and
+-- `site 76 1`, and `Lower.evidenceShapeOk` stopped the build with
+-- `internal` — a compiler bug reported about a program whose only fault
+-- is that it nests twice over a constrained element.
+--
+-- Four routes reach it, and the golden shows a CHILD site under each
+-- instruction of all four:
+--
+--   - `nestedList` is the `ext` arm: `k` is `List Int`, whose `compare`
+--     is `core/List`'s `pub foreign compare … where a.compare` (§5.2).
+--   - `nestedDict` is the same shape through `Dict.insert`, which is
+--     where a user meets it — a `Dict` keyed on a list, built by two
+--     inserts over a `let`-bound `Dict.empty`. `annotatedDict` beside it
+--     is the control, and it is why the `Dict.size` wrapper is there: an
+--     annotation pins `k` to `List Int` before the nesting is checked, so
+--     each constraint is discharged and marked before any join happens
+--     and that form was right all along.
+--   - `nestedOwn` is the `top` arm: `Pair` is declared HERE and this
+--     module's own `pub compare … where a.compare` answers for it, so the
+--     nested slot is instantiated from a local scheme rather than an
+--     interface.
+--   - `nestedEq` is the same defect under the other well-known name.
+--
+-- `dispatch/JoinedConstraintSites` is the flat case — one join, no callee
+-- of the callee — and `run/NestedConstrainedListKeys` executes all four.
+import Dict exposing (Dict)
+
+
+pub type Box k
+    = Empty
+    | Box k
+
+
+pub put : Box k, k -> Box k
+    where k.compare : k, k -> Order
+put box _ =
+    box
+
+
+pub tag : Box k, k -> Box k
+    where k.eq : k, k -> Bool
+tag box _ =
+    box
+
+
+pub type Pair a
+    = Pair a a
+
+
+pub compare : Pair a, Pair a -> Order
+    where a.compare : a, a -> Order
+compare (Pair x _) (Pair y _) =
+    x.compare y
+
+
+pub size : Box k -> Int
+size _ =
+    1
+
+
+pub nestedList : Int
+nestedList =
+    let
+        seed =
+            Empty
+    in
+    size (put (put seed [ 1, 2 ]) [ 3 ])
+
+
+pub nestedDict : Int
+nestedDict =
+    let
+        seed =
+            Dict.empty
+    in
+    Dict.size (Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b")
+
+
+pub annotatedDict : Dict (List Int) String
+annotatedDict =
+    let
+        seed =
+            Dict.empty
+    in
+    Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b"
+
+
+pub nestedOwn : Int
+nestedOwn =
+    let
+        seed =
+            Empty
+    in
+    size (put (put seed (Pair 1 2)) (Pair 3 4))
+
+
+pub nestedEq : Int
+nestedEq =
+    let
+        seed =
+            Empty
+    in
+    size (tag (tag seed [ 1, 2 ]) [ 3 ])
