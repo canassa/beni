@@ -1310,3 +1310,143 @@ test "600 modules check identically at every worker count, twice each" {
     // different number here and not merely as a different order.
     try testing.expectEqual(@as(usize, (leaves + 2) / 3), first_count);
 }
+
+// ---------------------------------------------------------------------------
+// Degenerate constraint accumulation
+// ---------------------------------------------------------------------------
+
+/// The static-dispatch counters `--self-profile` writes at exit, for one run
+/// (`src/Profile.zig`). They are the only deterministic window the binary
+/// gives on the solver's bookkeeping, and a complexity claim needs a counter
+/// rather than a clock.
+const ChainCounters = struct {
+    obligations: u64 = 0,
+    constraints_created: u64 = 0,
+    constraints_merged: u64 = 0,
+    constraints_deferred: u64 = 0,
+    constraints_discharged: u64 = 0,
+    constraints_promoted: u64 = 0,
+};
+
+/// Check a chain of `links` unannotated declarations, each adding one method
+/// to the set the one before it inferred, and return the counters.
+///
+/// `f1 x = ( x.m1 x, x )` and `fk x = ( x.mk x, f(k-1) x )`: no operator, no
+/// literal and no import, so `--core-root=nocore` holds and every number
+/// below is this file's alone.
+fn constraintChainCounters(w: *World, links: usize, trace: []const u8, source_path: []const u8) !ChainCounters {
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    for (1..links + 1) |i| {
+        if (i != 1) try out.writeAll("\n");
+        try out.print("pub f{d} x =\n", .{i});
+        if (i == 1) {
+            try out.writeAll("    ( x.m1 x, x )\n");
+        } else {
+            try out.print("    ( x.m{d} x, f{d} x )\n", .{ i, i - 1 });
+        }
+    }
+    try w.write(source_path, source.written());
+    try w.write("nocore/PLACEHOLDER", "");
+
+    const flag = try std.fmt.allocPrint(testing.allocator, "--self-profile={s}", .{trace});
+    defer testing.allocator.free(flag);
+    const r = try w.run(&.{ "check", flag, "--core-root=nocore", "--jobs=1", source_path });
+    if (r.term != .exited) {
+        std.debug.print("did not exit normally: {any}\n", .{r.term});
+        return error.CompilerDiedFromSignal;
+    }
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualStrings("", r.stderr);
+
+    const Event = struct {
+        name: []const u8,
+        ph: []const u8,
+        args: struct {
+            obligations: ?u64 = null,
+            constraints_created: ?u64 = null,
+            constraints_merged: ?u64 = null,
+            constraints_deferred: ?u64 = null,
+            constraints_discharged: ?u64 = null,
+            constraints_promoted: ?u64 = null,
+        },
+    };
+    const text = try w.read(trace);
+    const parsed = try std.json.parseFromSlice(
+        struct { traceEvents: []Event },
+        testing.allocator,
+        text,
+        .{ .ignore_unknown_fields = true },
+    );
+    defer parsed.deinit();
+    var counters: ChainCounters = .{};
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        inline for (@typeInfo(ChainCounters).@"struct".fields) |f| {
+            if (std.mem.eql(u8, e.name, f.name)) @field(counters, f.name) = @field(e.args, f.name).?;
+        }
+    }
+    return counters;
+}
+
+test "an unannotated constraint chain costs one merge per link, not one per constraint" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Link k of an unannotated chain accumulates k method constraints, so a
+    // chain of n carries n(n+1)/2 of them and that quadratic is the FEATURE
+    // (`plans/static-dispatch-spike.md` §7 M2). What is not the feature is a
+    // third factor on top of it: folding each deferred constraint back onto
+    // its own set rebuilt the whole set, so link k copied k constraints k
+    // times and `beni check` went CUBIC in time and memory — 51 ms / 53 MB
+    // at n = 100, 3.1 s / 3.3 GB at n = 400, and at n = 1000 a process
+    // killed at 29 GiB with no diagnostic (A.81).
+    //
+    // The counter says it and a clock does not: `constraints_merged` counts
+    // set rebuilds, and it is one per link when the fold is a no-op and
+    // n(n+1)/2 + n - 1 when it is not. At n = 64 that is 63 against 2 143.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const links = 64;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try constraintChainCounters(&w, links, "one.json", "Chain.beni");
+    const two = try constraintChainCounters(&w, 2 * links, "two.json", "Longer.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Every counter, because the cheap way to make the merges linear is to
+    // stop registering the obligations — and then `beni` would emit calls
+    // an evidence argument short (A.57). The obligations, the deferrals and
+    // the promotions must stay at n(n+1)/2 exactly while the merges go
+    // linear. Nothing is discharged: no receiver is ever a concrete type.
+    try testing.expectEqualDeep(ChainCounters{
+        .obligations = links * (links + 1) / 2,
+        .constraints_created = links,
+        .constraints_merged = links - 1,
+        .constraints_deferred = links * (links + 1) / 2,
+        .constraints_discharged = 0,
+        .constraints_promoted = links * (links + 1) / 2,
+    }, one);
+    try testing.expectEqualDeep(ChainCounters{
+        .obligations = 2 * links * (2 * links + 1) / 2,
+        .constraints_created = 2 * links,
+        .constraints_merged = 2 * links - 1,
+        .constraints_deferred = 2 * links * (2 * links + 1) / 2,
+        .constraints_discharged = 0,
+        .constraints_promoted = 2 * links * (2 * links + 1) / 2,
+    }, two);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Doubling the chain doubles the rebuilds and no more. Stated as a
+    // growth as well as a value, because the two literals above could both
+    // be re-blessed to whatever the compiler does today while this cannot.
+    try testing.expectEqual(one.constraints_merged * 2 + 1, two.constraints_merged);
+}

@@ -3644,3 +3644,33 @@ unpinned. The fixture has to keep the constraint off the caller's own interface 
 what is left to answer. *Why it is an error and not an invented answer:* A.66's line — `eq` and
 `compare` mean the same thing at every type and the bridge answers them, a user's method does not.
 Fixture: `check/bad/TypeDispatchUnpinnedResult`.
+
+**A.81 — folding a constraint back onto the set it is already in costs nothing** (§6.3, §7 M2,
+A.57, A.75) [S8-fix]. §6.3's `flex` row ends every method obligation whose receiver is still a
+variable by re-attaching its constraint to that variable, and `attachConstraint` saw a name its set
+already carried and took the JOIN path: the whole set copied onto a fresh range, `joinConstraint`
+merging a site list with itself, and `adopt` redirecting every index to the copy of itself. The
+result of all of it is the set it started from. That is O(set) per obligation, and the unannotated
+chain of §7 M2 is the input built to walk into it — link k defers k constraints over a set of k, so
+`beni check` was **cubic in the chain's length in time and in memory**: 51 ms / 53 MB at n = 100,
+382 ms / 403 MB at n = 200, 3 114 ms / 3 307 MB at n = 400, and at n = 1000 a process killed at
+29.2 GiB with no diagnostic where `master`'s checker does the same 3 008 lines in 0.25 s. The guard
+is three comparisons at the top of `attachConstraint` — the caller's index lies inside the root's
+current range and carries `c`'s name — and it returns that index untouched. *Why the quadratic
+UNDER it is not a defect:* link k of an unannotated chain genuinely accumulates k constraints, so
+the chain carries n(n+1)/2 of them and `constraints_promoted` has read n(n+1)/2 since S3; the fix
+takes n = 1000 from killed to 440 ms and n = 2000 to 1.96 s, which is at or under the S3 row
+(483 ms and 2 061 ms) for the first time. *Where the bisect points and why it is not the whole
+story:* `git bisect` lands on S6b (`5dfc082`) because A.75's redirect map made each of those futile
+rebuilds ~3.3x more expensive, but the same three n at `8081b5f` — the commit before it — read
+21 / 132 / 935 ms, which is already cubic. **S6b multiplied the constant; it did not introduce the
+exponent**, and A.75 is not the cause and is not weakened: nothing moves, so nothing needs
+redirecting, and the `answered` bookkeeping `adopt` carries across a rebuild is carried across
+nothing. A.76 is untouched — the loop it added is in `methodOnApp`, which a chain never reaches
+(`constraints_discharged` is 0 on this input). *The counters say it and a clock does not:*
+`constraints_merged` counts set rebuilds and was n(n+1)/2 + n - 1 on the chain, against n - 1 after
+the fix, while `obligations`, `constraints_deferred` and `constraints_promoted` are unchanged to the
+unit at every n — which is the assertion that no obligation was dropped to buy the speed (A.57).
+Fixture: the `abuse_test.zig` scenario "an unannotated constraint chain costs one merge per link,
+not one per constraint", which reads those counters back out of `--self-profile` at 64 links and
+128 and pins all six.

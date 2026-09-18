@@ -2029,6 +2029,20 @@ pub const Solver = struct {
     /// minted for this call and is not in the table yet. Either way the
     /// answer is the index `c`'s sites live at afterwards, which is what
     /// the obligation for them must name (A.75).
+    ///
+    /// **Folding a constraint back onto the set it is already in is a
+    /// no-op, and finding that out must not cost the set.** Every deferred
+    /// constraint comes back through §6.3's `flex` row once per obligation,
+    /// and by then `at` — followed through A.75's redirects — is the very
+    /// slot the constraint occupies: the join below would copy the whole
+    /// set to rebuild it byte for byte, and `adopt` would then redirect
+    /// every index to itself. That is O(set) per obligation, which made the
+    /// UNANNOTATED CHAIN cubic in its length rather than quadratic: link k
+    /// defers k constraints over a set of k, so n = 400 spent 3.1 s and
+    /// 3.3 GB where n = 100 spent 51 ms and 53 MB, and n = 1000 reached
+    /// 29 GiB and was killed. The quadratic underneath is the feature
+    /// (`constraints_promoted` is n(n+1)/2 on this input and always was);
+    /// the third factor was bookkeeping (A.81).
     fn attachConstraint(
         s: *Solver,
         root: Var,
@@ -2043,6 +2057,14 @@ pub const Solver = struct {
             st.constraint_sets.items[existing_set.int()].start
         else
             0;
+
+        // Already this set's slot for that name: there is nothing to join,
+        // nothing to copy and nothing to redirect. The name is compared as
+        // well as the range, so a redirect that landed somewhere else falls
+        // through to the rebuild instead of being trusted.
+        if (at) |x| {
+            if (x >= old_base and x - old_base < n and st.constraints.items[x].name == c.name) return x;
+        }
 
         // The common case by far: a name this variable does not carry yet.
         if (st.findConstraint(flags.constraints, c.name) == null) {
