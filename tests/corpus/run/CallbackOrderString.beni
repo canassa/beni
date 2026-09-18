@@ -1,0 +1,41 @@
+-- run: `String`'s callback functions walk the string left to right
+-- (`checker.md` Appendix B). `map` and `filter` are `List.map`/`List.filter`
+-- over `toList`, so they inherited the back-to-front order and are fixed by
+-- the same change; `foldl`, `any` and `all` were already left to right, and
+-- this pins them so that a later rewrite of `String` cannot lose it.
+-- `String.foldr` belongs to `CallbackOrderFoldr` and is right to left there.
+import Char
+import Node exposing (Program)
+import String
+
+
+noteChar : String, Char -> Char
+noteChar tag ch =
+    Debug.log ch tag
+
+
+main : Program
+main =
+    let
+        mapped =
+            String.map "abc" (\ch -> noteChar "String.map" ch)
+
+        kept =
+            String.filter "abc" (\ch -> noteChar "String.filter" ch /= 'b')
+
+        folded =
+            String.foldl "abc" 0 (\ch acc -> Char.toCode (noteChar "String.foldl" ch) + acc)
+
+        searched =
+            String.any "abc" (\ch -> noteChar "String.any" ch == 'b')
+
+        every =
+            String.all "abc" (\ch -> noteChar "String.all" ch /= 'c')
+    in
+    Node.printLines
+        [ mapped
+        , kept
+        , String.fromInt folded
+        , Debug.toString searched
+        , Debug.toString every
+        ]

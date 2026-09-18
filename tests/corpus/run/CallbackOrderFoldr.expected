@@ -1,0 +1,32 @@
+List.foldl: 1
+List.foldl: 2
+List.foldl: 3
+List.foldr: 3
+List.foldr: 2
+List.foldr: 1
+String.foldl: "a"
+String.foldl: "b"
+String.foldl: "c"
+String.foldr: "c"
+String.foldr: "b"
+String.foldr: "a"
+Dict.foldl: 1
+Dict.foldl: 2
+Dict.foldl: 3
+Dict.foldr: 3
+Dict.foldr: 2
+Dict.foldr: 1
+Set.foldl: 1
+Set.foldl: 2
+Set.foldl: 3
+Set.foldr: 3
+Set.foldr: 2
+Set.foldr: 1
+[3,2,1]
+[1,2,3]
+cba
+abc
+[3,2,1]
+[1,2,3]
+[3,2,1]
+[1,2,3]

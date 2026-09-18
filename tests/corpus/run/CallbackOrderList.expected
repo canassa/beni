@@ -1,0 +1,39 @@
+foldl: 1
+foldl: 2
+foldl: 3
+map: 1
+map: 2
+map: 3
+indexedMap: 1
+indexedMap: 2
+indexedMap: 3
+filter: 1
+filter: 2
+filter: 3
+filterMap: 1
+filterMap: 2
+filterMap: 3
+concatMap: 1
+concatMap: 2
+concatMap: 3
+map2: 1
+map2: 2
+map2: 3
+partition: 1
+partition: 2
+partition: 3
+any: 1
+any: 2
+all: 1
+all: 2
+all: 3
+6
+[10,20,30]
+[1,3,5]
+[1,3]
+[100,300]
+[1,1,2,2,3,3]
+[11,22,33]
+{ a = [1,3], b = [2] }
+true
+false

@@ -79,6 +79,11 @@ foldl xs acc func =
 --|
 --|     foldr [ 1, 2, 3 ] [] cons == [ 1, 2, 3 ]
 --|
+--| This is the one function here that calls its callback back to front, and
+--| that is its contract rather than an accident of how it is written
+--| (`checker.md` Appendix B): the last element is handed to `func` first.
+--| Nothing built on it may inherit that order — see `map`.
+--|
 --| Reverse, then fold from the left — exact for this argument order, and
 --| `reverse` is itself a `foldl`, so there is no cycle. It costs one extra
 --| list of n cells per call, which is not a regression: the JavaScript this
@@ -161,9 +166,16 @@ rangeHelp lo hi list =
 --| Apply a function to every element of a list.
 --|
 --|     map [ 1, 4, 9 ] negate == [ -1, -4, -9 ]
+--|
+--| `func` is called on the first element first (`checker.md` Appendix B).
+--| That is why this is `foldl` and then `reverse` rather than the one-liner
+--| `foldr xs [] (\x acc -> func x :: acc)`: `foldr` is reverse-then-`foldl`,
+--| so the short spelling walks the list backwards and hands `func` the last
+--| element first. The cost is the same either way — one intermediate list of
+--| n cells — and this one puts it after the calls instead of before them.
 pub map : List a, (a -> b) -> List b
 map xs func =
-    foldr xs [] (\x acc -> func x :: acc)
+    reverse (foldl xs [] (\x acc -> func x :: acc))
 
 
 --| Same as `map` but the function is also given the index of each element,
@@ -178,16 +190,21 @@ indexedMap xs func =
 --| Keep the elements that pass the test.
 --|
 --|     filter [ 1, 2, 3, 4 ] isEven == [ 2, 4 ]
+--|
+--| `isGood` is asked about the first element first, so this is a `foldl` and
+--| a `reverse` rather than a `foldr` (see `map`).
 pub filter : List a, (a -> Bool) -> List a
 filter list isGood =
-    foldr
-        list
-        []
-        (\x xs ->
-            if isGood x then
-                x :: xs
-            else
-                xs
+    reverse
+        (foldl
+            list
+            []
+            (\x xs ->
+                if isGood x then
+                    x :: xs
+                else
+                    xs
+            )
         )
 
 
@@ -195,9 +212,12 @@ filter list isGood =
 --| lists, filter out the empty ones in the same pass that unwraps the rest.
 --|
 --|     filterMap [ [ 1, 2 ], [], [ 3 ] ] head == [ 1, 3 ]
+--|
+--| `func` sees the first element first, so this is a `foldl` and a `reverse`
+--| rather than a `foldr` (see `map`).
 pub filterMap : List a, (a -> Maybe b) -> List b
 filterMap xs func =
-    foldr xs [] (\value rest -> maybeCons value rest func)
+    reverse (foldl xs [] (\value rest -> maybeCons value rest func))
 
 
 maybeCons : a, List b, (a -> Maybe b) -> List b
@@ -598,6 +618,9 @@ drop list n =
 --| not.
 --|
 --|     partition [ 1, 2, 3, 4 ] isEven == ( [ 2, 4 ], [ 1, 3 ] )
+--|
+--| `pred` is asked about the first element first, so this is a `foldl` and a
+--| `reverse` of each half rather than a `foldr` (see `map`).
 pub partition : List a, (a -> Bool) -> ( List a, List a )
 partition list pred =
     let
@@ -606,8 +629,11 @@ partition list pred =
                 ( x :: trues, falses )
             else
                 ( trues, x :: falses )
+
+        ( kept, dropped ) =
+            foldl list ( [], [] ) step
     in
-    foldr list ( [], [] ) step
+    ( reverse kept, reverse dropped )
 
 
 --| Decompose a list of tuples into a tuple of lists.

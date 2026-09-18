@@ -1,0 +1,77 @@
+-- run: every `List` function that takes a callback and builds its result in
+-- list order calls that callback front to back, first element first
+-- (`checker.md` Appendix B). `Debug.log` is the only instrument that can see
+-- the order today, and it is exactly the instrument effects will replace:
+-- under `transparent-effects-proposal.md` §5 this order decides which request
+-- is sent first.
+--
+-- `map`, `filter`, `filterMap`, `concatMap` and `partition` were all built on
+-- `foldr`, which is reverse-then-`foldl`, so all five ran their callback back
+-- to front. The trailing lines pin the RESULTS too, because the fix must not
+-- move a single element.
+import List
+import Node exposing (Program)
+import String
+
+
+note : String, Int -> Int
+note tag n =
+    Debug.log n tag
+
+
+xs : List Int
+xs =
+    [ 1, 2, 3 ]
+
+
+main : Program
+main =
+    let
+        folded =
+            List.foldl xs 0 (\x acc -> note "foldl" x + acc)
+
+        mapped =
+            List.map xs (\x -> note "map" x * 10)
+
+        indexed =
+            List.indexedMap xs (\at x -> note "indexedMap" x + at)
+
+        kept =
+            List.filter xs (\x -> note "filter" x /= 2)
+
+        picked =
+            List.filterMap xs
+                (\x ->
+                    if note "filterMap" x == 2 then
+                        Nothing
+                    else
+                        Just (x * 100)
+                )
+
+        flattened =
+            List.concatMap xs (\x -> [ note "concatMap" x, x ])
+
+        zipped =
+            List.map2 xs [ 10, 20, 30 ] (\x y -> note "map2" x + y)
+
+        split =
+            List.partition xs (\x -> note "partition" x /= 2)
+
+        searched =
+            List.any xs (\x -> note "any" x == 2)
+
+        every =
+            List.all xs (\x -> note "all" x /= 3)
+    in
+    Node.printLines
+        [ String.fromInt folded
+        , Debug.toString mapped
+        , Debug.toString indexed
+        , Debug.toString kept
+        , Debug.toString picked
+        , Debug.toString flattened
+        , Debug.toString zipped
+        , Debug.toString split
+        , Debug.toString searched
+        , Debug.toString every
+        ]

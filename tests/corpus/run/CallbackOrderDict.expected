@@ -1,0 +1,42 @@
+Dict.map: 1
+Dict.map: 2
+Dict.map: 3
+Dict.map: 4
+Dict.map: 5
+Dict.filter: 1
+Dict.filter: 2
+Dict.filter: 3
+Dict.filter: 4
+Dict.filter: 5
+Dict.partition: 1
+Dict.partition: 2
+Dict.partition: 3
+Dict.partition: 4
+Dict.partition: 5
+merge.left: 1
+merge.both: 2
+merge.right: 3
+merge.left: 4
+merge.right: 5
+Set.map: 1
+Set.map: 2
+Set.map: 3
+Set.map: 4
+Set.map: 5
+Set.filter: 1
+Set.filter: 2
+Set.filter: 3
+Set.filter: 4
+Set.filter: 5
+Set.partition: 1
+Set.partition: 2
+Set.partition: 3
+Set.partition: 4
+Set.partition: 5
+[{ a = 1, b = 11 },{ a = 2, b = 22 },{ a = 3, b = 33 },{ a = 4, b = 44 },{ a = 5, b = 55 }]
+[1,2,4,5]
+{ a = [1,2,4,5], b = [3] }
+15
+[10,20,30,40,50]
+[1,2,4,5]
+{ a = [1,2,4,5], b = [3] }

@@ -474,6 +474,9 @@ merge leftDict rightDict initialResult leftStep bothStep rightStep =
 --| the ordering, are untouched.
 --|
 --|     map (fromList [ ( "a", 1 ) ]) (\_ value -> value + 1)
+--|
+--| `func` is called in ascending key order (`checker.md` Appendix B), which
+--| is what `mapTree` binds its three pieces in order to get.
 pub map : Dict k a, (k, a -> b) -> Dict k b
 map (Dict tree) func =
     Dict (mapTree tree func)
@@ -486,7 +489,17 @@ mapTree tree func =
             Leaf
 
         Node color key value left right ->
-            Node color key (func key value) (mapTree left func) (mapTree right func)
+            let
+                newLeft =
+                    mapTree left func
+
+                newValue =
+                    func key value
+
+                newRight =
+                    mapTree right func
+            in
+            Node color key newValue newLeft newRight
 
 
 --| Fold over the key-value pairs in a dictionary from lowest key to highest

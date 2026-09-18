@@ -38,6 +38,8 @@ one commit each, nothing force-pushed, no history rewritten.
 | 12 | Effects: spec pass **done** `fe3cf8e` — `plans/effects-plan.md`; **eight owner decisions before any code** | waiting on owner | E1/E2 could go straight to master once decided |
 | 13 | **M1 miscompile**: refutable pattern in a parameter | **done** `59e47f3` | type-directed (usefulness as a one-row match), `let` widened; my first decision (syntactic rule) broke 40 sites and was withdrawn |
 | 14 | `check/Exhaustive.zig` reports nothing when `pattern_budget` runs out, so a non-exhaustive `case` can reach a default-free tree | todo | exit-0 hole documented in `backend.md` §7; make budget exhaustion a diagnostic |
-| 15 | Core callback order: `List.map` ran right-to-left | in flight (main checkout) | found by the effects plan |
+| 15 | Core callback order: `List.map` ran right-to-left | **done** | found by the effects plan |
 | 16 | `?` codegen (`Lower.zig`), the last real M3b gap | todo | after DCE lands (same file) |
 | 17 | `Int32`: absent from the language, listed in `backend.md` §1/§4 | **owner decision** | add `core/Int32` + a `language.md` paragraph, or strike the rows |
+| 18 | `language.md` has no evaluation-order section: "strict, left to right, in source order" lives only in the effects proposal §5; promote it, and say `let` bindings evaluate in written order (core's `Dict.mapTree`/`foldlTree` depend on it; M3c inlining must preserve it) | todo | docs + a `run/` fixture pinning argument and `let` order |
+| 19 | `List.sortBy` calls its key function more than once per element, in merge order | todo | harmless while pure; under effects a hazard — decorate-sort-undecorate, measure allocation |

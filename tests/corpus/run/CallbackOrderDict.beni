@@ -1,0 +1,82 @@
+-- run: `Dict` and `Set` walk in ascending key order when they call a
+-- callback (`checker.md` Appendix B), and `Dict.merge` visits the union of
+-- both key sets lowest first.
+--
+-- `Dict.map` was the second defect, independent of `List.map`'s: `mapTree`
+-- built `Node color key (func key value) (mapTree left) (mapTree right)`, and
+-- a constructor's arguments are evaluated left to right, so the callback ran
+-- in PRE-ORDER over the red-black tree — 4, 2, 1, 3, 5 for the keys 1..5 —
+-- which is neither ascending nor any order a caller could name. `Set.map` was
+-- the third, inherited from `List.map` through `toList`.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import Set exposing (Set)
+import String
+
+
+note : String, Int -> Int
+note tag n =
+    Debug.log n tag
+
+
+-- Five keys, so the tree has a shape: a pre-order walk and an ascending walk
+-- of a three-key dictionary can coincide, and of this one they cannot.
+numbers : Dict Int Int
+numbers =
+    Dict.fromList [ ( 1, 10 ), ( 2, 20 ), ( 3, 30 ), ( 4, 40 ), ( 5, 50 ) ]
+
+
+members : Set Int
+members =
+    Set.fromList [ 1, 2, 3, 4, 5 ]
+
+
+leftSide : Dict Int Int
+leftSide =
+    Dict.fromList [ ( 1, 10 ), ( 2, 20 ), ( 4, 40 ) ]
+
+
+rightSide : Dict Int Int
+rightSide =
+    Dict.fromList [ ( 2, 22 ), ( 3, 33 ), ( 5, 55 ) ]
+
+
+main : Program
+main =
+    let
+        mapped =
+            Dict.map numbers (\k value -> note "Dict.map" k + value)
+
+        kept =
+            Dict.filter numbers (\k _ -> note "Dict.filter" k /= 3)
+
+        ( splitKept, splitDropped ) =
+            Dict.partition numbers (\k _ -> note "Dict.partition" k /= 3)
+
+        merged =
+            Dict.merge leftSide
+                rightSide
+                0
+                (\k _ acc -> note "merge.left" k + acc)
+                (\k _ _ acc -> note "merge.both" k + acc)
+                (\k _ acc -> note "merge.right" k + acc)
+
+        setMapped =
+            Set.map members (\v -> note "Set.map" v * 10)
+
+        setKept =
+            Set.filter members (\v -> note "Set.filter" v /= 3)
+
+        ( setSplitKept, setSplitDropped ) =
+            Set.partition members (\v -> note "Set.partition" v /= 3)
+    in
+    Node.printLines
+        [ Debug.toString (Dict.toList mapped)
+        , Debug.toString (Dict.keys kept)
+        , Debug.toString ( Dict.keys splitKept, Dict.keys splitDropped )
+        , String.fromInt merged
+        , Debug.toString (Set.toList setMapped)
+        , Debug.toString (Set.toList setKept)
+        , Debug.toString ( Set.toList setSplitKept, Set.toList setSplitDropped )
+        ]

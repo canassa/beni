@@ -739,6 +739,21 @@ and function last**, so that `|>` inserts at the first argument and `<-` reaches
 variable's first occurrence is an argument of a type application, the `equatable` marker is
 attached by parenthesising it: `List (equatable a)`.
 
+**Callback order is part of every signature below, not an implementation detail.** The language is
+strict and evaluates left to right in source order (`transparent-effects-proposal.md` §5), so the
+order in which a core function calls the function it was given is observable — through `Debug.log`
+today, and through which request is sent first once effects land. The rule: **a core function that
+takes a callback and produces its result in the order of its subject calls that callback in that
+same order, first element first** — `List.foldl`, `map`, `indexedMap`, `filter`, `filterMap`,
+`concatMap`, `map2`…`map5`, `partition`, `any` and `all` (both with early exit) walk the list front
+to back; `Dict` and `Set`'s `map`, `filter`, `partition`, `foldl` and `merge` walk in ascending key
+order; `String`'s walk the string left to right; `Maybe` and `Result`'s callbacks are called at most
+once. **`foldr` is the exception, by definition**: `List.foldr`, `String.foldr`, `Dict.foldr` and
+`Set.foldr` call their callback last element first, and that — not an accident of an implementation
+built on `reverse` — is their contract. The sort family is outside the rule: `sort`, `sortBy` and
+`sortWith` call their comparator (and `sortBy` its key function) in whatever order the merge sort
+reaches, as many times as it needs, and that order is deliberately unspecified.
+
 - `Basics`: `equatable foreign type Int`, `Float`; `type Bool = True | False`; `type Order =
   LT | EQ | GT`; `type Never = JustOneMore Never`; the arithmetic, comparison and logic foreigns
   with `number` annotations (`add : number, number -> number`, `lt : number, number -> Bool`, …);
