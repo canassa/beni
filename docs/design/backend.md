@@ -241,10 +241,247 @@ default arm for a well-typed match** and the absence of one is not a latent cras
 
 ## 8. Tail calls
 
-Direct self-recursion lowers to `label: while (true)` with parameters reassigned through temporaries.
-**This is mandatory, not an optimisation**: no JavaScript engine reliably provides tail-call
-elimination, V8 shipped and reverted it, SpiderMonkey never shipped it. Mutual recursion remains a
-real stack frame and ships as a stated limitation (§14 question 5).
+Direct self-recursion lowers to `label: while (true)`. **This is mandatory, not an optimisation**:
+no JavaScript engine reliably provides tail-call elimination, V8 shipped and reverted it,
+SpiderMonkey never shipped it. Node 24 overflows a two-parameter accumulator between 5 000 and
+10 000 frames, which is why `bench/runtime/c1/R1DictString.beni:11` builds its key list out of two
+small ranges and `core/List.beni:71,77` still say `foreign`. Mutual recursion remains a real stack
+frame and ships as a stated limitation (§14 question 5).
+
+`JsIr` has held `while_true`, `break_stmt`, `continue_stmt` and `assign_stmt` since M3a
+(`src/js/JsIr.zig:141`) and the printer already emits them (`src/js/Print.zig:284`); what M3b adds
+is the lowering.
+
+### What a tail call is
+
+Over `Bir`, a **tail position** of a function is its body; every branch body of a `case` in tail
+position — which covers `if` and `?`, both of which are a `case` by the time the backend sees them
+(`language.md` §8, §4); and the `in` body of a `let` in tail position. Nothing else is: not an
+operand, not an argument, not a `let`'s bound value, not a lambda body, not the left of a `|>` (a
+pipe is a call before the backend sees it, §6), not the operand of `?`. Parentheses do not exist in
+`Bir`, so looking through them is free.
+
+A **tail self-call** is a `call` instruction in tail position whose callee is, syntactically, the
+reference that names the function being lowered — a `top` for a declaration, a `local` for a
+`let`-bound one — with argument count and evidence count equal to that function's own. Both
+equalities hold by construction (calls are saturated, `language.md` §6.7, and the checker fixes
+evidence at every site) and are still checked: a mismatch emits the ordinary call and no loop,
+because a wrong loop is a wrong answer and a missing one is only a deep stack.
+
+The cases, decided:
+
+| Case | Loops? | Why |
+|---|---|---|
+| `f x acc = … f x' acc'` | yes | the case this exists for |
+| `let go i acc = … go i' acc'` | **yes** | a `let_def` with parameters is already its own hoisted `function` (`src/js/Lower.zig:3135`), so the loop is contained; excluding it would leave the language's most natural loop idiom overflowing |
+| `f = \x -> … f x'` | **yes** | `f x = e` and `f = \x -> e` emit byte-identical JavaScript today, and two spellings of one program must not differ in stack behaviour. The rule is narrow: a `lambda` that is the **entire** body of a parameterless declaration or `let_def` inherits that name; a lambda anywhere else never does |
+| a self-call inside a nested lambda | no | a different function |
+| a self-call through an alias, or `f` passed as a value | no | the callee must be the name itself, in callee position |
+| the function's name shadowed | can't happen | shadowing is an error (`language.md` §7); `tests/corpus/parse/bad/ShadowingParam.beni` pins exactly a parameter named like a top-level value. The backend needs no scope test |
+| a function with both tail and non-tail self-calls | yes | only the tail ones become jumps. `core/Dict.beni:128`'s `sizeHelp (sizeHelp (n + 1) right) left` is this shape in core today |
+| a function with no tail self-call | no | its emitted shape is unchanged, byte for byte |
+
+### The emitted shape
+
+A parameter is **carried** when some tail self-call passes it anything other than a reference to
+that same parameter. A carried parameter is renamed to `$in$<i>` in the JavaScript parameter list,
+*i* being its position counting evidence first; the loop's first statement re-binds it to its
+ordinary name with a `const`. A parameter that is not carried keeps its ordinary name and gets
+neither slot nor copy. The test is syntactic and conservative — when in doubt, carried. A parameter
+whose pattern is not a bare variable already has a compiler-made name and a destructuring prologue
+(`functionOf`, `src/js/Lower.zig:745`); it takes a slot by the same rule, and **its destructuring
+statements go inside the loop**, because they read this iteration's value.
+
+```js
+const List$foldl = ($in$0, $in$1, func$3) => {
+  List$foldl: while (true) {
+    const xs$1 = $in$0, acc$2 = $in$1;
+    if (xs$1.$ === 0) {
+      return acc$2;
+    } else {
+      const x$4 = xs$1.a;
+      const rest$5 = xs$1.b;
+      $in$0 = rest$5;
+      $in$1 = func$3(x$4, acc$2);
+      continue List$foldl;
+    }
+  }
+};
+```
+
+```js
+const Main$count = ($in$0, $in$1) => {          // count n acc = if n <= 0 then acc
+  Main$count: while (true) {                     //              else count (n - 1) (acc + n)
+    const n$1 = $in$0, acc$2 = $in$1;
+    const $t$1 = n$1 <= 0;
+    if ($t$1) { return acc$2; } else {
+      $in$0 = Basics$sub(n$1, 1);
+      $in$1 = Basics$add(acc$2, n$1);
+      continue Main$count;
+    }
+  }
+};
+```
+
+**There are no temporaries, and that is the load-bearing invariant.** `$in$<i>` is written in the
+assignments and read in the prologue `const` and nowhere else; every argument expression is written
+against the ordinary names, which hold this iteration's values and are never assigned. So the
+assignments may run in parameter order with no `$temp$` in sight, and an argument swap is right by
+construction. Elm reassigns the parameters in place and needs one `$temp$` per argument per call
+site to do it; this scheme pays *n* copies once per function and *n* assignments per site against
+Elm's 2*n* per site, so it ties at one tail call and wins at two, and the prologue line is the most
+compressible kind of text there is (§9). *Alternative rejected: Elm's in-place scheme, fewer
+bindings and correct only with a capture analysis — see below.*
+
+Control leaves by `return` or by `continue <label>`; there is no `break` and nothing follows the
+loop. The `continue` is **labelled**, not bare, because §7's decision trees put a `switch` and a
+shared-branch loop between the jump and this one. The label is the function's own emitted name —
+`List$foldl`, `go$2` — input-derived, no counter, and it cannot collide because labels are a
+separate namespace from bindings. `$in$<i>` is positional for the same reason (CLAUDE.md rule 5),
+and two nested loops both using `$in$0` are safe precisely because neither ever reads the other's.
+The parameter list keeps its count and order, so `.length` is unchanged and §6's eta-expansion of
+evidence still sees the beni arity it expects.
+
+### Closures, and the one way to get this wrong
+
+This is the defect the design above exists to make impossible, and it exits 0.
+
+```elm
+build n acc =
+    if n <= 0 then acc else build (n - 1) ((\x -> x + n) :: acc)
+```
+
+Each iteration conses a closure over `n`. Reassign `n` in place and every closure reads the last
+value: `build 3 []`, then applying each to `0`, prints `0 0 0` instead of `1 2 3` — measured on Node
+24 from both shapes written by hand. The per-iteration `const` fixes it because a `while` body block
+gets a fresh declarative environment on every evaluation, so iteration *i*'s closures capture
+iteration *i*'s binding. The copies are therefore **unconditional**: the answer has to be right for
+lambdas, `f a _` placeholders, `<-` continuations and §6's eta-expanded evidence alike, and a
+capture analysis that is wrong once is wrong silently.
+
+`<-` is both at once. `let x <- f a in rest` is
+`f a (\x -> rest)` (`language.md` §6.7), so when `f` is the enclosing function the **call** is a
+tail self-call and loops, while the continuation is a different function and its body is **not** a
+tail position of the outer one. The continuation closes over this iteration's parameters, including
+over the callback parameter it is replacing — in-place reassignment there does not merely read a
+stale value, it builds a closure that calls itself.
+
+### Evidence parameters
+
+The hidden leading parameters of §4 and `static-dispatch-spike.md` §8.1 are **ordinary parameters of
+the loop**, carried or not by the same syntactic test. In the overwhelming case a self-call forwards
+`$m$k` unchanged, so no evidence parameter is carried, none is renamed and none is assigned:
+`countEq` compiles to `($m$0, $in$0, …)` with `$m$0` untouched.
+
+**"Evidence is loop-invariant" is not a rule, though, and stating it as one would be a miscompile.**
+Polymorphic recursion is typeable here with an annotation and is accepted today: a `where`-constrained
+declaration may call itself in tail position at a different instantiation, and the checker then writes
+a *different* evidence expression at that site rather than `$m$k` — verified against the M3a binary,
+where `f : List a, Int -> Int where a.eq` calling `f [ Red, Blue, Red ] (n - 1)` emitted
+`Main$f(Main$eq$prim, …)`. The syntactic test catches it: the argument is not a reference to `$m$0`,
+so `$m$0` is carried, gets a slot and is reassigned like anything else. A fixture is required.
+
+### What this needs from `case`, and what it does not need from §7
+
+**The loop does not depend on decision trees and must land before them.** What it does need is a
+statement form of tail-position lowering, because `continue` cannot appear in a ternary or in an
+IIFE and today's lowering produces both: `src/js/Lower.zig`'s `expr` returns an expression, and a
+`case` becomes either one `cond` node or a `let $t$n;` above an `if`/`else` chain whose arms assign
+it. Neither can hold a jump.
+
+M3b adds a second entry point beside `expr`: one that lowers an instruction **in tail position**
+directly into a statement list, emitting `return <expr>;` for everything that is not a tail
+self-call, an `if`/`else` chain with each arm lowered the same way for a `case`, the bindings
+followed by the body for a `let`, and the assignments plus `continue <label>` for a tail self-call.
+It is used **only inside a function that has at least one tail self-call**, so every existing
+`emit/` golden stays byte-identical and `a ? b : c` survives wherever it is still correct. §7 later
+replaces the `if`/`else` chain with a tree; the contract this section needs from it is only that a
+tail position be reachable as a statement.
+
+### `foldl` and `foldr` leave `foreign`
+
+The two of them are the reason this slice is scheduled where it is
+([`research/17-platform-primitives.md`](research/17-platform-primitives.md) §3,
+[`transparent-effects-proposal.md`](transparent-effects-proposal.md) §10 item 0): they are the only
+`foreign` values in the repository with a function type anywhere in them, and a JavaScript loop
+cannot park when its beni callback suspends. **They land in the same commit as the loop** — `core/`
+is compiled into the binary, so a beni `foldl` without the loop is a stack bomb in core itself.
+
+```elm
+pub foldl : List a, b, (a, b -> b) -> b
+foldl xs acc func =
+    case xs of
+        [] -> acc
+        x :: rest -> foldl rest (func x acc) func
+
+pub foldr : List a, b, (a, b -> b) -> b
+foldr xs acc func =
+    foldl (reverse xs) acc func
+```
+
+`foldr` is **reverse then `foldl`**, exact for this argument order, and `reverse` is
+`foldl xs [] cons`, so there is no cycle. It costs one extra list of *n* cells per call, which is
+not a regression: today's `core/List.js:30` already materialises the whole list into a JavaScript
+array to fold it backwards. *Alternative recorded and not taken: Elm's `foldrHelper` (read at
+`references/elm-core/src/List.elm:172` by report 17 §3.3; the submodule is not initialised here)
+unrolls four elements per frame and falls back past 500, avoiding the allocation for short lists at
+twenty-five lines and a magic number. Revisit if `List.map`, built on `foldr`, shows up in a
+`bench/runtime` profile.*
+
+`core/List.js` loses exactly the `foldl` and `foldr` exports, which `boundary.md` §4's second check
+— the sibling exports exactly the declared names, no more — is what enforces; the other two checks
+are unaffected. `core/List.beni`'s header list goes from five `foreign` declarations to three:
+`cons` stays (`::` desugars to it), and `eq`/`compare` stay for a reason the loop does not touch,
+that `List a` has no constructors for the compiler to walk. **Report 17 §3.4 counted 66 first-order
+`foreign` values and exactly two that are not; after this slice the count of higher-order `foreign`
+values in the repository is zero**, which discharges the first half of
+`transparent-effects-proposal.md` §10 item 0 in fact and not only on paper.
+
+**Everything else stays where it is**, and the list is short because most of it needs no source
+change at all. These are already beni self tail calls and simply stop overflowing: `List.rangeHelp`
+(`core/List.beni:145` — the one `bench/runtime/c1/*` works around), `repeatHelp` (`:128`), `any`
+(`:252`, and `all` and `member` through it), `takeHelp` (`:566`), `drop` (`:582`),
+`splitHalfHelp` (`:472`), `mergeWithHelp` (`:496`), `Dict.getHelp` (`:92`), `Dict.getMin` (`:314`),
+`Dict.sizeHelp` (`:128`, its outer call only). These stay real frames because their self-calls are
+not in tail position: `List.map2`–`map5`, `List.sortWith`, `Dict.insertHelp`, `removeHelp`,
+`removeMin`, `mapTree`, `foldlTree`, `foldrTree`. And `Basics.and`/`or` are `foreign` for
+short-circuiting (§4), `String`'s twenty-two for the native representation, not for this.
+
+### Fixtures
+
+Every one of these is `tests/corpus/run/` unless it says otherwise; §12's rule that behaviour is
+proved by running still holds, and the shape claim gets exactly one golden.
+
+| Fixture | Intent | Observable |
+|---|---|---|
+| `TailCallDeep` | **the fail-first one.** A two-parameter accumulator counting to 1 000 000 | `500000500000`; overflows the stack before the fix |
+| `TailCallSwap` | argument order: `swap a b n = … swap b a (n - 1)` | `2,1` then `1,2` for odd and even *n*; naive in-place assignment prints `2,2` |
+| `TailCallClosures` | the capture hazard: cons a `\x -> x + n` each iteration, then apply each to `0` | `1`, `2`, `3`; in-place reassignment prints `0`, `0`, `0` |
+| `TailCallNesting` | a tail call reached through `case` inside `let` inside `if`, and a nested `case` | any deep result, run at a depth that overflows without the loop |
+| `TailCallNotTail` | `f n = if n <= 0 then 0 else 1 + f (n - 1)` must NOT loop, and a function with one tail and one non-tail self-call must still be right | small depths, exact answers |
+| `TailCallBind` | `let m <- f (n - 1)`: the call loops, the continuation does not | `sumTo 3 (\x -> x)` is `1` |
+| `TailCallEvidence` | a `where`-constrained function looping deep with evidence forwarded, **and** a tail self-call at a different instantiation whose evidence therefore changes | exact counts; the second half is the polymorphic-recursion case above |
+| `TailCallLetFunction` | a `let`-bound helper counting to 1 000 000 | as `TailCallDeep` |
+| `TailCallLambdaBody` | `f = \n acc -> … f …` counting to 1 000 000 | as `TailCallDeep` |
+| `ListFoldDeep` | `List.foldl` over `List.range 1 1000000` and `List.foldr` over a list of 200 000 | the sums; proves the beni folds and `range` all survive |
+| `emit/TailCallLoop` | the shape: label, `$in$<i>` slots, the prologue `const`, `continue`, and one loop-invariant parameter keeping its own name | the golden of §12 |
+
+Shadowing needs no new fixture: `tests/corpus/parse/bad/ShadowingParam.beni` already refuses a
+parameter named like a top-level value, which is the only way a self-call's name could be captured.
+
+Determinism (CLAUDE.md rule 5) falls out: the label is the declaration's name, the slot names are
+parameter positions, and nothing in the loop consults a counter that parallel work could reorder.
+The `--jobs=1` / `--jobs=8` comparison covers it with no new machinery.
+
+### Measurement
+
+`bench/runtime.mjs` is the instrument. The visible effect is a follow-up rather than part of this
+slice: `bench/runtime/c0/` and `c1/` split their workloads into blocks of 500 because
+`List.range 1 2000` is near the stack limit, and once the loop lands those headers and their
+`concatMap` scaffolding can go, which makes the R-programs shorter and their `ns_per_op` comparable
+to a plain range. **What must not regress is §13's emit throughput** — the loop adds one walk of
+each function body's tail positions, O(body), once — and no `run/` or `emit/` fixture that does not
+involve a self tail call may change at all.
 
 ## 9. The optimiser, ranked by compressed bytes
 
@@ -320,6 +557,12 @@ platform stay out of the file (`tests/corpus/emit/README.md`).
 
 A bug that changes emitted shape but not behaviour must not fail a `run/` test; a bug that changes
 behaviour must. That is the whole point of preferring it.
+
+§8 lists the fixtures the tail-call loop owes, one row each, with the observable that separates a
+right loop from a wrong one. Two of them are worth naming here because they are the pattern the rest
+of M3b should copy: the loop's fail-first fixture overflows the stack without the change, and its
+closure-capture fixture exits 0 with the wrong answer, which is the failure mode a `run/` fixture
+exists to catch and an `emit/` golden cannot.
 
 ## 13. Measurement
 
