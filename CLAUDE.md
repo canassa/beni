@@ -39,10 +39,25 @@ its decision trees for pattern matching and its `?` have landed
 `src/js/Reach.zig`) — an empty program went from 70 684 bytes in 19 files to
 2 147 in 5, with `derived_bytes` exactly 0. **M3b's list in §1 is otherwise
 spent**: interpolation, tuples and record update worked in M3a, and `Int32` is
-a language gap (no type, no module, no paragraph) and not a codegen one. Still
-to come: `Int32`'s owner decision, the rest of M3c's optimiser, and chunking.
+a language gap (no type, no module, no paragraph) and not a codegen one.
 [`backend.md`](docs/design/backend.md) is the contract,
 [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
+
+**M3c's first `--release` slice has landed** — §9's *The release optimiser*,
+items 1, 2, 3 and 5: local dead bindings and single-use inlining
+(`src/js/Opt.zig`), two namespaces of short names (`src/js/Rename.zig`),
+compact printing and joined `const` runs (`src/js/Print.zig`). The flag is no
+longer refused; `--source-maps` still is. `bench/corpus` fell 126 436 → 55 593
+raw and 21 840 → **15 017** brotli (−31%), `run/Dictionaries` 7 008 → 5 860
+(−16%), the floor 833 → 789. **Development output did not move by one byte**,
+which is what makes an `emit/` golden that changes a finding. The whole `run/`
+corpus is built and run a SECOND time under the flag, ~100 programs, +13 s of
+`test-blackbox`; `emit/release/` is the golden directory for shape claims and
+`ReleaseDeadDebug.release-expected` is the one place the two builds
+legitimately differ. Still to come in M3c: **item 4**, type-directed field
+ambiguation, which needs a per-build field-interference artifact the backend
+does not receive (§9's *What the second slice owes*), integer constructor tags
+riding with it, and chunking (§10). `Int32`'s owner decision is still open.
 
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`

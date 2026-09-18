@@ -79,23 +79,24 @@ beni build [options] <entry>...      compile to JavaScript
 | `--out=<dir>` | output directory | `out/` |
 | `--source-maps` | emit `.map` files | M5; refused today, on in dev and off in release once §11 lands |
 
-**`--release` and `--source-maps` are refused, not ignored.** Neither is implemented — the optimiser
-is M3c (§1) and the source-map encoder is M5 (§11) — and a flag that is accepted while doing nothing
-makes a user believe they asked for something: a silent, successful `--source-maps` build sends them
-looking for a `.map` that was never written, exactly as a silent `--release` build would ship
-development output. Both exit `2` with `frontend.md` §1's one-line usage message naming the
-milestone. The defaults in the table above are what M5 will do; until then the only way to build is
-without the flag.
+**`--source-maps` is refused, not ignored.** It is not implemented — the encoder is M5 (§11) — and a
+flag that is accepted while doing nothing makes a user believe they asked for something: a silent,
+successful `--source-maps` build sends them looking for a `.map` that was never written, exactly as a
+silent `--release` build would have shipped development output. It exits `2` with `frontend.md` §1's
+one-line usage message naming the milestone. The defaults in the table above are what M5 will do;
+until then the only way to build is without that flag. `--release` was refused on the same argument
+and no longer is, because M3c's first slice implements it.
 
-**`--release` stops being refused with M3c's first slice, and `--source-maps` does not.** The
-refusal is one branch (`src/Cli.zig:362-364`); it goes, the `release: bool` already parsed at
+**`--release` stopped being refused with M3c's first slice, and `--source-maps` did not.** The
+refusal was one branch (`src/Cli.zig:362-364`); it went, the `release: bool` already parsed at
 `:338-341` reaches `Emit.Options`, and the usage line at `:46` states what the flag does rather than
-what it does not. Nothing else about the command changes: `--release` takes no value, composes with
+what it does not. Nothing else about the command changed: `--release` takes no value, composes with
 `--library` and `--out` and `--jobs` exactly as `--library` does, and **implies nothing** — in
 particular it does not switch elimination on, because elimination is always on (§9), and it does not
 switch source maps off, because there are none to switch. `--source-maps` keeps its own refusal at
 `:369-371` and keeps it in a `--release` build too, so the pair `--release --source-maps` exits 2 on
-the source-map line. `dump --stage=…` is untouched for the same reason §9 gives: every stage is
+the source-map line. The one thing it changes beyond §9's four passes: the entry file's two-line
+header comment goes, which is 135 bytes of the floor's 2 009. `dump --stage=…` is untouched for the same reason §9 gives: every stage is
 before the backend. **Development output does not move by one byte** — every `emit/` golden, every
 `run/` `.expected` and every `bench/size.mjs` figure in this document is a dev-build figure and stays
 one — which is what makes "a golden moved" a finding rather than a blessing for the whole slice.
@@ -1409,10 +1410,21 @@ which declarations exist; this decides what is left inside one. Two rules, one w
 `NameIndex` a `const_decl` or `let_decl` introduces in that body, nested functions included — a
 closure reading an outer binding is a use. `JsIr` names are `NameIndex`es and two names are equal
 exactly when their indices are (`src/js/JsIr.zig:300-330`), so the count is an array indexed by
-name and needs no map and no scope stack: `localName` gives every local of one declaration a
-distinct disambiguator already (`src/js/Lower.zig:1255-1271`), and the compiler-made names are
-positional or depth-derived (`$m$k` `:447`, `$in$i` `:463`, `$t$n`/`$p$n` through `fresh` `:365`,
-`$j$<d>$<b>` and `$c$<d>` `:4494`, `:4503`).
+name and needs no map and no scope stack.
+
+**The array is per TOP-LEVEL DECLARATION and not per module**, and the sentence above was written
+as if it were per module, which does not work. `localName` gives every local of ONE declaration a
+distinct disambiguator (`src/js/Lower.zig:1255-1271`) and then **restarts**, so `a$2` of `sum` and
+`a$2` of `square` are one `NameIndex`; counted module-wide that reads as two declarations and four
+uses and every fold in the module is declined. The compiler-made names are positional or
+depth-derived and repeat for the same reason (`$m$k` `:447`, `$in$i` `:463`, `$t$n`/`$p$n` through
+`fresh` `:365`, `$j$<d>$<b>` and `$c$<d>` `:4494`, `:4503`). The counters are therefore reset per
+declaration, by a stamp rather than a `@memset`, which keeps the reset O(1) and the pass linear.
+
+**The substitution is keyed by the USE SITE and not by the name**, for the same reason pointing the
+other way, and getting this wrong is a wrong answer rather than a missed byte: with a name-keyed
+table `run/MatchRowOrder`'s two functions overwrite each other's `n$2`, and the emitted code reads
+`xs$1.a` where it meant `xs$1.b.a` and exits 0. So the plan is one slot per `ident` NODE.
 
 **Zero uses: the binding is dropped WHOLE, initialiser included, whatever the initialiser is.**
 `language.md` §6's *What an optimiser may assume* is the licence, in so many words: "a binding whose
@@ -1559,6 +1571,18 @@ space between two tokens whose last and first characters are both identifier cha
 a `binary` `+`/`-` and a `unary` `+`/`-` that follows it. Nothing else in `BinaryOp.text` or
 `UnaryOp.text` (`src/js/JsIr.zig:263-298`) can merge — `typeof ` already carries its own space.
 
+**Built as one guard on one function and not as a rule at each branch point**, because the branch
+points are where it gets forgotten: every byte goes through `Printer.push`, which keeps the last
+byte emitted and asks `merges` about the join. Then `return x`, `const a`, `case 1:`, `break L` and
+`a - -1` are the same rule, and a construct added later cannot miss it. `/` before `/` or `*` rides
+along at no cost.
+
+**A token written in several pieces must open ONCE.** A string literal reaches the joiner as its
+runs and its escapes, a template as its chunks and its interpolations, a long name as
+`Module`, `$`, `base`, `$tag` — and a guard asked per piece sees `n` beside `t` inside `"one\ntwo"`
+and puts a space in the middle of the string. `run/StringOps` caught exactly that. So those three
+open with the first byte and continue without the guard.
+
 **Semicolons stay, all of them.** Every newline the release printer emits comes immediately after a
 `;`, so no newline is ever in a position where ASI could stand in for a semicolon and there is
 nothing to elide. Dropping the last semicolon of a block would save one byte per block and
@@ -1608,6 +1632,15 @@ order and a comma declaration evaluates left to right, which is the `let` bindin
 does not join a `const` run and an uninitialised `let_decl` does not join at all: §7's `let $t$n;`
 sits above an `if`/`else` chain and joining it with a later `const` would move a declaration past
 the statements between them.
+
+**The module body is a statement list too, and it joins**, which reads at first as a conflict with
+item 3's newline after every top-level declaration and is not: the run is printed
+`const a=1,\nb=2;`, so the `const ` and the `;` are saved while the line break still falls after
+each declaration and a stack trace still names one. Worth 23 brotli bytes on `bench/corpus` over
+joining inside bodies alone, which is the whole of the gap between the implementation and the
+hand-applied figure above. Evaluation order is unchanged — a comma declaration runs left to right,
+exactly as the separate statements did — and so is the temporal dead zone, since the members keep
+their order.
 
 **The three conditional rewrites are out.** The return form measures **worse** after compression on
 every reading — +38 over the corpus, +18 on `bench/corpus`, +7 on `Dictionaries` — and the reason it
