@@ -739,6 +739,93 @@ spent 12.8 s there against 73 ms for the same declarations without `pub`. It is 
 interface because it is meaningless once the Bir is gone and must never be hashed with the
 record M4 caches.
 
+### The serialized form
+
+*Specified 2026-09-18 for M4 slice zero (`plans/m4-slice-zero.md`); the hash over these bytes and
+the acceptance test are `fast-compiler.md` §8.*
+
+The record's bytes **are** its contract — §8.1's firewall compares them — so the on-disk form is
+specified here beside the in-memory one and not wherever a cache happens to be written.
+
+```
+header    magic "BENIIFC\x00" (8)   format_version: u32   column_count: u32
+table     column_count × { offset: u32, len: u32 }        offsets from byte 0
+columns   in table order, each 4-byte aligned, gaps zero-filled
+```
+
+Eleven columns, in this order and no other: `values`, `types`, `ctors`, `schemes`, `term_tags`,
+`term_lhs`, `term_rhs`, `extra`, `type_refs`, `symbols`, `strings`. `terms` is split into its three
+SoA columns rather than written as a row of 12 bytes, because that is what the record already is and
+what §8.3 wants to map. `len` is the element count except for `strings`, where it is a byte count.
+
+| Column | Element | Bytes |
+|---|---|---|
+| `values` | `name: u32`, `scheme: u32`, `flags: u8` (bit 0 `is_foreign`), pad `[3]` | 12 |
+| `types` | `name: u32`, `ctors_start: u32`, `ctors_end: u32`, `arity: u8`, `kind: u8`, `flags: u8` (bit 0 opaque, bit 1 equatable), pad | 16 |
+| `ctors` | `name`, `type`, `arity`, `arg_terms`, `quantified_start`, all `u32` | 20 |
+| `schemes` | `quantified_start: u32`, `quantified_count: u32`, `body: u32` | 12 |
+| `term_tags` / `term_lhs` / `term_rhs` | `u8` / `u32` / `u32` | 1 / 4 / 4 |
+| `extra`, `symbols` | `u32` | 4 |
+| `type_refs` | `module: u32`, `name: u32`, `package: u8`, pad `[3]` | 12 |
+| `strings` | `len: u32` then `len` bytes, padded to 4 | — |
+
+Padding exists because alignment demands it, is written as zeros and is hashed like everything else.
+It is **not** a reserved field: an interface change is a `format_version` bump and a cache discard,
+never a migration into spare bytes (`plans/m4-plan.md` D4).
+
+**Every scalar is little-endian by definition of the format**, converted on write and on read, so the
+bytes and therefore the hash are a function of the source on any host. What is host-specific is the
+*cache*, not the record: §8.3's zero-copy map wants the host's own byte order and alignment, so a
+cache directory is machine-local and its key says so.
+
+**The one column that changes shape is `symbols`.** In memory it is `[]Symbol`, an index into the
+session interner whose numbering depends on which worker interned which file (`InternPool`'s header,
+`Session.zig:16-22`). On disk `symbols[i]` is instead a byte offset into `strings`, and loading
+re-interns each string through `InternPool.Global.getOrPut`. The column keeps its length and its
+order — every `SymbolIndex` in every other column means what it meant — and only its *contents* are
+translated, which is `Global.merge` run backwards. Two slots holding the same text may share one
+`strings` record; the blob is built in first-occurrence order over the column, so sharing does not
+move a byte.
+
+**What the bytes do not contain, and why each may be left out.** `Provenance` (above) — it is
+`Bir.DeclIndex`es, and its only two readers, `Types.build` (`src/check/Types.zig:397`) and the
+module's own `fillInterface` (`src/check/Check.zig:1036`), run only for a module whose Bir is
+present; it is therefore not serialized at all rather than serialized unhashed. `Types.ref_ids`
+(`src/check/Types.zig:120-135`) — recomputed by `resolveRefs` (`:286`) once per module per build,
+which is where `Check.zig:1103` already does it. Any `Symbol` — replaced by text, above. Any
+`Graph.Index` — the record holds none since `type_refs` landed.
+
+**What must travel beside the record, unhashed**, when a dependency's Bir is absent: the interface
+type slot → own declaration ordinal map `Types.build` reaches through `Provenance`
+(`src/check/Types.zig:396-404`), and the module's whole declared-type table with its settled
+`equatable`/`comparable`/`has_function` bits (`:476-524`). Both are functions of the module's source,
+so both are pure — and both must still stay **out of the hashed bytes**, because adding a private
+type to a module shifts its own declaration ordinals while changing nothing a dependent can see, and
+a hash that moved for that would defeat the firewall exactly as the `TypeId` leak did. They are a
+sidecar of the cache entry, not part of the record. Slice zero does not write one: its acceptance
+test round-trips the record with every Bir still in memory. → `plans/m4-slice-zero.md` §4.
+
+**Loading validates, and a bad record is a MISS, never a message.** A wrong magic, an unknown
+`format_version`, a short file, a column whose offset or length leaves the file, or a `strings`
+record that runs past the blob: each makes the load fail and the caller recompute from source. A
+stale cache must be indistinguishable from a cold build, so none of these is a diagnostic and none
+is an exit code. Past the header the record is taken as-is and every index is bounds-checked **at
+use**, which is the posture `range`, `typeRef`, `quantified`, `quantifiedConstraint`,
+`ctorQuantified` and `quantifiedSymbol` already take (`src/resolve/Interface.zig:411-467`) and
+`Schemes.Reader` mirrors (`src/check/Schemes.zig:769`, `:818`, `:836`). Three accessors do not and
+must, because a loaded record reaches them: `term` (`Interface.zig:419`), `scheme` (`:432`) with
+`valueScheme` (`:471`), and `symbol` (`:477`). A loaded record never reports: the module that wrote
+it reported when it wrote it (`Schemes.zig:763-768`). A record that is structurally valid and
+nevertheless *wrong* — written by a different compiler build, or edited — is the cache key's
+problem (`fast-compiler.md` §8.1), not the reader's; the split is that a wrong answer is a key bug
+and a crash is a reader bug.
+
+**`dump --stage=raw` is the differ, not the format.** It resolves symbol indices to text and omits
+`Scheme.quantified_start`, `Quantified.constraints_start` and the `symbols` column's identity — two
+slots holding the same text print alike and the column's length is never stated — so it is not
+lossless and must not be mistaken for a serialization. It stays what §2 says it is: the view that
+can see a byte difference the two pretty printers hide.
+
 ## 8. Diagnostics
 
 Every code below joins the catalogue in `language.md` §10 (append there first, then in

@@ -704,6 +704,66 @@ format version and content hash. No general serialization library — rkyv-style
 *idea* to steal, not the dependency (04 §7). Roc calls this "zero-parse deserialization" and loads at
 roughly memcpy speed (05 §4). Only possible because of the no-pointers rule in §5.
 
+### The interface hash, and slice zero
+
+*Added 2026-09-18. Slice zero is the part of M4 that is the same under every answer to
+`plans/m4-plan.md`'s nine open decisions: make the interface serializable, hash it, and prove a
+round-tripped build is byte-identical to a cold one. The record's byte format is `checker.md` §7;
+the plan is `plans/m4-slice-zero.md`.*
+
+**The hash is `std.hash.SipHash128(1, 3)` over the serialized record's bytes in full** — magic,
+version, column table, columns and their alignment padding — with an all-zero key, and it is not
+stored inside the record. 128 bits because an accidental collision then has to be impossible rather
+than unlikely; SipHash-1-3 because it is the only 128-bit output in `std.hash` that is not
+byte-at-a-time. Measured on the M4 plan's machine at a 3 kB record, the size of one module's
+interface: **0.49 µs, 6.2 GB/s**, so hashing every module of the 100k corpus costs 0.31 ms.
+Rejected: `Fnv1a_128`, the only other 128-bit choice, at 3.32 µs and 0.93 GB/s; `Blake3`, at 4.53 µs
+and cryptographic, for a property a cache does not need; `Wyhash` (0.105 µs) and `XxHash3`
+(0.057 µs), faster but 64-bit, and the 128-bit margin costs a third of a millisecond across the
+whole project. **It is not a MAC.** The key is a public constant, so nothing here resists someone
+who can choose the source files; the threat model is accident.
+
+**Equal source ⇒ equal bytes ⇒ equal hash**, at every `--jobs`, on every run, and on every machine:
+the record holds no `Symbol`, no `TypeId` and no `Graph.Index`, every order in it is by name text,
+and every scalar of the serialized form is little-endian by definition (`checker.md` §7). A *cache
+directory* is still machine-local — §8.3's zero-copy map wants the host's own alignment — but the
+hash is not.
+
+**Two hidden flags, and they are hidden on purpose.** `--roundtrip-interfaces` serializes and
+deserializes every module's record in place the moment its check finishes, so every dependent, every
+dump, every dispatch table and every emitted file is built from bytes that have been through the
+format. `--iface-hash` makes `check` print one `<package>:<Module> <32 hex digits>` line per module,
+including `core` and the platform, sorted by module path. Both are accepted like `--jobs`, are absent
+from `--help` and from `checker.md` §2's table, and are diagnostic surface rather than product
+surface. A test-only entry point was the alternative and is refused: the suite is black-box (the
+binary driven by files and flags), and an in-source hook would move the assertion off the thing that
+ships.
+
+**The acceptance test is §10's determinism rule with one more axis.** An incremental build's every
+output stream and output file must be byte-identical to a cold build of the same source tree, so for
+every corpus case of every kind that runs the checker, four runs — {plain, `--roundtrip-interfaces`}
+× {`--jobs=1`, `--jobs=8`} — must agree byte for byte on exit code, stdout, stderr and every file
+written: diagnostics, `--stage=raw`, the `.iface` golden, `--stage=dispatch`, and the emitted
+JavaScript. The emitted JavaScript is compared as bytes in the three extra runs and executed once, as
+today. At a measured 9.4 ms per small-fixture invocation the added axis is ~20 s over the ~576 cases.
+This is the first test in the project that asserts the firewall's premise rather than assuming it:
+until it passes, every claim about a warm rebuild is unfalsifiable (`plans/m4-plan.md` §3.4).
+
+**And the firewall's first real measurement.** `bench/churn.sh` applies four mechanical edit classes
+and byte-diffs `dump --stage=raw` before and after, which counts changed bytes in one module's dump
+and cannot see a cross-module effect. With `--iface-hash` it reports "importers re-checked" by hash
+instead, and gains the edit class it could not express: **a type added to a module the observed one
+does not import — expected 0**, which is what `TypeId` in the record used to make nonzero.
+
+**What slice zero deliberately does not do**, each pointing at the decision that owns it: no cache
+directory and no file naming (D1 — disk cache before daemon); no invalidation policy and no cache
+key, so the `stat` fast-path, the sibling `.js` hash of `boundary.md` §7.3 and the "produced by a
+clean check" bit all wait (D1); no reserved bits for effects (D4, already taken — the version field
+is the mechanism); no `mmap` and therefore no commitment to a host-specific layout (D1); no memory
+ceiling (D7); no watching (D8); no cancellation (D9). It also does not close the two cross-module
+`Bir` reads `checker.md` §7 names, `Types.build` and `Types.Builder.aliasBody`: the round-trip
+happens with every module's Bir in memory, which is what keeps the slice one slice.
+
 ## 9. JavaScript backend
 
 ### 9.1 Dead code elimination — copy Elm's mechanism exactly
