@@ -111,6 +111,7 @@ pub fn build(b: *std.Build) void {
         "tests/blackbox/abuse_test.zig",
         "tests/blackbox/build_test.zig",
         "tests/blackbox/check_test.zig",
+        "tests/blackbox/iface_test.zig",
     }) |root| {
         const t = b.addTest(.{
             .root_module = b.createModule(.{

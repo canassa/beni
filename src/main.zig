@@ -83,6 +83,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .core = common.core,
         .core_root = common.core_root,
         .pattern_budget = common.pattern_budget orelse Session.default_pattern_budget,
+        .roundtrip_interfaces = common.roundtrip_interfaces,
     };
 }
 

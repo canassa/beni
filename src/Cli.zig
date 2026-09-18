@@ -102,6 +102,25 @@ pub const Common = struct {
     /// passes it starts exiting `2`, and it is where the next informational
     /// diagnostic goes.
     explain: bool = false,
+    /// `--roundtrip-interfaces` — **hidden**, and hidden on purpose
+    /// (`fast-compiler.md` §8's *The interface hash, and slice zero*).
+    ///
+    /// Every module's record is written to bytes and read back IN PLACE the
+    /// moment its check finishes, so every dependent, every dump, every
+    /// dispatch table and every emitted file downstream is built from a
+    /// record that has been through `resolve/iface_bytes.zig`. A run with it
+    /// must be byte-identical to one without, which is the acceptance test
+    /// of the whole slice.
+    ///
+    /// It is absent from `usage` and from `checker.md` §2's table because it
+    /// is diagnostic surface, not product surface. A test-only entry point
+    /// was the alternative and is refused: the suite is black-box, and an
+    /// in-source hook would move the assertion off the thing that ships.
+    roundtrip_interfaces: bool = false,
+    /// `--iface-hash` — hidden, for `--roundtrip-interfaces`' reasons.
+    /// Makes `check` print one `<package>:<Module> <32 hex digits>` line per
+    /// module, `core` and the platform included, sorted by that key.
+    iface_hash: bool = false,
 };
 
 pub const Check = struct {
@@ -295,6 +314,18 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--explain")) {
         if (value != null) return noValue(name);
         common.explain = true;
+        return null;
+    }
+    // The two hidden flags of `fast-compiler.md` §8. Accepted like `--jobs`,
+    // absent from `usage` — see `Common.roundtrip_interfaces`.
+    if (std.mem.eql(u8, name, "--roundtrip-interfaces")) {
+        if (value != null) return noValue(name);
+        common.roundtrip_interfaces = true;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--iface-hash")) {
+        if (value != null) return noValue(name);
+        common.iface_hash = true;
         return null;
     }
     if (std.mem.eql(u8, name, "--core-root")) {
@@ -738,6 +769,49 @@ test "check and dump take --platform; fmt does not, and neither does a per-file 
     );
     // `fmt` resolves nothing: formatting is per file.
     try expectUsage("beni: unknown option '--platform'; run 'beni help' for usage", &.{ "fmt", "--platform=node", "a.beni" });
+}
+
+// The two flags of `fast-compiler.md` §8, and the property that makes them
+// "hidden": they parse everywhere `--jobs` does, and `beni help` does not
+// list them. A flag the usage text advertises is product surface and would
+// have to be supported forever; these two are diagnostic surface.
+test "the hidden flags parse, take no value, and are absent from the usage text" {
+    try expectCommand(
+        .{ .check = .{ .common = .{ .roundtrip_interfaces = true }, .paths = &.{"src"} } },
+        &.{ "check", "--roundtrip-interfaces", "src" },
+    );
+    try expectCommand(
+        .{ .check = .{ .common = .{ .iface_hash = true }, .paths = &.{"src"} } },
+        &.{ "check", "--iface-hash", "src" },
+    );
+    try expectCommand(
+        .{ .check = .{
+            .common = .{ .jobs = 8, .roundtrip_interfaces = true, .iface_hash = true },
+            .paths = &.{"src"},
+        } },
+        &.{ "check", "--iface-hash", "--jobs=8", "--roundtrip-interfaces", "src" },
+    );
+    // Every command takes them, because every command that resolves runs the
+    // checker: `build` and `dump` both have to be able to prove the same
+    // thing `check` does.
+    try expectCommand(
+        .{ .build = .{ .common = .{ .roundtrip_interfaces = true }, .platform = "node", .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--roundtrip-interfaces", "src" },
+    );
+    try expectCommand(
+        .{ .dump = .{ .common = .{ .roundtrip_interfaces = true }, .stage = .raw, .file = "M.beni" } },
+        &.{ "dump", "--stage=raw", "--roundtrip-interfaces", "M.beni" },
+    );
+    try expectUsage(
+        "beni: option '--roundtrip-interfaces' does not take a value",
+        &.{ "check", "--roundtrip-interfaces=1", "src" },
+    );
+    try expectUsage("beni: option '--iface-hash' does not take a value", &.{ "check", "--iface-hash=yes", "src" });
+    // Hidden: `beni help` prints `usage`, and `usage` says nothing of them.
+    try testing.expect(std.mem.indexOf(u8, usage, "--roundtrip-interfaces") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "--iface-hash") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "iface") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "roundtrip") == null);
 }
 
 test "usage text mentions every subcommand" {

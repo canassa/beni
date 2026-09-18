@@ -146,6 +146,11 @@ pub const Options = struct {
     /// been extracted (§5), and keeping them costs memory proportional to
     /// the whole project rather than to one module.
     keep_type_stores: bool = false,
+    /// `--roundtrip-interfaces` (`Cli.Common`, `fast-compiler.md` §8):
+    /// replace every module's interface record with serialize → bytes →
+    /// deserialize of itself the moment its check finishes, before any
+    /// dependent reads it.
+    roundtrip_interfaces: bool = false,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9). Set by `check` and
     /// `build`, which are the two subcommands the decision names (A.83);
@@ -872,6 +877,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                     .quiet = r.quiet,
                     .jobs = @intCast(r.session.workers.len),
                     .pattern_budget = r.session.options.pattern_budget,
+                    .roundtrip_interfaces = r.session.options.roundtrip_interfaces,
                 },
             );
         }

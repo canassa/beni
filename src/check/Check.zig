@@ -62,6 +62,7 @@ const Solve = @import("Solve.zig");
 const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const iface_bytes = @import("../resolve/iface_bytes.zig");
 
 const Check = @This();
 
@@ -160,6 +161,12 @@ pub const Options = struct {
     /// Settable so a test can prove the bound is what makes it fall silent,
     /// rather than asserting the absence of a hang.
     pattern_budget: u32 = Exhaustive.default_budget,
+    /// `--roundtrip-interfaces` (`fast-compiler.md` §8): replace every
+    /// module's record with serialize → bytes → deserialize of itself, in
+    /// place, the moment its check finishes — so every dependent, every
+    /// dump, every dispatch table and every emitted file downstream is
+    /// built from bytes that have been through the format.
+    roundtrip_interfaces: bool = false,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
@@ -532,6 +539,7 @@ const Driver = struct {
             .pattern_budget = d.options.pattern_budget,
             .informational = d.options.informational,
             .dispatch = &d.dispatch[m.int()],
+            .roundtrip_interfaces = d.options.roundtrip_interfaces,
         };
         d.counters[m.int()] = try one.run(if (d.kept.len != 0) &d.kept[m.int()] else null);
     }
@@ -560,6 +568,8 @@ const ModuleCheck = struct {
     pattern_budget: u32 = Exhaustive.default_budget,
     /// `Options.informational`, for this module.
     informational: bool = false,
+    /// `Options.roundtrip_interfaces`, for this module.
+    roundtrip_interfaces: bool = false,
     /// This module's slot of the run's dispatch tables (§7.1), filled at
     /// the end of `run`.
     dispatch: *Dispatch = undefined,
@@ -705,7 +715,7 @@ const ModuleCheck = struct {
         }
 
         // 5. The interface gains its schemes (checker.md §7).
-        try mc.fillInterface(&env, bir, store, decl_scheme);
+        try mc.fillInterface(&env, &reporter, bir, store, decl_scheme);
 
         // 7. Whatever was too deeply nested to read. Last, so a declaration
         //    that tripped the guard in more than one place is one message.
@@ -1030,7 +1040,14 @@ const ModuleCheck = struct {
     /// here, against 73 ms for the same declarations without `pub`, and
     /// none of it showed in `--self-profile` because it sits between the
     /// profiled events.
-    fn fillInterface(mc: *ModuleCheck, env: *Constrain.Env, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional) Error!void {
+    fn fillInterface(
+        mc: *ModuleCheck,
+        env: *Constrain.Env,
+        reporter: *Diagnostics.Reporter,
+        bir: *const Bir,
+        store: *TypeStore,
+        decl_scheme: []const Var.Optional,
+    ) Error!void {
         const gpa = mc.gpa;
         const iface = &mc.interfaces[mc.module.int()];
         const prov = if (mc.module.int() < mc.provenance.len)
@@ -1090,6 +1107,15 @@ const ModuleCheck = struct {
 
         try mc.fillCtorTerms(env, bir, store, prov, iface, &writer);
         try writer.attach(iface);
+        // `--roundtrip-interfaces` goes HERE and nowhere else
+        // (`fast-compiler.md` §8): the record is complete and no importer
+        // has read it yet, because a dependent cannot start before this
+        // module's check has finished (checker.md §4.4). Replacing it
+        // wholesale is also why `Schemes.Writer.attach`'s non-idempotence
+        // does not bite — nothing re-attaches to the loaded record — and
+        // why the `ref_ids` fill below must come after: it resolves the
+        // `type_refs` of whichever record ends up in the slot.
+        if (mc.roundtrip_interfaces) try mc.roundtripInterface(iface, reporter);
         // The record now says which types it names, as
         // `(package, module name, type name)` — bytes that do not move when
         // an unrelated module gains a declaration (`Interface.TypeRef`).
@@ -1101,6 +1127,38 @@ const ModuleCheck = struct {
         const ref_ids = &mc.types.ref_ids[mc.module.int()];
         gpa.free(ref_ids.*);
         ref_ids.* = try mc.types.resolveRefs(gpa, iface, mc.graph);
+    }
+
+    /// Replace this module's record with serialize → bytes → deserialize of
+    /// itself (`fast-compiler.md` §8's `--roundtrip-interfaces`).
+    ///
+    /// The point is that NOTHING downstream can tell: every dependent,
+    /// every dump, every dispatch table and every emitted file is then
+    /// built from a record that has been through the format, and the
+    /// acceptance matrix asserts the whole corpus comes out byte-identical.
+    ///
+    /// A failure here is `internal` and not a cache miss. Under this flag a
+    /// record is written and read back inside ONE session, so `BadRecord`
+    /// can only mean the writer and the reader disagree and `UnknownSymbol`
+    /// can only mean a name the session itself interned is missing from its
+    /// own pool — both compiler bugs, neither a stale file.
+    fn roundtripInterface(mc: *ModuleCheck, iface: *Interface, reporter: *Diagnostics.Reporter) Error!void {
+        const gpa = mc.gpa;
+        const bytes = try iface_bytes.write(gpa, iface, mc.interner);
+        defer gpa.free(bytes);
+        const loaded = iface_bytes.read(gpa, bytes, mc.interner) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.BadRecord => return reporter.internalAlways(
+                @enumFromInt(0),
+                "this module's interface record did not load back from its own bytes",
+            ),
+            error.UnknownSymbol => return reporter.internalAlways(
+                @enumFromInt(0),
+                "this module's interface record names a string the session's interner does not hold",
+            ),
+        };
+        iface.deinit(gpa);
+        iface.* = loaded;
     }
 
     /// Every visible constructor's argument types, as terms (checker.md §7's

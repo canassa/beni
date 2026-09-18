@@ -844,6 +844,20 @@ pub const Reporter = struct {
     /// unreachable on every input a person writes.
     pub fn internal(r: *Reporter, region: Bir.Inst.Index, what: []const u8) Error!void {
         if (r.quiet) return;
+        return r.internalAlways(region, what);
+    }
+
+    /// `internal`, said even in a QUIET module.
+    ///
+    /// `quiet` means "an earlier phase already reported on this module, so
+    /// every type error in it is a consequence of a message the author
+    /// already has" — a rule about the PROGRAM. A compiler invariant that
+    /// broke in this run is not a consequence of anything the author wrote,
+    /// and a module with a syntax error is exactly where an interface
+    /// record full of holes gets built, so the one place this is used —
+    /// `--roundtrip-interfaces` failing to load a record back
+    /// (`fast-compiler.md` §8) — must not be able to fail in silence.
+    pub fn internalAlways(r: *Reporter, region: Bir.Inst.Index, what: []const u8) Error!void {
         var out = r.writer();
         defer out.deinit();
         out.writer.print(
