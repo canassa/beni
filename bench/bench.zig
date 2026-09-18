@@ -56,6 +56,7 @@ const JsLower = beni.js.Lower;
 const JsPrint = beni.js.Print;
 const Bir = beni.Bir;
 const Graph = beni.resolve.Graph;
+const iface_bytes = beni.resolve.iface_bytes;
 const Ast = beni.Ast;
 const Arena = beni.Arena;
 const Session = beni.Session;
@@ -176,6 +177,13 @@ pub fn main(init: std.process.Init) !u8 {
     try printEmitLine(stdout, emitted);
     total.ns += emitted.ns;
     try printLine(stdout, "total", total);
+
+    // Outside `total`: serializing an interface is not a phase of a cold
+    // build and never runs in one. It is the row `plans/m4-slice-zero.md`
+    // §8 items 1–3 ask for, so a warm build's cost can be argued about
+    // with numbers before D1 is taken.
+    const ifaces = try measureIface(gpa, io, corpus, options.iterations);
+    try printIfaceLine(stdout, ifaces);
 
     // One line per pathological file, so a single slow file cannot hide in
     // a corpus average. `--pathological=<name>` measures one file and gets
@@ -708,6 +716,132 @@ fn printEmitLine(writer: *Io.Writer, m: EmitMeasurement) !void {
 /// used to print nothing at all, which is the one failure mode a benchmark
 /// line must not have — a missing field reads as "the feature costs
 /// nothing" rather than as a bug.
+/// The serialized interface (M4 slice zero): how big a module's record is,
+/// what the three operations over it cost, and what a whole check costs
+/// with every record round-tripped.
+///
+/// **What it is for.** `plans/m4-slice-zero.md` §8 lists three numbers that
+/// a decision about the warm build needs and that nothing could produce:
+/// bytes per module, serialize/deserialize/hash time, and the fraction of a
+/// check a load would replace. The last is the one that matters — the
+/// firewall is only worth having if reading a record is much cheaper than
+/// recomputing it — and `roundtrip_check_ns` against `cold_check_ns` is its
+/// upper bound, because a round trip pays for BOTH halves where a warm
+/// build pays for one.
+const IfaceMeasurement = struct {
+    modules: u64 = 0,
+    bytes: u64 = 0,
+    min_bytes: u64 = 0,
+    median_bytes: u64 = 0,
+    max_bytes: u64 = 0,
+    /// Source bytes behind those records, for the ratio §2 estimates.
+    source_bytes: u64 = 0,
+    write_ns: u64 = 0,
+    read_ns: u64 = 0,
+    hash_ns: u64 = 0,
+    cold_check_ns: u64 = 0,
+    roundtrip_check_ns: u64 = 0,
+};
+
+fn measureIface(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32) !IfaceMeasurement {
+    var m: IfaceMeasurement = .{};
+    var sink: Io.Writer.Discarding = .init(&.{});
+
+    var session = try Session.init(gpa, io, .{ .jobs = 1, .diagnostics = .json, .core_package = true });
+    defer session.deinit();
+    _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch return m;
+
+    const interfaces = session.resolution.interfaces;
+    m.modules = interfaces.len;
+    if (m.modules == 0) return m;
+    for (0..session.store.count()) |i| {
+        m.source_bytes += session.store.bytes(@enumFromInt(i)).len;
+    }
+
+    const sizes = try gpa.alloc(u64, interfaces.len);
+    defer gpa.free(sizes);
+
+    var best_write: u64 = std.math.maxInt(u64);
+    var best_read: u64 = std.math.maxInt(u64);
+    var best_hash: u64 = std.math.maxInt(u64);
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var write_ns: u64 = 0;
+        var read_ns: u64 = 0;
+        var hash_ns: u64 = 0;
+        var total_bytes: u64 = 0;
+        for (interfaces, sizes) |*iface, *size| {
+            var t = Io.Timestamp.now(io, .awake);
+            const bytes = try iface_bytes.write(gpa, iface, &session.interner);
+            defer gpa.free(bytes);
+            write_ns += elapsed(io, &t);
+            std.mem.doNotOptimizeAway(iface_bytes.hash(bytes));
+            hash_ns += elapsed(io, &t);
+            var back = iface_bytes.read(gpa, bytes, &session.interner) catch continue;
+            read_ns += elapsed(io, &t);
+            back.deinit(gpa);
+            size.* = bytes.len;
+            total_bytes += bytes.len;
+        }
+        if (iteration == 0) continue; // warm-up
+        if (write_ns < best_write) best_write = write_ns;
+        if (read_ns < best_read) best_read = read_ns;
+        if (hash_ns < best_hash) best_hash = hash_ns;
+        m.bytes = total_bytes;
+    }
+    m.write_ns = best_write;
+    m.read_ns = best_read;
+    m.hash_ns = best_hash;
+
+    std.mem.sort(u64, sizes, {}, std.sort.asc(u64));
+    m.min_bytes = sizes[0];
+    m.median_bytes = sizes[sizes.len / 2];
+    m.max_bytes = sizes[sizes.len - 1];
+
+    m.cold_check_ns = try timedCheck(gpa, io, corpus, iterations, false);
+    m.roundtrip_check_ns = try timedCheck(gpa, io, corpus, iterations, true);
+    return m;
+}
+
+/// A whole cold `check` over `corpus`, with or without
+/// `--roundtrip-interfaces`. Best of `iterations` after a warm-up, exactly
+/// as `coldCheck` does it.
+fn timedCheck(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u32, roundtrip: bool) !u64 {
+    var sink: Io.Writer.Discarding = .init(&.{});
+    var best: u64 = std.math.maxInt(u64);
+    var iteration: u32 = 0;
+    while (iteration < iterations + 1) : (iteration += 1) {
+        var session = try Session.init(gpa, io, .{
+            .jobs = 1,
+            .diagnostics = .json,
+            .core_package = true,
+            .roundtrip_interfaces = roundtrip,
+        });
+        defer session.deinit();
+        const start = Io.Timestamp.now(io, .awake);
+        _ = session.run(&.{corpus}, Session.check_phases, &sink.writer) catch continue;
+        const ns: u64 = @intCast(start.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds);
+        if (iteration == 0) continue;
+        best = @min(best, ns);
+    }
+    return if (best == std.math.maxInt(u64)) 0 else best;
+}
+
+fn printIfaceLine(writer: *Io.Writer, m: IfaceMeasurement) !void {
+    try writer.print(
+        "{{\"phase\":\"iface\",\"modules\":{d},\"bytes\":{d},\"bytes_per_module\":{d}" ++
+            ",\"min_bytes\":{d},\"median_bytes\":{d},\"max_bytes\":{d},\"source_bytes\":{d}" ++
+            ",\"write_ms\":{d:.3},\"hash_ms\":{d:.3},\"read_ms\":{d:.3}" ++
+            ",\"cold_check_ms\":{d:.1},\"roundtrip_check_ms\":{d:.1}}}\n",
+        .{
+            m.modules,               m.bytes,                       m.bytes / @max(m.modules, 1),
+            m.min_bytes,             m.median_bytes,                m.max_bytes,
+            m.source_bytes,          milliseconds(m.write_ns),      milliseconds(m.hash_ns),
+            milliseconds(m.read_ns), milliseconds(m.cold_check_ns), milliseconds(m.roundtrip_check_ns),
+        },
+    );
+}
+
 fn printCheckLine(writer: *Io.Writer, m: CheckMeasurement) !void {
     const seconds = @as(f64, @floatFromInt(@max(m.ns, 1))) / 1e9;
     const loc_per_s: u64 = @intFromFloat(@as(f64, @floatFromInt(m.lines)) / seconds);

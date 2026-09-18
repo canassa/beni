@@ -43,29 +43,39 @@
 #              `==` adds nothing, and says nothing about polymorphism.
 #     `==` is the only ad-hoc operation C0 has on a polymorphic value, which
 #     is itself part of the finding.
-#   * `beni dump --stage=raw` is taken before and after each edit and the
-#     target module's record is byte-compared. That dump is the interface
-#     record's bytes (`src/dump/interface.zig`), the same surface the
-#     determinism test compares across `--jobs`, and §9 notes it is exactly
-#     what M4's interface hash will be taken over.
+#       E4     add a PRIVATE type to a module, and ask what it did to EVERY
+#              module's hash. Not a per-declaration class like the four
+#              above and reported in its own table: it is the class they
+#              structurally cannot express (see below). Expected: 0
+#              everywhere, the edited module included, because a private
+#              type is in no interface at all.
+#   * `beni check --iface-hash` is taken before and after each edit, and two
+#     numbers come out of it: whether the TARGET module's own hash moved
+#     (`changed/accepted`, the same question the old `--stage=raw` byte-diff
+#     answered), and how many OTHER modules' hashes moved (`others`). The
+#     second is what `fast-compiler.md` §8.1's firewall is about — it is the
+#     count of importers a warm build would have to re-check — and it is
+#     what report 19 §16 left open.
 #
-#     The dump is of the WHOLE ROOT (`dump --stage=raw --root=<root> <root>`,
-#     `src/main.zig:257`), not of one file. Dumping one file leaves its
-#     sibling imports unresolved — `Counter.beni` alone reports seven UNKNOWN
-#     MODULE — so a per-file baseline would be comparing two broken records.
-#     The target module's record is cut out of the root dump by its `module`
-#     header line.
+#     The run is over the WHOLE ROOT (`check --iface-hash --root=<root>
+#     <root>`), not one file. Checking one file leaves its sibling imports
+#     unresolved — `Counter.beni` alone reports seven UNKNOWN MODULE — so a
+#     per-file baseline would be comparing two broken records. Every module
+#     gets a line, core's included, which is the other thing the dump could
+#     not do: `dump --stage=raw` prints only the modules named on the
+#     command line.
 #
-# What this script structurally CANNOT measure, and where that lives instead.
-# Every edit class above edits the declaration whose dump it diffs, so none of
-# them can see a record moved by an edit to a DIFFERENT module. That is a real
-# failure mode and it was a real defect: `Interface.Term`'s `app` and `alias`
-# carried a whole-program `TypeStore.TypeId`, so a type declared anywhere
-# earlier in sorted-path order rewrote an untouched module's bytes
-# (`plans/m4-plan.md` §2.2). The fixture that covers it is a black-box
-# scenario, not a bench row — "a type declared elsewhere leaves an untouched
-# module's interface bytes alone" in `tests/blackbox/blackbox_test.zig`, which
-# is a gate rather than a measurement because the answer is 0 or a bug.
+# What this script could not measure until slice zero, and now can. Every
+# edit class E1–E3poly edits the declaration whose record it compares, so
+# none of them could see a record moved by an edit to a DIFFERENT module.
+# That is a real failure mode and it was a real defect: `Interface.Term`'s
+# `app` and `alias` carried a whole-program `TypeStore.TypeId`, so a type
+# declared anywhere earlier in sorted-path order rewrote an untouched
+# module's bytes (`plans/m4-plan.md` §2.2). It had to be caught by a
+# black-box scenario — "a type declared elsewhere leaves an untouched
+# module's interface bytes alone" in `tests/blackbox/blackbox_test.zig` —
+# because there was no number. E4 and the `others` column are that number;
+# the scenario stays, because a gate and a measurement are different things.
 #
 # Every outcome is counted:
 #
@@ -77,9 +87,12 @@
 #              `=`)
 #   rejected   the compiler reported an error on the edited program. This is
 #              counted from `--diagnostics=json` and NEVER from the exit
-#              status: `beni dump` exits 0 whatever it found, so a run that
-#              read the exit code would score a type error as a successful
-#              measurement. For E3 on an annotated declaration a rejection is
+#              status. `beni check` exits 1 when it found an error, which is
+#              an answer and not a failure to run, so the two are told apart
+#              by the STREAM: a status of 1 with an empty diagnostics stream
+#              is a process that died before it said anything, and that is a
+#              failed measurement rather than a rejected edit.
+#              For E3 on an annotated declaration a rejection is
 #              often the EXPECTED answer and the point of the row — in C0 you
 #              cannot add an operation to a value whose annotation says `a`,
 #              so the edit that dispatch would turn into an interface change
@@ -350,15 +363,6 @@ NR == def_start { print "pub " $0; next }
 AWK
 
 # ---------------------------------------------------------------------------
-# awk: cut one module's record out of a whole-root `--stage=raw` dump. Each
-# record starts with its own `module <Name>` line.
-# ---------------------------------------------------------------------------
-cat >"$work/record.awk" <<'AWK'
-/^module / { on = ($2 == want) }
-on { print }
-AWK
-
-# ---------------------------------------------------------------------------
 # awk: the edits. Each prints the edited module on stdout and the word
 # `applied` or `skipped` on stderr, so the caller can tell "no change because
 # the edit did not apply" from "no change because the interface held" — and
@@ -545,32 +549,54 @@ AWK
 classes="E1 E2 E3 E3poly"
 
 # ---------------------------------------------------------------------------
-# One whole-root dump. `$1` is the module name whose record to keep, `$2` the
-# file to write it to. The error count goes to `$work/errors`, counted from
-# the JSON diagnostics stream and never from the exit status: `beni dump`
-# exits 0 on a type error, an unknown module and a parse failure alike.
+# One whole-root HASH LIST. `$1` is the module name whose line to cut out,
+# `$2` the file to write it to; the whole list goes to `$2.all` beside it.
+#
+# It used to be `dump --stage=raw` and a byte-diff of one module's record.
+# The dump counts changed BYTES IN ONE MODULE'S DUMP and structurally cannot
+# see a cross-module effect — every edit class below edits the declaration
+# whose dump it diffs — which is why the `TypeId` leak of `plans/m4-plan.md`
+# §2.2 had to be caught by a black-box scenario instead of by a bench row.
+# `check --iface-hash` (M4 slice zero, `fast-compiler.md` §8) prints one
+# `<package>:<Module> <32 hex digits>` line for EVERY module, core included,
+# so "how many OTHER modules would be re-checked?" becomes a number: the
+# firewall's own quantity, and the one report 19 §16 left open.
+#
+# The error count still comes from the JSON diagnostics stream and never
+# from the exit status — but the status means something different now.
+# `beni dump` exits 0 whatever it found; `beni check` exits 1 when it found
+# an error diagnostic, which is an ANSWER and not a failure to run, so only
+# 2 and above is the process itself failing.
 # ---------------------------------------------------------------------------
 # A run that FAILED TO RUN, recorded here rather than swallowed. The error
 # count below is read out of `dump.err`, and an empty `dump.err` reads as
 # zero errors — so a `beni` that never started scores every edit as a clean,
 # interface-preserving measurement and the table comes out full of zeros in
-# the `rejected` column. The status is what tells the two apart: `beni dump`
-# exits 0 whatever it FOUND, so a non-zero status is the process itself
-# failing and never a diagnostic.
+# the `rejected` column.
 spawn_failures="$work/spawn-failures"
 : >"$spawn_failures"
 
 dump_root() {
     status=0
     if [ -n "$core_flag" ]; then
-        (cd "$work" && "$beni_abs" dump --stage=raw --core --diagnostics=json --root="$src_name" -- "$src_name" \
+        (cd "$work" && "$beni_abs" check --iface-hash --core --diagnostics=json --root="$src_name" -- "$src_name" \
             >"$work/dump.out" 2>"$work/dump.err") || status=$?
     else
-        (cd "$work" && "$beni_abs" dump --stage=raw --diagnostics=json --root="$src_name" -- "$src_name" \
+        (cd "$work" && "$beni_abs" check --iface-hash --diagnostics=json --root="$src_name" -- "$src_name" \
             >"$work/dump.out" 2>"$work/dump.err") || status=$?
     fi
-    if [ "$status" != 0 ]; then
-        echo "bench/churn.sh: '$beni_abs dump' exited $status; the measurement below would be counted out of an empty diagnostics stream" >&2
+    grep -o '"severity":"error"' "$work/dump.err" | wc -l >"$work/errors"
+    # Three shapes of "the compiler did not run", and the middle one is why
+    # the exit status alone is not the test any more. `beni check` exits 1
+    # when it FOUND an error, which is an answer; a status of 1 with an
+    # empty diagnostics stream is a process that died before it said
+    # anything, which is the `ETXTBSY`-class flake this guard exists for.
+    # A run that printed no hash line at all is the same failure seen from
+    # the other side: every project here has at least one module.
+    if [ "$status" -gt 1 ] ||
+        { [ "$status" = 1 ] && [ "$(errors_seen)" = 0 ]; } ||
+        [ ! -s "$work/dump.out" ]; then
+        echo "bench/churn.sh: '$beni_abs check' exited $status; the measurement below would be counted out of an empty diagnostics stream" >&2
         sed -n '1,20p' "$work/dump.err" >&2 || true
         # The sentinel, because this function is also called from inside the
         # declaration loop's pipeline subshell, where `set -e` unwinds no
@@ -579,8 +605,31 @@ dump_root() {
         echo "exit $status" >>"$spawn_failures"
         return 1
     fi
-    grep -o '"severity":"error"' "$work/dump.err" | wc -l >"$work/errors"
-    awk -v want="$1" -f "$work/record.awk" "$work/dump.out" >"$2"
+    cp "$work/dump.out" "$2.all"
+    awk -v want="$1" '{ split($1, key, ":"); if (key[2] == want) print }' "$work/dump.out" >"$2"
+}
+
+# How many modules OTHER than `$3` have a different hash in `$2` than in
+# `$1` — "importers re-checked", which is what the firewall buys. A module
+# that appeared or vanished counts as moved: a build that stopped producing
+# a record for it is not a build that left it alone.
+others_moved() {
+    awk -v want="$3" '
+        NR == FNR { before[$1] = $2; seen[$1] = 1; next }
+        {
+            split($1, key, ":")
+            if (key[2] == want) next
+            gone[$1] = 1
+            if (!($1 in before) || before[$1] != $2) n++
+        }
+        END {
+            for (k in seen) {
+                split(k, key, ":")
+                if (key[2] != want && !(k in gone)) n++
+            }
+            print n + 0
+        }
+    ' "$1" "$2"
 }
 
 errors_seen() { tr -d ' \n' <"$work/errors"; }
@@ -598,7 +647,7 @@ excluded=$extra_excludes
 round=0
 while [ "$round" -lt 20 ]; do
     round=$((round + 1))
-    dump_root __none__ /dev/null
+    dump_root __none__ "$work/resolve_probe"
     [ "$(errors_seen)" != 0 ] || break
     blamed=$(grep -o '"file":"[^"]*"' "$work/dump.err" | sed 's/"file":"//; s/"$//' | sed "s|^$src_name/||" | sort -u)
     [ -n "$blamed" ] || break
@@ -621,6 +670,11 @@ if [ -n "$only_module" ]; then modules=$only_module; fi
 # records one line per outcome here and the totals are counted from the log.
 log="$work/outcomes"
 : >"$log"
+# One line per ACCEPTED edit: `<class> <variant> <other modules moved>`. Kept
+# beside the outcome log rather than in it so the outcome lines keep the
+# exact shape `count_of` greps for.
+others_log="$work/others"
+: >"$others_log"
 
 for module in $modules; do
     pristine="$work/pristine.beni"
@@ -637,6 +691,7 @@ for module in $modules; do
             if [ "$variant" = ann ]; then
                 cp "$pristine" "$src/$module"
                 cp "$work/base_ann" "$work/base"
+                cp "$work/base_ann.all" "$work/base.all"
                 vd_start=$def_start
                 vd_end=$def_end
                 base_source=$pristine
@@ -678,10 +733,13 @@ for module in $modules; do
                 dump_root "$mname" "$work/after"
                 if [ "$(errors_seen)" != 0 ]; then
                     echo "  $module $name $klass $variant rejected"
-                elif cmp -s "$work/base" "$work/after"; then
-                    echo "  $module $name $klass $variant unchanged"
                 else
-                    echo "  $module $name $klass $variant CHANGED"
+                    echo "$klass $variant $(others_moved "$work/base.all" "$work/after.all" "$mname")" >>"$others_log"
+                    if cmp -s "$work/base" "$work/after"; then
+                        echo "  $module $name $klass $variant unchanged"
+                    else
+                        echo "  $module $name $klass $variant CHANGED"
+                    fi
                 fi
                 cp "$base_source" "$src/$module"
             done
@@ -697,6 +755,15 @@ count_of() {
     n=$(grep -c " $1 $2 $3\$" "$log" 2>/dev/null || true)
     [ -n "$n" ] || n=0
     printf '%s' "$n"
+}
+
+# `<edits whose other modules moved> <total other modules moved>` for one
+# class and variant, out of the `others` log.
+others_of() {
+    awk -v klass="$1" -v variant="$2" '
+        $1 == klass && $2 == variant { total += $3; if ($3 > 0) edits++ }
+        END { printf "%d %d", edits + 0, total + 0 }
+    ' "$others_log"
 }
 
 if [ "$verbose" -eq 1 ]; then
@@ -728,8 +795,12 @@ echo "corpus: $corpus"
 echo "tree restored: $restored"
 [ "$broken" = 0 ] || echo "edit program failed on $broken declarations"
 echo
-echo "edit    variant       changed/accepted  applied  skipped  rejected  decls"
-echo "------  ------------  ----------------  -------  -------  --------  -----"
+# `changed/accepted` is the OBSERVED module's own hash moving — the same
+# question the `--stage=raw` byte-diff answered. `others` is the new one and
+# the one the firewall is actually about: how many modules BESIDES the
+# edited one would have to be re-checked.
+echo "edit    variant       changed/accepted  applied  skipped  rejected  decls  edits w/ others  others"
+echo "------  ------------  ----------------  -------  -------  --------  -----  ---------------  ------"
 for klass in $classes; do
     for variant in ann unann; do
         ch=$(count_of "$klass" "$variant" CHANGED)
@@ -740,9 +811,58 @@ for klass in $classes; do
         applied=$((accepted + rj))
         decls=$((applied + sk))
         label=$([ "$variant" = ann ] && echo annotated || echo unannotated)
-        printf '%-6s  %-12s  %14s  %7d  %7d  %8d  %5d\n' \
-            "$klass" "$label" "$ch/$accepted" "$applied" "$sk" "$rj" "$decls"
+        set -- $(others_of "$klass" "$variant")
+        printf '%-6s  %-12s  %14s  %7d  %7d  %8d  %5d  %15d  %6d\n' \
+            "$klass" "$label" "$ch/$accepted" "$applied" "$sk" "$rj" "$decls" "$1" "$2"
     done
 done
+
+# ---------------------------------------------------------------------------
+# E4 — a type added to a module the observed one does not import.
+#
+# The class every other row here structurally cannot express: E1–E3poly all
+# edit the declaration whose record they compare, so none of them can see a
+# record moved by an edit to a DIFFERENT module. That was a real defect —
+# `Term.app` and `Term.alias` carried a whole-program `TypeStore.TypeId`, so
+# a type declared anywhere earlier in sorted-path order rewrote an untouched
+# module's bytes (`plans/m4-plan.md` §2.2) — and it was caught by a
+# black-box scenario rather than by a number, because there was no number.
+#
+# The type added is PRIVATE, which makes the expected answer a clean zero
+# everywhere: a private type is in no interface at all, so not even the
+# EDITED module's own hash may move. A `pub` one would legitimately move the
+# edited module's and must still move nobody else's; the private form is the
+# stricter claim and the one the `TypeId` leak broke.
+# ---------------------------------------------------------------------------
+echo
+echo "E4: a private type added to one module — modules whose interface hash moved"
+echo "module                                  moved  of"
+echo "--------------------------------------  -----  --"
+e4_worst=0
+dump_root __none__ "$work/e4_base"
+e4_total=$(awk 'END { print NR }' "$work/e4_base.all")
+for module in $modules; do
+    cp "$src/$module" "$work/pristine.beni"
+    printf '\n\ntype ChurnProbeE4\n    = ChurnProbeE4\n' >>"$src/$module"
+    dump_root __none__ "$work/e4_after"
+    if [ "$(errors_seen)" != 0 ]; then
+        printf '%-38s  %5s  %2s\n' "$module" "-" "rejected"
+    else
+        # `__none__` is no module's name, so nothing is excluded: the count
+        # is over EVERY module, the edited one included.
+        moved=$(others_moved "$work/e4_base.all" "$work/e4_after.all" __none__)
+        [ "$moved" -le "$e4_worst" ] || e4_worst=$moved
+        printf '%-38s  %5d  %2d\n' "$module" "$moved" "$e4_total"
+    fi
+    cp "$work/pristine.beni" "$src/$module"
+done
+echo "E4 worst case: $e4_worst modules moved (expected 0)"
+
+# E4 edits and restores files of its own, after the check above ran, so the
+# claim is made again over the tree E4 left behind.
+(cd "$src" && find . -type f -print | sort | while IFS= read -r f; do
+    cmp -s "$f" "$corpus_abs/$f" || exit 1
+done) || restored=no
+echo "tree restored after E4: $restored"
 
 if [ "$restored" != yes ] || [ "$broken" != 0 ]; then exit 1; fi

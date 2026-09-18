@@ -241,3 +241,149 @@ projects of `tests/blackbox/blackbox_test.zig:457`, `:3445`, `:3569` and
 4. **Could not determine: what a warm rebuild costs.** Unchanged from `plans/m4-plan.md` §8 —
    slice zero makes the byte-identity assertion possible, not the timing one. The timing needs a
    cache, which is D1.
+
+---
+
+## 11. Measured — 2026-09-19, slice zero as landed
+
+Ryzen 9 5950X (32 threads), Zig 0.16.0, ReleaseFast for the bench rows and the installed Debug
+binary for `bench/churn.sh` and `zig build test-blackbox`. Every bench row is `zig build bench`'s
+new `iface` line, best of the stated iterations after a warm-up, at `--jobs=1`. Raw output, one
+line per corpus.
+
+### 11.1 The record's size, and what the three operations cost
+
+```
+{"phase":"iface","corpus":"--generate=100000","modules":633,"bytes":980920,"bytes_per_module":1549,"min_bytes":440,"median_bytes":1512,"max_bytes":6708,"source_bytes":1919214,"write_ms":1.098,"hash_ms":0.201,"read_ms":0.636,"cold_check_ms":127.4,"roundtrip_check_ms":128.8}
+{"phase":"iface","corpus":"--generate=100000 --dispatch","modules":633,"bytes":990904,"bytes_per_module":1565,"min_bytes":440,"median_bytes":1528,"max_bytes":6708,"source_bytes":1969165,"write_ms":1.136,"hash_ms":0.207,"read_ms":0.657,"cold_check_ms":136.9,"roundtrip_check_ms":136.6}
+{"phase":"iface","corpus":"bench/corpus","modules":20,"bytes":69932,"bytes_per_module":3496,"min_bytes":440,"median_bytes":3068,"max_bytes":8500,"source_bytes":145742,"write_ms":0.051,"hash_ms":0.012,"read_ms":0.032,"cold_check_ms":8.6,"roundtrip_check_ms":8.9}
+{"phase":"iface","corpus":"core","modules":9,"bytes":31552,"bytes_per_module":3505,"min_bytes":440,"median_bytes":3068,"max_bytes":6708,"source_bytes":83258,"write_ms":0.027,"hash_ms":0.008,"read_ms":0.017,"cold_check_ms":3.4,"roundtrip_check_ms":3.6}
+{"phase":"iface","corpus":"tests/corpus/run","modules":116,"bytes":55028,"bytes_per_module":474,"min_bytes":104,"median_bytes":104,"max_bytes":6708,"source_bytes":281515,"write_ms":0.062,"hash_ms":0.018,"read_ms":0.044,"cold_check_ms":14.6,"roundtrip_check_ms":13.7}
+{"phase":"iface","corpus":"tests/corpus/dispatch","modules":37,"bytes":50100,"bytes_per_module":1354,"min_bytes":196,"median_bytes":856,"max_bytes":6708,"source_bytes":121002,"write_ms":0.048,"hash_ms":0.012,"read_ms":0.032,"cold_check_ms":4.9,"roundtrip_check_ms":5.1}
+```
+
+Every row counts core's nine records, which is why `min_bytes` is 440 wherever core holds the
+smallest module in the tree and why `max_bytes` is 6 708 — `core:Dict` — on four of the six.
+104 bytes is a header and a column table and nothing else: the record of a module with no `pub`
+declarations, which most of `tests/corpus/run` is.
+
+**§2's estimate was 777 kB over 624 modules, ~1.25 kB each. Measured: 981 kB over 633 modules,
+1 549 bytes each** — 24 % over, and §2 said which way it would be wrong and why (it counted no
+quantifier block and no `where` suffix). The ratio to source is 0.51×, against the 0.42× §2
+predicted, and the `--stage=raw` text of the same corpus is 1 865 423 bytes, so the binary form is
+**53 %** of the printed one rather than §2's 42 %.
+
+**The monomorphic caveat, now quantified.** The generated corpus has zero `where` rows; the
+`--dispatch` generator's corpus has them, and the whole difference is **+1.0 %** (1 549 → 1 565
+bytes per module). So the shape §2 warned about is real but small at this corpus's polymorphism.
+The two corpora that are not generated are the ones that differ, at 3 496 and 3 505 bytes per
+module — 2.3× the generated figure, because a generated module has one `pub` value and a written
+one has thirty.
+
+**Time.** Over the 100k corpus, 633 modules: write 1.098 ms, hash 0.201 ms, read 0.636 ms —
+1.73 µs, 0.32 µs and 1.00 µs per module. The hash runs at 4.9 GB/s over 981 kB, against §3's
+6.2 GB/s at a 3 kB input, and costs 0.201 ms for the whole project against the 15 ms warm budget.
+§3's claim holds.
+
+### 11.2 What fraction of a check a warm build would replace
+
+`read_ms` against `cold_check_ms` is the number `plans/m4-plan.md` §8 could not determine:
+
+| Corpus | cold check | read every record | fraction |
+|---|---:|---:|---:|
+| `--generate=100000` | 127.4 ms | 0.636 ms | **0.50 %** |
+| `--generate=100000 --dispatch` | 136.9 ms | 0.657 ms | 0.48 % |
+| `bench/corpus` | 8.6 ms | 0.032 ms | 0.37 % |
+| `core` | 3.4 ms | 0.017 ms | 0.50 % |
+
+**A warm build that loaded every record instead of computing it would spend half a percent of a
+cold check's time on the loading.** That is the firewall's ceiling stated as a number, and it is
+the first time it has been one. It is a CEILING and not a prediction: it excludes reading the
+files, hashing the sources and the sidecar of §4, none of which exist yet, and it assumes a 100 %
+cutoff rate, which §11.3 measures and which is not 100 %.
+
+`--roundtrip-interfaces` costs **+1.1 %** of a cold check on the 100k corpus (127.4 → 128.8 ms)
+and is inside the noise on the four small ones — which is what a flag doing a write, a read and a
+free per module should cost, and is why the acceptance matrix's price is process startup and not
+the format.
+
+### 11.3 The firewall, by hash — `bench/churn.sh`
+
+`bench/churn.sh` now takes `check --iface-hash` instead of a `--stage=raw` byte-diff, so it
+reports two things per edit: whether the OBSERVED module's own hash moved (`changed/accepted`,
+the old question) and how many OTHER modules' hashes moved (`others`, the new one).
+
+```
+corpus: bench/corpus
+modules excluded (the pristine root does not resolve them): JsonCodecs.beni NotesApp.beni
+
+edit    variant       changed/accepted  applied  skipped  rejected  decls  edits w/ others  others
+------  ------------  ----------------  -------  -------  --------  -----  ---------------  ------
+E1      annotated               0/20       20       83         0    103                0       0
+E1      unannotated             0/19       25       78         6    103                0       0
+E2      annotated                0/1        2      101         1    103                0       0
+E2      unannotated              0/1        8       95         7    103                0       0
+E3      annotated               0/70       84       19        14    103                0       0
+E3      unannotated            29/68       85       18        17    103                0       0
+E3poly  annotated                0/0        5       98         5    103                0       0
+E3poly  unannotated              4/4       11       92         7    103                0       0
+
+E4: a private type added to one module — modules whose interface hash moved
+Counter, Data/Parser, Data/Token, DictExtra, ExprParser, FormValidation,
+PrettyPrinter, Router, Ui/View — 0 of 18, every one.
+E4 worst case: 0 modules moved (expected 0)
+```
+
+```
+corpus: core
+
+edit    variant       changed/accepted  applied  skipped  rejected  decls  edits w/ others  others
+------  ------------  ----------------  -------  -------  --------  -----  ---------------  ------
+E1      annotated               0/15       15      125         0    140                0       0
+E1      unannotated             0/15       15      125         0    140                0       0
+E2      annotated                0/7        8      132         1    140                0       0
+E2      unannotated              0/7        8      132         1    140                0       0
+E3      annotated               0/74      107       33        33    140                0       0
+E3      unannotated            50/90      107       33        17    140                0       0
+E3poly  annotated                0/0       15      125        15    140                0       0
+E3poly  unannotated            12/12       15      125         3    140                0       0
+
+E4: Basics, Char, Debug, Dict, List, Maybe, Result, Set, String — 0 of 9, every one.
+E4 worst case: 0 modules moved (expected 0)
+```
+
+**Three findings.**
+
+1. **E4 is 0 everywhere, on both corpora.** A private type added to a module moves no module's
+   interface hash at all — not even the edited module's own, which is the stricter claim and the
+   one the `TypeId` leak of `plans/m4-plan.md` §2.2 broke. It is not a blind zero: the same edit
+   written `pub` instead of private moves exactly one line, the edited module's own, and no other
+   (checked by hand for `app:Counter` and for `core:Basics`). This is the firewall's first real
+   measurement and the row `fast-compiler.md` §8 asked for.
+
+2. **`others` is 0 on every one of the 366 accepted edits.** When an interface DID move, no second
+   module's interface moved with it: the wave stops at one record. That is not "no importer is
+   re-checked" — an importer of a changed module still has to be re-checked — it is the stronger
+   and more useful fact that the re-check does not then propagate. A cutoff at depth one is what
+   makes the firewall worth having, and this is the first evidence for it.
+
+3. **Report 19 §4's annotated rows were 0 by dump-diff. They are 0 by hash too** — every
+   `annotated` row above is `0/n`, on both corpora, over E1, E2, E3 and E3poly alike. The hash is
+   strictly more sensitive than the dump on the two fields `--stage=raw` does not print
+   (`Scheme.quantified_start`, `Quantified.constraints_start`) and on the `symbols` column's
+   identity, so this is a confirmation and not the same measurement twice. The unannotated rows
+   are unchanged as well: 29/68 and 4/4 on `bench/corpus`, 50/90 and 12/12 on `core`, which is
+   `plans/state-of-the-compiler.md` §7's split — an annotation is what makes a body edit safe —
+   restated in the quantity a cache will use.
+
+### 11.4 What the acceptance matrix cost
+
+336 fixtures × four runs, over `check_good`, `check_bad`, `check_args`, `check_depth`,
+`dispatch`, `run`, `emit` and `regress`. `zig build test-blackbox` went from **86.4 s to 111.8 s,
++25.4 s (+29 %)**. The spec estimated ~20 s from a measured 9.4 ms per small-fixture invocation;
+the installed Debug binary on this machine costs ~101 ms per `check` and ~113 ms per `build`, so
+the honest serial figure is ~240 s of work. What keeps it at 25 s is that the matrix is its own
+test binary — `zig build test-blackbox` runs its binaries concurrently — and that it spreads its
+own fixtures over eight workers. No fixture and no kind was dropped to get there; what is
+deliberately not in the cross is the `--release` half of a `run/` fixture, which is downstream of
+the record exactly as the development build already is.
