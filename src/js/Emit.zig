@@ -286,6 +286,21 @@ const Emitter = struct {
         return e.session.artifacts.bir(e.graph().moduleFile(m));
     }
 
+    /// The 1-based line and column of `token` in `file`.
+    ///
+    /// Nothing else in this phase needs positions — the session turns the
+    /// reported token into a span. A message that has to name a SECOND
+    /// location is the exception, the way `duplicate_declaration` names the
+    /// first of two by line; two `main`s are in different modules, so the
+    /// path is named with it.
+    fn tokenPosition(e: *Emitter, file: SourceStore.Index, token: u32) diagnostic.Position {
+        const line_starts = e.session.store.lineStarts(file);
+        if (line_starts.len == 0) return .{ .line = 1, .col = 1 };
+        const tokens = e.session.artifacts.tokens(file);
+        if (token >= tokens.len) return .{ .line = 1, .col = 1 };
+        return diagnostic.position(line_starts, tokens.items(.start)[token]);
+    }
+
     fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
@@ -613,19 +628,35 @@ const Emitter = struct {
                 if (d.kind != .value) continue;
                 if (b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
                 if (found) |previous| {
+                    // Which of the two is "the first" is the lower MODULE
+                    // INDEX, which comes from the sorted path and never
+                    // from argument or completion order (CLAUDE.md rule 5),
+                    // so the message is the same however the build was
+                    // invoked.
+                    const first_file = e.graph().moduleFile(previous.module);
+                    const first_token = e.bir(previous.module).decl(previous.decl).name_token;
+                    const first = e.tokenPosition(first_file, first_token);
+                    const second = e.tokenPosition(file, d.name_token);
                     try e.report(
-                        .missing_main,
+                        .duplicate_main,
                         file,
                         d.name_token,
                         \\This project has more than one `main`.
                         \\
-                        \\`{s}` and `{s}` both declare one, and a build is a pair of ONE entry
-                        \\point and ONE platform (`docs/design/boundary.md` §5.3). Build them
-                        \\separately.
+                        \\`{s}` declares one at `{s}:{d}:{d}` and `{s}` another at
+                        \\`{s}:{d}:{d}`. A build is a pair of ONE entry point and ONE platform
+                        \\(`docs/design/boundary.md` §5.3), so two entry points are two builds: give
+                        \\each its own, or pass `--library` if this project is not a program.
                     ,
                         .{
-                            e.session.store.moduleName(e.graph().moduleFile(previous.module)),
+                            e.session.store.moduleName(first_file),
+                            e.session.store.path(first_file),
+                            first.line,
+                            first.col,
                             e.session.store.moduleName(file),
+                            e.session.store.path(file),
+                            second.line,
+                            second.col,
                         },
                     );
                     return null;

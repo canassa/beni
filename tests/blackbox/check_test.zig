@@ -372,7 +372,7 @@ test "check --platform does not require a main, and does not mind two" {
     // build's and has not moved.
     try testing.expectEqual(@as(u8, 1), built.exit_code);
     try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.missing_main, built.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Code.duplicate_main, built.diagnostics[0].code);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │

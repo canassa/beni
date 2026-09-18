@@ -215,6 +215,13 @@ pub const Code = enum {
     /// the last exit-0 path from a MODULE to a temporal dead zone, as
     /// `let_forward_reference` was from a `let`.
     cyclic_value,
+    /// M3a again (`boundary.md` §5.3), appended on 2026-09-19: a project
+    /// with more than one `main`. It was reported under `missing_main`,
+    /// whose title says the opposite of the message underneath it and whose
+    /// code routes a tool to the wrong condition. A build is a pair of ONE
+    /// entry point and ONE platform, so two `main`s are two builds — a
+    /// different edit from the one "MISSING MAIN" asks for.
+    duplicate_main,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -314,6 +321,7 @@ pub fn title(code: Code) []const u8 {
         .foreign_unbound_reference => "UNBOUND JAVASCRIPT REFERENCE",
         .foreign_arity_mismatch => "FOREIGN ARITY MISMATCH",
         .missing_main => "MISSING MAIN",
+        .duplicate_main => "TWO MAINS",
         .main_not_program => "MAIN IS NOT A PROGRAM",
         .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",
         .duplicate_where_constraint => "DUPLICATE CONSTRAINT",

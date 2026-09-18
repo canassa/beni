@@ -283,6 +283,12 @@ is compiled twice under different platforms and each compilation sees only the c
 platform offers. A module that uses a browser-only capability simply fails to resolve when compiled
 for the server, which is the diagnostic you want rather than a runtime surprise.
 
+**A project with two `main`s is therefore refused, under `duplicate_main`** (`language.md` §10, added
+2026-09-19; it used to share `missing_main`, whose title says the opposite). The message names both
+modules and both locations, and calls "the first" the one with the lower module index — the sorted
+path, never argument or completion order. `--library` turns the rule off with the rest of the
+entry-point search, because a library has no entry point to be ambiguous about.
+
 This is also why `--platform` cannot be a global flag with one value per invocation forever; the
 build contract needs to express "this entry point, that platform" as a pair. M3 may ship one pair
 per invocation, but the manifest concept M4 introduces should carry the set.

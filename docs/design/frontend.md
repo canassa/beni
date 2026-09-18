@@ -55,8 +55,8 @@ gets today's message and not a guess.
 and then `boundary.md` §4's four sibling checks, which need no output directory and read the same
 embedded assets the build reads. A `foreign_arity_mismatch` is exactly what a pre-commit check
 exists to catch, and a `check` that passed where the `build` behind it fails is the asymmetry this
-flag removes. What it does **not** run is the entry-point search: `missing_main`, the two-`main`
-refusal and `main_not_program` belong to `build`, because a build is a pair of ONE entry point and
+flag removes. What it does **not** run is the entry-point search: `missing_main`, `duplicate_main`
+and `main_not_program` belong to `build`, because a build is a pair of ONE entry point and
 ONE platform (`boundary.md` §5.3) while `check` is given whatever paths it is given — one module of
 a project, or a repository holding a client and a server with a `main` each. `checker.md` §1 puts
 `main`'s type outside the checker for the same reason.

@@ -1425,6 +1425,96 @@ test "`main` is resolved per platform: it must exist and have the platform's Pro
     try testing.expect(!w.exists("out"));
 }
 
+test "two `main`s are TWO MAINS, naming both modules and both locations" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A build is a pair of ONE entry point and ONE platform
+    // (`boundary.md` §5.3), so a project with two `main`s is two builds. It
+    // used to be reported under `missing_main`, whose title — MISSING MAIN —
+    // says the opposite of the message printed underneath it, and whose code
+    // told a tool routing on it that the project had no entry point when it
+    // had two.
+    //
+    // This cannot be a corpus fixture: the corpus walker passes no
+    // `--platform`, and a build that must FAIL has no kind (`plans/
+    // coverage-audit.md` Part A).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "main"
+        \\
+    );
+    try w.write("Other.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "other"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni", "Other.beni" });
+    // The same project with the two paths the other way round. Module index
+    // comes from the SORTED path and never from argument or completion order
+    // (CLAUDE.md rule 5), so which of the two is "the first" must not move.
+    const swapped = try w.run(&.{ "build", "--platform=node", "--out=out", "Other.beni", "Main.beni" });
+    // `--library` turns off the requirement for a `main`, and a second one
+    // with it (`backend.md` §2): both are exported and neither is an entry
+    // point.
+    const library = try w.run(&.{ "build", "--platform=node", "--library", "--out=lib", "Main.beni", "Other.beni" });
+    // `check --platform` is handed paths rather than a build pair, so it
+    // does not look for an entry point at all (`boundary.md` §5.3).
+    const checked = try w.run(&.{ "check", "--platform=node", "Main.beni", "Other.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .duplicate_main,
+        .severity = .@"error",
+        .span = .{
+            .file = "Other.beni",
+            .start = .{ .line = 5, .col = 1 },
+            .end = .{ .line = 5, .col = 5 },
+        },
+        .title = "TWO MAINS",
+        .message =
+        \\This project has more than one `main`.
+        \\
+        \\`Main` declares one at `Main.beni:5:1` and `Other` another at
+        \\`Other.beni:5:1`. A build is a pair of ONE entry point and ONE platform
+        \\(`docs/design/boundary.md` §5.3), so two entry points are two builds: give
+        \\each its own, or pass `--library` if this project is not a program.
+        ,
+    }, r.diagnostics[0]);
+    try testing.expectEqualStrings(r.stderr, swapped.stderr);
+
+    try testing.expectEqual(@as(u8, 0), library.exit_code);
+    try testing.expectEqualStrings("", library.stderr);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqualStrings("", checked.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
+    try testing.expect(w.exists("lib/Main.mjs"));
+    try testing.expect(w.exists("lib/Other.mjs"));
+    try testing.expect(!w.exists("lib/main.mjs"));
+}
+
 test "a `?` nothing reaches is not lowered, so nothing it needs is emitted" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -103,7 +103,8 @@ one — which is what makes "a golden moved" a finding rather than a blessing fo
 
 **`--library` is not in that company**: it lands with §9 and does something the day it lands. It
 turns off exactly two things — the REQUIREMENT for a `main` (`missing_main` does not fire, a second
-`main` is not an error, and a `main` that is there is not checked against the platform's `Program`)
+`main` is not a `duplicate_main`, and a `main` that is there is not checked against the platform's
+`Program`)
 and the entry file — and turns on one, the root rule. A `main` that happens to exist is still
 exported and still a root, because §5's export list has the entry declaration in it and §9 roots a
 library at its export list; §9's "Roots" says why at length. It is not a second output mode; a
@@ -1215,7 +1216,8 @@ visit order cannot reach the bytes. `--jobs=1` against `--jobs=8` covers it with
   **That last clause is a correction, and §2's "a `main` that happens to exist is not special" is
   wrong as written.** §5's export list has three sources and the entry declaration is the third; a
   library build roots at the export list, so it roots at all three. What `--library` turns off is
-  the REQUIREMENT for a `main` — `missing_main` does not fire, a second one is not an error, and the
+  the REQUIREMENT for a `main` — `missing_main` does not fire, a second one is not a
+  `duplicate_main`, and the
   type is not checked against the platform's `Program` — and the entry file. It does not turn off
   finding one. The evidence is this section's own acceptance: `main` is not `pub` in a single
   fixture of the corpus, so a rule that excluded it would take `main` and its `import Node` out of
