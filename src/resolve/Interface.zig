@@ -416,7 +416,14 @@ pub fn range(iface: *const Interface, start: u32) []const u32 {
     return rest[0..len];
 }
 
+/// The term at `index`, or `err` for `none` and for an index this record
+/// does not describe. Bounds-checked for the reason `range` is: M4 maps
+/// these from disk, and a record that does not describe itself must not be
+/// able to crash the compiler — nor to mislead it, which is why the
+/// degraded answer is `err` (the tag every reader already poisons on) and
+/// not some other term's bytes (checker.md §7's *The serialized form*).
 pub fn term(iface: *const Interface, index: TermIndex) Term {
+    if (index == .none or index.int() >= iface.terms.len) return .{ .tag = .err, .lhs = 0, .rhs = 0 };
     return iface.terms.get(index.int());
 }
 
@@ -429,7 +436,14 @@ pub fn typeRef(iface: *const Interface, index: TypeRefIndex) ?TypeRef {
     return iface.type_refs[index.int()];
 }
 
+/// The scheme at `index`. `none`, and an index this record does not
+/// describe, both yield the empty scheme — no quantifiers and an `err`
+/// body, which is what a value with no scheme already means to every
+/// reader. Bounds-checked for `range`'s reason.
 pub fn scheme(iface: *const Interface, index: SchemeIndex) Scheme {
+    if (index == .none or @intFromEnum(index) >= iface.schemes.len) {
+        return .{ .quantified_start = 0, .quantified_count = 0, .body = .none };
+    }
     return iface.schemes[@intFromEnum(index)];
 }
 
@@ -467,14 +481,22 @@ pub fn ctorQuantified(iface: *const Interface, c: Ctor, i: u32) Quantified {
 }
 
 /// The scheme of `value`, or null when it has none — a declaration that
-/// failed to check, or a module that was never checked.
+/// failed to check, a module that was never checked, or a value index this
+/// record does not describe (`range`'s reason).
 pub fn valueScheme(iface: *const Interface, value: ValueIndex) ?Scheme {
+    if (@intFromEnum(value) >= iface.values.len) return null;
     const s = iface.values[@intFromEnum(value)].scheme;
     if (s == .none) return null;
     return iface.scheme(s);
 }
 
+/// The interner symbol at `index`. An index this record does not describe
+/// yields symbol 0 — `InternPool.WellKnown.main`, which every session has
+/// interned — so a malformed record renders as a wrong NAME rather than
+/// reading past the column. Bounds-checked for `range`'s reason; every
+/// caller of this is on the path a record mapped from disk reaches.
 pub fn symbol(iface: *const Interface, index: SymbolIndex) Symbol {
+    if (@intFromEnum(index) >= iface.symbols.len) return @enumFromInt(0);
     return iface.symbols[@intFromEnum(index)];
 }
 
@@ -818,4 +840,68 @@ test "a module with no pub declarations has an empty interface" {
         \\    1
         \\
     );
+}
+
+// ---------------------------------------------------------------------------
+// The bounds-checked posture (checker.md §7, *The serialized form*).
+//
+// Every accessor above answers a DEGRADED value rather than trapping, because
+// M4 loads these records from bytes and a record that does not describe itself
+// must be able to crash neither the compiler nor the answer. The records below
+// are ones no writer produces: every index in them is out of range on purpose.
+// ---------------------------------------------------------------------------
+
+test "an empty record's accessors answer instead of trapping" {
+    const iface: Interface = .empty;
+    try testing.expectEqual(Term.Tag.err, iface.term(@enumFromInt(0)).tag);
+    try testing.expectEqual(Term.Tag.err, iface.term(.none).tag);
+    try testing.expectEqual(Term.Tag.err, iface.term(@enumFromInt(std.math.maxInt(u32) - 1)).tag);
+
+    try testing.expectEqual(TermIndex.none, iface.scheme(@enumFromInt(0)).body);
+    try testing.expectEqual(@as(u32, 0), iface.scheme(@enumFromInt(7)).quantified_count);
+    try testing.expectEqual(TermIndex.none, iface.scheme(.none).body);
+
+    try testing.expectEqual(@as(?Scheme, null), iface.valueScheme(@enumFromInt(0)));
+    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), iface.symbol(@enumFromInt(9)));
+}
+
+test "a record whose indices leave their columns still answers" {
+    var terms: std.MultiArrayList(Term) = .empty;
+    defer terms.deinit(testing.allocator);
+    try terms.append(testing.allocator, .{ .tag = .unit, .lhs = 0, .rhs = 0 });
+
+    // One value naming a scheme that is not there, one scheme whose body is
+    // not there, and a symbol column of length one.
+    const iface: Interface = .{
+        .values = &.{.{ .name = @enumFromInt(4), .is_foreign = false, .scheme = @enumFromInt(3) }},
+        .types = &.{},
+        .ctors = &.{},
+        .schemes = &.{.{ .quantified_start = 100, .quantified_count = 2, .body = @enumFromInt(50) }},
+        .terms = terms.slice(),
+        .extra = &.{},
+        .type_refs = &.{},
+        .symbols = &.{@enumFromInt(0)},
+    };
+
+    // The one real term is readable; one past it is `err`.
+    try testing.expectEqual(Term.Tag.unit, iface.term(@enumFromInt(0)).tag);
+    try testing.expectEqual(Term.Tag.err, iface.term(@enumFromInt(1)).tag);
+
+    // `values[0].scheme` is 3 and there is one scheme: the degraded scheme,
+    // not a read past `schemes`.
+    const s = iface.valueScheme(@enumFromInt(0)).?;
+    try testing.expectEqual(TermIndex.none, s.body);
+    try testing.expectEqual(@as(u32, 0), s.quantified_count);
+    // And a value index past the column is "no scheme" rather than a trap.
+    try testing.expectEqual(@as(?Scheme, null), iface.valueScheme(@enumFromInt(1)));
+
+    // The scheme that IS there has a body index that is not, and quantifiers
+    // past the end of `extra`; both are already the six accessors' business.
+    const real = iface.scheme(@enumFromInt(0));
+    try testing.expectEqual(Term.Tag.err, iface.term(real.body).tag);
+    try testing.expectEqual(SymbolIndex.Optional.none, iface.quantified(real, 0).name);
+
+    // `values[0].name` is 4 over a one-entry symbol column.
+    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), iface.symbol(@enumFromInt(4)));
+    try testing.expectEqual(@as(Symbol, @enumFromInt(0)), iface.symbol(@enumFromInt(1)));
 }
