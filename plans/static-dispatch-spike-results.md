@@ -2784,3 +2784,621 @@ then `zig build test-blackbox` again — **all exit 0**
 at the end is the black-box suite's own).
 
 ---
+
+## 2026-09-18 12:32 CEST — S8a′, M2 re-taken after A.81 (machine 2)
+
+**Same machine as the S8a header at `:1423`**: host `dagon`, AMD Ryzen 9 5950X
+(16 cores / 32 threads), 31 GiB RAM, Linux 6.12.110 (NixOS), Zig 0.16.0, Node
+v24.19.0. Every rule in that header applies to every number below, `uptime` is
+recorded verbatim before every instrument, and no number here was taken with a
+1-minute load average above 2.0 — the range across this whole session is **0.12
+to 0.94**, so nothing had to be retried.
+
+**Binaries.**
+
+- **A = the C0 proxy**, *not* rebuilt: `../beni-s1/zig-out/bin/beni` at
+  `c870e9a`, `stat -c '%s'` → **13 253 080 bytes**, the same file and the same
+  byte count the S8a header records at `:1446`. `git log --oneline -1` there is
+  `c870e9a` and `git status --short` is empty. Nothing in this session wrote to
+  that worktree except `zig build`.
+- **B = the branch**, rebuilt for this entry: HEAD **`e4c56d6`** (= S8a's
+  `d9e1b02`, the S8-fix `98fe87a`, and the diary commit), built
+  `zig build -Doptimize=ReleaseFast --prefix /tmp/rf`, **16 752 152 bytes**
+  against S8a's **16 751 760** at `eb03b77` (`:1454`) — **+392 bytes**. Never
+  installed into the branch's `zig-out`. That the installed file really is this
+  commit's was verified rather than assumed: a second `zig build
+  -Doptimize=ReleaseFast --prefix /tmp/rf2` and `cmp /tmp/rf/bin/beni
+  /tmp/rf2/bin/beni` printed nothing.
+
+**Why this row is re-taken.** Every M2 number above this line was taken on a
+binary that no longer exists on the branch. `98fe87a` — A.81,
+`docs/design/static-dispatch-spike.md:3648-3676` — removed a third factor from
+`beni check` on the unannotated chain: `Solve.attachConstraint` rebuilt an entire
+constraint set (copying it, joining a site list with itself, redirecting every
+index to the copy of itself) in order to fold a constraint onto the set it was
+**already in**. M2 is the only S8a row whose numbers that can move, and the
+second half of this entry is the evidence for which of the other rows it leaves
+untouched.
+
+#### Correction 1 — the S8a M2 entry's "regression between S3 and `eb03b77`" is wrong
+
+S8a's M2 Reading (`:1714-1726`) says `obligations` "were linear in the chain at
+S3 and are quadratic in it now", and that "something between S3 and `eb03b77`
+(S4–S7: the evidence plumbing, the parts work, the redirect map, the pre-order
+numbering) made every promoted constraint carry an obligation of its own". The
+summary row repeats it (`:2767`: "`obligations` are now `n(n+1)/2 + 49` where S3
+recorded them linear"). **Both statements are wrong.** The evidence is the
+S8-fix diary entry (`plans/diary.md`, `## 2026-09-18 12:16 CEST — S8-fix: the
+constraint chain was cubic, and the bisect lied`) and A.81:
+
+- The S8-fix implementer built **`8081b5f`** — S6b's parent, the commit a
+  `git bisect` over this defect calls "good" — and measured **21.1 / 132.0 /
+  934.7 ms at n = 100 / 200 / 400**, which is **already cubic**. *Those three
+  timings were taken by the S8-fix implementer on this machine; they are cited
+  here and were **not** re-taken in this entry.*
+- `8081b5f` reports **`obligations: 5064`** at n = 100 against HEAD's **5099**.
+  There is no linear-to-quadratic step anywhere between S3 and `eb03b77`.
+- **n(n+1)/2 obligations is the correct A.57 count on this input.** Link k of an
+  unannotated chain genuinely accumulates k constraints, so the chain carries
+  n(n+1)/2 of them, and the count matches `constraints_promoted`, which has read
+  n(n+1)/2 **since S3**. The S3 row's `obligations: 1014` (`:633-641`) is a
+  *different, under-registering* checker, not a baseline — reading two counters
+  from two commits as one series is what made a correct quadratic look like a
+  regression.
+- The counter that *does* localise the defect is **`constraints_merged`**: it
+  counts set rebuilds and read **n(n+1)/2 + n − 1** where the honest number is
+  **n − 1**. Every post-fix block below reads exactly n − 1.
+- **S6b's A.75 redirect map multiplied the constant (~3.3×); it did not introduce
+  the exponent.** A bisect over a *continuous* quantity finds where that quantity
+  crossed the threshold you bisected on, not where its growth *rate* changed.
+
+#### Correction 2 — the 29.2 GiB kill was a defect, not the feature's cost
+
+S8a's Reading (`:1698-1712`) and summary row (`:2767`) present the OOM as what
+the branch costs — "the branch's worst row", "at n = 1 000 the branch does not
+compile the program at all", "**At n = 1 000 B reaches 29.2 GiB and is killed
+after 46 s**". The kill was **a bookkeeping defect in
+`Solve.attachConstraint`**, not the price of static dispatch. With the guard in
+place the same n = 1 000 tree checks in **441 ms at 411 MB** (below), and
+`beni check` now reaches n = 3 000 — a chain the C0 checker refuses outright.
+What static dispatch costs on an unannotated chain is the **quadratic** measured
+below, and that is the figure report 19 should carry.
+
+---
+
+### M2 — constraint accumulation in unannotated code, RE-TAKEN post-fix (A and B, machine 2)
+
+`plans/static-dispatch-spike.md` §7 M2, the same instrument as at `:1466`:
+`zig build bench -- --pathological=constraint-chain=<n> --iterations=5`, best of
+5 after one warm-up, `--jobs=1`, **interleaved ABBA per n** (A-1, B-1, B-2,
+A-2), A run from `../beni-s1` and B from the branch. Both bench executables were
+built before the first block, so no build overlaps an instrument. n runs
+**{10, 100, 200, 400, 1000, 2000, 3000}**: B at n = 2000 reads 1.91 s, under the
+~3 s bar the manager set, so **n = 3000 was taken on both sides**.
+
+**The generated program is byte-identical on the two sides at every n**, which is
+the assertion that the two checkers read the same source: `cmp` of
+`../beni-s1/.zig-cache/bench-pathological/Gen/ConstraintChain.beni` against the
+branch's copy printed nothing (`IDENTICAL`) at n = 10, 100, 200, 400, 1000, 2000
+and 3000, and the `bench:` header reports the same byte count on both sides at
+every n (787 / 3 760 / 7 360 / 14 560 / 36 163 / 75 163 / 114 163).
+
+**Two caveats, both carried over from the S8a block.** (1) A checks **12**
+modules and B checks **10** — C1 deletes `core/Dict/String.beni` and
+`core/Dict/Int.beni` — so this is "the branch as it stands against `master` as it
+stands", not one program through two checkers. (2) **A reports `diagnostics: 1`
+at n = 2000 and n = 3000.** That is C0 giving up: past ≈64 links its checker
+stops building the chain and emits one `UNKNOWN FIELD` (S1 quotes it verbatim at
+`:152-167`), and its times plateau at ~250 ms. **A's numbers at those two n are
+not A doing the same work**, and the table labels them `†`. At n ≤ 1000 both
+sides are clean (`diagnostics: 0`).
+
+#### n = 10
+
+```
+### uptime before A-1 (n=10)
+ 12:23:28 up  1:25,  3 users,  load average: 0.14, 0.81, 0.95
+A1 bench: generated constraint-chain n=10 (787 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":38,"unifications":5366,"generalisations":2092,"instantiations":1662,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":1.59,"loc_per_s":23896,"cold_check_ms":2.6}
+### uptime before B-1 (n=10)
+ 12:23:28 up  1:25,  3 users,  load average: 0.14, 0.81, 0.95
+B1 bench: generated constraint-chain n=10 (787 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":38,"unifications":5153,"generalisations":2006,"instantiations":1574,"obligations":104,"constraints_created":18,"constraints_merged":9,"constraints_deferred":104,"constraints_discharged":39,"constraints_promoted":55,"diagnostics":0,"ms":1.98,"loc_per_s":19195,"cold_check_ms":3.0}
+### uptime before B-2 (n=10)
+ 12:23:28 up  1:25,  3 users,  load average: 0.14, 0.81, 0.95
+B2 {"phase":"check","modules":10,"lines":38,"unifications":5153,"generalisations":2006,"instantiations":1574,"obligations":104,"constraints_created":18,"constraints_merged":9,"constraints_deferred":104,"constraints_discharged":39,"constraints_promoted":55,"diagnostics":0,"ms":1.86,"loc_per_s":20441,"cold_check_ms":2.8}
+### uptime before A-2 (n=10)
+ 12:23:28 up  1:25,  3 users,  load average: 0.14, 0.81, 0.95
+A2 {"phase":"check","modules":12,"lines":38,"unifications":5366,"generalisations":2092,"instantiations":1662,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":1.62,"loc_per_s":23398,"cold_check_ms":2.6}
+### generated-source identity check (n=10)
+IDENTICAL
+```
+
+#### n = 100
+
+```
+### uptime before A-1 (n=100)
+ 12:23:35 up  1:25,  3 users,  load average: 0.12, 0.79, 0.94
+A1 bench: generated constraint-chain n=100 (3760 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":308,"unifications":6716,"generalisations":17617,"instantiations":2022,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":4.84,"loc_per_s":63622,"cold_check_ms":5.9}
+### uptime before B-1 (n=100)
+ 12:23:35 up  1:25,  3 users,  load average: 0.12, 0.79, 0.94
+B1 bench: generated constraint-chain n=100 (3760 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":308,"unifications":6143,"generalisations":12446,"instantiations":1934,"obligations":5099,"constraints_created":108,"constraints_merged":99,"constraints_deferred":5099,"constraints_discharged":39,"constraints_promoted":5050,"diagnostics":0,"ms":6.60,"loc_per_s":46657,"cold_check_ms":7.6}
+### uptime before B-2 (n=100)
+ 12:23:35 up  1:25,  3 users,  load average: 0.12, 0.79, 0.94
+B2 {"phase":"check","modules":10,"lines":308,"unifications":6143,"generalisations":12446,"instantiations":1934,"obligations":5099,"constraints_created":108,"constraints_merged":99,"constraints_deferred":5099,"constraints_discharged":39,"constraints_promoted":5050,"diagnostics":0,"ms":6.24,"loc_per_s":49325,"cold_check_ms":7.4}
+### uptime before A-2 (n=100)
+ 12:23:35 up  1:25,  3 users,  load average: 0.12, 0.79, 0.94
+A2 {"phase":"check","modules":12,"lines":308,"unifications":6716,"generalisations":17617,"instantiations":2022,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":4.80,"loc_per_s":64120,"cold_check_ms":5.9}
+### generated-source identity check (n=100)
+IDENTICAL
+```
+
+#### n = 200
+
+```
+### uptime before A-1 (n=200)
+ 12:23:41 up  1:26,  3 users,  load average: 0.18, 0.78, 0.94
+A1 bench: generated constraint-chain n=200 (7360 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":608,"unifications":8216,"generalisations":63367,"instantiations":2422,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":14.44,"loc_per_s":42102,"cold_check_ms":15.7}
+### uptime before B-1 (n=200)
+ 12:23:41 up  1:26,  3 users,  load average: 0.18, 0.78, 0.94
+B1 bench: generated constraint-chain n=200 (7360 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":608,"unifications":7243,"generalisations":43046,"instantiations":2334,"obligations":20149,"constraints_created":208,"constraints_merged":199,"constraints_deferred":20149,"constraints_discharged":39,"constraints_promoted":20100,"diagnostics":0,"ms":18.40,"loc_per_s":33045,"cold_check_ms":19.6}
+### uptime before B-2 (n=200)
+ 12:23:41 up  1:26,  3 users,  load average: 0.18, 0.78, 0.94
+B2 {"phase":"check","modules":10,"lines":608,"unifications":7243,"generalisations":43046,"instantiations":2334,"obligations":20149,"constraints_created":208,"constraints_merged":199,"constraints_deferred":20149,"constraints_discharged":39,"constraints_promoted":20100,"diagnostics":0,"ms":19.75,"loc_per_s":30780,"cold_check_ms":21.0}
+### uptime before A-2 (n=200)
+ 12:23:42 up  1:26,  3 users,  load average: 0.18, 0.78, 0.94
+A2 {"phase":"check","modules":12,"lines":608,"unifications":8216,"generalisations":63367,"instantiations":2422,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":15.49,"loc_per_s":39259,"cold_check_ms":16.7}
+### generated-source identity check (n=200)
+IDENTICAL
+```
+
+#### n = 400
+
+```
+### uptime before A-1 (n=400)
+ 12:23:47 up  1:26,  3 users,  load average: 0.16, 0.77, 0.93
+A1 bench: generated constraint-chain n=400 (14560 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":1208,"unifications":11216,"generalisations":244867,"instantiations":3222,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":46.65,"loc_per_s":25893,"cold_check_ms":48.1}
+### uptime before B-1 (n=400)
+ 12:23:47 up  1:26,  3 users,  load average: 0.16, 0.77, 0.93
+B1 bench: generated constraint-chain n=400 (14560 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":1208,"unifications":9443,"generalisations":164246,"instantiations":3134,"obligations":80249,"constraints_created":408,"constraints_merged":399,"constraints_deferred":80249,"constraints_discharged":39,"constraints_promoted":80200,"diagnostics":0,"ms":72.19,"loc_per_s":16733,"cold_check_ms":73.7}
+### uptime before B-2 (n=400)
+ 12:23:48 up  1:26,  3 users,  load average: 0.16, 0.77, 0.93
+B2 {"phase":"check","modules":10,"lines":1208,"unifications":9443,"generalisations":164246,"instantiations":3134,"obligations":80249,"constraints_created":408,"constraints_merged":399,"constraints_deferred":80249,"constraints_discharged":39,"constraints_promoted":80200,"diagnostics":0,"ms":73.43,"loc_per_s":16450,"cold_check_ms":75.0}
+### uptime before A-2 (n=400)
+ 12:23:49 up  1:26,  3 users,  load average: 0.16, 0.77, 0.93
+A2 {"phase":"check","modules":12,"lines":1208,"unifications":11216,"generalisations":244867,"instantiations":3222,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":47.06,"loc_per_s":25669,"cold_check_ms":48.7}
+### generated-source identity check (n=400)
+IDENTICAL
+```
+
+#### n = 1000 — the point S8a could not reach
+
+```
+### uptime before A-1 (n=1000)
+ 12:23:56 up  1:26,  3 users,  load average: 0.14, 0.75, 0.92
+A1 bench: generated constraint-chain n=1000 (36163 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":3008,"unifications":20216,"generalisations":1509367,"instantiations":5622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":239.71,"loc_per_s":12548,"cold_check_ms":242.1}
+### uptime before B-1 (n=1000)
+ 12:23:57 up  1:26,  3 users,  load average: 0.14, 0.75, 0.92
+B1 bench: generated constraint-chain n=1000 (36163 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":3008,"unifications":16043,"generalisations":1007846,"instantiations":5534,"obligations":500549,"constraints_created":1008,"constraints_merged":999,"constraints_deferred":500549,"constraints_discharged":39,"constraints_promoted":500500,"diagnostics":0,"ms":441.02,"loc_per_s":6820,"cold_check_ms":443.3}
+### uptime before B-2 (n=1000)
+ 12:24:02 up  1:26,  3 users,  load average: 0.21, 0.75, 0.92
+B2 {"phase":"check","modules":10,"lines":3008,"unifications":16043,"generalisations":1007846,"instantiations":5534,"obligations":500549,"constraints_created":1008,"constraints_merged":999,"constraints_deferred":500549,"constraints_discharged":39,"constraints_promoted":500500,"diagnostics":0,"ms":437.38,"loc_per_s":6877,"cold_check_ms":439.8}
+### uptime before A-2 (n=1000)
+ 12:24:06 up  1:26,  3 users,  load average: 0.27, 0.75, 0.92
+A2 {"phase":"check","modules":12,"lines":3008,"unifications":20216,"generalisations":1509367,"instantiations":5622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":240.04,"loc_per_s":12531,"cold_check_ms":242.4}
+### generated-source identity check (n=1000)
+IDENTICAL
+```
+
+#### n = 2000 — never attempted on B before
+
+```
+### uptime before A-1 (n=2000)
+ 12:24:15 up  1:26,  3 users,  load average: 0.25, 0.74, 0.92
+A1 bench: generated constraint-chain n=2000 (75163 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":6008,"unifications":33268,"generalisations":1599447,"instantiations":9622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":1,"ms":245.40,"loc_per_s":24482,"cold_check_ms":249.2}
+### uptime before B-1 (n=2000)
+ 12:24:17 up  1:26,  3 users,  load average: 0.31, 0.75, 0.92
+B1 bench: generated constraint-chain n=2000 (75163 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":6008,"unifications":27043,"generalisations":4013846,"instantiations":9534,"obligations":2001049,"constraints_created":2008,"constraints_merged":1999,"constraints_deferred":2001049,"constraints_discharged":39,"constraints_promoted":2001000,"diagnostics":0,"ms":1912.46,"loc_per_s":3141,"cold_check_ms":1916.2}
+### uptime before B-2 (n=2000)
+ 12:24:35 up  1:26,  3 users,  load average: 0.46, 0.76, 0.92
+B2 {"phase":"check","modules":10,"lines":6008,"unifications":27043,"generalisations":4013846,"instantiations":9534,"obligations":2001049,"constraints_created":2008,"constraints_merged":1999,"constraints_deferred":2001049,"constraints_discharged":39,"constraints_promoted":2001000,"diagnostics":0,"ms":1928.59,"loc_per_s":3115,"cold_check_ms":1932.4}
+### uptime before A-2 (n=2000)
+ 12:24:53 up  1:27,  3 users,  load average: 0.62, 0.78, 0.92
+A2 {"phase":"check","modules":12,"lines":6008,"unifications":33268,"generalisations":1599447,"instantiations":9622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":1,"ms":250.00,"loc_per_s":24031,"cold_check_ms":253.7}
+### generated-source identity check (n=2000)
+IDENTICAL
+```
+
+#### n = 3000 — added because B at n = 2000 came in under the 3 s bar
+
+```
+### uptime before A-1 (n=3000)
+ 12:25:02 up  1:27,  3 users,  load average: 0.60, 0.77, 0.92
+A1 bench: generated constraint-chain n=3000 (114163 bytes) under .zig-cache/bench-pathological
+A1 {"phase":"check","modules":12,"lines":9008,"unifications":46268,"generalisations":1607447,"instantiations":13622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":1,"ms":248.72,"loc_per_s":36217,"cold_check_ms":253.9}
+### uptime before B-1 (n=3000)
+ 12:25:04 up  1:27,  3 users,  load average: 0.60, 0.77, 0.92
+B1 bench: generated constraint-chain n=3000 (114163 bytes) under .zig-cache/bench-pathological
+B1 {"phase":"check","modules":10,"lines":9008,"unifications":38043,"generalisations":9019846,"instantiations":13534,"obligations":4501549,"constraints_created":3008,"constraints_merged":2999,"constraints_deferred":4501549,"constraints_discharged":39,"constraints_promoted":4501500,"diagnostics":0,"ms":4442.51,"loc_per_s":2027,"cold_check_ms":4447.7}
+### uptime before B-2 (n=3000)
+ 12:25:47 up  1:28,  3 users,  load average: 0.88, 0.82, 0.93
+B2 {"phase":"check","modules":10,"lines":9008,"unifications":38043,"generalisations":9019846,"instantiations":13534,"obligations":4501549,"constraints_created":3008,"constraints_merged":2999,"constraints_deferred":4501549,"constraints_discharged":39,"constraints_promoted":4501500,"diagnostics":0,"ms":4477.26,"loc_per_s":2011,"cold_check_ms":4482.3}
+### uptime before A-2 (n=3000)
+ 12:26:30 up  1:28,  3 users,  load average: 0.94, 0.84, 0.93
+A2 {"phase":"check","modules":12,"lines":9008,"unifications":46268,"generalisations":1607447,"instantiations":13622,"obligations":3,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":1,"ms":256.34,"loc_per_s":35140,"cold_check_ms":261.4}
+### generated-source identity check (n=3000)
+IDENTICAL
+```
+
+#### The same series as `beni check`, with peak RSS — one tree, two compilers
+
+Same instrument as the S8a half at `:1636-1668`: the memory curve is taken with
+the plain `check` command, **ABBA, both binaries over the same generated
+directory** (the branch's `.zig-cache/bench-pathological`, regenerated at each n
+before the block and byte-identical to A's copy per the `cmp` above), so this
+half is one corpus through two compilers. `command time -f '%x %e %M'`.
+**B now completes every n**, so unlike the S8a block B is run twice at every
+point, n = 1 000 included.
+
+```
+### n=10  (uptime ` 12:27:07 up  1:29,  3 users,  load average: 0.59, 0.77, 0.90`)
+A-1 exit=0 wall=0.00s maxrss=3696kB
+B-1 exit=0 wall=0.00s maxrss=3856kB
+B-2 exit=0 wall=0.00s maxrss=4156kB
+A-2 exit=0 wall=0.00s maxrss=3696kB
+
+### n=100  (uptime ` 12:27:07 up  1:29,  3 users,  load average: 0.59, 0.77, 0.90`)
+A-1 exit=0 wall=0.00s maxrss=6512kB
+B-1 exit=0 wall=0.01s maxrss=8252kB
+B-2 exit=0 wall=0.01s maxrss=7696kB
+A-2 exit=0 wall=0.00s maxrss=6512kB
+
+### n=200  (uptime ` 12:27:08 up  1:29,  3 users,  load average: 0.59, 0.77, 0.90`)
+A-1 exit=0 wall=0.01s maxrss=14704kB
+B-1 exit=0 wall=0.02s maxrss=19472kB
+B-2 exit=0 wall=0.02s maxrss=19516kB
+A-2 exit=0 wall=0.01s maxrss=15472kB
+
+### n=400  (uptime ` 12:27:08 up  1:29,  3 users,  load average: 0.59, 0.77, 0.90`)
+A-1 exit=0 wall=0.05s maxrss=50308kB
+B-1 exit=0 wall=0.08s maxrss=68392kB
+B-2 exit=0 wall=0.08s maxrss=68464kB
+A-2 exit=0 wall=0.05s maxrss=50720kB
+
+### n=1000  (uptime ` 12:27:14 up  1:29,  3 users,  load average: 0.54, 0.75, 0.90`)
+A-1 exit=0 wall=0.25s maxrss=261616kB
+B-1 exit=0 wall=0.47s maxrss=410916kB
+B-2 exit=0 wall=0.46s maxrss=410372kB
+A-2 exit=0 wall=0.25s maxrss=261780kB
+
+### n=2000  (uptime ` 12:27:23 up  1:29,  3 users,  load average: 0.61, 0.76, 0.90`)
+A-1 exit=1 wall=0.26s maxrss=256528kB
+B-1 exit=0 wall=1.99s maxrss=1666916kB
+B-2 exit=0 wall=1.99s maxrss=1666700kB
+A-2 exit=1 wall=0.25s maxrss=256232kB
+
+### n=3000  (uptime ` 12:27:45 up  1:30,  3 users,  load average: 0.72, 0.78, 0.90`)
+A-1 exit=1 wall=0.26s maxrss=257640kB
+B-1 exit=0 wall=4.53s maxrss=3754392kB
+B-2 exit=0 wall=4.53s maxrss=3753876kB
+A-2 exit=1 wall=0.26s maxrss=257312kB
+
+```
+
+`A-1` and `A-2` **exit 1** at n = 2000 and n = 3000. That is the same
+`diagnostics: 1` the bench rows carry — C0 refuses the chain — so A's 0.26 s and
+~257 MB there are the cost of a refusal, not of checking a 2 000- or 3 000-link
+chain.
+
+#### The table
+
+Times are the two runs of each side as printed; `B ÷ A` is best-of-2 over
+best-of-2. **Pre-fix B figures are quoted from the S8a block above and cited by
+line; none of them was re-taken.** `constraints_promoted` is identical pre and
+post at every n S8a reached, so it carries one column.
+
+| n | A `check` ms (r1, r2) | B ms **pre-fix** (S8a, line) | B ms **post-fix** (r1, r2) | B ÷ A | B peak RSS pre → post | `constraints_merged` pre → post | `constraints_promoted` |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 1.59, 1.62 | 2.06, 1.81 (`:1496`, `:1499`) | 1.98, 1.86 | 1.17× | not recorded → **3 856 kB** | 64 → **9** | 55 |
+| 100 | 4.84, 4.80 | 50.81, 49.56 (`:1517`, `:1520`) | 6.60, 6.24 | 1.30× | 52 992 → **7 696 kB** (6.9×) | 5 149 → **99** | 5 050 |
+| 200 | 14.44, 15.49 | 382.17, 387.93 (`:1542`, `:1545`) | 18.40, 19.75 | 1.27× | 402 524 → **19 472 kB** (20.7×) | 20 299 → **199** | 20 100 |
+| 400 | 46.65, 47.06 | 3 114.04, 3 124.79 (`:1558`, `:1561`) | 72.19, 73.43 | 1.55× | 3 307 304 → **68 392 kB** (48.4×) | 80 599 → **399** | 80 200 |
+| 1 000 | 239.71, 240.04 | **killed** at 46.4 s (`:1587`, `:1622`) | **441.02, 437.38** | 1.82× | 30 585 800 (killed) → **410 372 kB** (74.5×) | — → **999** | 500 500 |
+| 2 000 | 245.40†, 250.00† | not attempted (`:1694`) | **1 912.46, 1 928.59** | 7.79†× | — → **1 666 700 kB** | — → **1 999** | 2 001 000 |
+| 3 000 | 248.72†, 256.34† | never taken | **4 442.51, 4 477.26** | 17.86†× | — → **3 753 876 kB** | — → **2 999** | 4 501 500 |
+
+† **A emits `diagnostics: 1` and exits 1 at these two n** — C0 refuses the chain
+past ≈64 links, so its ~250 ms / ~257 MB is a refusal and the ratio in that row
+is B working against A not working. It is not a slowdown figure.
+
+Reading.
+
+**The cubic is gone; B is quadratic in n in time and in memory.** Fitting the
+growth exponent between successive n as `log(t₂/t₁) / log(n₂/n₁)` on best-of-2:
+
+| interval | B time ×, exponent | B peak RSS ×, exponent |
+|---|---:|---:|
+| 10 → 100 | ×3.355, **0.53** | ×1.996, **0.30** |
+| 100 → 200 | ×2.949, **1.56** | ×2.530, **1.34** |
+| 200 → 400 | ×3.923, **1.97** | ×3.512, **1.81** |
+| 400 → 1 000 | ×6.059, **1.97** | ×6.000, **1.96** |
+| 1 000 → 2 000 | ×4.373, **2.13** | ×4.061, **2.02** |
+| 2 000 → 3 000 | ×2.323, **2.08** | ×2.252, **2.00** |
+
+Both series settle on **2.0** from n = 200 upward; the low exponents at the small
+end are the fixed floor (checking `core` costs ~1.5 ms and ~3.7 MB whatever n
+is). The same fit on the S8a numbers over 100 → 200 → 400 read 7.5× and 8.2× per
+doubling in time and 7.6× and 8.2× in memory (`:1701-1707`) — exponents 2.9 and
+3.0. **The exponent dropped by exactly one, in both time and space.** Measured
+speed-up at the points S8a reached: **7.9× at n = 100, 20.8× at 200, 43.1× at
+400** in time, and **6.9× / 20.7× / 48.4×** in peak RSS, with n = 1 000 going
+from a killed process at 29.2 GiB to 441 ms at 411 MB.
+
+**What remains is the quadratic, and it is the count the program genuinely has.**
+`constraints_promoted` reads **n(n+1)/2 to the unit at every n** — 55, 5 050,
+20 100, 80 200, 500 500, 2 001 000, 4 501 500 — and `obligations` reads
+n(n+1)/2 + 49, the 49 being `core`'s own. Link k of an unannotated chain
+accumulates k constraints because nothing pins them, so the chain carries
+n(n+1)/2 of them and A.57 asks for exactly that count. **This is the feature's
+cost on this input**, and it is what report 19 should quote where S8a quoted the
+kill.
+
+**A pays its own super-linear price on the same input, so the comparison is
+quadratic against ~n^1.8, not quadratic against linear.** A's exponents over
+100 → 200 → 400 → 1000 are 1.59, 1.69, 1.79 in time and 1.18, 1.78, 1.80 in peak
+RSS, driven by `generalisations` going 17 617 → 1 509 367 from n = 100 to 1 000
+as the accumulated open record is re-walked (S1 read the same shape at `:143-146`).
+At the five n where both compilers are clean, B ÷ A is **1.17×, 1.30×, 1.27×,
+1.55× and 1.82×** — and the largest of those, n = 1 000, is the point at which
+S8a's binary was killed.
+
+**`constraints_merged` moved, and it moved alone.** It reads **n − 1** at every n
+(9 / 99 / 199 / 399 / 999 / 1 999 / 2 999) where pre-fix it read n(n+1)/2 + n − 1
+(64 / 5 149 / 20 299 / 80 599). `obligations`, `constraints_created`,
+`constraints_deferred`, `constraints_discharged` and `constraints_promoted` are
+**unchanged to the unit at every n S8a recorded** — compare the blocks above line
+for line against `:1492-1502`, `:1513-1523`, `:1539-1548` and `:1555-1564`, where
+`unifications`, `generalisations` and `instantiations` also match exactly. That
+is the assertion that no obligation was dropped to buy the speed.
+
+**What the row does and does not say.** It does **not** say ordinary code is
+quadratic: the 100 159-line generated corpus creates 281 constraints, defers 476
+and promotes 1 across 633 modules (recorded below), and `bench/corpus` and `core`
+check in milliseconds. It does **not** say the branch's bookkeeping is cheap in
+absolute terms — 3.6 GB of resident memory to check 9 008 lines is a real cost,
+and at n = 1 000, the last n at which both compilers are clean, B still holds
+410 MB against A's 262 MB. It does **not** re-take
+M1a/M1b, which stay N100-only. It **does** say that the shape on the *unannotated
+accumulating chain* — the one report 18 §2.3 is about, and the one M2 exists to
+measure — is **quadratic in the chain's length in both time and memory**; that
+the quadratic is the number of constraints the program actually carries rather
+than a defect; and that the cubic S8a measured, including the 29.2 GiB kill, was
+a fold-onto-its-own-set rebuild that no longer exists. Whether a language accepts
+an n² obligation count on an unannotated chain — an annotation removes it
+entirely, per M3 — is §12's and §14's question, not this row's.
+
+---
+
+### Which other S8a rows survive the fix — established by re-running them, not asserted
+
+A.81 changes `Solve.attachConstraint` only. The claim that follows from that is
+that **no emitted JavaScript and no accepted/rejected decision moves**, and the
+claim is checked rather than argued. Every check below passed; had any not, it
+would mean the fix changed output and this entry would say so first.
+
+#### (a) M4 — output size: byte-identical
+
+`node bench/size.mjs --beni=/tmp/rf/bin/beni`, one run, full stdout diffed
+against the S8a B-side output recorded at `:2045-2107` (63 lines: floor,
+`bench/corpus`, 60 programs, total).
+
+```
+### uptime before M4 (B)
+ 12:28:07 up  1:30,  3 users,  load average: 0.60, 0.75, 0.89
+$ node bench/size.mjs --beni=/tmp/rf/bin/beni     → exit 0, 63 lines
+$ diff <S8a B-side, :2045-2107> <this run>
+  (no output)
+BYTE-IDENTICAL
+```
+
+**All 63 lines identical**, floor and total included:
+`{"floor":true,…,"raw_bytes":68791,…,"derived_bytes":3159,"derived_functions":22,"eq_functions":8,"eq_bytes":1041,"compare_functions":9,"compare_bytes":1874,"order_tables":5,"order_bytes":244}`
+and
+`{"total":true,"programs":61,"files":1166,"raw_bytes":229568,…,"derived_bytes":216942,"derived_functions":1497,…}`.
+**M4 stands exactly as recorded at `:1978-2228`.**
+
+#### (b) M3 — interface churn: identical on both corpora
+
+`sh bench/churn.sh` on B, one run per corpus, compared against S8a's B rows at
+`:1858-1867` and `:1911-1918`. `tree restored: yes` on both.
+
+```
+### uptime before M3 (B, bench/corpus)
+ 12:28:21 up  1:30,  3 users,  load average: 0.53, 0.72, 0.88
+$ sh bench/churn.sh --corpus=bench/corpus --beni=/tmp/rf/bin/beni
+corpus: bench/corpus
+modules excluded (the pristine root does not resolve them): JsonCodecs.beni NotesApp.beni
+tree restored: yes
+
+edit    variant       changed/accepted  applied  skipped  rejected  decls
+------  ------------  ----------------  -------  -------  --------  -----
+E1      annotated               0/20       20       83         0    103
+E1      unannotated             0/19       25       78         6    103
+E2      annotated                0/1        2      101         1    103
+E2      unannotated              0/1        8       95         7    103
+E3      annotated               0/70       84       19        14    103
+E3      unannotated            29/68       85       18        17    103
+E3poly  annotated                0/0        5       98         5    103
+E3poly  unannotated              4/4       11       92         7    103
+
+### uptime before M3 (B, core)
+ 12:28:36 up  1:30,  3 users,  load average: 0.69, 0.75, 0.89
+$ sh bench/churn.sh --corpus=core --core --beni=/tmp/rf/bin/beni
+corpus: core
+tree restored: yes
+
+edit    variant       changed/accepted  applied  skipped  rejected  decls
+------  ------------  ----------------  -------  -------  --------  -----
+E1      annotated               0/15       15      123         0    138
+E1      unannotated             0/15       15      123         0    138
+E2      annotated                0/7        8      130         1    138
+E2      unannotated              0/7        8      130         1    138
+E3      annotated               0/74      105       33        31    138
+E3      unannotated            50/90      105       33        15    138
+E3poly  annotated                0/0       13      125        13    138
+E3poly  unannotated            12/12       13      125         1    138
+```
+
+**Every cell of both tables matches S8a's B rows** — 0 on every `annotated` row,
+E3 unannotated 29/68 and 50/90, E3poly 4/4 and 12/12, and the same
+applied/skipped/rejected/decls throughout. **M3 stands as recorded at
+`:1814-1975`**; the A side is untouched by construction.
+
+#### (c) M5 — runtime: stands, and the checksums are re-confirmed
+
+M5 measures Node running the emitted JavaScript. **(a) is byte-identical**, so
+the JavaScript B emits is the same JavaScript S8a measured, and M5's ns/op rows
+stand as recorded at `:2229-2477` without re-timing. Belt and braces, one
+`--runs=5` C1 round was run to confirm the programs still print their C0
+checksums (the row is void without them). `--runs=5` is a *checksum* check, not a
+timing one, and its ns/op are not comparable with the `--runs=20` rows above.
+
+```
+### uptime before M5 (B, c1, runs=5)
+ 12:28:55 up  1:31,  3 users,  load average: 0.69, 0.75, 0.89
+$ node bench/runtime.mjs --beni=/tmp/rf/bin/beni --variant=c1 --runs=5
+{"program":"R1DictString","variant":"c1","runs":5,"ops":120000,"floor_ms":28.22,"best_ms":238.36,"median_ms":242.91,"ns_per_op":1751.2,"checksum":"60000 288894"}
+{"program":"R2DictRecord","variant":"c1","runs":5,"ops":120000,"floor_ms":28.21,"best_ms":112.37,"median_ms":114.32,"ns_per_op":701.3,"checksum":"60000 18600000"}
+{"program":"R3Sorting","variant":"c1","runs":5,"ops":120000,"floor_ms":29.5,"best_ms":132.1,"median_ms":133.32,"ns_per_op":855,"checksum":"4000 499313"}
+{"program":"R5EvidenceForwarding","variant":"c1","runs":5,"ops":10000000,"floor_ms":29.13,"best_ms":55.26,"median_ms":57.02,"ns_per_op":2.6,"checksum":"5000000"}
+{"program":"R6Megamorphic","variant":"c1","runs":5,"ops":3000000,"floor_ms":28.38,"best_ms":100.26,"median_ms":108.22,"ns_per_op":24,"checksum":"1352000"}
+```
+
+**All five checksums are the ones the M5 table pins at `:2295-2300`** —
+`60000 288894`, `60000 18600000`, `4000 499313`, `5000000`, `1352000` — including
+R5's 5 000 000 and R6's 1 352 000, the two the manager made the row conditional
+on. (R4's C1 side is B against `--variant=c0` and is not part of a `--variant=c1`
+run; its checksum `400 20000 200 0 6` is unaffected by (a) being identical.)
+
+#### (d) M9 — the gates at `e4c56d6`
+
+```
+### uptime before the gates
+ 12:29:26 up  1:31,  3 users,  load average: 0.41, 0.68, 0.86
+zig build test         exit 0
+zig build test-blackbox exit 0
+zig build fmt-check    exit 0
+### uptime before the second test-blackbox
+ 12:30:22 up  1:32,  3 users,  load average: 1.49, 0.97, 0.95
+zig build test-blackbox exit 0   (second run)
+### uptime after
+ 12:31:13 up  1:33,  3 users,  load average: 1.95, 1.21, 1.04
+### uptime before zig build
+ 12:31:16 up  1:33,  3 users,  load average: 1.80, 1.19, 1.03
+zig build              exit 0
+```
+
+**All four gates exit 0, and `test-blackbox` twice.** (`zig build` was run last
+rather than first because the first attempt passed it the step name `build`,
+which is not a step and exited 1; the plain invocation is the gate and it is
+green. The 1.95 load line is the black-box suite's own, recorded *after* its
+instrument, not before one.) The suite now includes A.81's fixture — the
+`abuse_test.zig` scenario "an unannotated constraint chain costs one merge per
+link, not one per constraint", which reads all six dispatch counters back out of
+`--self-profile` at 64 and 128 links.
+
+#### (e) M7 — the compiler-cost row moves by 392 bytes and 22 lines of `src/`
+
+Not re-timed: build time and test time are unchanged instruments on an
+essentially unchanged tree, and re-taking them would cost two cold ReleaseFast
+builds to move a number by less than its own noise. What *is* recorded is the
+delta, measured directly.
+
+```
+$ git show --numstat --format= 98fe87a
+30	0	docs/design/static-dispatch-spike.md
+22	0	src/check/Solve.zig
+140	0	tests/blackbox/abuse_test.zig
+ 3 files changed, 192 insertions(+)
+
+$ git diff --shortstat c870e9a..eb03b77     (S8a's M7 figure at :2629-2630, where HEAD was eb03b77)
+ 361 files changed, 21409 insertions(+), 931 deletions(-)
+$ git diff --shortstat c870e9a..HEAD        (now)
+ 365 files changed, 23383 insertions(+), 936 deletions(-)
+
+src/  c870e9a..eb03b77 : 32 files, +8 970 −178      → c870e9a..HEAD : 32 files, +8 992 −178
+tests/ c870e9a..eb03b77: 299 files, +8 533 −289     → c870e9a..HEAD : 300 files, +8 717 −289
+```
+
+- **Binary**: `/tmp/rf/bin/beni` **16 751 760 → 16 752 152 B**, **+392**, on a
+  3 498 712-byte feature. The M7 table's 1.264× against C0 is unchanged to three
+  decimal places.
+- **`src/`**: **+22 lines**, all in `src/check/Solve.zig` — the three-comparison
+  guard. `src/check`'s share of the spike's `src/` diff stays at 59 %.
+- **`tests/`**: the fix adds **+140** lines (`tests/blackbox/abuse_test.zig`).
+  The +184 in the totals above is those 140 plus the 44 lines S8a itself added to
+  `tests/blackbox/build_test.zig` for M4's split fields, which are S8a's and not
+  the fix's.
+- The rest of the `c870e9a..HEAD` growth is this file and the diary, which M7
+  counts under `plans/`.
+
+Everything else in M7 — 260 new fixtures, the by-area table, 46.9 s → 64.1 s cold
+build, 8.55 → 8.79 s `zig build test`, 31.4 → 50.5 s `test-blackbox` — stands as
+recorded at `:2614-2761`.
+
+#### (f) M1a/M1b are N100-only — one B-side counter line, for the record
+
+**This is not a re-take of M1a or M1b.** Those rows stay N100-only per the
+machine-2 header (`:1434`), and nothing below is comparable with their times.
+What is recorded here is one B-side `check` line on the plain 100 159-line
+corpus, on *this* machine, so that the effect of A.81 on ordinary code is on the
+record as a counter rather than as a claim.
+
+```
+### uptime before M1a-counters (B only)
+ 12:29:06 up  1:31,  3 users,  load average: 0.58, 0.73, 0.88
+$ zig build bench -- --generate=100000 --iterations=5
+bench: generated 624 files, 100159 lines, 1835619 bytes (plain) under .zig-cache/bench-gen
+{"phase":"check","modules":633,"lines":100159,"unifications":228143,"generalisations":104086,"instantiations":52346,"obligations":3486,"constraints_created":281,"constraints_merged":3,"constraints_deferred":476,"constraints_discharged":2710,"constraints_promoted":1,"diagnostics":0,"ms":72.09,"loc_per_s":1389431,"cold_check_ms":106.7}
+```
+
+Against S8a's B line for the same corpus at `:1247`: `unifications`,
+`generalisations`, `instantiations`, `obligations` (3 486), `constraints_created`
+(281), `constraints_deferred` (476), `constraints_discharged` (2 710) and
+`constraints_promoted` (1) are **identical to the unit**. The one field that
+moves is **`constraints_merged` 4 → 3**, which is the whole footprint of A.81 on
+the plain corpus: one futile rebuild in 100 159 lines. The `ms` is **not**
+comparable with `:1247`'s 86.57 — that is an N100 number and this is machine 2 —
+and it is quoted only so the line is complete. The S8-fix diary entry reports
+73.2 → 72.2 ms for this corpus on this machine; that pair was taken by the S8-fix
+implementer and is not re-taken here.
+
+#### Summary — what S8a′ changes in the S8a summary table
+
+| Row | Status after A.81 |
+|---|---|
+| **M2** | **Re-taken in full.** B is **quadratic**, not cubic: check 6.24 / 18.40 / 72.19 / 437.4 / 1 912 / 4 443 ms and peak RSS 7.7 / 19.5 / 68.4 / 410 / 1 667 / 3 754 MB at n = 100 / 200 / 400 / 1 000 / 2 000 / 3 000, against A's 4.80 / 14.44 / 46.65 / 239.7 ms at 6.5 / 14.7 / 50.3 / 262 MB. **n = 1 000 now checks in 441 ms at 411 MB where S8a's binary was killed at 29.2 GiB**; n = 3 000 checks cleanly where A refuses. B ÷ A at the clean points is 1.17–1.82×. `constraints_merged` n(n+1)/2 + n − 1 → **n − 1**; `obligations` and `constraints_promoted` unchanged to the unit. The `where`-printer half of M2 (`:1737-1810`) is untouched by the fix and stands |
+| M3 | **Re-run on B, identical** on both corpora, every cell |
+| M4 | **Re-run on B, byte-identical**, all 63 lines |
+| M5 | **Stands** — (a) byte-identical ⇒ same emitted JavaScript; all five C1 checksums re-confirmed |
+| M7 | **+392 B** binary, **+22** lines of `src/`, **+140** lines of tests; everything else stands |
+| M8 | Counter-only greps over two trees; the fix touches neither tree's `.beni` sources. Stands |
+| M9 | **Re-run at `e4c56d6`**: four gates exit 0, `test-blackbox` twice |
+| M1a / M1b | Still N100-only and **not** re-taken. One B-side counter line recorded above: `constraints_merged` 4 → 3, nothing else moves |
+
+Two statements in the S8a entry are corrected above and **not** edited in place,
+per the append-only rule: the "regression between S3 and `eb03b77`" reading
+(`:1714-1726`, `:2767`) and the presentation of the OOM as the feature's cost
+(`:1698-1712`, `:2767`). Report 19 should take M2 from **this** entry.
+
+---
