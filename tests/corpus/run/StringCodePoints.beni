@@ -1,0 +1,87 @@
+-- `core/String.js`'s header promises that every function where the UTF-16
+-- mismatch would show answers in CODE POINTS, and `backend.md` §4 says a
+-- `Char` is one scalar. `indexes` broke that promise: it was
+-- `haystack.indexOf(needle)`, which counts UTF-16 code UNITS, so the numbers
+-- it handed back were not indices into the string `length` and `slice`
+-- describe. Feeding one straight to `slice` — the obvious composition — read
+-- the wrong characters the moment an astral character sat to its left, and
+-- the program exited 0 with a wrong answer.
+--
+-- Three things are pinned here beyond the units, because each of them is a
+-- choice and not an accident:
+--
+--   * matches do NOT overlap. `indexes "aaaa" "aa"` is `[ 0, 2 ]` and not
+--     `[ 0, 1, 2 ]`: the search resumes past the match it found, which is
+--     what Elm's `_String_indexes` does (`i = i + subLen`).
+--   * an empty needle matches nothing at all, rather than every position.
+--     Elm returns `[]` for it too.
+--   * a combining mark is its OWN code point, so `e` U+0301 `x` is three
+--     characters and the `x` is at 2. That is what "code point" costs, and
+--     it is the same bargain `run/CoreStringUnicode.beni` pins for `reverse`.
+--
+-- `split` on an EMPTY separator is the same class and was the same defect:
+-- `"a😀b".split("")` in JavaScript is four code units, two of which are
+-- surrogate halves and neither of which is a character.
+import Node exposing (Program)
+import String
+
+
+-- Four characters, six UTF-16 code units. The two `a`s are characters 1 and
+-- 3; an answer in code units would say 2 and 5.
+subject : String
+subject =
+    "\u{1F600}a\u{1F600}a"
+
+
+shown : List Int -> String
+shown ns =
+    "[" ++ String.join (List.map ns String.fromInt) "," ++ "]"
+
+
+yesNo : Bool -> String
+yesNo b =
+    if b then
+        "yes"
+    else
+        "no"
+
+
+main : Program
+main =
+    Node.printLines
+        [ shown (String.indexes subject "a")
+        , shown (String.indices subject "a")
+        , String.fromInt (String.length subject)
+
+        -- The composition that was silently wrong: an index from `indexes`
+        -- handed straight back to `slice`.
+        , String.slice subject 1 2
+        , String.slice subject 3 4
+
+        -- A needle that is itself astral, and one that straddles the
+        -- boundary between an astral character and the next.
+        , shown (String.indexes subject "\u{1F600}")
+        , shown (String.indexes "a\u{1F600}b\u{1F600}c" "\u{1F600}b")
+
+        -- A combining mark is a code point of its own.
+        , shown (String.indexes "e\u{0301}x" "x")
+
+        -- Non-overlapping, and the doc example.
+        , shown (String.indexes "aaaa" "aa")
+        , shown (String.indexes "Mississippi" "i")
+        , shown (String.indexes "Mississippi" "ss")
+        , shown (String.indexes "abc" "abc")
+
+        -- Nothing to find, in each of the three ways.
+        , shown (String.indexes "abc" "")
+        , shown (String.indexes "" "a")
+        , shown (String.indexes "haystack" "needle")
+
+        -- `contains` reads `indexes`, so it inherits the units.
+        , yesNo (String.contains subject "a")
+
+        -- An empty separator splits into CHARACTERS, not code units.
+        , String.join (String.split "a\u{1F600}b" "") "|"
+        , String.fromInt (List.length (String.split "a\u{1F600}b" ""))
+        , String.replace "\u{1F600}" "" "-"
+        ]

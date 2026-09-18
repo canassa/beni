@@ -117,6 +117,10 @@ pub foreign lines : String -> List String
 --| first, so `csv |> split ","` reads as "split this on commas".
 --|
 --|     split "cat,dog,cow" "," == [ "cat", "dog", "cow" ]
+--|     split "abc" "" == [ "a", "b", "c" ]
+--|
+--| An empty separator splits into characters, which are code points: an
+--| astral character comes back whole and never as two halves.
 pub foreign split : String, String -> List String
 
 
@@ -125,6 +129,16 @@ pub foreign split : String, String -> List String
 --|
 --|     indexes "Mississippi" "i" == [ 1, 4, 7, 10 ]
 --|     indexes "haystack" "needle" == []
+--|
+--| The indexes count CHARACTERS, the same way `length` and `slice` do, so
+--| an index from here can be handed straight back to `slice`. A combining
+--| mark is a character of its own.
+--|
+--| Matches do not overlap — the search resumes after the one it found —
+--| and an empty needle matches nothing.
+--|
+--|     indexes "aaaa" "aa" == [ 0, 2 ]
+--|     indexes "abc" "" == []
 pub foreign indexes : String, String -> List Int
 
 
@@ -307,7 +321,8 @@ endsWith str suffix =
 
 
 --| Get all of the indexes for a substring. An alias of `indexes`, kept
---| because Elm has both spellings.
+--| because Elm has both spellings, so it counts characters and skips
+--| overlaps exactly as `indexes` does.
 --|
 --|     indices "Mississippi" "i" == [ 1, 4, 7, 10 ]
 pub indices : String, String -> List Int
