@@ -1148,3 +1148,272 @@ The headline for report 19 therefore stands as the rewrite plan predicted it:
 **17 ordering arguments → 0, and 15 comparator parameters → 4.** The
 "modules declaring ≥ 2 nominal types" row is unchanged at 21 and is not
 re-counted here: no module gained or lost a type.
+
+---
+
+## 2026-09-18 05:32 CEST — S8a, correction to the S6b header
+
+**This is a correction, not a measurement.** The S6b entry's header at `:739-745`
+says:
+
+> The **C0** side of M5 is `../beni-s1` at `c870e9a`, the same ReleaseFast
+> binary the S1 baselines were taken with, run back to back with the C1 side in
+> the same minutes
+
+**The binary it actually ran was a Debug rebuild of the same commit, not the
+ReleaseFast one.** `../beni-s1/zig-out/bin/beni` was **42 950 861 bytes, dated
+2026-09-17 16:06** when S8a opened at 05:30 on 2026-09-18 — i.e. some later
+`zig build` in that worktree had overwritten the 13 317 664-byte ReleaseFast
+install of 13:54 with a Debug one, hours before the S6b M5 rows were taken at
+03:43. The commit under it is unchanged (`c870e9a`, tree clean), so the
+*program* the C0 side compiled is the right one; only the optimisation level of
+the compiler that compiled it is wrong.
+
+**Why it is harmless for the M5 rows and for nothing else.** M5 times the
+EMITTED JavaScript under Node. The compiler runs once, outside the timed loop,
+and `bench/runtime.mjs` never times `beni build` — so a Debug compiler produces
+the same `out/main.mjs` a ReleaseFast one does and the `ns_per_op` figures at
+`:1120-1139` stand as recorded. The S5 entry at `:667-733` already says the same
+thing of itself in the open ("Both are Debug compilers building the same
+`bench/runtime/c0/*.beni` sources"). What the claim would have invalidated is any
+row that times the COMPILER, and no such row in the S6b entry used `../beni-s1`:
+M3, M4 and M8 cite the S1 rows at `:220`, `:293` and `:448` rather than re-run
+them, and M1b is `/tmp/rf` against those S1 numbers.
+
+**State now.** S8a's step A-0 rebuilt `../beni-s1` at `-Doptimize=ReleaseFast`;
+the install came straight back out of the Zig cache and reproduced the S1 figure
+**exactly — 13 317 664 bytes** (mtime 2026-09-17 13:54, the original S1 install
+relinked). So the A binary of every row below is byte-identical to the one the
+S1 baselines were taken with, and that identity is asserted rather than assumed.
+
+```
+$ cd ../beni-s1 && uptime && time direnv exec …/beni zig build -Doptimize=ReleaseFast
+ 05:32:10 up 4 days, 12:13,  3 users,  load average: 0.34, 0.97, 0.95
+real	0m0.223s
+$ stat -c '%s' zig-out/bin/beni
+13317664
+```
+
+---
+
+## 2026-09-18 05:33 CEST — S8a, M1a: what the feature costs code that never uses it
+
+**Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory channel,
+16 GB RAM, Linux 7.2.2, Zig 0.16.0, Node v24.19.0, ReleaseFast.
+
+**A** = `../beni-s1/zig-out/bin/beni` at `c870e9a`, **13 317 664 bytes**, the S1
+binary (see the correction above). **B** = this branch at `99e0a05` built
+`-Doptimize=ReleaseFast --prefix /tmp/rf`, **16 854 856 bytes**. Instrument:
+`zig build bench -- --generate=100000 --iterations=5`, best of 5 after one
+warm-up, `jobs = 1`. **Interleaved ABBA inside 20 seconds**, which is what the
+S6b "+8 %" reading did not have: it compared a B run taken at 03:39 on
+2026-09-18 with an A run taken at 13:38 on 2026-09-17.
+
+**The generator header is byte-identical on both sides**, which is the assertion
+that the two runs read the same 624 files:
+
+```
+A: bench: generated 624 files, 100159 lines, 1835619 bytes (plain) under .zig-cache/bench-gen
+B: bench: generated 624 files, 100159 lines, 1835619 bytes (plain) under .zig-cache/bench-gen
+```
+
+**Caveat, and it is the one that limits this row.** The user code is the same
+but the *cores are not*: A checks 635 modules, B checks 633 — C1 deletes
+`core/Dict/String.beni` and `core/Dict/Int.beni` — and B's `core/Dict.beni`
+carries seventeen `where` clauses A's does not. So this pair is "the branch as
+it stands against `master` as it stands", not "the same program through two
+checkers".
+
+**Load before A-1:** ` 05:33:11 up 4 days, 12:14,  3 users,  load average: 0.24, 0.84, 0.91`
+**Load before B-1:** ` 05:33:17 up 4 days, 12:14,  3 users,  load average: 0.30, 0.84, 0.91`
+**Load before B-2:** ` 05:33:23 up 4 days, 12:14,  3 users,  load average: 0.33, 0.83, 0.90`
+**Load before A-2:** ` 05:33:30 up 4 days, 12:14,  3 users,  load average: 0.30, 0.82, 0.90`
+
+```
+$ (A) direnv exec …/beni zig build bench -- --generate=100000 --iterations=5
+A1 {"phase":"lex","files":624,"bytes":1835619,"tokens":302615,"nodes":0,"insts":0,"ms":9.9,"mb_per_s":176.8,"loc_per_s":10115460}
+A1 {"phase":"parse","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":0,"ms":6.7,"mb_per_s":262.1,"loc_per_s":14998096}
+A1 {"phase":"lower","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":205097,"ms":9.5,"mb_per_s":184.2,"loc_per_s":10537997}
+A1 {"phase":"resolve","modules":635,"edges":3787,"interfaces":635,"ms":5.62,"cold_check_ms":41.1}
+A1 {"phase":"check","modules":635,"lines":100159,"unifications":231352,"generalisations":101320,"instantiations":55228,"obligations":3151,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":71.88,"loc_per_s":1393337,"cold_check_ms":113.0}
+A1 {"phase":"emit","modules":635,"js_bytes":3075595,"nodes":254951,"lines":103669,"ms":33.36,"mb_per_s":87.9,"loc_per_s":3107267}
+A1 {"phase":"total","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":205097,"ms":139.1,"mb_per_s":12.6,"loc_per_s":720203}
+
+$ (B) direnv exec . zig build bench -- --generate=100000 --iterations=5
+B1 {"phase":"lex","files":624,"bytes":1835619,"tokens":302615,"nodes":0,"insts":0,"ms":9.4,"mb_per_s":185.4,"loc_per_s":10606805}
+B1 {"phase":"parse","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":0,"ms":6.8,"mb_per_s":258.9,"loc_per_s":14814458}
+B1 {"phase":"lower","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":202303,"ms":9.4,"mb_per_s":186.0,"loc_per_s":10643121}
+B1 {"phase":"resolve","modules":633,"edges":3932,"interfaces":633,"ms":5.52,"cold_check_ms":41.4}
+B1 {"phase":"check","modules":633,"lines":100159,"unifications":228143,"generalisations":104086,"instantiations":52346,"obligations":3486,"constraints_created":281,"constraints_merged":4,"constraints_deferred":476,"constraints_discharged":2710,"constraints_promoted":1,"diagnostics":0,"ms":86.57,"loc_per_s":1156915,"cold_check_ms":127.9}
+B1 {"phase":"emit","modules":633,"js_bytes":3870047,"nodes":347677,"lines":103650,"ms":49.32,"mb_per_s":74.8,"loc_per_s":2101595}
+B1 {"phase":"total","files":624,"bytes":1835619,"tokens":302615,"nodes":221576,"insts":202303,"ms":169.2,"mb_per_s":10.3,"loc_per_s":592119}
+
+B2 {"phase":"lex",...,"ms":9.5,"mb_per_s":184.9,"loc_per_s":10579184}
+B2 {"phase":"parse",...,"ms":6.8,"mb_per_s":257.4,"loc_per_s":14726951}
+B2 {"phase":"lower",...,"insts":202303,"ms":9.4,"mb_per_s":186.0,"loc_per_s":10640257}
+B2 {"phase":"resolve","modules":633,"edges":3932,"interfaces":633,"ms":5.46,"cold_check_ms":41.4}
+B2 {"phase":"check","modules":633,"lines":100159,"unifications":228143,"generalisations":104086,"instantiations":52346,"obligations":3486,"constraints_created":281,"constraints_merged":4,"constraints_deferred":476,"constraints_discharged":2710,"constraints_promoted":1,"diagnostics":0,"ms":86.79,"loc_per_s":1154009,"cold_check_ms":128.2}
+B2 {"phase":"emit","modules":633,"js_bytes":3870047,"nodes":347677,"lines":103650,"ms":49.30,"mb_per_s":74.9,"loc_per_s":2102635}
+B2 {"phase":"total",...,"ms":169.3,"mb_per_s":10.3,"loc_per_s":591546}
+
+A2 {"phase":"lex",...,"ms":9.5,"mb_per_s":185.2,"loc_per_s":10598511}
+A2 {"phase":"parse",...,"ms":6.6,"mb_per_s":264.1,"loc_per_s":15110710}
+A2 {"phase":"lower",...,"insts":205097,"ms":9.5,"mb_per_s":184.1,"loc_per_s":10533833}
+A2 {"phase":"resolve","modules":635,"edges":3787,"interfaces":635,"ms":5.44,"cold_check_ms":41.1}
+A2 {"phase":"check","modules":635,"lines":100159,"unifications":231352,"generalisations":101320,"instantiations":55228,"obligations":3151,"constraints_created":0,"constraints_merged":0,"constraints_deferred":0,"constraints_discharged":0,"constraints_promoted":0,"diagnostics":0,"ms":72.23,"loc_per_s":1386713,"cold_check_ms":113.4}
+A2 {"phase":"emit","modules":635,"js_bytes":3075595,"nodes":254951,"lines":103669,"ms":33.27,"mb_per_s":88.2,"loc_per_s":3116070}
+A2 {"phase":"total",...,"ms":138.7,"mb_per_s":12.6,"loc_per_s":722157}
+```
+
+| phase | A (`c870e9a`) ms | B (`99e0a05`) ms | B ÷ A |
+|---|---:|---:|---:|
+| lex | 9.9, 9.5 | 9.4, 9.5 | 0.98× |
+| parse | 6.7, 6.6 | 6.8, 6.8 | 1.02× |
+| lower | 9.5, 9.5 | 9.4, 9.4 | 0.99× |
+| resolve | 5.62, 5.44 | 5.52, 5.46 | 1.00× |
+| **check** | **71.88, 72.23** | **86.57, 86.79** | **1.203×** |
+| **emit** | **33.36, 33.27** | **49.32, 49.30** | **1.480×** |
+| **total** | **139.1, 138.7** | **169.2, 169.3** | **1.218×** |
+
+| counter | A | B |
+|---|---:|---:|
+| modules | 635 | 633 |
+| unifications | 231 352 | 228 143 |
+| generalisations | 101 320 | 104 086 |
+| instantiations | 55 228 | 52 346 |
+| obligations | 3 151 | 3 486 |
+| constraints created / merged / deferred / discharged / promoted | 0 / 0 / 0 / 0 / 0 | 281 / 4 / 476 / 2 710 / 1 |
+| `js_bytes` | 3 075 595 | 3 870 047 (**+25.8 %**) |
+
+Reading.
+
+**`check` on a corpus with no dot-call and no `where` costs 20.3 %, not 8 %.**
+Both runs are clean (`diagnostics: 0`), both read the same 1 835 619 bytes, and
+the ABBA spread inside each binary is 0.5 % (A 71.88/72.23, B 86.57/86.79) —
+smaller than a twelfth of the gap, so the gap is real. **This supersedes the
+S6b entry's "check costs 8 % on the plain tree" at `:823`**, which is an
+arithmetic slip on its own numbers: 87.63 against 71.77 is +22.1 %, not +8 %.
+The companion "12 % on the dispatch tree" at the same line is right
+(93.11 against 83.39 = +11.7 %) but compares a successful check with a failing
+one and is superseded by M1b below, which does not have to.
+
+**Where the 20 % goes, per the counters.** B creates 281 constraints, defers
+476 and discharges 2 710 on a corpus that never writes a `where` clause: that
+is `==` and `<` on generated code lowering to method calls (§3.1) and then
+resolving against a concrete receiver. It also does 3 209 *fewer* unifications
+and 2 882 fewer instantiations than A, so the cost is not extra unification —
+it is the obligation bookkeeping on top of it, plus 2 766 more generalisations.
+
+**`emit` costs 48 % and output grows 25.8 %**, unchanged from the S6b reading
+and for the same reason: eager derivation (§8.5) with no DCE. It is now
+measured interleaved, so the figure is no longer a cross-session one.
+
+**The front end is flat to within the noise**, which is the part of M1a that
+report 18 §2.1 asks about: lexing, parsing and lowering the *same bytes* costs
+the same on both binaries (0.98×, 1.02×, 0.99×), and B lowers 2 794 fewer BIR
+instructions because C1's core is two modules smaller.
+
+---
+
+## 2026-09-18 05:33 CEST — S8a, M1b: what USING the feature costs, same binary both sides
+
+`plans/static-dispatch-spike.md` §7 M1b, and the first version of this row where
+**both sides are the same compiler** — B at `99e0a05` against the plain tree and
+against the `--dispatch` tree, run **PDDP** inside eight seconds. The M1b row in
+the S6b entry (`:770-800`) compared a B plain run at 03:39 with a B dispatch run
+at 04:58 after the review fixes; this one does not span a session.
+
+**Load before P-1:** ` 05:33:46 up 4 days, 12:14,  3 users,  load average: 0.23, 0.78, 0.88`
+**Load before D-1:** ` 05:33:48 up 4 days, 12:14,  3 users,  load average: 0.30, 0.78, 0.88`
+**Load before D-2:** ` 05:33:50 up 4 days, 12:14,  3 users,  load average: 0.30, 0.78, 0.88`
+**Load before P-2:** ` 05:33:52 up 4 days, 12:14,  3 users,  load average: 0.30, 0.78, 0.88`
+
+```
+$ direnv exec . zig build bench -- --generate=100000 --iterations=5
+P1 bench: generated 624 files, 100159 lines, 1835619 bytes (plain) under .zig-cache/bench-gen
+P1 {"phase":"lex",...,"tokens":302615,"ms":9.7,"mb_per_s":179.9}
+P1 {"phase":"parse",...,"nodes":221576,"ms":6.7,"mb_per_s":261.2}
+P1 {"phase":"lower",...,"insts":202303,"ms":9.5,"mb_per_s":184.9}
+P1 {"phase":"resolve","modules":633,"edges":3932,"interfaces":633,"ms":5.26,"cold_check_ms":41.2}
+P1 {"phase":"check","modules":633,"lines":100159,"unifications":228143,"generalisations":104086,"instantiations":52346,"obligations":3486,"constraints_created":281,"constraints_merged":4,"constraints_deferred":476,"constraints_discharged":2710,"constraints_promoted":1,"diagnostics":0,"ms":86.52,"loc_per_s":1157586,"cold_check_ms":127.7}
+P1 {"phase":"emit","modules":633,"js_bytes":3870047,"nodes":347677,"lines":103650,"ms":49.52,"mb_per_s":74.5}
+P1 {"phase":"total",...,"ms":169.4,"mb_per_s":10.3,"loc_per_s":591189}
+
+$ direnv exec . zig build bench -- --generate=100000 --dispatch --iterations=5
+D1 bench: generated 624 files, 100327 lines, 1885570 bytes (dispatch) under .zig-cache/bench-gen-dispatch
+D1 {"phase":"lex",...,"tokens":317281,"ms":9.8,"mb_per_s":183.6}
+D1 {"phase":"parse",...,"nodes":231896,"ms":7.3,"mb_per_s":246.7}
+D1 {"phase":"lower",...,"insts":209801,"ms":10.0,"mb_per_s":179.5}
+D1 {"phase":"resolve","modules":633,"edges":4018,"interfaces":633,"ms":5.71,"cold_check_ms":43.0}
+D1 {"phase":"check","modules":633,"lines":100327,"unifications":238018,"generalisations":115730,"instantiations":56199,"obligations":4213,"constraints_created":347,"constraints_merged":80,"constraints_deferred":1203,"constraints_discharged":5134,"constraints_promoted":77,"diagnostics":0,"ms":93.07,"loc_per_s":1078021,"cold_check_ms":136.1}
+D1 {"phase":"emit","modules":633,"js_bytes":4086222,"nodes":372018,"lines":103818,"ms":55.47,"mb_per_s":70.2}
+D1 {"phase":"total",...,"ms":183.5,"mb_per_s":9.8,"loc_per_s":546766}
+
+D2 {"phase":"lex",...,"ms":9.9}  {"phase":"parse",...,"ms":7.2}  {"phase":"lower",...,"ms":10.1}
+D2 {"phase":"resolve","modules":633,"edges":4018,"interfaces":633,"ms":5.70,"cold_check_ms":43.1}
+D2 {"phase":"check",…same counters…,"diagnostics":0,"ms":93.12,"loc_per_s":1077407,"cold_check_ms":136.2}
+D2 {"phase":"emit","modules":633,"js_bytes":4086222,"nodes":372018,"lines":103818,"ms":55.42,"mb_per_s":70.3}
+D2 {"phase":"total",...,"ms":183.6,"mb_per_s":9.8,"loc_per_s":546420}
+
+P2 {"phase":"lex",...,"ms":9.4}  {"phase":"parse",...,"ms":6.7}  {"phase":"lower",...,"ms":9.5}
+P2 {"phase":"resolve","modules":633,"edges":3932,"interfaces":633,"ms":5.52,"cold_check_ms":41.4}
+P2 {"phase":"check",…same counters…,"diagnostics":0,"ms":86.22,"loc_per_s":1161628,"cold_check_ms":127.6}
+P2 {"phase":"emit","modules":633,"js_bytes":3870047,"nodes":347677,"lines":103650,"ms":49.31,"mb_per_s":74.8}
+P2 {"phase":"total",...,"ms":168.8,"mb_per_s":10.4,"loc_per_s":593474}
+```
+
+| phase | plain (ms) | `--dispatch` (ms) | ratio |
+|---|---:|---:|---:|
+| lex | 9.7, 9.4 | 9.8, 9.9 | 1.04× |
+| parse | 6.7, 6.7 | 7.3, 7.2 | 1.08× |
+| lower | 9.5, 9.5 | 10.0, 10.1 | 1.06× |
+| resolve | 5.26, 5.52 | 5.71, 5.70 | 1.06× |
+| **check** | **86.52, 86.22** | **93.07, 93.12** | **1.078×** |
+| emit | 49.52, 49.31 | 55.47, 55.42 | 1.122× |
+| **total** | **169.4, 168.8** | **183.5, 183.6** | **1.085×** |
+
+The `--dispatch` tree is the same 624 modules written in the dot-call style:
+**+168 lines, +49 951 bytes, +14 666 tokens, +10 320 AST nodes, +7 498 BIR
+instructions**. Per byte the front end is *flat* (lex 183.6 MB/s against
+179.9–184.9 plain); the 4–8 % on `lex`/`parse`/`lower` is the extra 2.7 % of
+source, not a slower pass.
+
+Constraint counters, plain → dispatch: created 281 → 347, merged 4 → 80,
+deferred 476 → 1 203, discharged 2 710 → 5 134, promoted 1 → 77.
+
+Reading: **writing 100 327 lines in the dot-call style costs 7.8 % of `check`
+and 8.5 % of total wall time over writing the same program without it**, on one
+compiler, in one machine state, both sides clean. That is the honest M1b number
+and it is smaller than M1a's 20.3 %: most of what the feature costs is paid by
+code that never uses it.
+
+### The acceptance row — one corpus, two compilers
+
+The `diagnostics: 0` above is B's own reading of a corpus B generated, which is
+not by itself an acceptance test. So: generate the `--dispatch` tree with B,
+then hand **that exact directory** to A. S1's 1 682 (`:66`) and S6b's 0 (`:797`)
+were taken on two different generators — the tree has moved from 1 887 474 bytes
+to 1 885 570 since — and so were never comparable.
+
+**Load before:** ` 05:34:06 up 4 days, 12:15,  3 users,  load average: 0.30, 0.76, 0.88`
+
+```
+$ ../beni-s1/zig-out/bin/beni check --jobs=1 .zig-cache/bench-gen-dispatch --diagnostics=json
+exit 1; 596 429 bytes of JSON on stderr; 1683 diagnostics
+  type_mismatch 1425, wrong_type_arity 129, unexpected_token 129
+first: Gen/Data/Store1.beni:63:57 TYPE MISMATCH
+  "This is not a record with a `insert` field: It is: (k, k -> Order) -> Dict k v"
+
+$ /tmp/rf/bin/beni check --jobs=1 .zig-cache/bench-gen-dispatch --diagnostics=json
+exit 0; 0 bytes on stderr; 0 diagnostics
+```
+
+**Load before:** ` 05:34:13 up 4 days, 12:15,  3 users,  load average: 0.25, 0.73, 0.87`
+
+Reading: **the same 624 files, the same bytes: 1 683 errors and exit 1 on
+`master`'s checker, 0 errors and exit 0 on the branch.** This is the spike's
+acceptance test stated so that both halves are the same input. The 129
+`unexpected_token` diagnostics are the `where` clauses — S2's grammar — and the
+1 425 `type_mismatch` are the dot-calls landing on `master`'s row-polymorphic
+field access, which is exactly the "no grammar change needed, but no meaning
+either" position §1.1 describes.
