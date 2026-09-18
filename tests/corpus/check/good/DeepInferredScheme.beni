@@ -1,0 +1,22 @@
+-- check/good: an inferred type 300 constructors deep — comfortably under
+-- `Schemes.Writer.max_depth` (512), so the whole scheme reaches the
+-- interface and `check` exits 0 with nothing to say.
+--
+-- The `.iface` golden is the assertion, and what it pins is the scan that
+-- decides whether a solved type is poisoned (§7). That scan used to carry a
+-- FIXED 256-entry worklist and answer "too wide to tell" past it, and the
+-- caller published `<error>` for this declaration without a word. An
+-- interface entry that says `<error>` for a program the checker just
+-- accepted is the exit-0 wrongness of §5: every importer then checks
+-- against a hole.
+--
+-- The nesting leans RIGHT on purpose. The scan is depth-first over a stack,
+-- so a left-nested `( ( 1, 2 ), 2 )` pops its leaf before it descends and
+-- the stack never grows; a right-nested one leaves a leaf behind at every
+-- level, which is the shape that reached the bound — as does an ordinary
+-- record extension chain, one frame per link.
+--
+-- `Render` still truncates the PRINTED form at `Render.max_depth`, which is
+-- the `…` in the golden and is only about how much of one type is shown.
+pub f =
+    ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, ( 1, 1 ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) ) )

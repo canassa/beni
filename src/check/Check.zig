@@ -1028,6 +1028,9 @@ const ModuleCheck = struct {
             &Interface.Provenance.empty;
         var writer: Schemes.Writer = .init(gpa, store, mc.interner, @intCast(iface.symbols.len));
         defer writer.deinit();
+        // One frontier for the whole module; `hasError` clears it per call.
+        var scan: std.ArrayList(Var) = .empty;
+        defer scan.deinit(gpa);
 
         const values = try gpa.alloc(Interface.Value, iface.values.len);
         errdefer gpa.free(values);
@@ -1042,9 +1045,23 @@ const ModuleCheck = struct {
                 v.scheme = try writer.addError();
                 continue;
             };
-            if (hasError(store, scheme) != .clean) {
-                v.scheme = try writer.addError();
-                continue;
+            switch (try hasError(gpa, &scan, store, scheme)) {
+                .clean => {},
+                .poisoned => {
+                    v.scheme = try writer.addError();
+                    continue;
+                },
+                // The declaration solved CLEAN and the scan ran out of
+                // budget on it, so `<error>` here is the scanner's answer
+                // and not the program's. Publishing it in silence is the
+                // one failure mode §5 forbids — `beni check` exits 0 and
+                // every importer sees a hole — so it is reported like any
+                // other guard that poisons.
+                .unknown => {
+                    try noteDeepDecl(env, bir, prov.valueDecl(i));
+                    v.scheme = try writer.addError();
+                    continue;
+                },
             }
             v.scheme = try writer.add(scheme);
             if (writer.too_deep) {
@@ -1239,71 +1256,64 @@ fn noteDeepDecl(env: *Constrain.Env, bir: *const Bir, decl: ?Bir.DeclIndex) Erro
 /// declaration that failed to check is `<error>` in the interface rather
 /// than a type built out of `?` (checker.md §7).
 ///
-/// Three-valued on purpose. The walk has a bounded worklist, and a type too
-/// wide to finish is `unknown` — which the caller must treat exactly like
-/// `poisoned`, because the alternative is what this used to do: drop the
-/// frontier, answer "clean", and publish a scheme with a raw `err` term
-/// inside it. A dependent instantiating that scheme gets a component that
-/// unifies with anything, which is cascade suppression leaking across the
-/// module firewall — the one place checker.md §7 says it must not.
+/// Three-valued on purpose. A type the walk could not finish is `unknown` —
+/// which the caller must treat exactly like `poisoned`, because the
+/// alternative is what this used to do: drop the frontier, answer "clean",
+/// and publish a scheme with a raw `err` term inside it. A dependent
+/// instantiating that scheme gets a component that unifies with anything,
+/// which is cascade suppression leaking across the module firewall — the
+/// one place checker.md §7 says it must not.
+///
+/// `unknown` is also not free: the caller publishes `<error>` for a
+/// declaration that solved clean, so it REPORTS as well. The worklist is
+/// grown rather than fixed for exactly that reason — a fixed 256 entries
+/// made `unknown` reachable from ordinary source (255 record extension
+/// links clean, 256 `<error>` and exit 0), which turned a formatting bound
+/// into a silent wrong answer.
 const ErrorScan = enum {
     clean,
     poisoned,
-    /// Too wide for the worklist; the caller treats it as `poisoned`.
+    /// The budget ran out; the caller treats it as `poisoned` AND reports.
     unknown,
 };
 
-fn hasError(store: *TypeStore, root_var: Var) ErrorScan {
+/// `scratch` is the caller's, reused across declarations: this runs once per
+/// public value of the module and a fresh list per call would allocate the
+/// whole frontier again every time.
+fn hasError(gpa: Allocator, scratch: *std.ArrayList(Var), store: *TypeStore, root_var: Var) Allocator.Error!ErrorScan {
     const mark = store.nextMark();
-    var stack: [256]Var = undefined;
-    var len: usize = 1;
-    stack[0] = root_var;
-    // Every variable is marked at most once, so the walk visits at most the
-    // store's variable count; the budget only bounds a store that is itself
-    // malformed, and it is stated in terms of the input so it cannot become
-    // the real limit.
+    const stack = scratch;
+    stack.clearRetainingCapacity();
+    try stack.append(gpa, root_var);
+    // Every variable is VISITED at most once, so the budget is the store's
+    // own variable count; it only bounds a store that is itself malformed,
+    // and it is stated in terms of the input so it cannot become the real
+    // limit. It is charged per visit and not per pop, because a shared
+    // component is pushed once per parent that references it — charging
+    // those would make the budget a function of the edges and reachable on
+    // a type nothing is wrong with.
     var budget: usize = @as(usize, store.count()) + 16;
-    const push = struct {
-        fn f(buf: *[256]Var, l: *usize, x: Var) bool {
-            if (l.* >= buf.len) return false;
-            buf[l.*] = x;
-            l.* += 1;
-            return true;
-        }
-    }.f;
-    while (len > 0) {
-        if (budget == 0) return .unknown;
-        budget -= 1;
-        len -= 1;
-        const v = stack[len];
+    while (stack.pop()) |v| {
         const root = store.find(v);
         if (store.mark(root) == mark) continue;
+        if (budget == 0) return .unknown;
+        budget -= 1;
         store.setMark(root, mark);
         switch (store.content(root)) {
             .err => return .poisoned,
             .flex, .rigid => {},
-            .alias => |a| {
-                if (!push(&stack, &len, a.actual)) return .unknown;
-            },
+            .alias => |a| try stack.append(gpa, a.actual),
             .structure => |flat| switch (flat) {
                 .unit, .empty_record => {},
                 .func => |f| {
-                    for (store.vars(f.params)) |x| {
-                        if (!push(&stack, &len, x)) return .unknown;
-                    }
-                    if (!push(&stack, &len, f.result)) return .unknown;
+                    try stack.appendSlice(gpa, store.vars(f.params));
+                    try stack.append(gpa, f.result);
                 },
-                .app => |a| for (store.vars(a.args)) |x| {
-                    if (!push(&stack, &len, x)) return .unknown;
-                },
-                .tuple => |t| for (store.vars(t)) |x| {
-                    if (!push(&stack, &len, x)) return .unknown;
-                },
+                .app => |a| try stack.appendSlice(gpa, store.vars(a.args)),
+                .tuple => |t| try stack.appendSlice(gpa, store.vars(t)),
                 .record => |r| {
-                    for (store.fields(r.fields)) |f| {
-                        if (!push(&stack, &len, f.value)) return .unknown;
-                    }
-                    if (!push(&stack, &len, r.ext)) return .unknown;
+                    for (store.fields(r.fields)) |f| try stack.append(gpa, f.value);
+                    try stack.append(gpa, r.ext);
                 },
             },
         }

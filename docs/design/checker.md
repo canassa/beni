@@ -462,6 +462,18 @@ the goldens double as documentation. The interface of a module with type errors 
 erroneous declarations appear with `<error>` so dependents check against the rest.
 `dump --stage=raw` prints the tables themselves (§2).
 
+**`<error>` in the record is a statement about the program, never about the writer, and it always
+travels with a message.** Every path in `fillInterface` that publishes `<error>` for a declaration
+that *solved clean* — the scheme writer running out of `Schemes.Writer.max_depth`, or the poisoned-
+type scan running out of budget — reports `nesting_too_deep` first, which is §5's rule applied to
+the way out of the module. The alternative is the one failure mode a compiler may not have: `beni
+check` exits 0, the interface entry is a hole, and every importer checks against it and compiles
+clean. So no bound on the way out may be a silent one; a bound is either large enough that no
+program reaches it, or it is a reported error and an exit code. The scan that decides whether a
+solved type is poisoned carries **no** width bound for exactly that reason — it once carried a
+fixed 256-entry worklist, which made an ordinary 256-link record extension chain `<error>` at exit
+0 — and `check/good/DeepInferredScheme` is the fixture.
+
 **`arg_terms` is the firewall for constructors**, and M2 shipped without it. `var(i)` inside a
 constructor's argument terms is the owning TYPE's parameter `i` — they are quantified first and
 in declaration order, `quantified_start` says where their flags are — so a dependent rebuilds
@@ -582,6 +594,19 @@ function-typed *parameter* is always parenthesised (`List a, (a -> b) -> List b`
 `language.md` §3's grammar notes. The same renderer produces
 `dump --stage=types` and `--stage=interface`, so every diagnostic's type text is corpus-tested
 through the dumps.
+
+**The printer has two bounds, both of them truncations, and a truncation is always visible and
+never a different type.** `Render.max_depth` (24) elides a nested type as `…`; `Render.max_ext_links`
+(64) elides the rest of a record's extension chain — remaining fields and tail alike — as
+`{ … | a : Int, … }`, with the `…` standing where the extension variable would. Both stop at a
+width past which more text stops helping, and neither is an error: the diagnostic that asked for
+this text is already decided and the bound changes only how much of one type the reader sees.
+What a bound may **not** do is change the type it is printing. An extension chain that ran out
+of links used to print `{ a : Int, … }` **closed**, and a closed record is not a truncation of an
+open one — it refuses the extra fields the open one accepts, so the reader was shown a constraint
+the program does not have, and a `--stage=interface` dump said so as an artifact. `… | ` is the
+defined form for "open, and there is more here"; `check/depth/RecordExtTruncatedDeep` and
+`check/good/RecordExtChain` pin it in a diagnostic and in an interface respectively.
 
 ### 8.3 The arity suite
 

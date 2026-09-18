@@ -389,6 +389,30 @@ fn writeNamed(
     if (wrap) try w.writeByte(')');
 }
 
+/// How many extension links `writeRecord` follows before it stops. The
+/// chain can be a cycle — an `infinite_type` is reported and then printed,
+/// so the printer meets the poisoned type it is describing — and a record
+/// past this width is unreadable anyway, which is `max_depth`'s argument
+/// one axis over.
+///
+/// Stopping here TRUNCATES and says so. It does not close the record: an
+/// open record printed closed is a different type, and a reader who pastes
+/// it back gets a program that does not compile. See `Ext.elided`.
+const max_ext_links = 64;
+
+/// What sits at the end of a flattened extension chain.
+const Ext = union(enum) {
+    /// `{}`-terminated: the record is closed and the printed field list is
+    /// all of it.
+    closed,
+    /// An extension variable: `{ r | … }`.
+    open: Var,
+    /// `max_ext_links` ran out before the tail was reached, so neither the
+    /// remaining fields nor the tail is known. Prints `…` where the
+    /// extension variable goes.
+    elided,
+};
+
 fn writeRecord(
     w: *std.Io.Writer,
     cx: Context,
@@ -402,21 +426,21 @@ fn writeRecord(
     defer collected.deinit(namer.gpa);
     var tail = record.ext;
     try collected.appendSlice(namer.gpa, cx.store.fields(record.fields));
-    var guard: u32 = 0;
-    const open: ?Var = while (guard < 64) : (guard += 1) {
+    var links: u32 = 0;
+    const ext: Ext = while (links < max_ext_links) : (links += 1) {
         const root, const c = cx.store.resolved(tail);
         switch (c) {
             .structure => |s| switch (s) {
-                .empty_record => break null,
+                .empty_record => break .closed,
                 .record => |r| {
                     try collected.appendSlice(namer.gpa, cx.store.fields(r.fields));
                     tail = r.ext;
                 },
-                else => break root,
+                else => break .{ .open = root },
             },
-            else => break root,
+            else => break .{ .open = root },
         }
-    } else null;
+    } else .elided;
 
     // Sorted by the field's TEXT, never by its symbol id: an id depends on
     // which worker interned which file (`InternPool`'s header), and a
@@ -429,19 +453,27 @@ fn writeRecord(
     };
     std.mem.sort(TypeStore.Field, collected.items, Sorter{ .interner = cx.interner }, Sorter.lessThan);
 
-    if (collected.items.len == 0 and open == null) return w.writeAll("{}");
+    if (collected.items.len == 0 and ext == .closed) return w.writeAll("{}");
     try w.writeAll("{ ");
-    if (open) |ext| {
+    switch (ext) {
+        .closed => {},
         // An open record prints its extension variable, so two `{ r | … }`
         // in one message are visibly the same `r` or visibly not.
-        switch (cx.store.content(cx.store.find(ext))) {
-            .flex, .rigid => |flags| {
-                const preferred: ?[]const u8 = if (flags.name.unwrap()) |s| cx.interner.slice(s) else "r";
-                try w.writeAll(try namer.name(cx.store.find(ext), preferred));
-            },
-            else => try w.writeAll("?"),
-        }
-        try w.writeAll(" | ");
+        .open => |v| {
+            switch (cx.store.content(cx.store.find(v))) {
+                .flex, .rigid => |flags| {
+                    const preferred: ?[]const u8 = if (flags.name.unwrap()) |s| cx.interner.slice(s) else "r";
+                    try w.writeAll(try namer.name(cx.store.find(v), preferred));
+                },
+                else => try w.writeAll("?"),
+            }
+            try w.writeAll(" | ");
+        },
+        // `{ … | … }`: the chain ran past `max_ext_links`, so the rest of
+        // the record — however many more fields, and whatever the tail
+        // turns out to be — is elided. Never `{ … }`: a record whose
+        // remainder was not read may not be printed closed (checker.md §8.2).
+        .elided => try w.writeAll("… | "),
     }
     for (collected.items, 0..) |f, i| {
         if (i != 0) try w.writeAll(", ");

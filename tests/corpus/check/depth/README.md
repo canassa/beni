@@ -14,6 +14,7 @@ without one, is a failure.
 | `ParserOk` / `ParserDeep` | `Parse.max_depth` (4096) | 4095 clean, 4096 reports |
 | `TypeParensOk` / `TypeParensDeep` | the same guard, reached through a **type** | 4095 clean, 4096 reports |
 | `RenderTruncatedDeep` | `Render.max_depth` (24) | truncates one type to `…` |
+| `RecordExtTruncatedDeep` | `Render.max_ext_links` (64) | elides the tail as `… \| ` and stays OPEN |
 
 ## Why this kind exists
 

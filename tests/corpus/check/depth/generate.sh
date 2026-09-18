@@ -154,3 +154,26 @@ type_parens 4096 'one over, in a type: a parenthesised type charges a level like
     repeat 30 ', Int )'
     printf ' -> Int\nf _ =\n    1\n\n\npub g : Int\ng =\n    f 1\n'
 } > "$dir/RenderTruncatedDeep.beni"
+
+# ---------------------------------------------------------------------------
+# `Render.max_ext_links` (64): the same formatting decision one axis over — a
+# record's extension CHAIN rather than a type's depth. 65 links, so the
+# printer stops before the tail and prints `… | ` in the extension slot.
+#
+# The `| r` is the whole fixture. Stopping without it printed the record
+# CLOSED, which is not a truncation of the type but a different type: a
+# closed record refuses the extra fields an open one accepts, so the reader
+# was shown a constraint the program does not have. `check/good/
+# RecordExtChain.beni` is the same shape with the interface as its golden.
+# ---------------------------------------------------------------------------
+{
+    printf -- '-- check/depth: a record whose extension chain is longer than\n'
+    printf -- '-- Render.max_ext_links elides the tail as `…` and STAYS OPEN.\n'
+    printf 'f1 x =\n    x.a1\n\n\n'
+    i=2
+    while [ "$i" -le 65 ]; do
+        printf 'f%d x =\n    ( x.a%d, f%d x )\n\n\n' "$i" "$i" "$((i - 1))"
+        i=$((i + 1))
+    done
+    printf 'pub g =\n    f65 "not a record"\n'
+} > "$dir/RecordExtTruncatedDeep.beni"
