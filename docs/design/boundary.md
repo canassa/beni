@@ -287,6 +287,26 @@ This is also why `--platform` cannot be a global flag with one value per invocat
 build contract needs to express "this entry point, that platform" as a pair. M3 may ship one pair
 per invocation, but the manifest concept M4 introduces should carry the set.
 
+**How a platform is located, and which subcommands may say so.** `--platform=<name>` is either the
+name of a platform that ships in the binary — embedded like `core/`, modules, siblings, runtime and
+manifest all — or a path to a directory holding a package whose `beni.json` says `"platform": true`
+(§2). Nothing else is a platform, and a name that is neither exits `2` naming the ones that ship,
+because a build that quietly fell back to "no platform" would report `main`'s type as a missing
+module. Either way the package is enumerated alongside the app and core, its modules get
+`SourceStore.Package.platform`, and that is what puts them in the import search path and makes
+`foreign` legal inside them.
+
+**`beni check` and `beni dump` take the same flag, resolved the same way** (`frontend.md` §1).
+`--platform` was added with the backend and stayed a `build` flag for as long as `build` was the
+only thing that needed a platform package on disk; that was never a decision, and the cost of it was
+that `check` — the command an editor, a hook, CI, M4's daemon and M5's LSP all run — could not be
+pointed at any program that imports its platform for `Program`, which is every program. `check` is
+not *required* to name one: a library and a platform-free module must stay checkable, so the flag is
+optional and a program that omits it gets `unknown_module` plus, for a platform in the box, a hint
+naming the flag. With a platform named, `check` runs §4's four sibling checks as well, since they
+need no output directory; it does not look for an entry point, because the entry point is half of a
+BUILD pair and `check` is handed paths.
+
 Two platforms ship with the compiler:
 
 - **Browser**: The Elm Architecture. `init`, `update`, `view`, `subscriptions`, ports.

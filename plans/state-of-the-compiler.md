@@ -206,6 +206,8 @@ while `release_*` are plain **gross** sums, so those two fields say release is
 *larger*; `gross_*` against `release_*` is the honest pair, used above. It does
 **not** say the 35 shared names are the same source (§1), nor that brotli over a
 concatenation is what a chunked build ships — chunking has not landed.
+*(Fixed the same day: the total line now carries `floor_once_*` and `release_gross_*`, so the
+divisible pair is `gross_*` ÷ `release_gross_*` and the misreading is no longer available.)*
 
 ## 5. Runtime of the emitted JavaScript
 

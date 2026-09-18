@@ -11,7 +11,8 @@
 //      "files":6,"raw_bytes":3520,"gzip_bytes":1584,"brotli_bytes":1318,
 //      "net_raw_bytes":1373,"net_gzip_bytes":294,"net_brotli_bytes":213,
 //      "derived_bytes":0,"derived_functions":0}
-//     {"total":true,"programs":35,"raw_bytes":…,"gross_raw_bytes":…, …}
+//     {"total":true,"programs":35,"gross_raw_bytes":…,"release_gross_raw_bytes":…,
+//      "floor_once_raw_bytes":…, …}
 //
 // **The floor, and what it means now that §9 exists.** It is still an EMPTY
 // program — a `main` that is `Node.done` — built in the same run and
@@ -22,9 +23,21 @@
 // ~2 kB. So `net_*` is a subtraction against a minimum rather than against
 // common code, and **`gross_*` is the number that matters**, because after
 // elimination no two programs ship the same tree and the "shared tree
-// counted once" arithmetic no longer describes anything. The `raw_bytes`,
-// `gzip_bytes` and `brotli_bytes` of the total keep that arithmetic because
-// it still adds up; read `gross_*` beside them.
+// counted once" arithmetic no longer describes anything.
+//
+// **Every figure on the total line says which arithmetic it is, because for
+// one milestone three of them did not and the line read as if `--release`
+// made programs bigger.** The total used to carry `raw_bytes`, `gzip_bytes`
+// and `brotli_bytes` — the floor counted ONCE plus each program's net — next
+// to `release_raw_bytes`, `release_gzip_bytes` and `release_brotli_bytes`,
+// which were plain gross sums with the floor in them 35 times over. The two
+// are not comparable, and the obvious comparison of the two is backwards;
+// `plans/state-of-the-compiler.md` §4 had to warn its reader off it in
+// prose. So the netted trio is now `floor_once_*` and the release column is
+// `release_gross_*`, and the pair to divide is `gross_*` against
+// `release_gross_*` — the same arithmetic on both sides, which is the only
+// thing a ratio may be taken of. Program lines are unchanged: there
+// `raw_bytes` and `release_raw_bytes` are both one whole tree already.
 //
 // Net compressed bytes are a subtraction, not a separate compression, so
 // that the totals add up; a program's own bytes compress against the
@@ -102,7 +115,12 @@ acceptance asks for that, so that a size claim is never a comparison against a
 remembered number from a different binary. The release figures ride on the
 same line under \`release_raw_bytes\`, \`release_gzip_bytes\` and
 \`release_brotli_bytes\`; the derived-code split is a dev-only figure, because
-it reads declarations by NAME and §9 item 2 has taken the names away.`;
+it reads declarations by NAME and §9 item 2 has taken the names away.
+
+On the {"total":…} line the release column is summed GROSS and named
+\`release_gross_*\`, beside the dev \`gross_*\` it may be divided by. The
+floor-counted-once arithmetic is there too, named \`floor_once_*\` so that it
+cannot be mistaken for a gross sum.`;
 
 function fail(message) {
   process.stderr.write(`bench/size.mjs: ${message}\n`);
@@ -419,9 +437,9 @@ function main() {
     gross_raw_bytes: 0,
     gross_gzip_bytes: 0,
     gross_brotli_bytes: 0,
-    release_raw_bytes: 0,
-    release_gzip_bytes: 0,
-    release_brotli_bytes: 0,
+    release_gross_raw_bytes: 0,
+    release_gross_gzip_bytes: 0,
+    release_gross_brotli_bytes: 0,
     derived_bytes: 0,
     derived_functions: 0,
     eq_functions: 0,
@@ -442,9 +460,9 @@ function main() {
     lines.push(JSON.stringify({ ...fields, ...measured, ...net }));
     total.programs += 1;
     total.files += measured.files;
-    total.release_raw_bytes += measured.release_raw_bytes ?? 0;
-    total.release_gzip_bytes += measured.release_gzip_bytes ?? 0;
-    total.release_brotli_bytes += measured.release_brotli_bytes ?? 0;
+    total.release_gross_raw_bytes += measured.release_raw_bytes ?? 0;
+    total.release_gross_gzip_bytes += measured.release_gzip_bytes ?? 0;
+    total.release_gross_brotli_bytes += measured.release_brotli_bytes ?? 0;
     total.gross_raw_bytes += measured.raw_bytes;
     total.gross_gzip_bytes += measured.gzip_bytes;
     total.gross_brotli_bytes += measured.brotli_bytes;
@@ -580,27 +598,29 @@ function main() {
       total: true,
       programs: total.programs,
       files: total.files,
-      // The shared tree counted once, plus what each program adds to it.
-      raw_bytes: floor.raw_bytes + total.net_raw_bytes,
-      gzip_bytes: floor.gzip_bytes + total.net_gzip_bytes,
-      brotli_bytes: floor.brotli_bytes + total.net_brotli_bytes,
+      // The shared tree counted ONCE, plus what each program adds to it.
+      // Named for the arithmetic and not `raw_bytes`, because a bare
+      // `raw_bytes` here reads as the sum of the program lines' and is not.
+      floor_once_raw_bytes: floor.raw_bytes + total.net_raw_bytes,
+      floor_once_gzip_bytes: floor.gzip_bytes + total.net_gzip_bytes,
+      floor_once_brotli_bytes: floor.brotli_bytes + total.net_brotli_bytes,
       floor_raw_bytes: floor.raw_bytes,
       floor_gzip_bytes: floor.gzip_bytes,
       floor_brotli_bytes: floor.brotli_bytes,
       net_raw_bytes: total.net_raw_bytes,
       net_gzip_bytes: total.net_gzip_bytes,
       net_brotli_bytes: total.net_brotli_bytes,
-      // Every program's whole tree added up: the shared bytes N times over,
-      // which is what a per-program sum means when there is no DCE.
+      // Every program's whole tree added up: the floor N times over, which
+      // is the only sum a release sum may be divided by.
       gross_raw_bytes: total.gross_raw_bytes,
       gross_gzip_bytes: total.gross_gzip_bytes,
       gross_brotli_bytes: total.gross_brotli_bytes,
-      // The release column, summed the same way `gross_*` is: every
-      // program's whole tree, so the two are comparable line for line.
+      // The release column, summed exactly the way `gross_*` is and named
+      // so: every program's whole tree, so the pair is like for like.
       ...(options.release ? {
-        release_raw_bytes: total.release_raw_bytes,
-        release_gzip_bytes: total.release_gzip_bytes,
-        release_brotli_bytes: total.release_brotli_bytes,
+        release_gross_raw_bytes: total.release_gross_raw_bytes,
+        release_gross_gzip_bytes: total.release_gross_gzip_bytes,
+        release_gross_brotli_bytes: total.release_gross_brotli_bytes,
       } : {}),
       derived_bytes: total.derived_bytes,
       derived_functions: total.derived_functions,

@@ -13,7 +13,7 @@ black-box suite may touch nothing else (see `.claude/skills/write-tests/SKILL.md
 
 ```
 beni build  [options] --platform=<name> <path>...      compile to JavaScript (backend.md §2)
-beni check  [options] <path>...                 parse + lower every module; report diagnostics
+beni check  [options] [--platform=<name>] <path>...    parse + lower every module; report diagnostics
 beni fmt    [options] [--check] [--stdout] <path>...   format in place / verify / print
 beni dump   [options] --stage=<tokens|ast|bir> <file>  print one file's IR as text
 beni version
@@ -31,6 +31,35 @@ informational diagnostic goes. A warning cannot change an exit code (below) eith
 `build` arrived with M3a and its flags are `backend.md` §2's; the rest of this document is M0/M1's
 and the common options below apply to it too. Its product on stdout is one summary line naming what
 was written; everything else it has to say is a diagnostic.
+
+**`--platform=<name>` is not `build`'s alone.** `check` takes it, and so does `dump` for the stages
+that resolve imports (`interface`, `raw`, `types`, `graph`, `dispatch`), with exactly `build`'s
+resolution — an embedded platform's name or a directory holding one ([`boundary.md`](boundary.md)
+§5.3), the same `2` on an unknown one, the same privileges for the package's own modules. Without
+it the platform package is not enumerated at all, so **every real program is unloadable by the one
+command whose whole job is "just type-check it"**: `main : Program` names a platform module, and an
+editor, a pre-commit hook, CI, M4's daemon and M5's LSP all run `check` rather than `build`. It is
+**not required** the way `build` requires it — a library, a single module, or anything that imports
+only core must stay checkable with no flag, and demanding one would make `check` unusable on the
+inputs that need no platform — so the flag is optional everywhere but `build`, and the cost of
+leaving it off is an honest `unknown_module`. `fmt` does not take it: formatting is per file and
+resolves nothing.
+
+That `unknown_module` (and `unknown_module_alias`, for the qualified uses that follow it) gains a
+closing paragraph naming the flag **when, and only when, the module it could not find is a module of
+a platform that ships in the binary and no `--platform` was given**. The hint can be honest about
+nothing else: a platform given as a directory is not known until it is named, so a missing `Html`
+gets today's message and not a guess.
+
+`check --platform=<name>` runs everything `build` runs before a byte is emitted — the check phases,
+and then `boundary.md` §4's four sibling checks, which need no output directory and read the same
+embedded assets the build reads. A `foreign_arity_mismatch` is exactly what a pre-commit check
+exists to catch, and a `check` that passed where the `build` behind it fails is the asymmetry this
+flag removes. What it does **not** run is the entry-point search: `missing_main`, the two-`main`
+refusal and `main_not_program` belong to `build`, because a build is a pair of ONE entry point and
+ONE platform (`boundary.md` §5.3) while `check` is given whatever paths it is given — one module of
+a project, or a repository holding a client and a server with a `main` each. `checker.md` §1 puts
+`main`'s type outside the checker for the same reason.
 
 Options common to all subcommands:
 

@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) u8 {
             return 0;
         },
         .build => |build| return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build),
-        .check => |check| return runCheck(gpa, io, stderr, check),
+        .check => |check| return beni.check.Command.run(gpa, io, stderr, sessionOptions(check.common), check),
         .fmt => |fmt| return beni.fmt.Command.run(gpa, io, stdout, stderr, sessionOptions(fmt.common), fmt),
         .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
     }
@@ -99,28 +99,6 @@ fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8, 
     return .{ .summary = summary };
 }
 
-fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check) u8 {
-    var options = sessionOptions(check.common);
-    // A package may declare itself a platform (boundary.md §2), and then
-    // `foreign` is legal in it. `check` has to honour that or a platform
-    // package could not be checked at all.
-    options.manifest_root = check.common.root orelse ".";
-    // `check` resolves names across modules, and every module resolves
-    // against core (checker.md §4): the package is part of the input.
-    options.core_package = true;
-    // `check` and `build` are the two subcommands that emit the
-    // informational warnings of static-dispatch-spike.md §10 (A.83); a
-    // `dump` or a `fmt` of the same file stays silent about them.
-    options.informational = true;
-    var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
-    defer session.deinit();
-    const summary = switch (runSession(&session, stderr, check.paths, Session.check_phases)) {
-        .summary => |s| s,
-        .exit => |code| return code,
-    };
-    return if (summary.errors > 0) 1 else 0;
-}
-
 /// Run `function` on a thread with the stack a deep tree walk needs. The
 /// same shape `Session` uses for the checker, and for the same reason: the
 /// parser's nesting limit bounds the tree at `Parse.max_depth` levels, every
@@ -152,7 +130,12 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // alongside the file (checker.md §4). The other three stages are a
     // function of the file's own bytes, and loading ~2,800 lines of core
     // into every one of them would be pure cost.
-    options.core_package = dump.stage == .interface or dump.stage == .raw or dump.stage == .types or dump.stage == .graph or dump.stage == .dispatch;
+    options.core_package = Cli.stageResolvesImports(dump.stage);
+    // A platform is the other package an import may resolve into
+    // (boundary.md §5.3), so it is loaded for exactly the stages core is —
+    // `parseDump` has already refused the flag on the others, so this is
+    // never a silent drop.
+    options.platform = if (Cli.stageResolvesImports(dump.stage)) dump.platform else null;
     // `--stage=types` prints local bindings' types, and a `Var` means
     // nothing once its store is gone (checker.md §5).
     options.keep_type_stores = dump.stage == .types;
@@ -171,6 +154,10 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         .summary => {},
         .exit => |code| return code,
     }
+    // A `--platform` that named nothing is a usage failure, not a dump with
+    // a missing package: the same exit 2 and the same line `check` and
+    // `build` print (platform.zig).
+    if (session.platform_error) return beni.platform.reportUnknown(stderr, dump.platform.?);
     // `--stage=graph` is about the PROJECT and not about one file: it
     // takes whatever path the other stages take and prints the whole
     // module graph, so it never looks a dump target up.

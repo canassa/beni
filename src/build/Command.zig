@@ -29,9 +29,7 @@ const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Emit = @import("../js/Emit.zig");
 const beni_profile = @import("../Profile.zig");
-const Manifest = @import("../js/Manifest.zig");
-const core_package = @import("core_package");
-const platform_packages = @import("platform_packages");
+const platform = @import("../platform.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, build: Cli.Build) u8 {
     var options = options_in;
@@ -58,13 +56,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         },
         else => |e| return fail(stderr, "beni: {t}", .{e}),
     };
-    if (session.platform_error) {
-        return fail(
-            stderr,
-            "beni: unknown platform '{s}'; give the name of a platform that ships with the compiler ({s}) or a directory holding one",
-            .{ build.platform, embedded_names },
-        );
-    }
+    if (session.platform_error) return platform.reportUnknown(stderr, build.platform);
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
         return 1;
@@ -74,37 +66,14 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const platform = resolvePlatform(arena, io, &session) catch |err| switch (err) {
-        error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
-        error.NoManifest => return fail(
-            stderr,
-            "beni: '{s}' has no {s}; a platform package declares itself one with \"platform\": true",
-            .{ build.platform, Manifest.file_name },
-        ),
-        error.NotAPlatform => return fail(
-            stderr,
-            "beni: '{s}' is not a platform package; its {s} must say \"platform\": true",
-            .{ build.platform, Manifest.file_name },
-        ),
-        error.Incomplete => return fail(
-            stderr,
-            "beni: '{s}' does not declare what `main` is; its {s} needs \"program\" and \"runtime\"",
-            .{ build.platform, Manifest.file_name },
-        ),
-        error.Malformed => return fail(
-            stderr,
-            "beni: cannot read '{s}/{s}': it is not a JSON object",
-            .{ session.platform_root, Manifest.file_name },
-        ),
-    };
-
-    const embedded = collectEmbedded(arena, &session) catch return fail(stderr, "beni: out of memory", .{});
+    const loaded = platform.load(arena, io, &session) catch |err|
+        return platform.report(stderr, build.platform, &session, err);
 
     const emit_token = session.profile.begin();
     var result = emitOnBigStack(gpa, arena, &session, .{
         .out_dir = build.out,
-        .platform = platform,
-        .embedded = embedded,
+        .platform = loaded.platform,
+        .embedded = loaded.embedded,
         .library = build.library,
         .release = build.release,
     }) catch |err| switch (err) {
@@ -174,75 +143,6 @@ fn emitOnBigStack(gpa: Allocator, arena: Allocator, session: *Session, options: 
     thread.join();
     return runner.result;
 }
-
-const PlatformError = error{
-    NoManifest,
-    NotAPlatform,
-    Incomplete,
-    Malformed,
-} || Allocator.Error;
-
-/// What the platform package says about itself (boundary.md §5.2). The
-/// embedded platforms carry their manifest bytes in the binary; a directory
-/// is read from disk. Either way the answer comes from the manifest and not
-/// from a table in the compiler, which is what makes a Bun or Deno platform
-/// a package rather than a compiler change (§5.1).
-fn resolvePlatform(arena: Allocator, io: Io, session: *Session) PlatformError!Emit.Platform {
-    if (session.platform_manifest.len == 0) {
-        const read = Manifest.read(arena, io, session.platform_root) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.Malformed => return error.Malformed,
-            error.ReadFailed => return error.NoManifest,
-        } orelse return error.NoManifest;
-        return finish(read, session.platform_root);
-    }
-    const manifest = Manifest.parse(arena, session.platform_manifest) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.Malformed => return error.Malformed,
-    };
-    return finish(manifest, session.platform_root);
-}
-
-fn finish(manifest: Manifest, root: []const u8) PlatformError!Emit.Platform {
-    if (!manifest.platform) return error.NotAPlatform;
-    return .{
-        .program = manifest.program orelse return error.Incomplete,
-        .runtime = manifest.runtime orelse return error.Incomplete,
-        .root = root,
-    };
-}
-
-/// Every file the compiler carries that the build may have to copy out:
-/// core's siblings, and the chosen platform's siblings and runtime. A
-/// platform read from a directory contributes nothing here and is read from
-/// disk instead.
-fn collectEmbedded(arena: Allocator, session: *Session) Allocator.Error![]const Emit.Asset {
-    var out: std.ArrayList(Emit.Asset) = .empty;
-    // A `--core-root` run reads core from disk, so the embedded copy must
-    // not shadow it.
-    if (session.options.core_root == null) {
-        for (core_package.assets) |asset| {
-            try out.append(arena, .{ .path = asset.path, .bytes = asset.bytes });
-        }
-    }
-    for (platform_packages.platforms) |platform| {
-        if (!std.mem.eql(u8, platform.root, session.platform_root)) continue;
-        for (platform.assets) |asset| {
-            try out.append(arena, .{ .path = asset.path, .bytes = asset.bytes });
-        }
-    }
-    return out.items;
-}
-
-/// The names `--platform` accepts without a directory, for the error
-/// message. Built at comptime because the platform table is.
-const embedded_names = blk: {
-    var text: []const u8 = "";
-    for (platform_packages.platforms, 0..) |platform, i| {
-        text = text ++ (if (i == 0) "" else ", ") ++ platform.name;
-    }
-    break :blk text;
-};
 
 fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u8 {
     stderr.print(format_string ++ "\n", args) catch {};

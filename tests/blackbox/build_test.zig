@@ -1836,12 +1836,21 @@ test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a fl
     try testing.expect(total.total);
     try testing.expectEqual(@as(u32, 1), total.programs);
     // The shared tree counted ONCE plus what the program adds, and the gross
-    // sum kept beside it.
-    try testing.expectEqual(floor.raw_bytes + program.net_raw_bytes, total.raw_bytes);
-    try testing.expectEqual(floor.gzip_bytes + program.net_gzip_bytes, total.gzip_bytes);
-    try testing.expectEqual(floor.brotli_bytes + program.net_brotli_bytes, total.brotli_bytes);
+    // sum kept beside it. Each field says which of the two it is, so that
+    // the release column can be divided by the right one.
+    try testing.expectEqual(floor.raw_bytes + program.net_raw_bytes, total.floor_once_raw_bytes);
+    try testing.expectEqual(floor.gzip_bytes + program.net_gzip_bytes, total.floor_once_gzip_bytes);
+    try testing.expectEqual(floor.brotli_bytes + program.net_brotli_bytes, total.floor_once_brotli_bytes);
     try testing.expectEqual(program.raw_bytes, total.gross_raw_bytes);
     try testing.expectEqual(floor.raw_bytes, total.floor_raw_bytes);
+    // **The pair that may be compared.** `release_gross_*` is summed exactly
+    // as `gross_*` is — whole trees, floor included, once per program — so
+    // the ratio of the two is a fact about the optimiser. With one program
+    // in this corpus the sum IS that program's release tree, and it is
+    // smaller than the dev one, which the old netted `raw_bytes` next to a
+    // gross `release_raw_bytes` said the opposite of.
+    try testing.expect(total.release_gross_raw_bytes > 0);
+    try testing.expect(total.release_gross_raw_bytes < total.gross_raw_bytes);
 }
 
 test "bench/size.mjs counts §8.5's derived names and not a user's own `eq`" {
@@ -2252,14 +2261,21 @@ const SizeSynthesised = struct {
     net_raw_bytes: i64,
 };
 
+/// The `{"total":…}` line. Every figure names its ARITHMETIC: `floor_once_*`
+/// counts the floor once and adds each program's net, `gross_*` sums whole
+/// trees, and `release_gross_*` sums whole release trees. They were
+/// `raw_bytes` and `release_raw_bytes` for one milestone, one netted and one
+/// gross, and the obvious comparison of the two said `--release` made
+/// programs bigger.
 const SizeTotal = struct {
     total: bool,
     programs: u32,
-    raw_bytes: i64,
-    gzip_bytes: i64,
-    brotli_bytes: i64,
+    floor_once_raw_bytes: i64,
+    floor_once_gzip_bytes: i64,
+    floor_once_brotli_bytes: i64,
     floor_raw_bytes: i64,
     gross_raw_bytes: i64,
+    release_gross_raw_bytes: i64 = 0,
 };
 
 const RuntimeLine = struct {

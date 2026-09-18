@@ -939,7 +939,10 @@ fn reportGraphDiagnostics(session: *Session) RunError!void {
                 cx.name = session.store.moduleName(item.file);
                 cx.other_path = session.store.path(session.graph.moduleFile(@enumFromInt(item.cycle_start)));
             },
-            else => cx.name = session.moduleNameOfImport(item.file, item.token),
+            else => {
+                cx.name = session.moduleNameOfImport(item.file, item.token);
+                if (item.code == .unknown_module) cx.platform = session.platformOffering(cx.name);
+            },
         }
         try ResolveDiagnostics.message(item.code, cx, &message.writer);
         const start, const end = session.tokenSpan(item.file, item.token);
@@ -956,6 +959,38 @@ fn moduleNameOfImport(session: *const Session, file: SourceStore.Index, token: u
     return Tokenizer.slice(session.store.bytes(file), tokens.items(.tag)[token], tokens.items(.start)[token]);
 }
 
+/// The name of a platform EMBEDDED IN THIS BINARY that has a module called
+/// `module_name`, when this run named no `--platform` — the honest half of
+/// the hint `frontend.md` §1 attaches to an unknown module. Empty otherwise.
+///
+/// Empty when a platform WAS named, because then the module really is not
+/// there and advice to name one is noise; and empty for anything not in the
+/// box, because a platform given as a directory cannot be guessed at. The
+/// name is compared against the platform's file list rather than derived
+/// into a buffer: `Node.beni` is the module `Node` and `A/B.beni` is `A.B`,
+/// which is a character rewrite and needs no allocation.
+fn platformOffering(session: *const Session, module_name: []const u8) []const u8 {
+    if (session.options.platform != null or module_name.len == 0) return "";
+    for (platform_packages.platforms) |platform| {
+        for (platform.files) |f| {
+            if (relIsModule(f.rel, module_name)) return platform.name;
+        }
+    }
+    return "";
+}
+
+fn relIsModule(rel: []const u8, name: []const u8) bool {
+    const stem = if (std.mem.endsWith(u8, rel, SourceStore.extension))
+        rel[0 .. rel.len - SourceStore.extension.len]
+    else
+        rel;
+    if (stem.len != name.len) return false;
+    for (stem, name) |a, b| {
+        if ((if (a == '/') @as(u8, '.') else a) != b) return false;
+    }
+    return true;
+}
+
 fn reportResolveDiagnostics(session: *Session) RunError!void {
     const gpa = session.gpa;
     var message: Io.Writer.Allocating = .init(gpa);
@@ -963,13 +998,16 @@ fn reportResolveDiagnostics(session: *Session) RunError!void {
     for (session.resolution.diagnostics) |item| {
         message.clearRetainingCapacity();
         const file = session.graph.moduleFile(item.module);
-        const cx: ResolveDiagnostics.Context = .{
+        var cx: ResolveDiagnostics.Context = .{
             .name = session.symbolText(item.name),
             .module = session.symbolText(item.module_name),
             .owner = session.symbolText(item.owner),
             .expected = item.expected,
             .found = item.found,
         };
+        // The qualified uses that follow a failed import get the same hint:
+        // the fix is the same flag (frontend.md §1).
+        if (item.code == .unknown_module_alias) cx.platform = session.platformOffering(cx.module);
         try ResolveDiagnostics.message(item.code, cx, &message.writer);
         const start, const end = session.tokenSpan(file, item.token);
         try session.workers[0].report(session, file, item.code, start, end, message.written());

@@ -7,7 +7,7 @@
 //!
 //! ```
 //! beni build  [options] --platform=<name> <path>...
-//! beni check  [options] <path>...
+//! beni check  [options] [--platform=<name>] <path>...
 //! beni fmt    [options] [--check] [--stdout] <path>...
 //! beni dump   [options] --stage=<tokens|ast|bir|interface|raw|types|graph> [--positions] <file>
 //! beni version
@@ -38,6 +38,10 @@ pub const usage =
     \\  --explain                 accepted; currently governs no diagnostic (all informational ones are on)
     \\  --pattern-budget=<n>      work one `case` may spend proving exhaustiveness before it is refused
     \\
+    \\check options:
+    \\  --platform=<name>         also load this platform package, exactly as build does; optional,
+    \\                            and with it the sibling checks of a build run too
+    \\
     \\build options:
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
     \\  --out=<dir>               output directory (default: out)
@@ -53,6 +57,8 @@ pub const usage =
     \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch
     \\                            which representation to print (required)
     \\  --positions               include source positions
+    \\  --platform=<name>         as check's, for the stages that resolve imports (interface, raw,
+    \\                            types, graph, dispatch); refused on the others
     \\
     \\exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O failure
     \\
@@ -100,6 +106,13 @@ pub const Common = struct {
 
 pub const Check = struct {
     common: Common = .{},
+    /// `--platform`: the same value `build` takes, resolved the same way
+    /// (frontend.md §1, boundary.md §5.3). **Optional here**, because a
+    /// library and a platform-free module must stay checkable; null is "no
+    /// platform", which is what `check` ran with until 2026-09-18 and what
+    /// made it useless on every program that imports its platform for
+    /// `Program`.
+    platform: ?[]const u8 = null,
     paths: []const []const u8,
 };
 
@@ -142,6 +155,10 @@ pub const Dump = struct {
     common: Common = .{},
     stage: Stage,
     positions: bool = false,
+    /// `--platform`, for the stages that resolve imports. `parseDump`
+    /// refuses it on the others rather than accepting a flag that does
+    /// nothing, which is the rule `--source-maps` set (backend.md §2).
+    platform: ?[]const u8 = null,
     file: []const u8,
 };
 
@@ -297,15 +314,33 @@ fn noValue(name: []const u8) Usage {
     return Usage.init("beni: option '{s}' does not take a value", .{name});
 }
 
-const NoSpecific = struct {
+/// `--platform=<name>`, which `build`, `check` and `dump` all take
+/// (frontend.md §1). One spelling, one message, one value: the three
+/// commands must not drift apart about what the flag is, because a `check`
+/// that resolves a platform differently from the `build` behind it is worse
+/// than no `check`.
+fn applyPlatform(slot: *?[]const u8, consumed: *bool, value: ?[]const u8) ?Usage {
+    const v = value orelse return needsValue("--platform", "<name>");
+    if (v.len == 0) return needsValue("--platform", "<name>");
+    slot.* = v;
+    consumed.* = true;
+    return null;
+}
+
+const CheckSpecific = struct {
     consumed: bool = false,
-    fn apply(_: *NoSpecific, _: []const u8, _: ?[]const u8) Allocator.Error!?Usage {
+    platform: ?[]const u8 = null,
+
+    fn apply(self: *CheckSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--platform")) {
+            if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
+        }
         return null;
     }
 };
 
 fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
-    var s: Scanner(NoSpecific) = .{};
+    var s: Scanner(CheckSpecific) = .{};
     errdefer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| {
         s.positionals.deinit(gpa);
@@ -315,7 +350,15 @@ fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: check needs at least one path", .{}) };
     }
-    return .{ .command = .{ .check = .{ .common = s.common, .paths = try s.positionals.toOwnedSlice(gpa) } } };
+    // No "check needs --platform": a library, a single module and anything
+    // that imports only core must stay checkable with no flag (frontend.md
+    // §1). The cost of leaving it off is an `unknown_module` that names the
+    // flag.
+    return .{ .command = .{ .check = .{
+        .common = s.common,
+        .platform = s.specific.platform,
+        .paths = try s.positionals.toOwnedSlice(gpa),
+    } } };
 }
 
 const BuildSpecific = struct {
@@ -328,10 +371,7 @@ const BuildSpecific = struct {
 
     fn apply(self: *BuildSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
-            const v = value orelse return needsValue(name, "<name>");
-            if (v.len == 0) return needsValue(name, "<name>");
-            self.platform = v;
-            self.consumed = true;
+            if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
         } else if (std.mem.eql(u8, name, "--out")) {
             const v = value orelse return needsValue(name, "<dir>");
             if (v.len == 0) return needsValue(name, "<dir>");
@@ -435,9 +475,12 @@ const DumpSpecific = struct {
     consumed: bool = false,
     stage: ?Stage = null,
     positions: bool = false,
+    platform: ?[]const u8 = null,
 
     fn apply(self: *DumpSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
-        if (std.mem.eql(u8, name, "--stage")) {
+        if (std.mem.eql(u8, name, "--platform")) {
+            if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
+        } else if (std.mem.eql(u8, name, "--stage")) {
             const v = value orelse return needsValue(name, "tokens|ast|bir|interface|raw|types|graph|dispatch");
             self.stage = std.meta.stringToEnum(Stage, v) orelse
                 return Usage.init("beni: invalid value '{s}' for --stage (expected tokens, ast, bir, interface, raw, types, graph or dispatch)", .{v});
@@ -456,6 +499,17 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
     const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch", .{}) };
+    // A platform is a package of MODULES, so it changes what an import
+    // resolves to and nothing else. The stages below it are a function of
+    // one file's own bytes, and accepting the flag there would be a flag
+    // that does nothing — the mistake `--source-maps` is refused to avoid
+    // (backend.md §2).
+    if (s.specific.platform != null and !stageResolvesImports(stage)) {
+        return .{ .usage = .init(
+            "beni: --platform has no effect on --stage={t}; it applies to interface, raw, types, graph and dispatch",
+            .{stage},
+        ) };
+    }
     // `--stage=interface` and `--stage=dispatch` also take a directory (a
     // whole project's interfaces or dispatch tables, checker.md §3 and
     // static-dispatch-spike.md §7.3); either way it is one path.
@@ -464,8 +518,19 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
         .common = s.common,
         .stage = stage,
         .positions = s.specific.positions,
+        .platform = s.specific.platform,
         .file = s.positionals.items[0],
     } } };
+}
+
+/// Whether a dump stage runs the phases that resolve imports (checker.md
+/// §4). The same set `main.zig` loads the core package for, and for the same
+/// reason: below it, nothing knows another module exists.
+pub fn stageResolvesImports(stage: Stage) bool {
+    return switch (stage) {
+        .tokens, .ast, .bir => false,
+        .interface, .raw, .types, .graph, .dispatch => true,
+    };
 }
 
 /// Free what `parse` allocated for `command`.
@@ -624,8 +689,55 @@ test "build: the platform is required, --release is accepted and --source-maps i
         &.{ "build", "--platform=node", "--release", "--source-maps", "src" },
     );
     try expectUsage("beni: option '--source-maps' does not take a value", &.{ "build", "--platform=node", "--source-maps=yes", "src" });
-    // `--platform` belongs to build only.
-    try expectUsage("beni: unknown option '--platform'; run 'beni help' for usage", &.{ "check", "--platform=node", "src" });
+}
+
+test "check and dump take --platform; fmt does not, and neither does a per-file stage" {
+    // It was `build`'s alone until 2026-09-18, and that was an accident of
+    // the flag arriving with the backend rather than a decision: `check` is
+    // what an editor, a hook, CI, M4's daemon and M5's LSP run, and no real
+    // program resolves without its platform (frontend.md §1, boundary.md
+    // §5.3).
+    try expectCommand(
+        .{ .check = .{ .platform = "node", .paths = &.{"src"} } },
+        &.{ "check", "--platform=node", "src" },
+    );
+    try expectCommand(
+        .{ .check = .{ .common = .{ .jobs = 2 }, .platform = "./platforms/node", .paths = &.{ "src", "vendor" } } },
+        &.{ "check", "--platform=./platforms/node", "--jobs=2", "src", "vendor" },
+    );
+    try expectUsage("beni: option '--platform' needs a value: --platform=<name>", &.{ "check", "--platform", "src" });
+    try expectUsage("beni: option '--platform' needs a value: --platform=<name>", &.{ "check", "--platform=", "src" });
+    // `dump` takes it for the stages that RESOLVE imports, and refuses it
+    // for the ones that are a function of the file's own bytes rather than
+    // accepting a flag that does nothing (backend.md §2's `--source-maps`
+    // rule).
+    for ([_][:0]const u8{ "--stage=interface", "--stage=raw", "--stage=types", "--stage=graph", "--stage=dispatch" }) |stage| {
+        const result = try parse(testing.allocator, &.{ "dump", stage, "--platform=node", "M.beni" });
+        switch (result) {
+            .command => |c| {
+                defer deinitCommand(testing.allocator, c);
+                try testing.expectEqualStrings("node", c.dump.platform.?);
+            },
+            .usage => |u| {
+                std.debug.print("unexpected usage error: {s}\n", .{u.message()});
+                return error.TestUnexpectedResult;
+            },
+        }
+    }
+    try expectUsage(
+        "beni: --platform has no effect on --stage=ast; it applies to interface, raw, types, graph and dispatch",
+        &.{ "dump", "--stage=ast", "--platform=node", "M.beni" },
+    );
+    try expectUsage(
+        "beni: --platform has no effect on --stage=tokens; it applies to interface, raw, types, graph and dispatch",
+        &.{ "dump", "--platform=node", "--stage=tokens", "M.beni" },
+    );
+    try expectUsage(
+        "beni: --platform has no effect on --stage=bir; it applies to interface, raw, types, graph and dispatch",
+        &.{ "dump", "--stage=bir", "--platform=node", "M.beni" },
+    );
+    // `fmt` resolves nothing: formatting is per file.
+    try expectUsage("beni: unknown option '--platform'; run 'beni help' for usage", &.{ "fmt", "--platform=node", "a.beni" });
 }
 
 test "usage text mentions every subcommand" {

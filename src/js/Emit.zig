@@ -194,6 +194,33 @@ pub fn run(
     };
 }
 
+/// `boundary.md` §4's four checks with nothing emitted: what
+/// `beni check --platform=<name>` runs after the check phases
+/// (`frontend.md` §1).
+///
+/// It is the front half of `run` and nothing else — no entry-point search,
+/// no elimination, no lowering, no output directory. The entry point is half
+/// of a BUILD pair (§5.3) and `check` is handed paths; the four checks are
+/// not, because a `foreign_arity_mismatch` is a defect of the module and its
+/// sibling wherever it is found, and it is exactly what a pre-commit check
+/// exists to catch. `options.out_dir` is unused here and nothing is written.
+///
+/// Diagnostics are owned by the caller, messages included, like `run`'s.
+pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
+    var io_failure: ?Session.IoFailure = null;
+    var e: Emitter = .{
+        .gpa = gpa,
+        .scratch = scratch,
+        .session = session,
+        .options = options,
+        .io_failure = &io_failure,
+    };
+    errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
+    try e.checkForeignShapes();
+    try e.checkSiblings();
+    return e.diagnostics.toOwnedSlice(gpa);
+}
+
 const Emitter = struct {
     gpa: Allocator,
     scratch: Allocator,

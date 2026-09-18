@@ -14,6 +14,7 @@ pub const InternPool = @import("InternPool.zig");
 pub const Profile = @import("Profile.zig");
 pub const Session = @import("Session.zig");
 pub const SourceStore = @import("SourceStore.zig");
+pub const platform = @import("platform.zig");
 pub const Token = @import("lex/Token.zig");
 pub const Tokenizer = @import("lex/Tokenizer.zig");
 pub const lex = struct {
@@ -67,6 +68,7 @@ pub const check = struct {
     pub const Diagnostics = @import("check/Diagnostics.zig");
     pub const Check = @import("check/Check.zig");
     pub const Dispatch = @import("check/Dispatch.zig");
+    pub const Command = @import("check/Command.zig");
 };
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");

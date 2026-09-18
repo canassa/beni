@@ -68,6 +68,7 @@ a file.
 |---|---|---|
 | `--core-root=<dir>` | use this directory as the core package instead of the embedded one; for developing core | embedded |
 | `--pattern-budget=<n>` | work one `case` may spend proving exhaustiveness (§6.6) before it is refused; session-wide, so it applies to core too | 5 000 000 |
+| `--platform=<name>` | enumerate a platform package too, exactly as `build` does (`frontend.md` §1, `boundary.md` §5.3); optional, and `dump` takes it for the stages that resolve imports | none |
 
 `check` on a directory is the project: every `.beni` under it is a module of the package
 `app`; core is the package `core`. **A source file at a core module's path is that core

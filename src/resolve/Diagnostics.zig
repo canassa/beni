@@ -28,16 +28,27 @@ pub const Context = struct {
     cycle: []const []const u8 = &.{},
     /// `duplicate_module`: the path of the file that claimed the name.
     other_path: []const u8 = "",
+    /// `unknown_module`, `unknown_module_alias`: the name of a platform that
+    /// SHIPS WITH THIS BINARY and has a module of that name, when the run
+    /// named no `--platform`. Empty otherwise, and then nothing is added.
+    ///
+    /// It is the whole of what the hint may honestly claim (frontend.md §1):
+    /// a platform given as a directory is unknown until it is named, so a
+    /// missing `Html` gets the plain message and no guess.
+    platform: []const u8 = "",
 };
 
 pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Writer.Error!void {
     switch (code) {
-        .unknown_module => try w.print(
-            \\I cannot find a module named `{s}`.
-            \\
-            \\I looked in this project and in the core package. Check the spelling, or check
-            \\that a file named `{s}.beni` exists under the source root.
-        , .{ cx.name, cx.name }),
+        .unknown_module => {
+            try w.print(
+                \\I cannot find a module named `{s}`.
+                \\
+                \\I looked in this project and in the core package. Check the spelling, or check
+                \\that a file named `{s}.beni` exists under the source root.
+            , .{ cx.name, cx.name });
+            try platformHint(cx, w);
+        },
         .duplicate_module => try w.print(
             \\Two files claim the module name `{s}`.
             \\
@@ -88,14 +99,33 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             \\directly, or through other aliases — has no expansion. Make it a `type` with a
             \\constructor instead; that is what gives recursion somewhere to stop.
         , .{cx.name}),
-        .unknown_module_alias => try w.print(
-            \\I cannot find a module named `{s}`.
-            \\
-            \\The qualified name `{s}.{s}` needs it. Check the spelling, or add an import.
-        , .{ cx.module, cx.module, cx.name }),
+        .unknown_module_alias => {
+            try w.print(
+                \\I cannot find a module named `{s}`.
+                \\
+                \\The qualified name `{s}.{s}` needs it. Check the spelling, or add an import.
+            , .{ cx.module, cx.module, cx.name });
+            try platformHint(cx, w);
+        },
         // A code this pass does not produce; the title is still true.
         else => try w.writeAll(diagnostic.title(code)),
     }
+}
+
+/// The closing paragraph of an unknown module that IS a platform's, when the
+/// run did not name that platform (frontend.md §1). The qualified uses that
+/// follow a failed import carry it too, because the fix is the same flag
+/// wherever the reader's eye lands.
+fn platformHint(cx: Context, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    if (cx.platform.len == 0) return;
+    const module = if (cx.module.len != 0) cx.module else cx.name;
+    try w.print(
+        \\
+        \\
+        \\`{s}` is a module of the `{s}` platform, which ships with the compiler, and a
+        \\platform's modules are in scope only when the platform is named. Add
+        \\`--platform={s}`.
+    , .{ module, cx.platform, cx.platform });
 }
 
 fn plural(n: u32) []const u8 {
