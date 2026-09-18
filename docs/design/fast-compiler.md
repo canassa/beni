@@ -551,6 +551,16 @@ then a sharded global pool following Zig's index encoding (per-thread `locals` w
 the index's high bits, per-shard locks on the dedup tables, 01 §5); short identifiers use inline
 storage (SSO) in the token payload so the common case never touches the table.
 
+*Corrected 2026-09-18: of that decision, only the first clause has landed. Per-worker interners
+merged at one synchronisation point in worker-index order: yes (`src/Session.zig:421-436`). **The
+sharded global pool and the SSO are not implemented** — `Token.payload` is a plain `Symbol`
+(`src/lex/Token.zig:22-28`), there is no lock, atomic or shard anywhere in `InternPool.zig`, and
+`:24-26` defers sharding to M4. The consequence the rest of the design has to carry is stated at
+`src/Session.zig:16-22`: because a worker interns the identifiers of the files it happened to take,
+**a global symbol id still varies with `--jobs`**, so no artifact that is compared, hashed or cached
+may hold one. That is why every record from `Bir` to `Interface` to `JsIr` holds symbols through one
+remappable column; see `plans/m4-plan.md` §2.5.*
+
 ## 6. Pipeline
 
 ```
@@ -620,6 +630,21 @@ Beni keys it on **content hashes, not mtimes** — Elm's mtime scheme is the doc
 cache-desync bugs and CI pathologies (05 §3). Cache key = source bytes + module identity + compiler
 version + direct imports' interface hashes (Roc's `cache_key.zig` model, 05 §4), with a `stat`
 fast-path avoiding hashes for files whose size and mtime are both unchanged (04 §7).
+
+*Corrected 2026-09-18, on two counts, from the M4 readiness audit (`plans/m4-plan.md` §2.2, §3.1).*
+*(i) **The key has grown by one term:** `boundary.md` §7.3 adds the content hash of a module's
+sibling JavaScript file, and requires the `stat` fast-path to cover sibling files and not only
+`.beni` ones; `backend.md` §9 restates the whole key for the reachability edge list.*
+*(ii) **The premise of this layer does not yet hold of the landed record.** An interface is
+specified to be a function of one module's source and its imports' interfaces, but `Interface.Term`'s
+`app` and `alias` tags spend `lhs` on a `TypeStore.TypeId` (`src/resolve/Interface.zig:182-196`),
+and a `TypeId` is a whole-program dense index assigned by walking every module in `Graph.Index` order
+(`src/check/Types.zig:250-278`). Measured: adding one type declaration — `pub` or private — to an
+alphabetically earlier module, or adding a new file containing a type, shifts an untouched,
+non-importing module's `dump --stage=raw` bytes by one word. Hashed as it stands, the cutoff would
+fail to fire on approximately every type-introducing edit. `checker.md` §7 already asks for "a story
+for the whole type table"; this is the sharper half of that, and the fix is to stop writing a session
+`TypeId` into the record.*
 
 **What static dispatch did to this layer, and it is the sharpest measured cost of adopting it.** An
 interface is the *inferred* scheme of each `pub` declaration (§3.1, "Top-level annotations are
@@ -954,6 +979,16 @@ that the wrong order costs a 30,000-line refactor (01 §7).
    and resist adding more without a measurement that demands it.
 4. **Does BIR need to be separate from the resolved IR at all**, given that Beni has no `comptime`
    and a much simpler semantic model than Zig? The caching argument says yes; the complexity argument
-   says measure it before committing.
+   says measure it before committing. *Corrected 2026-09-18: the question's premise is overtaken by
+   what landed. There is no separate resolved IR — `Resolve.rewriteReferences` mutates the `Bir`
+   **in place**, turning every `import_value`/`qualified`/`type_import` instruction into
+   `ext_value`/`top`/`ext_type` (`src/resolve/Resolve.zig:221-238`; `src/Artifacts.zig:121-127` exists
+   for it). So one array holds two states: pre-resolve, which is the per-file pure form §6 describes
+   and the one a cache may hold, and post-resolve, which carries `Graph.Index` and interface indices.
+   The live question is therefore not whether to split them but that a cache must write the
+   pre-resolve form and re-run resolution on load — 3.05 ms across 634 modules, ~5 µs each
+   (`plans/m4-plan.md` §2.3). Note also that lowering takes `Lower.Options{core, platform,
+   module_name}` (`src/bir/Lower.zig:149-162`), so "a function of one file's text" is really a
+   function of that plus the package privilege bits and the module name.*
 5. **Mutual-recursion stack safety** (§9.4). Trampolining costs the common case; leaving it unfixed
    is a real cliff for idiomatic ML code. Defer, but don't forget.
