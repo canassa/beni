@@ -31,7 +31,7 @@ one commit each, nothing force-pushed, no history rewritten.
 | 5 | Two printer defects: `Render.writeRecord` 64-link flatten drops `| r`; `Schemes.Writer.max_depth` writes `<error>` with exit 0 | **done** | owed 3; each needs a fail-first fixture |
 | 6 | Decision trees (M3b, `backend.md` §7) | **done** `ebacb5b` (spec), `cf7806f` (code) | worst path 17→2 on the enum-in-cons match; R1–R6 10–20 % faster, checksums identical |
 | 7 | Rest of M3b — audit **done** (`plans/m3b-audit.md`): left are `?`, `Int32` (a language gap: owner decision), `--source-maps` honesty, sibling-import rewrite | todo | interpolation, tuples, record update already work |
-| 8 | **Reachability DCE** (M3c) | spec **done** `dc311d0`; code in flight (worktree) | the adoption's only blocker; also fixes `size.mjs`'s derived-name heuristic |
+| 8 | **Reachability DCE** (M3c) | **done** `dc311d0` (spec), `22f7f2f` (code) | hello-world 68 794 B / 19 files → 2 061 B / 5; spec's edge set was wrong three times and the compile-time self-check caught each |
 | 9 | Drop the 4×500 split in `bench/runtime` once #2 lands; re-take M5 | todo | measurement follow-up |
 | 10 | `transparent-effects-proposal.md` §10 item 1 is stale (`Func` is n-ary now) | todo | docs; found by L1 |
 | 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | **done** | found by slice 3; low priority |

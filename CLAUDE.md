@@ -56,8 +56,7 @@ with `|>` flipped to pipe-first.
 
 ### Owed after the static-dispatch adoption
 
-Report 19 §14, items 1–5. Only item 3 is left; 1, 2, 4 and 5 are **done**
-(2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
+Report 19 §14, items 1–5. **All five are done** (2026-09-18): the `foreign` arity rule is enforced as `boundary.md` §4's check 4
 (A.84), the inferred-`where` suffix is capped at 64 constraints and an
 unannotated declaration over the cap is `too_many_inferred_constraints`, which
 bounds the n² with it —
@@ -83,10 +82,11 @@ A.83 — and dead-code elimination has landed.
    every existing sibling passed unchanged
    ([`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) §5.2,
    §11, A.7, A.84).
-3. **The two `master` printer defects** report 19 §3.1 reproduces:
-   `Render.writeRecord`'s 64-link flatten dropping the `| r` tail, and
-   `Schemes.Writer.max_depth` writing `<error>` into an interface that
-   `beni check` exits 0 on.
+3. ~~**The two `master` printer defects** report 19 §3.1 reproduces.~~ **Done**
+   (`83ce553`): a record truncated past 64 extension links prints `… | ` and
+   stays open, and `<error>` never reaches an interface unreported — the cause
+   was a 256-slot stack in the poisoned-type scan, not `Schemes.Writer.max_depth`
+   as report 19 guessed (`checker.md` §7, §8.2).
 4. ~~**A cap or a diagnostic for the inferred `where` suffix.**~~ **Done**: the
    cap is 64 and over it the declaration promotes nothing, so a promoted suffix
    is at most 64 clauses. The `ambiguous_method_receiver` warning is also on by
