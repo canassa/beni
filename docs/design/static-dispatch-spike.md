@@ -1339,6 +1339,13 @@ store). Everything the checker decided about a method call therefore has to cros
 dispatch table is that data: one per module, flat, index-based, immutable once built, in the shape
 of `Bir.refs`.
 
+**It carries one decision that is not about a method call**, added when M3b emitted `?`: which of
+`language.md` §6.6's two shapes each `?` turned out to be. `checker.md` §6.5 settles it by
+speculation, the emitted failure test is the `Nothing` tag for one shape and the `Err` tag for the
+other, and there is no pattern at a `?` to read either off — so it is exactly the kind of decision
+this table exists for, and giving it a second channel would have meant a second thing to keep
+sorted, roll back and dump.
+
 ### 7.1 The record
 
 ```zig
@@ -1375,6 +1382,10 @@ pub const Dispatch = struct {
         target: Target,
     };
     pub const Evidence = struct { quantified: u16, var_name: SymbolIndex, method: SymbolIndex };
+    pub const Try = struct {                                      // one per `?` (ADDED with M3b's
+        inst: Bir.Inst.Index,                                     // `?` codegen: `backend.md` §4,
+        shape: enum(u8) { maybe, result },                        // `checker.md` §6.5)
+    };
     pub const Derived = struct {
         kind: enum(u8) { eq, compare },
         shape: Shape,
@@ -1386,6 +1397,7 @@ pub const Dispatch = struct {
 
     sites: []Site,                     // grouped by `inst`, and within one instruction in the
                                        // PRE-ORDER of §7.2's evidence tree
+    tries: []Try,                      // ascending by `inst`, one row per `?`
     decl_evidence: []Range,            // per declaration, into `evidence`
     evidence: []Evidence,              // canonical order within each declaration
     derived: []Derived,                // SORTED by emitted name text (§8.5). Exactly what this
@@ -1509,6 +1521,7 @@ golden untouched and `--jobs` cannot move a byte (the rule `dump/types.zig` alre
 module <ModuleName>
   decl <name> evidence=<n>
     evidence <k> quantified=<q> var=<varName> method=<methodName>
+  try <inst> <maybe|result>
   derived <i> <eq|compare> <shape> evidence=<n>
     part <j> <target>
   site <inst> <evidence_index> <target>
@@ -1518,6 +1531,10 @@ module <ModuleName>
 - `decl` lines are in **source order** and there is one per value declaration; a declaration with no
   evidence prints `evidence=0` and no `evidence` lines. A module with no dispatch at all prints its
   `module` line and nothing else.
+- `try` lines are one per `?`, ascending by Bir instruction index, and say which of
+  `language.md` §6.6's two shapes the speculation of `checker.md` §6.5 committed to. A module with
+  no `?` prints none, and a module whose ONLY dispatch is a `?` still prints them — the shape is
+  what the emitter's failure test is built from, so it is printed for the same reason a site is.
 - `derived` lines are in the emission order of §8.5 (by emitted name text). Their `part` lines are
   the **body's** positions — every constructor argument of a nominal type, in declaration order
   (§9's parts contract). A record, a tuple and `()` have none: `evidence=<n>` is the whole of it.

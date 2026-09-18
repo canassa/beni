@@ -398,6 +398,16 @@ The instruction's type is `a`. The enclosing result is the `let_def` or declarat
 `target`, whose result var is the one after peeling its parameter count from its type. No
 conversion between the two shapes and no `From` (language.md §6.6).
 
+**The shape that wins is recorded for the backend**, in the dispatch table
+(`static-dispatch-spike.md` §7.1's `tries`, one row per `?`, ascending by instruction). It is the
+one thing about a `?` the emitter cannot work out for itself: the failure test it writes is the
+`Nothing` tag for one shape and the `Err` tag for the other, `backend.md` §3 gives it no types, and
+unlike a `case` there is no pattern at a `?` to read a constructor off. Only a **committed** guess
+is recorded — the probe's rollback truncates the table with everything else, so a `?` inside
+another `?`'s retracted guess leaves nothing behind — and a `?` that solved as neither shape is
+`try_shape`, which refuses the build. So a `?` reaching the backend without a row is a compiler
+bug, and the backend says so (`internal`) rather than guessing.
+
 ### 6.6 Exhaustiveness
 
 After a module is solved, every `case` (including the ones `if` lowered to) is checked with

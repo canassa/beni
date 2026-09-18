@@ -1,0 +1,77 @@
+-- run: what runs before a `?`, and what does not run after one
+-- (`language.md` §6, *Evaluation order*; `backend.md` §4).
+--
+-- A `?` is the first construct whose lowering can decide that an expression
+-- written beside it never runs at all, so the hoisting rule is visible here
+-- in a way the `case` it resembles could not make it: the early `return` is
+-- a STATEMENT, it runs where the statements go, and everything written in
+-- front of it therefore has to have been evaluated into a temporary by the
+-- time it does.
+--
+-- `chain`   four subjects in one expression: all four run left to right
+--           while they succeed, and the one after the failure does not run
+-- `mixed`   a call written before the `?` runs before the failure returns
+-- `record`  the same, where the sort ALSO moves the initialiser (slice A)
+-- `args`    the same, in a call argument
+import Node exposing (Program)
+import String
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+step : String, Int -> Result String Int
+step label v =
+    Ok (n label v)
+
+
+stop : String -> Result String Int
+stop label =
+    Err (Debug.log label "stop")
+
+
+two : Int, Int -> Int
+two a b =
+    a + b
+
+
+chain : String -> Result String Int
+chain label =
+    Ok (step "chain.1" 1? + step "chain.2" 2? + stop label? + step "chain.4" 4?)
+
+
+mixed : String -> Result String Int
+mixed label =
+    Ok (n "mixed.first" 1 + (step label 2)?)
+
+
+record : String -> Result String { alpha : Int, zed : Int }
+record label =
+    Ok { zed = n "record.zed" 1, alpha = (step label 2)? }
+
+
+args : String -> Result String Int
+args label =
+    Ok (two (n "args.first" 1) ((step label 2)?))
+
+
+showResult : Result String Int -> String
+showResult r =
+    case r of
+        Ok value ->
+            String.fromInt value
+
+        Err message ->
+            message
+
+
+main : Program
+main =
+    Node.printLines
+        [ showResult (chain "chain.3")
+        , showResult (mixed "mixed.second")
+        , Debug.toString (record "record.alpha")
+        , showResult (args "args.second")
+        ]

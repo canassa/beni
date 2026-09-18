@@ -1632,6 +1632,17 @@ pub const Solver = struct {
             const ok = try s.tryShapeOnce(id, scrutinee, info);
             if (ok) {
                 s.store().commit(snapshot);
+                // The shape the guess settled on is the one thing about a
+                // `?` the backend cannot work out for itself: there is no
+                // pattern at a `?` to read `Nothing` or `Err` off, and
+                // `backend.md` §3 gives it no types. It crosses in the
+                // dispatch table like every other decision of this phase
+                // (§7.1), and only from the guess that COMMITTED — the
+                // rollback above truncates what a retracted one wrote.
+                try s.env.dispatch.addTry(.{
+                    .inst = node.region,
+                    .shape = if (id == wk.result) .result else .maybe,
+                });
                 return;
             }
             const exact = s.store().rollback(snapshot);

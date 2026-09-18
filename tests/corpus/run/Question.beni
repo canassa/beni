@@ -1,0 +1,107 @@
+-- run: `?` on both shapes and on both paths (`language.md` §6.6,
+-- `backend.md` §4). The program `check/good/QuestionShapes.beni` and
+-- `check/good/QuestionWithConstraints.beni` check, with a `main` so that it
+-- also runs: those two pin the interface and the dispatch probe, this pins
+-- the answer.
+--
+-- The failure value is RETURNED and never rebuilt, which is only sound
+-- because neither shape's failure carries the type that changed: an
+-- `Err msg` leaving a `Result String Int` is the same object as the
+-- `Err msg` that entered a `Result String Bool`, and `Nothing` is that
+-- argument with an empty hand. Both are visible here — `parseBoth` prints
+-- the message its `parseOne` built, and `firstPlus` prints `nothing`.
+import Node exposing (Program)
+import String
+
+
+parseBoth : String, String -> Result String Int
+parseBoth a b =
+    let
+        left =
+            parseOne a?
+
+        right =
+            parseOne b?
+    in
+    Ok (left + right)
+
+
+parseOne : String -> Result String Int
+parseOne s =
+    case String.toInt s of
+        Just value ->
+            Ok value
+
+        Nothing ->
+            Err "not a number: ${s}"
+
+
+firstPlus : List Int -> Maybe Int
+firstPlus xs =
+    let
+        head =
+            List.head xs?
+    in
+    Just (head + 1)
+
+
+-- A `?` inside a declaration that carries a `where` clause: the evidence
+-- parameter is in front of `r`, and the early return has to leave the same
+-- function the evidence was passed to.
+firstBigger : Result String a, a -> Result String Bool
+    where a.compare : a, a -> Order
+firstBigger r limit =
+    let
+        value =
+            r?
+    in
+    Ok (bigger value limit)
+
+
+bigger : a, a -> Bool
+    where a.compare : a, a -> Order
+bigger x y =
+    x.compare y == GT
+
+
+showMaybe : Maybe Int -> String
+showMaybe m =
+    case m of
+        Just n ->
+            String.fromInt n
+
+        Nothing ->
+            "nothing"
+
+
+showResult : Result String Int -> String
+showResult r =
+    case r of
+        Ok n ->
+            String.fromInt n
+
+        Err message ->
+            message
+
+
+showBool : Result String Bool -> String
+showBool r =
+    case r of
+        Ok b ->
+            Debug.toString b
+
+        Err message ->
+            message
+
+
+main : Program
+main =
+    Node.printLines
+        [ showResult (parseBoth "1" "2")
+        , showResult (parseBoth "x" "2")
+        , showResult (parseBoth "1" "y")
+        , showMaybe (firstPlus [ 41, 2 ])
+        , showMaybe (firstPlus [])
+        , showBool (firstBigger (Ok 9) 3)
+        , showBool (firstBigger (Err "no value") 3)
+        ]

@@ -1,0 +1,112 @@
+-- run: which function a `?` returns from, and what the emitted `return`
+-- means where it lands (`language.md` §6.6, `backend.md` §4, §7, §8).
+--
+-- `inner`     a `let` definition with parameters is its own JavaScript
+--             function, and §6.6 says the `?` returns from the nearest
+--             definition with parameters — so `outer` carries on and
+--             answers with what `inner` gave up and returned
+-- `sumUntil`  §8's `while (true)`: a `?` in a tail-call ARGUMENT is not in
+--             tail position, so it is evaluated with the other arguments
+--             and its `return` leaves the loop and the function together
+-- `pick`      §7's tree: the failure path of a `?` in one branch belongs to
+--             that branch, and taking the other one does not run it
+-- `classify`  a `?` in the SCRUTINEE: evaluated once, before any test
+-- `flatten`   `m??` applies `?` twice (§6.6)
+-- `field`     `m?.size` is `(m?).size` — the access chain may follow a `?`
+import Node exposing (Program)
+import String
+
+
+outer : Maybe Int, Int -> String
+outer m fallback =
+    let
+        inner x =
+            Just (m? + x)
+    in
+    case inner 1 of
+        Just v ->
+            "inner ${String.fromInt v}"
+
+        Nothing ->
+            "fallback ${String.fromInt fallback}"
+
+
+sumUntil : List (Maybe Int), Int -> Maybe Int
+sumUntil xs acc =
+    case xs of
+        [] ->
+            Just acc
+
+        first :: rest ->
+            sumUntil rest (acc + first?)
+
+
+pick : Maybe Int, Bool -> Maybe String
+pick m flag =
+    case flag of
+        True ->
+            Just (String.fromInt (m?))
+
+        False ->
+            Just "skipped"
+
+
+classify : Maybe Int -> Maybe String
+classify m =
+    case m? of
+        0 ->
+            Just "zero"
+
+        other ->
+            Just (String.fromInt other)
+
+
+flatten : Maybe (Maybe Int) -> Maybe Int
+flatten mm =
+    Just (mm?? + 1)
+
+
+field : Maybe { size : Int } -> Maybe Int
+field m =
+    Just (m?.size + 1)
+
+
+showMaybe : Maybe Int -> String
+showMaybe m =
+    case m of
+        Just n ->
+            String.fromInt n
+
+        Nothing ->
+            "nothing"
+
+
+showText : Maybe String -> String
+showText m =
+    case m of
+        Just s ->
+            s
+
+        Nothing ->
+            "nothing"
+
+
+main : Program
+main =
+    Node.printLines
+        [ outer (Just 41) 0
+        , outer Nothing 7
+        , showMaybe (sumUntil [ Just 1, Just 2, Just 3 ] 0)
+        , showMaybe (sumUntil [ Just 1, Nothing, Just 3 ] 0)
+        , showText (pick (Just 5) True)
+        , showText (pick Nothing True)
+        , showText (pick Nothing False)
+        , showText (classify (Just 0))
+        , showText (classify (Just 9))
+        , showText (classify Nothing)
+        , showMaybe (flatten (Just (Just 1)))
+        , showMaybe (flatten (Just Nothing))
+        , showMaybe (flatten Nothing)
+        , showMaybe (field (Just { size = 2 }))
+        , showMaybe (field Nothing)
+        ]

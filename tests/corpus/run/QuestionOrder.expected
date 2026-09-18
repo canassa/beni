@@ -1,0 +1,13 @@
+chain.1: 1
+chain.2: 2
+stop: "chain.3"
+mixed.first: 1
+mixed.second: 2
+record.zed: 1
+record.alpha: 2
+args.first: 1
+args.second: 2
+chain.3
+3
+Ok { alpha = 2, zed = 1 }
+3

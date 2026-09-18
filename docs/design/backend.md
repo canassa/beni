@@ -21,11 +21,17 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
   foreign JavaScript for what that subset uses, a minimal Node platform, and the harness boundary
   that runs emitted code. *Acceptance: a beni program computes something and prints the right
   answer* — `tests/corpus/run/` is 26 programs that do, executed under Node. All 65 of core's
-  foreign values are implemented, not only the ones the subset reaches. `?` is the one construct
-  of §4's table M3a does not compile, and it says so with a diagnostic rather than emitting
+  foreign values are implemented, not only the ones the subset reaches. `?` was the one construct
+  of §4's table M3a did not compile, and it said so with a diagnostic rather than emitting
   something wrong.
 - **M3b — the whole language.** Tail-call loops, decision trees, interpolation, `?`, tuples, record
-  update, `Int32`, everything remaining. *Acceptance: the corpus compiles and runs.*
+  update, `Int32`, everything remaining. *Acceptance: the corpus compiles and runs.* **Four of the
+  seven were stale when the list was written** and one is not a backend item at all: interpolation,
+  tuples and record update worked in M3a (`plans/m3b-audit.md` measured every row of §4 against the
+  code), tail-call loops landed in `bbfc869` (§8), decision trees in `cf7806f` (§7), and `?` with
+  this slice (§4). What is left is **`Int32`**, which is a *language* gap and not a codegen one —
+  no type, no `core` module, no paragraph in `language.md` — and needs an owner decision rather
+  than an emitter.
 - **M3c — the optimiser.** Reachability elimination, reachability-driven inlining, local
   dead-binding elimination, renaming, field ambiguation, compact printing. *Acceptance: §9's size
   and throughput numbers, and §9's size and throughput numbers alone; the direct-call share that used to decide §9.3 is
@@ -161,7 +167,7 @@ mapping.
 | `if` | conditional expression when both arms are expressions, else `if`/`else` |
 | `let` | a VALUE binding is a `const` in the enclosing statement list, in written order; a binding whose right-hand side is a **function** is a `function` declaration, which JavaScript **hoists** — every one of them, not only the mutually recursive ones. The hoisting is what makes mutual recursion between `let` functions work, and `language.md` §7's initialisation rule is stated in terms of it: a value may not read a `const` below it, and may read a `function` anywhere |
 | string interpolation | template literal |
-| `?` | the `case` it desugars to, over the enclosing function's early return |
+| `?` | a test and an early `return` of the failure, in statements, over the subject bound once (below) |
 | `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4) |
 | method call, resolved to a declaration | a direct call of that declaration, receiver first: `x.m a` is `M$m(x, a)` |
 | method call on a `primitive` target | the JavaScript operator the surface origin names — `===` for `==`, and the `Order` result of `compare` tested in place rather than built |
@@ -238,6 +244,65 @@ The rule is deliberately conservative: it pins by the *shape* of the lowered val
 whether a particular expression could be observed. The same rule holds wherever an emitted order
 can differ from a written one, which is why §7's tree rebuilds occurrences rather than re-evaluating
 subjects, and why record **update** needed nothing: a spread moves no initialiser.
+
+### `?` is a test and a `return`, and the statements around it
+
+`language.md` §6.6's `e?` yields the payload of an `Ok`/`Just` and returns the `Err`/`Nothing` from
+the enclosing function. It is three pieces of JavaScript, and no `case`:
+
+```js
+const $t$1 = String$toInt(text);            // the subject, evaluated exactly once
+if ($t$1.$ === "Nothing") return $t$1;      // the failure test, and the early return
+…$t$1.a…                                    // the value of the expression
+```
+
+| Piece | What it is |
+|---|---|
+| the subject | evaluated **once** (`language.md` §6) and bound to a `$t$<n>`, because the test and the payload both read it. A subject that is already an atom — a name, a literal — is read twice instead and nothing is bound |
+| the test | `<subject>.$ === "<failure tag>"` for §4's padded representation, `<subject> === "<failure tag>"` for a bare tag. The failing constructor is `Nothing` for the `Maybe` shape and `Err` for the `Result` one, and its representation is looked up like any other constructor's, from the declaring module's interface |
+| **which shape** | the CHECKER's, carried in the dispatch table (`checker.md` §6.5, `static-dispatch-spike.md` §7.1). The emitter sees no types (§3) and a `?` carries no pattern, so this is the one thing about it the backend cannot work out; a `?` with no row is `internal` and stops the build |
+| the failure | **the subject itself, returned unchanged.** Nothing is rebuilt and nothing new is named |
+| the value | the payload slot, which is slot 0 — `a` — for `Just` and for `Ok` alike |
+
+**Returning the subject is sound because neither failure carries the type that changed.** `?` takes
+a `Result e a` inside a function answering `Result e b`: an `Err` holds an `e` and never an `a`, so
+the object that came in is already the object that goes out, and re-wrapping it would allocate a
+second one with the same two fields. `Maybe a` to `Maybe b` is the same argument with an empty
+hand: §4's padding makes `Nothing` a `{$:"Nothing",a:null}` whatever `a` was. This is also what
+keeps §9 honest — the failure path names no declaration, imports nothing and adds no edge, so a
+`?` cannot keep anything alive.
+
+**The `return` is the enclosing function's, wherever the statement lands.** `language.md` §6.6 says
+a `?` returns from the nearest enclosing *definition with parameters* and makes a lambda in between
+`question_in_lambda`, so there is no case where the beni answer and the JavaScript answer could
+differ: a `let` definition with parameters is its own emitted `function` (§8's cases table), a
+parameterless `let` binding is a `const` in the enclosing one, and a lambda cannot be reached. A
+`return` inside §7's labelled block or `switch` leaves the function and not the block — that is
+what distinguishes it from a leaf's `break $c$<d>`, which is how a leaf delivers the `case`'s own
+value — and inside §8's `while (true)` it leaves the loop with the function.
+
+**Everything written before a `?` must have run before it.** The early `return` is a statement, so
+it runs where the statements go, ahead of the expression it was written inside; an expression
+written to its left that is still sitting in that expression would run *after* it, or — if the `?`
+fails — not at all. This is the record literal's rule above, generalised: **a run of
+sub-expressions in written order pins to a `const` every non-atomic value written before the last
+one that hoists statements.** It applies to every position that holds more than one written
+expression — a call's arguments *together with its callee*, a method call's receiver and
+arguments, a constructor's arguments, a list, a tuple, an interpolation's segments, a record
+literal's initialisers, a record update's base and fields — and it is the same machinery, so a
+`case` in the same position was fixed by the same change. Short-circuit `&&`/`||` need nothing
+extra: correction 3 above already gives the right operand its own branch, and statements hoisted
+there run only when it does.
+
+Two consequences worth stating, because they are what the emitted shape looks like:
+
+- **In a `case` (§7)**, a `?` in a branch body hoists into *that branch* and nowhere else, so the
+  other branch does not run its test; a `?` in the scrutinee hoists before the tree, once. A leaf
+  that hoists statements is why the conditional-expression shape is chosen only after the bodies
+  are lowered: `a ? b : c` cannot hold a `return`, and the tree falls back to the statement form.
+- **In a looping function (§8)**, a `?` in a **tail-call argument** is not in tail position — the
+  operand of a `?` never is — so it is evaluated with the other arguments, before any parameter is
+  rebound, and its failure returns out of the loop rather than continuing it.
 
 ## 5. Module output and linking
 
@@ -582,12 +647,18 @@ if (maybe$1.$ === "Just") {
 `if`/`else` by the rule above and nothing here special-cases the shape of its second arm; and the
 binding is a `const` at the leaf, because that is where §7 puts bindings.
 
-`if` and `?` need nothing of their own: both are a `case` by the time the backend sees them
-(`language.md` §8, §6.6). An `if` is a two-alternative boolean fan-out, which the ≥3 threshold keeps
-as the `if`/`else` it is today; `?` is a two-branch `case` whose first arm returns from the
-enclosing function, which is what the tail-position statement form makes expressible at all. §7 is
-the machinery `?` has been waiting for, and lifting its `not_implemented` diagnostic is a slice of
-its own, not this one.
+`if` needs nothing of its own: it is a `case` by the time the backend sees it (`language.md` §8), a
+two-alternative boolean fan-out, which the ≥3 threshold keeps as the `if`/`else` it is today.
+
+**`?` turned out not to be a `case` at all.** This section predicted it would be "a two-branch
+`case` whose first arm returns from the enclosing function", and what it needed from §7 was the
+tail-position statement form. What landed is smaller: `Bir` keeps `?` as its own instruction, so
+the emitter writes one `if` and one `return` with no tree, no scrutinee binding it does not need
+and no branch bodies (§4). Two things this section owns still hold for it, and they are worth
+naming here because a leaf is where a reader will look for them: a `?` in a **branch body** hoists
+its test and its `return` into that branch, so the other branch never runs them; and a leaf that
+hoists any statement at all is why the `cond` chain of the last row is chosen only after the
+bodies are lowered — `a ? b : c` cannot hold a `return`.
 
 **Irrefutable patterns keep their own path.** A `let` pattern is irrefutable by grammar
 (`language.md` §7) and a function or lambda parameter pattern is *intended* to be. Both are a
@@ -707,11 +778,13 @@ is the lowering.
 ### What a tail call is
 
 Over `Bir`, a **tail position** of a function is its body; every branch body of a `case` in tail
-position — which covers `if` and `?`, both of which are a `case` by the time the backend sees them
-(`language.md` §8, §4); and the `in` body of a `let` in tail position. Nothing else is: not an
-operand, not an argument, not a `let`'s bound value, not a lambda body, not the left of a `|>` (a
-pipe is a call before the backend sees it, §6), not the operand of `?`. Parentheses do not exist in
-`Bir`, so looking through them is free.
+position — which covers `if`, a `case` by the time the backend sees it (`language.md` §8); and the
+`in` body of a `let` in tail position. Nothing else is: not an operand, not an argument, not a
+`let`'s bound value, not a lambda body, not the left of a `|>` (a pipe is a call before the backend
+sees it, §6), not the operand of `?`, and not a `?` itself — it is its own instruction in `Bir`
+(§4), its subject has to be tested before anything can be done with it, and what follows the test
+is an ordinary expression that may or may not be a tail call of its own. Parentheses do not exist
+in `Bir`, so looking through them is free.
 
 A **tail self-call** is a `call` instruction in tail position whose callee is, syntactically, the
 reference that names the function being lowered — a `top` for a declaration, a `local` for a

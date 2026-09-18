@@ -1414,11 +1414,24 @@ const Lowerer = struct {
 
     // ---- Expressions ------------------------------------------------------
 
+    /// The elements of one written-order list — a call's arguments, a
+    /// tuple's or a list's elements. Ordered, because any of them may hoist
+    /// statements (a `case`, a `?`) that would otherwise run in front of the
+    /// elements written before it.
     fn exprList(l: *Lowerer, out: *StmtList, range: Bir.SubRange) ![]Node.Index {
+        return l.orderedExprs(out, l.bir.extraSlice(range, Inst.Index), false);
+    }
+
+    /// A callee or a receiver and then its arguments, as ONE written-order
+    /// sequence: `f a b` evaluates `f` first (`language.md` §6), so a `?`
+    /// among the arguments may not hoist its early return in front of it.
+    /// Element 0 of the result is the head.
+    fn exprListWithHead(l: *Lowerer, out: *StmtList, head: Inst.Index, range: Bir.SubRange) ![]Node.Index {
         const items = l.bir.extraSlice(range, Inst.Index);
-        const result = try l.scratch.alloc(Node.Index, items.len);
-        for (items, result) |inst, *slot| slot.* = try l.expr(out, inst);
-        return result;
+        const insts = try l.scratch.alloc(Inst.Index, items.len + 1);
+        insts[0] = head;
+        @memcpy(insts[1..], items);
+        return l.orderedExprs(out, insts, false);
     }
 
     /// Lower a run of sub-expressions in the order they are WRITTEN, and
@@ -1504,15 +1517,27 @@ const Lowerer = struct {
             },
             .string, .chunk => return l.stringNode(l.bir.bytes(inst), p),
             .interp => {
+                // Segment by segment, left to right (`language.md` §6); a
+                // literal chunk evaluates nothing, so only the expression
+                // segments are a sequence and the chunks are threaded back
+                // into their places afterwards.
                 const parts = l.bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                var holes: std.ArrayList(Inst.Index) = .empty;
+                for (parts) |part| {
+                    if (l.bir.instTag(part) == .chunk) continue;
+                    try holes.append(l.scratch, part);
+                }
+                const values = try l.orderedExprs(out, holes.items, false);
                 var nodes: std.ArrayList(Node.Index) = .empty;
+                var next: usize = 0;
                 for (parts) |part| {
                     if (l.bir.instTag(part) == .chunk) {
                         const offset, const len = try l.b.addString(l.bir.bytes(part));
                         try nodes.append(l.scratch, try l.add(.template_chunk, l.pos(part), offset, len));
                         continue;
                     }
-                    try nodes.append(l.scratch, try l.expr(out, part));
+                    try nodes.append(l.scratch, values[next]);
+                    next += 1;
                 }
                 const range = try l.b.addRange(nodes.items);
                 return l.add(.template, p, @intFromEnum(range.start), @intFromEnum(range.end));
@@ -1538,12 +1563,20 @@ const Lowerer = struct {
             },
             .record => return l.recordNode(out, Bir.inlineRange(d), p),
             .record_update => {
-                const base = try l.expr(out, @enumFromInt(d.lhs));
+                // The base, then the updated fields in written order
+                // (`language.md` §6). Nothing is sorted — a spread carries
+                // the key order of the record it spreads — so the only
+                // thing that can move an evaluation here is a later field
+                // that hoists statements, which is what `orderedExprs`
+                // pins against.
                 const fields = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Bir.Field);
+                const insts = try l.scratch.alloc(Inst.Index, fields.len + 1);
+                insts[0] = @enumFromInt(d.lhs);
+                for (fields, insts[1..]) |f, *slot| slot.* = f.value;
+                const values = try l.orderedExprs(out, insts, false);
                 var properties: std.ArrayList(Node.Index) = .empty;
-                try properties.append(l.scratch, try l.add(.spread_property, p, base.int(), Node.Data.unused));
-                for (fields) |f| {
-                    const value = try l.expr(out, f.value);
+                try properties.append(l.scratch, try l.add(.spread_property, p, values[0].int(), Node.Data.unused));
+                for (fields, values[1..]) |f, value| {
                     try properties.append(l.scratch, try l.property(l.bir.symbol(f.name), value, p));
                 }
                 return l.object(properties.items, p);
@@ -1569,20 +1602,7 @@ const Lowerer = struct {
             },
             .case => return l.caseExpr(out, inst),
             .local, .top, .ctor, .ext_value, .ext_ctor => return l.reference(inst),
-            .@"try" => {
-                try l.report(
-                    .not_implemented,
-                    inst,
-                    \\I cannot compile `?` to JavaScript yet.
-                    \\
-                    \\The question mark desugars to a `case` with an early return, and the code
-                    \\generator grows that in M3b (`docs/design/backend.md` §1). Write the `case`
-                    \\out by hand for now — it is the same program.
-                ,
-                    .{},
-                );
-                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            },
+            .@"try" => return l.tryExpr(out, inst),
             .type_dispatch => return l.typeDispatchExpr(out, inst),
             // A poisoned instruction: the name did not resolve or the
             // parser could not build a node. `beni build` refuses to emit a
@@ -1672,6 +1692,134 @@ const Lowerer = struct {
             try properties.append(l.scratch, try l.property(l.bir.symbol(fields[field].name), values[field], p));
         }
         return l.object(properties.items, p);
+    }
+
+    // ---- `?` (backend.md §4, language.md §6.6) ----------------------------
+
+    /// `e?`: three statements' worth of JavaScript and no `case` at all.
+    ///
+    ///     const $t$1 = <e>;
+    ///     if ($t$1.$ === "Nothing") return $t$1;
+    ///     …$t$1.a…
+    ///
+    /// **The subject is evaluated once** (`language.md` §6), so it is bound
+    /// unless it is already an atom; the test reads the failing
+    /// constructor's representation, which is `Nothing` for the `Maybe`
+    /// shape and `Err` for the `Result` one; and the value of the whole
+    /// expression is the payload slot of the succeeding constructor, which
+    /// is slot 0 for `Just` and for `Ok` alike.
+    ///
+    /// **The failure is RETURNED, not rebuilt.** `Err x` going out of a
+    /// function whose result is `Result e b` is the same JavaScript object
+    /// that came in as `Result e a`: it carries an `e` and never an `a`, so
+    /// nothing in it depends on the type that changed. `Nothing` is the
+    /// same argument with an empty hand — the padded `{$:"Nothing",a:null}`
+    /// of one `Maybe` is the padded `{$:"Nothing",a:null}` of every other.
+    /// So the failure path allocates nothing, names nothing, and adds no
+    /// edge for §9's reachability to follow.
+    ///
+    /// **The `return` is the enclosing FUNCTION's**, which is what §6.6
+    /// asks for and what the emitted statement means wherever it lands: a
+    /// `return` inside §7's labelled block or `switch` leaves the function
+    /// and not the block, and inside §8's `while (true)` it leaves the
+    /// loop. The front end has already made the two agree — a `?` may only
+    /// name the nearest enclosing definition with parameters, and a lambda
+    /// in between is `question_in_lambda` — and a `let` definition with
+    /// parameters is its own JavaScript function here (§8's cases table),
+    /// so "the nearest enclosing definition" and "the nearest enclosing
+    /// `function`" are the same place.
+    fn tryExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const subject = try l.bindSubject(out, try l.expr(out, @enumFromInt(d.lhs)), p);
+        const shape = l.in.dispatch.tryShape(inst) orelse {
+            try l.reportMissingTryShape(inst);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        };
+        const rep, const tag = switch (shape) {
+            .maybe => try l.coreCtor(.Maybe, .Nothing, p),
+            .result => try l.coreCtor(.Result, .Err, p),
+        } orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        // Every representation of §4 is written out rather than assumed.
+        // `Maybe` and `Result` each have a constructor that carries a
+        // payload, so both are `tagged` today and the other two arms are
+        // what the emitter would have to do if that changed — an emitter
+        // that guesses at a representation is how a wrong answer ships.
+        const failed = switch (rep) {
+            .tagged => try l.binary(.strict_eq, try l.member(subject, l.well.tag, p), try l.stringNode(l.text(tag), p), p),
+            .bare_tag => try l.binary(.strict_eq, subject, try l.stringNode(l.text(tag), p), p),
+            .boolean => |value| if (value)
+                subject
+            else
+                try l.unary(.not, subject, p),
+        };
+        try l.ifStatement(out, failed, &.{try l.returnStmt(subject, p)}, p);
+        return l.member(subject, try l.slotName(0), p);
+    }
+
+    /// The representation and tag of a CONSTRUCTOR of a core type, by name,
+    /// however this module reaches it. `?` is the one construct that needs
+    /// this: its failure test names a constructor the program never wrote,
+    /// so there is no `ctor` instruction anywhere in it to read a
+    /// representation off. `coreValue` is the same lookup for a value, and
+    /// each failure is reported for the same reason.
+    fn coreCtor(
+        l: *Lowerer,
+        comptime owner: InternPool.WellKnown,
+        ctor: InternPool.WellKnown,
+        p: u32,
+    ) !?struct { CtorRep, Symbol } {
+        const spelling = l.interner.slice(ctor.symbol());
+        const module = l.in.graph.lookup(.core, owner.symbol()) orelse {
+            _ = try l.missingCoreValue(p, @tagName(owner), spelling, "there is no such module in the core package");
+            return null;
+        };
+        if (module == l.in.module) {
+            for (l.bir.ctors, 0..) |c, i| {
+                if (l.bir.symbol(c.name) != ctor.symbol()) continue;
+                return .{ l.ctorRepLocal(@intCast(i)), l.bir.symbol(c.name) };
+            }
+            _ = try l.missingCoreValue(p, @tagName(owner), spelling, "this module IS that module, and it does not declare it");
+            return null;
+        }
+        if (module.int() >= l.in.interfaces.len) {
+            _ = try l.missingCoreValue(p, @tagName(owner), spelling, "its interface is not available here");
+            return null;
+        }
+        const iface = &l.in.interfaces[module.int()];
+        const index = iface.findCtor(l.interner, ctor.symbol()) orelse {
+            _ = try l.missingCoreValue(p, @tagName(owner), spelling, "that module declares no such constructor");
+            return null;
+        };
+        // A constructor is an object literal or a tag string at every use
+        // site (§4), so nothing is imported for it and §9 has no edge to
+        // follow.
+        return .{
+            l.ctorRepExternal(module, @intFromEnum(index)),
+            iface.symbols[@intFromEnum(iface.ctors[@intFromEnum(index)].name)],
+        };
+    }
+
+    /// `internal`, and for `reportDispatchBug`'s reason: a `?` the checker
+    /// solved has a row in the table, a `?` it did not solve is `try_shape`
+    /// and refuses the build, and there is no third case — so a `?` here
+    /// with no row is two records disagreeing and not a missing feature.
+    fn reportMissingTryShape(l: *Lowerer, inst: Inst.Index) !void {
+        try l.report(
+            .internal,
+            inst,
+            \\I cannot tell whether this `?` is a `Maybe` or a `Result`.
+            \\
+            \\`docs/design/checker.md` §6.5 settles that by trying both shapes and
+            \\records the one that fit, because the failure test is the `Nothing` tag
+            \\for one and the `Err` tag for the other and nothing in this expression
+            \\says which. The table has no row for this `?`.
+            \\
+            \\That is a compiler bug. Please report it with this program; `beni dump
+            \\--stage=dispatch` prints the table this reads.
+        ,
+            .{},
+        );
     }
 
     /// A reference in VALUE position: the JavaScript binding itself. Only a
@@ -3264,9 +3412,9 @@ const Lowerer = struct {
                 if (try l.refuseEvidence(inst, evidence_sites, 0)) {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
-                const receiver = try l.expr(out, @enumFromInt(d.lhs));
-                const callee = try l.member(receiver, l.bir.symbol(m.name), p);
-                return l.call(callee, try l.exprList(out, args), p);
+                const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
+                const callee = try l.member(values[0], l.bir.symbol(m.name), p);
+                return l.call(callee, values[1..], p);
             },
             // The ONE silent `undefined` §8.3 documents: `err` is a site
             // the checker could not resolve, and it only makes one after
@@ -3301,8 +3449,9 @@ const Lowerer = struct {
                 if (try l.refuseEvidence(inst, evidence_sites, l.targetEvidence(target))) {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
-                const receiver = try l.expr(out, @enumFromInt(d.lhs));
-                const rest = try l.exprList(out, args);
+                const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
+                const receiver = values[0];
+                const rest = values[1..];
                 if (rest.len != 1) {
                     try l.reportDispatchBug(inst, primitive_needs_two_operands);
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -3341,8 +3490,9 @@ const Lowerer = struct {
         args: Bir.SubRange,
         p: u32,
     ) !Node.Index {
-        const receiver = try l.expr(out, receiver_inst);
-        const rest = try l.exprList(out, args);
+        const values = try l.exprListWithHead(out, receiver_inst, args);
+        const receiver = values[0];
+        const rest = values[1..];
         const all = try l.scratch.alloc(Node.Index, evidence.len + 1 + rest.len);
         @memcpy(all[0..evidence.len], evidence);
         all[evidence.len] = receiver;
@@ -3571,17 +3721,18 @@ const Lowerer = struct {
         }
 
         // Everything else is one direct n-ary call (`backend.md` §6). The
-        // callee is lowered FIRST because JavaScript evaluates it first,
-        // and either side may need statements hoisted ahead of the call.
+        // callee and the arguments are ONE sequence, because JavaScript
+        // evaluates the callee first and so does beni, and either side may
+        // need statements hoisted ahead of the call.
         //
         // The evidence arguments (§8.2) go in front of the written ones.
         // They are names and closures with no statements of their own, so
-        // building them between the callee and the arguments changes no
-        // evaluation order.
-        const callee = try l.expr(out, callee_inst);
+        // building them after the sequence changes no evaluation order.
+        const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@enumFromInt(d.rhs)));
+        const callee = values[0];
+        const written = values[1..];
         l.region = inst;
         const evidence = try l.evidenceArguments(sites, p);
-        const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
         if (evidence.len == 0) return l.call(callee, written, p);
         const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
         @memcpy(args[0..evidence.len], evidence);
@@ -4952,10 +5103,14 @@ test "a foreign value is imported from the sibling file under its bare name" {
     , text);
 }
 
-test "`?` is refused with a diagnostic rather than emitted wrongly" {
-    // backend.md §1 puts `?` in M3b. The guard reports; it does not fall
-    // through, because a construct that silently emitted nothing would be a
-    // program that compiles and computes the wrong answer.
+test "a `?` the table has no shape for is a bug, not a wrong answer" {
+    // The one `?` path no program can reach, and therefore the one this
+    // suite owns: `checker.md` §6.5 records the shape its speculation
+    // settled on, a `?` that settled on neither is `try_shape` and refuses
+    // the build, so a `?` reaching the emitter with no row means two
+    // records disagree. A SYNTHETIC empty table is the only way to produce
+    // one, which is why this is in-source (CLAUDE.md rule 3); the shapes it
+    // does record are `run/Question*.beni` and `emit/QuestionShape.js`.
     const gpa = testing.allocator;
     var modules: std.ArrayList(TestProject.Module) = .empty;
     defer modules.deinit(gpa);
@@ -4984,17 +5139,14 @@ test "`?` is refused with a diagnostic rather than emitted wrongly" {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
-        .dispatch = if (m.int() < session.checked.dispatch.len)
-            &session.checked.dispatch[m.int()]
-        else
-            &Dispatch.empty,
+        .dispatch = &Dispatch.empty,
         .types = &session.checked.types,
         .specifiers = specifiers,
         .sibling = "",
     });
     defer result.deinit(gpa);
     try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.not_implemented, result.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Code.internal, result.diagnostics[0].code);
 }
 
 test "the evidence wall counts the top-level slots, in both directions" {

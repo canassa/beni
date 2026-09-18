@@ -46,7 +46,8 @@ pub fn write(
     // A module with no dispatch at all prints its `module` line and nothing
     // else (§7.3); one with any prints every value declaration in SOURCE
     // order, so the evidence lists read as the parameter lists they are.
-    if (dispatch.sites.len == 0 and dispatch.derived.len == 0 and dispatch.evidence.len == 0) return;
+    if (dispatch.sites.len == 0 and dispatch.derived.len == 0 and
+        dispatch.evidence.len == 0 and dispatch.tries.len == 0) return;
     for (bir.decls, 0..) |d, i| {
         if (!d.kind.isValue()) continue;
         const evidence = dispatch.declEvidence(@intCast(i));
@@ -59,6 +60,12 @@ pub fn write(
                 interner.slice(e.method),
             });
         }
+    }
+    // Which shape each `?` solved as (§7.1, `checker.md` §6.5), ascending
+    // by instruction. The emitter's failure test comes from here and from
+    // nowhere else, so it is printed for the same reason a site is.
+    for (dispatch.tries) |t| {
+        try w.print("  try {d} {s}\n", .{ t.inst.int(), @tagName(t.shape) });
     }
     // Derived functions in the emission order of §8.5 (by printed name
     // text). `part` lines under a `derived` row are the BODY's positions —

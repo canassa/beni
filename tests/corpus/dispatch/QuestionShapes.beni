@@ -1,0 +1,25 @@
+-- dispatch: the `?` half of §7.1, which is not about a method call at all.
+--
+-- `checker.md` §6.5 settles a `?` by trying `Result` and then `Maybe` under a
+-- journal mark, and the shape that committed is recorded for the backend:
+-- its failure test is the `Err` tag for one and the `Nothing` tag for the
+-- other, and nothing in the instruction says which (`backend.md` §4).
+--
+-- Three `?` over both shapes and one declaration that mixes a `?` with a
+-- `where` clause, so the `try` rows and the evidence rows are visible in one
+-- module — the probe rolls the dispatch builder back between its guesses
+-- (A.35), and a site the losing guess recorded must not survive.
+pub parse : Result String Int, Result String Int -> Result String Int
+parse a b =
+    Ok (a? + b?)
+
+
+pub firstPlus : Maybe Int -> Maybe Int
+firstPlus m =
+    Just (m? + 1)
+
+
+pub bigger : Result String a, a -> Result String Bool
+    where a.compare : a, a -> Order
+bigger r limit =
+    Ok ((r?).compare limit == GT)

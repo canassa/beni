@@ -205,7 +205,28 @@ pub const Derived = struct {
     pub const Kind = enum(u8) { eq, compare };
 };
 
+/// Which shape every `?` of this module turned out to have (§6.5), sorted
+/// by instruction.
+///
+/// **It is a decision and not a lookup, so it has to cross as data.** The
+/// backend sees no types (`backend.md` §3), and `Maybe` and `Result` are
+/// the one construct where the emitted JavaScript differs by a type the
+/// program never wrote: the failure test is the `Nothing` tag or the `Err`
+/// tag and there is no pattern at the `?` to read either off. `checker.md`
+/// §6.5 settles it by speculation, and what the speculation chose is this.
+pub const Try = struct {
+    inst: Bir.Inst.Index,
+    shape: Kind,
+
+    /// Named `Kind` and not `Shape` because `Shape` above is what a DERIVED
+    /// function is derived for, and one file may not spell two things one
+    /// way.
+    pub const Kind = enum(u8) { maybe, result };
+};
+
 sites: []const Site = &.{},
+/// One per `try` instruction that solved, ascending by instruction.
+tries: []const Try = &.{},
 /// Per declaration, into `evidence`.
 decl_evidence: []const Range = &.{},
 /// Canonical order within each declaration (§7.2).
@@ -224,12 +245,29 @@ pub const empty: Dispatch = .{};
 
 pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.sites);
+    gpa.free(d.tries);
     gpa.free(d.decl_evidence);
     gpa.free(d.evidence);
     gpa.free(d.derived);
     gpa.free(d.parts);
     gpa.free(d.symbols);
     d.* = .empty;
+}
+
+/// Which shape the `?` at `inst` has, or `null` when the checker recorded
+/// none — a `try` that never solved, which cannot reach the emitter from a
+/// build that checked clean. One binary search over a table with one row
+/// per `?` in the module.
+pub fn tryShape(d: *const Dispatch, inst: Bir.Inst.Index) ?Try.Kind {
+    var lo: usize = 0;
+    var hi: usize = d.tries.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const at = d.tries[mid].inst;
+        if (at == inst) return d.tries[mid].shape;
+        if (at.int() < inst.int()) lo = mid + 1 else hi = mid;
+    }
+    return null;
 }
 
 /// The evidence parameters of `decl`, in canonical order.
@@ -262,6 +300,7 @@ pub fn partsAt(d: *const Dispatch, r: Range) []const Target {
 pub const Builder = struct {
     gpa: Allocator,
     sites: std.ArrayList(Site) = .empty,
+    tries: std.ArrayList(Try) = .empty,
     evidence: std.ArrayList(Evidence) = .empty,
     derived: std.ArrayList(Derived) = .empty,
     parts: std.ArrayList(Target) = .empty,
@@ -269,10 +308,22 @@ pub const Builder = struct {
     /// `decl_evidence`, filled per declaration as its rank generalises.
     decl_evidence: std.ArrayList(Range) = .empty,
 
-    pub const Lengths = struct { sites: usize, evidence: usize, derived: usize, parts: usize, symbols: usize };
+    pub const Lengths = struct {
+        sites: usize,
+        /// A `?`'s own shape probe rolls the builder back between its two
+        /// guesses (§6.5), and a `?` may sit inside another one's probe, so
+        /// the shapes are rolled back with everything else — or a retracted
+        /// guess would decide the emitted test.
+        tries: usize,
+        evidence: usize,
+        derived: usize,
+        parts: usize,
+        symbols: usize,
+    };
 
     pub fn deinit(b: *Builder) void {
         b.sites.deinit(b.gpa);
+        b.tries.deinit(b.gpa);
         b.evidence.deinit(b.gpa);
         b.derived.deinit(b.gpa);
         b.parts.deinit(b.gpa);
@@ -283,6 +334,7 @@ pub const Builder = struct {
     pub fn lengths(b: *const Builder) Lengths {
         return .{
             .sites = b.sites.items.len,
+            .tries = b.tries.items.len,
             .evidence = b.evidence.items.len,
             .derived = b.derived.items.len,
             .parts = b.parts.items.len,
@@ -292,6 +344,7 @@ pub const Builder = struct {
 
     pub fn shrink(b: *Builder, to: Lengths) void {
         b.sites.shrinkRetainingCapacity(to.sites);
+        b.tries.shrinkRetainingCapacity(to.tries);
         b.evidence.shrinkRetainingCapacity(to.evidence);
         b.derived.shrinkRetainingCapacity(to.derived);
         b.parts.shrinkRetainingCapacity(to.parts);
@@ -300,6 +353,12 @@ pub const Builder = struct {
 
     pub fn addSite(b: *Builder, site: Site) Allocator.Error!void {
         try b.sites.append(b.gpa, site);
+    }
+
+    /// Record the shape a `?` solved as. Appended in the order the solver
+    /// reaches them and sorted by `finish`, like `sites`.
+    pub fn addTry(b: *Builder, entry: Try) Allocator.Error!void {
+        try b.tries.append(b.gpa, entry);
     }
 
     pub fn addSymbols(b: *Builder, names: []const Symbol) Allocator.Error!Range {
@@ -447,9 +506,18 @@ pub const Builder = struct {
         std.mem.sort(Site, sites, {}, siteLessThan);
         try preorderSites(sites, scratch);
 
+        // One row per `?`, ascending, so the emitter can search it. A
+        // duplicate is possible only if one instruction solved twice, and
+        // the two rows then agree — the shape is a function of the types —
+        // so the sort is by instruction alone and the first row wins.
+        const tries = try gpa.dupe(Try, b.tries.items);
+        errdefer gpa.free(tries);
+        std.mem.sort(Try, tries, {}, tryLessThan);
+
         while (b.decl_evidence.items.len < decl_count) try b.decl_evidence.append(b.gpa, .{});
         return .{
             .sites = sites,
+            .tries = tries,
             .decl_evidence = try gpa.dupe(Range, b.decl_evidence.items),
             .evidence = try gpa.dupe(Evidence, b.evidence.items),
             .derived = derived,
@@ -463,6 +531,10 @@ pub const Builder = struct {
             .derived => |d| t.* = .{ .derived = .{ .index = remap[d.index], .parts = d.parts } },
             else => {},
         }
+    }
+
+    fn tryLessThan(_: void, a: Try, c: Try) bool {
+        return a.inst.int() < c.inst.int();
     }
 
     fn siteLessThan(_: void, a: Site, c: Site) bool {

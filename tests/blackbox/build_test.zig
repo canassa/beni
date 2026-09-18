@@ -1389,68 +1389,21 @@ test "`main` is resolved per platform: it must exist and have the platform's Pro
     try testing.expect(!w.exists("out"));
 }
 
-test "`?` says it is not implemented rather than emitting the wrong program" {
+test "a `?` nothing reaches is not lowered, so nothing it needs is emitted" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("Main.beni",
-        \\import Node exposing (Program)
-        \\import String
-        \\
-        \\
-        \\parse : String -> Maybe Int
-        \\parse text =
-        \\    Just (String.toInt text? + 1)
-        \\
-        \\
-        \\main : Program
-        \\main =
-        \\    case parse "1" of
-        \\        Just n ->
-        \\            Node.print (String.fromInt n)
-        \\
-        \\        Nothing ->
-        \\            Node.print "x"
-        \\
-    );
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 1), r.exit_code);
-    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.not_implemented, r.diagnostics[0].code);
-    try testing.expectEqualStrings("NOT IMPLEMENTED YET", r.diagnostics[0].title);
-    try testing.expectEqualStrings("Main.beni", r.diagnostics[0].span.file);
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    // The whole project checked clean, so core and the platform lowered
-    // fine and only THIS module did not. Nothing is written even so: a
-    // build that emitted the modules it could would leave an `out/` that
-    // looks fresh and is missing the one thing the program needs.
-    try testing.expect(!w.exists("out"));
-}
-
-test "a `?` nothing reaches is not lowered, so it does not stop the build" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `backend.md` §5's one visible behaviour change: elimination decides
-    // what is WRITTEN, never what is CHECKED, but a LOWERING diagnostic in
-    // a declaration nobody reaches is never raised, because the declaration
-    // is never lowered. `?` is the construct that makes that observable
-    // today (§1 assigns it to M3b) and it is deliberate — code that is not
-    // emitted cannot miscompile. Same module, same `parse`, same `?`; the
-    // only difference from the test above is that `main` does not call it.
+    // `backend.md` §5: elimination decides what is WRITTEN, never what is
+    // CHECKED, and a declaration nobody reaches is never lowered at all.
+    //
+    // This scenario was written when `?` was the construct that made that
+    // observable — it raised a LOWERING diagnostic, and an unreachable
+    // declaration containing one still built clean, which is the sharpest
+    // possible proof that nothing lowered it. `?` compiles as of M3b, so
+    // what is left to observe is the emitted file: `parse` is the only
+    // thing in this module that imports `String.toInt`, and neither the
+    // declaration, nor its `?`, nor the import survives. The claim is
+    // unchanged and one of its two witnesses is gone.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -1488,6 +1441,10 @@ test "a `?` nothing reaches is not lowered, so it does not stop the build" {
     // one, and rooting at it would pin all of core forever.
     const js = try w.read("out/Main.mjs");
     try testing.expect(std.mem.indexOf(u8, js, "parse") == null);
+    // Nothing the `?` would have emitted is there either: no import of the
+    // value it calls, and no early return of a `Nothing` (`backend.md` §4).
+    try testing.expect(std.mem.indexOf(u8, js, "toInt") == null);
+    try testing.expect(std.mem.indexOf(u8, js, "Nothing") == null);
 }
 
 test "a project that does not check writes nothing" {

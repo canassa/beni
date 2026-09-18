@@ -63,9 +63,9 @@
 // one) cannot be built on its own, so the script synthesises a `BenchMain`
 // that imports every module of the root the compiler can take and builds
 // THAT; the modules it had to drop are listed on the line. Today that is
-// `Data/Parser` and `ExprParser`, which use `?` (the back end grows it in
-// M3b, `backend.md` §1), and `JsonCodecs` and `NotesApp`, which import a
-// `Json.Decode` and an `Html` that do not exist.
+// `JsonCodecs` and `NotesApp`, which import a `Json.Decode` and an `Html`
+// that do not exist. `Data/Parser` and `ExprParser` were on that list until
+// `?` was emitted (`backend.md` §4) and are measured now.
 //
 // Output order: corpus roots sorted, then programs sorted within each root.
 
@@ -469,9 +469,10 @@ function main() {
     };
 
     // A module the BACK END cannot compile is dropped and the rest rebuilt,
-    // because dropping one can break its dependents. Today `?` is the common
-    // cause (`backend.md` §1, M3b), and that is a fact about this milestone
-    // that belongs on the line rather than in a crash.
+    // because dropping one can break its dependents. `?` was the common
+    // cause until M3b emitted it; what is left is a module naming a package
+    // that does not exist, and that is a fact about this milestone that
+    // belongs on the line rather than in a crash.
     let kept = [...modules];
     let ok = false;
     for (let round = 0; round <= modules.length && kept.length !== 0; round++) {

@@ -32,13 +32,15 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 ## M3 — in progress
 
-M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop
-and its decision trees for pattern matching have landed
-([`backend.md`](docs/design/backend.md) §8, §7); and M3c's first piece,
+M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,
+its decision trees for pattern matching and its `?` have landed
+([`backend.md`](docs/design/backend.md) §8, §7, §4); and M3c's first piece,
 **reachability-driven dead code elimination**, has landed with it (§9,
 `src/js/Reach.zig`) — an empty program went from 70 684 bytes in 19 files to
-2 147 in 5, with `derived_bytes` exactly 0. Still to come: the rest of M3b, the
-rest of M3c's optimiser, and chunking.
+2 147 in 5, with `derived_bytes` exactly 0. **M3b's list in §1 is otherwise
+spent**: interpolation, tuples and record update worked in M3a, and `Int32` is
+a language gap (no type, no module, no paragraph) and not a codegen one. Still
+to come: `Int32`'s owner decision, the rest of M3c's optimiser, and chunking.
 [`backend.md`](docs/design/backend.md) is the contract,
 [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
 
