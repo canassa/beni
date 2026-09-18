@@ -29,7 +29,11 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
 - **M3c — the optimiser.** Reachability elimination, reachability-driven inlining, local
   dead-binding elimination, renaming, field ambiguation, compact printing. *Acceptance: §9's size
   and throughput numbers, and §9's size and throughput numbers alone; the direct-call share that used to decide §9.3 is
-  discharged, not measured (§6).*
+  discharged, not measured (§6).* **Reachability elimination is built first and is not optional**:
+  static dispatch derives eagerly, so an empty program ships 3 159 bytes of `eq`/`compare` that
+  nothing calls, and `fast-compiler.md` §13 moved this pass from an optimisation to a prerequisite
+  on that evidence. Its own acceptance is separate and exact: the floor's `derived_bytes` is **0**
+  for a program that compares nothing (§9).
 - **M3d — chunking and `lazy`.** The keyword, entry-set colouring, the merge pass, cross-chunk
   bindings. *Acceptance: a two-route program splits and both routes run.*
 
@@ -44,7 +48,8 @@ beni build [options] <entry>...      compile to JavaScript
 | Flag | Meaning | Default |
 |---|---|---|
 | `--platform=<name>` | which platform package supplies `main`'s type and the runtime | required |
-| `--release` | chunks, elimination, renaming, integer tags, maps off | off |
+| `--release` | chunks, renaming, integer tags, maps off | off |
+| `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (§9) | off |
 | `--out=<dir>` | output directory | `out/` |
 | `--source-maps` | emit `.map` files | M5; refused today, on in dev and off in release once §11 lands |
 
@@ -56,10 +61,22 @@ development output. Both exit `2` with `frontend.md` §1's one-line usage messag
 milestone. The defaults in the table above are what M5 will do; until then the only way to build is
 without the flag.
 
-Development output is **one ESM file per source module**, mirroring the source tree, with no
-elimination and readable names. Release output is **reachability chunks**. Both read one declaration
-graph (§9.1 of the design doc); nothing is built twice. §5.3 of `boundary.md` makes a build a pair of
-entry point and platform, so a project with a client and a server runs `build` twice.
+**`--library` is not in that company**: it lands with §9 and does something the day it lands. It
+turns off exactly two things — the search for `main` (`missing_main` does not fire, and a `main`
+that happens to exist is not special) and the entry file — and turns on one, the root rule. It is
+not a second output mode; a library build emits the same `.mjs` per module as any other.
+
+Development output is **one ESM file per source module**, mirroring the source tree, with readable
+names — but not with everything the source declared. Release output is **reachability chunks**. Both
+read one declaration graph (§9.1 of the design doc) and **both eliminate against it**: a dev build
+and a release build ship the same set of declarations and differ in how those are named, laid out
+and grouped into files. Nothing is built twice. §5.3 of `boundary.md` makes a build a pair of entry
+point and platform, so a project with a client and a server runs `build` twice.
+
+**Elimination is not behind a flag**, and §9 gives the reason: eager derivation makes it the
+difference between an empty program shipping 70 kB and shipping 2 kB, and a development build that
+ships fifty times what it needs is not a development build anyone would run. What `--library`
+changes is the root SET and never whether the pass runs.
 
 A successful build prints **nothing, on either stream**. `frontend.md` §1 gives stdout to the product
 and stderr to diagnostics and nothing else; a build's product is the files it wrote, so there is no
@@ -111,6 +128,13 @@ one field beside `interfaces`: a **dispatch table**, one per module, flat and in
 shape of `Bir.refs`, in which the checker has already written what every method call resolved to,
 what evidence every declaration takes, and which functions must be derived. The lowerer reads
 targets, never types. → [`static-dispatch-spike.md`](static-dispatch-spike.md) §7, §8.0.
+
+**The elimination graph is not `JsIr`'s.** §9's reachability walk runs over `Bir` and the dispatch
+table *before* lowering, so an unreachable declaration never becomes `JsIr` nodes at all and `JsIr`
+holds only what survives. That is the opposite of §9 item 1, the local dead-binding pass, which is a
+use-count walk over `JsIr` after lowering and removes bindings *inside* a declaration that is being
+emitted. Two passes, two IRs, and neither is a fallback for the other. `Lower.Input` gains one more
+field for it (§9).
 
 ## 4. Codegen, construct by construct
 
@@ -204,6 +228,46 @@ walk the dispatch table's sites **as well as** `bir.refs`: a method call is a re
 does not record, and without those edges a constant whose initialiser is a method call on this
 module's own type is a temporal-dead-zone throw in a well-typed program.
 → [`static-dispatch-spike.md`](static-dispatch-spike.md) §8.5, §1.4.
+
+### What a module looks like after elimination
+
+§9 decides *what* survives; this is what the file shape does about it. Four consequences, and none
+of them is a new mechanism:
+
+- **An unreachable declaration is not lowered, not printed and not exported.** `Lower.exports`
+  (`src/js/Lower.zig:637-680`) builds its list from `bir.interface`, the dispatch table's nominal
+  `derived` rows and the entry declaration; each of the three is filtered by the surviving set, so
+  an export list shrinks to exactly the surviving names it used to hold. It does **not** shrink to
+  what someone imports: a `pub` value that survives because something reaches it stays exported
+  under its own name, because an export costs the name once and a consumer-driven export list would
+  make one module's bytes depend on another's, which is a determinism hazard for nothing.
+- **Import lists shrink for free on one leg and need one line on the other.** Cross-module imports
+  are already use-driven — `need` / `needDerived` collect them as lowering discovers them
+  (`src/js/Lower.zig:743-759`) — so a dropped declaration takes its imports with it and a module
+  with no surviving reference to another emits no `import` of it. The **sibling** import is not:
+  `importStatements` walks `bir.decls` and imports every `foreign_value` whether used or not
+  (`src/js/Lower.zig:688-695`). That loop gains the surviving-set test, so an unreachable `foreign`
+  is not imported.
+- **A module with nothing reachable is not written at all**, and nothing imports it because imports
+  are use-driven. `emitModules` (`src/js/Emit.zig:673-717`) skips producing it. A **sibling file**
+  is copied iff the module has a *surviving* `foreign_value`, which replaces `copyAssets`' current
+  "declares any `foreign`" test (`src/js/Emit.zig:725-729`). The platform's runtime is still copied
+  unconditionally: `main.mjs` imports its `run` (§2), so it is a root by construction.
+- **Emission order is unchanged and still correct.** `emissionOrder` (`src/js/Lower.zig:496-538`)
+  post-orders `bir.refs` plus the dispatch sites; its outer loop is restricted to surviving
+  declarations, and it can reach nothing else, because every edge it walks is also a reachability
+  edge. So the survivors come out in the same relative order they have today and the temporal dead
+  zone stays closed. The derived pass (`synthesisedValues`, `:1886`) keeps its two sorted runs and
+  iterates only surviving rows.
+
+**Elimination decides what is written, never what is checked.** `checkForeignShapes` and
+`checkSiblings` run before the entry is even found (`src/js/Emit.zig:145-146`) and keep running over
+every module of the graph, reachable or not: `boundary.md` §4's four checks are a contract on
+privileged code, not an optimisation, and a sibling that grew an extra export must fail the build
+whether or not anything imports it. What *does* go quiet is a **lowering** diagnostic in a
+declaration nobody reaches — it is not lowered, so it is not raised. That is deliberate and is the
+one behaviour change a user can see: a program whose only use of `?` is in dead code now builds
+(§1's `not_implemented`). Code that is not emitted cannot miscompile.
 
 ## 6. The calling convention
 
@@ -782,10 +846,261 @@ constant evaluation, sequence joining, comparison and switch rewriting.
 order and names are stable across builds; a size-sorted order costs up to 7% of compressed bytes at
 identical raw size.
 
+### Reachability elimination
+
+**Ranked sixth by compressed bytes and built first.** The ranking is right and the order is not a
+contradiction: the list measures what each pass is worth *on code that is going to ship*, and this
+pass decides what that is. Static dispatch made it a prerequisite rather than a win
+(`fast-compiler.md` §13), and the measurement says how far: an empty program emits **188** top-level
+declarations of which **2** are reachable from `main`, 47 821 bytes of declarations of which **93**
+are reachable, and **22** derived functions of which **none** is. Predicted output after the pass is
+about **2.1 kB in 5 files against 70 684 bytes in 19** — and `derived_bytes` exactly 0.
+`tests/corpus/run/Dictionaries.beni` keeps 28 of 188 declarations and 14 472 of 48 486 bytes.
+Raw figures, method and the approximation's limits are in [`plans/dce-notes.md`](../../plans/dce-notes.md).
+
+#### The unit, and the graph
+
+**The unit is a top-level declaration**, as `boundary.md` §7.1 requires and for the reason it gives:
+Elm solved this and then lost it by keying a whole kernel file to one node. There are exactly three
+kinds of node, all of them things that occupy bytes in an emitted `.mjs`:
+
+| Node | Identity | Emitted by |
+|---|---|---|
+| a value declaration | `(Graph.Index, Bir.DeclIndex)` for a `Decl` of kind `.value` with a body | `Lower.declaration` (`src/js/Lower.zig:564`) |
+| a foreign binding | `(Graph.Index, Bir.DeclIndex)` for a `Decl` of kind `.foreign_value` | the sibling `import` (`:688-695`) |
+| a derived function | `(Graph.Index, Dispatch.Derived index)` | `synthesisedValues` (`:1886`) |
+
+And four things that are **not** nodes, each because it has no separate existence in the output. A
+`type`, a `type alias` and a `foreign type` emit nothing (`:571-575`). **A constructor is not a
+node**: it is an object literal at its use site, so there is nothing to keep or drop and a
+constructor mentioned only in a pattern needs no edge to survive. A **`$$order` table** is not a
+node: `orderTable` is reached only for a row whose arrow was built (`:1911`), so it lives and dies
+with its `compare`. The three **primitive comparators as values** — `eq$prim`, `compare$prim`,
+`compare$char` — are not nodes either: `Lowerer.needs` discovers them during lowering, which now
+runs over survivors only, so they are emitted iff a surviving body wanted one.
+
+**The edges.** Out of a value declaration `d` of module `m`:
+
+1. every `Bir.refs` row of `d` whose kind is `top_value` → `(m, ref.a)`. This is the §9.1 byproduct,
+   already deduplicated per declaration and in source order, already walked by `emissionOrder`
+   (`:524`).
+2. every `ext_value` instruction in `bir.insts[d.inst_start .. d.inst_end]` → the declaration behind
+   that interface value: `Resolve` has already rewritten the instruction to carry
+   `(Graph.Index, Interface.ValueIndex)` (`src/resolve/Resolve.zig:303-309`), and
+   `Interface.Provenance.valueDecl` (`src/resolve/Interface.zig:309-313`) turns the second half into
+   a `Bir.DeclIndex`. A declaration's instructions are contiguous (`Bir.Decl.inst_start`/`inst_end`,
+   the same fact `declSiteRange` rests on at `:1612-1617`), so this is a slice walk.
+   *Alternative rejected: reading `refs`' `import_value` rows, which are symbolic `(module symbol,
+   name symbol)` pairs that `Resolve` never rewrites — re-deriving that lookup in the backend is a
+   second copy of resolution, and a copy that drifts drops an edge, and a dropped edge is a
+   `ReferenceError`.*
+3. every **dispatch site** of `d` — `declSiteRange(d)` (`:1614`) — and, recursively through
+   `Dispatch.partsAt`, every target nested in one. **These are the edges `Bir` deliberately does not
+   have** (`frontend.md` §3.6, `static-dispatch-spike.md` §1.4): a method call's callee is not known
+   until the checker runs, and evidence arguments are references that no source line spells. Target
+   by target: `top {decl}` → `(m, decl)`; `ext {module, value}` → that module's declaration, through
+   the same provenance as leg 2; `derived {index}` → `(m, index)`; `ext_derived {module, type,
+   kind}` → that module's `Derived` row for the pair; `evidence k`, `primitive`, `field` and `err`
+   add no edge, because each is a parameter, an operator, a property read or a poisoned table.
+
+Out of a **derived function** row `r` of `m`: every target in `partsAt(r.parts)`, recursively, by the
+same mapping — that is how a derived `eq` for `type T = T (Maybe U)` reaches `Maybe`'s row and `U`'s.
+Out of a **foreign binding**: nothing; its body is in a sibling file this pass does not read.
+
+This is `collectTops` (`:555-562`) widened from `top` to all four target kinds and given a
+cross-module leg, so the eta-expanded evidence closures of §6 need no rule of their own: an
+eta-expansion is built from a site's targets, and the targets are the edges.
+
+**Where it runs.** A new whole-program pass in `src/js/`, called from `Emit.run` between `findEntry`
+and `emitModules` (`src/js/Emit.zig:147`, `:155`), producing one bitset per module over each of the
+three node kinds. `Lower.Input` gains that per-module triple; nothing else about lowering
+changes. It runs **before lowering, not after**, for three reasons: an unreachable declaration is
+then never lowered at all, which makes the pass pay for itself in emit time rather than cost
+anything; the graph is a function of `Bir` and the dispatch table, both of which M4 can cache per
+module, where `JsIr` is the emit unit itself; and §10's colouring wants the same graph, before
+anything has been assigned to a file.
+
+**Determinism and parallelism.** Per-module edge lists are built **in parallel**, one job per
+module, each writing only its own slot — the same shape as every other per-file phase. The
+**reachability walk is serial**, because a fixpoint over a whole-program graph is, and it is
+nothing: 278 nodes for the null program, O(declarations) at any size, microseconds against §13's
+800 ms budget. Node identity is input-derived end to end — `Graph.Index` comes from the sorted path
+(CLAUDE.md rule 5), a declaration index is source order, a `Derived` index is the sorted-by-name
+order §7.1 of the spike fixes before anything indexes it — and the pass's output is a *set*, so
+visit order cannot reach the bytes. `--jobs=1` against `--jobs=8` covers it with no new machinery.
+
+#### Roots
+
+- **`main` of the entry module**, found as it is today (`Emit.findEntry`, `src/js/Emit.zig:541`).
+  In an application build it is the **only** root.
+- **Whatever the platform calls back into.** Today that is `main` and nothing else: the artifact is
+  `main.mjs` handing `main` to the runtime's `run` export (`:763-781`), and the runtime sibling is
+  copied whole, so it needs no root of its own. When ports land (`boundary.md` B3) every port is a
+  root and this line grows; nothing else in `boundary.md` §5 imposes a signature the compiler must
+  keep alive.
+- **`--library`: every name the root package's modules export.** A library has no `main` and its
+  callers are not in the build, so its public surface is its root set — which is exactly the export
+  list §5 already computes: `pub` values with a body, every nominal `derived` row, and nothing else.
+  `--library` also makes `main` optional and writes no `main.mjs`.
+
+**`pub` means nothing to DCE in an application build, and that is a decision.** A `pub` declaration
+that nothing in this program reaches is deleted, in `Main.beni` as much as in `core/List.beni`.
+`pub` is a *module* boundary, not a *program* boundary; a whole-program compiler knows the program,
+and treating `pub` as a root would pin all of core forever, since every core value is `pub`.
+*Alternative rejected: rooting at the entry module's own exports, which would spare the `emit/`
+corpus without a flag and cost a user every derived method of every type they happen to declare in
+the module they named on the command line — the nominal rows are exported regardless of the type's
+`pub` (`src/js/Lower.zig:639-660`), so that rule can never drop one.*
+
+**What a library build cannot do, stated so nobody reports it as a bug.** Measured on
+`bench/corpus`: under library roots **48 of 59** derived functions survive and **10 614 of 11 790**
+derived bytes, because a `pub` type's `eq` and `compare` are exported and a consumer may call them.
+Elimination shrinks a *program*; it barely shrinks a *library*. That is the correct answer and not a
+limitation to fix.
+
+#### Purity, and what may be dropped
+
+**An unreachable declaration is dropped entirely, initialiser included, with no exceptions.** The
+rule is total because the premise is: a top-level beni value is pure to evaluate.
+
+Establishing that, rather than assuming it. A top-level constant *can* have a call in its
+initialiser and one does — `platform/Node.mjs` emits `const Node$done = Node$printLines({$:0,…})`,
+a call of a `foreign`. What makes it safe is `boundary.md` §4's two-shape rule and §7.2's reading of
+it: a `foreign` is a total pure function over admitted types or an effect *value*, effects are data
+until the platform interprets them, and `printLines` returns `{code, out}` having written nothing.
+`Debug.log` is the one deliberate violation in the language and it is a **function**, so its effect
+happens when it is called and a call is an edge; a `Debug.log` reachable from `main` keeps
+everything it names. A platform `Program` is a value like any other. So there is no top-level
+initialiser whose evaluation anyone can observe, and dropping one is unobservable by construction —
+which is the proof `fast-compiler.md` §9.1 claims over a bundler's `sideEffects: false` guesswork,
+written down.
+
+**Sibling modules are the one place ES module semantics could bite, and the rule is: a sibling is
+imported iff one of its exports survives.** An unreferenced `import` still *evaluates* the module,
+so dropping the import is a semantic change wherever the sibling has top-level effects — and none
+does. Checked over all seven siblings in the repository: every top-level statement is an `import`,
+an `export`, a `const`/`function` declaration or a comment, and the only module import is
+`platforms/node/runtime.js` taking `node:process`. `boundary.md` §4.1's recipe already forbids the
+shape that would break this (address by value, marshal to data, no reference held across a
+boundary), and §4's check 3 — a sibling's references must be covered by its own imports — is what
+keeps a sibling from reaching a host global at load time. If a future platform wants load-time
+setup it must put it inside an exported function, and that is a rule of §4.1 and not a new one.
+
+**Sibling-level elimination is out of scope, and here is what it costs.** A sibling is hand-written
+JavaScript copied whole, so a file survives entire as soon as one of its exports is reachable.
+Measured on `Dictionaries`: two of six sibling files are dropped (2 922 B), and the four that stay
+carry **12 925 bytes for six reachable exports out of sixty-one** — roughly as much again as
+everything the pass saves on that program. Doing better needs to know which top-level helper in the
+sibling is used by which export, and reading that exactly needs a JavaScript parser, which is the
+dependency `boundary.md` §4's wall exists to avoid and which check 3 is already deliberately
+approximate rather than acquire. Left on the table, deliberately, with the number. *Alternative
+rejected: Elm's template dialect, which buys exactly this and is the reason its kernel files are
+module-granular in the first place (`boundary.md` §7.1).*
+
+#### When it runs, and what pins the corpus
+
+**Always on, for every `beni build`.** Not release-only: `--release` is about chunking, renaming and
+tags (§2), and answering "eager derivation is not shippable without DCE" for release builds alone
+would leave every development build shipping fifty times its own size and every `run/` fixture
+exercising a code path release does not. One pass, one behaviour, one set of goldens.
+
+`dump --stage=…` is untouched. Every stage is `tokens`, `ast`, `bir`, `types`, `interface` or
+`dispatch` — all of them before the backend — so nothing a dump prints moves, and `bir`'s `refs`
+list in particular keeps printing the symbolic `import_value` rows it prints today, because this
+pass reads instructions for that leg rather than rewriting `refs` (above).
+
+**The `emit/` corpus builds with `--library`, and that is the whole pin.** Measured over all
+fourteen fixtures: with `main` as the only root, **14 of 14 goldens change** and twelve also lose an
+import; with the library rule, **0 of 14 change**. The difference is not cosmetic —
+`emit/DerivedCompareNominal.js` is 115 lines of which 114 are derived code and one is `main`, and
+its intent comment says in so many words that nothing below uses these and they are emitted anyway.
+That claim is about eager derivation in the declaring module, it is still true, and a `main`-only
+build would delete the evidence for it. So: `tests/corpus/emit/README.md` gains the rule that **an
+`emit/` golden is a claim about the shape of a declaration and must not be contingent on something
+calling it**, and the harness appends `--library` for the kind (`corpus_test.zig:472`), exactly as
+it already appends `--core` for a fixture under `core/` (`:340-345`). Elimination's own `emit/`
+goldens, which need an application build, go in a subdirectory the harness does not add the flag
+for — `tests/corpus/emit/app/` — by the same per-fixture mechanism.
+
+`run/` fixtures are unaffected in how they are built and **no `.expected` may change**: they assert
+what the program printed, and elimination does not change that. A `run/` fixture that moves is
+over-elimination, which is the failure this pass has to fear.
+
+#### Incrementality (M4) and chunking (M3d)
+
+`fast-compiler.md` §8.2's declaration-level graph and this one are **the same graph**, which is what
+§9.1 means by "build once, use three times". Concretely, for M4:
+
+- A module's **edge lists are cacheable per module**, keyed by the cache key §8.1 already defines —
+  source bytes, module identity, compiler version, direct imports' interface hashes, and
+  `boundary.md` §7.3's sibling content hash. Legs 1 and 2 are a function of that module's `Bir`
+  after resolution; leg 3 is a function of its dispatch table, which is a function of its own check.
+  Nothing in an edge list names a thread or a completion order.
+- What **reruns on every build is the walk**, because reachability is whole-program by definition
+  and an edit to one module can make another's declaration dead. It is the cheap half: 278 nodes for
+  the null program, O(declarations) at scale, against a re-check that the firewall may skip
+  entirely. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
+  decision it depends on"; **a change to liveness is one more such input**, and a declaration whose
+  liveness flipped is an `emit` unit to redo whether or not its own bytes would differ.
+
+Chunking (§10) runs on this graph and not on one of its own: an entry set is a set of roots, a
+colour is the set of entries that reach a declaration, and "reaches" is this walk with more than one
+seed. Pointer only; §10 is where that lives.
+
+#### Measurement and acceptance
+
+`bench/size.mjs` is the instrument and it needs one change, because DCE breaks one of its
+assumptions. The `run/` corpus and the floor are built as they are today and their numbers simply
+start meaning what they say. The **synthesised `BenchMain`** does not: `bench/corpus` declares no
+`main` and the entry the script writes only imports the modules, so under `main`-only roots the
+build keeps **1 declaration of 336** and the benchmark silently stops measuring anything. That path
+therefore passes `--library` — `bench/corpus` *is* a library — and its line records which rule it
+used. Two meanings also shift and the header comment must say so: the **floor** stops being a shared
+tree every program drags in and becomes the minimum a program can ship, so `net_*` is a subtraction
+against a minimum rather than against common code; and `gross_*` becomes the number that matters,
+since after elimination no two programs ship the same tree.
+
+Acceptance, all five:
+
+1. **`derived_bytes` is 0** on the floor line and on any program that uses no `==` and no `compare`.
+2. **Every `run/` fixture's `.expected` is unchanged** and every one still exits 0.
+3. **Size is reported through `bench/size.mjs`**, floor and total, both directions recorded whichever
+   way they come out — though on the floor there is only one direction available.
+4. **Emit throughput within noise or better.** It should be better: emit is 18.7 ms of a 101 ms
+   Debug build of `Dictionaries` today and 70 % of the declaration bytes it prints are unreachable.
+   If it regresses, an edge list is being rebuilt where it should be built once.
+5. **The determinism test is green** at `--jobs=1` and `--jobs=8`, twice each, byte-compared.
+
+#### Fixtures
+
+**Over-elimination is a `ReferenceError` at load or a wrong answer at a call; under-elimination is
+only bytes.** Every `run/` row below is therefore a program that crashes or lies if the pass drops
+too much, which is why they are `run/` and not goldens (§12).
+
+| Fixture | Intent | Observable |
+|---|---|---|
+| `emit/app/DceUnusedValue` | a `pub` value and a private helper that nothing reaches, beside one that `main` does | golden: the unreachable pair is gone, the export list and the `import` line shrank with them |
+| `emit/app/DceDerived` | two types, one compared with `==` and one not; the compared one's payload is a third type | golden: the unused `$$eq`/`$$compare`/`$$order` are gone and the used one is there **with the payload type's own derived function**, which is the transitive edge |
+| `emit/app/DceEvidenceOnly` | a function referenced **only** as an evidence argument — never called by name anywhere | golden: it is still emitted. This is the edge `Bir.refs` does not have; without leg 3 the golden loses it and `run/DceEvidenceDepth` throws |
+| `emit/app/DceCtorPattern` | a constructor of a type used only as a `case` pattern, with the type's derived methods unreachable | golden: the match compiles unchanged and the derived methods are gone — pins that a constructor is not a node |
+| `emit/app/DceModuleGone` | a two-module fixture whose second module nothing reaches | golden: the entry module has no `import` of it; the harness also asserts `out/<Other>.mjs` was not written |
+| `run/DceEvidenceDepth` | evidence passed down through three generic levels, the innermost comparator reached only as a `parts` target | the comparison's answer; a missing nested-`parts` edge is a `ReferenceError` at the innermost call |
+| `run/DceOrderTable` | a multi-constructor type whose `compare` is reached only through a generic `List.sortWith`-shaped path | the sorted order in declaration order; dropping the `$$order` table gives `undefined[tag]` and a wrong order, not a crash — the worst failure mode here |
+| `run/DceEtaEvidence` | evidence that itself takes evidence, so §6 eta-expands it, reached from nowhere else | the answer; the closure names a function that must have survived |
+| `run/DceForeignThroughCore` | a `foreign` reachable only through a core function that is itself reachable only through one user call | the value; a sibling dropped one file too far is a load-time `ReferenceError` |
+| `run/DceUnusedFailsNothing` | a module full of `pub` declarations that nothing reaches, beside a `main` that prints | it prints; proves the build does not need what it deleted |
+| `run/DceDebugLog` | `Debug.log` in a reachable branch and in an unreachable declaration | exactly one line of log output — pins that the effect follows the edge and not the declaration |
+
+Each is fail-first in the ordinary way: every `emit/app/` golden differs before and after, and every
+`run/` row above either throws or prints the wrong thing if the matching edge is missing. The
+existing fourteen `emit/` goldens are the regression half — **none of them may move** (`--library`,
+measured 0 of 14), and one that does is a finding.
+
 ## 10. Chunking
 
 Entry points are `main` and every `lazy` declaration. Each declaration's colour is the set of entry
-points that reach it; declarations sharing a colour share a chunk. The colour is **hash-consed from
+points that reach it; declarations sharing a colour share a chunk. **"Reaches" is §9's walk with
+more than one seed, over §9's graph** — the colouring adds a lattice, not a second graph. The colour is **hash-consed from
 the first line written**, because dart2js measured 401 deferred imports producing 2.9 million
 import-sets and a five-gigabyte heap without interning, and both GWT and Rollup found the same late.
 dart2js's `ImportSetLattice` is the structure to copy. Declaration granularity is proven in four
@@ -829,6 +1144,11 @@ The one deviation, recorded rather than hidden: an `emit/` golden is the fixture
 whole — one deliberately tiny module holding nothing but the claim — because one module of one
 tiny fixture *is* that extract, with no extractor of its own to get wrong, while core and the
 platform stay out of the file (`tests/corpus/emit/README.md`).
+
+A second deviation arrives with §9: **`emit/` builds with `--library`**, so a golden is a claim about
+the shape of a declaration and not about whether the fixture's own `main` happens to call it, and
+`emit/app/` is the subdirectory that does not — for the goldens whose claim *is* what elimination
+removes. Same mechanism as `core/`, which already appends `--core`.
 
 A bug that changes emitted shape but not behaviour must not fail a `run/` test; a bug that changes
 behaviour must. That is the whole point of preferring it.
