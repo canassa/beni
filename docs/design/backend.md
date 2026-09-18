@@ -98,6 +98,12 @@ pass.
 Names in `JsIr` are `Symbol`s, never strings, so renaming in M3c is a table swap rather than a
 rewrite.
 
+**The backend still sees no types, and static dispatch did not change that.** `Lower.Input` gains
+one field beside `interfaces`: a **dispatch table**, one per module, flat and index-based in the
+shape of `Bir.refs`, in which the checker has already written what every method call resolved to,
+what evidence every declaration takes, and which functions must be derived. The lowerer reads
+targets, never types. → [`static-dispatch-spike.md`](static-dispatch-spike.md) §7, §8.0.
+
 ## 4. Codegen, construct by construct
 
 Representation decisions are §9.4's and are not reopened here. What this section fixes is the
@@ -121,6 +127,16 @@ mapping.
 | string interpolation | template literal |
 | `?` | the `case` it desugars to, over the enclosing function's early return |
 | `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4) |
+| method call, resolved to a declaration | a direct call of that declaration, receiver first: `x.m a` is `M$m(x, a)` |
+| method call on a `primitive` target | the JavaScript operator the surface origin names — `===` for `==`, and the `Order` result of `compare` tested in place rather than built |
+| return-type dispatch | a direct call of whatever the constrained variable resolved to, or of the evidence parameter standing in for it |
+| a declaration that carries constraints | hidden **leading** parameters, one per constraint in canonical order, invisible in beni and fixed at every call site by the checker |
+| a derived `eq` / `compare` | a generated top-level function per type or per structural shape, emitted sorted by printed name |
+
+The last five are static dispatch's, and
+[`static-dispatch-spike.md`](static-dispatch-spike.md) §8 and §9 are the contract: §8 for the four
+call shapes and the evidence convention, §9 for the exact JavaScript of every derived function.
+Nothing here reopens a representation decision — §9.4's shapes are what derivation walks.
 
 ### Corrections from M3a
 
@@ -170,6 +186,17 @@ short name, and the cross-chunk bindings synthesised by the assigner.
 A platform declares its output shape (`boundary.md` §5.2) — what the artifact looks like and how
 `main` is invoked. The emitter is parameterised by it.
 
+**Derived functions are module-local and named by the compiler**: `<Module>$<Type>$eq` for a
+nominal type, `<Module>$eq$<shape>` for a structural one, emitted **sorted by printed name text**
+rather than in the order the checker asked for them, so a reader can check determinism without
+reasoning about discharge order (CLAUDE.md rule 5). Derivation is **eager** — every declared
+nominal type ships both, called or not — which is why §9's reachability elimination stopped being
+an optimisation and became a prerequisite (`fast-compiler.md` §13). And `Lower.emissionOrder` must
+walk the dispatch table's sites **as well as** `bir.refs`: a method call is a reference the file
+does not record, and without those edges a constant whose initialiser is a method call on this
+module's own type is a temporal-dead-zone throw in a well-typed program.
+→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §8.5, §1.4.
+
 ## 6. The calling convention
 
 **There isn't one.** `fast-compiler.md` §9.3 dropped automatic currying on 2026-09-14 and
@@ -189,6 +216,16 @@ lambda over the innermost enclosing application, and `e |> f a` lowers to the ca
 function-typed value in flight is therefore always a closure of known arity, never a partially
 applied thing waiting for more arguments, and a call through a parameter is a call of that
 parameter's arity, which the checker knows.
+
+**Static dispatch extends that invariant and does not break it.** Evidence is a function value in
+flight, and a piece of evidence that itself takes evidence has a *hidden* arity the receiving
+parameter's beni type does not show — so passing it by bare name would be a partial application by
+the back door. It is passed **eta-expanded** instead: a closure of exactly the beni arity that
+supplies its own evidence inside. Evidence with no evidence of its own is passed by bare name. So
+the sentence above still holds as written, with "known arity" meaning the beni arity at every
+point. The hidden leading parameters are a *calling convention for a declaration*, fixed by the
+checker at every site, and never something the backend has to discover.
+→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §8.1, §8.2.
 
 **What this does not remove.** The absence of a runtime library still holds and still matters:
 `boundary.md`'s wall means the only hand-written JavaScript in a build is core's siblings, and a

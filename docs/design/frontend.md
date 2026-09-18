@@ -20,6 +20,12 @@ beni version
 beni help
 ```
 
+Later milestones add stages to `dump` without changing its shape: `interface`, `raw`, `types`,
+`graph` and `dispatch` ([`checker.md`](checker.md) §2). They also add one common flag, `--explain`,
+which turns on informational `warning`-severity diagnostics that are otherwise suppressed; `check`
+and `build` act on it, and because a warning cannot change an exit code (below) it can never turn a
+passing build into a failing one.
+
 `build` arrived with M3a and its flags are `backend.md` §2's; the rest of this document is M0/M1's
 and the common options below apply to it too. Its product on stdout is one summary line naming what
 was written; everything else it has to say is a diagnostic.
@@ -96,7 +102,11 @@ no positions (so a formatting change to the input leaves an `.ast` golden unchan
   written in `Ast.Node.Tag`, identifier and literal text inline. Error placeholder nodes print
   as `(error <code>)`.
 - `--stage=bir`: one declaration per block, then its instructions, then its interface entry.
-  The implementer designs it; it must show every desugaring in `language.md` §8 legibly.
+  The implementer designs it; it must show every desugaring in `language.md` §8 legibly. Static
+  dispatch put two instruction tags into that dump, `method_call` and `type_dispatch`, and a
+  `method_call` **prints the operator it was written as** — `%4 = method_call %2 .eq [%3] (==)` —
+  so a golden distinguishes `a == b` from `a.eq b`, which are not the same constraint.
+  → [`static-dispatch-spike.md`](static-dispatch-spike.md) §1.3, §1.4.
 
 ## 2. Repository layout
 
@@ -234,6 +244,14 @@ Lowering is one pass over the AST with an explicit scope stack (a flat array of 
 local_index)` pairs with per-scope marks; lookups scan backwards — scopes are small and this
 beats a hash map on every measurement Zig and Roc made).
 
+**Static dispatch added two instruction tags and one declaration field, and removed a `refs` edge.**
+`method_call` and `type_dispatch` join the tag set; a declaration stores its `where` clause as a
+range of `(variable, method, type)` triples beside its annotation. What it did **not** add is a
+`refs` edge for a method call: `refs` is a pure function of the file and the reference a method call
+becomes is not known until the checker runs, so the checker's dispatch table carries those edges and
+two consumers — emission order and the future DCE — must read both.
+→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §1.4, §2.4.
+
 ### 3.7 Formatting
 
 `Format.zig` walks the AST once, printing to a `std.Io.Writer`. Layout decisions ("fits on one
@@ -241,6 +259,11 @@ line") use a width measure computed from the AST without printing twice: each no
 single-line width or "does not fit" in one bottom-up pass into a side array, and the printer
 consults it. Comments and blank-line preservation come from the comment array and token line
 numbers. The formatter never reads the source text except through token slices.
+
+A `where` clause (`language.md` §3) is the one construct whose layout does not follow the
+never-join-lines rule: it is **always** on continuation lines, however short, because there is no
+one-line form. `language.md` §9 states the shape and
+[`static-dispatch-spike.md`](static-dispatch-spike.md) §2.5 the reasoning.
 
 ## 4. Session and parallelism
 
@@ -306,7 +329,7 @@ and formatting `.expected` again is a fixed point and parses to the same `.ast`;
 --stage=bir` equals `.bir`; `check/good` → `check` is clean and `dump --stage=interface` equals
 the `.iface`; `check/bad` and `check/args` → `check --diagnostics=json` equals the `.diag`
 (checker.md §3; `check/args` is the arity suite of §8.3, kept apart so its size and
-pass rate are visible on their own). A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`) is run with
+pass rate are visible on their own); `dispatch` → `dump --stage=dispatch` equals the `.dispatch`. A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`) is run with
 `--core` (language.md §5.4); the module name is still derived from the file's own directory.
 `BENI_WRITE_EXPECTED=1` blesses; the failure message says so; the
 value is fully materialised before any golden is written.

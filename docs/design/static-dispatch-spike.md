@@ -1,15 +1,26 @@
-# Static dispatch — branch specification (spike)
+# Static dispatch — specification
 
-**Status:** normative **for the branch `spike/static-dispatch` only**, written 2026-09-17 as slice
-S0 of [`../../plans/static-dispatch-spike.md`](../../plans/static-dispatch-spike.md). It is a
-**delta** on [`language.md`](language.md) and [`checker.md`](checker.md): it edits neither, it
-renumbers nothing anywhere (CLAUDE.md rule 2), and where it extends one of them it cites the
-section it extends. [`fast-compiler.md`](fast-compiler.md) §3.1 still records static dispatch as
-excluded, and this document does not change that: the spike produces numbers and
-`research/19-static-dispatch-spike.md`, and the decision is taken on `master` afterwards.
+**Status:** normative. **Adopted whole on 2026-09-18** — option (b) of
+[`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md) §15:
+`where` constraints, dot-call, well-known `eq` and `compare` with derivation, return-type dispatch
+and the C1 core rewrite are the language. It was written 2026-09-17 as slice S0 of
+[`../../plans/static-dispatch-spike.md`](../../plans/static-dispatch-spike.md), when it was
+normative for the branch `spike/static-dispatch` alone. **The file name is historical** and is kept
+deliberately: roughly a hundred Zig comments, corpus fixture headers and bench programs cite this
+file by name and by its own `§N` and `A.N` numbers, and CLAUDE.md rule 2 forbids disturbing them.
 
-Where this document and the plan disagree, **this document wins for the branch**, and every such
-disagreement is listed in Appendix A.
+It is a **delta** on [`language.md`](language.md) and on the four phase contracts —
+[`frontend.md`](frontend.md), [`checker.md`](checker.md), [`backend.md`](backend.md),
+[`boundary.md`](boundary.md). It renumbers nothing anywhere (CLAUDE.md rule 2), and where it extends
+a section it cites the section it extends; each of those sections now carries a short pointer back
+here. **The detail lives here and only here.** Where this document and one of them disagree, this
+one wins; where this document and the plan disagree, this one wins too, and every such disagreement
+is listed in Appendix A.
+
+What the adoption did to the other documents is A.82. What it left **owed** — dead-code
+elimination, the unenforced `foreign` arity rule of §5.2, the two `master` printer defects, a cap on
+the inferred `where` suffix and a position on the n² obligation count — is report 19 §14, carried in
+CLAUDE.md as "Owed after the static-dispatch adoption".
 
 ## 0. How to read this, and what it extends
 
@@ -22,10 +33,10 @@ disagreement is listed in Appendix A.
 | §5 core | `checker.md` Appendix B | new signatures, two type moves, two module deletions |
 | §6 checker | `checker.md` §5, §6.2, §6.3, §6.4, §7 | constraints on a type variable's flags; one new obligation kind; `Quantified.words = 4` |
 | §7 dispatch table | `checker.md` §2, `backend.md` §3 | a new checker→backend side table and a new `dump --stage` |
-| §8 backend | `backend.md` §4, §5, §6 | hidden leading parameters; four call shapes; **§6's "a function-typed value in flight is always a closure of known arity" (`backend.md:189`) is extended**: evidence in value position is an eta-expanded closure, §8.2 |
+| §8 backend | `backend.md` §4, §5, §6 | hidden leading parameters; four call shapes; **§6's "a function-typed value in flight is always a closure of known arity" (`backend.md:216`) is extended**: evidence in value position is an eta-expanded closure, §8.2 |
 | §9 derived functions | `backend.md` §4 | the exact JavaScript for `eq` and `compare` per representation |
 | §10 diagnostics | `language.md` §10, `checker.md` §8.1 | ten new codes, appended to the catalogue; one new flag, `--explain` |
-| §5.2 `foreign` with a `where` clause | `boundary.md` §4 | the sibling export's arity becomes evidence count + declared arity. `boundary.md` §4's checks are *export coverage* and *import coverage* (`src/js/Sibling.zig:1-33`); neither checks arity, so this rule is **documented and not enforced** on the branch — §11 records it as a widening of the `foreign` surface |
+| §5.2 `foreign` with a `where` clause | `boundary.md` §4 | the sibling export's arity becomes evidence count + declared arity. `boundary.md` §4's checks are *export coverage* and *import coverage* (`src/js/Sibling.zig:1-33`); neither checks arity, so this rule is **documented and not enforced** — §11 records it as a widening of the `foreign` surface, and report 19 §14 item 2 as an owed item |
 | §11 known limits | — | what the spike knowingly does not solve |
 
 [`research/20-roc-static-dispatch-implementation.md`](research/20-roc-static-dispatch-implementation.md)
@@ -38,11 +49,13 @@ usable: plan §3.1 → §1; §3.2 → §2; §3.3 → §3; §3.4 → §4; §3.5 �
 §4.3 → §6.3; §4.4 → §6.4–§6.6; §4.5 → §6.7; §4.6 → §7; §4.7 → §10; §4.8 → §6.8; §5.1–§5.2 → §1.4,
 §2.5, §8.0; §5.3 → §8; §6 → §9; §9 → §11.
 
-**Two `fast-compiler.md` §3.1 decisions are suspended on the branch**, and neither document is
-edited (CLAUDE.md rules 1 and 2; plan §0). They are listed here so a reader of either document
-knows which statements this branch contradicts:
+**Two `fast-compiler.md` §3.1 decisions are superseded by this document.** They were suspended on
+the branch while the spike ran; the 2026-09-18 adoption makes the reversal permanent.
+`fast-compiler.md` §3.1 records it in place — same section number, its own history kept, points 3
+and 4 marked superseded with a pointer here (A.82). The two are listed here as well, so a reader of
+either document knows which statements this one replaces:
 
-| `fast-compiler.md` §3.1 | Says (`fast-compiler.md:111-115`) | On the branch |
+| `fast-compiler.md` §3.1 | Said (*Decision*, points 3 and 4) | Now |
 |---|---|---|
 | Decision point 3 | "Drop `comparable` and `compappend`. `<`, `>`, `<=`, `>=` are **numbers-only**. `"a" < "b"` does not compile; use `String.compare`." | the four operators call the receiver type's `compare` method (§3.1); `"a" < "b"` compiles. `comparable` is still not a `Kind`, so the *mechanism* the decision rejected is still absent |
 | Decision point 4 | "Ordering is passed explicitly. `List.sortBy`, `List.sortWith`, and `Dict`/`Set` keyed by a concrete type (`Dict.String`, `Dict.Int`) as sugar over a comparator-taking core." | `Dict.String` and `Dict.Int` are deleted, `Dict`/`Set`/`List.sort` carry `where k.compare` (§5), and `sortWith` is the survivor |
@@ -375,7 +388,7 @@ static dispatch**, and the number would have been wrong in the direction that fl
 objection. The four ordering operators pin the same way, with `Order` in place of `Bool` inside the
 constraint and `Bool` as the instruction's type.
 
-**The operator-as-function form** (`language.md` §6.5, "operators as functions", `language.md:485`;
+**The operator-as-function form** (`language.md` §6.5, "operators as functions", `language.md:532`;
 the live fixture is `tests/corpus/parse/good/OperatorsAll.beni:30`, `[ (==), (/=), (<), (>), (<=), (>=) ]`)
 gets the same dispatch as the operator, because it lowers to a lambda over it:
 
@@ -562,8 +575,8 @@ is the only place a type is named in an expression, and it is weaker than the ab
 
 ## 5. Core package changes
 
-This section replaces the `Dict`, `Set`, `List` and `Basics` rows of `checker.md` Appendix B **for
-the branch**. Line numbers are `master` at `f466aac`. The rewrite itself is slice S6 and its
+This section **replaces** the `Dict`, `Set`, `List` and `Basics` rows of `checker.md` Appendix B;
+that appendix points here. Line numbers in the `master` column below are `master` at `f466aac`. The rewrite itself is slice S6 and its
 site-by-site plan is [`../../plans/static-dispatch-c1-rewrite.md`](../../plans/static-dispatch-c1-rewrite.md).
 
 **One constraint governs every edit below, and it is new with §6.8.** The checker mints a type for
@@ -625,8 +638,9 @@ in `core/List.js`. This rule is **documented and not enforced**: [`boundary.md`]
 two automated checks are export coverage and import coverage (`src/js/Sibling.zig:1-33`) and
 neither inspects arity, so a sibling that forgot the leading parameter fails at runtime rather than
 at build time. That is a widening of the `foreign` surface against CLAUDE.md rule 6, forced by the
-list representation being the emitter's rather than beni's; §11 records it as a finding the
-adoption decision has to weigh, and Appendix A.7 records the alternatives.
+list representation being the emitter's rather than beni's; §11 records it as a finding, the
+adoption weighed it and left it **owed** (report 19 §14 item 2, `boundary.md` §4), and Appendix A.7
+records the alternatives.
 
 ### 5.3 `Dict` — the comparator leaves the data structure
 
@@ -1076,7 +1090,7 @@ parameter.
 `--explain` is a new flag on `beni check` and `beni build` that emits informational diagnostics
 otherwise suppressed. It adds **no new severity**: `diagnostic.Severity` stays
 `{ error, warning }` (`src/diagnostic.zig:17`), `ambiguous_method_receiver` is a `warning`, and a
-warning does not change the exit code (`frontend.md:44-45`), so `--explain` can never turn a
+warning does not change the exit code (`frontend.md:50-51`), so `--explain` can never turn a
 passing build into a failing one. It is the only diagnostic the flag controls in the spike, and the
 churn measurement (plan §7 M3) is what reads it. §10's preamble has the flag's full contract;
 Appendix A.10.
@@ -1644,7 +1658,7 @@ for a `call`, in `evidence_index` order. The argument for each target:
 constrained `pub` value, or a derived function for a parametric type or a structural shape — is
 **not** a function of the two arguments the evidence slot promises. Passing
 `List$eq(Main$eq$r$x$y, …)` would pass the *result* of a call, and `List$eq` is not a value at all
-until its evidence is bound; `backend.md` §6 (`backend.md:189`) requires every function-typed value
+until its evidence is bound; `backend.md` §6 (`backend.md:216`) requires every function-typed value
 in flight to be a closure of known arity, and this is how that requirement is met here:
 
 > A target with `n > 0` evidence parameters, in **value** position, is emitted as
@@ -2140,7 +2154,7 @@ resolved when it is called and not when it is defined. The one thing that must p
 own ahead of the functions.
 
 `Point` is an alias **declared in this module**, so it is looked through (§1.2) and the record shape
-is what derives; a `Point` imported from elsewhere would be `no_methods_on_shape` on the branch
+is what derives; a `Point` imported from elsewhere would be `no_methods_on_shape`
 (§11). `Float` and `Int` both reach `primitive num_compare` / `strict_eq`, which inside a derived
 body is the inline operator and in the evidence position of `Points$compare$r$x$y` is
 `Points$compare$prim`. `List.sort`'s one evidence parameter takes `Points$Shape$compare` — which
@@ -2231,7 +2245,7 @@ Four existing codes are reused rather than duplicated: `not_equatable` for `eq` 
 `nesting_too_deep` for the constraint-chain guard (§6.3).
 
 **Severity, and `--explain`.** `diagnostic.Severity` stays `{ error, warning }`
-(`src/diagnostic.zig:17`); the branch adds no third value. Nine of the ten codes are `error`.
+(`src/diagnostic.zig:17`); this document adds no third value. Nine of the ten codes are `error`.
 `ambiguous_method_receiver` is a **`warning`**, and it is emitted only when `--explain` is passed:
 
 | | |
@@ -2239,7 +2253,7 @@ Four existing codes are reused rather than duplicated: `not_equatable` for `eq` 
 | Flag | `--explain`, a new field on `Cli.Common` (`src/Cli.zig:68-79`), so `check`, `build`, `dump` and `fmt` all parse it; only `check` and `build` act on it |
 | Default | off |
 | Effect | informational `warning`-severity diagnostics that are otherwise suppressed are emitted |
-| Exit code | **none.** `frontend.md`'s exit codes are `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O (`docs/design/frontend.md:44-45`), so a warning cannot change the exit code and `--explain` cannot turn a passing build into a failing one |
+| Exit code | **none.** `frontend.md`'s exit codes are `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O (`docs/design/frontend.md:50-51`), so a warning cannot change the exit code and `--explain` cannot turn a passing build into a failing one |
 | Stream | `stderr`, sorted with every other diagnostic by file, position, code |
 
 **Two regions, and which is primary.** Three of the ten codes are raised while discharging an
@@ -2526,7 +2540,7 @@ decode s =
 ### 10.9 `ambiguous_method_receiver`
 
 **Severity** **warning**, emitted only under `--explain` (see the preamble). **Region** the
-declaration's name. It is the only `warning` the branch adds, and it never changes the exit code.
+declaration's name. It is the only `warning` this document adds, and it never changes the exit code.
 
 > **CONSTRAINT IN AN INFERRED INTERFACE** — `<decl>` is `pub`, has no annotation, and its inferred
 > type carries `<n>` method constraint(s):
@@ -2569,8 +2583,10 @@ that survived generalisation of an *inferred* scheme (§6.4).
 
 ## 11. Known limits, and where the design may change
 
-Everything here is a limit the spike **accepts on purpose**. None of it is a bug to be filed; each
-is either measured (§7 of the plan) or recorded for report 19.
+Everything here is a limit the design **accepts on purpose**. None of it is a bug to be filed; each
+was either measured (§7 of the plan) or recorded in report 19, and the 2026-09-18 adoption took them
+with the feature. The five that the adoption left as work rather than as accepted limits are report
+19 §14's owed list, not this section.
 
 **Module-rule namespace clash.** Two types declared in one module cannot both have a method named
 `m`, because a module's `pub` values are one namespace. Roc hit this and moved to a per-type block
@@ -2863,7 +2879,7 @@ on `List.sortBy people .name` for no reason a reader could state. *Alternative:*
 flag without specifying it. **Amended 2026-09-17:** there is no new severity.
 `diagnostic.Severity` stays `{ error, warning }` (`src/diagnostic.zig:17`) and
 `ambiguous_method_receiver` is a **`warning`** emitted only under the flag; warnings do not affect
-the exit code (`frontend.md:44-45`), so `--explain` can never turn a passing build into a failing
+the exit code (`frontend.md:50-51`), so `--explain` can never turn a passing build into a failing
 one. *Alternative:* emit it always (noisy) or never (M3 has nothing to count), or add a third
 severity (a change to a schema three tools read).
 
@@ -2963,7 +2979,7 @@ its own list, which is more bytes in the record M4 hashes and one more thing to 
 **A.25 — a constrained value used as a value is its eta-expansion** (§8.2) [B1]. Evidence whose
 target itself takes evidence — a constrained `pub` value, a derived function for a parametric or
 structural type — is emitted as `(l, r) => <name>(<its evidence…>, l, r)`, and so is a bare
-reference to a constrained value. *Why:* `backend.md` §6 (`backend.md:189`) requires a
+reference to a constrained value. *Why:* `backend.md` §6 (`backend.md:216`) requires a
 function-typed value in flight to be a closure of known arity; the bare name has the wrong arity and
 a call in that position passes a result, not a function. *Alternative:* a runtime partial-application
 helper, which is exactly the adapter `backend.md` §6 deleted and the one helper `boundary.md`'s wall
@@ -3674,3 +3690,29 @@ unit at every n — which is the assertion that no obligation was dropped to buy
 Fixture: the `abuse_test.zig` scenario "an unannotated constraint chain costs one merge per link,
 not one per constraint", which reads those counters back out of `--self-profile` at 64 links and
 128 and pins all six.
+
+**A.82 — the spike is adopted whole, and this document is promoted in place** (front matter, §0)
+[L1, 2026-09-18]. After [`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md),
+the owner took §15 option (b) — the whole feature — on three grounds: `where` is the extension point
+library authors need (codecs, UI, user containers); the code is already written, reviewed and
+measured; and pre-1.0 it can still be withdrawn. `master` had not moved since the branch was cut, so
+the code landed by fast-forward and only the documents needed work. *Why promote this file rather
+than re-slice it into the four phase contracts:* it is larger than `frontend.md`, `checker.md`,
+`backend.md` and `boundary.md` together, and ~100 files cite it by name and by its own `§N` / `A.N`
+numbers, which CLAUDE.md rule 2 protects. So it keeps its file name, its title's subject and every
+section number, and the other documents gain pointers. What changed elsewhere:
+
+| Document | What |
+|---|---|
+| [`fast-compiler.md`](fast-compiler.md) | §3.1's *Decision* points 3 and 4 marked **superseded** in place with the evidence (report 19 §6, §9, §15) and the replacement (§3, §5 here); points 1, 2 and 5 restated as standing; *Decision: no static dispatch* reopened and closed the other way; §3 and §3.2's derived claims corrected; §8.1 gains the inferred-`where`-suffix consequence; §13 records where the adoption landed in M3 |
+| [`language.md`](language.md) | §0 gains four departures (dot-call, `where`, well-known `eq`/`compare`, return-type dispatch) and its `comparable` row is corrected; pointer paragraphs at §3, §4, §5.4, §6.2, §6.3, §6.5, §8, §9, §10 and Appendix A |
+| [`checker.md`](checker.md) | pointers at §1, §2, §3, §5, §6.1–§6.4, §7, §8.1; Appendix B's `Basics`, `List`, `String`, `Char`, `Dict` and `Set` rows brought in line with `core/` |
+| [`backend.md`](backend.md) | pointers at §3, §4, §5, §6; §6's "a function-typed value in flight is always a closure of known arity" recorded as extended by §8.2 here |
+| [`boundary.md`](boundary.md) | §4 records the `foreign` + `where` arity rule as **documented and not enforced**, and names it an owed item |
+| [`frontend.md`](frontend.md) | §1, §1.2, §2 and §8 pointers: the `where` tail, the two new BIR tags, the formatter rule, the new dump stages |
+| CLAUDE.md | the language bullet, the M3 status, rule 1's contract list, and an "Owed after the static-dispatch adoption" list (report 19 §14 items 1–5) |
+
+*Alternative:* the re-slice report 19 §14 describes — folding §1–§10 into the four contracts without
+renumbering. It is the tidier end state and it was declined here because the citation surface makes
+it a mechanical rewrite of ~100 files for no change in what any document says. It stays available:
+nothing in this document depends on living in one file.

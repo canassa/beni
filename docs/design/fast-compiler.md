@@ -2,7 +2,9 @@
 
 **Host language:** Zig. **Target:** JavaScript (ESM). **Source language:** Elm-like — ML family,
 full Hindley-Milner inference, ADTs, records, modules; no typeclasses, no macros, no type-level
-computation.
+computation. Ad-hoc polymorphism is **static dispatch** — methods named on a type's declaring
+module, constrained by a `where` clause, discharged by caller-threaded evidence — adopted
+2026-09-18 and specified in [`static-dispatch-spike.md`](static-dispatch-spike.md) (§3.1).
 
 **Stance: Elm's walled garden, better equipped.** The wall is not negotiable: user code does not
 reach arbitrary JavaScript, effects cross a controlled boundary, matches are exhaustive, there is no
@@ -76,10 +78,12 @@ Decisions about the *source language*, made now because they cannot be retrofitt
 
 - **LL(k), no backtracking.** Constant lookahead, committed choice — Zig's stated parser invariant
   (01 §9) and Elm's practical one (05 §1.3). Guarantees linear parse time.
-- **No typeclasses, no dictionary passing, no static dispatch.** Settled — §3.1, reports 09 and 10.
-  Dictionaries cost runtime and bundle size, the effective fix is global, and whole-program
-  specialisation is the one phase nobody has made cheap to cache. *Not* the `RowList` incident, a
-  parser bug.
+- **No typeclasses and no whole-program specialisation; static dispatch, since 2026-09-18, yes.**
+  §3.1 and reports 09, 10, 18 and 19. Dictionaries cost runtime and bundle size and the effective
+  fix is global, so specialisation — the one phase nobody has made cheap to cache — stays out; what
+  came in instead is per-constraint evidence threaded by the caller, measured rather than argued
+  ([`static-dispatch-spike.md`](static-dispatch-spike.md)). *Not* the `RowList` incident, a parser
+  bug.
 - **No type-level computation, no row-polymorphic type functions.** Records get plain extensible
   rows with structural unification, nothing more.
 - **No macros** — what lets a simple module-interface firewall work instead of a salsa-style query
@@ -109,9 +113,11 @@ comparator `_Utils_cmp`, the megamorphic dispatch point V8 cannot inline through
 1. **Keep `number`.** `+`, `-`, `*` on `Int` and `Float`. Flat membership test, free.
 2. **Keep `appendable`.** `++` on `String` and `List`. Also free — its branch is a plain merge.
 3. **Drop `comparable` and `compappend`.** `<`, `>`, `<=`, `>=` are **numbers-only**. `"a" < "b"`
-   does not compile; use `String.compare`.
+   does not compile; use `String.compare`. — **Superseded 2026-09-18**; see *Reversed on
+   2026-09-18* below.
 4. **Ordering is passed explicitly.** `List.sortBy`, `List.sortWith`, and `Dict`/`Set` keyed by a
-   concrete type (`Dict.String`, `Dict.Int`) as sugar over a comparator-taking core.
+   concrete type (`Dict.String`, `Dict.Int`) as sugar over a comparator-taking core. —
+   **Superseded 2026-09-18**; see *Reversed on 2026-09-18* below.
 5. **`==` stays fully polymorphic, but its check leaves the unifier.** "This type must be equatable"
    is an obligation discharged *after* solving, when the type is concrete — same principle as the
    occurs check: don't make the check faster, make it rare. It also turns Elm's last runtime crash,
@@ -122,6 +128,8 @@ comparator `_Utils_cmp`, the megamorphic dispatch point V8 cannot inline through
 The unifier does one thing, with no recursive membership walk and no occurs check
 on its hot path — §7's premise intact. The price is ergonomic and real: `List.sort` becomes
 `List.sortBy identity`, tuple-keyed dictionaries need a comparator, some ordering code gets longer.
+(That price is what *Reversed on 2026-09-18* below stopped paying; the paragraph is kept because
+the price was the argument, and report 19 §9 is the measurement of it.)
 Point 3 is the genuine departure from Elm; 1, 2 and 5 are close to free. **Roc reached the same place
 independently** ([`research/07-roc-static-dispatch.md`](research/07-roc-static-dispatch.md)), but its
 mechanism of methods named on types is *not* copyable: what makes it cheap is monomorphisation, and
@@ -172,6 +180,40 @@ the module system, since user-named methods need a declaring module (18 §4, §6
 recommendations: generalise obligation discharge beyond the hardcoded
 `number`/`appendable`/`equatable` set, and decide structural codec derivation separately, needing no
 dispatch at all.
+
+### Reversed on 2026-09-18: static dispatch is adopted
+
+The exclusion above was tested by building the feature and measuring it
+([`plans/static-dispatch-spike.md`](../../plans/static-dispatch-spike.md), results in
+[`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md)), and
+on 2026-09-18 it was **reversed**: beni has static dispatch. The contract is
+[`static-dispatch-spike.md`](static-dispatch-spike.md) — the file name is historical, the document
+is normative — and it is the place to read what the feature *is*. What that does to this section:
+
+| This section | State |
+|---|---|
+| Decision points 1, 2 and 5 — `number`, `appendable`, `==` as a post-solve obligation | **stand, unchanged.** `Kind` is still `{ any, number, appendable }` and nothing was added to it; a method constraint lives on a variable's own constraint set, not in `Kind` (spec §6.1). Point 5's obligation mechanism is what the new one is built beside |
+| Decision point 3 — `comparable` dropped, `<` numbers-only | **superseded.** `<`, `>`, `<=`, `>=` call the receiver type's `compare` method and `"a" < "b"` compiles (spec §3.1, §3.2). The *mechanism* point 3 rejected is still absent: `comparable` is not a `Kind` and unification runs no recursive membership walk |
+| Decision point 4 — ordering passed explicitly, `Dict.String`/`Dict.Int` as sugar | **superseded.** The two sugar modules are deleted; `Dict`, `Set` and `List.sort`/`sortBy` carry a `where k.compare` constraint instead; `List.sortWith` survives as the way to order by something that is not the type's own (spec §5.3–§5.5, §5.7) |
+| `equatable` | **kept and now redundant.** A type that has an `eq` is equatable and a function type has neither, so the marker overlaps the constraint. Neither mechanism was removed; `not_equatable` survives as the better message for `==` on a function (spec §3.4) |
+| The four ruled-out mechanisms above | beni takes the fifth: **caller-threaded evidence with no whole-program specialisation** — one hidden leading argument per constraint, in a canonical order both sides compute from the scheme record (spec §7.2, §8.1). It is the dictionary-passing row done per constraint rather than per class, and the row's own runtime objection was already retracted for a JS target by report 18 §1.1 and §1.5 |
+
+**The evidence, and it is not one-sided.** Report 19 §6 measures the runtime win — 7.2× on
+structural `==`, 3.2× on a sort, 1.28× on a dictionary build — and §9 the ergonomic one: the tax of
+17 argument sites, 15 comparator parameters and two sugar modules goes to zero. Against that, §2
+measures `check` **+20.3 %** on code that never uses the feature and **+7.8 %** more for code that
+does; §5 output **+5.5 %** at the floor and **+11.8 %** on `bench/corpus`, all upper bounds while
+no DCE exists; §4 unannotated `pub` interface churn **4.4–6.5× worse**; §3 an **n²** obligation
+count on an unannotated chain; §8 the compiler itself +8 992 lines of `src/` and a 1.37× cold build.
+§15 lays out the four options and the two questions the numbers could not answer; the owner took
+option (b), the whole feature, and the reasons are recorded in spec A.82. Pre-1.0, it can still be
+withdrawn.
+
+**What the reversal owes**, from report 19 §14 — none of it is optional and all of it is tracked in
+CLAUDE.md: dead-code elimination (already M3c, and eager derivation without it is not shippable);
+an arity check for a `foreign` carrying a `where` clause, or withdrawal of that combination
+([`boundary.md`](boundary.md) §4); the two printer defects §3.1 of that report reproduces; a cap on
+the `where` suffix an inferred interface may carry (§8.1 below); and a position on the n² count.
 
 ### Settled alongside it
 
@@ -382,8 +424,10 @@ gathering and four extension cases; at runtime tuples alias the record layout pa
 into the standard library (Feldman, #contributing, 2023-03-26).
 
 **Representation:** a fixed-shape object per arity, per §9.4's hidden-class rule; no runtime tag, so
-one field less than Elm's `{$: '#2', a, b}`. With `comparable` gone (§3.1) a tuple-keyed `Dict` takes
-an explicit comparator — the intended consequence. **Positional access `.0`/`.1`, zero-based,
+one field less than Elm's `{$: '#2', a, b}`. With `comparable` gone (§3.1) a tuple-keyed `Dict` took
+an explicit comparator — the intended consequence, and superseded on 2026-09-18: a tuple has a
+derived `compare` and `Dict ( Int, Int ) v` needs nothing written
+([`static-dispatch-spike.md`](static-dispatch-spike.md) §9.3). **Positional access `.0`/`.1`, zero-based,
 reversing an earlier draft** that rejected it as costing lookahead: the real cost is one branch and
 one byte (`roc/src/parse/tokenize.zig:1412-1442`) inside the `.` case the lexer *already* needs.
 Unbounded arity makes it necessary, since there can be no per-arity accessors — hence no
@@ -424,7 +468,11 @@ merely diagnosable rather than impossible. Everything unmarked is private; `pub 
 exposes a name without its constructors; imports stay Elm-shaped. Rejected: **Roc's type modules** (a
 capitalised `Url.roc` defines type `Url`, public functions *associated items* on it) — nicer, but a
 view of static dispatch, which §3.1 rejected, so we take only the part needing no dispatch,
-*namespacing*; **Go's capitalisation rule**, unavailable because case is spoken for — in ML syntax
+*namespacing*. **Half of that came back on 2026-09-18**: the module rule makes a method of `T` any
+`pub` value of the module that declares `T` ([`static-dispatch-spike.md`](static-dispatch-spike.md)
+§1.2), which is Roc's association without Roc's file-is-a-type rule. What is still rejected is the
+per-type method block Roc moved to in October 2025 — lookup is keyed on `(TypeId, name)` and never
+on text, so adopting it later is a front-end change and nothing else (spec §11); **Go's capitalisation rule**, unavailable because case is spoken for — in ML syntax
 `Url` is a type or constructor and `parse` a value, and the lexer depends on it; and **Elm's exposing
 list**, two edits per new public function plus an error class of its own.
 
@@ -572,6 +620,25 @@ Beni keys it on **content hashes, not mtimes** — Elm's mtime scheme is the doc
 cache-desync bugs and CI pathologies (05 §3). Cache key = source bytes + module identity + compiler
 version + direct imports' interface hashes (Roc's `cache_key.zig` model, 05 §4), with a `stat`
 fast-path avoiding hashes for files whose size and mtime are both unchanged (04 §7).
+
+**What static dispatch did to this layer, and it is the sharpest measured cost of adopting it.** An
+interface is the *inferred* scheme of each `pub` declaration (§3.1, "Top-level annotations are
+optional"), and since 2026-09-18 a scheme may carry a `where` suffix: every method constraint its
+body accumulated, written into the interface record per quantified variable
+([`static-dispatch-spike.md`](static-dispatch-spike.md) §6.5). Two consequences, both from
+[`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md):
+
+- **An unannotated `pub` declaration's interface changes far more often.** Report 19 §4 measures
+  4.4–6.5× the churn of the same corpus without the feature — 8.5 % of edits to `core` changing an
+  interface before, 55.6 % after. **An annotation removes it entirely**: annotated declarations
+  measured 0 interface changes in every edit class on both corpora and both compilers, because an
+  annotation's `where` clause is exactly the constraints and the body cannot add to it. That is the
+  firewall argument report 18 §2.3 made, priced.
+- **There is no cap on the suffix.** A record printer flattens at 64 links; the `where` printer does
+  not, and report 19 §3.1 reaches a 6.4 kB interface entry for one declaration. A cap, or a
+  diagnostic before the entry gets there, is owed (§3.1, *Reversed on 2026-09-18*). `--explain` is
+  the interim: it warns an author at the moment an unannotated `pub` declaration acquires a
+  constraint (spec §10.9).
 
 **Explicitly rejected: salsa-style fine-grained query memoization.** rustc's own documentation says
 fingerprinting "is the main reason why incremental compilation can be slower than non-incremental";
@@ -857,6 +924,15 @@ that the wrong order costs a 30,000-line refactor (01 §7).
 4. **M3 — Backend.** Decl graph, reachability DCE, JsIr, printer, direct n-ary calls everywhere
    (§9.3: no currying, so no `A2`/`F2` adapter and no specialiser), TCO loops, decision trees, ESM
    output.
+
+   **Static dispatch landed inside M3**, between M3a and M3b, rather than as a milestone of its own
+   (§3.1, *Reversed on 2026-09-18*). It reaches every phase — parser, BIR, checker, interface,
+   backend and `core/` — and [`static-dispatch-spike.md`](static-dispatch-spike.md) is its build
+   order as well as its contract. **It moved M3c's reachability elimination from an optimisation to
+   a prerequisite**: derivation is eager, so every declared nominal type ships an `eq` and a
+   `compare` whether or not anything calls them, and report 19 §5 counts 216 942 bytes of derived
+   code across 61 programs, mostly dead. Every output-size figure taken before DCE exists is an
+   upper bound.
 5. **M4 — Daemon + incrementality.** Socket protocol, content-hash cache, mmap artifacts, interface
    firewall, then the declaration-level graph.
 6. **M5 — Polish.** Source maps, code splitting, LSP, field-name shortening. No minifier handoff:

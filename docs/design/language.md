@@ -17,6 +17,16 @@ function types are n-ary and written `Int, Int -> Int`, `_` is the partial-appli
 The decision and its evidence are in [`fast-compiler.md`](fast-compiler.md) §9.3; the rules are
 normative here, in §3, §6.5, §6.7, §8 and §9.
 
+**Static dispatch.** Decided 2026-09-18, after a spike that built it and measured it
+([`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md)).
+A type's **methods** are the `pub` values of the module that declares it; `x.m a b` calls one;
+a top-level annotation may carry a `where` clause constraining a type variable's methods; and the
+six comparison operators are calls of the receiver type's `eq` or `compare`, which the compiler
+derives where it can. The contract is [`static-dispatch-spike.md`](static-dispatch-spike.md) — the
+file name is historical, the document is normative — and the sections below point into it where it
+extends them. It reverses two decisions of [`fast-compiler.md`](fast-compiler.md) §3.1, which
+records the reversal in place.
+
 | Elm | Beni | Where |
 |---|---|---|
 | `module Foo exposing (..)` header | none; module name from path; `pub` per declaration | §5.1 |
@@ -29,7 +39,12 @@ normative here, in §3, §6.5, §6.7, §8 and §9.
 | `Tuple.first`, arity ≤ 3 | `t.0`, `t.1`, any arity ≥ 2 | §6.4 |
 | user-defined operators, `infix` | fixed operator set, fixed fixities | §6.5 |
 | shadowing is an error | same | §7 |
-| `comparable`, `<` on strings | numbers only; not a front-end concern | M2 |
+| `comparable`, `<` on strings | `comparable` is gone as a *mechanism*, but `<` accepts anything whose type has a `compare`, `"a" < "b"` included | §6.5, spec §3 |
+| `x.m a` is a field access applied | `x.m a` is a **method call** on `x`'s type; `(x.m) a` opts out | §6.3, spec §1 |
+| no way to constrain a type variable | `where a.compare : a, a -> Order` on a top-level annotation | §3, spec §2 |
+| `==` and `<` are `Basics.eq`/`Basics.lt` calls | they are calls of the receiver type's `eq` / `compare`, derived when the type declares none | §6.5, §8, spec §3 |
+| type classes name methods globally | a type's methods are the `pub` values of the module declaring it — the **module rule** | spec §1.2 |
+| — | `a.decode s` dispatches on the *return* type, inside an annotated declaration | §6.2, spec §4 |
 | tabs | syntax error everywhere | §2.1 |
 | Kernel modules | `foreign` declarations, core root only | §5.4 |
 | `a -> b -> c` curried, partial application everywhere | `a, b -> c` n-ary; every call saturated | §3, §6.7 |
@@ -263,6 +278,16 @@ The rest of this section constrains the grammar above. Rules belonging to one co
 where it is: records §6.3, operators and negation §6.5, `?` §6.6, `_`, `|>` and `<-` §6.7, §7
 scoping.
 
+**Static dispatch extends this grammar in two places** (§0;
+[`static-dispatch-spike.md`](static-dispatch-spike.md) §1.1, §2.1). A **top-level** `Annotation`,
+and a `Foreign` value declaration, may end with an optional `WhereClause` — `'where' Constraint (','
+Constraint)*` where a `Constraint` is `lower_ident dot_lower ':' Type`; a `let` annotation may not.
+`where` is a **contextual word**, not a keyword, recognised by three tokens of lookahead exactly as
+`equatable` is, and the comma inside a clause is settled by the same lookahead rule the record-type
+body uses. No production for expressions changes: `App := Atom Arg*` over `Atom dot_lower` already
+parses `x.m a b`, and what is new is that BIR lowering reads it as a method call (§6.3).
+→ `static-dispatch-spike.md` §2.1–§2.4 for the grammar, the lookahead rules and well-formedness.
+
 **Declarations**
 
 | Construct | Constraint |
@@ -336,6 +361,11 @@ Rules:
 | 5 | **`then`, `else`, `of`, `->`, `in`, operators, arguments, `\|` in a type declaration** follow rule 2 and nothing more: any of them may start a line as long as it is right of the enclosing block's indent. |
 | 6 | **Brackets do not suspend layout.** Inside `( [ {` rule 2 applies against the enclosing block's indent, which is what makes an unclosed bracket unable to swallow the file: a token at column 1 ends every open construct and reports `unclosed_delimiter` at the opening bracket. |
 | 7 | **Interpolation follows the string.** Tokens inside `${…}` are on the string's line by construction, so rule 2 holds automatically. |
+
+**A `where` clause (§3) needs no rule of its own**: it is rule 2 and nothing more. `where` and every
+token of the clause belong to the declaration's block, so each must be at column ≥ 2; a `where` at
+column 1 starts a new declaration and the annotation above it simply has no clause.
+→ `static-dispatch-spike.md` §2.5.
 
 Worked example, columns shown:
 
@@ -420,7 +450,8 @@ pub foreign type List a
 |---|---|
 | shape | `foreign name : Type` declares a value with that type and no definition. `foreign type T a…` declares a type with no constructors, so it is opaque by construction; `opaque` before `foreign` is `unexpected_token`. Both take `pub` and may carry a doc comment. |
 | `foreign_outside_platform` | `foreign` is **legal only under the core root**, which is embedded in the compiler (`fast-compiler.md` §3.1, "Primitives"); a `foreign` declaration in any other module is this, reported by lowering. User code reaches JavaScript through the effects model (open), never through `foreign`. |
-| which types | the primitive types are foreign: `Int`, `Float`, `Char`, `String`, `List a`. `Bool`, `Maybe`, `Result` and `Order` are ordinary declared types in core. |
+| which types | the primitive types are foreign: `Int`, `Float`, `Char`, `String`, `List a`. `Bool`, `Maybe`, `Result` and `Order` are ordinary declared types in core. `Char` and `String` are declared in `Char` and `String`, not in `Basics`: under the module rule a type's methods are its declaring module's `pub` values, and `String.compare` is the method `String` should always have had (spec §5.1). Both stay prelude types, so no module gains an import. |
+| a `foreign` with a `where` clause | a `pub foreign` may carry a `where` clause (§3), and the sibling export's arity is then **evidence count + declared arity** — `core/List.beni`'s `eq` is declared 2-ary and is written `(m0, xs, ys)` in `core/List.js`. **This rule is documented and not enforced**: [`boundary.md`](boundary.md) §4's checks are export coverage and import coverage, and neither looks at arity. → `static-dispatch-spike.md` §5.2. |
 | binding, lowering | each core module that declares foreigns has a sibling JavaScript file exporting one function per foreign value, under the same name, in the emitted calling convention; binding is by name, and a missing export is a build error of the core package, not a user diagnostic. Lowering emits a `foreign` declaration into the interface skeleton like any other `pub` name, and the interface records that it is foreign so M3's printer can key its peephole on the module-qualified name. |
 
 ## 6. Expression details
@@ -445,12 +476,28 @@ name; the prelude entry is then not visible in this file (no diagnostic). A top-
 may **not** reuse an `exposing` name (`shadows_import`), and locals may shadow nothing (§7) —
 including prelude names.
 
+**One reading is added to the table above, and only inside an annotated declaration**
+(§0): an application whose head is `v.m`, where `v` resolves to *no* value binding by the rules
+above but **is** a type variable that the declaration's own `where` clause constrains, is a
+**return-type dispatch** rather than `unbound_variable`. `a.decode s` is the shape. Shadowing is an
+error (§7), so no value binding can ever be hidden by this rule and the two readings never overlap;
+with no `where` clause naming the method, or no annotation at all, it stays an error.
+→ `static-dispatch-spike.md` §4.
+
 ### 6.3 Records
 
 `{ a = 1, b = 2 }`, `{ r | a = 1 }`, `r.a`, `.a`. Field names are unique within a literal
 (`duplicate_field`); update with zero fields (`{ r | }`) is a syntax error. The update target is a
 plain name, as in Elm, resolved by §6.2 (local, top-level, or exposed import); `{ r.a | … }` is not
 allowed. Access is a chain on any atom and must abut it (§3): `r.a.b`, `(f x).name`.
+
+**Field access and the method call share a spelling, and the argument list separates them** (§0).
+`x.m` alone is a field access, always — an application with no arguments is not an application, so
+even a nullary method is out of reach and is written `M.m x`. `x.m a b` is a **method call**: the
+checker resolves `m` against the methods of `x`'s *type* and, when that type turns out to be a
+record, falls back to the field call `(x.m) a b` with the record's own diagnostics. Parentheses opt
+out explicitly, and `M.f x` on a qualified *name* is an ordinary call and never a method call.
+→ `static-dispatch-spike.md` §1.1, §1.2.
 
 ### 6.4 Tuples
 
@@ -482,7 +529,16 @@ non-associative operators reject a second operator of the same precedence withou
 | mixing `<\|` and `\|>` | at precedence 0 without parentheses it is `non_associative_chain`: they associate in opposite directions, so a mixed chain has no predictable reading, and Elm rejects the same pair. `<<` and `>>` are removed, and with them the precedence-9 case of this rule and the composition idiom, which is replaced by naming the argument. |
 | **negation** | `-` directly followed (no whitespace) by an atom, where the parser expects the *start* of an operand: `-x`, `-(a + b)`, `-1`, `[ -1, -2 ]`. The operand is one atom with its access chain, so `-r.value` is `-(r.value)` and `-f x` is `(-f) x`, as in Elm. Negation of an integer literal in a *pattern* is a literal pattern (`-1 ->`). `- x` with a space in prefix position is `negation_with_space`; `a - -b` is allowed. |
 | `f -1` | **not** negation: in argument position the parser has parsed `f` and sees `-` where either an argument or an operator may follow, and **it is the binary operator**, as in Elm, so `f -1` is `f - 1`. Write `f (-1)`. |
-| **operators as functions** | `(+)`, `(::)`, `(==)` and so on: any operator from the table that desugars to a call, each being the 2-ary function it desugars to. Whitespace inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do not exist; `(-)` is the binary minus function and there is no negation function. `\|>` and `<\|` are syntax, not calls, so `(\|>)` and `(<\|)` do not exist and are `operator_not_a_function`. |
+| **operators as functions** | `(+)`, `(::)`, `(==)` and so on: any operator from the table that lowers to a call or to a method call, each being the 2-ary function it lowers to. The six comparison operators lower to a lambda over a marked method call, not to a reference to `Basics.eq` — so `(==)` is `\a b -> a.eq b` with the operator's own pinning rule, not structural equality (spec §3.1). Whitespace inside the parentheses is allowed and the formatter removes it. Sections such as `(+ 1)` do not exist; `(-)` is the binary minus function and there is no negation function. `\|>` and `<\|` are syntax, not calls, so `(\|>)` and `(<\|)` do not exist and are `operator_not_a_function`. |
+
+**The six comparison operators are method calls, not `Basics` calls** (§0). `a == b` and `a /= b`
+lower to a call of `eq` on `a`'s type; `a < b`, `a <= b`, `a > b`, `a >= b` to a call of `compare`,
+whose `Order` result the backend tests. The operator form **pins both operands to one type** — which
+a hand-written `a.eq b` does not — and the compiler **derives** `eq` and `compare` for a type whose
+module declares none, structurally and recursively, so `==` on a record of lists of user types keeps
+working and `"a" < "b"` now compiles. `Basics.eq`, `neq`, `lt`, `gt`, `le`, `ge` and `compare` stay
+declared, exported and callable by name; they are simply no longer what the operators mean. Nothing
+in the precedence table above changes. → `static-dispatch-spike.md` §3.
 
 ### 6.6 `?`
 
@@ -567,10 +623,20 @@ file's bytes: nothing in it depends on another module. Lowering:
 | Step | What it does |
 |---|---|
 | 1 | Resolves every name per §6.2 into one of `local(index)`, `top(index)` (this module), `import_value(module, name)`, `import_ctor(module, name)`, `ctor(index)` (this module), `qualified(alias → module, name)`, and records the set of top-level names each declaration references (§9.1 of the design doc: the DCE graph is a byproduct). |
-| 2, ordered | Desugars operators into calls of the corresponding core functions (`a + b` → `add a b`, marked as a `number`-typed builtin — the M2 checker resolves the builtin). Then, **in this order**, because the readings disagree otherwise (§6.7): `\|>` into a call whose **first** argument is the left operand (`e \|> f a` → `f e a`, looking through grouping parentheses) and `<\|` into direct application, so every pipeline is a saturated call; then `_` into a lambda over the innermost enclosing application; then `x <- e` into a call of `e` whose last argument is a lambda over the rest of the block. |
+| 2, ordered | Desugars operators into calls of the corresponding core functions (`a + b` → `add a b`, marked as a `number`-typed builtin — the M2 checker resolves the builtin) — **except the six comparison operators, which become method calls** carrying the operator they were written as, and are resolved by the checker rather than by lowering (§6.5). Then, **in this order**, because the readings disagree otherwise (§6.7): `\|>` into a call whose **first** argument is the left operand (`e \|> f a` → `f e a`, looking through grouping parentheses) and `<\|` into direct application, so every pipeline is a saturated call; then `_` into a lambda over the innermost enclosing application; then `x <- e` into a call of `e` whose last argument is a lambda over the rest of the block. |
 | 2, order-independent | `?` into `case`; string interpolation into an `interp` node listing chunks and expressions; `if` into a two-branch `case` on `True`/`False`; `.field` accessor functions into one-parameter lambdas. Multi-parameter lambdas stay n-ary; record update, tuples and lists stay as nodes; field access and tuple index stay as nodes (the checker needs them). Calls are n-ary in BIR and always were; what the spec pass changes is that a `call` node is now the *only* reading of an application. |
 | 3 | Emits the module's **interface skeleton**: the `pub` names, aliases, types, and constructor lists — lexically computable, no inference (§8.1 of the design doc). |
 | 4 | Reports the diagnostics of §5.3, §6.2 and §7. |
+
+**Static dispatch adds two instructions and one declaration field, and takes one edge away** (§0).
+An application whose head is a field access lowers to `method_call` rather than to
+`call(field_access(…), args)`, carrying the surface operator it came from so the dump can show it;
+an application whose head names a constrained type variable lowers to `type_dispatch` (§6.2). A
+declaration stores its `where` clause beside its annotation, and step 4 reports the clause's
+well-formedness. What lowering **cannot** record is the reference a method call will become — that
+is not known until the checker runs, and step 1 is a pure function of the file — so `refs` gains no
+edge for one and the checker's dispatch table carries those edges instead, for emission order and
+for the future DCE. → `static-dispatch-spike.md` §1.4, §2.4, §7.
 
 A textual dump of BIR (`beni dump --stage=bir`) is part of the CLI contract, so it is testable as an
 output rather than an internal.
@@ -601,6 +667,7 @@ keeps it vertical even when it would fit; a construct that does not fit is broke
 | **Declarations and types** | |
 | annotation, `=` | the annotation goes on its own line directly above its definition, with `pub` on the annotation line. `=` goes at the end of the head line and the body on the next line indented 4 — always, for top-level definitions and `let` bindings alike, as elm-format does. |
 | annotations, `type alias`, `type` | an annotation or `type alias` prints `name :` … on one line if the type fits in 100 columns, otherwise broken at `->` with the arrows leading continuation lines. A `type` declaration puts `=` and each `\|` at the start of their own lines, indented 4. |
+| **`where` clauses** (§3) | **never joined to the annotation's line**, however short. One constraint shares the `where` line, indented 4; two or more put `where` alone on a continuation line indented 4 and one constraint per line indented 8, each after the first led by its comma — elm-format's vertical form. **Source order is kept, never sorted**, and a constraint's own type is printed flat, so a clause the author broke is joined; a constraint that does not fit overflows the guide rather than breaking, as a pattern does. The renderer that prints a *type* for a diagnostic or a `.iface` golden is a different thing and prints the suffix on one line, sorted — the two legitimately differ. → `static-dispatch-spike.md` §2.5, §6.6. |
 | **function types** | print as `A, B -> C`: one space after each comma, one space either side of `->`. The parameter list is a multi-element construct like any other, so it goes on one line when it fits *and* the author wrote no break between parameters. When a type breaks, the parameters move to the line below `name :` indented 4, one per line with the comma leading each continuation as lists do, and the `->` leads the result's line. |
 | **patterns** | **never broken across lines.** A `case` pattern, a definition's parameter list or a `let` pattern that does not fit overflows the 100-column guide rather than wrapping: there is no wrapped form a reader could tell from the `->` that follows. The same holds for the head line of a definition. |
 | **Blocks** | no blank line before `then`, `else`, `in`, or between the last binding and `in` |
@@ -648,6 +715,10 @@ tuple_index_out_of_range  not_a_tuple  try_shape
 missing_patterns  redundant_pattern
 foreign_bad_shape  foreign_sibling_missing  foreign_export_mismatch  foreign_unbound_reference
 missing_main  main_not_program  not_implemented
+where_variable_unbound  duplicate_where_constraint
+unknown_method  private_method  no_methods_on_shape  missing_where_constraint
+method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_receiver
+constrained_constant
 ```
 
 **How the catalogue is laid out.** After the M1 catalogue:
@@ -657,7 +728,8 @@ missing_main  main_not_program  not_implemented
 | the next three | M2a | the module graph and cross-module name resolution |
 | then | M2b | type errors, defined in [`checker.md`](checker.md) §8 |
 | then | M2c | the exhaustiveness pair — `missing_patterns` is a `case` with no branch for some possibility, `redundant_pattern` a branch no value can reach ([`checker.md`](checker.md) §6.6), both reported only for a declaration that type-checked, so the patterns they judge are known to be well typed |
-| the last two | M3a | about the JavaScript boundary rather than beni: the four `foreign_*` codes are the build-time checks of [`boundary.md`](boundary.md) §4; `missing_main` and `main_not_program` are §5's "`main` is a platform-owned opaque `Program`"; `not_implemented` is what the code generator says about a construct it does not compile yet — a diagnostic rather than a panic, because [`backend.md`](backend.md) §1 ships the language in halves and the missing half has to say so |
+| the next two | M3a | about the JavaScript boundary rather than beni: the four `foreign_*` codes are the build-time checks of [`boundary.md`](boundary.md) §4; `missing_main` and `main_not_program` are §5's "`main` is a platform-owned opaque `Program`"; `not_implemented` is what the code generator says about a construct it does not compile yet — a diagnostic rather than a panic, because [`backend.md`](backend.md) §1 ships the language in halves and the missing half has to say so |
+| the last four | static dispatch | ten codes appended on 2026-09-18, never inserted, so no line above moved. The first two are reported by lowering, from a `where` clause that names a variable the annotation does not have or the same `(variable, method)` twice; the rest are the checker's, about a method that does not exist, is private, has nowhere to live, was used without being constrained, was constrained twice at different types, needs an annotation to dispatch on a return type, is a constraint that reached an inferred `pub` interface (a `warning`, only under `--explain`), or survived onto a declaration with no parameters. Four existing codes are reused rather than duplicated: `not_equatable`, `unbound_variable`, `unexpected_token` and `nesting_too_deep`. → `static-dispatch-spike.md` §10 |
 
 **The three generic syntax codes**, all carrying Elm-style prose — what the parser was in the middle
 of, what it saw, and what it expected, e.g. *I was parsing the branches of this `case` and ran into
@@ -698,3 +770,10 @@ fromPolar isNaN isInfinite identity always never
 Lowering resolves each to `import_value(Basics, name)` / `import_ctor(Maybe, Just)` etc., the same
 form an explicit `import Basics exposing (max)` would produce, so nothing downstream knows the
 prelude exists.
+
+**Which module a prelude type belongs to moved for two of them, and the table above did not change.**
+`String` and `Char` are declared in `String` and `Char` rather than in `Basics` (§5.4), because the
+module rule makes a type's methods its declaring module's `pub` values. Both stay prelude *types*,
+so every module still names them unqualified and no module gains an import; what changes is where
+the conditional prelude *edge* points, and which module a string or character literal mints its type
+from. → `static-dispatch-spike.md` §5.1.

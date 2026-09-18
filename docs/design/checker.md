@@ -21,6 +21,13 @@ the ad-hoc obligations of §3.1 (`number`, `appendable`, equatable, interpolatab
 pattern exhaustiveness and redundancy; every diagnostic in §8; the `check` corpus kinds; a
 type-correct synthetic corpus for measurement.
 
+**Static dispatch, adopted 2026-09-18, is in as well**, and it is the largest single addition this
+document has taken: method constraints on a type variable, a method obligation kind beside the four
+above, resolution of `x.m a` against the receiver's type, derivation of `eq` and `compare`, the
+`where` suffix in the interface record, and the checker→backend dispatch table. Every rule of it is
+in [`static-dispatch-spike.md`](static-dispatch-spike.md) §6 and §7, which extend §5, §6.1–§6.4 and
+§7 below; each of those sections points back. The detail is not repeated here.
+
 Out: codegen, the runtime, `main`'s type (a platform fact, M3), the JavaScript half of `foreign`
 (M3), caching of anything (M4), the daemon (M4).
 
@@ -34,7 +41,20 @@ beni dump --stage=raw <file>             the same interface as the RECORD: term 
                                          argument ranges
 beni dump --stage=types <file>           every top-level declaration with its inferred scheme,
                                          and every local binding with its type, as text
+beni dump --stage=graph <file>           the module graph's edges, one `package:Module ->
+                                         package:Module` per line, sorted by the printed line
+beni dump --stage=dispatch <file>        the dispatch table: what every method call resolved to,
+                                         every declaration's evidence list, every derived function
 ```
+
+The last two arrived with static dispatch. `--stage=graph` exists because §4's order is a
+topological sort of exactly those edges, so a golden over the edges pins the schedule *and* says
+why; `--stage=dispatch` is the checker→backend side table of
+[`static-dispatch-spike.md`](static-dispatch-spike.md) §7, made an output so it is testable rather
+than internal. `--stage=dispatch` takes a directory as well as a file and has a corpus kind of its
+own, `tests/corpus/dispatch/` (§3); `--stage=graph` is asserted by a black-box scenario over
+`check/good/TypeOwnerEdges/_expected.graph`, at `--jobs=1` and `--jobs=8`.
+→ `static-dispatch-spike.md` §6.8, §7.3.
 
 `--stage=raw` exists for one assertion and is not meant to be read for pleasure. Both other
 views of an interface go through `check/Render.zig`, which re-sorts a record's fields by name
@@ -61,7 +81,7 @@ top-level name shadowing a prelude name. Exit codes and streams are unchanged.
 ```
 core/                       the core package, in beni (language.md §5.4)
   Basics.beni  List.beni  Maybe.beni  Result.beni  String.beni  Char.beni  Debug.beni
-  Dict.beni  Set.beni      (ordinary beni over a comparator-taking core; §3.1 of the design)
+  Dict.beni  Set.beni      (ordinary beni; `where k.compare` since 2026-09-18, Appendix B)
 src/
   resolve/
     Graph.zig               module graph: index by (package, module symbol), edges, topo order
@@ -71,11 +91,14 @@ src/
     TypeStore.zig           descriptors, union-find, levels, undo journal (§5)
     Constrain.zig           Bir → constraint tree per binding group (§6.1)
     Solve.zig               the solver: unify, generalise, instantiate, obligations (§6.2–6.4)
+    Dispatch.zig            the checker→backend dispatch table (static-dispatch-spike.md §7)
     Exhaustive.zig          pattern usefulness (§6.6)
     Render.zig              type → text for diagnostics and dumps (§8.2)
     Diagnostics.zig         the M2 items and their prose
-  dump/interface.zig  dump/types.zig
+  dump/interface.zig  dump/types.zig  dump/graph.zig  dump/dispatch.zig
 tests/corpus/
+  dispatch/<Name>.beni + <Name>.dispatch       (or a directory) — `dump --stage=dispatch`
+                                               golden; its own kind, per static dispatch
   check/good/<Name>.beni + <Name>.iface        single module, checks clean; interface golden
   check/good/<Name>/ (directory) + _expected.iface   multi-module project; golden is the
                                                concatenated interfaces of every module, in path order
@@ -128,7 +151,13 @@ until M4 caches it. `--core-root` reads the directory instead.
    itself.
 
    `::` desugars to `List.cons` and `++` to `Basics.append`, matching Elm; every other operator
-   maps to `Basics`. Lowering emits the home module per operator rather than assuming `Basics`.
+   that desugars to a call maps to `Basics`. Lowering emits the home module per operator rather
+   than assuming `Basics`. **The six comparison operators desugar to no call at all** since static
+   dispatch: they are method calls whose target the solver picks, so they name no module and
+   contribute no import edge. What does contribute one is a *minted* type — a literal, or an `e?` —
+   whose owning core module becomes an edge of the module that wrote it, which is a fourth edge
+   source beside explicit imports, prelude rows and self-references.
+   → [`static-dispatch-spike.md`](static-dispatch-spike.md) §3.1, §6.8.
 
 4. **Topological order**, stable (ties by `(package, path)`), gives the check order. Modules
    whose imports are all checked are checked in parallel — one worker per module, a bounded
@@ -178,6 +207,13 @@ pub const Content = union(enum) {            // tag + u32 payload into `extra` w
 pub const Kind = enum(u8) { any, number, appendable };   // the closed set of §3.1
 pub const TypeId = enum(u32) { _ };                      // (module, decl) of a type or alias, dense
 ```
+
+**Static dispatch adds a constraint set to a variable, and nothing to `Kind`.** A `flex` or `rigid`
+carries, beside its kind and its equatable flag, a set of **method constraints** — "whatever type
+ends up here has a method of this name at this type" — one per `(variable, method name)`, each
+recorded with the origin that raised it. `Kind` is untouched and still the closed set of §3.1, which
+is what §6.3's "nothing else may be added to `Kind`" was protecting. The store gains the set, its
+merge rule and the speculator the `?` journal already provides. → `static-dispatch-spike.md` §6.1.
 
 - **Union-find with path compression and union by rank of the tree**, separate from the
   Rémy `rank`. `find` is the only place that walks; every other operation works on roots.
@@ -232,7 +268,10 @@ One pass over a binding group's Bir producing a constraint tree (Elm's `Type/Con
 `equal(expected, actual, region, category)`, `let(rigid vars, flex vars, header constraints,
 body)`, `and`, `pattern` constraints for bindings, and the **obligations**: `equatable(var,
 region)`, `interpolatable(var, region)`, `tuple_index(var, index, region)`, `try(var, enclosing
-result var, region)`. Regions are the Bir instruction index; positions are looked up only when
+result var, region)` — and, since static dispatch, a **method** obligation, the one new kind
+(→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §6.2, §6.3). It differs from the four
+above in one respect that reaches §6.4: discharging it can register further obligations, so the
+discharge loop's budget is reachable by input rather than only by a compiler bug. Regions are the Bir instruction index; positions are looked up only when
 a diagnostic is rendered (design §7, "good messages off the happy path").
 
 Binding groups: top-level values are SCC-decomposed over the module's `refs` (the `top_value`
@@ -249,7 +288,9 @@ What each Bir form generates is Elm's, with the beni-specific rules:
 | `int` | flex var of kind `number` |
 | `float`, `char`, `string`, `interp` | `Float` / `Char` / `String`; `interp` adds `interpolatable(t)` per expression part |
 | `call(import_value(Basics, add), [a, b])` etc. | ordinary application of the core function's scheme — the `number` kind comes from Basics' own annotation `add : number, number -> number`; the checker has no operator table |
-| `call(import_value(Basics, eq), [a, b])` | `a = b` plus `equatable(a)`: `eq : equatable a, a -> Bool` in Basics is annotated with the `equatable` marker (Appendix B) |
+| `call(import_value(Basics, eq), [a, b])` | an explicit call of `Basics.eq` by name, which still exists: `a = b` plus `equatable(a)`, from the `equatable` marker on its annotation (Appendix B). **This is no longer what `a == b` lowers to** — see `method_call` below |
+| `method_call(recv, m, args, origin)` | a method constraint `m : <the type at this use>` on the receiver's variable, and the instruction typed by the constraint's result. When `origin` names an operator, the receiver and the argument are unified and the result pinned first, so `==` and `<` are tighter than a hand-written dot-call. Resolution is deferred to the solver (§6.2) |
+| `type_dispatch(v, m, args)` | the same, against the rigid annotation variable `v` and its declared `where` constraint |
 | `call(f, args)` | `f = (arg1, …, argN) -> result` — **one n-ary function type with exactly N parameters**; an arity difference is §8.3's diagnostics and never a partial application |
 | `lambda` | fresh vars per parameter pattern, one n-ary function type |
 | `let` | SCC groups, `let` constraint with generalisation per group |
@@ -291,6 +332,14 @@ else — a function value assigned to a differently-shaped parameter, say — it
 Instantiation copies a scheme with the `copy` memo so internal sharing is preserved (design
 §7 #4), clearing the memo through a scratch list afterwards.
 
+**Two additions from static dispatch, both inside `unify`'s flex case.** Merging two variables
+merges their constraint sets, with at most one constraint per `(variable, method name)` and a
+`method_constraint_mismatch` when two uses of one name disagree about the type. And a variable
+carrying constraints that meets a **concrete** receiver resolves each of them there and then,
+against the receiver type's methods — the module rule, the well-known table, then derivation —
+which is what turns a constraint into a call target and an evidence slot.
+→ `static-dispatch-spike.md` §6.2, §6.3, §1.2.
+
 ### 6.3 Generalisation and the ad-hoc kinds
 
 A generalised scheme records, per quantified variable, its kind and equatable flag. That is
@@ -301,6 +350,16 @@ membership check at unification; `equatable` propagates through generalisation e
 function type. No dictionary exists at runtime because equality is structural in the emitted
 JavaScript; the flag is purely a compile-time check. Nothing else may be added to `Kind`
 without revisiting `fast-compiler.md` §3.1.
+
+**That last sentence still holds, and static dispatch obeyed it.** `Kind` is unchanged. What a
+generalised scheme also records, since 2026-09-18, is each quantified variable's **method
+constraints**, which live in their own set beside the kind and the equatable flag (§5) and are
+written into the interface as a `where` suffix (§7). Two rules of generalisation follow and are not
+obvious: a constrained `let` binding is **not** generalised — it is held at the enclosing rank, so
+a constrained helper used at two types is a `type_mismatch` at the second use — and a constrained
+variable that survives onto a declaration with **no parameters** is `constrained_constant`, because
+a constant with an evidence parameter would be a function across the module boundary.
+→ `static-dispatch-spike.md` §6.4.
 
 Unresolved `number` variables at top level stay polymorphic in the scheme (Elm's behaviour);
 M3 decides how a literal of type `number` is emitted.
@@ -318,6 +377,13 @@ obligation whose variable's root is:
   or report (`interpolatable` and `tuple_index` cannot be deferred to callers:
   `ambiguous_interpolation` / `ambiguous_tuple` naming the annotation that would fix it);
 - a **rigid var**: report unless the annotation declared the flag (Appendix B).
+
+A **method** obligation is discharged here too, by the same three cases — resolve against a concrete
+receiver, fold onto a flex variable being generalised, or check a rigid variable's own `where`
+clause and report `missing_where_constraint` when it does not name the method. What is new is that
+discharging one can register more, so the loop is bounded, and **reaching the bound reports**
+`nesting_too_deep` and poisons what is left rather than clearing the list in silence — §5's "a
+guard that poisons must report first", applied here. → `static-dispatch-spike.md` §6.3.
 
 ### 6.5 `?`
 
@@ -378,7 +444,7 @@ Interface
                  alias_body: TermIndex? }                                     sorted by name
   ctors:    [] { name: SymbolIndex, type: index into types, arity: u32,
                  arg_terms: range, quantified_start: u32 }   grouped by type, declaration order
-  schemes:  [] { quantified: range of (kind, equatable, name), body: TermIndex }
+  schemes:  [] { quantified: range of (kind, equatable, name, constraints), body: TermIndex }
   terms:    MultiArrayList { tag, lhs, rhs }   the flat type term language: var(i), fn(range, result),
                                                app(TypeId, range),
                                                tuple(range), record(range, ext), unit, empty_record,
@@ -405,6 +471,14 @@ needs no storage. A constructor applied to the wrong number of fields is therefo
 Without it the solver reached into the declaring module's `Bir` and found the constructor **by
 name**, which breaks §4.5 and which M4 cannot do at all: a dependency's Bir may not be in
 memory.
+
+**A quantifier grew from two words to four**, and the two new ones are the `where` suffix: a range
+into `extra` of `(method SymbolIndex, type TermIndex)` pairs, sorted by name text, with `var(i)`
+inside a constraint's term meaning quantifier `i` of the same scheme — so a dependent rebuilds the
+constraint from this record alone, exactly as `arg_terms` lets it rebuild a constructor. Both rules
+below apply to them unchanged, and so does §8.1 of the design doc: these bytes are part of what M4
+hashes, which is why **an unannotated `pub` declaration's interface now changes far more often**
+than an annotated one's. → `static-dispatch-spike.md` §6.5; `fast-compiler.md` §8.1 for the cost.
 
 **Every name in the record is a `SymbolIndex`, never a `Symbol`**, including a quantifier's.
 A `Symbol` is an index into the session's interner, whose numbering depends on which worker
@@ -440,8 +514,11 @@ Every code below joins the catalogue in `language.md` §10 (append there first, 
 `diagnostic.Code`), with a `bad/` fixture each. Messages follow Elm's `Reporting/Error/Type.hs`
 in register and structure: the title, what the compiler was looking at, the two types laid out
 one under the other with the differing part highlighted, then a hint when there is a known one
-(Elm's hints for `number` vs `String`, missing `toFloat`, function equality, comparison of
-strings needing `String.compare`, and record field typos by edit distance).
+(Elm's hints for `number` vs `String`, missing `toFloat`, function equality, and record field typos
+by edit distance). **The "to order text use `String.compare`" hint is stale** since `<` stopped
+being numbers-only: it is now reachable only from arithmetic, where naming `<` among the
+numbers-only operators is wrong. `src/check/Diagnostics.zig:491` and `:746` carry it and are owed a
+rewording.
 
 ### 8.1 Codes
 
@@ -455,7 +532,20 @@ not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
 tuple_index_out_of_range  not_a_tuple  try_shape
 missing_patterns  redundant_pattern
 nesting_too_deep                                (shared with the parser; §5)
+unknown_method  private_method  no_methods_on_shape  missing_where_constraint
+method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_receiver
+constrained_constant                            (static dispatch; two more are lowering's)
 ```
+
+The last eight arrived with static dispatch on 2026-09-18, appended to `language.md` §10's
+catalogue and never inserted. Two more of that set — `where_variable_unbound` and
+`duplicate_where_constraint` — are reported by lowering and live under `tests/corpus/parse/bad/`.
+Four existing codes are reused rather than duplicated: `not_equatable` for `eq` on a function type,
+`unbound_variable` for a dotted name that is neither a value nor a constrained annotation variable,
+`unexpected_token` for a `where` the grammar does not allow, and `nesting_too_deep` for the
+constraint-chain guard (§6.4). Three of the eight carry **two** regions — the call the author wrote
+and the annotation the requirement came from — and the author's call is the primary one.
+→ `static-dispatch-spike.md` §10.
 
 `nesting_too_deep` is the front end's code and the checker reuses it rather than inventing a
 second one: a type the checker cannot read to the bottom and an expression the parser cannot
@@ -571,8 +661,17 @@ produces their message, and `ComposeMissingArg` goes with `>>` and `<<`.
 ## Appendix B — the core package
 
 Written in beni, `pub` per declaration, doc comments on everything public. The signatures are
-Elm 0.19's `elm/core` minus `comparable`, `compappend` and the effect modules, plus the
-explicit-ordering replacements (`fast-compiler.md` §3.1):
+Elm 0.19's `elm/core` minus `comparable`, `compappend` and the effect modules
+(`fast-compiler.md` §3.1).
+
+**This appendix was rewritten on 2026-09-18 for static dispatch**, and
+[`static-dispatch-spike.md`](static-dispatch-spike.md) §5 is what it defers to for the `Basics`,
+`List`, `Dict` and `Set` rows: that section is the site-by-site record of the change and this one is
+the inventory. Three things moved. `Char` and `String` are **declared by their own modules**, not by
+`Basics`, so that the module rule gives each the methods it should have. `Dict`, `Set` and the
+`List` sort family **lose their comparator parameter** and carry a `where` constraint instead. And
+`core/Dict/String.beni` and `core/Dict/Int.beni` are **deleted**: they existed only to hide the
+comparator argument, and there is nothing left to hide.
 
 - `Int32` (its own module): `pub opaque type Int32`, with total wrapping arithmetic — `mul` bound
   to `Math.imul`, `add`/`sub` to the truncating form, `and`/`or`/`xor`/shifts to the native
@@ -585,30 +684,43 @@ and function last**, so that `|>` inserts at the first argument and `<-` reaches
 variable's first occurrence is an argument of a type application, the `equatable` marker is
 attached by parenthesising it: `List (equatable a)`.
 
-- `Basics`: `foreign type Int`, `Float`, `Char`, `String` (declared here so the prelude's types
-  have one home); `type Bool = True | False`; `type Order = LT | EQ | GT`; `type Never =
-  JustOneMore Never`; the arithmetic, comparison and logic foreigns with `number` annotations
-  (`add : number, number -> number`, `lt : number, number -> Bool`, …); `eq : equatable a,
-  a -> Bool`; `append : appendable, appendable -> appendable`; `compare : number, number ->
-  Order`; `max`, `min`, `clamp` on `number`; the numeric functions; `identity`,
+- `Basics`: `equatable foreign type Int`, `Float`; `type Bool = True | False`; `type Order =
+  LT | EQ | GT`; `type Never = JustOneMore Never`; the arithmetic, comparison and logic foreigns
+  with `number` annotations (`add : number, number -> number`, `lt : number, number -> Bool`, …);
+  `eq : equatable a, a -> Bool`; `append : appendable, appendable -> appendable`; `compare :
+  number, number -> Order`; `max`, `min`, `clamp` on `number`; the numeric functions; `identity`,
   `always`, `never`, `not`, `xor`, `modBy`, `remainderBy`, `negate`, `abs`, `toFloat`, `round`,
-  `floor`, `ceiling`, `truncate`, `isNaN`, `isInfinite`, `e`, `pi`, trigonometry.
-- `List`: `foreign type List a`; `foreign` only for `cons` — `foldl` and `foldr` move into beni as
-  soon as the code generator emits a tail-call loop (`backend.md` §8), and
-  `research/17-platform-primitives.md` §3 is why that matters beyond tidiness; everything else in
-  beni. `map : List a, (a -> b) -> List b`, `sortWith : List a, (a, a -> Order) -> List a`,
-  `sortBy : List a, (a -> number) -> List a`, `sort : List number -> List number`,
-  `member : List (equatable a), a -> Bool`.
+  `floor`, `ceiling`, `truncate`, `isNaN`, `isInfinite`, `e`, `pi`, trigonometry. **`eq`, `neq`,
+  `lt`, `gt`, `le`, `ge` and `compare` are no longer what `language.md` §6.5's operators mean**
+  (spec §3.1); all seven stay declared, exported and callable by name.
+- `List`: `equatable foreign type List a`; `foreign` for `cons`, `foldl`, `foldr` — the last two
+  move into beni as soon as the code generator emits a tail-call loop (`backend.md` §8), and
+  `research/17-platform-primitives.md` §3 is why that matters beyond tidiness — and for the two
+  methods `List a` answers by the module rule rather than by derivation, since a list has no
+  constructors to walk: `eq : List a, List a -> Bool where a.eq : a, a -> Bool` and `compare :
+  List a, List a -> Order where a.compare : a, a -> Order`. Everything else in beni.
+  `map : List a, (a -> b) -> List b`, `sortWith : List a, (a, a -> Order) -> List a`,
+  `sortBy : List a, (a -> b) -> List a where b.compare : b, b -> Order`,
+  `sort : List a -> List a where a.compare : a, a -> Order`,
+  `member : List a, a -> Bool where a.eq : a, a -> Bool`. `maximum` and `minimum` stay `number`.
 - `Maybe`, `Result`: entirely beni. `Result.andThen : Result x a, (a -> Result x b) -> Result x b`.
-- `String`: `foreign` primitives (`length`, `slice`, `fromInt`, `toInt`, `fromFloat`,
-  `toFloat`, `fromChar`, `toList`, `fromList`, `append`, `compare : String, String ->
-  Order`, `toUpper`, `toLower`, …); the rest in beni. `split : String, String -> List String`.
-- `Char`: `foreign` classification and conversion.
+- `String`: declares `pub equatable foreign type String`; `foreign` primitives (`length`, `slice`,
+  `fromInt`, `toInt`, `fromFloat`, `toFloat`, `fromChar`, `toList`, `fromList`, `append`,
+  `compare : String, String -> Order`, `toUpper`, `toLower`, …); the rest in beni.
+  `split : String, String -> List String`. `compare` is `String`'s own `compare` method, so
+  `"a" < "b"` compiles and means what it reads as.
+- `Char`: declares `pub equatable foreign type Char`; `foreign` classification and conversion.
+  Its `compare` comes from the well-known table and is a **code-point** comparison (spec §3.2).
 - `Debug`: `foreign log : a, String -> a` (subject first, so `value |> Debug.log "label"` reads),
   `foreign todo : String -> a`, `foreign toString : a -> String`.
-- `Dict`, `Set`: beni, keyed by an explicit comparator (`Dict.empty : (k, k -> Order) -> Dict
-  k v`, `Dict.insert : Dict k v, k, v -> Dict k v`) with `Dict.String`/`Dict.Int` modules as sugar,
-  per `fast-compiler.md` §3.1 point 4.
+- `Dict`, `Set`: beni, with the key's ordering taken from its own `compare` method rather than from
+  a parameter. `Dict.empty : Dict k v` and `Dict.singleton : k, v -> Dict k v` are unconstrained —
+  neither compares anything; `Dict.get`, `member`, `insert`, `remove`, `update`, `union`,
+  `intersect`, `diff`, `filter`, `partition`, `merge` and `fromList` carry
+  `where k.compare : k, k -> Order`; `size`, `isEmpty`, `map`, `foldl`, `foldr`, `keys`, `values`
+  and `toList` carry nothing. `Set` mirrors it on `t`, with `Set.map : Set a, (a -> b) -> Set b
+  where b.compare : b, b -> Order`. **There are no `Dict.String`/`Dict.Int` sugar modules.**
+  → `static-dispatch-spike.md` §5.3–§5.5, §5.7.
 
 The argument order of every remaining signature is settled by the same rule when `core/` is
 rewritten; that rewrite is the deliverable, and this appendix is its specification rather than its

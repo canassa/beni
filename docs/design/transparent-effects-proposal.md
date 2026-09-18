@@ -974,6 +974,17 @@ This is now the thing in the document most likely to be wrong, and it is no long
    `14/elm` §0.2 identifies as Elm's actual binding constraint is worth doing regardless of this
    document, and is the only intervention the Elm evidence says is certainly worth it.
 
+**What static dispatch, adopted 2026-09-18, did to this list**
+([`static-dispatch-spike.md`](static-dispatch-spike.md)). Item 2 still stands and is unaffected:
+`Kind` was *not* added to — a method constraint lives in a per-variable constraint set beside the
+kind, and that set, with its interface encoding, is now the precedent for where a flag variable
+could live. Item 0 gains a case it did not have: **evidence is a hidden function-typed leading
+parameter**, so every constrained call passes a function whose bits would matter, and the
+higher-order question item 0 asks about platform primitives now has an affirmative answer inside
+`core` regardless of what the platform turns out to need. Item 3 is unchanged, and `boundary.md` §4
+has meanwhile acquired a second unenforced rule of its own — a `foreign` with a `where` clause —
+which any rewrite of shape (b) has to account for.
+
 ---
 
 ## 11. Questions for reviewers

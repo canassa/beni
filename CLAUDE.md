@@ -7,10 +7,16 @@ rebuilds.
 
 ## Details about the project
 
-- **Language**: Elm 0.19 minus a short list of deliberate departures, all in
-  [`language.md`](docs/design/language.md) §0. The largest is that there is **no
+- **Language**: Elm 0.19 with a short list of deliberate departures, all in
+  [`language.md`](docs/design/language.md) §0. Two are large. There is **no
   automatic currying**: every call is saturated, function types are n-ary and
-  written `Int, Int -> Int`, and partial application is written `f a _`.
+  written `Int, Int -> Int`, and partial application is written `f a _`. And
+  there **is static dispatch**, adopted 2026-09-18: a type's methods are the
+  `pub` values of the module declaring it, `x.m a` calls one, a top-level
+  annotation may carry `where a.compare : a, a -> Order`, and `==` and `<` call
+  the receiver type's `eq`/`compare`, derived when it declares none. Contract:
+  [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) — the file
+  name is historical, the document is normative.
 - **Target**: modern JavaScript, ES modules. `Int` is a double.
 - **Compiler**: Zig 0.16, pinned with Node 24 by `flake.nix`; `direnv allow`
   puts both on `PATH`.
@@ -31,11 +37,41 @@ tail-call loop, decision trees for pattern matching, reachability-driven dead
 code elimination, and chunking. [`backend.md`](docs/design/backend.md) is the
 contract, [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
 
+**Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
+well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`
+rewritten around them. It was built as a spike, measured
+([`research/19`](docs/design/research/19-static-dispatch-spike-results.md)) and
+adopted on 2026-09-18, reversing two `fast-compiler.md` §3.1 decisions.
+
 **In flight across M3**: the no-currying change, sliced. Landed so far are the
 removal of `>>`/`<<`, the `_` placeholder, the `let x <- e` bind, n-ary
 function types through the parser, BIR and checker, and `core/` rewritten
 subject-first with `|>` flipped to pipe-first. Still to come are saturated
 calls in the backend.
+
+### Owed after the static-dispatch adoption
+
+Report 19 §14, items 1–5. None is optional; the first is the only blocker.
+
+1. **Dead-code elimination** (already M3c). Derivation is eager, so every type
+   ships an `eq` and a `compare` whether or not anything calls them — 216 942
+   bytes across 61 programs, mostly dead. Every output-size figure taken before
+   DCE is an upper bound, and eager derivation without DCE is not shippable.
+2. **An arity check for a `foreign` carrying a `where` clause**, or withdrawal
+   of that combination ([`boundary.md`](docs/design/boundary.md) §4). A sibling
+   that forgot its leading evidence parameter fails at runtime, not at build
+   time — a real widening of rule 6's surface, taken knowingly.
+3. **The two `master` printer defects** report 19 §3.1 reproduces:
+   `Render.writeRecord`'s 64-link flatten dropping the `| r` tail, and
+   `Schemes.Writer.max_depth` writing `<error>` into an interface that
+   `beni check` exits 0 on.
+4. **A cap or a diagnostic for the inferred `where` suffix.** Nothing bounds
+   what one unannotated declaration writes into its interface; a 6.4 kB entry is
+   reachable. `--explain` warns the author; it does not bound anything.
+5. **A position on the n² obligation count** of an unannotated chain. It is the
+   correct count for the program and an annotation removes it entirely; whether
+   the language ships a checker quadratic on a shape a user can write by
+   accident is a decision, not a bug.
 
 M4 is the daemon and incrementality; M5 is source maps, code splitting and LSP.
 Neither has started.
@@ -80,7 +116,10 @@ Read the contract for a phase before its code:
 [`frontend.md`](docs/design/frontend.md),
 [`checker.md`](docs/design/checker.md),
 [`backend.md`](docs/design/backend.md),
-[`boundary.md`](docs/design/boundary.md).
+[`boundary.md`](docs/design/boundary.md). Static dispatch cuts across all four
+and has its own:
+[`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md). The four
+point into it at each section it extends; the detail lives there, once.
 
 ### 2. Never renumber a section in `docs/design/`
 

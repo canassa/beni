@@ -136,6 +136,20 @@ Three checks run at build time, and all three are things Elm does not do:
    nothing finer. The free set is ECMAScript's intrinsics plus the web-standard common set of
    §5.1, derived from that section rather than from taste.
 
+**A fourth rule, documented and NOT enforced — an owed item, recorded here so it is not mistaken
+for a check.** Since static dispatch (2026-09-18), a `pub foreign` may carry a `where` clause, and
+its sibling export's arity is then **evidence count + declared arity**: `core/List.beni`'s
+`eq : List a, List a -> Bool where a.eq : a, a -> Bool` is 2-ary in beni and must be written
+`(m0, xs, ys)` in `core/List.js`. **None of the three checks above looks at arity**
+(`src/js/Sibling.zig`), so a sibling that forgot its leading evidence parameter fails at runtime
+rather than at build time. That is a real widening of the `foreign` surface against CLAUDE.md rule
+6, and it was taken knowingly: the alternatives are an arity check, which needs the JavaScript
+parser this wall exists to avoid, or refusing `where` on `foreign` and giving `List` an uncons
+primitive to write `eq` and `compare` in beni over. The adoption weighed it and left it owed —
+[`research/19-static-dispatch-spike-results.md`](research/19-static-dispatch-spike-results.md) §14
+item 2, and CLAUDE.md's owed list.
+→ [`static-dispatch-spike.md`](static-dispatch-spike.md) §5.2, A.7.
+
 ### 4.1 The recipe for privileged code, written down and tested
 
 The guarantee lives or dies in privileged code, and Elm's own has holes: a core package declares a
