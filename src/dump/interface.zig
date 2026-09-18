@@ -61,6 +61,10 @@ pub fn write(
     gpa: Allocator,
     module_name: []const u8,
     iface: *const Interface,
+    /// This session's translation of `iface.type_refs` — `Types.refIds` of
+    /// the module this record belongs to. The rendering does not print it;
+    /// instantiating a scheme needs it (`Schemes.instantiate`).
+    type_ids: []const TypeStore.TypeId,
     types: *const Types,
     interner: *const InternPool.Global,
 ) Error!void {
@@ -99,7 +103,7 @@ pub fn write(
         try w.print("value {s}", .{interner.slice(iface.symbol(v.name))});
         if (v.scheme != .none) {
             try w.writeAll(" : ");
-            try writeScheme(w, gpa, iface, @enumFromInt(i), types, interner);
+            try writeScheme(w, gpa, iface, type_ids, @enumFromInt(i), types, interner);
         }
         try w.writeByte('\n');
     }
@@ -178,6 +182,18 @@ pub fn writeRaw(
             }
         }
     }
+    // The types the terms name, printed as the record says them: a package,
+    // a declaring module and a type name, never a session index. An `app`
+    // or `alias` operand below is a row of THIS table, so an unrelated
+    // module gaining a type cannot move it (`Interface.TypeRef`).
+    for (iface.type_refs, 0..) |ref, i| {
+        try w.print("typeref {d} {t} {s}.{s}\n", .{
+            i,
+            ref.package,
+            interner.slice(iface.symbol(ref.module)),
+            interner.slice(iface.symbol(ref.name)),
+        });
+    }
     const tags = iface.terms.items(.tag);
     const lhs = iface.terms.items(.lhs);
     const rhs = iface.terms.items(.rhs);
@@ -209,6 +225,7 @@ fn writeScheme(
     w: *std.Io.Writer,
     gpa: Allocator,
     iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
     value: Interface.ValueIndex,
     types: *const Types,
     interner: *const InternPool.Global,
@@ -221,6 +238,7 @@ fn writeScheme(
     defer arena.deinit();
     const v = try Schemes.instantiate(
         iface,
+        type_ids,
         &store,
         @intFromEnum(iface.values[@intFromEnum(value)].scheme),
         TypeStore.generalized,

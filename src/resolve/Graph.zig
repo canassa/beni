@@ -174,6 +174,14 @@ pub fn dependencies(g: *const Graph, i: Index) []const Index {
     return g.deps[m.deps_start..m.deps_end];
 }
 
+/// The module `(package, name)` EXACTLY, with none of `lookup`'s fallback:
+/// what an `Interface.TypeRef` names is the module that DECLARES a type,
+/// already decided, so falling back to another package would resolve a
+/// stale reference onto the wrong module instead of poisoning it.
+pub fn find(g: *const Graph, package: Package, name: Symbol) ?Index {
+    return g.by_name.get(.{ .package = package, .name = name });
+}
+
 /// Resolve `name` as seen from a module of `from`: its own package first,
 /// then the platform package of this build, then `core` (checker.md §2,
 /// boundary.md §5.3). An `app` module named like a core module therefore

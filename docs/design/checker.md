@@ -624,13 +624,14 @@ Interface
                  arg_terms: range, quantified_start: u32 }   grouped by type, declaration order
   schemes:  [] { quantified: range of (kind, equatable, name, constraints), body: TermIndex }
   terms:    MultiArrayList { tag, lhs, rhs }   the flat type term language: var(i), fn(range, result),
-                                               app(TypeId, range),
+                                               app(TypeRefIndex, range),
                                                tuple(range), record(range, ext), unit, empty_record,
-                                               alias(TypeId, range), err
+                                               alias(TypeRefIndex, range), err
                                                `fn` spends `lhs` on a range in `extra` and `rhs` on
                                                the result, since an n-ary parameter list does not
                                                fit two operand words
   extra:    []u32
+  type_refs:[] { package, module: SymbolIndex, name: SymbolIndex }   first mention order
   symbols:  []Symbol                            remapped like Bir's
 ```
 
@@ -669,6 +670,45 @@ constraint from this record alone, exactly as `arg_terms` lets it rebuild a cons
 below apply to them unchanged, and so does §8.1 of the design doc: these bytes are part of what M4
 hashes, which is why **an unannotated `pub` declaration's interface now changes far more often**
 than an annotated one's. → `static-dispatch-spike.md` §6.5; `fast-compiler.md` §8.1 for the cost.
+
+**The purity rule: an interface record is a function of its module's source and its imports'
+interfaces, and of nothing else in the program.** Decided 2026-09-18, and it is what makes §8.1's
+firewall a cutoff rather than a formality — "recompile a dependent only when the dependency's
+interface changed" is worth nothing if the record moves for reasons that have nothing to do with
+the dependency. No index assigned by walking the whole project may be written here.
+
+The rule was broken by `app` and `alias`, which spent `lhs` on a `TypeStore.TypeId` — a
+**whole-program** dense index, assigned by numbering every declared type of every module in
+`Graph.Index` order (§5). So adding one type declaration to an alphabetically earlier module
+rewrote the bytes of a module that did not import it: `term 4 app 15 10` became `term 4 app 16 10`
+for three unrelated edits alike — a new `pub` type, a new **private** type, and a new file
+containing a type. On a real project most of a record's `app` terms name a type numbered after
+whatever was added, so the firewall would have fired on approximately every type-introducing edit
+and the warm budgets of `fast-compiler.md` §2 would have been measured against a full rebuild.
+
+**`type_refs` is the encoding.** `app` and `alias` spend `lhs` on an index into a table of this
+module's own, each row `(package, declaring module's name, type's name)` — two `SymbolIndex`es and
+a package tag, nothing a session assigned. The row's CONTENT is the type's identity; the row's
+POSITION is first mention in the writer's walk, which is a function of the module's own source.
+Four consequences, all deliberate:
+
+- **The DECLARING module, not the module the reference came through.** An inferred scheme can name
+  a type its module never imported — `C` uses `B.mk : A.T` without mentioning `A` — so a reference
+  relative to the import edge would not exist. Being absolute, it is copied through `B`'s record
+  unchanged, and `C`'s bytes move only when `B`'s do, which is what the firewall wants.
+- **A NAME, not the declaring module's interface `TypeIndex`.** `pub make : Hidden` over a private
+  `type Hidden` is legal, so a `pub` scheme can name a type that is in no interface's `types` table
+  at all. An index into a table the type is not in cannot say which type it is.
+- **Renaming a type a record names now moves that record's bytes**, which is correct and was not
+  true before: the id of `Mid.Tag` does not change when it is renamed to `Mid.Label`, so the old
+  record could not see a rename of a type it depended on.
+- **Reading one stays O(1).** The session's translation of a module's `type_refs` into `TypeId`s
+  lives in `Types.ref_ids`, built once per module at the end of that module's check by the thread
+  that checked it — exactly as `Types.by_interface` translates an interface `TypeIndex` — so
+  instantiating an imported scheme indexes an array and never resolves a name. Filling it is the
+  only name lookup on the type table, it runs once per module per build, and §4.5's rule is about
+  the per-use path, which stays free of names. Like `Provenance`, `ref_ids` is **not** part of the
+  record and must never be hashed.
 
 **Every name in the record is a `SymbolIndex`, never a `Symbol`**, including a quantifier's.
 A `Symbol` is an index into the session's interner, whose numbering depends on which worker

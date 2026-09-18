@@ -51,6 +51,7 @@ const Artifacts = @import("../Artifacts.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
+const SourceStore = @import("../SourceStore.zig");
 const TypeStore = @import("TypeStore.zig");
 
 const Types = @This();
@@ -64,6 +65,13 @@ pub const Entry = struct {
     module: Graph.Index,
     decl: Bir.DeclIndex,
     name: Symbol,
+    /// The declaring module's identity, `(package, name)` — copied here
+    /// rather than reached through the graph because it is what an
+    /// `Interface.TypeRef` is made of, and the interface writer must be
+    /// able to name a type without holding the module graph
+    /// (`Interface.TypeRef`, `fast-compiler.md` §8.1).
+    package: SourceStore.Package,
+    module_name: Symbol,
     /// Number of type parameters. Types are always fully applied
     /// (checker.md Appendix A), so this is also every use's argument count.
     arity: u8,
@@ -105,6 +113,26 @@ decl_offsets: []u32,
 /// Owned. `by_interface[module][interface type index] = TypeId`.
 by_interface: []TypeId,
 interface_offsets: []u32,
+/// Owned. `entries[entry_offsets[m]..entry_offsets[m+1]]` are module `m`'s
+/// declared types, `pub` and private alike — the range `resolveRefs`
+/// searches by name.
+entry_offsets: []u32,
+/// Owned, one slice per module: `ref_ids[m][r]` is the `TypeId` module
+/// `m`'s interface `type_refs[r]` names in THIS session.
+///
+/// **Not part of any interface record**, and deliberately on this side of
+/// the boundary: the record says `(package, module name, type name)`
+/// because those bytes are a function of the source (`Interface.TypeRef`),
+/// and this is the session's one-off translation of them, exactly as
+/// `by_interface` is for an interface `TypeIndex`. A reader indexes it, so
+/// resolving a type reference stays O(1) however many times a scheme is
+/// instantiated.
+///
+/// Filled per module at the end of that module's check, by the thread that
+/// checked it, into its own slot; a dependent cannot run before its
+/// dependency has finished (checker.md §4.4), so nothing reads a slot
+/// before it is written.
+ref_ids: [][]TypeId,
 /// The types the checker itself names (`Int` for a literal, `List` for a
 /// list, `Result`/`Maybe` for `?`). `.none` when the core package is not
 /// part of the run.
@@ -135,6 +163,8 @@ pub const empty: Types = .{
     .decl_offsets = &.{},
     .by_interface = &.{},
     .interface_offsets = &.{},
+    .entry_offsets = &.{},
+    .ref_ids = &.{},
     .well_known = .{},
 };
 
@@ -144,6 +174,9 @@ pub fn deinit(types: *Types, gpa: Allocator) void {
     gpa.free(types.decl_offsets);
     gpa.free(types.by_interface);
     gpa.free(types.interface_offsets);
+    for (types.ref_ids) |ids| gpa.free(ids);
+    gpa.free(types.ref_ids);
+    gpa.free(types.entry_offsets);
     types.* = empty;
 }
 
@@ -155,6 +188,8 @@ pub fn entry(types: *const Types, id: TypeId) Entry {
         .module = @enumFromInt(0),
         .decl = @enumFromInt(0),
         .name = @enumFromInt(0),
+        .package = .app,
+        .module_name = @enumFromInt(0),
         .arity = 0,
         .kind = .foreign,
         .equatable = true,
@@ -212,6 +247,70 @@ pub fn ofInterface(types: *const Types, module: Graph.Index, index: Interface.Ty
     return types.by_interface[base + @intFromEnum(index)];
 }
 
+/// How `id` is written into an interface record: the declaring module's
+/// package and name, and the type's own name (`Interface.TypeRef`).
+/// Null for `.none` and for an id no entry describes, which the writer
+/// turns into `TypeRefIndex.none`.
+pub const Named = struct {
+    package: SourceStore.Package,
+    module: Symbol,
+    name: Symbol,
+};
+
+pub fn named(types: *const Types, id: TypeId) ?Named {
+    if (id == .none or id.int() >= types.entries.len) return null;
+    const e = types.entries[id.int()];
+    return .{ .package = e.package, .module = e.module_name, .name = e.name };
+}
+
+/// This session's translation of module `m`'s interface type references.
+/// Empty until `m` has been checked, which is also when its terms exist.
+pub fn refIds(types: *const Types, m: Graph.Index) []const TypeId {
+    if (m.int() >= types.ref_ids.len) return &.{};
+    return types.ref_ids[m.int()];
+}
+
+/// Translate every `Interface.TypeRef` of `iface` into this session's
+/// `TypeId`, once, so that reading a term is an array index.
+///
+/// A reference is resolved by NAME against the declaring module's whole
+/// declaration list rather than against its interface, because a `pub`
+/// signature may name a PRIVATE type (`pub make : Hidden`) and that type is
+/// in no interface. The scan is linear in one module's declared types and
+/// runs once per module per build, not once per use; the `checker.md` §4.5
+/// rule is about the per-use path, which `ref_ids` keeps free of names.
+///
+/// A reference that names no module or no type of it yields `.none` — the
+/// same poisoned id the term carried before, so a record M4 mapped from
+/// disk that does not describe itself cannot trap.
+pub fn resolveRefs(
+    types: *const Types,
+    gpa: Allocator,
+    iface: *const Interface,
+    graph: *const Graph,
+) Allocator.Error![]TypeId {
+    const out = try gpa.alloc(TypeId, iface.type_refs.len);
+    errdefer gpa.free(out);
+    for (iface.type_refs, out) |ref, *slot| {
+        slot.* = types.find(graph, ref.package, iface.symbol(ref.module), iface.symbol(ref.name));
+    }
+    return out;
+}
+
+/// The type named `name` declared by the module `(package, module)`, or
+/// `.none`. The only name lookup on the type table, and it is a one-off:
+/// see `resolveRefs`.
+fn find(types: *const Types, graph: *const Graph, package: SourceStore.Package, module: Symbol, type_name: Symbol) TypeId {
+    const m = graph.find(package, module) orelse return .none;
+    if (m.int() + 1 >= types.entry_offsets.len) return .none;
+    const from = types.entry_offsets[m.int()];
+    const to = types.entry_offsets[m.int() + 1];
+    for (types.entries[from..to], from..) |e, i| {
+        if (e.name == type_name) return @enumFromInt(i);
+    }
+    return .none;
+}
+
 // ---------------------------------------------------------------------------
 // Building
 // ---------------------------------------------------------------------------
@@ -239,6 +338,13 @@ pub fn build(
     errdefer gpa.free(decl_offsets);
     const interface_offsets = try gpa.alloc(u32, modules + 1);
     errdefer gpa.free(interface_offsets);
+    const entry_offsets = try gpa.alloc(u32, modules + 1);
+    errdefer gpa.free(entry_offsets);
+    // One empty slot per module; each is filled by the thread that checks
+    // that module, once its terms exist (see `ref_ids`).
+    const ref_ids = try gpa.alloc([]TypeId, modules);
+    errdefer gpa.free(ref_ids);
+    @memset(ref_ids, &.{});
 
     // Topological order, so a type is numbered before anything that can
     // mention it. Nothing depends on that today — the ids are dense
@@ -254,7 +360,10 @@ pub fn build(
         const m: Graph.Index = @enumFromInt(i);
         decl_offsets[i] = @intCast(by_decl.items.len);
         interface_offsets[i] = @intCast(by_interface.items.len);
+        entry_offsets[i] = @intCast(entries.items.len);
         const bir = artifacts.bir(graph.moduleFile(m));
+        const package = graph.modules.items(.package)[i];
+        const module_name = graph.moduleName(m);
         for (bir.decls, 0..) |d, di| {
             if (d.kind.isValue()) {
                 try by_decl.append(gpa, .none);
@@ -265,6 +374,8 @@ pub fn build(
                 .module = m,
                 .decl = @enumFromInt(@as(u32, @intCast(di))),
                 .name = bir.symbol(d.name),
+                .package = package,
+                .module_name = module_name,
                 .arity = std.math.cast(u8, d.params) orelse std.math.maxInt(u8),
                 .kind = switch (d.kind) {
                     .type => .adt,
@@ -295,12 +406,15 @@ pub fn build(
     }
     decl_offsets[modules] = @intCast(by_decl.items.len);
     interface_offsets[modules] = @intCast(by_interface.items.len);
+    entry_offsets[modules] = @intCast(entries.items.len);
 
     types.entries = try entries.toOwnedSlice(gpa);
     types.by_decl = try by_decl.toOwnedSlice(gpa);
     types.by_interface = try by_interface.toOwnedSlice(gpa);
     types.decl_offsets = decl_offsets;
     types.interface_offsets = interface_offsets;
+    types.entry_offsets = entry_offsets;
+    types.ref_ids = ref_ids;
 
     // The table of §3.2 FIRST: `settleEquatable` settles `comparable`
     // alongside `equatable`, and a `Char` is comparable because the table

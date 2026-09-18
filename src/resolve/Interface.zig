@@ -28,10 +28,21 @@
 //! in M4 its hash — depend on `--jobs`. Sorting by the bytes makes the
 //! table, the dump and the future hash a function of the source alone, and
 //! a lookup is a binary search over short strings.
+//! **The purity rule** (checker.md §7, decided 2026-09-18): every byte of
+//! this record is a function of ITS MODULE'S SOURCE and ITS IMPORTS'
+//! INTERFACES, and of nothing else in the program. Nothing here may be an
+//! index assigned by walking the whole project. `Term.app` and `Term.alias`
+//! used to spend `lhs` on a session `TypeStore.TypeId` — a whole-program
+//! dense index — so adding one type declaration to an alphabetically
+//! earlier module, `pub` or private, shifted the bytes of an untouched
+//! module that did not import it, and the firewall of `fast-compiler.md`
+//! §8.1 would have fired on approximately every type-introducing edit.
+//! `type_refs` is the fix: a term names a type by WHERE IT IS DECLARED.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const InternPool = @import("../InternPool.zig");
+const SourceStore = @import("../SourceStore.zig");
 const Bir = @import("../bir/Bir.zig");
 
 const Interface = @This();
@@ -51,6 +62,11 @@ schemes: []const Scheme,
 terms: std.MultiArrayList(Term).Slice,
 /// Owned. Ranges and record fields the terms point at.
 extra: []const u32,
+/// Owned. Every declared type the terms above name, each said in a way
+/// that means the same thing in every compilation of the same sources —
+/// see `TypeRef` and the header's purity rule. `Term.app` and `Term.alias`
+/// index this.
+type_refs: []const TypeRef,
 /// Owned. The one symbol column; every name above is an index into it,
 /// exactly as `Bir` does it, so a remap is one loop and M4 can map the
 /// whole record without a fixup pass.
@@ -86,6 +102,47 @@ pub const SymbolIndex = enum(u32) {
             return if (o == .none) null else @enumFromInt(@intFromEnum(o));
         }
     };
+};
+
+/// A declared type, named by WHERE IT IS DECLARED rather than by any index
+/// the session assigned: the declaring module's package and name, and the
+/// type's own name. The header's purity rule is why.
+///
+/// **Both names are `SymbolIndex`, never `Symbol`**, for the reason every
+/// other name in this record is: a `Symbol` is an index into the session's
+/// interner, whose numbering depends on which worker interned which file.
+///
+/// **The declaring module, not the module this record was imported FROM.**
+/// A module's inferred scheme can name a type it never imported — `C` uses
+/// `B.mk : A.T` without mentioning `A` — so the reference has to be
+/// absolute. It is then copied through `B`'s record unchanged, and `C`'s
+/// bytes move only when `B`'s do, which is exactly what the firewall wants.
+///
+/// **Private types are included.** `pub make : Hidden` over a private
+/// `type Hidden` is legal and publishes a scheme naming a type that is in
+/// no interface's `types` table, so a reference cannot be an interface
+/// `TypeIndex`: it is a NAME, resolved against the declaring module's whole
+/// declaration list (`check/Types.zig`'s `resolveRefs`).
+pub const TypeRef = struct {
+    /// The package the declaring module belongs to. A module's identity is
+    /// `(package, name)` and not the name alone (`Graph`'s header).
+    package: SourceStore.Package,
+    /// The declaring module's name, e.g. `Json.Decode`.
+    module: SymbolIndex,
+    /// The type's own name, as its declaration spells it.
+    name: SymbolIndex,
+};
+
+/// Index into `type_refs`. `none` is a poisoned type — the term said
+/// nothing about which type it was, exactly as `TypeStore.TypeId.none`
+/// does inside a store.
+pub const TypeRefIndex = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
+
+    pub fn int(i: TypeRefIndex) u32 {
+        return @intFromEnum(i);
+    }
 };
 
 /// Index into `terms`.
@@ -182,7 +239,7 @@ pub const Term = struct {
         /// parameters need a range of their own the way `app`'s arguments
         /// do — both operand words were already spoken for.
         func,
-        /// `lhs` is a `TypeStore.TypeId`; `rhs` an `extra` range of terms.
+        /// `lhs` is a `TypeRefIndex`; `rhs` an `extra` range of terms.
         app,
         /// `lhs` is an `extra` range of terms.
         tuple,
@@ -193,7 +250,7 @@ pub const Term = struct {
         unit,
         /// The closed end of a record.
         empty_record,
-        /// `lhs` is a `TypeStore.TypeId`; `rhs` an `extra` range whose last
+        /// `lhs` is a `TypeRefIndex`; `rhs` an `extra` range whose last
         /// word is the expansion and whose earlier words are the arguments.
         alias,
         /// A declaration that failed to check (checker.md §7).
@@ -331,6 +388,7 @@ pub const empty: Interface = .{
     .schemes = &.{},
     .terms = .empty,
     .extra = &.{},
+    .type_refs = &.{},
     .symbols = &.{},
 };
 
@@ -341,6 +399,7 @@ pub fn deinit(iface: *Interface, gpa: Allocator) void {
     gpa.free(iface.schemes);
     iface.terms.deinit(gpa);
     gpa.free(iface.extra);
+    gpa.free(iface.type_refs);
     gpa.free(iface.symbols);
     iface.* = undefined;
 }
@@ -359,6 +418,15 @@ pub fn range(iface: *const Interface, start: u32) []const u32 {
 
 pub fn term(iface: *const Interface, index: TermIndex) Term {
     return iface.terms.get(index.int());
+}
+
+/// The type an `app` or `alias` term names, or null for `none` and for an
+/// index this record does not describe — M4 maps these from disk, and a
+/// record that does not describe itself must not be able to crash the
+/// compiler (`range`'s comment).
+pub fn typeRef(iface: *const Interface, index: TypeRefIndex) ?TypeRef {
+    if (index == .none or index.int() >= iface.type_refs.len) return null;
+    return iface.type_refs[index.int()];
 }
 
 pub fn scheme(iface: *const Interface, index: SchemeIndex) Scheme {
@@ -653,7 +721,15 @@ fn expectInterface(expected: []const u8, source: [:0]const u8) !void {
     const m = p.module("M").?;
     var out: std.Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
-    try dump.write(&out.writer, testing.allocator, "M", &p.session.resolution.interfaces[m.int()], &p.session.checked.types, &p.session.interner);
+    try dump.write(
+        &out.writer,
+        testing.allocator,
+        "M",
+        &p.session.resolution.interfaces[m.int()],
+        p.session.checked.types.refIds(m),
+        &p.session.checked.types,
+        &p.session.interner,
+    );
     try testing.expectEqualStrings(expected, out.written());
 }
 

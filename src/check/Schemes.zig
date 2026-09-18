@@ -45,12 +45,27 @@ pub const Writer = struct {
     /// The pool every `Symbol` written here comes from. Needed to order a
     /// record's fields by their TEXT — see `writeVar`'s `.record` arm.
     interner: *const InternPool.Global,
+    /// The session type table, read ONLY to turn a store `TypeId` into the
+    /// `(package, module name, type name)` an `Interface.TypeRef` holds.
+    /// Writing the id itself is what `Interface`'s purity rule forbids.
+    types: *const Types,
     /// Where this writer's symbols land in the finished column: the
     /// interface already has one, and these are appended to it.
     symbol_base: u32,
     schemes: std.ArrayList(Interface.Scheme) = .empty,
     terms: std.MultiArrayList(Interface.Term) = .empty,
     extra: std.ArrayList(u32) = .empty,
+    type_refs: std.ArrayList(Interface.TypeRef) = .empty,
+    /// The `TypeId` behind each row of `type_refs`, so the same type named
+    /// twice writes one row and both terms point at it.
+    ///
+    /// A linear scan rather than a dense `TypeId → row` side array: a
+    /// module's interface names a handful of types — 36 rows across the
+    /// nine modules of `core/` — while the session type table has one entry
+    /// per type in the PROJECT, so a dense array would cost an allocation
+    /// and a memset proportional to the whole program once per module, to
+    /// index four entries.
+    ref_ids: std.ArrayList(TypeStore.TypeId) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
     /// `Var → TermIndex` for the scheme being written; dense over the
     /// store, cleared per scheme. Never a map: a `Var` is a dense id and
@@ -101,8 +116,14 @@ pub const Writer = struct {
     /// annotations that each fit.
     pub const max_depth = 512;
 
-    pub fn init(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, symbol_base: u32) Writer {
-        return .{ .gpa = gpa, .store = store, .interner = interner, .symbol_base = symbol_base };
+    pub fn init(
+        gpa: Allocator,
+        store: *TypeStore,
+        interner: *const InternPool.Global,
+        types: *const Types,
+        symbol_base: u32,
+    ) Writer {
+        return .{ .gpa = gpa, .store = store, .interner = interner, .types = types, .symbol_base = symbol_base };
     }
 
     pub fn deinit(w: *Writer) void {
@@ -110,6 +131,8 @@ pub const Writer = struct {
         w.schemes.deinit(w.gpa);
         w.terms.deinit(w.gpa);
         w.extra.deinit(w.gpa);
+        w.type_refs.deinit(w.gpa);
+        w.ref_ids.deinit(w.gpa);
         w.symbols.deinit(w.gpa);
         w.pending_flags.deinit(w.gpa);
         w.pending_roots.deinit(w.gpa);
@@ -285,6 +308,31 @@ pub const Writer = struct {
         return index;
     }
 
+    /// The row of `type_refs` that names `id`, appending one if this is the
+    /// first mention. A poisoned id gets `none`, which reads back as the
+    /// same poisoned id.
+    ///
+    /// **The row's CONTENT is what makes the record pure**: the declaring
+    /// module's package and name and the type's own name, none of which
+    /// moves when an unrelated module gains a declaration. The row's
+    /// POSITION is first mention in this walk, which is a function of the
+    /// module's own source — the `pub` declarations in name order, each
+    /// term walked in the order `writeVar` descends.
+    fn typeRefOf(w: *Writer, id: TypeStore.TypeId) Error!Interface.TypeRefIndex {
+        const t = w.types.named(id) orelse return .none;
+        for (w.ref_ids.items, 0..) |seen, i| {
+            if (seen == id) return @enumFromInt(@as(u32, @intCast(i)));
+        }
+        const index: Interface.TypeRefIndex = @enumFromInt(@as(u32, @intCast(w.type_refs.items.len)));
+        try w.type_refs.append(w.gpa, .{
+            .package = t.package,
+            .module = @enumFromInt(try w.symbolIndex(t.module)),
+            .name = @enumFromInt(try w.symbolIndex(t.name)),
+        });
+        try w.ref_ids.append(w.gpa, id);
+        return index;
+    }
+
     fn writeVar(w: *Writer, v: Var) Error!Interface.TermIndex {
         w.depth += 1;
         defer w.depth -= 1;
@@ -324,7 +372,8 @@ pub const Writer = struct {
                     const words = try w.writeRange(w.store.vars(a.args));
                     defer w.gpa.free(words);
                     const start = try w.addRange(words);
-                    return try w.memoise(root, try w.term(.app, @intFromEnum(a.type), start));
+                    const ref = try w.typeRefOf(a.type);
+                    return try w.memoise(root, try w.term(.app, ref.int(), start));
                 },
                 .tuple => |t| {
                     const words = try w.writeRange(w.store.vars(t));
@@ -366,7 +415,8 @@ pub const Writer = struct {
                 for (copied, 0..) |arg, i| words[i] = (try w.writeVar(arg)).int();
                 words[args.len] = (try w.writeVar(a.actual)).int();
                 const start = try w.addRange(words);
-                return try w.memoise(root, try w.term(.alias, @intFromEnum(a.type), start));
+                const ref = try w.typeRefOf(a.type);
+                return try w.memoise(root, try w.term(.alias, ref.int(), start));
             },
         }
     }
@@ -429,6 +479,7 @@ pub const Writer = struct {
         iface.schemes = try w.schemes.toOwnedSlice(w.gpa);
         iface.terms = w.terms.toOwnedSlice();
         iface.extra = try w.extra.toOwnedSlice(w.gpa);
+        iface.type_refs = try w.type_refs.toOwnedSlice(w.gpa);
     }
 };
 
@@ -538,8 +589,16 @@ fn orderWalk(
 
 /// Copy an interface scheme into `store` at `rank`: one fresh variable per
 /// quantifier, then the body rebuilt on top of them.
+///
+/// `type_ids` is this session's translation of `iface.type_refs`, which is
+/// `Types.refIds` of the module the record belongs to. It is passed in
+/// rather than resolved here because it is built ONCE per module, when that
+/// module is checked, and read on every import use: resolving a reference
+/// has to stay one array index however many times a scheme is instantiated
+/// (`Interface.TypeRef`, `Types.ref_ids`).
 pub fn instantiate(
     iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
     store: *TypeStore,
     scheme_index: u32,
     rank: u32,
@@ -562,7 +621,7 @@ pub fn instantiate(
     const memo = try scratch.alloc(Var.Optional, iface.terms.len);
     defer scratch.free(memo);
     @memset(memo, .none);
-    var reader: Reader = .{ .iface = iface, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
+    var reader: Reader = .{ .iface = iface, .type_ids = type_ids, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
     const body = try reader.read(s.body);
     // The constraint blocks LAST, so every quantifier already has its
     // variable and a `var(i)` inside a constraint's type lands on the same
@@ -641,6 +700,7 @@ pub const Site = struct {
 /// checked, or its declaration was too deep to read. The caller poisons.
 pub fn instantiateCtor(
     iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
     store: *TypeStore,
     ctor_index: u32,
     type_id: TypeStore.TypeId,
@@ -666,7 +726,7 @@ pub fn instantiateCtor(
     const memo = try scratch.alloc(Var.Optional, iface.terms.len);
     defer scratch.free(memo);
     @memset(memo, .none);
-    var reader: Reader = .{ .iface = iface, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
+    var reader: Reader = .{ .iface = iface, .type_ids = type_ids, .store = store, .rank = rank, .scratch = scratch, .fresh = fresh, .memo = memo };
 
     const words = iface.range(c.arg_terms);
     const args = try scratch.alloc(Var, words.len);
@@ -687,6 +747,8 @@ pub fn instantiateCtor(
 
 const Reader = struct {
     iface: *const Interface,
+    /// `iface.type_refs` translated into this session — see `instantiate`.
+    type_ids: []const TypeStore.TypeId,
     store: *TypeStore,
     rank: u32,
     scratch: Allocator,
@@ -724,7 +786,7 @@ const Reader = struct {
                 const args = try r.readRange(t.rhs);
                 defer r.scratch.free(args);
                 const range = try r.store.addVars(args);
-                break :blk try r.store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(t.lhs), .args = range } } }, r.rank);
+                break :blk try r.store.fresh(.{ .structure = .{ .app = .{ .type = r.typeId(t.lhs), .args = range } } }, r.rank);
             },
             .tuple => blk: {
                 const elements = try r.readRange(t.lhs);
@@ -759,11 +821,20 @@ const Reader = struct {
                 for (args, 0..) |*a, i| a.* = try r.read(@enumFromInt(words[i]));
                 const actual = try r.read(@enumFromInt(words[words.len - 1]));
                 const range = try r.store.addVars(args);
-                break :blk try r.store.fresh(.{ .alias = .{ .type = @enumFromInt(t.lhs), .args = range, .actual = actual } }, r.rank);
+                break :blk try r.store.fresh(.{ .alias = .{ .type = r.typeId(t.lhs), .args = range, .actual = actual } }, r.rank);
             },
         };
         r.memo[index.int()] = v.toOptional();
         return v;
+    }
+
+    /// The session `TypeId` an `app` or `alias` operand names. One array
+    /// index — the whole point of `Types.ref_ids`. A reference the session
+    /// could not resolve, and an operand a record mapped from disk does not
+    /// describe, both give `.none`, which is the poisoned id this operand
+    /// carried directly before the reference existed.
+    fn typeId(r: *const Reader, operand: u32) TypeStore.TypeId {
+        return if (operand < r.type_ids.len) r.type_ids[operand] else .none;
     }
 
     fn readRange(r: *Reader, start: u32) Error![]Var {
@@ -781,6 +852,51 @@ const Reader = struct {
 
 const testing = std.testing;
 
+/// A session type table for the tests that fabricate a solved type by hand:
+/// one module `M` of package `core` declaring `names` in order, so `TypeId`
+/// `i` is `names[i]`.
+///
+/// It exists because the interface no longer stores a session `TypeId`. A
+/// term names a type by `(package, declaring module, type name)`
+/// (`Interface.TypeRef`), so the writer has to be told what an id MEANS —
+/// which is the whole point of the change, and a test that could not say it
+/// would be testing a record no build produces.
+fn testTypes(entries: []Types.Entry, module: Symbol, names: []const Symbol) Types {
+    for (entries, names) |*e, n| e.* = .{
+        .module = @enumFromInt(0),
+        .decl = @enumFromInt(0),
+        .name = n,
+        .package = .core,
+        .module_name = module,
+        .arity = 0,
+        .kind = .adt,
+        .equatable = true,
+        .comparable = true,
+        .has_function = false,
+    };
+    var types: Types = .empty;
+    types.entries = entries;
+    return types;
+}
+
+/// `iface.type_refs` translated back into ids, the way `Types.resolveRefs`
+/// does it against a real graph: by name, against the declaring module's
+/// declarations. The reader indexes this.
+fn testTypeIds(gpa: Allocator, iface: *const Interface, types: *const Types) Allocator.Error![]TypeStore.TypeId {
+    const out = try gpa.alloc(TypeStore.TypeId, iface.type_refs.len);
+    errdefer gpa.free(out);
+    for (iface.type_refs, out) |ref, *slot| {
+        slot.* = .none;
+        for (types.entries, 0..) |e, i| {
+            if (e.name == iface.symbol(ref.name) and e.module_name == iface.symbol(ref.module)) {
+                slot.* = @enumFromInt(i);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 test "a scheme round trips through terms with its sharing intact" {
     const gpa = testing.allocator;
     var interner: InternPool.Global = try .init(gpa);
@@ -793,9 +909,10 @@ test "a scheme round trips through terms with its sharing intact" {
     const one = try store.addVars(&.{a});
     const body = try store.fresh(.{ .structure = .{ .func = .{ .params = one, .result = a } } }, TypeStore.generalized);
 
+    const no_types: Types = .empty;
     var iface: Interface = .empty;
     defer iface.deinit(gpa);
-    var w: Writer = .init(gpa, &store, &interner, 0);
+    var w: Writer = .init(gpa, &store, &interner, &no_types, 0);
     defer w.deinit();
     const index = try w.add(body);
     try w.attach(&iface);
@@ -808,8 +925,8 @@ test "a scheme round trips through terms with its sharing intact" {
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const first = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
-    const second = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
+    const first = try instantiate(&iface, &.{}, &target, 0, 1, arena.allocator(), null);
+    const second = try instantiate(&iface, &.{}, &target, 0, 1, arena.allocator(), null);
     const f1 = target.content(target.find(first)).structure.func;
     const f2 = target.content(target.find(second)).structure.func;
     const p1 = target.vars(f1.params)[0];
@@ -834,9 +951,16 @@ test "a method constraint round trips through the interface onto a fresh variabl
     // `a, Int -> a where a.eq : a, a -> Bool, a.compare : a, a -> Order`,
     // the two constraints DECLARED in the wrong order on purpose: the
     // record must come back sorted by name text, `compare` before `eq`.
-    const int: TypeStore.TypeId = @enumFromInt(1);
-    const bool_id: TypeStore.TypeId = @enumFromInt(2);
-    const order_id: TypeStore.TypeId = @enumFromInt(3);
+    const module_name = try interner.getOrPut(gpa, "M");
+    var entries: [3]Types.Entry = undefined;
+    const types = testTypes(&entries, module_name, &.{
+        try interner.getOrPut(gpa, "Int"),
+        try interner.getOrPut(gpa, "Bool"),
+        try interner.getOrPut(gpa, "Order"),
+    });
+    const int: TypeStore.TypeId = @enumFromInt(0);
+    const bool_id: TypeStore.TypeId = @enumFromInt(1);
+    const order_id: TypeStore.TypeId = @enumFromInt(2);
     const a = try store.fresh(.{ .flex = .{} }, TypeStore.generalized);
     const int_var = try store.fresh(.{ .structure = .{ .app = .{ .type = int, .args = .empty } } }, TypeStore.generalized);
     const bool_var = try store.fresh(.{ .structure = .{ .app = .{ .type = bool_id, .args = .empty } } }, TypeStore.generalized);
@@ -856,10 +980,12 @@ test "a method constraint round trips through the interface onto a fresh variabl
 
     var iface: Interface = .empty;
     defer iface.deinit(gpa);
-    var w: Writer = .init(gpa, &store, &interner, 0);
+    var w: Writer = .init(gpa, &store, &interner, &types, 0);
     defer w.deinit();
     _ = try w.add(body);
     try w.attach(&iface);
+    const type_ids = try testTypeIds(gpa, &iface, &types);
+    defer gpa.free(type_ids);
 
     const scheme = iface.schemes[0];
     try testing.expectEqual(@as(u32, 1), scheme.quantified_count);
@@ -876,7 +1002,7 @@ test "a method constraint round trips through the interface onto a fresh variabl
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const copy = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
+    const copy = try instantiate(&iface, type_ids, &target, 0, 1, arena.allocator(), null);
     const func = target.content(target.find(copy)).structure.func;
     const fresh_a = target.find(target.vars(func.params)[0]);
     try testing.expectEqual(fresh_a, target.find(func.result));
@@ -894,7 +1020,7 @@ test "a method constraint round trips through the interface onto a fresh variabl
 
     // A second instantiation is independent: two call sites of a
     // constrained value do not share a method type.
-    const again = try instantiate(&iface, &target, 0, 1, arena.allocator(), null);
+    const again = try instantiate(&iface, type_ids, &target, 0, 1, arena.allocator(), null);
     const second = target.content(target.find(again)).structure.func;
     const other_a = target.find(target.vars(second.params)[0]);
     try testing.expect(other_a != fresh_a);
@@ -936,7 +1062,8 @@ test "quantifier order matches the writer, records and constraints included" {
 
     var iface: Interface = .empty;
     defer iface.deinit(gpa);
-    var w: Writer = .init(gpa, &store, &interner, 0);
+    const no_types: Types = .empty;
+    var w: Writer = .init(gpa, &store, &interner, &no_types, 0);
     defer w.deinit();
     _ = try w.add(body);
     try w.attach(&iface);
@@ -968,6 +1095,10 @@ const RandomType = struct {
     random: std.Random,
     made: std.ArrayList(Var) = .empty,
     names: []const Symbol,
+    /// What an `app` may name, `.none` included. Real ids rather than
+    /// always-`none`, so the round trip exercises the `type_refs` table
+    /// that `app` and `alias` now index (`Interface.TypeRef`).
+    type_ids: []const TypeStore.TypeId,
 
     const max_depth = 4;
 
@@ -1032,7 +1163,8 @@ const RandomType = struct {
                 defer g.gpa.free(args);
                 for (args) |*a| a.* = try g.make(depth + 1);
                 const range = try g.store.addVars(args);
-                return g.store.fresh(.{ .structure = .{ .app = .{ .type = .none, .args = range } } }, rank);
+                const id = g.type_ids[g.random.uintLessThan(usize, g.type_ids.len)];
+                return g.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = range } } }, rank);
             },
         }
     }
@@ -1112,33 +1244,42 @@ fn expectRoundTrip(seed: u64) !void {
         sym.* = try interner.getOrPut(gpa, text);
     }
 
+    // Three named types and the poisoned id, so the walk writes `type_refs`
+    // rows and the reader has to translate them back. `renderOf` prints an
+    // `app`'s type by NAME, so a reference that came back as a different
+    // type — or as `.none` — shows up in the rendered text.
+    var entries: [3]Types.Entry = undefined;
+    const types = testTypes(&entries, try interner.getOrPut(gpa, "M"), &.{ names[0], names[1], names[2] });
+    const ids = [_]TypeStore.TypeId{ @enumFromInt(0), @enumFromInt(1), @enumFromInt(2), .none };
+
     var prng: std.Random.DefaultPrng = .init(seed);
     var source: TypeStore = .init(gpa);
     defer source.deinit();
-    var g: RandomType = .{ .gpa = gpa, .store = &source, .random = prng.random(), .names = &names };
+    var g: RandomType = .{ .gpa = gpa, .store = &source, .random = prng.random(), .names = &names, .type_ids = &ids };
     defer g.deinit();
     const root = try g.make(0);
 
     var iface: Interface = .empty;
     defer iface.deinit(gpa);
-    var w: Writer = .init(gpa, &source, &interner, 0);
+    var w: Writer = .init(gpa, &source, &interner, &types, 0);
     defer w.deinit();
     const index = try w.add(root);
     try testing.expect(!w.too_deep);
     try w.attach(&iface);
+    const type_ids = try testTypeIds(gpa, &iface, &types);
+    defer gpa.free(type_ids);
 
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
     var target: TypeStore = .init(gpa);
     defer target.deinit();
-    const copy = try instantiate(&iface, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator(), null);
+    const copy = try instantiate(&iface, type_ids, &target, @intFromEnum(index), TypeStore.generalized, arena.allocator(), null);
 
     // The record must not have smuggled an error term into a type that had
     // none: `err` unifies with anything, so one hiding inside a published
     // scheme is a hole in every dependent.
     for (iface.terms.items(.tag)) |tag| try testing.expect(tag != .err);
 
-    const types: Types = .empty;
     const before = try renderOf(gpa, &source, &types, &interner, root);
     defer gpa.free(before);
     const after = try renderOf(gpa, &target, &types, &interner, copy);
@@ -1190,7 +1331,8 @@ test "an errored declaration still gets a scheme, whose body is the error term" 
     defer store.deinit();
     var iface: Interface = .empty;
     defer iface.deinit(gpa);
-    var w: Writer = .init(gpa, &store, &interner, 0);
+    const no_types: Types = .empty;
+    var w: Writer = .init(gpa, &store, &interner, &no_types, 0);
     defer w.deinit();
     _ = try w.addError();
     try w.attach(&iface);

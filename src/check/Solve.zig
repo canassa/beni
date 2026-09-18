@@ -1392,7 +1392,7 @@ pub const Solver = struct {
         const type_id = s.env.types.ofInterface(module, iface.ctors[index].type);
         if (type_id == .none) return null;
         const mark = s.store().count();
-        const v = try Schemes.instantiateCtor(iface, s.store(), index, type_id, s.rank, s.env.scratch) orelse return null;
+        const v = try Schemes.instantiateCtor(iface, s.env.types.refIds(module), s.store(), index, type_id, s.rank, s.env.scratch) orelse return null;
         try s.adoptSince(mark);
         return v;
     }
@@ -1414,7 +1414,7 @@ pub const Solver = struct {
         if (scheme_index == .none) return null;
         const mark = s.store().count();
         const from: u32 = @intCast(s.store().constraints.items.len);
-        const v = try Schemes.instantiate(iface, s.store(), @intFromEnum(scheme_index), s.rank, s.env.scratch, site);
+        const v = try Schemes.instantiate(iface, s.env.types.refIds(module), s.store(), @intFromEnum(scheme_index), s.rank, s.env.scratch, site);
         try s.adoptSince(mark);
         // **An imported scheme's constraints need obligations exactly as a
         // local one's do** (A.57). `Schemes.instantiate` writes their

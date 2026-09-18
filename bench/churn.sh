@@ -56,6 +56,17 @@
 #     The target module's record is cut out of the root dump by its `module`
 #     header line.
 #
+# What this script structurally CANNOT measure, and where that lives instead.
+# Every edit class above edits the declaration whose dump it diffs, so none of
+# them can see a record moved by an edit to a DIFFERENT module. That is a real
+# failure mode and it was a real defect: `Interface.Term`'s `app` and `alias`
+# carried a whole-program `TypeStore.TypeId`, so a type declared anywhere
+# earlier in sorted-path order rewrote an untouched module's bytes
+# (`plans/m4-plan.md` §2.2). The fixture that covers it is a black-box
+# scenario, not a bench row — "a type declared elsewhere leaves an untouched
+# module's interface bytes alone" in `tests/blackbox/blackbox_test.zig`, which
+# is a gate rather than a measurement because the answer is 0 or a bug.
+#
 # Every outcome is counted:
 #
 #   changed    the edit moved the interface

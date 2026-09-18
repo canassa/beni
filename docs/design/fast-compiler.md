@@ -635,16 +635,20 @@ fast-path avoiding hashes for files whose size and mtime are both unchanged (04 
 *(i) **The key has grown by one term:** `boundary.md` §7.3 adds the content hash of a module's
 sibling JavaScript file, and requires the `stat` fast-path to cover sibling files and not only
 `.beni` ones; `backend.md` §9 restates the whole key for the reachability edge list.*
-*(ii) **The premise of this layer does not yet hold of the landed record.** An interface is
-specified to be a function of one module's source and its imports' interfaces, but `Interface.Term`'s
-`app` and `alias` tags spend `lhs` on a `TypeStore.TypeId` (`src/resolve/Interface.zig:182-196`),
-and a `TypeId` is a whole-program dense index assigned by walking every module in `Graph.Index` order
-(`src/check/Types.zig:250-278`). Measured: adding one type declaration — `pub` or private — to an
-alphabetically earlier module, or adding a new file containing a type, shifts an untouched,
-non-importing module's `dump --stage=raw` bytes by one word. Hashed as it stands, the cutoff would
-fail to fire on approximately every type-introducing edit. `checker.md` §7 already asks for "a story
-for the whole type table"; this is the sharper half of that, and the fix is to stop writing a session
-`TypeId` into the record.*
+*(ii) **The premise of this layer is now an invariant of the record, and was not before.** An
+interface is specified to be a function of one module's source and its imports' interfaces.
+`Interface.Term`'s `app` and `alias` tags used to spend `lhs` on a `TypeStore.TypeId`, a
+whole-program dense index assigned by walking every module in `Graph.Index` order — so, measured,
+adding one type declaration (`pub` or private) to an alphabetically earlier module, or adding a new
+file containing a type, shifted an untouched, non-importing module's `dump --stage=raw` bytes by one
+word: `term 2 app 15 4` became `term 2 app 16 4`. Hashed as it stood, the cutoff would have failed
+to fire on approximately every type-introducing edit. **Fixed the same day** (plan decision D2):
+`app` and `alias` now index a per-module `type_refs` table whose rows are `(package, declaring
+module's name, type's name)`, which no unrelated edit can move, and `checker.md` §7 states the
+purity rule as an invariant with the encoding and its four consequences. The session's translation
+of those rows into `TypeId`s lives outside the record, in `Types.ref_ids`, so reading one is still
+one array index. Two whole-program reads named in `checker.md` §7 remain — `Types.build` and
+`Types.Builder.aliasBody` — but neither is in the hashed bytes any more.*
 
 **What static dispatch did to this layer, and it is the sharpest measured cost of adopting it.** An
 interface is the *inferred* scheme of each `pub` declaration (§3.1, "Top-level annotations are

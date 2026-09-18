@@ -3523,6 +3523,241 @@ test "a record's fields are laid out in the record by name text, not by symbol i
     try testing.expect(middle < zulu);
 }
 
+/// One module's block of a whole-root `dump --stage=raw`: its `module <name>`
+/// line up to the next one, or to the end.
+fn rawSection(dump: []const u8, module: []const u8) ![]const u8 {
+    var needle_buf: [64]u8 = undefined;
+    const needle = try std.fmt.bufPrint(&needle_buf, "module {s}\n", .{module});
+    const at = std.mem.indexOf(u8, dump, needle) orelse return error.ModuleNotInDump;
+    const rest = dump[at + needle.len ..];
+    const end = std.mem.indexOf(u8, rest, "\nmodule ") orelse return dump[at..];
+    return dump[at .. at + needle.len + end + 1];
+}
+
+/// The three modules of the purity scenario below. `Zeta` is the module
+/// under observation: it imports `Mid` and never mentions `Alpha`.
+fn writePurityProject(w: *World) !void {
+    try w.write("src/Alpha.beni",
+        \\pub type Solo
+        \\    = Solo
+        \\
+    );
+    try w.write("src/Mid.beni",
+        \\pub type Tag
+        \\    = Tag
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+    );
+    try w.write("src/Zeta.beni",
+        \\import Mid exposing (Tag)
+        \\
+        \\
+        \\pub type Pair a
+        \\    = Pair a a
+        \\
+        \\
+        \\pub mk : Int, Tag -> Pair Tag
+        \\mk _ t =
+        \\    Pair t t
+        \\
+    );
+}
+
+test "a type declared elsewhere leaves an untouched module's interface bytes alone" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `fast-compiler.md` §8.1's firewall recompiles a dependent only when
+    // its dependency's interface CHANGED, so an interface record must be a
+    // pure function of its module's source and its imports' interfaces
+    // (checker.md §7). It was not: `Term.app` and `Term.alias` spent `lhs`
+    // on a session `TypeStore.TypeId`, a whole-program dense index assigned
+    // by walking every module in `Graph.Index` order — so one new type
+    // declaration anywhere earlier in sorted-path order rewrote the bytes of
+    // a module that did not import it, and the firewall would have fired on
+    // approximately every type-introducing edit.
+    //
+    // The `--jobs` determinism tests cannot see this (it is not a scheduling
+    // difference) and `bench/churn.sh` cannot either (every one of its edit
+    // classes edits the declaration whose dump it diffs). This is the test
+    // that can: four edit classes, none of them in `Zeta`, and `Zeta`'s
+    // bytes must not move for any of them.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePurityProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const base = try w.runWith(&.{ "dump", "--stage=raw", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), base.exit_code);
+    const before = try rawSection(base.stdout, "Zeta");
+
+    // The edits are cumulative, so every step is also still holding the
+    // previous one's change: (a) a `pub` type in an alphabetically earlier
+    // module `Zeta` does not import; (b) a PRIVATE type in the same module,
+    // which numbering leaked just as loudly as a public one; (c) a whole new
+    // file containing a type; (d) a type added to `Mid`, which `Zeta` DOES
+    // import but whose new type `Zeta`'s interface never mentions.
+    const edits = [_]struct { what: []const u8, path: []const u8, source: []const u8 }{
+        .{ .what = "a pub type in a module Zeta does not import", .path = "src/Alpha.beni", .source =
+        \\pub type Solo
+        \\    = Solo
+        \\
+        \\
+        \\pub type Extra
+        \\    = Extra
+        \\
+        },
+        .{ .what = "a PRIVATE type in a module Zeta does not import", .path = "src/Alpha.beni", .source =
+        \\pub type Solo
+        \\    = Solo
+        \\
+        \\
+        \\pub type Extra
+        \\    = Extra
+        \\
+        \\
+        \\type Hidden
+        \\    = Hidden
+        \\
+        },
+        .{ .what = "a new file containing a type", .path = "src/Beta.beni", .source =
+        \\pub type Thing
+        \\    = Thing
+        \\
+        },
+        .{ .what = "a type added to a module Zeta imports but does not name", .path = "src/Mid.beni", .source =
+        \\pub type Tag
+        \\    = Tag
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+        \\
+        \\pub type Added
+        \\    = Added
+        \\
+        },
+    };
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (edits) |e| {
+        try w.write(e.path, e.source);
+        const r = try w.runWith(&.{ "dump", "--stage=raw", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        const after = rawSection(r.stdout, "Zeta") catch |err| {
+            std.debug.print("after '{s}': {t}\n", .{ e.what, err });
+            return err;
+        };
+        testing.expectEqualStrings(before, after) catch |err| {
+            std.debug.print("Zeta's interface moved after adding {s}\n", .{e.what});
+            return err;
+        };
+    }
+
+    // The record really does name the types it uses, and it names them by
+    // where they are DECLARED rather than by a session index: `Int` from
+    // core, `Tag` from the module `Zeta` imports, `Pair` from `Zeta`
+    // itself. Without this the assertions above would also pass on a record
+    // that had stopped mentioning any type at all.
+    try testing.expect(std.mem.indexOf(u8, before, "typeref 0 core Basics.Int\n") != null);
+    try testing.expect(std.mem.indexOf(u8, before, " app Mid.Tag\n") != null);
+    try testing.expect(std.mem.indexOf(u8, before, " app Zeta.Pair\n") != null);
+}
+
+test "a change to a type a module's interface DOES mention moves its bytes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The converse of the test above, and the reason it is not vacuous: the
+    // firewall has to fire when the interface really changed. Three edits
+    // that reach `Zeta`'s own record — renaming the type it imports,
+    // changing the arity of the type it declares, and adding a constructor
+    // to a type whose constructors are exported (which moves the DECLARING
+    // module's record).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePurityProject(&w);
+
+    const base = try w.runWith(&.{ "dump", "--stage=raw", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), base.exit_code);
+    const zeta_before = try rawSection(base.stdout, "Zeta");
+    const mid_before = try rawSection(base.stdout, "Mid");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: the imported type is renamed │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Mid.beni",
+        \\pub type Label
+        \\    = Tag
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+    );
+    try w.write("src/Zeta.beni",
+        \\import Mid exposing (Label)
+        \\
+        \\
+        \\pub type Pair a
+        \\    = Pair a a
+        \\
+        \\
+        \\pub mk : Int, Label -> Pair Label
+        \\mk _ t =
+        \\    Pair t t
+        \\
+    );
+    const renamed = try w.runWith(&.{ "dump", "--stage=raw", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), renamed.exit_code);
+    try testing.expect(!std.mem.eql(u8, zeta_before, try rawSection(renamed.stdout, "Zeta")));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: a constructor is added │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Mid.beni",
+        \\pub type Label
+        \\    = Tag
+        \\    | Second
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+    );
+    const ctor = try w.runWith(&.{ "dump", "--stage=raw", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), ctor.exit_code);
+    try testing.expect(!std.mem.eql(u8, mid_before, try rawSection(ctor.stdout, "Mid")));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: the local type's arity │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Zeta.beni",
+        \\import Mid exposing (Label)
+        \\
+        \\
+        \\pub type Pair a b
+        \\    = Pair a b
+        \\
+        \\
+        \\pub mk : Int, Label -> Pair Label Label
+        \\mk _ t =
+        \\    Pair t t
+        \\
+    );
+    const arity = try w.runWith(&.{ "dump", "--stage=raw", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), arity.exit_code);
+    try testing.expect(!std.mem.eql(u8, zeta_before, try rawSection(arity.stdout, "Zeta")));
+}
+
 test "an imported constructor is instantiated from the interface, argument types and all" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

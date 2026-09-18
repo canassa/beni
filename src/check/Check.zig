@@ -1037,7 +1037,7 @@ const ModuleCheck = struct {
             &mc.provenance[mc.module.int()]
         else
             &Interface.Provenance.empty;
-        var writer: Schemes.Writer = .init(gpa, store, mc.interner, @intCast(iface.symbols.len));
+        var writer: Schemes.Writer = .init(gpa, store, mc.interner, mc.types, @intCast(iface.symbols.len));
         defer writer.deinit();
         // One frontier for the whole module; `hasError` clears it per call.
         var scan: std.ArrayList(Var) = .empty;
@@ -1090,6 +1090,17 @@ const ModuleCheck = struct {
 
         try mc.fillCtorTerms(env, bir, store, prov, iface, &writer);
         try writer.attach(iface);
+        // The record now says which types it names, as
+        // `(package, module name, type name)` — bytes that do not move when
+        // an unrelated module gains a declaration (`Interface.TypeRef`).
+        // Translating them into this session's `TypeId`s is done ONCE, here,
+        // by the thread that checked this module, so that every dependent's
+        // instantiation is an array index. A dependent cannot start before
+        // this module's check has finished (checker.md §4.4), so the slot is
+        // written before anyone reads it.
+        const ref_ids = &mc.types.ref_ids[mc.module.int()];
+        gpa.free(ref_ids.*);
+        ref_ids.* = try mc.types.resolveRefs(gpa, iface, mc.graph);
     }
 
     /// Every visible constructor's argument types, as terms (checker.md §7's
@@ -1967,6 +1978,7 @@ test "a module with a type error still produces an interface" {
         gpa,
         "M",
         &p.session.resolution.interfaces[m.int()],
+        p.session.checked.types.refIds(m),
         &p.session.checked.types,
         &p.session.interner,
     );

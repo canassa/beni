@@ -232,6 +232,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
                 gpa,
                 session.store.moduleName(file),
                 &session.resolution.interfaces[m.int()],
+                session.checked.types.refIds(m),
                 &session.checked.types,
                 &session.interner,
             ) catch return 2;
@@ -303,7 +304,7 @@ fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.
         if (raw)
             beni.dump.interface.writeRaw(stdout, session.store.moduleName(f), iface, &session.interner) catch return 2
         else
-            beni.dump.interface.write(stdout, gpa, session.store.moduleName(f), iface, &session.checked.types, &session.interner) catch return 2;
+            beni.dump.interface.write(stdout, gpa, session.store.moduleName(f), iface, session.checked.types.refIds(m), &session.checked.types, &session.interner) catch return 2;
         printed += 1;
     }
     if (printed == 0) return fail(stderr, "beni: dump needs at least one module", .{});
