@@ -1,0 +1,58 @@
+-- run: a record literal evaluates its fields in the order they are WRITTEN —
+-- `language.md` §6, *Evaluation order*, the row `EvalOrderLiterals.beni` was
+-- written without because the emitter did not honour it.
+--
+-- `backend.md` §4 sorts the emitted object's KEYS so that one record type has
+-- one hidden class. That is a representation decision and it may not move an
+-- evaluation, so the two halves of every literal below are independent: the
+-- logs come out in written order and the printed records come out sorted.
+--
+-- Four shapes, one per row of §4's record rule:
+--
+--   `rec`     out of order, three initialisers that do something — the sort
+--             moves all three, so each is pinned to a temporary first
+--   `nested`  the same, one level down, where the inner literal is itself an
+--             initialiser of the outer one
+--   `sorted`  written in sorted order already: nothing moves and nothing is
+--             pinned, and the order still has to hold
+--   `hoisted` written in sorted order, but the second initialiser is a `case`
+--             that becomes STATEMENTS, which run before the object literal —
+--             so the first initialiser has to be pinned even though the sort
+--             moved nothing
+import Node exposing (Program)
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+main : Program
+main =
+    let
+        rec =
+            { zed = n "rec.zed" 1, alpha = n "rec.alpha" 2, mid = n "rec.mid" 3 }
+
+        nested =
+            { outer = n "nested.outer" 1, inner = { yy = n "nested.yy" 2, ax = n "nested.ax" 3 } }
+
+        sorted =
+            { alpha = n "sorted.alpha" 1, zed = n "sorted.zed" 2 }
+
+        hoisted =
+            { alpha = n "hoisted.alpha" 1
+            , zed =
+                case Just (n "hoisted.zed" 2) of
+                    Just v ->
+                        v
+
+                    Nothing ->
+                        0
+            }
+    in
+    Node.printLines
+        [ Debug.toString rec
+        , Debug.toString nested
+        , Debug.toString sorted
+        , Debug.toString hoisted
+        ]

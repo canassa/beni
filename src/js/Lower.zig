@@ -1421,6 +1421,71 @@ const Lowerer = struct {
         return result;
     }
 
+    /// Lower a run of sub-expressions in the order they are WRITTEN, and
+    /// keep their evaluation in that order however the caller emits the
+    /// values (`language.md` §6, *Evaluation order*).
+    ///
+    /// Two things move an evaluation once the values are back in the
+    /// caller's hands. The caller may emit them in another order — a record
+    /// literal sorts its keys so that one record type has one hidden class
+    /// (§4) — and a LATER element may hoist statements of its own, which
+    /// run before the expression the earlier values are still sitting
+    /// inside. The answer to both is the same: pin the value that would
+    /// move to a `const` where it was written, and hand the caller the
+    /// name.
+    ///
+    /// **A temporary is bought only where one is needed**, so the emitted
+    /// bytes do not change under a caller that reorders nothing:
+    ///
+    ///   - an ATOM is never pinned. A literal, a name, or the `$t$<n>` a
+    ///     `case` has already assigned costs nothing to re-read and has
+    ///     nothing to observe, so no order over it is visible;
+    ///   - when the caller reorders, the non-atoms are pinned only if there
+    ///     are **two or more** of them: one evaluation cannot be reordered
+    ///     against pure atoms;
+    ///   - a hoist pins everything non-atomic written before the LAST
+    ///     element that hoists, and nothing after it.
+    fn orderedExprs(l: *Lowerer, out: *StmtList, insts: []const Inst.Index, reordered: bool) ![]Node.Index {
+        const values = try l.scratch.alloc(Node.Index, insts.len);
+        const held = try l.scratch.alloc([]const Node.Index, insts.len);
+        var movable: usize = 0;
+        // Each element into a list of its own: whether it hoists is not
+        // known until it is lowered, and what it hoists may not be written
+        // out before the elements in front of it are pinned.
+        for (insts, 0..) |inst, i| {
+            var stmts: StmtList = .empty;
+            values[i] = try l.expr(&stmts, inst);
+            held[i] = stmts.items;
+            if (!l.isAtom(values[i])) movable += 1;
+        }
+        var last_hoist: usize = 0;
+        for (held, 0..) |stmts, i| {
+            if (stmts.len != 0) last_hoist = i;
+        }
+        const pin_all = reordered and movable >= 2;
+        for (insts, 0..) |inst, i| {
+            try out.appendSlice(l.scratch, held[i]);
+            if (l.isAtom(values[i])) continue;
+            if (!pin_all and i >= last_hoist) continue;
+            const p = l.pos(inst);
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, values[i], p);
+            values[i] = try l.ident(n, p);
+        }
+        return values;
+    }
+
+    /// Whether a value can be re-read wherever it lands: no work to repeat,
+    /// nothing to observe, and therefore no order to keep. `bindSubject`
+    /// and `orderedExprs` ask this of the same node tags for the same
+    /// reason.
+    fn isAtom(l: *Lowerer, value: Node.Index) bool {
+        return switch (l.b.nodes.items(.tag)[value.int()]) {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+            else => false,
+        };
+    }
+
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
@@ -1571,21 +1636,40 @@ const Lowerer = struct {
     /// number depends on which worker interned which file, and two modules
     /// building the same record type have to agree on the key order or V8
     /// sees two shapes.
+    ///
+    /// **The sort moves the KEYS and never an initialiser.** It is the
+    /// permutation that is sorted here and not the fields, so the
+    /// initialisers are lowered in written order (`language.md` §6,
+    /// *Evaluation order*) and `orderedExprs` pins whichever of them the
+    /// key order — or a later initialiser's statements — would otherwise
+    /// move. Sorting the fields first and lowering each one, which is what
+    /// this did until 2026-09-18, dragged the evaluation along with the key
+    /// and ran `{ zed = p, alpha = q }` as `q` then `p`.
     fn recordNode(l: *Lowerer, out: *StmtList, range: Bir.SubRange, p: u32) !Node.Index {
         const fields = l.bir.extraSlice(range, Bir.Field);
-        const sorted = try l.scratch.alloc(Bir.Field, fields.len);
-        @memcpy(sorted, fields);
+        const order = try l.scratch.alloc(u32, fields.len);
+        for (order, 0..) |*slot, i| slot.* = @intCast(i);
         const Sorter = struct {
             lower: *Lowerer,
-            fn lessThan(s: @This(), a: Bir.Field, b: Bir.Field) bool {
-                return std.mem.lessThan(u8, s.lower.text(s.lower.bir.symbol(a.name)), s.lower.text(s.lower.bir.symbol(b.name)));
+            fields: []const Bir.Field,
+            fn lessThan(s: @This(), a: u32, b: u32) bool {
+                return std.mem.lessThan(u8, s.text(a), s.text(b));
+            }
+            fn text(s: @This(), i: u32) []const u8 {
+                return s.lower.text(s.lower.bir.symbol(s.fields[i].name));
             }
         };
-        std.mem.sort(Bir.Field, sorted, Sorter{ .lower = l }, Sorter.lessThan);
+        std.mem.sort(u32, order, Sorter{ .lower = l, .fields = fields }, Sorter.lessThan);
+        var reordered = false;
+        for (order, 0..) |field, k| {
+            if (field != k) reordered = true;
+        }
+        const insts = try l.scratch.alloc(Inst.Index, fields.len);
+        for (fields, insts) |f, *slot| slot.* = f.value;
+        const values = try l.orderedExprs(out, insts, reordered);
         var properties: std.ArrayList(Node.Index) = .empty;
-        for (sorted) |f| {
-            const value = try l.expr(out, f.value);
-            try properties.append(l.scratch, try l.property(l.bir.symbol(f.name), value, p));
+        for (order) |field| {
+            try properties.append(l.scratch, try l.property(l.bir.symbol(fields[field].name), values[field], p));
         }
         return l.object(properties.items, p);
     }
@@ -3638,10 +3722,7 @@ const Lowerer = struct {
     /// (§7, `planCase`): a two-alternative boolean node reads it once, and
     /// binding it there is the 41 scrutinee temporaries §7 measures.
     fn bindSubject(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) !Node.Index {
-        switch (l.b.nodes.items(.tag)[value.int()]) {
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return value,
-            else => {},
-        }
+        if (l.isAtom(value)) return value;
         const n = try l.fresh(l.well.temp);
         try l.constDecl(out, n, value, p);
         return l.ident(n, p);

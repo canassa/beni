@@ -1,0 +1,49 @@
+-- emit: a record literal sorts its KEYS and never an initialiser
+-- (`backend.md` §4, `language.md` §6 *Evaluation order*). Behaviour proves the
+-- order — `run/EvalOrderRecordFields.beni` does that — and this pins the other
+-- half of the rule: that the temporaries which keep the order are bought only
+-- where one is needed, so the shape of a literal that moves nothing is exactly
+-- what it was before the rule was enforced.
+--
+-- Four declarations, one per case of §4's record row:
+--
+--   `sortedFields`    written in key order: nothing moves, no temporary, the
+--                     initialisers stay inside the object literal
+--   `unsortedFields`  two initialisers that do something, and the sort swaps
+--                     them: both are pinned to a `$t$<n>` in written order and
+--                     the object reads the names
+--   `unsortedAtoms`   the sort swaps two ATOMS: re-reading a parameter is not
+--                     an evaluation, so nothing is pinned
+--   `unsortedOne`     the sort swaps one call past one atom: one evaluation has
+--                     nothing to be reordered against, so nothing is pinned
+import Node exposing (Program)
+
+
+bump : Int -> Int
+bump n =
+    n + 1
+
+
+pub sortedFields : Int, Int -> { alpha : Int, zed : Int }
+sortedFields a b =
+    { alpha = bump a, zed = bump b }
+
+
+pub unsortedFields : Int, Int -> { alpha : Int, zed : Int }
+unsortedFields a b =
+    { zed = bump a, alpha = bump b }
+
+
+pub unsortedAtoms : Int, Int -> { alpha : Int, zed : Int }
+unsortedAtoms a b =
+    { zed = a, alpha = b }
+
+
+pub unsortedOne : Int, Int -> { alpha : Int, zed : Int }
+unsortedOne a b =
+    { zed = bump a, alpha = b }
+
+
+main : Program
+main =
+    Node.printLines []

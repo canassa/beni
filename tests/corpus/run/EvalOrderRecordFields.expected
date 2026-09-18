@@ -1,0 +1,14 @@
+rec.zed: 1
+rec.alpha: 2
+rec.mid: 3
+nested.outer: 1
+nested.yy: 2
+nested.ax: 3
+sorted.alpha: 1
+sorted.zed: 2
+hoisted.alpha: 1
+hoisted.zed: 2
+{ alpha = 2, mid = 3, zed = 1 }
+{ inner = { ax = 3, yy = 2 }, outer = 1 }
+{ alpha = 1, zed = 2 }
+{ alpha = 1, zed = 2 }

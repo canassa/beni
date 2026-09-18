@@ -652,14 +652,17 @@ observable today; effects will make them observable in what a program *does*.
 | top-level constants | each before its own first use, at module load |
 
 **Two rows the emitter did not honour, found on 2026-09-18 by writing the fixtures for this
-table.** The document is what is right and the code is the bug, per the two rows themselves. The
-first is still open; the second landed with queue slice 21:
+table.** The document is what is right and the code is the bug, per the two rows themselves.
+Both were fixed the same day:
 
-1. A **record literal** evaluates its fields in *sorted field-name order*, because `Lower.recordNode`
-   sorts the fields and then lowers each one, so the key sort drags the initialiser with it:
-   `{ zed = p, alpha = q }` emits `{ alpha: q, zed: p }` and runs `q` first. The fix is to evaluate
-   in written order into temporaries and sort only the properties. Record *update* is already right,
-   because a spread does not move anything.
+1. ~~A **record literal** evaluates its fields in *sorted field-name order*.~~ **Fixed** the same
+   day. `Lower.recordNode` sorted the fields and then lowered each one, so the key sort dragged the
+   initialiser with it and `{ zed = p, alpha = q }` ran `q` first. It now sorts a *permutation* of
+   the fields, lowers the initialisers in written order, and pins one to a `const` exactly when the
+   key order — or a later initialiser's hoisted statements — would otherwise move it
+   (`backend.md` §4). `run/EvalOrderRecordFields.beni` proves the order and
+   `emit/RecordFieldOrder.js` proves that a literal which moves nothing buys no temporary. Record
+   *update* was already right, because a spread does not move anything.
 2. A **`let` value binding that names a later `let` value binding** was accepted by the checker and
    emitted as a `const` in written order, so it trapped at run time with a JavaScript
    `ReferenceError`. **Fixed on 2026-09-18 by refusing the program, not by reordering it**:

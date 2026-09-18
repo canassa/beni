@@ -150,7 +150,7 @@ mapping.
 | function of *n* parameters | one function expression of arity *n*; no arity tag (§6) |
 | a pattern in an irrefutable position | a fresh name plus a destructuring statement, **with no test** — a parameter, a `let` pattern and a `<-` bound pattern alike. Correct by construction: `language.md` §7 makes all of them irrefutable, the parser refusing the shapes no type can rescue and `checker.md` §6.6 refusing a constructor whose type has more than one, so a pattern that could fail never reaches lowering. A single-constructor type destructures through whichever shape §9.4 gave it — `{$: "Tag", a, b}`, or the bare tag when its one constructor is nullary |
 | saturated call at known arity | direct call `f(a, b)` (§6) |
-| record | object literal, keys in a canonical sorted order so one hidden class per record type |
+| record | object literal, keys in a canonical sorted order so one hidden class per record type — the sort moves the **keys** and never an initialiser (below) |
 | constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |
 | nullary constructor | the bare tag |
 | tuple | fixed-shape object per arity, no runtime tag |
@@ -211,6 +211,33 @@ not say.
 native strings, which are Elm's answers and the ones pattern matching and interop respectively push
 toward. M3c benchmarks a 32-way persistent vector trie against cons cells on real idiomatic code, as
 open question 2 requires, and records the result here either way.
+
+### A record literal's keys move; its initialisers do not
+
+The sorted key order above is a **representation** decision and `language.md` §6's *Evaluation
+order* is a **semantic** one, and where they meet the semantics wins: `{ zed = p, alpha = q }`
+emits `{alpha: …, zed: …}` and runs `p` before `q`. So the emitter sorts a permutation of the
+fields, lowers the initialisers in the order they are **written**, and binds one to a `const $t$<n>`
+before the object literal whenever leaving it in place would move its evaluation. M3a sorted the
+fields and then lowered each one, which ran them in key order; the fixtures are
+`run/EvalOrderRecordFields.beni` and `emit/RecordFieldOrder.js`.
+
+**A temporary is bought only where one is needed**, because an unnecessary one is bytes in every
+record literal in the program. Two things can move an evaluation, and an **atom** — a literal, a
+name, or the `$t$<n>` a `case` has already assigned — is moved by neither, since re-reading one
+repeats no work and shows nothing:
+
+| The literal | What is pinned |
+|---|---|
+| already in key order, no initialiser hoisting statements | nothing: the initialisers stay inside the object literal, byte for byte as before |
+| the sort moves the fields, and **at most one** initialiser is not an atom | nothing: one evaluation cannot be reordered against values that are only read |
+| the sort moves the fields, and two or more initialisers are not atoms | every non-atom, to a `const` in written order; the object reads the names |
+| some initialiser lowers to **statements** (a `case`, an `?`) | every non-atom written before the last such initialiser — its statements run before the object literal is built, so what is written in front of it has to have run already |
+
+The rule is deliberately conservative: it pins by the *shape* of the lowered value and never asks
+whether a particular expression could be observed. The same rule holds wherever an emitted order
+can differ from a written one, which is why §7's tree rebuilds occurrences rather than re-evaluating
+subjects, and why record **update** needed nothing: a spread moves no initialiser.
 
 ## 5. Module output and linking
 
