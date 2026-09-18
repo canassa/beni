@@ -1436,6 +1436,42 @@ test "bench/size.mjs counts a derived-shaped name and not core's hand-written on
     try testing.expectEqual(@as(u32, 23), program.derived_functions);
     try testing.expect(program.derived_bytes > 0);
     try testing.expect(program.derived_bytes < program.raw_bytes);
+
+    // And the SPLIT, which is the number M4 reports and §11/A.38 forbid
+    // summing. The twenty-three above break down as nine `$eq` (the eight
+    // core ships plus this module's own `Foo$eq`), nine `$compare` and five
+    // `$order` tables — the same partition the list above is written in, read
+    // down the three columns:
+    //
+    //   eq       Foo$eq  Basics$Never$$eq  Dict$Dict$$eq  Dict$NColor$$eq
+    //            Dict$Tree$$eq  Maybe$Maybe$$eq  Result$Result$$eq
+    //            Set$Set$$eq  Set$eq$unit
+    //   compare  Basics$Never$$compare  Basics$Order$$compare
+    //            Dict$Dict$$compare  Dict$NColor$$compare  Dict$Tree$$compare
+    //            Maybe$Maybe$$compare  Result$Result$$compare
+    //            Set$Set$$compare  Set$compare$unit
+    //   order    Basics$Order$$order  Dict$NColor$$order  Dict$Tree$$order
+    //            Maybe$Maybe$$order  Result$Result$$order
+    //
+    // `$order` is five and not nine because §8.5 emits a table only for a
+    // type with two or more constructors: `Never` has none and `Dict`/`Set`
+    // are one-constructor wrappers.
+    try testing.expectEqual(@as(u32, 9), program.eq_functions);
+    try testing.expectEqual(@as(u32, 9), program.compare_functions);
+    try testing.expectEqual(@as(u32, 5), program.order_tables);
+    // The split is a partition of the same walk, so it adds up on both
+    // axes — that is what makes it safe to report the three separately.
+    try testing.expectEqual(
+        program.derived_functions,
+        program.eq_functions + program.compare_functions + program.order_tables,
+    );
+    try testing.expectEqual(
+        program.derived_bytes,
+        program.eq_bytes + program.compare_bytes + program.order_bytes,
+    );
+    try testing.expect(program.eq_bytes > 0);
+    try testing.expect(program.compare_bytes > 0);
+    try testing.expect(program.order_bytes > 0);
 }
 
 test "bench/size.mjs builds a root that declares no main behind a synthesised entry" {
@@ -1693,6 +1729,14 @@ const SizeProgram = struct {
     net_brotli_bytes: i64,
     derived_bytes: u64,
     derived_functions: u32,
+    // The per-method split M4 reports as three numbers and never as a sum
+    // (§11, A.38).
+    eq_functions: u32,
+    eq_bytes: u64,
+    compare_functions: u32,
+    compare_bytes: u64,
+    order_tables: u32,
+    order_bytes: u64,
 };
 
 const SizeSynthesised = struct {

@@ -1,0 +1,111 @@
+-- ops: 10000000
+--
+-- R5 of the M5 row (`plans/static-dispatch-spike.md` §7): an ordering used
+-- three generic levels below where it was chosen.
+--
+-- This is the **C1** form of `c0/R5EvidenceForwarding.beni`, and the pair
+-- measures **lambda-passing versus evidence**. The C0 program builds a
+-- LAMBDA in `tallyBy` that closes over a local `key`, which is itself a
+-- lambda over the parameter `scale`, and threads it through
+-- `level1 -> level2 -> tally` as an ordinary argument; `cmp x mark` inside
+-- `tally` is then an indirect call through a parameter, and every comparison
+-- pays two `key` calls on top of it.
+--
+-- Here all three levels carry `where a.compare : a, a -> Order` instead. The
+-- comparator parameter is gone from every signature, one hidden evidence
+-- parameter takes its place (§8.1), `x.compare mark` is the call site, and
+-- **no closure is allocated and no `key` is called anywhere in the program**.
+-- `tallyBy` keeps its name and its place — it is still where the ordering is
+-- chosen — but choosing it is now naming the element type, so its `scale`
+-- parameter has no work left to do and is gone with the closure it existed
+-- to capture. That difference IS the row; the two programs are not meant to
+-- be the same JavaScript.
+--
+-- **The checksum is the guard.** `scale` is 1 at the one call site in C0, so
+-- `key` is the identity there and both programs count the same elements of
+-- the same list against the same pivot with the same total order on `Int`.
+-- `5000000` — 20 000 repetitions x 250 elements below the pivot — is what C0
+-- prints, and if this program prints anything else the row is void and the
+-- two are not comparable.
+--
+-- The call site is MONOMORPHIC here — one element type, one ordering — which
+-- is the case V8 inlines best. R6 is the same shape gone megamorphic.
+--
+-- One op is one `compare` call: 500 elements x 20 000 repetitions, the
+-- repetitions run as 40 x 500 because `List.range 1 20000` recurses past
+-- the JavaScript stack until the tail-call loop lands.
+import List
+import Node exposing (Program)
+import String
+
+
+outerReps : Int
+outerReps =
+    40
+
+
+innerReps : Int
+innerReps =
+    500
+
+
+pivot : Int
+pivot =
+    250
+
+
+values : List Int
+values =
+    List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+
+
+-- Level 3: the work. Everything it knows about `a` arrives as evidence.
+tally : List a, a -> Int
+    where a.compare : a, a -> Order
+tally xs mark =
+    List.foldl xs
+        0
+        (\x acc ->
+            case x.compare mark of
+                LT ->
+                    acc + 1
+
+                _ ->
+                    acc
+        )
+
+
+-- Level 2 and level 1: pure forwarding, which is the point. Each one is
+-- generic in `a` and so cannot know what `compare` is; each one forwards the
+-- obligation rather than a value it can see.
+level2 : List a, a -> Int
+    where a.compare : a, a -> Order
+level2 xs mark =
+    tally xs mark
+
+
+level1 : List a, a -> Int
+    where a.compare : a, a -> Order
+level1 xs mark =
+    level2 xs mark
+
+
+-- Where the ordering is chosen. In C0 this builds two closures; here it
+-- discharges one obligation with `Int`'s own `compare` and calls.
+tallyBy : List Int, Int -> Int
+tallyBy xs mark =
+    level1 xs mark
+
+
+main : Program
+main =
+    let
+        total =
+            List.foldl
+                (List.range 1 outerReps)
+                0
+                (\_ acc ->
+                    List.foldl (List.range 1 innerReps) acc (\_ n -> n + tallyBy values pivot)
+                )
+    in
+    Node.print (String.fromInt total)

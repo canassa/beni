@@ -1,0 +1,153 @@
+-- ops: 3000000
+--
+-- R6 of the M5 row (`plans/static-dispatch-spike.md` §7): R5's shape with
+-- THREE element types going through the same three generic levels in one
+-- loop, so the comparison inside `tally` is a megamorphic call site.
+--
+-- This is the **C1** form of `c0/R6Megamorphic.beni` and it is the inline-cache
+-- question of report 18 §1.4. In C0 the three orderings are three lambdas,
+-- each closing over the local `scale` of the function that built it and each
+-- allocated afresh per call. Here they are three **evidence arguments**
+-- reaching one call site — `x.compare mark` in `tally` — whose callee still
+-- varies between `Int`'s primitive comparison, `String`'s and the record
+-- shape's derived one. Whether dispatch helps here, hurts here, or does
+-- nothing is the number this program exists for, and it is the second
+-- program `--cpu-prof` profiles.
+--
+-- Deliberately identical to `c1/R5EvidenceForwarding.beni` except for the
+-- three types, so the pair is a controlled comparison: same list length,
+-- same level chain, same loop.
+--
+-- **Three things make the checksum match C0's `1352000`, and all three are
+-- worth naming because each one is a claim.**
+--
+--   1. `scale` is 1 at every C0 call site, so `flipOrder` is the identity
+--      there. It exists in C0 only to force a genuine capture, and there is
+--      no lambda here to stop V8 folding, so it is gone.
+--   2. `Person`'s comparison in C0 is written by hand as `age` first, then
+--      `name`. The DERIVED `compare` of §9.2 walks a record's fields in
+--      SORTED FIELD-NAME order, and for `{ name, age }` that is `age` then
+--      `name` — the same order, by luck rather than by design, which is why
+--      it is stated here rather than relied on silently.
+--   3. `String`'s `compare` is the hand-written core function in both
+--      programs (§9.1 routes the method to it), so the text ordering is the
+--      same code on both sides.
+--
+-- If this program prints anything but `1352000` the row is void.
+--
+-- One op is one `compare` call: 3 types x 500 elements x 2 000 repetitions,
+-- the repetitions run as 4 x 500 because `List.range 1 2000` is close to the
+-- JavaScript stack limit until the tail-call loop lands.
+import List
+import Node exposing (Program)
+import String
+
+
+outerReps : Int
+outerReps =
+    4
+
+
+innerReps : Int
+innerReps =
+    500
+
+
+type alias Person =
+    { name : String, age : Int }
+
+
+numbers : List Int
+numbers =
+    List.map (List.range 1 500) (\n -> modBy (n * 7919) 499)
+
+
+texts : List String
+texts =
+    List.map numbers String.fromInt
+
+
+people : List Person
+people =
+    List.map numbers (\n -> { name = String.fromInt n, age = modBy n 97 })
+
+
+numberMark : Int
+numberMark =
+    250
+
+
+textMark : String
+textMark =
+    "250"
+
+
+personMark : Person
+personMark =
+    { name = "250", age = 48 }
+
+
+-- Level 3: one function, one `x.compare mark` call site, three element types
+-- reaching it in the same loop through three different evidence arguments.
+tally : List a, a -> Int
+    where a.compare : a, a -> Order
+tally xs mark =
+    List.foldl xs
+        0
+        (\x acc ->
+            case x.compare mark of
+                LT ->
+                    acc + 1
+
+                _ ->
+                    acc
+        )
+
+
+level2 : List a, a -> Int
+    where a.compare : a, a -> Order
+level2 xs mark =
+    tally xs mark
+
+
+level1 : List a, a -> Int
+    where a.compare : a, a -> Order
+level1 xs mark =
+    level2 xs mark
+
+
+tallyNumbers : List Int, Int -> Int
+tallyNumbers xs mark =
+    level1 xs mark
+
+
+tallyTexts : List String, String -> Int
+tallyTexts xs mark =
+    level1 xs mark
+
+
+tallyPeople : List Person, Person -> Int
+tallyPeople xs mark =
+    level1 xs mark
+
+
+main : Program
+main =
+    let
+        total =
+            List.foldl
+                (List.range 1 outerReps)
+                0
+                (\_ acc ->
+                    List.foldl
+                        (List.range 1 innerReps)
+                        acc
+                        (\_ n ->
+                            n
+                                + tallyNumbers numbers numberMark
+                                + tallyTexts texts textMark
+                                + tallyPeople people personMark
+                        )
+                )
+    in
+    Node.print (String.fromInt total)

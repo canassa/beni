@@ -43,6 +43,16 @@
 // `List$eq`, …) are excluded by an explicit list, never by name shape, which
 // is what makes the number 0 on `master` rather than a handful.
 //
+// The same walk also reports the SPLIT — `eq_functions`/`eq_bytes`,
+// `compare_functions`/`compare_bytes`, `order_tables`/`order_bytes` — on the
+// floor line, on every program line and on the total. §11 and A.38 require
+// the per-method cost as separate numbers and never as a sum: a derived
+// `compare` is lexicographic with an early return where a derived `eq` is a
+// chain of `&&` (§9), and an `$order` table is a constructor-index table with
+// no `eq` counterpart at all. The three counts add to `derived_functions` and
+// the three byte figures add to `derived_bytes` by construction, which is what
+// the `build_test` scenario asserts.
+//
 // A corpus root whose modules declare no `main : Program` (bench/corpus is
 // one) cannot be built on its own, so the script synthesises a `BenchMain`
 // that imports every module of the root the compiler can take and builds
@@ -215,9 +225,13 @@ const hand_written = new Set([
   "List$compare",
 ]);
 
-function isDerivedName(name) {
-  if (hand_written.has(name)) return false;
-  return derived_shape.test(name);
+/// `null` if the name is not a derived one; otherwise which of the three
+/// §8.5 spellings it is — `eq`, `compare` or `order` — which is the segment
+/// the name's LAST `$eq` / `$compare` / `$order` carries.
+function derivedKind(name) {
+  if (hand_written.has(name)) return null;
+  const match = name.match(derived_shape);
+  return match === null ? null : match[1];
 }
 
 function measureTree(outDir) {
@@ -225,6 +239,11 @@ function measureTree(outDir) {
   let raw = 0;
   let derivedBytes = 0;
   let derivedFunctions = 0;
+  // §11 and A.38 require the per-method split to be reported as separate
+  // numbers and never as a sum: a derived `compare` is a different shape of
+  // code from a derived `eq` (§9, lexicographic with early return against a
+  // chain of `&&`), and an `$order` table has no `eq` counterpart at all.
+  const split = { eq: { n: 0, bytes: 0 }, compare: { n: 0, bytes: 0 }, order: { n: 0, bytes: 0 } };
   const chunks = [];
   for (const rel of files) {
     const bytes = readFileSync(join(outDir, rel));
@@ -234,9 +253,13 @@ function measureTree(outDir) {
     for (const statement of topLevelStatements(text)) {
       const match = statement.match(declared);
       if (match === null) continue;
-      if (!isDerivedName(match[1])) continue;
+      const kind = derivedKind(match[1]);
+      if (kind === null) continue;
+      const size = Buffer.byteLength(statement, "utf8");
       derivedFunctions += 1;
-      derivedBytes += Buffer.byteLength(statement, "utf8");
+      derivedBytes += size;
+      split[kind].n += 1;
+      split[kind].bytes += size;
     }
   }
   const bundle = Buffer.concat(chunks);
@@ -249,6 +272,12 @@ function measureTree(outDir) {
     }).length,
     derived_bytes: derivedBytes,
     derived_functions: derivedFunctions,
+    eq_functions: split.eq.n,
+    eq_bytes: split.eq.bytes,
+    compare_functions: split.compare.n,
+    compare_bytes: split.compare.bytes,
+    order_tables: split.order.n,
+    order_bytes: split.order.bytes,
   };
 }
 
@@ -311,6 +340,12 @@ function main() {
       brotli_bytes: floor.brotli_bytes,
       derived_bytes: floor.derived_bytes,
       derived_functions: floor.derived_functions,
+      eq_functions: floor.eq_functions,
+      eq_bytes: floor.eq_bytes,
+      compare_functions: floor.compare_functions,
+      compare_bytes: floor.compare_bytes,
+      order_tables: floor.order_tables,
+      order_bytes: floor.order_bytes,
     }),
   );
 
@@ -325,6 +360,12 @@ function main() {
     gross_brotli_bytes: 0,
     derived_bytes: 0,
     derived_functions: 0,
+    eq_functions: 0,
+    eq_bytes: 0,
+    compare_functions: 0,
+    compare_bytes: 0,
+    order_tables: 0,
+    order_bytes: 0,
   };
 
   /// One program's line, and its contribution to the totals.
@@ -345,6 +386,12 @@ function main() {
     total.net_brotli_bytes += net.net_brotli_bytes;
     total.derived_bytes += measured.derived_bytes;
     total.derived_functions += measured.derived_functions;
+    total.eq_functions += measured.eq_functions;
+    total.eq_bytes += measured.eq_bytes;
+    total.compare_functions += measured.compare_functions;
+    total.compare_bytes += measured.compare_bytes;
+    total.order_tables += measured.order_tables;
+    total.order_bytes += measured.order_bytes;
   };
 
   for (const corpus of [...options.corpora].sort()) {
@@ -470,6 +517,12 @@ function main() {
       gross_brotli_bytes: total.gross_brotli_bytes,
       derived_bytes: total.derived_bytes,
       derived_functions: total.derived_functions,
+      eq_functions: total.eq_functions,
+      eq_bytes: total.eq_bytes,
+      compare_functions: total.compare_functions,
+      compare_bytes: total.compare_bytes,
+      order_tables: total.order_tables,
+      order_bytes: total.order_bytes,
     }),
   );
   process.stdout.write(lines.map((line) => `${line}\n`).join(""));
