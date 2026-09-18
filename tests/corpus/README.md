@@ -75,5 +75,10 @@ reason this corpus does not rot the way Elm's did:
   modulo positions, with the same comments in the same order.
 - Abuse inputs are first-class: a hostile file must produce a diagnostic,
   never a panic, a hang or an OOM, and must leave no partial output behind.
-- Determinism: the corpus is run at `--jobs=1` and `--jobs=8`, twice each,
-  and every stream is byte-compared.
+- Determinism, and the interface format: the walker in
+  `tests/blackbox/corpus_test.zig` passes no `--jobs` at all — it never did,
+  and this line used to claim otherwise. The cross is a separate binary,
+  `tests/blackbox/matrix_test.zig`: every fixture of every kind that runs the
+  checker is run {plain, `--roundtrip-interfaces`} × {`--jobs=1`,
+  `--jobs=8`}, and the exit code, stdout, stderr and every file written must
+  agree byte for byte (`fast-compiler.md` §8, `plans/m4-slice-zero.md` §6).
