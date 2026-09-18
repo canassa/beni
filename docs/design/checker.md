@@ -401,8 +401,25 @@ Maranget's usefulness algorithm over the *solved* types: constructors of an ADT 
 type declaration (through the interface for imported types), literals are infinite (`_`
 required), lists are `[]`/`::`, tuples and records are products. Missing patterns →
 `missing_patterns` at the `case` with up to three example patterns rendered; a branch that can
-never match → `redundant_pattern` at the branch. `let` patterns are irrefutable by grammar.
+never match → `redundant_pattern` at the branch.
 This runs only on modules with no type errors in that declaration, so it never sees `err`.
+
+**The same analysis decides `language.md` §7's irrefutable positions** — the parameters of a
+declaration, of a `let`-bound function and of a lambda, a `let` pattern, and a `<-` bound pattern,
+which lowering has already turned into a lambda parameter. Each is run as a **one-row match**: is
+this single pattern exhaustive on its own? Not exhaustive → `refutable_let_pattern` or
+`refutable_parameter_pattern` (§8.1) at the pattern, with the missing constructors rendered exactly
+as `missing_patterns` renders them. Reusing usefulness rather than asking "has this type one
+constructor?" is deliberate: nesting (`Pair (Box a) b`), a type with no constructors, an opaque
+imported type and the tuple/record/`as` shapes all fall out of the one algorithm, and there is no
+second test that can drift from the first. The parser has already refused the literal, list and
+`::` shapes, which no type can rescue, so only a pattern containing a constructor is analysed here.
+
+**Budget exhaustion is a refusal in an irrefutable position, not silence.** A `case` that exhausts
+the budget reports nothing (below) because the cost of that is a missed warning. An irrefutable
+position that exhausts it reports the refutable-pattern error with no examples and says why, because
+the cost of silence there is the guarantee `backend.md` §4's unchecked destructure stands on. Same
+mechanism, opposite default, for the reason the two answers are worth.
 
 What M2c built (`check/Exhaustive.zig`), and where it reads this paragraph more narrowly than
 it is written:
@@ -547,6 +564,7 @@ missing_field  unknown_field  record_not_closed
 not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
 tuple_index_out_of_range  not_a_tuple  try_shape
 missing_patterns  redundant_pattern
+refutable_let_pattern  refutable_parameter_pattern   (shared with the parser; §6.6, language.md §7)
 nesting_too_deep                                (shared with the parser; §5)
 unknown_method  private_method  no_methods_on_shape  missing_where_constraint
 method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_receiver

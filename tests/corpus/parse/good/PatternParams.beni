@@ -1,6 +1,9 @@
 -- Destructuring in function and lambda parameters (PatAtom only): tuples,
 -- records, wildcards, unit, a parenthesised constructor pattern, `as`, and
--- nesting; the type used is declared after its first use.
+-- nesting; the type used is declared after its first use. A constructor
+-- parameter PARSES here whatever its type is — §7 leaves "does it match
+-- everything?" to the checker — while a list or `::` parameter can never
+-- match everything and is a parse error (`parse/bad/RefutableParameterList`).
 first ( a, _ ) =
     a
 
@@ -35,11 +38,3 @@ deep ( ( a, b ), { c } ) =
 
 lambdaParams =
     \( a, b ) { c } (Box d) -> a + b + c + d
-
-
-listParam [ x, y ] =
-    x + y
-
-
-consParam (x :: rest) =
-    ( x, rest )

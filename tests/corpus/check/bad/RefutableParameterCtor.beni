@@ -1,0 +1,47 @@
+-- check/bad: §7's irrefutability is TYPE-DIRECTED for a constructor, so the
+-- parser admits `un (Just n)` and the checker refuses it — usefulness on the
+-- pattern as a one-row match (§6.6), which is why the message names what is
+-- missing. Before this rule `un Nothing` built clean and returned `null`.
+-- refutable_parameter_pattern at 21:5, 26:7, 31:9, 36:9 and 41:19; `fine` is
+-- the other side — `Boxed` is its type's only constructor, so it is accepted.
+type Shape
+    = Circle Int
+    | Square Int
+
+
+type Boxed
+    = Boxed Int
+
+
+type Pair
+    = Pair (Maybe Int) Int
+
+
+pub un : Maybe Int -> Int
+un (Just n) =
+    n
+
+
+pub side : Shape -> Int
+side (Circle r) =
+    r
+
+
+pub nullary : Maybe Int -> Int
+nullary Nothing =
+    0
+
+
+pub nested : Pair -> Int
+nested (Pair (Just a) b) =
+    a + b
+
+
+pub inTuple : ( Maybe Int, Int ) -> Int
+inTuple ( Just a, b ) =
+    a + b
+
+
+pub fine : Boxed -> Int
+fine (Boxed n) =
+    n

@@ -1,0 +1,30 @@
+-- check/bad: the rule reaches every irrefutable position, not just a top-level
+-- definition's parameters (§7) — a lambda's (8:8), a `let`-bound function's
+-- (14:12), and the pattern of a `let x <- e` (28:9), which §6.7 desugars into
+-- the callback's PARAMETER and which is therefore named as one, by the parser
+-- and by the checker alike.
+pub lambda : Int
+lambda =
+    (\(Just n) -> n) (Just 1)
+
+
+pub letBound : Int
+letBound =
+    let
+        f (Just n) =
+            n
+    in
+    f (Just 2)
+
+
+withMaybe : Maybe Int, (Maybe Int -> Int) -> Int
+withMaybe m body =
+    body m
+
+
+pub bound : Int
+bound =
+    let
+        Just v <- withMaybe (Just 3)
+    in
+    v

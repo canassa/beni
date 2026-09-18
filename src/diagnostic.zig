@@ -77,6 +77,11 @@ pub const Code = enum {
     negation_with_space,
     invalid_tuple_index,
     refutable_let_pattern,
+    /// The same rule one scope out, appended on 2026-09-18 (`language.md`
+    /// §7): a function or lambda PARAMETER must be irrefutable too. Its own
+    /// code rather than `refutable_let_pattern`'s, because that message
+    /// names `let` and a parameter is not one.
+    refutable_parameter_pattern,
     placeholder_outside_argument,
     multiple_placeholders,
     operator_not_a_function,
@@ -217,6 +222,7 @@ pub fn title(code: Code) []const u8 {
         .negation_with_space => "NEGATION WITH SPACE",
         .invalid_tuple_index => "INVALID TUPLE INDEX",
         .refutable_let_pattern => "REFUTABLE PATTERN",
+        .refutable_parameter_pattern => "REFUTABLE PARAMETER",
         .placeholder_outside_argument => "PLACEHOLDER OUTSIDE ARGUMENT",
         .multiple_placeholders => "TWO PLACEHOLDERS",
         .operator_not_a_function => "OPERATOR IS NOT A FUNCTION",

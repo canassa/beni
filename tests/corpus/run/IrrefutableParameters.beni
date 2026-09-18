@@ -1,0 +1,168 @@
+-- Every pattern §7 allows in an irrefutable position, destructured in a
+-- definition, a lambda, a `let`, a `let`-bound function and a `let x <- e`,
+-- and then RUN. Two halves: the shapes the parser admits without types
+-- (name, `_`, `()`, tuple, record, `as`, nesting), and the constructor
+-- patterns the checker admits because their type has only the one — which
+-- is what makes `core`'s `Dict`, `Set` and `Never` compile as written.
+--
+-- The backend destructures all of these with no test at all (`backend.md`
+-- §4), so this fixture is the evidence for that: it covers both shapes
+-- `ctorRepOf` can give a single-constructor type — `tagged` (`Box`, `Rec`,
+-- `Pair`) and `bare_tag` (`Unit`, whose one constructor is nullary, so the
+-- value is the bare tag string and the destructure binds nothing). The
+-- third, `boolean`, cannot occur: `Bool` has two constructors.
+import List
+import Node exposing (Program)
+import String
+
+
+type Box
+    = Box Int
+
+
+type Wrapped
+    = Wrapped Box
+
+
+type Pair
+    = Pair Box Box
+
+
+type Rec
+    = Rec { n : Int, s : String }
+
+
+type Unit
+    = Unit
+
+
+-- ---- the shapes that need no types ----------------------------------------
+addPair : ( Int, Int ) -> Int
+addPair ( a, b ) =
+    a + b
+
+
+ignore : Int, Int -> Int
+ignore _ n =
+    n
+
+
+fromUnit : () -> Int
+fromUnit () =
+    7
+
+
+fullName : { firstName : String, lastName : String } -> String
+fullName { firstName, lastName } =
+    "${firstName} ${lastName}"
+
+
+rebuild : ( Int, Int ) -> Int
+rebuild (( a, b ) as both) =
+    a + b + addPair both
+
+
+deep : ( ( Int, Int ), { c : Int } ) -> Int
+deep ( ( a, b ), { c } ) =
+    a + b + c
+
+
+-- ---- single-constructor types, admitted by the checker ---------------------
+unbox : Box -> Int
+unbox (Box n) =
+    n
+
+
+nested : Wrapped -> Int
+nested (Wrapped (Box n)) =
+    n
+
+
+pairSum : Pair -> Int
+pairSum (Pair (Box a) (Box b)) =
+    a + b
+
+
+inTuple : ( Box, Int ) -> Int
+inTuple ( Box a, b ) =
+    a + b
+
+
+ofRecord : Rec -> String
+ofRecord (Rec r) =
+    "${r.s}${String.fromInt r.n}"
+
+
+-- The `bare_tag` representation: one constructor, no fields, so the value is
+-- the tag itself and the destructure has nothing to read off it.
+countUnit : Unit -> Int
+countUnit Unit =
+    1
+
+
+letUnwrap : Box -> Int
+letUnwrap b =
+    let
+        (Box n) =
+            b
+    in
+    n
+
+
+letNested : Pair -> Int
+letNested p =
+    let
+        Pair (Box a) (Box b) =
+            p
+    in
+    a + b
+
+
+letBoundFn : Int
+letBoundFn =
+    let
+        f (Box n) =
+            n
+    in
+    f (Box 11)
+
+
+withBox : Box, (Box -> Int) -> Int
+withBox b body =
+    body b
+
+
+bound : Int
+bound =
+    let
+        Box n <- withBox (Box 12)
+    in
+    n
+
+
+lambdas : List Int
+lambdas =
+    List.map [ Box 1, Box 2 ] (\(Box n) -> n)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (addPair ( 1, 2 ))
+        , String.fromInt (ignore 1 2)
+        , String.fromInt (fromUnit ())
+        , fullName { firstName = "Ada", lastName = "Lovelace" }
+        , String.fromInt (rebuild ( 10, 20 ))
+        , String.fromInt (deep ( ( 1, 2 ), { c = 3 } ))
+        , String.fromInt (unbox (Box 4))
+        , String.fromInt (nested (Wrapped (Box 5)))
+        , String.fromInt (pairSum (Pair (Box 6) (Box 7)))
+        , String.fromInt (inTuple ( Box 8, 9 ))
+        , ofRecord (Rec { n = 10, s = "r" })
+        , String.fromInt (countUnit Unit)
+        , String.fromInt (letUnwrap (Box 13))
+        , String.fromInt (letNested (Pair (Box 14) (Box 15)))
+        , String.fromInt letBoundFn
+        , String.fromInt bound
+        , String.fromInt (List.sum lambdas)
+        ]

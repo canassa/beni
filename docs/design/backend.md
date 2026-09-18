@@ -145,6 +145,7 @@ mapping.
 |---|---|
 | top-level value | one `const` per declaration, module-qualified name in dev, short name in release |
 | function of *n* parameters | one function expression of arity *n*; no arity tag (§6) |
+| a pattern in an irrefutable position | a fresh name plus a destructuring statement, **with no test** — a parameter, a `let` pattern and a `<-` bound pattern alike. Correct by construction: `language.md` §7 makes all of them irrefutable, the parser refusing the shapes no type can rescue and `checker.md` §6.6 refusing a constructor whose type has more than one, so a pattern that could fail never reaches lowering. A single-constructor type destructures through whichever shape §9.4 gave it — `{$: "Tag", a, b}`, or the bare tag when its one constructor is nullary |
 | saturated call at known arity | direct call `f(a, b)` (§6) |
 | record | object literal, keys in a canonical sorted order so one hidden class per record type |
 | constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |

@@ -209,7 +209,7 @@ TypeAlias   := 'type' 'alias' upper_ident lower_ident* '=' Type
 TypeDecl    := 'type' upper_ident lower_ident* '=' Ctor ('|' Ctor)*
 Ctor        := upper_ident TypeAtom*
 Annotation  := lower_ident ':' Type
-Definition  := lower_ident PatAtom* '=' Expr
+Definition  := lower_ident Param* '=' Expr                       -- irrefutable only (§7)
 
 Type        := TypeParams '->' Type                              -- n-ary, right assoc in result
              | TypeApp
@@ -231,7 +231,7 @@ RecordTypeFields := lower_ident ':' Type (',' lower_ident ':' Type)*
 Expr        := 'let' LetBinding+ 'in' Expr
              | 'if' Expr 'then' Expr 'else' Expr
              | 'case' Expr 'of' Branch+
-             | '\' PatAtom+ '->' Expr
+             | '\' Param+ '->' Expr                              -- irrefutable only (§7)
              | BinOp
 LetBinding  := Annotation? Definition
              | LetPattern '=' Expr                               -- pattern binds have no args
@@ -271,8 +271,17 @@ PatAtom     := '_' | lower_ident
 LetPattern  := '_' | lower_ident | '(' ')' | '(' LetPattern ')'  -- irrefutable only (§7)
              | '(' LetPattern (',' LetPattern)+ ')'
              | '{' lower_ident (',' lower_ident)* '}'
+             | (upper_ident | qualified_upper) LetPattern*       -- if its type has ONE ctor
              | LetPattern 'as' lower_ident
+Param       := PatAtom, restricted to LetPattern's shapes        -- irrefutable (§7)
 ```
+
+`Param` and `LetPattern` are the same restriction in two places, and it is **not purely
+syntactic**: the constructor line above is admitted by the grammar and settled by the checker,
+because "does `Box x` match every `Box`?" is a question about `Box`'s type. §7 states the rule, the
+parser enforces the half of it that needs no types, and `checker.md` §6.6 decides the rest. A
+`Param` is the `PatAtom` spelling of the same set, so `as` reaches it only inside the parenthesised
+form — already the only place a `PatAtom` can carry one.
 
 The rest of this section constrains the grammar above. Rules belonging to one construct are stated
 where it is: records §6.3, operators and negation §6.5, `?` §6.6, `_`, `|>` and `<-` §6.7, §7
@@ -602,14 +611,17 @@ render scope conn h
 | `bind_rhs_not_application` | anything that is not a call once the rest of the block is appended — a `case`, an `if`, a lambda, a `let`, a `?`, an arithmetic expression |
 | pipes | a `\|>`/`<\|` chain is legal in principle, because pipes rewrite before the bind does (the order rule above), so `let x <- File.read path \|> Task.mapError f` means `Task.mapError (File.read path) f (\x -> rest)`. The chain's head application is what receives the callback, so the bind attaches to `Task.mapError`, not to the pipe. |
 | no `_`, no annotation | a bind is a call missing exactly its final argument, not a partial application, so a `_` among the bind's own arguments is `placeholder_outside_argument`; a `_` in a nested application inside one of those arguments lifts over that application as usual. `let x : T` may only precede a `Definition`, so an annotation above a bind is `annotation_without_definition`. Whether the callee's last parameter is in fact a function is a type question, reported in M2 as `bind_not_callback`. |
-| what `rest` is, and the bound pattern | `rest` is every binding after this one together with the `in` body. A `<-` may appear anywhere in the binding list, last included, where `rest` is the body alone. A bind inside a `case` arm or an `if` branch opens its own `let` and cannot reach past the branch it sits in. The bound pattern is a `LetPattern`, so irrefutable, and is in scope only in `rest` (§7). |
+| what `rest` is, and the bound pattern | `rest` is every binding after this one together with the `in` body. A `<-` may appear anywhere in the binding list, last included, where `rest` is the body alone. A bind inside a `case` arm or an `if` branch opens its own `let` and cannot reach past the branch it sits in. The bound pattern is a `LetPattern`, so irrefutable, and is in scope only in `rest` (§7). Because the desugaring makes it the callback's **parameter**, that is what it is called when it breaks the rule: `refutable_parameter_pattern`, from the parser and from the checker alike — the checker only ever sees it as a `lambda` parameter, and one position may not have two names. A `_` placeholder's lambda needs no rule at all: its parameter is a name lowering invents, never a written pattern. |
 | against §6.6 | **the callback is a lambda**, so a `?` anywhere in `rest` is `question_in_lambda`. The restriction is conservative and reversible: letting `?` return from the callback is correct only when the callee passes its result through unchanged, which the front end cannot know. Same question as `transparent-effects-proposal.md` §11 Q5, to be settled there. |
 
 ## 7. Scoping and shadowing
 
 | Rule | Detail |
 |---|---|
-| irrefutable `let` patterns | a `let` pattern binding must be a name, `_`, unit, a tuple or record of irrefutable patterns, or one of those with `as` (`LetPattern` in §3). A constructor, literal or `::` pattern there is a syntax error (`refutable_let_pattern`); use `case`. Elm's rule, and it keeps exhaustiveness out of `let`. |
+| **irrefutable positions**, and what irrefutable means | **one rule for five positions**: the parameters of a top-level definition, of a `let`-bound function and of a lambda, a `let` pattern, and the pattern of a `let p <- e` — in all five, the pattern must **match every value of its type**. It is Elm's rule, and it keeps exhaustiveness out of everything but `case`. A pattern qualifies when it is a name, `_`, `()`, a record, a tuple of qualifying patterns, one of those with `as`, or **a constructor of a type that has only that one constructor**, whose arguments all qualify (`LetPattern` in §3). So `unwrap (Box x) = x` and `let (Box x) = b` are both legal and `un (Just n) = n` is not. |
+| how it is decided, and by whom | **the rule is type-directed, so it is enforced in two places and they cannot disagree.** A literal, a list and a `::` fail it whatever the types are, so the **parser** refuses those, early and cheaply. A **constructor** is admitted by the parser and settled by the **checker**, which runs the pattern through the same usefulness analysis a `case` gets, as a one-row match (`checker.md` §6.6) — so nesting (`Pair (Box a) b`), a type with no constructors, and an opaque imported type all fall out of one algorithm rather than a second single-constructor test that could drift from the first. |
+| the two codes | `refutable_let_pattern` for a `let` pattern, `refutable_parameter_pattern` for the other four. **A `<-` bound pattern is a parameter**, because §6.7 desugars it into the callback's parameter; naming it that way is what keeps the parser and the checker from labelling one position two ways. Each code has a parse-time and a check-time source (§10); only the check-time one can name the constructors that are missing. The backend may therefore destructure any of these positions with no test (`backend.md` §4). |
+| provenance | Manager decision of 2026-09-18, owner offline; reversible. The alternative considered and rejected was the purely **syntactic** rule — refuse every constructor in these positions, as the parser alone can — which is simpler and needs no checker pass. It was built first and withdrawn: it rejected 40 existing declarations, 27 of them in `core` (`Dict`, `Set`, `Never` unwrapping their one constructor), none of them a real refutability risk, and it left beni with no way to unwrap an opaque newtype except `case`. |
 | what binds, and where | every binding introduces a name into a lexical scope: function parameters, lambda parameters, `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression — mutual recursion is allowed), pattern variables in `case` branches and destructuring. Top-level names are all in scope in every body; order does not matter. |
 | `shadowing`, `duplicate_pattern_variable` | **shadowing is an error**: a binding may not reuse a name already bound in an enclosing scope, including top-level names of this file and names in `exposing` lists. Two sibling scopes may reuse a name (`\x -> …` twice). A pattern may not bind the same name twice: `duplicate_pattern_variable`. |
 | order | `let` bindings are in scope throughout their `let`, **except that a `<-` splits the block** (§6.7): a name bound at or before a `<-` is in scope in the whole block, the `<-`-bound name itself only in `rest` because the desugaring puts it inside a lambda, and a `<-` right-hand side may not reference a binding that appears after it (`bind_rhs_forward_reference`). Mutual recursion through a `<-` is therefore not available — what the desugaring means, not a restriction on top of it. |
@@ -695,7 +707,7 @@ invalid_char_literal  doc_comment_unattached  module_doc_not_at_top
 expected_declaration  expected_token  unexpected_token  unclosed_delimiter
 annotation_without_definition  pub_on_definition  opaque_not_on_type  case_without_branches
 args_after_question  non_associative_chain  negation_with_space  invalid_tuple_index
-refutable_let_pattern  nesting_too_deep
+refutable_let_pattern  refutable_parameter_pattern  nesting_too_deep
 placeholder_outside_argument  multiple_placeholders  operator_not_a_function
 pipe_rhs_not_application  bind_rhs_not_application  bind_rhs_forward_reference
 arrow_in_tuple_element  bind_not_callback
@@ -722,6 +734,12 @@ constrained_constant
 too_many_inferred_constraints
 foreign_arity_mismatch
 ```
+
+**Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
+are raised by the **parser** for the shapes no type can rescue and by the **checker** for a
+constructor whose type has more than one (§7; [`checker.md`](checker.md) §6.6, §8.1). One rule, one
+code per position, two places that enforce it — the message differs, because only the checker's can
+name the constructors that are missing. `nesting_too_deep` is shared the same way (§5).
 
 **How the catalogue is laid out.** After the M1 catalogue:
 

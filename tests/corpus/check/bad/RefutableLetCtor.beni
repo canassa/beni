@@ -1,0 +1,35 @@
+-- check/bad: `let` was widened with parameters and by the same analysis (§7,
+-- manager decision 2026-09-18) — `let (Boxed n) = b` is legal because `Boxed`
+-- is its type's only constructor, and `let (Just v) = m` is
+-- refutable_let_pattern from the CHECKER, at 14:9, naming what is missing. A
+-- constructor nested inside an irrefutable tuple counts (23:19): the analysis
+-- reads the whole pattern as one row.
+type Boxed
+    = Boxed Int
+
+
+pub refutable : Maybe Int -> Int
+refutable m =
+    let
+        Just v =
+            m
+    in
+    v
+
+
+pub insideTuple : ( Maybe Int, Int ) -> Int
+insideTuple pair =
+    let
+        ( Just v, n ) =
+            pair
+    in
+    v + n
+
+
+pub fine : Boxed -> Int
+fine b =
+    let
+        (Boxed n) =
+            b
+    in
+    n

@@ -415,8 +415,27 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .refutable_let_pattern => try w.print(
             \\I found `{s}` in a `let` pattern, but a `let` pattern must always match.
             \\
-            \\Only a name, `_`, `()`, and tuples or records of those can be bound in a `let`. To
-            \\match a constructor, a literal or a list, use `case`.
+            \\A literal, a list and a `::` each match some values of their type and not others,
+            \\whatever that type turns out to be, so none of them can be bound in a `let`. A
+            \\CONSTRUCTOR can, when its type has only that one — `let (Box n) = b` is fine and
+            \\`let (Just n) = m` is not, and I say which after I have checked the types. To
+            \\match on more than one shape, use `case`.
+        , .{text}),
+        .refutable_parameter_pattern => try w.print(
+            \\I found `{s}` in a parameter, but a parameter must always match.
+            \\
+            \\A literal, a list and a `::` each match some arguments and not others, whatever
+            \\their type turns out to be, and there is nowhere for the rest to go. (A
+            \\CONSTRUCTOR is allowed here when its type has only that one; I say which after I
+            \\have checked the types.) Take the argument whole and `case` on it:
+            \\
+            \\    un m =
+            \\        case m of
+            \\            Just n ->
+            \\                n
+            \\
+            \\            Nothing ->
+            \\                0
         , .{text}),
         .import_after_declaration => try w.writeAll(
             \\This `import` comes after a declaration.

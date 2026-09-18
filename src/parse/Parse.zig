@@ -886,7 +886,7 @@ fn parseWhereConstraint(p: *Parse) Allocator.Error!Index {
 fn parseDefinition(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     p.context = .definition;
     const name = p.next();
-    const params = try p.parsePatAtoms();
+    const params = try p.parseParams();
     _ = try p.expectToken(.equal);
     const body = try p.parseExpr();
     const extra = try p.addExtra(Ast.Definition{ .header = header, .params_start = params.start, .params_end = params.end });
@@ -1891,7 +1891,7 @@ fn parseLambda(p: *Parse) Allocator.Error!Index {
     const saved_context = p.setContext(.lambda);
     defer p.context = saved_context;
     const backslash = p.next();
-    const params = try p.parsePatAtoms();
+    const params = try p.parseParams();
     if (params.len() == 0) {
         @branchHint(.cold);
         var item = p.itemAt(.unexpected_token);
@@ -2050,7 +2050,7 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
             }
             if (p.peekAt(1) != .keyword_as and p.peekAt(1) != .arrow_left) {
                 const name = p.next();
-                const params = try p.parsePatAtoms();
+                const params = try p.parseParams();
                 _ = try p.expectToken(.equal);
                 const body = try p.parseExpr();
                 const extra = try p.addExtra(params);
@@ -2061,8 +2061,16 @@ fn parseLetBinding(p: *Parse) Allocator.Error!Index {
         else => {},
     }
     const pattern = try p.parsePattern();
-    try p.checkIrrefutable(pattern);
-    if (p.peek() == .arrow_left) {
+    // §6.7 desugars `p <- e` into a call whose last argument is a callback
+    // `\p -> rest`, so the bound pattern IS a parameter and is named as
+    // one; `p = e` is a `let` pattern. The rule is the same either way
+    // (§7) — what differs is only which code says so, and the operator has
+    // to be peeked at BEFORE the check so that the parser and the checker
+    // (where the same position reappears as a `lambda` parameter) cannot
+    // name one position two ways.
+    const bind = p.peek() == .arrow_left;
+    try p.checkIrrefutable(pattern, if (bind) .refutable_parameter_pattern else .refutable_let_pattern);
+    if (bind) {
         _ = p.next();
         const value = try p.parseExpr();
         try p.checkBindRhs(value);
@@ -2167,25 +2175,59 @@ fn applyArgs(p: *const Parse, node: Index) []const u32 {
     return p.extra.items[d.lhs + 1 .. d.rhs];
 }
 
-/// LetPattern (§3, §7): a name, `_`, unit, or tuples/records of those,
-/// optionally with `as`. Anything else is `refutable_let_pattern`.
-fn checkIrrefutable(p: *Parse, node: Index) Allocator.Error!void {
+/// The HALF of §7's irrefutability rule that types cannot change: a
+/// literal, a list and a `::` match some values of their type and not
+/// others whatever that type turns out to be, so they are rejected here,
+/// early and cheaply, in every irrefutable position — a `let` pattern, a
+/// `<-` bound pattern, and the parameters of a definition, a `let`-bound
+/// function or a lambda. `code` says which position found it.
+///
+/// A **constructor** pattern is not decided here. Whether `Box x` always
+/// matches depends on how many constructors `Box`'s type has, which is a
+/// question about types; the checker asks it with the same usefulness
+/// analysis a `case` gets (`checker.md` §6.6) and raises the same two
+/// codes. So this walk descends THROUGH a constructor's arguments — a `::`
+/// inside one is still hopeless — without judging the constructor itself.
+fn checkIrrefutable(p: *Parse, node: Index, code: diagnostic.Code) Allocator.Error!void {
     const tags = p.nodes.items(.tag);
     const data = p.nodes.items(.data);
-    switch (tags[node.int()]) {
-        .pat_wild, .pat_var, .pat_unit, .pat_record, .error_pattern => {},
-        .pat_paren, .pat_as => try p.checkIrrefutable(@enumFromInt(data[node.int()].lhs)),
-        .pat_tuple => {
+    const tag = tags[node.int()];
+    // Already reported as whatever it really was — the depth guard hands a
+    // pattern position an `error_expr` — and "it is also refutable" adds
+    // nothing to that.
+    if (tag.isError()) return;
+    switch (tag) {
+        .pat_wild, .pat_var, .pat_unit, .pat_record => {},
+        .pat_paren, .pat_as => try p.checkIrrefutable(@enumFromInt(data[node.int()].lhs), code),
+        .pat_tuple, .pat_ctor => {
             const range: SubRange = .{ .start = @enumFromInt(data[node.int()].lhs), .end = @enumFromInt(data[node.int()].rhs) };
-            for (p.extra.items[@intFromEnum(range.start)..@intFromEnum(range.end)]) |child| try p.checkIrrefutable(@enumFromInt(child));
+            for (p.extra.items[@intFromEnum(range.start)..@intFromEnum(range.end)]) |child| try p.checkIrrefutable(@enumFromInt(child), code);
         },
         else => {
             @branchHint(.cold);
-            var item = p.itemAtToken(.refutable_let_pattern, p.nodes.items(.main_token)[node.int()]);
-            item.context = .let_bindings;
+            var item = p.itemAtToken(code, p.nodes.items(.main_token)[node.int()]);
+            // A binding list has to name its context: `parsePattern` has
+            // restored whatever enclosed the `let`, which is not it. A
+            // parameter's ambient context is already the definition or the
+            // lambda it belongs to.
+            if (code == .refutable_let_pattern) item.context = .let_bindings;
             _ = try p.report(item);
         },
     }
+}
+
+/// The parameters of a `Definition`, of a `let`-bound function or of a
+/// lambda (§3), each checked against §7: a parameter pattern is
+/// irrefutable, exactly as a `let` pattern is. That is what lets the
+/// backend destructure one with no test at all (`backend.md` §4). What is
+/// checked HERE is only the half of the rule that needs no types.
+fn parseParams(p: *Parse) Allocator.Error!SubRange {
+    const params = try p.parsePatAtoms();
+    var i = @intFromEnum(params.start);
+    while (i < @intFromEnum(params.end)) : (i += 1) {
+        try p.checkIrrefutable(@enumFromInt(p.extra.items[i]), .refutable_parameter_pattern);
+    }
+    return params;
 }
 
 // ---------------------------------------------------------------------------
@@ -3979,7 +4021,12 @@ test "let bindings: definitions, annotations, irrefutable patterns, and refutabl
         \\        (ident l))
         \\      (ident y))))
         \\
-    , &.{ .{ .code = .refutable_let_pattern, .line = 9, .col = 9 }, .{ .code = .refutable_let_pattern, .line = 10, .col = 9 }, .{ .code = .refutable_let_pattern, .line = 11, .col = 12 } });
+        // `Just y` on line 9 is NOT reported here: whether a constructor
+        // always matches depends on how many its type has, which the
+        // parser does not know, so §7 leaves it to the checker. The
+        // literal and the `::` can never match everything whatever the
+        // types are, so those two stay parse errors.
+    , &.{ .{ .code = .refutable_let_pattern, .line = 10, .col = 9 }, .{ .code = .refutable_let_pattern, .line = 11, .col = 12 } });
 }
 
 // ---- Doc comments ----------------------------------------------------------

@@ -1558,6 +1558,66 @@ pub const Reporter = struct {
         try r.emit(.missing_patterns, region, &out);
     }
 
+    /// A pattern in an **irrefutable** position — a parameter, a `let`
+    /// pattern, a `<-` bound pattern — that does not match every value of
+    /// its type (`language.md` §7). The parser rejects the shapes no type
+    /// can rescue; this is the other half, where the answer needed the
+    /// types: a constructor of a type that has more than one.
+    ///
+    /// `code` picks which position is being talked about, and it is one of
+    /// the parser's two codes on purpose — the rule is one rule, so the
+    /// author sees one code for it wherever it was decided. `examples` are
+    /// rendered by `Render.allocPattern` exactly as `missingPatterns`'
+    /// are; an EMPTY slice means the analysis ran out of budget, which in
+    /// this position is a refusal and not silence (checker.md §6.6).
+    pub fn refutablePattern(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        code: diagnostic.Code,
+        examples: []const []const u8,
+    ) Error!void {
+        if (r.quiet) return;
+        const what: []const u8 = if (code == .refutable_let_pattern) "A `let` pattern" else "A parameter";
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        if (examples.len == 0) {
+            w.print(
+                \\I cannot prove that this pattern matches every value of its type.
+                \\
+                \\{s} has to match whatever it is given, and the search that decides
+                \\that ran out of budget here (`--pattern-budget`). An answer I could not
+                \\compute is a refusal in this position, because there is no branch to fall
+                \\through to. Match on the value with `case`, which may be as big as it likes.
+                \\
+            , .{what}) catch return error.OutOfMemory;
+            return r.emit(code, region, &out);
+        }
+        w.print(
+            \\This pattern does not match every value of its type:
+            \\
+            \\Missing possibilities include:
+            \\
+            \\
+        , .{}) catch return error.OutOfMemory;
+        for (examples) |e| w.print("    {s}\n", .{e}) catch return error.OutOfMemory;
+        w.print(
+            \\
+            \\{s} has to match whatever it is given, so there is nowhere for those to
+            \\go and I would have to crash. Take the value whole and `case` on it:
+            \\
+            \\    un m =
+            \\        case m of
+            \\            Just n ->
+            \\                n
+            \\
+            \\            Nothing ->
+            \\                0
+            \\
+        , .{what}) catch return error.OutOfMemory;
+        try r.emit(code, region, &out);
+    }
+
     /// A branch no value can reach: every shape it matches is taken by a
     /// branch above it. `index` is 1-based, as the reader counts them.
     pub fn redundantPattern(r: *Reporter, region: Bir.Inst.Index, index: u32) Error!void {

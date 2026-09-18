@@ -72,6 +72,7 @@ const Interface = @import("../resolve/Interface.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
+const diagnostic = @import("diagnostic");
 
 const Exhaustive = @This();
 
@@ -288,13 +289,22 @@ pub const Context = struct {
 };
 
 /// Check every `case` of every declaration of `cx.module` that is not
-/// skipped, reporting through `reporter`.
+/// skipped, and every pattern of that declaration that sits in an
+/// **irrefutable** position (`language.md` §7), reporting through
+/// `reporter`.
 ///
 /// `skip` is one flag per declaration: true when an earlier phase or the
 /// solver already reported on it, in which case its patterns may not even be
 /// well typed and are not analysed (checker.md §6.6). `scratch` is reset
 /// once per `case`, so the peak is one `case`'s matrices and not the
 /// module's.
+///
+/// The irrefutable positions are the declaration's own parameters, a
+/// `lambda`'s parameters, a `let_def`'s parameters and a `let_pattern`'s
+/// pattern. That list is complete because lowering has already run: a `<-`
+/// bound pattern IS a lambda parameter by the time BIR exists
+/// (`language.md` §6.7, §8), and a `_` placeholder's lambda has a parameter
+/// lowering invented, which is a `pat_var` and passes for free.
 pub fn run(
     gpa: Allocator,
     scratch: *Arena,
@@ -307,13 +317,124 @@ pub fn run(
     const bir = cx.bir;
     for (bir.decls, 0..) |d, i| {
         if (i < skip.len and skip[i]) continue;
+        // `params_start..params_end` means the TYPE parameter names on a
+        // type declaration and pattern instructions only on a value, so
+        // the kind is asked first (`Bir.Decl.params_start`).
+        if (d.kind == .value) {
+            for (bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index)) |param| {
+                scratch.reset(.retain_capacity);
+                try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
+            }
+        }
         var inst = d.inst_start.int();
         while (inst < d.inst_end.int() and inst < bir.insts.len) : (inst += 1) {
-            if (bir.instTag(@enumFromInt(inst)) != .case) continue;
-            scratch.reset(.retain_capacity);
-            try one(gpa, scratch.allocator(), cx, reporter, @enumFromInt(inst), budget);
+            const at: Bir.Inst.Index = @enumFromInt(inst);
+            const data = bir.instData(at);
+            switch (bir.instTag(at)) {
+                .case => {
+                    scratch.reset(.retain_capacity);
+                    try one(gpa, scratch.allocator(), cx, reporter, at, budget);
+                },
+                .lambda => for (bir.extraSlice(bir.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index)) |param| {
+                    scratch.reset(.retain_capacity);
+                    try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
+                },
+                .let_def => {
+                    const def = bir.extraData(@enumFromInt(data.lhs), Bir.LetDef);
+                    for (bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index)) |param| {
+                        scratch.reset(.retain_capacity);
+                        try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
+                    }
+                },
+                .let_pattern => {
+                    scratch.reset(.retain_capacity);
+                    try irrefutable(gpa, scratch.allocator(), cx, reporter, @enumFromInt(data.lhs), .refutable_let_pattern, budget);
+                },
+                else => {},
+            }
         }
     }
+}
+
+/// One pattern in an irrefutable position: is this single row exhaustive on
+/// its own? That is the question a `case` asks of all its rows at once, so
+/// it is the same two relations over a one-row, one-column matrix — and
+/// single-constructor types, nesting (`Pair (Box a) b`), a type with no
+/// constructors at all and an opaque imported type all fall out of it,
+/// with no second "how many constructors has this type?" test to disagree
+/// with the first.
+///
+/// **Budget exhaustion is a refusal here, not silence.** A `case` that
+/// cannot be decided loses a warning (`Analysis.spend`); this position
+/// would lose the guarantee that the backend's unchecked destructure stands
+/// on (`backend.md` §4), so an answer that could not be computed is
+/// reported as "not proven" (checker.md §6.6).
+fn irrefutable(
+    gpa: Allocator,
+    arena: Allocator,
+    cx: Context,
+    reporter: *Diagnostics.Reporter,
+    pattern: Bir.Inst.Index,
+    code: diagnostic.Code,
+    budget: u32,
+) Error!void {
+    // Almost every parameter ever written is a name, and the parser has
+    // already refused every shape that is refutable whatever its type is
+    // (`language.md` §7), so a pattern with no constructor anywhere in it
+    // is irrefutable and needs no matrix. Skipping those keeps this off the
+    // per-declaration cost of a file that never destructures.
+    if (!hasCtor(cx.bir, pattern, 0)) return;
+
+    var pats: Patterns = .{ .string_bytes = cx.bir.string_bytes };
+    var an: Analysis = .{ .arena = arena, .cx = cx, .pats = &pats, .budget = budget };
+    const p = an.simplify(pattern, 0) catch |err| switch (err) {
+        error.Abandoned => return reporter.refutablePattern(pattern, code, &.{}),
+        else => |e| return e,
+    };
+    const row = try arena.dupe(PatIndex, &.{p});
+    const rows = try arena.dupe([]const PatIndex, &.{row});
+    const missing = an.isExhaustive(rows, 1, 0) catch |err| switch (err) {
+        error.Abandoned => return reporter.refutablePattern(pattern, code, &.{}),
+        else => |e| return e,
+    };
+    if (missing.len == 0) return;
+
+    var texts: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (texts.items) |t| gpa.free(t);
+        texts.deinit(gpa);
+    }
+    for (missing) |m| {
+        if (m.len == 0) continue;
+        const text = try Render.allocPattern(gpa, &pats, cx.interner, m[0]);
+        errdefer gpa.free(text);
+        try texts.append(gpa, text);
+    }
+    // Every row `isExhaustive` returned was empty, which cannot happen for
+    // width 1 — but if it ever did, an error with no witness would read as
+    // the budget refusal, so say nothing rather than mislead.
+    if (texts.items.len == 0) return;
+    try reporter.refutablePattern(pattern, code, texts.items);
+}
+
+/// Does `pattern` contain a constructor anywhere? The pre-filter above.
+/// Too deep counts as yes: the full analysis then abandons and refuses,
+/// which is the safe answer for this position.
+fn hasCtor(bir: *const Bir, pattern: Bir.Inst.Index, depth: u32) bool {
+    if (depth > max_depth) return true;
+    if (pattern.int() >= bir.insts.len) return false;
+    const data = bir.instData(pattern);
+    return switch (bir.instTag(pattern)) {
+        .pat_ctor => true,
+        .pat_as => hasCtor(bir, @enumFromInt(data.lhs), depth + 1),
+        .pat_tuple => for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |el| {
+            if (hasCtor(bir, el, depth + 1)) break true;
+        } else false,
+        // The parser rejects these in an irrefutable position whatever the
+        // types are, so reaching one means it already reported; there is
+        // nothing left for this pass to add.
+        else => false,
+    };
 }
 
 /// One `case`: simplify its branch patterns, find the first redundant one,

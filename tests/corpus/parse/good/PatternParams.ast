@@ -62,19 +62,4 @@
             (ident a)
             (ident b))
           (ident c))
-        (ident d))))
-  (definition listParam
-    (pat_list
-      (pat_var x)
-      (pat_var y))
-    (add
-      (ident x)
-      (ident y)))
-  (definition consParam
-    (pat_paren
-      (pat_cons
-        (pat_var x)
-        (pat_var rest)))
-    (tuple
-      (ident x)
-      (ident rest))))
+        (ident d)))))

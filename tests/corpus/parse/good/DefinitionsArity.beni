@@ -1,5 +1,7 @@
 -- Definitions with zero, one and many parameters, wildcard and destructuring
--- parameters (PatAtom), and a one-line definition.
+-- parameters (PatAtom), and a one-line definition. A list parameter is not
+-- among them: it can never match every list, so §7 makes it a parse error
+-- wherever a pattern has to match (`parse/bad/RefutableParameterList`).
 zero =
     0
 
@@ -16,7 +18,7 @@ ignore _ _ =
     ()
 
 
-unpack ( a, b ) { name } [ first ] =
+unpack ( a, b ) { name } (Wrapped first) =
     ( a, b, name, first )
 
 

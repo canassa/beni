@@ -2450,6 +2450,30 @@ test "the usefulness budget: an analysis that would cost too much reports nothin
     try expectBudgetedCodes(&.{}, source, 1);
 }
 
+test "the usefulness budget: an irrefutable position refuses instead of going silent" {
+    // The same exhaustion, the opposite answer, and that is the point
+    // (checker.md §6.6). A `case` the analysis cannot decide loses a
+    // WARNING, so silence is the cheap mistake. An irrefutable position it
+    // cannot decide would lose the guarantee that `backend.md` §4's
+    // unchecked destructure stands on — the miscompile this slice exists to
+    // close — so there the undecided answer is a refusal.
+    //
+    // `Boxed` is its type's only constructor, so with room to think the
+    // analysis proves the parameter irrefutable and says nothing.
+    const source =
+        \\pub type Boxed
+        \\    = Boxed Int
+        \\
+        \\
+        \\pub f : Boxed -> Int
+        \\f (Boxed n) =
+        \\    n
+        \\
+    ;
+    try expectBudgetedCodes(&.{}, source, Session.default_pattern_budget);
+    try expectBudgetedCodes(&.{.refutable_parameter_pattern}, source, 1);
+}
+
 test "the usefulness budget: many constructors times many branches terminates" {
     // Forty constructors and forty branches, each branch a two-deep nest of
     // them: the shape that makes every column of the matrix complete, which
