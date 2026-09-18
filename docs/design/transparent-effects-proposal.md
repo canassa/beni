@@ -32,6 +32,15 @@ The compiler infers two booleans per function, uses them to decide which functio
 suspendable form, and shows them to the reader through the editor rather than through syntax. Since
 2026-09-15 the lowering is P1's; the surface is not.
 
+**Both blockers cleared, 2026-09-18.** The no-currying change landed (§10 item 1) and the tail-call
+loop landed with `List.foldl`/`foldr` leaving `foreign` (§7.3). What landed in between and this
+document never considered is **static dispatch**
+([`static-dispatch-spike.md`](static-dispatch-spike.md), normative since 2026-09-18): hidden leading
+evidence parameters, method constraints on type variables, derived `eq`/`compare`, and
+`boundary.md` §4's check 4. Every correction below is dated and marked as one; the implementation
+plan, the new interactions and the decisions still owed are in
+[`plans/effects-plan.md`](../../plans/effects-plan.md).
+
 **What it assumes, already decided elsewhere.** No automatic currying, `_` placeholder, pipe-first
 `|>`, n-ary types `Int, Int -> Int`, and a rest-of-block bind `let x <- e` (`fast-compiler.md`
 §9.3). JavaScript is the target, and a modern one. Errors are `Result` values and `?` unwraps them
@@ -200,6 +209,17 @@ coloured). If they are all first-order, the keyword is strictly simpler and the 
 untouched. If even one is higher-order, the bits belong in the type and the grammar has to grow —
 and §3.2's `sync` turns on the same fact, which is why §10 item 0 answers both at once.
 
+**Corrected 2026-09-18, on `research/17-platform-primitives.md` and on static dispatch.** The bet on
+the leaves **wins**: report 17 §6.5 item 1 says freeze this keyword, because nothing in 71 projected
+primitives needs `suspends` or `impure` inside a signature. Two things this paragraph did not
+anticipate. First, a `foreign` may now carry a **`where` clause** — `core/List.beni:100` and `:114`
+are `foreign eq`/`compare` over `where a.eq` / `where a.compare` — so a declaration keyword does
+describe a signature with a function type in it after all, in the *evidence* position rather than in
+a parameter's; the keyword says nothing about the evidence's bits. Second, the `random` example
+above is wrong in a way report 17 §4.9 asks to be fixed: a *seeded* step `nextInt : Seed -> (Int,
+Seed)` is a hash and is `pure`; what is `impure` is obtaining the first `Seed`. §2's argument is
+unaffected, but as written a reader concludes a deterministic PRNG step cannot be memoised.
+
 ### 3.2 `sync` — optional, and postponed
 
 **Status: not part of v1. Deferred, and nothing else in this document depends on it.** It is
@@ -242,6 +262,17 @@ constrain a function type nested inside it? If every platform primitive is first
 higher-order, both need the bits in the type, and they should be designed together rather than
 separately. That is the reason to postpone: **enumerate the platform's primitives first** (§10),
 then decide once.
+
+**Corrected 2026-09-18 — the enumeration exists and it answers no.** `research/17` §5.1 lists seven
+imposed signatures whose callback the host calls synchronously (`view`, `update`, `subscriptions`,
+`init`, a DOM event handler, a `Html.map`/`Sub.map` tagger, an incoming port's tagger, a `Cmd`'s
+tagger), and `boundary.md` §5.4 has already committed in writing to checking the first two. So the
+sentence below — *"it is not a different type, and a `sync` function unifies with an ordinary one"* —
+is **withdrawn**: `sync` needs an argument position, which means one bit on a function type. The
+enumeration also narrows the price to far less than this section budgeted: one bool, one
+`Interface.Term.Tag` value, one `Solve.Obligation.Kind` value, and a witness in the interface for
+§8's chain. Costed against today's code in
+[`plans/effects-plan.md`](../../plans/effects-plan.md) §2.5 and §3.
 
 **What postponing costs.** The boundary question — "may this function suspend?" — is the one §1
 calls load-bearing, and without `sync` v1 has no way to *assert* it. In practice a suspending
@@ -415,6 +446,15 @@ subtraction (`14/flix` §1, §7.1). With two booleans and no complement, every c
 answer to `research/15` §0's "the unifier stays simple": the unifier *is* unchanged. The flags ride
 alongside it as obligations of the kind `Solve.zig` already carries per rank, not as a new
 structure inside unification.
+
+**Narrowed 2026-09-18, not withdrawn.** `research/17` §6.3 prices the `sync` demand as *"one case,
+no new solver"* — `unifyFlat` (`src/check/Solve.zig:881`) compares two `Func`s at equal arity, and a
+bit mismatch records an obligation rather than failing — so the honest form of the claim is now *the
+unifier gains one case and no new structure*. Static dispatch is the standing precedent that this is
+survivable and the standing warning about what it costs: a per-variable constraint set rides beside
+`kind` and `equatable` on `TypeStore.Flags` (`src/check/TypeStore.zig:149-169`) without touching
+`Kind`, and it cost **20.3 % of check time on code that never uses the feature** (report 19 §2.1).
+A flag variable is the same shape of addition and should be budgeted the same way.
 
 ### 4.2 Inference
 
@@ -733,7 +773,21 @@ the cache-hit argument that accepted it — is deleted, not softened. That cost 
 
 A deliverable, not a risk. CPS moves a recursive tail call inside a continuation closure, and beni
 has no tail-call elimination: `core/List.beni` says `foldl` is `foreign` because "written in beni it
-is a self tail call, which the code generator is not yet required to turn into a loop". Xie and
+is a self tail call, which the code generator is not yet required to turn into a loop".
+
+**Corrected 2026-09-18 — the loop landed and the folds left `foreign` with it** (`bbfc869`;
+`backend.md` §8). Direct self-recursion lowers to `label: while (true)` with carried parameters in
+`$in$<i>` slots and a per-iteration `const` prologue; `core/List.beni:68` and `:86` are ordinary beni
+and there is no `foreign` value left in the repository with a function type in its signature. The
+sentence above is kept because it was the argument for scheduling the loop first. What it costs the
+lowering below is *not* nothing: a suspendable body that is also a looping body has to return a
+continuation instead of executing `continue`, and the composition is worked in
+[`plans/effects-plan.md`](../../plans/effects-plan.md) §2.2. The miscompile the ordering existed to
+prevent has **moved rather than gone** — `core/List.js`'s `eq` and `compare` are JavaScript loops
+that call a beni evidence function, which is the same hazard in the position static dispatch
+created (plan §2.1).
+
+Xie and
 Leijen name the defect exactly — *"any direct tail-recursive calls are no longer directly
 tail-recursive as they occur under a lambda now!"* — and Koka's backend answers it in the emitted
 JavaScript with `{ tailcall: while(1) { … continue tailcall; } }`, carrying the same `_yielding()`
@@ -846,6 +900,15 @@ fires at an argument, so the requirement lives in a parameter type, and a keywor
 cannot get there. It ships when §3.2's open question is answered, and its answer decides whether
 the bits stay out of the type language.
 
+**Corrected 2026-09-18.** §3.2's question is answered (`research/17` §6.1): `sync_boundary` is
+**not droppable**, so the bits do not stay out of the type language, and the table's third row is
+scheduled work rather than a hypothetical. Two additions the table does not have. A `must_not_suspend`
+chain that crosses a module boundary needs a **witness in the interface** — `checker.md` §7 keeps
+`Interface.Provenance` deliberately out of the record, so there is no call graph with spans to walk
+— and `sync_boundary` now also fires at an **evidence** argument, which is a slot the source never
+wrote (plan §2.1). Both are specified in
+[`plans/effects-plan.md`](../../plans/effects-plan.md) §2.5.
+
 The chain in `must_not_suspend` is the whole diagnostic budget of the boundary check, and it is
 what replaces the marker: the compiler knows the path and prints it, rather than asking the author
 to have written a character at every link. Note that this is the one place the argument for
@@ -948,10 +1011,28 @@ This is now the thing in the document most likely to be wrong, and it is no long
    untouched. If even one is higher-order, the bits belong in the type and §4.1's "the unifier is
    unchanged" is withdrawn. This is cheap, it is needed anyway to know how much of a program gets
    coloured, and **no surface decision should be frozen before it exists.**
+
+   **Discharged 2026-09-15 by [`research/17-platform-primitives.md`](research/17-platform-primitives.md),
+   and the answer is neither branch.** 54 of 71 projected primitives are first-order, so §3.1's
+   keyword is enough and nothing needs `suspends` *inside* a signature — but six primitives and
+   seven imposed signatures are functions the **host** calls back into beni synchronously, so `sync`
+   needs an argument position and §8's `sync_boundary` is not droppable (report 17 §6.1). One bit,
+   in one direction, on function-typed parameters only.
 1. **`TypeStore.Func` is `{ param: Var, result: Var }`** — the checker's function type is curried
    and built by `Constrain.funcChain`, and `checker.md` §6.1's application rule is still written
    curried. The n-ary decision of 2026-09-14 has not landed. Flags have nowhere to live on a
    curried chain, so this comes first and nothing can be prototyped before it.
+
+   **Corrected 2026-09-18 — landed, and the cost estimate moved with it.**
+   `TypeStore.Structure.Func` is `{ params: Range, result: Var }` (`src/check/TypeStore.zig:249`),
+   `Constrain.funcChain` is `Constrain.func` (`src/check/Constrain.zig:516`), and
+   `Interface.Term.func` spends `lhs` on an `extra` range and `rhs` on the result
+   (`src/resolve/Interface.zig:180-184`). Flags now have somewhere to live. What also changed is the
+   price: `Func` is **already** 12 bytes and already the widest `Structure` payload, so
+   `research/17-platform-primitives.md` §6.3's "free in size" — written when `Func` was 8 bytes —
+   no longer holds. Two constant bits on `Func` grow `Structure` 16 → 20, `Content` 20 → 24 and
+   `Descriptor` 40 → 44; two flag *variables* grow them to 24 / 28 / 48. Zero-growth encodings exist
+   and are costed in [`plans/effects-plan.md`](../../plans/effects-plan.md) §3.
 2. **`checker.md` §6.3** says a generalised scheme records per quantified variable its kind and
    equatable flag, and that "nothing else may be added to `Kind`". Flag variables are exactly such
    an addition and that paragraph needs amending.
@@ -984,6 +1065,14 @@ higher-order question item 0 asks about platform primitives now has an affirmati
 `core` regardless of what the platform turns out to need. Item 3 is unchanged, and `boundary.md` §4
 has meanwhile acquired a second unenforced rule of its own — a `foreign` with a `where` clause —
 which any rewrite of shape (b) has to account for.
+
+**Updated 2026-09-18.** That rule is now enforced, as `boundary.md` §4's **check 4** (`16b1c0d`):
+a sibling export takes evidence count + declared arity parameters. The check counts parameters; it
+cannot see what the sibling *does* with them, and `core/List.js`'s `eq` and `compare` call `m0` from
+inside a JavaScript `while` loop. That is report 17 §1's kind (i) — a host-called beni callback — in
+the one place the report's own grep for a parenthesised arrow in a `foreign` signature cannot find
+it, and it is `foldl`'s miscompile in a new position. [`plans/effects-plan.md`](../../plans/effects-plan.md)
+is the work-up.
 
 ---
 
@@ -1040,6 +1129,11 @@ which any rewrite of shape (b) has to account for.
    §3.1's `foreign` keyword both need the bits in the type, and §4.1's "the unifier is unchanged"
    goes with them. That one enumeration answers §3.1, §3.2 and §8's `sync_boundary` at once, and
    nothing about the surface should be frozen before it exists.
+   **(b) is discharged, 2026-09-15**, by `research/17-platform-primitives.md`: the keyword is frozen,
+   `sync` needs the type position, `sync_boundary` stays. **(a) is still open and is now the sharper
+   half**, because `boundary.md` §5.4's promise that "`update` and `view` are `sync`" has no
+   mechanism, and because check 4 counts a sibling's parameters without seeing what it does with
+   them (§10). It is decision 1 of [`plans/effects-plan.md`](../../plans/effects-plan.md) §5.
 9. **Bare `let` items.** §3.3. Is the type guard enough to keep this from becoming statements, or
    does the first request for `for` arrive the week after it ships? And should a pure bare item be
    a warning or an error?

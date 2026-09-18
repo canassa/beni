@@ -775,6 +775,11 @@ that `List a` has no constructors for the compiler to walk. **Report 17 §3.4 co
 `foreign` values and exactly two that are not; after this slice the count of higher-order `foreign`
 values in the repository is zero**, which discharges the first half of
 `transparent-effects-proposal.md` §10 item 0 in fact and not only on paper.
+*Corrected 2026-09-18: zero in a **signature**, not zero. `List.eq` and `List.compare` are `foreign`
+with a `where` clause, so their siblings are JavaScript loops that call a beni function — the evidence
+`m0` — and under the effects proposal's lowering that is the same hazard `foldl` was. It harms nothing
+today, because a well-known `eq`/`compare` cannot suspend; [`plans/effects-plan.md`](../../plans/effects-plan.md)
+§2 carries it.*
 
 **Everything else stays where it is**, and the list is short because most of it needs no source
 change at all. These are already beni self tail calls and simply stop overflowing: `List.rangeHelp`

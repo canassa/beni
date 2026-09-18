@@ -100,10 +100,12 @@ effect flags have nowhere to live on a curried `{param, result}` chain.
 discharges its §10 item 0. A second constraint found there: the tail-call loop
 had to land **before** effects, because it is what lets `List.foldl`/`foldr`
 leave `foreign`, and until they did the proposal's own headline example
-miscompiled. **Both have now landed** — no `foreign` value in the repository
-takes a function — so what stands between the proposal and a first slice is the
-proposal's own §10 list, which is stale in places (item 1 still describes a
-curried `Func`) and needs a spec pass before any code.
+miscompiled. **Both have now landed**, and the proposal has had its spec pass:
+[`plans/effects-plan.md`](plans/effects-plan.md) holds the slice plan and **eight
+decisions that are the owner's to take before any effects code is written**. One
+hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
+`where` clause, so their siblings are JavaScript loops calling beni evidence —
+the shape `foldl` was.
 
 ## Building
 
