@@ -1,0 +1,14 @@
+1 + 2 * 3 = 7.0
+(1 + 2) * 3 = 9.0
+2 ^ 3 ^ 2 = 512.0
+-x * y = -12.0
+x + y / 2 = 5.0
+max(1, 2) = 2.0
+min(x, y) + abs(-5) = 8.0
+sqrt(16) = 4.0
+1 + ! unexpected end of input
+2 @ 3 ! unexpected character: @
+unknown(1) ! unknown function unknown with 1 arguments
+z + 1 ! unknown variable z
+1.0 + (2.0 * 3.0)
+-(x + 1.0) ^ 2.0

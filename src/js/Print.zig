@@ -82,6 +82,8 @@ pub const Options = struct {
     /// §9 item 2's namespaces. Null is a dev build, where every name comes
     /// out as `Module$base$tag`.
     rename: ?*Rename.Module = null,
+    /// §9 items 3 and 5: compact printing and `const` joining.
+    compact: bool = false,
 };
 
 /// Print `ir` as an ES module. The caller owns the returned bytes.
@@ -92,6 +94,7 @@ pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Al
         .names = names,
         .plan = options.plan,
         .rename = options.rename,
+        .compact = options.compact,
     };
     defer p.joiner.deinit();
     // The module body is walked here rather than through `statements`,
@@ -182,6 +185,29 @@ const prec_unary: u8 = 14;
 const prec_cond: u8 = 3;
 const prec_arrow: u8 = 2;
 
+/// A character that may appear inside an identifier, a keyword or a number.
+fn identChar(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or c == '_' or c == '$';
+}
+
+/// The first byte of `text`, or `fallback` when it is empty.
+fn firstByte(text: []const u8, fallback: u8) u8 {
+    return if (text.len == 0) fallback else text[0];
+}
+
+/// Whether `a` and `b`, written with nothing between them, would lex as one
+/// token rather than two. §9 item 3 names the first two; the rest are the same
+/// question asked of every operator pair the printer could ever produce.
+fn merges(a: u8, b: u8) bool {
+    if (identChar(a) and identChar(b)) return true; // `return x`, `case 1`, `1 in`
+    if (a == '+' and b == '+') return true; // `a + +b` is not `a++b`
+    if (a == '-' and b == '-') return true; // `a - -1` is not `a--1`
+    if (a == '/' and (b == '/' or b == '*')) return true; // a comment, not a division
+    if (a == '<' and b == '!') return true; // `<!--` opens an HTML-style comment
+    return false;
+}
+
 const Printer = struct {
     joiner: Joiner,
     ir: *const JsIr,
@@ -191,11 +217,87 @@ const Printer = struct {
     plan: *const Opt.Plan = &Opt.Plan.none,
     /// §9 item 2's namespaces, or null for a development build.
     rename: ?*Rename.Module = null,
+    /// §9 item 3: no indentation, no space that syntax does not need, and a
+    /// newline after each TOP-LEVEL statement only.
+    compact: bool = false,
+    /// The last byte pushed, for the token-adjacency guard. Only read in
+    /// compact mode, where it is the whole of the tokenisation risk.
+    last: u8 = 0,
+
+    // ---- Bytes out ---------------------------------------------------------
+
+    /// Every byte the printer emits goes through here, so `last` is never
+    /// stale and the adjacency guard cannot be forgotten at a call site.
+    ///
+    /// **The guard is the whole tokenisation rule** (§9 item 3): when the
+    /// space between two tokens goes, two tokens whose facing characters are
+    /// both identifier characters become one — `return x` into `returnx` — and
+    /// `a - -1` becomes the decrement `a--1`. Rather than reason about which
+    /// of the 35-odd branch points can produce one, the printer asks the
+    /// question at every join and puts a space back when the answer is yes.
+    /// `/` before `/` or `*` is on the list for the same money: nothing emits
+    /// a regular expression or a comment today, and the day something does it
+    /// will not be this function that is wrong.
+    fn push(p: *Printer, text: []const u8) Allocator.Error!void {
+        if (text.len == 0) return;
+        if (p.compact and merges(p.last, text[0])) try p.joiner.push(" ");
+        p.last = text[text.len - 1];
+        try p.joiner.push(text);
+    }
+
+    fn pushOwned(p: *Printer, text: []const u8) Allocator.Error!void {
+        if (text.len == 0) return;
+        if (p.compact and merges(p.last, text[0])) try p.joiner.push(" ");
+        p.last = text[text.len - 1];
+        try p.joiner.pushOwned(text);
+    }
+
+    /// Open a token whose bytes arrive in SEVERAL pieces — a string literal,
+    /// a template, a long `Module$base$tag` name. The guard is asked once,
+    /// about the first byte, and the pieces after it go through `pushInner`.
+    ///
+    /// Asking it per piece is wrong and was a bug: `"one\ntwo"` is pushed as
+    /// `one`, `\n`, `two`, whose facing characters are `n` and `t`, so the
+    /// guard put a space INSIDE the string and `run/StringOps` started
+    /// printing `one| two`. A string literal is one token however many pieces
+    /// it takes to write.
+    fn openToken(p: *Printer, first: u8) Allocator.Error!void {
+        if (p.compact and merges(p.last, first)) try p.joiner.push(" ");
+    }
+
+    /// A piece of a token already opened: tracked, never separated.
+    fn pushInner(p: *Printer, text: []const u8) Allocator.Error!void {
+        if (text.len == 0) return;
+        p.last = text[text.len - 1];
+        try p.joiner.push(text);
+    }
+
+    fn pushInnerOwned(p: *Printer, text: []const u8) Allocator.Error!void {
+        if (text.len == 0) return;
+        p.last = text[text.len - 1];
+        try p.joiner.pushOwned(text);
+    }
+
+    /// `dev` in a development build, `release` under `--release`. Every
+    /// whitespace decision of §9 item 3 is one of these, so the two forms sit
+    /// next to each other and a dev build cannot drift.
+    fn tok(p: *Printer, dev: []const u8, release: []const u8) Allocator.Error!void {
+        try p.push(if (p.compact) release else dev);
+    }
+
+    /// End a statement. A development build breaks the line after every one;
+    /// a release build breaks it after a TOP-LEVEL one and nowhere else —
+    /// measured at 21 brotli bytes on `bench/corpus` and 0.1% of the corpus,
+    /// for output whose stack traces still name a declaration by line (§9).
+    fn endLine(p: *Printer, level: u32) Allocator.Error!void {
+        if (!p.compact or level == 0) try p.push("\n");
+    }
 
     fn indent(p: *Printer, level: u32) Allocator.Error!void {
+        if (p.compact) return;
         var left: usize = @as(usize, level) * 2;
-        while (left > spaces.len) : (left -= spaces.len) try p.joiner.push(spaces);
-        try p.joiner.push(spaces[0..left]);
+        while (left > spaces.len) : (left -= spaces.len) try p.push(spaces);
+        try p.push(spaces[0..left]);
     }
 
     // ---- Names ------------------------------------------------------------
@@ -213,7 +315,7 @@ const Printer = struct {
             if (role == .binding) {
                 if (m.ordinal(index)) |o| {
                     var buf: [8]u8 = undefined;
-                    return p.joiner.pushOwned(Rename.spell(o, &buf));
+                    return p.pushOwned(Rename.spell(o, &buf));
                 }
                 // Nothing assigned this one. The safety build turns that into
                 // a stopped build with the name in it; every build prints the
@@ -222,36 +324,81 @@ const Printer = struct {
             }
         }
         const n = p.ir.name(index);
+        const base = p.names.text(n.base);
+        const escaped = n.module == .none and escape_reserved and isReservedWord(base);
+        // `Module$base$tag` is ONE token written in up to five pieces, so the
+        // adjacency guard is asked once and the rest go in raw.
+        try p.openToken(if (n.module.unwrap()) |module| firstByte(p.names.text(module), '$') else if (escaped) '$' else firstByte(base, '$'));
         if (n.module.unwrap()) |module| {
             const text = p.names.text(module);
             var start: usize = 0;
             while (std.mem.indexOfScalarPos(u8, text, start, '.')) |dot| {
-                try p.joiner.push(text[start..dot]);
-                try p.joiner.push("$");
+                try p.pushInner(text[start..dot]);
+                try p.pushInner("$");
                 start = dot + 1;
             }
-            try p.joiner.push(text[start..]);
-            try p.joiner.push("$");
+            try p.pushInner(text[start..]);
+            try p.pushInner("$");
         }
-        const base = p.names.text(n.base);
-        if (n.module == .none and escape_reserved and isReservedWord(base)) try p.joiner.push("$");
-        try p.joiner.push(base);
+        if (escaped) try p.pushInner("$");
+        try p.pushInner(base);
         if (n.tag != JsIr.Name.no_tag) {
             var buf: [12]u8 = undefined;
-            try p.joiner.pushOwned(std.fmt.bufPrint(&buf, "${d}", .{n.tag}) catch "$x");
+            try p.pushInnerOwned(std.fmt.bufPrint(&buf, "${d}", .{n.tag}) catch "$x");
         }
     }
 
     // ---- Statements -------------------------------------------------------
 
     fn statements(p: *Printer, range: JsIr.SubRange, level: u32) Allocator.Error!void {
-        for (p.ir.extraSlice(range, Index)) |node| {
+        const list = p.ir.extraSlice(range, Index);
+        var i: usize = 0;
+        while (i < list.len) : (i += 1) {
             // §9 item 1: a binding nothing reads, or one whose single use
             // reads its initialiser instead. Skipped before the indentation,
             // so the line goes whole.
-            if (p.plan.isDropped(node)) continue;
-            try p.statement(node, level);
+            if (p.plan.isDropped(list[i])) continue;
+            // §9 item 5: a maximal run of adjacent `const_decl`s at one level
+            // joins into `const a=1,b=2;`. It reorders nothing — the run keeps
+            // its order and a comma declaration evaluates left to right, which
+            // is `language.md` §6's `let` bindings row unchanged — and no
+            // `JsIr` node moves, because it is a printing decision. §8's loop
+            // prologue is what reserved it.
+            if (p.compact and p.ir.tag(list[i]) == .const_decl) {
+                i = try p.constRun(list, i, level);
+                continue;
+            }
+            try p.statement(list[i], level);
         }
+    }
+
+    /// Print the run of `const_decl`s starting at `from` as one declaration,
+    /// and return the index of its last member.
+    ///
+    /// A `let_decl` does not join a `const` run and an uninitialised one does
+    /// not join at all (§9 item 5): §7's `let $t$n;` sits above an `if`/`else`
+    /// chain and joining it with a later `const` would move a declaration past
+    /// the statements between them.
+    fn constRun(p: *Printer, list: []const Index, from: usize, level: u32) Allocator.Error!usize {
+        try p.indent(level);
+        try p.push("const");
+        var last = from;
+        var i = from;
+        var written: usize = 0;
+        while (i < list.len) : (i += 1) {
+            if (p.plan.isDropped(list[i])) continue;
+            if (p.ir.tag(list[i]) != .const_decl) break;
+            if (written != 0) try p.push(",");
+            const d = p.ir.data(list[i]);
+            try p.name(@enumFromInt(d.lhs), .binding);
+            try p.push("=");
+            try p.expression(@enumFromInt(d.rhs), 0, level);
+            written += 1;
+            last = i;
+        }
+        try p.push(";");
+        try p.endLine(level);
+        return last;
     }
 
     fn statement(p: *Printer, node: Index, level: u32) Allocator.Error!void {
@@ -260,10 +407,10 @@ const Printer = struct {
         switch (p.ir.tag(node)) {
             .import_stmt => {
                 const imp = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Import);
-                try p.joiner.push("import { ");
+                try p.tok("import { ", "import{");
                 const specs = p.ir.extraSlice(imp.specs(), JsIr.Specifier);
                 for (specs, 0..) |spec, i| {
-                    if (i != 0) try p.joiner.push(", ");
+                    if (i != 0) try p.tok(", ", ",");
                     // The two halves differ exactly for a SIBLING binding —
                     // `import { add as Basics$add } from "./Basics.foreign.mjs"`
                     // — and then the `imported` half is the sibling's own
@@ -276,133 +423,151 @@ const Printer = struct {
                         continue;
                     }
                     try p.name(spec.imported, .fixed);
-                    try p.joiner.push(" as ");
+                    try p.push(" as ");
                     try p.name(spec.local, .binding);
                 }
-                try p.joiner.push(" } from \"");
-                try p.joiner.push(p.ir.string_bytes[imp.source_start..][0..imp.source_len]);
-                try p.joiner.push("\";\n");
+                try p.tok(" } from \"", "}from\"");
+                try p.push(p.ir.string_bytes[imp.source_start..][0..imp.source_len]);
+                try p.push("\";");
+                try p.endLine(level);
             },
             .export_stmt => {
-                try p.joiner.push("export { ");
+                try p.tok("export { ", "export{");
                 for (p.ir.extraSlice(JsIr.inlineRange(d), JsIr.NameIndex), 0..) |n, i| {
-                    if (i != 0) try p.joiner.push(", ");
+                    if (i != 0) try p.tok(", ", ",");
                     try p.name(n, .binding);
                 }
-                try p.joiner.push(" };\n");
+                try p.tok(" };", "};");
+                try p.endLine(level);
             },
             .const_decl => {
-                try p.joiner.push("const ");
+                // The keyword keeps exactly the space that separates it from
+                // the name, and in compact mode the adjacency guard puts that
+                // one back — `const` then `a` cannot run together.
+                try p.tok("const ", "const");
                 try p.name(@enumFromInt(d.lhs), .binding);
-                try p.joiner.push(" = ");
+                try p.tok(" = ", "=");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             .let_decl => {
-                try p.joiner.push("let ");
+                try p.tok("let ", "let");
                 try p.name(@enumFromInt(d.lhs), .binding);
                 if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |value| {
-                    try p.joiner.push(" = ");
+                    try p.tok(" = ", "=");
                     try p.expression(value, 0, level);
                 }
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             .func_decl => {
-                try p.joiner.push("function ");
+                try p.tok("function ", "function");
                 try p.name(@enumFromInt(d.lhs), .binding);
                 const f = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Func);
                 try p.params(f);
-                try p.joiner.push(" {\n");
+                try p.tok(" {\n", "{");
                 try p.statements(f.body(), level + 1);
                 try p.indent(level);
-                try p.joiner.push("}\n");
+                try p.push("}");
+                try p.endLine(level);
             },
             .assign_stmt => {
                 try p.expression(@enumFromInt(d.lhs), 0, level);
-                try p.joiner.push(" = ");
+                try p.tok(" = ", "=");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             .return_stmt => {
-                try p.joiner.push("return");
+                try p.push("return");
                 if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |value| {
-                    try p.joiner.push(" ");
+                    try p.tok(" ", "");
                     try p.expression(value, 0, level);
                 }
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             .if_stmt => {
                 const branches = p.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                try p.joiner.push("if (");
+                try p.tok("if (", "if(");
                 try p.expression(@enumFromInt(d.lhs), 0, level);
-                try p.joiner.push(") {\n");
+                try p.tok(") {\n", "){");
                 try p.statements(branches.thenBody(), level + 1);
                 try p.indent(level);
                 if (branches.elseBody().len() == 0) {
-                    try p.joiner.push("}\n");
+                    try p.push("}");
+                    try p.endLine(level);
                 } else {
-                    try p.joiner.push("} else {\n");
+                    try p.tok("} else {\n", "}else{");
                     try p.statements(branches.elseBody(), level + 1);
                     try p.indent(level);
-                    try p.joiner.push("}\n");
+                    try p.push("}");
+                    try p.endLine(level);
                 }
             },
             .while_true => {
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
                     try p.name(@enumFromInt(d.lhs), .binding);
-                    try p.joiner.push(": ");
+                    try p.tok(": ", ":");
                 }
-                try p.joiner.push("while (true) {\n");
+                try p.tok("while (true) {\n", "while(true){");
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
                 try p.indent(level);
-                try p.joiner.push("}\n");
+                try p.push("}");
+                try p.endLine(level);
             },
             .break_stmt, .continue_stmt => {
-                try p.joiner.push(if (p.ir.tag(node) == .break_stmt) "break" else "continue");
+                try p.push(if (p.ir.tag(node) == .break_stmt) "break" else "continue");
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
-                    try p.joiner.push(" ");
+                    try p.tok(" ", "");
                     try p.name(@enumFromInt(d.lhs), .binding);
                 }
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             .switch_stmt => {
-                try p.joiner.push("switch (");
+                try p.tok("switch (", "switch(");
                 try p.expression(@enumFromInt(d.lhs), 0, level);
-                try p.joiner.push(") {\n");
+                try p.tok(") {\n", "){");
                 for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| {
                     try p.statement(c, level + 1);
                 }
                 try p.indent(level);
-                try p.joiner.push("}\n");
+                try p.push("}");
+                try p.endLine(level);
             },
             .switch_case => {
                 if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |test_expr| {
-                    try p.joiner.push("case ");
+                    try p.tok("case ", "case");
                     try p.expression(test_expr, 0, level);
-                    try p.joiner.push(":\n");
+                    try p.tok(":\n", ":");
                 } else {
-                    try p.joiner.push("default:\n");
+                    try p.tok("default:\n", "default:");
                 }
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
             },
             .block_stmt => {
                 if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
                     try p.name(@enumFromInt(d.lhs), .binding);
-                    try p.joiner.push(": ");
+                    try p.tok(": ", ":");
                 }
-                try p.joiner.push("{\n");
+                try p.tok("{\n", "{");
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
                 try p.indent(level);
-                try p.joiner.push("}\n");
+                try p.push("}");
+                try p.endLine(level);
             },
             .expr_stmt => {
                 try p.expression(@enumFromInt(d.lhs), 0, level);
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             .throw_stmt => {
-                try p.joiner.push("throw ");
+                try p.tok("throw ", "throw");
                 try p.expression(@enumFromInt(d.lhs), 0, level);
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
             // An expression where a statement belongs is a builder bug, not
             // a possible consequence of user input (`JsIr.verify` is the
@@ -412,18 +577,19 @@ const Printer = struct {
             // readable bytes instead of as a panic.
             else => {
                 try p.expression(node, 0, level);
-                try p.joiner.push(";\n");
+                try p.push(";");
+                try p.endLine(level);
             },
         }
     }
 
     fn params(p: *Printer, f: JsIr.Func) Allocator.Error!void {
-        try p.joiner.push("(");
+        try p.push("(");
         for (p.ir.extraSlice(f.params(), JsIr.NameIndex), 0..) |n, i| {
-            if (i != 0) try p.joiner.push(", ");
+            if (i != 0) try p.tok(", ", ",");
             try p.name(n, .binding);
         }
-        try p.joiner.push(")");
+        try p.push(")");
     }
 
     // ---- Expressions ------------------------------------------------------
@@ -440,9 +606,9 @@ const Printer = struct {
         const resolved = p.resolve(node);
         const own = p.precedence(resolved);
         const bracket = own < min_prec;
-        if (bracket) try p.joiner.push("(");
+        if (bracket) try p.push("(");
         try p.raw(resolved, level);
-        if (bracket) try p.joiner.push(")");
+        if (bracket) try p.push(")");
     }
 
     /// Follow §9 item 1's substitutions to the node that is really printed.
@@ -481,90 +647,93 @@ const Printer = struct {
         const d = p.ir.data(node);
         switch (p.ir.tag(node)) {
             .ident => try p.name(@enumFromInt(d.lhs), .binding),
-            .number => try p.joiner.push(p.ir.bytes(node)),
+            .number => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
             .template => {
-                try p.joiner.push("`");
+                // Everything between the backticks is inside the literal, so
+                // no adjacency guard applies to the literal halves; an
+                // interpolation is ordinary expression territory again.
+                try p.push("`");
                 for (p.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
                     if (p.ir.tag(part) == .template_chunk) {
                         try p.templateChunk(p.ir.bytes(part));
                         continue;
                     }
-                    try p.joiner.push("${");
+                    try p.pushInner("${");
                     try p.expression(part, 0, level);
-                    try p.joiner.push("}");
+                    try p.push("}");
                 }
-                try p.joiner.push("`");
+                try p.pushInner("`");
             },
             .template_chunk => try p.templateChunk(p.ir.bytes(node)),
-            .true_lit => try p.joiner.push("true"),
-            .false_lit => try p.joiner.push("false"),
-            .null_lit => try p.joiner.push("null"),
-            .undefined_lit => try p.joiner.push("undefined"),
+            .true_lit => try p.push("true"),
+            .false_lit => try p.push("false"),
+            .null_lit => try p.push("null"),
+            .undefined_lit => try p.push("undefined"),
             .call => {
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
-                try p.joiner.push("(");
+                try p.push("(");
                 for (p.ir.extraSlice(p.ir.subRange(@enumFromInt(d.rhs)), Index), 0..) |arg, i| {
-                    if (i != 0) try p.joiner.push(", ");
+                    if (i != 0) try p.tok(", ", ",");
                     try p.expression(arg, prec_arrow, level);
                 }
-                try p.joiner.push(")");
+                try p.push(")");
             },
             .member => {
                 // A numeric literal needs a bracket before `.` (`1.a` is a
                 // syntax error), and so does an arrow or a conditional.
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
-                try p.joiner.push(".");
+                try p.push(".");
                 try p.name(@enumFromInt(d.rhs), .fixed);
             },
             .index_get => {
                 try p.expression(@enumFromInt(d.lhs), prec_call, level);
-                try p.joiner.push("[");
+                try p.push("[");
                 try p.expression(@enumFromInt(d.rhs), 0, level);
-                try p.joiner.push("]");
+                try p.push("]");
             },
             .object => {
                 const props = p.ir.extraSlice(JsIr.inlineRange(d), Index);
                 if (props.len == 0) {
-                    try p.joiner.push("{}");
+                    try p.push("{}");
                     return;
                 }
-                try p.joiner.push("{ ");
+                try p.tok("{ ", "{");
                 for (props, 0..) |prop, i| {
-                    if (i != 0) try p.joiner.push(", ");
+                    if (i != 0) try p.tok(", ", ",");
                     try p.raw(prop, level);
                 }
-                try p.joiner.push(" }");
+                try p.tok(" }", "}");
             },
             .property => {
                 try p.name(@enumFromInt(d.lhs), .fixed);
-                try p.joiner.push(": ");
+                try p.tok(": ", ":");
                 try p.expression(@enumFromInt(d.rhs), prec_arrow, level);
             },
             .spread_property => {
-                try p.joiner.push("...");
+                try p.push("...");
                 try p.expression(@enumFromInt(d.lhs), prec_arrow, level);
             },
             .array => {
-                try p.joiner.push("[");
+                try p.push("[");
                 for (p.ir.extraSlice(JsIr.inlineRange(d), Index), 0..) |e, i| {
-                    if (i != 0) try p.joiner.push(", ");
+                    if (i != 0) try p.tok(", ", ",");
                     try p.expression(e, prec_arrow, level);
                 }
-                try p.joiner.push("]");
+                try p.push("]");
             },
             .arrow => {
                 const f = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Func);
                 try p.params(f);
-                try p.joiner.push(" => ");
+                try p.tok(" => ", "=>");
                 try p.arrowBody(f, level);
             },
             .cond => {
                 const c = p.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
                 try p.expression(@enumFromInt(d.lhs), prec_cond + 1, level);
-                try p.joiner.push(" ? ");
+                try p.tok(" ? ", "?");
                 try p.expression(c.consequent, prec_arrow, level);
-                try p.joiner.push(" : ");
+                try p.tok(" : ", ":");
                 try p.expression(c.alternate, prec_arrow, level);
             },
             .binary => {
@@ -572,20 +741,26 @@ const Printer = struct {
                 const b = p.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
                 const prec = op.precedence();
                 try p.expression(b.left, prec, level);
-                try p.joiner.push(" ");
-                try p.joiner.push(op.text());
-                try p.joiner.push(" ");
+                try p.tok(" ", "");
+                try p.push(op.text());
+                // The space after the operator is the `a - -1` case, and it is
+                // the guard in `push` that decides it: `-` then `-` merges into
+                // a decrement, `-` then anything else does not.
+                try p.tok(" ", "");
                 // Right operand at `prec + 1`: every operator here is
                 // left-associative, so `a - (b - c)` must keep its brackets.
                 try p.expression(b.right, prec + 1, level);
             },
             .unary => {
                 const op: JsIr.UnaryOp = @enumFromInt(d.rhs);
-                try p.joiner.push(op.text());
+                // `typeof ` carries its own trailing space; in compact mode
+                // the guard supplies one only where it is needed, so
+                // `typeof x` keeps it and `typeof(a)` would not.
+                try p.tok(op.text(), if (op == .type_of) "typeof" else op.text());
                 try p.expression(@enumFromInt(d.lhs), prec_unary, level);
             },
             // A statement in expression position: see `statement`'s `else`.
-            else => try p.joiner.push("undefined"),
+            else => try p.push("undefined"),
         }
     }
 
@@ -602,9 +777,9 @@ const Printer = struct {
                 if (@as(Node.OptionalIndex, @enumFromInt(p.ir.data(only).lhs)).unwrap()) |value| {
                     const resolved = p.resolve(value);
                     if (p.ir.tag(resolved) == .object) {
-                        try p.joiner.push("(");
+                        try p.push("(");
                         try p.raw(resolved, level);
-                        try p.joiner.push(")");
+                        try p.push(")");
                         return;
                     }
                     try p.expression(resolved, prec_arrow, level);
@@ -612,10 +787,10 @@ const Printer = struct {
                 }
             }
         }
-        try p.joiner.push("{\n");
+        try p.tok("{\n", "{");
         try p.statements(f.body(), level + 1);
         try p.indent(level);
-        try p.joiner.push("}");
+        try p.push("}");
     }
 
     /// The one statement of `range` that survives §9 item 1, or null when it
@@ -637,7 +812,7 @@ const Printer = struct {
     /// every escape is decided here. Non-ASCII bytes pass through: the
     /// output is UTF-8 and so is the input.
     fn quoted(p: *Printer, text: []const u8) Allocator.Error!void {
-        try p.joiner.push("\"");
+        try p.push("\"");
         var run_start: usize = 0;
         for (text, 0..) |c, i| {
             const escape: ?[]const u8 = switch (c) {
@@ -658,14 +833,14 @@ const Printer = struct {
                 else => null,
             };
             const e = escape orelse continue;
-            try p.joiner.push(text[run_start..i]);
+            try p.pushInner(text[run_start..i]);
             // A computed escape lives in a stack buffer that is gone by the
             // time the joiner blits, so it has to be copied.
-            if (c < 0x20 or c == 127) try p.joiner.pushOwned(e) else try p.joiner.push(e);
+            if (c < 0x20 or c == 127) try p.pushInnerOwned(e) else try p.pushInner(e);
             run_start = i + 1;
         }
-        try p.joiner.push(text[run_start..]);
-        try p.joiner.push("\"");
+        try p.pushInner(text[run_start..]);
+        try p.pushInner("\"");
     }
 
     /// The literal half of a template: backticks, backslashes and `${` are
@@ -681,11 +856,11 @@ const Printer = struct {
                 '\r' => "\\r",
                 else => continue,
             };
-            try p.joiner.push(text[run_start..i]);
-            try p.joiner.push(escape);
+            try p.pushInner(text[run_start..i]);
+            try p.pushInner(escape);
             run_start = i + 1;
         }
-        try p.joiner.push(text[run_start..]);
+        try p.pushInner(text[run_start..]);
     }
 };
 
@@ -788,23 +963,40 @@ const Fixture = struct {
     }
 
     /// Print `statements` as the module body. Owned by the caller.
-    fn render(f: *Fixture, statements: []const Index) ![]u8 {
+    fn render(f: *Fixture, statements: []const Index, options: Options) ![]u8 {
         const body = try f.b.addRange(statements);
         var ir = try f.b.toOwned(body);
         defer ir.deinit(f.gpa);
         try ir.verify();
-        return print(f.gpa, &ir, .fromLocal(&f.interner), .{});
+        return print(f.gpa, &ir, .fromLocal(&f.interner), options);
+    }
+
+    /// `label: while (true) { … }` around `body`.
+    fn loop(f: *Fixture, label: JsIr.NameIndex, body: []const Index) !Index {
+        const range = try f.b.addRange(body);
+        const record = try f.b.addRecord(range);
+        return f.node(.while_true, @intFromEnum(label), @intFromEnum(record));
     }
 };
 
 fn expectPrinted(expected: []const u8, build: anytype) !void {
+    return expectPrintedWith(expected, build, .{});
+}
+
+/// The same, with §9's compact printing on: no indentation, no space syntax
+/// does not need, and a newline after each TOP-LEVEL statement only.
+fn expectCompact(expected: []const u8, build: anytype) !void {
+    return expectPrintedWith(expected, build, .{ .compact = true });
+}
+
+fn expectPrintedWith(expected: []const u8, build: anytype, options: Options) !void {
     const gpa = testing.allocator;
     var f = try Fixture.init(gpa);
     defer f.deinit();
     var statements: std.ArrayList(Index) = .empty;
     defer statements.deinit(gpa);
     try build(&f, &statements);
-    const text = try f.render(statements.items);
+    const text = try f.render(statements.items, options);
     defer gpa.free(text);
     try testing.expectEqualStrings(expected, text);
 }
@@ -1111,6 +1303,197 @@ test "the joiner allocates once and blits, borrowed and owned pieces alike" {
     const out = try j.blit();
     defer gpa.free(out);
     try testing.expectEqualStrings("hello world!", out);
+}
+
+// ---------------------------------------------------------------------------
+// §9 item 3 and item 5: compact printing, one hazard per test.
+//
+// The claim these pin is not "the output is small" — `bench/size.mjs` measures
+// that — but that **the printer never creates a tokenisation problem when the
+// spaces go**. Each test is one of the adjacencies §9 lists, plus the two the
+// implementation found: a multi-piece token, and a `switch` label.
+// ---------------------------------------------------------------------------
+
+test "compact: a binary minus before a negation keeps one space and nothing else does" {
+    // `a - -b` closing up to `a--b` is a decrement, which is the one
+    // adjacency §9 names beside identifier-identifier. `a + -b` is safe, and
+    // so is every other pair `BinaryOp.text` and `UnaryOp.text` can make.
+    try expectCompact(
+        \\const a=x- -y;
+        \\const b=x+-y;
+        \\const c=x-y;
+        \\const d=-x-y;
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const neg_y = try f.node(.unary, (try f.ident("y")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            try f.constDecl(out, "a", try f.binary(.sub, try f.ident("x"), neg_y));
+            const neg_y2 = try f.node(.unary, (try f.ident("y")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            try f.constDecl(out, "b", try f.binary(.add, try f.ident("x"), neg_y2));
+            try f.constDecl(out, "c", try f.binary(.sub, try f.ident("x"), try f.ident("y")));
+            // A negation at the START of an initialiser needs nothing: `=`
+            // and `-` do not merge, so `const d=-x-y;` is right. The rule is
+            // about the pair of characters and never about which construct
+            // produced them, which is why it is one function and not seven.
+            const neg_x = try f.node(.unary, (try f.ident("x")).int(), @intFromEnum(JsIr.UnaryOp.neg));
+            try f.constDecl(out, "d", try f.binary(.sub, neg_x, try f.ident("y")));
+        }
+    }.go);
+}
+
+test "compact: every keyword keeps exactly the space that separates it from what follows" {
+    // `return x`, `const x`, `case 1:`, `typeof x`, `throw x`, `break L`,
+    // `continue L` — all of them identifier-character adjacencies, all of
+    // them handled by one guard rather than by seven call sites.
+    try expectCompact(
+        \\const f=(a)=>{switch(a){case 1:{throw a;}default:{break L;}}};
+        \\const g=(a)=>typeof a;
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const throw = try f.node(.throw_stmt, (try f.ident("a")).int(), 0);
+            const case_body = try f.b.addRange(&.{throw});
+            const case_block = try f.node(.block_stmt, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(try f.b.addRecord(case_body)));
+            const one_case = try f.node(.switch_case, @intFromEnum((try f.number("1")).toOptional()), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{case_block}))));
+
+            const brk = try f.node(.break_stmt, @intFromEnum(try f.name("L")), 0);
+            const default_block = try f.node(.block_stmt, @intFromEnum(JsIr.NameIndex.none), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{brk}))));
+            const default_case = try f.node(.switch_case, @intFromEnum(Node.OptionalIndex.none), @intFromEnum(try f.b.addRecord(try f.b.addRange(&.{default_block}))));
+
+            const cases = try f.b.addRecord(try f.b.addRange(&.{ one_case, default_case }));
+            const sw = try f.node(.switch_stmt, (try f.ident("a")).int(), @intFromEnum(cases));
+            try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{sw}));
+
+            const type_of = try f.node(.unary, (try f.ident("a")).int(), @intFromEnum(JsIr.UnaryOp.type_of));
+            const ret = try f.node(.return_stmt, @intFromEnum(type_of.toOptional()), 0);
+            try f.constDecl(out, "g", try f.func(&.{try f.name("a")}, &.{ret}));
+        }
+    }.go);
+}
+
+test "compact: a string literal is one token however many pieces it takes to write" {
+    // The bug this is here for: `"one\ntwo"` reaches the joiner as `one`,
+    // `\n`, `two`, and a guard asked per PIECE sees `n` beside `t` and puts a
+    // space inside the string. `run/StringOps` printed `one| two` until the
+    // guard learnt about `openToken`.
+    try expectCompact(
+        "const s=\"one\\ntwo\";\nconst t=`a${b}c`;\n",
+        struct {
+            fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+                try f.constDecl(out, "s", try f.string("one\ntwo"));
+                const before_offset, const before_len = try f.b.addString("a");
+                const before = try f.node(.template_chunk, before_offset, before_len);
+                const after_offset, const after_len = try f.b.addString("c");
+                const after = try f.node(.template_chunk, after_offset, after_len);
+                const parts = try f.b.addRange(&.{ before, try f.ident("b"), after });
+                try f.constDecl(out, "t", try f.node(.template, @intFromEnum(parts.start), @intFromEnum(parts.end)));
+            }
+        }.go,
+    );
+}
+
+test "compact: a run of consts joins, and a newline lands only after a top-level statement" {
+    // §9 item 5, and §9 item 3's one surviving newline. Every newline the
+    // release printer emits comes immediately after a `;` or a `}`, so ASI is
+    // never in a position to stand in for a semicolon — which is why every
+    // semicolon stays.
+    try expectCompact(
+        \\const f=(a)=>{const b=1,c=2;return b;};
+        \\const g=2;
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const b1 = try f.node(.const_decl, @intFromEnum(try f.name("b")), (try f.number("1")).int());
+            const c2 = try f.node(.const_decl, @intFromEnum(try f.name("c")), (try f.number("2")).int());
+            const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("b")).toOptional()), 0);
+            try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{ b1, c2, ret }));
+            try f.constDecl(out, "g", try f.number("2"));
+        }
+    }.go);
+}
+
+test "compact: a labelled loop, an if/else chain and an assignment" {
+    try expectCompact(
+        \\const f=(a)=>{L:while(true){if(a){a=1;continue L;}else{return a;}}};
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const label = try f.name("L");
+            const assign = try f.node(.assign_stmt, (try f.ident("a")).int(), (try f.number("1")).int());
+            const cont = try f.node(.continue_stmt, @intFromEnum(label), 0);
+            const then_body = try f.b.addRange(&.{ assign, cont });
+            const ret = try f.node(.return_stmt, @intFromEnum((try f.ident("a")).toOptional()), 0);
+            const else_body = try f.b.addRange(&.{ret});
+            const branches = try f.b.addRecord(JsIr.If{
+                .then_start = then_body.start,
+                .then_end = then_body.end,
+                .else_start = else_body.start,
+                .else_end = else_body.end,
+            });
+            const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @intFromEnum(branches));
+            const loop = try f.loop(label, &.{if_stmt});
+            try f.constDecl(out, "f", try f.func(&.{try f.name("a")}, &.{loop}));
+        }
+    }.go);
+}
+
+test "compact: an import keeps its `as`, and an object and a call lose every space" {
+    try expectCompact(
+        \\import{add as Basics$add,Other$f}from"./M.mjs";
+        \\const o={a:1,...rest};
+        \\const c=f(1,2);
+        \\export{o,c};
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const gpa = f.gpa;
+            const other = try f.qualified("Other", "f");
+            const specs = [_]JsIr.Specifier{
+                .{ .imported = try f.name("add"), .local = try f.qualified("Basics", "add") },
+                .{ .imported = other, .local = other },
+            };
+            const offset, const len = try f.b.addString("./M.mjs");
+            const range = try f.b.addExtra(@ptrCast(&specs));
+            const record = try f.b.addRecord(JsIr.Import{
+                .source_start = offset,
+                .source_len = len,
+                .specs_start = range.start,
+                .specs_end = range.end,
+            });
+            try out.append(gpa, try f.node(.import_stmt, @intFromEnum(record), 0));
+
+            const property = try f.node(.property, @intFromEnum(try f.name("a")), (try f.number("1")).int());
+            const spread = try f.node(.spread_property, (try f.ident("rest")).int(), 0);
+            const props = try f.b.addRange(&.{ property, spread });
+            try f.constDecl(out, "o", try f.node(.object, @intFromEnum(props.start), @intFromEnum(props.end)));
+
+            const args = try f.b.addRecord(try f.b.addRange(&.{ try f.number("1"), try f.number("2") }));
+            try f.constDecl(out, "c", try f.node(.call, (try f.ident("f")).int(), @intFromEnum(args)));
+
+            const exported = try f.b.addNames(&.{ try f.name("o"), try f.name("c") });
+            try out.append(gpa, try f.node(.export_stmt, @intFromEnum(exported.start), @intFromEnum(exported.end)));
+        }
+    }.go);
+}
+
+test "a numeric literal in a member position is bracketed, in both modes" {
+    // `1.a` is a syntax error: the dot reads as a decimal point. Nothing in a
+    // dev build produces one, and §9 item 1 can, by inlining a literal
+    // binding into the object position of a member access — so the printer's
+    // precedence table carries the rule rather than the inliner carrying an
+    // exception.
+    try expectPrinted(
+        \\const a = (1).b;
+        \\const c = (1)[0];
+        \\
+    , struct {
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const one = try f.number("1");
+            try f.constDecl(out, "a", try f.node(.member, one.int(), @intFromEnum(try f.name("b"))));
+            const two = try f.number("1");
+            try f.constDecl(out, "c", try f.node(.index_get, two.int(), (try f.number("0")).int()));
+        }
+    }.go);
 }
 
 test "reserved words are the ECMAScript set, the strict-mode ones included" {

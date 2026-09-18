@@ -806,6 +806,7 @@ const Emitter = struct {
             const text = try Print.print(e.gpa, &lowered.ir, .fromGlobal(&e.session.interner), .{
                 .plan = &plan,
                 .rename = if (renamer) |*r| r else null,
+                .compact = e.options.release,
             });
             if (renamer) |r| try e.reportRenameFailure(&lowered.ir, file, r);
             defer e.gpa.free(text);

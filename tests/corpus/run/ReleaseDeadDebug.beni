@@ -1,0 +1,61 @@
+-- run: `backend.md` §9 item 1's zero-use rule, which is the half that is
+-- about correctness rather than bytes — and the one fixture in the corpus
+-- whose dev and release output legitimately DIFFER.
+--
+-- §9 item 1: "a binding whose value is never used may be dropped whole,
+-- everything inside it included, a `Debug.log` among it". `language.md` §6's
+-- *What an optimiser may assume* is the licence in so many words, and
+-- `Debug.log` is the one thing in the language that can see it being spent.
+--
+-- Three `Debug.log`s in `report`, in written order:
+--
+--   1. `first` is read, so it survives and prints;
+--   2. `ignored` is read by NOTHING. A release build drops the binding whole
+--      and the line does not appear. A dev build keeps it — elimination is
+--      declaration-granular and does not look inside a body (§9's
+--      reachability walk), so `local dead bindings` is release-only and dev
+--      still prints it;
+--   3. `second` is read, so it survives and prints AFTER the first: the
+--      surviving order did not move, which is the other half of the claim.
+--
+-- Hence `ReleaseDeadDebug.expected` and `ReleaseDeadDebug.release-expected`.
+-- That pair is the whole of the difference between the two builds across the
+-- corpus, and it is deliberate rather than tolerated: §9 asks for the drop by
+-- name, and a `.release-expected` is how a fixture says so out loud instead
+-- of a harness quietly accepting two answers everywhere.
+--
+-- `dropped` is the third kind and belongs to `run/DceDebugLog`: a whole
+-- declaration nothing reaches, deleted by the reachability walk in BOTH
+-- builds, so neither golden has its line.
+import Node exposing (Program)
+import String
+
+
+log : String, Int -> Int
+log label v =
+    Debug.log v label
+
+
+pub dropped : Int
+dropped =
+    log "dead.declaration" 99
+
+
+report : Int -> Int
+report n =
+    let
+        first =
+            log "dead.first" n
+
+        ignored =
+            log "dead.ignored" (n * 10)
+
+        second =
+            log "dead.second" (n + 1)
+    in
+    first + second
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (report 2) ]

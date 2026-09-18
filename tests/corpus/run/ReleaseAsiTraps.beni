@@ -1,0 +1,92 @@
+-- run: the tokenisation traps `backend.md` §9 item 3 names, as a program
+-- whose ANSWER moves if the compact printer ever creates one. Built twice,
+-- once as a dev build and once with `--release`.
+--
+-- **Semicolons stay, all of them**, so ASI is never in a position to stand in
+-- for one: every newline the release printer emits comes immediately after a
+-- `;` or a `}`. That is the claim, and the way to pin a claim about something
+-- the printer NEVER does is to write the expressions that would need it and
+-- check the arithmetic:
+--
+--   * `a - -1` and `a - -b`. Closed up, `--` is a decrement and the program
+--     either throws or computes something else. This is the one adjacency §9
+--     names beside identifier-identifier.
+--   * `a + -b`, `-a - b`, `- -a`: the pairs that are safe, here so that a
+--     printer which put a space between every operator pair would also fail.
+--   * a `return` whose value starts with `(`, `[`, `` ` ``, `-` and `/` —
+--     every prefix that obliges a general minifier to know when to write a
+--     leading semicolon. Ours never elides one, so none of them needs it.
+--   * a division beside a division, which is the `/` `/` pair that would open
+--     a comment, and a template literal beside an identifier, which is the
+--     tagged-template shape.
+--   * strings holding newlines and dollar-braces, which reach the joiner in
+--     several pieces and must come out as ONE token: the guard asked per
+--     piece put a space inside `"one\ntwo"` and `run/StringOps` caught it.
+--
+-- Recorded rather than hidden: `a - -1` currently lowers to
+-- `Basics$sub(a, Basics$negate(1))`, because §9's peephole that turns a call
+-- of `Basics.add` into `+` is not built, so the emitted bytes hold no `- -`
+-- pair today. The `--` adjacency itself is pinned by `Print.zig`'s own
+-- compact tests, which build the `binary`/`unary` pair directly; this fixture
+-- pins the ANSWERS, and it will start exercising the emitted pair the day the
+-- peephole lands without anyone having to remember it.
+import Node exposing (Program)
+import String
+
+
+-- `a - -1`: the decrement trap, with a literal and with a name.
+minusMinus : Int, Int -> Int
+minusMinus a b =
+    (a - -1) + (a - -b) + (a + -b) + (-a - b) + -(-a)
+
+
+-- A `return` whose value begins with each troublesome character.
+startsWithParen : Int -> Int
+startsWithParen n =
+    (n + 1) * 2
+
+
+startsWithBracket : Int -> String
+startsWithBracket n =
+    String.join (List.map [ n, n + 1 ] String.fromInt) ","
+
+
+startsWithBacktick : Int -> String
+startsWithBacktick n =
+    "v=${String.fromInt n}"
+
+
+startsWithMinus : Int -> Int
+startsWithMinus n =
+    -n
+
+
+startsWithSlash : Float, Float -> Float
+startsWithSlash a b =
+    a / b / 2.0
+
+
+-- A template beside an identifier, and a string that is written in pieces.
+pieces : Int -> String
+pieces n =
+    let
+        tag =
+            "n"
+
+        body =
+            "${tag}=${String.fromInt n}"
+    in
+    String.concat [ body, "|", "one\ntwo", "|", "a\tb", "|", "d\${}e" ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (minusMinus 10 3)
+        , String.fromInt (startsWithParen 4)
+        , startsWithBracket 7
+        , startsWithBacktick 9
+        , String.fromInt (startsWithMinus 5)
+        , String.fromFloat (startsWithSlash 100.0 5.0)
+        , pieces 3
+        ]

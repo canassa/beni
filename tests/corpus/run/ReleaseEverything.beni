@@ -1,0 +1,499 @@
+-- run: one big program using every construct, under both builds — §9's
+-- *Testing* asks for exactly this and says to reuse an existing one rather
+-- than invent a new one.
+--
+-- The body below is `bench/corpus/ExprParser.beni` verbatim, with a `main`
+-- added: a tokenizer, a precedence-climbing parser, an evaluator and a
+-- printer, which between them use `case` with literal rows and nested
+-- constructors, `?` in three positions, tail recursion, `let` functions,
+-- records, `Dict`, `Result`, strings, floats and unary minus. It is the
+-- shape §7's decision trees, §8's loop and §4's temporaries were all
+-- measured against, and until now it was only ever MEASURED: `bench/corpus`
+-- is compiled by `bench/size.mjs` and never executed. Here it is run, twice,
+-- and its answers are the golden.
+--
+-- Keeping it as a copy rather than importing `bench/corpus` is deliberate: a
+-- `run/` fixture is one file copied into a temporary project (the module name
+-- comes from the path), and a benchmark corpus that a test depends on stops
+-- being free to change for benchmarking reasons.
+
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+pub type Token
+    = TNumber Float
+    | TIdent String
+    | TPlus
+    | TMinus
+    | TStar
+    | TSlash
+    | TCaret
+    | TLParen
+    | TRParen
+    | TComma
+
+
+pub type Expr
+    = Number Float
+    | Var String
+    | Neg Expr
+    | Binary Op Expr Expr
+    | Call String (List Expr)
+
+
+pub type Op
+    = Add
+    | Sub
+    | Mul
+    | Div
+    | Pow
+
+
+pub tokenize : String -> Result String (List Token)
+tokenize input =
+    tokenizeChars (String.toList input) []
+
+
+tokenizeChars : List Char, List Token -> Result String (List Token)
+tokenizeChars chars acc =
+    case chars of
+        [] ->
+            Ok (List.reverse acc)
+
+        ' ' :: rest ->
+            tokenizeChars rest acc
+
+        '\n' :: rest ->
+            tokenizeChars rest acc
+
+        '+' :: rest ->
+            tokenizeChars rest (TPlus :: acc)
+
+        '-' :: rest ->
+            tokenizeChars rest (TMinus :: acc)
+
+        '*' :: rest ->
+            tokenizeChars rest (TStar :: acc)
+
+        '/' :: rest ->
+            tokenizeChars rest (TSlash :: acc)
+
+        '^' :: rest ->
+            tokenizeChars rest (TCaret :: acc)
+
+        '(' :: rest ->
+            tokenizeChars rest (TLParen :: acc)
+
+        ')' :: rest ->
+            tokenizeChars rest (TRParen :: acc)
+
+        ',' :: rest ->
+            tokenizeChars rest (TComma :: acc)
+
+        c :: rest ->
+            if Char.isDigit c then
+                let
+                    ( digits, remaining ) =
+                        span isNumberChar chars
+
+                    text =
+                        String.fromList digits
+                in
+                case String.toFloat text of
+                    Just n ->
+                        tokenizeChars remaining (TNumber n :: acc)
+
+                    Nothing ->
+                        Err "bad number: ${text}"
+            else if Char.isAlpha c then
+                let
+                    ( letters, remaining ) =
+                        span Char.isAlphaNum chars
+                in
+                tokenizeChars remaining (TIdent (String.fromList letters) :: acc)
+            else
+                Err "unexpected character: ${c}"
+
+
+isNumberChar : Char -> Bool
+isNumberChar c =
+    Char.isDigit c || c == '.'
+
+
+span : (a -> Bool), List a -> ( List a, List a )
+span predicate items =
+    let
+        go taken remaining =
+            case remaining of
+                x :: rest ->
+                    if predicate x then
+                        go (x :: taken) rest
+                    else
+                        ( List.reverse taken, remaining )
+
+                [] ->
+                    ( List.reverse taken, [] )
+    in
+    go [] items
+
+
+pub parse : String -> Result String Expr
+parse input =
+    let
+        tokens =
+            tokenize input?
+
+        ( expr, rest ) =
+            parseExpr 0 tokens?
+    in
+    case rest of
+        [] ->
+            Ok expr
+
+        token :: _ ->
+            Err "unexpected ${describeToken token} after expression"
+
+
+parseExpr : Int, List Token -> Result String ( Expr, List Token )
+parseExpr minPrec tokens =
+    let
+        ( left, rest ) =
+            parseUnary tokens?
+    in
+    climb minPrec left rest
+
+
+climb : Int, Expr, List Token -> Result String ( Expr, List Token )
+climb minPrec left tokens =
+    case tokens of
+        token :: rest ->
+            case binaryOp token of
+                Just ( op, prec, rightAssoc ) ->
+                    if prec < minPrec then
+                        Ok ( left, tokens )
+                    else
+                        let
+                            nextMin =
+                                if rightAssoc then
+                                    prec
+                                else
+                                    prec + 1
+
+                            ( right, remaining ) =
+                                parseExpr nextMin rest?
+                        in
+                        climb minPrec (Binary op left right) remaining
+
+                Nothing ->
+                    Ok ( left, tokens )
+
+        [] ->
+            Ok ( left, [] )
+
+
+binaryOp : Token -> Maybe ( Op, Int, Bool )
+binaryOp token =
+    case token of
+        TPlus ->
+            Just ( Add, 1, False )
+
+        TMinus ->
+            Just ( Sub, 1, False )
+
+        TStar ->
+            Just ( Mul, 2, False )
+
+        TSlash ->
+            Just ( Div, 2, False )
+
+        TCaret ->
+            Just ( Pow, 3, True )
+
+        _ ->
+            Nothing
+
+
+parseUnary : List Token -> Result String ( Expr, List Token )
+parseUnary tokens =
+    case tokens of
+        TMinus :: rest ->
+            let
+                ( operand, remaining ) =
+                    parseUnary rest?
+            in
+            Ok ( Neg operand, remaining )
+
+        _ ->
+            parseAtom tokens
+
+
+parseAtom : List Token -> Result String ( Expr, List Token )
+parseAtom tokens =
+    case tokens of
+        TNumber n :: rest ->
+            Ok ( Number n, rest )
+
+        TIdent name :: TLParen :: rest ->
+            let
+                ( args, remaining ) =
+                    parseArgs rest []?
+            in
+            Ok ( Call name args, remaining )
+
+        TIdent name :: rest ->
+            Ok ( Var name, rest )
+
+        TLParen :: rest ->
+            let
+                ( inner, remaining ) =
+                    parseExpr 0 rest?
+            in
+            case remaining of
+                TRParen :: afterParen ->
+                    Ok ( inner, afterParen )
+
+                _ ->
+                    Err "expected closing parenthesis"
+
+        token :: _ ->
+            Err "unexpected ${describeToken token}"
+
+        [] ->
+            Err "unexpected end of input"
+
+
+parseArgs : List Token, List Expr -> Result String ( List Expr, List Token )
+parseArgs tokens acc =
+    case tokens of
+        TRParen :: rest ->
+            Ok ( List.reverse acc, rest )
+
+        _ ->
+            let
+                ( arg, remaining ) =
+                    parseExpr 0 tokens?
+            in
+            case remaining of
+                TComma :: afterComma ->
+                    parseArgs afterComma (arg :: acc)
+
+                TRParen :: afterParen ->
+                    Ok ( List.reverse (arg :: acc), afterParen )
+
+                _ ->
+                    Err "expected `,` or `)` in argument list"
+
+
+describeToken : Token -> String
+describeToken token =
+    case token of
+        TNumber n ->
+            "number ${n}"
+
+        TIdent name ->
+            "identifier ${name}"
+
+        TPlus ->
+            "`+`"
+
+        TMinus ->
+            "`-`"
+
+        TStar ->
+            "`*`"
+
+        TSlash ->
+            "`/`"
+
+        TCaret ->
+            "`^`"
+
+        TLParen ->
+            "`(`"
+
+        TRParen ->
+            "`)`"
+
+        TComma ->
+            "`,`"
+
+
+pub eval : Dict String Float, Expr -> Result String Float
+eval env expr =
+    case expr of
+        Number n ->
+            Ok n
+
+        Var name ->
+            Dict.get env name |> Result.fromMaybe "unknown variable ${name}"
+
+        Neg inner ->
+            Ok (negate (eval env inner?))
+
+        Binary op left right ->
+            let
+                l =
+                    eval env left?
+
+                r =
+                    eval env right?
+            in
+            case op of
+                Add ->
+                    Ok (l + r)
+
+                Sub ->
+                    Ok (l - r)
+
+                Mul ->
+                    Ok (l * r)
+
+                Div ->
+                    if r == 0 then
+                        Err "division by zero"
+                    else
+                        Ok (l / r)
+
+                Pow ->
+                    Ok (l ^ r)
+
+        Call name args ->
+            let
+                values =
+                    evalAll env args?
+            in
+            callFunction name values
+
+
+evalAll : Dict String Float, List Expr -> Result String (List Float)
+evalAll env exprs =
+    case exprs of
+        [] ->
+            Ok []
+
+        first :: rest ->
+            Ok (eval env first? :: evalAll env rest?)
+
+
+callFunction : String, List Float -> Result String Float
+callFunction name args =
+    case ( name, args ) of
+        ( "sqrt", [ x ] ) ->
+            Ok (sqrt x)
+
+        ( "abs", [ x ] ) ->
+            Ok (abs x)
+
+        ( "max", [ a, b ] ) ->
+            Ok (max a b)
+
+        ( "min", [ a, b ] ) ->
+            Ok (min a b)
+
+        ( "sum", xs ) ->
+            Ok (List.sum xs)
+
+        ( _, _ ) ->
+            Err "unknown function ${name} with ${List.length args} arguments"
+
+
+pub print : Expr -> String
+print expr =
+    case expr of
+        Number n ->
+            String.fromFloat n
+
+        Var name ->
+            name
+
+        Neg inner ->
+            "-${printAtom inner}"
+
+        Binary op left right ->
+            "${printAtom left} ${opSymbol op} ${printAtom right}"
+
+        Call name args ->
+            name ++ "(" ++ String.join (List.map args print) ", " ++ ")"
+
+
+printAtom : Expr -> String
+printAtom expr =
+    case expr of
+        Binary _ _ _ ->
+            "(" ++ print expr ++ ")"
+
+        _ ->
+            print expr
+
+
+opSymbol : Op -> String
+opSymbol op =
+    case op of
+        Add ->
+            "+"
+
+        Sub ->
+            "-"
+
+        Mul ->
+            "*"
+
+        Div ->
+            "/"
+
+        Pow ->
+            "^"
+
+
+pub calculate : Dict String Float, String -> Result String Float
+calculate env input =
+    eval env (parse input?)
+
+
+show : String -> String
+show input =
+    let
+        env =
+            Dict.insert (Dict.insert Dict.empty "x" 3.0) "y" 4.0
+    in
+    case calculate env input of
+        Ok value ->
+            input ++ " = " ++ String.fromFloat value
+
+        Err message ->
+            input ++ " ! " ++ message
+
+
+reprint : String -> String
+reprint input =
+    case parse input of
+        Ok expr ->
+            print expr
+
+        Err message ->
+            "! " ++ message
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map
+            [ "1 + 2 * 3"
+            , "(1 + 2) * 3"
+            , "2 ^ 3 ^ 2"
+            , "-x * y"
+            , "x + y / 2"
+            , "max(1, 2)"
+            , "min(x, y) + abs(-5)"
+            , "sqrt(16)"
+            , "1 +"
+            , "2 @ 3"
+            , "unknown(1)"
+            , "z + 1"
+            ]
+            show
+            ++ List.map [ "1 + 2 * 3", "-(x + 1) ^ 2" ] reprint
+        )

@@ -1,0 +1,64 @@
+-- emit/release: `backend.md` §9 items 3 and 5, as bytes. What a running
+-- program cannot tell you is where the whitespace went, so this is the
+-- golden that says it:
+--
+--   * **one line per top-level declaration and no other newline**, which
+--     costs 21 brotli bytes on `bench/corpus` and keeps a stack trace naming
+--     a declaration by line (§9's measurement J);
+--   * **no indentation at all**, and no space that the syntax does not need —
+--     `const a=1`, `f(x,y)`, `{a:1}`, `(a,b)=>`, `a?b:c`, `if(c){…}else{…}`,
+--     `case 1:`, `while(true)`;
+--   * **every semicolon present**, including the last one of every block. §9
+--     rejects eliding it: one byte per block, in exchange for having to know
+--     that a statement beginning `(`, `[`, `` ` ``, `+`, `-` or `/` needs a
+--     leading one. Nothing here elides, so no newline is ever in a position
+--     where ASI could stand in for a semicolon;
+--   * **a run of adjacent `const`s joined into one** — `joins`' three
+--     bindings and `carried`'s §8 loop prologue, which is what item 5 was
+--     reserved for. A `let` does not join a `const` run, and `branching`'s
+--     `if`/`else` is the statement that breaks one.
+--
+-- The declarations below exist for those shapes and for nothing else, so a
+-- diff of this golden reads as a whitespace decision rather than as codegen.
+import Node exposing (Program)
+
+
+pub joins : Int -> Int
+joins n =
+    let
+        one =
+            n * 2
+
+        two =
+            one * 3
+
+        three =
+            two * 4
+    in
+    one + two + three
+
+
+pub branching : Int -> Int
+branching n =
+    if n > 0 then
+        n * 2
+    else
+        n - 1
+
+
+pub carried : Int, Int -> Int
+carried n acc =
+    if n <= 0 then
+        acc
+    else
+        carried (n - 1) (acc + n)
+
+
+pub shaped : Int -> { count : Int, label : Int }
+shaped n =
+    { count = n, label = n * 2 }
+
+
+main : Program
+main =
+    Node.printLines []
