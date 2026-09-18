@@ -9,9 +9,14 @@
 -- the pair of numbers is what the change costs or buys at run time.
 --
 -- The key list is built by `concatMap` over two small ranges rather than one
--- `List.range 1 100000`, because `List.rangeHelp` is a self tail call and the
--- tail-call loop (`fast-compiler.md` §13) has not landed: a range over about
--- 7 000 overflows the JavaScript stack. Everything else here goes through
+-- `List.range 1 100000`, because when this was written `List.rangeHelp` was a
+-- self tail call that recursed, and a range over about 7 000 overflowed the
+-- JavaScript stack. **The tail-call loop (`fast-compiler.md` §13) landed on
+-- 2026-09-18 in `bbfc869`**, so the split is now VESTIGIAL for a compiler at
+-- or after it and still MANDATORY for the C0 baseline binary this program is
+-- also measured with. It is left exactly as it was because the `-- ops:`
+-- count and the checksum are cited throughout
+-- `plans/static-dispatch-spike-results.md`. Everything else here goes through
 -- `List.foldl`, which is `foreign` and therefore a loop.
 --
 -- One op is one insert or one get, so `ops` is 2 x keys.

@@ -11,8 +11,9 @@
 -- then `y` — which for this shape is the same order `comparePoint` used, so
 -- the two programs sort identically and their checksums have to match.
 --
--- Same range-depth constraint as R1: nested small ranges, `List.foldl` for
--- every loop.
+-- Same range-depth constraint as R1, and the same note that it is now
+-- vestigial for a compiler at or after `bbfc869`: nested small ranges,
+-- `List.foldl` for every loop.
 --
 -- **`weight` is not decoration, and `c0/R2DictRecord.beni` does not have
 -- it.** `c0` writes the inserted value inline as `(p.x + p.y)`, and in C1

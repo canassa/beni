@@ -19,6 +19,43 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-09-18 — where the compiler stands, after the day M3 had
+
+**The numbers are not here.** This entry exists so that the trend has a marker
+at this date and points at the page that carries them:
+[`plans/state-of-the-compiler.md`](../plans/state-of-the-compiler.md), taken on
+`8be8e17` against the `c870e9a` baseline in one sitting on **machine 2** (AMD
+Ryzen 9 5950X, 16 cores / 32 threads, 31 GiB, Linux 6.12.110, Zig 0.16.0, Node
+v24.19.0, load 0.04–1.05 throughout).
+
+The one-line summary, so this file is not silent about its own budget: **check
+1.29 M LOC/s per core** against §2's 250 k; **a 100 k-line cold build in 109 ms**
+(196 ms at `--jobs=1`) against §2's 800 ms; **emit 59–62 MB/s** against
+`backend.md` §13's 5 MB/s; **an empty program ships 2 147 bytes** where it
+shipped 65 214 before reachability elimination. The slowest thing in the repo
+is now `zig build test-blackbox` at **78 s**.
+
+### `bench/runtime/` — one note about the programs, not a number
+
+Every program under `bench/runtime/c0/` and `c1/` splits its workload into
+blocks (4 × 500, 40 × 500, 120 × 500) and each header explains that it does so
+because `List.range 1 2000` was close to the JavaScript stack limit "until the
+tail-call loop lands". **It landed, in `bbfc869` on 2026-09-18.** So the split
+is now:
+
+- **vestigial** for any compiler at or after `bbfc869` — `List.rangeHelp` and
+  `List.mergeWithHelp` are labelled loops and a flat range would be fine;
+- **mandatory** for the C0 baseline binary at `c870e9a`, which is still the A
+  side of every C0-vs-C1 row and has no loop.
+
+The programs are therefore **left exactly as they are**. Their `-- ops:` counts
+and their checksums are cited all over
+`plans/static-dispatch-spike-results.md`, and a program whose ops count moved
+would void every row that quotes it. Only the sentences that claimed the loop
+"has not landed" were corrected; no code, no count, no checksum changed.
+
+---
+
 ## 2026-09-14 — M3a, the emitter's first number
 
 **Machine:** Intel N100, 4 cores / 4 threads, 6 MiB L3, single memory

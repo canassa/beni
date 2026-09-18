@@ -32,8 +32,11 @@
 -- is the case V8 inlines best. R6 is the same shape gone megamorphic.
 --
 -- One op is one `compare` call: 500 elements x 20 000 repetitions, the
--- repetitions run as 40 x 500 because `List.range 1 20000` recurses past
--- the JavaScript stack until the tail-call loop lands.
+-- repetitions run as 40 x 500 because `List.range 1 20000` recursed past the
+-- JavaScript stack when this was written. **The tail-call loop landed on
+-- 2026-09-18 in `bbfc869`**, so the split is now vestigial for a compiler at
+-- or after it and still mandatory for the C0 baseline binary; it is left
+-- alone because the `-- ops:` count and the checksum are cited.
 import List
 import Node exposing (Program)
 import String

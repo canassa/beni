@@ -3402,3 +3402,39 @@ per the append-only rule: the "regression between S3 and `eb03b77`" reading
 (`:1698-1712`, `:2767`). Report 19 should take M2 from **this** entry.
 
 ---
+
+## 2026-09-18 22:39 CEST — this file is no longer the last word
+
+**Append-only, so read this before quoting anything above.** Every C1 figure in
+this file and in
+[`docs/design/research/19-static-dispatch-spike-results.md`](../docs/design/research/19-static-dispatch-spike-results.md)
+was taken on a branch that never merged, at or before `e4c56d6` (12:20). Static
+dispatch was then **adopted into `master`** at `89ce028` (13:50), and by
+`8be8e17` (22:16) the same day `master` had also gained the tail-call loop
+(`bbfc869`), decision trees (`cf7806f`), reachability elimination always on
+(`22f7f2f`), `?` (`b545b60`), the `--release` optimiser (`e605066` and four
+follow-ups), a 64-constraint cap on inferred interfaces with the
+`ambiguous_method_receiver` warning on by default (`9074538`), linear
+exhaustiveness for flat and pair-keyed lookup tables (`992ab59`, `889caae`),
+key-once `sortBy` (`128002b`), left-to-right core callbacks (`51ab217`) and
+three new checker passes.
+
+**The post-adoption numbers are in
+[`plans/state-of-the-compiler.md`](state-of-the-compiler.md)**, taken the same
+evening on the same machine (machine 2) against the same `c870e9a` C0 baseline,
+ABBA throughout. Five figures quoted above are superseded there rather than
+wrong here — they were true of the binary that produced them:
+
+| Figure here | Where | What the evening reads |
+|---|---|---|
+| floor output +5.5 % raw, `bench/corpus` +11.8 %, "every size is an upper bound because there is no DCE" | `:926`, `:2046`, report 19 §5 | the bound is collected: floor **65 214 → 2 147 B**, and the 35 programs on both sides ship **0.269×** C0's raw bytes |
+| n² obligations on an unannotated chain; 3 754 MB at n = 3 000 | `:3110-3151`, report 19 §3 | **linear** — 32 549 obligations at n = 1 000 and 98 774 at n = 3 000, 99 ms and 94 MB, at the price of 46 `too_many_inferred_constraints` refusals |
+| `check` +20.3 %, `emit` 1.48× | report 19 §2.1 (N100) | **+24.5 %** and **1.74×**, machine 2, ABBA |
+| binary 1.264×, cold build 1.37×, black-box gate 1.61× | report 19 §8 | **1.347×**, **1.48×**, **2.50×** |
+| R4 7.2× · R5 3.2× · R6 1.28× faster; R1–R3 flat | `:2304-2311`, report 19 §6 | **8.6× · 3.1× · 1.22×**; R1/R2 still flat, **R3 now +6.1 % slower than C0** |
+
+Two rows above are re-taken and **unchanged**: M3's interface churn is
+byte-identical in every cell of both corpora, and every M5 checksum still
+agrees. Nothing in this entry edits a prior one.
+
+---

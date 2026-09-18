@@ -12,10 +12,13 @@
 -- leaves the minimum alone and moves the rest, so a checksum over the head
 -- would score the wrong answer as a fast one.
 --
--- Sizes: 4 000 elements, 10 repetitions. `List.mergeWithHelp` is a self tail
--- call and the tail-call loop has not landed, so the merge recurses once per
--- element and a list over about 6 000 overflows the stack. The repetition,
--- not the length, is what buys the running time.
+-- Sizes: 4 000 elements, 10 repetitions. When this was written
+-- `List.mergeWithHelp` was a self tail call that recursed once per element,
+-- so a list over about 6 000 overflowed the stack. **The tail-call loop
+-- landed on 2026-09-18 in `bbfc869`**, so the ceiling is now vestigial for a
+-- compiler at or after it and still real for the C0 baseline binary; the
+-- sizes are left alone because the `-- ops:` count and the checksum are
+-- cited. The repetition, not the length, is what buys the running time.
 --
 -- One op is one element sorted: 3 lists x 4 000 x 10.
 import List
