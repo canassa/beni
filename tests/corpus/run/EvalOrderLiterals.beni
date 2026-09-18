@@ -1,0 +1,79 @@
+-- run: evaluation order inside the literal forms — `language.md` §6,
+-- *Evaluation order*. A tuple, a list, a constructor, a record update and the
+-- segments of an interpolated string all evaluate left to right, in the order
+-- written.
+--
+-- The RECORD LITERAL is deliberately absent, and its absence is the point.
+-- `backend.md` §4 sorts a record's keys so that one record type has one hidden
+-- class, and `Lower.recordNode` sorts the fields and then lowers each one — so
+-- the key sort drags the initialiser with it and `{ zed = p, alpha = q }` runs
+-- `q` first. That is a defect against the table, not a decision; the fixture
+-- that pins it belongs here the day it is fixed. The record UPDATE below is
+-- the same shape done right: a spread moves no initialiser.
+import Node exposing (Program)
+import String
+
+
+type Triple
+    = Triple Int Int Int
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+-- An interpolation may not contain a string literal (`language.md` §2.6), so
+-- the label of each segment's log has to be baked into a function.
+seg0 : Int -> Int
+seg0 v =
+    Debug.log v "interp.0"
+
+
+seg1 : Int -> Int
+seg1 v =
+    Debug.log v "interp.1"
+
+
+seg2 : Int -> Int
+seg2 v =
+    Debug.log v "interp.2"
+
+
+-- Written out of alphabetical order on purpose: the update below names `zed`
+-- before `alpha`, and the emitted object's key order must not decide when the
+-- two initialisers run.
+base : { zed : Int, alpha : Int, mid : Int }
+base =
+    { zed = 0, alpha = 0, mid = 0 }
+
+
+main : Program
+main =
+    let
+        tup =
+            ( n "tuple.0" 1, n "tuple.1" 2, n "tuple.2" 3 )
+
+        lst =
+            [ n "list.0" 1, n "list.1" 2, n "list.2" 3 ]
+
+        ctor =
+            Triple (n "ctor.0" 1) (n "ctor.1" 2) (n "ctor.2" 3)
+
+        updated =
+            { base | zed = n "update.zed" 1, alpha = n "update.alpha" 2 }
+
+        interpolated =
+            "${String.fromInt (seg0 1)}-${String.fromInt (seg1 2)}-${String.fromInt (seg2 3)}"
+
+        accessed =
+            n "access.subject" 7 + tup.0
+    in
+    Node.printLines
+        [ Debug.toString tup
+        , Debug.toString lst
+        , Debug.toString ctor
+        , Debug.toString updated
+        , interpolated
+        , String.fromInt accessed
+        ]

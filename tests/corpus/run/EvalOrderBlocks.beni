@@ -1,0 +1,140 @@
+-- run: evaluation order for the block forms — `language.md` §6, *Evaluation
+-- order*. `let` bindings run in the order written; `if` evaluates its
+-- condition and exactly one branch; a `case` evaluates its scrutinee exactly
+-- once and one branch body; `&&` and `||` evaluate their right operand only
+-- when the left has not decided.
+--
+-- The `case` rows are the ones a decision tree (`backend.md` §7) could break.
+-- A tree is free to test the parts of a scrutinee in any order it likes and to
+-- test one part on several paths — a test reads a value that is already there.
+-- What it may not do is evaluate a written expression twice or out of order,
+-- which is why it binds the scrutinee at most once. `tupleScrutinee` below
+-- makes the difference visible: the tree tests the SECOND element first (it is
+-- the literal `7`), and both elements are still evaluated once, left to right,
+-- before any test.
+--
+-- The short-circuit rows are `backend.md` §4's correction 3: `Basics.and` and
+-- `Basics.or` are `foreign` precisely so a call does not evaluate both sides,
+-- and a right operand that needs statements of its own gets them inside the
+-- branch. `shortCircuit*Statements` is that second half — a `case` on the
+-- right of `&&`.
+import Node exposing (Program)
+import String
+
+
+type Shape
+    = Circle Int
+    | Square Int
+    | Tri Int Int
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+b : String, Bool -> Bool
+b label v =
+    Debug.log v label
+
+
+shape : String, Shape -> Shape
+shape label v =
+    Debug.log v label
+
+
+subject : Shape
+subject =
+    Tri 1 2
+
+
+main : Program
+main =
+    let
+        first =
+            n "let.first" 1
+
+        second =
+            n "let.second" 2
+
+        third =
+            n "let.third" 3
+
+        onceSimple =
+            case shape "case.scrutinee" subject of
+                Circle a ->
+                    a
+
+                Square a ->
+                    a
+
+                Tri a c ->
+                    a + c
+
+        tupleScrutinee =
+            case ( shape "tuple.scrutinee.0" subject, n "tuple.scrutinee.1" 7 ) of
+                ( Circle a, 7 ) ->
+                    a
+
+                ( Tri a c, 7 ) ->
+                    a + c
+
+                ( _, other ) ->
+                    other
+
+        conditional =
+            if n "if.condition" 1 == 1 then
+                n "if.then" 10
+            else
+                n "if.else" 20
+
+        andShort =
+            b "and.short.left" False && b "and.short.right" True
+
+        andBoth =
+            b "and.both.left" True && b "and.both.right" False
+
+        orShort =
+            b "or.short.left" True || b "or.short.right" False
+
+        orBoth =
+            b "or.both.left" False || b "or.both.right" True
+
+        andShortStatements =
+            b "and.stmt.short.left" False
+                && (case shape "and.stmt.short.right" subject of
+                       Circle a ->
+                           a > 0
+
+                       Square a ->
+                           a > 0
+
+                       Tri a c ->
+                           a < c
+                   )
+
+        andBothStatements =
+            b "and.stmt.both.left" True
+                && (case shape "and.stmt.both.right" subject of
+                       Circle a ->
+                           a > 0
+
+                       Square a ->
+                           a > 0
+
+                       Tri a c ->
+                           a < c
+                   )
+    in
+    Node.printLines
+        [ String.fromInt (first + second + third)
+        , String.fromInt onceSimple
+        , String.fromInt tupleScrutinee
+        , String.fromInt conditional
+        , Debug.toString andShort
+        , Debug.toString andBoth
+        , Debug.toString orShort
+        , Debug.toString orBoth
+        , Debug.toString andShortStatements
+        , Debug.toString andBothStatements
+        ]

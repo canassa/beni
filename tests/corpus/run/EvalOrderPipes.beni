@@ -1,0 +1,87 @@
+-- run: evaluation order for the three forms that REWRITE before anything runs
+-- — `language.md` §6, *Evaluation order*, and §6.7 for the rewrites
+-- themselves. Pipes, the `_` placeholder and `let x <- e` all become ordinary
+-- applications during lowering, and the rewritten form's order is what holds.
+--
+-- `|>` is the one where the two readings could differ: `e |> f a` is `f e a`,
+-- so `e` — written first — becomes the FIRST argument and is evaluated first.
+-- Source order and lowered order agree, and this fixture is what says so.
+--
+-- The placeholder is the row worth reading twice. `f (g x) _` is `\p -> f (g x) p`,
+-- so `g x` is inside the lambda: it runs on EVERY call, and after that call's
+-- own argument, not once when the lambda is built. `held` below is called
+-- twice and `placeholder.inner` is logged twice, each time after the argument
+-- of that call.
+--
+-- The last line pins top-level constants. Their order among themselves is
+-- deliberately unspecified beyond "each before its own first use" — the
+-- backend emits them in dependency order today, which is why `topSum` is
+-- logged after `topOne` although it is written first — and `backend.md` §9's
+-- reachability pass may drop such a declaration whole, `Debug.log` included.
+import Node exposing (Program)
+import String
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+add2 : Int, Int -> Int
+add2 x y =
+    x + y
+
+
+add3 : Int, Int, Int -> Int
+add3 x y z =
+    x + y + z
+
+
+-- The callee of a `<-` bind: it logs when it runs, and again through the
+-- callback it is handed.
+withK : Int, (Int -> List Int) -> List Int
+withK v k =
+    k (n "bind.callee" v)
+
+
+topSum : Int
+topSum =
+    n "top.sum" 10 + topOne
+
+
+topOne : Int
+topOne =
+    n "top.one" 1
+
+
+main : Program
+main =
+    let
+        piped =
+            n "pipe.left" 1 |> add3 (n "pipe.arg2" 2) (n "pipe.arg3" 3)
+
+        backPiped =
+            add2 (n "backpipe.arg1" 1) <| n "backpipe.right" 2
+
+        held =
+            add3 (n "placeholder.inner" 1) 10 _
+
+        firstCall =
+            held (n "placeholder.call1" 100)
+
+        secondCall =
+            held (n "placeholder.call2" 200)
+
+        bound =
+            let
+                got <- withK (n "bind.arg" 5)
+            in
+            [ n "bind.rest" got ]
+    in
+    Node.printLines
+        [ String.fromInt piped
+        , String.fromInt backPiped
+        , String.fromInt (firstCall + secondCall)
+        , Debug.toString bound
+        , String.fromInt (topSum + topOne)
+        ]

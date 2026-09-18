@@ -1,0 +1,90 @@
+-- run: evaluation order for applications and operators — `language.md` §6,
+-- *Evaluation order*. The rule is strict, left to right, in source order, and
+-- it was normative nowhere until 2026-09-18 even though `core/Dict.beni`'s
+-- ascending walk and `checker.md` Appendix B's callback-order rule both spend
+-- it. Every `Debug.log` line below is one row of that table.
+--
+-- These fixtures PASS as written: the implementation was already right here.
+-- They are guards for M3c — inlining and dead-binding elimination (`backend.md`
+-- §9) are the passes that could quietly reorder any of this, and nothing else
+-- in `run/` would notice.
+import Node exposing (Program)
+import String
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+s : String, String -> String
+s label v =
+    Debug.log v label
+
+
+three : Int, Int, Int -> Int
+three x y z =
+    x + y + z
+
+
+-- The callee of an application is an expression like any other, so a call
+-- whose head is itself a call has an order to pin: head first, arguments
+-- after.
+chooser : Int -> (Int, Int, Int -> Int)
+chooser _ =
+    three
+
+
+-- A self tail call becomes a loop (`backend.md` §8). Its new arguments are
+-- evaluated in parameter order, and all of them before any parameter is
+-- rebound — swapping two of them is the shape that catches a rebind-as-you-go
+-- bug, because the result would be `x` twice.
+swapLoop : Int, Int, Int -> Int
+swapLoop steps x y =
+    if steps == 0 then
+        x * 100 + y
+    else
+        swapLoop (steps - 1) (n "loop.newX" y) (n "loop.newY" x)
+
+
+main : Program
+main =
+    let
+        callArgs =
+            three (n "call.arg1" 1) (n "call.arg2" 2) (n "call.arg3" 3)
+
+        calleeFirst =
+            (chooser (n "callee" 0)) (n "callee.arg1" 1) (n "callee.arg2" 2) (n "callee.arg3" 3)
+
+        -- `+` desugars to a `Basics` call, so this is the row above.
+        plus =
+            n "plus.left" 1 + n "plus.right" 2
+
+        -- `==` and `<` are METHOD calls with evidence since static dispatch
+        -- (`language.md` §6.5). The evidence is a leading parameter, and the
+        -- operands still go left to right.
+        equal =
+            n "eq.left" 1 == n "eq.right" 2
+
+        less =
+            n "lt.left" 1 < n "lt.right" 2
+
+        appended =
+            s "append.left" "a" ++ s "append.right" "b"
+
+        consed =
+            n "cons.head" 1 :: [ n "cons.tail" 2 ]
+
+        looped =
+            swapLoop 3 1 2
+    in
+    Node.printLines
+        [ String.fromInt callArgs
+        , String.fromInt calleeFirst
+        , String.fromInt plus
+        , Debug.toString equal
+        , Debug.toString less
+        , appended
+        , Debug.toString consed
+        , String.fromInt looped
+        ]

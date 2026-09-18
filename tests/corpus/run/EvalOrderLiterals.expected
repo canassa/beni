@@ -1,0 +1,21 @@
+tuple.0: 1
+tuple.1: 2
+tuple.2: 3
+list.0: 1
+list.1: 2
+list.2: 3
+ctor.0: 1
+ctor.1: 2
+ctor.2: 3
+update.zed: 1
+update.alpha: 2
+interp.0: 1
+interp.1: 2
+interp.2: 3
+access.subject: 7
+{ a = 1, b = 2, c = 3 }
+[1,2,3]
+Triple 1 2 3
+{ alpha = 2, mid = 0, zed = 1 }
+1-2-3
+8

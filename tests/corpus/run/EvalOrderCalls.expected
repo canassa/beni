@@ -1,0 +1,31 @@
+call.arg1: 1
+call.arg2: 2
+call.arg3: 3
+callee: 0
+callee.arg1: 1
+callee.arg2: 2
+callee.arg3: 3
+plus.left: 1
+plus.right: 2
+eq.left: 1
+eq.right: 2
+lt.left: 1
+lt.right: 2
+append.left: "a"
+append.right: "b"
+cons.head: 1
+cons.tail: 2
+loop.newX: 2
+loop.newY: 1
+loop.newX: 1
+loop.newY: 2
+loop.newX: 2
+loop.newY: 1
+6
+6
+3
+false
+true
+ab
+[1,2]
+201

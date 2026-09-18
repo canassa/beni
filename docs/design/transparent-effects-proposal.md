@@ -504,6 +504,8 @@ general subsumption is cheap: `false ⊑ true` everywhere a function type appear
   bindings in the order written. This must be specified because it becomes observable, and
   PureScript's MagicDo has had exactly this open since 2020 (`14/purescript` §3;
   `01-solution-space.md` §5, sub-decision 8).
+  **2026-09-18: now normative in `language.md` §6, *Evaluation order*, construct by construct** —
+  this bullet is no longer where the rule lives, and effects add only the next one to it.
 - **A call with `impure` is never eliminated, duplicated, reordered across another `impure` call,
   or memoised**, even when its result is unused. A call with neither bit may be.
 - **One-shot.** The runtime resumes a suspended call exactly once, or never.

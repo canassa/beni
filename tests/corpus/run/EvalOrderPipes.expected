@@ -1,0 +1,19 @@
+top.one: 1
+top.sum: 10
+pipe.left: 1
+pipe.arg2: 2
+pipe.arg3: 3
+backpipe.arg1: 1
+backpipe.right: 2
+placeholder.call1: 100
+placeholder.inner: 1
+placeholder.call2: 200
+placeholder.inner: 1
+bind.arg: 5
+bind.callee: 5
+bind.rest: 5
+6
+3
+322
+[5]
+12
