@@ -1,0 +1,26 @@
+-- check/bad: the circle exists only in the DISPATCH table (queue slice 23,
+-- `static-dispatch-spike.md` §1.4). `(Counter 1).bump 2` is a `method_call`,
+-- and a method call adds NO `Bir.refs` edge — which function it calls is not
+-- known until the checker has run — so a walk of `refs` alone sees `bumped`
+-- naming nothing at all and finds no circle.
+--
+-- This is the fixture that proves the checker reads the third leg: `bumped`
+-- reaches `bump` through its dispatch site, and `bump`'s body names `bumped`.
+-- `run/ConstantMethodCall.beni` is the same shape without the circle, and it
+-- is why `backend.md` §5's emission order reads that table too.
+pub type Counter
+    = Counter Int
+
+
+pub bumped : Counter
+bumped =
+    (Counter 1).bump 2
+
+
+pub bump : Counter, Int -> Counter
+bump c step =
+    case c of
+        Counter n ->
+            case bumped of
+                Counter seed ->
+                    Counter (n + step + seed)

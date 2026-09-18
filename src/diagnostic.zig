@@ -205,6 +205,16 @@ pub const Code = enum {
     /// is a JavaScript temporal dead zone: it was the last exit-0 path
     /// from a `let` to a `ReferenceError`.
     let_forward_reference,
+    /// The TOP-LEVEL half of the same rule, appended on 2026-09-18 (queue
+    /// slice 23, `language.md` §7, `checker.md` §6.7): a top-level value
+    /// whose initialiser is reachable from itself, directly or through the
+    /// functions it names. Top-level constants are emitted in dependency
+    /// order (`backend.md` §5), which orders everything except a cycle —
+    /// there `emissionOrder` falls back to source order and the program
+    /// throws a `ReferenceError` at load with the build exiting 0. It was
+    /// the last exit-0 path from a MODULE to a temporal dead zone, as
+    /// `let_forward_reference` was from a `let`.
+    cyclic_value,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -245,6 +255,7 @@ pub fn title(code: Code) []const u8 {
         .arrow_in_tuple_element => "ARROW IN A TUPLE ELEMENT",
         .bind_rhs_forward_reference => "BIND USES A LATER BINDING",
         .let_forward_reference => "LET BINDING USED TOO SOON",
+        .cyclic_value => "VALUE DEFINED IN TERMS OF ITSELF",
         .nesting_too_deep => "NESTING TOO DEEP",
         .duplicate_exposed_name => "DUPLICATE EXPOSED NAME",
         .duplicate_import => "DUPLICATE IMPORT",

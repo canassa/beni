@@ -37,6 +37,10 @@
 //! **Then exhaustiveness** (§6.6), over the declarations that solved clean:
 //! `Exhaustive.zig` has the algorithm and `exhaustive` is what it costs in a
 //! trace.
+//!
+//! **Then top-level value cycles** (§6.7), last of all, because the graph
+//! that pass walks is half `Bir.refs` and half the module's dispatch table
+//! and the table is not finished until step 6. `Cycles.zig` has it.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -50,6 +54,7 @@ const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Constrain = @import("Constrain.zig");
+const Cycles = @import("Cycles.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Render = @import("Render.zig");
 const Schemes = @import("Schemes.zig");
@@ -716,6 +721,12 @@ const ModuleCheck = struct {
             DerivedNamer.write,
             @ptrCast(&namer),
         );
+
+        // 8. Top-level value cycles (checker.md §6.7). After the dispatch
+        //    table is FINISHED, because a `method_call` adds no `refs` edge
+        //    and the table is where that edge lives — the same reason
+        //    `backend.md` §5's emission order reads it.
+        try Cycles.run(mc.scratch.allocator(), bir, mc.dispatch, mc.interner, &reporter);
 
         // A declaration with no body — a `foreign` value, an annotation the
         // parser found no definition for — has no check variable, so its

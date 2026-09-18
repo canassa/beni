@@ -1,0 +1,19 @@
+-- check/bad: three values in a circle (`language.md` §7). The message walks
+-- it in order — `a → b → c → a` — because a reader has to see which step is
+-- the one they meant to break, and a set of three names does not say.
+--
+-- The declarations are written in the order the circle runs, so the anchor
+-- and the source order agree here; `CyclicValueChain`'s job is the PATH.
+pub a : Int
+a =
+    b + 1
+
+
+pub b : Int
+b =
+    c + 1
+
+
+pub c : Int
+c =
+    a + 1

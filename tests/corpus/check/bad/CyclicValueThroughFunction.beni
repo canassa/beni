@@ -1,0 +1,21 @@
+-- check/bad: the circle runs through a FUNCTION (`language.md` §7). Naming a
+-- function counts as calling it — passing it to `List.map` calls it — so
+-- whatever `f`'s body reads is read while `a` is being computed, and `f`
+-- reads `b`, which is `a`.
+--
+-- `f` itself is fine: a function's body runs when it is called, so functions
+-- may be mutually recursive and this is not a report about `f`. The message
+-- names it as the step in between, which is the fix the author needs.
+pub a : Int
+a =
+    f 1
+
+
+pub f : Int -> Int
+f n =
+    n + b
+
+
+pub b : Int
+b =
+    a

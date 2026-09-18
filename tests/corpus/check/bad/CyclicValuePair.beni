@@ -1,0 +1,15 @@
+-- check/bad: two top-level values that need each other (`language.md` §7).
+-- Neither can go first, so `backend.md` §5's dependency order has no answer
+-- and falls back to source order — `const CyclicValuePair$y = …$x;` above
+-- `x`'s own `const`, which is a temporal dead zone.
+--
+-- ONE diagnostic, not two: the circle is one mistake, reported at the first
+-- of its values in source order.
+pub x : Int
+x =
+    y + 1
+
+
+pub y : Int
+y =
+    x

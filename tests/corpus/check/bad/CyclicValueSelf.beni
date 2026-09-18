@@ -1,0 +1,12 @@
+-- check/bad: the shortest shape of `language.md` §7's top-level
+-- initialisation rule. A top-level value is computed once, when the module
+-- loads, so its own result cannot be part of computing it: `cyclic_value`,
+-- with nothing in between and a one-name circle.
+--
+-- Until queue slice 23 this checked clean, built with exit 0 and emitted
+-- `const CyclicValueSelf$x = Basics$add(CyclicValueSelf$x, 1);`, which throws
+-- `ReferenceError: Cannot access 'CyclicValueSelf$x' before initialization`
+-- the moment Node loads the module.
+pub x : Int
+x =
+    x + 1

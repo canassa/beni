@@ -1,0 +1,83 @@
+-- run: what §7's top-level initialisation rule still ALLOWS, proven by
+-- running it. `language.md` §6, *Evaluation order* promises a top-level
+-- constant is initialised before its own first use, and `backend.md` §5
+-- delivers that by emitting in dependency order; §7 refuses only a value
+-- that is reachable from itself (`cyclic_value`). Four shapes survive that,
+-- and every one of them is here because every one is emitted differently:
+--
+--   * a CHAIN of constants written in reverse dependency order. `first`
+--     names `second` names `third`, all written above their dependencies,
+--     and the emitter reorders them — this is the half `let` does not have,
+--     and it has to RUN, not merely check;
+--   * MUTUAL RECURSION between functions. A function's body runs when it is
+--     called, so `isEven`/`isOdd` are a circle the rule does not touch;
+--   * a value named only from inside a function body that no initialiser
+--     runs. `offset` is read by `shift`, and `shift` is called from `main`,
+--     which is after every constant has a value;
+--   * a lambda-valued constant naming a value written below it. Nothing runs
+--     where `deferred` is bound, so `scale` may be defined after it; calling
+--     it from `main` is what reads `scale`.
+import Node exposing (Program)
+import String
+
+
+first : Int
+first =
+    second * 2
+
+
+second : Int
+second =
+    third + 1
+
+
+third : Int
+third =
+    10
+
+
+deferred : () -> Int
+deferred =
+    \_ -> scale * 3
+
+
+scale : Int
+scale =
+    7
+
+
+offset : Int
+offset =
+    100
+
+
+shift : Int -> Int
+shift n =
+    n + offset
+
+
+isEven : Int -> Bool
+isEven n =
+    if n == 0 then
+        True
+    else
+        isOdd (n - 1)
+
+
+isOdd : Int -> Bool
+isOdd n =
+    if n == 0 then
+        False
+    else
+        isEven (n - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt first
+        , String.fromInt (deferred ())
+        , String.fromInt (shift 5)
+        , Debug.toString (isEven 4)
+        , Debug.toString (isOdd 4)
+        ]

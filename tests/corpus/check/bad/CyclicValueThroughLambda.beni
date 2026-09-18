@@ -1,0 +1,16 @@
+-- check/bad: a value whose right-hand side IS a lambda defers — nothing runs
+-- where it is bound — but CALLING it is what runs its body, so mentioning it
+-- counts as calling it exactly as for a function (`language.md` §7).
+--
+-- `deferred` may name `seed` freely; what closes the circle is `seed` calling
+-- `deferred`. Without the lambda rule this would be two mutually recursive
+-- values and equally refused; with it, the report still fires, and the
+-- message names `deferred` as the step in between.
+pub deferred : () -> Int
+deferred =
+    \_ -> seed + 1
+
+
+pub seed : Int
+seed =
+    deferred ()

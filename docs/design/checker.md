@@ -94,6 +94,7 @@ src/
     Solve.zig               the solver: unify, generalise, instantiate, obligations (§6.2–6.4)
     Dispatch.zig            the checker→backend dispatch table (static-dispatch-spike.md §7)
     Exhaustive.zig          pattern usefulness (§6.6)
+    Cycles.zig              top-level value cycles (§6.7)
     Render.zig              type → text for diagnostics and dumps (§8.2)
     Diagnostics.zig         the M2 items and their prose
   dump/interface.zig  dump/types.zig  dump/graph.zig  dump/dispatch.zig
@@ -505,6 +506,51 @@ it is written:
   refusal starts firing on code people mean, the budget is the thing to fix — Maranget's §4
   optimisations, or a larger default — not the message.
 
+### 6.7 Top-level value cycles
+
+`language.md` §7's initialisation rule, top-level half: a top-level **value** may not be reachable
+from its own initialiser. The code is `cyclic_value` (§8.1) and the pass is `check/Cycles.zig`.
+
+**Why it is the checker's and not lowering's.** The `let` half of the same rule is lowering's
+(`let_forward_reference`, queue slice 21), because a `let`'s references are all local and BIR knows
+them. This half needs two graphs: `Bir.refs`, and the checker's **dispatch table** — a `method_call`
+adds no `refs` edge at all, because which function it calls is not known until the checker has run
+(`static-dispatch-spike.md` §1.4), so `bumped = (Counter 1).bump 2` with a `bump` that reads
+`bumped` is a circle no `refs` walk can see. `backend.md` §5's `emissionOrder` and `js/Reach.zig`
+read the same three legs for the same reason, and §8's "lowering cannot record the reference a
+method call will become" is the rule all three obey.
+
+**Where it runs, and what it costs.** Last in the module's check, after the dispatch table is
+finished, inside §4.4's DAG-parallel walk. It reads only this module's `Bir` and this module's
+dispatch table and writes only this module's diagnostics, so it adds no cross-thread state; a
+cycle cannot cross a module, because the module graph is a DAG and an import circle is already
+`import_cycle` (§4.3). Cost is one walk of the declaration table, one of the instruction range and
+Tarjan over the result — O(declarations + instructions + edges), allocated in the module's scratch
+arena — and a module with **no constant at all** answers before any of that, over the declaration
+table alone, because nothing can be reported about one. Measured with
+`bench --generate=100000 --iterations=5`, the pass off and on alternately, five runs each: the
+`check` phase ran 74.5–76.6 ms with the pass off and 73.7–82.6 ms with it on, minima 74.52 and
+73.73 ms, 1.34 and 1.36 M LOC/s. The spread of one configuration is larger than the difference
+between them, so the honest statement is that the pass is **below this machine's noise floor**, not
+that it is free.
+
+**What is a node, and what defers.** A declaration is a node when it is a value with a body. It
+**defers** — nothing of it runs at module load — when it has parameters, when it has evidence
+parameters, or when its entire body is a `lambda`; those are the emitter's own three readings
+(`js/Lower.declaration` splits on the same triple). A strongly connected component with at least
+one node that RUNS is refused; one made only of deferring nodes is mutual recursion between
+functions and is fine. The analysis is conservative in exactly the shape §7 describes: mentioning
+a function counts as running it.
+
+**One diagnostic per component**, at the first node of it that runs, in source order, with the
+circle printed in the order it is walked (shortest way round, breadth-first over edges in table
+order) — so nothing in the output depends on visit order or on `--jobs` (CLAUDE.md rule 5).
+
+`Cycles.zig` and `js/Reach.zig` walk the same three legs over the same tables and **must agree**;
+they are written twice because one runs per module inside the checker and may not depend on the
+backend, and the other runs over the whole program after it. Nothing but review keeps them in
+step. `Cycles.zig`'s edge set is `Reach.zig`'s minus the cross-module leg.
+
 ## 7. The interface record
 
 Per module, flat, index-based, session-owned, immutable once built — designed so M4 can hash
@@ -627,6 +673,7 @@ unknown_method  private_method  no_methods_on_shape  missing_where_constraint
 method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_receiver
 constrained_constant                            (static dispatch; two more are lowering's)
 too_many_inferred_constraints                   (the cap of static-dispatch-spike.md §6.4)
+cyclic_value                                    (§6.7, language.md §7)
 ```
 
 The last nine arrived with static dispatch on 2026-09-18, appended to `language.md` §10's
@@ -649,6 +696,14 @@ set and after `foreign_arity_mismatch`, so again no line above it moved. It is t
 §6.6's set and the only one that is about the CHECKER rather than about the program: the analysis
 could not decide this `case` inside `--pattern-budget`, so it refuses it rather than passing an
 unproven `case` to a decision tree that carries no default arm (`backend.md` §7).
+
+`cyclic_value` was appended on 2026-09-18 (queue slice 23), last, so again no line above it moved.
+It is §6.7's one code and the only one of this list that is about **when a value is computed**
+rather than about its type: a top-level value reachable from its own initialiser, which
+`backend.md` §5's dependency order cannot order and which therefore loaded and threw at run time
+with the build exiting 0. Its message names the whole circle in the order it runs, as
+`import_cycle` does one scope up; its fixtures are `check/bad/CyclicValue*` and its allowed
+shapes are `run/EvalOrderTopLevelInit.beni`.
 
 `nesting_too_deep` is the front end's code and the checker reuses it rather than inventing a
 second one: a type the checker cannot read to the bottom and an expression the parser cannot

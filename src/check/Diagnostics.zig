@@ -1525,6 +1525,65 @@ pub const Reporter = struct {
 
     // ---- Patterns (checker.md §6.6) --------------------------------------
 
+    /// A top-level value the module cannot initialise, because computing it
+    /// needs its own result (`language.md` §7, `checker.md` §6.7).
+    ///
+    /// `path` is the rest of the circle after `name`, in the order it is
+    /// walked, so the printed line always starts and ends at `name`;
+    /// `through` is the first step on it that DEFERS — a function, or a
+    /// value whose right-hand side is a lambda — when there is one, because
+    /// "these three values need each other" and "this value names a function
+    /// that reads it back" are the same defect and do not read the same way.
+    /// The sentence it earns says what naming one costs, which is the half
+    /// of the rule an author cannot guess.
+    ///
+    /// The region is the declaration's BODY and the underline is its NAME:
+    /// the mistake is the definition as a whole, and no single reference in
+    /// it is more to blame than another.
+    pub fn cyclicValue(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        token: u32,
+        name: []const u8,
+        path: []const []const u8,
+        through: ?[]const u8,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        w.print(
+            \\`{s}` is defined in terms of itself:
+            \\
+            \\    {s}
+        , .{ name, name }) catch return error.OutOfMemory;
+        for (path) |step| w.print(" → {s}", .{step}) catch return error.OutOfMemory;
+        w.print(
+            \\ → {s}
+            \\
+            \\A top-level value is computed once, when the module is loaded, so there is no
+            \\order in which I can compute these: each of them is already needed before it
+            \\has a value.
+            \\
+        , .{name}) catch return error.OutOfMemory;
+        if (through) |f| {
+            w.print(
+                \\
+                \\Naming `{s}` counts as calling it, so whatever its body reads is read
+                \\while `{s}` is being computed.
+                \\
+            , .{ f, name }) catch return error.OutOfMemory;
+        }
+        w.writeAll(
+            \\
+            \\Hint: a FUNCTION may be recursive, because its body runs when it is called and
+            \\not when the module loads. Give one of these a parameter, or compute it from
+            \\something outside the circle.
+            \\
+        ) catch return error.OutOfMemory;
+        try r.emitAt(.cyclic_value, region, token, &out);
+    }
+
     /// A `case` with no branch for some possibility. `examples` are
     /// counterexample patterns already rendered as source syntax by
     /// `Render.allocPattern` — at most three of them, because a list of
