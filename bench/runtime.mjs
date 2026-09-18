@@ -51,6 +51,7 @@ const usage = `usage: node bench/runtime.mjs [options]
   --beni=<path>       compiler to run (default ./zig-out/bin/beni)
   --dir=<path>        program root (default bench/runtime)
   --variant=c0|c1     subdirectory of --dir to measure (default c0)
+  --release           build every program (and the floor) with --release
   --runs=<n>          runs per program (default 20)
   --program=<name>    measure only this program (basename, repeatable)
   --cpu-prof          also write a V8 CPU profile for R4 and R6 (§7 M5)
@@ -65,6 +66,7 @@ function parseArgs(argv) {
     beni: "./zig-out/bin/beni",
     dir: "bench/runtime",
     variant: "c0",
+    release: false,
     runs: 20,
     programs: [],
     cpuProf: false,
@@ -90,6 +92,12 @@ function parseArgs(argv) {
       case "--variant":
         if (value !== "c0" && value !== "c1") fail(`--variant must be c0 or c1, not ${value}`);
         options.variant = value;
+        break;
+      // `backend.md` §9: the release optimiser is a size change and must not
+      // be a speed one. The floor is built with the flag too, so the
+      // subtraction stays honest — a release floor loads a release core.
+      case "--release":
+        options.release = true;
         break;
       case "--runs":
         options.runs = Number(value);
@@ -167,7 +175,9 @@ function main() {
   const floorDir = join(work, "__floor");
   mkdirSync(floorDir, { recursive: true });
   writeFileSync(join(floorDir, "Floor.beni"), "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.done\n");
-  const floorBuilt = spawnSync(beni, ["build", "--platform=node", "--out=out", "Floor.beni"], {
+  const buildArgs = (module) =>
+    ["build", "--platform=node", "--out=out", ...(options.release ? ["--release"] : []), module];
+  const floorBuilt = spawnSync(beni, buildArgs("Floor.beni"), {
     cwd: floorDir,
     encoding: "utf8",
   });
@@ -194,7 +204,7 @@ function main() {
     const moduleName = `${basename(program)}.beni`;
     writeFileSync(join(project, moduleName), source);
 
-    const built = spawnSync(beni, ["build", "--platform=node", "--out=out", moduleName], {
+    const built = spawnSync(beni, buildArgs(moduleName), {
       cwd: project,
       encoding: "utf8",
     });
@@ -264,6 +274,7 @@ function main() {
     const line = {
       program,
       variant: options.variant,
+      release: options.release,
       runs: samples.length,
       ops,
       floor_ms,

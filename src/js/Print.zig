@@ -244,17 +244,24 @@ const Printer = struct {
     /// `/` before `/` or `*` is on the list for the same money: nothing emits
     /// a regular expression or a comment today, and the day something does it
     /// will not be this function that is wrong.
+    /// A development build pays one predictable branch and nothing else: the
+    /// `last` byte is only ever READ in compact mode, so it is only written
+    /// there. §13's emit budget is what that is protecting.
     fn push(p: *Printer, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
-        if (p.compact and merges(p.last, text[0])) try p.joiner.push(" ");
-        p.last = text[text.len - 1];
+        if (p.compact) {
+            if (merges(p.last, text[0])) try p.joiner.push(" ");
+            p.last = text[text.len - 1];
+        }
         try p.joiner.push(text);
     }
 
     fn pushOwned(p: *Printer, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
-        if (p.compact and merges(p.last, text[0])) try p.joiner.push(" ");
-        p.last = text[text.len - 1];
+        if (p.compact) {
+            if (merges(p.last, text[0])) try p.joiner.push(" ");
+            p.last = text[text.len - 1];
+        }
         try p.joiner.pushOwned(text);
     }
 
@@ -274,13 +281,13 @@ const Printer = struct {
     /// A piece of a token already opened: tracked, never separated.
     fn pushInner(p: *Printer, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
-        p.last = text[text.len - 1];
+        if (p.compact) p.last = text[text.len - 1];
         try p.joiner.push(text);
     }
 
     fn pushInnerOwned(p: *Printer, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
-        p.last = text[text.len - 1];
+        if (p.compact) p.last = text[text.len - 1];
         try p.joiner.pushOwned(text);
     }
 
