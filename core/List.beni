@@ -13,17 +13,11 @@
 --! first, with the value repeated before the count, exactly as `String.repeat`
 --! is, while `range lo hi` has no subject to put first.
 --!
---! Five declarations here are `foreign`, and nothing else is:
+--! Three declarations here are `foreign`, and nothing else is:
 --!
 --!   - `cons : a, List a -> List a` — `::` desugars to a call of this
 --!     function, so a beni definition of it would call itself. Its order is
 --!     the operator's, element before list, not a pipeline's.
---!   - `foldl : List a, b, (a, b -> b) -> b` — the loop every other function
---!     here is built from. Written in beni it is a self tail call, which the
---!     code generator is not yet required to turn into a loop.
---!   - `foldr : List a, b, (a, b -> b) -> b` — the same, and it recurses to
---!     the depth of the list, which the JavaScript stack cannot take for a
---!     long one.
 --!   - `eq : List a, List a -> Bool where a.eq` — what `==` on a list means.
 --!     `List a` has no constructors, so the compiler has nothing to derive a
 --!     body from, and the shape of a cons cell belongs to the code generator
@@ -68,13 +62,30 @@ pub foreign cons : a, List a -> List a
 --| Reduce a list from the left, starting from an initial value.
 --|
 --|     foldl [ 1, 2, 3 ] [] cons == [ 3, 2, 1 ]
-pub foreign foldl : List a, b, (a, b -> b) -> b
+--|
+--| The recursive call is in tail position, so the code generator turns it
+--| into a loop (`backend.md` §8) and this walks a list of any length.
+pub foldl : List a, b, (a, b -> b) -> b
+foldl xs acc func =
+    case xs of
+        [] ->
+            acc
+
+        x :: rest ->
+            foldl rest (func x acc) func
 
 
 --| Reduce a list from the right, starting from an initial value.
 --|
 --|     foldr [ 1, 2, 3 ] [] cons == [ 1, 2, 3 ]
-pub foreign foldr : List a, b, (a, b -> b) -> b
+--|
+--| Reverse, then fold from the left — exact for this argument order, and
+--| `reverse` is itself a `foldl`, so there is no cycle. It costs one extra
+--| list of n cells per call, which is not a regression: the JavaScript this
+--| replaced materialised the whole list into an array to fold it backwards.
+pub foldr : List a, b, (a, b -> b) -> b
+foldr xs acc func =
+    foldl (reverse xs) acc func
 
 
 --| Two lists are equal when they have the same elements, in the same order,

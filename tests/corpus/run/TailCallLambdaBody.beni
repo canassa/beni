@@ -1,0 +1,36 @@
+-- run: `f = \n acc -> … f …` (`docs/design/backend.md` §8). `f x = e` and
+-- `f = \x -> e` emit byte-identical JavaScript today, so two spellings of one
+-- program must not differ in stack behaviour — a lambda that is the ENTIRE
+-- body of a parameterless declaration or `let_def` inherits that name.
+--
+-- The rule is narrow, and `outer` is the other side of it: a lambda anywhere
+-- else never inherits a name, so the self-call inside the lambda `outer`
+-- RETURNS is an ordinary call of `outer` and not a jump into it.
+import Node exposing (Program)
+import String
+
+
+count : Int, Int -> Int
+count =
+    \n acc ->
+        if n <= 0 then
+            acc
+        else
+            count (n - 1) (acc + n)
+
+
+outer : Int -> (Int -> Int)
+outer n =
+    \m ->
+        if m <= 0 then
+            n
+        else
+            (outer (n + 1)) (m - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (count 1000000 0)
+        , String.fromInt ((outer 0) 3)
+        ]

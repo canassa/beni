@@ -432,6 +432,19 @@ const Lowerer = struct {
         return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
     }
 
+    /// `$in$<i>`: the loop slot of the i-th parameter of a function that
+    /// has a tail self-call (`backend.md` §8), *i* counting evidence
+    /// first. Positional and never a counter, so two nested loops both
+    /// using `$in$0` are safe — neither ever reads the other's — and the
+    /// name is a function of the source and not of thread timing
+    /// (CLAUDE.md rule 5).
+    fn inSlotName(l: *Lowerer, index: u32) !JsIr.NameIndex {
+        var buf: [16]u8 = undefined;
+        const spelled = std.fmt.bufPrint(&buf, "$in${d}", .{index}) catch unreachable;
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
     /// `<Module>$<base>` for a value this module SYNTHESISES rather than
     /// declares (§8.5): the primitive comparators of §9.1 today, the
     /// derived functions of §9 when S5 lands.
@@ -580,6 +593,26 @@ const Lowerer = struct {
         // §6.4), so the constant path below is reached only with none.
         const evidence: u16 = @intCast(l.in.dispatch.declEvidence(index).len);
         if (d.params == 0 and evidence == 0) {
+            // §8's narrow rule: a `lambda` that is the ENTIRE body of a
+            // parameterless declaration inherits its name, because `f x = e`
+            // and `f = \x -> e` emit byte-identical JavaScript today and two
+            // spellings of one program must not differ in stack behaviour.
+            // A lambda anywhere else never does.
+            if (l.bir.instTag(body) == .lambda) {
+                const ld = l.bir.instData(body);
+                const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
+                const lambda_record = try l.functionOrLoop(
+                    n,
+                    .{ .top = index },
+                    0,
+                    lambda_params,
+                    @enumFromInt(ld.rhs),
+                    p,
+                );
+                const lambda = try l.add(.arrow, p, @intFromEnum(lambda_record), Node.Data.unused);
+                try l.constDecl(out, n, lambda, p);
+                return;
+            }
             var stmts: StmtList = .empty;
             const value = try l.expr(&stmts, body);
             // A constant whose lowering needed statements cannot be a bare
@@ -596,7 +629,7 @@ const Lowerer = struct {
             return;
         }
         const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
-        const record = try l.functionOf(evidence, params, body, p);
+        const record = try l.functionOrLoop(n, .{ .top = index }, evidence, params, body, p);
         const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
         try l.constDecl(out, n, arrow, p);
     }
@@ -805,6 +838,354 @@ const Lowerer = struct {
         const value = try l.ctorValue(rep, tag, args.items, p);
         const stmts = [_]Node.Index{try l.returnStmt(value, p)};
         return l.arrowOf(params.items, &stmts, p);
+    }
+
+    // ---- Tail calls (backend.md §8) ---------------------------------------
+    //
+    // Direct self-recursion becomes `label: while (true)`, and §8 makes that
+    // MANDATORY rather than an optimisation: no JavaScript engine reliably
+    // eliminates a tail call, so a beni `foldl` over a list longer than a
+    // few thousand cells would otherwise overflow the stack.
+    //
+    // A parameter is CARRIED when some tail self-call passes it anything
+    // other than a reference to that same parameter. A carried parameter is
+    // renamed to `$in$<i>` in the JavaScript parameter list and re-bound to
+    // its ordinary name by a `const` at the top of the loop body; one that
+    // is not carried keeps its name and gets neither slot nor copy.
+    //
+    // **There are no temporaries, and that is the load-bearing invariant.**
+    // `$in$<i>` is written by the assignments and read by the prologue
+    // `const` and nowhere else, so every argument expression is written
+    // against the ordinary names, which hold this iteration's values and are
+    // never assigned. The stores may therefore run in parameter order with
+    // no `$temp$` anywhere and an argument swap is right by construction —
+    // where Elm reassigns the parameters in place and needs one temporary
+    // per argument per call site. The per-iteration `const` is also what
+    // makes a closure built inside the loop capture THIS iteration's value:
+    // a `while` body block gets a fresh declarative environment on every
+    // evaluation, and in-place reassignment gives every closure the last
+    // value instead (§8, "Closures, and the one way to get this wrong").
+
+    /// The function being lowered as a loop: what a self-call has to name,
+    /// and one slot per JavaScript parameter, evidence first (§8.1).
+    const Loop = struct {
+        /// The label, which is the function's own emitted name — input
+        /// derived, no counter, and it cannot collide because labels are a
+        /// separate namespace from bindings (§8).
+        label: JsIr.NameIndex,
+        self: Self,
+        evidence: u16,
+        slots: []Slot,
+
+        /// Which reference, syntactically, names this function.
+        const Self = union(enum) {
+            /// A declaration of this module: the callee must be `top d`.
+            top: u32,
+            /// A `let` binding: the callee must be `local i`.
+            local: u32,
+        };
+
+        const Slot = struct {
+            /// The parameter's pattern; `.none` for an evidence parameter.
+            pattern: Inst.OptionalIndex = .none,
+            /// The local a `pat_var` pattern binds, else `no_local`.
+            local: u32 = no_local,
+            carried: bool = false,
+            /// The name in the JavaScript parameter list: `$in$<i>` when
+            /// carried, the ordinary name when not.
+            param: JsIr.NameIndex = .none,
+            /// The name the body reads. The prologue `const` binds it from
+            /// `$in$<i>` when the slot is carried; `.none` for `_`, which
+            /// nothing can read.
+            body: JsIr.NameIndex = .none,
+        };
+
+        const no_local: u32 = std.math.maxInt(u32);
+    };
+
+    /// The `Func` record for a function that may loop: §8's shape when it
+    /// has at least one tail self-call, and byte for byte what `functionOf`
+    /// emits when it has none. `label` is the function's emitted name and
+    /// `self` is the reference a self-call has to name.
+    ///
+    /// The analysis allocates no name and builds no node, so falling back
+    /// leaves the emitted bytes — and the `fresh` counter behind them —
+    /// exactly where they were.
+    fn functionOrLoop(
+        l: *Lowerer,
+        label: JsIr.NameIndex,
+        self: Loop.Self,
+        evidence: u16,
+        params: []const Inst.Index,
+        body: Inst.Index,
+        p: u32,
+    ) !JsIr.ExtraIndex {
+        const slots = try l.scratch.alloc(Loop.Slot, @as(usize, evidence) + params.len);
+        for (slots[0..evidence]) |*slot| slot.* = .{};
+        for (params, slots[evidence..]) |param, *slot| {
+            slot.* = .{ .pattern = param.toOptional() };
+            if (l.bir.instTag(param) == .pat_var) {
+                slot.local = l.bir.instData(param).lhs;
+            } else {
+                // A parameter whose pattern is not a bare variable has no
+                // name a call site could write, so no argument can be a
+                // reference to it and §8's test makes it carried. `_` is
+                // carried for the same reason: the argument is still
+                // evaluated and still stored, because deciding that a beni
+                // expression is dead is not this pass's job.
+                slot.carried = true;
+            }
+        }
+        var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .slots = slots };
+        if (!l.markTails(body, &loop)) return l.functionOf(evidence, params, body, p);
+
+        var names: std.ArrayList(JsIr.NameIndex) = .empty;
+        for (slots, 0..) |*slot, i| {
+            const index: u32 = @intCast(i);
+            slot.body = if (index < evidence)
+                try l.evidenceName(@intCast(index))
+            else if (slot.local != Loop.no_local)
+                try l.localName(slot.local)
+            else if (l.bir.instTag(slot.pattern.unwrap().?) == .pat_wild)
+                .none
+            else
+                try l.fresh(l.well.param);
+            slot.param = if (slot.carried) try l.inSlotName(index) else slot.body;
+            try names.append(l.scratch, slot.param);
+        }
+
+        var loop_body: StmtList = .empty;
+        // The prologue. One `const` per carried slot rather than one
+        // comma-separated declaration: joining them is §9 item 5's variable
+        // joining, a printer decision and M3c's, not this slice's.
+        for (slots) |slot| {
+            if (!slot.carried or slot.body == .none) continue;
+            try l.constDecl(&loop_body, slot.body, try l.ident(slot.param, p), p);
+        }
+        // A parameter whose pattern is not a bare variable destructures
+        // INSIDE the loop, because it reads this iteration's value (§8).
+        for (slots[evidence..]) |slot| {
+            const pattern = slot.pattern.unwrap().?;
+            switch (l.bir.instTag(pattern)) {
+                .pat_var, .pat_wild => {},
+                else => try l.bindings(&loop_body, pattern, try l.ident(slot.body, l.pos(pattern))),
+            }
+        }
+        try l.tailStmts(&loop_body, body, &loop);
+
+        const range = try l.b.addRange(loop_body.items);
+        const record = try l.b.addRecord(range);
+        // Control leaves by `return` or by `continue`, so nothing follows
+        // the loop and there is no `break` (§8).
+        const while_node = try l.add(.while_true, p, @intFromEnum(label), @intFromEnum(record));
+        return l.funcRecord(names.items, &.{while_node});
+    }
+
+    /// Walk the TAIL POSITIONS of `inst` — §8: the body itself, every branch
+    /// body of a `case` in tail position (which covers `if` and `?`, both a
+    /// `case` by the time the backend sees them), and the `in` body of a
+    /// `let` in tail position, and nothing else — marking every slot a tail
+    /// self-call passes something other than itself. Answers whether there
+    /// was one at all.
+    ///
+    /// Nothing here descends into a lambda: that is a different function,
+    /// and a self-call inside one is an ordinary call (§8's cases table).
+    fn markTails(l: *Lowerer, inst: Inst.Index, loop: *Loop) bool {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => return l.markTails(@enumFromInt(d.rhs), loop),
+            .case => {
+                var found = false;
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) continue;
+                    if (l.markTails(@enumFromInt(l.bir.instData(branch).rhs), loop)) found = true;
+                }
+                return found;
+            },
+            .call => {
+                if (!l.isSelfCall(inst, loop)) return false;
+                l.markCarried(inst, loop);
+                return true;
+            },
+            else => return false,
+        }
+    }
+
+    /// Whether a `call` is a tail self-call: the callee is, syntactically,
+    /// the reference that names the function being lowered, and the
+    /// argument and evidence counts are the function's own.
+    ///
+    /// Both equalities hold by construction — every call is saturated
+    /// (`language.md` §6.7) and the checker fixes evidence at every site —
+    /// and are checked anyway, because a wrong loop is a wrong answer where
+    /// a missing one is only a deep stack (§8).
+    fn isSelfCall(l: *Lowerer, inst: Inst.Index, loop: *const Loop) bool {
+        const d = l.bir.instData(inst);
+        const callee: Inst.Index = @enumFromInt(d.lhs);
+        const named = switch (loop.self) {
+            .top => |decl| l.bir.instTag(callee) == .top and l.bir.instData(callee).lhs == decl,
+            .local => |index| l.bir.instTag(callee) == .local and l.bir.instData(callee).lhs == index,
+        };
+        if (!named) return false;
+        if (l.bir.subRange(@enumFromInt(d.rhs)).len() != loop.slots.len - loop.evidence) return false;
+        return l.topLevelSites(l.sitesOf(inst)) == loop.evidence;
+    }
+
+    /// How many top-level evidence ARGUMENTS a site list holds: the same
+    /// pre-order walk `evidenceArguments` makes, counting its roots.
+    fn topLevelSites(l: *Lowerer, sites: []const Dispatch.Site) usize {
+        var cursor: usize = 0;
+        var count: usize = 0;
+        while (cursor < sites.len) : (count += 1) l.skipEvidence(sites, &cursor);
+        return count;
+    }
+
+    /// One top-level evidence argument and the sites its own evidence
+    /// consumes underneath it — `evidenceValue`'s walk with nothing built.
+    /// The cursor only ever advances, so the recursion is bounded by the
+    /// length of the list.
+    fn skipEvidence(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize) void {
+        const target = sites[cursor.*].target;
+        cursor.* += 1;
+        switch (target) {
+            .derived, .ext_derived => return,
+            else => if (target.partsOf().len != 0) return,
+        }
+        const wanted = l.targetEvidence(target);
+        var k: u16 = 0;
+        while (k < wanted and cursor.* < sites.len) : (k += 1) l.skipEvidence(sites, cursor);
+    }
+
+    /// Mark the slots this tail self-call passes something other than
+    /// themselves. Conservative by design: when in doubt, carried.
+    ///
+    /// **"Evidence is loop-invariant" is not a rule**, and stating it as one
+    /// would be a miscompile (§8). Polymorphic recursion is typeable with an
+    /// annotation, and the checker then writes a different evidence
+    /// expression at the site rather than `$m$k` — so the same syntactic
+    /// test carries the evidence parameter like any other.
+    fn markCarried(l: *Lowerer, inst: Inst.Index, loop: *Loop) void {
+        const sites = l.sitesOf(inst);
+        var cursor: usize = 0;
+        var k: u16 = 0;
+        while (cursor < sites.len and k < loop.evidence) : (k += 1) {
+            const target = sites[cursor].target;
+            l.skipEvidence(sites, &cursor);
+            const forwarded = switch (target) {
+                .evidence => |index| index == k,
+                else => false,
+            };
+            if (!forwarded) loop.slots[k].carried = true;
+        }
+        const d = l.bir.instData(inst);
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        for (args, loop.slots[loop.evidence..]) |arg, *slot| {
+            if (slot.carried) continue;
+            if (l.bir.instTag(arg) == .local and l.bir.instData(arg).lhs == slot.local) continue;
+            slot.carried = true;
+        }
+    }
+
+    /// Lower `inst` in TAIL position straight into a statement list — the
+    /// second entry point beside `expr` that §8 needs, because `continue`
+    /// cannot appear in a ternary or in an IIFE and today's `case` lowering
+    /// produces both.
+    ///
+    /// It is reached ONLY from inside a function that has a tail self-call,
+    /// which is what keeps every existing `emit/` golden byte-identical and
+    /// `a ? b : c` alive wherever it is still correct. §7's decision tree
+    /// later replaces the `if`/`else` chain below; all it owes this section
+    /// is that a tail position stay reachable as a statement.
+    fn tailStmts(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) Allocator.Error!void {
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => {
+                try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
+                return l.tailStmts(out, @enumFromInt(d.rhs), loop);
+            },
+            .case => return l.tailCase(out, inst, loop),
+            .call => {
+                if (l.isSelfCall(inst, loop)) return l.tailJump(out, inst, loop);
+            },
+            else => {},
+        }
+        const value = try l.expr(out, inst);
+        try out.append(l.scratch, try l.returnStmt(value, l.pos(inst)));
+    }
+
+    /// A `case` in tail position: `caseExpr`'s chain with every arm lowered
+    /// the same way instead of assigning a result temporary. The LAST branch
+    /// is emitted unconditionally for the same reason it is there — the
+    /// checker proved the match exhaustive (`checker.md` §6.6).
+    fn tailCase(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) !void {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const scrutinee = try l.expr(out, @enumFromInt(d.lhs));
+        const subject = try l.bindSubject(out, scrutinee, p);
+        const branch_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (branch_insts.len == 0) {
+            const value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            try out.append(l.scratch, try l.returnStmt(value, p));
+            return;
+        }
+
+        const tests = try l.scratch.alloc(Node.OptionalIndex, branch_insts.len);
+        const bodies = try l.scratch.alloc([]const Node.Index, branch_insts.len);
+        const positions = try l.scratch.alloc(u32, branch_insts.len);
+        for (branch_insts, 0..) |branch_inst, i| {
+            const bd = l.bir.instData(branch_inst);
+            const pattern: Inst.Index = @enumFromInt(bd.lhs);
+            var stmts: StmtList = .empty;
+            tests[i] = try l.patternTest(pattern, subject);
+            try l.bindings(&stmts, pattern, subject);
+            try l.tailStmts(&stmts, @enumFromInt(bd.rhs), loop);
+            bodies[i] = stmts.items;
+            positions[i] = l.pos(branch_inst);
+        }
+
+        var tail = bodies[bodies.len - 1];
+        var i: usize = bodies.len - 1;
+        while (i > 0) {
+            i -= 1;
+            const condition = tests[i].unwrap() orelse {
+                // An irrefutable branch before the end: everything after it
+                // is dead and the checker already said so.
+                tail = bodies[i];
+                continue;
+            };
+            const then_range = try l.b.addRange(bodies[i]);
+            const else_range = try l.b.addRange(tail);
+            const record = try l.b.addRecord(JsIr.If{
+                .then_start = then_range.start,
+                .then_end = then_range.end,
+                .else_start = else_range.start,
+                .else_end = else_range.end,
+            });
+            const node = try l.add(.if_stmt, positions[i], condition.int(), @intFromEnum(record));
+            const one = try l.scratch.alloc(Node.Index, 1);
+            one[0] = node;
+            tail = one;
+        }
+        for (tail) |statement| try out.append(l.scratch, statement);
+    }
+
+    /// A tail self-call: the argument expressions, the assignments to the
+    /// carried slots in parameter order, and `continue <label>`. The
+    /// `continue` is LABELLED and not bare, because §7's decision trees put
+    /// a `switch` and a shared-branch loop between the jump and this one.
+    fn tailJump(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) !void {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        l.region = inst;
+        const evidence = try l.evidenceArguments(l.sitesOf(inst), p);
+        const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+        for (loop.slots, 0..) |slot, i| {
+            if (!slot.carried) continue;
+            const value = if (i < evidence.len) evidence[i] else written[i - evidence.len];
+            const target = try l.ident(slot.param, p);
+            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+        }
+        try out.append(l.scratch, try l.add(.continue_stmt, p, @intFromEnum(loop.label), Node.Data.unused));
     }
 
     // ---- Names and references ---------------------------------------------
@@ -3126,12 +3507,36 @@ const Lowerer = struct {
                         Inst.Index,
                     );
                     const n = try l.localName(payload.local);
+                    const self: Loop.Self = .{ .local = payload.local };
                     if (params.len == 0) {
-                        const value = try l.expr(out, @enumFromInt(d.rhs));
+                        // §8 again: `go = \i acc -> …` inherits the binding's
+                        // name exactly as `go i acc = …` does.
+                        const value_inst: Inst.Index = @enumFromInt(d.rhs);
+                        if (l.bir.instTag(value_inst) == .lambda) {
+                            const ld = l.bir.instData(value_inst);
+                            const lambda_p = l.pos(value_inst);
+                            const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
+                            const lambda_record = try l.functionOrLoop(
+                                n,
+                                self,
+                                0,
+                                lambda_params,
+                                @enumFromInt(ld.rhs),
+                                lambda_p,
+                            );
+                            const lambda = try l.add(.arrow, lambda_p, @intFromEnum(lambda_record), Node.Data.unused);
+                            try l.constDecl(out, n, lambda, p);
+                            continue;
+                        }
+                        const value = try l.expr(out, value_inst);
                         try l.constDecl(out, n, value, p);
                         continue;
                     }
-                    const record = try l.functionOf(0, params, @enumFromInt(d.rhs), p);
+                    // A `let_def` with parameters is already its own hoisted
+                    // `function` (§8's cases table), so the loop is
+                    // contained; excluding it would leave the language's
+                    // most natural loop idiom overflowing.
+                    const record = try l.functionOrLoop(n, self, 0, params, @enumFromInt(d.rhs), p);
                     try out.append(l.scratch, try l.add(.func_decl, p, @intFromEnum(n), @intFromEnum(record)));
                 },
                 .let_pattern => {
@@ -3868,6 +4273,68 @@ test "string interpolation becomes a template literal" {
         \\pub label : Int -> String
         \\label n =
         \\    "n is ${String.fromInt n}!"
+        \\
+    );
+}
+
+test "two nested loops each own their $in$ slots, so the inner shadows the outer" {
+    // `backend.md` §8: the label is the function's own emitted name and the
+    // slot names are parameter POSITIONS, so a `let`-bound looping function
+    // inside a looping declaration uses `$in$0` twice. That is safe
+    // precisely because neither ever reads the other's — the inner slots are
+    // the inner function's own parameters and shadow the outer ones — and a
+    // shape that got this wrong would be an infinite loop, not a diff.
+    //
+    // The corpus proves the ANSWER (`run/TailCallLetFunction.beni`); what is
+    // here is the shape claim that no `run/` fixture can separate from it.
+    try expectJs(
+        \\import { Basics$sub, Basics$add } from "./Basics.mjs";
+        \\const M$outer = ($in$0, $in$1) => {
+        \\  M$outer: while (true) {
+        \\    const n$1 = $in$0;
+        \\    const acc$2 = $in$1;
+        \\    const $t$1 = n$1 < 1;
+        \\    if ($t$1) {
+        \\      return acc$2;
+        \\    } else {
+        \\      function inner$3($in$0, $in$1) {
+        \\        inner$3: while (true) {
+        \\          const i$4 = $in$0;
+        \\          const total$5 = $in$1;
+        \\          const $t$2 = i$4 < 1;
+        \\          if ($t$2) {
+        \\            return total$5;
+        \\          } else {
+        \\            $in$0 = Basics$sub(i$4, 1);
+        \\            $in$1 = Basics$add(total$5, 1);
+        \\            continue inner$3;
+        \\          }
+        \\        }
+        \\      }
+        \\      $in$0 = Basics$sub(n$1, 1);
+        \\      $in$1 = inner$3(3, acc$2);
+        \\      continue M$outer;
+        \\    }
+        \\  }
+        \\};
+        \\export { M$outer };
+        \\
+    ,
+        \\pub outer : Int, Int -> Int
+        \\outer n acc =
+        \\    if n < 1 then
+        \\        acc
+        \\
+        \\    else
+        \\        let
+        \\            inner i total =
+        \\                if i < 1 then
+        \\                    total
+        \\
+        \\                else
+        \\                    inner (i - 1) (total + 1)
+        \\        in
+        \\        outer (n - 1) (inner 3 acc)
         \\
     );
 }

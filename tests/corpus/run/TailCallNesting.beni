@@ -1,0 +1,42 @@
+-- run: a tail call reached through a `case` inside a `let` inside an `if`,
+-- and through a nested `case` (`docs/design/backend.md` §8). Every branch
+-- body of a `case` in tail position is itself a tail position, and so is the
+-- `in` body of a `let` in tail position — `if` is a `case` by the time the
+-- backend sees it.
+--
+-- The depth is what makes the claim testable: 200 000 frames is well past
+-- what Node 24 gives this shape, so a tail position the walk failed to reach
+-- is a stack overflow and not a wrong number. The `let` binding is lowered
+-- INSIDE the loop, because it reads this iteration's `n`.
+import Node exposing (Program)
+import String
+
+
+walk : Int, Int -> Int
+walk n acc =
+    if n <= 0 then
+        acc
+    else
+        let
+            byThree =
+                modBy n 3
+        in
+        case byThree of
+            0 ->
+                walk (n - 1) (acc + 1)
+
+            _ ->
+                case modBy n 2 of
+                    0 ->
+                        walk (n - 1) (acc + 2)
+
+                    _ ->
+                        walk (n - 1) acc
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (walk 6 0)
+        , String.fromInt (walk 200000 0)
+        ]

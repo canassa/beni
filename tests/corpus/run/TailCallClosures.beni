@@ -1,0 +1,26 @@
+-- run: the capture hazard of `docs/design/backend.md` §8, "Closures, and the
+-- one way to get this wrong". Each iteration conses a closure over `n`.
+--
+-- The loop re-binds every carried parameter with a `const` at the top of the
+-- body, and a `while` body block gets a fresh declarative environment on
+-- every evaluation, so iteration i's closures capture iteration i's binding
+-- and this prints 1, 2, 3. Reassigning `n` in place instead gives every
+-- closure the LAST value and prints 0, 0, 0 — exit code 0 with the wrong
+-- answer, which is the failure a `run/` fixture exists to catch and an
+-- `emit/` golden cannot.
+import List
+import Node exposing (Program)
+import String
+
+
+build : Int, List (Int -> Int) -> List (Int -> Int)
+build n acc =
+    if n <= 0 then
+        acc
+    else
+        build (n - 1) ((\x -> x + n) :: acc)
+
+
+main : Program
+main =
+    Node.printLines (List.map (build 3 []) (\f -> String.fromInt (f 0)))

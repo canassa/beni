@@ -703,9 +703,9 @@ attached by parenthesising it: `List (equatable a)`.
   `floor`, `ceiling`, `truncate`, `isNaN`, `isInfinite`, `e`, `pi`, trigonometry. **`eq`, `neq`,
   `lt`, `gt`, `le`, `ge` and `compare` are no longer what `language.md` §6.5's operators mean**
   (spec §3.1); all seven stay declared, exported and callable by name.
-- `List`: `equatable foreign type List a`; `foreign` for `cons`, `foldl`, `foldr` — the last two
-  move into beni as soon as the code generator emits a tail-call loop (`backend.md` §8), and
-  `research/17-platform-primitives.md` §3 is why that matters beyond tidiness — and for the two
+- `List`: `equatable foreign type List a`; `foreign` for `cons` — `foldl` and `foldr` moved into
+  beni with the tail-call loop (`backend.md` §8), which is what
+  `research/17-platform-primitives.md` §3 says matters beyond tidiness — and for the two
   methods `List a` answers by the module rule rather than by derivation, since a list has no
   constructors to walk: `eq : List a, List a -> Bool where a.eq : a, a -> Bool` and `compare :
   List a, List a -> Order where a.compare : a, a -> Order`. Everything else in beni.

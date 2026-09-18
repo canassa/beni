@@ -1,0 +1,34 @@
+-- emit: the SHAPE of `docs/design/backend.md` §8's loop, which running
+-- cannot observe — a program is right whether it loops or overflows at a
+-- depth the fixture never reaches.
+--
+-- The golden pins all five claims of §8's table row: the labelled
+-- `while (true)`, the `$in$<i>` slots in the parameter list, the prologue
+-- `const` that re-binds each one to its ordinary name, the labelled
+-- `continue`, and one LOOP-INVARIANT parameter — `step`, which every
+-- self-call passes itself — keeping its own name with neither slot nor copy.
+--
+-- `plain` is the control: no tail self-call, so its emitted shape is
+-- unchanged, byte for byte.
+import Node exposing (Program)
+
+
+pub countUp : Int, Int, Int -> Int
+countUp n acc step =
+    if n <= 0 then
+        acc
+    else
+        countUp (n - 1) (acc + step) step
+
+
+pub plain : Int -> Int
+plain n =
+    if n <= 0 then
+        0
+    else
+        1 + plain (n - 1)
+
+
+main : Program
+main =
+    Node.printLines []

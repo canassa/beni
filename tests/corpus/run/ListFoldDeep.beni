@@ -1,0 +1,25 @@
+-- run: `foldl` and `foldr` left `foreign` in the same commit as the loop
+-- (`docs/design/backend.md` §8, "`foldl` and `foldr` leave `foreign`"). They
+-- were the only `foreign` values in the repository with a function type
+-- anywhere in them, and a JavaScript loop cannot park when its beni callback
+-- suspends; core is compiled into the binary, so a beni `foldl` without the
+-- loop is a stack bomb in core itself.
+--
+-- `foldr` is reverse-then-`foldl`, exact for this argument order, and
+-- `reverse` is `foldl xs [] cons`, so there is no cycle. `List.range` builds
+-- its list with `rangeHelp`, which was already a beni self tail call and
+-- simply stops overflowing — the three of them survive a million cells here,
+-- which is what `bench/runtime/c1`'s blocks-of-500 scaffolding worked around.
+import List
+import Node exposing (Program)
+import String
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (List.foldl (List.range 1 1000000) 0 (\x acc -> x + acc))
+        , String.fromInt (List.foldr (List.range 1 200000) 0 (\x acc -> x + acc))
+        , String.fromInt (List.length (List.map (List.range 1 200000) (\n -> n * 2)))
+        , String.fromInt (List.foldr [ 1, 2, 3 ] 0 (\x acc -> x - acc))
+        ]

@@ -1,0 +1,41 @@
+-- run: what must NOT loop (`docs/design/backend.md` §8's cases table).
+--
+-- `depth n = 1 + depth (n - 1)` has its self-call as an OPERAND, which is not
+-- a tail position: turning it into a jump would throw the `1 +` away and
+-- answer 0. `total` has one self-call in tail position and one as an
+-- ARGUMENT — the shape `core/Dict.beni`'s `sizeHelp` is — and only the tail
+-- one becomes a jump, so the argument call still builds a real frame and
+-- still contributes its answer.
+--
+-- Small depths and exact answers: what this fixture is about is the numbers
+-- being right, not the stack surviving.
+import Node exposing (Program)
+import String
+
+
+depth : Int -> Int
+depth n =
+    if n <= 0 then
+        0
+    else
+        1 + depth (n - 1)
+
+
+total : Int, Int -> Int
+total n acc =
+    if n <= 0 then
+        acc
+    else if n == 5 then
+        total (n - 1) (total 2 acc)
+    else
+        total (n - 1) (acc + n)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (depth 0)
+        , String.fromInt (depth 7)
+        , String.fromInt (total 2 0)
+        , String.fromInt (total 8 0)
+        ]

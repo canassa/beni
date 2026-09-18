@@ -1,0 +1,43 @@
+-- run: `let m <- f (n - 1)` (`docs/design/backend.md` §8). The bind is
+-- `f (n - 1) (\m -> rest)` (`language.md` §6.7), so when `f` is the enclosing
+-- function the CALL is a tail self-call and loops, while the continuation is
+-- a different function and its body is NOT a tail position of the outer one.
+--
+-- `sumTo 3 (\x -> x)` is 1: each iteration replaces the callback outright, so
+-- only the innermost continuation ever runs. `chainTo` is the same shape with
+-- the continuation CALLING the callback it is replacing, which is the case
+-- §8 says in-place reassignment does not merely read stale — it builds a
+-- closure that calls itself, and the program hangs instead of printing 6.
+import Node exposing (Program)
+import String
+
+
+sumTo : Int, (Int -> Int) -> Int
+sumTo n k =
+    if n <= 0 then
+        k 0
+    else
+        let
+            m <- sumTo (n - 1)
+        in
+        m + 1
+
+
+chainTo : Int, (Int -> Int) -> Int
+chainTo n k =
+    if n <= 0 then
+        k 0
+    else
+        let
+            m <- chainTo (n - 1)
+        in
+        k (m + n)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (sumTo 3 (\x -> x))
+        , String.fromInt (chainTo 3 (\x -> x))
+        , String.fromInt (chainTo 100 (\x -> x))
+        ]

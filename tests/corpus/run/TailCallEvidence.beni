@@ -1,0 +1,56 @@
+-- run: the hidden leading parameters of `static-dispatch-spike.md` §8.1 are
+-- ORDINARY parameters of the loop, carried or not by the same syntactic test
+-- (`docs/design/backend.md` §8, "Evidence parameters").
+--
+-- `countEq` is the overwhelming case: the self-call forwards `$m$0`
+-- unchanged, so the evidence parameter is not carried, not renamed and not
+-- assigned — and neither is `value`, which is passed itself.
+--
+-- `spin` is the other half, and the reason "evidence is loop-invariant" is
+-- not a rule. Polymorphic recursion is typeable here with an annotation: the
+-- tail self-call is at a DIFFERENT instantiation, so the checker writes a
+-- different evidence expression at that site rather than `$m$0`, the
+-- syntactic test sees an argument that is not a reference to its own slot,
+-- and `$m$0` is carried and reassigned like anything else. Stating the rule
+-- instead would make this print the wrong count.
+import List
+import Node exposing (Program)
+import String
+
+
+pub type Colour
+    = Red
+    | Blue
+
+
+countEq : List a, a, Int -> Int
+    where a.eq : a, a -> Bool
+countEq xs value acc =
+    case xs of
+        [] ->
+            acc
+
+        x :: rest ->
+            if x == value then
+                countEq rest value (acc + 1)
+            else
+                countEq rest value acc
+
+
+spin : List a, a, Int -> Int
+    where a.eq : a, a -> Bool
+spin xs value n =
+    if n <= 0 then
+        countEq xs value 0
+    else
+        spin [ Red, Blue, Red ] Red (n - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (countEq [ 1, 2, 1, 3, 1 ] 1 0)
+        , String.fromInt (countEq (List.repeat "x" 200000) "x" 0)
+        , String.fromInt (spin [ "a", "b" ] "a" 0)
+        , String.fromInt (spin [ "a", "b" ] "a" 3)
+        ]

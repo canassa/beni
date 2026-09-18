@@ -245,8 +245,8 @@ Direct self-recursion lowers to `label: while (true)`. **This is mandatory, not 
 no JavaScript engine reliably provides tail-call elimination, V8 shipped and reverted it,
 SpiderMonkey never shipped it. Node 24 overflows a two-parameter accumulator between 5 000 and
 10 000 frames, which is why `bench/runtime/c1/R1DictString.beni:11` builds its key list out of two
-small ranges and `core/List.beni:71,77` still say `foreign`. Mutual recursion remains a real stack
-frame and ships as a stated limitation (§14 question 5).
+small ranges and why `core/List.beni:71,77` said `foreign` until this slice. Mutual recursion
+remains a real stack frame and ships as a stated limitation (§14 question 5).
 
 `JsIr` has held `while_true`, `break_stmt`, `continue_stmt` and `assign_stmt` since M3a
 (`src/js/JsIr.zig:141`) and the printer already emits them (`src/js/Print.zig:284`); what M3b adds
@@ -285,8 +285,10 @@ The cases, decided:
 
 A parameter is **carried** when some tail self-call passes it anything other than a reference to
 that same parameter. A carried parameter is renamed to `$in$<i>` in the JavaScript parameter list,
-*i* being its position counting evidence first; the loop's first statement re-binds it to its
-ordinary name with a `const`. A parameter that is not carried keeps its ordinary name and gets
+*i* being its position counting evidence first; the loop's prologue re-binds it to its ordinary
+name with a `const`, one statement per carried slot — joining the run into a single
+comma-separated declaration is §9 item 5's variable joining, a printer decision and M3c's, not
+this slice's. A parameter that is not carried keeps its ordinary name and gets
 neither slot nor copy. The test is syntactic and conservative — when in doubt, carried. A parameter
 whose pattern is not a bare variable already has a compiler-made name and a destructuring prologue
 (`functionOf`, `src/js/Lower.zig:745`); it takes a slot by the same rule, and **its destructuring
@@ -295,7 +297,8 @@ statements go inside the loop**, because they read this iteration's value.
 ```js
 const List$foldl = ($in$0, $in$1, func$3) => {
   List$foldl: while (true) {
-    const xs$1 = $in$0, acc$2 = $in$1;
+    const xs$1 = $in$0;
+    const acc$2 = $in$1;
     if (xs$1.$ === 0) {
       return acc$2;
     } else {
@@ -312,7 +315,8 @@ const List$foldl = ($in$0, $in$1, func$3) => {
 ```js
 const Main$count = ($in$0, $in$1) => {          // count n acc = if n <= 0 then acc
   Main$count: while (true) {                     //              else count (n - 1) (acc + n)
-    const n$1 = $in$0, acc$2 = $in$1;
+    const n$1 = $in$0;
+    const acc$2 = $in$1;
     const $t$1 = n$1 <= 0;
     if ($t$1) { return acc$2; } else {
       $in$0 = Basics$sub(n$1, 1);
@@ -371,7 +375,8 @@ stale value, it builds a closure that calls itself.
 The hidden leading parameters of §4 and `static-dispatch-spike.md` §8.1 are **ordinary parameters of
 the loop**, carried or not by the same syntactic test. In the overwhelming case a self-call forwards
 `$m$k` unchanged, so no evidence parameter is carried, none is renamed and none is assigned:
-`countEq` compiles to `($m$0, $in$0, …)` with `$m$0` untouched.
+`countEq xs value acc` compiles to `($m$0, $in$1, value$2, $in$3)` with `$m$0` untouched —
+the slot numbers count evidence first, so the first beni parameter is `$in$1` and not `$in$0`.
 
 **"Evidence is loop-invariant" is not a rule, though, and stating it as one would be a miscompile.**
 Polymorphic recursion is typeable here with an annotation and is accepted today: a `where`-constrained

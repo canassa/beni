@@ -8,32 +8,20 @@
 // `js/Lower.zig` are the two places that know it.
 //
 // The parameter lists mirror the beni signatures, which are subject first and
-// function last: `foldl(list, acc, f)`. `cons(head, tail)` is the exception,
+// function last: `eq(m0, xs, ys)`. `cons(head, tail)` is the exception,
 // because `::` desugars to it and takes the element first.
 //
-// `foldl` and `foldr` take an N-ARY function: function types are n-ary and
-// every call is saturated (§9.3), so the callback of `(a, b -> b)` is reached
-// as `f(x, acc)` and never as `f(x)(acc)`.
+// **`foldl` and `foldr` used to live here and no longer do** (backend.md §8).
+// They were the only `foreign` values in the repository with a function type
+// anywhere in them, and a JavaScript loop cannot park when its beni callback
+// suspends; they left for beni in the same commit as the tail-call loop,
+// because a beni `foldl` without the loop would be a stack bomb inside core
+// itself. What is left here is first-order, which is what
+// `research/17-platform-primitives.md` §3.4 counts.
 
 const nil = { $: 0, a: null, b: null };
 
 export const cons = (head, tail) => ({ $: 1, a: head, b: tail });
-
-export const foldl = (list, acc, f) => {
-  let out = acc;
-  for (let at = list; at.$ === 1; at = at.b) out = f(at.a, out);
-  return out;
-};
-
-// Right fold, iteratively: recursing here would recurse to the depth of the
-// list, which is exactly why List.beni declares it `foreign`.
-export const foldr = (list, acc, f) => {
-  const items = [];
-  for (let at = list; at.$ === 1; at = at.b) items.push(at.a);
-  let out = acc;
-  for (let i = items.length - 1; i >= 0; i--) out = f(items[i], out);
-  return out;
-};
 
 // `eq`, §9.5's loop. The evidence parameter of static-dispatch-spike.md §8.1
 // comes FIRST and the declared arguments follow, so a sibling of a
@@ -44,7 +32,8 @@ export const foldr = (list, acc, f) => {
 // catches it if it moves.
 //
 // A LOOP and not recursion: a list long enough to be interesting is longer
-// than the JavaScript stack, which is why `foldr` above is a loop too.
+// than the JavaScript stack, and nothing turns a self-call in a hand-written
+// sibling into one.
 export const eq = (m0, xs, ys) => {
   let a = xs;
   let b = ys;

@@ -1,0 +1,51 @@
+-- run: a `let`-bound helper counting to a million (`docs/design/backend.md`
+-- §8). A `let_def` with parameters is already its own hoisted `function`, so
+-- the loop is contained — and excluding it would leave the language's most
+-- natural loop idiom overflowing, which is why §8's cases table says yes.
+--
+-- `go` also closes over `limit`, a binding of the enclosing declaration that
+-- is not a parameter of the loop at all and must not acquire a slot.
+--
+-- `nested` is the second half: a `let`-bound loop inside a LOOPING
+-- declaration. The label is each function's own emitted name and the slot
+-- names are parameter positions, so both loops use `$in$0` — safe exactly
+-- because the inner slots are the inner function's own parameters and shadow
+-- the outer ones. Getting that wrong is not a wrong number, it is a program
+-- that never stops.
+import Node exposing (Program)
+import String
+
+
+total : Int -> Int
+total limit =
+    let
+        go i acc =
+            if i > limit then
+                acc
+            else
+                go (i + 1) (acc + i)
+    in
+    go 1 0
+
+
+nested : Int, Int -> Int
+nested n acc =
+    if n <= 0 then
+        acc
+    else
+        let
+            inner i sub =
+                if i <= 0 then
+                    sub
+                else
+                    inner (i - 1) (sub + 1)
+        in
+        nested (n - 1) (inner 3 acc)
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (total 1000000)
+        , String.fromInt (nested 100000 0)
+        ]

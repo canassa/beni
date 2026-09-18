@@ -1,0 +1,29 @@
+-- run: argument order. `swap b a (n - 1)` hands each parameter the OTHER
+-- one's value, which is the case Elm's in-place scheme needs a `$temp$` per
+-- argument to survive (`docs/design/backend.md` §8).
+--
+-- The shape here needs none: `$in$0` and `$in$1` are written by the
+-- assignments and read by the loop's prologue `const` and nowhere else, so
+-- both argument expressions read this iteration's `a` and `b`, which nothing
+-- assigns. Reassigning the parameters in place instead prints `2,2` for the
+-- odd case, because the second store reads the value the first one wrote.
+import Node exposing (Program)
+import String
+
+
+swap : Int, Int, Int -> String
+swap a b n =
+    if n <= 0 then
+        "${String.fromInt a},${String.fromInt b}"
+    else
+        swap b a (n - 1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ swap 1 2 1
+        , swap 1 2 2
+        , swap 1 2 101
+        , swap 1 2 100000
+        ]
