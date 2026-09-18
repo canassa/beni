@@ -34,6 +34,5 @@ one commit each, nothing force-pushed, no history rewritten.
 | 8 | **Reachability DCE** (M3c) | todo | the adoption's only blocker (report 19 §14.1); re-take M4 after |
 | 9 | Drop the 4×500 split in `bench/runtime` once #2 lands; re-take M5 | todo | measurement follow-up |
 | 10 | `transparent-effects-proposal.md` §10 item 1 is stale (`Func` is n-ary now) | todo | docs; found by L1 |
-
 | 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | todo | found by slice 3; low priority |
 | 12 | Effects: spec pass over `transparent-effects-proposal.md` §10 now that both blockers landed | todo | after M3b; a design pass, owner should read it before code |
