@@ -1,0 +1,88 @@
+-- `Int` is a double (CLAUDE.md), so the two ends of the numeric line are
+-- reachable from ordinary beni and nothing pinned what happens there:
+-- infinities, NaN, and integers past 2^53 where `+ 1` stops moving.
+--
+-- The `compare`/`min`/`max` lines are the ones worth reading. All three are
+-- written in beni over `<` and `>` (`core/Basics.beni`), and every
+-- comparison with a NaN is False, so `compare` falls through to `EQ` and
+-- `min`/`max` return whichever argument the `if` fell through to. That is
+-- not IEEE's answer and it is not a total order — it is what the definition
+-- in the source says, and pinning it means changing it has to be a
+-- deliberate change with a fixture diff to show for it.
+--
+-- `String.toInt` guards with `Number.isSafeInteger`, so the first integer
+-- that cannot round-trip is refused rather than silently truncated; the
+-- literal one line above it shows what the language itself does with the
+-- same number.
+import Node exposing (Program)
+import String
+
+
+order : Order -> String
+order o =
+    case o of
+        LT ->
+            "LT"
+
+        EQ ->
+            "EQ"
+
+        GT ->
+            "GT"
+
+
+nan : Float
+nan =
+    0.0 / 0.0
+
+
+inf : Float
+inf =
+    1.0 / 0.0
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromFloat inf
+        , String.fromFloat (negate inf)
+        , String.fromFloat nan
+        , String.fromFloat (0.0 - 0.0)
+        , String.fromFloat (inf - inf)
+        , String.fromFloat (0.0 * inf)
+        , String.fromFloat (2.0 ^ 0.5)
+        , String.fromFloat (2.0 ^ negate 1.0)
+        , String.fromFloat (0.0 ^ 0.0)
+        , String.fromFloat (sqrt (negate 4.0))
+        , String.fromFloat (logBase 0.0 10.0)
+        , order (compare nan 1.0)
+        , order (compare 1.0 nan)
+        , order (compare nan nan)
+        , order (compare inf 1.0)
+        , order (compare (negate inf) inf)
+        , String.fromFloat (min nan 1.0)
+        , String.fromFloat (min 1.0 nan)
+        , String.fromFloat (max nan 1.0)
+        , String.fromFloat (max 1.0 nan)
+        , String.fromFloat (clamp nan 0.0 10.0)
+        , String.fromFloat (abs (negate inf))
+        , String.fromFloat (abs nan)
+        , String.fromInt (round nan)
+        , String.fromInt (round inf)
+        , String.fromInt (truncate nan)
+        , String.fromInt 9007199254740992
+        , String.fromInt (9007199254740992 + 1)
+        , String.fromInt (9007199254740992 + 2)
+        , Debug.toString (String.toInt "9007199254740992")
+        , Debug.toString (String.toInt "9007199254740993")
+        , Debug.toString (String.toInt "-7")
+        , Debug.toString (String.toInt "+7")
+        , Debug.toString (String.toInt " 7")
+        , Debug.toString (String.toFloat "1e400")
+        , String.fromInt (modBy 7 0)
+        , String.fromInt (remainderBy 7 0)
+        , String.fromInt (modBy (negate 7) 3)
+        , String.fromInt (remainderBy (negate 7) 3)
+        , String.fromInt (modBy 7 (negate 3))
+        , String.fromInt (remainderBy 7 (negate 3))
+        ]

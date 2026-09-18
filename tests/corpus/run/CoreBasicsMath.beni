@@ -1,0 +1,48 @@
+-- The floating-point half of the prelude (`language.md` Appendix A): the
+-- trigonometry, the two constants, the angle conversions and the polar
+-- pair. Every expected value here is the one the doc comment in
+-- `core/Basics.beni` promises, so the golden is a check on the doc as much
+-- as on the emitter, and the angles are chosen at the exact points
+-- (0, 1, pi) where the answer is a number a human can write down.
+import Node exposing (Program)
+import String
+
+
+showPair : ( Float, Float ) -> String
+showPair pair =
+    String.fromFloat pair.0 ++ "," ++ String.fromFloat pair.1
+
+
+showBool : Bool -> String
+showBool b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromFloat (logBase 100.0 10.0)
+        , String.fromFloat e
+        , String.fromFloat pi
+        , String.fromFloat (cos 0.0)
+        , String.fromFloat (sin 0.0)
+        , String.fromFloat (tan 0.0)
+        , String.fromFloat (acos 1.0)
+        , String.fromFloat (asin 0.0)
+        , String.fromFloat (atan 0.0)
+        , String.fromFloat (atan2 0.0 1.0)
+        , String.fromFloat (degrees 180.0)
+        , String.fromFloat (radians pi)
+        , String.fromFloat (turns 0.5)
+        , showPair (toPolar ( 0.0, 1.0 ))
+        , showPair (fromPolar ( 1.0, 0.0 ))
+        , showBool (isNaN (0.0 / 0.0))
+        , showBool (isNaN (sqrt (negate 1.0)))
+        , showBool (isNaN 0.0)
+        , showBool (isInfinite (1.0 / 0.0))
+        , showBool (isInfinite (negate 1.0 / 0.0))
+        , showBool (isInfinite 0.0)
+        ]

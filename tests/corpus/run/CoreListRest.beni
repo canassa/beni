@@ -1,0 +1,61 @@
+-- The `List` functions no other `run/` fixture called: `singleton`,
+-- `minimum`, `intersperse`, `isEmpty`, `tail`, `unzip` and `map3`-`map5`.
+-- Every line is the example its doc comment in `core/List.beni` promises,
+-- plus the shape the doc leaves out — the uneven lists `map3`-`map5` are
+-- documented to truncate to the shortest, and the empty list each of
+-- `minimum`, `tail` and `unzip` has to answer for.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int -> String
+ints xs =
+    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+flag : Bool -> String
+flag b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    let
+        ( numbers, flags ) =
+            List.unzip [ ( 0, True ), ( 17, False ) ]
+    in
+    Node.printLines
+        [ ints (List.singleton 1234)
+        , Debug.toString (List.minimum [ 3, 2, 1 ])
+        , Debug.toString (List.minimum [])
+        , Debug.toString (List.maximum [])
+        , String.join (List.intersperse [ "turtles", "turtles" ] "on") " "
+        , String.join (List.intersperse [ "alone" ] "on") " "
+        , String.join (List.intersperse [] "on") " "
+        , flag (List.isEmpty [])
+        , flag (List.isEmpty [ 1 ])
+        , Debug.toString (List.tail [ 1, 2, 3 ])
+        , Debug.toString (List.tail [ 1 ])
+        , Debug.toString (List.tail [])
+        , ints numbers
+        , String.join (List.map flags flag) ","
+        , ints (List.unzip []).0
+        , ints (List.map3 [ 1, 2, 3 ] [ 10, 20, 30 ] [ 100, 200, 300 ] (\a b c -> a + b + c))
+        , ints (List.map3 [ 1, 2, 3 ] [ 10 ] [ 100, 200 ] (\a b c -> a + b + c))
+        , ints (List.map4 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] (\a b c d -> a + b + c + d))
+        , ints (List.map4 [ 1, 2 ] [ 10, 20 ] [ 100, 200 ] [] (\a b c d -> a + b + c + d))
+        , ints (List.map5 [ 1 ] [ 10 ] [ 100 ] [ 1000 ] [ 10000 ] (\a b c d f -> a + b + c + d + f))
+        , ints
+            (List.map5
+                [ 1, 2 ]
+                [ 10, 20 ]
+                [ 100, 200 ]
+                [ 1000, 2000 ]
+                [ 10000 ]
+                (\a b c d f -> a + b + c + d + f)
+            )
+        ]

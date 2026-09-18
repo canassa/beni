@@ -1,0 +1,37 @@
+Just 7
+Nothing
+Nothing
+Just 6
+Nothing
+Just 10
+Nothing
+Just 15
+Nothing
+Just 2
+Nothing
+Nothing
+Ok 2
+2.0
+Err "bad input"
+Ok 7
+Err "no"
+Err "first"
+Ok 6
+Err "no"
+Ok 10
+Err "a"
+Ok 15
+Err "c"
+Ok 2
+Err "no"
+Err "later"
+Err "42"
+Ok 42
+Just 42
+Nothing
+Ok 42
+Err "lost"
+123
+0
+1
+0

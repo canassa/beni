@@ -1609,6 +1609,62 @@ test "--source-maps is refused rather than silently writing no .map file" {
     try testing.expectEqualStrings("", r.stdout);
 }
 
+test "Debug.todo compiles as anything and crashes with its message when reached" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `core/Debug.beni`: "It type-checks as anything at all, so the rest of
+    // the module still compiles, and it crashes with the message if it is
+    // ever reached." Both halves had no test anywhere — `todo` was the one
+    // `pub` value in `core/` that no corpus fixture executed, and it cannot
+    // become one: a `run/` fixture asserts stdout at exit 0 and this ends
+    // the process at exit 1.
+    //
+    // The type claim is the half worth pinning. `unfinished : Int -> String`
+    // returns a `Debug.todo` in one branch and a `String` in the other, so
+    // if `todo`'s `a` ever stopped being fully polymorphic the build would
+    // fail here rather than at some user's keyboard.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\unfinished : Int -> String
+        \\unfinished n =
+        \\    if n > 0 then
+        \\        String.fromInt n
+        \\    else
+        \\        Debug.todo "the negative case"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ unfinished 1, unfinished (negate 1) ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // The reachable branch never prints: `printLines` needs the whole list
+    // before it writes anything, so the throw comes first.
+    try testing.expectEqual(@as(u8, 1), program.exit_code);
+    try testing.expectEqualStrings("", program.stdout);
+    if (std.mem.indexOf(u8, program.stderr, "Error: TODO: the negative case") == null) {
+        std.debug.print("expected the todo message on stderr, got:\n{s}\n", .{program.stderr});
+        return error.MissingTodoMessage;
+    }
+}
+
 test "an unknown platform is a usage failure that names the ones that ship" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1653,6 +1709,67 @@ test "a directory that is not a platform package says so" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), r.exit_code);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "is not a platform package") != null);
+    try testing.expect(!w.exists("out"));
+}
+
+test "a platform whose manifest names a runtime file that is not there is refused" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `boundary.md` §5.2: the manifest's `"runtime"` is the file the entry
+    // point hands `main` to, and `copyAssets` is the only place that reads
+    // it. That is the SECOND site of `foreign_sibling_missing`
+    // (`src/js/Emit.zig:906`) and it had no test at all — every other
+    // scenario for that code exercises a module's own missing `.js`
+    // sibling, which is a different branch a hundred lines earlier.
+    //
+    // It is build-only: `check --platform` runs §4's sibling checks but
+    // writes nothing, so it never asks for the runtime.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/beni.json",
+        \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "gone.js" }
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hi"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+    const checked = try w.run(&.{ "check", "--platform=myplat", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // The span is deliberately NOT asserted: this diagnostic has nowhere
+    // honest to point — the fault is in the platform's manifest, not in any
+    // source file — and it currently lands on file 0, token 0, which is the
+    // user's own first line. That is recorded as a question rather than
+    // pinned here.
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.foreign_sibling_missing, r.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Severity.@"error", r.diagnostics[0].severity);
+    try testing.expectEqualStrings("MISSING JAVASCRIPT FILE", r.diagnostics[0].title);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "gone.js") != null);
+    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "\"runtime\"") != null);
+
+    // `check` does not copy assets, so the missing runtime is invisible to
+    // it and the module's own siblings are all present: it passes.
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
     try testing.expect(!w.exists("out"));
 }
 

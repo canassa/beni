@@ -1,0 +1,73 @@
+-- `Maybe.map2`-`map5` and `andThen`, and the whole of `Result` except
+-- `withDefault` and `fromMaybe`: nothing in `run/` had called any of them.
+--
+-- The claim on every `mapN` is WHICH failure wins and that the later
+-- arguments are not needed once one has: `Maybe` collapses to `Nothing`,
+-- and `Result` propagates the FIRST `Err` ("If not, the first `Err` will
+-- propagate through"), so the lines with two errors in them are the ones
+-- that would catch a right-to-left walk.
+import Node exposing (Program)
+import Result
+import String
+
+
+main : Program
+main =
+    Node.printLines
+        [ Debug.toString (Maybe.map2 (Just 3) (Just 4) (\a b -> a + b))
+        , Debug.toString (Maybe.map2 (Just 3) Nothing (\a b -> a + b))
+        , Debug.toString (Maybe.map2 Nothing (Just 4) (\a b -> a + b))
+        , Debug.toString (Maybe.map3 (Just 1) (Just 2) (Just 3) (\a b c -> a + b + c))
+        , Debug.toString (Maybe.map3 (Just 1) Nothing (Just 3) (\a b c -> a + b + c))
+        , Debug.toString
+            (Maybe.map4 (Just 1) (Just 2) (Just 3) (Just 4) (\a b c d -> a + b + c + d))
+        , Debug.toString (Maybe.map4 (Just 1) (Just 2) (Just 3) Nothing (\a b c d -> a + b + c + d))
+        , Debug.toString
+            (Maybe.map5
+                (Just 1)
+                (Just 2)
+                (Just 3)
+                (Just 4)
+                (Just 5)
+                (\a b c d f -> a + b + c + d + f)
+            )
+        , Debug.toString
+            (Maybe.map5
+                (Just 1)
+                Nothing
+                (Just 3)
+                (Just 4)
+                (Just 5)
+                (\a b c d f -> a + b + c + d + f)
+            )
+        , Debug.toString (Maybe.andThen (Just 1) (\x -> Just (x + 1)))
+        , Debug.toString (Maybe.andThen Nothing (\x -> Just (x + 1)))
+        , Debug.toString (Maybe.andThen (Just 1) (\_ -> Nothing))
+        , Debug.toString (Result.map (Ok 4.0) sqrt)
+        , String.fromFloat (Result.withDefault (Result.map (Ok 4.0) sqrt) 0.0)
+        , Debug.toString (Result.map (Err "bad input") sqrt)
+        , Debug.toString (Result.map2 (Ok 3) (Ok 4) (\a b -> a + b))
+        , Debug.toString (Result.map2 (Ok 3) (Err "no") (\a b -> a + b))
+        , Debug.toString (Result.map2 (Err "first") (Err "second") (\a b -> a + b))
+        , Debug.toString (Result.map3 (Ok 1) (Ok 2) (Ok 3) (\a b c -> a + b + c))
+        , Debug.toString (Result.map3 (Ok 1) (Err "no") (Ok 3) (\a b c -> a + b + c))
+        , Debug.toString (Result.map4 (Ok 1) (Ok 2) (Ok 3) (Ok 4) (\a b c d -> a + b + c + d))
+        , Debug.toString (Result.map4 (Err "a") (Ok 2) (Ok 3) (Err "d") (\a b c d -> a + b + c + d))
+        , Debug.toString
+            (Result.map5 (Ok 1) (Ok 2) (Ok 3) (Ok 4) (Ok 5) (\a b c d f -> a + b + c + d + f))
+        , Debug.toString
+            (Result.map5 (Ok 1) (Ok 2) (Err "c") (Ok 4) (Err "e") (\a b c d f -> a + b + c + d + f))
+        , Debug.toString (Result.andThen (Ok 1) (\x -> Ok (x + 1)))
+        , Debug.toString (Result.andThen (Err "no") (\x -> Ok (x + 1)))
+        , Debug.toString (Result.andThen (Ok 1) (\_ -> Err "later"))
+        , Debug.toString (Result.mapError (Err 42) String.fromInt)
+        , Debug.toString (Result.mapError (Ok 42) String.fromInt)
+        , Debug.toString (Result.toMaybe (Ok 42))
+        , Debug.toString (Result.toMaybe (Err "no"))
+        , Debug.toString (Result.fromMaybe (Just 42) "lost")
+        , Debug.toString (Result.fromMaybe Nothing "lost")
+        , Debug.toString (Result.withDefault (Ok 123) 0)
+        , Debug.toString (Result.withDefault (Err "no") 0)
+        , Debug.toString (Maybe.withDefault (Just 1) 0)
+        , Debug.toString (Maybe.withDefault Nothing 0)
+        ]

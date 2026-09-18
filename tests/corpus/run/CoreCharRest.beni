@@ -1,0 +1,54 @@
+-- The `Char` classifiers are ASCII code-point ranges written in beni, so
+-- the only way they can be wrong is at a boundary. `isOctDigit` had never
+-- been run at all; `isUpper`, `isLower` and `isAlphaNum` had only been run
+-- through `isAlpha`. Each line below is either the doc comment's own
+-- example or a character one code point outside a range's edge — `/` and
+-- `:` around the digits, `@` and `[` around `A`-`Z`, `` ` `` and `{`
+-- around `a`-`z`, `8` just past octal, `g` and `G` just past hex.
+import Node exposing (Program)
+import String
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Char.isUpper 'A')
+            ++ show (Char.isUpper 'Z')
+            ++ show (Char.isUpper '@')
+            ++ show (Char.isUpper '[')
+            ++ show (Char.isUpper 'a')
+        , show (Char.isLower 'a')
+            ++ show (Char.isLower 'z')
+            ++ show (Char.isLower '`')
+            ++ show (Char.isLower '{')
+            ++ show (Char.isLower 'A')
+        , show (Char.isAlpha 'a') ++ show (Char.isAlpha 'Z') ++ show (Char.isAlpha '0')
+        , show (Char.isAlphaNum 'a')
+            ++ show (Char.isAlphaNum 'Z')
+            ++ show (Char.isAlphaNum '0')
+            ++ show (Char.isAlphaNum '-')
+        , show (Char.isDigit '0')
+            ++ show (Char.isDigit '9')
+            ++ show (Char.isDigit '/')
+            ++ show (Char.isDigit ':')
+            ++ show (Char.isDigit 'a')
+        , show (Char.isOctDigit '0')
+            ++ show (Char.isOctDigit '7')
+            ++ show (Char.isOctDigit '8')
+            ++ show (Char.isOctDigit '/')
+        , show (Char.isHexDigit 'f')
+            ++ show (Char.isHexDigit 'F')
+            ++ show (Char.isHexDigit '9')
+            ++ show (Char.isHexDigit 'g')
+            ++ show (Char.isHexDigit 'G')
+        , show (Char.isAlpha '\u{1F600}') ++ show (Char.isDigit '\u{1F600}')
+        , String.fromInt (Char.toCode '\u{0000}')
+        ]

@@ -1,0 +1,68 @@
+-- The inputs `core/List.beni`'s doc comments do not show: a count that is
+-- zero or negative, an index past the end, a range whose bounds cross, and
+-- a sort that is already sorted, reversed or full of ties.
+--
+-- `take`/`drop`/`repeat` all guard with `n <= 0`, so a negative count is
+-- the same as zero and never an error; `range lo hi` with `lo > hi` is
+-- documented to be `[]`. The sort lines are the stability contract of
+-- `sortWith` (`core/List.beni`: "`mergeWith` takes the LEFT element on
+-- anything but `GT`"), read through `sortBy` on a key that ties.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int -> String
+ints xs =
+    "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+labels : List { key : Int, tag : String } -> String
+labels rows =
+    String.join (List.map rows (\r -> String.fromInt r.key ++ r.tag)) ","
+
+
+tied : List { key : Int, tag : String }
+tied =
+    [ { key = 2, tag = "a" }
+    , { key = 1, tag = "b" }
+    , { key = 2, tag = "c" }
+    , { key = 1, tag = "d" }
+    , { key = 2, tag = "e" }
+    ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ ints (List.take [ 1, 2, 3 ] 2)
+        , ints (List.take [ 1, 2, 3 ] 0)
+        , ints (List.take [ 1, 2, 3 ] (negate 2))
+        , ints (List.take [ 1, 2, 3 ] 99)
+        , ints (List.take [] 2)
+        , ints (List.drop [ 1, 2, 3 ] 2)
+        , ints (List.drop [ 1, 2, 3 ] 0)
+        , ints (List.drop [ 1, 2, 3 ] (negate 2))
+        , ints (List.drop [ 1, 2, 3 ] 99)
+        , ints (List.drop [] 2)
+        , ints (List.repeat 0 3)
+        , ints (List.repeat 7 0)
+        , ints (List.repeat 7 (negate 3))
+        , ints (List.range 3 6)
+        , ints (List.range 3 3)
+        , ints (List.range 6 3)
+        , ints (List.range (negate 2) 1)
+        , ints (List.sort [ 3, 1, 5 ])
+        , ints (List.sort [])
+        , ints (List.sort [ 9 ])
+        , ints (List.sort [ 1, 2, 3, 4, 5 ])
+        , ints (List.sort [ 5, 4, 3, 2, 1 ])
+        , ints (List.sort [ 2, 2, 1, 1, 2 ])
+        , ints (List.sortWith [ 1, 2, 3 ] (\x y -> compare y x))
+        , labels (List.sortBy tied .key)
+        , labels (List.sortWith tied (\x y -> compare x.key y.key))
+        , String.fromInt (List.sum [])
+        , String.fromInt (List.product [])
+        , ints (List.concat [])
+        , ints (List.concat [ [], [], [] ])
+        ]

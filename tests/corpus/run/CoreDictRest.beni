@@ -1,0 +1,71 @@
+-- The `Dict` half nothing ran: `singleton`, `member`, `isEmpty`, `update`,
+-- `union`, `intersect` and `diff`, plus the two edges every balanced tree
+-- gets wrong quietly — inserting a key that is already there, and removing
+-- one that is not.
+--
+-- The set operations are documented by whose value wins: `union` "gives
+-- preference to the first dictionary", `intersect` keeps the LEFT pair when
+-- the key is in the right, and `diff` keeps what the right does not have. A
+-- collision is therefore an assertion and not an incidental, so every one
+-- of them here has an overlapping key whose values differ.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+pairs : Dict String Int -> String
+pairs dict =
+    String.join (List.map (Dict.toList dict) (\p -> p.0 ++ "=" ++ String.fromInt p.1)) ","
+
+
+flag : Bool -> String
+flag b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+left : Dict String Int
+left =
+    Dict.fromList [ ( "a", 1 ), ( "b", 2 ) ]
+
+
+right : Dict String Int
+right =
+    Dict.fromList [ ( "b", 20 ), ( "c", 30 ) ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ "[" ++ pairs Dict.empty ++ "]"
+        , pairs (Dict.singleton "Tom" 42)
+        , flag (Dict.isEmpty Dict.empty)
+        , flag (Dict.isEmpty (Dict.singleton "Tom" 42))
+        , flag (Dict.member left "a")
+        , flag (Dict.member left "z")
+        , flag (Dict.member Dict.empty "a")
+        , pairs (Dict.insert left "a" 99)
+        , String.fromInt (Dict.size (Dict.insert left "a" 99))
+        , pairs (Dict.remove left "z")
+        , String.fromInt (Dict.size (Dict.remove Dict.empty "z"))
+        , pairs (Dict.update left "a" (\_ -> Just 7))
+        , pairs (Dict.update left "a" (\_ -> Nothing))
+        , pairs (Dict.update left "z" (\_ -> Just 7))
+        , pairs (Dict.update left "z" (\_ -> Nothing))
+        , pairs (Dict.update left "a" (\v -> v))
+        , pairs (Dict.union left right)
+        , pairs (Dict.union right left)
+        , pairs (Dict.union left Dict.empty)
+        , pairs (Dict.intersect left right)
+        , "[" ++ pairs (Dict.intersect left Dict.empty) ++ "]"
+        , pairs (Dict.diff left right)
+        , pairs (Dict.diff right left)
+        , "[" ++ pairs (Dict.diff left left) ++ "]"
+        , pairs (Dict.fromList [ ( "a", 1 ), ( "a", 2 ) ])
+        , String.fromInt (Dict.foldr left 0 (\_ v acc -> v + acc))
+        , String.join (Dict.foldr left [] (\k _ acc -> k :: acc)) ","
+        , String.join (Dict.foldl left [] (\k _ acc -> k :: acc)) ","
+        ]

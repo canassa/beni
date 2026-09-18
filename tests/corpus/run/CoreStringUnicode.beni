@@ -1,0 +1,68 @@
+-- `backend.md` §4: a `String` is a native JavaScript string and a `Char` is
+-- a one-scalar string, so every function where the UTF-16 mismatch would
+-- show has to work in CODE POINTS. `core/String.js`'s header names three —
+-- `length`, `slice`, `toList` — and everything built on them inherits the
+-- obligation: `reverse`, `left`, `right`, `dropLeft`, `dropRight`, `uncons`,
+-- `pad`, `map`, `foldl`.
+--
+-- The subject is `a\u{1F600}b`: three characters, four UTF-16 code units.
+-- Anything that answered in code units would say `4` for `length`, split
+-- the emoji into surrogate halves under `reverse`, and take a surrogate
+-- half for `left … 2`.
+--
+-- The combining-mark lines are the other half of the contract, and they go
+-- the other way: `e` plus U+0301 is ONE grapheme but TWO code points, so
+-- `e\u{0301}x` is THREE characters and not two, and `reverse` separates the
+-- accent from the letter it sat on. That is not a bug to fix later; it is
+-- what "code point" costs, and pinning it means a future grapheme pass has
+-- to be a deliberate change.
+import Char
+import Node exposing (Program)
+import String
+
+
+emoji : String
+emoji =
+    "a\u{1F600}b"
+
+
+accented : String
+accented =
+    "e\u{0301}x"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (String.length emoji)
+        , String.fromInt (String.length "\u{1F600}")
+        , String.fromInt (String.length accented)
+        , String.reverse emoji
+        , String.reverse accented
+        , String.slice emoji 1 2
+        , String.slice emoji 0 (negate 1)
+        , String.left emoji 2
+        , String.right emoji 2
+        , String.dropLeft emoji 1
+        , String.dropRight emoji 1
+        , String.fromInt (List.length (String.toList emoji))
+        , String.join (List.map (String.toList emoji) String.fromChar) "|"
+        , Debug.toString (String.uncons "\u{1F600}b")
+        , String.pad "\u{1F600}" 3 '.'
+        , String.map
+            emoji
+            (\c ->
+                if c == '\u{1F600}' then
+                    '!'
+                else
+                    c
+            )
+        , String.foldl emoji "" (\c acc -> String.cons acc c)
+        , String.fromInt (Char.toCode '\u{1F600}')
+        , String.fromChar (Char.fromCode 128512)
+        , String.fromChar (Char.fromCode 55296)
+        , String.fromChar (Char.fromCode 1114112)
+        , String.fromChar (Char.toUpper '\u{1F600}')
+        , String.fromChar (Char.toUpper 'ß')
+        , String.fromChar (Char.toLower 'İ')
+        ]

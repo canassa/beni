@@ -1,0 +1,75 @@
+-- The eight `Basics` functions the operators used to desugar to. They no
+-- longer do — `==` and `<` dispatch on the receiver's type instead — but
+-- `core/Basics.beni`'s module doc says all of them "stay declared, exported
+-- and callable by name", and nothing ran them. `<` on numbers is emitted
+-- inline, so the emitter never reaches `Basics.lt` on its own; naming it is
+-- the only way the foreign definition is executed at all.
+--
+-- `eq` is structural (`language.md` §6.5), so a list and a record answer it
+-- the same way two integers do.
+--
+-- `and` and `or` get a second spelling, as VALUES handed to `List.map2`.
+-- `core/Basics.js` says the emitter turns a saturated call of either into
+-- `&&`/`||` and that the exported function is "reached only when the
+-- function is passed as a value" — so a direct call does not run the
+-- sibling at all and this is the only line that does.
+--
+-- The last two lines are `always` and `never`, which have no other home.
+-- `never` cannot be CALLED by anyone: its argument is a `Never` and there
+-- is no way to build one. What it can be is well typed and emitted, which
+-- is what `List.map []` over an empty list of `Impossible` proves.
+import Basics
+import List
+import Node exposing (Program)
+import String
+
+
+type Impossible
+    = Impossible Never
+
+
+drain : Impossible -> Int
+drain (Impossible nothingness) =
+    never nothingness
+
+
+showBool : Bool -> String
+showBool b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ showBool (Basics.eq 1 1)
+        , showBool (Basics.eq 1 2)
+        , showBool (Basics.eq [ 1, 2 ] [ 1, 2 ])
+        , showBool (Basics.eq "ab" "ab")
+        , showBool (Basics.eq { x = 1, y = 2 } { x = 1, y = 3 })
+        , showBool (Basics.neq 1 2)
+        , showBool (Basics.neq [ 1, 2 ] [ 1, 2 ])
+        , showBool (Basics.lt 1 2)
+        , showBool (Basics.lt 2 2)
+        , showBool (Basics.gt 3 2)
+        , showBool (Basics.gt 2 2)
+        , showBool (Basics.le 2 2)
+        , showBool (Basics.le 3 2)
+        , showBool (Basics.ge 2 2)
+        , showBool (Basics.ge 1 2)
+        , showBool (Basics.and True True)
+        , showBool (Basics.and True False)
+        , showBool (Basics.or False True)
+        , showBool (Basics.or False False)
+        , String.join
+            (List.map (List.map2 [ True, True, False ] [ True, False, False ] Basics.and) showBool)
+            ","
+        , String.join
+            (List.map (List.map2 [ True, True, False ] [ True, False, False ] Basics.or) showBool)
+            ","
+        , String.fromInt (always 0 1)
+        , String.join (List.map (List.map [ 1, 2, 3 ] (always 0 _)) String.fromInt) ","
+        , String.fromInt (List.length (List.map [] drain))
+        ]

@@ -1,0 +1,97 @@
+-- The `String` functions no other `run/` fixture called — `toLower`,
+-- `trimLeft`, `trimRight`, `isEmpty`, `dropRight`, `startsWith`,
+-- `endsWith`, `indices`, `uncons`, `pad`, `padRight` — plus the counts each
+-- of them is not shown handling: zero, negative, and larger than the
+-- string. Every documented example in `core/String.beni` is a line here.
+--
+-- `left`/`right`/`dropLeft`/`dropRight` guard with `n < 1`, so a negative
+-- count behaves as zero; a count past the end saturates rather than
+-- erroring, because `slice` is the platform's and clamps. `pad` splits the
+-- shortfall `ceiling` on the left and `floor` on the right, so an odd
+-- shortfall puts the extra character in FRONT.
+import Char
+import Node exposing (Program)
+import String
+
+
+flag : Bool -> String
+flag b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.toUpper "aBc"
+        , String.toLower "aBc"
+        , "[" ++ String.trim "  hats  \n" ++ "]"
+        , "[" ++ String.trimLeft "  hats  " ++ "]"
+        , "[" ++ String.trimRight "  hats  " ++ "]"
+        , flag (String.isEmpty "")
+        , flag (String.isEmpty "the world")
+        , String.reverse "stressed"
+        , String.reverse ""
+        , String.repeat "ha" 3
+        , "[" ++ String.repeat "ha" 0 ++ "]"
+        , "[" ++ String.repeat "ha" (negate 1) ++ "]"
+        , String.concat [ "never", "the", "less" ]
+        , "[" ++ String.concat [] ++ "]"
+        , String.join [ "cat", "dog" ] ", "
+        , "[" ++ String.join [] ", " ++ "]"
+        , String.left "Mulder" 2
+        , "[" ++ String.left "Mulder" 0 ++ "]"
+        , "[" ++ String.left "Mulder" (negate 2) ++ "]"
+        , String.left "Mulder" 99
+        , String.right "Scully" 2
+        , "[" ++ String.right "Scully" 0 ++ "]"
+        , String.right "Scully" 99
+        , String.dropLeft "The Lone Gunmen" 2
+        , String.dropLeft "The Lone Gunmen" 0
+        , "[" ++ String.dropLeft "abc" 99 ++ "]"
+        , String.dropRight "Cigarette Smoking Man" 2
+        , String.dropRight "abc" 0
+        , "[" ++ String.dropRight "abc" 99 ++ "]"
+        , flag (String.contains "theory" "the")
+        , flag (String.contains "theory" "hat")
+        , flag (String.startsWith "theory" "the")
+        , flag (String.startsWith "theory" "ory")
+        , flag (String.startsWith "theory" "")
+        , flag (String.endsWith "theory" "ory")
+        , flag (String.endsWith "theory" "the")
+        , flag (String.endsWith "theory" "")
+        , String.join (List.map (String.indices "Mississippi" "i") String.fromInt) ","
+        , "[" ++ String.join (List.map (String.indices "abc" "z") String.fromInt) "," ++ "]"
+        , String.cons "he truth is out there" 'T'
+        , Debug.toString (String.uncons "abc")
+        , Debug.toString (String.uncons "")
+        , "[" ++ String.pad "1" 5 ' ' ++ "]"
+        , "[" ++ String.pad "1" 4 ' ' ++ "]"
+        , "[" ++ String.pad "abc" 2 ' ' ++ "]"
+        , String.padLeft "1" 5 '.'
+        , String.padLeft "abc" 2 '.'
+        , String.padRight "1" 5 '.'
+        , String.padRight "abc" 2 '.'
+        , String.map
+            "a/b/c"
+            (\char ->
+                if char == '/' then
+                    '.'
+                else
+                    char
+            )
+        , String.filter "R2-D2" Char.isDigit
+        , String.foldl "time" "" (\char acc -> String.cons acc char)
+        , String.foldr "time" "" (\char acc -> String.cons acc char)
+        , flag (String.any "R2-D2" Char.isDigit)
+        , flag (String.all "2D2" Char.isDigit)
+        , flag (String.any "" Char.isDigit)
+        , flag (String.all "" Char.isDigit)
+        , Debug.toString (String.toInt "42")
+        , Debug.toString (String.toInt "4.2")
+        , Debug.toString (String.toInt "")
+        , Debug.toString (String.toFloat "4.2")
+        , Debug.toString (String.toFloat "nope")
+        ]
