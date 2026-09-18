@@ -1558,6 +1558,66 @@ pub const Reporter = struct {
         try r.emit(.missing_patterns, region, &out);
     }
 
+    /// A `case` the usefulness analysis could not decide inside its work
+    /// budget (checker.md §6.6). An ERROR, not a warning and not silence:
+    /// `backend.md` §7 compiles a `case` to a decision tree with no default
+    /// arm, on the strength of "the checker proved exhaustiveness", so a
+    /// `case` nobody proved anything about is the one remaining way to a
+    /// wrong answer at exit 0.
+    ///
+    /// `why` picks between two messages under the one code, because the two
+    /// ways out differ and a wrong hint is worse than none: the analysis
+    /// spends WORK, which `--pattern-budget` buys more of, and it spends
+    /// STACK, which it does not. The author sees one code — "this `case` was
+    /// not decided" — and the sentence that is true of their program.
+    ///
+    /// `limit` is whichever of the two ran out, as it was in force and not as
+    /// what is left of it, so the author can see what they met.
+    pub fn patternBudgetExhausted(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        why: enum { budget, depth },
+        limit: u32,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        switch (why) {
+            .budget => w.print(
+                \\This `case` is too big for me to prove anything about:
+                \\
+                \\Deciding whether a `case` covers every possibility can cost exponentially
+                \\much, so I spend at most a fixed amount of work on it — {d} steps here — and
+                \\this one ran out. I do not know whether a possibility is missing or a branch
+                \\is unreachable, and I will not compile a `case` I could not check: the
+                \\JavaScript I generate has no fallback branch to land in.
+                \\
+                \\Splitting the match makes it cheap, because the cost is in the COMBINATIONS:
+                \\a helper function per group of constructors, or one `case` per column instead
+                \\of one `case` over all of them at once.
+                \\
+                \\Hint: `--pattern-budget=<n>` raises the limit if the `case` really is meant
+                \\to be this big.
+                \\
+            , .{limit}) catch return error.OutOfMemory,
+            .depth => w.print(
+                \\This `case` matches on a pattern nested deeper than I can analyse:
+                \\
+                \\I read {d} levels of nesting and gave up, so I do not know whether a
+                \\possibility is missing or a branch is unreachable — and I will not compile a
+                \\`case` I could not check: the JavaScript I generate has no fallback branch
+                \\to land in.
+                \\
+                \\Give the inner part a function of its own and match on what that returns.
+                \\`--pattern-budget` will not help here; it buys work, and this ran out of
+                \\depth.
+                \\
+            , .{limit}) catch return error.OutOfMemory,
+        }
+        try r.emit(.pattern_budget_exhausted, region, &out);
+    }
+
     /// A pattern in an **irrefutable** position — a parameter, a `let`
     /// pattern, a `<-` bound pattern — that does not match every value of
     /// its type (`language.md` §7). The parser rejects the shapes no type

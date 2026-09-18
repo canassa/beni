@@ -3634,6 +3634,236 @@ test "one level under the reading limit checks clean and publishes a real scheme
 }
 
 // ---------------------------------------------------------------------------
+// The pattern-usefulness budget is the last guard that gave up in SILENCE
+// (`checker.md` §6.6, `backend.md` §7, queue slice 14)
+//
+// Deciding a `case` can cost exponentially much, so the analysis spends a
+// bounded amount of work on it. It used to report nothing when that ran out,
+// which was harmless while the backend's `case` still had a fallback — and a
+// miscompile the moment decision trees landed, because a tree carries **no
+// default arm** on the strength of "the checker proved exhaustiveness". A
+// `case` nobody proved anything about took the tree's last edge and printed
+// the wrong answer at exit 0, with no diagnostic anywhere.
+//
+// `--pattern-budget=<n>` is what makes that assertable with a four-line
+// module instead of the ~440-literal-branch `case` it takes to reach the
+// default. The scenarios below are the pair: too little budget is a refusal,
+// enough budget is the real answer, and a refused `case` writes no
+// JavaScript at all.
+// ---------------------------------------------------------------------------
+
+/// Not exhaustive: nothing matches `Nothing`. Small enough that ANY budget
+/// above a handful of steps decides it, so the two scenarios below differ
+/// only in the flag.
+const undecidable_case =
+    \\pub f : Maybe Int -> Int
+    \\f m =
+    \\    case m of
+    \\        Just n ->
+    \\            n
+    \\
+;
+
+test "a `case` the usefulness budget cannot decide is refused, not passed over" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("M.beni", undecidable_case);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--pattern-budget=1", "M.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // The budget is a session-wide knob, so a value this small also refuses
+    // every `case` in the embedded core package. Only `M.beni`'s is this
+    // scenario's, and there is exactly one of those.
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    var mine: ?diagnostic.Diagnostic = null;
+    for (r.diagnostics) |candidate| {
+        if (!std.mem.eql(u8, candidate.span.file, "M.beni")) continue;
+        try testing.expect(mine == null);
+        mine = candidate;
+    }
+    // The whole diagnostic, because the message is the deliverable: it has
+    // to name the budget that was in force and both ways past it, or the
+    // author is told "too big" and nothing else.
+    const d = mine orelse return error.NoDiagnosticForTheModule;
+    try testing.expectEqual(diagnostic.Code.pattern_budget_exhausted, d.code);
+    try testing.expectEqual(diagnostic.Severity.@"error", d.severity);
+    try testing.expectEqualStrings("CASE TOO BIG TO CHECK", d.title);
+    try testing.expectEqualStrings("M.beni", d.span.file);
+    try testing.expectEqual(@as(u32, 3), d.span.start.line);
+    try testing.expectEqual(@as(u32, 5), d.span.start.col);
+    try testing.expectEqualStrings(
+        "This `case` is too big for me to prove anything about:\n" ++
+            "\n" ++
+            "Deciding whether a `case` covers every possibility can cost exponentially\n" ++
+            "much, so I spend at most a fixed amount of work on it — 1 steps here — and\n" ++
+            "this one ran out. I do not know whether a possibility is missing or a branch\n" ++
+            "is unreachable, and I will not compile a `case` I could not check: the\n" ++
+            "JavaScript I generate has no fallback branch to land in.\n" ++
+            "\n" ++
+            "Splitting the match makes it cheap, because the cost is in the COMBINATIONS:\n" ++
+            "a helper function per group of constructors, or one `case` per column instead\n" ++
+            "of one `case` over all of them at once.\n" ++
+            "\n" ++
+            "Hint: `--pattern-budget=<n>` raises the limit if the `case` really is meant\n" ++
+            "to be this big.\n",
+        d.message,
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The refusal REPLACES the answer rather than arriving beside a
+    // half-searched one. Nothing in the whole run — this module or the core
+    // package, which a budget this small starves too — claims a pattern is
+    // missing or redundant, because no matrix was searched far enough to
+    // know either.
+    for (r.diagnostics) |candidate| {
+        try testing.expect(candidate.code != .missing_patterns);
+        try testing.expect(candidate.code != .redundant_pattern);
+    }
+}
+
+test "the same `case` with budget to spare gets the real answer instead of the refusal" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The refusal is about the BUDGET and never about the program, so the
+    // same source at the default budget must say what is actually wrong —
+    // and an exhaustive version of it must say nothing at all.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("M.beni", undecidable_case);
+    try w.write("Ok.beni",
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+        \\        Nothing ->
+        \\            0
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const bad = try w.run(&.{ "check", "M.beni" });
+    const good = try w.run(&.{ "check", "--pattern-budget=1000000", "Ok.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), bad.exit_code);
+    try testing.expectEqual(@as(usize, 1), bad.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.missing_patterns, bad.diagnostics[0].code);
+
+    try testing.expectEqual(@as(u8, 0), good.exit_code);
+    try testing.expectEqualStrings("", good.stderr);
+}
+
+test "a `case` the checker could not decide never reaches the default-free decision tree" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The miscompile itself, at the second boundary. `name 999` matches no
+    // branch; `backend.md` §7's tree has no default arm, so before this
+    // slice the build exited 0 and the program printed `"seven"` — the last
+    // edge's answer — for an input no branch covers.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\name : Int -> String
+        \\name k =
+        \\    case k of
+        \\        0 ->
+        \\            "zero"
+        \\
+        \\        7 ->
+        \\            "seven"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ name 0, name 999 ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const starved = try w.run(&.{ "build", "--platform=node", "--out=out", "--pattern-budget=1", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), starved.exit_code);
+    var refused = false;
+    for (starved.diagnostics) |d| {
+        if (!std.mem.eql(u8, d.span.file, "Main.beni")) continue;
+        try testing.expectEqual(diagnostic.Code.pattern_budget_exhausted, d.code);
+        refused = true;
+    }
+    try testing.expect(refused);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Nothing was written. A refused `case` is not a program that throws at
+    // runtime; it is not a program at all.
+    try testing.expect(!w.exists(world.entry_file));
+
+    // And with room to think, the compiler says what is really wrong — the
+    // same refusal to emit, for the honest reason.
+    const decided = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), decided.exit_code);
+    try testing.expectEqual(@as(usize, 1), decided.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.missing_patterns, decided.diagnostics[0].code);
+    try testing.expect(!w.exists(world.entry_file));
+
+    // The fixed program builds and runs, so the refusal is about the hole
+    // and not about the shape of the `case`.
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\name : Int -> String
+        \\name k =
+        \\    case k of
+        \\        0 ->
+        \\            "zero"
+        \\
+        \\        7 ->
+        \\            "seven"
+        \\
+        \\        _ ->
+        \\            "other"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ name 0, name 999 ]
+        \\
+    );
+    const fixed = try w.buildAndRun(&.{"Main.beni"});
+    try testing.expectEqual(@as(u8, 0), fixed.build.exit_code);
+    const program = fixed.program orelse return error.BuildFailed;
+    try testing.expectEqualStrings("zero\nother\n", program.stdout);
+}
+
+// ---------------------------------------------------------------------------
 // S3 — the module graph carries TYPE edges, and they are deterministic
 // (`static-dispatch-spike.md` §6.8, `fast-compiler.md` §10, CLAUDE.md rule 5)
 //

@@ -11,6 +11,7 @@ without one, is a failure.
 | `AnnotationOk` / `AnnotationDeep` | `Types.Builder.max_depth` (512) | 510 clean, 511 reports |
 | `AliasChainOk` / `AliasChainDeep` | the same guard, reached by expanding aliases | 509 clean, 510 reports |
 | `InferredOk` / `InferredDeep` | `Schemes.Writer.max_depth` (512) | 511 clean, 512 reports |
+| `PatternNestOk` / `PatternNestDeep` | `Exhaustive.max_depth` (512), how deep a **pattern** the usefulness analysis walks | 512 clean, 513 reports |
 | `ParserOk` / `ParserDeep` | `Parse.max_depth` (4096) | 4095 clean, 4096 reports |
 | `TypeParensOk` / `TypeParensDeep` | the same guard, reached through a **type** | 4095 clean, 4096 reports |
 | `RenderTruncatedDeep` | `Render.max_depth` (24) | truncates one type to `…` |
@@ -34,6 +35,27 @@ That is a silent wrong answer, which is the one failure mode a compiler may
 not have. Every guard here was asserted only by its absence before this
 kind existed; the sweep would have caught it on the day it was written.
 
+## One guard joined the sweep late, and the reason it was outside it was a bug
+
+`Exhaustive`'s depth and work budgets used to report **nothing** on purpose,
+and this README used to list them here as deliberately excluded. That
+argument — a half-searched pattern matrix can no more prove a branch
+redundant than prove one missing, so there is no partial answer worth
+printing — is still true, and it is why the refusal carries no examples. It
+stopped being a reason for *silence* when `backend.md` §7 landed decision
+trees: a `case` now compiles to a tree with **no default arm**, on the
+strength of the checker having proved it exhaustive, so a `case` the checker
+declined to decide does not lose a warning — it takes the tree's last edge
+and prints the wrong answer at exit 0.
+
+`PatternNestDeep.beni` is exactly that program: one branch, `Nothing`
+unmatched, and before queue slice 14 it compiled clean. The **work** budget
+has no pair here because the corpus walker cannot pass a flag per fixture and
+reaching 200 000 steps at the default takes a ~1 400-line `case`
+(~440 `Int`-literal branches, or ~310 constructors matched flat); the pair for
+it is `blackbox_test.zig`'s `--pattern-budget` scenarios, which say the same
+thing in four lines.
+
 ## Two guards are deliberately NOT in the sweep
 
 - **`Constrain`'s and `Solve`'s 4200-level recursion guards.** They sit
@@ -42,11 +64,10 @@ kind existed; the sweep would have caught it on the day it was written.
   the message comes from the **parser**. The guards are written as
   `Parse.max_depth + 104` rather than as a constant so the relation cannot
   rot.
-- **`Exhaustive`'s depth and work budgets.** They report *nothing* on
-  purpose (checker.md §6.6): a half-searched pattern matrix can no more
-  prove a branch redundant than prove one missing, and there is no partial
-  answer worth printing. `check/Check.zig`'s budget tests assert that by
-  turning the budget down, which is a better test than a huge fixture.
+- **`Exhaustive`'s WORK budget**, for the size reason above and not for a
+  reason of principle: it reports, like everything else here, and
+  `check/Check.zig`'s budget tests plus `blackbox_test.zig`'s scenarios turn
+  it down instead of carrying a huge fixture that reaches it.
 
 ## Regenerating
 

@@ -383,12 +383,19 @@ literal node is always a `===` fan-out with a default and never a range test or 
 A `Char` is a one-scalar string (§4), so its test and a `String` literal's are the same `===`.
 
 **The checker leaves nothing behind to reuse.** `check/Exhaustive.zig` is a usefulness analysis over
-`Bir` patterns returning diagnostics and no artifact, it reads no solved type, and — usefulness
-being exponential (`checker.md` §6.6) — a `case` that exhausts `pattern_budget` reports **nothing**.
-So the backend builds its own matrix from `Bir`, and "the checker proved exhaustiveness" is an
-invariant with one documented hole: a budget-exhausted `case` can reach the backend non-exhaustive,
-take the default-free last edge and compute a wrong answer rather than throw. That is the checker's
-bug to fix if it bites, not a reason for the tree to carry a default arm.
+`Bir` patterns returning diagnostics and no artifact, and it reads no solved type. So the backend
+builds its own matrix from `Bir`.
+
+**"The checker proved exhaustiveness" now holds without a hole.** It did not when decision trees
+landed: usefulness is exponential (`checker.md` §6.6), and a `case` that exhausted `pattern_budget`
+reported **nothing**, so it could reach the backend non-exhaustive, take the default-free last edge
+and compute a wrong answer rather than throw — at exit 0, with no diagnostic anywhere. That hole was
+reachable at the DEFAULT budget and with no flag: a `case` over about 440 `Int` literals costs more
+than 200 000 steps, and one written without its wildcard compiled and printed the last branch's
+answer for every unmatched input. Queue slice 14 closed it at the checker, where it belonged: an
+undecided `case` is now `pattern_budget_exhausted`, an error, so nothing the backend receives is a
+`case` the checker declined to decide. The tree still carries no default arm, and it still needs
+none.
 
 ### Choosing a column
 
@@ -1048,6 +1055,10 @@ limitation to fix.
 
 **An unreachable declaration is dropped entirely, initialiser included, with no exceptions.** The
 rule is total because the premise is: a top-level beni value is pure to evaluate.
+
+`language.md` §6, *Evaluation order* is where purity and the licence it buys are now stated for the
+language as a whole — what may be dropped, what may not be reordered, and what an inliner may
+substitute. This section is that licence spent on top-level declarations.
 
 Establishing that, rather than assuming it. A top-level constant *can* have a call in its
 initialiser and one does — `platform/Node.mjs` emits `const Node$done = Node$printLines({$:0,…})`,

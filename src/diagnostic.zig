@@ -191,6 +191,12 @@ pub const Code = enum {
     /// count is not evidence count + declared arity, or whose parameter list
     /// the scanner may not count.
     foreign_arity_mismatch,
+    /// The third of the exhaustiveness set, appended on 2026-09-18 (queue
+    /// slice 14, `checker.md` §6.6): a `case` whose exhaustiveness the
+    /// usefulness analysis could not decide inside `--pattern-budget`.
+    /// Silence there was the last exit-0 path to a wrong answer, because
+    /// `backend.md` §7's decision tree emits no default arm.
+    pattern_budget_exhausted,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -281,6 +287,7 @@ pub fn title(code: Code) []const u8 {
         .try_shape => "BAD QUESTION MARK",
         .missing_patterns => "MISSING PATTERNS",
         .redundant_pattern => "REDUNDANT PATTERN",
+        .pattern_budget_exhausted => "CASE TOO BIG TO CHECK",
         .foreign_bad_shape => "BAD FOREIGN TYPE",
         .foreign_sibling_missing => "MISSING JAVASCRIPT FILE",
         .foreign_export_mismatch => "FOREIGN EXPORT MISMATCH",

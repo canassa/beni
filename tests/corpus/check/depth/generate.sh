@@ -86,6 +86,31 @@ inferred 512 'one over: the scheme is `<error>` AND there is a message.' \
     > "$dir/InferredDeep.beni"
 
 # ---------------------------------------------------------------------------
+# `Exhaustive.max_depth` (512): how deep a PATTERN the usefulness analysis
+# walks before it gives up on the `case`. It was outside this sweep until
+# 2026-09-18 because it gave up in SILENCE — and that silence was the hole
+# queue slice 14 closed: `backend.md` §7 compiles a `case` to a decision tree
+# with no default arm, so a `case` nobody decided answered wrongly at exit 0.
+# The `Deep` fixture here IS that program.
+#
+# The trailing `_ ->` is what makes the shallow one exhaustive, so its clean
+# exit means "decided and complete" rather than "too deep to judge".
+# Measured: 512 levels check clean, 513 report.
+# ---------------------------------------------------------------------------
+pattern_nest() {
+    printf -- '-- check/depth: %s\n' "$2"
+    printf 'f m =\n    case m of\n        '
+    repeat "$1" 'Just ('
+    printf 'x'
+    repeat "$1" ')'
+    printf ' ->\n            x\n\n        _ ->\n            0\n'
+}
+pattern_nest 512 'one under Exhaustive.max_depth: the `case` is decided, and complete.' \
+    > "$dir/PatternNestOk.beni"
+pattern_nest 513 'one over: a `case` the analysis cannot decide is REFUSED, not skipped.' \
+    > "$dir/PatternNestDeep.beni"
+
+# ---------------------------------------------------------------------------
 # There is no pair for the DERIVATION guard of
 # `docs/design/static-dispatch-spike.md` §6.3, and there cannot be one.
 # Derivation is structural and recursive (§3.3), so `==` on a deep tuple

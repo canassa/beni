@@ -57,9 +57,20 @@
 //! **The budget.** Usefulness is exponential in the worst case (Maranget
 //! §3.3), and a `case` over many constructors with many branches reaches it.
 //! Every recursive step and every row of every specialisation spends from a
-//! fixed budget; when it runs out the `case` reports NOTHING rather than
-//! hanging. A missed warning is a much smaller bug than a compiler that does
-//! not terminate, and the input that gets there is not one anybody writes.
+//! fixed budget; when it runs out the analysis stops rather than hanging, and
+//! it says so — `pattern_budget_exhausted`, an ERROR, at the `case` it could
+//! not decide (checker.md §6.6). Silence was the old answer and it was the
+//! one remaining exit-0 path to a wrong answer: `backend.md` §7's decision
+//! tree emits no default arm because "the checker proved exhaustiveness", so
+//! a `case` the checker never decided compiles to a tree that falls into its
+//! last edge. Every other guard in this checker that gives up reports first
+//! (checker.md §5); this one now does too.
+//!
+//! An undecided `case` is not the same as an UNREADABLE one. A poisoned
+//! reference or a constructor whose arity does not match its declaration
+//! means the matrix is not what this file thinks it is — a precondition
+//! failure, not a cost — and those still report nothing, because the author
+//! has already been told about them somewhere else.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -83,38 +94,69 @@ pub const Symbol = InternPool.Symbol;
 pub const max_examples = 3;
 
 /// Row visits and recursive steps one `case` may spend before it is
-/// abandoned.
+/// refused.
 ///
-/// **Measured, not guessed.** Turning it down and watching where the
-/// answers change: every `case` in `core/`, in the `check` corpus and in the
-/// generated 100k-line corpus is decided on a budget of **50**, and the
-/// widest input anyone has written here — 200 constructors × 200 branches,
-/// each branch a two-deep nest, the shape that makes every column of the
-/// matrix complete — lands between 25,600 and 51,200. So this is roughly
-/// 4,000× what real code needs and 4× what the hostile case needs, and it
-/// is insurance rather than a limit anything meets: the exponent is real
-/// (Maranget §3.3) but it takes deliberate effort to reach, because both
-/// searches stop early — `isUseful` at the first useful alternative and
-/// `isExhaustive` at `max_examples` counterexamples.
+/// **Measured, not guessed**, and re-measured on 2026-09-18 when exhaustion
+/// stopped being silent — a number that only ever cost a warning is one
+/// nobody checks, and the old note here was wrong about the headroom. Turning
+/// the budget down until the answers change:
+///
+///   - the costliest `case` in `core/` spends **70**;
+///   - the costliest in `bench/corpus`, about **420**;
+///   - the costliest fixture in `tests/corpus` — `parse/good/ManyBranches`,
+///     100 branches on `Int` literals plus a wildcard — about **10,500**.
+///
+/// So nothing written in this repository is within a factor of nineteen of
+/// the budget. The headroom above that is smaller than it looks, because the
+/// cost is **quadratic in the branch count with no nesting at all**:
+/// `isUseful` runs each branch against the matrix of the branches above it,
+/// so n branches cost about 1.05·n² even when every column is one literal
+/// wide. Measured: ~440 `Int`-literal branches, or ~310 constructors of one
+/// type matched flat, reach 200,000. Maranget §3.3's exponent is real but it
+/// is not what a table-driven program meets first.
+///
+/// Both searches stop early — `isUseful` at the first useful alternative and
+/// `isExhaustive` at `max_examples` counterexamples — which is why the
+/// quadratic term dominates in practice.
+///
+/// If the refusal starts firing on code people mean, **the budget is what to
+/// fix** (Maranget §4's optimisations, or a bigger number here), not the
+/// message: `--pattern-budget=<n>` exists so that an author who meets it is
+/// not stuck while that happens.
 pub const default_budget: u32 = 200_000;
 
 /// How deeply the recursion may nest. `budget` alone bounds the total work
 /// but not the STACK, and the failure mode of an unbounded stack is a
 /// segfault rather than a missing warning.
 ///
-/// Every guard against it reports NOTHING, which is checker.md §6.6's rule:
-/// a `case` this analysis could not decide gets silence, because the only
-/// alternatives are a warning that may be wrong and a compiler that does
-/// not finish. The depth is a nesting depth of PATTERNS — 512 `Just (Just
-/// (…))` — so no program a person writes comes near it, and one that does
-/// still compiles and still runs correctly; it only loses a warning.
+/// It is refused like the budget: a `case` that nests deeper than this is one
+/// the analysis did not decide, so it is `pattern_budget_exhausted` and not
+/// silence. It gets that code's OTHER message, the one that does not mention
+/// `--pattern-budget` — the budget is not what stopped it and raising it
+/// would not help. The depth is a nesting depth of PATTERNS — 512 `Just (Just
+/// (…))` — so no program a person writes comes near it.
 const max_depth: u32 = 512;
 
-/// The analysis gave up: either the work budget ran out, or the patterns did
-/// not describe a matrix this algorithm can read (a poisoned reference, a
-/// constructor whose type is unknown). Either way the `case` reports
-/// nothing.
-const Abort = error{Abandoned};
+/// Why the analysis stopped early. Three answers, not one:
+///
+///   - `OverBudget` — the work budget ran out. The matrix was fine; the exact
+///     answer was too expensive. `pattern_budget_exhausted`, and the message
+///     offers `--pattern-budget=<n>`, which really would help.
+///   - `TooDeep` — a pattern nested past `max_depth`. Also
+///     `pattern_budget_exhausted`, because it is the same thing to the
+///     author (a `case` that was not decided) — but a DIFFERENT message,
+///     because raising the budget would not help and saying so would be a
+///     lie. The two share a code and not a sentence.
+///   - `Malformed` — the patterns do not describe a matrix this algorithm
+///     can read: a poisoned reference, a constructor whose type is unknown,
+///     an arity that does not match the declaration, a column mixing
+///     literals with constructors. Every one of those is a precondition
+///     failure that some earlier phase already reported, so this one stays
+///     silent rather than adding a second, misleading message about budget.
+///
+/// An irrefutable position collapses all three into its own refusal: there
+/// the answer that matters is "not proven", however it failed to be proven.
+const Abort = error{ OverBudget, TooDeep, Malformed };
 
 pub const Error = Allocator.Error;
 const Fail = Allocator.Error || Abort;
@@ -364,11 +406,13 @@ pub fn run(
 /// with no second "how many constructors has this type?" test to disagree
 /// with the first.
 ///
-/// **Budget exhaustion is a refusal here, not silence.** A `case` that
-/// cannot be decided loses a warning (`Analysis.spend`); this position
-/// would lose the guarantee that the backend's unchecked destructure stands
-/// on (`backend.md` §4), so an answer that could not be computed is
-/// reported as "not proven" (checker.md §6.6).
+/// **An answer that could not be computed is a refusal**, here and — since
+/// queue slice 14 — at a `case` too. The two messages differ because the two
+/// ways out differ: this position has no branch to fall through to, so the
+/// advice is "`case` on it instead", while a `case` can be split or given a
+/// bigger budget. A matrix this file cannot READ (`error.Malformed`) is still
+/// a refusal here, because the guarantee `backend.md` §4's unchecked
+/// destructure stands on is not one to give away on a defensive path.
 fn irrefutable(
     gpa: Allocator,
     arena: Allocator,
@@ -388,13 +432,13 @@ fn irrefutable(
     var pats: Patterns = .{ .string_bytes = cx.bir.string_bytes };
     var an: Analysis = .{ .arena = arena, .cx = cx, .pats = &pats, .budget = budget };
     const p = an.simplify(pattern, 0) catch |err| switch (err) {
-        error.Abandoned => return reporter.refutablePattern(pattern, code, &.{}),
+        error.OverBudget, error.TooDeep, error.Malformed => return reporter.refutablePattern(pattern, code, &.{}),
         else => |e| return e,
     };
     const row = try arena.dupe(PatIndex, &.{p});
     const rows = try arena.dupe([]const PatIndex, &.{row});
     const missing = an.isExhaustive(rows, 1, 0) catch |err| switch (err) {
-        error.Abandoned => return reporter.refutablePattern(pattern, code, &.{}),
+        error.OverBudget, error.TooDeep, error.Malformed => return reporter.refutablePattern(pattern, code, &.{}),
         else => |e| return e,
     };
     if (missing.len == 0) return;
@@ -464,16 +508,27 @@ fn one(
         // about what it matches, so the caret belongs under the pattern.
         const pattern: Bir.Inst.Index = @enumFromInt(bir.instData(b).lhs);
         const p = an.simplify(pattern, 0) catch |err| switch (err) {
-            // The `case` is abandoned WHOLE, with no diagnostic. Checker.md
-            // §6.6: an answer this analysis could not compute is reported
-            // as no answer, never as a guess. The three sites below are the
-            // same decision at the same `case`.
-            error.Abandoned => return,
+            // The `case` is abandoned WHOLE at any of these three sites, and
+            // the reason decides what is said. An undecided `case` is
+            // REPORTED: the answer was affordable in principle and nothing
+            // downstream re-derives it, so silence would be `backend.md`
+            // §7's default-free tree running on a `case` nobody checked.
+            // `Malformed` stays silent, because the matrix is not what this
+            // file thinks it is and some earlier phase has already said so.
+            //
+            // Neither ever reports a PARTIAL result. A half-searched matrix
+            // can no more prove a branch redundant than prove one missing,
+            // so what has been found so far is dropped along with the rest.
+            error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
+            error.TooDeep => return reporter.patternBudgetExhausted(case, .depth, max_depth),
+            error.Malformed => return,
             else => |e| return e,
         };
         const row = try arena.dupe(PatIndex, &.{p});
         const useful = an.isUseful(matrix.items, row, 0) catch |err| switch (err) {
-            error.Abandoned => return, // silent, by the argument above
+            error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
+            error.TooDeep => return reporter.patternBudgetExhausted(case, .depth, max_depth),
+            error.Malformed => return, // silent, by the argument above
             else => |e| return e,
         };
         if (!useful) return reporter.redundantPattern(pattern, @intCast(i + 1));
@@ -481,7 +536,9 @@ fn one(
     }
 
     const missing = an.isExhaustive(matrix.items, 1, 0) catch |err| switch (err) {
-        error.Abandoned => return, // silent, by the argument above
+        error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
+        error.TooDeep => return reporter.patternBudgetExhausted(case, .depth, max_depth),
+        error.Malformed => return, // silent, by the argument above
         else => |e| return e,
     };
     if (missing.len == 0) return;
@@ -511,19 +568,21 @@ const Analysis = struct {
     budget: u32,
 
     /// Charge `amount` to the budget, abandoning the `case` when it runs
-    /// out. **Abandoning reports nothing, on purpose** (checker.md §6.6):
-    /// the budget is only ever reached by a matrix whose exact answer needs
-    /// exponential work (`default_budget`'s note measures how far away that
-    /// is), and there is no partial answer to report — a half-searched
+    /// out. **Abandoning is `error.OverBudget`, which is reported** (checker.md
+    /// §6.6): the budget is only ever reached by a matrix whose exact answer
+    /// needs exponential work (`default_budget`'s note measures how far away
+    /// that is), and there is no partial answer to report — a half-searched
     /// matrix can no more prove a branch redundant than it can prove one
-    /// missing. Silence loses a warning on input nobody writes; the two
-    /// alternatives are a wrong warning and a compiler that does not
-    /// terminate.
+    /// missing. So the whole `case` is refused, with a message that names the
+    /// budget and the two ways past it. The three alternatives are all worse:
+    /// a wrong warning, a compiler that does not terminate, or — the one that
+    /// was here until queue slice 14 — silence, which hands an unproven
+    /// `case` to a decision tree that carries no default arm.
     fn spend(an: *Analysis, amount: usize) Abort!void {
-        const cost = std.math.cast(u32, amount) orelse return error.Abandoned;
+        const cost = std.math.cast(u32, amount) orelse return error.OverBudget;
         if (an.budget < cost) {
             an.budget = 0;
-            return error.Abandoned;
+            return error.OverBudget;
         }
         an.budget -= cost;
     }
@@ -592,10 +651,10 @@ const Analysis = struct {
         // Nesting guard; the whole `case` then reports nothing. Correct
         // here because a pattern this deep is not simplified at all, so
         // there is no matrix to judge — see `max_depth`.
-        if (depth > max_depth) return error.Abandoned;
+        if (depth > max_depth) return error.TooDeep;
         try an.spend(1);
         const bir = an.cx.bir;
-        if (inst.int() >= bir.insts.len) return error.Abandoned;
+        if (inst.int() >= bir.insts.len) return error.Malformed;
         const tag = bir.instTag(inst);
         const data = bir.instData(inst);
         switch (tag) {
@@ -641,13 +700,13 @@ const Analysis = struct {
                 // is a type error, so this declaration would have been
                 // skipped; a mismatch here means the matrix cannot be
                 // trusted.
-                if (arg_insts.len != declared) return error.Abandoned;
+                if (arg_insts.len != declared) return error.Malformed;
                 const args = try an.arena.alloc(PatIndex, arg_insts.len);
                 for (arg_insts, args) |ai, *a| a.* = try an.simplify(ai, depth + 1);
                 return an.makeCtor(found.un, found.alt, args);
             },
             // A pattern the parser or the resolver could not make sense of.
-            else => return error.Abandoned,
+            else => return error.Malformed,
         }
     }
 
@@ -679,19 +738,19 @@ const Analysis = struct {
     /// of it the constructor is.
     fn ctorUnion(an: *Analysis, reference: Bir.Inst.Index) Fail!struct { un: u32, alt: u32 } {
         const bir = an.cx.bir;
-        if (reference.int() >= bir.insts.len) return error.Abandoned;
+        if (reference.int() >= bir.insts.len) return error.Malformed;
         const data = bir.instData(reference);
         switch (bir.instTag(reference)) {
             // A constructor of this module: the declaring `type` lists them
             // all, opaque or not — opacity hides them from IMPORTERS, and
             // this is the declaring side.
             .ctor => {
-                if (data.lhs >= bir.ctors.len) return error.Abandoned;
+                if (data.lhs >= bir.ctors.len) return error.Malformed;
                 const c = bir.ctors[data.lhs];
                 const d = bir.decl(c.decl);
-                if (d.ctors_end <= d.ctors_start or data.lhs < d.ctors_start or data.lhs >= d.ctors_end) return error.Abandoned;
+                if (d.ctors_end <= d.ctors_start or data.lhs < d.ctors_start or data.lhs >= d.ctors_end) return error.Malformed;
                 const id = an.cx.types.ofDecl(an.cx.module, c.decl);
-                if (id == .none) return error.Abandoned;
+                if (id == .none) return error.Malformed;
                 const alts = try an.arena.alloc(Alt, d.ctors_end - d.ctors_start);
                 for (bir.ctors[d.ctors_start..d.ctors_end], alts) |sibling, *a| a.* = .{
                     .name = bir.symbol(sibling.name).toOptional(),
@@ -704,16 +763,16 @@ const Analysis = struct {
             // interface, which groups a type's constructors and keeps them
             // in declaration order for this (see `Interface.findCtor`).
             .ext_ctor => {
-                if (data.lhs >= an.cx.interfaces.len) return error.Abandoned;
+                if (data.lhs >= an.cx.interfaces.len) return error.Malformed;
                 const module: Graph.Index = @enumFromInt(data.lhs);
                 const iface = &an.cx.interfaces[data.lhs];
-                if (data.rhs >= iface.ctors.len) return error.Abandoned;
+                if (data.rhs >= iface.ctors.len) return error.Malformed;
                 const type_index = iface.ctors[data.rhs].type;
-                if (@intFromEnum(type_index) >= iface.types.len) return error.Abandoned;
+                if (@intFromEnum(type_index) >= iface.types.len) return error.Malformed;
                 const t = iface.types[@intFromEnum(type_index)];
-                if (t.ctors_end <= t.ctors_start or data.rhs < t.ctors_start or data.rhs >= t.ctors_end) return error.Abandoned;
+                if (t.ctors_end <= t.ctors_start or data.rhs < t.ctors_start or data.rhs >= t.ctors_end) return error.Malformed;
                 const id = an.cx.types.ofInterface(module, type_index);
-                if (id == .none) return error.Abandoned;
+                if (id == .none) return error.Malformed;
                 const alts = try an.arena.alloc(Alt, t.ctors_end - t.ctors_start);
                 for (iface.ctors[t.ctors_start..t.ctors_end], alts) |sibling, *a| a.* = .{
                     .name = iface.symbol(sibling.name).toOptional(),
@@ -722,7 +781,7 @@ const Analysis = struct {
                 const un = try an.internUnion(.adt, id, alts);
                 return .{ .un = un, .alt = an.pats.unionAt(un).alts_start + (data.rhs - t.ctors_start) };
             },
-            else => return error.Abandoned,
+            else => return error.Malformed,
         }
     }
 
@@ -735,7 +794,7 @@ const Analysis = struct {
         // truncated search cannot distinguish "not useful" (which would be
         // `redundant_pattern`) from "not searched far enough", and the
         // second spelled as the first is a warning about correct code.
-        if (depth > max_depth) return error.Abandoned;
+        if (depth > max_depth) return error.TooDeep;
         try an.spend(matrix.len + 1);
         // Nothing above it matches the same values, so it is useful.
         if (matrix.len == 0) return true;
@@ -782,7 +841,7 @@ const Analysis = struct {
         // tree, and a truncated branch may be exactly the one that is
         // covered — printing what we have would be `missing_patterns` on a
         // `case` that is complete.
-        if (depth > max_depth) return error.Abandoned;
+        if (depth > max_depth) return error.TooDeep;
         try an.spend(matrix.len + 1);
         // No row matches anything: every value of width `n` is missing.
         if (matrix.len == 0) {
@@ -827,7 +886,7 @@ const Analysis = struct {
             const sub = try an.specializeByCtor(matrix, alt, arity);
             const rows = try an.isExhaustive(sub, arity + n - 1, depth + 1);
             for (rows) |row| {
-                if (row.len < arity) return error.Abandoned;
+                if (row.len < arity) return error.Malformed;
                 const recovered = try an.makeCtor(seen.un, alt, row[0..arity]);
                 try out.append(an.arena, try an.concat(&.{recovered}, row[arity..]));
                 if (out.items.len >= max_examples) return out.items;
@@ -854,10 +913,10 @@ const Analysis = struct {
         var alts: std.ArrayList(u32) = .empty;
         var un: u32 = 0;
         for (matrix) |row| {
-            if (row.len == 0) return error.Abandoned;
+            if (row.len == 0) return error.Malformed;
             if (an.pats.tag(row[0]) != .ctor) continue;
             const c = an.pats.ctor(row[0]);
-            if (alts.items.len != 0 and c.un != un) return error.Abandoned;
+            if (alts.items.len != 0 and c.un != un) return error.Malformed;
             un = c.un;
             if (std.mem.indexOfScalar(u32, alts.items, c.alt) == null) try alts.append(an.arena, c.alt);
         }
@@ -879,7 +938,7 @@ const Analysis = struct {
         try an.spend(matrix.len + 1);
         var out: std.ArrayList([]const PatIndex) = .empty;
         for (matrix) |row| {
-            if (row.len == 0) return error.Abandoned;
+            if (row.len == 0) return error.Malformed;
             switch (an.pats.tag(row[0])) {
                 .ctor => {
                     const c = an.pats.ctor(row[0]);
@@ -891,7 +950,7 @@ const Analysis = struct {
                 // align"); a compiler may not. The precondition is that the
                 // declaration type-checked, so reaching this means the
                 // matrix is not what we think it is.
-                .literal => return error.Abandoned,
+                .literal => return error.Malformed,
             }
         }
         return out.items;
@@ -901,13 +960,13 @@ const Analysis = struct {
         try an.spend(matrix.len + 1);
         var out: std.ArrayList([]const PatIndex) = .empty;
         for (matrix) |row| {
-            if (row.len == 0) return error.Abandoned;
+            if (row.len == 0) return error.Malformed;
             switch (an.pats.tag(row[0])) {
                 .literal => if (an.pats.literal(row[0]).eql(lit, an.pats)) {
                     try out.append(an.arena, row[1..]);
                 },
                 .anything => try out.append(an.arena, row[1..]),
-                .ctor => return error.Abandoned,
+                .ctor => return error.Malformed,
             }
         }
         return out.items;
@@ -917,7 +976,7 @@ const Analysis = struct {
         try an.spend(matrix.len + 1);
         var out: std.ArrayList([]const PatIndex) = .empty;
         for (matrix) |row| {
-            if (row.len == 0) return error.Abandoned;
+            if (row.len == 0) return error.Malformed;
             if (an.pats.tag(row[0]) != .anything) continue;
             try out.append(an.arena, row[1..]);
         }

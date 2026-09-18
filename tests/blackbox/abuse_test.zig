@@ -1176,11 +1176,23 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
             try testing.expectEqual(diagnostic.Code.nesting_too_deep, checked.diagnostics[0].code);
             try testing.expectEqual(diagnostic.Code.unbound_variable, checked.diagnostics[1].code);
         } else {
-            // A legal tree: the `case` is not exhaustive, but analysing a
-            // 2000-deep pattern is past `Exhaustive`'s own depth guard, so
-            // it says nothing rather than working for a week.
-            try testing.expectEqual(@as(u8, 0), checked.exit_code);
-            try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+            // A legal tree the parser and both dumps survive, and a `case`
+            // the CHECKER cannot decide: 2000 levels is past `Exhaustive`'s
+            // own depth guard (`checker.md` §6.6), so the analysis stops
+            // rather than working for a week.
+            //
+            // It used to stop in SILENCE, and this line used to assert exit
+            // 0 with no diagnostic — which was a hole, not a property. The
+            // `case` is genuinely not exhaustive (one branch, `Nothing`
+            // unmatched), so `backend.md` §7's default-free decision tree
+            // would have answered `x` for a `Nothing` at exit 0. Queue slice
+            // 14 made it a refusal, and the message it gets is the depth one:
+            // `--pattern-budget` buys work, and this ran out of depth.
+            try testing.expectEqual(@as(u8, 1), checked.exit_code);
+            try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.pattern_budget_exhausted, checked.diagnostics[0].code);
+            try testing.expect(std.mem.indexOf(u8, checked.diagnostics[0].message, "nested deeper than I can analyse") != null);
+            try testing.expect(std.mem.indexOf(u8, checked.diagnostics[0].message, "will not help here") != null);
         }
 
         // ┌─────────────────────────────────────────┐

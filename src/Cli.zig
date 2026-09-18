@@ -36,6 +36,7 @@ pub const usage =
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
     \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
     \\  --explain                 accepted; currently governs no diagnostic (all informational ones are on)
+    \\  --pattern-budget=<n>      work one `case` may spend proving exhaustiveness before it is refused
     \\
     \\build options:
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
@@ -77,6 +78,14 @@ pub const Common = struct {
     /// `--core-root=<dir>`: read core from there instead of the embedded
     /// copy (checker.md §2).
     core_root: ?[]const u8 = null,
+    /// `--pattern-budget=<n>`: the work one `case` may spend on the
+    /// usefulness analysis (checker.md §6.6). null means the default.
+    ///
+    /// It is a flag and not only a test knob because exhausting it is now an
+    /// ERROR (`pattern_budget_exhausted`), and a diagnostic that says "this
+    /// was too big to decide" has to leave the author a way to say "decide it
+    /// anyway". The message names this flag, so the flag has to exist.
+    pattern_budget: ?u32 = null,
     /// `--explain`: emit the informational diagnostics that are otherwise
     /// suppressed (static-dispatch-spike.md §10 preamble, A.10).
     ///
@@ -231,6 +240,13 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
         const n = std.fmt.parseInt(u32, v, 10) catch 0;
         if (n == 0) return Usage.init("beni: invalid value '{s}' for --jobs (expected a positive integer)", .{v});
         common.jobs = n;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--pattern-budget")) {
+        const v = value orelse return needsValue(name, "<n>");
+        const n = std.fmt.parseInt(u32, v, 10) catch 0;
+        if (n == 0) return Usage.init("beni: invalid value '{s}' for --pattern-budget (expected a positive integer)", .{v});
+        common.pattern_budget = n;
         return null;
     }
     if (std.mem.eql(u8, name, "--root")) {
@@ -582,7 +598,7 @@ test "build: the platform is required and --release and --source-maps are refuse
 }
 
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release" }) |word| {
+    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
 }

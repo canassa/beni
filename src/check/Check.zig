@@ -2433,11 +2433,18 @@ test "exhaustiveness: an imported type's constructors come from its interface" {
     });
 }
 
-test "the usefulness budget: an analysis that would cost too much reports nothing" {
+test "the usefulness budget: an analysis that would cost too much is refused, not skipped" {
     // The algorithm is exponential in the worst case (Maranget §3.3), so a
     // `case` that exceeds a fixed work budget is abandoned. Proving that
     // with a hang is not a test; proving it by turning the budget down to
     // where an ordinary `case` cannot be analysed is.
+    //
+    // Until queue slice 14 the second line of this test expected `&.{}` —
+    // silence — and that silence was a miscompile: `backend.md` §7's
+    // decision tree emits no default arm because the checker is supposed to
+    // have proved exhaustiveness, so a `case` the checker never decided
+    // falls into its last edge and answers wrongly at exit 0. An analysis
+    // that gave up now SAYS it gave up.
     const source =
         \\pub f : Maybe Int -> Int
         \\f m =
@@ -2447,16 +2454,39 @@ test "the usefulness budget: an analysis that would cost too much reports nothin
         \\
     ;
     try expectBudgetedCodes(&.{.missing_patterns}, source, Session.default_pattern_budget);
-    try expectBudgetedCodes(&.{}, source, 1);
+    try expectBudgetedCodes(&.{.pattern_budget_exhausted}, source, 1);
+}
+
+test "the usefulness budget: exhaustion reports ONE code, not a partial answer" {
+    // The same `case` is both non-exhaustive (no `Nothing` branch) and
+    // redundant (`Just n` twice). With room to think the analysis reports
+    // the redundancy, which is the first answer it reaches; out of budget it
+    // reports neither, because a half-searched matrix proves nothing at all
+    // — only `pattern_budget_exhausted`, once.
+    const source =
+        \\pub f : Maybe Int -> Int
+        \\f m =
+        \\    case m of
+        \\        Just n ->
+        \\            n
+        \\
+        \\        Just k ->
+        \\            k
+        \\
+    ;
+    try expectBudgetedCodes(&.{.redundant_pattern}, source, Session.default_pattern_budget);
+    try expectBudgetedCodes(&.{.pattern_budget_exhausted}, source, 1);
 }
 
 test "the usefulness budget: an irrefutable position refuses instead of going silent" {
-    // The same exhaustion, the opposite answer, and that is the point
-    // (checker.md §6.6). A `case` the analysis cannot decide loses a
-    // WARNING, so silence is the cheap mistake. An irrefutable position it
-    // cannot decide would lose the guarantee that `backend.md` §4's
-    // unchecked destructure stands on — the miscompile this slice exists to
-    // close — so there the undecided answer is a refusal.
+    // An irrefutable position the analysis cannot decide would lose the
+    // guarantee that `backend.md` §4's unchecked destructure stands on, so
+    // there the undecided answer has always been a refusal (checker.md §6.6).
+    //
+    // Both answers are refusals since slice 14; what differs is the message
+    // and the way out. A `case` can be split or given a bigger budget; an
+    // irrefutable position has no branch to fall through to at all, so its
+    // message says "`case` on it instead".
     //
     // `Boxed` is its type's only constructor, so with room to think the
     // analysis proves the parameter irrefutable and says nothing.
@@ -2478,8 +2508,9 @@ test "the usefulness budget: many constructors times many branches terminates" {
     // Forty constructors and forty branches, each branch a two-deep nest of
     // them: the shape that makes every column of the matrix complete, which
     // is where the exponent lives. The contract is that this FINISHES —
-    // with the default budget it is analysed, with a small one it is
-    // abandoned, and neither answer is a hang or a crash.
+    // with the default budget it is analysed and answers `missing_patterns`,
+    // with a small one it is refused as `pattern_budget_exhausted`, and
+    // neither answer is a hang or a crash.
     const gpa = testing.allocator;
     const ctors = 40;
     var out: std.Io.Writer.Allocating = .init(gpa);
@@ -2498,10 +2529,10 @@ test "the usefulness budget: many constructors times many branches terminates" {
     for ([_]u32{ Session.default_pattern_budget, 64 }) |budget| {
         const codes = try budgetedCodes(gpa, text, budget);
         defer gpa.free(codes);
-        // Whatever it decides, it decides: either the one message or
-        // silence, never a crash and never a second message.
-        try testing.expect(codes.len <= 1);
-        if (codes.len == 1) try testing.expectEqual(diagnostic.Code.missing_patterns, codes[0]);
+        // Exactly one message either way: the real answer, or the refusal
+        // that says there is no real answer. Never a crash, never two.
+        try testing.expectEqual(@as(usize, 1), codes.len);
+        try testing.expect(codes[0] == .missing_patterns or codes[0] == .pattern_budget_exhausted);
     }
 }
 

@@ -67,6 +67,7 @@ a file.
 | Flag | Meaning | Default |
 |---|---|---|
 | `--core-root=<dir>` | use this directory as the core package instead of the embedded one; for developing core | embedded |
+| `--pattern-budget=<n>` | work one `case` may spend proving exhaustiveness (§6.6) before it is refused; session-wide, so it applies to core too | 200 000 |
 
 `check` on a directory is the project: every `.beni` under it is a module of the package
 `app`; core is the package `core`. **A source file at a core module's path is that core
@@ -254,8 +255,11 @@ merge rule and the speculator the `?` journal already provides. → `static-disp
     a constant. A file the parser accepted cannot reach them and a file that could was reported
     before the checker ran — deriving the number from the parser's is what keeps that argument
     from rotting.
-  - `Exhaustive`'s depth and work budgets report **nothing** on purpose (§6.6): a half-searched
-    pattern matrix can no more prove a branch redundant than prove one missing.
+  - `Exhaustive`'s depth and work budgets report `pattern_budget_exhausted` (§6.6). They reported
+    **nothing** until 2026-09-18, on the argument that a half-searched pattern matrix can no more
+    prove a branch redundant than prove one missing — which is true, and is why the refusal carries
+    no partial result, but is not a reason to say nothing once `backend.md` §7 stopped emitting a
+    default arm. This guard was the last one in the checker that gave up in silence.
 
   `tests/corpus/check/depth/` sweeps all of them, one fixture per guard at guard − 1 and
   guard + 1 (§3).
@@ -415,11 +419,43 @@ imported type and the tuple/record/`as` shapes all fall out of the one algorithm
 second test that can drift from the first. The parser has already refused the literal, list and
 `::` shapes, which no type can rescue, so only a pattern containing a constructor is analysed here.
 
-**Budget exhaustion is a refusal in an irrefutable position, not silence.** A `case` that exhausts
-the budget reports nothing (below) because the cost of that is a missed warning. An irrefutable
-position that exhausts it reports the refutable-pattern error with no examples and says why, because
-the cost of silence there is the guarantee `backend.md` §4's unchecked destructure stands on. Same
-mechanism, opposite default, for the reason the two answers are worth.
+**Budget exhaustion is a refusal wherever it happens.** An irrefutable position that exhausts the
+budget reports the refutable-pattern error with no examples and says why, because the cost of
+silence there is the guarantee `backend.md` §4's unchecked destructure stands on. A `case` that
+exhausts it is `pattern_budget_exhausted` (§8.1) at the `case`, naming the budget that was in force
+and the two ways past it: split the match, since the cost is in the combinations, or raise
+`--pattern-budget=<n>`. The **depth** guard shares that code and not its sentence: a pattern nested
+past `Exhaustive.max_depth` is equally a `case` that was not decided, but raising the budget would
+not help it, so its message says how deep the analysis read and tells the author to give the inner
+part a function of its own. One code, because to the author the fact is the same; two messages,
+because a hint that would not work is worse than no hint. `tests/corpus/check/depth/PatternNestOk`
+and `PatternNestDeep` are that guard's pair in the sweep of §5 — it was outside the sweep for as
+long as it was silent.
+
+Until 2026-09-18 a `case` reported **nothing** there, on the argument that the cost of silence was
+one missed warning. That argument died with `backend.md` §7: a `case` now compiles to a decision
+tree with **no default arm**, on the strength of "the checker proved exhaustiveness", so a `case`
+the checker never decided does not lose a warning — it takes the tree's last edge and computes a
+wrong answer at exit 0. Silence was the one remaining exit-0 path to a wrong answer in the whole
+compiler, and it was reachable at the DEFAULT budget with no flag: a `case` over about 440 `Int`
+literals, or about 310 constructors of one type, costs more than 200 000 steps, because the
+per-branch work of `isUseful` against the matrix above it is quadratic in the branch count long
+before the exponent of Maranget §3.3 appears. §5's rule — every guard that gives up reports first —
+now holds here too, and it is the same rule slice 5 applied to `<error>` in an interface.
+
+**Neither half reports a partial result.** Redundancy and exhaustiveness share the budget and share
+this one diagnostic: a half-searched matrix can no more prove a branch redundant than prove one
+missing, so whatever was found before the budget ran out is dropped with the rest. What is NOT
+reported is a matrix the analysis cannot read — a poisoned constructor reference, an arity that
+disagrees with the declaration, a column mixing literals with constructors. Those are precondition
+failures that an earlier phase has already reported, and a second message about budget would point
+at the wrong thing; they stay silent at a `case` and stay a refusal in an irrefutable position.
+
+The **alternative that was rejected**: keep the silence and have the backend emit a throwing default
+arm for budget-exhausted `case`s only. It turns a compile-time unknown into a runtime crash in code
+that may well be correct, and it needs a checker→backend side channel saying which `case`s were
+never decided — a new artifact out of a pass whose whole design (§6.6, `backend.md` §7) is that it
+leaves nothing behind.
 
 What M2c built (`check/Exhaustive.zig`), and where it reads this paragraph more narrowly than
 it is written:
@@ -443,10 +479,21 @@ it is written:
   present. So a `case` can need two rounds to be made exhaustive. That is Elm's behaviour and
   the message is honest about being a sample ("Missing possibilities include:").
 - **The algorithm is exponential in the worst case** (Maranget §3.3), so every recursive step
-  and every specialised row spends from a fixed budget and a `case` that exhausts it reports
-  NOTHING. A missed warning is a far smaller bug than a compiler that does not terminate.
-  `Session.Options.pattern_budget` sets it, so the bound has a test rather than an absence of
-  one.
+  and every specialised row spends from a fixed budget and a `case` that exhausts it is
+  **refused** — `pattern_budget_exhausted`, by the argument above; it reported NOTHING until
+  2026-09-18. A compiler that does not terminate is still the thing being bought off, and the
+  price is now a message rather than a hole. `Session.Options.pattern_budget` and
+  `--pattern-budget=<n>` set it, so the bound has a test rather than an absence of one, and an
+  author who meets it has a way through.
+- **What the default of 200 000 buys, measured 2026-09-18** by turning it down until the answers
+  change: the costliest `case` in `core/` spends **70**, the costliest in `bench/corpus` about
+  **420**, and the costliest fixture in `tests/corpus` — `parse/good/ManyBranches.beni`, a
+  100-branch `case` on `Int` literals — about **10 500**. So nothing written here is within a
+  factor of nineteen of it. But the headroom above that is smaller than the earlier note claimed:
+  the cost is quadratic in the branch count even with no nesting at all, so ~440 literal branches
+  or ~310 constructors reach it, and both are shapes a table-driven program really has. If the
+  refusal starts firing on code people mean, the budget is the thing to fix — Maranget's §4
+  optimisations, or a larger default — not the message.
 
 ## 7. The interface record
 
@@ -563,7 +610,7 @@ too_few_args  too_many_args  not_a_function
 missing_field  unknown_field  record_not_closed
 not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple
 tuple_index_out_of_range  not_a_tuple  try_shape
-missing_patterns  redundant_pattern
+missing_patterns  redundant_pattern  pattern_budget_exhausted
 refutable_let_pattern  refutable_parameter_pattern   (shared with the parser; §6.6, language.md §7)
 nesting_too_deep                                (shared with the parser; §5)
 unknown_method  private_method  no_methods_on_shape  missing_where_constraint
@@ -586,6 +633,12 @@ is what bounds both the inferred `where` suffix and the n(n+1)/2 an unannotated 
 otherwise accumulate. `ambiguous_method_receiver` is the one `warning` of the set, emitted by
 default and only for a module of the root package.
 → `static-dispatch-spike.md` §10.
+
+`pattern_budget_exhausted` was appended the same day (queue slice 14), after the static-dispatch
+set and after `foreign_arity_mismatch`, so again no line above it moved. It is the third code of
+§6.6's set and the only one that is about the CHECKER rather than about the program: the analysis
+could not decide this `case` inside `--pattern-budget`, so it refuses it rather than passing an
+unproven `case` to a decision tree that carries no default arm (`backend.md` §7).
 
 `nesting_too_deep` is the front end's code and the checker reuses it rather than inventing a
 second one: a type the checker cannot read to the bottom and an expression the parser cannot
@@ -740,7 +793,8 @@ variable's first occurrence is an argument of a type application, the `equatable
 attached by parenthesising it: `List (equatable a)`.
 
 **Callback order is part of every signature below, not an implementation detail.** The language is
-strict and evaluates left to right in source order (`transparent-effects-proposal.md` §5), so the
+strict and evaluates left to right in source order (`language.md` §6, *Evaluation order* — normative
+there since 2026-09-18, and no longer the proposal it was cited from), so the
 order in which a core function calls the function it was given is observable — through `Debug.log`
 today, and through which request is sent first once effects land. The rule: **a core function that
 takes a callback and produces its result in the order of its subject calls that callback in that

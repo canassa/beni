@@ -614,6 +614,97 @@ render scope conn h
 | what `rest` is, and the bound pattern | `rest` is every binding after this one together with the `in` body. A `<-` may appear anywhere in the binding list, last included, where `rest` is the body alone. A bind inside a `case` arm or an `if` branch opens its own `let` and cannot reach past the branch it sits in. The bound pattern is a `LetPattern`, so irrefutable, and is in scope only in `rest` (§7). Because the desugaring makes it the callback's **parameter**, that is what it is called when it breaks the rule: `refutable_parameter_pattern`, from the parser and from the checker alike — the checker only ever sees it as a `lambda` parameter, and one position may not have two names. A `_` placeholder's lambda needs no rule at all: its parameter is a name lowering invents, never a written pattern. |
 | against §6.6 | **the callback is a lambda**, so a `?` anywhere in `rest` is `question_in_lambda`. The restriction is conservative and reversible: letting `?` return from the callback is correct only when the callee passes its result through unchanged, which the front end cannot know. Same question as `transparent-effects-proposal.md` §11 Q5, to be settled there. |
 
+### Evaluation order
+
+*Unnumbered on purpose: this belongs inside §6, and a numbered §6.8 would renumber nothing but would
+invite one.* **beni is strict, and it evaluates left to right in source order.** An expression is
+evaluated exactly once, when control reaches it, and control moves through a declaration in the
+order that declaration is written.
+
+That sentence lived only in [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §5
+until 2026-09-18, which is a proposal and therefore normative nowhere — while three landed things
+already depended on it. `checker.md` Appendix B's callback-order rule ("a core function that takes a
+callback … calls it first element first") is *only* a rule if argument order is fixed. `core/Dict.beni`
+gets `mapTree`'s ascending walk from its `let` bindings and `foldlTree`'s from its arguments. And
+`backend.md` §9's optimiser needs to know what it may not move. `Debug.log` makes every row below
+observable today; effects will make them observable in what a program *does*.
+
+| Construct | What is evaluated, and in what order |
+|---|---|
+| application `f a b` | **the callee, then the arguments left to right.** The callee is an expression like any other, so `(pick k) a b` evaluates `pick k` first |
+| method call `x.m a` | the receiver, then the arguments left to right. The evidence parameters a constraint adds are leading (`backend.md` §4) but are not expressions the program wrote, and no order is observable through them |
+| binary operator `a ⊕ b` | **the left operand, then the right**, whatever the operator desugars to — a `Basics` call (`+`), a method call (`==`, `<`, §6.5) or `List.cons` (`::`). The desugaring is an application, so this is the row above and not a separate rule |
+| `&&`, `\|\|` | the left operand, then the right **only when the left does not decide it**. This is why `Basics.and` and `Basics.or` are `foreign`: a call would evaluate both (`backend.md` §4, correction 3). A right operand that needs statements of its own gets them inside the branch |
+| `\|>`, `<\|` | **pipes rewrite before anything runs** (§6.7, §8), and the rewritten form's order is what holds. For `\|>` the two agree: `e \|> f a` is `f e a`, so `e` — written first — is evaluated first. For `<\|`, `f a <\| e` is `f a e` and `a` precedes `e`, which is again source order |
+| `_` placeholder | **the lambda evaluates nothing when it is built.** `f (g x) _` is `\p -> f (g x) p` (§6.7), so `g x` runs on *every* call of that lambda, and after that call's own argument. Bind `g x` to a name first if it should run once |
+| `let x <- e` | `let x <- f a in rest` is `f a (\x -> rest)`: `f`, then `a`, then the call; `rest` runs if and when and as often as `f` calls the callback |
+| tuple literal, list literal | element by element, left to right |
+| constructor | argument by argument, left to right |
+| **record literal** | **field by field, in the order the fields are written** — `{ z = p, a = q }` evaluates `p` then `q`. `backend.md` §4 sorts the emitted object's *keys* so that one record type has one hidden class; that is a representation decision, and it does not move an evaluation |
+| record update `{ r \| a = p, b = q }` | `r`, then the updated fields in written order |
+| field access `r.a`, tuple index `t.0`, accessor `.a` applied | the subject alone, once |
+| string interpolation | segment by segment, left to right; a literal chunk evaluates nothing |
+| `if` | the condition, then **exactly one** branch |
+| `case` | **the scrutinee exactly once**, then exactly one branch body. A scrutinee that is a tuple literal evaluates each element once, left to right, before any test is made |
+| `e?` | the subject once — `?` is a `case` on it (§6.6) |
+| `let` bindings | **in the order written.** A binding whose right-hand side is a *function* is available throughout the block, so mutual recursion among `let` functions is unrestricted; a binding whose right-hand side is a *value* may only name bindings written before it |
+| a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8) |
+| top-level constants | each before its own first use, at module load |
+
+**Two rows the emitter does not honour yet, found on 2026-09-18 by writing the fixtures for this
+table.** The document is what is right and the code is the bug, per the two rows themselves:
+
+1. A **record literal** evaluates its fields in *sorted field-name order*, because `Lower.recordNode`
+   sorts the fields and then lowers each one, so the key sort drags the initialiser with it:
+   `{ zed = p, alpha = q }` emits `{ alpha: q, zed: p }` and runs `q` first. The fix is to evaluate
+   in written order into temporaries and sort only the properties. Record *update* is already right,
+   because a spread does not move anything.
+2. A **`let` value binding that names a later `let` value binding** is accepted by the checker and
+   emitted as a `const` in written order, so it traps at run time with a JavaScript
+   `ReferenceError`. Written order is the rule; what is missing is the diagnostic that says so,
+   which is `bind_rhs_forward_reference`'s shape (§7) for an ordinary binding. Function bindings are
+   emitted as hoisted `function` declarations and are unaffected, which is what makes the mutual
+   recursion §7 promises work.
+
+**Tests are not evaluations, and that is what a decision tree trades on.** `backend.md` §7 compiles
+a whole `case` to one tree, which may test the parts of the scrutinee in whatever order it likes,
+test one part on several paths, and skip a test it has already made. All of that is reading a value
+that is already there. What the tree may not do is evaluate a written expression twice, or in an
+order this table does not give — which is why it binds the scrutinee at most once and rebuilds
+*occurrences* rather than re-evaluating subjects.
+
+**Deliberately unspecified.** Three things, each because pinning it would buy nothing and cost an
+implementation:
+
+- **How often, and in what order, `sort`, `sortBy` and `sortWith` call the function they are given.**
+  The merge sort reaches elements as it reaches them; `sortBy`'s key function may run once per
+  element or many times (`checker.md` Appendix B says the same, and is the place this is owned).
+  Every *other* callback-taking core function has its order fixed there.
+- **The order in which one module's top-level constants are initialised**, beyond each preceding its
+  own first use. The backend emits them in dependency order today. Nothing can observe the
+  difference except a top-level `Debug.log`, and `backend.md` §9 may drop that declaration whole.
+- **Which of two modules that do not depend on each other is loaded first.**
+
+**What an optimiser may assume** (`backend.md` §9 is where it is spent). Every beni expression is
+**pure**: evaluating it produces a value and changes nothing an observer can see. The exceptions are
+exactly two — `Debug.log`, which writes a line, and a platform package's `foreign` values, which
+`boundary.md` §4 confines to a total pure function over admitted types or an effect *value*. So:
+
+- **A binding whose value is never used may be dropped whole**, everything inside it included, a
+  `Debug.log` among it. That is `backend.md` §9's dead-binding elimination and its reachability
+  pass, and purity is why neither needs a bundler's `sideEffects` guesswork.
+- **Two evaluations that both survive may not be reordered against each other**, and neither may be
+  duplicated into a position where it runs more often than the table above says. Inlining
+  substitutes a *body*, never an argument expression: an argument is evaluated once, at the call,
+  however many times the parameter is mentioned.
+- A `let` binding may be sunk into the one branch that uses it, or dropped, but not lifted out of a
+  branch into a position where it runs when that branch does not.
+
+When effects land, `transparent-effects-proposal.md` §5 adds one clause on top of this and changes
+none of it: a call carrying the `impure` bit may not be eliminated, duplicated, reordered across
+another `impure` call, or memoised, *even when its result is unused* — the first bullet above stops
+applying to it.
+
 ## 7. Scoping and shadowing
 
 | Rule | Detail |
@@ -733,6 +824,7 @@ method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_rec
 constrained_constant
 too_many_inferred_constraints
 foreign_arity_mismatch
+pattern_budget_exhausted
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -747,10 +839,11 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 |---|---|---|
 | the next three | M2a | the module graph and cross-module name resolution |
 | then | M2b | type errors, defined in [`checker.md`](checker.md) §8 |
-| then | M2c | the exhaustiveness pair — `missing_patterns` is a `case` with no branch for some possibility, `redundant_pattern` a branch no value can reach ([`checker.md`](checker.md) §6.6), both reported only for a declaration that type-checked, so the patterns they judge are known to be well typed |
+| then | M2c | the exhaustiveness pair — `missing_patterns` is a `case` with no branch for some possibility, `redundant_pattern` a branch no value can reach ([`checker.md`](checker.md) §6.6), both reported only for a declaration that type-checked, so the patterns they judge are known to be well typed. A third code, `pattern_budget_exhausted`, joined them on the last line of the catalogue |
 | the next two | M3a | about the JavaScript boundary rather than beni: the four `foreign_*` codes here are build-time checks of [`boundary.md`](boundary.md) §4, and a fifth is the last line of the catalogue; `missing_main` and `main_not_program` are §5's "`main` is a platform-owned opaque `Program`"; `not_implemented` is what the code generator says about a construct it does not compile yet — a diagnostic rather than a panic, because [`backend.md`](backend.md) §1 ships the language in halves and the missing half has to say so |
 | the next five | static dispatch | ten codes appended on 2026-09-18, never inserted, so no line above moved, and an eleventh appended the same day. The first two are reported by lowering, from a `where` clause that names a variable the annotation does not have or the same `(variable, method)` twice; the rest are the checker's, about a method that does not exist, is private, has nowhere to live, was used without being constrained, was constrained twice at different types, needs an annotation to dispatch on a return type, is a constraint that reached an inferred `pub` interface (a `warning`, on by default and only for the root package), survived onto a declaration with no parameters, or — the eleventh — is one of more than 64 constraints an unannotated declaration inferred, which is refused so that neither the interface suffix nor the checker's own bookkeeping is unbounded. Four existing codes are reused rather than duplicated: `not_equatable`, `unbound_variable`, `unexpected_token` and `nesting_too_deep`. → `static-dispatch-spike.md` §10 |
-| the last line | M3a again | `foreign_arity_mismatch`, appended on 2026-09-18 rather than filed with its four siblings above, so that no line moved. It is [`boundary.md`](boundary.md) §4's **check 4**: a sibling export's parameter count must be the declaration's evidence count plus its declared arity, and the two export forms whose parameter list cannot be counted — a bare name and a rest parameter — are refused under the same code (`static-dispatch-spike.md` A.84) |
+| the second-to-last line | M3a again | `foreign_arity_mismatch`, appended on 2026-09-18 rather than filed with its four siblings above, so that no line moved. It is [`boundary.md`](boundary.md) §4's **check 4**: a sibling export's parameter count must be the declaration's evidence count plus its declared arity, and the two export forms whose parameter list cannot be counted — a bare name and a rest parameter — are refused under the same code (`static-dispatch-spike.md` A.84) |
+| the last line | M2c again | `pattern_budget_exhausted`, appended on 2026-09-18 (queue slice 14) rather than filed with the exhaustiveness pair above, so that again no line moved. It is the one code of the three that is about the compiler and not the program: deciding a `case` can cost exponentially much, so the analysis spends a bounded amount of work on it (`--pattern-budget=<n>`), and a `case` it could not decide is **refused** rather than passed over in silence. Silence there was an exit-0 miscompile, because [`backend.md`](backend.md) §7 compiles a `case` to a decision tree with no default arm on the strength of the checker having proved it exhaustive. The message names the budget in force and says the two ways past it: split the match, or raise the flag |
 
 **The three generic syntax codes**, all carrying Elm-style prose — what the parser was in the middle
 of, what it saw, and what it expected, e.g. *I was parsing the branches of this `case` and ran into

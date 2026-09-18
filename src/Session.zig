@@ -166,8 +166,9 @@ pub const Options = struct {
     /// `warning`s, so the waves are joined instead of assumed disjoint.
     defer_render: bool = false,
     /// Work one `case` may spend on pattern usefulness (checker.md §6.6)
-    /// before it is abandoned and reports nothing. A knob for the tests
-    /// that prove the bound, not a flag.
+    /// before the analysis gives up. Giving up is `pattern_budget_exhausted`,
+    /// an error, so `--pattern-budget=<n>` is a real flag and not only the
+    /// knob the tests that prove the bound turn.
     pattern_budget: u32 = default_pattern_budget,
     /// Capacity of each worker's profile buffer. Allocated once at session
     /// start and never grown, so a worker records without allocating; a full

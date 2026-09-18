@@ -37,7 +37,7 @@ one commit each, nothing force-pushed, no history rewritten.
 | 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | **done** | found by slice 3; low priority |
 | 12 | Effects: spec pass **done** `fe3cf8e` — `plans/effects-plan.md`; **eight owner decisions before any code** | waiting on owner | E1/E2 could go straight to master once decided |
 | 13 | **M1 miscompile**: refutable pattern in a parameter | **done** `59e47f3` | type-directed (usefulness as a one-row match), `let` widened; my first decision (syntactic rule) broke 40 sites and was withdrawn |
-| 14 | `check/Exhaustive.zig` reports nothing when `pattern_budget` runs out, so a non-exhaustive `case` can reach a default-free tree | todo | exit-0 hole documented in `backend.md` §7; make budget exhaustion a diagnostic |
+| 14 | `check/Exhaustive.zig` reports nothing when `pattern_budget` runs out, so a non-exhaustive `case` can reach a default-free tree | **done** | exit-0 hole documented in `backend.md` §7; make budget exhaustion a diagnostic |
 | 15 | Core callback order: `List.map` ran right-to-left | **done** | found by the effects plan |
 | 16 | `?` codegen (`Lower.zig`), the last real M3b gap | todo | after DCE lands (same file) |
 | 17 | `Int32`: absent from the language, listed in `backend.md` §1/§4 | **owner decision** | add `core/Int32` + a `language.md` paragraph, or strike the rows |
@@ -45,3 +45,4 @@ one commit each, nothing force-pushed, no history rewritten.
 | 19 | `List.sortBy` calls its key function more than once per element, in merge order | todo | harmless while pure; under effects a hazard — decorate-sort-undecorate, measure allocation |
 | 20 | **Record literal evaluates fields in sorted-name order** (`Lower.zig` `recordNode` sorts, then lowers in sorted order) — observable via `Debug.log`, an effect-order bug later | todo, after DCE (same file) | fixture waiting in scratchpad `EvalOrderRecordFields.beni`; evaluate in written order into temporaries, sort only the emitted properties |
 | 21 | **A `let` value naming a LATER `let` value compiles clean and crashes** with a JS TDZ `ReferenceError` | todo | wants a `check/bad` diagnostic (the `bind_rhs_forward_reference` shape), or dependency-ordered emission; decide in spec (`language.md` §7 says all bindings are in scope) |
+| 22 | Default `pattern_budget` of 200 000 refuses a flat ~440-literal or ~310-constructor `case` (cost is ~1.05·n² with no nesting) — an ordinary lookup table | todo (manager leaning: raise to ~5 M ≈ 0.1 s ReleaseFast for 2 000 branches; tests that rely on the 200k default need re-pinning) | nothing in the repo is within 19× of it today |
