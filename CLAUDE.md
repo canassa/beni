@@ -52,6 +52,11 @@ calls in the backend.
 ### Owed after the static-dispatch adoption
 
 Report 19 §14, items 1–5. None is optional; the first is the only blocker.
+Items 4 and 5 are **done** (2026-09-18): the inferred-`where` suffix is capped
+at 64 constraints and an unannotated declaration over the cap is
+`too_many_inferred_constraints`, which bounds the n² with it —
+[`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) §6.4, §10.11,
+A.83.
 
 1. **Dead-code elimination** (already M3c). Derivation is eager, so every type
    ships an `eq` and a `compare` whether or not anything calls them — 216 942
@@ -65,13 +70,14 @@ Report 19 §14, items 1–5. None is optional; the first is the only blocker.
    `Render.writeRecord`'s 64-link flatten dropping the `| r` tail, and
    `Schemes.Writer.max_depth` writing `<error>` into an interface that
    `beni check` exits 0 on.
-4. **A cap or a diagnostic for the inferred `where` suffix.** Nothing bounds
-   what one unannotated declaration writes into its interface; a 6.4 kB entry is
-   reachable. `--explain` warns the author; it does not bound anything.
-5. **A position on the n² obligation count** of an unannotated chain. It is the
-   correct count for the program and an annotation removes it entirely; whether
-   the language ships a checker quadratic on a shape a user can write by
-   accident is a decision, not a bug.
+4. ~~**A cap or a diagnostic for the inferred `where` suffix.**~~ **Done**: the
+   cap is 64 and over it the declaration promotes nothing, so a promoted suffix
+   is at most 64 clauses. The `ambiguous_method_receiver` warning is also on by
+   default now, for the root package only (spec §6.4, §10.9, §10.11, A.83).
+5. ~~**A position on the n² obligation count** of an unannotated chain.~~
+   **Done**, and it is the same rule: dropping the set at the cap stops it
+   feeding the next link, so a chain costs ⌈n/65⌉ diagnostics in linear time
+   and memory instead of n(n+1)/2 constraints (spec §10.11).
 
 M4 is the daemon and incrementality; M5 is source maps, code splitting and LSP.
 Neither has started.

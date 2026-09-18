@@ -634,11 +634,14 @@ body accumulated, written into the interface record per quantified variable
   measured 0 interface changes in every edit class on both corpora and both compilers, because an
   annotation's `where` clause is exactly the constraints and the body cannot add to it. That is the
   firewall argument report 18 §2.3 made, priced.
-- **There is no cap on the suffix.** A record printer flattens at 64 links; the `where` printer does
-  not, and report 19 §3.1 reaches a 6.4 kB interface entry for one declaration. A cap, or a
-  diagnostic before the entry gets there, is owed (§3.1, *Reversed on 2026-09-18*). `--explain` is
-  the interim: it warns an author at the moment an unannotated `pub` declaration acquires a
-  constraint (spec §10.9).
+- **The suffix is capped at 64 clauses.** A record printer flattens at 64 links and the `where`
+  printer did not, so report 19 §3.1 reached a 6.4 kB interface entry for one declaration. Since
+  2026-09-18 an **unannotated** declaration whose inferred set would exceed 64 constraints is
+  `too_many_inferred_constraints` and promotes nothing, so a promoted suffix is at most 64 clauses
+  — ~2 kB at §3.1's measured 31 characters per clause — and an annotated one is bounded by the
+  annotation's own text (spec §6.4, §10.11, A.83). The author is also told the moment an
+  unannotated `pub` declaration in the root package acquires a constraint at all: spec §10.9's
+  warning is on by default.
 
 **Explicitly rejected: salsa-style fine-grained query memoization.** rustc's own documentation says
 fingerprinting "is the main reason why incremental compilation can be slower than non-incremental";

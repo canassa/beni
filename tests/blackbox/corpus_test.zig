@@ -11,6 +11,9 @@
 //!                                   parse to the same AST
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
 //!   dispatch/X.beni   + X.dispatch  `dump --stage=dispatch` equals the golden
+//!   check/good/X.beni + X.iface     `check` exits 0 and `dump --stage=interface`
+//!                                   equals the golden; an optional X.diag holds
+//!                                   the `warning`s it is allowed to print
 //!   check/args/X.beni + X.diag      the arity suite (checker.md §8.3)
 //!   run/X.beni        + X.expected  `build --platform=node`, then the emitted
 //!                                   program under Node; its stdout is the golden
@@ -507,17 +510,30 @@ const Case = struct {
         try c.expectGolden("dispatch", r.stdout);
     }
 
-    /// A module — or a project — that resolves clean: no diagnostic at
-    /// all, and its interface(s) are the golden (checker.md §3). Both
-    /// halves matter: the exit code says the names resolved, the golden
-    /// says what the module now offers its dependents.
+    /// A module — or a project — that resolves clean: exit 0, no
+    /// `error`-severity diagnostic, and its interface(s) are the golden
+    /// (checker.md §3). Both halves matter: the exit code says the names
+    /// resolved, the golden says what the module now offers its dependents.
+    ///
+    /// A `warning` is legitimate output from a fixture that compiles, so a
+    /// `check/good` fixture MAY carry a `.diag` golden and then its
+    /// warnings are compared against it byte for byte — the same golden
+    /// discipline `check/bad` gets, applied to the one `warning` the
+    /// compiler has (`static-dispatch-spike.md` §10.9, A.83). Without the
+    /// golden it must still be silent, so a fixture cannot start warning
+    /// unnoticed.
     fn checkGood(c: Case) !void {
         const path = try c.fixturePath();
         const checked = try c.compiler(&.{ "check", path });
         try expectExit(0, checked);
-        if (checked.stderr.len != 0) {
-            std.debug.print("{s}: a check/good fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
-            return error.GoodFixtureHasDiagnostics;
+        if (checked.stderr.len != 0 or c.goldenExists("diag")) {
+            const json = try c.compiler(&.{ "check", "--diagnostics=json", path });
+            try expectExit(0, json);
+            if (json.stderr.len == 0 and !c.bless) {
+                std.debug.print("{s}: a silent check/good fixture must not have a .diag golden\n", .{c.fixture.name});
+                return error.UnexpectedDiagGolden;
+            }
+            try c.expectGolden("diag", json.stderr);
         }
         const r = try c.compiler(&.{ "dump", "--stage=interface", path });
         try expectExit(0, r);

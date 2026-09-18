@@ -719,6 +719,7 @@ where_variable_unbound  duplicate_where_constraint
 unknown_method  private_method  no_methods_on_shape  missing_where_constraint
 method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_receiver
 constrained_constant
+too_many_inferred_constraints
 ```
 
 **How the catalogue is laid out.** After the M1 catalogue:
@@ -729,7 +730,7 @@ constrained_constant
 | then | M2b | type errors, defined in [`checker.md`](checker.md) §8 |
 | then | M2c | the exhaustiveness pair — `missing_patterns` is a `case` with no branch for some possibility, `redundant_pattern` a branch no value can reach ([`checker.md`](checker.md) §6.6), both reported only for a declaration that type-checked, so the patterns they judge are known to be well typed |
 | the next two | M3a | about the JavaScript boundary rather than beni: the four `foreign_*` codes are the build-time checks of [`boundary.md`](boundary.md) §4; `missing_main` and `main_not_program` are §5's "`main` is a platform-owned opaque `Program`"; `not_implemented` is what the code generator says about a construct it does not compile yet — a diagnostic rather than a panic, because [`backend.md`](backend.md) §1 ships the language in halves and the missing half has to say so |
-| the last four | static dispatch | ten codes appended on 2026-09-18, never inserted, so no line above moved. The first two are reported by lowering, from a `where` clause that names a variable the annotation does not have or the same `(variable, method)` twice; the rest are the checker's, about a method that does not exist, is private, has nowhere to live, was used without being constrained, was constrained twice at different types, needs an annotation to dispatch on a return type, is a constraint that reached an inferred `pub` interface (a `warning`, only under `--explain`), or survived onto a declaration with no parameters. Four existing codes are reused rather than duplicated: `not_equatable`, `unbound_variable`, `unexpected_token` and `nesting_too_deep`. → `static-dispatch-spike.md` §10 |
+| the last five | static dispatch | ten codes appended on 2026-09-18, never inserted, so no line above moved, and an eleventh appended the same day. The first two are reported by lowering, from a `where` clause that names a variable the annotation does not have or the same `(variable, method)` twice; the rest are the checker's, about a method that does not exist, is private, has nowhere to live, was used without being constrained, was constrained twice at different types, needs an annotation to dispatch on a return type, is a constraint that reached an inferred `pub` interface (a `warning`, on by default and only for the root package), survived onto a declaration with no parameters, or — the eleventh — is one of more than 64 constraints an unannotated declaration inferred, which is refused so that neither the interface suffix nor the checker's own bookkeeping is unbounded. Four existing codes are reused rather than duplicated: `not_equatable`, `unbound_variable`, `unexpected_token` and `nesting_too_deep`. → `static-dispatch-spike.md` §10 |
 
 **The three generic syntax codes**, all carrying Elm-style prose — what the parser was in the middle
 of, what it saw, and what it expected, e.g. *I was parsing the branches of this `case` and ran into

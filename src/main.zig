@@ -82,7 +82,6 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .root = common.root,
         .core = common.core,
         .core_root = common.core_root,
-        .explain = common.explain,
     };
 }
 
@@ -108,6 +107,10 @@ fn runCheck(gpa: std.mem.Allocator, io: Io, stderr: *Io.Writer, check: Cli.Check
     // `check` resolves names across modules, and every module resolves
     // against core (checker.md §4): the package is part of the input.
     options.core_package = true;
+    // `check` and `build` are the two subcommands that emit the
+    // informational warnings of static-dispatch-spike.md §10 (A.83); a
+    // `dump` or a `fmt` of the same file stays silent about them.
+    options.informational = true;
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
     const summary = switch (runSession(&session, stderr, check.paths, Session.check_phases)) {

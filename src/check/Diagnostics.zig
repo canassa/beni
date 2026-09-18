@@ -47,8 +47,8 @@ pub const Item = struct {
     /// `origin` — the call the author wrote — never the annotation the
     /// requirement came from.
     region: Bir.Inst.Index,
-    /// `warning` only for `ambiguous_method_receiver` under `--explain`
-    /// (§10.9); a warning never changes the exit code.
+    /// `warning` only for `ambiguous_method_receiver` (§10.9); a warning
+    /// never changes the exit code.
     severity: diagnostic.Severity = .@"error",
     /// The token to underline, when it is not the one `region`'s
     /// instruction came from. A message ABOUT a declaration —
@@ -1226,8 +1226,52 @@ pub const Reporter = struct {
         try r.emit(.type_dispatch_needs_annotation, region, &out);
     }
 
-    /// §10.9. Informational, `warning`, and only under `--explain`: what
-    /// plan §7's M3 churn measurement counts.
+    /// §10.11. The cap of §6.4: an unannotated declaration whose inferred
+    /// scheme would carry more than `Solver.max_inferred_constraints` of
+    /// them. `names` is the first few, in the canonical order of §7.2, and
+    /// only the first few — a message that printed all `count` of them
+    /// would be the 6.4 kB report 19 §3.1 reached, with a title on it.
+    pub fn tooManyInferredConstraints(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        token: u32,
+        decl: Symbol,
+        count: u32,
+        limit: u32,
+        names: []const Symbol,
+    ) Error!void {
+        if (r.quiet) return;
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        const name = r.env.interner.slice(decl);
+        w.print(
+            "`{s}` has no annotation, and the type I inferred for it needs {d} methods.\nI stop at {d}.\n\nThe first {d} are ",
+            .{ name, count, limit, names.len },
+        ) catch return error.OutOfMemory;
+        for (names, 0..) |m, i| {
+            if (i != 0) w.writeAll(if (i + 1 == names.len) " and " else ", ") catch return error.OutOfMemory;
+            w.print("`{s}`", .{r.env.interner.slice(m)}) catch return error.OutOfMemory;
+        }
+        w.print(
+            \\.
+            \\
+            \\Each one is an argument I have to pass at every call to `{s}`, and a line in
+            \\this module's interface that every importer is checked against. A list this
+            \\long is almost always a chain of unannotated helpers, each one inheriting
+            \\what the one before it needed.
+            \\
+            \\Hint: annotate `{s}`. An annotation pins the type, and a `where` clause you
+            \\write yourself may name as many methods as you like.
+            \\
+        , .{ name, name }) catch return error.OutOfMemory;
+        try r.emitAt(.too_many_inferred_constraints, region, token, &out);
+    }
+
+    /// §10.9. Informational, `warning`, and — since A.83 — emitted by
+    /// default, for a module of the ROOT package only: what plan §7's M3
+    /// churn measurement counts, and what tells the author of an
+    /// unannotated `pub` declaration that its interface now has a suffix.
     pub fn ambiguousMethodReceiver(
         r: *Reporter,
         region: Bir.Inst.Index,

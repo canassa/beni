@@ -302,6 +302,27 @@ pub const Solver = struct {
     /// report.
     const max_depth = Parse.max_depth + 104;
 
+    /// How many method constraints an **unannotated** declaration's inferred
+    /// scheme may promote (static-dispatch-spike.md §6.4, §10.11, A.83).
+    /// Over it, `promote` reports `too_many_inferred_constraints` and the
+    /// declaration promotes NOTHING — which is what bounds the inferred
+    /// `where` suffix report 19 §3.1 found unbounded, and, because the next
+    /// link then starts from zero, the n(n+1)/2 of report 19 §3 with it.
+    ///
+    /// An ANNOTATED declaration is never capped: its `where` clause is the
+    /// whole set (Rule U2) and it is bounded by the text of the annotation.
+    ///
+    /// 64 because pre-dispatch `master` already refused the same chain at
+    /// ≈64 links — `Render.writeRecord` flattens at most 64 extension links
+    /// and the chain was an open record before it was a constraint set — so
+    /// no program that checked before the 2026-09-18 adoption is newly
+    /// refused (report 19 `results:152-167`).
+    pub const max_inferred_constraints = 64;
+
+    /// How many of the constraint names `too_many_inferred_constraints`
+    /// prints. Bounding the message is half the point of the cap.
+    const named_in_cap_message = 5;
+
     pub fn init(gpa: Allocator, env: *Constrain.Env, tree: *const Constrain.Tree, reporter: *Diagnostics.Reporter) Solver {
         return .{ .gpa = gpa, .env = env, .tree = tree, .reporter = reporter };
     }
@@ -3834,6 +3855,13 @@ pub const Solver = struct {
         defer order.deinit(s.env.scratch);
         try Schemes.quantifierOrder(st, s.env.interner, h.v, &order, s.env.scratch);
 
+        // The cap (§6.4, §10.11), counted BEFORE anything is emitted: an
+        // unannotated declaration — `pub` or not, the quadratic does not
+        // care — may promote at most `max_inferred_constraints`.
+        var total: u32 = 0;
+        for (order.items) |root| total += st.constraintCount(st.flagsOf(root).constraints);
+        if (total > max_inferred_constraints) return s.capPromotion(h, d, order.items, total);
+
         var entries: std.ArrayList(Dispatch.Evidence) = .empty;
         defer entries.deinit(s.env.scratch);
         var index: u16 = 0;
@@ -3884,9 +3912,12 @@ pub const Solver = struct {
             );
             return;
         }
-        // Informational, and only under `--explain` (§10.9): this is what
-        // plan §7's M3 churn measurement counts.
-        if (s.env.explain) {
+        // Informational (§10.9), on by default under `check` and `build`
+        // since A.83, and only for a module of the ROOT package: a warning
+        // about `Dict.foldl` is one nobody can act on, because `core/` is
+        // embedded in the binary and a platform package is somebody else's
+        // dependency. This is what plan §7's M3 churn measurement counts.
+        if (s.env.informational and s.env.graph.module(s.env.module).package == .app) {
             try s.reporter.ambiguousMethodReceiver(
                 d.body.unwrap() orelse h.region,
                 d.name_token,
@@ -3895,6 +3926,64 @@ pub const Solver = struct {
                 h.v,
             );
         }
+    }
+
+    /// **Over the cap** (§6.4, §10.11): report, then generalise the
+    /// declaration with NO promoted constraints.
+    ///
+    /// Three things happen and they all matter. The constraints are dropped
+    /// from every quantified variable, so the scheme `Schemes.Writer` puts
+    /// in the interface has no `where` suffix. Each of those variables is
+    /// entered in `promoted`, so `settleUndetermined` does not then ask
+    /// about the same constraints a second time and answer them one message
+    /// each. And the declaration gets no evidence list and no sites, so
+    /// nothing downstream believes it takes hidden arguments.
+    ///
+    /// What is NOT touched is the root type: the declaration keeps the shape
+    /// it inferred and simply keeps no requirements, which is what lets the
+    /// next link of an unannotated chain start again from zero instead of
+    /// inheriting a set that is already over the cap (report 19 §3).
+    fn capPromotion(
+        s: *Solver,
+        h: Constrain.Header,
+        d: Bir.Decl,
+        order: []const Var,
+        total: u32,
+    ) Error!void {
+        const st = s.store();
+        // The first few names, in the canonical order of §7.2 — quantifier
+        // order, then constraint order within each quantifier — so the
+        // message does not depend on which worker checked the module.
+        var names: std.ArrayList(Symbol) = .empty;
+        defer names.deinit(s.env.scratch);
+        for (order) |root| {
+            const flags = st.flagsOf(root);
+            const n = st.constraintCount(flags.constraints);
+            if (n == 0) continue;
+            if (names.items.len < named_in_cap_message) {
+                const base = st.constraint_sets.items[flags.constraints.unwrap().?.int()].start;
+                const sorted = try s.env.scratch.alloc(u32, n);
+                defer s.env.scratch.free(sorted);
+                for (sorted, 0..) |*x, j| x.* = base + @as(u32, @intCast(j));
+                std.mem.sort(u32, sorted, s, constraintIndexLessThan);
+                for (sorted) |at| {
+                    if (names.items.len == named_in_cap_message) break;
+                    try names.append(s.env.scratch, st.constraints.items[at].name);
+                }
+            }
+            if (std.mem.indexOfScalar(Var, s.promoted.items, root) == null) {
+                try s.promoted.append(s.gpa, root);
+            }
+            s.setConstraints(root, flags, .none);
+        }
+        try s.reporter.tooManyInferredConstraints(
+            d.body.unwrap() orelse h.region,
+            d.name_token,
+            s.env.bir.symbol(d.name),
+            total,
+            max_inferred_constraints,
+            names.items,
+        );
     }
 };
 

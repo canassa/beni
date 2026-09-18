@@ -1,0 +1,3 @@
+module WarningWithoutExplain
+  value annotated : Int, Int -> Bool
+  value bigger : a, a -> Bool where a.compare : a, a -> Order

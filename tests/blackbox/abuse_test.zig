@@ -1359,7 +1359,16 @@ fn constraintChainCounters(w: *World, links: usize, trace: []const u8, source_pa
     }
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     try testing.expectEqualStrings("", r.stdout);
-    try testing.expectEqualStrings("", r.stderr);
+    // Every link is an unannotated `pub` declaration whose inferred scheme
+    // really does carry a `where` suffix, so since A.83 each one warns —
+    // one message per link, all of them §10.9's, and nothing else. Asserted
+    // rather than allowed: an `error` appearing here would mean the chain
+    // stopped being the clean input this measurement is taken on.
+    try testing.expectEqual(links, r.diagnostics.len);
+    for (r.diagnostics) |d| {
+        try testing.expectEqual(diagnostic.Code.ambiguous_method_receiver, d.code);
+        try testing.expectEqual(diagnostic.Severity.warning, d.severity);
+    }
 
     const Event = struct {
         name: []const u8,
@@ -1407,9 +1416,16 @@ test "an unannotated constraint chain costs one merge per link, not one per cons
     // The counter says it and a clock does not: `constraints_merged` counts
     // set rebuilds, and it is one per link when the fold is a no-op and
     // n(n+1)/2 + n - 1 when it is not. At n = 64 that is 63 against 2 143.
+    //
+    // 32 and 64, not 64 and 128, since A.83: a chain of 128 links promotes
+    // 65 constraints at link 65 and is `too_many_inferred_constraints` from
+    // there on (§10.11), which is a different measurement. 64 is the longest
+    // chain the cap still accepts whole, so it is still the widest set the
+    // fold can be asked to copy, and the growth assertion below is still
+    // what the guard has to hold.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const links = 64;
+    const links = 32;
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -1449,4 +1465,100 @@ test "an unannotated constraint chain costs one merge per link, not one per cons
     // growth as well as a value, because the two literals above could both
     // be re-blessed to whatever the compiler does today while this cannot.
     try testing.expectEqual(one.constraints_merged * 2 + 1, two.constraints_merged);
+}
+
+test "a chain past the inferred-constraint cap reports a bounded number of errors and finishes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // static-dispatch-spike.md §6.4 and §10.11, A.83. The cap is not only a
+    // bound on one message: a declaration over it promotes NOTHING, which is
+    // what stops the accumulation reaching the next link. Link 65 is
+    // reported and promotes nothing, so link 66 starts again from one
+    // constraint and the chain costs one error per 65 links instead of the
+    // n(n+1)/2 constraints and 3.7 GB report 19 §3 measured at n = 3000.
+    //
+    // 300 links, so the recovery has to happen four times: the assertion is
+    // the EXACT count and the EXACT declarations, because "a bounded number"
+    // is only a claim if the bound is written down. Same shape as the A.81
+    // scenario above — no operator, no literal, no import, so
+    // `--core-root=nocore` holds and every number here is this file's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const links = 300;
+    // 65: the 64 the cap allows, plus the one that is over it.
+    const period = 65;
+
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    const out = &source.writer;
+    for (1..links + 1) |i| {
+        if (i != 1) try out.writeAll("\n");
+        try out.print("pub f{d} x =\n", .{i});
+        if (i == 1) {
+            try out.writeAll("    ( x.m1 x, x )\n");
+        } else {
+            try out.print("    ( x.m{d} x, f{d} x )\n", .{ i, i - 1 });
+        }
+    }
+    try w.write("Chain.beni", source.written());
+    try w.write("nocore/PLACEHOLDER", "");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "check", "--core-root=nocore", "--jobs=1", "Chain.beni" });
+    if (r.term != .exited) {
+        std.debug.print("did not exit normally: {any}\n", .{r.term});
+        return error.CompilerDiedFromSignal;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    // One message per declaration and no more: ⌊300/65⌋ = 4 declarations are
+    // over the cap and the other 296 are unannotated `pub` declarations
+    // whose interface really did acquire a suffix (§10.9).
+    try testing.expectEqual(@as(usize, links), r.diagnostics.len);
+    var capped: usize = 0;
+    for (r.diagnostics) |d| {
+        switch (d.code) {
+            .too_many_inferred_constraints => {
+                try testing.expectEqual(diagnostic.Severity.@"error", d.severity);
+                capped += 1;
+                // Declaration k occupies three lines — `pub fk x =`, its
+                // body, and the blank separator — so link `period * capped`
+                // starts at line `3 * period * capped - 2`.
+                try testing.expectEqual(@as(u32, @intCast(3 * period * capped - 2)), d.span.start.line);
+                var name: [16]u8 = undefined;
+                const decl = try std.fmt.bufPrint(&name, "`f{d}`", .{period * capped});
+                try testing.expect(std.mem.indexOf(u8, d.message, decl) != null);
+                // The count is the set the link would have promoted, which
+                // is one over the cap every time — proof that the previous
+                // capped link handed on nothing.
+                try testing.expect(std.mem.indexOf(u8, d.message, "needs 65 methods") != null);
+            },
+            .ambiguous_method_receiver => try testing.expectEqual(diagnostic.Severity.warning, d.severity),
+            else => {
+                std.debug.print("unexpected code {t}: {s}\n", .{ d.code, d.message });
+                return error.UnexpectedDiagnostic;
+            },
+        }
+    }
+    try testing.expectEqual(links / period, capped);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The bound is the message's, not the renderer's: only the first five
+    // method names are named, whatever the count is, because printing all
+    // 65 would be the 6.4 kB interface entry report 19 §3.1 reached with a
+    // title on it.
+    for (r.diagnostics) |d| {
+        if (d.code != .too_many_inferred_constraints) continue;
+        try testing.expect(std.mem.indexOf(u8, d.message, "The first 5 are ") != null);
+        try testing.expect(d.message.len < 700);
+    }
+    try testing.expectEqualStrings("", r.stdout);
 }

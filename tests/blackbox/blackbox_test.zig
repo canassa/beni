@@ -3148,17 +3148,19 @@ test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
     try testing.expect(std.mem.indexOf(u8, out[0], "    evidence 0 ") != null);
 }
 
-test "--explain reports a constraint that rode out on an inferred interface, and does not fail the build" {
+test "a constraint that rode out on an inferred interface is reported without --explain, and does not fail the build" {
     // static-dispatch-spike.md §10.9 and §6.4: an unannotated `pub`
     // declaration's inferred scheme carries the constraints its body raised,
     // and that scheme IS the module's interface — so a body edit can change
     // what every importer is checked against (report 18 §2.3). The warning
-    // exists so plan §7's M3 churn measurement has something to count.
+    // exists so plan §7's M3 churn measurement has something to count, and
+    // since A.83 it is ON BY DEFAULT, so the author hears about the suffix
+    // when they create it rather than only under a flag.
     //
     // Both halves are asserted: the message is a `warning`, and the exit
     // code stays 0. `diagnostic.Severity` gains no third value and a warning
-    // cannot change the exit code (frontend.md §1), so `--explain` can never
-    // turn a passing build into a failing one (A.10).
+    // cannot change the exit code (frontend.md §1), so this can never turn a
+    // passing build into a failing one (A.10, A.83).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -3172,12 +3174,7 @@ test "--explain reports a constraint that rode out on an inferred interface, and
         \\
     );
 
-    // Off by default: the same file is silent without the flag.
-    const quiet = try w.run(&.{ "check", "Main.beni" });
-    try testing.expectEqual(@as(u8, 0), quiet.exit_code);
-    try testing.expectEqual(@as(usize, 0), quiet.diagnostics.len);
-
-    const r = try w.run(&.{ "check", "--explain", "Main.beni" });
+    const r = try w.run(&.{ "check", "Main.beni" });
 
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
@@ -3191,6 +3188,131 @@ test "--explain reports a constraint that rode out on an inferred interface, and
     // `annotated` pins its type, so it carries no constraint and is not
     // reported — which is the hint the message gives.
     try testing.expect(std.mem.indexOf(u8, d.message, "annotated") == null);
+
+    // `--explain` is still accepted and now governs nothing: same exit code,
+    // same diagnostics, byte for byte. The flag is kept rather than removed
+    // so nothing scripted against it starts exiting 2 (A.83).
+    const explained = try w.run(&.{ "check", "--explain", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), explained.exit_code);
+    try testing.expectEqualStrings(r.stderr, explained.stderr);
+
+    // `dump` is not one of the two subcommands that emit informational
+    // diagnostics, so the same file dumps silently — a dump's stderr stays
+    // a channel for problems with the input, not advice about it.
+    const dumped = try w.run(&.{ "dump", "--stage=interface", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dumped.exit_code);
+    try testing.expectEqual(@as(usize, 0), dumped.diagnostics.len);
+
+    // `build` is the other subcommand that does act on it, and a warning
+    // still writes the program: the exit code is 0 and the module is on
+    // disk. This is the half of A.10 the decision could have broken.
+    try w.write("App.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\pub bigger a b =
+        \\    a < b
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "ok"
+        \\
+    );
+    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "App.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.ambiguous_method_receiver, built.diagnostics[0].code);
+    try testing.expect(w.exists("out/App.mjs"));
+}
+
+test "a build that warns and then fails in the emit phase prints one diagnostics array, not two" {
+    // `beni build` produces diagnostics in two waves: the check `run`'s, and
+    // the emit phase's, which runs after `run` has returned because it must
+    // not run at all when the check failed (`Session.renderLate`). Rendering
+    // both would put TWO JSON arrays on one stream, which is not the format
+    // (frontend.md §1.1) — so `build` holds the first wave back and renders
+    // once, sorted together.
+    //
+    // Until A.83 the two waves could not overlap: a run that reached the
+    // emit phase had produced nothing at all, and `build` asserted exactly
+    // that. The first `warning` the compiler emits by default is what makes
+    // them overlap, and the assertion was reachable from a program whose
+    // only faults are a missing `main` and an unannotated `pub` declaration.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub bigger a b =
+        \\    a < b
+        \\
+    );
+
+    // `w.run` parses stderr as ONE array and fails the test if it is not.
+    const r = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(usize, 2), r.diagnostics.len);
+    // Sorted by the schema's comparator over BOTH waves, so the emit
+    // phase's `missing_main` at 1:1 precedes the checker's warning at 1:5.
+    try testing.expectEqual(diagnostic.Code.missing_main, r.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Severity.@"error", r.diagnostics[0].severity);
+    try testing.expectEqual(diagnostic.Code.ambiguous_method_receiver, r.diagnostics[1].code);
+    try testing.expectEqual(diagnostic.Severity.warning, r.diagnostics[1].severity);
+
+    // A failed build writes nothing.
+    try testing.expect(!w.exists("out/Main.mjs"));
+}
+
+test "the inferred-interface warning is not raised about a package the author does not own" {
+    // static-dispatch-spike.md §10 preamble, A.83 decision 2. `core/` is
+    // compiled into the binary and a platform package is somebody else's
+    // dependency (boundary.md §2): nobody can annotate `Dict.foldl` from
+    // their own project, so a warning about it is noise they cannot act on.
+    // The warning is therefore raised only for a module of the ROOT package.
+    //
+    // The dependency here is a core package of one module, supplied with
+    // `--core-root`, carrying exactly the shape §10.9 is about: an
+    // unannotated `pub` declaration whose inferred scheme has a constraint.
+    // It must stay silent while the app's own copy of the same shape does
+    // not. No literal and no operator appears in either, so the stand-in
+    // core needs no `Basics` and the two declarations are the only things
+    // in the run that can raise anything.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("dep/Dep.beni",
+        \\pub relay x =
+        \\    ( x.ping x, x )
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\pub mine x =
+        \\    ( x.pong x, x )
+        \\
+    );
+
+    const r = try w.run(&.{ "check", "--core-root=dep", "--jobs=1", "src" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+    const d = r.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.ambiguous_method_receiver, d.code);
+    try testing.expectEqual(diagnostic.Severity.warning, d.severity);
+    try testing.expectEqualStrings("src/Main.beni", d.span.file);
+    try testing.expect(std.mem.indexOf(u8, d.message, "`mine`") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The dependency really was checked and really does carry the shape —
+    // otherwise the silence above would be the silence of a module nobody
+    // looked at. Its interface shows the promoted `where` suffix.
+    const iface = try w.run(&.{ "dump", "--stage=interface", "--core-root=dep", "--jobs=1", "dep/Dep.beni" });
+    try testing.expectEqual(@as(u8, 0), iface.exit_code);
+    try testing.expect(std.mem.indexOf(u8, iface.stdout, "where a.ping") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "relay") == null);
 }
 
 test "dump --stage=interface prints each value's scheme, and <error> for one that failed" {

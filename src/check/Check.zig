@@ -130,11 +130,11 @@ pub const Options = struct {
     /// Keep each module's store and variable tables alive after the check,
     /// for `dump --stage=types`.
     keep_stores: bool = false,
-    /// `--explain` (static-dispatch-spike.md §10 preamble): emit the
-    /// informational warnings that are otherwise suppressed. The only one
-    /// in the spike is `ambiguous_method_receiver` (§10.9), and a warning
-    /// never changes the exit code.
-    explain: bool = false,
+    /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
+    /// today only `ambiguous_method_receiver` (§10.9), and then only for a
+    /// module of the ROOT package. Set by `check` and `build` (A.83); a
+    /// warning never changes the exit code.
+    informational: bool = false,
     /// One per graph module: true when an EARLIER phase already reported on
     /// it. Such a module is still checked — its dependents need schemes —
     /// but silently.
@@ -525,7 +525,7 @@ const Driver = struct {
             .profile = d.options.profile,
             .tid = tid,
             .pattern_budget = d.options.pattern_budget,
-            .explain = d.options.explain,
+            .informational = d.options.informational,
             .dispatch = &d.dispatch[m.int()],
         };
         d.counters[m.int()] = try one.run(if (d.kept.len != 0) &d.kept[m.int()] else null);
@@ -553,7 +553,8 @@ const ModuleCheck = struct {
     /// buffers lock-free.
     tid: u32 = 0,
     pattern_budget: u32 = Exhaustive.default_budget,
-    explain: bool = false,
+    /// `Options.informational`, for this module.
+    informational: bool = false,
     /// This module's slot of the run's dispatch tables (§7.1), filled at
     /// the end of `run`.
     dispatch: *Dispatch = undefined,
@@ -616,7 +617,7 @@ const ModuleCheck = struct {
             .too_deep = &too_deep,
             .dispatch = &dispatch,
             .monomorphic = &monomorphic,
-            .explain = mc.explain,
+            .informational = mc.informational,
             .store = store,
             .types = mc.types,
             .graph = mc.graph,

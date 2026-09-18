@@ -354,10 +354,10 @@ pub const Env = struct {
     /// The module's dispatch table as it is built (§7.1). Owned by
     /// `ModuleCheck`; the solver appends to it and `finish` sorts it once.
     dispatch: *Dispatch.Builder,
-    /// `--explain` (§10 preamble): whether the informational warnings that
-    /// are otherwise suppressed are emitted. The only one in the spike is
-    /// `ambiguous_method_receiver` (§10.9).
-    explain: bool = false,
+    /// Emit the informational `warning`s of §10 — today only
+    /// `ambiguous_method_receiver` (§10.9), and then only for a module of
+    /// the ROOT package. True under `check` and `build` (A.83).
+    informational: bool = false,
     /// Written types the reader could not finish (`Types.Builder.max_depth`,
     /// `Schemes.Writer.max_depth`), by the instruction a message points at.
     ///

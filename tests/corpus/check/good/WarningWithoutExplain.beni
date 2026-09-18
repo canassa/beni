@@ -1,0 +1,16 @@
+-- check/good: §10.9 and A.83. The warning about an unannotated `pub`
+-- declaration whose inferred scheme carries a constraint is emitted by
+-- DEFAULT — the walker runs plain `beni check`, with no `--explain` — and it
+-- is a `warning`, so the fixture still exits 0 and still has an `.iface`.
+--
+-- `annotated` is the twin that pins its type. An annotation's `where` clause
+-- is the whole set (Rule U2), so it promotes nothing and says nothing: the
+-- `.diag` golden names `bigger` and never `annotated`, which is the hint the
+-- message gives.
+pub bigger a b =
+    a < b
+
+
+pub annotated : Int, Int -> Bool
+annotated a b =
+    a < b

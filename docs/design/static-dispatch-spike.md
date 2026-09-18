@@ -1012,12 +1012,43 @@ At generalisation, a constraint still sitting on a flex variable of the generali
 |---|---|---|
 | annotated | never — the annotation's `where` clause is the whole set (Rule U2), and anything else was already `missing_where_constraint` | — |
 | unannotated, not `pub` | promoted silently; the scheme is local and nothing outside the module sees it | — |
-| unannotated, `pub` | promoted into the **interface** (§6.5), which is what makes report 18 §2.3's churn question measurable | `ambiguous_method_receiver`, severity **`warning`**, emitted only under `--explain` |
+| unannotated, `pub` | promoted into the **interface** (§6.5), which is what makes report 18 §2.3's churn question measurable | `ambiguous_method_receiver`, severity **`warning`**, **on by default** and only in the root package (§10.9) |
+| unannotated, `pub` or not, whose promoted set would exceed `max_inferred_constraints` | **rejected**, and the set is dropped (below) | `too_many_inferred_constraints` (§10.11) |
 | a `pub` value of **zero parameters** whose promoted scheme has at least one constraint | rejected | `constrained_constant` |
 
 `constrained_constant` exists because a value with evidence parameters is a function (§8.1), and
 silently turning a declared constant into a function would change its type across the module
 boundary. The author's fix is to give it a parameter or an annotation that pins the type.
+
+**The cap, and what the declaration becomes after it.** `Solver.max_inferred_constraints = 64`.
+An **unannotated** declaration whose promoted set would hold more than that is
+`too_many_inferred_constraints` (§10.11), `pub` or not — the quadratic report 19 §3 measures does
+not care about `pub`, and neither does the n(n+1)/2 that produces it. An **annotated** declaration
+is never capped: a `where` clause the author wrote is the whole set (Rule U2), it is bounded by the
+text of the annotation, and it may carry any number.
+
+> **Recovery.** After the report, the declaration is generalised with **no promoted constraints**:
+> every quantified variable the promotion walked has its `Flags.constraints` reset to `.none`, it is
+> entered in the solver's `promoted` list so §6.4's `settleUndetermined` does not then ask about the
+> constraints a second time, and the declaration gets **no evidence list and no dispatch sites**.
+> Its root type is untouched — the declaration keeps the shape it inferred, it simply keeps no
+> requirements — so its interface entry has no `where` suffix and a caller instantiates a scheme
+> with nothing to accumulate.
+
+That last clause is the point: the cap is not only a bound on one message, it is what stops the
+accumulation feeding the next link. On report 19 §3's chain — n unannotated declarations, link k
+calling link k−1 on its own parameter — link 65 is reported and promotes nothing, so link 66 starts
+again from one constraint. The chain therefore costs **⌊n/65⌋ errors and a constant 65·66/2
+constraints per segment**: the whole run is linear in n in both time and memory, where before the
+cap it was n(n+1)/2 constraints and 3.7 GB at n = 3000 (report 19 §3, §14 item 5). §10.11 has the
+measurements.
+
+**Why 64, and why no program loses.** `master`'s pre-dispatch checker already refused the same
+chain past ≈64 links — `Render.writeRecord` flattens at most 64 extension links and the chain was a
+row-polymorphic open record before it was a constraint set, so the 65th link is `UNKNOWN FIELD`
+there, quoted verbatim at report 19 `results:152-167`. **No program that checked before the
+2026-09-18 adoption is newly refused by this cap.** It is also the same 64 the record printer uses,
+so the two bounds on "how wide may one inferred type get" agree. A.83.
 
 **The outer-rank receiver, and why the spike does not build Roc's side table.**
 
@@ -1087,13 +1118,15 @@ to `List.map` and then to `List.foldl`, so `$m$0` is read two closure levels bel
 list; it must print the right answer and its emitted JavaScript must contain exactly one `$m$0`
 parameter.
 
-`--explain` is a new flag on `beni check` and `beni build` that emits informational diagnostics
+`--explain` is a flag on `beni check` and `beni build` that emits informational diagnostics
 otherwise suppressed. It adds **no new severity**: `diagnostic.Severity` stays
 `{ error, warning }` (`src/diagnostic.zig:17`), `ambiguous_method_receiver` is a `warning`, and a
-warning does not change the exit code (`frontend.md:50-51`), so `--explain` can never turn a
-passing build into a failing one. It is the only diagnostic the flag controls in the spike, and the
-churn measurement (plan §7 M3) is what reads it. §10's preamble has the flag's full contract;
-Appendix A.10.
+warning does not change the exit code (`frontend.md:50-51`), so nothing here can turn a passing
+build into a failing one. **Amended 2026-09-18 (A.83): the warning is on by default and the flag
+governs nothing.** `ambiguous_method_receiver` was the only diagnostic `--explain` ever controlled;
+now that it is emitted without it, `--explain` is accepted, parsed and documented as redundant, and
+it is kept rather than removed so no invocation that passes it starts failing with a usage error.
+§10's preamble has the full contract; Appendix A.10, amended by A.83.
 
 ### 6.5 Interfaces
 
@@ -2239,22 +2272,41 @@ method_constraint_mismatch  where_variable_unbound  duplicate_where_constraint
 type_dispatch_needs_annotation  ambiguous_method_receiver  constrained_constant
 ```
 
+An **eleventh** was appended on 2026-09-18 with the cap of §6.4, in the same way — at the end of
+this section as §10.11, and at the end of both catalogues, so nothing above it moves (A.83):
+
+```
+too_many_inferred_constraints
+```
+
 Four existing codes are reused rather than duplicated: `not_equatable` for `eq` on a function type
 (§3.4), `unbound_variable` for a dotted name that is neither a value nor an annotated type variable
 (§4.1), `unexpected_token` for a `where` in a position the grammar does not allow (§2.1, §2.3), and
 `nesting_too_deep` for the constraint-chain guard (§6.3).
 
 **Severity, and `--explain`.** `diagnostic.Severity` stays `{ error, warning }`
-(`src/diagnostic.zig:17`); this document adds no third value. Nine of the ten codes are `error`.
-`ambiguous_method_receiver` is a **`warning`**, and it is emitted only when `--explain` is passed:
+(`src/diagnostic.zig:17`); this document adds no third value. Ten of the eleven codes are `error`.
+`ambiguous_method_receiver` is a **`warning`**, and **since 2026-09-18 it is emitted by default**
+(A.83) — by `check` and `build`, the two subcommands that act on informational diagnostics;
+`dump` and `fmt` leave a dump's stderr for problems with the input rather than advice about it
+(`Session.Options.informational`). The row below records what `--explain` was and what it is now:
 
 | | |
 |---|---|
-| Flag | `--explain`, a new field on `Cli.Common` (`src/Cli.zig:68-79`), so `check`, `build`, `dump` and `fmt` all parse it; only `check` and `build` act on it |
+| Flag | `--explain`, a field on `Cli.Common` (`src/Cli.zig:68-79`), so `check`, `build`, `dump` and `fmt` all parse it |
 | Default | off |
-| Effect | informational `warning`-severity diagnostics that are otherwise suppressed are emitted |
-| Exit code | **none.** `frontend.md`'s exit codes are `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O (`docs/design/frontend.md:50-51`), so a warning cannot change the exit code and `--explain` cannot turn a passing build into a failing one |
+| Effect | **none, since 2026-09-18.** `ambiguous_method_receiver` was the only diagnostic it ever gated and that gate is gone, so the flag is accepted and does nothing. It is kept, not removed, so no script that passes it starts exiting `2` |
+| Exit code | **none.** `frontend.md`'s exit codes are `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O (`docs/design/frontend.md:50-51`), so a warning cannot change the exit code |
 | Stream | `stderr`, sorted with every other diagnostic by file, position, code |
+
+**Warnings are for code the author owns.** A diagnostic that an author cannot act on is noise, and
+`core/` is compiled into the binary while a platform package is somebody else's dependency
+(`boundary.md` §2) — nobody can annotate `Dict.foldl` from their own project. So
+`ambiguous_method_receiver` is raised **only for a module of the root package**
+(`SourceStore.Package.app`, `src/SourceStore.zig:65`; the checker reads it through
+`Graph.module(m).package`). Errors are not restricted this way: an `error` in a dependency stops the
+build whoever wrote it, and `too_many_inferred_constraints` (§10.11) is an error in every package.
+A.83.
 
 **Two regions, and which is primary.** Three of the ten codes are raised while discharging an
 obligation, and an obligation carries two instructions (§6.2): `origin`, the instruction in *this*
@@ -2539,8 +2591,10 @@ decode s =
 
 ### 10.9 `ambiguous_method_receiver`
 
-**Severity** **warning**, emitted only under `--explain` (see the preamble). **Region** the
-declaration's name. It is the only `warning` this document adds, and it never changes the exit code.
+**Severity** **warning**, emitted **by default** by `check` and `build`, and only for a module of
+the **root package** (see the preamble; before 2026-09-18 it needed `--explain` and ignored the
+package — A.83). **Region** the declaration's name. It is the only `warning` this document adds, and
+it never changes the exit code.
 
 > **CONSTRAINT IN AN INFERRED INTERFACE** — `<decl>` is `pub`, has no annotation, and its inferred
 > type carries `<n>` method constraint(s):
@@ -2552,7 +2606,9 @@ declaration's name. It is the only `warning` this document adds, and it never ch
 > Hint: an annotation pins it.
 
 It is not an error and does not fail a build. It exists so that plan §7's M3 churn measurement has
-something to count, and so the cost report 18 §2.3 predicts is observable rather than argued.
+something to count, and so the cost report 18 §2.3 predicts is observable rather than argued —
+and, since it is on by default, so that the author of the declaration is told at the moment the
+interface acquires the suffix rather than only when somebody goes looking with a flag.
 
 ### 10.10 `constrained_constant`
 
@@ -2578,6 +2634,69 @@ It must be **unannotated**. With `pub blank : Dict k v` the annotation declares 
 empty constraint set, so the body's `compare` requirement is `missing_where_constraint` (§10.4)
 instead, and the fixture would assert the wrong code. `constrained_constant` is about a constraint
 that survived generalisation of an *inferred* scheme (§6.4).
+
+### 10.11 `too_many_inferred_constraints`
+
+Appended 2026-09-18, after §10.10 and after both catalogues, so no number above it moves (A.83).
+
+**Severity** error. **Region** the declaration's name. It applies to every **unannotated**
+declaration, `pub` or not, in every package, and it fires when the promoted set of §6.4 would hold
+more than `Solver.max_inferred_constraints = 64`.
+
+> **TOO MANY INFERRED CONSTRAINTS** — `<decl>` has no annotation, and the type I inferred for it
+> needs `<n>` methods. I stop at 64.
+>
+> The first five are `<m1>`, `<m2>`, `<m3>`, `<m4>` and `<m5>`.
+>
+> Each one is an argument I have to pass at every call to `<decl>`, and a line in this module's
+> interface that every importer is checked against. A list this long is almost always a chain of
+> unannotated helpers, each one inheriting what the one before it needed.
+>
+> Hint: annotate `<decl>`. An annotation pins the type, and a `where` clause you write yourself may
+> name as many methods as you like.
+
+**Only the first few names are printed** — five, and a count of how many are left — because bounding
+the output is half the point: report 19 §3.1 reaches a 6.4 kB rendered scheme for one declaration,
+and a message that printed all of them would be the same 6.4 kB with a title on it. The rendered
+scheme is *not* printed for the same reason; §10.9 prints it because it is short enough to read.
+
+**Recovery is §6.4's**: the declaration promotes nothing, so its interface has no `where` suffix and
+the next link in the chain starts from zero. The bound this buys, measured 2026-09-18 on report 19
+§3's own generator (`zig build bench -- --pathological=constraint-chain=n --iterations=3`, then
+`command time` over `beni check --jobs=1 .zig-cache/bench-pathological`, ReleaseFast):
+
+| n | this error | `obligations` | `constraints_promoted` | `check` wall | peak RSS | before the cap (report 19 §3) |
+|---:|---:|---:|---:|---:|---:|---|
+| 1 000 | 15 | 32 549 | 31 525 | 0.14 s | 35.1 MB | 0.44 s, 411 MB, 500 500 promoted |
+| 3 000 | 46 | 98 774 | 95 735 | 0.39 s | 91.5 MB | 4.44 s, 3 754 MB, 4 501 500 promoted |
+
+⌊n / 65⌋ errors, and time and obligations linear in n rather than quadratic. This is the answer
+report 19 §14 item 5 asks for — the checker does **not** ship a quadratic on a shape a user can
+write by accident, because the shape stops being accepted at 64 — and item 4's cap on the inferred
+`where` suffix falls out of it: a promoted suffix is now at most 64 clauses, ~2 kB at §3.1's
+measured 31 characters per clause, where an annotated one is bounded by the annotation's own text.
+
+**The total diagnostic count is still one per declaration**, and that is §10.9's warning, not this
+error: every link of the chain is an unannotated `pub` declaration whose interface really did
+acquire a suffix, so n = 3000 prints 2 954 warnings and 46 errors. One message per declaration is
+the ordinary rate for a per-declaration diagnostic and it is what makes the pathological input
+finish at all; what the cap removes is the n² *under* it. `bench/bench.zig`'s own `diagnostics:`
+figure counts **only the errors** — 15 and 46 — because the bench harness is not `check` or
+`build` and so emits no informational warning; that column is what report 19 §3's C0 rows read,
+and it is comparable to them again.
+
+**The warning's rendering is the expensive part**: it prints the whole scheme, and report 19 §16
+listed its cost at scale as never measured. Measured now, at the pathological extreme where every
+scheme is at the 64-clause ceiling: ~0.1 ms per warning in ReleaseFast (0.39 s wall for a run that
+prints 3 000 of them) and **~23 ms** per warning in a **Debug** build, where `Render.Namer.allocate`
+pays an allocation and a linear scan per candidate suffix while it numbers `number`, `number2`, …
+`number65`. Debug is not a shipping configuration and no real scheme is 64 clauses wide, so it is
+recorded rather than fixed.
+
+Fixtures: `tests/corpus/check/bad/TooManyInferredConstraints.beni` (65 distinct methods on one
+unannotated declaration), `tests/corpus/check/good/SixtyFourConstraints.beni` (64, clean) and
+`tests/corpus/check/good/AnnotatedManyConstraints.beni` (the annotated 65-constraint twin, clean),
+plus the bounded-recovery scenario in `tests/blackbox/abuse_test.zig`.
 
 ---
 
@@ -2715,6 +2834,13 @@ a future module system with recursive imports would bring it back, and this is w
 
 **Constrained constants** are refused (`constrained_constant`, §6.4) rather than silently turned
 into functions. `Dict.empty` is unaffected — it has no constraint (§5.3).
+
+**An inferred set of more than 64 method constraints is refused** (`too_many_inferred_constraints`,
+§6.4, §10.11), which is a real ceiling on inference and is taken deliberately: it is what bounds
+both the interface suffix report 19 §3.1 found unbounded and the n² of §3, and no program that
+checked on pre-dispatch `master` is inside the range it removes (report 19 `results:152-167`). An
+annotation lifts it entirely, so nothing is unwritable — only uninferable. If a real program ever
+wants 65 inferred constraints, the number is one constant. A.83.
 
 **Interface hashing does not exist**, so plan §7's M3 measures interface *bytes changed* through
 `dump --stage=raw`, which is exactly what M4's hash will be taken over.
@@ -3716,3 +3842,38 @@ section number, and the other documents gain pointers. What changed elsewhere:
 renumbering. It is the tidier end state and it was declined here because the citation surface makes
 it a mechanical rewrite of ~100 files for no change in what any document says. It stays available:
 nothing in this document depends on living in one file.
+
+**A.83 — the inferred-interface warning is on by default, and an inferred set is capped at 64**
+(§6.4, §10 preamble, §10.9, new §10.11, §11) [queue slice 3, 2026-09-18]. Report 19 §14 items 4 and
+5 left two questions open — nothing bounds what one unannotated declaration writes into its
+interface (a 6.4 kB entry is reachable, §3.1), and nothing takes a position on the n² obligation
+count of an unannotated chain (§3). **Manager decisions of 2026-09-18**, taken on the owner's behalf
+while he was offline, and reversible by editing this row:
+
+| | Decision | Why | *Alternative* |
+|---|---|---|---|
+| 1 | `ambiguous_method_receiver` is emitted **by default** by `check` and `build`. It stays a `warning` and still cannot change the exit code | the whole point of the warning is that the author learns when a body edit made the interface churnable (report 19 §4); a warning nobody runs the flag for is not a mitigation | leave it behind `--explain`, and accept that it warns nobody by default |
+| 1b | `--explain` is **kept, accepted, and governs nothing**. It was the only diagnostic the flag ever controlled | removing a flag breaks any invocation that passes it, and the flag is the natural home for the next informational diagnostic | delete the flag, at the cost of a new usage error in anything scripted against it |
+| 2 | the warning fires **only for modules of the root package** (`SourceStore.Package.app`) | `core/` is embedded and a platform package is a dependency: a user cannot annotate `Dict.foldl`, so a warning about it is noise they cannot act on. Measured at the time of the change: `core/` and `platforms/` together would have produced **0** warnings — every `pub` declaration in both is annotated — so the restriction changes no output today and is implemented for the dependency packages M4 brings | warn everywhere, and have the first `pub` declaration anybody leaves unannotated in a library spray the warning across every consumer |
+| 3 | an unannotated declaration whose inferred scheme would carry **more than 64** method constraints is `too_many_inferred_constraints`, an **error**, `pub` or not; an annotated one may carry any number | it answers both owed items with one rule: the promoted suffix is bounded, and the quadratic is bounded with it. 64 because pre-dispatch `master` already refused the same chain at ≈64 links (report 19 `results:152-167`), so **no program that checked before the adoption is newly refused** | a `warning` instead of an error (bounds nothing — the interface is still written), or a much larger cap (bounds the interface but not the n²), or no cap and a documented limit |
+| 3b | the capped declaration **promotes nothing**: constraints dropped, no evidence list, no sites, root type untouched | an error has to recover the way the rest of `Solve.zig` recovers, and this recovery is what stops the accumulation reaching the next link. Measured: ⌊n/65⌋ errors, linear time and memory, 46 errors / 0.39 s / 91 MB at n = 3000 against 4.44 s / 3 754 MB before (§10.11) | poison the declaration's root type to `err` instead, which gives one diagnostic for the whole chain and hides every unrelated error downstream of it |
+
+Three consequences worth stating. **`tests/blackbox/abuse_test.zig`'s A.81 scenario moves from 64
+and 128 links to 32 and 64**, because 128 now hits the cap; it still pins all six counters and still
+fails without A.81's guard. **`bench/gen.zig --pathological=constraint-chain` is unchanged** and now
+reports diagnostics past 64 links, which is what C0 did and what the 64 was chosen to match.
+**`check/good` corpus fixtures may now carry a `.diag` golden**: a good fixture is one that exits 0,
+and a `warning` is legitimate output, so the walker compares warnings against a golden instead of
+requiring silence.
+
+**And one latent defect in `beni build` had to be fixed to land it.** `build` renders diagnostics in
+two waves — the check's, and the emit phase's, which runs after `Session.run` has returned because
+it must not run at all when the check failed. Two renders are two JSON arrays on one stream, which
+is not the format (`frontend.md` §1.1), and `build` guarded that with
+`assert(session.diagnostics.items.len == 0)` plus a comment saying *"the moment a warning exists,
+this has to become one collected list rendered once"*. This is that moment: `build` now runs with
+`Session.Options.defer_render`, `run` collects and renders nothing, and `renderLate` sorts both
+waves into one array. Without it, `beni build` **panicked** on a program whose only faults were a
+missing `main` and an unannotated `pub` declaration — reachable under `--explain` since the
+adoption, and unconditionally after it. Fixture: the `blackbox_test.zig` scenario "a build that
+warns and then fails in the emit phase prints one diagnostics array, not two".

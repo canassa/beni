@@ -22,9 +22,11 @@ beni help
 
 Later milestones add stages to `dump` without changing its shape: `interface`, `raw`, `types`,
 `graph` and `dispatch` ([`checker.md`](checker.md) §2). They also add one common flag, `--explain`,
-which turns on informational `warning`-severity diagnostics that are otherwise suppressed; `check`
-and `build` act on it, and because a warning cannot change an exit code (below) it can never turn a
-passing build into a failing one.
+for informational `warning`-severity diagnostics that are otherwise suppressed. **It governs nothing
+today**: the one diagnostic it gated, `ambiguous_method_receiver`, is emitted by default since
+2026-09-18 ([`static-dispatch-spike.md`](static-dispatch-spike.md) §10 preamble, A.83). The flag is
+still parsed and accepted, so nothing that passes it starts failing, and it is where the next
+informational diagnostic goes. A warning cannot change an exit code (below) either way.
 
 `build` arrived with M3a and its flags are `backend.md` §2's; the rest of this document is M0/M1's
 and the common options below apply to it too. Its product on stdout is one summary line naming what

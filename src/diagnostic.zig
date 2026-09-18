@@ -172,10 +172,15 @@ pub const Code = enum {
     missing_where_constraint,
     method_constraint_mismatch,
     type_dispatch_needs_annotation,
-    /// The one `warning` the branch adds, emitted only under `--explain`
-    /// (§10.9). A warning never changes the exit code.
+    /// The one `warning` the branch adds (§10.9), emitted by default and
+    /// only for a module of the ROOT package. A warning never changes the
+    /// exit code.
     ambiguous_method_receiver,
     constrained_constant,
+    /// The cap of §6.4, appended on 2026-09-18 (§10.11, A.83): an
+    /// unannotated declaration whose inferred scheme would carry more than
+    /// `Solve.Solver.max_inferred_constraints` of them.
+    too_many_inferred_constraints,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -281,6 +286,7 @@ pub fn title(code: Code) []const u8 {
         .type_dispatch_needs_annotation => "TYPE DISPATCH NEEDS AN ANNOTATION",
         .ambiguous_method_receiver => "CONSTRAINT IN AN INFERRED INTERFACE",
         .constrained_constant => "CONSTRAINED CONSTANT",
+        .too_many_inferred_constraints => "TOO MANY INFERRED CONSTRAINTS",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

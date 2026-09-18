@@ -1,0 +1,77 @@
+-- check/bad: §10.11 and §6.4. 65 distinct methods on one unannotated
+-- declaration, one over `Solver.max_inferred_constraints`. The cap exists so
+-- that neither the inferred `where` suffix (report 19 §3.1: a 6.4 kB interface
+-- entry is reachable) nor the n(n+1)/2 an unannotated chain accumulates
+-- (report 19 §3) is unbounded. Only the first five names are printed: bounding
+-- the message is half the point.
+--
+-- The twins are `check/good/SixtyFourConstraints.beni` (64, accepted) and
+-- `check/good/AnnotatedManyConstraints.beni` (65 in a `where` clause the
+-- author wrote, accepted — an annotation lifts the cap).
+pub wide x =
+    x.m01 1
+        + x.m02 1
+        + x.m03 1
+        + x.m04 1
+        + x.m05 1
+        + x.m06 1
+        + x.m07 1
+        + x.m08 1
+        + x.m09 1
+        + x.m10 1
+        + x.m11 1
+        + x.m12 1
+        + x.m13 1
+        + x.m14 1
+        + x.m15 1
+        + x.m16 1
+        + x.m17 1
+        + x.m18 1
+        + x.m19 1
+        + x.m20 1
+        + x.m21 1
+        + x.m22 1
+        + x.m23 1
+        + x.m24 1
+        + x.m25 1
+        + x.m26 1
+        + x.m27 1
+        + x.m28 1
+        + x.m29 1
+        + x.m30 1
+        + x.m31 1
+        + x.m32 1
+        + x.m33 1
+        + x.m34 1
+        + x.m35 1
+        + x.m36 1
+        + x.m37 1
+        + x.m38 1
+        + x.m39 1
+        + x.m40 1
+        + x.m41 1
+        + x.m42 1
+        + x.m43 1
+        + x.m44 1
+        + x.m45 1
+        + x.m46 1
+        + x.m47 1
+        + x.m48 1
+        + x.m49 1
+        + x.m50 1
+        + x.m51 1
+        + x.m52 1
+        + x.m53 1
+        + x.m54 1
+        + x.m55 1
+        + x.m56 1
+        + x.m57 1
+        + x.m58 1
+        + x.m59 1
+        + x.m60 1
+        + x.m61 1
+        + x.m62 1
+        + x.m63 1
+        + x.m64 1
+        + x.m65 1
+        + 0

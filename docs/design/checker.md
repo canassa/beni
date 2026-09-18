@@ -539,16 +539,22 @@ nesting_too_deep                                (shared with the parser; §5)
 unknown_method  private_method  no_methods_on_shape  missing_where_constraint
 method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_receiver
 constrained_constant                            (static dispatch; two more are lowering's)
+too_many_inferred_constraints                   (the cap of static-dispatch-spike.md §6.4)
 ```
 
-The last eight arrived with static dispatch on 2026-09-18, appended to `language.md` §10's
+The last nine arrived with static dispatch on 2026-09-18, appended to `language.md` §10's
 catalogue and never inserted. Two more of that set — `where_variable_unbound` and
 `duplicate_where_constraint` — are reported by lowering and live under `tests/corpus/parse/bad/`.
 Four existing codes are reused rather than duplicated: `not_equatable` for `eq` on a function type,
 `unbound_variable` for a dotted name that is neither a value nor a constrained annotation variable,
 `unexpected_token` for a `where` the grammar does not allow, and `nesting_too_deep` for the
-constraint-chain guard (§6.4). Three of the eight carry **two** regions — the call the author wrote
+constraint-chain guard (§6.4). Three of the nine carry **two** regions — the call the author wrote
 and the annotation the requirement came from — and the author's call is the primary one.
+The last of the nine, `too_many_inferred_constraints`, is the 64-constraint cap on an **unannotated**
+declaration's promoted set: over it the set is dropped and the declaration promotes nothing, which
+is what bounds both the inferred `where` suffix and the n(n+1)/2 an unannotated chain would
+otherwise accumulate. `ambiguous_method_receiver` is the one `warning` of the set, emitted by
+default and only for a module of the root package.
 → `static-dispatch-spike.md` §10.
 
 `nesting_too_deep` is the front end's code and the checker reuses it rather than inventing a

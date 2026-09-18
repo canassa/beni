@@ -146,9 +146,25 @@ pub const Options = struct {
     /// been extracted (§5), and keeping them costs memory proportional to
     /// the whole project rather than to one module.
     keep_type_stores: bool = false,
-    /// `--explain` (static-dispatch-spike.md §10 preamble): emit the
-    /// informational `warning`s that are otherwise suppressed.
-    explain: bool = false,
+    /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
+    /// today only `ambiguous_method_receiver` (§10.9). Set by `check` and
+    /// `build`, which are the two subcommands the decision names (A.83);
+    /// `dump` and `fmt` leave it off so a dump's stderr stays a channel for
+    /// problems with the input rather than advice about it.
+    ///
+    /// It was `--explain` until 2026-09-18. The flag is still parsed and
+    /// accepted and now governs nothing (`Cli.Common.explain`, A.83).
+    informational: bool = false,
+    /// `run` collects, counts and profiles its diagnostics but does NOT
+    /// render them; the caller renders once, later, through `renderLate`.
+    ///
+    /// `beni build` sets it, because its emit phase runs after `run` has
+    /// returned and can produce diagnostics of its own — and two renders on
+    /// one stream are two JSON arrays, which is not the format (§1.1). Until
+    /// A.83 the two waves could not overlap, because a run that reached the
+    /// emit phase had produced nothing at all; now it may have produced
+    /// `warning`s, so the waves are joined instead of assumed disjoint.
+    defer_render: bool = false,
     /// Work one `case` may spend on pattern usefulness (checker.md §6.6)
     /// before it is abandoned and reports nothing. A knob for the tests
     /// that prove the bound, not a flag.
@@ -245,9 +261,10 @@ pub const Worker = struct {
     }
 
     /// As `report`, with an explicit severity. A `warning` does not change
-    /// the exit code (`frontend.md` §1), which is what lets `--explain`
-    /// emit `ambiguous_method_receiver` without ever turning a passing
-    /// build into a failing one (static-dispatch-spike.md §10 preamble).
+    /// the exit code (`frontend.md` §1), which is what lets
+    /// `ambiguous_method_receiver` be emitted by default without ever
+    /// turning a passing build into a failing one
+    /// (static-dispatch-spike.md §10 preamble, A.83).
     pub fn reportAs(worker: *Worker, session: *Session, file: SourceStore.Index, code: diagnostic.Code, severity: diagnostic.Severity, start: diagnostic.Position, end: diagnostic.Position, message: []const u8) Allocator.Error!void {
         const owned = try session.gpa.dupe(u8, message);
         errdefer session.gpa.free(owned);
@@ -438,12 +455,8 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     session.profile.addCounter(.diagnostics, session.diagnostics.items.len);
 
     const render_token = session.profile.begin();
-    if (session.diagnostics.items.len != 0) {
-        switch (session.options.diagnostics) {
-            .text => try render_text.render(stderr, session.diagnostics.items, .{ .context = session, .lookup = lookupSource }),
-            .json => try render_json.render(stderr, session.diagnostics.items),
-        }
-        try stderr.flush();
+    if (session.diagnostics.items.len != 0 and !session.options.defer_render) {
+        try session.render(session.diagnostics.items, stderr);
     }
     session.profile.end(0, render_token, .render, Profile.Event.no_file, 0);
 
@@ -854,7 +867,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                 .{
                     .profile = &r.session.profile,
                     .keep_stores = r.session.options.keep_type_stores,
-                    .explain = r.session.options.explain,
+                    .informational = r.session.options.informational,
                     .quiet = r.quiet,
                     .jobs = @intCast(r.session.workers.len),
                     .pattern_budget = r.session.options.pattern_budget,
@@ -1037,20 +1050,25 @@ pub const LateItem = struct {
     message: []const u8,
 };
 
-/// Render `items` on `stderr` in the run's diagnostics format, sorted by
-/// the schema's comparator like every other wave. Returns how many were
-/// errors.
+/// Render `items` on `stderr` in the run's diagnostics format, sorted by the
+/// schema's comparator like every other wave. Returns how many of `items`
+/// were errors.
 ///
-/// Safe to call exactly once after a `run` that produced nothing, which is
-/// the only way `build` reaches it: two JSON renders on one stream would be
-/// two arrays and not one, and the black-box harness parses the stream as a
-/// whole.
+/// **What `run` held back comes with them.** Under `defer_render` — which is
+/// how `build` runs — `run` collected its own wave and rendered nothing, so
+/// this is the single render of the whole stream and both waves are sorted
+/// together into ONE array. Two renders would be two JSON arrays and not
+/// one, and the black-box harness parses the stream as a whole.
+///
+/// Called exactly once per run, and safe with `items` empty: a run that had
+/// warnings and an emit phase that had nothing still has to print them.
 pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer) RunError!u32 {
-    if (items.len == 0) return 0;
+    const held = if (session.options.defer_render) session.diagnostics.items else &.{};
+    if (items.len == 0 and held.len == 0) return 0;
     const gpa = session.gpa;
-    const rendered = try gpa.alloc(diagnostic.Diagnostic, items.len);
+    const rendered = try gpa.alloc(diagnostic.Diagnostic, items.len + held.len);
     defer gpa.free(rendered);
-    for (items, rendered) |item, *slot| {
+    for (items, rendered[0..items.len]) |item, *slot| {
         const start, const end = session.tokenSpan(item.file, item.token);
         slot.* = .{
             .code = item.code,
@@ -1060,17 +1078,25 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
             .message = item.message,
         };
     }
+    @memcpy(rendered[items.len..], held);
     diagnostic.sort(rendered);
-    switch (session.options.diagnostics) {
-        .text => try render_text.render(stderr, rendered, .{ .context = session, .lookup = lookupSource }),
-        .json => try render_json.render(stderr, rendered),
-    }
-    try stderr.flush();
+    try session.render(rendered, stderr);
     var errors: u32 = 0;
-    for (rendered) |d| {
+    for (rendered[0..items.len]) |d| {
         if (d.severity == .@"error") errors += 1;
     }
     return errors;
+}
+
+/// One wave of diagnostics onto `stderr`, in the run's format. The only
+/// place either renderer is called from, so "one array per stream" is a
+/// property of who calls this and how often.
+fn render(session: *Session, items: []const diagnostic.Diagnostic, stderr: *Io.Writer) RunError!void {
+    switch (session.options.diagnostics) {
+        .text => try render_text.render(stderr, items, .{ .context = session, .lookup = lookupSource }),
+        .json => try render_json.render(stderr, items),
+    }
+    try stderr.flush();
 }
 
 fn lookupSource(context: *const anyopaque, file: []const u8) ?[]const u8 {

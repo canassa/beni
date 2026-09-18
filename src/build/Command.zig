@@ -41,6 +41,12 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     options.core_package = true;
     options.platform = build.platform;
     options.manifest_root = build.common.root orelse ".";
+    // `check` and `build` are the two subcommands that emit the
+    // informational warnings of static-dispatch-spike.md §10 (A.83) — which
+    // is why the run's own wave is held back: the emit phase below can add
+    // to it, and the two together are ONE array on stderr.
+    options.informational = true;
+    options.defer_render = true;
 
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
@@ -59,15 +65,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
             .{ build.platform, embedded_names },
         );
     }
-    if (summary.errors > 0) return 1;
-    // `run` has already rendered its own wave, and `--diagnostics=json` is
-    // ONE array per stream: a second render would make it two, which is not
-    // the format and which the black-box harness parses as malformed. Today
-    // the first wave is EMPTY whenever `summary.errors` is zero, because
-    // every diagnostic the compiler can currently produce is error severity.
-    // The moment a warning exists, this has to become one collected list
-    // rendered once — stated here rather than discovered then.
-    std.debug.assert(session.diagnostics.items.len == 0);
+    if (summary.errors > 0) {
+        _ = session.renderLate(&.{}, stderr) catch return 2;
+        return 1;
+    }
 
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
@@ -115,7 +116,11 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     defer result.deinit(gpa);
     session.profile.end(0, emit_token, .emit, beni_profile.Event.no_file, @intCast(result.bytes_written));
 
-    if (result.diagnostics.len != 0) {
+    // The one render of the stream: the emit phase's diagnostics and the
+    // `warning`s `run` held back, sorted together into one array. Called
+    // even when the emit phase said nothing, because the held-back wave
+    // still has to reach the author.
+    {
         const late = gpa.alloc(Session.LateItem, result.diagnostics.len) catch
             return fail(stderr, "beni: out of memory", .{});
         defer gpa.free(late);

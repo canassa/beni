@@ -35,7 +35,7 @@ pub const usage =
     \\  --root=<dir>              the source root module names are derived from
     \\  --core                    treat the files as the core package (`foreign` declarations are legal)
     \\  --core-root=<dir>         read the core package from this directory instead of the embedded copy
-    \\  --explain                 emit informational diagnostics that are otherwise suppressed (check and build)
+    \\  --explain                 accepted; currently governs no diagnostic (all informational ones are on)
     \\
     \\build options:
     \\  --platform=<name>         which platform supplies `main`'s type and the runtime (required)
@@ -78,10 +78,13 @@ pub const Common = struct {
     /// copy (checker.md §2).
     core_root: ?[]const u8 = null,
     /// `--explain`: emit the informational diagnostics that are otherwise
-    /// suppressed (static-dispatch-spike.md §10 preamble, A.10). Parsed by
-    /// every subcommand; only `check` and `build` act on it. It adds no
-    /// severity — the one diagnostic it controls is a `warning` — so it can
-    /// never turn a passing build into a failing one.
+    /// suppressed (static-dispatch-spike.md §10 preamble, A.10).
+    ///
+    /// **It governs nothing today** (A.83). The one diagnostic it gated,
+    /// `ambiguous_method_receiver`, has been emitted by default since
+    /// 2026-09-18. The flag stays parsed and accepted so no invocation that
+    /// passes it starts exiting `2`, and it is where the next informational
+    /// diagnostic goes.
     explain: bool = false,
 };
 
