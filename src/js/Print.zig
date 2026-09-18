@@ -319,6 +319,16 @@ const Printer = struct {
                 }
                 try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
             },
+            .block_stmt => {
+                if (@as(JsIr.NameIndex, @enumFromInt(d.lhs)) != .none) {
+                    try p.name(@enumFromInt(d.lhs), true);
+                    try p.joiner.push(": ");
+                }
+                try p.joiner.push("{\n");
+                try p.statements(p.ir.subRange(@enumFromInt(d.rhs)), level + 1);
+                try p.indent(level);
+                try p.joiner.push("}\n");
+            },
             .expr_stmt => {
                 try p.expression(@enumFromInt(d.lhs), 0, level);
                 try p.joiner.push(";\n");

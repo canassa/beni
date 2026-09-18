@@ -1,0 +1,89 @@
+-- `docs/design/backend.md` §7: `Int`, `String` and `Char` literal rows with
+-- a `_` fallback, enough of each to cross the three-label `switch`
+-- threshold.
+--
+-- A literal has infinitely many alternatives, so its node ALWAYS keeps a
+-- default edge — a literal column is never exhaustive without a wildcard
+-- row — and the fallback is what every one of the misses below lands on.
+-- `day` is §7's four-deep `===` ternary chain, which is one dispatch now.
+-- A `Char` is a one-scalar JavaScript string (§4), so its test and a
+-- `String` literal's are the same `===`; both are here because the two
+-- spellings travel different paths through the lowering.
+import Node exposing (Program)
+import String
+
+
+day : Int -> String
+day n =
+    case n of
+        0 ->
+            "Sun"
+
+        1 ->
+            "Mon"
+
+        2 ->
+            "Tue"
+
+        3 ->
+            "Wed"
+
+        -1 ->
+            "yesterday"
+
+        _ ->
+            "later"
+
+
+greek : String -> Int
+greek name =
+    case name of
+        "alpha" ->
+            1
+
+        "beta" ->
+            2
+
+        "gamma" ->
+            3
+
+        "delta" ->
+            4
+
+        _ ->
+            0
+
+
+vowel : Char -> String
+vowel c =
+    case c of
+        'a' ->
+            "first"
+
+        'e' ->
+            "second"
+
+        'i' ->
+            "third"
+
+        'o' ->
+            "fourth"
+
+        _ ->
+            "consonant"
+
+
+main : Program
+main =
+    Node.printLines
+        [ day 0
+        , day 3
+        , day (-1)
+        , day 9
+        , String.fromInt (greek "alpha")
+        , String.fromInt (greek "delta")
+        , String.fromInt (greek "omega")
+        , vowel 'a'
+        , vowel 'o'
+        , vowel 'z'
+        ]

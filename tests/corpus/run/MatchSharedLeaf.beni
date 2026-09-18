@@ -1,0 +1,70 @@
+-- `docs/design/backend.md` §7: a leaf reached from TWO paths, written once
+-- behind a `$j$<d>$<b>` block that both paths `break` to, and exercised
+-- down both of them.
+--
+-- The last row of each match is a wildcard in the column the tree tests
+-- first, so specialisation copies it under both alternatives and two paths
+-- end at one leaf — §7's counted rule, one path inline and two or more
+-- shared. That leaf BINDS: `x` and `y` are read at the leaf through the
+-- member chain their positions in the pattern fix, which is what lets one
+-- copy serve both paths ("an occurrence is a member chain, not a name"). If
+-- a binding travelled with the edge instead of being rebuilt at the leaf,
+-- one of the two lines below would carry the other's numbers.
+import Node exposing (Program)
+import String
+
+
+type Point
+    = Point Int Int
+
+
+type Flag
+    = On
+    | Off
+
+
+verdict : Point, Flag -> String
+verdict p flag =
+    case ( p, flag ) of
+        ( Point 0 y, On ) ->
+            "on axis ${String.fromInt y}"
+
+        ( Point x 0, Off ) ->
+            "off axis ${String.fromInt x}"
+
+        ( Point x y, _ ) ->
+            "sum ${String.fromInt (x + y)}"
+
+
+describe : Point, Flag -> String
+describe p flag =
+    case ( p, flag ) of
+        ( Point 1 _, On ) ->
+            "one on"
+
+        ( Point _ 1, Off ) ->
+            "one off"
+
+        ( whole, _ ) ->
+            "plain ${String.fromInt (total whole)}"
+
+
+total : Point -> Int
+total p =
+    case p of
+        Point x y ->
+            x + y
+
+
+main : Program
+main =
+    Node.printLines
+        [ verdict (Point 0 5) On
+        , verdict (Point 7 0) Off
+        , verdict (Point 3 4) On
+        , verdict (Point 3 4) Off
+        , describe (Point 1 9) On
+        , describe (Point 9 1) Off
+        , describe (Point 2 2) On
+        , describe (Point 2 2) Off
+        ]

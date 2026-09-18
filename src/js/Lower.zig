@@ -47,6 +47,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const Bir = @import("../bir/Bir.zig");
+const Decision = @import("Decision.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
@@ -290,6 +291,13 @@ const Lowerer = struct {
     /// not an operator (§8.2), so the module emits the two-or-three-line
     /// `const` once and every use names it.
     needs: Primitives = .{},
+    /// How many `case` instructions of the function being lowered enclose
+    /// the one being lowered now: the `<d>` of §7's `$j$<d>$<b>` and
+    /// `$c$<d>` labels. It is reset at every function boundary, because a
+    /// `break` cannot cross one and an inner function's labels are a fresh
+    /// set — which is what keeps the names structural rather than a counter
+    /// (CLAUDE.md rule 5).
+    case_depth: u32 = 0,
     /// How deep the evidence walk of §8.2 is. The `parts` of a target nest
     /// (A.46) and the walk that reads them is recursive, so a poisoned
     /// table whose range pointed back at itself would recurse until the
@@ -775,9 +783,13 @@ const Lowerer = struct {
     /// The `Func` record for `params` and `body`: what both an `arrow` and
     /// a `func_decl` carry, built once so a `let` binding can choose which
     /// of the two it becomes without lowering the body twice.
-    fn functionOf(l: *Lowerer, evidence: u16, params: []const Inst.Index, body: Inst.Index, p: u32) !JsIr.ExtraIndex {
+    fn functionOf(l: *Lowerer, evidence: u16, params: []const Inst.Index, body: Inst.Index) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var stmts: StmtList = .empty;
+        // A new function is a new label scope (§7).
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
         // The evidence parameters come FIRST, before the declaration's own
         // (§8.1). `evidence` is zero for every lambda: §6.4 rule (a) keeps a
         // nested binding from being generalised over a constrained
@@ -802,8 +814,13 @@ const Lowerer = struct {
             const subject = try l.ident(fresh_name, l.pos(param));
             try l.bindings(&stmts, param, subject);
         }
-        const value = try l.expr(&stmts, body);
-        try stmts.append(l.scratch, try l.returnStmt(value, p));
+        // §7 removes §8's gate on the statement form: a `case` in tail
+        // position becomes statements whether or not the function loops, so
+        // a function whose body is one returns from each arm instead of
+        // assigning a `let $t$n` and returning that. The position of the
+        // `return` is the body's own, which `tailStmts` reads from the
+        // instruction — so this no longer takes one.
+        try l.tailStmts(&stmts, body, null);
         return l.funcRecord(names.items, stmts.items);
     }
 
@@ -937,7 +954,12 @@ const Lowerer = struct {
             }
         }
         var loop: Loop = .{ .label = label, .self = self, .evidence = evidence, .slots = slots };
-        if (!l.markTails(body, &loop)) return l.functionOf(evidence, params, body, p);
+        if (!l.markTails(body, &loop)) return l.functionOf(evidence, params, body);
+
+        // A new function is a new label scope (§7).
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
 
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         for (slots, 0..) |*slot, i| {
@@ -1088,15 +1110,16 @@ const Lowerer = struct {
 
     /// Lower `inst` in TAIL position straight into a statement list — the
     /// second entry point beside `expr` that §8 needs, because `continue`
-    /// cannot appear in a ternary or in an IIFE and today's `case` lowering
-    /// produces both.
+    /// cannot appear in a ternary or in an IIFE.
     ///
-    /// It is reached ONLY from inside a function that has a tail self-call,
-    /// which is what keeps every existing `emit/` golden byte-identical and
-    /// `a ? b : c` alive wherever it is still correct. §7's decision tree
-    /// later replaces the `if`/`else` chain below; all it owes this section
-    /// is that a tail position stay reachable as a statement.
-    fn tailStmts(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) Allocator.Error!void {
+    /// §8 reached it only from inside a function that has a tail self-call,
+    /// so that every `emit/` golden of that slice stayed byte-identical.
+    /// **§7 removes that gate**: `loop` is `null` for a function that does
+    /// not loop, and a `case` in tail position becomes statements either
+    /// way, which is what deletes the `let $t$n` / assign / `return $t$n`
+    /// triple from every function whose body is a `case`. `a ? b : c`
+    /// survives wherever it is still correct, in `tailCase`.
+    fn tailStmts(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: ?*const Loop) Allocator.Error!void {
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
             .let => {
@@ -1105,68 +1128,14 @@ const Lowerer = struct {
             },
             .case => return l.tailCase(out, inst, loop),
             .call => {
-                if (l.isSelfCall(inst, loop)) return l.tailJump(out, inst, loop);
+                if (loop) |lp| {
+                    if (l.isSelfCall(inst, lp)) return l.tailJump(out, inst, lp);
+                }
             },
             else => {},
         }
         const value = try l.expr(out, inst);
         try out.append(l.scratch, try l.returnStmt(value, l.pos(inst)));
-    }
-
-    /// A `case` in tail position: `caseExpr`'s chain with every arm lowered
-    /// the same way instead of assigning a result temporary. The LAST branch
-    /// is emitted unconditionally for the same reason it is there — the
-    /// checker proved the match exhaustive (`checker.md` §6.6).
-    fn tailCase(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: *const Loop) !void {
-        const d = l.bir.instData(inst);
-        const p = l.pos(inst);
-        const scrutinee = try l.expr(out, @enumFromInt(d.lhs));
-        const subject = try l.bindSubject(out, scrutinee, p);
-        const branch_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
-        if (branch_insts.len == 0) {
-            const value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            try out.append(l.scratch, try l.returnStmt(value, p));
-            return;
-        }
-
-        const tests = try l.scratch.alloc(Node.OptionalIndex, branch_insts.len);
-        const bodies = try l.scratch.alloc([]const Node.Index, branch_insts.len);
-        const positions = try l.scratch.alloc(u32, branch_insts.len);
-        for (branch_insts, 0..) |branch_inst, i| {
-            const bd = l.bir.instData(branch_inst);
-            const pattern: Inst.Index = @enumFromInt(bd.lhs);
-            var stmts: StmtList = .empty;
-            tests[i] = try l.patternTest(pattern, subject);
-            try l.bindings(&stmts, pattern, subject);
-            try l.tailStmts(&stmts, @enumFromInt(bd.rhs), loop);
-            bodies[i] = stmts.items;
-            positions[i] = l.pos(branch_inst);
-        }
-
-        var tail = bodies[bodies.len - 1];
-        var i: usize = bodies.len - 1;
-        while (i > 0) {
-            i -= 1;
-            const condition = tests[i].unwrap() orelse {
-                // An irrefutable branch before the end: everything after it
-                // is dead and the checker already said so.
-                tail = bodies[i];
-                continue;
-            };
-            const then_range = try l.b.addRange(bodies[i]);
-            const else_range = try l.b.addRange(tail);
-            const record = try l.b.addRecord(JsIr.If{
-                .then_start = then_range.start,
-                .then_end = then_range.end,
-                .else_start = else_range.start,
-                .else_end = else_range.end,
-            });
-            const node = try l.add(.if_stmt, positions[i], condition.int(), @intFromEnum(record));
-            const one = try l.scratch.alloc(Node.Index, 1);
-            one[0] = node;
-            tail = one;
-        }
-        for (tail) |statement| try out.append(l.scratch, statement);
     }
 
     /// A tail self-call: the argument expressions, the assignments to the
@@ -1426,7 +1395,7 @@ const Lowerer = struct {
             .method_call => return l.methodCallExpr(out, inst),
             .lambda => {
                 const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
-                const record = try l.functionOf(0, params, @enumFromInt(d.rhs), p);
+                const record = try l.functionOf(0, params, @enumFromInt(d.rhs));
                 return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
             },
             .let => {
@@ -3549,123 +3518,14 @@ const Lowerer = struct {
         }
     }
 
-    // ---- `case` -----------------------------------------------------------
-
-    const Branch = struct {
-        /// The refutable half of the pattern, or `.none` when it always
-        /// matches.
-        test_expr: Node.OptionalIndex,
-        /// Bindings, then whatever the body needed, then the result.
-        stmts: []const Node.Index,
-        value: Node.Index,
-        pos: u32,
-    };
-
-    /// A `case`, compiled naively: one test per branch, in order. §7's
-    /// decision tree is M3b's; what M3a needs is that the answer is right.
+    /// Bind a value to a name unless it is already something that can be
+    /// re-read for free. A `let` pattern reads its subject once per binding
+    /// and a comparator reads each operand twice, so a call — or anything
+    /// else with work in it — has to be evaluated exactly once.
     ///
-    /// The LAST branch is emitted unconditionally. That is not an
-    /// optimisation and not an assumption about the patterns: the checker
-    /// has already proved the match exhaustive (checker.md §6.6), so if
-    /// none of the earlier branches matched, the last one does — which is
-    /// exactly backend.md §7's "the tree needs no default arm for a
-    /// well-typed match".
-    fn caseExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
-        const d = l.bir.instData(inst);
-        const p = l.pos(inst);
-        const scrutinee = try l.expr(out, @enumFromInt(d.lhs));
-        const subject = try l.bindSubject(out, scrutinee, p);
-        const branch_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
-        if (branch_insts.len == 0) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-
-        var branches: std.ArrayList(Branch) = .empty;
-        var simple = true;
-        for (branch_insts) |branch_inst| {
-            const bd = l.bir.instData(branch_inst);
-            const pattern: Inst.Index = @enumFromInt(bd.lhs);
-            var stmts: StmtList = .empty;
-            const test_expr = try l.patternTest(pattern, subject);
-            try l.bindings(&stmts, pattern, subject);
-            const value = try l.expr(&stmts, @enumFromInt(bd.rhs));
-            if (stmts.items.len != 0) simple = false;
-            try branches.append(l.scratch, .{
-                .test_expr = test_expr,
-                .stmts = stmts.items,
-                .value = value,
-                .pos = l.pos(branch_inst),
-            });
-        }
-
-        if (simple) {
-            // Nested conditionals, built from the last branch backwards —
-            // `if a then b else c` is `a ? b : c` and nothing more.
-            var result = branches.items[branches.items.len - 1].value;
-            var i: usize = branches.items.len - 1;
-            while (i > 0) {
-                i -= 1;
-                const branch = branches.items[i];
-                const condition = branch.test_expr.unwrap() orelse {
-                    // An irrefutable branch before the end: everything
-                    // after it is dead, and the checker already said so
-                    // (`redundant_pattern`).
-                    result = branch.value;
-                    continue;
-                };
-                const record = try l.b.addRecord(JsIr.Cond{ .consequent = branch.value, .alternate = result });
-                result = try l.add(.cond, branch.pos, condition.int(), @intFromEnum(record));
-            }
-            return result;
-        }
-
-        const result_name = try l.fresh(l.well.temp);
-        try out.append(l.scratch, try l.add(
-            .let_decl,
-            p,
-            @intFromEnum(result_name),
-            @intFromEnum(Node.OptionalIndex.none),
-        ));
-
-        // Build the `if`/`else` chain backwards; the last branch is the
-        // final `else` body.
-        var tail: []const Node.Index = try l.branchBody(branches.items[branches.items.len - 1], result_name);
-        var i: usize = branches.items.len - 1;
-        while (i > 0) {
-            i -= 1;
-            const branch = branches.items[i];
-            const body = try l.branchBody(branch, result_name);
-            const condition = branch.test_expr.unwrap() orelse {
-                tail = body;
-                continue;
-            };
-            const then_range = try l.b.addRange(body);
-            const else_range = try l.b.addRange(tail);
-            const record = try l.b.addRecord(JsIr.If{
-                .then_start = then_range.start,
-                .then_end = then_range.end,
-                .else_start = else_range.start,
-                .else_end = else_range.end,
-            });
-            const node = try l.add(.if_stmt, branch.pos, condition.int(), @intFromEnum(record));
-            const one = try l.scratch.alloc(Node.Index, 1);
-            one[0] = node;
-            tail = one;
-        }
-        for (tail) |statement| try out.append(l.scratch, statement);
-        return l.ident(result_name, p);
-    }
-
-    fn branchBody(l: *Lowerer, branch: Branch, result: JsIr.NameIndex) ![]const Node.Index {
-        var body: StmtList = .empty;
-        try body.appendSlice(l.scratch, branch.stmts);
-        const target = try l.ident(result, branch.pos);
-        try body.append(l.scratch, try l.add(.assign_stmt, branch.pos, target.int(), branch.value.int()));
-        return body.items;
-    }
-
-    /// Bind the scrutinee to a name unless it is already something that can
-    /// be re-read for free. A pattern match reads its subject once per
-    /// test, so a call — or anything else with work in it — has to be
-    /// evaluated exactly once.
+    /// A `case` calls this only when the tree reads the root more than once
+    /// (§7, `planCase`): a two-alternative boolean node reads it once, and
+    /// binding it there is the 41 scrutinee temporaries §7 measures.
     fn bindSubject(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) !Node.Index {
         switch (l.b.nodes.items(.tag)[value.int()]) {
             .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return value,
@@ -3676,111 +3536,648 @@ const Lowerer = struct {
         return l.ident(n, p);
     }
 
-    // ---- Patterns ---------------------------------------------------------
+    // ---- `case` — the decision tree (backend.md §7) ------------------------
+    //
+    // One tree over ALL the branches at once, so nothing re-tests what the
+    // branches above it already disproved. `js/Decision.zig` builds the tree
+    // out of `Bir` patterns and knows no representation; everything below
+    // turns it into JavaScript: §4's `subj` / `subj.$` discriminants, the
+    // `switch` at three labels and the `if` at two, the bindings at the leaf
+    // as member chains, and the labelled block a leaf reached from two paths
+    // is written once behind.
 
-    /// The condition under which `pattern` matches `subject`, or `.none`
-    /// when it always does.
-    fn patternTest(l: *Lowerer, pattern: Inst.Index, subject: Node.Index) Allocator.Error!Node.OptionalIndex {
-        const d = l.bir.instData(pattern);
-        const p = l.pos(pattern);
-        switch (l.bir.instTag(pattern)) {
-            .pat_wild, .pat_var, .pat_unit, .pat_record => return .none,
-            .pat_as => return l.patternTest(@enumFromInt(d.lhs), subject),
-            .pat_tuple => {
-                var condition: Node.OptionalIndex = .none;
-                for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |element, i| {
-                    const slot = try l.member(subject, try l.slotName(@intCast(i)), p);
-                    condition = try l.andTest(condition, try l.patternTest(element, slot), p);
+    /// Where a `case`'s leaves send their answers.
+    const Sink = union(enum) {
+        /// **Tail position**: each leaf lowers its body straight into
+        /// statements, so a leaf ends in `return` or — inside a loop, and
+        /// only when the body is a tail self-call — §8's assignments and
+        /// `continue <label>`. Both terminate a `switch` case and escape
+        /// every labelled block, which is why tail position needs no
+        /// wrapper. `null` is a function with no loop at all: §8's gate on
+        /// this form is removed (§7), so a `case` in tail position becomes
+        /// statements whether or not the function loops.
+        tail: ?*const Loop,
+        /// **Expression position**: each leaf assigns the result temporary
+        /// and, when the tree needed a `$c$<d>` block, breaks out of it.
+        value: Value,
+    };
+
+    const Value = struct {
+        result: JsIr.NameIndex,
+        /// `.none` for a pure `if`/`else` chain: the arms fall out of it and
+        /// there is nothing to break out of (§7's third row).
+        wrapper: JsIr.NameIndex = .none,
+    };
+
+    /// A branch body already lowered as an expression, for the shapes that
+    /// turned out not to need statements. Lowering happens exactly once
+    /// either way: a leaf reached from one path is inlined there and a leaf
+    /// reached from two or more is written once, so no body is ever lowered
+    /// twice and no `$t$<n>` is ever allocated and thrown away.
+    const Ready = struct {
+        stmts: []const Node.Index = &.{},
+        value: Node.OptionalIndex = .none,
+    };
+
+    /// Everything one `case` needs to emit itself.
+    const Case = struct {
+        tree: Decision.Tree,
+        /// The JavaScript expression each root is read through. One root
+        /// normally; §7's tuple-literal rule gives one per element.
+        roots: []const Node.Index,
+        /// The member chain of each occurrence, built on first use and
+        /// reused: `JsIr` is immutable, so one node may be referenced from
+        /// as many tests as read that occurrence.
+        occ_nodes: []Node.OptionalIndex,
+        /// `branch * roots.len + r`: the pattern whose bindings root `r`
+        /// supplies for that branch, or `.none` when it supplies none.
+        pats: []const Inst.OptionalIndex,
+        branches: []const Inst.Index,
+        /// The number of enclosing `case` instructions, which is the `<d>`
+        /// of `$j$<d>$<b>` and `$c$<d>` (§7). Structural, so a golden does
+        /// not renumber when an unrelated declaration is added above it.
+        depth: u32,
+        /// Branches reached from two or more paths, ascending — §7's shared
+        /// leaves, nested lowest-index-innermost so their bodies read in
+        /// source order.
+        shared: []const u32,
+        /// Pre-lowered leaf values, or empty when the leaves lower
+        /// themselves as they are emitted.
+        ready: []Ready,
+        sink: Sink,
+        p: u32,
+    };
+
+    /// A `case` in expression position: §7's last three rows.
+    fn caseExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
+        const p = l.pos(inst);
+        var c = try l.planCase(out, inst) orelse
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const depth = l.case_depth;
+        l.case_depth += 1;
+        defer l.case_depth = depth;
+
+        // The conditional-expression shape: no `switch`, no shared leaf,
+        // nothing bound, every leaf one expression — `a ? b : c` and nothing
+        // more, exactly as today.
+        if (l.condChainPossible(&c)) {
+            try l.lowerReady(&c);
+            if (l.readyIsClean(&c)) return l.condChain(&c, c.tree.root);
+        }
+
+        const result = try l.fresh(l.well.temp);
+        try out.append(l.scratch, try l.add(
+            .let_decl,
+            c.p,
+            @intFromEnum(result),
+            @intFromEnum(Node.OptionalIndex.none),
+        ));
+        const wrapped = c.tree.hasSwitch() or c.tree.hasShared();
+        c.sink = .{ .value = .{
+            .result = result,
+            .wrapper = if (wrapped) try l.caseLabel(&c) else .none,
+        } };
+
+        if (!wrapped) {
+            try l.emitCase(&c, out);
+            return l.ident(result, c.p);
+        }
+        // One `$c$<d>` block, which every leaf but the textually last one
+        // breaks out of to skip the shared leaves written below the tree.
+        var inner: StmtList = .empty;
+        try l.emitCase(&c, &inner);
+        l.trimTrailingBreak(&inner, c.sink.value.wrapper);
+        try out.append(l.scratch, try l.blockStmt(c.sink.value.wrapper, inner.items, c.p));
+        return l.ident(result, c.p);
+    }
+
+    /// A `case` in TAIL position (§7's first row): the branch bodies are
+    /// lowered as statements, so each arm returns — or jumps — for itself
+    /// and there is no result temporary at all.
+    fn tailCase(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: ?*const Loop) !void {
+        const p = l.pos(inst);
+        var c = try l.planCase(out, inst) orelse {
+            const value = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            try out.append(l.scratch, try l.returnStmt(value, p));
+            return;
+        };
+        const depth = l.case_depth;
+        l.case_depth += 1;
+        defer l.case_depth = depth;
+        c.sink = .{ .tail = loop };
+
+        // A chain of two-way tests over expression leaves stays the
+        // conditional expression it is today: `return a ? b : c` is shorter
+        // than two `return`s and says the same thing.
+        if (l.condChainPossible(&c)) {
+            try l.lowerReady(&c);
+            if (l.readyIsClean(&c)) {
+                const value = try l.condChain(&c, c.tree.root);
+                try out.append(l.scratch, try l.returnStmt(value, c.p));
+                return;
+            }
+        }
+        try l.emitCase(&c, out);
+    }
+
+    /// Build the tree, evaluate the scrutinee and decide which leaves are
+    /// shared. `null` is a `case` with no branches, which the parser already
+    /// reported.
+    fn planCase(l: *Lowerer, out: *StmtList, inst: Inst.Index) !?Case {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const scrutinee: Inst.Index = @enumFromInt(d.lhs);
+        const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (branches.len == 0) return null;
+
+        // §7's tuple-literal rule: a `case` on a tuple LITERAL every row
+        // matches with a tuple pattern (or a bare `_`) starts as an n-column
+        // matrix over the elements, and no tuple object is built. A row that
+        // binds the tuple as a whole, by name or by `as`, needs the object
+        // and turns the rule off.
+        const elements: []const Inst.Index = if (l.bir.instTag(scrutinee) == .tuple)
+            l.bir.extraSlice(Bir.inlineRange(l.bir.instData(scrutinee)), Inst.Index)
+        else
+            &.{};
+        const spread = elements.len != 0 and l.rowsAreTuples(branches, elements.len);
+        const roots: usize = if (spread) elements.len else 1;
+
+        const pats = try l.scratch.alloc(Inst.OptionalIndex, branches.len * roots);
+        @memset(pats, .none);
+        const rows = try l.scratch.alloc(Decision.Row, branches.len);
+        for (branches, 0..) |branch, i| {
+            const pattern: Inst.Index = @enumFromInt(l.bir.instData(branch).lhs);
+            const slots = pats[i * roots ..][0..roots];
+            if (!spread) {
+                slots[0] = pattern.toOptional();
+            } else if (l.bir.instTag(pattern) == .pat_tuple) {
+                for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(pattern)), Inst.Index), slots) |element, *slot| {
+                    slot.* = element.toOptional();
                 }
-                return condition;
-            },
-            .pat_int => return (try l.binary(
-                .strict_eq,
-                subject,
-                try l.numberNode(l.bir.bytes(pattern), p),
-                p,
-            )).toOptional(),
-            .pat_char => {
-                var buf: [4]u8 = undefined;
-                const len = std.unicode.utf8Encode(std.math.cast(u21, d.lhs) orelse 0xFFFD, &buf) catch
-                    std.unicode.utf8Encode(0xFFFD, &buf) catch unreachable;
-                return (try l.binary(.strict_eq, subject, try l.stringNode(buf[0..len], p), p)).toOptional();
-            },
-            .pat_string => return (try l.binary(
-                .strict_eq,
-                subject,
-                try l.stringNode(l.bir.bytes(pattern), p),
-                p,
-            )).toOptional(),
-            .pat_ctor => {
-                const ctor_inst: Inst.Index = @enumFromInt(d.lhs);
-                const rep_and_tag = l.ctorRepOf(ctor_inst) orelse return .none;
-                const rep, const tag = rep_and_tag;
-                var condition: Node.OptionalIndex = switch (rep) {
-                    // `x === true` is `x`, and `x === false` is `!x`: the
-                    // one place a readable `if` is worth a special case,
-                    // because every `if` in the language goes through here.
-                    .boolean => |value| if (value)
-                        subject.toOptional()
-                    else
-                        (try l.unary(.not, subject, p)).toOptional(),
-                    .bare_tag => (try l.binary(.strict_eq, subject, try l.stringNode(l.text(tag), p), p)).toOptional(),
-                    .tagged => (try l.binary(
-                        .strict_eq,
-                        try l.member(subject, l.well.tag, p),
-                        try l.stringNode(l.text(tag), p),
-                        p,
-                    )).toOptional(),
-                };
-                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, i| {
-                    const slot = try l.member(subject, try l.slotName(@intCast(i)), p);
-                    condition = try l.andTest(condition, try l.patternTest(arg, slot), p);
+            }
+            rows[i] = .{ .branch = @intCast(i), .pats = slots };
+        }
+
+        const tree = try Decision.build(
+            l.scratch,
+            .{ .bir = l.bir, .interfaces = l.in.interfaces },
+            @intCast(roots),
+            rows,
+            @intCast(branches.len),
+        );
+
+        // The scrutinee is evaluated exactly once, and §7 binds it to a name
+        // only when the tree READS it more than once: a two-alternative
+        // boolean node reads it once, so `const $t$1 = n$1 <= 0; if ($t$1)`
+        // becomes `if (n$1 <= 0)` — and every `if` in the language is a
+        // `case` (`language.md` §8).
+        const root_nodes = try l.scratch.alloc(Node.Index, roots);
+        if (!spread) {
+            const value = try l.expr(out, scrutinee);
+            var reads = tree.fanReads(0);
+            for (0..branches.len) |i| {
+                if (tree.uses[i] == 0) continue;
+                reads += l.bindCount(pats[i]);
+            }
+            root_nodes[0] = if (reads == 1) value else try l.bindSubject(out, value, p);
+        } else {
+            // Each element is bound in source order, so the elements keep
+            // being evaluated left to right whatever the tree tests first.
+            for (elements, root_nodes) |element, *root| {
+                root.* = try l.bindSubject(out, try l.expr(out, element), p);
+            }
+        }
+
+        var shared: std.ArrayList(u32) = .empty;
+        for (tree.uses, 0..) |uses, i| {
+            if (uses >= 2) try shared.append(l.scratch, @intCast(i));
+        }
+        const occ_nodes = try l.scratch.alloc(Node.OptionalIndex, tree.occs.len);
+        @memset(occ_nodes, .none);
+        return .{
+            .tree = tree,
+            .roots = root_nodes,
+            .occ_nodes = occ_nodes,
+            .pats = pats,
+            .branches = branches,
+            .depth = l.case_depth,
+            .shared = shared.items,
+            .ready = try l.scratch.alloc(Ready, 0),
+            .sink = .{ .tail = null },
+            .p = p,
+        };
+    }
+
+    /// Whether every row of `branches` matches a tuple of `arity` elements
+    /// or is a bare `_`. A row that names the tuple — `t ->`, `( a, b ) as
+    /// t ->` — needs the object, and one of another arity is a type error
+    /// that never reaches here.
+    fn rowsAreTuples(l: *Lowerer, branches: []const Inst.Index, arity: usize) bool {
+        for (branches) |branch| {
+            const pattern: Inst.Index = @enumFromInt(l.bir.instData(branch).lhs);
+            switch (l.bir.instTag(pattern)) {
+                .pat_wild => {},
+                .pat_tuple => if (Bir.inlineRange(l.bir.instData(pattern)).len() != arity) return false,
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// How many times `bindings` would read the subject of `pattern`: one
+    /// per `const` it emits.
+    fn bindCount(l: *Lowerer, pattern: Inst.OptionalIndex) u32 {
+        const pat = pattern.unwrap() orelse return 0;
+        const d = l.bir.instData(pat);
+        return switch (l.bir.instTag(pat)) {
+            .pat_var => 1,
+            .pat_as => 1 + l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()),
+            .pat_record => Bir.inlineRange(d).len(),
+            .pat_tuple, .pat_list => blk: {
+                var total: u32 = 0;
+                for (l.bir.extraSlice(Bir.inlineRange(d), Inst.Index)) |element| {
+                    total += l.bindCount(element.toOptional());
                 }
-                return condition;
+                break :blk total;
             },
-            .pat_cons => {
-                var condition = (try l.binary(
-                    .strict_eq,
-                    try l.member(subject, l.well.tag, p),
-                    try l.numberNode("1", p),
-                    p,
-                )).toOptional();
-                const head = try l.member(subject, try l.slotName(0), p);
-                const tail = try l.member(subject, try l.slotName(1), p);
-                condition = try l.andTest(condition, try l.patternTest(@enumFromInt(d.lhs), head), p);
-                return l.andTest(condition, try l.patternTest(@enumFromInt(d.rhs), tail), p);
-            },
-            .pat_list => {
-                const elements = l.bir.extraSlice(Bir.inlineRange(d), Inst.Index);
-                var condition: Node.OptionalIndex = .none;
-                var walk = subject;
-                for (elements) |element| {
-                    condition = try l.andTest(condition, (try l.binary(
-                        .strict_eq,
-                        try l.member(walk, l.well.tag, p),
-                        try l.numberNode("1", p),
-                        p,
-                    )).toOptional(), p);
-                    const head = try l.member(walk, try l.slotName(0), p);
-                    condition = try l.andTest(condition, try l.patternTest(element, head), p);
-                    walk = try l.member(walk, try l.slotName(1), p);
+            .pat_ctor => blk: {
+                var total: u32 = 0;
+                for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index)) |arg| {
+                    total += l.bindCount(arg.toOptional());
                 }
-                // …and nothing after the last element.
-                return l.andTest(condition, (try l.binary(
-                    .strict_eq,
-                    try l.member(walk, l.well.tag, p),
-                    try l.numberNode("0", p),
-                    p,
-                )).toOptional(), p);
+                break :blk total;
             },
-            else => return .none,
+            .pat_cons => l.bindCount(@as(Inst.Index, @enumFromInt(d.lhs)).toOptional()) +
+                l.bindCount(@as(Inst.Index, @enumFromInt(d.rhs)).toOptional()),
+            else => 0,
+        };
+    }
+
+    // ---- The emitted shape ------------------------------------------------
+
+    /// The tree, and the shared leaves behind it: `$j$<d>$<b>` labels the
+    /// block whose exit is branch *b*, and the blocks nest with the lowest
+    /// branch index innermost so their bodies read in source order (§7).
+    fn emitCase(l: *Lowerer, c: *Case, out: *StmtList) !void {
+        var stmts: StmtList = .empty;
+        try l.emitNode(c, &stmts, c.tree.root);
+        for (c.shared) |branch| {
+            const block = try l.blockStmt(try l.sharedLabel(c, branch), stmts.items, c.p);
+            var next: StmtList = .empty;
+            try next.append(l.scratch, block);
+            try l.leafBody(c, &next, branch);
+            stmts = next;
+        }
+        try out.appendSlice(l.scratch, stmts.items);
+    }
+
+    fn emitNode(l: *Lowerer, c: *Case, out: *StmtList, node: u32) Allocator.Error!void {
+        if (node == Decision.no_node) return;
+        switch (c.tree.node(node)) {
+            .leaf => |branch| try l.emitLeaf(c, out, branch),
+            .fan => |index| try l.emitFan(c, out, index),
         }
     }
 
-    fn andTest(l: *Lowerer, left: Node.OptionalIndex, right: Node.OptionalIndex, p: u32) !Node.OptionalIndex {
-        const a = left.unwrap() orelse return right;
-        const b = right.unwrap() orelse return left;
-        return (try l.binary(.logical_and, a, b, p)).toOptional();
+    /// A leaf: inlined when one path reaches it, and a `break` to the block
+    /// it is written behind when two or more do (§7's counted rule — Elm's
+    /// `countTargets`/`createChoices`).
+    fn emitLeaf(l: *Lowerer, c: *Case, out: *StmtList, branch: u32) !void {
+        if (c.tree.uses[branch] >= 2) {
+            const label = try l.sharedLabel(c, branch);
+            try out.append(l.scratch, try l.add(.break_stmt, c.p, @intFromEnum(label), Node.Data.unused));
+            return;
+        }
+        try l.leafBody(c, out, branch);
+    }
+
+    /// The bindings of a branch and then its body. **An occurrence is a
+    /// member chain and not a name**, so it is the same expression on every
+    /// path that reaches the leaf — which is what lets the leaf own its
+    /// bindings even when it is shared.
+    fn leafBody(l: *Lowerer, c: *Case, out: *StmtList, branch: u32) !void {
+        for (c.roots, 0..) |root, r| {
+            const pattern = c.pats[branch * c.roots.len + r].unwrap() orelse continue;
+            try l.bindings(out, pattern, root);
+        }
+        const body: Inst.Index = @enumFromInt(l.bir.instData(c.branches[branch]).rhs);
+        const p = l.pos(c.branches[branch]);
+        // A pre-lowered leaf: the shape decided it was an expression before
+        // the bodies were lowered, and then one of them needed a statement
+        // after all.
+        if (c.ready.len != 0) {
+            try out.appendSlice(l.scratch, c.ready[branch].stmts);
+            const value = c.ready[branch].value.unwrap() orelse return;
+            return l.finishLeaf(c, out, value, p);
+        }
+        switch (c.sink) {
+            .tail => |loop| try l.tailStmts(out, body, loop),
+            .value => {
+                const value = try l.expr(out, body);
+                try l.finishLeaf(c, out, value, p);
+            },
+        }
+    }
+
+    fn finishLeaf(l: *Lowerer, c: *Case, out: *StmtList, value: Node.Index, p: u32) !void {
+        switch (c.sink) {
+            .tail => try out.append(l.scratch, try l.returnStmt(value, p)),
+            .value => |v| {
+                const target = try l.ident(v.result, p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+                if (v.wrapper != .none) {
+                    try out.append(l.scratch, try l.add(.break_stmt, p, @intFromEnum(v.wrapper), Node.Data.unused));
+                }
+            },
+        }
+    }
+
+    /// One fan-out. **Three or more case labels is a `switch`; two or fewer
+    /// is `if`/`else`** (§7) — a threshold that is representation
+    /// independent, and that makes a boolean and a list node, which have
+    /// exactly two alternatives, always an `if`.
+    fn emitFan(l: *Lowerer, c: *Case, out: *StmtList, index: u32) !void {
+        const fan = c.tree.fans[index];
+        const edges = c.tree.edges[fan.edges_start..fan.edges_end];
+        const labels = fan.labels();
+        // One alternative and no default: the type has one constructor here,
+        // so there is nothing to test and no impossible arm to name.
+        if (labels <= 1) {
+            if (fan.default != Decision.no_node) return l.emitNode(c, out, fan.default);
+            if (edges.len != 0) return l.emitNode(c, out, edges[0].child);
+            return;
+        }
+        if (labels == 2) {
+            const condition = try l.edgeTest(c, fan, edges[0]);
+            var then_stmts: StmtList = .empty;
+            try l.emitNode(c, &then_stmts, edges[0].child);
+            var else_stmts: StmtList = .empty;
+            try l.emitNode(c, &else_stmts, if (fan.default != Decision.no_node)
+                fan.default
+            else
+                edges[1].child);
+            const then_range = try l.b.addRange(then_stmts.items);
+            const else_range = try l.b.addRange(else_stmts.items);
+            const record = try l.b.addRecord(JsIr.If{
+                .then_start = then_range.start,
+                .then_end = then_range.end,
+                .else_start = else_range.start,
+                .else_end = else_range.end,
+            });
+            const p = l.edgePos(c, edges[0]);
+            try out.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @intFromEnum(record)));
+            return;
+        }
+
+        // **The last alternative of an exhaustive fan-out is `default:`**,
+        // not a `case` of its own, and nothing is emitted for the impossible
+        // arm: it saves a label and a `throw` per `switch`, and it is
+        // byte-for-byte what the chain did when it emitted its last branch
+        // unconditionally.
+        const tail_is_default = fan.default == Decision.no_node;
+        const named = edges[0 .. edges.len - @intFromBool(tail_is_default)];
+        var cases: std.ArrayList(Node.Index) = .empty;
+        for (named) |edge| {
+            const p = l.edgePos(c, edge);
+            var body: StmtList = .empty;
+            try l.emitNode(c, &body, edge.child);
+            // **Each case body is a block.** Two sibling cases may both
+            // bind, and a `switch`'s cases share one scope; local indices
+            // keep the names apart today, and one block per case ends that
+            // class of bug for two bytes that compress to nothing.
+            const one = [_]Node.Index{try l.blockStmt(.none, body.items, p)};
+            const range = try l.b.addRange(&one);
+            const record = try l.b.addRecord(range);
+            const key = try l.edgeKey(c, fan, edge);
+            try cases.append(l.scratch, try l.add(
+                .switch_case,
+                p,
+                @intFromEnum(key.toOptional()),
+                @intFromEnum(record),
+            ));
+        }
+        {
+            const child = if (tail_is_default) edges[edges.len - 1].child else fan.default;
+            var body: StmtList = .empty;
+            try l.emitNode(c, &body, child);
+            const one = [_]Node.Index{try l.blockStmt(.none, body.items, c.p)};
+            const range = try l.b.addRange(&one);
+            const record = try l.b.addRecord(range);
+            try cases.append(l.scratch, try l.add(
+                .switch_case,
+                c.p,
+                @intFromEnum(Node.OptionalIndex.none),
+                @intFromEnum(record),
+            ));
+        }
+        const cases_range = try l.b.addRange(cases.items);
+        const cases_record = try l.b.addRecord(cases_range);
+        const discriminant = try l.fanDiscriminant(c, fan);
+        try out.append(l.scratch, try l.add(.switch_stmt, c.p, discriminant.int(), @intFromEnum(cases_record)));
+    }
+
+    /// The conditional-expression form of a chain: `a ? b : c`, built from
+    /// the same tree. Reached only when `condChainPossible` held and every
+    /// leaf lowered without a statement.
+    fn condChain(l: *Lowerer, c: *Case, node: u32) Allocator.Error!Node.Index {
+        switch (c.tree.node(node)) {
+            .leaf => |branch| return c.ready[branch].value.unwrap().?,
+            .fan => |index| {
+                const fan = c.tree.fans[index];
+                const edges = c.tree.edges[fan.edges_start..fan.edges_end];
+                if (fan.labels() <= 1) {
+                    return l.condChain(c, if (fan.default != Decision.no_node) fan.default else edges[0].child);
+                }
+                const condition = try l.edgeTest(c, fan, edges[0]);
+                const consequent = try l.condChain(c, edges[0].child);
+                const alternate = try l.condChain(c, if (fan.default != Decision.no_node)
+                    fan.default
+                else
+                    edges[1].child);
+                const record = try l.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = alternate });
+                return l.add(.cond, l.edgePos(c, edges[0]), condition.int(), @intFromEnum(record));
+            },
+        }
+    }
+
+    // ---- Tests, discriminants and occurrences ------------------------------
+
+    /// What a `switch` switches on: `subj` for `.boolean` and `.bare_tag`,
+    /// `subj.$` for `.tagged` and for a list cell, and the scrutinee itself
+    /// for a literal node (§7).
+    fn fanDiscriminant(l: *Lowerer, c: *Case, fan: Decision.Fan) !Node.Index {
+        const subject = try l.occNode(c, fan.occ);
+        switch (fan.kind) {
+            .list => return l.member(subject, l.well.tag, c.p),
+            .ctor => {
+                const rep = l.fanRep(c, fan) orelse return subject;
+                return switch (rep) {
+                    .tagged => try l.member(subject, l.well.tag, c.p),
+                    .boolean, .bare_tag => subject,
+                };
+            },
+            .int, .char, .string => return subject,
+        }
+    }
+
+    /// The `===` an `if` tests one alternative with. `x === true` is `x` and
+    /// `x === false` is `!x`: the one place a readable `if` is worth a
+    /// special case, because every `if` in the language goes through here.
+    fn edgeTest(l: *Lowerer, c: *Case, fan: Decision.Fan, edge: Decision.Edge) !Node.Index {
+        const subject = try l.occNode(c, fan.occ);
+        const p = l.edgePos(c, edge);
+        if (fan.kind == .ctor) {
+            if (edge.ref.unwrap()) |ref| {
+                if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
+                    // `True` and `False` are the alternative itself.
+                    .boolean => |value| return if (value) subject else try l.unary(.not, subject, p),
+                    else => {},
+                };
+            }
+        }
+        return l.binary(.strict_eq, try l.fanDiscriminant(c, fan), try l.edgeKey(c, fan, edge), p);
+    }
+
+    /// The value a `case` label compares against: the constructor's tag, the
+    /// `0`/`1` of a list cell, or the literal the pattern spells.
+    fn edgeKey(l: *Lowerer, c: *Case, fan: Decision.Fan, edge: Decision.Edge) !Node.Index {
+        const p = l.edgePos(c, edge);
+        switch (fan.kind) {
+            .list => return l.numberNode(if (edge.order == 0) "0" else "1", p),
+            .ctor => {
+                const ref = edge.ref.unwrap() orelse return l.nullNode(p);
+                const rep_and_tag = l.ctorRepOf(ref) orelse return l.nullNode(p);
+                return l.stringNode(l.text(rep_and_tag[1]), p);
+            },
+            .int => return l.numberNode(l.bir.bytes(edge.ref.unwrap().?), p),
+            .char => {
+                var buf: [4]u8 = undefined;
+                const scalar = l.bir.instData(edge.ref.unwrap().?).lhs;
+                const len = std.unicode.utf8Encode(std.math.cast(u21, scalar) orelse 0xFFFD, &buf) catch
+                    std.unicode.utf8Encode(0xFFFD, &buf) catch unreachable;
+                return l.stringNode(buf[0..len], p);
+            },
+            .string => return l.stringNode(l.bir.bytes(edge.ref.unwrap().?), p),
+        }
+    }
+
+    /// How the constructors of a `.ctor` fan are represented. Every edge of
+    /// one fan is a constructor of one type, so the first answers for all.
+    fn fanRep(l: *Lowerer, c: *Case, fan: Decision.Fan) ?CtorRep {
+        for (c.tree.edges[fan.edges_start..fan.edges_end]) |edge| {
+            const ref = edge.ref.unwrap() orelse continue;
+            const rep_and_tag = l.ctorRepOf(ref) orelse continue;
+            return rep_and_tag[0];
+        }
+        return null;
+    }
+
+    fn edgePos(l: *Lowerer, c: *Case, edge: Decision.Edge) u32 {
+        const ref = edge.ref.unwrap() orelse return c.p;
+        return l.pos(ref);
+    }
+
+    /// An occurrence as a member chain down from its root, built once and
+    /// reused. The chain is rebuilt rather than bound to a `const $p$k` per
+    /// edge: every value is immutable and every step is a property read, so
+    /// re-reading costs nothing and there is no live binding for M3c's
+    /// dead-binding pass to fail to remove (§7).
+    fn occNode(l: *Lowerer, c: *Case, occ: u32) Allocator.Error!Node.Index {
+        if (c.occ_nodes[occ].unwrap()) |node| return node;
+        const o = c.tree.occs[occ];
+        const node = if (o.parent == Decision.Occ.no_parent)
+            c.roots[o.root]
+        else
+            try l.member(try l.occNode(c, o.parent), try l.slotName(o.slot), c.p);
+        c.occ_nodes[occ] = node.toOptional();
+        return node;
+    }
+
+    // ---- Shapes and labels -------------------------------------------------
+
+    /// Whether the tree can be one conditional expression: no `switch`, no
+    /// shared leaf, nothing bound, and no branch body that is a `let`, a
+    /// `case` or a tail self-call — the three that need statements of their
+    /// own. Whether the bodies really lower without statements is only known
+    /// after they are lowered, which is what `readyIsClean` answers.
+    fn condChainPossible(l: *Lowerer, c: *Case) bool {
+        if (c.tree.hasSwitch() or c.tree.hasShared()) return false;
+        for (c.branches, 0..) |branch, i| {
+            if (c.tree.uses[i] == 0) continue;
+            for (0..c.roots.len) |r| {
+                if (l.bindCount(c.pats[i * c.roots.len + r]) != 0) return false;
+            }
+            const body: Inst.Index = @enumFromInt(l.bir.instData(branch).rhs);
+            switch (l.bir.instTag(body)) {
+                .let, .case => return false,
+                .call => switch (c.sink) {
+                    .tail => |loop| if (loop) |lp| {
+                        if (l.isSelfCall(body, lp)) return false;
+                    },
+                    .value => {},
+                },
+                else => {},
+            }
+        }
+        return true;
+    }
+
+    fn lowerReady(l: *Lowerer, c: *Case) !void {
+        const ready = try l.scratch.alloc(Ready, c.branches.len);
+        @memset(ready, .{});
+        for (c.branches, 0..) |branch, i| {
+            if (c.tree.uses[i] == 0) continue;
+            var stmts: StmtList = .empty;
+            const value = try l.expr(&stmts, @enumFromInt(l.bir.instData(branch).rhs));
+            ready[i] = .{ .stmts = stmts.items, .value = value.toOptional() };
+        }
+        c.ready = ready;
+    }
+
+    fn readyIsClean(l: *Lowerer, c: *Case) bool {
+        _ = l;
+        for (c.ready, 0..) |ready, i| {
+            if (c.tree.uses[i] == 0) continue;
+            if (ready.stmts.len != 0) return false;
+        }
+        return true;
+    }
+
+    /// `$j$<d>$<b>`: the block whose exit is branch *b*. Structural, so two
+    /// cases at one depth are siblings and never nested and the names cannot
+    /// collide.
+    fn sharedLabel(l: *Lowerer, c: *Case, branch: u32) !JsIr.NameIndex {
+        var buf: [32]u8 = undefined;
+        const spelled = std.fmt.bufPrint(&buf, "$j${d}${d}", .{ c.depth, branch }) catch unreachable;
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
+    /// `$c$<d>`: the block an expression-position tree assigns its result
+    /// inside and breaks out of.
+    fn caseLabel(l: *Lowerer, c: *Case) !JsIr.NameIndex {
+        var buf: [24]u8 = undefined;
+        const spelled = std.fmt.bufPrint(&buf, "$c${d}", .{c.depth}) catch unreachable;
+        const base = try l.interner.getOrPut(l.gpa, spelled);
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
+    fn blockStmt(l: *Lowerer, label: JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
+        const range = try l.b.addRange(body);
+        const record = try l.b.addRecord(range);
+        return l.add(.block_stmt, p, @intFromEnum(label), @intFromEnum(record));
+    }
+
+    /// The `break $c$<d>` on the textually last leaf is omitted (§7): there
+    /// is nothing below it to skip. Only at the top level of the block — a
+    /// `break` inside a `switch` case is what keeps it from falling through
+    /// and is never dead.
+    fn trimTrailingBreak(l: *Lowerer, out: *StmtList, label: JsIr.NameIndex) void {
+        if (out.items.len == 0) return;
+        const last = out.items[out.items.len - 1];
+        if (l.b.nodes.items(.tag)[last.int()] != .break_stmt) return;
+        if (l.b.nodes.items(.data)[last.int()].lhs != @intFromEnum(label)) return;
+        _ = out.pop();
     }
 
     /// The `const`s a pattern introduces, given the expression its subject
@@ -4046,11 +4443,11 @@ test "if becomes a conditional expression and `&&` becomes `&&`" {
     // `language.md` §6.5 desugars `&&` into a CALL of `Basics.and`, and a
     // call evaluates both sides. Emitting `&&` is not an optimisation here,
     // it is the semantics.
+    // The scrutinee keeps no temporary of its own: §7 binds it only when
+    // the tree reads it more than once, and a two-alternative boolean node
+    // reads it once.
     try expectJs(
-        \\const M$pick = (a$1, b$2) => {
-        \\  const $t$1 = a$1 && b$2;
-        \\  return $t$1 ? 1 : 2;
-        \\};
+        \\const M$pick = (a$1, b$2) => a$1 && b$2 ? 1 : 2;
         \\export { M$pick };
         \\
     ,
@@ -4095,14 +4492,12 @@ test "a constructor of a payload-carrying type is padded to one shape" {
         \\const M$some = { $: "Some", a: 1 };
         \\const M$none = { $: "None", a: null };
         \\const M$unwrap = (v$1) => {
-        \\  let $t$1;
         \\  if (v$1.$ === "Some") {
         \\    const n$2 = v$1.a;
-        \\    $t$1 = n$2;
+        \\    return n$2;
         \\  } else {
-        \\    $t$1 = 0;
+        \\    return 0;
         \\  }
-        \\  return $t$1;
         \\};
         \\export { M$Box$$compare, M$Box$$eq, M$some, M$none, M$unwrap };
         \\
@@ -4293,16 +4688,14 @@ test "two nested loops each own their $in$ slots, so the inner shadows the outer
         \\  M$outer: while (true) {
         \\    const n$1 = $in$0;
         \\    const acc$2 = $in$1;
-        \\    const $t$1 = n$1 < 1;
-        \\    if ($t$1) {
+        \\    if (n$1 < 1) {
         \\      return acc$2;
         \\    } else {
         \\      function inner$3($in$0, $in$1) {
         \\        inner$3: while (true) {
         \\          const i$4 = $in$0;
         \\          const total$5 = $in$1;
-        \\          const $t$2 = i$4 < 1;
-        \\          if ($t$2) {
+        \\          if (i$4 < 1) {
         \\            return total$5;
         \\          } else {
         \\            $in$0 = Basics$sub(i$4, 1);

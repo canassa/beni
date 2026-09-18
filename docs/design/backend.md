@@ -325,11 +325,18 @@ in tail position straight into a statement list.
 Three programs, compiled with the binary at `889c4fa`. "Tests" counts `===` operands in the emitted
 function; "worst path" counts the comparisons one call executes on its slowest input.
 
-| Program | Tests emitted | Distinct | Worst path | `if` nesting | A tree would emit |
+| Program | Tests emitted | Distinct | Worst path | `if` nesting | The tree emits |
 |---|---|---|---|---|---|
-| `describe : Shape, Colour -> String`, 5 rows over a 2-tuple of ADTs | 6 | 4 | 4 | 4 | one 3-way `switch` + 2 `if`s; worst path 2 |
-| `classify : List Int -> String`, 5 rows mixing `[]`, `[ 1 ]`, `[ x ]`, `1 :: 2 :: rest`, `x :: y :: rest` | 10 | 6 | 7 | 4 | 3 tests total; worst path 3 |
-| `run : List Token, Int -> Int`, 10 rows over a 9-constructor enum inside a cons | 17 | 10 | 17 | 9 | one `if` + one 9-case `switch`; worst path 2 |
+| `describe : Shape, Colour -> String`, 5 rows over a 2-tuple of ADTs | 6 | 4 | 4 | 4 | one 3-label `switch` + 3 `if`s; worst path 2 |
+| `classify : List Int -> String`, 5 rows mixing `[]`, `[ 1 ]`, `[ x ]`, `1 :: 2 :: rest`, `x :: y :: rest` | 10 | 6 | 7 | 4 | 5 tests total; worst path 4 |
+| `run : List Token, Int -> Int`, 10 rows over a 9-constructor enum inside a cons | 17 | 10 | 17 | 9 | one `if` + one 9-label `switch`; worst path 2 |
+
+The last column was a prediction when this was written and is the **measurement** now
+(`tests/corpus/run/Match*.beni` are the three programs). Two of the three landed as predicted; the
+`classify` row did not, and the prediction was wrong rather than the tree. Distinguishing `[ 1 ]`
+from `[ x ]` from `1 :: 2 :: rest` from `x :: y :: rest` needs four questions of a two-cell list —
+is there a first cell, is there a second, is the first `1`, is the second `2` — so four is the
+floor for its worst path and no column order reaches three.
 
 In the third, `ts$1.$ === 1` is written **eight** times, and the `case` is the body of a §8 loop, so
 that is up to eight comparisons per list element. In the first, the scrutinee is a tuple literal and
@@ -363,6 +370,12 @@ simplifies them, and the vocabulary is deliberately shared with it:
 | `[]`, `x :: xs` | the two constructors of the list union on the emitter's `{$:0}`/`{$:1}` shape (§4) | `subj.$ === 0` / `=== 1` |
 | `[ a, b, c ]` | **normalised to `a :: b :: c :: []`** before the matrix is built | the cons tests |
 | `Int`, `Char`, `String` literal | a literal with infinitely many alternatives, so the node always keeps a default edge | `===` against the literal |
+
+The matrix is `js/Decision.zig`, which reads those forms off `Bir` and knows no representation at
+all; `js/Lower.zig` turns the tree it returns into the JavaScript of the third column. A literal
+edge carries the pattern instruction that spells it and a constructor edge the reference that names
+it, which is what the emitter reads `ctorRepOf` from — so the representation is decided in exactly
+one place, as it was before.
 
 `-1` is an `Int` literal, and **there are no `Float` patterns and no guards** — `language.md` §3's
 `PatAtom` admits `int | char | string-without-interpolation | '-' int` and nothing else — so a
@@ -422,9 +435,15 @@ which is why `if` keeps emitting what it emits today.
   nothing is emitted for the impossible arm — it saves a label and a `throw` per `switch`, and it is
   byte-for-byte what today's chain does when it emits the last branch unconditionally (`:3630`).
   Which one: the one declared **last** in the type among those present at the node, input-derived
-  with no tie-break. When the node has a genuine default edge (some row was a wildcard there) that
-  edge is `default:` and every present constructor gets its own `case`; a literal node always has
-  one, since a literal column is never exhaustive without a wildcard row. *Alternative rejected:
+  with no tie-break. When the node has a genuine default edge that edge is `default:` and every
+  present constructor gets its own `case`; a literal node always has one, since a literal column is
+  never exhaustive without a wildcard row. **A wildcard row is not by itself a default edge**: a row
+  that is a wildcard in this column is copied into *every* specialisation already, so once the
+  alternatives present are all the type has, the default arm is unreachable — it is the impossible
+  arm this rule refuses, and emitting it would cost a second copy of whatever the wildcard rows
+  decide. So the edge exists only when the present set is *incomplete*, which is Maranget's
+  condition and is what makes `( Circle, Red ) | ( Circle, _ ) | …` two `if`s over a two-constructor
+  `Colour` rather than two `switch`es. *Alternative rejected:
   `default: throw new Error(…)`, a diagnosis for a state the checker excludes, at a string per
   `switch` in every program.*
 - Adjacent `case` labels reaching the same body are **not** merged into `case "A": case "B":` — a
@@ -440,10 +459,15 @@ the one expression that must be evaluated exactly once is the scrutinee. *Altern
 costs one live binding per edge that M3c's dead-binding pass cannot remove, for a property read V8
 already inline-caches.*
 
-Two changes to how the scrutinee itself is bound. **`bindSubject` binds only when the tree reads the
-root more than once**: a two-alternative boolean node reads it once, so `const $t$1 = n$1 <= 0; if
+Two changes to how the scrutinee itself is bound. **`bindSubject` binds unless the tree reads the
+root exactly once**: a two-alternative boolean node reads it once, so `const $t$1 = n$1 <= 0; if
 ($t$1)` becomes `if (n$1 <= 0)`, and every `if` in the language is a `case` (`language.md` §8), so
-that is the 41 scrutinee temporaries above. And **a `case` on a tuple literal starts as an
+that is the 41 scrutinee temporaries above. Exactly once, and not "at most once", because a tree
+that reads the root ZERO times — `case f x of _ ->` — would otherwise not evaluate `f x` at all,
+and deciding that a beni expression is dead is the optimiser's job and not this one's. The count is
+one fan-out per test of that root plus one per `const` its leaves bind, over the branches the tree
+actually reaches; a root read once is therefore read on every path, because a tree with any fan-out
+over it tests it before any leaf binds it. And **a `case` on a tuple literal starts as an
 *n*-column matrix over the tuple's elements**, each bound by `bindSubject` in source order, with no
 tuple object built at all. The condition is syntactic — the scrutinee is a `Bir` `tuple` node and
 **every** row's pattern is a tuple pattern or a bare `_`; a row binding the tuple as a whole, by
@@ -506,8 +530,20 @@ a second `while` between a `continue` and §8's.*
 at least one tail self-call, so every existing `emit/` golden stays byte-identical"; M3b lowers a
 `case` in tail position into statements whether or not the function loops, deleting the `let $t$n;`
 / assign / `return $t$n` triple from every function whose body is a `case` — the 76 result
-temporaries above. `Maybe.withDefault` becomes `if (maybe$1.$ === "Just") { return maybe$1.a; }
-return $default$2;`.
+temporaries above. `Maybe.withDefault` becomes
+
+```js
+if (maybe$1.$ === "Just") {
+  const value$3 = maybe$1.a;
+  return value$3;
+} else {
+  return $default$2;
+}
+```
+
+— an `if`/`else` and not an `if` with the last arm behind it, because a two-alternative node is
+`if`/`else` by the rule above and nothing here special-cases the shape of its second arm; and the
+binding is a `const` at the leaf, because that is where §7 puts bindings.
 
 `if` and `?` need nothing of their own: both are a `case` by the time the backend sees them
 (`language.md` §8, §6.6). An `if` is a two-alternative boolean fan-out, which the ≥3 threshold keeps
@@ -534,9 +570,15 @@ tree would have nowhere to send the failing value either.
 - **Derived `eq` and `compare` are out of scope.** They are emitted by `nominalArrow` /
   `structuralArrow` (`:2186`, `:2090`), which build their own `switch` from the dispatch table and
   never touch a `Bir` pattern (`static-dispatch-spike.md` §9). `emit/Derived*.js` must not move.
-- **Exactly one existing `emit/` golden may change**: `emit/TailCallLoop.js`, where two `const $t$n
-  = n$1 <= 0;` temporaries disappear into the `if` and the ternary that read them once. No other has
-  a `case` over anything but a boolean, so one that moves is a finding and not a blessing.
+- **Five existing `emit/` goldens change, and no sixth.** This bullet said "exactly one" and was
+  wrong on its own terms: `emit/TailCallLoop.js` loses two `const $t$n = n$1 <= 0;` temporaries into
+  the `if` and the ternary that read them once — and `emit/ConstantMethodCall.js`,
+  `emit/EvidenceParameters.js`, `emit/EvidenceValue.js` and `emit/MethodTargets.js` each hold a
+  function whose whole body is a `case` over a **one-constructor** type, which is the `let $t$n` /
+  assign / `return $t$n` triple this section deletes, not a `case` over a boolean. (`EvidenceValue`
+  renumbers two `$p$n` besides, because the module-wide counter behind every compiler-made name no
+  longer spends a tag on the temporary that went.) The rest of the corpus is untouched, so a sixth
+  that moves is a finding and not a blessing.
 
 ### Fixtures
 
@@ -545,10 +587,10 @@ tree would have nowhere to send the failing value either.
 | Fixture | Intent | Observable |
 |---|---|---|
 | `MatchNested` | constructors inside constructors, and a tuple scrutinee whose rows overlap — `describe` above | the strings; wrong specialisation picks the wrong arm |
-| `MatchRowOrder` | rows that overlap and whose order decides: a specific row above a general one, and the same pair swapped in a second function | the two differ; a tree that loses source order makes them equal |
+| `MatchRowOrder` | rows that overlap and whose order decides, swapped in a second function. Not "a specific row above a general one", which this row said and the checker refuses as `redundant_pattern`: two rows that overlap where neither shadows the other — `1 :: n :: _` and `n :: 2 :: _` — and which bind the same NAME at different occurrences | the two differ; a tree that loses source order makes them equal, and one that carries a binding down an edge instead of rebuilding it at the leaf gets the right string with the wrong number |
 | `MatchLiteralFallthrough` | `Int`, `String` and `Char` literal rows with a `_` fallback, enough of each to cross the `switch` threshold | every literal and one miss per type |
 | `MatchSharedLeaf` | a leaf reached from two paths, binding pattern variables, exercised down both | the same answer from both, with the bindings right on each |
-| `MatchInLoop` | a `case` inside a §8 tail-recursive loop deep enough to overflow without it, where the `continue` crosses a `switch` **and** a shared leaf's labelled block | the sum at a depth of 1 000 000 |
+| `MatchInLoop` | a `case` inside a §8 tail-recursive loop deep enough to overflow without it, where the `continue` crosses a `switch` **and** a shared leaf's labelled block | the sum at a depth of 1 000 000 (and see below: this one passes before the change too, because §8 landed first) |
 | `MatchListDepth` | `[]`, `[ x ]`, `[ 1 ]`, `x :: y :: rest`, `1 :: 2 :: rest` in one match — `classify` above | one line per shape, including the ones the current chain gets right only by luck |
 | `MatchRecordsTuples` | records and tuples nested inside constructors, and a tuple scrutinee with a row that binds the whole tuple (so the object *is* built) | the values; proves the tuple rule's off-switch |
 | `MatchAsPattern` | `as` at the top of a row, on a nested sub-pattern, and on a shared leaf | the bound whole and the bound part |
@@ -558,8 +600,20 @@ tree would have nowhere to send the failing value either.
 | `emit/MatchNested` | the shape: no test appears twice on any path, and no tuple object is allocated | golden |
 
 §12's fail-first discipline applies to every `run/` row: each is written so the current chain either
-gives a different answer or is pinned by an `emit/` golden that changes. `MatchInLoop` is the one
-that overflows without the fix.
+gives a different answer or is pinned by an `emit/` golden that changes.
+
+**What that came to, honestly, and it is not what the paragraph above predicted.** Run against the
+binary at `ebacb5b`, with every fixture of this table in place, **eight `emit/` goldens fail and no
+`run/` fixture does** — the three new ones, and the five §7 knew it would move. Every `run/` row
+passes before *and* after, by design and not by accident: a decision tree computes what a linear
+chain computes, which is the first line of "what must not change", so a behaviour fixture for this
+slice guards the rewrite rather than reproducing a defect. That includes `MatchInLoop`, which this
+section expected to overflow without the fix and does not: §8's loop landed FIRST, so the `continue`
+was already a jump before the tree put a `switch` between it and the `while` — what `MatchInLoop`
+proves is that it still is. The fail-first rows are the `emit/` goldens, and `MatchRowOrder` is the
+one written to tell a wrong tree from a right one rather than to document a shape — overlapping
+rows, source order deciding, and one name bound at two different occurrences. It is the row to read
+first when this lowering is next changed.
 
 ### Measurement
 
@@ -573,6 +627,32 @@ beyond noise** (§13, 85.5 MB/s at M3a): the tree is built per `case` over a mat
 columns, the same input the linear chain already walks once per branch, and the exponential case is
 the checker's usefulness relation and not this one. If a corpus module's emit time moves, a
 heuristic is being recomputed where it should be cached — an implementation bug, not a design cost.
+
+**Measured**, `ebacb5b` against the slice, on the same corpus both times (80 programs, the fixtures
+of the table above included), five iterations of `bench --generate=100000`:
+
+| | before | after | |
+|---|---|---|---|
+| `bench` emit, wall clock | 53.92 ms | 46.92 ms | −13% |
+| `bench` emit, JavaScript written | 3,872,156 B | 3,045,688 B | **−21%** |
+| `bench` emit, MB/s | 68.5 | 61.9 | −9.6% |
+| `size.mjs` raw, 80 programs | 268,916 B | 268,707 B | −0.1% |
+| `size.mjs` gzip | 52,443 B | 50,911 B | −2.9% |
+| `size.mjs` brotli | 46,160 B | 45,938 B | −0.5% |
+| `size.mjs` floor (core + platform) gzip | 16,880 B | 16,215 B | −3.9% |
+| `runtime.mjs --variant=c1`, ns/op | — | — | −12% to −23%, every program, checksums identical |
+
+Two of those read the wrong way round unless the denominators are read with them. **Emit MB/s
+falls while emit gets faster**: the metric is output bytes over time, the slice removes a fifth of
+the output bytes, and the same 100k lines are lowered in 13% less wall clock — 1.92M to 2.21M
+lines/s. §13's budget is "> 5 MB/s of JavaScript", which this is 12× over; the throughput this
+section told the implementer not to regress is the one per line of input, and it improved. And
+**raw size barely moves while compressed size falls**: the block per `switch` case and the labelled
+block per shared leaf cost braces that the temporaries and repeated tests paid for elsewhere, and
+braces are the cheapest bytes a compressor ever sees. The direction §7 predicted — compressed size
+down, runtime down on anything that matches in a loop — holds; the size win is smaller than the
+runtime one, and the runtime one is larger than expected because `Dict` and `List` match in every
+inner loop `bench/runtime` has.
 
 ## 8. Tail calls
 

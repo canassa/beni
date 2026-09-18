@@ -1,0 +1,653 @@
+//! The decision tree of `docs/design/backend.md` §7: one tree over ALL the
+//! branches of a `case`, so that no branch re-tests what the branches above
+//! it already disproved.
+//!
+//! Compilation is Maranget's, in the shape §7 fixes: a `case` of *m*
+//! branches starts as a matrix of *m* rows and one column (the scrutinee);
+//! pick a column, ask which constructors occur in it, and for each one
+//! **specialise** — keep the rows whose pattern there is that constructor or
+//! a wildcard, replacing the constructor's with its argument sub-patterns in
+//! place, so the column becomes *arity* columns. A column of wildcards
+//! everywhere is dropped; a matrix whose first row is all wildcards is a
+//! leaf.
+//!
+//! **Pattern forms are simplified exactly as `check/Exhaustive.zig`
+//! simplifies them**, and the vocabulary is deliberately shared with it
+//! (§7's table): `_`, a variable and a record pattern are *anything*; `p as
+//! x` is `p`; a tuple and `()` are the sole constructor of a one-constructor
+//! union, so they never become a test and only widen the matrix; `[ a, b ]`
+//! is `a :: b :: []` over the two constructors of the list union; and an
+//! `Int`, `Char` or `String` literal has infinitely many alternatives, so
+//! its node always keeps a default edge.
+//!
+//! **Nothing here builds a `JsIr` node or knows a representation.** What it
+//! produces is a tree of tests over OCCURRENCES — paths of slot indices down
+//! from the scrutinee — and `js/Lower.zig` turns each into the member chain
+//! and the `===` §4's representation asks for. The one thing an edge carries
+//! out of `Bir` is the instruction that *names* its constructor or spells
+//! its literal, which is what the emitter reads the representation from.
+//!
+//! **Determinism** (CLAUDE.md rule 5) is structural throughout: the
+//! constructor set at a column is enumerated in the declaring type's
+//! declaration order, literals in the order the rows spell them, the column
+//! tie-break is the lowest index, and nothing consults a hash map or a
+//! counter.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Bir = @import("../bir/Bir.zig");
+const Interface = @import("../resolve/Interface.zig");
+
+const Inst = Bir.Inst;
+
+/// "No such node": an edge whose matrix held no row. It cannot arise from an
+/// exhaustive `case` — every edge is created from a row that reached it —
+/// and the emitter drops one if it ever does.
+pub const no_node: u32 = std.math.maxInt(u32);
+
+/// What the tree has to read out of the module. A `Bir` and the interfaces
+/// of everything it imports, which is all a constructor's declaring type
+/// takes: `Exhaustive.ctorUnion` reads exactly these two for exactly this,
+/// and for the same reason (`fast-compiler.md` §8.1 — in M4 a dependency's
+/// `Bir` may not be in memory and its interface always is).
+pub const Context = struct {
+    bir: *const Bir,
+    interfaces: []const Interface,
+};
+
+/// Where a column's value is read from: a path of slot indices down from one
+/// of the roots. `root` is the scrutinee, or one element of it when §7's
+/// tuple-literal rule made the `case` an n-column matrix.
+///
+/// The path and not an expression, because §7 emits an occurrence as a
+/// member chain REBUILT at each use — every value is immutable and every
+/// step is a property read, so re-reading costs nothing and there is no
+/// `const $p$k` per edge for M3c to fail to eliminate.
+pub const Occ = struct {
+    root: u32,
+    parent: u32 = no_parent,
+    /// The slot index (`a`, `b`, …) this occurrence is of its parent.
+    slot: u32 = 0,
+
+    pub const no_parent: u32 = std.math.maxInt(u32);
+};
+
+/// What a fan-out tests. The emitter turns each into §4's representation:
+/// `subj` or `subj.$` against a tag for `.ctor`, `subj.$` against `0`/`1`
+/// for `.list`, and `subj` against the literal for the other three.
+pub const Kind = enum { ctor, list, int, char, string };
+
+/// One alternative of a fan-out.
+pub const Edge = struct {
+    /// The constructor reference (`ctor` / `ext_ctor`) for `.ctor` and the
+    /// literal PATTERN instruction for a literal kind: what the emitter
+    /// reads the representation and the spelling from. `.none` for `.list`,
+    /// whose two constructors are the emitter's own `{$:0}` / `{$:1}`.
+    ref: Inst.OptionalIndex = .none,
+    /// Declaration order within the type for `.ctor`, `0`/`1` for `.list`,
+    /// and the order the rows first spell it for a literal. It is what the
+    /// edges are sorted by, and what makes the fan input-derived.
+    order: u32,
+    child: u32,
+};
+
+pub const Fan = struct {
+    occ: u32,
+    kind: Kind,
+    edges_start: u32,
+    edges_end: u32,
+    /// The edge every row that was a wildcard here takes, or `no_node` when
+    /// no row was — in which case the LAST edge is the exhaustive
+    /// alternative and is spelled `default:` (§7: no impossible arm, no
+    /// `throw`).
+    default: u32 = no_node,
+
+    pub fn edgeCount(f: Fan) u32 {
+        return f.edges_end - f.edges_start;
+    }
+
+    /// How many `case` labels the fan would print: §7's threshold is three.
+    pub fn labels(f: Fan) u32 {
+        return f.edgeCount() + @intFromBool(f.default != no_node);
+    }
+};
+
+pub const TNode = union(enum) {
+    /// A branch of the `case`, by index.
+    leaf: u32,
+    /// Index into `fans`.
+    fan: u32,
+};
+
+pub const Tree = struct {
+    nodes: []const TNode,
+    fans: []const Fan,
+    edges: []const Edge,
+    occs: []const Occ,
+    root: u32,
+    /// How many leaves reach each branch. §7's counted rule: one path
+    /// inline, two or more shared through a labelled block.
+    uses: []const u32,
+
+    pub fn node(t: Tree, index: u32) TNode {
+        return t.nodes[index];
+    }
+
+    /// Whether any fan-out prints as a `switch` rather than an `if`.
+    pub fn hasSwitch(t: Tree) bool {
+        for (t.fans) |f| if (f.labels() >= 3) return true;
+        return false;
+    }
+
+    pub fn hasShared(t: Tree) bool {
+        for (t.uses) |u| if (u >= 2) return true;
+        return false;
+    }
+
+    /// How many times the tree TESTS something read from root `r`. The
+    /// other half of §7's "`bindSubject` binds only when the tree reads the
+    /// root more than once" is the leaf bindings, which the emitter counts
+    /// from the patterns themselves.
+    pub fn fanReads(t: Tree, r: u32) u32 {
+        var count: u32 = 0;
+        for (t.fans) |f| {
+            if (t.occs[f.occ].root == r) count += 1;
+        }
+        return count;
+    }
+};
+
+/// One row of the initial matrix: a branch and the pattern each root is
+/// matched against. `.none` is a wildcard — the `_` row of §7's
+/// tuple-literal rule, which matches whatever the elements are.
+pub const Row = struct {
+    branch: u32,
+    pats: []const Inst.OptionalIndex,
+};
+
+/// Compile `rows` over `roots` occurrences into one tree.
+pub fn build(arena: Allocator, cx: Context, roots: u32, rows: []const Row, branches: u32) Allocator.Error!Tree {
+    var b: Builder = .{ .arena = arena, .cx = cx, .uses = try arena.alloc(u32, branches) };
+    @memset(b.uses, 0);
+
+    const cols = try arena.alloc(u32, roots);
+    for (cols, 0..) |*col, i| col.* = try b.rootOcc(@intCast(i));
+
+    const start_rows = try arena.alloc(MRow, rows.len);
+    for (rows, start_rows) |row, *out| {
+        const cells = try arena.alloc(Cell, roots);
+        for (cells, 0..) |*cell, i| cell.* = .{ .pat = if (i < row.pats.len) row.pats[i] else .none };
+        out.* = .{ .branch = row.branch, .cells = cells };
+    }
+
+    const root = try b.compile(.{ .cols = cols, .rows = start_rows });
+    for (b.nodes.items) |n| switch (n) {
+        .leaf => |branch| if (branch < b.uses.len) {
+            b.uses[branch] += 1;
+        },
+        .fan => {},
+    };
+    return .{
+        .nodes = b.nodes.items,
+        .fans = b.fans.items,
+        .edges = b.edges.items,
+        .occs = b.occs.items,
+        .root = root,
+        .uses = b.uses,
+    };
+}
+
+/// One cell of the matrix. A `pat_list` is `[ a, b, c ]` NORMALISED to
+/// `a :: b :: c :: []` (§7's table) without rewriting `Bir`: `from` is how
+/// many of its elements the tree has already consumed, so the same
+/// instruction is the head of a cons at `from < len` and the empty list at
+/// `from == len`.
+const Cell = struct {
+    /// `.none` is a wildcard, either written or made by specialising a row
+    /// that was one.
+    pat: Inst.OptionalIndex = .none,
+    from: u32 = 0,
+};
+
+const MRow = struct {
+    branch: u32,
+    cells: []const Cell,
+};
+
+const Matrix = struct {
+    cols: []const u32,
+    rows: []const MRow,
+};
+
+const Ctor = struct {
+    ref: Inst.Index,
+    /// Index within the declaring type, which is the fan's order.
+    order: u32,
+    /// How many constructors the type has, which is what says whether the
+    /// alternatives present at a node are all of them.
+    count: u32,
+    arity: u32,
+};
+
+/// A cell's head constructor, in `Exhaustive.zig`'s three shapes plus the
+/// structural ones it invents unions for.
+const Head = union(enum) {
+    wild,
+    ctor: Ctor,
+    /// A tuple, of this arity: the sole constructor of a one-constructor
+    /// union, so it never becomes a test and only widens the matrix.
+    tuple: u32,
+    unit,
+    /// `true` is `::`, `false` is `[]`.
+    list: bool,
+    literal: struct { pat: Inst.Index, kind: Kind },
+};
+
+const Builder = struct {
+    arena: Allocator,
+    cx: Context,
+    occs: std.ArrayList(Occ) = .empty,
+    nodes: std.ArrayList(TNode) = .empty,
+    fans: std.ArrayList(Fan) = .empty,
+    edges: std.ArrayList(Edge) = .empty,
+    uses: []u32,
+
+    fn rootOcc(b: *Builder, root: u32) !u32 {
+        for (b.occs.items, 0..) |o, i| {
+            if (o.parent == Occ.no_parent and o.root == root) return @intCast(i);
+        }
+        const index: u32 = @intCast(b.occs.items.len);
+        try b.occs.append(b.arena, .{ .root = root });
+        return index;
+    }
+
+    /// The occurrence of slot `slot` of `parent`, interned so that two
+    /// columns reaching the same value are one occurrence and the emitter
+    /// builds its member chain once.
+    fn subOcc(b: *Builder, parent: u32, slot: u32) !u32 {
+        for (b.occs.items, 0..) |o, i| {
+            if (o.parent == parent and o.slot == slot) return @intCast(i);
+        }
+        const index: u32 = @intCast(b.occs.items.len);
+        try b.occs.append(b.arena, .{ .root = b.occs.items[parent].root, .parent = parent, .slot = slot });
+        return index;
+    }
+
+    fn leafNode(b: *Builder, branch: u32) !u32 {
+        const index: u32 = @intCast(b.nodes.items.len);
+        try b.nodes.append(b.arena, .{ .leaf = branch });
+        return index;
+    }
+
+    // ---- Heads ------------------------------------------------------------
+
+    fn headOf(b: *Builder, cell: Cell) Head {
+        const pat = cell.pat.unwrap() orelse return .wild;
+        const bir = b.cx.bir;
+        if (pat.int() >= bir.insts.len) return .wild;
+        const d = bir.instData(pat);
+        return switch (bir.instTag(pat)) {
+            // A record pattern binds names and cannot fail: a record type
+            // has no alternatives (`Exhaustive.simplify`, §7's table).
+            .pat_wild, .pat_var, .pat_record => .wild,
+            .pat_as => b.headOf(.{ .pat = @as(Inst.Index, @enumFromInt(d.lhs)).toOptional() }),
+            .pat_unit => .unit,
+            .pat_tuple => .{ .tuple = Bir.inlineRange(d).len() },
+            .pat_int => .{ .literal = .{ .pat = pat, .kind = .int } },
+            .pat_char => .{ .literal = .{ .pat = pat, .kind = .char } },
+            .pat_string => .{ .literal = .{ .pat = pat, .kind = .string } },
+            .pat_cons => .{ .list = true },
+            .pat_list => .{ .list = cell.from < Bir.inlineRange(d).len() },
+            .pat_ctor => blk: {
+                const arity = bir.subRange(@enumFromInt(d.rhs)).len();
+                break :blk if (b.ctorInfo(@enumFromInt(d.lhs), arity)) |c| .{ .ctor = c } else .wild;
+            },
+            // A pattern the parser or the resolver could not build. A build
+            // with any error diagnostic emits nothing, so this is
+            // unreachable from a successful one; treating it as a wildcard
+            // keeps a bug in that gate from becoming a crash.
+            else => .wild,
+        };
+    }
+
+    /// Where a constructor sits in its declaring type, and how many siblings
+    /// it has — `Exhaustive.ctorUnion`'s two answers, without the `TypeId`
+    /// it needs for interning and this does not.
+    fn ctorInfo(b: *Builder, ref: Inst.Index, arity: u32) ?Ctor {
+        const bir = b.cx.bir;
+        if (ref.int() >= bir.insts.len) return null;
+        const d = bir.instData(ref);
+        switch (bir.instTag(ref)) {
+            .ctor => {
+                if (d.lhs >= bir.ctors.len) return null;
+                const owner = bir.decl(bir.ctors[d.lhs].decl);
+                if (owner.ctors_end <= owner.ctors_start) return null;
+                if (d.lhs < owner.ctors_start or d.lhs >= owner.ctors_end) return null;
+                return .{
+                    .ref = ref,
+                    .order = d.lhs - owner.ctors_start,
+                    .count = owner.ctors_end - owner.ctors_start,
+                    .arity = arity,
+                };
+            },
+            .ext_ctor => {
+                if (d.lhs >= b.cx.interfaces.len) return null;
+                const iface = &b.cx.interfaces[d.lhs];
+                if (d.rhs >= iface.ctors.len) return null;
+                const type_index = iface.ctors[d.rhs].type;
+                if (@intFromEnum(type_index) >= iface.types.len) return null;
+                const t = iface.types[@intFromEnum(type_index)];
+                if (t.ctors_end <= t.ctors_start) return null;
+                if (d.rhs < t.ctors_start or d.rhs >= t.ctors_end) return null;
+                return .{
+                    .ref = ref,
+                    .order = d.rhs - t.ctors_start,
+                    .count = t.ctors_end - t.ctors_start,
+                    .arity = arity,
+                };
+            },
+            else => return null,
+        }
+    }
+
+    fn sameHead(b: *Builder, x: Head, y: Head) bool {
+        return switch (x) {
+            .wild => false,
+            .ctor => |a| y == .ctor and y.ctor.order == a.order,
+            // One constructor, so two heads of one column are always it.
+            .tuple, .unit => y == .tuple or y == .unit,
+            .list => |cons| y == .list and y.list == cons,
+            .literal => |a| y == .literal and a.kind == y.literal.kind and
+                b.sameLiteral(a.pat, y.literal.pat),
+        };
+    }
+
+    /// Two literal patterns spell the same value. By the SPELLING for an
+    /// `Int`, where `Exhaustive.zig` compares by value: two spellings of one
+    /// number are then two edges of the fan, the first of which wins at run
+    /// time — which is the row the source put first, so the answer is the
+    /// same and the cost is one dead `case` label on input nobody writes.
+    fn sameLiteral(b: *Builder, x: Inst.Index, y: Inst.Index) bool {
+        const bir = b.cx.bir;
+        return switch (bir.instTag(x)) {
+            .pat_char => bir.instData(x).lhs == bir.instData(y).lhs,
+            .pat_int, .pat_string => std.mem.eql(u8, bir.bytes(x), bir.bytes(y)),
+            else => false,
+        };
+    }
+
+    // ---- The algorithm ----------------------------------------------------
+
+    fn compile(b: *Builder, m: Matrix) Allocator.Error!u32 {
+        // Only reachable from a `case` the checker could not prove
+        // exhaustive (§7's documented hole) or from one with no branches at
+        // all. Neither may crash the compiler and neither gets a `throw`.
+        if (m.rows.len == 0) return no_node;
+        if (b.allWild(m.rows[0])) return b.leafNode(m.rows[0].branch);
+
+        const col = b.chooseColumn(m);
+
+        var keys: std.ArrayList(Head) = .empty;
+        var has_default = false;
+        for (m.rows) |row| {
+            const h = b.headOf(row.cells[col]);
+            if (h == .wild) {
+                has_default = true;
+                continue;
+            }
+            var seen = false;
+            for (keys.items) |k| seen = seen or b.sameHead(k, h);
+            if (!seen) try keys.append(b.arena, h);
+        }
+        // Unreachable: the row above is not all wildcards, so the column
+        // chosen for it holds something. A leaf rather than an index out of
+        // bounds, because a poisoned `Bir` must not panic the compiler.
+        if (keys.items.len == 0) return b.leafNode(m.rows[0].branch);
+
+        // A tuple and `()` always match: the column becomes its elements and
+        // no test is emitted, which is what keeps a tuple scrutinee from
+        // costing a comparison it cannot fail (§7's table).
+        switch (keys.items[0]) {
+            .tuple, .unit => return b.expand(m, col, keys.items[0]),
+            else => {},
+        }
+
+        sortKeys(keys.items);
+
+        const fan_index: u32 = @intCast(b.fans.items.len);
+        const node_index: u32 = @intCast(b.nodes.items.len);
+        try b.nodes.append(b.arena, .{ .fan = fan_index });
+        try b.fans.append(b.arena, .{
+            .occ = m.cols[col],
+            .kind = kindOf(keys.items[0]),
+            .edges_start = 0,
+            .edges_end = 0,
+            .default = no_node,
+        });
+
+        var built: std.ArrayList(Edge) = .empty;
+        for (keys.items) |key| {
+            const child = try b.compile(try b.specialise(m, col, key));
+            if (child == no_node) continue;
+            try built.append(b.arena, .{
+                .ref = switch (key) {
+                    .ctor => |c| c.ref.toOptional(),
+                    .literal => |lit| lit.pat.toOptional(),
+                    else => .none,
+                },
+                .order = orderOf(key),
+                .child = child,
+            });
+        }
+        // A default edge only when the alternatives present are NOT all of
+        // them: a wildcard row is copied into every specialisation already,
+        // so once the set is complete the default arm is the impossible one
+        // §7 refuses to emit. A literal column is never complete, which is
+        // why a literal node always keeps its default.
+        const complete = switch (keys.items[0]) {
+            .ctor => |c| built.items.len >= c.count,
+            .list => built.items.len >= 2,
+            else => false,
+        };
+        const default = if (has_default and !complete)
+            try b.compile(try b.defaultMatrix(m, col))
+        else
+            no_node;
+
+        const start: u32 = @intCast(b.edges.items.len);
+        try b.edges.appendSlice(b.arena, built.items);
+        b.fans.items[fan_index].edges_start = start;
+        b.fans.items[fan_index].edges_end = @intCast(b.edges.items.len);
+        b.fans.items[fan_index].default = default;
+        return node_index;
+    }
+
+    fn allWild(b: *Builder, row: MRow) bool {
+        for (row.cells) |cell| {
+            if (b.headOf(cell) != .wild) return false;
+        }
+        return true;
+    }
+
+    /// §7's three rules, in order, stopping at the first that leaves one
+    /// column: **d** (fewest wildcard rows), **b** (fewest distinct
+    /// constructors) and **leftmost**. The third is not a formality — it is
+    /// what makes the choice input-derived (CLAUDE.md rule 5) — and it falls
+    /// out of scanning left to right and improving only on a strict win.
+    fn chooseColumn(b: *Builder, m: Matrix) u32 {
+        var best: u32 = 0;
+        var best_wild: usize = 0;
+        var best_distinct: usize = 0;
+        var found = false;
+        for (0..m.cols.len) |i| {
+            var wild: usize = 0;
+            var distinct: usize = 0;
+            var relevant = false;
+            for (m.rows, 0..) |row, r| {
+                const h = b.headOf(row.cells[i]);
+                if (h == .wild) {
+                    wild += 1;
+                    continue;
+                }
+                relevant = true;
+                var seen = false;
+                for (m.rows[0..r]) |above| seen = seen or b.sameHead(b.headOf(above.cells[i]), h);
+                if (!seen) distinct += 1;
+            }
+            if (!relevant) continue;
+            if (found and wild > best_wild) continue;
+            if (found and wild == best_wild and distinct >= best_distinct) continue;
+            best = @intCast(i);
+            best_wild = wild;
+            best_distinct = distinct;
+            found = true;
+        }
+        return best;
+    }
+
+    /// The column becomes the sole constructor's arity columns and every row
+    /// is widened. Specialising by a one-constructor union drops no row —
+    /// every row matches it — so this is the ordinary specialisation with no
+    /// fan-out wrapped around it, which is exactly what "always matches, so
+    /// it never becomes a test" means.
+    fn expand(b: *Builder, m: Matrix, col: u32, key: Head) Allocator.Error!u32 {
+        return b.compile(try b.specialise(m, col, key));
+    }
+
+    fn specialise(b: *Builder, m: Matrix, col: u32, key: Head) Allocator.Error!Matrix {
+        const arity = arityOf(key);
+        const cols = try b.arena.alloc(u32, m.cols.len - 1 + arity);
+        @memcpy(cols[0..col], m.cols[0..col]);
+        for (0..arity) |i| cols[col + i] = try b.subOcc(m.cols[col], @intCast(i));
+        @memcpy(cols[col + arity ..], m.cols[col + 1 ..]);
+
+        var rows: std.ArrayList(MRow) = .empty;
+        for (m.rows) |row| {
+            const cells = try b.arena.alloc(Cell, cols.len);
+            @memcpy(cells[0..col], row.cells[0..col]);
+            @memcpy(cells[col + arity ..], row.cells[col + 1 ..]);
+            if (!b.subCells(row.cells[col], key, cells[col..][0..arity])) continue;
+            try rows.append(b.arena, .{ .branch = row.branch, .cells = cells });
+        }
+        return .{ .cols = cols, .rows = rows.items };
+    }
+
+    /// Maranget's `D(P)`: the rows that were a wildcard at `col`, with the
+    /// column dropped. A row that tested something there cannot reach the
+    /// default edge.
+    fn defaultMatrix(b: *Builder, m: Matrix, col: u32) Allocator.Error!Matrix {
+        const cols = try b.arena.alloc(u32, m.cols.len - 1);
+        @memcpy(cols[0..col], m.cols[0..col]);
+        @memcpy(cols[col..], m.cols[col + 1 ..]);
+
+        var rows: std.ArrayList(MRow) = .empty;
+        for (m.rows) |row| {
+            if (b.headOf(row.cells[col]) != .wild) continue;
+            const cells = try b.arena.alloc(Cell, cols.len);
+            @memcpy(cells[0..col], row.cells[0..col]);
+            @memcpy(cells[col..], row.cells[col + 1 ..]);
+            try rows.append(b.arena, .{ .branch = row.branch, .cells = cells });
+        }
+        return .{ .cols = cols, .rows = rows.items };
+    }
+
+    /// The sub-patterns `cell` contributes when the row is kept under `key`,
+    /// or `false` when the row tests something else and is dropped.
+    fn subCells(b: *Builder, cell: Cell, key: Head, out: []Cell) bool {
+        const head = b.headOf(cell);
+        if (head == .wild) {
+            @memset(out, .{});
+            return true;
+        }
+        if (!b.sameHead(head, key)) return false;
+        @memset(out, .{});
+        const pat = unwrapAs(b.cx.bir, cell.pat.unwrap().?);
+        const bir = b.cx.bir;
+        const d = bir.instData(pat);
+        switch (bir.instTag(pat)) {
+            .pat_ctor => {
+                const args = bir.extraSlice(bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+                for (args, 0..) |arg, i| {
+                    if (i < out.len) out[i] = .{ .pat = arg.toOptional() };
+                }
+            },
+            .pat_tuple => {
+                for (bir.extraSlice(Bir.inlineRange(d), Inst.Index), 0..) |element, i| {
+                    if (i < out.len) out[i] = .{ .pat = element.toOptional() };
+                }
+            },
+            .pat_cons => {
+                if (out.len == 2) {
+                    out[0] = .{ .pat = @as(Inst.Index, @enumFromInt(d.lhs)).toOptional() };
+                    out[1] = .{ .pat = @as(Inst.Index, @enumFromInt(d.rhs)).toOptional() };
+                }
+            },
+            .pat_list => {
+                // `[ a, b, c ]` from element `from` on is `a :: <the rest>`,
+                // and the rest is this same instruction one element along.
+                const elements = bir.extraSlice(Bir.inlineRange(d), Inst.Index);
+                if (out.len == 2 and cell.from < elements.len) {
+                    out[0] = .{ .pat = elements[cell.from].toOptional() };
+                    out[1] = .{ .pat = pat.toOptional(), .from = cell.from + 1 };
+                }
+            },
+            // `()` and a literal have no arguments.
+            else => {},
+        }
+        return true;
+    }
+};
+
+fn unwrapAs(bir: *const Bir, pat: Inst.Index) Inst.Index {
+    var at = pat;
+    while (at.int() < bir.insts.len and bir.instTag(at) == .pat_as) {
+        at = @enumFromInt(bir.instData(at).lhs);
+    }
+    return at;
+}
+
+fn arityOf(key: Head) u32 {
+    return switch (key) {
+        .wild, .unit => 0,
+        .ctor => |c| c.arity,
+        .tuple => |arity| arity,
+        .list => |cons| if (cons) 2 else 0,
+        .literal => 0,
+    };
+}
+
+fn orderOf(key: Head) u32 {
+    return switch (key) {
+        .ctor => |c| c.order,
+        .list => |cons| @intFromBool(cons),
+        else => 0,
+    };
+}
+
+fn kindOf(key: Head) Kind {
+    return switch (key) {
+        .ctor => .ctor,
+        .list => .list,
+        .literal => |lit| lit.kind,
+        // Neither reaches a fan: both are expanded away above.
+        .wild, .tuple, .unit => .ctor,
+    };
+}
+
+/// Constructors in the declaring type's declaration order, `[]` before `::`.
+/// A literal keeps the order the rows spell it in, which is the only
+/// input-derived order there is — a literal column has no declaration.
+///
+/// Insertion sort because a fan has as many alternatives as the type has
+/// constructors, and a stable sort is what keeps equal keys (two spellings
+/// of one literal) in row order.
+fn sortKeys(keys: []Head) void {
+    if (keys.len == 0 or keys[0] == .literal) return;
+    var i: usize = 1;
+    while (i < keys.len) : (i += 1) {
+        var j = i;
+        while (j > 0 and orderOf(keys[j - 1]) > orderOf(keys[j])) : (j -= 1) {
+            std.mem.swap(Head, &keys[j - 1], &keys[j]);
+        }
+    }
+}

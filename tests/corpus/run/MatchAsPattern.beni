@@ -1,0 +1,70 @@
+-- `docs/design/backend.md` §7: `as` at the top of a row, on a nested
+-- sub-pattern, and on a row whose leaf is shared.
+--
+-- `p as x` is `p` in the matrix, plus a binding of THIS occurrence to `x`
+-- (§7's table): the tree tests what `p` tests and nothing more, and the
+-- name is bound at the leaf like any other. So the bound whole and the
+-- bound part are two member chains of different lengths off one root, and
+-- an `as` that lost its sub-pattern's test — or bound the wrong occurrence
+-- — prints a different line for every call below.
+import List
+import Node exposing (Program)
+import String
+
+
+type Wrapped
+    = Wrap (Maybe Int) Int
+    | Bare Int
+
+
+head : List Int -> String
+head xs =
+    case xs of
+        (a :: _) as whole ->
+            "${String.fromInt a} of ${String.fromInt (List.length whole)}"
+
+        [] ->
+            "none"
+
+
+inner : Wrapped -> String
+inner w =
+    case w of
+        Wrap ((Just n) as m) k ->
+            "just ${String.fromInt n} of ${String.fromInt (Maybe.withDefault m 0)} plus ${String.fromInt k}"
+
+        Wrap Nothing k ->
+            "nothing plus ${String.fromInt k}"
+
+        Bare k ->
+            "bare ${String.fromInt k}"
+
+
+-- The `as` row is the one a wildcard column copies under both alternatives,
+-- so its leaf is the shared one and the binding has to be rebuilt there.
+pairUp : Wrapped, Bool -> String
+pairUp w flag =
+    case ( w, flag ) of
+        ( Wrap (Just 0) k, True ) ->
+            "zero true ${String.fromInt k}"
+
+        ( Bare 0, False ) ->
+            "zero false"
+
+        ( other as w2, _ ) ->
+            "other ${inner w2} ${inner other}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ head [ 7, 8, 9 ]
+        , head []
+        , inner (Wrap (Just 5) 2)
+        , inner (Wrap Nothing 3)
+        , inner (Bare 4)
+        , pairUp (Wrap (Just 0) 6) True
+        , pairUp (Bare 0) False
+        , pairUp (Bare 1) True
+        , pairUp (Wrap (Just 2) 3) False
+        ]

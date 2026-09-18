@@ -1,0 +1,87 @@
+-- emit: the SHAPE of `docs/design/backend.md` §7's fan-out, which running
+-- cannot observe — a chain of `===` and a `switch` compute the same answer.
+--
+-- The golden pins four claims. **Three or more case labels is a `switch`**
+-- and two or fewer is `if`/`else`, so `name` dispatches once where `toggle`
+-- — a two-alternative boolean node over two expression leaves — stays the
+-- conditional expression it is today. **Each case body is a block**, so two sibling
+-- cases cannot redeclare one name in the single scope a `switch` gives all
+-- of them. **The last alternative of an exhaustive fan-out is `default:`**,
+-- not a `case` of its own, and nothing is emitted for the impossible arm:
+-- no label, no `throw`. And the discriminant is named ONCE per fan-out,
+-- `subj` for a bare tag and `subj.$` for a tagged constructor.
+--
+-- `size` is the tagged shape and `weekday` the literal one, whose node
+-- always keeps a real `default:` because a literal column has infinitely
+-- many alternatives.
+import Node exposing (Program)
+import String
+
+
+type Colour
+    = Red
+    | Green
+    | Blue
+
+
+type Size
+    = Small Int
+    | Medium Int
+    | Large Int
+
+
+pub name : Colour -> String
+name colour =
+    case colour of
+        Red ->
+            "red"
+
+        Green ->
+            "green"
+
+        Blue ->
+            "blue"
+
+
+pub toggle : Bool -> String
+toggle flag =
+    case flag of
+        True ->
+            "on"
+
+        False ->
+            "off"
+
+
+pub measure : Size -> Int
+measure size =
+    case size of
+        Small n ->
+            n
+
+        Medium n ->
+            n * 2
+
+        Large n ->
+            n * 3
+
+
+pub weekday : Int -> String
+weekday n =
+    case n of
+        0 ->
+            "Sun"
+
+        1 ->
+            "Mon"
+
+        2 ->
+            "Tue"
+
+        _ ->
+            "later"
+
+
+main : Program
+main =
+    Node.printLines []

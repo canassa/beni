@@ -1,0 +1,54 @@
+-- `docs/design/backend.md` §7: rows that OVERLAP, and whose order decides
+-- the answer. Maranget's specialisation keeps the rows of every sub-matrix
+-- in source order, so a value both rows match is decided by the one written
+-- first — and `later` is the same pair the other way round, which must
+-- therefore give the other answer. Neither row shadows the other, so the
+-- checker calls neither redundant and both functions are legal.
+--
+-- The two rows also bind the SAME NAME at different occurrences: `n` is the
+-- head of the tail in one and the head of the list in the other. A tree
+-- that carried a binding down an edge instead of rebuilding the member
+-- chain at the leaf it belongs to would print the right string with the
+-- wrong number, which is the failure this fixture exists to catch.
+import Node exposing (Program)
+import String
+
+
+firstWins : List Int -> String
+firstWins xs =
+    case xs of
+        1 :: n :: _ ->
+            "one then ${String.fromInt n}"
+
+        n :: 2 :: _ ->
+            "${String.fromInt n} then two"
+
+        _ ->
+            "neither"
+
+
+laterWins : List Int -> String
+laterWins xs =
+    case xs of
+        n :: 2 :: _ ->
+            "${String.fromInt n} then two"
+
+        1 :: n :: _ ->
+            "one then ${String.fromInt n}"
+
+        _ ->
+            "neither"
+
+
+main : Program
+main =
+    Node.printLines
+        [ firstWins [ 1, 2, 3 ]
+        , laterWins [ 1, 2, 3 ]
+        , firstWins [ 1, 9 ]
+        , laterWins [ 1, 9 ]
+        , firstWins [ 7, 2 ]
+        , laterWins [ 7, 2 ]
+        , firstWins [ 5 ]
+        , laterWins []
+        ]

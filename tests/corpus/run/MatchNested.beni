@@ -1,0 +1,90 @@
+-- `docs/design/backend.md` §7: constructors inside constructors, and a
+-- tuple scrutinee whose rows overlap — `describe`, the first program of
+-- §7's before-table.
+--
+-- `describe` is the one that proves specialisation: five rows over a
+-- 2-tuple of ADTs, three of which are wildcards in one column and get
+-- copied into every branch of the other. Pick the wrong column, or drop a
+-- wildcard row on the way down, and one of the eight answers below is the
+-- string of another row.
+--
+-- `depth` nests a constructor inside a constructor inside a constructor, so
+-- the matrix has to widen twice before it has anything to test.
+import Node exposing (Program)
+import String
+
+
+type Shape
+    = Circle
+    | Square
+    | Tri
+
+
+type Colour
+    = Red
+    | Blue
+
+
+type Inner
+    = Leaf Int
+    | Pair Inner Inner
+
+
+type Outer
+    = Boxed Inner
+    | Empty
+
+
+describe : Shape, Colour -> String
+describe shape colour =
+    case ( shape, colour ) of
+        ( Circle, Red ) ->
+            "red circle"
+
+        ( Circle, _ ) ->
+            "circle"
+
+        ( Square, Red ) ->
+            "red square"
+
+        ( _, Blue ) ->
+            "blue thing"
+
+        ( _, _ ) ->
+            "thing"
+
+
+depth : Outer -> String
+depth o =
+    case o of
+        Boxed (Pair (Leaf a) (Leaf b)) ->
+            "two leaves ${String.fromInt (a + b)}"
+
+        Boxed (Pair (Leaf a) _) ->
+            "left leaf ${String.fromInt a}"
+
+        Boxed (Pair _ _) ->
+            "pair"
+
+        Boxed (Leaf n) ->
+            "leaf ${String.fromInt n}"
+
+        Empty ->
+            "empty"
+
+
+main : Program
+main =
+    Node.printLines
+        [ describe Circle Red
+        , describe Circle Blue
+        , describe Square Red
+        , describe Square Blue
+        , describe Tri Blue
+        , describe Tri Red
+        , depth (Boxed (Pair (Leaf 1) (Leaf 2)))
+        , depth (Boxed (Pair (Leaf 3) (Pair (Leaf 1) (Leaf 1))))
+        , depth (Boxed (Pair (Pair (Leaf 1) (Leaf 1)) (Leaf 9)))
+        , depth (Boxed (Leaf 7))
+        , depth Empty
+        ]

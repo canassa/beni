@@ -149,6 +149,15 @@ pub const Node = struct {
         /// `case test:` / `default:`. `lhs` is an `OptionalIndex` (`.none`
         /// is `default`), `rhs` is extra `SubRange` of statements.
         switch_case,
+        /// `label: { … }`, or `{ … }` when `lhs` is `.none`. `lhs` is a
+        /// `NameIndex`, `rhs` is extra `SubRange` of statements.
+        ///
+        /// Both halves of §7 need it: a shared leaf is reached by
+        /// `break $j$<d>$<b>` out of the labelled block that ends just
+        /// before it, and a `switch` case body is a block so that two
+        /// sibling cases cannot redeclare one name in the single scope a
+        /// `switch` gives all of them.
+        block_stmt,
         /// `expr;`.
         expr_stmt,
         /// `throw expr;`.
@@ -633,6 +642,10 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         },
         .switch_case => {
             try ir.verifyOptional(d.lhs, .expression);
+            try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
+        },
+        .block_stmt => {
+            try ir.verifyName(@enumFromInt(d.lhs), true);
             try ir.verifyRange(try ir.verifyExtra(@enumFromInt(d.rhs), SubRange), .statement);
         },
         .expr_stmt, .throw_stmt => try ir.verifyChild(@enumFromInt(d.lhs), .expression),

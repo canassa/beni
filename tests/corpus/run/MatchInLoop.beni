@@ -1,0 +1,72 @@
+-- `docs/design/backend.md` §7 and §8 together: a `case` inside a
+-- tail-recursive loop, deep enough to overflow the stack without §8's
+-- `while (true)`, where the `continue` has to cross BOTH a `switch` case
+-- and the labelled block of a shared leaf.
+--
+-- That crossing is the composition §7 verified by hand on Node 24: `break
+-- <label>` leaves a labelled block from inside a `switch` case, and
+-- `continue <label>` targets the nearest enclosing ITERATION statement with
+-- that label — a labelled block is not one — so a tail self-call inside a
+-- shared leaf inside a `switch` still reaches the function's loop. If it
+-- did not, this program would not compile, or it would overflow at a depth
+-- a million iterations reaches in the first millisecond.
+import Node exposing (Program)
+import String
+
+
+type Step
+    = Up
+    | Down
+    | Hold
+    | Reset
+
+
+stepFor : Int -> Step
+stepFor n =
+    case Basics.modBy n 4 of
+        0 ->
+            Up
+
+        1 ->
+            Down
+
+        2 ->
+            Hold
+
+        _ ->
+            Reset
+
+
+-- Every arm is a tail self-call, so every `continue` is emitted inside the
+-- `switch` case the tree put it in; the last row is a wildcard in the
+-- column the tree tests first, so two paths reach it and it becomes the
+-- shared leaf with a `continue` of its own behind the block.
+walk : Int, Int, Bool -> Int
+walk n acc flag =
+    if n <= 0 then
+        acc
+
+    else
+        case ( stepFor n, flag ) of
+            ( Up, True ) ->
+                walk (n - 1) (acc + 2) False
+
+            ( Down, True ) ->
+                walk (n - 1) (acc + 1) False
+
+            ( Hold, False ) ->
+                walk (n - 1) (acc + 3) True
+
+            ( Reset, _ ) ->
+                walk (n - 1) (acc + 4) True
+
+            ( _, _ ) ->
+                walk (n - 1) (acc + 1) True
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (walk 8 0 True)
+        , String.fromInt (walk 1000000 0 True)
+        ]

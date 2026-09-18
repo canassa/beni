@@ -1,0 +1,56 @@
+-- emit: the SHAPE of `docs/design/backend.md` §7's shared leaf, which
+-- running cannot observe — a duplicated leaf and a shared one compute the
+-- same answer.
+--
+-- The golden pins three claims. A leaf reached from TWO paths is written
+-- **once**, behind a labelled block every path `break`s out of; the label
+-- is `$j$<d>$<b>` — structural, so it does not renumber when a declaration
+-- is added above it — with *d* the number of enclosing `case` instructions
+-- and *b* the branch. And in EXPRESSION position, where the value has to
+-- come back to the caller, the tree sits inside one `$c$<d>` block that
+-- every leaf but the textually last one breaks out of after assigning the
+-- result temporary, because the shared leaves are written below the tree
+-- and the paths through it must skip them.
+--
+-- `verdict` is the tail-position shape and `report` the expression-position
+-- one: the same match, once as a function body and once as an argument.
+import Node exposing (Program)
+import String
+
+
+type Flag
+    = On
+    | Off
+
+
+pub verdict : Int, Int, Flag -> String
+verdict x y flag =
+    case ( x, y, flag ) of
+        ( 0, b, On ) ->
+            "on axis ${String.fromInt b}"
+
+        ( a, 0, Off ) ->
+            "off axis ${String.fromInt a}"
+
+        ( a, b, _ ) ->
+            "sum ${String.fromInt (a + b)}"
+
+
+pub report : Int, Int, Flag -> String
+report x y flag =
+    String.append "> "
+        (case ( x, y, flag ) of
+            ( 0, b, On ) ->
+                "on axis ${String.fromInt b}"
+
+            ( a, 0, Off ) ->
+                "off axis ${String.fromInt a}"
+
+            ( a, b, _ ) ->
+                "sum ${String.fromInt (a + b)}"
+        )
+
+
+main : Program
+main =
+    Node.printLines []

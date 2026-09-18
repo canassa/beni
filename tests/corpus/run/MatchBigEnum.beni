@@ -1,0 +1,129 @@
+-- `docs/design/backend.md` §7: a nine-constructor enum inside a cons, in a
+-- loop — `run`, the third program of §7's before-table.
+--
+-- The chain wrote `ts.$ === 1` eight times and paid up to seventeen
+-- comparisons per element; the tree is one `if` on the spine and one
+-- nine-label `switch` on the token, worst path two. The fold below walks a
+-- list long enough that a wrong arm shows up as a wrong sum, and the
+-- `continue` of §8's loop leaves each `switch` case.
+import List
+import Node exposing (Program)
+import String
+
+
+type Token
+    = Plus
+    | Minus
+    | Times
+    | Over
+    | Open
+    | Close
+    | Comma
+    | Semi
+    | Dot
+
+
+score : Token -> Int
+score token =
+    case token of
+        Plus ->
+            1
+
+        Minus ->
+            2
+
+        Times ->
+            3
+
+        Over ->
+            4
+
+        Open ->
+            5
+
+        Close ->
+            6
+
+        Comma ->
+            7
+
+        Semi ->
+            8
+
+        Dot ->
+            9
+
+
+total : List Token, Int -> Int
+total ts acc =
+    case ts of
+        [] ->
+            acc
+
+        Plus :: rest ->
+            total rest (acc + 1)
+
+        Minus :: rest ->
+            total rest (acc + 2)
+
+        Times :: rest ->
+            total rest (acc + 3)
+
+        Over :: rest ->
+            total rest (acc + 4)
+
+        Open :: rest ->
+            total rest (acc + 5)
+
+        Close :: rest ->
+            total rest (acc + 6)
+
+        Comma :: rest ->
+            total rest (acc + 7)
+
+        Semi :: rest ->
+            total rest (acc + 8)
+
+        Dot :: rest ->
+            total rest (acc + 9)
+
+
+tokenFor : Int -> Token
+tokenFor n =
+    case Basics.modBy n 9 of
+        0 ->
+            Plus
+
+        1 ->
+            Minus
+
+        2 ->
+            Times
+
+        3 ->
+            Over
+
+        4 ->
+            Open
+
+        5 ->
+            Close
+
+        6 ->
+            Comma
+
+        7 ->
+            Semi
+
+        _ ->
+            Dot
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (total [ Plus, Dot, Semi, Open ] 0)
+        , String.fromInt (total [] 100)
+        , String.fromInt (total (List.map (List.range 1 90) tokenFor) 0)
+        , String.fromInt (List.foldl (List.map (List.range 1 9) tokenFor) 0 (\t acc -> acc + score t))
+        ]

@@ -1,0 +1,73 @@
+-- emit: the SHAPE of `docs/design/backend.md` §7's tree, which running
+-- cannot observe — the chain and the tree compute the same answer.
+--
+-- The golden pins two claims of §7's before-table. **No test appears twice
+-- on any path**: the chain re-tested from the root per branch and wrote
+-- `shape === "Circle"` once per row that named it, where the tree asks each
+-- question once and specialises. And **no tuple object is allocated**: a
+-- `case` on a tuple LITERAL every row matches with a tuple pattern starts
+-- as an n-column matrix over the elements, so `describe` reads `shape$1`
+-- and `colour$2` and never builds `{ a: shape$1, b: colour$2 }` to read
+-- both fields back out.
+--
+-- `nested` is the constructors-inside-constructors half: the matrix widens
+-- twice before it has anything to test, and the inner tests are member
+-- chains off the root rather than temporaries per edge.
+import Node exposing (Program)
+import String
+
+
+type Shape
+    = Circle
+    | Square
+    | Tri
+
+
+type Colour
+    = Red
+    | Blue
+
+
+type Inner
+    = Leaf Int
+    | Pair Inner Inner
+
+
+pub describe : Shape, Colour -> String
+describe shape colour =
+    case ( shape, colour ) of
+        ( Circle, Red ) ->
+            "red circle"
+
+        ( Circle, _ ) ->
+            "circle"
+
+        ( Square, Red ) ->
+            "red square"
+
+        ( _, Blue ) ->
+            "blue thing"
+
+        ( _, _ ) ->
+            "thing"
+
+
+pub nested : Inner -> String
+nested i =
+    case i of
+        Pair (Leaf a) (Leaf b) ->
+            "two leaves ${String.fromInt (a + b)}"
+
+        Pair (Leaf a) _ ->
+            "left leaf ${String.fromInt a}"
+
+        Pair _ _ ->
+            "pair"
+
+        Leaf n ->
+            "leaf ${String.fromInt n}"
+
+
+main : Program
+main =
+    Node.printLines []
