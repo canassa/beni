@@ -56,6 +56,13 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
 - **M3d — chunking and `lazy`.** The keyword, entry-set colouring, the merge pass, cross-chunk
   bindings. *Acceptance: a two-route program splits and both routes run.*
 
+  **The two halves have a dependency between them and it is not small.** §10 specifies the chunker;
+  the keyword is PENDING an owner decision, because a deferred load is asynchronous, the language is
+  synchronous, and `fast-compiler.md` §9.5's type rewrite names a `Task` that
+  `transparent-effects-proposal.md` removes. [`plans/m3d-plan.md`](../../plans/m3d-plan.md) §2 is the
+  argument, §6 the decisions — including what "route" means on a platform whose only entry point is
+  `main`, and whether the chunker ships against multiple entry points before `lazy` exists.
+
 `boundary.md`'s B1 and B2 fold into M3a; B3 through B5 follow M3d.
 
 ## 2. CLI surface
@@ -334,8 +341,9 @@ Two consequences worth stating, because they are what the emitted shape looks li
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
 trace is readable; each module's sibling JavaScript beside it as `<Module>.foreign.mjs`, and the
-platform's runtime as `platform/<name>.foreign.mjs` (§2). Release: chunks (§8), every surviving declaration emitted into its chunk with a
-short name, and the cross-chunk bindings synthesised by the assigner.
+platform's runtime as `platform/<name>.foreign.mjs` (§2). Release: chunks (§10), every surviving declaration emitted into its chunk with a
+short name, and the cross-chunk bindings synthesised by the assigner — and with one entry point and
+no `lazy`, that is one file.
 
 A platform declares its output shape (`boundary.md` §5.2) — what the artifact looks like and how
 `main` is invoked. The emitter is parameterised by it.
@@ -1721,23 +1729,158 @@ seed. §10 is where that lives.
 
 ## 10. Chunking
 
-Entry points are `main` and every `lazy` declaration. Each declaration's colour is the set of entry
-points that reach it; declarations sharing a colour share a chunk. **"Reaches" is §9's walk with
-more than one seed, over §9's graph** — the colouring adds a lattice, not a second graph. The colour is **hash-consed from
-the first line written**, because dart2js measured 401 deferred imports producing 2.9 million
-import-sets and a five-gigabyte heap without interning, and both GWT and Rollup found the same late.
-dart2js's `ImportSetLattice` is the structure to copy. Declaration granularity is proven in four
-whole-program compilers, and Closure's four safety guards for it are vacuous in a pure language.
+**Release output is chunks; development output is not.** §9.5 of the design doc settles that with
+"two build modes, one graph", and M3d is what makes the second half true. A chunk is a file; a
+declaration's chunk is decided by which entry points reach it; and **with one entry point and no
+`lazy`, a release build is exactly one file**, which is the degenerate case of everything below and
+the part of this section worth the most bytes.
 
-A **merge pass** follows, budgeted by compression rather than request count: four chunks cost about
-6.6% of compressed bytes and sixteen about 18%, before any chunk has saved anything. A chunk whose
-private content does not repay that is folded back.
+**What is PENDING an owner decision, and nothing here quietly assumes an answer.** The `lazy` marker
+is specified in `fast-compiler.md` §9.5 as rewriting a declaration's type to `Task LoadError a`, and
+that section's own block quote says the type is gone. A deferred load is asynchronous, this language
+is synchronous and has no effect system yet, and there is therefore **no way to express a deferred
+value in the language as it stands**. [`plans/m3d-plan.md`](../../plans/m3d-plan.md) §2 is the
+argument and §6 the decisions: whether `lazy` is a keyword, a contextual word or neither; whether it
+waits for `plans/effects-plan.md`'s E1–E3; whether a build may carry more than one entry point. Until
+those are taken, this section specifies the chunker and **not** the trigger. Everywhere below, "an
+entry" means a declaration in the seed set, and how a declaration gets there is PENDING.
 
-The assigner **synthesises the cross-chunk `import`/`export` bindings itself**, and is budgeted with
-the assigner rather than after it. Closure is the only other system doing declaration-granular
-chunking with an ES-module mode and the combination is broken there, because it relocates
-declarations without emitting the bindings (closure-compiler#4264, open). esbuild's
-`computeCrossChunkDependencies` is the model.
+### The colouring
+
+Entry points are **the entry declarations of the build** — today `main`, and whatever §6's decisions
+add. Each node's colour is the set of entries that reach it; nodes sharing a colour share a chunk.
+**"Reaches" is §9's walk with more than one seed, over §9's graph** — the colouring adds a lattice,
+not a second graph. Declaration granularity is proven in four whole-program compilers and Closure's
+four safety guards for it are vacuous in a pure language (report 12 §3.2).
+
+Mechanically it is §9's pass run once per entry and transposed: `Reach.run` already returns two
+bitsets per module over input-derived node identities (`src/js/Reach.zig:103-123`), so node *n*'s
+colour is the `|E|`-bit vector of which runs marked it, and **§9's liveness is the OR of those bits**
+— one machine, both answers, no second walk. Colours are **interned**: dart2js measured 401 deferred
+imports producing 2.9 million import-sets and a five-gigabyte heap without it, and GWT and Rollup
+found the same late. At `|E| ≤ 64` a `u64` key into a hash map is `ImportSetLattice` at a thousandth
+of the code; the trie is what is needed past that, and the cost of the walks is `|E| × O(nodes)`
+against a pass §9 measures in microseconds.
+
+**Every colour containing the main entry IS the main chunk.** dart2js's rule and its reason, quoted
+in report 12 §3.1: code reachable from `main` is loaded "possibly synchronously", so splitting it out
+buys a chunk that is always fetched. One consequence is worth stating because it removes a whole
+class of bug: **the main chunk has no outgoing cross-chunk edge.**
+
+**The chunk graph is a DAG by construction.** If `d → e` then every entry reaching `d` reaches `e`,
+so `colour(e) ⊇ colour(d)` and a chunk imports only from chunks whose colour is a strict superset.
+Rollup's `CIRCULAR_CHUNK`, Scala.js's `maxExcludedHopCount` and its two-of-three "(unproven)" lemmas
+(report 12 §3.3) are all repairing a property the colour order gives here for free.
+
+### The merge
+
+A merge pass follows, budgeted by compression rather than by request count: four chunks cost about
+6.6% of compressed bytes and sixteen about 18% before any chunk has saved anything (report 12 §2.6).
+
+**Folding a chunk is promoting its entry, never moving its declarations.** Moving them breaks the DAG
+property, because relocated code still references colours the destination does not contain and the
+repair cascades — which is precisely why *"every fixup demotes the atom to leftovers"* in GWT. So: an
+entry whose chunk does not repay a split is **added to the main entry's seed set and the colouring is
+re-run**, to a fixpoint, candidates considered in canonical entry order. That is dart2js's
+`ImportSetTransition` (report 12 §4.2) used as the merge mechanism, and it cannot produce a cycle.
+
+**The threshold is provisional and says so.** A candidate chunk is kept iff its private content is at
+least **4 096 raw bytes and 5% of the program's raw bytes**. Both numbers are inferred from report
+12 §2.6's table and dart2js's 1 080-byte empty part, not measured here: report 12's open question 2
+— *"the biggest unquantified risk in the chunking plan"* — is that nobody has measured what
+declaration-granular colouring produces, and there is still no beni program large enough to say.
+Re-derive from `bench/size.mjs` on the first one that is.
+
+### Assembly, and what a chunk file contains
+
+Lowering does not change. A module is lowered to `JsIr` exactly as today and a chunk is assembled
+from the result: `JsIr.body` is *"the `import`s first, then one declaration per emitted value, then
+one `export`"* (`src/js/JsIr.zig:57-62`), and `import_stmt` and `export_stmt` are their own tags
+(`:117`, `:119`), so the assembler **drops them and writes its own**. `Print.print` gains an entry
+point that prints a given list of statements into a caller's buffer; it prints `ir.body` today
+(`src/js/Print.zig:73-78`).
+
+- **Order within a chunk is module-topological, then `emissionOrder`.** In separate files ESM orders
+  the modules; in one file nothing does, and a `const` read before its initialiser is a temporal-dead
+  zone `ReferenceError` at load — the failure §9's own `run/` fixtures exist to catch. The module
+  graph is acyclic and a cross-module reference only exists along an import edge, so the two orders
+  compose. Emission order is otherwise unchanged: report 12 §2.1 measures up to 7% of compressed
+  bytes for keeping related declarations adjacent, and §9's namer already spent that.
+- **Nothing is renamed by chunk assignment, and that is the whole reason this is cheap.** §9's namer
+  puts every name that can cross a file in one whole-program namespace, assigned before any chunk
+  exists, so a declaration's name does not depend on where it lands. Rollup pays `deconflictChunk.ts`
+  (266 lines) for this and Elm's LCI-plus-renaming is what report 12 §3.3 identifies as *"Elm's actual
+  blocker"*. Confirmed on today's dev output too, where names are `Module$name` and already unique.
+- **Cross-chunk bindings are synthesised by the assigner, inside the pass.** Closure is the only
+  other system doing declaration-granular chunking with an ES-module mode and the combination is
+  broken there because it relocates declarations without emitting the bindings
+  (closure-compiler#4264, open); esbuild's `computeCrossChunkDependencies` is the model. By the DAG
+  property, every such binding is a static `import` from a less-shared chunk into a more-shared one.
+
+### Where everything else goes
+
+| Thing | Chunk | Why |
+|---|---|---|
+| the main chunk | **`out/main.mjs`**, with the platform's `run(main)` call last | it is already the file `Emit.emitEntry` writes (`src/js/Emit.zig:840-858`), so the artifact path does not move |
+| a colour that is one entry | `out/chunk/<Module>.<name>.mjs` | input-derived and readable: it names the declaration the author marked |
+| a colour of two or more | `out/chunk/shared.<i>.mjs`, `i` the colour's index in canonical colour order | input-derived; **no content hash**, so a golden is stable and rule 5 is met by construction |
+| a derived `eq` / `compare` | coloured like any other node (`Reach.Kind.derived`) | §9 already makes it a node |
+| a `$$order` table | its `compare`'s chunk | *"lives and dies with its `compare`"* (§9); not a node |
+| `eq$prim`, `compare$prim`, `compare$char` | emitted per chunk that wants one | discovered by `Lowerer.needs` during lowering, not nodes (§9); three small functions, and duplicating beats a cross-chunk edge |
+| an eta-expanded evidence closure | the chunk of the declaration whose site built it | not a node; *"an eta-expansion is built from a site's targets, and the targets are the edges"* (§9) |
+| a `*.foreign.mjs` sibling | **its own file, unchunked**, at today's path; every chunk using one of its exports imports it | a sibling is copied whole and never parsed (`boundary.md` §4). ESM evaluates a module once, so duplicate imports cost specifiers and nothing else. Measured cost of not folding siblings into the bundle: 1 215 brotli bytes on `run/Dictionaries`, where the seven siblings are **54% of compressed output** — left on the table deliberately, because separating two siblings' scopes needs a JavaScript parser |
+| `platform/runtime.foreign.mjs` | its own file, imported by the main chunk | *"copied whole, so it needs no root of its own"* (§9) |
+| a `--library` build | **one chunk** | a library's callers are not in the build, so there is no entry set to colour by; §9 already measures that elimination barely shrinks a library |
+
+### Determinism, M4 and M5
+
+**Determinism needs no new machinery.** Entry order, node identity, colour order and chunk names are
+all functions of sorted paths and source order (CLAUDE.md rule 5), and the colouring's output is a
+*set*. `--jobs=1` against `--jobs=8` covers it exactly as it covers §9, with `--release` in the
+matrix.
+
+**M4 and chunking never meet.** Chunking is release-only and release is not the 15 ms warm path, so
+"one edit rewrites one small file" (`src/js/Emit.zig:6-10`) remains true of the mode that promises
+it. The cacheable unit is what §9 says — per-module edge lists, per-module `JsIr` — and a chunk file
+is a concatenation of already-lowered statements. What a release build cannot cache is the name
+table: §9 promises only that a name is a function of position in `emissionOrder`, so inserting a
+declaration shifts every name after it. That is a stated non-guarantee and not a regression.
+
+**M5 needs nothing new either.** §11's *"per-file chunks rebased once at join time"* is chunk
+assembly: mappings are recorded at print time and rebased by the chunk's running line offset, one
+`.map` per chunk file.
+
+### Measurement, acceptance and fixtures
+
+**`bench/size.mjs` cannot see chunking today and must be changed first.** `measureTree` concatenates
+every `.mjs` under `out/` and compresses the concatenation (`bench/size.mjs:255-279`), so its
+headline `brotli_bytes` is *already* the idealised single-file number. It gains **`split_brotli_bytes`
+— the sum of per-file brotli — and `files`**, and chunking's win is the distance between them
+closing. Measured today on dev builds: `run/Dictionaries` is 20 files, 11 908 brotli summed against
+9 290 concatenated (**−22.0%**, −26.5% once module headers go); hello world is 5 files, 1 152 against
+835 (**−27.5%**). Those are the numbers the single-chunk case has to reach.
+
+Acceptance:
+
+1. **A release build of a single-entry program writes one `.mjs` plus siblings and the runtime**, and
+   its `split_brotli_bytes` equals its `brotli_bytes`.
+2. **Every `run/` fixture passes under `--release` with no `.expected` change**, which §9's release
+   testing already runs; a chunked build is a third pass over the same corpus, not a new one.
+3. **Every `emit/` and dev golden is byte-identical**: chunking is release-only.
+4. **The determinism test is green** at `--jobs=1` and `--jobs=8`, twice each, byte-compared, with
+   `--release` in the matrix.
+5. **Emit throughput stays above §13's 5 MB/s.** Assembly is a copy per statement and an interning
+   pass over `|E| × nodes` bits; what would breach it is a fixpoint per declaration, and none is
+   specified.
+
+Fixtures, and the failure each one is about. `emit/release/ChunkSingleFile` — one file, no `import`
+of a generated module, sibling imports hoisted, `run(main)` last. `emit/release/ChunkOrder` — a
+three-module diamond that throws a temporal-dead-zone `ReferenceError` at load if assembly order is
+not module-topological; it is `run/`-shaped rather than golden-shaped for the reason §12 gives.
+`run/ChunkCrossBinding` and a two-entry `run/` project prove that a shared chunk is imported by both
+entries and that both print — **PENDING the multi-entry decision**, which is what gives the colouring
+a second seed at all; until then every fixture here exercises the one-colour case, and a pass whose
+only test is the degenerate case is a pass that will be wrong the first time it has two.
 
 ## 11. Source maps
 
