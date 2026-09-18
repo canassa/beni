@@ -245,6 +245,359 @@ test "an empty record, and a module that never lowered, travel through the forma
     _ = try expectSameThroughTheFormat(&w, &.{ "check", "--diagnostics=json", "src" }, arena_state.allocator());
 }
 
+// ---------------------------------------------------------------------------
+// `--iface-hash` (`fast-compiler.md` §8)
+// ---------------------------------------------------------------------------
+
+/// The `<32 hex digits>` of the one line whose key is `key`, or an error
+/// naming what was there instead. The whole line is not returned on
+/// purpose: a test that compared lines would pass on two runs that both
+/// printed nothing.
+fn hashOf(out: []const u8, key: []const u8) ![]const u8 {
+    var it = std.mem.splitScalar(u8, out, '\n');
+    while (it.next()) |line| {
+        if (line.len == 0) continue;
+        const space = std.mem.indexOfScalar(u8, line, ' ') orelse {
+            std.debug.print("--iface-hash printed a line with no hash: '{s}'\n", .{line});
+            return error.MalformedHashLine;
+        };
+        if (!std.mem.eql(u8, line[0..space], key)) continue;
+        const digits = line[space + 1 ..];
+        if (digits.len != 32) {
+            std.debug.print("--iface-hash printed {d} digits for {s}, not 32\n", .{ digits.len, key });
+            return error.MalformedHashLine;
+        }
+        for (digits) |c| {
+            if (!std.ascii.isHex(c) or std.ascii.isUpper(c)) return error.MalformedHashLine;
+        }
+        return digits;
+    }
+    std.debug.print("--iface-hash printed no line for {s}; it printed:\n{s}\n", .{ key, out });
+    return error.NoSuchModule;
+}
+
+test "--iface-hash prints one sorted line per module, core included" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Zulu.beni",
+        \\pub one : Int
+        \\one =
+        \\    1
+        \\
+    );
+    try w.write("src/Alpha.beni",
+        \\pub two : Int
+        \\two =
+        \\    2
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // The key is `(package, name)` and not the name alone, and the package
+    // is there because core's modules are on the list: `dump --stage=raw`
+    // cannot see them and the firewall has to.
+    _ = try hashOf(r.stdout, "app:Alpha");
+    _ = try hashOf(r.stdout, "app:Zulu");
+    _ = try hashOf(r.stdout, "core:Basics");
+    _ = try hashOf(r.stdout, "core:String");
+
+    // Sorted by that key's text, so the output is a function of the sources.
+    var previous: []const u8 = "";
+    var lines: usize = 0;
+    var it = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (it.next()) |line| {
+        if (line.len == 0) continue;
+        const key = line[0..std.mem.indexOfScalar(u8, line, ' ').?];
+        try testing.expect(std.mem.lessThan(u8, previous, key));
+        previous = key;
+        lines += 1;
+    }
+    try testing.expect(lines >= 10);
+}
+
+test "a module's hash does not depend on which files the interner saw first" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // **The fixture that fails first, and the one `dump --stage=raw` cannot
+    // see.** A `Symbol` is an index into the session interner, whose
+    // numbering depends on which worker interned which file — so a
+    // `symbols` column written as raw ids would give `Zeta` a different
+    // record the moment an unrelated module full of identifiers sorted
+    // before it. `--stage=raw` is blind to this: it resolves symbol indices
+    // to TEXT before printing. The hash is not, because it is taken over
+    // the bytes.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Zeta.beni",
+        \\pub type Tag
+        \\    = Tag String
+        \\
+        \\
+        \\pub label : Tag -> String
+        \\label t =
+        \\    case t of
+        \\        Tag s ->
+        \\            s
+        \\
+        \\
+        \\pub pair : a, b -> ( a, b )
+        \\pair x y =
+        \\    ( x, y )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const alone_1 = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), alone_1.exit_code);
+    const alone_8 = try w.runWith(&.{ "check", "--iface-hash", "--jobs=8", "src" }, .{ .raw_diagnostics = true });
+    const before = try hashOf(alone_1.stdout, "app:Zeta");
+    try testing.expectEqualStrings(before, try hashOf(alone_8.stdout, "app:Zeta"));
+
+    // An unrelated module, full of identifiers, sorting BEFORE `Zeta`, so
+    // every name `Zeta` uses is interned after a few hundred others.
+    {
+        var source: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer source.deinit();
+        for (0..200) |i| {
+            try source.writer.print(
+                \\pub noise{d} : Int -> Int
+                \\noise{d} unrelatedParameter{d} =
+                \\    unrelatedParameter{d}
+                \\
+                \\
+                \\
+            , .{ i, i, i, i });
+        }
+        try w.write("src/Aardvark.beni", source.written());
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "--jobs=1", "--jobs=8" }) |jobs| {
+        const r = try w.runWith(&.{ "check", "--iface-hash", jobs, "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        testing.expectEqualStrings(before, try hashOf(r.stdout, "app:Zeta")) catch |err| {
+            std.debug.print("Zeta's hash moved at {s} because another module was added\n", .{jobs});
+            return err;
+        };
+        // Core is in the same session and equally untouched.
+        _ = try hashOf(r.stdout, "core:Basics");
+    }
+}
+
+/// The purity project of `blackbox_test.zig`'s `--stage=raw` scenarios,
+/// restated here so the hash can be asked the same question the dump was.
+fn writePurityProject(w: *World) !void {
+    try w.write("src/Alpha.beni",
+        \\pub type Solo
+        \\    = Solo
+        \\
+    );
+    try w.write("src/Mid.beni",
+        \\pub type Tag
+        \\    = Tag
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+    );
+    try w.write("src/Zeta.beni",
+        \\import Mid exposing (Tag)
+        \\
+        \\
+        \\pub type Pair a
+        \\    = Pair a a
+        \\
+        \\
+        \\pub mk : Int, Tag -> Pair Tag
+        \\mk _ t =
+        \\    Pair t t
+        \\
+    );
+}
+
+test "the firewall by hash: an edit elsewhere does not move a module's line" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // checker.md §7's purity rule, stated as the quantity the firewall
+    // actually uses. The same four cumulative edits `--stage=raw` is asked
+    // about, now asked of the hash — which is what `bench/churn.sh` reports
+    // and what a cache key will compare.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePurityProject(&w);
+    const base = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), base.exit_code);
+    const before = try hashOf(base.stdout, "app:Zeta");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY                        │
+    // └─────────────────────────────────────────┘
+    const edits = [_]struct { what: []const u8, path: []const u8, source: []const u8 }{
+        .{ .what = "a pub type in a module Zeta does not import", .path = "src/Alpha.beni", .source =
+        \\pub type Solo
+        \\    = Solo
+        \\
+        \\
+        \\pub type Extra
+        \\    = Extra
+        \\
+        },
+        .{ .what = "a PRIVATE type in a module Zeta does not import", .path = "src/Alpha.beni", .source =
+        \\pub type Solo
+        \\    = Solo
+        \\
+        \\
+        \\pub type Extra
+        \\    = Extra
+        \\
+        \\
+        \\type Hidden
+        \\    = Hidden
+        \\
+        },
+        .{ .what = "a new file containing a type", .path = "src/Beta.beni", .source =
+        \\pub type Thing
+        \\    = Thing
+        \\
+        },
+        .{ .what = "a type added to a module Zeta imports but does not name", .path = "src/Mid.beni", .source =
+        \\pub type Tag
+        \\    = Tag
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+        \\
+        \\pub type Added
+        \\    = Added
+        \\
+        },
+    };
+    for (edits) |e| {
+        try w.write(e.path, e.source);
+        const r = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        testing.expectEqualStrings(before, try hashOf(r.stdout, "app:Zeta")) catch |err| {
+            std.debug.print("Zeta's hash moved after adding {s}\n", .{e.what});
+            return err;
+        };
+    }
+}
+
+test "the converse, by hash: a change the record DOES describe moves its line" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Without this the test above would also pass on a hash that never
+    // moved at all, which is the failure mode a firewall measurement has:
+    // a cutoff rate of 100% is either perfect or broken and the number
+    // cannot tell you which.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePurityProject(&w);
+    const base = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), base.exit_code);
+    const zeta_before = try hashOf(base.stdout, "app:Zeta");
+    const mid_before = try hashOf(base.stdout, "app:Mid");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: the type Zeta names is renamed │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Mid.beni",
+        \\pub type Label
+        \\    = Tag
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+    );
+    try w.write("src/Zeta.beni",
+        \\import Mid exposing (Label)
+        \\
+        \\
+        \\pub type Pair a
+        \\    = Pair a a
+        \\
+        \\
+        \\pub mk : Int, Label -> Pair Label
+        \\mk _ t =
+        \\    Pair t t
+        \\
+    );
+    {
+        const r = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expect(!std.mem.eql(u8, zeta_before, try hashOf(r.stdout, "app:Zeta")));
+        try testing.expect(!std.mem.eql(u8, mid_before, try hashOf(r.stdout, "app:Mid")));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: a constructor is added to an exported type │
+    // └─────────────────────────────────────────┘
+    try writePurityProject(&w);
+    const restored = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqualStrings(mid_before, try hashOf(restored.stdout, "app:Mid"));
+    try w.write("src/Mid.beni",
+        \\pub type Tag
+        \\    = Tag
+        \\    | Extra
+        \\
+        \\
+        \\pub type Other
+        \\    = Other
+        \\
+    );
+    {
+        const r = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expect(!std.mem.eql(u8, mid_before, try hashOf(r.stdout, "app:Mid")));
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY: a local arity changes │
+    // └─────────────────────────────────────────┘
+    try writePurityProject(&w);
+    try w.write("src/Zeta.beni",
+        \\import Mid exposing (Tag)
+        \\
+        \\
+        \\pub type Pair a
+        \\    = Pair a a a
+        \\
+        \\
+        \\pub mk : Int, Tag -> Pair Tag
+        \\mk _ t =
+        \\    Pair t t t
+        \\
+    );
+    {
+        const r = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expect(!std.mem.eql(u8, zeta_before, try hashOf(r.stdout, "app:Zeta")));
+    }
+}
+
 test "a build's emitted JavaScript is byte-identical under --roundtrip-interfaces" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

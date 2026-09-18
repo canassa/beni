@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) u8 {
             return 0;
         },
         .build => |build| return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build),
-        .check => |check| return beni.check.Command.run(gpa, io, stderr, sessionOptions(check.common), check),
+        .check => |check| return beni.check.Command.run(gpa, io, stdout, stderr, sessionOptions(check.common), check),
         .fmt => |fmt| return beni.fmt.Command.run(gpa, io, stdout, stderr, sessionOptions(fmt.common), fmt),
         .dump => |dump| return runDump(gpa, io, stdout, stderr, dump),
     }

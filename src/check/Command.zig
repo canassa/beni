@@ -28,8 +28,9 @@ const Cli = @import("../Cli.zig");
 const Session = @import("../Session.zig");
 const Emit = @import("../js/Emit.zig");
 const platform = @import("../platform.zig");
+const iface_bytes = @import("../resolve/iface_bytes.zig");
 
-pub fn run(gpa: Allocator, io: Io, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
+pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
     // A package may declare itself a platform (boundary.md §2), and then
     // `foreign` is legal in it. `check` has to honour that or a platform
@@ -60,6 +61,13 @@ pub fn run(gpa: Allocator, io: Io, stderr: *Io.Writer, options_in: Session.Optio
         else => |e| return fail(stderr, "beni: {t}", .{e}),
     };
     if (session.platform_error) return platform.reportUnknown(stderr, check.platform.?);
+    // Before the exit-code branch below, so a project with errors still
+    // reports the hashes of the modules that do have an interface: the
+    // firewall's question is "did this module's public face move?", and a
+    // module whose dependent failed to compile still has one.
+    if (check.common.iface_hash) {
+        printInterfaceHashes(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
+    }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
         return 1;
@@ -100,6 +108,53 @@ pub fn run(gpa: Allocator, io: Io, stderr: *Io.Writer, options_in: Session.Optio
     }
     const errors = session.renderLate(late, stderr) catch return 2;
     return if (errors > 0) 1 else 0;
+}
+
+/// `--iface-hash`: one `<package>:<Module> <32 hex digits>` line per module
+/// on stdout, `core` and the platform included, sorted by that key
+/// (`fast-compiler.md` §8's *The interface hash, and slice zero*).
+///
+/// **Why it exists at all**: `dump --stage=raw` prints only the modules
+/// named on the command line, so core's and the platform's records are
+/// invisible to it — and the firewall's quantity is "did this record
+/// change?", which is a hash and not a dump. `bench/churn.sh` reports
+/// "importers re-checked" out of these lines.
+///
+/// The package is part of the key because a module's identity is
+/// `(package, name)` and not the name alone (`Graph`'s header), and the
+/// sort is on the key's TEXT — a function of the sources, like every other
+/// order in this slice, and never of `--jobs`.
+fn printInterfaceHashes(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const Line = struct {
+        key: []const u8,
+        digits: [32]u8,
+
+        fn lessThan(_: void, a: @This(), b: @This()) bool {
+            return std.mem.lessThan(u8, a.key, b.key);
+        }
+    };
+    const lines = try arena.alloc(Line, session.graph.count());
+    for (lines, 0..) |*line, i| {
+        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const file = session.graph.moduleFile(m);
+        const iface = &session.resolution.interfaces[i];
+        const bytes = try iface_bytes.write(gpa, iface, &session.interner);
+        defer gpa.free(bytes);
+        line.* = .{
+            .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{
+                session.store.package(file),
+                session.interner.slice(session.graph.moduleName(m)),
+            }),
+            .digits = iface_bytes.hashHex(iface_bytes.hash(bytes)),
+        };
+    }
+    std.mem.sort(Line, lines, {}, Line.lessThan);
+    for (lines) |line| try stdout.print("{s} {s}\n", .{ line.key, &line.digits });
+    try stdout.flush();
 }
 
 fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u8 {
