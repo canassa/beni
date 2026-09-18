@@ -64,38 +64,59 @@ pub const Prec = enum {
 /// nowhere else.
 pub const Namer = struct {
     gpa: Allocator,
-    entries: std.ArrayList(Entry) = .empty,
+    /// What each variable that has been named prints as. Borrows the text
+    /// from `names`, which owns it.
+    by_var: std.AutoHashMapUnmanaged(Var, []const u8) = .empty,
+    /// Every name handed out, so a candidate is rejected in O(1) instead of
+    /// by a walk of the whole message. Owns the text.
+    names: std.StringHashMapUnmanaged(void) = .empty,
+    /// The next suffix worth trying for a stem whose bare form is already
+    /// taken. A suffix, once handed out, is taken for the rest of the
+    /// message, so a stem never has to re-walk the run it already spent:
+    /// `number65` costs one probe rather than sixty-four. Keys borrow the
+    /// `names` key that spells the stem, which is why the stem itself is
+    /// never allocated twice.
+    next_suffix: std.StringHashMapUnmanaged(u32) = .empty,
     /// How many generated (`a`, `b`, …) names have been handed out.
     generated: u32 = 0,
-
-    const Entry = struct { v: Var, text: []const u8 };
 
     pub fn init(gpa: Allocator) Namer {
         return .{ .gpa = gpa };
     }
 
     pub fn deinit(n: *Namer) void {
-        for (n.entries.items) |e| n.gpa.free(e.text);
-        n.entries.deinit(n.gpa);
+        // Before the texts: a stem key points into one of them.
+        n.next_suffix.deinit(n.gpa);
+        n.by_var.deinit(n.gpa);
+        var it = n.names.keyIterator();
+        while (it.next()) |text| n.gpa.free(text.*);
+        n.names.deinit(n.gpa);
     }
 
     /// The name `v` prints as, allocating one the first time. `preferred`
     /// is the variable's own name or its kind, or null for a plain flex
     /// variable.
     pub fn name(n: *Namer, v: Var, preferred: ?[]const u8) Allocator.Error![]const u8 {
-        for (n.entries.items) |e| {
-            if (e.v == v) return e.text;
-        }
+        if (n.by_var.get(v)) |text| return text;
+        try n.by_var.ensureUnusedCapacity(n.gpa, 1);
         const text = try n.allocate(preferred);
-        try n.entries.append(n.gpa, .{ .v = v, .text = text });
+        errdefer n.gpa.free(text);
+        try n.names.put(n.gpa, text, {});
+        n.by_var.putAssumeCapacity(v, text);
         return text;
     }
 
     fn allocate(n: *Namer, preferred: ?[]const u8) Allocator.Error![]const u8 {
         if (preferred) |p| {
             if (!n.taken(p)) return n.gpa.dupe(u8, p);
-            var suffix: u32 = 2;
-            while (suffix < 1000) : (suffix += 1) {
+            // `p` is taken, so `names` holds a copy of it whose bytes
+            // outlive every suffix search; key the counter by that.
+            const stem = n.names.getKey(p).?;
+            const slot = try n.next_suffix.getOrPut(n.gpa, stem);
+            if (!slot.found_existing) slot.value_ptr.* = 2;
+            while (slot.value_ptr.* < 1000) {
+                const suffix = slot.value_ptr.*;
+                slot.value_ptr.* += 1;
                 const candidate = try std.fmt.allocPrint(n.gpa, "{s}{d}", .{ p, suffix });
                 if (!n.taken(candidate)) return candidate;
                 n.gpa.free(candidate);
@@ -110,10 +131,7 @@ pub const Namer = struct {
     }
 
     fn taken(n: *const Namer, candidate: []const u8) bool {
-        for (n.entries.items) |e| {
-            if (std.mem.eql(u8, e.text, candidate)) return true;
-        }
-        return false;
+        return n.names.contains(candidate);
     }
 };
 
@@ -679,4 +697,34 @@ test "a namer keeps one name per variable and never repeats a name" {
     try testing.expectEqualStrings("msg2", try namer.name(d, "msg"));
     const e: Var = @enumFromInt(4);
     try testing.expectEqualStrings("c", try namer.name(e, null));
+}
+
+test "disambiguating one stem sixty-four times is linear, not quadratic" {
+    // `check/good/SixtyFourConstraints` renders a scheme whose `where`
+    // clause names `number` sixty-five times, and the namer used to walk
+    // every suffix from 2 for each of them — O(k²) allocations and O(k³)
+    // comparisons for one warning. The count is the assertion because a
+    // clock is not one: on the old code this is ~2000 allocations, and no
+    // timing threshold could say that without also failing on a slow
+    // machine.
+    var counting: std.testing.FailingAllocator = .init(testing.allocator, .{});
+    const gpa = counting.allocator();
+    var namer: Namer = .init(gpa);
+    defer namer.deinit();
+    for (0..64) |i| {
+        const v: Var = @enumFromInt(@as(u32, @intCast(i)));
+        const got = try namer.name(v, "number");
+        if (i == 0) {
+            try testing.expectEqualStrings("number", got);
+        } else {
+            var buf: [16]u8 = undefined;
+            try testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "number{d}", .{i + 1}), got);
+        }
+    }
+    // Eight allocations per name is generous for one `allocPrint` and the
+    // occasional map growth — it measures 201 in all — where the old code
+    // spent ~2000 printings for the same sixty-four names. The ratio is the
+    // assertion; the bound is only loose enough to survive a change in how
+    // `allocPrint` buffers.
+    try testing.expect(counting.alloc_index < 8 * 64);
 }

@@ -593,7 +593,9 @@ function-typed *parameter* is always parenthesised (`List a, (a -> b) -> List b`
 `(Int, Int) -> Int` so that it is distinguishable from the 2-ary `Int, Int -> Int`. The rule mirrors
 `language.md` §3's grammar notes. The same renderer produces
 `dump --stage=types` and `--stage=interface`, so every diagnostic's type text is corpus-tested
-through the dumps.
+through the dumps. Disambiguation (`number`, `number2`, … `number65`) is amortised O(1) per name
+— a per-stem next-suffix counter over a set of the names already handed out, never a rescan from
+`2` — because one warning on a wide `where` clause used to cost milliseconds of the error path.
 
 **The printer has two bounds, both of them truncations, and a truncation is always visible and
 never a different type.** `Render.max_depth` (24) elides a nested type as `…`; `Render.max_ext_links`

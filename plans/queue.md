@@ -34,7 +34,7 @@ one commit each, nothing force-pushed, no history rewritten.
 | 8 | **Reachability DCE** (M3c) | todo | the adoption's only blocker (report 19 §14.1); re-take M4 after |
 | 9 | Drop the 4×500 split in `bench/runtime` once #2 lands; re-take M5 | todo | measurement follow-up |
 | 10 | `transparent-effects-proposal.md` §10 item 1 is stale (`Func` is n-ary now) | todo | docs; found by L1 |
-| 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | todo | found by slice 3; low priority |
+| 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | **done** | found by slice 3; low priority |
 | 12 | Effects: spec pass over `transparent-effects-proposal.md` §10 now that both blockers landed | todo | after M3b; a design pass, owner should read it before code |
 | 13 | **M1 miscompile**: refutable pattern in a function/lambda parameter is an unchecked destructure (exit 0, wrong answer) | in flight (worktree) | manager decision: parameters obey `let`'s irrefutability rule (Elm's rule) |
 | 14 | `check/Exhaustive.zig` reports nothing when `pattern_budget` runs out, so a non-exhaustive `case` can reach a default-free tree | todo | exit-0 hole documented in `backend.md` §7; make budget exhaustion a diagnostic |
