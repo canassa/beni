@@ -1,0 +1,110 @@
+-- run: return-type dispatch, all four routes the result type arrives by
+-- (`static-dispatch-spike.md` §4.2, §6.4 rule (a), §7.2, §8.4).
+--
+-- `run/TypeDispatch` pins one of them — an annotation on the caller. The
+-- other three have never been executed:
+--
+--   * `decodeTwo` FORWARDS its own evidence to two calls of `decodeInto`.
+--     This is the return-position analogue of `run/EvidenceCapture`: the
+--     constraint is on `decodeTwo`'s RESULT, so nothing in its body can
+--     pin `a` and each inner call's slot is answered by the enclosing
+--     declaration's hidden parameter (`evidence 0`, §7.2). `pair` is what
+--     chooses `Tag`, one annotation two calls away from the dispatch.
+--   * `later` pins the type by a LATER USE and not by an annotation: `t`
+--     is a `let` binding whose type carries the constraint, §6.4 rule (a)
+--     holds it at the enclosing rank rather than generalising it, and
+--     `label t` is what makes it `Tag`. (The FAILING half of rule (a) —
+--     two uses at two types — is `check/bad/LetConstrainedTwice`; this is
+--     the succeeding half, which had no fixture at all.)
+--   * `sameNum` has NO `where` clause and still resolves. The rigid arm
+--     tests `findConstraint`, then the A.53 bridge, then §10.8, so a
+--     `number` variable answers `eq` with `primitive strict_eq` before
+--     `type_dispatch_needs_annotation` is ever reached. A.77 records the
+--     order; this line is what says the compiler really does take it.
+--
+-- Two target types are what makes any of it dispatch rather than a rename,
+-- and `run/` is single-file (the corpus walker gives `run/` no projects),
+-- so the second target is a core type: `String.fromList : List Char ->
+-- String` against this module's own `fromList`. Both are reached through
+-- one `where a.fromList`, and only the caller's type says which.
+import Node exposing (Program)
+import String
+
+
+pub type Tag
+    = Tag String
+
+
+pub fromList : List Char -> Tag
+fromList chars =
+    Tag (String.fromList chars)
+
+
+pub label : Tag -> String
+label t =
+    case t of
+        Tag s ->
+            s
+
+
+decodeInto : String -> a
+    where a.fromList : List Char -> a
+decodeInto s =
+    a.fromList (String.toList s)
+
+
+decodeTwo : String, String -> ( a, a )
+    where a.fromList : List Char -> a
+decodeTwo x y =
+    ( decodeInto x, decodeInto y )
+
+
+asTag : Tag
+asTag =
+    decodeInto "tag"
+
+
+asString : String
+asString =
+    decodeInto "str"
+
+
+pair : ( Tag, Tag )
+pair =
+    decodeTwo "one" "two"
+
+
+later : String
+later =
+    let
+        t =
+            decodeInto "zz"
+    in
+    label t
+
+
+sameNum : number, number -> Bool
+sameNum x y =
+    number.eq x y
+
+
+pairLabels : String
+pairLabels =
+    case pair of
+        ( x, y ) ->
+            label x ++ "/" ++ label y
+
+
+main : Program
+main =
+    Node.printLines
+        [ label asTag
+        , asString
+        , pairLabels
+        , later
+        , if sameNum 3 3 then
+            "same"
+
+          else
+            "different"
+        ]

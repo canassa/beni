@@ -1,0 +1,24 @@
+-- check/bad: the `.any` arm of §10.1's undetermined-receiver message (A.66,
+-- §6.4). `decodeInto`'s constraint is on its RESULT, so nothing inside the
+-- declaration determines `a` and only a use can. `always 1 (decodeInto 0)`
+-- is a use that never does: the result is thrown away, and `ignored`'s own
+-- annotation is `Int`, which does not mention `a`, so `promote` cannot
+-- claim the constraint into the interface either. What is left is a slot
+-- `settleUndetermined` must answer, and `fromInt` is not well known — `eq`
+-- and `compare` mean the same thing at every type and the A.53 bridge
+-- answers them, a user's own method does not and inventing one would be
+-- inventing a meaning.
+--
+-- The other two `kind` arms are pinned elsewhere: `.number` by
+-- `check/bad/WhereNonWellKnownAtLiteral`. Return-type dispatch is the
+-- natural producer of `.any`, because a constraint that never reaches an
+-- argument has nothing but the caller to pin it.
+pub decodeInto : Int -> a
+    where a.fromInt : Int -> a
+decodeInto n =
+    a.fromInt n
+
+
+pub ignored : Int
+ignored =
+    always 1 (decodeInto 0)

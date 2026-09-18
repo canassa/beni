@@ -1,0 +1,37 @@
+-- dispatch (project): result-only `where`, resolved across a module
+-- boundary (§2.4, §4.2, §6.5, §7.2).
+--
+-- Nothing in `Main` mentions `a`; the two annotations are what pick the
+-- function, one call apart from the dispatch that uses it. For that to
+-- work the constraint has to survive the whole round trip — `decodeInto`'s
+-- scheme is written to `Decoder`'s interface by `Schemes.Writer`, read back
+-- by `Schemes.instantiate` here, and the canonical evidence order (§7.2)
+-- has to be computed identically on both sides, from the scheme record
+-- alone. A quantifier that occurs only in the RESULT is the case where
+-- "walk the written body" could most easily have found a different order
+-- in the callee than in the caller; it does not.
+--
+-- `top fromList` is this module's own type and `ext String fromList` is
+-- core's, so one imported declaration answers two different functions and
+-- the golden is what says which went where.
+import Decoder
+import String
+
+
+pub type Tag
+    = Tag String
+
+
+pub fromList : List Char -> Tag
+fromList chars =
+    Tag (String.fromList chars)
+
+
+pub asTag : Tag
+asTag =
+    Decoder.decodeInto "tag"
+
+
+pub asString : String
+asString =
+    Decoder.decodeInto "str"

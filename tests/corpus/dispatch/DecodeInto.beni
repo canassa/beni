@@ -1,0 +1,74 @@
+-- dispatch: the table behind `run/DecodeInto` (§4.2, §7.2, §7.3).
+--
+-- What only this file can see is the FORWARD. `decodeTwo`'s constraint is
+-- on its result, so neither of the two `decodeInto` calls in its body can
+-- be resolved inside it: each is a `call` instantiating a scheme with one
+-- evidence parameter, and each gets one site whose target is `evidence 0`
+-- — `decodeTwo`'s own hidden parameter, passed down. The program runs the
+-- same whichever function those two slots hold, which is exactly why the
+-- golden is the assertion (`tests/corpus/dispatch/README.md`).
+--
+-- The rest is the three callers, one row each and no two alike: `top
+-- fromList` for this module's type, `ext String fromList` for core's, and
+-- `top fromList` again for the `let` in `later`, which is pinned by a
+-- later USE rather than by an annotation (§6.4 rule (a)). `sameNum` has
+-- no `where` clause and so no evidence at all — the A.53 bridge answers
+-- `number.eq` with `primitive strict_eq` before §10.8 is reached (A.77).
+import String
+
+
+pub type Tag
+    = Tag String
+
+
+pub fromList : List Char -> Tag
+fromList chars =
+    Tag (String.fromList chars)
+
+
+pub label : Tag -> String
+label t =
+    case t of
+        Tag s ->
+            s
+
+
+decodeInto : String -> a
+    where a.fromList : List Char -> a
+decodeInto s =
+    a.fromList (String.toList s)
+
+
+decodeTwo : String, String -> ( a, a )
+    where a.fromList : List Char -> a
+decodeTwo x y =
+    ( decodeInto x, decodeInto y )
+
+
+pub asTag : Tag
+asTag =
+    decodeInto "tag"
+
+
+pub asString : String
+asString =
+    decodeInto "str"
+
+
+pub pair : ( Tag, Tag )
+pair =
+    decodeTwo "one" "two"
+
+
+pub later : String
+later =
+    let
+        t =
+            decodeInto "zz"
+    in
+    label t
+
+
+pub sameNum : number, number -> Bool
+sameNum x y =
+    number.eq x y

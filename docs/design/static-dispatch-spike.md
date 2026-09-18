@@ -469,8 +469,19 @@ and does not try to unify the two mechanisms — that redundancy is a finding fo
 ## 4. Return-type dispatch
 
 The one case that cannot be expressed with values, because at the dispatch point no value of the
-dispatched type exists ([`research/18`](research/18-static-dispatch-revisited.md) §3). Roc spells it
-`module(a).decode(bytes)`; beni spells it `a.decode bytes`.
+dispatched type exists ([`research/18`](research/18-static-dispatch-revisited.md) §3). beni spells it
+`a.decode bytes`.
+
+**What Roc actually ships**, because report 18 §3 described a syntax that is not in the vendored
+tree: `module(a).decode(bytes)` is gone. The shipped form binds an uppercase name to an
+annotation's type variable with a **statement** — `s_type_var_alias`
+(`references/roc/src/canonicalize/Statement.zig:222-240`) — and `Thing.something(arg)` then
+canonicalises to `e_type_method_call`, which the checker rewrites into `e_type_dispatch_call` with
+a `constraint_fn_var` (`references/roc/src/check/Check.zig:20237`). That is **closer** to
+`type_dispatch { var, name, args }` than to anything report 18 described: beni's form is Roc's
+design minus the binding statement, which Roc needs only because the alias is a scope entry its
+formatter must round-trip, while beni resolves the variable straight out of the annotation
+([`research/20`](research/20-roc-static-dispatch-implementation.md) §5.4).
 
 ### 4.1 The rule
 
@@ -496,13 +507,21 @@ decode s =
 |---|---|
 | `v` unbound as a value, the declaration has a `where` clause naming `v` and `m` | `type_dispatch` |
 | `v` unbound as a value, the declaration has a `where` clause naming `v` but not `m` | `type_dispatch_needs_annotation`, naming the constraint to add |
-| `v` unbound as a value, `v` **is** a type variable of the annotation but the annotation has no `where` clause at all | `type_dispatch_needs_annotation` |
+| `v` unbound as a value, `v` **is** a type variable of the annotation but the annotation has no `where` clause at all | `type_dispatch_needs_annotation` — unless `v` is spelled `number` and `m` is `eq` or `compare`, which the A.53 bridge answers first (A.77) |
 | `v` unbound as a value, `v` is not a type variable of the annotation | `unbound_variable`, as today |
 | the declaration has no annotation | `unbound_variable`, as today — the feature requires the annotation, as it does in Roc |
 | `v.m` with no arguments | `unbound_variable`: an application with no arguments is not an application (§1.1) |
 
 Giving `type_dispatch_needs_annotation` the second and third rows is what makes the code
 reachable; the plan left it with no trigger. See Appendix A.5.
+
+**A dispatch can never appear inside a derived `eq` or `compare`, by construction**, so there is no
+interaction between §4 and §9 to specify and no fixture that could show one. Rule 1 above requires
+an application the author wrote in a declaration body, and a derived function has no body in the
+source at all: §9 generates it from the type's shape, and the only methods it ever asks for are the
+two the compiler owns, by NAME and never through a `where` clause on a rigid (A.56, §3.3 step 2).
+The nearest thing to the case — evidence whose own answer needs evidence — is the `part` nesting of
+A.46, which is a `Target` tree and not an instruction.
 
 ### 4.2 Typing
 
@@ -517,6 +536,23 @@ config : Result String Config
 config =
     decode text          -- `a` is forced to `Config` by this annotation
 ```
+
+**The result type arrives by two routes and can also be deferred, and the checker treats all three
+alike.** An *annotation* on the caller is the first, and the only one report 18 described. The
+second is a **later use**: nothing says the flex has to be made concrete by the expression that
+created it, and `let t = decodeInto "zz" in label t` is pinned by `label`, one line down, because
+§6.4 rule (a) holds a constrained `let` binding at the enclosing rank instead of generalising it —
+the succeeding half of the rule that `check/bad/LetConstrainedTwice` shows the failing half of.
+Underneath both sits the third: a caller that is *itself* constrained on the same variable
+**forwards** its evidence rather than choosing, so `decodeTwo : String, String -> ( a, a ) where
+a.fromList : …` gives each inner `decodeInto` call a site targeting `evidence 0` and pushes the
+choice out to ITS caller — the return-position analogue of the capture in §6.4's
+`run/EvidenceCapture`. All three work across a module boundary, where the constraint travels
+through `Schemes.Writer.quantifierOf` into the interface and back through `Schemes.instantiate`; a
+quantifier that occurs **only in the result** is the case where callee and caller could most easily
+have computed §7.2's canonical order differently, and they do not, because both derive it from the
+scheme record alone. Fixtures: `run/DecodeInto`, `dispatch/DecodeInto`,
+`dispatch/DecodeIntoAcrossModules`.
 
 Report 18 §3 records the three costs Roc accepted with this feature — it requires an annotation, it
 is the only place a type is named in an expression, and it is weaker than the abilities it replaced
@@ -1675,6 +1711,19 @@ For a non-`primitive` target, an ordering operator wraps the `Order` result in a
 Identical to §8.3 with no receiver: `type_dispatch { var, name, args }` emits the target applied to
 `args` alone, evidence first. Its target is always `evidence k` inside a constrained declaration
 (§6.7), so in practice it is `$m$k(args…)`.
+
+**Which makes most of `Lower.typeDispatchExpr`'s arms unreachable, and they stay.** The
+constraint's root is a rigid (§6.7), so the only three answers §6.3 can give a `type_dispatch` are
+`evidence k`, a `primitive` where the A.53 bridge answered a well-known method on a `number` or
+flagged-`equatable` rigid (A.77), and §10.8's error, which the site carries as `err`. `top`, `ext`,
+`derived`, `ext_derived` and `field` cannot arrive at this instruction from any beni program — only
+from a table that disagrees with the solver — and each is kept for a different reason: `top` and
+`ext` cost nothing, sharing the ordinary call path with `evidence` and `primitive`; `derived` and
+`ext_derived` have a real lowering, §8.3's minus the receiver, because the shape of that call is
+decided here and not at the point it would first be needed; `field` is an explicit wall, because
+there is no receiver for a field to be read from. Fixture: `dispatch/TypeDispatch`, which is the
+only place a receiver-less site is visible at all — `run/` and `emit/` see the emitted call, not
+the target that produced it.
 
 ### 8.5 Naming and emission order
 
@@ -3540,3 +3589,58 @@ instruction's cursor and parented on that instruction's slot, so there is nothin
 two origins to hoist — the loop IS the shared part. *An annotation hides it*, which is why the
 fixture carries `annotatedDict` beside `nestedDict`: pinning `k` discharges each constraint before
 any join happens. Fixtures: `dispatch/JoinedConstraintNested`, `run/NestedConstrainedListKeys`.
+
+**A.77 — the A.53 bridge is tested BEFORE §10.8, so a `number` variable dispatches with no `where`
+clause** (§4.1, §6.3, §8.4, A.53) [S7]. The rigid arm of `resolveMethod` runs `findConstraint`,
+then `builtinRigidTarget`, then the `.type_dispatch` check, so `pub sameNum : number, number ->
+Bool` with body `number.eq x y` and no clause at all resolves to `primitive strict_eq` and
+`evidence=0` — it does **not** take §4.1's third table row to `type_dispatch_needs_annotation`.
+*Why leave it:* the answer is right. `number` is `Int` or `Float`, §3.2 gives both `===`, and
+refusing the program would mean asking for a `where` clause whose only possible content is the
+answer the compiler already has. It is also not a case anyone writes on purpose — `x == y` is the
+spelling — so the order is worth a row rather than a code change. *What it costs:* §4.1's table is
+not the whole rule for the two well-known names on a `number` (or flagged-`equatable`) rigid, and a
+reader who trusts the table alone will predict an error that does not come. *Alternative:* move the
+`.type_dispatch` test above `builtinRigidTarget`, which makes the table total and rejects a correct
+program to do it. Fixtures: `run/DecodeInto`'s `sameNum` line and `dispatch/DecodeInto`, which shows
+the `primitive strict_eq` site beside the `evidence 0` ones.
+
+**A.78 — `run/` is single-file, so `run/DecodeInto`'s second dispatch target is a core type** (§4,
+§11, §7.3) [S7]. The corpus walker gives projects to `check/good`, `check/bad` and `dispatch` only
+(`Kind.hasProjects`), and §11's module rule forbids two types in one module from both declaring a
+`fromList`, so a single-file fixture cannot hold two user targets for one method. The second target
+is `core/String.beni`'s `fromList : List Char -> String`, against the fixture's own
+`fromList : List Char -> Tag`. *Why it matters that there are two:* with one target the whole of §4
+is a rename — the emitted code would be correct however the checker resolved the site — and the
+fixture would assert nothing. *Alternative:* teach `run/` projects, which is a harness change with
+no dispatch content, or split the second target into a `dispatch/` project and lose the EXECUTION
+of the second arm. `dispatch/DecodeIntoAcrossModules` is that project, and it is a complement rather
+than a replacement: it sees the interface round trip, it does not see the answer come out.
+
+**A.79 — `typeDispatchExpr` keeps five arms no beni program can reach** (§8.4, §6.7) [S7]. The
+constraint root of a `type_dispatch` is always a rigid, so the solver can only ever hand it
+`evidence k`, a `primitive` (A.77) or `err`; the lowerer nevertheless has `top`, `ext`, `derived`,
+`ext_derived` and `field` as well. S7 read them rather than exercising them, because there is no
+program that gets there — the only way in is a table that disagrees with the solver. *Why keep
+them:* `top` and `ext` are free, on the same path as `evidence`; `field` is a wall that names the
+bug (`field_without_receiver`) where a narrowed `switch` would have to crash without a region; and
+`derived`/`ext_derived` carry a real lowering, §8.3's with the receiver removed and the use's
+evidence taken off the target's own `parts` (A.46), which is worth having written down beside the
+`method_call` case it mirrors rather than reconstructed later from memory. *Alternative:* delete
+them and make the `switch` exhaustive over a narrower `Target`, which means a second `Target` type
+for one instruction — the cost §7.1 already refused for `Derived`. *Recorded, not fixtured:* the
+spike's rule is that every defect gets a fixture, and this is the complement — a reading that says
+why an absence of fixtures is correct.
+
+**A.80 — the `.any` arm of §10.1's undetermined-receiver message belongs to return-position
+dispatch** (§10.1, §6.4, A.66) [S7]. `undeterminedMethodReceiver` names the receiver's flex `kind`,
+and the three arms have very different reach: `.number` is a literal (`WhereNonWellKnownAtLiteral`),
+`.appendable` is a `String`-or-`List`, and `.any` is "a type variable no use of this value
+determines" — which an ARGUMENT-position constraint can hardly produce, because passing a value is
+usually what determines it. A constraint on the RESULT is the natural producer: nothing inside the
+declaration can pin it and only a caller can, so a caller that throws the result away leaves it
+unpinned. The fixture has to keep the constraint off the caller's own interface as well —
+`ignored : Int` does not mention `a`, so `promote` does not claim it and `settleUndetermined` is
+what is left to answer. *Why it is an error and not an invented answer:* A.66's line — `eq` and
+`compare` mean the same thing at every type and the bridge answers them, a user's method does not.
+Fixture: `check/bad/TypeDispatchUnpinnedResult`.

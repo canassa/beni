@@ -1,0 +1,12 @@
+-- check/bad: §10.8, trigger (1) of A.5 — the other half of
+-- `TypeDispatchUnannotated`, which is trigger (2). Here the declaration DOES
+-- have a `where` clause and `a` IS constrained by it, but the clause names
+-- `describe` and the body asks for `decode`. That is not `unbound_variable`
+-- (the rule of §4.1 fired: `a` is a type variable of this annotation) and it
+-- is not `missing_where_constraint` (there is no receiver value whose type
+-- went looking for a method) — it is the dispatch asking for a constraint
+-- the clause does not carry, and the message names the one to add.
+pub decode : String -> Result String a
+    where a.describe : a -> String
+decode s =
+    a.decode s

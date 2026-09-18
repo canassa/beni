@@ -1,0 +1,17 @@
+-- dispatch (project): the constrained callee, in another module. Its
+-- `where` clause names a variable that occurs ONLY in the result — the
+-- shape no cross-module evidence fixture had, because every other one
+-- (`ImportedMethod`, `LiteralEvidenceAcrossModules`, `ExtWithParts`) puts
+-- the constrained variable in an argument, where the call site's own
+-- arguments pin it.
+--
+-- Its own table is the control: one evidence parameter, one site, and the
+-- site is `evidence 0` because the constraint's root is the declaration's
+-- rigid (§6.7, §8.4).
+import String
+
+
+pub decodeInto : String -> a
+    where a.fromList : List Char -> a
+decodeInto s =
+    a.fromList (String.toList s)

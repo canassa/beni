@@ -1,0 +1,13 @@
+module TypeDispatch
+  decl fromInt evidence=0
+  decl make evidence=1
+    evidence 0 quantified=0 var=a method=fromInt
+  decl asMetre evidence=0
+  decl asString evidence=0
+  derived 0 compare TypeDispatch.Metre evidence=0
+    part 0 primitive num_compare
+  derived 1 eq TypeDispatch.Metre evidence=0
+    part 0 primitive strict_eq
+  site 16 0 evidence 0
+  site 20 0 top fromInt
+  site 24 0 ext String fromInt

@@ -57,3 +57,18 @@ half of the same appendix: two slots of one instruction that EACH nest, where
 the breadth-first numbering and the depth-first reading part company and the
 emitted JavaScript is not the same either way — `run/TwoSlotsNested` is what
 it did to the answers.
+
+`TypeDispatch` is §4 — the only fixture in the corpus that reads a
+RECEIVER-LESS site out of the table. `run/TypeDispatch` proves the program
+prints and `emit/TypeDispatch.js` shows the hidden parameter, but a
+`type_dispatch` resolved to the wrong function does both just as well, and
+this golden is what says which function the caller's annotation picked.
+`DecodeInto` is the same feature with the result type arriving three other
+ways (§4.2): forwarded through a second constrained declaration, pinned by a
+later USE of a `let` rather than by an annotation, and — in `sameNum` — not
+constrained at all, because the A.53 bridge answers `number.eq` before §10.8
+is reached (A.77). `DecodeIntoAcrossModules` puts the callee in another
+module, which is the only place the interface round trip of a quantifier
+that occurs ONLY in the result is visible: every other cross-module evidence
+fixture has the constrained variable in an argument, where the call's own
+arguments pin it.

@@ -1,0 +1,40 @@
+-- dispatch: a receiver-less site in the table (`static-dispatch-spike.md`
+-- §4.1, §6.7, §7.2). The only fixture that reads a `type_dispatch` out of
+-- the table: `run/TypeDispatch` proves the program prints `7 / 42` and
+-- `emit/TypeDispatch.js` shows the hidden parameter in the emitted body,
+-- but neither can see WHICH function the checker put in each slot, and a
+-- site resolved to the wrong function runs and emits exactly as well.
+--
+-- Three rows are the whole of §4. `decl make evidence=1` is the one
+-- evidence parameter the `where` clause buys; `site 16 0 evidence 0` is the
+-- dispatch itself, whose target is always the enclosing declaration's
+-- hidden parameter because the constraint's root is a rigid (§6.7, §8.4);
+-- and the two caller sites are what makes it dispatch rather than a rename
+-- — `top fromInt` for this module's type, `ext String fromInt` for core's,
+-- each chosen by the caller's annotation alone.
+import String
+
+
+pub type Metre
+    = Metre Int
+
+
+pub fromInt : Int -> Metre
+fromInt n =
+    Metre n
+
+
+make : Int -> a
+    where a.fromInt : Int -> a
+make n =
+    a.fromInt n
+
+
+pub asMetre : Metre
+asMetre =
+    make 7
+
+
+pub asString : String
+asString =
+    make 42

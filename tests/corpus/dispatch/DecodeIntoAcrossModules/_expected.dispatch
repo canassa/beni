@@ -1,0 +1,14 @@
+module Decoder
+  decl decodeInto evidence=1
+    evidence 0 quantified=0 var=a method=fromList
+  site 12 0 evidence 0
+module Main
+  decl fromList evidence=0
+  decl asTag evidence=0
+  decl asString evidence=0
+  derived 0 compare Main.Tag evidence=0
+    part 0 primitive string_compare
+  derived 1 eq Main.Tag evidence=0
+    part 0 primitive strict_eq
+  site 15 0 top fromList
+  site 19 0 ext String fromList
