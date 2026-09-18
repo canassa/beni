@@ -31,7 +31,7 @@ one commit each, nothing force-pushed, no history rewritten.
 | 5 | Two printer defects: `Render.writeRecord` 64-link flatten drops `| r`; `Schemes.Writer.max_depth` writes `<error>` with exit 0 | **done** | owed 3; each needs a fail-first fixture |
 | 6 | Decision trees (M3b, `backend.md` §7) | spec **done** `ebacb5b`; code in flight (worktree) | spec is four lines; needs the same expansion §8 got |
 | 7 | Rest of M3b — audit **done** (`plans/m3b-audit.md`): left are `?`, `Int32` (a language gap: owner decision), `--source-maps` honesty, sibling-import rewrite | todo | interpolation, tuples, record update already work |
-| 8 | **Reachability DCE** (M3c) | todo | the adoption's only blocker (report 19 §14.1); re-take M4 after |
+| 8 | **Reachability DCE** (M3c) | spec **done**; code waits for decision trees (both touch `Lower.zig`) | the adoption's only blocker (report 19 §14.1); re-take M4 after |
 | 9 | Drop the 4×500 split in `bench/runtime` once #2 lands; re-take M5 | todo | measurement follow-up |
 | 10 | `transparent-effects-proposal.md` §10 item 1 is stale (`Func` is n-ary now) | todo | docs; found by L1 |
 | 11 | `Render.Namer.allocate` is quadratic: ~23 ms per 64-clause warning in Debug (0.1 ms ReleaseFast) | **done** | found by slice 3; low priority |
