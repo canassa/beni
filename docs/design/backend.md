@@ -511,9 +511,11 @@ builds its own matrix from `Bir`.
 landed: usefulness is exponential (`checker.md` §6.6), and a `case` that exhausted `pattern_budget`
 reported **nothing**, so it could reach the backend non-exhaustive, take the default-free last edge
 and compute a wrong answer rather than throw — at exit 0, with no diagnostic anywhere. That hole was
-reachable at the DEFAULT budget and with no flag: a `case` over about 440 `Int` literals costs more
-than 200 000 steps, and one written without its wildcard compiled and printed the last branch's
-answer for every unmatched input. Queue slice 14 closed it at the checker, where it belonged: an
+reachable at the DEFAULT budget and with no flag: a `case` over about 440 `Int` literals cost more
+than the 200 000 steps that were the default then (queue slice 22 made a flat table linear and the
+default 5 000 000, so that shape costs ~880 now), and one written without its wildcard compiled and
+printed the last branch's answer for every unmatched input. Queue slice 14 closed it at the checker,
+where it belonged: an
 undecided `case` is now `pattern_budget_exhausted`, an error, so nothing the backend receives is a
 `case` the checker declined to decide. The tree still carries no default arm, and it still needs
 none.

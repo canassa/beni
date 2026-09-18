@@ -54,6 +54,15 @@
 //! such a `case` is exhaustive and reports nothing. That falls out; there is
 //! no special case for it.
 //!
+//! **A flat column does not go through either relation** (`Flat`, queue slice
+//! 22). A `case` whose every branch is one `_`, one literal or one nullary
+//! constructor is a lookup table, and for one of those "is this row useful?"
+//! is set membership rather than a matrix specialisation — Maranget §4's
+//! observation, and what makes an n-branch table cost 2n steps instead of
+//! 1.05·n². It decides nothing the general relation would decide otherwise
+//! and steps aside for every other shape; `Flat`'s own comment says where
+//! that equivalence is asserted.
+//!
 //! **The budget.** Usefulness is exponential in the worst case (Maranget
 //! §3.3), and a `case` over many constructors with many branches reaches it.
 //! Every recursive step and every row of every specialisation spends from a
@@ -96,34 +105,55 @@ pub const max_examples = 3;
 /// Row visits and recursive steps one `case` may spend before it is
 /// refused.
 ///
-/// **Measured, not guessed**, and re-measured on 2026-09-18 when exhaustion
-/// stopped being silent — a number that only ever cost a warning is one
-/// nobody checks, and the old note here was wrong about the headroom. Turning
-/// the budget down until the answers change:
+/// **Measured, not guessed**, and re-measured on 2026-09-18 (queue slice 22)
+/// when `Flat` took the quadratic out of a lookup table. The note before this
+/// one said 200 000 was nineteen times the costliest `case` in the repository
+/// and also that ~440 `Int` literals or ~310 constructors reached it — both
+/// true, and together they say the default refused ordinary code. The fix was
+/// the algorithm first and the number second.
 ///
-///   - the costliest `case` in `core/` spends **70**;
-///   - the costliest in `bench/corpus`, about **420**;
-///   - the costliest fixture in `tests/corpus` — `parse/good/ManyBranches`,
-///     100 branches on `Int` literals plus a wildcard — about **10,500**.
+/// What a flat column costs now, by turning the budget down until the answer
+/// changes (`n` branches plus a wildcard):
 ///
-/// So nothing written in this repository is within a factor of nineteen of
-/// the budget. The headroom above that is smaller than it looks, because the
-/// cost is **quadratic in the branch count with no nesting at all**:
-/// `isUseful` runs each branch against the matrix of the branches above it,
-/// so n branches cost about 1.05·n² even when every column is one literal
-/// wide. Measured: ~440 `Int`-literal branches, or ~310 constructors of one
-/// type matched flat, reach 200,000. Maranget §3.3's exponent is real but it
-/// is not what a table-driven program meets first.
+/// | shape | before | now |
+/// |---|---|---|
+/// | 500 `Int` literals | 253 508 | **1 002** |
+/// | 2 000 `Int` literals | 4 014 008 | **4 002** |
+/// | 10 000 `Int` literals | ~100 000 000 | **20 002** |
+/// | 320 nullary constructors | 207 039 | **640** |
+/// | 2 000 nullary constructors | ~8 000 000 | **4 000** |
+///
+/// So a table costs **2 per branch** and the branch count no longer squares.
+/// What still squares is a column the set cannot read — a constructor with
+/// ARGUMENTS, which is `case ( a, b ) of ( 1, 2 ) -> …`, a pair-keyed lookup
+/// table: 2n², measured at 5 014 936 steps for 1 580 rows. That is the shape
+/// this number is now sized for.
+///
+/// And what the repository spends, the same way: the costliest `case` in
+/// `core/` is **70**, in `bench/corpus` **401**, and in `tests/corpus`
+/// **528** — `check/depth/PatternNestOk`, 511 levels of `Just`, which exists
+/// to sit one under the depth guard. `parse/good/ManyBranches`, 100 `Int`
+/// branches and the old champion at ~10 500, now spends **202**.
+///
+/// **The default is 5 000 000**, by the rule "a budget a `case` a person
+/// wrote never meets, that still bounds an adversarial one to well under a
+/// second". It is ~9 500× the costliest `case` in this repository; it admits
+/// a flat table of 2.5 million branches and a pair-keyed one of 1 580 rows;
+/// and a `case` that spends all of it takes **0.6 s in a Debug build and
+/// 0.06 s in ReleaseFast** (measured end to end on the 1 580-row pair table,
+/// ~8.6 M steps/s Debug and ~80 M/s ReleaseFast).
 ///
 /// Both searches stop early — `isUseful` at the first useful alternative and
 /// `isExhaustive` at `max_examples` counterexamples — which is why the
-/// quadratic term dominates in practice.
+/// exponent of Maranget §3.3 is not what a real program meets first.
 ///
-/// If the refusal starts firing on code people mean, **the budget is what to
-/// fix** (Maranget §4's optimisations, or a bigger number here), not the
-/// message: `--pattern-budget=<n>` exists so that an author who meets it is
-/// not stuck while that happens.
-pub const default_budget: u32 = 200_000;
+/// If the refusal starts firing on code people mean again, **the algorithm is
+/// what to fix** before the number: the next one to take is a column of
+/// single-alternative constructors (a tuple), which unwraps into a flat
+/// column of literals and could go through `Flat` the same way.
+/// `--pattern-budget=<n>` exists so that an author who meets it is not stuck
+/// while that happens.
+pub const default_budget: u32 = 5_000_000;
 
 /// How deeply the recursion may nest. `budget` alone bounds the total work
 /// but not the STACK, and the failure mode of an unbounded stack is a
@@ -503,6 +533,13 @@ fn one(
     // behaviour and it is the right one — once a row is dead the rows after
     // it are being judged against a matrix the author did not mean.
     var matrix: std.ArrayList([]const PatIndex) = .empty;
+    // The flat column of `Flat`, while the `case` still has one. Once a
+    // branch is a shape it cannot read, it is abandoned for good and every
+    // remaining branch goes through the general relation with the matrix
+    // built so far — which is the same matrix either way, so the answers
+    // are the same answers.
+    var flat: Flat = .{ .arena = arena };
+    var flat_column = true;
     for (branches, 0..) |b, i| {
         // The PATTERN, not the branch: a redundant branch is a statement
         // about what it matches, so the caret belongs under the pattern.
@@ -525,6 +562,22 @@ fn one(
             else => |e| return e,
         };
         const row = try arena.dupe(PatIndex, &.{p});
+        if (flat_column) {
+            const answer = flat.admit(&an, p) catch |err| switch (err) {
+                error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
+                else => |e| return e,
+            };
+            switch (answer) {
+                .useful => {
+                    try matrix.append(arena, row);
+                    continue;
+                },
+                .redundant => return reporter.redundantPattern(pattern, @intCast(i + 1)),
+                // Not a shape the set can decide. The general relation
+                // takes this branch and every one after it.
+                .general => flat_column = false,
+            }
+        }
         const useful = an.isUseful(matrix.items, row, 0) catch |err| switch (err) {
             error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
             error.TooDeep => return reporter.patternBudgetExhausted(case, .depth, max_depth),
@@ -534,6 +587,14 @@ fn one(
         if (!useful) return reporter.redundantPattern(pattern, @intCast(i + 1));
         try matrix.append(arena, row);
     }
+
+    // A flat column that covers everything is exhaustive, and saying so
+    // here is what keeps `isExhaustive`'s own quadratic arm — one
+    // `specializeByCtor` per alternative, over every row — off a `case`
+    // that lists a hundred constructors. Every other answer is delegated,
+    // witnesses and all, so there is one place that builds a
+    // counterexample and it is not this one.
+    if (flat_column and flat.exhaustive(&an)) return;
 
     const missing = an.isExhaustive(matrix.items, 1, 0) catch |err| switch (err) {
         error.OverBudget => return reporter.patternBudgetExhausted(case, .budget, budget),
@@ -558,6 +619,105 @@ fn one(
 }
 
 // ---------------------------------------------------------------------------
+// The flat column (Maranget §4)
+// ---------------------------------------------------------------------------
+
+/// A `case` whose every branch is one width-1 row headed by `_`, a literal,
+/// or a **nullary** constructor — a lookup table, which is the shape a
+/// program written by a person actually reaches the budget with.
+///
+/// The general relation answers "is row k useful?" by specialising the whole
+/// matrix above k and recursing, which is O(k) per row and therefore
+/// **quadratic in the branch count with no nesting at all**: ~1.05·n²,
+/// measured at 253 508 steps for 500 `Int` branches and 4 014 008 for 2 000.
+/// A flat column has no nesting to recurse into and no combinations to
+/// explore, so the same question collapses to set membership — row k is
+/// useful exactly when its head has not been seen above it and nothing above
+/// it matches everything — and `isExhaustive`'s answer collapses with it: a
+/// wildcard covers the column, and so does a constructor column in which
+/// every alternative appears. That is Maranget §4's observation for the one
+/// case it is worth taking, and it is what OCaml and Elm rely on in practice.
+///
+/// It decides **nothing the general relation would decide differently**. The
+/// equivalence is asserted where it is visible — the `check/bad` fixtures for
+/// `missing_patterns` and `redundant_pattern` are unchanged to the byte, and
+/// `blackbox_test.zig`'s pair of flat-table scenarios pins the redundant row
+/// and the missing constructors inside a table the general relation could not
+/// have decided at all — and the one piece with no visible output, that
+/// `literalKey` agrees with `Literal.eql` in both directions, is pinned at
+/// the bottom of this file. Where a row is a shape it cannot read — a
+/// constructor with arguments, or a column that mixes literals with
+/// constructors (which is `error.Malformed`, and whose silence is the general
+/// path's to keep) — it answers `.general` and steps aside for good.
+///
+/// The budget is charged **1 per row**, which is what a hash probe costs
+/// amortised, against the O(k) the general relation charges for the same row.
+/// It is not free: `--pattern-budget=1` still refuses the first branch of any
+/// `case`, which is what the black-box scenarios of queue slice 14 assert.
+const Flat = struct {
+    arena: Allocator,
+    column: enum { empty, literal, ctor } = .empty,
+    /// Canonical keys of the literals seen, by `literalKey`.
+    literals: std.StringHashMapUnmanaged(void) = .empty,
+    /// Absolute alternative indices seen.
+    alts: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// The union of a `.ctor` column; meaningless otherwise.
+    un: u32 = 0,
+    /// A row above matches every value, so nothing below it can be useful.
+    wildcard: bool = false,
+
+    const Answer = enum { useful, redundant, general };
+
+    /// Decide one row against the rows already admitted, and record it.
+    /// `OverBudget` is the only abort it can raise: there is no recursion
+    /// to run out of depth in, and a shape it cannot read is `.general`
+    /// rather than `Malformed` — deciding that is the general path's job.
+    fn admit(f: *Flat, an: *Analysis, p: PatIndex) (Allocator.Error || error{OverBudget})!Answer {
+        switch (an.pats.tag(p)) {
+            .anything => {
+                try an.spend(1);
+                if (f.wildcard) return .redundant;
+                // A constructor column in which every alternative already
+                // appears leaves a wildcard nothing to match, which is what
+                // `isUseful`'s `complete` arm answers.
+                if (f.column == .ctor and f.alts.count() == an.pats.unionAt(f.un).count()) return .redundant;
+                f.wildcard = true;
+                return .useful;
+            },
+            .literal => {
+                if (f.column == .ctor) return .general;
+                try an.spend(1);
+                f.column = .literal;
+                if (f.wildcard) return .redundant;
+                const key = try an.literalKey(an.pats.literal(p));
+                return if ((try f.literals.getOrPut(f.arena, key)).found_existing) .redundant else .useful;
+            },
+            .ctor => {
+                const c = an.pats.ctor(p);
+                // A constructor with arguments needs the recursion this
+                // path exists to avoid, and a column of two unions is a
+                // matrix the general path calls malformed.
+                if (c.args_len != 0 or f.column == .literal) return .general;
+                if (f.column == .ctor and f.un != c.un) return .general;
+                try an.spend(1);
+                f.column = .ctor;
+                f.un = c.un;
+                if (f.wildcard) return .redundant;
+                return if ((try f.alts.getOrPut(f.arena, c.alt)).found_existing) .redundant else .useful;
+            },
+        }
+    }
+
+    /// Whether the rows admitted so far cover every value of the column.
+    fn exhaustive(f: *const Flat, an: *const Analysis) bool {
+        if (f.wildcard) return true;
+        // A literal column never is: there are infinitely many of them,
+        // which is why a wildcard is the only way to finish one.
+        return f.column == .ctor and f.alts.count() == an.pats.unionAt(f.un).count();
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Simplification
 // ---------------------------------------------------------------------------
 
@@ -578,7 +738,10 @@ const Analysis = struct {
     /// a wrong warning, a compiler that does not terminate, or — the one that
     /// was here until queue slice 14 — silence, which hands an unproven
     /// `case` to a decision tree that carries no default arm.
-    fn spend(an: *Analysis, amount: usize) Abort!void {
+    /// `error{OverBudget}` and not `Abort`: running out of budget is the
+    /// only way this can fail, and `Flat.admit` — which cannot go too deep
+    /// or meet a malformed matrix — needs to say so in its own signature.
+    fn spend(an: *Analysis, amount: usize) error{OverBudget}!void {
         const cost = std.math.cast(u32, amount) orelse return error.OverBudget;
         if (an.budget < cost) {
             an.budget = 0;
@@ -595,6 +758,28 @@ const Analysis = struct {
 
     fn anything(an: *Analysis) Error!PatIndex {
         return an.node(.{ .tag = .anything, .lhs = 0, .rhs = 0 });
+    }
+
+    /// A byte key two literals share exactly when `Literal.eql` says they
+    /// are the same literal, for `Flat`'s set. The kind leads, so a `Char`
+    /// and an `Int` of one scalar value never collide; an `int` whose
+    /// spelling overflowed `value` gets its own tag, because `eql` compares
+    /// those by spelling and never to a parsed one.
+    fn literalKey(an: *Analysis, lit: Literal) Error![]const u8 {
+        const tag: u8 = switch (lit.kind) {
+            .char => 'c',
+            .int => if (lit.parsed) 'i' else 'I',
+            .string => 's',
+        };
+        const body: []const u8 = switch (lit.kind) {
+            .char => std.mem.asBytes(&lit.value),
+            .int => if (lit.parsed) std.mem.asBytes(&lit.value) else an.pats.bytesOf(lit),
+            .string => an.pats.bytesOf(lit),
+        };
+        const key = try an.arena.alloc(u8, 1 + body.len);
+        key[0] = tag;
+        @memcpy(key[1..], body);
+        return key;
     }
 
     fn makeCtor(an: *Analysis, un: u32, alt: u32, args: []const PatIndex) Error!PatIndex {
@@ -1070,4 +1255,34 @@ test "a literal compares by value where it parsed and by spelling where it did n
     // the point is that the check lives next to the slice.
     const past_end: Literal = .{ .kind = .string, .off = 8, .len = 99 };
     try testing.expect(past_end.eql(.{ .kind = .string, .off = 50, .len = 1 }, &pats));
+}
+
+test "a flat column's key says the same thing about two literals that `eql` does" {
+    // `Flat` replaces `specializeByLiteral` with a set, so its key has to
+    // agree with `Literal.eql` in BOTH directions: a key that collided where
+    // `eql` says the literals differ would report `redundant_pattern` on a
+    // branch that runs, and one that differed where `eql` says they are the
+    // same would miss one. Every reading `eql` distinguishes is here — the
+    // kinds, the two `int` spellings, and the unparsed fallback.
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var pats: Patterns = .{ .string_bytes = "1  0x1nopealso" };
+    var an: Analysis = .{ .arena = arena.allocator(), .cx = undefined, .pats = &pats, .budget = 0 };
+
+    const lits = [_]Literal{
+        .{ .kind = .int, .value = 1, .off = 0, .len = 1 }, // `1`
+        .{ .kind = .int, .value = 1, .off = 3, .len = 3 }, // `0x1`, the same number
+        .{ .kind = .int, .value = 2, .off = 0, .len = 1 }, // a different number
+        .{ .kind = .int, .off = 6, .len = 4, .parsed = false }, // a spelling that did not parse
+        .{ .kind = .int, .off = 10, .len = 4, .parsed = false }, // a different one
+        .{ .kind = .char, .value = 1, .off = 0, .len = 0 }, // the scalar 1, not the Int 1
+        .{ .kind = .string, .off = 0, .len = 1 }, // "1", not the Int either
+        .{ .kind = .string, .off = 6, .len = 4 },
+    };
+    for (lits) |a| {
+        for (lits) |b| {
+            const same_key = std.mem.eql(u8, try an.literalKey(a), try an.literalKey(b));
+            try testing.expectEqual(a.eql(b, &pats), same_key);
+        }
+    }
 }

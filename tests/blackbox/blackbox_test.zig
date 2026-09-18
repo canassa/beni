@@ -3901,6 +3901,136 @@ test "a `case` the checker could not decide never reaches the default-free decis
 }
 
 // ---------------------------------------------------------------------------
+// A FLAT lookup table is linear, not quadratic (`checker.md` §6.6, queue
+// slice 22)
+//
+// The budget above was measured and found to refuse ordinary code: `isUseful`
+// ran every branch against the matrix of the branches above it, so a `case`
+// of n literal branches cost ~1.05·n² with no nesting at all — about 214 000
+// steps for 460 branches, against a default of 200 000. A lookup table is not
+// an adversarial input; it is what a table-driven program looks like.
+//
+// `Exhaustive.Flat` makes a column of literals or nullary constructors a
+// set-membership question instead of a matrix specialisation (Maranget §4),
+// which is 2 steps per branch. The scenarios below assert that as a BUDGET
+// the old code could not have met, and — because a fast path that is merely
+// fast is a fast path that is wrong — that it still finds the redundant row
+// and the missing constructors, at the right places.
+// ---------------------------------------------------------------------------
+
+/// A `case` of `count` `Int` literal branches plus a trailing wildcard.
+/// `dup` repeats an earlier literal at that branch, for the redundancy half.
+fn flatLiteralTable(arena: std.mem.Allocator, count: u32, dup: ?u32) ![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    try w.writeAll("pub name : Int -> Int\nname n =\n    case n of\n");
+    for (0..count) |i| {
+        const key: u32 = if (dup != null and dup.? == i) 0 else @intCast(i);
+        try w.print("        {d} ->\n            {d}\n\n", .{ key, i });
+    }
+    try w.writeAll("        _ ->\n            0\n");
+    return out.written();
+}
+
+/// A type of `count` nullary constructors and a `case` with one branch each,
+/// minus the last `missing` of them.
+fn flatCtorTable(arena: std.mem.Allocator, count: u32, missing: u32) ![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    try w.writeAll("pub type T\n    = C0\n");
+    for (1..count) |i| try w.print("    | C{d}\n", .{i});
+    try w.writeAll("\n\npub f : T -> Int\nf t =\n    case t of\n");
+    for (0..count - missing) |i| try w.print("        C{d} ->\n            {d}\n\n", .{ i, i });
+    return out.written();
+}
+
+test "a flat lookup table costs two steps a branch, not the square of the branch count" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // 460 is the number the old note named as the threshold, and 2 000 is
+    // there so that passing cannot be a bigger constant: 2 000 branches cost
+    // 4 014 008 steps before and 4 002 now, so a budget of 6 000 decides the
+    // second only if the cost is LINEAR.
+    try w.write("Small.beni", try flatLiteralTable(a, 460, null));
+    try w.write("Big.beni", try flatLiteralTable(a, 2000, null));
+    try w.write("Ctors.beni", try flatCtorTable(a, 320, 0));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Well under the ~214 000, ~4 000 000 and ~207 000 these used to need,
+    // and enough for 2·n + the handful `simplify` spends.
+    const small = try w.run(&.{ "check", "--pattern-budget=1000", "Small.beni" });
+    const big = try w.run(&.{ "check", "--pattern-budget=6000", "Big.beni" });
+    const ctors = try w.run(&.{ "check", "--pattern-budget=1000", "Ctors.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ small, big, ctors }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stderr);
+    }
+}
+
+test "the flat path still names the redundant branch and the missing constructors" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A fast path that is only fast is a wrong answer arriving sooner. Both
+    // halves of §6.6 are asserted inside a table too big for the old code to
+    // have decided at all, so the assertions are about the new path.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // Branch 300 (1-based: the 301st) repeats the literal of branch 0.
+    try w.write("Dup.beni", try flatLiteralTable(a, 460, 300));
+    // 320 constructors, three of them with no branch.
+    try w.write("Holes.beni", try flatCtorTable(a, 320, 3));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dup = try w.run(&.{ "check", "--pattern-budget=1000", "Dup.beni" });
+    // A little more than the exhaustive table above: the "some alternatives
+    // are missing" answer is DELEGATED to `isExhaustive`, which walks the
+    // column twice to build the witnesses. 1 271 steps, against the 207 000
+    // the 320 branches alone used to cost.
+    const holes = try w.run(&.{ "check", "--pattern-budget=2000", "Holes.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), dup.exit_code);
+    try testing.expectEqual(@as(usize, 1), dup.diagnostics.len);
+    const d = dup.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.redundant_pattern, d.code);
+    // The caret is under the PATTERN of the repeated branch, and the message
+    // counts branches from one: three lines per branch after the three-line
+    // head, so branch 301 starts at line 4 + 300·3.
+    try testing.expectEqual(@as(u32, 4 + 300 * 3), d.span.start.line);
+    try testing.expectEqual(@as(u32, 9), d.span.start.col);
+    try testing.expect(std.mem.indexOf(u8, d.message, "The 301st pattern is redundant") != null);
+
+    try testing.expectEqual(@as(u8, 1), holes.exit_code);
+    try testing.expectEqual(@as(usize, 1), holes.diagnostics.len);
+    const m = holes.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.missing_patterns, m.code);
+    // The three constructors with no branch, by name and in declaration
+    // order — the same witnesses the general relation builds, because the
+    // fast path delegates every answer that is not "exhaustive" to it.
+    try testing.expect(std.mem.indexOf(u8, m.message, "    C317\n    C318\n    C319\n") != null);
+}
+
+// ---------------------------------------------------------------------------
 // S3 — the module graph carries TYPE edges, and they are deterministic
 // (`static-dispatch-spike.md` §6.8, `fast-compiler.md` §10, CLAUDE.md rule 5)
 //

@@ -51,10 +51,12 @@ and prints the wrong answer at exit 0.
 `PatternNestDeep.beni` is exactly that program: one branch, `Nothing`
 unmatched, and before queue slice 14 it compiled clean. The **work** budget
 has no pair here because the corpus walker cannot pass a flag per fixture and
-reaching 200 000 steps at the default takes a ~1 400-line `case`
-(~440 `Int`-literal branches, or ~310 constructors matched flat); the pair for
-it is `blackbox_test.zig`'s `--pattern-budget` scenarios, which say the same
-thing in four lines.
+no `case` a file can hold comes near the default any more: queue slice 22 made
+a flat column set membership, so a table costs 2 steps a branch and the
+default is 5 000 000 (`checker.md` §6.6). The pair for it is
+`blackbox_test.zig`'s `--pattern-budget` scenarios, which say the same thing
+in four lines. `PatternNestOk.beni` is now the costliest `case` in the whole
+corpus at **528** steps, which is what that number is doing in §6.6's table.
 
 ## Two guards are deliberately NOT in the sweep
 

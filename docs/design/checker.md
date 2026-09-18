@@ -67,7 +67,7 @@ a file.
 | Flag | Meaning | Default |
 |---|---|---|
 | `--core-root=<dir>` | use this directory as the core package instead of the embedded one; for developing core | embedded |
-| `--pattern-budget=<n>` | work one `case` may spend proving exhaustiveness (§6.6) before it is refused; session-wide, so it applies to core too | 200 000 |
+| `--pattern-budget=<n>` | work one `case` may spend proving exhaustiveness (§6.6) before it is refused; session-wide, so it applies to core too | 5 000 000 |
 
 `check` on a directory is the project: every `.beni` under it is a module of the package
 `app`; core is the package `core`. **A source file at a core module's path is that core
@@ -449,10 +449,11 @@ tree with **no default arm**, on the strength of "the checker proved exhaustiven
 the checker never decided does not lose a warning — it takes the tree's last edge and computes a
 wrong answer at exit 0. Silence was the one remaining exit-0 path to a wrong answer in the whole
 compiler, and it was reachable at the DEFAULT budget with no flag: a `case` over about 440 `Int`
-literals, or about 310 constructors of one type, costs more than 200 000 steps, because the
-per-branch work of `isUseful` against the matrix above it is quadratic in the branch count long
-before the exponent of Maranget §3.3 appears. §5's rule — every guard that gives up reports first —
-now holds here too, and it is the same rule slice 5 applied to `<error>` in an interface.
+literals, or about 310 constructors of one type, cost more than the 200 000 steps that were the
+default then, because the per-branch work of `isUseful` against the matrix above it is quadratic in
+the branch count long before the exponent of Maranget §3.3 appears. §5's rule — every guard that
+gives up reports first — now holds here too, and it is the same rule slice 5 applied to `<error>`
+in an interface. **Those two shapes no longer cost that**, and the next paragraph but three is why.
 
 **Neither half reports a partial result.** Redundancy and exhaustiveness share the budget and share
 this one diagnostic: a half-searched matrix can no more prove a branch redundant than prove one
@@ -496,15 +497,43 @@ it is written:
   price is now a message rather than a hole. `Session.Options.pattern_budget` and
   `--pattern-budget=<n>` set it, so the bound has a test rather than an absence of one, and an
   author who meets it has a way through.
-- **What the default of 200 000 buys, measured 2026-09-18** by turning it down until the answers
-  change: the costliest `case` in `core/` spends **70**, the costliest in `bench/corpus` about
-  **420**, and the costliest fixture in `tests/corpus` — `parse/good/ManyBranches.beni`, a
-  100-branch `case` on `Int` literals — about **10 500**. So nothing written here is within a
-  factor of nineteen of it. But the headroom above that is smaller than the earlier note claimed:
-  the cost is quadratic in the branch count even with no nesting at all, so ~440 literal branches
-  or ~310 constructors reach it, and both are shapes a table-driven program really has. If the
-  refusal starts firing on code people mean, the budget is the thing to fix — Maranget's §4
-  optimisations, or a larger default — not the message.
+- **A FLAT column skips both relations**, which is queue slice 22 of 2026-09-18 and the reason the
+  paragraph above is past tense. A `case` whose every branch is one `_`, one literal or one
+  **nullary** constructor is a lookup table, and for one of those "is row k useful?" is set
+  membership — has this head been seen above, and does anything above match everything — rather
+  than a specialisation of the matrix above k. Exhaustiveness collapses with it: a wildcard covers
+  the column, and so does a constructor column in which every alternative appears. That is
+  Maranget §4's observation for the one shape worth taking it on, and it is what OCaml and Elm rely
+  on in practice. It decides nothing the general relation would decide otherwise; a constructor
+  with ARGUMENTS, or a column that mixes literals with constructors, is handed straight back to it,
+  for that branch and every one after. The budget is charged 1 per row, which is what a hash probe
+  costs, so `--pattern-budget=1` still refuses a `case`'s first branch.
+- **What the default buys, re-measured 2026-09-18 (queue slice 22)** by turning it down until the
+  answers change. Per branch, a flat table now costs **2** where it cost ~1.05·n² in total:
+
+  | shape | before | now |
+  |---|---|---|
+  | 500 `Int` literals + `_` | 253 508 | **1 002** |
+  | 2 000 `Int` literals + `_` | 4 014 008 | **4 002** |
+  | 10 000 `Int` literals + `_` | ~100 000 000 | **20 002** |
+  | 320 nullary constructors | 207 039 | **640** |
+  | 2 000 nullary constructors | ~8 000 000 | **4 000** |
+
+  What still squares is a column the set cannot read — a constructor with arguments, which is
+  `case ( a, b ) of ( 1, 2 ) -> …`, a **pair-keyed lookup table**: 2n², measured at **5 014 936**
+  steps for 1 580 rows. And what this repository spends: the costliest `case` in `core/` is **70**,
+  in `bench/corpus` **401**, in `tests/corpus` **528** (`check/depth/PatternNestOk`, 511 levels of
+  `Just`, which exists to sit one under the depth guard); `parse/good/ManyBranches.beni`, the old
+  champion at ~10 500, now spends **202**.
+
+  **The default is therefore 5 000 000**, by the rule *a budget a `case` a person wrote never
+  meets, that still bounds an adversarial one to well under a second*. It is ~9 500× the costliest
+  `case` here; it admits a flat table of 2.5 million branches and a pair-keyed one of 1 580 rows;
+  and a `case` that spends all of it takes **0.6 s in a Debug build and 0.06 s in ReleaseFast**
+  (end to end on the 1 580-row pair table — about 8.6 M steps/s Debug, 80 M/s ReleaseFast). If the
+  refusal starts firing on code people mean again, the ALGORITHM is what to fix before the number,
+  and the next one to take is the tuple column: a single-alternative constructor unwraps into a
+  flat column of literals and could go through the same set.
 
 ### 6.7 Top-level value cycles
 
