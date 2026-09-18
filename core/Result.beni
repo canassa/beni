@@ -194,8 +194,8 @@ andThen result callback =
 
 --| Transform an `Err` value, leaving an `Ok` alone.
 --|
---|     mapError (Err 42) toString == Err "42"
---|     mapError (Ok 42) toString == Ok 42
+--|     mapError (Err 42) Debug.toString == Err "42"
+--|     mapError (Ok 42) Debug.toString == Ok 42
 pub mapError : Result x a, (x -> y) -> Result y a
 mapError result func =
     case result of

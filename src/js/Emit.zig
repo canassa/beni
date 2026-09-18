@@ -66,6 +66,7 @@ const Rename = @import("Rename.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
+const Manifest = @import("Manifest.zig");
 
 const Emit = @This();
 
@@ -78,6 +79,15 @@ pub const Item = struct {
     token: u32,
     /// Owned by the caller's allocator.
     message: []const u8,
+    /// A path to report AGAINST INSTEAD of `file`, for a fault in a file
+    /// that is not beni source and therefore has no tokens — a platform's
+    /// `beni.json`. The span is then the whole-file 1:1 that
+    /// `Session.reportInvalidModulePath` already uses for a fault about a
+    /// file rather than a place in one, and no excerpt is rendered because
+    /// the path is not in the source store. Scratch-owned, so it lives as
+    /// long as the arena the caller passed to `run`, which outlives the
+    /// render. `file` and `token` are ignored when this is set.
+    path: ?[]const u8 = null,
 };
 
 /// What a platform package tells the emitter (boundary.md §5.2).
@@ -305,6 +315,28 @@ const Emitter = struct {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{ .code = code, .file = file, .token = token, .message = message });
+    }
+
+    /// Report against a PATH rather than a source file. The one caller is
+    /// the platform's missing runtime: the `"runtime"` key of a manifest
+    /// names a file that is not on disk, which is a fault of the platform
+    /// package and of no beni module. It used to be reported on file 0,
+    /// token 0 — the first token of whatever source the run happened to
+    /// enumerate first, which is the user's own — and a caret under an
+    /// `import` the reader wrote is worse than no caret at all. Every other
+    /// manifest failure is an exit-2 line naming the path
+    /// (`src/platform.zig`), and this is the same honesty inside a
+    /// diagnostic.
+    fn reportInFile(e: *Emitter, code: diagnostic.Code, path: []const u8, comptime fmt: []const u8, args: anytype) !void {
+        const message = try std.fmt.allocPrint(e.gpa, fmt, args);
+        errdefer e.gpa.free(message);
+        try e.diagnostics.append(e.gpa, .{
+            .code = code,
+            .file = @enumFromInt(0),
+            .token = 0,
+            .message = message,
+            .path = path,
+        });
     }
 
     // ---- boundary.md §4, check 1: the two-shape type rule -----------------
@@ -933,10 +965,13 @@ const Emitter = struct {
             e.options.platform.runtime,
         });
         const bytes = e.readAsset(runtime_source) orelse {
-            try e.report(
+            const manifest_path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{
+                e.options.platform.root,
+                Manifest.file_name,
+            });
+            try e.reportInFile(
                 .foreign_sibling_missing,
-                @enumFromInt(0),
-                0,
+                manifest_path,
                 \\I cannot find the platform's runtime file `{s}`.
                 \\
                 \\A platform declares its output shape in its manifest (`"runtime"`), and that

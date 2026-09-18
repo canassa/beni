@@ -50,7 +50,7 @@ pub foreign length : String -> Int
 --| starting from the *end* of the string.
 --|
 --|     slice "snakes on a plane!" 7 9 == "on"
---|     slice "snakes on a plane!" 0 -7 == "snakes on a"
+--|     slice "snakes on a plane!" 0 (-7) == "snakes on a"
 pub foreign slice : String, Int, Int -> String
 
 

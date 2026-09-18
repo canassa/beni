@@ -1840,18 +1840,35 @@ test "a platform whose manifest names a runtime file that is not there is refuse
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // The span is deliberately NOT asserted: this diagnostic has nowhere
-    // honest to point — the fault is in the platform's manifest, not in any
-    // source file — and it currently lands on file 0, token 0, which is the
-    // user's own first line. That is recorded as a question rather than
-    // pinned here.
+    // The span names the MANIFEST. The fault is in the platform package's
+    // `beni.json` and in no source file, and it used to land on file 0,
+    // token 0 — the first token of the user's own `Main.beni`, inviting the
+    // reader to think their `import` was wrong. A manifest has no tokens, so
+    // the position is the whole-file 1:1 that `invalid_module_path` already
+    // uses for a fault that is about a file rather than a place in one, and
+    // nothing renders an excerpt because the manifest is not in the source
+    // store.
     try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.foreign_sibling_missing, r.diagnostics[0].code);
-    try testing.expectEqual(diagnostic.Severity.@"error", r.diagnostics[0].severity);
-    try testing.expectEqualStrings("MISSING JAVASCRIPT FILE", r.diagnostics[0].title);
-    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "gone.js") != null);
-    try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "\"runtime\"") != null);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .foreign_sibling_missing,
+        .severity = .@"error",
+        .span = .{
+            .file = "myplat/beni.json",
+            .start = .{ .line = 1, .col = 1 },
+            .end = .{ .line = 1, .col = 1 },
+        },
+        .title = "MISSING JAVASCRIPT FILE",
+        .message =
+        \\I cannot find the platform's runtime file `myplat/gone.js`.
+        \\
+        \\A platform declares its output shape in its manifest (`"runtime"`), and that
+        \\file is what the entry point hands `main` to
+        \\(`docs/design/boundary.md` §5.2).
+        ,
+    }, r.diagnostics[0]);
+    // And nothing points into the user's source.
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "Main.beni") == null);
 
     // `check` does not copy assets, so the missing runtime is invisible to
     // it and the module's own siblings are all present: it passes.

@@ -32,7 +32,7 @@ export const length = (s) => codePoints(s).length;
 
 // The string comes first (subject first, String.beni). Indexes are code
 // points, and a negative index counts from the end
-// (String.beni: `slice "snakes on a plane!" 0 -7 == "snakes on a"`).
+// (String.beni: `slice "snakes on a plane!" 0 (-7) == "snakes on a"`).
 export const slice = (s, start, end) => {
   const points = codePoints(s);
   const n = points.length;

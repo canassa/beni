@@ -275,6 +275,15 @@ module a `<script type="module">` can load; a Node platform wants an entry file;
 wants a specific export. The platform declares this, the same way it declares `main`, so §9.5's
 emitter is parameterised by it rather than hardcoding one.
 
+**A `"runtime"` naming a file that is not there is `foreign_sibling_missing`, reported against the
+MANIFEST.** Every other manifest failure is an exit-2 line naming the path (§5.3, `src/platform.zig`),
+because a manifest is JSON and has no beni tokens; this one is a diagnostic because it is found
+during emit, alongside §4's sibling checks. It therefore points at `<platform root>/beni.json` at the
+whole-file position `1:1`, with no excerpt — the same shape `invalid_module_path` uses for a fault
+that is about a file rather than a place inside one. *Corrected 2026-09-19: it used to be reported on
+file 0, token 0, which is the first token of the USER'S source, so a fault in the platform package
+put a caret under an `import` the reader wrote.*
+
 ### 5.3 One project, several platforms
 
 The full-stack case is a first-class requirement, not an afterthought: a browser client and a server

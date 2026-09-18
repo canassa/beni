@@ -96,7 +96,7 @@ pub fn run(gpa: Allocator, io: Io, stderr: *Io.Writer, options_in: Session.Optio
         return fail(stderr, "beni: out of memory", .{});
     defer gpa.free(late);
     for (items, late) |item, *slot| {
-        slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .message = item.message };
+        slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .message = item.message, .path = item.path };
     }
     const errors = session.renderLate(late, stderr) catch return 2;
     return if (errors > 0) 1 else 0;

@@ -1087,6 +1087,13 @@ pub const LateItem = struct {
     /// Token index into `file`'s token list.
     token: u32,
     message: []const u8,
+    /// A path to report against INSTEAD of `file`, for a fault in a file
+    /// that is not beni source and so has no tokens — a platform's
+    /// `beni.json`. The span is then the whole-file 1:1 that
+    /// `reportInvalidModulePath` uses for the same kind of fault, and
+    /// `lookupSource` finds nothing under the path, so the renderer prints
+    /// no excerpt. Borrowed for the call, like `message`.
+    path: ?[]const u8 = null,
 };
 
 /// Render `items` on `stderr` in the run's diagnostics format, sorted by the
@@ -1108,11 +1115,15 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     const rendered = try gpa.alloc(diagnostic.Diagnostic, items.len + held.len);
     defer gpa.free(rendered);
     for (items, rendered[0..items.len]) |item, *slot| {
-        const start, const end = session.tokenSpan(item.file, item.token);
+        const whole_file: diagnostic.Position = .{ .line = 1, .col = 1 };
+        const start, const end = if (item.path == null)
+            session.tokenSpan(item.file, item.token)
+        else
+            .{ whole_file, whole_file };
         slot.* = .{
             .code = item.code,
             .severity = .@"error",
-            .span = .{ .file = session.store.path(item.file), .start = start, .end = end },
+            .span = .{ .file = item.path orelse session.store.path(item.file), .start = start, .end = end },
             .title = diagnostic.title(item.code),
             .message = item.message,
         };

@@ -110,7 +110,7 @@ pub foreign fdiv : Float, Float -> Float
 --| Integer division, truncated towards zero. What `//` desugars to.
 --|
 --|     idiv 3 2 == 1
---|     idiv -3 2 == -1
+--|     idiv (-3) 2 == -1
 pub foreign idiv : Int, Int -> Int
 
 
@@ -197,7 +197,7 @@ pub foreign toFloat : Int -> Float
 --| Round a number to the nearest integer.
 --|
 --|     round 1.5 == 2
---|     round -1.5 == -1
+--|     round (-1.5) == -1
 pub foreign round : Float -> Int
 
 
@@ -216,7 +216,7 @@ pub foreign ceiling : Float -> Int
 --| Truncate a number, dropping the decimal part.
 --|
 --|     truncate 1.9 == 1
---|     truncate -1.9 == -1
+--|     truncate (-1.9) == -1
 pub foreign truncate : Float -> Int
 
 
@@ -292,7 +292,7 @@ pub foreign atan2 : Float, Float -> Float
 --| Determine whether a float is an undefined or unrepresentable number.
 --|
 --|     isNaN (0 / 0) == True
---|     isNaN (sqrt -1) == True
+--|     isNaN (sqrt (-1)) == True
 pub foreign isNaN : Float -> Bool
 
 
@@ -315,7 +315,7 @@ negate n =
 
 --| Get the absolute value of a number.
 --|
---|     abs -25 == 25
+--|     abs (-25) == 25
 pub abs : number -> number
 abs n =
     if n < 0 then

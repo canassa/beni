@@ -181,7 +181,7 @@ map xs func =
 --| Same as `map` but the function is also given the index of each element,
 --| starting at zero.
 --|
---|     indexedMap [ "a", "b" ] Tuple2 == [ Tuple2 0 "a", Tuple2 1 "b" ]
+--|     indexedMap [ "a", "b" ] (\i x -> ( i, x )) == [ ( 0, "a" ), ( 1, "b" ) ]
 pub indexedMap : List a, (Int, a -> b) -> List b
 indexedMap xs func =
     map2 (range 0 (length xs - 1)) xs func
@@ -521,7 +521,7 @@ sortBy xs toKey =
 --| Sort values with an ordering function you write yourself, which is how
 --| you sort by something that is not the type's own order.
 --|
---|     sortWith [ 1, 2, 3 ] (\x y -> compare y x) == [ 3, 2, 1 ]
+--|     sortWith [ 1, 2, 3 ] (\x y -> Basics.compare y x) == [ 3, 2, 1 ]
 --|
 --| The sort is a stable merge sort: equal elements keep the order they were
 --| given in, and that is a contract rather than an accident of the merge
