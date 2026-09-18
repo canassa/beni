@@ -4031,6 +4031,220 @@ test "the flat path still names the redundant branch and the missing constructor
 }
 
 // ---------------------------------------------------------------------------
+// A PAIR-keyed lookup table is linear too (`checker.md` §6.6, queue slice 25)
+//
+// Slice 22 above read one literal COLUMN and no more, so `case ( a, b ) of
+// ( 1, 2 ) -> …` — a state machine's table, the most ordinary two-column code
+// there is — went straight back to `isUseful`, which specialises the matrix
+// above every row twice over: 2n². That met the default budget at about
+// 1 580 rows, which is still a table a person writes.
+//
+// The key path now unwraps every single-alternative constructor (a tuple is
+// one) and hashes the whole row, so the cost is one probe a branch whatever
+// the key's width. The scenarios below assert that as a budget the old code
+// could not have met, and — because a fast path that is merely fast is a fast
+// path that is wrong — that the ANSWERS are still exact: the redundant row at
+// its exact position, the missing combinations by name and in order, and a
+// partial-wildcard row (the CUT, which the key path refuses to decide)
+// falling back to the general relation rather than guessing.
+// ---------------------------------------------------------------------------
+
+/// A `case` on `( a, b )` of `rows` `Int` literal pairs laid out as a
+/// `width`-wide grid, plus a trailing wildcard. `dup` repeats row 0's key at
+/// that row, for the redundancy half; `open` writes `_` in the second column
+/// at that row, for the fallback half.
+fn pairLiteralTable(arena: std.mem.Allocator, rows: u32, width: u32, dup: ?u32, open: ?u32) ![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    try w.writeAll("pub f : Int, Int -> Int\nf a b =\n    case ( a, b ) of\n");
+    for (0..rows) |i| {
+        const at: u32 = @intCast(i);
+        const repeat = dup != null and dup.? == at;
+        const row = if (repeat) 0 else at / width;
+        if (open != null and open.? == at) {
+            try w.print("        ( {d}, _ ) ->\n            {d}\n\n", .{ row, i });
+        } else {
+            try w.print("        ( {d}, {d} ) ->\n            {d}\n\n", .{ row, if (repeat) 0 else at % width, i });
+        }
+    }
+    try w.writeAll("        _ ->\n            0\n");
+    return out.written();
+}
+
+/// Two enums of `count` constructors each, and a `case` with one branch per
+/// combination in declaration order, minus the last `missing` of them.
+fn pairCtorTable(arena: std.mem.Allocator, count: u32, missing: u32) ![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    try w.writeAll("pub type P\n    = P0\n");
+    for (1..count) |i| try w.print("    | P{d}\n", .{i});
+    try w.writeAll("\n\npub type Q\n    = Q0\n");
+    for (1..count) |i| try w.print("    | Q{d}\n", .{i});
+    try w.writeAll("\n\npub f : P, Q -> Int\nf a b =\n    case ( a, b ) of\n");
+    var i: u32 = 0;
+    while (i < count * count - missing) : (i += 1) {
+        try w.print("        ( P{d}, Q{d} ) ->\n            {d}\n\n", .{ i / count, i % count, i });
+    }
+    return out.written();
+}
+
+test "a pair-keyed lookup table costs one probe a branch, not the square of the branch count" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // 1 800 is the size of `check/good/PairLookupTable.beni`, chosen to sit a
+    // third OVER the default budget under the old cost; 500 is there so that
+    // passing cannot be a bigger constant, since the two budgets below are in
+    // the same ratio as the row counts and not as their squares.
+    try w.write("Small.beni", try pairLiteralTable(a, 500, 45, null, null));
+    try w.write("Big.beni", try pairLiteralTable(a, 1800, 45, null, null));
+    // The same key over two 40-constructor enums, every combination of them
+    // and no wildcard at all: 1 580 rows of this cost 5 343 192 steps before.
+    // Exhaustiveness here is the PRODUCT test — 1 600 distinct keys fill a
+    // key space with 1 600 points — and it is the answer the key path is
+    // allowed to give on its own, so nothing is delegated.
+    try w.write("Enums.beni", try pairCtorTable(a, 40, 0));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Against the ~0.5 M, ~6.6 M and ~5.2 M these used to need. Six steps a
+    // branch: three to simplify `( 1, 2 )` and three to walk and hash it.
+    const small = try w.run(&.{ "check", "--pattern-budget=4000", "Small.beni" });
+    const big = try w.run(&.{ "check", "--pattern-budget=12000", "Big.beni" });
+    const enums = try w.run(&.{ "check", "--pattern-budget=12000", "Enums.beni" });
+    // The path is not free, which is what keeps the refusal of queue slice 14
+    // reachable: one branch of one `case` still costs more than one step.
+    const nothing = try w.run(&.{ "check", "--pattern-budget=1", "Small.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ small, big, enums }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stderr);
+    }
+    try testing.expectEqual(@as(u8, 1), nothing.exit_code);
+    // `--pattern-budget` is session-wide, so core refuses too; this module's
+    // own `case` is the one being asserted.
+    var refused = false;
+    for (nothing.diagnostics) |d| {
+        if (!std.mem.eql(u8, d.span.file, "Small.beni")) continue;
+        try testing.expectEqual(diagnostic.Code.pattern_budget_exhausted, d.code);
+        refused = true;
+    }
+    try testing.expect(refused);
+}
+
+test "the key path still names the redundant pair and the missing combinations" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // Branch 700 (1-based: the 701st) repeats the key of branch 0.
+    try w.write("Dup.beni", try pairLiteralTable(a, 1800, 45, 700, null));
+    // Every combination of two 20-constructor enums but the last three.
+    try w.write("Holes.beni", try pairCtorTable(a, 20, 3));
+    // A complete finite product with a default under it: the default is
+    // dead, because 400 distinct keys fill a key space with 400 points.
+    try w.write("Full.beni", blk: {
+        var out: std.Io.Writer.Allocating = .init(a);
+        try out.writer.writeAll(try pairCtorTable(a, 20, 0));
+        try out.writer.writeAll("        _ ->\n            0\n");
+        break :blk out.written();
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dup = try w.run(&.{ "check", "--pattern-budget=12000", "Dup.beni" });
+    // The "some combinations are missing" answer is DELEGATED to
+    // `isExhaustive`, which is why this one needs the general relation's
+    // budget and the two above do not.
+    const holes = try w.run(&.{ "check", "--pattern-budget=5000000", "Holes.beni" });
+    const full = try w.run(&.{ "check", "--pattern-budget=4000", "Full.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), dup.exit_code);
+    try testing.expectEqual(@as(usize, 1), dup.diagnostics.len);
+    const d = dup.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.redundant_pattern, d.code);
+    // The caret is on the PATTERN of the repeated branch, and the message
+    // counts branches from one: three lines per branch after the three-line
+    // head, so branch 701 starts at line 4 + 700·3. The column is the one a
+    // tuple pattern has always reported (its last element, at `( 0, 0 )`'s
+    // second zero), which this slice does not move.
+    try testing.expectEqual(@as(u32, 4 + 700 * 3), d.span.start.line);
+    try testing.expectEqual(@as(u32, 14), d.span.start.col);
+    try testing.expect(std.mem.indexOf(u8, d.message, "The 701st pattern is redundant") != null);
+
+    try testing.expectEqual(@as(u8, 1), holes.exit_code);
+    try testing.expectEqual(@as(usize, 1), holes.diagnostics.len);
+    const m = holes.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.missing_patterns, m.code);
+    // The three combinations with no branch, named as PAIRS, in declaration
+    // order — the same witnesses the general relation builds, because the key
+    // path delegates every answer that is not "exhaustive" to it.
+    try testing.expect(std.mem.indexOf(
+        u8,
+        m.message,
+        "    ( P19, Q17 )\n    ( P19, Q18 )\n    ( P19, Q19 )\n",
+    ) != null);
+
+    try testing.expectEqual(@as(u8, 1), full.exit_code);
+    try testing.expectEqual(@as(usize, 1), full.diagnostics.len);
+    const f = full.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.redundant_pattern, f.code);
+    try testing.expect(std.mem.indexOf(u8, f.message, "The 401st pattern is redundant") != null);
+}
+
+test "a pair row with a wildcard column falls back to the general relation" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // THE CUT. `( 2, _ )` covers a SLICE of the key space, and membership of
+    // a point cannot decide a slice — so the key path answers nothing for it
+    // and hands that row and every row after it to `isUseful`, which shadows
+    // `( 2, 11 )` correctly. The wrong answer here would be exit 0 on a
+    // `case` with a branch that never runs.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    // Row 100 is `( 2, _ )`; row 101 is `( 2, 11 )`, which it shadows.
+    try w.write("Open.beni", try pairLiteralTable(a, 200, 45, null, 100));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // The general relation's budget, not the key path's: falling back is the
+    // point, and it is quadratic again from row 100 down.
+    const open = try w.run(&.{ "check", "--pattern-budget=100000", "Open.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), open.exit_code);
+    try testing.expectEqual(@as(usize, 1), open.diagnostics.len);
+    const d = open.diagnostics[0];
+    try testing.expectEqual(diagnostic.Code.redundant_pattern, d.code);
+    try testing.expect(std.mem.indexOf(u8, d.message, "The 102nd pattern is redundant") != null);
+    try testing.expectEqual(@as(u32, 4 + 101 * 3), d.span.start.line);
+}
+
+// ---------------------------------------------------------------------------
 // S3 — the module graph carries TYPE edges, and they are deterministic
 // (`static-dispatch-spike.md` §6.8, `fast-compiler.md` §10, CLAUDE.md rule 5)
 //

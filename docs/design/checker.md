@@ -497,19 +497,32 @@ it is written:
   price is now a message rather than a hole. `Session.Options.pattern_budget` and
   `--pattern-budget=<n>` set it, so the bound has a test rather than an absence of one, and an
   author who meets it has a way through.
-- **A FLAT column skips both relations**, which is queue slice 22 of 2026-09-18 and the reason the
-  paragraph above is past tense. A `case` whose every branch is one `_`, one literal or one
-  **nullary** constructor is a lookup table, and for one of those "is row k useful?" is set
-  membership — has this head been seen above, and does anything above match everything — rather
-  than a specialisation of the matrix above k. Exhaustiveness collapses with it: a wildcard covers
-  the column, and so does a constructor column in which every alternative appears. That is
-  Maranget §4's observation for the one shape worth taking it on, and it is what OCaml and Elm rely
-  on in practice. It decides nothing the general relation would decide otherwise; a constructor
-  with ARGUMENTS, or a column that mixes literals with constructors, is handed straight back to it,
-  for that branch and every one after. The budget is charged 1 per row, which is what a hash probe
-  costs, so `--pattern-budget=1` still refuses a `case`'s first branch.
-- **What the default buys, re-measured 2026-09-18 (queue slice 22)** by turning it down until the
-  answers change. Per branch, a flat table now costs **2** where it cost ~1.05·n² in total:
+- **A LOOKUP TABLE skips both relations**, which is queue slices 22 and 25 of 2026-09-18 and the
+  reason the paragraph above is past tense. A `case` whose every branch is a **key** — `_`, a
+  literal, a nullary constructor, or a tuple or single-constructor wrapper of those, unwrapped
+  (`as` is transparent already) — is a lookup table, and for one of those "is row k useful?" is set
+  membership rather than a specialisation of the matrix above k. Exhaustiveness collapses with it:
+  a full-wildcard row covers everything, and so does a key space whose every point is taken, which
+  is `|keys| == ∏ alternatives` when every cell column is a constructor column. That is
+  Maranget §4's observation for the one shape worth taking it on, and it is what OCaml and Elm
+  rely on in practice. It decides nothing the general relation would decide otherwise, and it only
+  ever answers what it can PROVE; everything else, including every witness, is handed straight
+  back, for that branch and every one after.
+
+  **The cut** is the one shape it refuses to decide: a row that is concrete in one cell and open in
+  another. `( 1, _ )` covers a *slice* of the key space, and membership of a *point* cannot decide
+  a slice — `( 1, _ )` above shadows `( 1, 3 )` below and no set of points says so. So a row is
+  decided here when every cell is concrete (it matches exactly one value, so usefulness is "is its
+  key absent?") or when every cell is a wildcard (it matches every value, so usefulness is "is
+  anything above already complete?"); anything between is `isUseful`'s, from that row down. A table
+  with a per-row default therefore stays quadratic, and a trailing `_ ->` — the shape essentially
+  every table has — does not. Rows must also unwrap to the same spine, and a cell column that mixes
+  literals with constructors is the general path's `error.Malformed` to keep. The budget is charged
+  1 per node the walk visits, which is what building and probing the key costs, so
+  `--pattern-budget=1` still refuses a `case`'s first branch.
+- **What the default buys, re-measured 2026-09-18 (queue slices 22 and 25)** by turning it down
+  until the answers change. Per branch, a one-column table costs **2** and a pair **6**, where
+  both used to cost a multiple of n² in TOTAL:
 
   | shape | before | now |
   |---|---|---|
@@ -518,22 +531,38 @@ it is written:
   | 10 000 `Int` literals + `_` | ~100 000 000 | **20 002** |
   | 320 nullary constructors | 207 039 | **640** |
   | 2 000 nullary constructors | ~8 000 000 | **4 000** |
+  | 500 `( Int, Int )` pairs + `_` | 757 514 | **3 002** |
+  | 1 580 `( Int, Int )` pairs + `_` | 6 352 912 | **9 482** |
+  | 5 000 `( Int, Int )` pairs + `_` | 55 075 006 | **30 002** |
+  | 500 pairs of two 40-ctor enums + `_` | 527 090 | **3 002** |
+  | 1 580 pairs of two 40-ctor enums + `_` | 5 343 192 | **9 482** |
+  | 5 000 pairs of two 80-ctor enums + `_` | 50 473 290 | **30 002** |
 
-  What still squares is a column the set cannot read — a constructor with arguments, which is
-  `case ( a, b ) of ( 1, 2 ) -> …`, a **pair-keyed lookup table**: 2n², measured at **5 014 936**
-  steps for 1 580 rows. And what this repository spends: the costliest `case` in `core/` is **70**,
-  in `bench/corpus` **401**, in `tests/corpus` **528** (`check/depth/PatternNestOk`, 511 levels of
-  `Just`, which exists to sit one under the depth guard); `parse/good/ManyBranches.beni`, the old
-  champion at ~10 500, now spends **202**.
+  End to end in a Debug build that is **6.3 s → 0.15 s** for the 5 000-row literal pair and
+  **6.8 s → 0.22 s** for the 5 000-row enum pair. (A 40×40 enum key has only 1 600 points, so the
+  5 000-row enum table is two 80-constructor enums; the 500- and 1 580-row ones are 40×40.)
+
+  What still squares is the CUT — one wildcard cell in an otherwise concrete row, which is
+  `case ( a, b ) of ( 1, _ ) -> …`, a **table with a per-row default**: 2n², measured at
+  **5 087 257** steps for 1 580 rows. And what this repository spends, leaving out the two fixtures
+  that exist to BE tables: the costliest `case` in `core/` is **71**, in `bench/corpus` **402**, in
+  `tests/corpus` **529** (`check/depth/PatternNestOk`, 511 levels of `Just`, which exists to sit
+  one under the depth guard); `parse/good/ManyBranches.beni`, the old champion at ~10 500, spends
+  **202**. The two tables themselves are `check/good/LookupTable.beni` at **922** and
+  `check/good/PairLookupTable.beni` — 1 800 pair rows that the default REFUSED before slice 25 at
+  6 587 936 — at **10 802**. Each tree's maximum is one step above what slice 22 measured, because
+  the key path now charges for the node it looks at before it finds it cannot read the shape; it
+  used to peek for free.
 
   **The default is therefore 5 000 000**, by the rule *a budget a `case` a person wrote never
   meets, that still bounds an adversarial one to well under a second*. It is ~9 500× the costliest
-  `case` here; it admits a flat table of 2.5 million branches and a pair-keyed one of 1 580 rows;
-  and a `case` that spends all of it takes **0.6 s in a Debug build and 0.06 s in ReleaseFast**
-  (end to end on the 1 580-row pair table — about 8.6 M steps/s Debug, 80 M/s ReleaseFast). If the
-  refusal starts firing on code people mean again, the ALGORITHM is what to fix before the number,
-  and the next one to take is the tuple column: a single-alternative constructor unwraps into a
-  flat column of literals and could go through the same set.
+  `case` here that is not a table; it admits a one-column table of 2.5 million branches, a
+  pair-keyed one of 830 000, and a pair-keyed one with a per-row default of ~1 570; and a `case`
+  that spends all of it takes **0.65 s in a Debug build and 0.07 s in ReleaseFast** (end to end on
+  the 1 580-row open-pair table — about 9 M steps/s Debug, 90 M/s ReleaseFast). If the refusal
+  starts firing on code people mean again, the ALGORITHM is what to fix before the number, and the
+  next one to take is the cut itself: deciding slices against points needs a different structure
+  than a hash set.
 
 ### 6.7 Top-level value cycles
 

@@ -54,14 +54,16 @@
 //! such a `case` is exhaustive and reports nothing. That falls out; there is
 //! no special case for it.
 //!
-//! **A flat column does not go through either relation** (`Flat`, queue slice
-//! 22). A `case` whose every branch is one `_`, one literal or one nullary
-//! constructor is a lookup table, and for one of those "is this row useful?"
-//! is set membership rather than a matrix specialisation — Maranget §4's
-//! observation, and what makes an n-branch table cost 2n steps instead of
-//! 1.05·n². It decides nothing the general relation would decide otherwise
-//! and steps aside for every other shape; `Flat`'s own comment says where
-//! that equivalence is asserted.
+//! **A lookup table does not go through either relation** (`Flat`, queue
+//! slices 22 and 25). A `case` whose every branch is a KEY — `_`, a literal,
+//! a nullary constructor, or a tuple/single-constructor wrapper of those — is
+//! a lookup table, and for one of those "is this row useful?" is set
+//! membership rather than a matrix specialisation — Maranget §4's
+//! observation, and what makes an n-branch table cost O(n) steps instead of
+//! 1.05·n² (a single key) or 2·n² (a pair). It decides nothing the general
+//! relation would decide otherwise and steps aside for every other shape;
+//! `Flat`'s own comment says where the cut is and where that equivalence is
+//! asserted.
 //!
 //! **The budget.** Usefulness is exponential in the worst case (Maranget
 //! §3.3), and a `case` over many constructors with many branches reaches it.
@@ -105,15 +107,17 @@ pub const max_examples = 3;
 /// Row visits and recursive steps one `case` may spend before it is
 /// refused.
 ///
-/// **Measured, not guessed**, and re-measured on 2026-09-18 (queue slice 22)
-/// when `Flat` took the quadratic out of a lookup table. The note before this
-/// one said 200 000 was nineteen times the costliest `case` in the repository
-/// and also that ~440 `Int` literals or ~310 constructors reached it — both
-/// true, and together they say the default refused ordinary code. The fix was
-/// the algorithm first and the number second.
+/// **Measured, not guessed**, and re-measured twice on 2026-09-18: by queue
+/// slice 22, when `Flat` took the quadratic out of a one-column lookup table,
+/// and by slice 25, when it took it out of a KEYED one. The note before those
+/// said 200 000 was nineteen times the costliest `case` in the repository and
+/// also that ~440 `Int` literals or ~310 constructors reached it — both true,
+/// and together they say the default refused ordinary code. The fix was the
+/// algorithm first and the number second, twice.
 ///
-/// What a flat column costs now, by turning the budget down until the answer
-/// changes (`n` branches plus a wildcard):
+/// What a lookup table costs, by turning the budget down until the answer
+/// changes (`n` branches plus a wildcard, except where the key is a complete
+/// product and needs none):
 ///
 /// | shape | before | now |
 /// |---|---|---|
@@ -122,35 +126,54 @@ pub const max_examples = 3;
 /// | 10 000 `Int` literals | ~100 000 000 | **20 002** |
 /// | 320 nullary constructors | 207 039 | **640** |
 /// | 2 000 nullary constructors | ~8 000 000 | **4 000** |
+/// | 500 `( Int, Int )` pairs | 757 514 | **3 002** |
+/// | 1 580 `( Int, Int )` pairs | 6 352 912 | **9 482** |
+/// | 5 000 `( Int, Int )` pairs | 55 075 006 | **30 002** |
+/// | 500 pairs of two 40-ctor enums | 527 090 | **3 002** |
+/// | 1 580 pairs of two 40-ctor enums | 5 343 192 | **9 482** |
+/// | 5 000 pairs of two 80-ctor enums | 50 473 290 | **30 002** |
 ///
-/// So a table costs **2 per branch** and the branch count no longer squares.
-/// What still squares is a column the set cannot read — a constructor with
-/// ARGUMENTS, which is `case ( a, b ) of ( 1, 2 ) -> …`, a pair-keyed lookup
-/// table: 2n², measured at 5 014 936 steps for 1 580 rows. That is the shape
-/// this number is now sized for.
+/// So a one-column table costs **2 per branch** and a pair **6** — three to
+/// simplify `( 1, 2 )` and three to walk and hash it — and neither squares.
+/// End to end in a Debug build, the 5 000-row pair goes from **6.3 s to
+/// 0.15 s** and the 5 000-row enum pair from **6.8 s to 0.22 s**.
 ///
-/// And what the repository spends, the same way: the costliest `case` in
-/// `core/` is **70**, in `bench/corpus` **401**, and in `tests/corpus`
-/// **528** — `check/depth/PatternNestOk`, 511 levels of `Just`, which exists
-/// to sit one under the depth guard. `parse/good/ManyBranches`, 100 `Int`
-/// branches and the old champion at ~10 500, now spends **202**.
+/// **What still squares** is a row the key path is not allowed to decide,
+/// which after slice 25 means one wildcard CELL in an otherwise concrete row:
+/// `case ( a, b ) of ( 1, _ ) -> …`, a table with a per-row default. That is
+/// `Flat`'s CUT, it is still 2n², and 1 580 rows of it come to **5 087 257**
+/// steps. That is the shape this number is now sized for.
+///
+/// And what the repository spends, the same way. Leaving out the two fixtures
+/// that exist to BE tables, the costliest `case` in `core/` is **71**, in
+/// `bench/corpus` **402**, and in `tests/corpus` **529** —
+/// `check/depth/PatternNestOk`, 511 levels of `Just`, which exists to sit one
+/// under the depth guard. `parse/good/ManyBranches`, 100 `Int` branches and
+/// the old champion at ~10 500, spends **202**. The two tables themselves:
+/// `check/good/LookupTable`, 460 `Int` branches, **922**, and
+/// `check/good/PairLookupTable`, 1 800 pair rows that the default REFUSED
+/// before slice 25 at 6 587 936, **10 802**. (Each of the three tree maxima
+/// is one step higher than slice 22 measured, because `Flat` now charges for
+/// the node it looks at before it discovers it cannot read the shape. It used
+/// to peek for free; work done is work charged.)
 ///
 /// **The default is 5 000 000**, by the rule "a budget a `case` a person
 /// wrote never meets, that still bounds an adversarial one to well under a
-/// second". It is ~9 500× the costliest `case` in this repository; it admits
-/// a flat table of 2.5 million branches and a pair-keyed one of 1 580 rows;
-/// and a `case` that spends all of it takes **0.6 s in a Debug build and
-/// 0.06 s in ReleaseFast** (measured end to end on the 1 580-row pair table,
-/// ~8.6 M steps/s Debug and ~80 M/s ReleaseFast).
+/// second". It is ~9 500× the costliest `case` here that is not a table; it
+/// admits a one-column table of 2.5 million branches, a pair-keyed one of
+/// 830 000, and a pair-keyed one with a per-row default of ~1 570; and a
+/// `case` that spends all of it takes **0.65 s in a Debug build and 0.07 s in
+/// ReleaseFast** (measured end to end on the 1 580-row open-pair table,
+/// ~9 M steps/s Debug and ~90 M/s ReleaseFast).
 ///
 /// Both searches stop early — `isUseful` at the first useful alternative and
 /// `isExhaustive` at `max_examples` counterexamples — which is why the
 /// exponent of Maranget §3.3 is not what a real program meets first.
 ///
 /// If the refusal starts firing on code people mean again, **the algorithm is
-/// what to fix** before the number: the next one to take is a column of
-/// single-alternative constructors (a tuple), which unwraps into a flat
-/// column of literals and could go through `Flat` the same way.
+/// what to fix** before the number: the next one to take is the CUT itself —
+/// a row with an open cell covers a slice of the key space, and deciding
+/// slices against points is a different structure than a hash set.
 /// `--pattern-budget=<n>` exists so that an author who meets it is not stuck
 /// while that happens.
 pub const default_budget: u32 = 5_000_000;
@@ -533,11 +556,11 @@ fn one(
     // behaviour and it is the right one — once a row is dead the rows after
     // it are being judged against a matrix the author did not mean.
     var matrix: std.ArrayList([]const PatIndex) = .empty;
-    // The flat column of `Flat`, while the `case` still has one. Once a
-    // branch is a shape it cannot read, it is abandoned for good and every
-    // remaining branch goes through the general relation with the matrix
-    // built so far — which is the same matrix either way, so the answers
-    // are the same answers.
+    // The key set of `Flat`, while the `case` is still a lookup table. Once
+    // a branch is a shape it cannot decide, it is abandoned for good and
+    // every remaining branch goes through the general relation with the
+    // matrix built so far — which is the same matrix either way, so the
+    // answers are the same answers.
     var flat: Flat = .{ .arena = arena };
     var flat_column = true;
     for (branches, 0..) |b, i| {
@@ -588,12 +611,12 @@ fn one(
         try matrix.append(arena, row);
     }
 
-    // A flat column that covers everything is exhaustive, and saying so
-    // here is what keeps `isExhaustive`'s own quadratic arm — one
+    // A key space with every point taken is exhaustive, and saying so here
+    // is what keeps `isExhaustive`'s own quadratic arm — one
     // `specializeByCtor` per alternative, over every row — off a `case`
-    // that lists a hundred constructors. Every other answer is delegated,
-    // witnesses and all, so there is one place that builds a
-    // counterexample and it is not this one.
+    // that lists a hundred constructors, or ten thousand pairs of them.
+    // Every other answer is delegated, witnesses and all, so there is one
+    // place that builds a counterexample and it is not this one.
     if (flat_column and flat.exhaustive(&an)) return;
 
     const missing = an.isExhaustive(matrix.items, 1, 0) catch |err| switch (err) {
@@ -619,101 +642,278 @@ fn one(
 }
 
 // ---------------------------------------------------------------------------
-// The flat column (Maranget §4)
+// The lookup table (Maranget §4)
 // ---------------------------------------------------------------------------
 
-/// A `case` whose every branch is one width-1 row headed by `_`, a literal,
-/// or a **nullary** constructor — a lookup table, which is the shape a
-/// program written by a person actually reaches the budget with.
+/// A `case` whose every branch is a **key** — a lookup table, which is the
+/// shape a program written by a person actually reaches the budget with.
 ///
 /// The general relation answers "is row k useful?" by specialising the whole
 /// matrix above k and recursing, which is O(k) per row and therefore
-/// **quadratic in the branch count with no nesting at all**: ~1.05·n²,
-/// measured at 253 508 steps for 500 `Int` branches and 4 014 008 for 2 000.
-/// A flat column has no nesting to recurse into and no combinations to
-/// explore, so the same question collapses to set membership — row k is
-/// useful exactly when its head has not been seen above it and nothing above
-/// it matches everything — and `isExhaustive`'s answer collapses with it: a
-/// wildcard covers the column, and so does a constructor column in which
-/// every alternative appears. That is Maranget §4's observation for the one
-/// case it is worth taking, and it is what OCaml and Elm rely on in practice.
+/// **quadratic in the branch count with no nesting at all**: ~1.05·n² for a
+/// single-column table, and 2·n² once the key is a pair, because each row's
+/// specialisation then runs twice over the rows above it. A key has no
+/// alternatives to explore, so the same question collapses to set membership,
+/// and `isExhaustive`'s answer collapses with it. That is Maranget §4's
+/// observation for the one shape it is worth taking, and it is what OCaml and
+/// Elm rely on in practice.
+///
+/// **What a key is.** `unwrap` walks a row, descending through every
+/// constructor of a union with exactly ONE alternative — a tuple, a record's
+/// product, a `Box a` wrapper — because such a constructor carries no choice:
+/// `Box a` matches exactly the values whose contents `a` matches, so the
+/// wrapper can be erased. (`as` is already transparent, `simplify` having
+/// dropped it.) What the walk leaves is a fixed-width row of **cells**, each
+/// of which must be `_`/a variable/a record, a literal, or a **nullary**
+/// constructor of a real choice. Anything else — a constructor with arguments
+/// that is one alternative of several, a column that mixes literals with
+/// constructors (which is `error.Malformed`, and whose silence is the general
+/// path's to keep), a row that unwraps to a different spine than the rows
+/// before it — is `.general`, for that row and every one after it.
+///
+/// **THE CUT.** A row of all-concrete cells matches exactly ONE value, so the
+/// rows above it match exactly the keys in the set and "is it useful?" is "is
+/// its key absent?". A row of all-wildcard cells matches EVERY value, so it is
+/// useful exactly when nothing above it covers everything. A row that is
+/// concrete in one cell and open in another — `( 1, _ )` — matches a SLICE of
+/// the key space, and membership of a point cannot decide a slice: `( 1, _ )`
+/// above shadows `( 1, 3 )` below, and no set of points says so. **Such a row
+/// is `.general`**, and so is every row after it. So the shape this path
+/// decides is: all-concrete rows, plus full-wildcard rows anywhere among them
+/// (in practice the trailing `_ ->`). What it leaves on the slow path is a
+/// table with a partial default — `( state, _ ) ->` — from that row down.
+///
+/// The two answers it gives are both proofs, never guesses:
+///
+///   - *useful / redundant* for a row, by the argument above.
+///   - *exhaustive*, and only when `covered` can show it: every cell column
+///     must be a constructor column, whose value space is its union's
+///     alternatives, and then the whole key space has `∏ alternatives` points.
+///     The keys are DISTINCT points of that space, so `count == product` is
+///     "every point is taken". A literal column has infinitely many points and
+///     ends the question; so does a product too big for `u64`.
+///
+/// Everything else — "not exhaustive", and the witnesses that go with it — is
+/// **delegated** to `isExhaustive` over the same matrix, so there is exactly
+/// one place in this file that builds a counterexample.
 ///
 /// It decides **nothing the general relation would decide differently**. The
 /// equivalence is asserted where it is visible — the `check/bad` fixtures for
 /// `missing_patterns` and `redundant_pattern` are unchanged to the byte, and
-/// `blackbox_test.zig`'s pair of flat-table scenarios pins the redundant row
-/// and the missing constructors inside a table the general relation could not
-/// have decided at all — and the one piece with no visible output, that
-/// `literalKey` agrees with `Literal.eql` in both directions, is pinned at
-/// the bottom of this file. Where a row is a shape it cannot read — a
-/// constructor with arguments, or a column that mixes literals with
-/// constructors (which is `error.Malformed`, and whose silence is the general
-/// path's to keep) — it answers `.general` and steps aside for good.
+/// `blackbox_test.zig`'s flat- and pair-table scenarios pin the redundant
+/// row's position and the missing combinations by name inside tables the
+/// general relation could not have decided at all — and the two pieces with
+/// no visible output, that `literalKey` agrees with `Literal.eql` in both
+/// directions and that `rowKey`'s concatenation is a prefix code, are pinned
+/// at the bottom of this file.
 ///
-/// The budget is charged **1 per row**, which is what a hash probe costs
-/// amortised, against the O(k) the general relation charges for the same row.
-/// It is not free: `--pattern-budget=1` still refuses the first branch of any
-/// `case`, which is what the black-box scenarios of queue slice 14 assert.
+/// The budget is charged **1 per node the walk visits**, which is what
+/// building and probing the key costs: 1 for a bare literal or nullary
+/// constructor, 3 for `( 1, 2 )`. That leaves a single-column table at the 2
+/// steps a branch it cost before this slice. It is not free:
+/// `--pattern-budget=1` still refuses the first branch of any `case`, which is
+/// what the black-box scenarios of queue slice 14 assert.
 const Flat = struct {
     arena: Allocator,
-    column: enum { empty, literal, ctor } = .empty,
-    /// Canonical keys of the literals seen, by `literalKey`.
-    literals: std.StringHashMapUnmanaged(void) = .empty,
-    /// Absolute alternative indices seen.
-    alts: std.AutoHashMapUnmanaged(u32, void) = .empty,
-    /// The union of a `.ctor` column; meaningless otherwise.
-    un: u32 = 0,
+    /// The spine the first all-concrete row fixed (`unwrap`'s tokens). A row
+    /// that walks differently builds its key out of a different structure, so
+    /// the two keys are not comparable and the table stops here.
+    shape: ?[]const u32 = null,
+    /// One per cell of the key, in order; fixed by that same first row.
+    cols: []Column = &.{},
+    /// Canonical keys of the all-concrete rows seen, by `rowKey`.
+    keys: std.StringHashMapUnmanaged(void) = .empty,
     /// A row above matches every value, so nothing below it can be useful.
     wildcard: bool = false,
+    /// One row's walk, reused across rows. A `case` is checked branch by
+    /// branch and a branch's cells are dead as soon as its key is built, so
+    /// three buffers for the whole `case` do what three per branch would —
+    /// and a `case` that is not a table at all never grows them, because
+    /// `unwrap` gives up before it appends. What OUTLIVES a row is copied
+    /// out: `shape` on the first concrete row, a key when it is new.
+    scratch_shape: std.ArrayList(u32) = .empty,
+    scratch_cells: std.ArrayList(PatIndex) = .empty,
+    scratch_key: std.ArrayList(u8) = .empty,
 
     const Answer = enum { useful, redundant, general };
 
-    /// Decide one row against the rows already admitted, and record it.
-    /// `OverBudget` is the only abort it can raise: there is no recursion
-    /// to run out of depth in, and a shape it cannot read is `.general`
-    /// rather than `Malformed` — deciding that is the general path's job.
-    fn admit(f: *Flat, an: *Analysis, p: PatIndex) (Allocator.Error || error{OverBudget})!Answer {
+    /// What one cell position holds. The kind is what makes a column of
+    /// literals and a column of constructors two different questions, and
+    /// `un` is what lets `covered` count a constructor column's points.
+    const Column = struct {
+        kind: enum { literal, ctor },
+        un: u32 = 0,
+    };
+
+    /// Flatten `p` into `cells`, recording the structure it walked in
+    /// `shape`. False means "not a key" — the caller answers `.general`.
+    ///
+    /// `shape`'s tokens are a prefix code, so two equal token sequences are
+    /// two equal structures: `0` is a cell, and `1, un, arity` is a wrapper
+    /// whose `arity` children follow. The cells themselves are NOT in it —
+    /// `( _, _ )` and `( 1, 2 )` have to compare equal, because a full
+    /// wildcard is the same row whatever the key's shape is.
+    fn unwrap(
+        f: *Flat,
+        an: *Analysis,
+        p: PatIndex,
+        depth: u32,
+        shape: *std.ArrayList(u32),
+        cells: *std.ArrayList(PatIndex),
+    ) (Allocator.Error || error{OverBudget})!bool {
+        // The same nesting guard the general path has, answered the way this
+        // path answers everything it cannot read: hand it back.
+        if (depth > max_depth) return false;
+        // Charged per node, so a row that unwraps into a combinatorial
+        // explosion runs out of budget rather than out of memory.
+        try an.spend(1);
         switch (an.pats.tag(p)) {
-            .anything => {
-                try an.spend(1);
-                if (f.wildcard) return .redundant;
-                // A constructor column in which every alternative already
-                // appears leaves a wildcard nothing to match, which is what
-                // `isUseful`'s `complete` arm answers.
-                if (f.column == .ctor and f.alts.count() == an.pats.unionAt(f.un).count()) return .redundant;
-                f.wildcard = true;
-                return .useful;
-            },
-            .literal => {
-                if (f.column == .ctor) return .general;
-                try an.spend(1);
-                f.column = .literal;
-                if (f.wildcard) return .redundant;
-                const key = try an.literalKey(an.pats.literal(p));
-                return if ((try f.literals.getOrPut(f.arena, key)).found_existing) .redundant else .useful;
+            .anything, .literal => {
+                try shape.append(f.arena, 0);
+                try cells.append(f.arena, p);
+                return true;
             },
             .ctor => {
                 const c = an.pats.ctor(p);
-                // A constructor with arguments needs the recursion this
-                // path exists to avoid, and a column of two unions is a
-                // matrix the general path calls malformed.
-                if (c.args_len != 0 or f.column == .literal) return .general;
-                if (f.column == .ctor and f.un != c.un) return .general;
-                try an.spend(1);
-                f.column = .ctor;
-                f.un = c.un;
-                if (f.wildcard) return .redundant;
-                return if ((try f.alts.getOrPut(f.arena, c.alt)).found_existing) .redundant else .useful;
+                if (an.pats.unionAt(c.un).count() == 1) {
+                    try shape.appendSlice(f.arena, &.{ 1, c.un, c.args_len });
+                    var i: u32 = 0;
+                    // `args` re-slices at every index on purpose: nothing
+                    // here appends to `extra`, but the rule that a slice of
+                    // it is valid only at the moment of use is the rule.
+                    while (i < c.args_len) : (i += 1) {
+                        if (!try f.unwrap(an, an.pats.args(c)[i], depth + 1, shape, cells)) return false;
+                    }
+                    return true;
+                }
+                // One alternative of a real choice. Nullary, or its
+                // arguments are exactly the recursion this path exists to
+                // avoid.
+                if (c.args_len != 0) return false;
+                try shape.append(f.arena, 0);
+                try cells.append(f.arena, p);
+                return true;
             },
         }
     }
 
-    /// Whether the rows admitted so far cover every value of the column.
+    /// Decide one row against the rows already admitted, and record it.
+    /// `OverBudget` is the only abort it can raise: the nesting guard and
+    /// every shape it cannot read are `.general` rather than `TooDeep` or
+    /// `Malformed` — deciding those is the general path's job.
+    fn admit(f: *Flat, an: *Analysis, p: PatIndex) (Allocator.Error || error{OverBudget})!Answer {
+        f.scratch_shape.clearRetainingCapacity();
+        f.scratch_cells.clearRetainingCapacity();
+        const shape = &f.scratch_shape;
+        const cells = &f.scratch_cells;
+        if (!try f.unwrap(an, p, 0, shape, cells)) return .general;
+
+        var concrete: usize = 0;
+        for (cells.items) |c| {
+            if (an.pats.tag(c) != .anything) concrete += 1;
+        }
+
+        // Nothing but wildcards: the row matches every value, so `_` and
+        // `( _, _ )` are one row — and so is `One` of a one-constructor
+        // type, which unwraps to no cells at all.
+        if (concrete == 0) {
+            if (f.wildcard) return .redundant;
+            // A key space already covered leaves a wildcard nothing to
+            // match, which is what `isUseful`'s `complete` arm answers.
+            if (f.covered(an)) return .redundant;
+            f.wildcard = true;
+            return .useful;
+        }
+        // THE CUT — see this struct's comment.
+        if (concrete != cells.items.len) return .general;
+
+        if (f.shape) |s| {
+            if (!std.mem.eql(u32, s, shape.items)) return .general;
+        } else {
+            const cols = try f.arena.alloc(Column, cells.items.len);
+            for (cells.items, cols) |c, *col| col.* = (columnOf(an, c) orelse return .general);
+            // Copied out of the scratch buffer, which the next row reuses.
+            f.shape = try f.arena.dupe(u32, shape.items);
+            f.cols = cols;
+        }
+        // Equal spines have equal cell counts, `0` being a cell's token — but
+        // the loop below PANICS on a length mismatch rather than answering,
+        // and handing back what it cannot decide is this path's whole job.
+        if (cells.items.len != f.cols.len) return .general;
+        // One spine can still carry two different columns: a cell that is a
+        // literal where an earlier row had a constructor is the matrix the
+        // general path calls malformed, and two constructors of different
+        // unions is the same thing one level down.
+        for (cells.items, f.cols) |c, col| {
+            const here = columnOf(an, c) orelse return .general;
+            if (here.kind != col.kind or here.un != col.un) return .general;
+        }
+
+        if (f.wildcard) return .redundant;
+        const key = try f.rowKey(an, cells.items);
+        // A key that is already there is answered without copying it, so the
+        // only row that costs an allocation is a row that is kept.
+        if (f.keys.contains(key)) return .redundant;
+        try f.keys.put(f.arena, try f.arena.dupe(u8, key), {});
+        return .useful;
+    }
+
+    /// The column a concrete cell describes, or null when it is not one.
+    fn columnOf(an: *const Analysis, cell: PatIndex) ?Column {
+        return switch (an.pats.tag(cell)) {
+            .literal => .{ .kind = .literal },
+            .ctor => .{ .kind = .ctor, .un = an.pats.ctor(cell).un },
+            .anything => null,
+        };
+    }
+
+    /// A byte key two rows share exactly when they match the same value: each
+    /// cell's canonical key, length-prefixed so the concatenation parses back
+    /// into the same cells and equal bytes mean equal cells. A literal's key
+    /// is `literalKey`'s, pinned against `Literal.eql` at the bottom of this
+    /// file; a nullary constructor's is its absolute alternative index, which
+    /// is what the general relation compares too.
+    ///
+    /// Valid until the next row: the caller copies it if it keeps it.
+    fn rowKey(f: *Flat, an: *Analysis, cells: []const PatIndex) Error![]const u8 {
+        f.scratch_key.clearRetainingCapacity();
+        const out = &f.scratch_key;
+        for (cells) |c| {
+            var alt: [4]u8 = undefined;
+            const body: []const u8 = switch (an.pats.tag(c)) {
+                .literal => try an.literalKey(an.pats.literal(c)),
+                .ctor => blk: {
+                    std.mem.writeInt(u32, &alt, an.pats.ctor(c).alt, .little);
+                    break :blk &alt;
+                },
+                // `admit` counted the wildcards before it got here.
+                .anything => "",
+            };
+            var len: [4]u8 = undefined;
+            std.mem.writeInt(u32, &len, @intCast(body.len), .little);
+            try out.appendSlice(f.arena, &len);
+            try out.appendSlice(f.arena, body);
+        }
+        return out.items;
+    }
+
+    /// Do the rows admitted so far take every point of the key space? Only a
+    /// constructor column has a finite one, so every column must be one, and
+    /// then the space has `∏ alternatives` points and the keys are distinct
+    /// points of it.
+    fn covered(f: *const Flat, an: *const Analysis) bool {
+        if (f.shape == null) return false;
+        var points: u64 = 1;
+        for (f.cols) |col| {
+            if (col.kind != .ctor) return false;
+            points = std.math.mul(u64, points, an.pats.unionAt(col.un).count()) catch return false;
+        }
+        return @as(u64, f.keys.count()) == points;
+    }
+
+    /// Whether the rows admitted so far cover every value of the scrutinee.
     fn exhaustive(f: *const Flat, an: *const Analysis) bool {
-        if (f.wildcard) return true;
-        // A literal column never is: there are infinitely many of them,
-        // which is why a wildcard is the only way to finish one.
-        return f.column == .ctor and f.alts.count() == an.pats.unionAt(f.un).count();
+        return f.wildcard or f.covered(an);
     }
 };
 
@@ -1285,4 +1485,34 @@ test "a flat column's key says the same thing about two literals that `eql` does
             try testing.expectEqual(a.eql(b, &pats), same_key);
         }
     }
+}
+
+test "a key row's bytes are a prefix code, so two different rows never collide" {
+    // The other half of the same argument, one level up: `Flat` decides a
+    // whole ROW by one hash probe, so the concatenation of its cells' keys
+    // has to be injective over cell sequences. Two rows that collide would
+    // be `redundant_pattern` on a branch that runs, which is the wrong
+    // answer this fast path exists to not give. The length prefix is what
+    // makes the concatenation a prefix code, and without it `( "ab", "c" )`
+    // and `( "a", "bc" )` are the same bytes.
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var pats: Patterns = .{ .string_bytes = "abc" };
+    var an: Analysis = .{ .arena = arena.allocator(), .cx = undefined, .pats = &pats, .budget = 0 };
+    var f: Flat = .{ .arena = arena.allocator() };
+
+    const ab = try an.newLiteral(.{ .kind = .string, .off = 0, .len = 2 });
+    const c = try an.newLiteral(.{ .kind = .string, .off = 2, .len = 1 });
+    const a = try an.newLiteral(.{ .kind = .string, .off = 0, .len = 1 });
+    const bc = try an.newLiteral(.{ .kind = .string, .off = 1, .len = 2 });
+
+    // Copied, because `rowKey` builds into a buffer the next row reuses —
+    // which is the aliasing `admit` handles by duping a key it keeps.
+    const left = try arena.allocator().dupe(u8, try f.rowKey(&an, &.{ ab, c }));
+    try testing.expect(!std.mem.eql(u8, left, try f.rowKey(&an, &.{ a, bc })));
+    // A row is not its own prefix either: widths differ, and so do the bytes.
+    try testing.expect(!std.mem.eql(u8, left, try f.rowKey(&an, &.{ab})));
+    // And two rows that match the same value do share their bytes, which is
+    // the direction that finds the redundant branch at all.
+    try testing.expectEqualSlices(u8, left, try f.rowKey(&an, &.{ ab, c }));
 }
