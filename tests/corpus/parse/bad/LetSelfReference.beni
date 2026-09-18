@@ -1,0 +1,17 @@
+-- let_forward_reference at 9:13, in its `self` reading (`language.md` §7): a
+-- value binding is in scope inside its own right-hand side, but it has no
+-- value there, so `x = x + 1` reads its own `const` in the temporal dead
+-- zone. Only a FUNCTION can be recursive, which is why `countDown` — written
+-- the same way one line down — is legal.
+h =
+    let
+        x =
+            x + 1
+
+        countDown k =
+            if k == 0 then
+                0
+            else
+                countDown (k - 1)
+    in
+    x + countDown 3

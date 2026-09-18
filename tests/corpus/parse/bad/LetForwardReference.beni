@@ -1,0 +1,20 @@
+-- let_forward_reference at 12:13: a `let` VALUE binding is initialised where
+-- it is written (`language.md` §6, *Evaluation order*), so `usesLater` may
+-- not read `later`, which is bound below it. The name RESOLVES — every
+-- binding of a `let` is in scope in every body (§7) — so this is not
+-- `unbound_variable`; what it is, is the emitted `const later$2` read inside
+-- its own temporal dead zone. Until 2026-09-18 (queue slice 21) this program
+-- compiled clean and threw `ReferenceError` under Node. `shown` is legal:
+-- `later` is written above it.
+f =
+    let
+        usesLater =
+            later + 100
+
+        later =
+            5
+
+        shown =
+            later + 1
+    in
+    usesLater + shown

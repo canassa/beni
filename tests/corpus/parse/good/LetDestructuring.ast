@@ -17,6 +17,12 @@
             (pat_var s)
             (pat_var flag)))
         (ident input))
+      (let_def person
+        (record
+          (field name
+            (ident s))
+          (field age
+            (ident n))))
       (let_pattern
         (pat_record name age)
         (ident person))
@@ -45,12 +51,6 @@
       (let_pattern
         (pat_wild)
         (ident flag))
-      (let_def person
-        (record
-          (field name
-            (ident s))
-          (field age
-            (ident n))))
       (let_annotation total
         (type_con Int))
       (let_def total

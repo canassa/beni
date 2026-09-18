@@ -1,12 +1,17 @@
 -- Pattern bindings in `let` (§3, LetBinding): tuple, nested tuple, record,
--- and wildcard patterns, mixed with ordinary definitions, an annotated
--- binding, and a binding used before its textual position. A list pattern is
--- refutable (§7) and so lives in a `case` instead.
+-- and wildcard patterns, mixed with ordinary definitions and an annotated
+-- binding. A list pattern is refutable (§7) and so lives in a `case`
+-- instead. Every binding here names only bindings written above it: a value
+-- that names a later value is `let_forward_reference` (§7), which is why
+-- `person` is written above the record pattern that destructures it.
 split : ( Int, ( String, Bool ) ) -> String
 split input =
     let
         ( n, ( s, flag ) ) =
             input
+
+        person =
+            { name = s, age = n }
 
         { name, age } =
             person
@@ -21,9 +26,6 @@ split input =
 
         _ =
             flag
-
-        person =
-            { name = s, age = n }
 
         total : Int
         total =

@@ -1,0 +1,15 @@
+-- let_forward_reference at 10:13, ONCE (`language.md` §7): two values that
+-- define each other are one forward reference, not two. `a = b + 1` reads `b`
+-- before it has a value and is reported; `b = a` reads a binding written
+-- above it, which is legal on its own and says nothing about the cycle. One
+-- report per binding that runs too soon is what keeps a chain of them from
+-- printing the same mistake n times.
+c =
+    let
+        a =
+            b + 1
+
+        b =
+            a
+    in
+    a + b

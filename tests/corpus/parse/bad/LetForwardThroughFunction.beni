@@ -1,0 +1,22 @@
+-- let_forward_reference at 11:13: the same rule one hop away (`language.md`
+-- §7). `a`'s initialiser does not name `b` at all; it names `f`, and naming a
+-- `let` function may call it — `List.map` would — so `f`'s body reads `b`
+-- before `b` has a value. The region is the mention of `f`, because that is
+-- the reference that runs too soon, and the message names `b` and its line.
+-- `later` is the legal shape: it calls the same `f` from BELOW `b`, where
+-- `b` is initialised.
+g =
+    let
+        a =
+            f 1
+
+        f x =
+            x + b
+
+        b =
+            2
+
+        later =
+            f 10
+    in
+    a + later

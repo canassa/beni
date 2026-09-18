@@ -1,0 +1,66 @@
+-- run: what §7's initialisation rule still ALLOWS, proven by running it.
+-- `language.md` §6, *Evaluation order* makes written order the rule for `let`
+-- value bindings, and §7 refuses a value that reads a later value
+-- (`let_forward_reference`). Three shapes survive that, and all three are
+-- here because all three are emitted differently:
+--
+--   * a `let` FUNCTION is a hoisted `function` declaration, so `callsLater`
+--     may call `twice` written below it, and `isEven`/`isOdd` may recurse
+--     into each other in any order — that is what §7's promise of mutual
+--     recursion between `let` functions means;
+--   * a value whose right-hand side IS a lambda evaluates nothing when it is
+--     bound, so `deferred` may name `later` below it. Calling it from the
+--     `in` body, after every binding has run, is safe and the rule lets it
+--     through; a lambda passed to a function that calls it immediately is
+--     refused instead, which is the conservative half of the rule;
+--   * a value may name any value written above it.
+--
+-- The `Debug.log` lines are the order claim: `let.callsLater` and
+-- `let.twice` print before `let.later`, so the call really did happen where
+-- the first binding is written and not where `twice` is.
+import Node exposing (Program)
+import String
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+main : Program
+main =
+    let
+        callsLater =
+            twice (n "let.callsLater" 3)
+
+        deferred =
+            \_ -> later + 1
+
+        later =
+            n "let.later" 5
+
+        usesEarlier =
+            later * 10
+
+        twice k =
+            n "let.twice" (k * 2)
+
+        isEven k =
+            if k == 0 then
+                True
+            else
+                isOdd (k - 1)
+
+        isOdd k =
+            if k == 0 then
+                False
+            else
+                isEven (k - 1)
+    in
+    Node.printLines
+        [ String.fromInt callsLater
+        , String.fromInt (deferred ())
+        , String.fromInt usesEarlier
+        , Debug.toString (isEven 4)
+        , Debug.toString (isOdd 4)
+        ]

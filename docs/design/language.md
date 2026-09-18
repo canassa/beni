@@ -647,24 +647,44 @@ observable today; effects will make them observable in what a program *does*.
 | `if` | the condition, then **exactly one** branch |
 | `case` | **the scrutinee exactly once**, then exactly one branch body. A scrutinee that is a tuple literal evaluates each element once, left to right, before any test is made |
 | `e?` | the subject once — `?` is a `case` on it (§6.6) |
-| `let` bindings | **in the order written.** A binding whose right-hand side is a *function* is available throughout the block, so mutual recursion among `let` functions is unrestricted; a binding whose right-hand side is a *value* may only name bindings written before it |
+| `let` bindings | **in the order written.** A binding whose right-hand side is a *function* is available throughout the block, so mutual recursion among `let` functions is unrestricted; a binding whose right-hand side is a *value* may only name bindings written before it — and one that does not is `let_forward_reference` (§7), which is the error that makes "in the order written" a total rule rather than an aspiration |
 | a self tail call | the new arguments in parameter order, all of them evaluated before any parameter is rebound (`backend.md` §8) |
 | top-level constants | each before its own first use, at module load |
 
-**Two rows the emitter does not honour yet, found on 2026-09-18 by writing the fixtures for this
-table.** The document is what is right and the code is the bug, per the two rows themselves:
+**Two rows the emitter did not honour, found on 2026-09-18 by writing the fixtures for this
+table.** The document is what is right and the code is the bug, per the two rows themselves. The
+first is still open; the second landed with queue slice 21:
 
 1. A **record literal** evaluates its fields in *sorted field-name order*, because `Lower.recordNode`
    sorts the fields and then lowers each one, so the key sort drags the initialiser with it:
    `{ zed = p, alpha = q }` emits `{ alpha: q, zed: p }` and runs `q` first. The fix is to evaluate
    in written order into temporaries and sort only the properties. Record *update* is already right,
    because a spread does not move anything.
-2. A **`let` value binding that names a later `let` value binding** is accepted by the checker and
-   emitted as a `const` in written order, so it traps at run time with a JavaScript
-   `ReferenceError`. Written order is the rule; what is missing is the diagnostic that says so,
-   which is `bind_rhs_forward_reference`'s shape (§7) for an ordinary binding. Function bindings are
+2. A **`let` value binding that names a later `let` value binding** was accepted by the checker and
+   emitted as a `const` in written order, so it trapped at run time with a JavaScript
+   `ReferenceError`. **Fixed on 2026-09-18 by refusing the program, not by reordering it**:
+   re-sorting the bindings by their dependencies would make evaluation order depend on which names
+   a right-hand side happens to mention, which is exactly what this table says it does not. The
+   diagnostic is `let_forward_reference` and the rule it enforces is §7's. Function bindings are
    emitted as hoisted `function` declarations and are unaffected, which is what makes the mutual
    recursion §7 promises work.
+
+**A third row the emitter does not honour, found the same way on 2026-09-18 (queue slice 21) and
+not fixed.** The `top-level constants` row promises each constant is initialised before its own
+first use, and `backend.md` §5's `emissionOrder` delivers that by emitting in dependency order —
+but only while the dependencies form a DAG. A **cycle between top-level VALUES** falls back to
+source order and crashes exactly as the `let` case did, with the build exiting 0: `x = y + 1` with
+`y = x` emits `const A$y = A$x;` above `const A$x = Basics$add(A$y, 1);` and throws
+`ReferenceError: Cannot access 'A$x' before initialization`, and so does a cycle that runs through a
+function (`a = f 1`, `f n = n + b`, `b = a` emits `const B$b = B$a;` first and throws the same way).
+Nothing refuses it: there is no cyclic-value code in §10, and `emissionOrder`'s own comment — "a
+cycle, which the checker allows only through functions" — is not true today. The rule wanted is the
+shape of §7's one scope out: a top-level value may not be reachable from itself, following an edge
+into a function's body because naming a function may call it. It is deliberately **not** in slice
+21, because the graph it must walk is not BIR's `refs` alone — a `method_call` adds no `refs` edge
+(`static-dispatch-spike.md` §1.4) and `emissionOrder` already patches that hole from the dispatch
+table — so the check belongs after the checker, where both halves of the graph exist, and wants its
+own slice.
 
 **Tests are not evaluations, and that is what a decision tree trades on.** `backend.md` §7 compiles
 a whole `case` to one tree, which may test the parts of the scrutinee in whatever order it likes,
@@ -713,7 +733,10 @@ applying to it.
 | how it is decided, and by whom | **the rule is type-directed, so it is enforced in two places and they cannot disagree.** A literal, a list and a `::` fail it whatever the types are, so the **parser** refuses those, early and cheaply. A **constructor** is admitted by the parser and settled by the **checker**, which runs the pattern through the same usefulness analysis a `case` gets, as a one-row match (`checker.md` §6.6) — so nesting (`Pair (Box a) b`), a type with no constructors, and an opaque imported type all fall out of one algorithm rather than a second single-constructor test that could drift from the first. |
 | the two codes | `refutable_let_pattern` for a `let` pattern, `refutable_parameter_pattern` for the other four. **A `<-` bound pattern is a parameter**, because §6.7 desugars it into the callback's parameter; naming it that way is what keeps the parser and the checker from labelling one position two ways. Each code has a parse-time and a check-time source (§10); only the check-time one can name the constructors that are missing. The backend may therefore destructure any of these positions with no test (`backend.md` §4). |
 | provenance | Manager decision of 2026-09-18, owner offline; reversible. The alternative considered and rejected was the purely **syntactic** rule — refuse every constructor in these positions, as the parser alone can — which is simpler and needs no checker pass. It was built first and withdrawn: it rejected 40 existing declarations, 27 of them in `core` (`Dict`, `Set`, `Never` unwrapping their one constructor), none of them a real refutability risk, and it left beni with no way to unwrap an opaque newtype except `case`. |
-| what binds, and where | every binding introduces a name into a lexical scope: function parameters, lambda parameters, `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression — mutual recursion is allowed), pattern variables in `case` branches and destructuring. Top-level names are all in scope in every body; order does not matter. |
+| what binds, and where | every binding introduces a name into a lexical scope: function parameters, lambda parameters, `let` bindings (all bindings of a `let` are in scope in all its bodies and its `in` expression — mutual recursion is allowed), pattern variables in `case` branches and destructuring. Top-level names are all in scope in every body; order does not matter. **Being in scope is not being initialised**, which is the next row. |
+| **initialisation**, and what being in scope does not buy | A `let` **value** binding is evaluated where it is written (§6, *Evaluation order*), so its right-hand side may not read a value binding of the same `let` that is written **below** it, nor itself. Nor may it read one **through a `let` function** of that block: naming a function may call it — passing it to `List.map` calls it — so whatever that function's body reads is read here too (`a = f 1` above `f x = x + b` above `b = 2` is the same mistake one hop away, and a function written before `b` but only *called* after it is fine). All three are **`let_forward_reference`**, whose region is the reference that runs too soon and whose message names the binding it reaches and the line it is on. The name still **resolves** — that is what the row above means — so the error is never `unbound_variable`. A `let` **function** is untouched in the other direction: `backend.md` §4 emits it as a hoisted `function` declaration, so naming one above its own line is legal and mutual recursion between `let` functions is unrestricted. Top-level declarations carry no such rule, because the backend emits constants in dependency order rather than in written order — with the gap §6 records above. |
+| how far the analysis reaches, and where it stops | **conservative, and deliberately so.** Mentioning a `let` function counts as calling it, whether or not it is called. A value whose right-hand side **is a lambda** (`g = \_ -> later`, and `g = f a _`, whose placeholder wraps the whole application in one) is the single exception: nothing runs when it is bound, so it may name a later value, and calling it is what reads that value — so mentioning `g` counts as calling `g`, exactly as for a function, and `h = g ()` above `later` is refused. A lambda anywhere else inside a value's right-hand side is **not** deferred, because whatever it was passed to may call it at once (`List.map xs (\_ -> later)` does), and a nested `let` inside a value's right-hand side is not deferred either. Those two refuse programs that would have run; the alternative is a call graph that has to be right about every higher-order function, and a wrong answer there is a `ReferenceError` a user cannot see coming. |
+| provenance of the initialisation rule | Manager decision of 2026-09-18 (queue slice 21), owner offline; reversible. The alternative considered and rejected was to **re-sort** a `let`'s bindings into dependency order, the way the backend already sorts top-level constants. It was rejected because §6's table is normative and says `let` bindings evaluate in written order: sorting would make the order of two `Debug.log`s — and, when effects land, the order of two effects — depend on which names one initialiser happens to mention. `core/Dict.beni`'s `mapTree` already depends on the written order it has. |
 | `shadowing`, `duplicate_pattern_variable` | **shadowing is an error**: a binding may not reuse a name already bound in an enclosing scope, including top-level names of this file and names in `exposing` lists. Two sibling scopes may reuse a name (`\x -> …` twice). A pattern may not bind the same name twice: `duplicate_pattern_variable`. |
 | order | `let` bindings are in scope throughout their `let`, **except that a `<-` splits the block** (§6.7): a name bound at or before a `<-` is in scope in the whole block, the `<-`-bound name itself only in `rest` because the desugaring puts it inside a lambda, and a `<-` right-hand side may not reference a binding that appears after it (`bind_rhs_forward_reference`). Mutual recursion through a `<-` is therefore not available — what the desugaring means, not a restriction on top of it. |
 | type variables | scoped to their annotation; annotations may mention free variables, which are implicitly quantified. A type declaration's parameters must be distinct (`duplicate_type_parameter`); a declared parameter unused in the body is fine; an unbound type variable in a `type` or `type alias` body is `unbound_type_variable`. |
@@ -825,6 +848,7 @@ constrained_constant
 too_many_inferred_constraints
 foreign_arity_mismatch
 pattern_budget_exhausted
+let_forward_reference
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`

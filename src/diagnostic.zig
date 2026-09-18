@@ -197,6 +197,14 @@ pub const Code = enum {
     /// Silence there was the last exit-0 path to a wrong answer, because
     /// `backend.md` §7's decision tree emits no default arm.
     pattern_budget_exhausted,
+    /// `language.md` §7's initialisation rule, appended on 2026-09-18
+    /// (queue slice 21): a `let` VALUE binding whose right-hand side reads
+    /// a value binding of the same `let` written below it — directly, by
+    /// naming itself, or by naming a `let` function that reads one. §6's
+    /// *Evaluation order* makes written order the rule, so the reference
+    /// is a JavaScript temporal dead zone: it was the last exit-0 path
+    /// from a `let` to a `ReferenceError`.
+    let_forward_reference,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -236,6 +244,7 @@ pub fn title(code: Code) []const u8 {
         .bind_rhs_not_application => "BIND WITHOUT A CALL",
         .arrow_in_tuple_element => "ARROW IN A TUPLE ELEMENT",
         .bind_rhs_forward_reference => "BIND USES A LATER BINDING",
+        .let_forward_reference => "LET BINDING USED TOO SOON",
         .nesting_too_deep => "NESTING TOO DEEP",
         .duplicate_exposed_name => "DUPLICATE EXPOSED NAME",
         .duplicate_import => "DUPLICATE IMPORT",

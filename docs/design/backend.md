@@ -159,7 +159,7 @@ mapping.
 | `Int` | a number; `Int32` a number kept in range by its operations (§3.1) |
 | `case` | a decision tree (§7) |
 | `if` | conditional expression when both arms are expressions, else `if`/`else` |
-| `let` | `const` in the enclosing statement list; a `let` whose bindings are mutually recursive becomes function declarations |
+| `let` | a VALUE binding is a `const` in the enclosing statement list, in written order; a binding whose right-hand side is a **function** is a `function` declaration, which JavaScript **hoists** — every one of them, not only the mutually recursive ones. The hoisting is what makes mutual recursion between `let` functions work, and `language.md` §7's initialisation rule is stated in terms of it: a value may not read a `const` below it, and may read a `function` anywhere |
 | string interpolation | template literal |
 | `?` | the `case` it desugars to, over the enclosing function's early return |
 | `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4) |

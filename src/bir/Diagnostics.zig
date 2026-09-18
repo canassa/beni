@@ -25,6 +25,12 @@ pub const Item = struct {
     end: u32,
     other_start: u32 = 0,
     other_end: u32 = 0,
+    /// `let_forward_reference` only: how the reference reaches the binding
+    /// that is not ready. The three readings need three messages, and the
+    /// ranges cannot tell them apart: `direct` names the later binding
+    /// itself, `self` is a value written in terms of itself, and `through`
+    /// names a `let` function of the same block whose body reads it.
+    forward: Forward = .direct,
     /// `where_variable_unbound` only: which of the two triggers of
     /// static-dispatch-spike.md §10.6 fired. False is (a), the constraint's
     /// own variable; true is (b), the closure rule — a variable that occurs
@@ -35,6 +41,8 @@ pub const Item = struct {
     pub fn hasOther(item: Item) bool {
         return item.other_end > item.other_start;
     }
+
+    pub const Forward = enum(u8) { direct, self, through };
 };
 
 /// Write the Elm-style prose for `item`. No trailing newline.
@@ -161,6 +169,29 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\the bindings below the `<-` do not exist yet where the call is made. Move the
             \\binding of `{s}` above the `<-`.
         , .{ text, text }),
+        .let_forward_reference => switch (item.forward) {
+            .direct => try w.print(
+                \\`{s}` is bound further down this `let`, on line {d}.
+                \\
+                \\A `let` evaluates its value bindings in the order they are written, so `{s}` has no
+                \\value yet where it is used here. Move the binding of `{s}` above this one. A `let`
+                \\FUNCTION is different — it is hoisted, so it can be used before it is written.
+            , .{ text, other_line, text, text }),
+            .self => try w.print(
+                \\`{s}` is defined in terms of itself.
+                \\
+                \\A `let` evaluates its value bindings in the order they are written, so `{s}` has no
+                \\value yet inside its own right-hand side. Only a FUNCTION can be recursive: give
+                \\`{s}` a parameter, or compute it from a different binding.
+            , .{ text, text, text }),
+            .through => try w.print(
+                \\Naming `{s}` here reads `{s}`, which is bound further down this `let`, on line {d}.
+                \\
+                \\A `let` evaluates its value bindings in the order they are written, so this binding
+                \\runs before `{s}` has a value — and naming `{s}` may call it, which reads `{s}`.
+                \\Move the binding of `{s}` above this one.
+            , .{ text, other, other_line, other, text, other, other }),
+        },
         .question_in_lambda => try w.writeAll(
             \\This `?` is inside a lambda.
             \\

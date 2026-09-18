@@ -934,6 +934,28 @@ const Module = struct {
         return name;
     }
 
+    /// Turn a local that is in scope into one that may (or may not) be
+    /// written where an `Int` belongs. A `let` block chooses ALL of its
+    /// names before it writes any value — that is what keeps a parameter
+    /// picked inside one binding from colliding with a sibling written
+    /// later — but `language.md` §7 lets a VALUE binding read only the
+    /// bindings written ABOVE it, so a sibling becomes readable exactly
+    /// when its own value has been written and not one line before.
+    /// Generating one that is not is `let_forward_reference`, which is a
+    /// generator bug of the same family as the `redundant_pattern` and the
+    /// `shadowing` ones below (checker.md §9).
+    fn setValue(g: *Module, name: []const u8, is_int: bool) void {
+        var i = g.local_count;
+        while (i > 0) {
+            i -= 1;
+            if (std.mem.eql(u8, g.locals[i], name)) {
+                g.local_is_int[i] = is_int;
+                return;
+            }
+        }
+        unreachable; // only ever called with a name just pushed
+    }
+
     fn inScope(g: *const Module, name: []const u8) bool {
         for (g.locals[0..g.local_count]) |l| if (std.mem.eql(u8, l, name)) return true;
         return false;
@@ -1315,8 +1337,14 @@ const Module = struct {
         // lambda parameter picked inside binding 1 only avoids bindings 0..1
         // and can collide with binding 2, which is a `shadowing` error in
         // the generator's own output (the bug this loop's shape fixes).
+        // …and none of them is READABLE yet: §7 lets a value binding read
+        // only the bindings above it, so each name becomes a value as its
+        // own right-hand side is written, in the loop below.
         var names: [3][]const u8 = undefined;
-        for (names[0..bindings]) |*slot| slot.* = g.bind();
+        for (names[0..bindings]) |*slot| {
+            slot.* = g.bind();
+            g.setValue(slot.*, false);
+        }
         if (with_twice) _ = g.pushFunction("twice");
 
         for (names[0..bindings], 0..) |local, i| {
@@ -1332,6 +1360,8 @@ const Module = struct {
             try g.expr(2);
             try g.w.writeByte('\n');
             g.lines += 1;
+            // Written, so initialised: the bindings below it may read it.
+            g.setValue(local, true);
         }
         if (with_twice) {
             // A let-bound function with its own parameter: fresh against

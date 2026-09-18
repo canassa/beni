@@ -177,6 +177,41 @@ const ScopeEntry = struct {
     token: TokenIndex,
 };
 
+/// One binding of one `let` block, gathered by `lowerBindings` for §7's
+/// initialisation rule and read by `checkLetOrder`. Annotations and `<-`
+/// binds contribute none: an annotation binds nothing, and the block ends
+/// at the first `<-` (§6.7).
+const LetBinding = struct {
+    /// The locals it binds, as declaration-relative indices. A `let_def`
+    /// binds one; a `let_pattern` binds every variable of its pattern, and
+    /// `let _ = e` binds none.
+    local_start: u32,
+    local_end: u32,
+    /// Its right-hand side's instructions, which is where its references
+    /// are. Contiguous, and a nested `let`'s lie inside it.
+    inst_start: u32 = 0,
+    inst_end: u32 = 0,
+    /// A `let` FUNCTION: the backend emits it as a `function` declaration,
+    /// which JavaScript hoists, so naming it above its own line is legal
+    /// and mutual recursion between `let` functions works (§7).
+    hoisted: bool,
+    /// Evaluating its right-hand side runs nothing: a function, or a value
+    /// whose right-hand side is a lambda (`g = \_ -> later`, `g = f a _`).
+    /// Its body runs when something CALLS it instead.
+    defers: bool = false,
+};
+
+/// A reference from one binding of a `let` block to a local that block
+/// binds: `from` and `to` are indices into the block's `LetBinding` list.
+const LetEdge = struct {
+    from: u32,
+    to: u32,
+    /// The local referenced, for the name and line of the binding reported.
+    local: u32,
+    /// The token of the reference itself, which is the region.
+    token: TokenIndex,
+};
+
 const Frame = struct {
     kind: Kind,
     /// The `let_def` instruction, or none for the declaration itself.
@@ -445,6 +480,24 @@ fn reportPair(l: *Lower, code: diagnostic.Code, token: TokenIndex, other: TokenI
         .end = l.tokenEnd(token),
         .other_start = l.starts[other],
         .other_end = l.tokenEnd(other),
+    });
+}
+
+/// Report `let_forward_reference` at `token` — the reference that runs too
+/// soon — naming at `other` the binding of the same `let` it reaches (§7).
+fn reportForward(
+    l: *Lower,
+    token: TokenIndex,
+    other: TokenIndex,
+    forward: Diagnostics.Item.Forward,
+) Allocator.Error!void {
+    try l.diagnostics.append(l.gpa, .{
+        .code = .let_forward_reference,
+        .start = l.starts[token],
+        .end = l.tokenEnd(token),
+        .other_start = l.starts[other],
+        .other_end = l.tokenEnd(other),
+        .forward = forward,
     });
 }
 
@@ -1115,6 +1168,11 @@ fn bindLocal(l: *Lower, symbol: Symbol.Optional, token: TokenIndex, kind: Bir.Lo
     });
     if (symbol.unwrap()) |s| try l.scope.append(l.scratch_allocator, .{ .symbol = s, .local = index, .token = token });
     return index;
+}
+
+/// The index the next local of this declaration will get.
+fn nextLocal(l: *const Lower) u32 {
+    return @intCast(l.locals.items.len - l.cur_locals_start);
 }
 
 /// A compiler-made local for a desugared lambda: no name, no scope entry.
@@ -1855,24 +1913,48 @@ fn lowerBindings(
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
 
+    // §7's initialisation rule wants one row per binding, in written order
+    // and in step with the scratch slots below. `checkLetOrder` reads them
+    // once, after phase 2 has filled in what each right-hand side is.
+    var order: std.ArrayList(LetBinding) = .empty;
+    defer order.deinit(l.scratch_allocator);
+    const first_local = l.nextLocal();
+
     // Phase 1: bind. `let_def` gets its instruction now (its index is the
     // `try` target of its body); a `let_pattern` lowers its pattern now
     // (irrefutable, so it resolves nothing) and its value later.
     for (head) |b| {
+        const local_start = l.nextLocal();
         switch (l.tree.nodeTag(b)) {
             .let_def => {
                 const inst = try l.reserveInst(.let_def);
                 _ = try l.bindVar(l.tree.nodeMainToken(b), l.scope.items.len, .let, inst);
                 try l.pushScratch(inst);
+                try order.append(l.scratch_allocator, .{
+                    .local_start = local_start,
+                    .local_end = l.nextLocal(),
+                    .hoisted = l.tree.fullLetDef(b).params.len != 0,
+                });
             },
             .let_pattern => {
                 const lp = l.tree.fullLetPattern(b);
                 const pat = try l.lowerPattern(lp.pattern, l.scope.items.len, .pattern);
                 try l.pushScratch(pat);
+                try order.append(l.scratch_allocator, .{
+                    .local_start = local_start,
+                    .local_end = l.nextLocal(),
+                    .hoisted = false,
+                });
             },
             else => {}, // annotations are read in phase 2; error bindings are skipped
         }
     }
+    // Every local this block binds, with the token that binds it, so a
+    // report can name the binding and its line. The scope entries phase 1
+    // appended are exactly those locals, in index order.
+    const local_tokens = try l.scratch_allocator.alloc(TokenIndex, l.nextLocal() - first_local);
+    defer l.scratch_allocator.free(local_tokens);
+    for (l.scope.items[scope_mark..]) |entry| local_tokens[entry.local - first_local] = entry.token;
 
     // Phase 2: bodies, in source order, each patched into its binding.
     var pending_annotation: Inst.OptionalIndex = .none;
@@ -1886,6 +1968,8 @@ fn lowerBindings(
             },
             .let_def => {
                 const inst: Index = @enumFromInt(l.list_scratch.items[slot]);
+                const row = &order.items[slot - mark];
+                row.inst_start = @intCast(l.insts.len);
                 const def = l.tree.fullLetDef(b);
                 var annotation: Inst.OptionalIndex = .none;
                 if (pending_annotation_name != null and pending_annotation_name.? == l.tokenSymbol(def.name)) {
@@ -1906,18 +1990,29 @@ fn lowerBindings(
                     .params_end = params.end,
                 });
                 l.setInstData(inst, @intFromEnum(record), body.int());
+                row.inst_end = @intCast(l.insts.len);
+                // A value whose right-hand side IS a lambda evaluates
+                // nothing when it is bound (§6, *Evaluation order*), so
+                // what the lambda's body names is read only when it is
+                // called. `f a _` is one of these: the placeholder's
+                // lambda wraps the whole application (§6.7).
+                row.defers = row.hoisted or l.insts.items(.tag)[body.int()] == .lambda;
                 slot += 1;
             },
             .let_pattern => {
                 const pat: Index = @enumFromInt(l.list_scratch.items[slot]);
+                const row = &order.items[slot - mark];
+                row.inst_start = @intCast(l.insts.len);
                 const lp = l.tree.fullLetPattern(b);
                 const value = try l.lowerExpr(lp.value);
                 l.list_scratch.items[slot] = (try l.addInst(.let_pattern, pat.int(), value.int())).int();
+                row.inst_end = @intCast(l.insts.len);
                 slot += 1;
             },
             else => {},
         }
     }
+    try l.checkLetOrder(order.items, first_local, local_tokens);
     // `let x : T` may only precede a Definition (§6.7), and a bind is not
     // one, so an annotation left pending when the head runs out is
     // unattached exactly as a top-level one would be.
@@ -1940,6 +2035,123 @@ fn lowerBindings(
     if (items.len == 0 and (rest.len != 0 or all_bindings.len == 0)) return body;
     const bindings = try l.addRangeRecord(try l.addRange(items));
     return l.addInst(.let, @intFromEnum(bindings), body.int());
+}
+
+/// §7's initialisation rule, for one `let` block: a VALUE binding is
+/// initialised where it is written (§6, *Evaluation order*), so its
+/// right-hand side may not read a binding of this block that has no value
+/// there — one written below it, or itself. A `let` FUNCTION is emitted as
+/// a hoisted `function` declaration (`backend.md` §4), so naming one early
+/// is legal, and that is what makes §7's promise of mutual recursion
+/// between `let` functions real; but naming one may CALL it — passing it
+/// to `List.map` calls it — so whatever its body reads is read here too.
+/// Without this, `a = later` above `later = 5` type-checks, emits
+/// `const a = later$2;` above `const later$2 = …` and throws a JavaScript
+/// `ReferenceError` at run time.
+///
+/// The references are read back out of the instructions the two phases
+/// just emitted rather than recorded as they were resolved. Every use of a
+/// local is a `local` instruction carrying its own token; each binding's
+/// right-hand side occupies one contiguous instruction range; and a nested
+/// `let`, lambda or `case` lies inside the range of the binding that
+/// contains it, so a reference from one of those to a binding of THIS
+/// block is attributed to the binding it runs inside, for free. Resolution
+/// is hot and pays nothing; this walk is once per `let`.
+fn checkLetOrder(
+    l: *Lower,
+    bindings: []const LetBinding,
+    first_local: u32,
+    local_tokens: []const TokenIndex,
+) Allocator.Error!void {
+    if (local_tokens.len == 0) return;
+    const end_local = first_local + @as(u32, @intCast(local_tokens.len));
+    const tags = l.insts.items(.tag);
+    const data = l.insts.items(.data);
+    const tokens = l.insts.items(.main_token);
+    var edges: std.ArrayList(LetEdge) = .empty;
+    defer edges.deinit(l.scratch_allocator);
+    for (bindings, 0..) |b, from| {
+        var i = b.inst_start;
+        while (i < b.inst_end) : (i += 1) {
+            if (tags[i] != .local) continue;
+            const local = data[i].lhs;
+            if (local < first_local or local >= end_local) continue;
+            try edges.append(l.scratch_allocator, .{
+                .from = @intCast(from),
+                .to = bindingOfLocal(bindings, local),
+                .local = local,
+                .token = tokens[i],
+            });
+        }
+    }
+    if (edges.items.len == 0) return;
+    const seen = try l.scratch_allocator.alloc(bool, bindings.len);
+    defer l.scratch_allocator.free(seen);
+    var work: std.ArrayList(u32) = .empty;
+    defer work.deinit(l.scratch_allocator);
+    for (bindings, 0..) |b, index| {
+        // A binding that defers runs nothing where it is written, so it
+        // cannot read anything too soon. It is what its callers reach
+        // THROUGH, which is the walk below.
+        if (b.defers) continue;
+        const k: u32 = @intCast(index);
+        @memset(seen, false);
+        for (edges.items) |e| {
+            if (e.from != k) continue;
+            if (tooSoon(bindings, e.to, k)) {
+                const forward: Diagnostics.Item.Forward = if (e.to == k) .self else .direct;
+                try l.reportForward(e.token, local_tokens[e.local - first_local], forward);
+                break;
+            }
+            if (!bindings[e.to].defers or seen[e.to]) continue;
+            seen[e.to] = true;
+            if (try l.reachesTooSoon(edges.items, bindings, seen, &work, e.to, k)) |hit| {
+                try l.reportForward(e.token, local_tokens[hit.local - first_local], .through);
+                break;
+            }
+        }
+    }
+}
+
+/// The first binding that `start`'s body reads and `k` cannot have yet, or
+/// null. `seen` carries across the calls made for one `k`, so no binding's
+/// body is walked twice for the same `k`.
+fn reachesTooSoon(
+    l: *Lower,
+    edges: []const LetEdge,
+    bindings: []const LetBinding,
+    seen: []bool,
+    work: *std.ArrayList(u32),
+    start: u32,
+    k: u32,
+) Allocator.Error!?LetEdge {
+    work.clearRetainingCapacity();
+    try work.append(l.scratch_allocator, start);
+    while (work.pop()) |p| {
+        for (edges) |e| {
+            if (e.from != p) continue;
+            if (tooSoon(bindings, e.to, k)) return e;
+            if (bindings[e.to].defers and !seen[e.to]) {
+                seen[e.to] = true;
+                try work.append(l.scratch_allocator, e.to);
+            }
+        }
+    }
+    return null;
+}
+
+/// Whether reading binding `to` while binding `k` is being initialised
+/// reads something that is not there: everything from `k` down is still
+/// uninitialised, itself included, unless it is hoisted.
+fn tooSoon(bindings: []const LetBinding, to: u32, k: u32) bool {
+    return to >= k and !bindings[to].hoisted;
+}
+
+fn bindingOfLocal(bindings: []const LetBinding, local: u32) u32 {
+    for (bindings, 0..) |b, i| {
+        if (local >= b.local_start and local < b.local_end) return @intCast(i);
+    }
+    unreachable; // the caller filtered to the locals this block binds
 }
 
 /// `p <- f a` with `rest` after it: `f a (\p -> rest)` (§6.7). The call is
@@ -3412,7 +3624,7 @@ test "sibling scopes may reuse a name; nested ones may not" {
     });
 }
 
-test "let bindings are in scope in every body; a let name may not reuse a parameter or a sibling" {
+test "let bindings are in scope in every body, but a value that names a later value is reported" {
     try expectErrors(
         \\f x =
         \\    let
@@ -3431,6 +3643,16 @@ test "let bindings are in scope in every body; a let name may not reuse a parame
         \\    a
         \\
     , .{}, &.{
+        // `b` RESOLVES — every binding of a `let` is in scope in every body
+        // (§7), which is why this is not `unbound_variable` — but reading it
+        // where `a` is initialised reads a `const` that has no value yet, so
+        // it is `let_forward_reference`.
+        .{ .code = .let_forward_reference, .line = 4, .col = 13 },
+        // `b = a` reads the SECOND `a`, because the shadowing one is bound
+        // too and is the one in scope, so it is a forward reference as well.
+        // The program is broken twice over; the point here is that neither
+        // report is `unbound_variable`.
+        .{ .code = .let_forward_reference, .line = 7, .col = 13 },
         .{ .code = .shadowing, .line = 9, .col = 9 },
         .{ .code = .shadowing, .line = 12, .col = 9 },
     });

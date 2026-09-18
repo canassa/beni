@@ -1,6 +1,9 @@
 -- BIR: all bindings of a `let` are in scope in every body and in the `in`
 -- expression (§7), so `even` and `odd` resolve to each other as locals
--- regardless of order, and a binding may reference a later constant.
+-- regardless of order, and a FUNCTION's body may reference a later constant:
+-- it is hoisted, and it does not run until `even n` calls it, by which time
+-- `base` is initialised. A VALUE binding that did the same would be
+-- `let_forward_reference` (§7).
 isEven : Int -> Bool
 isEven n =
     let
