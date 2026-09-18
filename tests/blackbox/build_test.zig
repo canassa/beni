@@ -290,12 +290,20 @@ test "a build is byte-identical at every --jobs" {
     // └─────────────────────────────────────────┘
     const one = try w.runWith(&.{ "build", "--platform=node", "--out=one", "--jobs=1", "Main.beni" }, .{ .raw_diagnostics = true });
     const many = try w.runWith(&.{ "build", "--platform=node", "--out=many", "--jobs=8", "Main.beni" }, .{ .raw_diagnostics = true });
+    // The `--release` pair (`backend.md` §9's *Testing*): renaming assigns
+    // from a counter in emission order, so a name that came from completion
+    // order instead would move here and nowhere else.
+    const one_r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=one-rel", "--jobs=1", "Main.beni" }, .{ .raw_diagnostics = true });
+    const many_r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=many-rel", "--jobs=8", "Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(one);
     try expectBuilt(many);
+    try expectBuilt(one_r);
+    try expectBuilt(many_r);
+    try expectSameTree(&w, "one-rel", "many-rel");
     // The WHOLE tree, file for file, rather than a hand-written list of
     // four names. Elimination (`backend.md` §9) decides which modules a
     // build writes at all, so a fixed list either names a file that is no
@@ -308,6 +316,21 @@ test "a build is byte-identical at every --jobs" {
     for (written) |name| {
         const a = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "one/{s}", .{name}));
         const b = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "many/{s}", .{name}));
+        try testing.expectEqualStrings(a, b);
+    }
+}
+
+/// Two output trees must hold the same paths and the same bytes. The WHOLE
+/// tree, not a chosen list: the set of paths is itself part of what must not
+/// move (CLAUDE.md rule 5).
+fn expectSameTree(w: *World, a_dir: []const u8, b_dir: []const u8) !void {
+    const arena = w.arena.allocator();
+    const written = try treeOf(w, a_dir);
+    try testing.expectEqualDeep(written, try treeOf(w, b_dir));
+    try testing.expect(written.len >= 4);
+    for (written) |name| {
+        const a = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ a_dir, name }));
+        const b = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ b_dir, name }));
         try testing.expectEqualStrings(a, b);
     }
 }
@@ -415,12 +438,25 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     // └─────────────────────────────────────────┘
     const one = try w.runWith(&.{ "build", "--platform=node", "--out=one", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
     const many = try w.runWith(&.{ "build", "--platform=node", "--out=many", "--jobs=8", "src" }, .{ .raw_diagnostics = true });
+    // The `--release` pair (`backend.md` §9's *Testing*). This is the
+    // scenario that matters most for renaming: the whole-program namespace
+    // has to give `Boxes$scale` the same short name in the module that
+    // declares it and in the two that import it, whatever order the checker
+    // finished those modules in.
+    const one_r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=one-rel", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    const many_r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=many-rel", "--jobs=8", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(one);
     try expectBuilt(many);
+    try expectBuilt(one_r);
+    try expectBuilt(many_r);
+    try expectSameTree(&w, "one-rel", "many-rel");
+    const release_program = try w.node("one-rel/main.mjs");
+    try testing.expectEqual(@as(u8, 0), release_program.exit_code);
+    try testing.expectEqualStrings("12\n", release_program.stdout);
     // Every file, not a chosen few: the point is that NOTHING moved, and a
     // list of names is a list of the places somebody thought to look.
     const files = try w.listFiles("one");
@@ -1484,10 +1520,13 @@ test "a project that does not check writes nothing" {
     try testing.expectEqualStrings("", r.stdout);
 }
 
-test "--release is refused rather than silently producing development output" {
+test "--release builds and runs, and --release --source-maps still exits 2 on the source-map line" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
+    // `backend.md` §2: the refusal goes with M3c's first slice, and
+    // `--source-maps` keeps its own — in a `--release` build too, so the
+    // pair exits 2 on the source-map line and writes nothing.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -1504,20 +1543,29 @@ test "--release is refused rather than silently producing development output" {
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    const both = try w.runWith(
+        &.{ "build", "--platform=node", "--release", "--source-maps", "--out=maps", "Main.beni" },
+        .{ .raw_diagnostics = true },
+    );
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try expectBuilt(r);
+    const program = try w.node("out/main.mjs");
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("x\n", program.stdout);
+
+    try testing.expectEqual(@as(u8, 2), both.exit_code);
     try testing.expectEqualStrings(
-        "beni: --release is not implemented until M3c; this build would be development output\n",
-        r.stderr,
+        "beni: --source-maps is not implemented until M5; this build would write no .map file\n",
+        both.stderr,
     );
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("out"));
+    try testing.expect(!w.exists("maps"));
 }
 
 test "--source-maps is refused rather than silently writing no .map file" {

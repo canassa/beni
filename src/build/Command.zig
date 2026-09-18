@@ -106,6 +106,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .platform = platform,
         .embedded = embedded,
         .library = build.library,
+        .release = build.release,
     }) catch |err| switch (err) {
         error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
         error.OutputPath => {

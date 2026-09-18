@@ -16,9 +16,15 @@
 //!                                   the `warning`s it is allowed to print
 //!   check/args/X.beni + X.diag      the arity suite (checker.md §8.3)
 //!   run/X.beni        + X.expected  `build --platform=node`, then the emitted
-//!                                   program under Node; its stdout is the golden
+//!                                   program under Node; its stdout is the golden.
+//!                                   Built and run TWICE — once as today and once
+//!                                   with `--release` — against the same golden,
+//!                                   unless X.release-expected exists (backend.md
+//!                                   §9's *Testing*, §12)
 //!   emit/X.beni       + X.js        `build --platform=node`, then the module's
 //!                                   own `.mjs` is the golden (backend.md §12)
+//!   emit/release/X.beni + X.js      the same, with `--release` added: the golden
+//!                                   is a shape claim about the optimiser (§9)
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
 //!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
@@ -202,6 +208,16 @@ fn walk(kind: Kind) !void {
         const start = fixtures.items.len;
         try collect(arena, app_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.app = true;
+
+        // `emit/release/`: the same mechanism a third time (`backend.md`
+        // §9's *Testing*, §12). These keep `--library` and gain
+        // `--release`, so a golden here is a shape claim about names,
+        // whitespace and inlining — the things `run/` cannot observe
+        // because they do not change what a program prints.
+        const release_dir = try std.fs.path.join(arena, &.{ kind.dir(), "release" });
+        const release_start = fixtures.items.len;
+        try collect(arena, release_dir, false, false, &fixtures, true);
+        for (fixtures.items[release_start..]) |*fixture| fixture.release = true;
     }
 
     if (fixtures.items.len == 0) {
@@ -246,6 +262,9 @@ const Fixture = struct {
     /// golden can be a claim about what elimination removes (backend.md
     /// §9). Everything else under `emit/` gets `--library`.
     app: bool = false,
+    /// Under `emit/release/`: `--release` is added to the argv, so the
+    /// golden is a shape claim about §9's release optimiser.
+    release: bool = false,
 };
 
 /// Append the `.beni` files directly under `dir`, sorted by name — plus,
@@ -450,32 +469,62 @@ const Case = struct {
     /// `Tests.Corpus.Run.Arithmetic`, which is not what the fixture writes
     /// `main` in), and a build writes an `out/` directory that has no
     /// business appearing in the repository.
+    /// Both passes. **The whole `run/` corpus is built and run a second
+    /// time under `--release`**, not a marked subset (`backend.md` §9's
+    /// *Testing*, §12): the failure mode of a minifier is a wrong answer in
+    /// a program nobody thought to mark, so the guard has to be the corpus
+    /// and not a guess. Measured cost: about 7 seconds, +11% of
+    /// `zig build test-blackbox`.
+    ///
+    /// The two builds go to different `--out` directories so that neither
+    /// can read the other's `out/`, and the release pass asserts the SAME
+    /// `.expected` — unless the fixture carries a `.release-expected`, which
+    /// exists for the one claim §9 makes that the two outputs legitimately
+    /// differ on: a dead local binding holding a `Debug.log` is dropped in
+    /// release and kept in dev.
     fn runProgram(c: Case) !void {
         const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
         try c.w.write(c.fixture.name, source);
 
-        const built = try c.inProject(&.{ "build", "--platform=node", "--out=out", c.fixture.name });
+        try c.runOnce("out", &.{ "build", "--platform=node", "--out=out", c.fixture.name }, "expected", c.bless);
+        // The release pass never blesses `expected`: it is the DEV pass's
+        // golden and a release build that disagrees with it is the finding
+        // this pass exists to make. A fixture that is allowed to differ says
+        // so by carrying its own `.release-expected`, which does bless.
+        const separate = c.goldenExists("release-expected");
+        try c.runOnce(
+            "release",
+            &.{ "build", "--platform=node", "--release", "--out=release", c.fixture.name },
+            if (separate) "release-expected" else "expected",
+            c.bless and separate,
+        );
+    }
+
+    /// One build-and-run of a `run/` fixture, against `golden`.
+    fn runOnce(c: Case, out_dir: []const u8, args: []const []const u8, golden: []const u8, bless: bool) !void {
+        const built = try c.inProject(args);
         if (built.exit_code != 0) {
-            std.debug.print("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
+            std.debug.print("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
             return error.BuildFailed;
         }
         if (built.stderr.len != 0) {
-            std.debug.print("{s}: a run fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
+            std.debug.print("{s} [{s}]: a run fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
 
-        const program = c.w.node(world.entry_file) catch |err| {
-            std.debug.print("{s}: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, err });
+        const entry = try std.fmt.allocPrint(c.arena, "{s}/main.mjs", .{out_dir});
+        const program = c.w.node(entry) catch |err| {
+            std.debug.print("{s} [{s}]: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
             return err;
         };
         if (program.exit_code != 0) {
             std.debug.print(
-                "{s}: the emitted program exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
-                .{ c.fixture.name, program.exit_code, program.stdout, program.stderr },
+                "{s} [{s}]: the emitted program exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
+                .{ c.fixture.name, out_dir, program.exit_code, program.stdout, program.stderr },
             );
             return error.ProgramFailed;
         }
-        try c.expectGolden("expected", program.stdout);
+        try c.expectGoldenMaybeBless(golden, program.stdout, bless);
     }
 
     /// Compile the fixture for the Node platform and golden the module it
@@ -529,6 +578,7 @@ const Case = struct {
         var args: std.ArrayList([]const u8) = .empty;
         try args.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
         if (!c.fixture.app) try args.append(c.arena, "--library");
+        if (c.fixture.release) try args.append(c.arena, "--release");
         try args.appendSlice(c.arena, sources.items);
 
         const built = try c.inProject(args.items);
@@ -627,8 +677,12 @@ const Case = struct {
     /// Compare `actual` (fully materialised by the caller) with the golden,
     /// or write it when blessing.
     fn expectGolden(c: Case, ext: []const u8, actual: []const u8) !void {
+        return c.expectGoldenMaybeBless(ext, actual, c.bless);
+    }
+
+    fn expectGoldenMaybeBless(c: Case, ext: []const u8, actual: []const u8, bless: bool) !void {
         const golden = try c.goldenPath(ext);
-        if (c.bless) {
+        if (bless) {
             try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = golden, .data = actual });
             std.debug.print("blessed {s}\n", .{golden});
             return;

@@ -108,6 +108,12 @@ pub const Options = struct {
     /// library build emits the same `.mjs` per module as any other — and it
     /// never changes WHETHER elimination runs, only what it starts from.
     library: bool = false,
+    /// `--release` (§2, §9's *The release optimiser*): local dead-binding
+    /// elimination, short names, compact printing and joined `const` runs,
+    /// all four between `Lower.lower` and `Print.print`. **Development
+    /// output does not move by one byte**, which is what makes "a golden
+    /// moved" a finding rather than a blessing for the whole slice.
+    release: bool = false,
     // No `source_maps`: the VLQ encoder is M5 (§11), so `--source-maps` is
     // refused in `Cli.parseBuild` and never reaches here. Positions ride in
     // the IR from M3a either way (§9.6).

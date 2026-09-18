@@ -43,7 +43,7 @@ pub const usage =
     \\  --out=<dir>               output directory (default: out)
     \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
     \\  --source-maps             emit .map files (not implemented until M5)
-    \\  --release                 chunks, renaming, integer tags (not implemented until M3c)
+    \\  --release                 dead bindings out, short names, compact printing, joined consts
     \\
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
@@ -113,13 +113,19 @@ pub const Build = struct {
     /// written, and §9's reachability roots are every name the root
     /// package's modules export.
     ///
-    /// **It is not in `--release`'s and `--source-maps`' company**: those
-    /// two are refused because they are not implemented, and this one lands
-    /// with §9 and does something the day it lands.
+    /// **It is not in `--source-maps`' company**: that one is refused
+    /// because it is not implemented, and this one lands with §9 and does
+    /// something the day it lands.
     library: bool = false,
-    /// No `source_maps` field, for the same reason there is no `release`
-    /// one: `parseBuild` refuses both flags outright, so nothing downstream
-    /// can be handed a setting the backend does not honour.
+    /// `--release` (backend.md §2, §9): local dead bindings out, short
+    /// names, compact printing and joined `const` runs. It takes no value,
+    /// composes with `--library`, `--out` and `--jobs`, and **implies
+    /// nothing** — elimination is always on and there are no source maps to
+    /// switch off.
+    release: bool = false,
+    /// No `source_maps` field: `parseBuild` refuses that flag outright, so
+    /// nothing downstream can be handed a setting the backend does not
+    /// honour.
     paths: []const []const u8,
 };
 
@@ -356,12 +362,10 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         return .{ .usage = u };
     }
     defer s.positionals.deinit(gpa);
-    // Rejected, not ignored: silently producing development output for a
-    // `--release` build is how a slow, unminified bundle reaches production
-    // without anyone noticing (backend.md §1 puts the optimiser in M3c).
-    if (s.specific.release) {
-        return .{ .usage = .init("beni: --release is not implemented until M3c; this build would be development output", .{}) };
-    }
+    // `--release` is no longer refused: M3c's first slice implements it
+    // (backend.md §2, §9). `--source-maps` keeps its own refusal, and keeps
+    // it in a `--release` build too, so the pair exits 2 on this line.
+    //
     // Same rule, same milestone argument: source maps are M5 (backend.md
     // §11). A flag that is accepted and does nothing makes a user believe
     // they asked for something — they would go looking for a `.map` that a
@@ -380,6 +384,7 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         .platform = platform,
         .out = s.specific.out orelse default_out,
         .library = s.specific.library,
+        .release = s.specific.release,
         .paths = paths,
     } } };
 }
@@ -580,7 +585,7 @@ test "dump: stage, positions, exactly one file" {
     try expectUsage("beni: option '--positions' does not take a value", &.{ "dump", "--stage=ast", "--positions=1", "A.beni" });
 }
 
-test "build: the platform is required and --release and --source-maps are refused" {
+test "build: the platform is required, --release is accepted and --source-maps is refused" {
     try expectCommand(.{ .build = .{ .platform = "node", .paths = &.{"src"} } }, &.{ "build", "--platform=node", "src" });
     try expectCommand(.{ .build = .{
         .common = .{ .root = "src", .jobs = 2 },
@@ -592,20 +597,31 @@ test "build: the platform is required and --release and --source-maps are refuse
     try expectUsage("beni: build needs at least one path", &.{ "build", "--platform=node" });
     try expectUsage("beni: option '--platform' needs a value: --platform=<name>", &.{ "build", "--platform", "src" });
     try expectUsage("beni: option '--out' needs a value: --out=<dir>", &.{ "build", "--platform=node", "--out=", "src" });
-    try expectUsage(
-        "beni: --release is not implemented until M3c; this build would be development output",
+    // `--release` is accepted and reaches the command, and it takes no
+    // value (backend.md §2).
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .paths = &.{"src"} } },
         &.{ "build", "--platform=node", "--release", "src" },
     );
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .library = true, .out = "dist", .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--release", "--library", "--out=dist", "src" },
+    );
+    try expectUsage("beni: option '--release' does not take a value", &.{ "build", "--platform=node", "--release=yes", "src" });
     try expectUsage(
         "beni: --source-maps is not implemented until M5; this build would write no .map file",
         &.{ "build", "--platform=node", "--source-maps", "src" },
     );
     // Refused before the platform is missed: the flag is wrong whatever
-    // else the line says, and `--release` is refused first for the same
-    // reason.
+    // else the line says. `--release --source-maps` exits 2 on the
+    // source-map line, because that half is still unimplemented (§2).
     try expectUsage(
         "beni: --source-maps is not implemented until M5; this build would write no .map file",
         &.{ "build", "--source-maps", "src" },
+    );
+    try expectUsage(
+        "beni: --source-maps is not implemented until M5; this build would write no .map file",
+        &.{ "build", "--platform=node", "--release", "--source-maps", "src" },
     );
     try expectUsage("beni: option '--source-maps' does not take a value", &.{ "build", "--platform=node", "--source-maps=yes", "src" });
     // `--platform` belongs to build only.
