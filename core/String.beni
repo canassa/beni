@@ -120,7 +120,12 @@ pub foreign lines : String -> List String
 --|     split "abc" "" == [ "a", "b", "c" ]
 --|
 --| An empty separator splits into characters, which are code points: an
---| astral character comes back whole and never as two halves.
+--| astral character comes back whole and never as two halves. An empty
+--| string has no characters, so it splits into nothing at all — but split on
+--| a separator it does not contain it is still one chunk, itself.
+--|
+--|     split "" "" == []
+--|     split "" "," == [ "" ]
 pub foreign split : String, String -> List String
 
 
@@ -135,10 +140,13 @@ pub foreign split : String, String -> List String
 --| mark is a character of its own.
 --|
 --| Matches do not overlap — the search resumes after the one it found —
---| and an empty needle matches nothing.
+--| and an empty needle matches nothing. That last rule is Elm's, and it is
+--| about POSITIONS only: `contains str ""` is still `True`, because the
+--| empty string is a substring of every string.
 --|
 --|     indexes "aaaa" "aa" == [ 0, 2 ]
 --|     indexes "abc" "" == []
+--|     indexes "" "" == []
 pub foreign indexes : String, String -> List Int
 
 
@@ -218,6 +226,16 @@ repeat chunk n =
 --| place, so `path |> replace "/" "."` reads in the order you say it.
 --|
 --|     replace "a,b,c" "," "/" == "a/b/c"
+--|
+--| This is `join (split str before) after`, so it inherits `split`'s
+--| empty-separator rule: an empty `before` separates every CHARACTER, and a
+--| character is a code point, so an astral character comes back whole rather
+--| than as two surrogate halves (which is what Elm's `replace` would give,
+--| since its `split` is JavaScript's). An empty string has nothing to
+--| separate, so it stays empty.
+--|
+--|     replace "abc" "" "-" == "a-b-c"
+--|     replace "" "" "-" == ""
 pub replace : String, String, String -> String
 replace str before after =
     join (split str before) after
@@ -294,27 +312,47 @@ dropRight str n =
 --|
 --|     contains "theory" "the" == True
 --|     contains "theory" "hat" == False
+--|
+--| The empty string is a substring of every string, at position 0, so an
+--| empty needle is always found — this is Elm's answer too, since
+--| `_String_contains` is `str.indexOf(sub) > -1`. Note that this does NOT
+--| follow from `indexes`, which answers "at which positions" and says
+--| nowhere for an empty needle; `contains` answers "is it in there".
+--|
+--|     contains "abc" "" == True
+--|     contains "" "" == True
 pub contains : String, String -> Bool
 contains str sub =
-    case indexes str sub of
-        [] ->
-            False
+    if isEmpty sub then
+        True
+    else
+        case indexes str sub of
+            [] ->
+                False
 
-        _ ->
-            True
+            _ ->
+                True
 
 
---| See if a string starts with a given prefix.
+--| See if a string starts with a given prefix. Every string starts with the
+--| empty one, which is what Elm's kernel says as well.
 --|
 --|     startsWith "theory" "the" == True
+--|     startsWith "theory" "ory" == False
+--|     startsWith "abc" "" == True
+--|     startsWith "" "" == True
 pub startsWith : String, String -> Bool
 startsWith str prefix =
     left str (length prefix) == prefix
 
 
---| See if a string ends with a given suffix.
+--| See if a string ends with a given suffix. Every string ends with the
+--| empty one, the mirror of `startsWith`.
 --|
 --|     endsWith "theory" "ory" == True
+--|     endsWith "theory" "the" == False
+--|     endsWith "abc" "" == True
+--|     endsWith "" "" == True
 pub endsWith : String, String -> Bool
 endsWith str suffix =
     right str (length suffix) == suffix
