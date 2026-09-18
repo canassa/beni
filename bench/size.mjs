@@ -90,10 +90,19 @@ const usage = `usage: node bench/size.mjs [options]
   --beni=<path>       compiler to run (default ./zig-out/bin/beni)
   --corpus=<path>     a corpus root; repeatable
                       (default: tests/corpus/run and bench/corpus)
+  --dev-only          skip the --release column (halves the run)
   --keep              leave the temporary build trees on disk
   --help              print this
 
-Prints one JSON line per program and one {"total":…} line, in sorted order.`;
+Prints one JSON line per program and one {"total":…} line, in sorted order.
+
+Every tree is built TWICE by default, once as a development build and once
+with \`--release\`, and both are measured in the same run — \`backend.md\` §9's
+acceptance asks for that, so that a size claim is never a comparison against a
+remembered number from a different binary. The release figures ride on the
+same line under \`release_raw_bytes\`, \`release_gzip_bytes\` and
+\`release_brotli_bytes\`; the derived-code split is a dev-only figure, because
+it reads declarations by NAME and §9 item 2 has taken the names away.`;
 
 function fail(message) {
   process.stderr.write(`bench/size.mjs: ${message}\n`);
@@ -101,7 +110,7 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const options = { beni: "./zig-out/bin/beni", corpora: [], keep: false };
+  const options = { beni: "./zig-out/bin/beni", corpora: [], keep: false, release: true };
   for (const arg of argv) {
     const eq = arg.indexOf("=");
     const name = eq === -1 ? arg : arg.slice(0, eq);
@@ -117,6 +126,9 @@ function parseArgs(argv) {
         break;
       case "--corpus":
         options.corpora.push(value);
+        break;
+      case "--dev-only":
+        options.release = false;
         break;
       case "--keep":
         options.keep = true;
@@ -296,28 +308,54 @@ function measureTree(outDir) {
 /// §9). A corpus root that declares no `main` IS a library, and under
 /// `main`-only roots elimination would keep 1 declaration of 336 and the
 /// line would stop measuring anything.
-function buildProject(beni, work, projectDir, sources, library = false) {
+/// `release` passes `--release` and writes to `out-release/`, so the two
+/// builds of one project cannot read each other's output.
+function buildProject(beni, work, projectDir, sources, library = false, release = false) {
   const projectRel = relative(work, projectDir).split(sep).join("/");
-  rmSync(join(projectDir, "out"), { recursive: true, force: true });
+  const out = release ? "out-release" : "out";
+  rmSync(join(projectDir, out), { recursive: true, force: true });
   return runBeni(
     beni,
     [
       "build",
       "--platform=node",
       "--diagnostics=json",
-      `--out=${projectRel}/out`,
+      `--out=${projectRel}/${out}`,
       `--root=${projectRel}`,
       ...(library ? ["--library"] : []),
+      ...(release ? ["--release"] : []),
       ...sources.map((s) => `${projectRel}/${s}`),
     ],
     work,
   );
 }
 
+/// The release half of one already-built project: the same sources with
+/// `--release`, or null when the column is off. A failure here is loud — a
+/// tree that builds in dev and not in release is the finding, not a hole in
+/// the table.
+function measureRelease(options, beni, work, projectDir, sources, library) {
+  if (!options.release) return null;
+  const run = buildProject(beni, work, projectDir, sources, library, true);
+  if (run.status !== 0) {
+    process.stderr.write(
+      `bench/size.mjs: --release build of ${projectDir} failed\n${run.stdout ?? ""}${run.stderr ?? ""}\n`,
+    );
+    return null;
+  }
+  const measured = measureTree(join(projectDir, "out-release"));
+  return {
+    release_files: measured.files,
+    release_raw_bytes: measured.raw_bytes,
+    release_gzip_bytes: measured.gzip_bytes,
+    release_brotli_bytes: measured.brotli_bytes,
+  };
+}
+
 /// The shared tree every program carries: core and the platform, reached by a
 /// `main` that does nothing. Built by the same compiler, in the same run, so
 /// the subtraction is against this binary's core and not a remembered number.
-function measureFloor(beni, work) {
+function measureFloor(options, beni, work) {
   const projectDir = join(work, "__floor");
   mkdirSync(projectDir, { recursive: true });
   writeFileSync(
@@ -329,7 +367,10 @@ function measureFloor(beni, work) {
     process.stderr.write(`bench/size.mjs: the empty program did not build\n${run.stdout ?? ""}${run.stderr ?? ""}\n`);
     return null;
   }
-  return measureTree(join(projectDir, "out"));
+  return {
+    ...measureTree(join(projectDir, "out")),
+    ...(measureRelease(options, beni, work, projectDir, ["Empty.beni"], false) ?? {}),
+  };
 }
 
 function main() {
@@ -339,7 +380,7 @@ function main() {
   const lines = [];
   let failed = false;
 
-  const floor = measureFloor(beni, work);
+  const floor = measureFloor(options, beni, work);
   if (floor === null) {
     rmSync(work, { recursive: true, force: true });
     process.exit(1);
@@ -352,6 +393,12 @@ function main() {
       raw_bytes: floor.raw_bytes,
       gzip_bytes: floor.gzip_bytes,
       brotli_bytes: floor.brotli_bytes,
+      ...(floor.release_raw_bytes === undefined ? {} : {
+        release_files: floor.release_files,
+        release_raw_bytes: floor.release_raw_bytes,
+        release_gzip_bytes: floor.release_gzip_bytes,
+        release_brotli_bytes: floor.release_brotli_bytes,
+      }),
       derived_bytes: floor.derived_bytes,
       derived_functions: floor.derived_functions,
       eq_functions: floor.eq_functions,
@@ -372,6 +419,9 @@ function main() {
     gross_raw_bytes: 0,
     gross_gzip_bytes: 0,
     gross_brotli_bytes: 0,
+    release_raw_bytes: 0,
+    release_gzip_bytes: 0,
+    release_brotli_bytes: 0,
     derived_bytes: 0,
     derived_functions: 0,
     eq_functions: 0,
@@ -392,6 +442,9 @@ function main() {
     lines.push(JSON.stringify({ ...fields, ...measured, ...net }));
     total.programs += 1;
     total.files += measured.files;
+    total.release_raw_bytes += measured.release_raw_bytes ?? 0;
+    total.release_gzip_bytes += measured.release_gzip_bytes ?? 0;
+    total.release_brotli_bytes += measured.release_brotli_bytes ?? 0;
     total.gross_raw_bytes += measured.raw_bytes;
     total.gross_gzip_bytes += measured.gzip_bytes;
     total.gross_brotli_bytes += measured.brotli_bytes;
@@ -444,7 +497,10 @@ function main() {
         }
         record(
           { program: `${corpus}/${program}`, entry: moduleNameOf(program), roots: "main" },
-          measureTree(join(projectDir, "out")),
+          {
+            ...measureTree(join(projectDir, "out")),
+            ...(measureRelease(options, beni, work, projectDir, [program], false) ?? {}),
+          },
         );
       }
       continue;
@@ -512,7 +568,10 @@ function main() {
         modules_measured: kept.length,
         modules_excluded: dropped,
       },
-      measureTree(join(projectDir, "out")),
+      {
+        ...measureTree(join(projectDir, "out")),
+        ...(measureRelease(options, beni, work, projectDir, [entry, ...kept], true) ?? {}),
+      },
     );
   }
 
@@ -536,6 +595,13 @@ function main() {
       gross_raw_bytes: total.gross_raw_bytes,
       gross_gzip_bytes: total.gross_gzip_bytes,
       gross_brotli_bytes: total.gross_brotli_bytes,
+      // The release column, summed the same way `gross_*` is: every
+      // program's whole tree, so the two are comparable line for line.
+      ...(options.release ? {
+        release_raw_bytes: total.release_raw_bytes,
+        release_gzip_bytes: total.release_gzip_bytes,
+        release_brotli_bytes: total.release_brotli_bytes,
+      } : {}),
       derived_bytes: total.derived_bytes,
       derived_functions: total.derived_functions,
       eq_functions: total.eq_functions,

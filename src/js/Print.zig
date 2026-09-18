@@ -100,10 +100,16 @@ pub fn print(gpa: Allocator, ir: *const JsIr, names: Names, options: Options) Al
     // The module body is walked here rather than through `statements`,
     // because §9 item 2's local alphabet RESTARTS at every top-level
     // declaration and this is the only place that boundary is visible.
-    for (ir.extraSlice(ir.body, Index)) |node| {
-        if (p.plan.isDropped(node)) continue;
-        if (p.rename) |m| try m.enter(node);
-        try p.statement(node, 0);
+    const body = ir.extraSlice(ir.body, Index);
+    var i: usize = 0;
+    while (i < body.len) : (i += 1) {
+        if (p.plan.isDropped(body[i])) continue;
+        if (p.compact and p.ir.tag(body[i]) == .const_decl) {
+            i = try p.topConstRun(body, i);
+            continue;
+        }
+        if (p.rename) |m| try m.enter(body[i]);
+        try p.statement(body[i], 0);
     }
     return p.joiner.blit();
 }
@@ -370,6 +376,42 @@ const Printer = struct {
             }
             try p.statement(list[i], level);
         }
+    }
+
+    /// §9 items 3 and 5 together, at the module level: a run of top-level
+    /// `const`s joins into one declaration AND keeps its newline after every
+    /// member, `const a=1,\nb=2;`. Both rules are the spec's, and they do not
+    /// conflict — joining saves the `const ` and the `;` while the newline
+    /// still lands after each declaration, so a stack trace still names one by
+    /// line. Worth 23 brotli bytes on `bench/corpus`, which is the whole of
+    /// the gap between this implementation and §9's hand-applied prediction.
+    ///
+    /// Each member is its own declaration for §9 item 2, so `enter` restarts
+    /// the local alphabet per member exactly as it would if they were still
+    /// separate statements.
+    fn topConstRun(p: *Printer, list: []const Index, from: usize) Allocator.Error!usize {
+        try p.push("const");
+        var last = from;
+        var i = from;
+        var written: usize = 0;
+        while (i < list.len) : (i += 1) {
+            if (p.plan.isDropped(list[i])) continue;
+            if (p.ir.tag(list[i]) != .const_decl) break;
+            if (written != 0) {
+                try p.push(",");
+                try p.push("\n");
+            }
+            if (p.rename) |m| try m.enter(list[i]);
+            const d = p.ir.data(list[i]);
+            try p.name(@enumFromInt(d.lhs), .binding);
+            try p.push("=");
+            try p.expression(@enumFromInt(d.rhs), 0, 1);
+            written += 1;
+            last = i;
+        }
+        try p.push(";");
+        try p.push("\n");
+        return last;
     }
 
     /// Print the run of `const_decl`s starting at `from` as one declaration,
@@ -1319,10 +1361,10 @@ test "compact: a binary minus before a negation keeps one space and nothing else
     // adjacency §9 names beside identifier-identifier. `a + -b` is safe, and
     // so is every other pair `BinaryOp.text` and `UnaryOp.text` can make.
     try expectCompact(
-        \\const a=x- -y;
-        \\const b=x+-y;
-        \\const c=x-y;
-        \\const d=-x-y;
+        \\const a=x- -y,
+        \\b=x+-y,
+        \\c=x-y,
+        \\d=-x-y;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -1346,8 +1388,8 @@ test "compact: every keyword keeps exactly the space that separates it from what
     // `continue L` — all of them identifier-character adjacencies, all of
     // them handled by one guard rather than by seven call sites.
     try expectCompact(
-        \\const f=(a)=>{switch(a){case 1:{throw a;}default:{break L;}}};
-        \\const g=(a)=>typeof a;
+        \\const f=(a)=>{switch(a){case 1:{throw a;}default:{break L;}}},
+        \\g=(a)=>typeof a;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -1377,7 +1419,7 @@ test "compact: a string literal is one token however many pieces it takes to wri
     // space inside the string. `run/StringOps` printed `one| two` until the
     // guard learnt about `openToken`.
     try expectCompact(
-        "const s=\"one\\ntwo\";\nconst t=`a${b}c`;\n",
+        "const s=\"one\\ntwo\",\nt=`a${b}c`;\n",
         struct {
             fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
                 try f.constDecl(out, "s", try f.string("one\ntwo"));
@@ -1392,14 +1434,17 @@ test "compact: a string literal is one token however many pieces it takes to wri
     );
 }
 
-test "compact: a run of consts joins, and a newline lands only after a top-level statement" {
-    // §9 item 5, and §9 item 3's one surviving newline. Every newline the
-    // release printer emits comes immediately after a `;` or a `}`, so ASI is
-    // never in a position to stand in for a semicolon — which is why every
-    // semicolon stays.
+test "compact: a run of consts joins, and a newline lands after every top-level declaration" {
+    // §9 item 5 and §9 item 3's one surviving newline, and they are the same
+    // test because they meet: the module body joins into ONE `const` whose
+    // members are still one to a line, so the bytes of `const ` are saved and
+    // a stack trace still names a declaration. Inside a body there is no
+    // newline at all. Every newline the release printer emits comes
+    // immediately after a `;` or a `,`, so ASI is never in a position to stand
+    // in for a semicolon — which is why every semicolon stays.
     try expectCompact(
-        \\const f=(a)=>{const b=1,c=2;return b;};
-        \\const g=2;
+        \\const f=(a)=>{const b=1,c=2;return b;},
+        \\g=2;
         \\
     , struct {
         fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
@@ -1440,8 +1485,8 @@ test "compact: a labelled loop, an if/else chain and an assignment" {
 test "compact: an import keeps its `as`, and an object and a call lose every space" {
     try expectCompact(
         \\import{add as Basics$add,Other$f}from"./M.mjs";
-        \\const o={a:1,...rest};
-        \\const c=f(1,2);
+        \\const o={a:1,...rest},
+        \\c=f(1,2);
         \\export{o,c};
         \\
     , struct {

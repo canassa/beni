@@ -4,7 +4,12 @@
 --
 --   * **one line per top-level declaration and no other newline**, which
 --     costs 21 brotli bytes on `bench/corpus` and keeps a stack trace naming
---     a declaration by line (§9's measurement J);
+--     a declaration by line (§9's measurement J). Note where that newline
+--     lands: the whole module body is ONE joined `const`, and the line break
+--     comes after each member's comma. §9 asks for both rules and they do not
+--     conflict — joining saves the `const ` and the `;`, the newline still
+--     falls after every declaration, and the pair is worth 23 brotli bytes on
+--     `bench/corpus` over joining inside bodies alone;
 --   * **no indentation at all**, and no space that the syntax does not need —
 --     `const a=1`, `f(x,y)`, `{a:1}`, `(a,b)=>`, `a?b:c`, `if(c){…}else{…}`,
 --     `case 1:`, `while(true)`;
