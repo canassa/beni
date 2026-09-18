@@ -1015,9 +1015,19 @@ change at all. These are already beni self tail calls and simply stop overflowin
 (`:252`, and `all` and `member` through it), `takeHelp` (`:566`), `drop` (`:582`),
 `splitHalfHelp` (`:472`), `mergeWithHelp` (`:496`), `Dict.getHelp` (`:92`), `Dict.getMin` (`:314`),
 `Dict.sizeHelp` (`:128`, its outer call only). These stay real frames because their self-calls are
-not in tail position: `List.map2`–`map5`, `List.sortWith`, `Dict.insertHelp`, `removeHelp`,
-`removeMin`, `mapTree`, `foldlTree`, `foldrTree`. And `Basics.and`/`or` are `foreign` for
-short-circuiting (§4), `String`'s twenty-two for the native representation, not for this.
+not in tail position: `List.sortWith`, `Dict.insertHelp`, `removeHelp`, `removeMin`, `mapTree`,
+`foldlTree`, `foldrTree`. And `Basics.and`/`or` are `foreign` for short-circuiting (§4), `String`'s
+twenty-two for the native representation, not for this.
+
+*Amended 2026-09-19.* `List.map2`–`map5` were on that second list and are no longer. The others on
+it recurse to the depth of a balanced red-black tree or of a merge-sort split, both O(log n), and
+measurement found none of them overflowing at 4 000 000 elements; `map2`–`map5` recursed to the
+depth of the LIST and overflowed at about 5 700, 4 900, 4 200 and 3 700 elements respectively,
+taking `indexedMap` (which is a `map2`) with them. They are now the accumulator loop `map` itself
+became — a tail-recursive `mapNHelp` consing onto an accumulator, then one `reverse` — which keeps
+the callback order Appendix B of [`checker.md`](checker.md) states, keeps the walk stopping at the
+shortest list without calling the callback for the unmatched tail, and adds no traversal `map` does
+not already pay. `tests/corpus/run/ListMapNDeep.beni` is the fixture, at a million elements each.
 
 ### Fixtures
 

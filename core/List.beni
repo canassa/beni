@@ -382,36 +382,65 @@ intersperse xs sep =
 --| longer, the extra elements are dropped.
 --|
 --|     map2 [ 1, 2, 3 ] [ 10, 20 ] (+) == [ 11, 22 ]
+--|
+--| `func` is called on the first elements first, and not at all for the tail
+--| the shorter list does not reach. Like `map`, this is an accumulator loop
+--| and then a `reverse` rather than `func x y :: map2 …`: the short spelling
+--| is not a tail call, so its stack depth was the LENGTH OF THE LIST and it
+--| died at about 5 700 elements. `map3`–`map5` are the same shape, one
+--| argument wider each, and they died proportionally sooner.
 pub map2 : List a, List b, (a, b -> result) -> List result
 map2 xs ys func =
+    reverse (map2Help xs ys func [])
+
+
+map2Help : List a, List b, (a, b -> result), List result -> List result
+map2Help xs ys func acc =
     case ( xs, ys ) of
         ( x :: xrest, y :: yrest ) ->
-            func x y :: map2 xrest yrest func
+            map2Help xrest yrest func (func x y :: acc)
 
         _ ->
-            []
+            acc
 
 
 --| Combine three lists, combining them with the given function.
 pub map3 : List a, List b, List c, (a, b, c -> result) -> List result
 map3 xs ys zs func =
+    reverse (map3Help xs ys zs func [])
+
+
+map3Help : List a, List b, List c, (a, b, c -> result), List result -> List result
+map3Help xs ys zs func acc =
     case ( xs, ys, zs ) of
         ( x :: xrest, y :: yrest, z :: zrest ) ->
-            func x y z :: map3 xrest yrest zrest func
+            map3Help xrest yrest zrest func (func x y z :: acc)
 
         _ ->
-            []
+            acc
 
 
 --| Combine four lists, combining them with the given function.
 pub map4 : List a, List b, List c, List d, (a, b, c, d -> result) -> List result
 map4 xs ys zs ws func =
+    reverse (map4Help xs ys zs ws func [])
+
+
+map4Help :
+    List a
+    , List b
+    , List c
+    , List d
+    , (a, b, c, d -> result)
+    , List result
+    -> List result
+map4Help xs ys zs ws func acc =
     case ( xs, ys, zs, ws ) of
         ( x :: xrest, y :: yrest, z :: zrest, w :: wrest ) ->
-            func x y z w :: map4 xrest yrest zrest wrest func
+            map4Help xrest yrest zrest wrest func (func x y z w :: acc)
 
         _ ->
-            []
+            acc
 
 
 --| Combine five lists, combining them with the given function.
@@ -424,12 +453,25 @@ pub map5 :
     , (a, b, c, d, e -> result)
     -> List result
 map5 xs ys zs ws vs func =
+    reverse (map5Help xs ys zs ws vs func [])
+
+
+map5Help :
+    List a
+    , List b
+    , List c
+    , List d
+    , List e
+    , (a, b, c, d, e -> result)
+    , List result
+    -> List result
+map5Help xs ys zs ws vs func acc =
     case ( xs, ys, zs, ws, vs ) of
         ( x :: xrest, y :: yrest, z :: zrest, w :: wrest, v :: vrest ) ->
-            func x y z w v :: map5 xrest yrest zrest wrest vrest func
+            map5Help xrest yrest zrest wrest vrest func (func x y z w v :: acc)
 
         _ ->
-            []
+            acc
 
 
 --| Sort a list from lowest to highest, by the element type's own `compare`.

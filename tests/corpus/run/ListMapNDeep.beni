@@ -1,0 +1,119 @@
+-- run: `List.map2`–`map5` recurse to the depth of the LIST, so they were the
+-- only functions in `core/` whose stack depth was linear in their input:
+-- `map2` threw `RangeError: Maximum call stack size exceeded` at about
+-- 5 700 elements, `map3` at 4 900, `map4` at 4 200 and `map5` at 3 700, and
+-- `indexedMap` is `map2` so it fell over with them. `backend.md` §8 listed
+-- them as staying real frames "because their self-calls are not in tail
+-- position", which was true and is no longer: `map` itself became `foldl`
+-- plus `reverse` (51ab217), and these are the same rewrite.
+--
+-- Everything the rewrite had to keep is pinned below, because an accumulator
+-- loop is exactly the shape that gets each of them wrong:
+--
+--   * the callback is called in LIST order, first element first
+--     (`checker.md` Appendix B) — a loop that forgot the final `reverse`
+--     would still produce a list, backwards;
+--   * the walk stops at the SHORTEST list and the callback is NOT called for
+--     the unmatched tail, whichever argument is the short one;
+--   * the results are element-for-element what they were.
+--
+-- `Debug.log` is the only instrument that can see a call that should not have
+-- happened, which is why the short-list cases are logged rather than only
+-- checked.
+import List
+import Node exposing (Program)
+import String
+
+
+note : String, Int -> Int
+note tag n =
+    Debug.log n tag
+
+
+-- One list, handed to every argument of every map: five separate million-cell
+-- lists would measure the allocator rather than the stack.
+big : List Int
+big =
+    List.range 1 1000000
+
+
+main : Program
+main =
+    let
+        -- Order, on lists of equal length.
+        three =
+            List.map3 [ 1, 2, 3 ]
+                [ 10, 20, 30 ]
+                [ 100, 200, 300 ]
+                (\x y z -> note "map3" x + y + z)
+
+        four =
+            List.map4 [ 1, 2, 3 ]
+                [ 10, 20, 30 ]
+                [ 100, 200, 300 ]
+                [ 1000, 2000, 3000 ]
+                (\x y z w -> note "map4" x + y + z + w)
+
+        five =
+            List.map5 [ 1, 2, 3 ]
+                [ 10, 20, 30 ]
+                [ 100, 200, 300 ]
+                [ 1000, 2000, 3000 ]
+                [ 10000, 20000, 30000 ]
+                (\x y z w v -> note "map5" x + y + z + w + v)
+
+        -- Stopping at the shortest, with the short list in a different
+        -- position each time: one log line per PAIR that exists, and none
+        -- for the elements left over.
+        shortSecond =
+            List.map2 [ 1, 2, 3 ] [ 10 ] (\x y -> note "map2short" x + y)
+
+        shortFirst =
+            List.map3 [ 1, 2 ]
+                [ 10, 20, 30 ]
+                [ 100, 200, 300 ]
+                (\x y z -> note "map3short" x + y + z)
+
+        shortLast =
+            List.map4 [ 1, 2, 3 ]
+                [ 10, 20, 30 ]
+                [ 100, 200, 300 ]
+                [ 1000 ]
+                (\x y z w -> note "map4short" x + y + z + w)
+
+        shortMiddle =
+            List.map5 [ 1, 2, 3 ]
+                [ 10, 20, 30 ]
+                [ 100 ]
+                [ 1000, 2000, 3000 ]
+                [ 10000, 20000, 30000 ]
+                (\x y z w v -> note "map5short" x + y + z + w + v)
+
+        -- An EMPTY list anywhere is the degenerate case of the same rule.
+        none =
+            List.map2 [ 1, 2, 3 ] [] (\x y -> note "map2none" x + y)
+    in
+    Node.printLines
+        [ Debug.toString three
+        , Debug.toString four
+        , Debug.toString five
+        , Debug.toString shortSecond
+        , Debug.toString shortFirst
+        , Debug.toString shortLast
+        , Debug.toString shortMiddle
+        , Debug.toString none
+        , Debug.toString (List.indexedMap [ "a", "b" ] (\i x -> x ++ String.fromInt i))
+
+        -- A million elements through each of them: this is the fail-first
+        -- half, and at the depth `backend.md` §8's own measurement says the
+        -- old shape dies at.
+        , String.fromInt (List.length (List.map2 big big (\x y -> x + y)))
+        , String.fromInt (List.length (List.map3 big big big (\x y z -> x + y + z)))
+        , String.fromInt (List.length (List.map4 big big big big (\x y z w -> x + y + z + w)))
+        , String.fromInt (List.length (List.map5 big big big big big (\x y z w v -> x + y + z + w + v)))
+        , String.fromInt (List.length (List.indexedMap big (\i x -> i + x)))
+
+        -- …and the last element of one of them, so a loop that produced a
+        -- list of the right LENGTH and the wrong contents is caught too.
+        , Debug.toString (List.drop (List.map2 big big (\x y -> x + y)) 999999)
+        ]
