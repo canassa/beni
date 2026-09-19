@@ -123,8 +123,25 @@ pub const Common = struct {
     iface_hash: bool = false,
 };
 
+/// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
+///
+/// **They belong to `check` and `build` and to no other subcommand.** `fmt`
+/// resolves nothing and `dump` prints a representation rather than a result,
+/// so a cache flag on either would be accepted and do nothing — the mistake
+/// `--source-maps` is refused to avoid. `fmt --cache-dir=x` is therefore the
+/// ordinary `unknown option` and exit `2`, which falls out of the field
+/// living here rather than on `Common`.
+pub const Cache = struct {
+    /// `--cache-build-id=<s>` — **hidden**, for `--roundtrip-interfaces`'
+    /// reasons. Its bytes replace the compiler build id in the cache key
+    /// (`src/build_id.zig`), which is how "a compiler change discards the
+    /// whole cache" is written as a fixture rather than as a rebuild.
+    build_id: ?[]const u8 = null,
+};
+
 pub const Check = struct {
     common: Common = .{},
+    cache: Cache = .{},
     /// `--platform`: the same value `build` takes, resolved the same way
     /// (frontend.md §1, boundary.md §5.3). **Optional here**, because a
     /// library and a platform-free module must stay checkable; null is "no
@@ -137,6 +154,7 @@ pub const Check = struct {
 
 pub const Build = struct {
     common: Common = .{},
+    cache: Cache = .{},
     /// `--platform`: an embedded platform's name, or a directory holding a
     /// package whose manifest says `"platform": true` (boundary.md §2).
     platform: []const u8,
@@ -376,14 +394,31 @@ fn applyPlatform(slot: *?[]const u8, consumed: *bool, value: ?[]const u8) ?Usage
     return null;
 }
 
+/// The cache flags of `Cache`, which `check` and `build` share and no other
+/// subcommand accepts. One spelling and one message for both, for
+/// `applyPlatform`'s reason: a `check` that keyed its cache differently from
+/// the `build` behind it would serve one of them a stale answer.
+fn applyCache(cache: *Cache, consumed: *bool, name: []const u8, value: ?[]const u8) ?Usage {
+    if (std.mem.eql(u8, name, "--cache-build-id")) {
+        const v = value orelse return needsValue(name, "<s>");
+        if (v.len == 0) return needsValue(name, "<s>");
+        cache.build_id = v;
+        consumed.* = true;
+    }
+    return null;
+}
+
 const CheckSpecific = struct {
     consumed: bool = false,
     platform: ?[]const u8 = null,
+    cache: Cache = .{},
 
     fn apply(self: *CheckSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
             if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
+            return null;
         }
+        if (applyCache(&self.cache, &self.consumed, name, value)) |u| return u;
         return null;
     }
 };
@@ -405,6 +440,7 @@ fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     // flag.
     return .{ .command = .{ .check = .{
         .common = s.common,
+        .cache = s.specific.cache,
         .platform = s.specific.platform,
         .paths = try s.positionals.toOwnedSlice(gpa),
     } } };
@@ -418,8 +454,11 @@ const BuildSpecific = struct {
     release: bool = false,
     library: bool = false,
     allow_debug: bool = false,
+    cache: Cache = .{},
 
     fn apply(self: *BuildSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (applyCache(&self.cache, &self.consumed, name, value)) |u| return u;
+        if (self.consumed) return null;
         if (std.mem.eql(u8, name, "--platform")) {
             if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
         } else if (std.mem.eql(u8, name, "--out")) {
@@ -477,6 +516,7 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     const paths = try s.positionals.toOwnedSlice(gpa);
     return .{ .command = .{ .build = .{
         .common = s.common,
+        .cache = s.specific.cache,
         .platform = platform,
         .out = s.specific.out orelse default_out,
         .library = s.specific.library,
@@ -858,6 +898,45 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try expectUsage("beni: unknown option '--allow-debug'; run 'beni help' for usage", &.{ "check", "--allow-debug", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "--allow-debug") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "allow-debug") == null);
+}
+
+test "--cache-build-id is check's and build's, hidden, and nobody else's" {
+    // `fast-compiler.md` §8: its bytes replace the compiler build id in the
+    // key, so a fixture can prove that a compiler change discards the whole
+    // cache without building a second compiler.
+    try expectCommand(
+        .{ .check = .{ .cache = .{ .build_id = "pretend" }, .paths = &.{"src"} } },
+        &.{ "check", "--cache-build-id=pretend", "src" },
+    );
+    try expectCommand(
+        .{ .build = .{
+            .cache = .{ .build_id = "pretend" },
+            .platform = "node",
+            .paths = &.{"src"},
+        } },
+        &.{ "build", "--platform=node", "--cache-build-id=pretend", "src" },
+    );
+    try expectUsage(
+        "beni: option '--cache-build-id' needs a value: --cache-build-id=<s>",
+        &.{ "check", "--cache-build-id", "src" },
+    );
+    try expectUsage(
+        "beni: option '--cache-build-id' needs a value: --cache-build-id=<s>",
+        &.{ "check", "--cache-build-id=", "src" },
+    );
+    // Not `fmt`'s and not `dump`'s: neither produces a cacheable result, and
+    // a flag that is accepted and does nothing is the mistake `--source-maps`
+    // is refused to avoid (`frontend.md` §1).
+    try expectUsage(
+        "beni: unknown option '--cache-build-id'; run 'beni help' for usage",
+        &.{ "fmt", "--cache-build-id=x", "src" },
+    );
+    try expectUsage(
+        "beni: unknown option '--cache-build-id'; run 'beni help' for usage",
+        &.{ "dump", "--stage=raw", "--cache-build-id=x", "M.beni" },
+    );
+    // Hidden, like the two flags above it.
+    try testing.expect(std.mem.indexOf(u8, usage, "--cache-build-id") == null);
 }
 
 test "usage text mentions every subcommand" {

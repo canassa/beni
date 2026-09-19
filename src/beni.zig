@@ -7,6 +7,11 @@ const std = @import("std");
 /// Printed by `beni version`. Bumped per milestone until there is a release.
 pub const version = "0.1.0-m1";
 
+/// The compiler build id (`fast-compiler.md` §8), printed by `beni version`
+/// after the version so that a bug report names the compiler that wrote a
+/// cache.
+pub const build_id = @import("build_id.zig");
+
 pub const Arena = @import("Arena.zig");
 pub const Artifacts = @import("Artifacts.zig");
 pub const Cli = @import("Cli.zig");

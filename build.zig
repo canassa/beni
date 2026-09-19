@@ -51,6 +51,11 @@ pub fn build(b: *std.Build) void {
     beni_mod.addImport("core_package", embedCore(b, core_dir));
     // The platform packages (boundary.md §8, B2), embedded the same way.
     beni_mod.addImport("platform_packages", embedPlatforms(b, platforms_dir));
+    // The compiler build id (`fast-compiler.md` §8): the cache key's term for
+    // "which compiler produced this entry". Computed here rather than by
+    // hashing the installed binary at run time, which is correct and costs
+    // ~2 ms of a 15 ms warm budget.
+    beni_mod.addImport("build_options", buildIdOptions(b, target, optimize));
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -146,6 +151,9 @@ pub fn build(b: *std.Build) void {
     });
     bench_beni.addImport("core_package", embedCore(b, core_dir));
     bench_beni.addImport("platform_packages", embedPlatforms(b, platforms_dir));
+    // Its own options, because the id covers the optimize mode and the bench
+    // module is always ReleaseFast whatever `-Doptimize` says.
+    bench_beni.addImport("build_options", buildIdOptions(b, target, .ReleaseFast));
     const bench_exe = b.addExecutable(.{
         .name = "bench",
         .root_module = b.createModule(.{
@@ -167,6 +175,97 @@ pub fn build(b: *std.Build) void {
         .paths = &.{ "src", "build.zig", "tests", "bench" },
         .check = true,
     }).step);
+}
+
+/// The `build_options` module, carrying the 16-byte compiler build id of
+/// `docs/design/fast-compiler.md` §8 — the cache key's term for "which
+/// compiler produced this entry" (`src/build_id.zig` has what it is for).
+fn buildIdOptions(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Module {
+    const options = b.addOptions();
+    options.addOption([16]u8, "build_id", compilerBuildId(b, target, optimize));
+    return options.createModule();
+}
+
+/// Bumped whenever the recipe below changes, so that two compilers which
+/// hash the same inputs differently cannot collide on an id.
+const build_id_recipe: []const u8 = "BENIBUILDID\x00v1";
+
+/// `SipHash128(1, 3)` — the compiler's one hash function
+/// (`src/resolve/iface_bytes.zig`) — over the recipe tag, the Zig version
+/// string, the optimize mode, the target triple and every file under `src/`:
+/// path then bytes, in sorted path order, each preceded by its length so that
+/// two different splits of the same concatenation cannot agree.
+///
+/// Configure time, not run time: the whole tree is ~2 MB and hashing it costs
+/// under a millisecond, and `build.zig` re-runs on every `zig build` — so the
+/// id is fresh whenever the sources are, which is also exactly when the
+/// compiler is relinked anyway.
+///
+/// `beni.version` is not a separate term; see `src/build_id.zig`'s header.
+fn compilerBuildId(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) [16]u8 {
+    var hasher = std.hash.SipHash128(1, 3).init(&@as([16]u8, @splat(0)));
+    feed(&hasher, build_id_recipe);
+    feed(&hasher, @import("builtin").zig_version_string);
+    feed(&hasher, @tagName(optimize));
+    feed(&hasher, target.result.zigTriple(b.allocator) catch @panic("OOM"));
+
+    var paths: std.ArrayList([]const u8) = .empty;
+    collectAll(b, "src", "", &paths);
+    sortPaths(&paths);
+    if (paths.items.len == 0) std.debug.panic("the compiler source tree at src/ is empty", .{});
+
+    const io = b.graph.io;
+    for (paths.items) |rel| {
+        feed(&hasher, rel);
+        const full = b.pathJoin(&.{ "src", rel });
+        const bytes = b.build_root.handle.readFileAlloc(io, full, b.allocator, .unlimited) catch |err| {
+            std.debug.panic("cannot read compiler source {s}: {t}", .{ full, err });
+        };
+        feed(&hasher, bytes);
+        b.allocator.free(bytes);
+    }
+
+    var out: [16]u8 = undefined;
+    hasher.final(&out);
+    return out;
+}
+
+/// One length-prefixed field of the digest.
+fn feed(hasher: *std.hash.SipHash128(1, 3), slice: []const u8) void {
+    var len: [8]u8 = undefined;
+    std.mem.writeInt(u64, &len, slice.len, .little);
+    hasher.update(&len);
+    hasher.update(slice);
+}
+
+/// Every file under `<root>/<prefix>`, recursively, as paths relative to
+/// `root`. Unlike `collectFiles` it does not sort files into two buckets:
+/// every file under `src/` is compiler source, whatever its extension.
+fn collectAll(b: *std.Build, root: []const u8, prefix: []const u8, out: *std.ArrayList([]const u8)) void {
+    const io = b.graph.io;
+    const full = if (prefix.len == 0) b.dupe(root) else b.pathJoin(&.{ root, prefix });
+    var handle = b.build_root.handle.openDir(io, full, .{ .iterate = true }) catch |err| {
+        std.debug.panic("cannot open compiler source directory {s}: {t}", .{ full, err });
+    };
+    defer handle.close(io);
+    var it = handle.iterate();
+    while (it.next(io) catch |err| std.debug.panic("cannot read {s}: {t}", .{ full, err })) |entry| {
+        if (entry.name.len == 0 or entry.name[0] == '.') continue;
+        const rel = if (prefix.len == 0) b.dupe(entry.name) else b.fmt("{s}/{s}", .{ prefix, entry.name });
+        switch (entry.kind) {
+            .directory => collectAll(b, root, rel, out),
+            .file => out.append(b.allocator, rel) catch @panic("OOM"),
+            else => {},
+        }
+    }
 }
 
 /// A module whose root exports `fixtures`, one `{ name, source }` per

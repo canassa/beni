@@ -50,7 +50,11 @@ pub fn main(init: std.process.Init) u8 {
 
     switch (command) {
         .version => {
-            stdout.print("beni {s}\n", .{beni.version}) catch return 2;
+            // The build id follows the version (`fast-compiler.md` §8): a
+            // cache entry names the compiler that wrote it, so a bug report
+            // has to be able to name it too.
+            const id = beni.build_id.hex();
+            stdout.print("beni {s} {s}\n", .{ beni.version, &id }) catch return 2;
             return 0;
         },
         .help => {

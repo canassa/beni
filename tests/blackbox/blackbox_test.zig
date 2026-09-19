@@ -13,9 +13,14 @@ const world = @import("world.zig");
 const World = world.World;
 const testing = std.testing;
 
-const expected_version = "beni 0.1.0-m1\n";
+/// The whole line is `beni <version> <32 hex digits>\n`: the build id follows
+/// the version so that a bug report names the compiler that wrote a cache
+/// (`fast-compiler.md` §8). The id moves with every edit under `src/`, which
+/// is the point of it, so the version half is pinned and the id half is
+/// checked for shape.
+const expected_version_prefix = "beni 0.1.0-m1 ";
 
-test "version prints the version on stdout and nothing else" {
+test "version prints the version and the build id on stdout and nothing else" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -31,8 +36,23 @@ test "version prints the version on stdout and nothing else" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings(expected_version, r.stdout);
     try testing.expectEqualStrings("", r.stderr);
+    try testing.expect(std.mem.startsWith(u8, r.stdout, expected_version_prefix));
+    try testing.expectEqual(expected_version_prefix.len + 33, r.stdout.len);
+    const digits = r.stdout[expected_version_prefix.len .. r.stdout.len - 1];
+    try testing.expectEqualStrings("\n", r.stdout[r.stdout.len - 1 ..]);
+    // Not all zeroes: a build option that defaulted to zero would make every
+    // compiler build's cache entries interchangeable, silently.
+    var any_nonzero = false;
+    for (digits) |c| {
+        try testing.expect(std.ascii.isHex(c) and !std.ascii.isUpper(c));
+        if (c != '0') any_nonzero = true;
+    }
+    try testing.expect(any_nonzero);
+
+    // And it is stable: two runs of one binary print the same id.
+    const again = try w.run(&.{"version"});
+    try testing.expectEqualStrings(r.stdout, again.stdout);
 }
 
 test "help exits 0 and prints usage on stdout" {
