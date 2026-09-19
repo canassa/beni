@@ -100,3 +100,17 @@ by owner decision, 2026-09-19", design text kept.
 | 47 | `beni fmt` resets a rewritten file's mode to 0644 (a 0600 file becomes world-readable; a 0444 file is rewritten anyway) and replaces a symlink with a regular file, leaving the target unformatted | in flight (same slice) | temp + `rename` write path; one fix serves both |
 | 48 | `beni dump` exits 0 while printing an error diagnostic; `frontend.md` §1 and `beni help` say exit 1, `src/main.zig:6-15` says it is deliberate | in flight (same slice) — manager decision: the document wins, `dump` exits 1 when it printed an error | |
 | 49 | `tests/corpus/README.md` says the `fmt/` kind checks "the same comments in the same order"; `corpus_test.zig`'s `format()` does not (the AST dump drops plain `--` comments) | in flight (same slice) | ~10 lines to make the claim true |
+
+## Owner decision, 2026-09-19: **`--release` refuses `Debug`**
+
+As Elm's `--optimize` does. A release build that REACHES `Debug.log`/`toString`/`todo` after
+reachability elimination is an error naming the use sites. Consequences to handle in the slice:
+the `run/` corpus's evaluation-order and callback-order fixtures observe order THROUGH `Debug.log`,
+and their second pass under `--release` is what proved the wide inliner unsafe — so the harness
+needs a hidden, test-only `--allow-debug` and must keep running them; `ReleaseDeadDebug`'s
+`.release-expected` (the one place the two builds legitimately differed) goes away; `backend.md`
+§9's "renaming is off when `Debug` survives" rule becomes unnecessary.
+
+| # | Slice | State | Notes |
+|---|---|---|---|
+| 50 | `--release` refuses a build that reaches `Debug` | in flight (worktree) | new code, fixtures, hidden `--allow-debug` for the corpus's second pass |
