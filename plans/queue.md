@@ -82,3 +82,14 @@ first", to be confirmed; the daemon-phase decisions D6–D9 are not needed befor
 | M4-1 | The content-hash cache key, the unhashed sidecar (`plans/m4-slice-zero.md` §4's disposition table), the "produced by a clean check" bit, a `stat` column on `SourceStore` | spec in flight | spec first; fixtures: a module cached while broken is never reused, a sibling `.js` edit invalidates only that emit unit, a compiler-build change discards the cache |
 | M4-2 | Pre-resolve BIR, AST, tokens, comments, diagnostics on disk (mmap, validated on load) | todo | corrupt-cache fixture per artifact; budget: cold start with a warm cache < 120 ms |
 | M4-3 | The firewall cutoff: unchanged interface hash ⇒ dependents not re-checked; needs the five re-entrancy fixes and the three "pure per module" corrections | todo | the incremental-determinism matrix; the three warm budgets 15 / 60 / 25 ms |
+
+## Owner decision, 2026-09-19: **`lazy` is parked**
+
+It leaves M3d and returns only when a browser platform and a real large application want it (effects
+will be in by then and make it cheaper). Its surface syntax is decided then, not now. M3d becomes
+static multi-entry chunking plus the single-file `--release` bundle; its acceptance reads "a two-ENTRY
+program splits and both entries run". `plans/m3d-plan.md` decisions 1, 3, 4 and 6 are thereby settled
+(1 and 6 postponed with `lazy`; 3 yes; 4 as recommended); 2 (static chunking ships) and 5
+(`--release --library` emits one chunk) stand as recommended. **Docs to mark** once no agent is editing
+them: `backend.md` §10's PENDING blocks and `fast-compiler.md` §9.5's *The `lazy` marker* — "deferred
+by owner decision, 2026-09-19", design text kept.
