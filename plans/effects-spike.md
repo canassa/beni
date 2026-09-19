@@ -38,6 +38,13 @@ default for each so that it is usable the moment those are answered. A default i
 | `Int32` | Built, inside the wall | 2026-09-19 |
 | The test for every restriction | `CLAUDE.md` rule 7. A rule stays only if it protects a guarantee; a capability gap is filled inside the wall; where no guarantee is at stake, warn rather than refuse | 2026-09-19 |
 | The interface bits and M4's cache | `plans/m4-plan.md` D4: **do not reserve them**; the cache header carries a format version, so adding them is a version bump and a cache discard, not a migration | 2026-09-19 |
+| **A1** the failure value | **DECIDED 2026-09-19 — see §0.1** (and NOT as this plan first assumed: no multi-reason failure value exists, so **S9 shrinks to `Exit` plus the crash reporter**, S8/S10 lose the `Cause` plumbing, and r23's conformance rows that expected a captured cause now expect a crash with a known report) | 2026-09-19 |
+| **A1** interruption | Invisible to the interrupted code (never a value there, only finalisers run); the interrupter **waits for cleanup** by default, with an explicit fire-and-forget variant; uninterruptible = `bracket`'s acquire and release, all finalisers, explicit `uninterruptible` + `restore` | 2026-09-19 |
+| **A2** / **A3** / **A10** / **A11** | **DECIDED 2026-09-19 — see §0.1** | 2026-09-19 |
+| **A5** `impure` | **DECIDED 2026-09-19 — see §0.1** | 2026-09-19 |
+| **A6** `sync` | **DECIDED 2026-09-19 — see §0.1** | 2026-09-19 |
+| **A7** services | **DECIDED 2026-09-19 — see §0.1** (three slots, not two: the log context joins clock and scheduler) | 2026-09-19 |
+| **A8** `main` | **DECIDED 2026-09-19 — see §0.1** | 2026-09-19 |
 
 ### 0.2 Taken earlier, and not reopened here
 
@@ -47,22 +54,22 @@ on `research/16` §2.4). r21 §4.4 re-ran the deciding experiment on the rewritt
 
 ### 0.3 Defaults this plan is written against, pending the sheet
 
-Each is the sheet's recommendation or, where the sources disagree, the stronger evidence. **None is
-decided.** If an answer differs, the affected slices are named in the last column.
+Each is the sheet's recommendation or, where the sources disagree, the stronger evidence. **The rows marked DECIDED were answered by the owner on 2026-09-19; the rest are still
+pending.** If an answer differs, the affected slices are named in the last column.
 
 | PENDING | Default assumed here | Slices that change |
 |---|---|---|
 | **A1** the failure value | r21 §11.6(a): a flat, multi-reason failure value, surfaced to beni only at `join`/`await`/`scope`/`bracket`'s release | S8, S9, S10 |
 | **A2** join vs await | both; `join` propagates, `await` returns the outcome | S10 |
-| **A3** `bracket`'s release | receives the outcome | S8 |
+| **A3** `bracket`'s release | **DECIDED 2026-09-19 — see §0.1** | S8 |
 | **A4** `retry` | takes a `Schedule`; `Schedule` is pure data and lands in `core/` **before** the runtime | pre-spike, S13 |
 | **A5** `impure` | inferred **and used**: `language.md` §6's optimiser licence gains the exception it already anticipates | S2, S4, S12 |
 | **A6** `sync` | ships in the first cut | S3 |
 | **A7** services / `R` | R-A + R-C for services (both already exist, cost zero); **two hard-wired fiber slots**, scheduler and clock, instead of a general `Context`; `R = never` conceded in writing | S11, S12, S13 |
 | **A8** `main` | `main : Program` stays and its body is `sync`; v4's exit-code mapping 0/1/1/130; keep-alive in the runtime; a new `run/bad/` corpus kind | S5, S9, S15 |
 | **A9** suspending `eq` evidence | a `must_not_suspend` obligation on well-known evidence — **but S1 writes and measures the alternative first** | S1, S3 |
-| **A10** combinators and cleanup | they wait for their losers' finalisers | S13 |
-| **A11** finaliser order | children first, as P2 §6.2 obligation 4 says, diverging from Effect | S10 |
+| **A10** combinators and cleanup | **DECIDED 2026-09-19 — see §0.1** | S13 |
+| **A11** finaliser order | **DECIDED 2026-09-19 — see §0.1** | S10 |
 | **A12** the three amendments | `uninterruptible`/`interruptible`/`restore`, three fork forms with `startImmediately`, `Duration` not `Int` | S7, S10, S12 |
 | **A13** deterministic time | swappable clock and scheduler from the first commit; **no fixture may sleep** | S11 |
 | **A14** kernel scope | `spawn`/`join`/`scope`/`bracket` for the spike; the full list for the adoption | S5–S13 |

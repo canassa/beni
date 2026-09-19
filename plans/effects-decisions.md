@@ -1,6 +1,7 @@
 # Effects — the owner's decision sheet
 
-**Status:** consolidation, 2026-09-19. Nothing here is decided; every item is the owner's. Read this
+**Status:** consolidation, 2026-09-19 — **and partly answered the same day; see the block below.**
+The item texts are kept as written so the reasoning stays readable; an item's answer is in the block. Read this
 before the spike starts; [`plans/effects-spike.md`](effects-spike.md) is written against a stated
 default for each, so it is usable the moment these are answered.
 
@@ -23,6 +24,23 @@ Plan decision 2 (interleave with M3c/M3d) — superseded by the owner's **M4 fir
 out; recorded, not decided. `lazy` — parked.
 
 **If you read one section, read §D**: five questions.
+
+## Answered by the owner, 2026-09-19
+
+All five of §D's questions, and what they settle. Recorded in `plans/queue.md` and folded into
+`plans/effects-spike.md` §0.1.
+
+| Item | Answer |
+|---|---|
+| **A1** | **Defects are fatal, and preventing them is the wall's job** — not option (a) or (b). A throwing `foreign` is a bug in `core/` or a platform, a stack overflow is resource exhaustion; neither is a condition beni code handles, and JS fibers share a heap, so containing one means running on state nobody can vouch for. The process dies with a good report and a non-zero exit. **Finalisers are infallible** (`-> ()`), which removes the two-failures-at-once case. **`Exit a = Done a \| Cancelled`.** Interruption: invisible to the interrupted code; the interrupter waits for cleanup by default; uninterruptible = acquire/release, finalisers, explicit `uninterruptible` + `restore`. Follow-ups queued: a boundary check refusing `throw` in a sibling, a hostile-input suite required of every platform, a crash reporter (queue 52–54) |
+| **A2, A3, A10, A11** | Settled with A1: two operations (`join` propagates, `await` observes); `bracket`'s release receives the outcome; combinators return after their losers' cleanup; children are interrupted before the parent's finalisers run |
+| **A5** | **(a)** — `impure` is used from the slice that infers it |
+| **A6** | **(a)** — `sync` ships in the first cut |
+| **A7** | **(b) now, a LIMITED (c) with the runtime**: records of functions and `where` clauses for services; three fixed per-fiber slots (clock, scheduler, log context), not a general `Context`; the `R = never` concession written down |
+| **A8** | **(a) + (d)** with keep-alive: `main : Program` stays, its body must not suspend; exit 0 / 1 / 130; never a silent exit 0 |
+
+**Still open in tier A:** A4 (`retry` takes a `Schedule` — recommended yes), A9, A12, A13, A14, A15, A16.
+Tiers B and C are unchanged.
 
 ---
 

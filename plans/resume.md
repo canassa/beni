@@ -56,18 +56,15 @@ M4 first, then effects, then M3d · `lazy` parked until a browser platform and a
 | A5 | `impure` is **used** from the slice that infers it — the optimiser consults it before dropping, inlining, merging or reordering. |
 | A6 | `sync` ships in the first cut. |
 | A8 | `main : Program` stays, body must not suspend; keep-alive while any fiber is parked; exit 0 / 1 / 130; never a silent exit 0. |
+| A7 | Services: records of functions and `where` clauses now; three fixed per-fiber slots (clock, scheduler, log context) with the runtime — not a general service locator; the "everything provided at the entry point" proof is conceded in writing. |
 
-**Still open on the sheet**: **A7 services** — in discussion when work was parked: option (b)
-(records of functions + `where` clauses, both exist today) was explained and looked right as the
-base; the open half is whether to add three fixed per-fiber slots (clock, scheduler, log context)
-with the runtime, and the written concession that beni will not have Effect's "everything provided
-at the entry point" proof. Also open: A4 (`retry` takes a `Schedule` — recommended yes), A9, A12–A16,
-and tiers B (settled by the spike's measurements) and C (can wait).
+**All five shortlist questions are answered, and folded into `plans/effects-spike.md` §0.1 and the
+block at the top of `plans/effects-decisions.md`.** Note what A1 changed in the plan: no multi-reason
+failure value exists, so slice S9 shrinks to `Exit` plus the crash reporter and the conformance rows
+that expected a captured cause now expect a crash with a known report.
 
-**Not yet folded in**: `plans/effects-spike.md` and the spec obligations still describe the
-pre-decision state — the failure-value kernel piece disappears, four conformance cases change from
-"captured cause" to "crash with a known report", `Ref` stays in T0. Do that fold in ONE pass once A7
-is answered.
+**Still open in tier A**: A4 (`retry` takes a `Schedule` — recommended yes), A9, A12–A16; tiers B
+(settled by the spike's measurements) and C (can wait).
 
 **Manager decisions taken while the owner was offline** (each one commit, reversible; the owner has
 not yet confirmed them): warning-by-default for an unannotated `pub` that infers a `where`, and the
