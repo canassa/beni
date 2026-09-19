@@ -188,6 +188,18 @@ pub const Cache = struct {
     /// file and not per module, because the front end is per file — a path
     /// that names no module still has one.
     frontend_keys: bool = false,
+    /// `--dep-digest` — hidden, `check`'s alone, and `--iface-hash`'s twin
+    /// (`checker.md` §7, *The dependency digest*). One
+    /// `<package>:<Module> <32 hex digits>` line per module on stdout, `core`
+    /// and the platform included, sorted by that key.
+    ///
+    /// The two are printed side by side in the edit-scenario table because
+    /// they answer the two halves of "what can a dependent see?": the hash is
+    /// what the module PUBLISHES and the digest is what its dependents READ.
+    /// It lands before the key changes, for `--cache-keys`' reason — the whole
+    /// invalidation table is fixtures against it, with no cache directory in
+    /// sight.
+    dep_digest: bool = false,
 };
 
 pub const Check = struct {
@@ -504,6 +516,12 @@ const CheckSpecific = struct {
         if (std.mem.eql(u8, name, "--frontend-keys")) {
             if (value != null) return noValue(name);
             self.cache.frontend_keys = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--dep-digest")) {
+            if (value != null) return noValue(name);
+            self.cache.dep_digest = true;
             self.consumed = true;
             return null;
         }

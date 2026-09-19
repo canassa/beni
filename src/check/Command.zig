@@ -31,6 +31,7 @@ const platform = @import("../platform.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const Key = @import("../cache/Key.zig");
 const CacheDir = @import("../cache/Dir.zig");
+const Digest = @import("../cache/Digest.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -94,6 +95,12 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // keys so a fixture that passes both reads one block then the other.
     if (check.cache.frontend_keys) {
         printFrontendKeys(stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    // Before the exit-code branch for `--iface-hash`'s reason, and after it in
+    // the stream because the two are read as a pair: the hash is what a module
+    // publishes and the digest is what its dependents read.
+    if (check.cache.dep_digest) {
+        printDependencyDigests(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
     }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
@@ -216,6 +223,45 @@ fn printCacheKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
                 session.interner.slice(session.graph.moduleName(m)),
             }),
             .digits = Key.hex(session.keys.of(m)),
+        };
+    }
+    std.mem.sort(Line, lines, {}, Line.lessThan);
+    for (lines) |line| try stdout.print("{s} {s}\n", .{ line.key, &line.digits });
+    try stdout.flush();
+}
+
+/// `--dep-digest`: one `<package>:<Module> <32 hex digits>` line per module on
+/// stdout, sorted by that key (`checker.md` §7, *The dependency digest*).
+///
+/// `--iface-hash`'s twin, and deliberately the same shape, because the two
+/// answer the two halves of "what can a dependent see?": the record is what a
+/// module PUBLISHES and the digest is what its dependents READ. An edit that
+/// moves the digest and not the hash is exactly the case an interface-hash-only
+/// firewall answers exit 0 to, so a fixture that reads both is the only one
+/// that can tell the two gaps apart.
+fn printDependencyDigests(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const Line = struct {
+        key: []const u8,
+        digits: [32]u8,
+
+        fn lessThan(_: void, a: @This(), b: @This()) bool {
+            return std.mem.lessThan(u8, a.key, b.key);
+        }
+    };
+    const lines = try arena.alloc(Line, session.graph.count());
+    for (lines, 0..) |*line, i| {
+        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const file = session.graph.moduleFile(m);
+        line.* = .{
+            .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{
+                session.store.package(file),
+                session.interner.slice(session.graph.moduleName(m)),
+            }),
+            .digits = Digest.hex(if (i < session.digests.len) session.digests[i] else Digest.none),
         };
     }
     std.mem.sort(Line, lines, {}, Line.lessThan);

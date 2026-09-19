@@ -74,6 +74,7 @@ pub const cache = struct {
     pub const type_body = @import("cache/type_body.zig");
     pub const dispatch_bytes = @import("cache/dispatch_bytes.zig");
     pub const Dir = @import("cache/Dir.zig");
+    pub const Digest = @import("cache/Digest.zig");
 };
 pub const check = struct {
     pub const TypeStore = @import("check/TypeStore.zig");

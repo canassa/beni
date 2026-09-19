@@ -64,6 +64,7 @@ const Solve = @import("check/Solve.zig");
 const Key = @import("cache/Key.zig");
 const FileKey = @import("cache/FileKey.zig");
 const CacheDir = @import("cache/Dir.zig");
+const Digest = @import("cache/Digest.zig");
 const entry_bytes = @import("cache/entry_bytes.zig");
 const CacheEntry = @import("cache/Entry.zig");
 const dispatch_bytes = @import("cache/dispatch_bytes.zig");
@@ -127,6 +128,22 @@ keys: Key.Keys = .empty,
 /// included, and 0.6 ms of source hashing that nothing reads is a cost a dump
 /// should not carry.
 file_keys: []FileKey.FileKey = &.{},
+/// One INTERFACE HASH and one DEPENDENCY DIGEST per module, in module index
+/// order (`checker.md` §7, *The dependency digest*). Empty unless the phases
+/// included the check step.
+///
+/// The pair is what an import contributes to its importer's key from M4-3 on,
+/// in place of the import's own key: the hash says whether the module's public
+/// face moved, and the digest carries what a dependent reads about it that the
+/// record does not say — the settled `equatable`/`comparable`/`has_function`
+/// bits of a PRIVATE type, an alias expansion no scheme mentions, and the set
+/// of derived functions the module emits.
+///
+/// Filled on every checking run, cache directory or not, for `keys`' reason:
+/// one code path, and a cost in the trace rather than in a branch. What it
+/// costs is the `dep_digest` profile row.
+iface_hashes: [][16]u8 = &.{},
+digests: []Digest.Digest = &.{},
 /// The compiler build id every file key is computed with, resolved once at
 /// `init` rather than per file: `--cache-build-id` substitutes a hash of its
 /// bytes, and hashing that string 634 times would be 634 times too many.
@@ -436,6 +453,8 @@ pub fn deinit(session: *Session) void {
     }
     gpa.free(session.workers);
     gpa.free(session.file_keys);
+    gpa.free(session.iface_hashes);
+    gpa.free(session.digests);
     session.keys.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
@@ -1323,7 +1342,82 @@ fn checkSerial(session: *Session) RunError!void {
         session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
     }
     try session.reportCheckDiagnostics();
+    // The interface hashes and dependency digests (`checker.md` §7), serially,
+    // in `graph.order`: an import's pair must exist before its importer's, and
+    // a module's own record exists only once it has been checked or installed.
+    try session.computeDigests();
     try session.storeEntries(cached);
+}
+
+/// One interface hash and one dependency digest per module (`checker.md` §7,
+/// *The dependency digest*), serially, in `graph.order` — the order that makes
+/// an import's pair available before its importer's, exactly as `Key.build`'s
+/// two passes do for keys.
+///
+/// It runs on every checking run, with or without a cache directory, for the
+/// reason `Session.digests` gives: one code path, and a cost that is in the
+/// trace rather than in a branch.
+fn computeDigests(session: *Session) RunError!void {
+    const gpa = session.gpa;
+    const worker = &session.workers[0];
+    const scratch = worker.arena.allocator();
+    const token = session.profile.begin();
+    const n = session.graph.count();
+
+    gpa.free(session.iface_hashes);
+    gpa.free(session.digests);
+    session.iface_hashes = try gpa.alloc([16]u8, n);
+    session.digests = try gpa.alloc(Digest.Digest, n);
+    @memset(session.iface_hashes, Digest.none);
+    @memset(session.digests, Digest.none);
+
+    const s: Digest.Session = .{
+        .graph = &session.graph,
+        .artifacts = &session.artifacts,
+        .types = &session.checked.types,
+        .interfaces = session.resolution.interfaces,
+        .dispatch = session.checked.dispatch,
+        .interner = &session.interner,
+    };
+
+    for (session.graph.order) |m| {
+        const record = try iface_bytes.write(scratch, &session.resolution.interfaces[m.int()], &session.interner);
+        session.iface_hashes[m.int()] = iface_bytes.hash(record);
+
+        var imports: std.ArrayList(Digest.Import) = .empty;
+        for (session.graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            try imports.append(scratch, .{
+                .package = session.graph.module(dep).package,
+                .name = session.interner.slice(session.graph.moduleName(dep)),
+                .iface_hash = session.iface_hashes[dep.int()],
+                .digest = session.digests[dep.int()],
+            });
+        }
+        std.mem.sort(Digest.Import, imports.items, {}, importLessThan);
+        var unique: usize = 0;
+        for (imports.items, 0..) |i, at| {
+            if (at != 0 and sameImport(imports.items[unique - 1], i)) continue;
+            imports.items[unique] = i;
+            unique += 1;
+        }
+        imports.shrinkRetainingCapacity(unique);
+
+        session.digests[m.int()] = try Digest.collect(scratch, s, m, imports.items);
+        // Per module, not per pass: the only thing that has to outlive one
+        // module is the two 16-byte values, and both are in session memory.
+        worker.arena.reset(.retain_capacity);
+    }
+    session.profile.end(0, token, .dep_digest, Profile.Event.no_file, 0);
+}
+
+fn importLessThan(_: void, a: Digest.Import, b: Digest.Import) bool {
+    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
+fn sameImport(a: Digest.Import, b: Digest.Import) bool {
+    return a.package == b.package and std.mem.eql(u8, a.name, b.name);
 }
 
 /// Read one entry per cacheable module, serially, before any worker starts.

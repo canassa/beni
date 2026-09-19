@@ -57,6 +57,12 @@ pub const Phase = enum {
     /// does not appear in the trace defeats the instrument
     /// (`fast-compiler.md` §12).
     cache_key,
+    /// The dependency digest pass (`checker.md` §7, `fast-compiler.md` §8):
+    /// one 128-bit value per module beside its interface hash, carrying what a
+    /// dependent reads about it that the record does not say. Its own row for
+    /// `cache_key`'s reason — it runs on every checking run, cache directory or
+    /// not, and a cost that does not appear in the trace defeats the instrument.
+    dep_digest,
     /// Reading the cache entries, serial, once per run before the workers
     /// start (`fast-compiler.md` §8): `InternPool.Global` is thread-confined
     /// and a cross-process load must `getOrPut`, so the reads cannot be on
