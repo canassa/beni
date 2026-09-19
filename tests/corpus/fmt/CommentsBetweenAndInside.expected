@@ -1,0 +1,41 @@
+-- Formatter: the comment positions `CommentsUgly` does not reach — trailing
+-- on an import, between an annotation and its definition, on a doc block
+-- above a `type alias`, inside a tuple and inside a record, and after a
+-- `<-` bind; expected: every comment kept, in order, own-line comments
+-- re-indented to their block and trailing ones left at the end of the line.
+import Dict -- trailing on an import
+import Set
+
+
+--| doc for an alias
+type alias R =
+    { a : Int -- after a field
+    , b : Int
+    }
+
+
+f : Int -> Int
+-- between the annotation and its definition
+f x =
+    x
+
+
+pair =
+    ( 1 -- inside a tuple
+    , 2
+    )
+
+
+rec =
+    { a = 1 -- inside a record
+    , b = 2
+    }
+
+
+g x =
+    let
+        h <- Task.wrap x -- after a bind
+        y =
+            1
+    in
+    y

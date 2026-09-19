@@ -1,0 +1,27 @@
+-- Formatter: operators LEADING their continuation line (the mirror of
+-- `OperatorsAtLineEnd`), with a comment between two operands; expected: the
+-- leading form is already §9's, so the operators stay where they are and
+-- each comment keeps its place between its operands. A `?` is postfix, not
+-- an operand separator, so one written on its own line rejoins its subject.
+a x y =
+  x
+   + y
+     -- between operands
+   + 1
+
+
+b xs =
+       xs
+     |> List.map double
+        -- a comment in the pipeline
+     |> List.filter even
+
+
+c x =
+    x
+      ?
+
+
+d r =
+    r.items
+        |> List.length

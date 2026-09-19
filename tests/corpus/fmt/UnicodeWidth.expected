@@ -1,0 +1,34 @@
+-- Formatter: astral characters. language.md §1 says a column counts BYTES,
+-- so `fits` measures a literal in bytes and not in display cells; the
+-- fourteen-emoji list below is 118 bytes and about 90 cells wide, and goes
+-- vertical. A comment and a string may hold any UTF-8, including combining
+-- marks and a ZWJ sequence — 😀 👨‍👩‍👧 café — and a string literal longer
+-- than the limit is printed on one line, never broken.
+emoji =
+    "😀 👨‍👩‍👧 café"
+
+
+narrow =
+    [ "😀", "😁", "😂", "😃", "😄", "😅" ]
+
+
+wide =
+    [ "😀"
+    , "😁"
+    , "😂"
+    , "😃"
+    , "😄"
+    , "😅"
+    , "😆"
+    , "😇"
+    , "😈"
+    , "😉"
+    , "😊"
+    , "😋"
+    , "😌"
+    , "😍"
+    ]
+
+
+long =
+    "a string literal far longer than the hundred column limit, which the formatter must print on one line"

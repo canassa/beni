@@ -1,0 +1,5 @@
+-- Formatter: a file that is nothing but comments — no declaration for
+-- them to attach to, and nothing may be dropped.
+-- second line of the block
+
+-- after a blank line
