@@ -51,6 +51,7 @@ const Diagnostics = @import("Diagnostics.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Dispatch = @import("Dispatch.zig");
+const reads = @import("reads.zig");
 
 const Solve = @This();
 
@@ -1409,7 +1410,7 @@ pub const Solver = struct {
     /// the dependency's Bir and scanned its constructor table by name.
     fn importedCtor(s: *Solver, module: Graph.Index, index: u32) Error!?Var {
         if (module.int() >= s.env.interfaces.len) return null;
-        const iface = &s.env.interfaces[module.int()];
+        const iface = s.env.iface(module);
         if (index >= iface.ctors.len) return null;
         const type_id = s.env.types.ofInterface(module, iface.ctors[index].type);
         if (type_id == .none) return null;
@@ -1430,7 +1431,7 @@ pub const Solver = struct {
     /// to mean exactly one thing.
     fn importedValue(s: *Solver, module: Graph.Index, index: u32, site: ?Schemes.Site) Error!?Var {
         if (module.int() >= s.env.interfaces.len) return null;
-        const iface = &s.env.interfaces[module.int()];
+        const iface = s.env.iface(module);
         if (index >= iface.values.len) return null;
         const scheme_index = iface.values[index].scheme;
         if (scheme_index == .none) return null;
@@ -2623,7 +2624,7 @@ pub const Solver = struct {
             // which is what `==` on an `equatable a` means today.
             const module = s.env.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return null;
             if (module.int() >= s.env.interfaces.len) return null;
-            const iface = &s.env.interfaces[module.int()];
+            const iface = s.env.iface(module);
             const value = iface.findValue(s.env.interner, c.name) orelse return null;
             return .{ .ext = .{ .module = module, .value = value } };
         }
@@ -2906,7 +2907,7 @@ pub const Solver = struct {
             s.poison(c.fn_var);
             return;
         } else {
-            const iface = &s.env.interfaces[entry.module.int()];
+            const iface = s.env.iface(entry.module);
             if (iface.findValue(s.env.interner, c.name)) |value| {
                 // The same continuation as the arm above: `List (List Int)`
                 // resolves `List.eq`, whose `where a.eq` slot resolves
@@ -3000,7 +3001,7 @@ pub const Solver = struct {
             return true;
         }
         if (entry.module.int() >= s.env.interfaces.len) return false;
-        const iface = &s.env.interfaces[entry.module.int()];
+        const iface = s.env.iface(entry.module);
         const index = iface.findType(s.env.interner, entry.name) orelse return false;
         const t = iface.types[@intFromEnum(index)];
         if (t.ctors_start == t.ctors_end) return false;
@@ -3097,6 +3098,12 @@ pub const Solver = struct {
     /// When the Bir is not in memory the answer is "no" and the message is
     /// `unknown_method`, which is the honest degradation.
     fn privateInOtherModule(s: *const Solver, module: Graph.Index, name: Symbol) bool {
+        // §3.2 row 23, disposition `E`: an error path, and `fast-compiler.md`
+        // §8's clean-check rule refuses to write an entry for a module that
+        // produced one, so a stale choice between the two messages can never
+        // be replayed. Noted anyway — the enumeration is the claim, and a
+        // claim that skipped its own hard case would be worth nothing.
+        reads.note(.bir, module);
         const file = s.env.graph.moduleFile(module);
         const bir = s.env.artifacts.bir(file);
         for (bir.decls) |d| {
@@ -3201,7 +3208,7 @@ pub const Solver = struct {
                 return .{ .top = .{ .decl = @enumFromInt(decl), .parts = parts } };
             }
         } else if (entry.module.int() < s.env.interfaces.len) {
-            const iface = &s.env.interfaces[entry.module.int()];
+            const iface = s.env.iface(entry.module);
             if (iface.findValue(s.env.interner, c.name)) |value| {
                 const parts = try s.importedValueParts(c, entry.module, value, a, origin, depth);
                 return .{ .ext = .{ .module = entry.module, .value = value, .parts = parts } };
@@ -3266,7 +3273,7 @@ pub const Solver = struct {
         origin: Bir.Inst.Index,
         depth: u32,
     ) Error!Dispatch.Range {
-        const iface = &s.env.interfaces[module.int()];
+        const iface = s.env.iface(module);
         if (@intFromEnum(value) >= iface.values.len) return .empty;
         const index = iface.values[@intFromEnum(value)].scheme;
         if (index == .none or @intFromEnum(index) >= iface.schemes.len) return .empty;
@@ -3388,7 +3395,7 @@ pub const Solver = struct {
     fn structuralEqTarget(s: *const Solver) ?Dispatch.Target {
         const module = s.env.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return null;
         if (module.int() >= s.env.interfaces.len) return null;
-        const iface = &s.env.interfaces[module.int()];
+        const iface = s.env.iface(module);
         const value = iface.findValue(s.env.interner, InternPool.WellKnown.eq.symbol()) orelse return null;
         return .{ .ext = .{ .module = module, .value = value } };
     }

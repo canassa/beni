@@ -46,6 +46,7 @@ const Artifacts = @import("../Artifacts.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
+const reads = @import("reads.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Dispatch = @import("Dispatch.zig");
@@ -369,6 +370,18 @@ pub const Env = struct {
     /// and reports this once per module. Empty on every input a person
     /// writes.
     too_deep: *std.ArrayList(Bir.Inst.Index),
+
+    /// Another module's interface record, noted for the covered-read
+    /// self-check (`reads.zig`, `plans/m4-3.md` §3.2 rows 17–22 and 25–27).
+    ///
+    /// **Every cross-module read of `interfaces` on the checking path goes
+    /// through this**, which is what makes the `&interfaces[N]` handoff one of
+    /// the three channels the enumeration is finite over. Callers keep their
+    /// own bounds tests: this is a note, not a guard.
+    pub fn iface(env: *const Env, m: Graph.Index) *const Interface {
+        reads.note(.iface, m);
+        return &env.interfaces[m.int()];
+    }
 
     pub fn localVar(env: *const Env, index: u32) ?Var {
         if (index >= env.local_var.len) return null;

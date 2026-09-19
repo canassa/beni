@@ -938,7 +938,7 @@ pub const Reporter = struct {
             // No near name: say what IS there, which is the other half of
             // §10.1's hint. Capped, because a module's public surface can
             // be a hundred names and a message that scrolls is no message.
-            const iface = &r.env.interfaces[module.int()];
+            const iface = r.env.iface(module);
             if (iface.values.len != 0) {
                 w.print("\nHint: `{s}` exposes:\n\n   ", .{module_text}) catch return error.OutOfMemory;
                 const shown = @min(iface.values.len, 8);
@@ -1390,7 +1390,7 @@ pub const Reporter = struct {
     /// §10.1's did-you-mean.
     fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
         if (module.int() >= r.env.interfaces.len) return null;
-        const iface = &r.env.interfaces[module.int()];
+        const iface = r.env.iface(module);
         const target = r.env.interner.slice(name);
         if (target.len < 3) return null;
         var best: ?Symbol = null;
@@ -1977,7 +1977,7 @@ pub const Reporter = struct {
             },
             .ext_value => {
                 if (data.lhs >= r.env.interfaces.len) return .anonymous;
-                const iface = &r.env.interfaces[data.lhs];
+                const iface = r.env.iface(@enumFromInt(data.lhs));
                 if (data.rhs >= iface.values.len) return .anonymous;
                 const symbol = iface.valueName(@enumFromInt(data.rhs));
                 // Every operator of language.md §6.5 desugars to a call of
@@ -1988,7 +1988,7 @@ pub const Reporter = struct {
             },
             .ext_ctor => {
                 if (data.lhs >= r.env.interfaces.len) return .anonymous;
-                const iface = &r.env.interfaces[data.lhs];
+                const iface = r.env.iface(@enumFromInt(data.lhs));
                 if (data.rhs >= iface.ctors.len) return .anonymous;
                 return .{ .kind = .ctor, .name = r.env.interner.slice(iface.ctorName(@enumFromInt(data.rhs))) };
             },

@@ -65,6 +65,7 @@ const Types = @import("Types.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
 const CacheEntry = @import("../cache/Entry.zig");
+const reads = @import("reads.zig");
 
 const Check = @This();
 
@@ -265,6 +266,12 @@ pub fn run(
         });
     }
 
+    // What each module's key can see move, for the covered-read self-check
+    // (`reads.zig`). Built once, before any worker: it is a function of the
+    // graph, which is fixed before the DAG starts.
+    var coverage: reads.Coverage = try .build(gpa, graph);
+    defer coverage.deinit(gpa);
+
     var driver: Driver = .{
         .gpa = gpa,
         .io = io,
@@ -279,6 +286,7 @@ pub fn run(
         .counters = counters,
         .kept = if (options.keep_stores) kept.items else &.{},
         .dispatch = dispatch,
+        .coverage = coverage,
     };
     try driver.go(scratch);
     if (driver.failure) |err| return err;
@@ -356,6 +364,9 @@ const Driver = struct {
     kept: []Module,
     /// One per module, written by the worker that checked it.
     dispatch: []Dispatch,
+    /// What each module's cache key can see move (`reads.zig`). Empty outside
+    /// a safe build and on a cyclic project, and then the self-check is off.
+    coverage: reads.Coverage = .empty,
 
     mutex: Io.Mutex = .init,
     /// A worker waits here for a module to become ready.
@@ -420,8 +431,10 @@ const Driver = struct {
     fn serial(d: *Driver, scratch: *Arena) Error!void {
         var patterns: Arena = .init(std.heap.page_allocator);
         defer patterns.deinit();
+        var recorder: reads.Recorder = try .init(d.gpa, d.graph.count());
+        defer recorder.deinit(d.gpa);
         for (d.graph.order) |m| {
-            try d.check(m, scratch, &patterns, 0);
+            try d.check(m, scratch, &patterns, 0, &recorder);
             scratch.reset(.retain_capacity);
         }
     }
@@ -502,6 +515,12 @@ const Driver = struct {
         // map and an unmap for it.
         var patterns: Arena = .init(std.heap.page_allocator);
         defer patterns.deinit();
+        // One per WORKER, not one per module: the arrays are sized by the
+        // module count and cleared per module, so the whole self-check costs
+        // `jobs` allocations for the run. An allocation failure here is not
+        // worth failing a build over — the self-check turns itself off.
+        var recorder: reads.Recorder = reads.Recorder.init(d.gpa, d.graph.count()) catch reads.Recorder.empty;
+        defer recorder.deinit(d.gpa);
 
         while (true) {
             d.mutex.lockUncancelable(d.io);
@@ -519,7 +538,7 @@ const Driver = struct {
             d.queue_head += 1;
             d.mutex.unlock(d.io);
 
-            const result = d.check(m, scratch, &patterns, tid);
+            const result = d.check(m, scratch, &patterns, tid, &recorder);
             scratch.reset(.retain_capacity);
             d.finish(m, result);
         }
@@ -543,7 +562,48 @@ const Driver = struct {
         d.wake.broadcast(d.io);
     }
 
-    fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
+    fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, recorder: *reads.Recorder) Error!void {
+        reads.begin(recorder, m);
+        // On every path out, including the failing one: a recorder left
+        // published would attribute the NEXT module's reads to this one.
+        defer reads.end();
+        try d.checkInner(m, scratch, patterns, tid);
+        try d.verifyReads(m, recorder);
+    }
+
+    /// The covered-read self-check (`reads.zig`, `plans/m4-3.md` §9 M3-a).
+    ///
+    /// A module that read a fact about a module its key cannot see move is an
+    /// incomplete enumeration, which is a stale answer waiting for the right
+    /// edit sequence. It is `internal` rather than a panic for
+    /// `fast-compiler.md` §5's reason — the build says what it could not do —
+    /// and it is compiled away outside a safe build.
+    fn verifyReads(d: *Driver, m: Graph.Index, recorder: *const reads.Recorder) Error!void {
+        if (!reads.enabled) return;
+        const bad = reads.firstUncovered(recorder, &d.coverage) orelse return;
+        const message = try std.fmt.allocPrint(
+            d.gpa,
+            \\Something went wrong inside the compiler here: checking `{s}` read a fact of kind `{t}` about `{s}`, which its cache key does not cover.
+            \\
+            \\This is a bug in beni, not in your code. Please report it.
+            \\
+        ,
+            .{
+                d.interner.slice(d.graph.moduleName(m)),
+                bad.kind,
+                d.interner.slice(d.graph.moduleName(bad.read)),
+            },
+        );
+        errdefer d.gpa.free(message);
+        try d.per_module[m.int()].append(d.gpa, .{
+            .code = .internal,
+            .module = m,
+            .region = @enumFromInt(0),
+            .message = message,
+        });
+    }
+
+    fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
         if (m.int() < d.options.cached.len) {
             if (d.options.cached[m.int()]) |*loaded| return d.install(m, loaded);
         }

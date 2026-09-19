@@ -91,6 +91,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
+const reads = @import("reads.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Render = @import("Render.zig");
 const Types = @import("Types.zig");
@@ -1150,6 +1151,10 @@ const Analysis = struct {
             .ext_ctor => {
                 if (data.lhs >= an.cx.interfaces.len) return error.Malformed;
                 const module: Graph.Index = @enumFromInt(data.lhs);
+                // §3.2 row 17: the sibling constructor set, which is `R` —
+                // the importer's exhaustiveness is a function of the
+                // declaring module's published `types`/`ctors` tables.
+                reads.note(.iface, module);
                 const iface = &an.cx.interfaces[data.lhs];
                 if (data.rhs >= iface.ctors.len) return error.Malformed;
                 const type_index = iface.ctors[data.rhs].type;

@@ -53,6 +53,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const SourceStore = @import("../SourceStore.zig");
 const TypeStore = @import("TypeStore.zig");
+const reads = @import("reads.zig");
 
 const Types = @This();
 
@@ -196,7 +197,13 @@ pub fn entry(types: *const Types, id: TypeId) Entry {
         .comparable = true,
         .has_function = false,
     };
-    return types.entries[id.int()];
+    const e = types.entries[id.int()];
+    // The funnel every `Types.Entry` field goes through — `name`,
+    // `isEquatable`, `isComparable`, `hasFunction`, `named` and the `arity`
+    // and `kind` `Builder.apply` reads — so one note covers §3.2 rows 2–6 and
+    // 14 (`reads.zig`).
+    reads.note(.types_entry, e.module);
+    return e;
 }
 
 pub fn name(types: *const Types, id: TypeId) Symbol {
@@ -229,6 +236,7 @@ pub fn hasFunction(types: *const Types, id: TypeId) bool {
 /// The type declared by `decl` of `module`, or `.none` when that
 /// declaration is a value.
 pub fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex) TypeId {
+    reads.note(.types_of_decl, module);
     if (module.int() + 1 >= types.decl_offsets.len) return .none;
     const base = types.decl_offsets[module.int()];
     const limit = types.decl_offsets[module.int() + 1];
@@ -240,6 +248,7 @@ pub fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex) Typ
 
 /// The type at `index` in `module`'s interface.
 pub fn ofInterface(types: *const Types, module: Graph.Index, index: Interface.TypeIndex) TypeId {
+    reads.note(.types_of_interface, module);
     if (module.int() + 1 >= types.interface_offsets.len) return .none;
     const base = types.interface_offsets[module.int()];
     const limit = types.interface_offsets[module.int() + 1];
@@ -266,6 +275,7 @@ pub fn named(types: *const Types, id: TypeId) ?Named {
 /// This session's translation of module `m`'s interface type references.
 /// Empty until `m` has been checked, which is also when its terms exist.
 pub fn refIds(types: *const Types, m: Graph.Index) []const TypeId {
+    reads.note(.types_ref_ids, m);
     if (m.int() >= types.ref_ids.len) return &.{};
     return types.ref_ids[m.int()];
 }
@@ -302,6 +312,10 @@ pub fn resolveRefs(
 /// see `resolveRefs`.
 pub fn find(types: *const Types, graph: *const Graph, package: SourceStore.Package, module: Symbol, type_name: Symbol) TypeId {
     const m = graph.find(package, module) orelse return .none;
+    // The one place a check can reach a module it has no import edge to
+    // (`checker.md` §7's first `type_refs` consequence): a record names the
+    // DECLARING module, and this resolves that name. §3.2 row 11.
+    reads.note(.types_find, m);
     if (m.int() + 1 >= types.entry_offsets.len) return .none;
     const from = types.entry_offsets[m.int()];
     const to = types.entry_offsets[m.int() + 1];
@@ -960,6 +974,10 @@ pub const Builder = struct {
     /// needs a story for the whole type table, not for alias bodies alone.
     /// The comment is here so nothing claims a firewall that does not exist.
     fn aliasBody(b: *Builder, e: Entry, args: []const Var) Error!Var {
+        // §3.2 row 12, and one of the two demonstrated miscompiles
+        // (`plans/m4-3.md` §6.2): the expansion is in no record, so the digest
+        // is what makes it visible.
+        reads.note(.types_alias_body, e.module);
         const bir = b.artifacts.bir(b.graph.moduleFile(e.module));
         const d = bir.decl(e.decl);
         const body = d.annotation.unwrap() orelse return b.store.freshErr(b.varRank());
