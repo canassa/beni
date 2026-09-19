@@ -732,6 +732,178 @@ fn expectEveryKeyMoved(what: []const u8, before: []const Entry, after: []const E
 }
 
 // ---------------------------------------------------------------------------
+// The DEFAULT (`plans/m4-3.md` §10.3 item 30, §12)
+// ---------------------------------------------------------------------------
+
+test "with no flag the cache is on, in .beni-cache beside the invocation" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // **The flip, and it is one line in `Dir.fromCli`.** What has to be true
+    // is that the default changes how FAST a build is and nothing else: the
+    // second run must say exactly what a `--no-cache` run says, and it must
+    // have hit.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const oracle = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "oracle.json");
+    const first = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "first.json");
+    const second = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "second.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(oracle.result.exit_code, second.result.exit_code);
+    try testing.expectEqualStrings(oracle.result.stdout, second.result.stdout);
+    try testing.expectEqualStrings(oracle.result.stderr, second.result.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(w.exists(".beni-cache"));
+    try testing.expectEqual(@as(u64, 0), first.counters.hits);
+    try testing.expect(second.counters.hits > 0);
+    try testing.expectEqual(@as(u64, 0), second.counters.checked);
+    // And the entries are under the same `v<n>/<kk>/` fan-out a named
+    // directory uses: the default changes WHERE, never WHAT.
+    const files = try w.listFiles(".beni-cache");
+    try testing.expect(files.len > 0);
+    for (files) |f| try testing.expect(std.mem.startsWith(u8, f, "v1/"));
+}
+
+test "--no-cache leaves no directory at all, which is what makes it the oracle" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "r.json");
+    try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+    try testing.expect(!w.exists(".beni-cache"));
+    try testing.expectEqual(@as(u64, 0), r.counters.bytes);
+    try testing.expectEqual(@as(u64, 0), r.counters.frontend_bytes);
+
+    // `--no-cache` wins over an explicit `--cache-dir` too, and writes
+    // nothing there either.
+    const both = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "--cache-dir=cache", "src" }, "both.json");
+    try testing.expectEqual(@as(u8, 0), both.result.exit_code);
+    try testing.expect(!w.exists("cache"));
+}
+
+test "a working directory it cannot write degrades SILENTLY to no cache" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // **The difference between the default and `--cache-dir`, and the whole
+    // reason they are not one code path.** A person who NAMES a directory
+    // meant it, and a typo that silently produced slow builds would be worse
+    // than an error — so that is exit 2 with the path. A person who named
+    // nothing asked implicitly, and a read-only checkout, a sandbox or a full
+    // disk must not fail their build.
+    //
+    // And silently: stderr is byte-compared across the whole corpus
+    // (`fast-compiler.md` §10), so even a one-line note would be a diagnostic
+    // in every golden.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    // The oracle is run the same way the subject is — from `ro/`, with
+    // `--root` naming the source directory so the manifest that grants
+    // `foreign` is still found — so the only difference between the two runs
+    // is the cache.
+    try w.createDir("ro");
+    const root = try w.projectSubPath(arena, "src");
+    const from_ro = try w.projectSubPath(arena, "ro");
+    const oracle = try w.runWith(&.{
+        "check", "--jobs=1", "--no-cache", try std.fmt.allocPrint(arena, "--root={s}", .{root}), root,
+    }, .{ .raw_diagnostics = true, .cwd = .{ .path = from_ro } });
+    try testing.expectEqual(@as(u8, 0), oracle.exit_code);
+
+    // `makeDirUnwritable` returns false when the test runs as a user the mode
+    // cannot stop (root in a container).
+    try w.write("ro/keep", "");
+    if (!try w.makeDirUnwritable("ro")) return error.SkipZigTest;
+    defer w.restoreDirMode("ro");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{
+        "check", "--jobs=1", try std.fmt.allocPrint(arena, "--root={s}", .{root}), root,
+    }, .{ .raw_diagnostics = true, .cwd = .{ .path = from_ro } });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(oracle.exit_code, r.exit_code);
+    try testing.expectEqualStrings(oracle.stdout, r.stdout);
+    try testing.expectEqualStrings(oracle.stderr, r.stderr);
+    try testing.expectEqualStrings("", r.stderr);
+    // And nothing was created in the directory it could not write.
+    try testing.expect(!w.exists("ro/.beni-cache"));
+}
+
+test "a NAMED cache directory that cannot be created is still exit 2 with the path" {
+    // The other half of the row above: the default degrades, the flag does
+    // not. Without this the two would be indistinguishable and the flip would
+    // have quietly removed a usage error.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    // A regular FILE cannot be opened as a directory.
+    try w.write("notadir", "x");
+    const r = try w.runWith(&.{ "check", "--jobs=1", "--cache-dir=notadir", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "notadir") != null);
+}
+
+test "fmt and dump make no cache, and two projects in one directory share it safely" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    // `fmt` and `dump` take no cache flag at all (`frontend.md` §1), and the
+    // flip must not have given them one by the back door: neither reads an
+    // interface, so neither has anything a cache could hold.
+    _ = try w.runWith(&.{ "fmt", "--check", "src" }, .{ .raw_diagnostics = true });
+    try testing.expect(!w.exists(".beni-cache"));
+    _ = try w.runWith(&.{ "dump", "--stage=bir", "src/Leaf.beni" }, .{ .raw_diagnostics = true });
+    try testing.expect(!w.exists(".beni-cache"));
+
+    // Two projects checked from ONE working directory share one `.beni-cache`
+    // and do not fight: the key holds no path, so their entries are named by
+    // content and simply coexist. `plans/m4-3.md` §12 calls the duplication
+    // "correct, duplicated, and the cheap failure".
+    try w.write("other/beni.json", manifest);
+    try w.write("other/Solo.beni", "pub solo : Int\nsolo =\n    5\n");
+    const a1 = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "a1.json");
+    const b1 = try runCounted(&w, arena, &.{ "check", "--jobs=1", "other" }, "b1.json");
+    const a2 = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "a2.json");
+    const b2 = try runCounted(&w, arena, &.{ "check", "--jobs=1", "other" }, "b2.json");
+    try testing.expectEqual(@as(u8, 0), a1.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), b1.result.exit_code);
+    // Each hits on its second run although the other ran in between, which is
+    // what "content-addressed" buys.
+    try testing.expectEqual(@as(u64, 0), a2.counters.checked);
+    try testing.expectEqual(@as(u64, 0), b2.counters.checked);
+}
+
+// ---------------------------------------------------------------------------
 // The cache as an environment (`plans/m4-1.md` §6.2, §6.3)
 // ---------------------------------------------------------------------------
 
@@ -824,7 +996,11 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    // `--no-cache` is what "plain" means since M4-3: with no flag at all the
+    // cache is ON, in `.beni-cache/` beside the invocation, so a run meant as
+    // the ORACLE has to say so. A `--no-cache` run that wrote anything would
+    // stop being one.
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
     const cached = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cached.json");
 
     // ┌─────────────────────────────────────────┐
@@ -846,8 +1022,11 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     try testing.expectEqual(cached.counters.misses, plain.counters.misses);
     try testing.expectEqual(cached.counters.checked, plain.counters.checked);
     try testing.expect(cached.counters.bytes > 0);
-    // A run with no cache directory writes nothing, whatever it counted.
+    // A `--no-cache` run writes nothing, whatever it counted — and it leaves
+    // no directory behind either, which is what keeps it the oracle every
+    // other row compares against.
     try testing.expectEqual(@as(u64, 0), plain.counters.bytes);
+    try testing.expect(!w.exists(".beni-cache"));
 
     const files = try entriesOnly(arena, try w.listFiles("cache"));
     try testing.expectEqual(@as(usize, @intCast(cached.counters.misses)), files.len);
@@ -891,7 +1070,7 @@ test "a cold run lexes, parses and lowers every file and writes one artifact for
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
     const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
 
     // ┌─────────────────────────────────────────┐
@@ -1002,7 +1181,7 @@ test "a warm run lexes, parses and lowers NOTHING and says exactly the same thin
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
     const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "warm.json");
 
@@ -1063,7 +1242,7 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const edited = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "edited.json");
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1110,7 +1289,7 @@ test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
     defer w.deinit();
     try writeProject(&w);
 
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
     _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
     try testing.expect(artifacts.len > 1);
@@ -1245,7 +1424,7 @@ test "the interner-order fixture: a cache written over P is read over P plus a m
         \\
     );
     const grown = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "p2.json");
-    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "cold.json");
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "cold.json");
     const cold_hashes = try ifaceHashes(&w, arena);
     const warm_hashes = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
 
@@ -1374,7 +1553,7 @@ test "a read-only cache directory is an ordinary run that writes nothing" {
     if (!try w.makeDirUnwritable("locked")) return; // root, or a filesystem with no permissions
     defer w.restoreDirMode("locked");
 
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
     const locked = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=locked", "src" }, "locked.json");
 
     try testing.expectEqual(plain.result.exit_code, locked.result.exit_code);
@@ -1808,7 +1987,7 @@ test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
     defer w.deinit();
     try writeProject(&w);
 
-    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "plain.json");
     const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     // The `.bec` entries only: a ruined `.bef` is a FRONT-END miss and does
     // not move `cache_misses`, so the row below would be measuring the wrong

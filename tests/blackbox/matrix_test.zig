@@ -138,11 +138,19 @@ const Variant = struct {
 /// the one whose loss shows up as a wrong program rather than a wrong
 /// message; the front-end artifact is the one whose loss shows up as a wrong
 /// program that depends on HISTORY, which is worse.
+///
+/// **The first four pass `--no-cache` explicitly**, and since M4-3 they must.
+/// The cache is on by default, these fixtures run with cwd = the repo root,
+/// and variant 0 is the ORACLE every other variant is byte-compared against —
+/// so without the flag the oracle would be a run whose behaviour depended on a
+/// `.beni-cache/` left by whatever ran before it. A golden compared against
+/// something history-dependent is not a golden. The cached path has variants 4
+/// and 5, which name their own fresh directory.
 const variants = [_]Variant{
-    .{ .label = "cold --jobs=1", .flags = &.{"--jobs=1"} },
-    .{ .label = "cold --jobs=8", .flags = &.{"--jobs=8"} },
-    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
-    .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
+    .{ .label = "cold --jobs=1", .flags = &.{ "--jobs=1", "--no-cache" } },
+    .{ .label = "cold --jobs=8", .flags = &.{ "--jobs=8", "--no-cache" } },
+    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--no-cache", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
+    .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--no-cache", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
     // The cache axis (`fast-compiler.md` §8, M4-1): a COLD-WITH-CACHE run at
     // `--jobs=1` into a fresh directory, then a WARM one at `--jobs=8`
     // against it. Both must be byte-identical to variant 0 on every stream

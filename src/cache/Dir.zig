@@ -117,9 +117,36 @@ pub fn open(io: Io, path: []const u8, failure: *?Failure) OpenError!Dir {
 /// arrives.
 pub fn fromCli(io: Io, cache: Cli.Cache, failure: *?Failure) OpenError!?Dir {
     if (cache.off) return null;
-    const path = cache.dir orelse return null;
+    const path = cache.dir orelse default_path;
+    if (cache.dir == null) {
+        // **The default, since M4-3.** `.beni-cache/` beside the invocation,
+        // created on demand — and a failure to create it is NOT the exit-2
+        // case that a named one is. A person who wrote `--cache-dir` meant
+        // that directory and a typo must not become a mysteriously slow
+        // build; a person who wrote nothing asked for a cache implicitly, and
+        // a read-only working directory, a full disk or a sandbox must degrade
+        // to no cache at all. **Silently**: stderr is byte-compared across the
+        // whole corpus (`fast-compiler.md` §10), so a one-line note would be a
+        // diagnostic in every golden.
+        var ignored: ?Failure = null;
+        return open(io, path, &ignored) catch null;
+    }
     return try open(io, path, failure);
 }
+
+/// Where the cache lives when no `--cache-dir` is given: **the working
+/// directory**, not the manifest's and not a user-wide one.
+///
+/// *Rejected: XDG* — a user-wide directory needs a garbage collector and a size
+/// cap, and M4-3 deliberately has neither. *Rejected: beside `beni.json`* —
+/// `check` may run with no manifest at all, so the rule would have two cases.
+/// The key holds no path, so one project checked from two working directories
+/// gets two directories of identical entries: correct, duplicated, and the
+/// cheap failure.
+///
+/// Deleting it is always safe and is the documented remedy, because every
+/// entry is content-addressed: `rm -rf .beni-cache`.
+pub const default_path = ".beni-cache";
 
 pub fn close(d: *Dir) void {
     d.handle.close(d.io);

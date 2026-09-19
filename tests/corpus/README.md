@@ -107,3 +107,16 @@ reason this corpus does not rot the way Elm's did:
   checker is run {plain, `--roundtrip-interfaces`} × {`--jobs=1`,
   `--jobs=8`}, and the exit code, stdout, stderr and every file written must
   agree byte for byte (`fast-compiler.md` §8, `plans/m4-slice-zero.md` §6).
+- The corpus walker passes **`--no-cache`** to every `check` and `build`, and
+  so do `matrix_test.zig`'s first four variants. Since M4-3 the cache is on by
+  default (`frontend.md` §1) and these cases run with cwd = the repo root, so
+  without the flag ~576 fixtures would share one `.beni-cache/` that survives
+  between suite runs — and a golden compared against a run that may have hit an
+  entry written by a different case, or by yesterday's build, is a golden
+  compared against history. The CACHED path is covered where it can be
+  controlled instead: the matrix's last two variants run every one of these
+  fixtures cold-then-warm into a directory that is fresh per fixture and
+  byte-compare both, and `tests/blackbox/cutoff_test.zig` runs the edit
+  classes. `fmt` and `dump` take no cache flag at all and create no directory.
+  `.beni-cache/` is in `.gitignore`: a cache is machine-local by policy and is
+  never committed, and deleting it is always safe.

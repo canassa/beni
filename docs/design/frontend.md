@@ -114,21 +114,38 @@ layout). Two flags, on `check` and `build` only:
 
 | Flag | Meaning | Default |
 |---|---|---|
-| `--cache-dir=<path>` | keep checked modules between runs in this directory | off — there is no default directory in M4-1 |
-| `--no-cache` | ignore `--cache-dir` and any default | off |
+| `--cache-dir=<path>` | keep checked modules between runs in this directory | **`.beni-cache/` in the working directory, since M4-3** |
+| `--no-cache` | read and write no cache at all | off |
 
 They are `check`'s and `build`'s and not common options, because `fmt` resolves nothing and `dump`
 prints a representation rather than a result — a flag that is accepted and does nothing is the
 mistake `--source-maps` is refused to avoid ([`backend.md`](backend.md) §2), so `fmt --cache-dir=x`
-and `dump --cache-dir=x` are the ordinary `unknown option` and exit `2`. `--no-cache` exists before
-there is a default so that a script written today keeps working the day the default arrives (M4-3).
+and `dump --cache-dir=x` are the ordinary `unknown option` and exit `2`, and neither command creates
+a cache directory either. `--no-cache` existed before there was a default so that a script written
+then keeps working now.
 
-**A cache never changes an answer and never fails a build.** The directory is created if it is
-missing and a failure to create it is `2` with the path named, like `--out`'s; after that, every
-per-entry read or write failure — a read-only directory, a full disk, a lost race, a corrupt
-file — is silent, and the run produces byte-identical output to one with no cache at all. A stale or
-damaged entry is a miss, never a diagnostic: `--self-profile`'s `cache_hits`, `cache_misses` and
-`modules_checked` counters are where a cache that is doing nothing says so.
+*Corrected 2026-09-19 for M4-3: the cache is ON by default.* The condition
+[`fast-compiler.md`](fast-compiler.md) §8 set was that a cache on by default must be right about
+every input and that the harness is what establishes it, and that harness is
+`tests/blackbox/cutoff_test.zig` plus `bench/cutoff.sh`. **Where:** `.beni-cache/` in the working
+directory, created on demand. *Rejected: XDG* — a user-wide directory needs a garbage collector and
+a size cap, and M4-3 has neither. *Rejected: beside `beni.json`* — `check` may run with no manifest,
+so the rule would have two cases. The key holds no path, so one project checked from two working
+directories gets two directories of identical entries: correct, duplicated, and the cheap failure.
+**How a user clears it:** `rm -rf .beni-cache`, which is always safe because every entry is
+content-addressed; there is no `beni clean` and no garbage collection (both M4-5's, with the size
+cap). **`.gitignore` it** — a cache is machine-local by policy and is never committed.
+
+**A cache never changes an answer and never fails a build.** A directory the user NAMED is created
+if it is missing and a failure to create it is `2` with the path named, like `--out`'s: a person who
+wrote the flag meant it, and a typo that silently produced slow builds would be worse than an error.
+The DEFAULT directory degrades silently instead — a read-only checkout, a sandbox or a full disk
+gives a run byte-identical to `--no-cache`, exit code included, with nothing on either stream,
+because stderr is byte-compared across the whole corpus (§10) and even a one-line note would be a
+diagnostic in every golden. After that, every per-entry read or write failure — a lost race, a
+corrupt file — is silent either way. A stale or damaged entry is a miss, never a diagnostic:
+`--self-profile`'s `cache_hits`, `cache_misses` and `modules_checked` counters are where a cache that
+is doing nothing says so.
 
 Three more flags are hidden, like `--roundtrip-interfaces` and `--iface-hash`, and for the same
 reason — they are diagnostic surface, absent from `beni help` and from [`checker.md`](checker.md)

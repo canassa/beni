@@ -8,3 +8,9 @@
 # `beni build`'s default output directory, when the compiler is run by hand
 # at the repository root (`--out=<dir>` moves it; `out/` is the default).
 /out/
+
+# The persistent cache (`fast-compiler.md` §8). On by default since M4-3, in
+# the working directory, so running `beni check` anywhere in the tree makes
+# one. A cache is machine-local by policy and is never committed; deleting it
+# is always safe, because every entry is content-addressed.
+.beni-cache/

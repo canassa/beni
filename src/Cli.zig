@@ -39,8 +39,9 @@ pub const usage =
     \\  --pattern-budget=<n>      work one `case` may spend proving exhaustiveness before it is refused
     \\
     \\check and build options:
-    \\  --cache-dir=<path>        keep checked modules between runs in this directory (no default)
-    \\  --no-cache                ignore --cache-dir and any default
+    \\  --cache-dir=<path>        keep checked modules between runs here (default: .beni-cache)
+    \\  --no-cache                do not read or write a cache at all
+    \\                            deleting the cache directory is always safe: rm -rf .beni-cache
     \\
     \\check options:
     \\  --platform=<name>         also load this platform package, exactly as build does; optional,
@@ -156,13 +157,20 @@ pub const Common = struct {
 /// living here rather than on `Common`.
 pub const Cache = struct {
     /// `--cache-dir=<path>`: keep checked modules between runs in this
-    /// directory. **No default — in M4-1 the cache is opt-in**
-    /// (`fast-compiler.md` §8); it becomes the default in M4-3, the slice
-    /// whose cutoff makes it worth having.
+    /// directory. **Null means `.beni-cache/` in the working directory since
+    /// M4-3** (`Dir.default_path`), the slice whose cutoff makes a cache worth
+    /// having — and whose harness is what established that it is right about
+    /// every input, which was the condition.
+    ///
+    /// The difference between null and a named path is what a FAILURE means: a
+    /// named directory that cannot be created is exit 2 with the path, because
+    /// a person who wrote the flag meant it; the default silently degrades to
+    /// no cache, because a read-only working directory must not fail a build.
     dir: ?[]const u8 = null,
-    /// `--no-cache`: ignore `--cache-dir` and any default. It exists BEFORE
-    /// there is a default so that a script written today keeps working the
-    /// day the default arrives.
+    /// `--no-cache`: read and write no cache at all. It existed BEFORE there
+    /// was a default so that a script written then keeps working now, and it
+    /// is what the acceptance matrix's oracle runs pass — a `--no-cache` run
+    /// must stay cache-free or it is no oracle.
     off: bool = false,
     /// `--cache-build-id=<s>` — **hidden**, for `--roundtrip-interfaces`'
     /// reasons. Its bytes replace the compiler build id in the cache key

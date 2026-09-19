@@ -413,11 +413,28 @@ const Case = struct {
         return c.w.runWith(try c.argv(args), .{ .raw_diagnostics = true });
     }
 
-    /// `args`, plus `--core` for a fixture under `core/`.
+    /// `args`, plus `--core` for a fixture under `core/`, plus `--no-cache`
+    /// for the two commands that take it.
+    ///
+    /// **`--no-cache` is not tidiness, it is the corpus's premise.** The cache
+    /// is on by default since M4-3 and these cases run with cwd = the REPO
+    /// ROOT, so without the flag every one of ~576 fixtures would share one
+    /// `.beni-cache/` that survives between suite runs — and a golden compared
+    /// against a run that may have hit an entry written by a different case,
+    /// or by yesterday's build, is a golden compared against history. The
+    /// cached path is covered where it can be controlled: `matrix_test.zig`'s
+    /// two cache variants run every one of these fixtures cold-then-warm into
+    /// a directory that is fresh per fixture, and byte-compare both.
+    ///
+    /// `fmt` and `dump` are left alone: neither takes a cache flag at all
+    /// (`frontend.md` §1), so passing one would be `unknown option` and exit 2.
     fn argv(c: Case, args: []const []const u8) ![]const []const u8 {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
         if (c.fixture.core) try list.append(c.arena, "--core");
+        if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
+            try list.append(c.arena, "--no-cache");
+        }
         return list.items;
     }
 

@@ -426,7 +426,12 @@ test "--self-profile writes a Chrome trace with a read event per file and the co
     // the numbers are exactly the project's. (The directory has to exist,
     // hence the placeholder; the walk only ever picks up `.beni` files.)
     try w.write("nocore/PLACEHOLDER", "");
-    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--core-root=nocore", "--jobs=2", "src" });
+    // `--no-cache`, because the subject is EXACTLY which phases a run
+    // performs and the cache is on by default since M4-3: a cached run also
+    // emits `frontend_load` and `frontend_store` per file, legitimately, and
+    // a row that allowed them would stop saying "these and no others". What
+    // a cached run's phases are is `cache_test.zig`'s counters.
+    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--no-cache", "--core-root=nocore", "--jobs=2", "src" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -529,7 +534,12 @@ test "--self-profile records every phase of every file and every counter, exactl
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     try w.write("nocore/PLACEHOLDER", "");
-    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--core-root=nocore", "--jobs=2", "src" });
+    // `--no-cache`, because the subject is EXACTLY which phases a run
+    // performs and the cache is on by default since M4-3: a cached run also
+    // emits `frontend_load` and `frontend_store` per file, legitimately, and
+    // a row that allowed them would stop saying "these and no others". What
+    // a cached run's phases are is `cache_test.zig`'s counters.
+    const r = try w.run(&.{ "check", "--self-profile=trace.json", "--no-cache", "--core-root=nocore", "--jobs=2", "src" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
