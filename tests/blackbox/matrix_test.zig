@@ -189,12 +189,31 @@ fn expandFlags(
     return profile;
 }
 
-const Counters = struct { hits: u64 = 0, checked: u64 = 0 };
+const Counters = struct {
+    hits: u64 = 0,
+    checked: u64 = 0,
+    /// M4-2's three, and the reason the warm run asserts anything at all
+    /// beyond byte equality: a front end that ran and produced the same
+    /// answer is indistinguishable from one that did not run.
+    files: u64 = 0,
+    lexed: u64 = 0,
+    parsed: u64 = 0,
+    lowered: u64 = 0,
+    frontend_hits: u64 = 0,
+};
 
 fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
     const Event = struct {
         ph: []const u8,
-        args: struct { cache_hits: ?u64 = null, modules_checked: ?u64 = null } = .{},
+        args: struct {
+            cache_hits: ?u64 = null,
+            modules_checked: ?u64 = null,
+            files: ?u64 = null,
+            files_lexed: ?u64 = null,
+            files_parsed: ?u64 = null,
+            files_lowered: ?u64 = null,
+            frontend_hits: ?u64 = null,
+        } = .{},
     };
     const text = try Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
     const parsed = try std.json.parseFromSlice(
@@ -208,6 +227,11 @@ fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
         if (!std.mem.eql(u8, e.ph, "C")) continue;
         if (e.args.cache_hits) |v| out.hits = v;
         if (e.args.modules_checked) |v| out.checked = v;
+        if (e.args.files) |v| out.files = v;
+        if (e.args.files_lexed) |v| out.lexed = v;
+        if (e.args.files_parsed) |v| out.parsed = v;
+        if (e.args.files_lowered) |v| out.lowered = v;
+        if (e.args.frontend_hits) |v| out.frontend_hits = v;
     }
     return out;
 }
@@ -228,12 +252,49 @@ fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
 /// `Kind.checksClean` is which is which.
 fn expectCacheCounters(f: Fixture, v: Variant, variant: usize, baseline_exit: u8, c: Counters) !void {
     if (variant == first_cached_variant) {
-        if (c.hits != 0) {
-            std.debug.print("{s}/{s}: the cold-with-cache run reported {d} hits\n", .{ f.dir, f.name, c.hits });
+        if (c.hits != 0 or c.frontend_hits != 0) {
+            std.debug.print(
+                "{s}/{s}: the cold-with-cache run reported {d} module hits and {d} file hits\n",
+                .{ f.dir, f.name, c.hits, c.frontend_hits },
+            );
+            return error.MatrixDiffers;
+        }
+        // A COLD run does all the front-end work, every file of it. This is
+        // the floor the warm assertion below is measured against: without it
+        // "the front end did not run" could be true because there was no
+        // front end to run (M4-2, `fast-compiler.md` §8).
+        if (c.files == 0 or c.lexed != c.files or c.parsed != c.files or c.lowered != c.files) {
+            std.debug.print(
+                "{s}/{s}: a cold run over {d} files lexed {d}, parsed {d} and lowered {d}\n",
+                .{ f.dir, f.name, c.files, c.lexed, c.parsed, c.lowered },
+            );
             return error.MatrixDiffers;
         }
         return;
     }
+
+    // The warm run. Every file is either a hit or was lowered again, on
+    // every fixture — including the ones that do not compile, where what was
+    // lowered again is exactly the files whose front end errored and were
+    // therefore never written.
+    if (c.frontend_hits + c.lowered != c.files or c.lexed != c.lowered or c.parsed != c.lowered) {
+        std.debug.print(
+            "{s}/{s}: {s} over {d} files hit {d} and lexed/parsed/lowered {d}/{d}/{d}\n",
+            .{ f.dir, f.name, v.label, c.files, c.frontend_hits, c.lexed, c.parsed, c.lowered },
+        );
+        return error.MatrixDiffers;
+    }
+    // On a fixture that compiles, NOTHING is lexed, parsed or lowered. That
+    // is the slice's acceptance test, and it is a counter rather than a
+    // timing on purpose.
+    if (baseline_exit == 0 and c.lowered != 0) {
+        std.debug.print(
+            "{s}/{s}: {s} re-lowered {d} files of a fixture that compiles\n",
+            .{ f.dir, f.name, v.label, c.lowered },
+        );
+        return error.MatrixDiffers;
+    }
+
     if (baseline_exit != 0 and !f.kind.checksClean()) return;
     if (c.checked != 0 or c.hits == 0) {
         std.debug.print(
