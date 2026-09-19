@@ -85,6 +85,38 @@ Streams: `stdout` carries the product (dump text, `fmt --stdout` output, nothing
 `stderr` carries diagnostics and nothing else. Diagnostics are sorted by file path, then start
 position, then code — regardless of `--jobs`.
 
+**The persistent cache** (M4-1; [`fast-compiler.md`](fast-compiler.md) §8 has the key and the
+layout). Two flags, on `check` and `build` only:
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--cache-dir=<path>` | keep checked modules between runs in this directory | off — there is no default directory in M4-1 |
+| `--no-cache` | ignore `--cache-dir` and any default | off |
+
+They are `check`'s and `build`'s and not common options, because `fmt` resolves nothing and `dump`
+prints a representation rather than a result — a flag that is accepted and does nothing is the
+mistake `--source-maps` is refused to avoid ([`backend.md`](backend.md) §2), so `fmt --cache-dir=x`
+and `dump --cache-dir=x` are the ordinary `unknown option` and exit `2`. `--no-cache` exists before
+there is a default so that a script written today keeps working the day the default arrives (M4-3).
+
+**A cache never changes an answer and never fails a build.** The directory is created if it is
+missing and a failure to create it is `2` with the path named, like `--out`'s; after that, every
+per-entry read or write failure — a read-only directory, a full disk, a lost race, a corrupt
+file — is silent, and the run produces byte-identical output to one with no cache at all. A stale or
+damaged entry is a miss, never a diagnostic: `--self-profile`'s `cache_hits`, `cache_misses` and
+`modules_checked` counters are where a cache that is doing nothing says so.
+
+Three more flags are hidden, like `--roundtrip-interfaces` and `--iface-hash`, and for the same
+reason — they are diagnostic surface, absent from `beni help` and from [`checker.md`](checker.md)
+§2's table. `--cache-build-id=<s>` replaces the compiler build id in the key, so a test can prove
+that a compiler change discards the cache. `--cache-keys` makes `check` print one
+`<package>:<Module> <32 hex digits>` line per module on stdout, sorted by that key, exactly as
+`--iface-hash` prints the record's — it is how an edit-scenario fixture asserts *which* modules a
+change reached, with no cache directory involved. `--roundtrip-dispatch` is `--roundtrip-interfaces`'
+twin for the dispatch sidecar: every module's table is written, read and re-resolved in place the
+moment its check finishes, so every emitted file downstream is built from a table that has been
+through the format.
+
 ### 1.1 Diagnostics
 
 Module `src/diagnostic.zig` is a named build module `diagnostic` that imports only `std`. Both

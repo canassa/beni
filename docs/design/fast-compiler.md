@@ -764,6 +764,143 @@ ceiling (D7); no watching (D8); no cancellation (D9). It also does not close the
 `Bir` reads `checker.md` §7 names, `Types.build` and `Types.Builder.aliasBody`: the round-trip
 happens with every module's Bir in memory, which is what keeps the slice one slice.
 
+### The persistent cache, and its key
+
+*Added 2026-09-19 for M4-1 (`plans/m4-1.md`), taken against owner decision D1 and D5. It is the
+first slice that keeps anything between processes; it changes not one byte of slice zero's record.*
+
+**What M4-1 is, in one sentence.** A module whose cache key is unchanged is not re-checked: its
+interface record, its dispatch table and its diagnostics are loaded from disk and installed, and
+`constrain`, `solve`, `exhaustive`, `fillInterface` and `Cycles` never run for it. The FIREWALL
+CUTOFF — an importer spared because its imports' interface *hashes* did not move although their
+sources did — is **M4-3** and is deliberately not here; §8.1's formula is reached in two steps and
+this is the first.
+
+**The key is a 128-bit value over this byte string, in this order, every integer little-endian:**
+
+```
+"BENIKEY\x00"           8       magic
+key_version: u32                bumped whenever this recipe changes
+build_id: [16]u8                the compiler build id, below
+package: u8                     SourceStore.Package — app, core or platform
+name_len: u32, name             the DOTTED module name ("Json.Decode"), UTF-8
+options_len: u32, options       the canonical option string, below
+source_hash: [16]u8             over the module's source bytes
+sibling_hash: [16]u8            over its sibling .js, or 16 zero bytes when it declares no `foreign`
+core_epoch: [16]u8              over every core module's key; 16 zero bytes for a core module itself
+import_count: u32
+  per direct import, sorted by (package, name) as bytes, duplicates removed:
+    package: u8, name_len: u32, name, key: [16]u8
+```
+
+hashed with the same `std.hash.SipHash128(1, 3)` and the same all-zero key the record uses
+(`src/resolve/iface_bytes.zig:141`), so there is one hash function in the compiler. Keys are
+computed **serially, in `graph.order`** (`src/resolve/Graph.zig:172` gives the direct imports), which
+is why an import's key is always available before its importer's.
+
+**An import contributes its KEY, not its interface hash, and that is the slice's central decision.**
+A key is inductively the whole transitive input set, so an equal key means every byte that could
+reach this module's check — sources, options, compiler — is identical, and every whole-program fact
+recomputed from them (`Types`, the `equatable`/`comparable`/`has_function` fixpoint, the settled bits
+of `plans/m4-slice-zero.md` §4) is identical with it. The interface-hash form is *weaker* than the
+record: a dependent's check reads facts about its dependencies that the record does not carry, and
+enumerating them and proving the enumeration complete is the whole content of M4-3. *Rejected: keying
+on the imports' `(interface hash, sidecar hash)` pair now — it is M4-3's answer arrived at without
+M4-3's proof, and the sidecar that would carry the settled bits does not exist in M4-1 because every
+module's `Bir` is still in memory.* The cost is stated plainly: **in M4-1 a comment-only edit to a
+leaf re-checks every transitive importer**, because the leaf's key moved even though its interface
+hash did not. That is the number M4-3 exists to fix.
+
+**`core` is an unconditional input of every module's check**, with no import edge to say so — the
+solver reaches `core/Basics` directly (`src/check/Solve.zig:2583`, `:3348`), `Types.findWellKnown`
+reads core's interfaces, and `Reach` reads core's `Bir` (`src/js/Reach.zig:224`, `:313`). `core_epoch`,
+one hash over the sorted `(module name, key)` list of the core package, is how the key says so.
+
+**The compiler build id** is 16 bytes produced at build time by `build.zig` and passed to the
+compiler as a build option: `SipHash128(1, 3)` over `beni.version` (`src/beni.zig:8`), the Zig
+version string, the optimize mode, the target triple, and every file under `src/` — path then bytes,
+in sorted path order. `beni version` prints it after the version, so a bug report names the compiler
+that wrote a cache. It does **not** cover `core/` or `platforms/`: those are hashed per module by
+`core_epoch` and by the import terms, which is finer. *Rejected: hashing the installed binary at
+runtime — correct, and ~2 ms of a 15 ms budget.* A test forces a different one with the hidden
+`--cache-build-id=<s>`, whose bytes replace the build-id term; it is hidden for
+`--roundtrip-interfaces`' reasons and is how the "a compiler-build change discards the whole cache"
+fixture is written.
+
+**The option string is the flags that change what a module produces, and only those**, written as
+`core=<0|1>;platform=<0|1>;informational=<0|1>;pattern_budget=<n>` — `Lower.Options`' two permission
+bits (`src/bir/Lower.zig:149-162`), the informational-warning switch, and the usefulness budget,
+whose exhaustion is an error of that module (`checker.md` §6.6). Everything else on `Cli.Common`,
+`Cli.Check` and `Cli.Build` (`src/Cli.zig:77-162`) is **out**, each for a reason: `--jobs` because
+output is identical for every `n` and keying on it would hide the bug that rule forbids; `--root`
+and `--core-root` because they reach the key through the module name and through `core_epoch`
+respectively, and keying on the string would make `src` and `./src` miss; `--platform` because what
+it changes is what an import resolves to, which the import terms already carry, and an unresolvable
+one is an error and errors are not cached; `--diagnostics`, `--self-profile`, `--explain`,
+`--iface-hash`, `--positions` because they select a rendering; `--roundtrip-interfaces` because a
+run with it must produce the same record, and exempting it would excuse it from the acceptance
+matrix; `--out`, `--library`, `--release` because they are the backend's and no emitted byte is
+cached in M4-1.
+
+**The `stat` fast-path is M4-2's.** M4-1 reads and hashes every source on every run because it reads
+every source anyway, so the hash is the only added cost: 1 836 kB at the 3.2 GB/s measured here is
+**0.57 ms** over the 100k corpus, against a 4.5 ms `read` phase. There is no size/mtime/inode column
+on `SourceStore.File` (`src/SourceStore.zig:67-85`) and M4-1 does not add one; the fast path pays
+only once the read itself is gone.
+
+**The cache directory** is named by `--cache-dir=<path>` on `check` and `build`
+([`frontend.md`](frontend.md) §1) and **there is no default: in M4-1 the cache is opt-in**. A cache
+that is on by default must be right about every input, and the fixtures that establish that are this
+slice's product, not its premise. It becomes the default in M4-3, the slice whose cutoff makes it
+worth having and whose edit-scenario table is what proves the key complete. Inside it, one file per
+module, **content-addressed by the key**: `<dir>/v<n>/<key[0..2]>/<key[2..32]>.bec`, two levels so
+no directory holds 100 000 entries. Writing is write-to-temp-then-`rename` inside the same directory
+and there are no locks: two `beni` processes that compute the same key write identical bytes and the
+later rename is harmless, and two that compute different keys never touch one file. *Rejected: one
+entry per module path, overwritten — two builds of one project with different options then fight
+over one file, and a stale entry becomes a wrong answer instead of an unreferenced one.* **No
+garbage collection in M4-1** and no size cap: entries accumulate at ~2 kB per checked module per
+distinct key, and the remedy is deleting the directory, which is always safe. `.gitignore` it; a
+cache is machine-local by policy from the moment §8.3's zero-copy map lands, and is never committed.
+
+**A cache entry is written only for a module whose own check produced no `error`-severity diagnostic
+and which the graph did not poison.** That is §3.2's "produced by a clean check" bit, and it is a
+refusal to write rather than a bit to read: an `<error>` scheme is a hole every importer checks
+clean against, and the one failure mode a compiler may not have is `beni check` exiting 0 over it.
+Warnings are cached, with the entry, and re-reported byte-identically — `ambiguous_method_receiver`
+is on by default, so "a module with any diagnostic is never cached" would exempt most real projects.
+
+**What a hit skips, and what still runs.** For every module, hit or miss: `enumerate`, `read`,
+`lex`, `parse`, `lower` — the front end runs for every module because `Types.build` and
+`settleEquatable` walk every module's `Bir` (`src/check/Types.zig:364`, `:477`) and so do `Resolve`,
+`Cycles`, `Reach` and `js/Lower` — then `merge_interners`, `graph`, `resolve` (which builds the
+interface *shell* and its `Provenance`), the key pass, and `types`. For a **miss**: the whole of
+`ModuleCheck.run` (`src/check/Check.zig:584`), then the entry is written. For a **hit**: translate
+the entry's module
+and type references into this session's `Graph.Index`es and `TypeId`s, install the record and the
+dispatch table, replay the diagnostics, fill `Types.ref_ids` (`src/check/Check.zig:1127-1129`) — and
+nothing else. `beni build` then runs `eliminate` and `emit` for every module as it always did: no
+emitted byte is cached, and the write-skip `Emit.flush` wants is M4-4's.
+
+**The acceptance test is the matrix with a third axis.** `tests/blackbox/matrix_test.zig` gains two
+runs per fixture: a **cold-with-cache** run at `--jobs=1` into a fresh cache directory, which must be
+byte-identical to the plain run and report `cache_hits = 0`, and a **warm** run at `--jobs=8` against
+it, which must be byte-identical to the plain run and report `modules_checked = 0`. Three counters
+say so: `cache_hits`, `cache_misses`, `modules_checked`. The `--jobs` cross is deliberate — a cache
+written at one worker count and read at another is what would catch a `Symbol` reaching the bytes.
+**What must NOT be asserted equal across the axis is `unifications`, `generalisations`,
+`instantiations` and `obligations`**: on a warm run they go to nearly zero, which is the point, and
+`plans/m4-plan.md` §4.5's "the counters did not move" is a claim about two runs at the same
+temperature.
+
+**Explicitly not in M4-1**, each pointing at its owner: front-end artifacts on disk and the `stat`
+fast-path (M4-2); the firewall cutoff, and with it the declared-type sidecar of
+`plans/m4-slice-zero.md` §4 — M4-3 needs its definition and its hash, M4-4 its bytes
+(`checker.md` §7); the whole-program passes, `Types` and the `Reach` edge lists, and
+any caching of emitted bytes (M4-4); `mmap` and §8.3's zero-copy load (M4-4, with the artifacts);
+the daemon, the socket protocol, the memory ceiling, watching and cancellation (M4-5, D6–D9
+**PENDING**); the declaration-level graph of §8.2 (M4-6).
+
 ## 9. JavaScript backend
 
 ### 9.1 Dead code elimination — copy Elm's mechanism exactly

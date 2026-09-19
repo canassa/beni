@@ -79,7 +79,7 @@ first", to be confirmed; the daemon-phase decisions D6–D9 are not needed befor
 
 | # | Slice | State | Notes |
 |---|---|---|---|
-| M4-1 | The content-hash cache key, the unhashed sidecar (`plans/m4-slice-zero.md` §4's disposition table), the "produced by a clean check" bit, a `stat` column on `SourceStore` | spec in flight | spec first; fixtures: a module cached while broken is never reused, a sibling `.js` edit invalidates only that emit unit, a compiler-build change discards the cache |
+| M4-1 | The content-hash cache key, the unhashed sidecar (`plans/m4-slice-zero.md` §4's disposition table), the "produced by a clean check" bit, a `stat` column on `SourceStore` | spec **done**; code in flight (worktree) | spec first; fixtures: a module cached while broken is never reused, a sibling `.js` edit invalidates only that emit unit, a compiler-build change discards the cache |
 | M4-2 | Pre-resolve BIR, AST, tokens, comments, diagnostics on disk (mmap, validated on load) | todo | corrupt-cache fixture per artifact; budget: cold start with a warm cache < 120 ms |
 | M4-3 | The firewall cutoff: unchanged interface hash ⇒ dependents not re-checked; needs the five re-entrancy fixes and the three "pure per module" corrections | todo | the incremental-determinism matrix; the three warm budgets 15 / 60 / 25 ms |
 

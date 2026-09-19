@@ -838,6 +838,84 @@ slots holding the same text print alike and the column's length is never stated 
 lossless and must not be mistaken for a serialization. It stays what §2 says it is: the view that
 can see a byte difference the two pretty printers hide.
 
+### The cache entry, and the sidecar beside the record
+
+*Specified 2026-09-19 for M4-1 (`plans/m4-1.md`); the key over these bytes, the directory and the
+acceptance test are `fast-compiler.md` §8.*
+
+One file per module, named by its cache key, holding the record verbatim and the two things a hit
+cannot recompute. Same shape as the record's: magic, version, a column table, little-endian scalars,
+4-byte alignment, gaps zero-filled, and **a bad entry is a MISS, never a message and never an exit
+code**.
+
+```
+header    magic "BENICAC\x00" (8)   format_version: u32   section_count: u32
+          key: [16]u8               the key this entry was written for
+table     section_count × { offset: u32, len: u32 }        offsets from byte 0
+sections  in table order, each 4-byte aligned
+```
+
+Three sections, in this order and no other: `interface`, `dispatch`, `diagnostics`. **`interface` is
+the bytes `iface_bytes.write` produced, verbatim**, so `iface_bytes.hash` over that section IS the
+interface hash §8.1's firewall compares and M4-3 re-derives nothing. The entry repeats its key in the
+header because the file NAME is the key: a mismatch is the "wrong build id" case, and it must be
+detectable without trusting a directory entry.
+
+**`dispatch` is the sidecar.** It is the module's `Dispatch` table (`src/check/Dispatch.zig:227-242`)
+and it is here because it is the one product of the solver the backend needs and nothing can
+reconstruct without solving — every method call's target, every `?`'s shape, every evidence
+parameter and every derived function the module emits. Same container, columns `sites`, `tries`,
+`decl_evidence`, `evidence`, `derived`, `parts`, `symbols`, `module_refs`, `type_refs`, `strings`.
+Two of its in-memory fields are session-relative and neither may reach the bytes, for the reason
+§8.1's purity rule gives: `Target.Ext.module` and `Target.ExtDerivedUse.module` are a `Graph.Index`
+(`:97`, `:119`) and become an index into `module_refs`, each row `(package, module name)`;
+`Shape.nominal` and `ExtDerivedUse.type` are a `TypeId` (`:49`) and become an index into a
+`type_refs` table with the record's own row shape, `(package, declaring module's name, type's
+name)`. `symbols` becomes offsets into `strings`, exactly as the record's does. What stays as-is is
+every `Bir.DeclIndex` and `Bir.Inst.Index`: they index the module's own `Bir`, which the key's
+`source_hash` and option string pin, and an `Interface.ValueIndex`, which indexes an import whose key
+the entry's key contains.
+
+**Resolving those two tables needs `Types`, which does not exist when the entry is read**, so
+loading is two steps and the split is part of the contract: the entry is read, validated and
+re-interned **serially, before any worker starts** — `InternPool.Global` is thread-confined and this
+is the load `iface_bytes`' header reserves `getOrPut` for — and `module_refs`/`type_refs` are
+translated through `Graph.find` and `Types.find` on the DAG, in the hit path, where `Types` is built
+and read-only.
+
+**`diagnostics` is the module's own check diagnostics**, one row of
+`{ code: u16, severity: u8, has_token: u8, region: u32, token: u32, message_start: u32,
+message_len: u32 }` into a `messages` blob — `Diagnostics.Item` (`src/check/Diagnostics.zig:41-60`)
+minus its `module`, which the entry is for. The message is stored as the prose the checker rendered,
+because a checker's message is built from types that die with the store; the span is NOT stored and
+is recomputed from this build's `SourceStore`, so a module that moved without changing its name still
+points at the right file. `Code` is stored as its integer value, which is meaningful only for the
+compiler build the key names — adding a diagnostic renumbers the enum and changes the build id, which
+is the mechanism.
+
+**Installing a loaded record is validated against the shell.** `Interface.build` has already run at
+resolve time and produced this module's `values`, `types` and `ctors` tables and its `Provenance`
+(`src/resolve/Interface.zig:570`); the loaded record replaces the shell wholesale, and the
+counts and the name of every entry of all three tables must agree first — `Provenance` is
+`Bir.DeclIndex`es indexed by slot, it is never serialized, and a record whose slots did not line up
+with it would be a silent miscompile rather than a miss. On the 100k corpus that is ~2 500
+comparisons for the whole project.
+
+**What is NOT in the entry, and why each may be left out.** The `TypeStore` — one per module, dead
+by design at the end of its check (`src/check/Check.zig:593-595`), and no dependent reads one.
+`Types.ref_ids` — recomputed by `resolveRefs` (`src/check/Types.zig:286`), once per module per
+build, which is where `Check.zig:1127-1129` already does it. `Provenance` — above. And the declared-
+type table with its settled `equatable`/`comparable`/`has_function` bits, `declaresPubCompare` and
+the interface-slot → declaration-ordinal map that *The serialized form* names as owing a sidecar:
+**their disposition stands and their due date is not M4-1, and it splits in two.** Every one of them
+is a function of the declaring module's `Bir`, and M4-1, M4-2 and M4-3 all keep every module's `Bir`
+present — M4-2 loads it from disk instead of rebuilding it, and `Types.build` walks all of them
+either way (`src/check/Types.zig:364`, `:477`). So **M4-3 needs their DEFINITION and their HASH** —
+it keys an importer on its imports' records, the records do not carry these facts, and a hash it
+recomputes from the `Bir` and compares is what closes that gap — and **M4-4 needs their BYTES**, when
+`Types` goes incremental and a module's `Bir` may be absent for the first time. Writing them in M4-1
+would be bytes nobody reads.
+
 ## 8. Diagnostics
 
 Every code below joins the catalogue in `language.md` §10 (append there first, then in

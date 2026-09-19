@@ -493,6 +493,22 @@ Elm, where kernel code lives inside the package and any change re-runs the packa
 requirement to state now rather than debug later: **M4's `stat` fast-path must cover sibling files**,
 not only `.beni` files.
 
+*Amended 2026-09-19, as M4-1 built the key (`fast-compiler.md` §8, `plans/m4-1.md`). The sibling
+hash is in the key, as a 16-byte term that is 16 zero bytes for a module declaring no `foreign`.
+Two corrections to the paragraph above, both from where the checks actually live. **(i) §4's four
+checks are a whole-program pass, not part of a module's check**: they run in `Emit.checkContract`
+(`src/js/Emit.zig:172`, `:229`, `:424`), which `beni build` runs and `beni check --platform` runs
+too (`src/check/Command.zig:89`), outside and after the per-module check whose result an entry
+holds. So in M4-1 no cached artifact depends on a sibling's bytes, and the term is conservative —
+taken anyway, because check 4 reads the sibling to count a declared `foreign`'s parameters and the
+day that answer is cached the key has to have been right all along, and because one hash per module
+declaring a `foreign` is a cost nobody can measure. **(ii) "and nothing else" is M4-3's, not
+M4-1's**: an M4-1 key carries its imports' keys, so a sibling edit does reach a dependent. It stops
+there the moment the key is weakened to the interface hash, which a sibling cannot move — foreignness
+is one bit derived from the `.beni` source and no byte of the JavaScript is in the record, which is
+this section's own point. The `stat` fast-path over siblings arrives with the one over sources, in
+M4-2.*
+
 ## 8. Milestones
 
 - **B1 — the platform contract in the compiler.** *Shipped with M3a.* The manifest key
