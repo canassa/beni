@@ -34,6 +34,14 @@
 //! not executed here — `corpus_test.zig` runs it, twice; this binary's
 //! claim is about bytes.
 //!
+//! **The cache axis** (M4-1) adds two more runs per fixture: a cold one at
+//! `--jobs=1` into a cache directory that is fresh because the `World` is,
+//! and a warm one at `--jobs=8` against it. Both are byte-compared with the
+//! plain run, and both assert counters — the cold one hits nothing, and the
+//! warm one re-checks no module of a fixture that compiles. The `--jobs`
+//! cross is deliberate: a cache written at one worker count and read at
+//! another is what would catch a `Symbol` reaching the bytes.
+//!
 //! `build/bad/` is here too, with no output tree to compare: a refused
 //! build writes nothing, so its claim is that the DIAGNOSTICS of a refusal
 //! are a function of the input and not of `--jobs` — which is the same
@@ -59,6 +67,7 @@ const Kind = enum {
     check_depth,
     dispatch,
     build_bad,
+    build_bad_release,
     run,
     emit,
     regress,
@@ -71,6 +80,7 @@ const Kind = enum {
             .check_depth => corpus_root ++ "/check/depth",
             .dispatch => corpus_root ++ "/dispatch",
             .build_bad => corpus_root ++ "/build/bad",
+            .build_bad_release => corpus_root ++ "/build/bad-release",
             .run => corpus_root ++ "/run",
             .emit => corpus_root ++ "/emit",
             .regress => corpus_root ++ "/regress",
@@ -78,13 +88,35 @@ const Kind = enum {
     }
 
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .build_bad;
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or
+            kind == .build_bad or kind == .build_bad_release;
     }
 
     /// Whether a fixture of this kind is COMPILED (its assertion is the
     /// output tree) rather than checked (its assertion is a stream).
     fn builds(kind: Kind) bool {
-        return kind == .run or kind == .emit or kind == .build_bad;
+        return kind == .run or kind == .emit or kind == .build_bad or kind == .build_bad_release;
+    }
+
+    /// `build/bad-release/` adds `--release`, which is what its fixtures are
+    /// about (`backend.md` §9's refusal of `Debug`).
+    fn isRelease(kind: Kind) bool {
+        return kind == .build_bad_release;
+    }
+
+    /// Whether every module of a fixture of this kind CHECKS clean, even
+    /// when the build then fails.
+    ///
+    /// It is true of both refused-build kinds and it is the sharp claim the
+    /// cache axis can make about them: `findEntry`, the sibling checks and
+    /// `--release`'s `Debug` refusal all run inside `Emit.run`, long after
+    /// `Session.run` has written the entries — so a build that exits 1 for
+    /// any of those reasons has nonetheless cached every module, and a warm
+    /// run of it re-checks NOTHING. `build/bad-release/` is the one that
+    /// proves it rather than assuming it: `corpus_test.buildBad`'s fourth
+    /// assertion requires the same project to build clean without the flag.
+    fn checksClean(kind: Kind) bool {
+        return kind == .build_bad or kind == .build_bad_release;
     }
 };
 
@@ -108,7 +140,106 @@ const variants = [_]Variant{
     .{ .label = "cold --jobs=8", .flags = &.{"--jobs=8"} },
     .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--roundtrip-interfaces", "--roundtrip-dispatch" } },
     .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--roundtrip-interfaces", "--roundtrip-dispatch" } },
+    // The cache axis (`fast-compiler.md` §8, M4-1): a COLD-WITH-CACHE run at
+    // `--jobs=1` into a fresh directory, then a WARM one at `--jobs=8`
+    // against it. Both must be byte-identical to variant 0 on every stream
+    // and every file written.
+    //
+    // Two runs and not four: the `--jobs` cross rides on the pair, and it is
+    // deliberate — a cache written at one worker count and read at another
+    // is what would catch a `Symbol` reaching the bytes.
+    //
+    // `{cache}` in a flag is replaced with this fixture's own cache
+    // directory, which is fresh per fixture because a `World` is.
+    .{ .label = "cold into a cache --jobs=1", .flags = &.{ "--jobs=1", "--cache-dir={cache}" } },
+    .{ .label = "warm from the cache --jobs=8", .flags = &.{ "--jobs=8", "--cache-dir={cache}" } },
 };
+
+/// Variant index of the first cached run. From here on the runs assert
+/// counters as well as bytes.
+const first_cached_variant = 4;
+
+/// `{cache}` replaced by an ABSOLUTE path inside this fixture's own temp
+/// tree, and `--self-profile` appended so the counters can be read.
+///
+/// Absolute and not relative because the stream fixtures run with cwd = the
+/// repo root, exactly as the corpus walker runs them — a relative cache
+/// directory would be created in the repository.
+fn expandFlags(
+    arena: std.mem.Allocator,
+    w: *World,
+    flags: []const []const u8,
+    variant: usize,
+    out: *std.ArrayList([]const u8),
+) ![]const u8 {
+    const root = try w.projectPath();
+    var profile: []const u8 = &.{};
+    for (flags) |flag| {
+        if (std.mem.eql(u8, flag, "--cache-dir={cache}")) {
+            try out.append(arena, try std.fmt.allocPrint(arena, "--cache-dir={s}/_cache", .{root}));
+            profile = try std.fmt.allocPrint(arena, "{s}/_p{d}.json", .{ root, variant });
+            try out.append(arena, try std.fmt.allocPrint(arena, "--self-profile={s}", .{profile}));
+            continue;
+        }
+        try out.append(arena, flag);
+    }
+    return profile;
+}
+
+const Counters = struct { hits: u64 = 0, checked: u64 = 0 };
+
+fn readCounters(arena: std.mem.Allocator, path: []const u8) !Counters {
+    const Event = struct {
+        ph: []const u8,
+        args: struct { cache_hits: ?u64 = null, modules_checked: ?u64 = null } = .{},
+    };
+    const text = try Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+    const parsed = try std.json.parseFromSlice(
+        struct { traceEvents: []Event },
+        arena,
+        text,
+        .{ .ignore_unknown_fields = true },
+    );
+    var out: Counters = .{};
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.cache_hits) |v| out.hits = v;
+        if (e.args.modules_checked) |v| out.checked = v;
+    }
+    return out;
+}
+
+/// What the two cached runs have to report, beyond byte equality.
+///
+/// The cold one hits nothing — the directory is this fixture's own and is
+/// fresh. The warm one re-checks NO clean module, which for a fixture that
+/// exits 0 means zero modules checked at all.
+///
+/// A fixture that exits 1 or 2 divides in two. When the CHECK is what
+/// failed, its broken modules are uncacheable by construction and are
+/// re-checked every time, so the claim is the byte equality alone. When the
+/// check passed and the BUILD refused — a missing `main`, a sibling that
+/// does not match, `--release` reaching `Debug` — every module was cached
+/// all the same, because all three of those run inside `Emit.run` after
+/// `Session.run` wrote the entries, and the warm run checks none.
+/// `Kind.checksClean` is which is which.
+fn expectCacheCounters(f: Fixture, v: Variant, variant: usize, baseline_exit: u8, c: Counters) !void {
+    if (variant == first_cached_variant) {
+        if (c.hits != 0) {
+            std.debug.print("{s}/{s}: the cold-with-cache run reported {d} hits\n", .{ f.dir, f.name, c.hits });
+            return error.MatrixDiffers;
+        }
+        return;
+    }
+    if (baseline_exit != 0 and !f.kind.checksClean()) return;
+    if (c.checked != 0 or c.hits == 0) {
+        std.debug.print(
+            "{s}/{s}: {s} re-checked {d} modules and hit {d}; a warm run of a clean fixture must check none\n",
+            .{ f.dir, f.name, v.label, c.checked, c.hits },
+        );
+        return error.MatrixDiffers;
+    }
+}
 
 const Fixture = struct {
     kind: Kind,
@@ -249,7 +380,7 @@ fn one(gpa: std.mem.Allocator, f: Fixture) !void {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    if (f.kind == .build_bad) return failedBuildMatrix(&w, arena, f);
+    if (f.kind == .build_bad or f.kind == .build_bad_release) return failedBuildMatrix(&w, arena, f);
     if (f.kind.builds()) return buildMatrix(&w, arena, f);
 
     const path = try std.fs.path.join(arena, &.{ f.dir, f.name });
@@ -267,11 +398,16 @@ fn one(gpa: std.mem.Allocator, f: Fixture) !void {
 /// with cwd = the repo root, as the corpus walker runs it, so the paths in
 /// the diagnostics are the repo-relative ones the goldens hold.
 fn streamMatrix(w: *World, arena: std.mem.Allocator, f: Fixture, args: []const []const u8) !void {
+    // `dump` takes no cache flag at all — it prints a representation rather
+    // than a result (`frontend.md` §1) — so the cache axis applies to the
+    // `check` invocations and the dumps keep the four they had.
+    const cached_axis = std.mem.eql(u8, args[0], "check");
     var base: ?world.Result = null;
-    for (variants) |v| {
+    for (variants, 0..) |v, i| {
+        if (i >= first_cached_variant and !cached_axis) break;
         var argv: std.ArrayList([]const u8) = .empty;
         try argv.appendSlice(arena, args);
-        try argv.appendSlice(arena, v.flags);
+        const profile = try expandFlags(arena, w, v.flags, i, &argv);
         if (f.core) try argv.append(arena, "--core");
         const r = try w.runWith(argv.items, .{ .raw_diagnostics = true, .cwd = .inherit });
         const b = base orelse {
@@ -281,15 +417,25 @@ fn streamMatrix(w: *World, arena: std.mem.Allocator, f: Fixture, args: []const [
         try expectSame(f, v, args[0], "exit code", b.exit_code, r.exit_code);
         try expectSameBytes(f, v, args[0], "stdout", b.stdout, r.stdout);
         try expectSameBytes(f, v, args[0], "stderr", b.stderr, r.stderr);
+        if (profile.len != 0) {
+            try expectCacheCounters(f, v, i, b.exit_code, try readCounters(arena, profile));
+        }
     }
 }
 
-/// A `build/bad/` project four ways: the whole fixture tree is the project
+/// A `build/bad/` project every way: the whole fixture tree is the project
 /// (`corpus_test.buildBad`), and a `platform/` subdirectory means
 /// `--platform=platform`. There is no output tree to compare — the build
 /// fails and §4 says it writes nothing — so the claim is the one that
 /// matters for a refusal: the DIAGNOSTICS a rejected build prints do not
-/// move with `--jobs` or with a round-tripped interface record.
+/// move with `--jobs`, with a round-tripped record, or with a cache.
+///
+/// `build/bad-release/` comes through here too, with `--release` added. It
+/// is the sharpest fixture the cache axis has for a failing build: its
+/// project checks CLEAN — `corpus_test.buildBad`'s fourth assertion proves
+/// it by building the same sources without the flag — so every module is
+/// cached, the refusal happens afterwards inside `Emit.run`, and the warm
+/// run re-checks nothing while still printing the same refusal.
 fn failedBuildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
     const dir_path = try std.fs.path.join(arena, &.{ f.dir, f.name });
     try w.copyTree(dir_path, "_expected.");
@@ -311,7 +457,7 @@ fn failedBuildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
     }.lessThan);
 
     var base: ?world.Result = null;
-    for (variants) |v| {
+    for (variants, 0..) |v, i| {
         var argv: std.ArrayList([]const u8) = .empty;
         try argv.appendSlice(arena, &.{
             "build",
@@ -319,7 +465,8 @@ fn failedBuildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
             if (has_platform) "--platform=platform" else "--platform=node",
             "--out=out",
         });
-        try argv.appendSlice(arena, v.flags);
+        if (f.kind.isRelease()) try argv.append(arena, "--release");
+        const profile = try expandFlags(arena, w, v.flags, i, &argv);
         try argv.appendSlice(arena, sources.items);
         const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
         const b = base orelse {
@@ -329,6 +476,9 @@ fn failedBuildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
         try expectSame(f, v, "build", "exit code", b.exit_code, r.exit_code);
         try expectSameBytes(f, v, "build", "stdout", b.stdout, r.stdout);
         try expectSameBytes(f, v, "build", "stderr", b.stderr, r.stderr);
+        if (profile.len != 0) {
+            try expectCacheCounters(f, v, i, b.exit_code, try readCounters(arena, profile));
+        }
     }
 }
 
@@ -374,7 +524,7 @@ fn buildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
         // (backend.md §9, §12); `run/` is always an application.
         if (f.kind == .emit and !f.app) try argv.append(arena, "--library");
         if (f.release) try argv.append(arena, "--release");
-        try argv.appendSlice(arena, v.flags);
+        const profile = try expandFlags(arena, w, v.flags, i, &argv);
         if (f.core) try argv.append(arena, "--core");
         try argv.appendSlice(arena, sources.items);
 
@@ -384,6 +534,9 @@ fn buildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
             base_dir = out_dir;
             continue;
         };
+        if (profile.len != 0) {
+            try expectCacheCounters(f, v, i, b.exit_code, try readCounters(arena, profile));
+        }
         try expectSame(f, v, "build", "exit code", b.exit_code, r.exit_code);
         try expectSameBytes(f, v, "build", "stdout", b.stdout, r.stdout);
         try expectSameBytes(f, v, "build", "stderr", b.stderr, r.stderr);
