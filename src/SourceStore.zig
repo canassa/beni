@@ -446,6 +446,21 @@ fn isUpperIdent(s: []const u8) bool {
     return true;
 }
 
+/// Whether `index`'s bytes are already in the store: an embedded file, whose
+/// bytes are in the binary's rodata, or one a worker has read.
+///
+/// M4-2 needs it because the front-end cache turns the per-file phase inside
+/// out: the source has to be READ before the file key can be computed, and
+/// the key decides whether the lexer runs at all — so `read` is called from
+/// two places on a miss and must be idempotent between them. Comparing
+/// against the `empty_source` sentinel rather than keeping a bit: the
+/// sentinel is what "not read" already means here, and a second column would
+/// be a second thing to keep true.
+pub fn isRead(store: *const SourceStore, index: Index) bool {
+    return store.files.items(.embedded)[index.int()] or
+        store.files.items(.bytes)[index.int()].ptr != empty_source.ptr;
+}
+
 pub const ReadError = Io.Dir.ReadFileAllocError;
 
 /// Read one file's bytes. Safe to call from a worker for its own index.

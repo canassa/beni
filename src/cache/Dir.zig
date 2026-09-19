@@ -230,12 +230,23 @@ pub fn loadFrontend(d: *const Dir, gpa: Allocator, scratch: *std.ArrayList(u8), 
     const p = filePath(&buffer, .frontend, key);
     var file = d.handle.openFile(d.io, p, .{}) catch return null;
     defer file.close(d.io);
-    const size = file.getEndPos(d.io) catch return null;
-    if (size == 0 or size > max_entry_bytes) return null;
+    const info = file.stat(d.io) catch return null;
+    if (info.size == 0 or info.size > max_entry_bytes) return null;
+    const size: usize = @intCast(info.size);
     scratch.clearRetainingCapacity();
-    scratch.ensureTotalCapacity(gpa, @intCast(size)) catch return null;
-    scratch.items.len = @intCast(size);
-    file.readStreamingAll(d.io, scratch.items) catch return null;
+    scratch.ensureTotalCapacity(gpa, size) catch return null;
+    scratch.items.len = size;
+    var filled: usize = 0;
+    while (filled < size) {
+        // A short read is not a failure — it is what a reader racing a
+        // writer sees — so the loop keeps going until the file is exhausted,
+        // and a file that ended early is a MISS through the header's
+        // `total_len` rather than an error here.
+        const n = file.readStreaming(d.io, &.{scratch.items[filled..]}) catch break;
+        if (n == 0) break;
+        filled += n;
+    }
+    scratch.items.len = filled;
     return scratch.items;
 }
 

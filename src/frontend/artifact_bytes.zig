@@ -1211,6 +1211,34 @@ test "fuzz: every mutation is refused, and with the hash resealed some still loa
     try testing.expect(attempts > 2000);
 }
 
+test "every prefix of a real artifact is a miss, which is what makes the dropped rename safe" {
+    // `plans/m4-2.md` §6 B drops write-to-temp-plus-`rename` for both file
+    // kinds, so a reader CAN see a partial file: `cache/Dir.zig` does one
+    // `create` and one sequential write of one buffer, and a reader racing it
+    // observes a PREFIX. This is the deterministic proof that every one of
+    // them is refused — the black-box race fixture is the same claim under
+    // real concurrency, and this is the one that covers every length.
+    const gpa = testing.allocator;
+    var sample = try Sample.init(gpa);
+    defer sample.deinit(gpa);
+    const bytes = try write(gpa, gpa, sample.input(&sample_diagnostics));
+    defer gpa.free(bytes);
+    try testing.expect(bytes.len > 512);
+
+    for (0..bytes.len) |len| {
+        var loaded = read(gpa, bytes[0..len], sample_key) catch |err| {
+            try testing.expectEqual(error.BadArtifact, err);
+            continue;
+        };
+        loaded.deinit(gpa);
+        std.debug.print("a {d}-byte prefix of a {d}-byte artifact was accepted\n", .{ len, bytes.len });
+        return error.PrefixAccepted;
+    }
+    // …and the whole thing is not.
+    var whole = try read(gpa, bytes, sample_key);
+    whole.deinit(gpa);
+}
+
 test "verify refuses the structural faults a well-typed record can still have" {
     // `plans/m4-2.md` §9.4's structural half, stated against `Bir.verify`
     // directly so a failure names the promise rather than a byte offset.

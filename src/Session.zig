@@ -319,6 +319,13 @@ pub const Worker = struct {
     /// This worker's diagnostics, each tagged with its file. Appended in
     /// source order per file; files in the order the worker took them.
     diagnostics: std.ArrayList(Pending) = .empty,
+    /// The buffer one front-end artifact is read into, REUSED across the
+    /// files this worker takes (`plans/m4-2.md` §4): a read into a reused
+    /// buffer is 2.23 ms over 633 files where `readFileAlloc` into an arena
+    /// is 5.76. It is `gpa`'s and not the arena's because an arena only
+    /// grows, and a buffer that is reused must be able to shrink to nothing
+    /// between runs — the property a daemon needs.
+    artifact_buffer: std.ArrayList(u8) = .empty,
     /// Summed into the profile after the join.
     counters: [Profile.Counter.count]u64 = @splat(0),
     /// The LOWEST-numbered file this worker could not process, and why.
@@ -423,6 +430,7 @@ pub fn deinit(session: *Session) void {
     for (session.workers) |*worker| {
         for (worker.diagnostics.items) |p| gpa.free(p.diagnostic.message);
         worker.diagnostics.deinit(gpa);
+        worker.artifact_buffer.deinit(gpa);
         worker.interner.deinit(gpa);
         worker.arena.deinit();
     }
@@ -699,6 +707,29 @@ fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
     }
 }
 
+/// Read one file's bytes into the store, once, with the `read` row and the
+/// `bytes` counter.
+///
+/// It is idempotent because M4-2 turns the per-file phase inside out: the
+/// front-end cache must READ the source before it can hash it into a file
+/// key, and the key is what decides whether the lexer runs at all — so on a
+/// MISS the phase asks for the bytes again and must not pay for them twice.
+///
+/// **This read is what the `stat` fast path would remove, and it is not
+/// M4-2's**: the file key is over the source BYTES, so the source is still
+/// read and still hashed. That is 5.2 ms + 0.6 ms of a predicted ~33 ms warm
+/// `check` and it moves to M4-5, where a daemon holds the sources and the
+/// watcher already knows what changed (`fast-compiler.md` §8, `plans/m4-2.md`
+/// §5).
+fn readSource(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
+    if (session.store.isRead(file)) return;
+    const read_token = session.profile.begin();
+    try session.store.read(session.gpa, session.io, file);
+    const text = session.store.bytes(file);
+    session.profile.end(worker.index, read_token, .read, file.int(), @intCast(text.len));
+    worker.addCounter(.bytes, text.len);
+}
+
 /// The M1a per-file phase: read the bytes into the store, tokenize them into
 /// session-owned artifacts (tokens, comments; the line table goes to the
 /// store), and turn the lexical diagnostics into reported ones with
@@ -706,11 +737,8 @@ fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
 /// I/O and the scanning are visible separately in a trace.
 fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
     const gpa = session.gpa;
-    const read_token = session.profile.begin();
-    try session.store.read(gpa, session.io, file);
+    try readSource(session, worker, file);
     const text = session.store.bytes(file);
-    session.profile.end(worker.index, read_token, .read, file.int(), @intCast(text.len));
-    worker.addCounter(.bytes, text.len);
 
     const lex_token = session.profile.begin();
     var out: Tokenizer.Output = .empty;
@@ -800,6 +828,23 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     // file's — which is what lets the round trip REPLACE them with the rows
     // it read back rather than merely compare them.
     const diagnostics_mark = worker.diagnostics.items.len;
+
+    // The hit path (`frontend.md` §4, step 2): read the bytes, hash them into
+    // the file key, and — if the artifact is on disk and validates — install
+    // the loaded `Bir`, token spans, line-start table and rendered
+    // diagnostics instead of lexing, parsing and lowering. Reading stays on
+    // the worker because the per-file phase already does file I/O and is
+    // already parallel; the one thing that could not stay there is the string
+    // table's re-interning, and it does not have to, because a worker has a
+    // `Local` pool to hand where M4-1's entry had only `Global`.
+    if (session.wantsFileKeys()) {
+        try readSource(session, worker, file);
+        session.file_keys[file.int()] = session.fileKey(file);
+        if (session.options.cache) |cache| {
+            if (try loadFrontend(session, worker, cache, file, diagnostics_mark)) return;
+        }
+    }
+
     try parsePhase(session, worker, file);
     const gpa = session.gpa;
     const text = session.store.bytes(file);
@@ -835,9 +880,60 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 
     session.artifacts.files.items(.bir)[file.int()] = bir;
 
-    if (session.wantsFileKeys()) session.file_keys[file.int()] = session.fileKey(file);
     if (session.options.roundtrip_frontend) try roundTripFrontend(session, worker, file, diagnostics_mark);
     if (session.options.cache) |cache| try storeFrontend(session, worker, cache, file, diagnostics_mark);
+}
+
+/// Try to install `file`'s front-end artifact from the cache. True on a hit.
+///
+/// **Every failure is a MISS and nothing is said about it**: a missing file,
+/// an unreadable one, one written for another key, one whose bytes moved
+/// under it, one `verify` refuses. A stale cache must be indistinguishable
+/// from a cold build (`frontend.md` §1), so none of them is a diagnostic and
+/// none is an exit code.
+///
+/// **The order is read, validate, VERIFY, re-intern, install**, and `verify`
+/// is not optional: `Reach`, `js/Lower`, `Types.build` and `Emit` index a
+/// `Bir` by raw index with no bounds check, which is correct for one the
+/// builder just made and is a crash or a wrong answer for one that came off a
+/// disk. The re-intern is last before the install because it is the one step
+/// that mutates the worker's pool, and a pool that grew for an artifact that
+/// was then refused would be a pool with dead strings in it — harmless, but
+/// not free.
+fn loadFrontend(
+    session: *Session,
+    worker: *Worker,
+    cache: *const CacheDir,
+    file: SourceStore.Index,
+    diagnostics_mark: usize,
+) anyerror!bool {
+    const gpa = session.gpa;
+    const token = session.profile.begin();
+    const key = session.file_keys[file.int()];
+
+    const bytes = cache.loadFrontend(gpa, &worker.artifact_buffer, key) orelse
+        return miss(session, worker, token, file);
+    var loaded = artifact_bytes.read(gpa, bytes, key) catch |err| switch (err) {
+        error.BadArtifact => return miss(session, worker, token, file),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    errdefer loaded.deinit(gpa);
+    if (!loaded.bir.verify(@intCast(loaded.tokens.len))) {
+        loaded.deinit(gpa);
+        return miss(session, worker, token, file);
+    }
+    try loaded.intern(gpa, worker.arena.allocator(), &worker.interner);
+    try installFrontend(session, worker, file, &loaded, diagnostics_mark, .fresh);
+
+    worker.addCounter(.frontend_hits, 1);
+    session.profile.end(worker.index, token, .frontend_load, file.int(), @intCast(bytes.len));
+    return true;
+}
+
+fn miss(session: *Session, worker: *Worker, token: Profile.Token, file: SourceStore.Index) bool {
+    worker.addCounter(.frontend_misses, 1);
+    session.profile.end(worker.index, token, .frontend_load, file.int(), 0);
+    return false;
 }
 
 /// This file's rendered front-end diagnostics, as rows, borrowed from the

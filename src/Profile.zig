@@ -74,6 +74,11 @@ pub const Phase = enum {
     /// failure. Its own row because the cold-path cost of six times M4-1's
     /// bytes is the number §6 B was argued on.
     frontend_store,
+    /// Reading, validating, verifying and re-interning one file's front-end
+    /// artifact, on the worker, in place of `read`+`lex`+`parse`+`lower`
+    /// (`fast-compiler.md` §8). It is emitted on a MISS too, with zero bytes,
+    /// so the row counts every lookup and not only the ones that paid off.
+    frontend_load,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.
@@ -164,6 +169,12 @@ pub const Counter = enum {
     files_lexed,
     files_parsed,
     files_lowered,
+    /// Files whose artifact was loaded and installed, and files whose
+    /// artifact was absent or unusable. `frontend_hits + files_lowered` is
+    /// every file of the project; a run with no cache directory counts
+    /// neither, because nothing was eligible.
+    frontend_hits,
+    frontend_misses,
     /// Bytes of front-end artifact written this run, over the files actually
     /// stored. Zero without `--cache-dir`.
     frontend_bytes,

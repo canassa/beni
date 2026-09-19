@@ -739,6 +739,7 @@ const Counters = struct {
     parsed: u64 = 0,
     lowered: u64 = 0,
     files: u64 = 0,
+    frontend_hits: u64 = 0,
     frontend_bytes: u64 = 0,
 };
 
@@ -766,6 +767,7 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
             files_parsed: ?u64 = null,
             files_lowered: ?u64 = null,
             files: ?u64 = null,
+            frontend_hits: ?u64 = null,
             frontend_bytes: ?u64 = null,
         } = .{},
     };
@@ -788,6 +790,7 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
         if (e.args.files_parsed) |v| counters.parsed = v;
         if (e.args.files_lowered) |v| counters.lowered = v;
         if (e.args.files) |v| counters.files = v;
+        if (e.args.frontend_hits) |v| counters.frontend_hits = v;
         if (e.args.frontend_bytes) |v| counters.frontend_bytes = v;
     }
     return .{ .result = r, .counters = counters };
@@ -969,6 +972,279 @@ test "a file whose front end failed is never written, and its neighbours are" {
     try testing.expectEqual(@as(u8, 0), fixed.result.exit_code);
     const after = try artifactsOnly(arena, try w.listFiles("cache"));
     try testing.expectEqual(@as(usize, @intCast(fixed.counters.files)), after.len);
+}
+
+test "a warm run lexes, parses and lowers NOTHING and says exactly the same thing" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The whole slice, in one row. Byte equality alone would not say it: a
+    // front end that ran and produced the same answer is indistinguishable
+    // from one that did not run, except in the counters
+    // (`fast-compiler.md` §8, `frontend.md` §6).
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
+    const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "warm.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(plain.result.exit_code, warm.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stderr, warm.result.stderr);
+    try testing.expectEqualStrings(plain.result.stdout, warm.result.stdout);
+
+    try testing.expectEqual(@as(u64, 0), warm.counters.lexed);
+    try testing.expectEqual(@as(u64, 0), warm.counters.parsed);
+    try testing.expectEqual(@as(u64, 0), warm.counters.lowered);
+    try testing.expectEqual(warm.counters.files, cold.counters.files);
+    // Every file hit, and nothing written a second time: the name is the
+    // key, so there is nothing to rewrite.
+    try testing.expectEqual(warm.counters.files, warm.counters.frontend_hits);
+    try testing.expectEqual(@as(u64, 0), warm.counters.frontend_bytes);
+    // …and the modules were not re-checked either, which is M4-1 still
+    // holding with a loaded `Bir` under it.
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+
+    // A cache written at one worker count and read at another is what would
+    // catch a `Symbol` reaching the bytes.
+    const crossed = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "crossed.json");
+    try testing.expectEqualStrings(plain.result.stderr, crossed.result.stderr);
+    try testing.expectEqual(@as(u64, 0), crossed.counters.lowered);
+}
+
+test "a body edit re-lowers ONLY the leaf while its importers re-check" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // **The row M4-2 exists for.** A module key folds every import's key, so
+    // `Mid` and `Top` are re-CHECKED; a file key does not, so their front
+    // ends are not re-run. `files_lowered = 1` is the whole claim, and the
+    // module counters beside it are what say the two invalidations really
+    // are different.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
+    try w.write(leaf_file,
+        \\pub foreign twice : Int -> Int
+        \\
+        \\
+        \\pub one : Int
+        \\one =
+        \\    2
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const edited = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "edited.json");
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), edited.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stderr, edited.result.stderr);
+
+    // ONE file re-lexed, re-parsed and re-lowered: the leaf.
+    try testing.expectEqual(@as(u64, 1), edited.counters.lexed);
+    try testing.expectEqual(@as(u64, 1), edited.counters.parsed);
+    try testing.expectEqual(@as(u64, 1), edited.counters.lowered);
+    try testing.expectEqual(edited.counters.files - 1, edited.counters.frontend_hits);
+    // THREE modules re-checked — `Leaf`, `Mid` and `Top` — because the
+    // module key is inductive over imports and the file key is not.
+    try testing.expectEqual(@as(u64, 3), edited.counters.checked);
+
+    // And the run after it is fully warm again, which is what says the edited
+    // file's artifact was written rather than merely not read.
+    const settled = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "settled.json");
+    try testing.expectEqual(@as(u64, 0), settled.counters.lowered);
+    try testing.expectEqual(@as(u64, 0), settled.counters.checked);
+}
+
+test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `plans/m4-2.md` §9.4 item 23, black-box, and the twin of the `.bec`
+    // table above. Each shape must produce byte-identical output to a cold
+    // run and the same exit code — never a crash, never a diagnostic, never a
+    // wrong answer — and the good artifact must then replace it. With the
+    // `rename` dropped (§6 B), the "overwritten" half is a REQUIREMENT and
+    // not a nicety: a partial file a crashed process left must not be
+    // believed forever.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
+    const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
+    try testing.expect(artifacts.len > 1);
+    const victim = try std.fs.path.join(arena, &.{ "cache", artifacts[0] });
+    const good = try w.read(victim);
+    try testing.expect(good.len > 128);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY                        │
+    // └─────────────────────────────────────────┘
+    const Shape = struct { what: []const u8, bytes: []const u8 };
+    const shapes = [_]Shape{
+        .{ .what = "zero length", .bytes = "" },
+        .{ .what = "truncated mid-section", .bytes = good[0 .. good.len - 8] },
+        .{ .what = "truncated to a stub", .bytes = good[0..9] },
+        .{ .what = "a prefix of exactly half", .bytes = good[0 .. good.len / 2] },
+        .{ .what = "random bytes", .bytes = "not an artifact at all, just some bytes" },
+    };
+    for (shapes) |shape| {
+        try w.write(victim, shape.bytes);
+        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "bad.json");
+        testing.expectEqual(plain.result.exit_code, r.result.exit_code) catch |err| {
+            std.debug.print("a {s} artifact changed the exit code\n", .{shape.what});
+            return err;
+        };
+        testing.expectEqualStrings(plain.result.stderr, r.result.stderr) catch |err| {
+            std.debug.print("a {s} artifact changed stderr\n", .{shape.what});
+            return err;
+        };
+        // Exactly one file missed — the one whose artifact was ruined — and
+        // the run then wrote it back, byte for byte.
+        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
+        try testing.expectEqualStrings(good, try w.read(victim));
+    }
+
+    // A flipped bit that keeps the LENGTH: the case a content-addressed name
+    // cannot detect, and the reason the header carries a hash over its body.
+    for ([_]usize{ 0, 8, 41 }) |at| {
+        const mangled = try arena.dupe(u8, good);
+        mangled[at] +%= 1;
+        try w.write(victim, mangled);
+        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "bit.json");
+        try testing.expectEqual(plain.result.exit_code, r.result.exit_code);
+        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
+        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
+        try testing.expectEqualStrings(good, try w.read(victim));
+    }
+    // A bit flipped in the BODY, past the header, where only the hash can
+    // see it.
+    {
+        const mangled = try arena.dupe(u8, good);
+        mangled[good.len - 5] ^= 0x40;
+        try w.write(victim, mangled);
+        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "body.json");
+        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
+        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
+        try testing.expectEqualStrings(good, try w.read(victim));
+    }
+
+    // Another file's artifact under this one's name: the "wrong build id"
+    // case, refused by the header's key and not by luck.
+    {
+        const other = try std.fs.path.join(arena, &.{ "cache", artifacts[1] });
+        try w.write(victim, try w.read(other));
+        const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "foreign.json");
+        try testing.expectEqualStrings(plain.result.stderr, r.result.stderr);
+        try testing.expectEqual(@as(u64, 1), r.counters.lowered);
+        try testing.expectEqualStrings(good, try w.read(victim));
+    }
+
+    // …and after all that, the cache is whole again.
+    const restored = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "restored.json");
+    try testing.expectEqual(@as(u64, 0), restored.counters.lowered);
+    try testing.expectEqual(@as(u64, 0), restored.counters.checked);
+}
+
+test "the interner-order fixture: a cache written over P is read over P plus a module sorting first" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Slice zero §7.1's shape, aimed at M4-2's own hazard. A worker's local
+    // symbol numbering depends on which files it took and in what order, so
+    // an artifact that stored raw `Symbol` ids would be read against a
+    // different numbering the moment a file is ADDED — and `Aardvark`, full
+    // of identifiers and sorting before everything, is the file that changes
+    // every later numbering. Writing `symbols` as raw ids and watching this
+    // go red is what it is for.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("src/Zeta.beni",
+        \\pub zeta : Int
+        \\zeta =
+        \\    let
+        \\        alpha =
+        \\            1
+        \\
+        \\        beta =
+        \\            2
+        \\    in
+        \\    alpha + beta
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Written at `--jobs=8` over P.
+    _ = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "p.json");
+    // Then a module full of unrelated identifiers, sorting first, is added,
+    // and the cache is read at `--jobs=1`.
+    try w.write("src/Aardvark.beni",
+        \\pub aardvark : Int
+        \\aardvark =
+        \\    let
+        \\        gamma =
+        \\            1
+        \\
+        \\        delta =
+        \\            2
+        \\
+        \\        epsilon =
+        \\            3
+        \\
+        \\        zeta2 =
+        \\            4
+        \\    in
+        \\    gamma + delta + epsilon + zeta2
+        \\
+    );
+    const grown = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "p2.json");
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "cold.json");
+    const cold_hashes = try ifaceHashes(&w, arena);
+    const warm_hashes = try w.runWith(&.{ "check", "--iface-hash", "--jobs=1", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(cold.result.exit_code, grown.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stderr, grown.result.stderr);
+    // Only the new file was lowered; everything the first run wrote was read
+    // back under a numbering that had shifted.
+    try testing.expectEqual(@as(u64, 1), grown.counters.lowered);
+    // And every module's interface record is byte-for-byte the cold one's,
+    // which is the assertion a shifted `Symbol` would break.
+    try expectMoved("the interner-order fixture", cold_hashes, try parseKeys(arena, warm_hashes.stdout), &.{});
 }
 
 /// `v1/<kk>/<rest>.bef`, the artifact path a file key names.
@@ -1602,6 +1878,91 @@ test "a pre-warmed cache directory made read-only still hits everything" {
     try testing.expectEqualStrings("", warm.result.stderr);
     try testing.expectEqual(cold.counters.misses, warm.counters.hits);
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+}
+
+test "readers racing writers on an empty cache directory never accept a torn file" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // **The fixture the dropped `rename` is conditional on** (`plans/m4-2.md`
+    // §6 B, condition 3). With write-to-temp-plus-rename a reader could never
+    // see a partial file; with a plain create it can, and what makes that
+    // safe is that the header carries the file's total length and the reader
+    // checks it FIRST, so every prefix is a miss.
+    //
+    // Six processes at once on one initially EMPTY directory, several
+    // rounds: each is both a reader and a writer, because a `check` reads
+    // what is there and writes what is not. Every one of them must exit 0
+    // and print exactly what a `--no-cache` run prints — a torn file that
+    // was believed would show up as a different diagnostic, a different exit
+    // code or a crash, and a torn file that was merely tolerated shows up in
+    // the settled run at the end.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    const alone = try w.runWith(&.{ "check", "--jobs=1", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const racers = 6;
+    for (0..6) |round| {
+        const dir = try std.fmt.allocPrint(arena, "--cache-dir=torn{d}", .{round});
+        var results: [racers]world.Result = undefined;
+        var threads: [racers]std.Thread = undefined;
+        const Racer = struct {
+            w: *World,
+            args: []const []const u8,
+            out: *world.Result,
+            err: ?anyerror = null,
+            fn go(r: *@This()) void {
+                r.out.* = r.w.runWith(r.args, .{ .raw_diagnostics = true }) catch |e| {
+                    r.err = e;
+                    return;
+                };
+            }
+        };
+        // Different `--jobs` on purpose: the processes then reach any one
+        // key at different moments, which is what makes the overlap real
+        // rather than nominal.
+        var list: [racers]Racer = undefined;
+        for (&list, 0..) |*slot, i| {
+            const jobs = try std.fmt.allocPrint(arena, "--jobs={d}", .{@as(u32, @intCast(1 + (i % 4)))});
+            slot.* = .{
+                .w = &w,
+                .args = try arena.dupe([]const u8, &.{ "check", jobs, dir, "src" }),
+                .out = &results[i],
+            };
+        }
+        for (&threads, &list) |*t, *r| t.* = try std.Thread.spawn(.{}, Racer.go, .{r});
+        for (threads) |t| t.join();
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for (list) |r| {
+            if (r.err) |e| return e;
+        }
+        for (results) |r| {
+            try testing.expectEqual(alone.exit_code, r.exit_code);
+            try testing.expectEqualStrings(alone.stderr, r.stderr);
+            try testing.expectEqualStrings(alone.stdout, r.stdout);
+        }
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // A settled run over the directory the race left behind hits EVERY file
+    // and every module: no half-written file survived it, and none was left
+    // in a state that is refused forever.
+    const settled = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=torn0", "src" }, "settled.json");
+    try testing.expectEqual(@as(u64, 0), settled.counters.lowered);
+    try testing.expectEqual(@as(u64, 0), settled.counters.checked);
+    try testing.expectEqual(@as(u64, 0), settled.counters.misses);
 }
 
 test "two processes racing on one empty cache directory both exit 0 and agree" {
