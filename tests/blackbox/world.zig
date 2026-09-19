@@ -174,6 +174,23 @@ pub const World = struct {
         return false;
     }
 
+    /// Take write permission off a DIRECTORY (chmod 555), so the compiler
+    /// can open it and cannot create anything inside it. Returns false when
+    /// it is still writable afterwards — running as root, or a filesystem
+    /// that does not carry permissions — so a scenario can say so instead of
+    /// asserting something the machine will not do.
+    ///
+    /// The read-only-cache-directory scenarios need exactly this shape: the
+    /// directory exists, so it is not the usage failure, and every write
+    /// inside it fails, which is the silent path.
+    pub fn makeDirUnwritable(world: *World, rel_path: []const u8) !bool {
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o555), .{});
+        var probe: [64]u8 = undefined;
+        const inside = try std.fmt.bufPrint(&probe, "{s}/probe", .{rel_path});
+        world.tmp.dir.writeFile(world.io, .{ .sub_path = inside, .data = "x" }) catch return true;
+        return false;
+    }
+
     /// Make `rel_path` executable (chmod 755), so a scenario can point a
     /// harness script at a stand-in for the compiler. `write` creates a
     /// plain data file, and a harness that takes a `--beni=<path>` checks

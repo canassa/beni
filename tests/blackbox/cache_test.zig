@@ -721,6 +721,357 @@ fn expectEveryKeyMoved(what: []const u8, before: []const Entry, after: []const E
     try testing.expect(saw_core);
 }
 
+// ---------------------------------------------------------------------------
+// The cache as an environment (`plans/m4-1.md` §6.2, §6.3)
+// ---------------------------------------------------------------------------
+
+/// The counters `--self-profile` writes, by name. A cache that is doing
+/// nothing says so here and nowhere else (`frontend.md` §1), so every
+/// scenario below reads them rather than inferring from a wall clock.
+const Counters = struct {
+    hits: u64 = 0,
+    misses: u64 = 0,
+    checked: u64 = 0,
+    bytes: u64 = 0,
+};
+
+const Run = struct {
+    result: world.Result,
+    counters: Counters,
+};
+
+/// `beni <args> --self-profile=<trace>`, with the cache counters read back.
+fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, trace: []const u8) !Run {
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(arena, args);
+    try argv.append(arena, try std.fmt.allocPrint(arena, "--self-profile={s}", .{trace}));
+    const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
+
+    const Event = struct {
+        ph: []const u8,
+        name: []const u8 = "",
+        args: struct {
+            cache_hits: ?u64 = null,
+            cache_misses: ?u64 = null,
+            modules_checked: ?u64 = null,
+            cache_bytes: ?u64 = null,
+        } = .{},
+    };
+    const text = try w.read(trace);
+    const parsed = try std.json.parseFromSlice(
+        struct { traceEvents: []Event },
+        testing.allocator,
+        text,
+        .{ .ignore_unknown_fields = true },
+    );
+    defer parsed.deinit();
+    var counters: Counters = .{};
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.cache_hits) |v| counters.hits = v;
+        if (e.args.cache_misses) |v| counters.misses = v;
+        if (e.args.modules_checked) |v| counters.checked = v;
+        if (e.args.cache_bytes) |v| counters.bytes = v;
+    }
+    return .{ .result = r, .counters = counters };
+}
+
+test "a cold run with --cache-dir writes entries and does not move one byte of output" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The claim the whole slice rests on, at its weakest point: a cache
+    // changes nothing about what a run SAYS. Until the read path lands, the
+    // only thing a cache directory can do is make output differ, so this is
+    // the assertion that has to hold first.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const cached = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cached.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(plain.result.exit_code, cached.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stdout, cached.result.stdout);
+    try testing.expectEqualStrings(plain.result.stderr, cached.result.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // A cold run hits nothing, checks everything, and writes an entry per
+    // cacheable module — the app's three and core's, which is what makes
+    // even M4-1's narrow win worth having.
+    try testing.expectEqual(@as(u64, 0), cached.counters.hits);
+    try testing.expectEqual(@as(u64, 0), plain.counters.hits);
+    try testing.expect(cached.counters.misses >= 12);
+    try testing.expectEqual(cached.counters.misses, plain.counters.misses);
+    try testing.expectEqual(cached.counters.checked, plain.counters.checked);
+    try testing.expect(cached.counters.bytes > 0);
+    // A run with no cache directory writes nothing, whatever it counted.
+    try testing.expectEqual(@as(u64, 0), plain.counters.bytes);
+
+    const files = try w.listFiles("cache");
+    try testing.expectEqual(@as(usize, @intCast(cached.counters.misses)), files.len);
+    for (files) |f| {
+        // `v<n>/<kk>/<rest>.bec`, two levels of fan-out over the key's hex.
+        try testing.expect(std.mem.startsWith(u8, f, "v1/"));
+        try testing.expect(std.mem.endsWith(u8, f, ".bec"));
+        try testing.expectEqual(@as(usize, "v1/".len + 2 + 1 + 30 + ".bec".len), f.len);
+    }
+
+    // Running again writes the same files and no more: the name is the key,
+    // so a second cold run overwrites rather than accumulating.
+    _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "again.json");
+    const again = try w.listFiles("cache");
+    try testing.expectEqual(files.len, again.len);
+}
+
+test "--no-cache beside --cache-dir reads nothing and writes nothing" {
+    // The flag exists before there is a default so a script written today
+    // keeps working the day one arrives (`frontend.md` §1) — which is worth
+    // nothing unless it really does suppress the directory beside it.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const r = try runCounted(
+        &w,
+        arena,
+        &.{ "check", "--jobs=1", "--cache-dir=cache", "--no-cache", "src" },
+        "trace.json",
+    );
+    try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+    try testing.expectEqualStrings("", r.result.stderr);
+    try testing.expectEqual(@as(u64, 0), r.counters.hits);
+    try testing.expectEqual(@as(u64, 0), r.counters.bytes);
+    // The directory is not even created: `--no-cache` is "no cache", not
+    // "a cache that is ignored".
+    try testing.expectEqual(@as(usize, 0), (try w.listFiles("cache")).len);
+    try testing.expect(!w.exists("cache"));
+}
+
+test "a cache directory naming an existing file is exit 2 with the path named" {
+    // `frontend.md` §1: the directory is created if it is missing and a
+    // failure to create it is 2 with the path named, like `--out`'s. This is
+    // the ONE failure a cache is allowed to have — a person who named a
+    // cache directory meant it, and silently ignoring a typo would make
+    // every later build mysteriously slow for no stated reason.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("notadir", "I am a regular file.\n");
+
+    const r = try w.runWith(&.{ "check", "--jobs=1", "--cache-dir=notadir", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "notadir") != null);
+    try testing.expect(std.mem.startsWith(u8, r.stderr, "beni: cannot write '"));
+}
+
+test "a cache directory with spaces and non-ASCII in its name works" {
+    // A path is a sequence of bytes and the compiler must not assume
+    // otherwise; a cache directory is the first path a user chooses freely
+    // rather than one derived from a module name.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const r = try runCounted(
+        &w,
+        arena,
+        &.{ "check", "--jobs=1", "--cache-dir=a cache dír/nested", "src" },
+        "trace.json",
+    );
+    try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+    try testing.expectEqualStrings("", r.result.stderr);
+    try testing.expect(r.counters.bytes > 0);
+    try testing.expect((try w.listFiles("a cache dír/nested")).len > 0);
+}
+
+test "a read-only cache directory is an ordinary run that writes nothing" {
+    // `plans/m4-1.md` §6.3 row 16. The directory EXISTS, so it is not the
+    // exit-2 case; what fails is creating `v1/` inside it, and every
+    // per-entry failure is silent by contract — the run produces
+    // byte-identical output to one with no cache at all, on both streams.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.createDir("locked");
+    if (!try w.makeDirUnwritable("locked")) return; // root, or a filesystem with no permissions
+
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const locked = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=locked", "src" }, "locked.json");
+
+    try testing.expectEqual(plain.result.exit_code, locked.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stdout, locked.result.stdout);
+    try testing.expectEqualStrings(plain.result.stderr, locked.result.stderr);
+    try testing.expectEqual(@as(u64, 0), locked.counters.hits);
+    try testing.expectEqual(@as(u64, 0), locked.counters.bytes);
+}
+
+test "a module with a type error is never written, and its importers are not either" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `plans/m4-1.md` §6.2 row 11, and the rule is a refusal to WRITE rather
+    // than a bit to read: an `<error>` scheme is a hole every importer checks
+    // clean against, and the one failure mode a compiler may not have is
+    // `beni check` exiting 0 over it. Fails before the clean-bit rule with an
+    // exit 0 and an `<error>` hole.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("src/Leaf.beni",
+        \\pub foreign twice : Int -> Int
+        \\
+        \\
+        \\pub one : Int
+        \\one =
+        \\    "not an Int"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const first = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "first.json");
+    const second = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "second.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), first.result.exit_code);
+    try testing.expectEqual(@as(u8, 1), second.result.exit_code);
+    // Identical both times: a broken module may not be cached into silence.
+    try testing.expectEqualStrings(first.result.stderr, second.result.stderr);
+    try testing.expect(first.result.stderr.len != 0);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Core is clean and still cached, so this is not "nothing was written";
+    // what is absent is exactly the broken module's entry.
+    const files = try w.listFiles("cache");
+    try testing.expect(files.len > 0);
+    const keys = try baselineKeysAllowingErrors(&w, arena);
+    try expectNoEntry(&w, files, lookup(keys, "app:Leaf").?);
+    try expectEntry(&w, files, lookup(keys, "core:Basics").?);
+
+    // And after the fix, the module compiles and is written.
+    try w.write("src/Leaf.beni", leaf_source);
+    const fixed = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "fixed.json");
+    try testing.expectEqual(@as(u8, 0), fixed.result.exit_code);
+    const after = try w.listFiles("cache");
+    const fixed_keys = try baselineKeys(&w, arena);
+    try expectEntry(&w, after, lookup(fixed_keys, "app:Leaf").?);
+}
+
+test "the members of an import cycle are never written, and the rest of the project still is" {
+    // `plans/m4-1.md` §6.2 row 13. A poisoned module's declarations are
+    // error types and it reports nothing further (`checker.md` §4.3), so its
+    // silence says nothing about its correctness — which is exactly why
+    // uncacheability has to be a bit of its own rather than "produced no
+    // diagnostic".
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("src/Ping.beni",
+        \\import Pong
+        \\
+        \\
+        \\pub ping : Int
+        \\ping =
+        \\    Pong.pong
+        \\
+    );
+    try w.write("src/Pong.beni",
+        \\import Ping
+        \\
+        \\
+        \\pub pong : Int
+        \\pong =
+        \\    Ping.ping
+        \\
+    );
+
+    const first = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "first.json");
+    const second = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "second.json");
+    try testing.expectEqual(@as(u8, 1), first.result.exit_code);
+    try testing.expectEqualStrings(first.result.stderr, second.result.stderr);
+
+    const files = try w.listFiles("cache");
+    const keys = try baselineKeysAllowingErrors(&w, arena);
+    try expectNoEntry(&w, files, lookup(keys, "app:Ping").?);
+    try expectNoEntry(&w, files, lookup(keys, "app:Pong").?);
+    // The modules outside the cycle are untouched by it.
+    try expectEntry(&w, files, lookup(keys, "app:Leaf").?);
+    try expectEntry(&w, files, lookup(keys, "core:Basics").?);
+}
+
+/// `--cache-keys` for a project that does not compile. The keys exist all
+/// the same — the firewall's question is about inputs, not about success —
+/// and a scenario that asserts "this module has no entry" needs its key.
+fn baselineKeysAllowingErrors(w: *World, arena: std.mem.Allocator) ![]const Entry {
+    const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    return parseKeys(arena, r.stdout);
+}
+
+/// `v<n>/<kk>/<rest>.bec` for a key's 32 hex digits, as `listFiles` spells it.
+fn entryPathFor(digits: []const u8) [40]u8 {
+    var out: [40]u8 = undefined;
+    @memcpy(out[0..3], "v1/");
+    @memcpy(out[3..5], digits[0..2]);
+    out[5] = '/';
+    @memcpy(out[6..36], digits[2..]);
+    @memcpy(out[36..40], ".bec");
+    return out;
+}
+
+fn expectEntry(w: *World, files: []const []const u8, digits: []const u8) !void {
+    _ = w;
+    const want = entryPathFor(digits);
+    for (files) |f| {
+        if (std.mem.eql(u8, f, &want)) return;
+    }
+    std.debug.print("no cache entry for {s} (expected {s})\n", .{ digits, &want });
+    return error.MissingEntry;
+}
+
+fn expectNoEntry(w: *World, files: []const []const u8, digits: []const u8) !void {
+    _ = w;
+    const unwanted = entryPathFor(digits);
+    for (files) |f| {
+        if (std.mem.eql(u8, f, &unwanted)) {
+            std.debug.print("a cache entry exists for {s} and must not\n", .{digits});
+            return error.UnexpectedEntry;
+        }
+    }
+}
+
 /// `--iface-hash`'s lines, in `--cache-keys`' shape, so the two can be
 /// compared by the same helper. Several rows above turn on the difference
 /// between the two quantities, and stating it in the fixture is what keeps

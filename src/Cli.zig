@@ -38,6 +38,10 @@ pub const usage =
     \\  --explain                 accepted; currently governs no diagnostic (all informational ones are on)
     \\  --pattern-budget=<n>      work one `case` may spend proving exhaustiveness before it is refused
     \\
+    \\check and build options:
+    \\  --cache-dir=<path>        keep checked modules between runs in this directory (no default)
+    \\  --no-cache                ignore --cache-dir and any default
+    \\
     \\check options:
     \\  --platform=<name>         also load this platform package, exactly as build does; optional,
     \\                            and with it the sibling checks of a build run too
@@ -139,6 +143,15 @@ pub const Common = struct {
 /// ordinary `unknown option` and exit `2`, which falls out of the field
 /// living here rather than on `Common`.
 pub const Cache = struct {
+    /// `--cache-dir=<path>`: keep checked modules between runs in this
+    /// directory. **No default — in M4-1 the cache is opt-in**
+    /// (`fast-compiler.md` §8); it becomes the default in M4-3, the slice
+    /// whose cutoff makes it worth having.
+    dir: ?[]const u8 = null,
+    /// `--no-cache`: ignore `--cache-dir` and any default. It exists BEFORE
+    /// there is a default so that a script written today keeps working the
+    /// day the default arrives.
+    off: bool = false,
     /// `--cache-build-id=<s>` — **hidden**, for `--roundtrip-interfaces`'
     /// reasons. Its bytes replace the compiler build id in the cache key
     /// (`src/build_id.zig`), which is how "a compiler change discards the
@@ -419,6 +432,19 @@ fn applyPlatform(slot: *?[]const u8, consumed: *bool, value: ?[]const u8) ?Usage
 /// `applyPlatform`'s reason: a `check` that keyed its cache differently from
 /// the `build` behind it would serve one of them a stale answer.
 fn applyCache(cache: *Cache, consumed: *bool, name: []const u8, value: ?[]const u8) ?Usage {
+    if (std.mem.eql(u8, name, "--cache-dir")) {
+        const v = value orelse return needsValue(name, "<path>");
+        if (v.len == 0) return needsValue(name, "<path>");
+        cache.dir = v;
+        consumed.* = true;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--no-cache")) {
+        if (value != null) return noValue(name);
+        cache.off = true;
+        consumed.* = true;
+        return null;
+    }
     if (std.mem.eql(u8, name, "--cache-build-id")) {
         const v = value orelse return needsValue(name, "<s>");
         if (v.len == 0) return needsValue(name, "<s>");
@@ -995,7 +1021,7 @@ test "--cache-build-id is check's and build's, hidden, and nobody else's" {
 }
 
 test "usage text mentions every subcommand" {
-    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release", "--library" }) |word| {
+    for ([_][]const u8{ "build", "check", "fmt", "dump", "version", "help", "--diagnostics", "--self-profile", "--jobs", "--root", "--core", "--core-root", "--explain", "--pattern-budget", "--stage", "--positions", "interface", "--platform", "--out", "--source-maps", "--release", "--library", "--cache-dir", "--no-cache" }) |word| {
         try testing.expect(std.mem.indexOf(u8, usage, word) != null);
     }
 }

@@ -57,6 +57,11 @@ pub const Phase = enum {
     /// does not appear in the trace defeats the instrument
     /// (`fast-compiler.md` §12).
     cache_key,
+    /// Writing the cache entries, serial, once per run after the check
+    /// (`fast-compiler.md` §8). One `create` and one `rename` per module
+    /// written, which is the number `plans/m4-1.md` §7 measurement 3 exists
+    /// to watch on the cold path.
+    cache_store,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.
@@ -123,6 +128,21 @@ pub const Counter = enum {
     constraints_deferred,
     constraints_discharged,
     constraints_promoted,
+    /// The persistent cache (`fast-compiler.md` §8). Modules whose entry was
+    /// loaded and installed, modules whose entry was absent or unusable, and
+    /// modules whose own check actually ran — which is what a warm-rebuild
+    /// claim is made of, and the reason these exist before there is anything
+    /// to load.
+    ///
+    /// `cache_hits + modules_checked` is every module of the graph; an
+    /// uncacheable module counts as neither a hit nor a miss, because it was
+    /// never eligible.
+    cache_hits,
+    cache_misses,
+    modules_checked,
+    /// Bytes written to the cache directory this run, over the entries that
+    /// were actually stored. Zero without `--cache-dir`.
+    cache_bytes,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

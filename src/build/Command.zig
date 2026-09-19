@@ -30,6 +30,7 @@ const SourceStore = @import("../SourceStore.zig");
 const Emit = @import("../js/Emit.zig");
 const beni_profile = @import("../Profile.zig");
 const platform = @import("../platform.zig");
+const CacheDir = @import("../cache/Dir.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, build: Cli.Build) u8 {
     var options = options_in;
@@ -46,6 +47,19 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // to it, and the two together are ONE array on stderr.
     options.informational = true;
     options.defer_render = true;
+
+    // Opened here for the reason `check/Command.zig` gives: the one failure
+    // a cache is allowed to have is a usage failure, and the command owns
+    // the message. `build` caches no emitted byte in M4-1 — the entry holds
+    // the check's result and nothing of `emit`'s, and the write-skip
+    // `Emit.flush` wants is M4-4's.
+    var cache_failure: ?CacheDir.Failure = null;
+    var cache: ?CacheDir = CacheDir.fromCli(io, build.cache, &cache_failure) catch {
+        const f = cache_failure.?;
+        return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
+    };
+    defer if (cache) |*c| c.close();
+    if (cache) |*c| options.cache = c;
 
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();

@@ -62,6 +62,10 @@ const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
 const Solve = @import("check/Solve.zig");
 const Key = @import("cache/Key.zig");
+const CacheDir = @import("cache/Dir.zig");
+const entry_bytes = @import("cache/entry_bytes.zig");
+const dispatch_bytes = @import("cache/dispatch_bytes.zig");
+const iface_bytes = @import("resolve/iface_bytes.zig");
 const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
 const platform_packages = @import("platform_packages");
@@ -201,6 +205,12 @@ pub const Options = struct {
     /// prove that a compiler change discards the whole cache without
     /// building a second compiler. Null is the real id.
     cache_build_id: ?[]const u8 = null,
+    /// `--cache-dir=<path>`, already opened by the command that owns the
+    /// exit-2 message for a directory that could not be created
+    /// (`frontend.md` §1). Null is "no cache", which is also what
+    /// `--no-cache` produces — the two are one state here on purpose, so
+    /// that no code below can behave differently for "off" and "suppressed".
+    cache: ?*const CacheDir = null,
     /// Capacity of each worker's profile buffer. Allocated once at session
     /// start and never grown, so a worker records without allocating; a full
     /// buffer counts the drop and the trace says `dropped_events`.
@@ -876,6 +886,113 @@ fn checkSerial(session: *Session) RunError!void {
         session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
     }
     try session.reportCheckDiagnostics();
+    // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
+    // §8). They are recorded on every run, cache or no cache, so that "this
+    // run re-checked everything" is a number rather than an inference.
+    {
+        var misses: u64 = 0;
+        for (0..session.graph.count()) |i| {
+            if (session.keys.isCacheable(@enumFromInt(i))) misses += 1;
+        }
+        session.profile.addCounter(.cache_misses, misses);
+        session.profile.addCounter(.modules_checked, session.graph.count());
+    }
+    try session.storeEntries();
+}
+
+/// Write one cache entry per module whose check produced nothing to hide
+/// (`fast-compiler.md` §8), serially, after the check.
+///
+/// **An entry is written only for a module whose own check produced no
+/// `error`-severity diagnostic and which the graph did not poison.** That is
+/// §3.2's "produced by a clean check" bit, and it is a refusal to WRITE
+/// rather than a bit to read: an `<error>` scheme is a hole every importer
+/// checks clean against, and the one failure mode a compiler may not have is
+/// `beni check` exiting 0 over it. **Warnings are cached** and replayed
+/// byte-identically — `ambiguous_method_receiver` is on by default, so "a
+/// module with any diagnostic is never cached" would exempt most real
+/// projects.
+///
+/// Serial, and after `Check.run` rather than on the checking worker
+/// (`plans/m4-1.md` decision 9 is about reads; this is where the writes'
+/// cost is measurable). Every failure is silent.
+fn storeEntries(session: *Session) RunError!void {
+    const cache = session.options.cache orelse return;
+    const gpa = session.gpa;
+    const token = session.profile.begin();
+
+    // One pass over the check's diagnostics to learn which modules spoke,
+    // and with what severity. Grouping here rather than per module keeps it
+    // linear instead of quadratic in a project with many messages.
+    const count = session.graph.count();
+    const clean = try gpa.alloc(bool, count);
+    defer gpa.free(clean);
+    @memset(clean, true);
+    for (session.checked.diagnostics) |item| {
+        if (item.severity != .@"error") continue;
+        if (item.module.int() < count) clean[item.module.int()] = false;
+    }
+    // A module an earlier phase reported on is not clean either, whatever
+    // its own check said: it was checked QUIETLY, so its silence is the
+    // `quiet` flag's and not the program's. `Key`'s uncacheable bit already
+    // carries that, and this is the second place it is honoured.
+
+    var written: u64 = 0;
+    var bytes_written: u64 = 0;
+    for (0..count) |i| {
+        const m: Graph.Index = @enumFromInt(i);
+        if (!session.keys.isCacheable(m)) continue;
+        if (!clean[i]) continue;
+
+        const entry = session.entryBytes(gpa, m) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+        defer gpa.free(entry);
+        if (cache.store(session.keys.of(m), entry)) {
+            written += 1;
+            bytes_written += entry.len;
+        }
+    }
+    session.profile.addCounter(.cache_bytes, bytes_written);
+    session.profile.end(0, token, .cache_store, Profile.Event.no_file, @intCast(@min(bytes_written, std.math.maxInt(u32))));
+}
+
+/// One module's entry: the record's bytes verbatim, the dispatch sidecar and
+/// the module's own diagnostics (`checker.md` §7).
+fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error![]u8 {
+    const record = try iface_bytes.write(gpa, &session.resolution.interfaces[m.int()], &session.interner);
+    defer gpa.free(record);
+    const sidecar = try dispatch_bytes.write(
+        gpa,
+        &session.checked.dispatch[m.int()],
+        &session.graph,
+        &session.checked.types,
+        &session.interner,
+    );
+    defer gpa.free(sidecar);
+
+    var rows: std.ArrayList(entry_bytes.Diagnostic) = .empty;
+    defer rows.deinit(gpa);
+    for (session.checked.diagnostics) |item| {
+        if (item.module != m) continue;
+        try rows.append(gpa, .{
+            .code = @intFromEnum(item.code),
+            .severity = @intFromEnum(item.severity),
+            .has_token = item.token != null,
+            .region = @intFromEnum(item.region),
+            .token = item.token orelse 0,
+            .message = item.message,
+        });
+    }
+    const diagnostics = try entry_bytes.writeDiagnostics(gpa, rows.items);
+    defer gpa.free(diagnostics);
+
+    return entry_bytes.write(gpa, .{
+        .key = session.keys.of(m),
+        .interface = record,
+        .dispatch = sidecar,
+        .diagnostics = diagnostics,
+    });
 }
 
 /// One persistent-cache key per module (`fast-compiler.md` §8, `cache/Key.zig`).

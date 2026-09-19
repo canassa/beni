@@ -30,6 +30,7 @@ const Emit = @import("../js/Emit.zig");
 const platform = @import("../platform.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const Key = @import("../cache/Key.zig");
+const CacheDir = @import("../cache/Dir.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -46,6 +47,18 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     options.informational = true;
     options.platform = check.platform;
     options.cache_build_id = check.cache.build_id;
+
+    // The cache directory is opened HERE and not inside the session, because
+    // the one failure a cache is allowed to have is a usage failure and the
+    // command owns every usage message (`frontend.md` §1: created if it is
+    // missing, and a failure to create it is 2 with the path named).
+    var cache_failure: ?CacheDir.Failure = null;
+    var cache: ?CacheDir = CacheDir.fromCli(io, check.cache, &cache_failure) catch {
+        const f = cache_failure.?;
+        return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
+    };
+    defer if (cache) |*c| c.close();
+    if (cache) |*c| options.cache = c;
     // With a platform there is a SECOND wave of diagnostics — §4's checks
     // run after `run` returns — and two renders on one stream are two JSON
     // arrays, which is not the format (§1.1). Without one there is no second
