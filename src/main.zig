@@ -5,10 +5,15 @@
 //!
 //! Exit codes: 0 no errors, 1 at least one error diagnostic, 2 usage or I/O
 //! failure. stdout carries the product; stderr carries diagnostics and usage
-//! errors and nothing else. `dump` exits 0 even when the file has lexical,
-//! syntax or lowering errors: its product is the token stream, the tree or
-//! the lowered file, placeholders and all, and the diagnostics still go to
-//! stderr. `check` and `dump --stage=interface|types` run the check phases
+//! errors and nothing else. **The rule is the binary's, not each
+//! subcommand's**: `dump` still prints whatever it could dump for a file
+//! with lexical, syntax or lowering errors — the token stream, the tree or
+//! the lowered file, placeholders and all — and it still exits 1, because
+//! it printed an `error` (`frontend.md` §1, `beni help`). It exited 0 until
+//! 2026-09-19 on the argument that a dump of a broken file is still a dump,
+//! which is true of the PRODUCT and was never true of the exit code: every
+//! script and editor driving `dump` read a silent success over a file the
+//! compiler had just refused. `check` and `dump --stage=interface|types` run the check phases
 //! and therefore load AND type-check the core package; `--stage=bir` stops
 //! after lowering and `--stage=tokens|ast` after the parser, so those dumps
 //! carry only the diagnostics of the stages they show and pay none of
@@ -151,10 +156,10 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // this dump stops before a single module is checked.
         .graph => Session.resolve_phases,
     };
-    switch (runSession(&session, stderr, &.{dump.file}, phases)) {
-        .summary => {},
+    const summary = switch (runSession(&session, stderr, &.{dump.file}, phases)) {
+        .summary => |s| s,
         .exit => |code| return code,
-    }
+    };
     // A `--platform` that named nothing is a usage failure, not a dump with
     // a missing package: the same exit 2 and the same line `check` and
     // `build` print (platform.zig).
@@ -164,7 +169,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // module graph, so it never looks a dump target up.
     if (dump.stage == .graph) {
         beni.dump.graph.write(stdout, gpa, &session.graph, &session.interner) catch return 2;
-        return 0;
+        return dumpExit(summary, 0);
     }
     // `--stage=interface` takes a directory as well as a file: a project's
     // interfaces in path order are exactly what a `check/good` corpus
@@ -175,9 +180,9 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // `--stage=dispatch` takes a directory for the same reason
         // (static-dispatch-spike.md §7.3): the table is per module, and a
         // project's tables in path order are what a corpus golden is.
-        if (dump.stage == .dispatch) return dumpProjectDispatch(&session, stdout, stderr, dump.file);
+        if (dump.stage == .dispatch) return dumpExit(summary, dumpProjectDispatch(&session, stdout, stderr, dump.file));
         if (dump.stage != .interface and dump.stage != .raw) return fail(stderr, "beni: dump needs exactly one file", .{});
-        return dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file, dump.stage == .raw);
+        return dumpExit(summary, dumpProjectInterfaces(gpa, &session, stdout, stderr, dump.file, dump.stage == .raw));
     };
     switch (dump.stage) {
         .tokens => beni.dump.tokens.write(
@@ -265,7 +270,20 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
             ) catch return 2;
         },
     }
-    return 0;
+    return dumpExit(summary, 0);
+}
+
+/// The exit code of a dump: whatever went wrong PRINTING it, if anything;
+/// else 1 when the session produced an `error`-severity diagnostic, else 0.
+///
+/// `frontend.md` §1 and `beni help` state the exit codes for the binary,
+/// with no `dump` carve-out, and a `warning` is the only severity that
+/// cannot change one. The dump itself is still written — error recovery
+/// means a broken file has a tree worth looking at, and that is exactly the
+/// file a person runs `dump` on.
+fn dumpExit(summary: Session.Summary, printing: u8) u8 {
+    if (printing != 0) return printing;
+    return if (summary.errors > 0) 1 else 0;
 }
 
 /// The file the dump is of: the one the argument named. Every other file in

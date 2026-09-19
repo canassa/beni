@@ -90,7 +90,10 @@ identifier. Normalising before the sort is what makes `beni check .` and `beni c
 same build: same modules, same order, byte-identical emitted output and `--iface-hash`.
 
 Exit codes: `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O
-failure (bad flag, unreadable path). `fmt --check` exits `1` if any file would change.
+failure (bad flag, unreadable path). `fmt --check` exits `1` if any file would change. The rule is
+the binary's and has no per-subcommand exception: **`dump` exits `1` when it printed an `error`**,
+and still prints the dump it has — a tree with placeholders in it is what error recovery is for,
+and that file is exactly the one someone runs `dump` on.
 
 A `fmt` that rewrites a file in place keeps everything about it that is not its contents. The mode
 is preserved. A symlink is **followed**: the link stays a link and the file it names is the one

@@ -1064,7 +1064,7 @@ test "three lexical errors in one file yield exactly three diagnostics in positi
     }), r.diagnostics);
 }
 
-test "a lexical error does not stop the file: later lines still lex, and dump exits 0 with the diagnostic on stderr" {
+test "a lexical error does not stop the file: later lines still lex, and dump prints them and exits 1" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1080,7 +1080,9 @@ test "a lexical error does not stop the file: later lines still lex, and dump ex
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    // The dump is the product and it is complete; the exit code is the
+    // binary's rule and says an `error` was printed (`frontend.md` §1).
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings(
         \\1:1 lower_ident x
         \\1:3 equal =
@@ -1310,7 +1312,7 @@ test "a layout error quotes both columns, and the text renderer shows the excerp
     );
 }
 
-test "dump --stage=ast on a broken file exits 0 with placeholders in the tree and the errors on stderr" {
+test "dump --stage=ast on a broken file prints placeholders in the tree, the errors on stderr, and exits 1" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1326,7 +1328,9 @@ test "dump --stage=ast on a broken file exits 0 with placeholders in the tree an
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    // The tree — placeholder and all — is still the product; exit 1 is the
+    // binary's rule about having printed an `error` (`frontend.md` §1).
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings(
         \\(module
         \\  (definition x
@@ -1340,6 +1344,58 @@ test "dump --stage=ast on a broken file exits 0 with placeholders in the tree an
     , r.stdout);
     try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.unexpected_token, r.diagnostics[0].code);
+}
+
+// The exit-code rule is the BINARY's — `frontend.md` §1 and `beni help` both
+// state it once, for every subcommand, and only a `warning` is exempt. Every
+// `dump` stage used to print a full `error` diagnostic on stderr and exit 0,
+// so a script, an editor or M5's LSP driving `dump` read a silent success
+// over a file the compiler had just refused. The dump is still printed: a
+// broken file is exactly the file someone runs `dump` on.
+test "every dump stage exits 1 over a file that produced an error, and still prints what it has" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // An unclosed `(`: every stage from the lexer down has something to say
+    // about it, and every stage has something to print anyway.
+    try w.write("Min.beni", "f =\n    (\n");
+    try w.write("Fine.beni", "f =\n    1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const stages = [_][]const u8{
+        "--stage=tokens",    "--stage=ast",   "--stage=bir",   "--stage=raw",
+        "--stage=interface", "--stage=types", "--stage=graph", "--stage=dispatch",
+    };
+    var broken: [stages.len]world.Result = undefined;
+    var fine: [stages.len]world.Result = undefined;
+    for (stages, &broken, &fine) |stage, *b, *f| {
+        b.* = try w.runWith(&.{ "dump", stage, "Min.beni" }, .{ .raw_diagnostics = true });
+        f.* = try w.runWith(&.{ "dump", stage, "Fine.beni" }, .{ .raw_diagnostics = true });
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (stages, broken, fine) |stage, b, f| {
+        if (b.exit_code != 1) {
+            std.debug.print("dump {s} over a broken file exited {d}\n--- stderr ---\n{s}\n", .{ stage, b.exit_code, b.stderr });
+            return error.DumpDidNotFail;
+        }
+        // The product is still on stdout, and the diagnostic is still the
+        // whole message on stderr — the exit code is all that changed.
+        try testing.expect(b.stdout.len != 0);
+        try testing.expect(std.mem.indexOf(u8, b.stderr, "UNCLOSED DELIMITER") != null);
+        // A clean file is still 0, on every one of the same stages.
+        if (f.exit_code != 0) {
+            std.debug.print("dump {s} over a clean file exited {d}\n--- stderr ---\n{s}\n", .{ stage, f.exit_code, f.stderr });
+            return error.CleanDumpFailed;
+        }
+        try testing.expectEqualStrings("", f.stderr);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3739,9 +3795,10 @@ test "dump --stage=interface prints each value's scheme, and <error> for one tha
 
     const r = try w.runWith(&.{ "dump", "--stage=interface", "src/Main.beni" }, .{ .raw_diagnostics = true });
 
-    // `dump` exits 0 even when the file has errors: the interface is its
-    // product, and a module with type errors still has one (checker.md §7).
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    // The interface is the product and a module with type errors still has
+    // one (checker.md §7) — it is printed in full. The exit code says an
+    // `error` was printed all the same (`frontend.md` §1).
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
     try testing.expectEqualStrings(
         \\module Main
         \\  value bad : <error>
@@ -4233,7 +4290,8 @@ test "a type nested past the checker's reading limit is reported, never silently
     // poisoned type and stays quiet, which is the cascade rule — but the
     // poison now arrives with a message rather than instead of one.
     const raw = try w.runWith(&.{ "dump", "--stage=raw", "src/Deep.beni" }, .{ .raw_diagnostics = true });
-    try testing.expectEqual(@as(u8, 0), raw.exit_code);
+    // The record is printed; the exit code repeats the diagnostic above.
+    try testing.expectEqual(@as(u8, 1), raw.exit_code);
     try testing.expect(std.mem.indexOf(u8, raw.stdout, "value 0 f foreign=false scheme=0") != null);
     try testing.expect(std.mem.indexOf(u8, raw.stdout, "term 0 err 0 0") != null);
 }

@@ -306,13 +306,15 @@ test "the three left-deep spines the parser builds in a loop are depth-bounded t
             return err;
         };
         // The dumps recurse per node; they are the consumers that crashed.
-        // They exit 0 with the tree they have and the error on stderr.
+        // They print the tree they have and exit 1 for the error on stderr
+        // (`frontend.md` §1) — what matters here is that there IS a tree and
+        // the process exited at all.
         for ([_]world.Result{ ast, bir }) |r| {
             if (r.term != .exited) {
                 std.debug.print("{s}: dump did not exit normally: {any}\n", .{ case.path, r.term });
                 return error.CompilerDiedFromSignal;
             }
-            try testing.expectEqual(@as(u8, 0), r.exit_code);
+            try testing.expectEqual(@as(u8, 1), r.exit_code);
             try testing.expect(r.stdout.len != 0);
         }
 
@@ -1159,7 +1161,10 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
                 std.debug.print("{s}: dump did not exit normally: {any}\n", .{ case.path, r.term });
                 return error.CompilerDiedFromSignal;
             }
-            try testing.expectEqual(@as(u8, 0), r.exit_code);
+            // A dump prints its tree either way; the exit code follows the
+            // diagnostics, so the legal depth is 0 and the bounded one is 1
+            // (`frontend.md` §1).
+            try testing.expectEqual(@as(u8, if (case.bounded) 1 else 0), r.exit_code);
             try testing.expect(r.stdout.len != 0);
         }
         if (checked.term != .exited) {
