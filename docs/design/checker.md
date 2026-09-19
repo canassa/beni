@@ -96,6 +96,8 @@ src/
     Dispatch.zig            the checker→backend dispatch table (static-dispatch-spike.md §7)
     Exhaustive.zig          pattern usefulness (§6.6)
     Cycles.zig              top-level value cycles (§6.7)
+    Edges.zig               the declaration-edge walk (§6.7, backend.md §9), shared by
+                            Cycles.zig and js/Reach.zig
     Render.zig              type → text for diagnostics and dumps (§8.2)
     Diagnostics.zig         the M2 items and their prose
   dump/interface.zig  dump/types.zig  dump/graph.zig  dump/dispatch.zig
@@ -605,10 +607,18 @@ a function counts as running it.
 circle printed in the order it is walked (shortest way round, breadth-first over edges in table
 order) — so nothing in the output depends on visit order or on `--jobs` (CLAUDE.md rule 5).
 
-`Cycles.zig` and `js/Reach.zig` walk the same three legs over the same tables and **must agree**;
-they are written twice because one runs per module inside the checker and may not depend on the
-backend, and the other runs over the whole program after it. Nothing but review keeps them in
-step. `Cycles.zig`'s edge set is `Reach.zig`'s minus the cross-module leg.
+`Cycles.zig` and `js/Reach.zig` walk the same three legs over the same tables, and they **share
+`check/Edges.zig`**, which is that walk. It lives under `src/check/` because it is a pure function
+of `Bir` and the dispatch table and because this pass runs per module inside the checker and may
+not depend on the backend, where `js/Reach.zig` already depends on `check/`; the walk yields a
+declaration's targets as a flat tagged stream — `top d | ext (module, value) | derived r |
+ext_derived (module, type, kind) | primitive p | err` — into a buffer the caller owns, and each
+consumer keeps the tags it can use. `Cycles.zig` keeps `top` alone, because a cycle cannot cross
+a module; `js/Reach.zig` takes all six and resolves the cross-module ones against the provenance
+and dispatch tables it has and this pass has not. *(It was written twice until 2026-09-19, with
+nothing but review keeping the two in step. Sharing it costs `eliminate` about 0.2 ms on a
+633-module build — the stream is materialised where the old code appended straight to its own
+node list — which does not move the `emit` phase that contains it.)*
 
 ## 7. The interface record
 

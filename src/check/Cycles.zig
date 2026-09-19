@@ -33,32 +33,23 @@
 //! own: `js/Lower.declaration` splits on the same `params != 0`, evidence
 //! and `lambda`-body triple.
 //!
-//! **The edges, in three legs**, and they are `js/Reach.zig`'s minus the
-//! cross-module one, out of a value declaration `d`:
+//! **The edges are `Edges.zig`'s**, shared with `js/Reach.zig` — the three
+//! legs out of a value declaration `d` (`refs` rows of kind `top_value`; the
+//! `.top` and `.ext_value` instructions of `d`'s contiguous instruction
+//! range; every dispatch site of `d` and, recursively through
+//! `Dispatch.partsAt`, every target nested in one). Leg 3 is the one no
+//! `refs` walk can see: a `method_call` adds no `refs` row at all
+//! (`static-dispatch-spike.md` §1.4), so `x = (T 1).bump 2` with a `bump`
+//! that reads `x` is a cycle only the dispatch table records.
 //!
-//!   1. every `Bir.refs` row of `d` whose kind is `top_value`;
-//!   2. every `.top` instruction in `d`'s contiguous instruction range.
-//!      `refs` records a reference by the NAME the source wrote and an
-//!      operator writes none, so inside `core/Basics` itself `0 - n`
-//!      resolves to a `top` instruction while its `refs` row stays a
-//!      symbolic `import_value` (`Reach.zig`'s leg 2, one module in);
-//!   3. every dispatch site of `d`, and recursively every `top` nested in
-//!      one through `Dispatch.partsAt`. A `method_call` adds no `refs` edge
-//!      at all (`static-dispatch-spike.md` §1.4), so `x = (T 1).bump 2` with
-//!      a `bump` that reads `x` is a cycle no `refs` walk can see.
-//!
-//! **`Reach.zig` and this file must agree**, and nothing but review makes
-//! them: the two walks are the same three legs over the same tables and are
-//! written twice because one lives under `src/js/` and runs over the whole
-//! program after the checker, while this one runs per module inside the
-//! checker's DAG and may not depend on the backend at all. The test at the
-//! bottom of this file is what would notice a leg going missing here.
-//!
-//! **A cycle cannot cross a module**, so this needs nothing but the module's
-//! own `Bir` and its own dispatch table: the module graph is a DAG and an
-//! import cycle is already `import_cycle` with every member poisoned
-//! (`resolve/Graph.zig`, `checker.md` §4.3). `ext_value` is therefore not a
-//! leg.
+//! **This pass keeps `.top` and drops every other tag.** A cycle cannot cross
+//! a module, so this needs nothing but the module's own `Bir` and its own
+//! dispatch table: the module graph is a DAG and an import cycle is already
+//! `import_cycle` with every member poisoned (`resolve/Graph.zig`,
+//! `checker.md` §4.3). `ext`, `ext_derived`, `primitive` and `err` are all
+//! cross-module; a `derived` row is synthesised and cannot close a cycle
+//! between two written declarations. `js/Reach.zig` takes all six, which is
+//! the whole difference between the two consumers of one walk.
 //!
 //! **Determinism.** Tarjan visits declarations in source order and follows
 //! each node's edges in table order, so the components, the anchor of each
@@ -72,16 +63,13 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Dispatch = @import("Dispatch.zig");
+const Edges = @import("Edges.zig");
 
 pub const Error = Allocator.Error;
 
 /// A node has no component until Tarjan gives it one.
 const no_scc: u32 = std.math.maxInt(u32);
 const none: u32 = std.math.maxInt(u32);
-
-/// A poisoned `parts` range could point back at itself; `Reach.target` and
-/// `Lower.collectTops` cap the same walk at the same depth.
-const max_depth: u8 = 32;
 
 /// One module's check. `scratch` is freed by the caller's arena.
 pub fn run(
@@ -145,8 +133,11 @@ const Graph = struct {
         g.at = try g.scratch.alloc(u32, count + 1);
         g.defers = try g.scratch.alloc(bool, count);
         g.runs = try g.scratch.alloc(bool, count);
-        const tags = g.bir.insts.items(.tag);
-        const data = g.bir.insts.items(.data);
+        // One buffer for the whole module, cleared per declaration: the
+        // shared walk writes into a buffer its caller owns, so the edges of
+        // one declaration cost no allocation after the first.
+        var stream: std.ArrayList(Edges.Edge) = .empty;
+        defer stream.deinit(g.scratch);
         for (g.bir.decls, 0..) |d, i| {
             g.at[i] = @intCast(g.targets.items.len);
             g.defers[i] = true;
@@ -162,38 +153,18 @@ const Graph = struct {
                 g.dispatch.declEvidence(@intCast(i)).len != 0 or
                 g.bir.instTag(body) == .lambda;
 
-            // Leg 1.
-            for (g.bir.refs[d.refs_start..d.refs_end]) |ref| {
-                if (ref.kind != .top_value) continue;
-                if (ref.a < count) try g.targets.append(g.scratch, ref.a);
-            }
-            // Leg 2. A declaration's instructions are contiguous, so this is
-            // a slice walk and not a tree traversal.
-            const start = @min(d.inst_start.int(), g.bir.insts.len);
-            const end = @min(d.inst_end.int(), g.bir.insts.len);
-            for (tags[start..end], data[start..end]) |tag, payload| {
-                if (tag != .top) continue;
-                if (payload.lhs < count) try g.targets.append(g.scratch, payload.lhs);
-            }
-            // Leg 3.
-            const range = siteRange(g.dispatch.sites, d.inst_start.int(), d.inst_end.int());
-            for (g.dispatch.sites[range.start..][0..range.len]) |site| {
-                try g.collect(site.target, count, 0);
-            }
+            stream.clearRetainingCapacity();
+            try Edges.declEdges(&stream, g.scratch, g.bir, g.dispatch, @intCast(i));
+            for (stream.items) |edge| switch (edge) {
+                // A poisoned index is dropped rather than followed: the
+                // node arrays are sized from this same declaration table.
+                .top => |target| if (target < count) try g.targets.append(g.scratch, target),
+                // Cross-module or synthesised; neither can close a cycle
+                // between two declarations of this module.
+                .ext, .derived, .ext_derived, .primitive, .err => {},
+            };
         }
         g.at[count] = @intCast(g.targets.items.len);
-    }
-
-    fn collect(g: *Graph, target: Dispatch.Target, count: u32, depth: u8) Error!void {
-        if (depth > max_depth) return;
-        switch (target) {
-            .top => |use| if (use.decl.int() < count) try g.targets.append(g.scratch, use.decl.int()),
-            // A derived function, another module's value and the evidence
-            // parameters are all either cross-module or synthesised, and
-            // neither can close a cycle inside this module.
-            else => {},
-        }
-        for (g.dispatch.partsAt(target.partsOf())) |part| try g.collect(part, count, depth + 1);
     }
 
     fn edges(g: *const Graph, node: u32) []const u32 {
@@ -364,21 +335,6 @@ const Graph = struct {
     }
 };
 
-/// The dispatch sites of one instruction range. `Dispatch.sites` is grouped
-/// by `inst` and a declaration's instructions are contiguous, so this is a
-/// lower bound plus a scan — `Reach.siteRange` reads the same table the same
-/// way.
-fn siteRange(sites: []const Dispatch.Site, start: u32, end: u32) Dispatch.Range {
-    const lo = std.sort.lowerBound(Dispatch.Site, sites, start, siteBefore);
-    var hi = lo;
-    while (hi < sites.len and sites[hi].inst.int() < end) hi += 1;
-    return .{ .start = @intCast(lo), .len = @intCast(hi - lo) };
-}
-
-fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
-    return std.math.order(inst, s.inst.int());
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 //
@@ -387,7 +343,8 @@ fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
 // evidence is `tests/corpus/check/bad/Cyclic*` and `run/EvalOrderTopLevel`.
 // What is here is the component arithmetic those fixtures cannot point at —
 // that a component of deferring nodes only is not a cycle, and that the
-// printed path is the shortest one.
+// printed path is the shortest one. That the EDGES are all three legs is
+// `Edges.zig`'s test, once, for both consumers.
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;

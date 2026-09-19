@@ -18,15 +18,16 @@
 //! `Lowerer.needs` while a surviving body is lowered, so they are emitted
 //! exactly when one wanted them.
 //!
-//! **The edges, in three legs** (§9), out of a value declaration `d` of
-//! module `m`:
+//! **The edges, in three legs** (§9), are walked by `check/Edges.zig`, which
+//! this pass shares with `check/Cycles.zig` — out of a value declaration `d`
+//! of module `m`:
 //!
 //!   1. every `Bir.refs` row of `d` whose kind is `top_value`;
-//!   2. every `ext_value` instruction in `d`'s contiguous instruction range,
-//!      through `Interface.Provenance.valueDecl` — `Resolve` has already
-//!      rewritten the instruction to carry `(Graph.Index, ValueIndex)`,
-//!      where the `refs` table's `import_value` rows stay symbolic and
-//!      re-deriving that lookup here would be a second copy of resolution;
+//!   2. every `.top` and `ext_value` instruction in `d`'s contiguous
+//!      instruction range — `Resolve` has already rewritten the instruction
+//!      to carry `(Graph.Index, ValueIndex)`, where the `refs` table's
+//!      `import_value` rows stay symbolic and re-deriving that lookup here
+//!      would be a second copy of resolution;
 //!   3. every dispatch site of `d`, and recursively every target nested in
 //!      one through `Dispatch.partsAt`. These are the edges `Bir`
 //!      deliberately does not have (`frontend.md` §3.6): a method call's
@@ -38,8 +39,18 @@
 //! Out of a foreign binding: nothing; its body is in a sibling file this
 //! pass does not read.
 //!
+//! **What is this pass's own** is everything CROSS-MODULE, which is the whole
+//! difference between the two consumers of `Edges.zig`: this one resolves an
+//! `ext` edge through `Interface.Provenance.valueDecl`, an `ext_derived` edge
+//! against the owning module's table, and the `primitive`/`err` edges against
+//! core — where `Cycles.zig` keeps `.top` alone, because the module graph is
+//! a DAG and a cycle cannot cross a module. The walk is shared so that a
+//! fourth leg is added once and both passes are then made to answer for it;
+//! `Edges.zig`'s own test is what pins the three that exist.
+//!
 //! **Two targets §9 calls edgeless are edges, and the spec is corrected
-//! here.** §9 says `primitive` and `err` add none "because each is an
+//! here.** `Edges.zig` yields both as tags and this pass is where they become
+//! nodes. §9 says `primitive` and `err` add none "because each is an
 //! operator or a poisoned table". That is true of `strict_eq`,
 //! `num_compare` and `char_compare`, which the module synthesises for
 //! itself — but `primitive string_compare` lowers to a CALL of core's
@@ -80,6 +91,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const Dispatch = @import("../check/Dispatch.zig");
+const Edges = @import("../check/Edges.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
@@ -301,7 +313,7 @@ pub fn run(scratch: Allocator, in: Input) Allocator.Error!Result {
     b.string_compare = in.coreDecl(.String, .compare);
     b.basics_eq = in.coreDecl(.Basics, .eq);
 
-    const edges = try scratch.alloc(Edges, count);
+    const edges = try scratch.alloc(ModuleEdges, count);
     for (edges, 0..) |*slot, i| slot.* = try b.module(@enumFromInt(@as(u32, @intCast(i))));
 
     // ---- The walk. Serial, because a fixpoint over a whole-program graph
@@ -342,13 +354,13 @@ fn mark(modules: []Live, node: Node) bool {
 
 /// One module's edge lists: two flat target arrays with a start offset per
 /// node, the same shape every other sidecar table here has.
-const Edges = struct {
+const ModuleEdges = struct {
     decl_at: []const u32 = &.{},
     decl_targets: []const Node = &.{},
     derived_at: []const u32 = &.{},
     derived_targets: []const Node = &.{},
 
-    fn targets(e: Edges, node: Node) []const Node {
+    fn targets(e: ModuleEdges, node: Node) []const Node {
         const at, const list = switch (node.kind) {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },
@@ -366,15 +378,15 @@ const Builder = struct {
     /// header).
     string_compare: ?Node = null,
     basics_eq: ?Node = null,
-    /// A poisoned `parts` range could point back at itself; the walk that
-    /// reads one is recursive, so it is capped exactly as
-    /// `Lower.derivedValue` and `dump/dispatch.zig` cap theirs.
-    const max_depth: u8 = 32;
+    /// The shared walk's output for one node, cleared and refilled per
+    /// node: a caller-owned buffer, so the whole module's edges cost one
+    /// allocation.
+    stream: std.ArrayList(Edges.Edge) = .empty,
 
     /// Every edge out of every node of one module. Writes nothing outside
     /// its own return value, which is what makes the loop above a parallel
     /// fan-out the day emit becomes one.
-    fn module(b: *Builder, m: Graph.Index) Allocator.Error!Edges {
+    fn module(b: *Builder, m: Graph.Index) Allocator.Error!ModuleEdges {
         const bir = b.in.birOf(m);
         const dispatch = b.in.dispatchOf(m);
 
@@ -388,54 +400,23 @@ const Builder = struct {
                 .value => {},
                 .foreign_value, .type, .type_alias, .foreign_type, .annotation_only => continue,
             }
-            // Leg 1: the reference table, already deduplicated per
-            // declaration and in source order.
-            for (bir.refs[d.refs_start..d.refs_end]) |ref| {
-                if (ref.kind != .top_value) continue;
-                try decl_targets.append(b.scratch, .{ .module = m, .kind = .decl, .index = ref.a });
-            }
-            // Leg 2: the references `Resolve` rewrote into the
-            // instructions. A declaration's instructions are contiguous, so
-            // this is a slice walk and not a tree traversal.
-            //
-            // **`.top` is read here as well as from `refs`, and §9's leg 1
-            // is wrong without it.** `refs` records a reference by the NAME
-            // the source wrote, and an operator writes none: `0 - n` lowers
-            // to `call(import_value Basics.sub, …)` with an `import_value`
-            // row, and inside `core/Basics` itself `Resolve` turns that
-            // instruction into a plain `top` while the row stays symbolic
-            // (the same asymmetry §9 cites for leg 2, one module further
-            // in). Reading `refs` alone left `Basics.negate` naming a
-            // `Basics.sub` this pass had deleted — caught by the wall in
-            // `Lower.topName`, which is what it is for. The `refs` walk
-            // above stays: it is the cheaper half and a duplicate edge
-            // costs one bitset test.
-            const tags = bir.insts.items(.tag);
-            const data = bir.insts.items(.data);
-            const start = @min(d.inst_start.int(), bir.insts.len);
-            const end = @min(d.inst_end.int(), bir.insts.len);
-            for (tags[start..end], data[start..end]) |tag, payload| {
-                switch (tag) {
-                    .top => try decl_targets.append(b.scratch, .{ .module = m, .kind = .decl, .index = payload.lhs }),
-                    .ext_value => try b.extValue(&decl_targets, @enumFromInt(payload.lhs), payload.rhs),
-                    else => {},
-                }
-            }
-            // Leg 3: the dispatch sites, and everything nested in one.
-            const range = siteRange(dispatch.sites, d.inst_start.int(), d.inst_end.int());
-            for (dispatch.sites[range.start..][0..range.len]) |site| {
-                try b.target(m, site.target, &decl_targets, 0);
-            }
+            b.stream.clearRetainingCapacity();
+            try Edges.declEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i));
+            // Most edges become exactly one node, so one reservation per
+            // declaration is the growth the resolve loop would otherwise do
+            // a word at a time.
+            try decl_targets.ensureUnusedCapacity(b.scratch, b.stream.items.len);
+            for (b.stream.items) |edge| try b.resolve(m, edge, &decl_targets);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
         const derived_at = try b.scratch.alloc(u32, dispatch.derived.len + 1);
         var derived_targets: std.ArrayList(Node) = .empty;
-        for (dispatch.derived, 0..) |row, i| {
+        for (0..dispatch.derived.len) |i| {
             derived_at[i] = @intCast(derived_targets.items.len);
-            for (dispatch.partsAt(row.parts)) |part| {
-                try b.target(m, part, &derived_targets, 0);
-            }
+            b.stream.clearRetainingCapacity();
+            try Edges.derivedEdges(&b.stream, b.scratch, dispatch, @intCast(i));
+            for (b.stream.items) |edge| try b.resolve(m, edge, &derived_targets);
         }
         derived_at[dispatch.derived.len] = @intCast(derived_targets.items.len);
 
@@ -447,13 +428,14 @@ const Builder = struct {
         };
     }
 
-    /// One dispatch target's edges, and recursively its evidence arguments.
-    fn target(b: *Builder, m: Graph.Index, t: Dispatch.Target, out: *std.ArrayList(Node), depth: u8) Allocator.Error!void {
-        if (depth > max_depth) return;
-        switch (t) {
-            .top => |use| try out.append(b.scratch, .{ .module = m, .kind = .decl, .index = use.decl.int() }),
-            .ext => |e| try b.extValue(out, e.module, @intFromEnum(e.value)),
-            .derived => |use| try out.append(b.scratch, .{ .module = m, .kind = .derived, .index = use.index }),
+    /// One edge of the shared stream, as whole-program nodes. Everything
+    /// cross-module is resolved here, because this is the pass that has the
+    /// tables for it.
+    inline fn resolve(b: *Builder, m: Graph.Index, edge: Edges.Edge, out: *std.ArrayList(Node)) Allocator.Error!void {
+        switch (edge) {
+            .top => |index| try out.append(b.scratch, .{ .module = m, .kind = .decl, .index = index }),
+            .ext => |e| try b.extValue(out, e.module, e.value),
+            .derived => |index| try out.append(b.scratch, .{ .module = m, .kind = .derived, .index = index }),
             .ext_derived => |use| try b.extDerived(out, use),
             // `String.compare` and `Basics.eq`: real cross-module calls the
             // lowerer writes with no target of their own (see the header).
@@ -463,10 +445,7 @@ const Builder = struct {
                 if (b.string_compare) |node| try out.append(b.scratch, node);
             },
             .err => if (b.basics_eq) |node| try out.append(b.scratch, node),
-            // A parameter and a property read name nothing that is emitted.
-            .evidence, .field => {},
         }
-        for (b.in.dispatchOf(m).partsAt(t.partsOf())) |part| try b.target(m, part, out, depth + 1);
     }
 
     fn extValue(b: *Builder, out: *std.ArrayList(Node), m: Graph.Index, value: u32) Allocator.Error!void {
@@ -485,7 +464,7 @@ const Builder = struct {
     /// is what the checker wrote, and `Lower.derivedName` names
     /// `types.entry(use.type).module`. They agree in every program, and an
     /// extra edge costs bytes where a missing one costs a `ReferenceError`.
-    fn extDerived(b: *Builder, out: *std.ArrayList(Node), use: Dispatch.Target.ExtDerivedUse) Allocator.Error!void {
+    fn extDerived(b: *Builder, out: *std.ArrayList(Node), use: Edges.Edge.ExtDerived) Allocator.Error!void {
         try b.derivedRowOf(out, use.module, use.type, use.kind);
         const owner = b.in.types.entry(use.type).module;
         if (owner != use.module) try b.derivedRowOf(out, owner, use.type, use.kind);
@@ -505,21 +484,6 @@ const Builder = struct {
     }
 };
 
-/// The dispatch sites of one instruction range. `Dispatch.sites` is grouped
-/// by `inst` and a declaration's instructions are contiguous, so this is a
-/// lower bound plus a scan — `Lower.siteRangeOf` reads the same table the
-/// same way.
-fn siteRange(sites: []const Dispatch.Site, start: u32, end: u32) Dispatch.Range {
-    const lo = std.sort.lowerBound(Dispatch.Site, sites, start, siteBefore);
-    var hi = lo;
-    while (hi < sites.len and sites[hi].inst.int() < end) hi += 1;
-    return .{ .start = @intCast(lo), .len = @intCast(hi - lo) };
-}
-
-fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
-    return std.math.order(inst, s.inst.int());
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 //
@@ -527,7 +491,8 @@ fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
 // does is visible in emitted JavaScript, so its evidence is
 // `tests/corpus/emit/app/` and the six `run/Dce*` programs. What is here is
 // the arithmetic those cannot reach — an out-of-range node index, and the
-// empty tables a module that failed to lower contributes.
+// empty tables a module that failed to lower contributes. That the EDGES are
+// all three legs is `check/Edges.zig`'s test, once, for both consumers.
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;

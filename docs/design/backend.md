@@ -1174,6 +1174,22 @@ This is `collectTops` (`:555-562`) widened from `top` to all four target kinds a
 cross-module leg, so the eta-expanded evidence closures of §6 need no rule of their own: an
 eta-expansion is built from a site's targets, and the targets are the edges.
 
+**The three legs are `check/Edges.zig`, shared with `check/Cycles.zig`** (`checker.md` §6.7),
+which asks the same question of the same two tables one module at a time. It was written twice
+until 2026-09-19, with only a "these two must agree" comment in each header behind it — and the
+edge set above had already lost three edges once, to a spec this document corrects in place.
+`Edges.zig` lives under `src/check/` because it is a pure function of `Bir` and `Dispatch` and
+because `Cycles` may not depend on the backend, where this pass already depends on `check/`. It
+yields a declaration's targets as a flat tagged stream — `top d | ext (module, value) | derived r
+| ext_derived (module, type, kind) | primitive p | err` — into a buffer this pass owns and
+reuses; this pass maps all six onto `Node`s, resolving the cross-module ones against the
+provenance and dispatch tables `Cycles` does not have, and `Cycles` keeps `top` alone. A fourth
+leg — effects and §10's chunking will each want one — is a tag added once, and the exhaustive
+switch in each consumer is then what makes both answer for it. *(Materialising the stream where
+the old code appended straight to its node list costs `eliminate` about 0.2 ms on a 633-module
+build, 1.0 ms → 1.2 ms, ReleaseFast, min of nine, ABBA; the `emit` phase that contains it does
+not move, 27 ms either way.)*
+
 **Where it runs.** A new whole-program pass in `src/js/`, called from `Emit.run` between `findEntry`
 and `emitModules` (`src/js/Emit.zig:147`, `:155`), producing one bitset per module over each of the
 three node kinds — **two bitsets, not three**: a value declaration and a foreign binding are both
