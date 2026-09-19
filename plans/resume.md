@@ -33,8 +33,9 @@ warm `build --library` 106 ms (`< 120 ms` met).
   `Debug`. Left in M3: static multi-entry chunking and the single-file release bundle (M3d, specified
   in `backend.md` §10, not built). Field ambiguation specified and declined on measurement.
 - **Incrementality (M4)**: M4-0 serialized interfaces + hash + the round-trip acceptance matrix;
-  M4-1 the persistent cache; M4-2 front-end artifacts on disk; **M4-3 the firewall cutoff, cache ON by default**. Warm
-  `check` of 100k lines: 39.5 ms (131 cold); warm `build` 100.5 ms — the `< 120 ms` budget is met.
+  M4-1 the persistent cache; M4-2 front-end artifacts on disk; **M4-3 the firewall cutoff, cache ON by default**. On 100k
+  lines: warm `check` with no edit ≈ 44 ms (131 cold), after a comment in a leaf ≈ 45 ms (it was 117),
+  warm `build --library` 106 ms — the `< 120 ms` budget is met; a `pub` signature edit is still ≈ 130 ms.
 - **Tooling**: `check --platform`, `beni check .`, `fmt` keeps modes and symlinks, `dump` exits 1
   over an error, diagnostics point into the file whose text is wrong.
 - **Rule 7** in `CLAUDE.md`: guarantees, not restrictions.
