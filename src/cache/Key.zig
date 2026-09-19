@@ -117,6 +117,19 @@ pub const Terms = struct {
 /// same 16 bytes for two different inputs would be invisible to a test that
 /// only ever compared keys.
 pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
+    try writeOwn(gpa, out, t);
+    try writeRest(gpa, out, t.core_epoch, t.imports);
+}
+
+/// The prefix with NO import term: package, name, option string, source hash,
+/// sibling hash, and the three constants in front of them.
+///
+/// **It is a prefix and not a hash**, which is the whole point: the key's bytes
+/// are one string and the part that depends on nothing else in the project can
+/// be produced serially, once, while the rest is appended on the DAG by the
+/// worker that claimed the module. `writeBytes` is the two halves in order, and
+/// a test asserts that it still is.
+pub fn writeOwn(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
     try out.appendSlice(gpa, magic);
     try appendInt(gpa, out, u32, key_version);
     try out.appendSlice(gpa, &t.build_id);
@@ -127,14 +140,30 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
     try out.appendSlice(gpa, t.options);
     try out.appendSlice(gpa, &t.source_hash);
     try out.appendSlice(gpa, &t.sibling_hash);
-    try out.appendSlice(gpa, &t.core_epoch);
-    try appendInt(gpa, out, u32, @intCast(t.imports.len));
-    for (t.imports) |i| {
+}
+
+/// Everything `writeOwn` left out: the core term, then the import terms.
+pub fn writeRest(gpa: Allocator, out: *std.ArrayList(u8), core: Key, imports: []const Import) Allocator.Error!void {
+    try out.appendSlice(gpa, &core);
+    try appendInt(gpa, out, u32, @intCast(imports.len));
+    for (imports) |i| {
         try out.append(gpa, @intFromEnum(i.package));
         try appendInt(gpa, out, u32, @intCast(i.name.len));
         try out.appendSlice(gpa, i.name);
         try out.appendSlice(gpa, &i.key);
     }
+}
+
+/// `m`'s key, from its `own_terms` blob and the terms only the DAG knows.
+///
+/// This is the function the worker that claimed `m` calls. `scratch` holds one
+/// module's byte string and may be reset the moment it returns.
+pub fn finish(scratch: Allocator, own: []const u8, core: Key, imports: []const Import) Allocator.Error!Key {
+    var bytes: std.ArrayList(u8) = .empty;
+    defer bytes.deinit(scratch);
+    try bytes.appendSlice(scratch, own);
+    try writeRest(scratch, &bytes, core, imports);
+    return iface_bytes.hash(bytes.items);
 }
 
 pub fn compute(gpa: Allocator, t: Terms) Allocator.Error!Key {
@@ -230,13 +259,41 @@ pub const Keys = struct {
     /// an earlier phase already reported on it, or one of its imports is
     /// itself uncacheable.
     uncacheable: []bool,
+    /// Owned, one blob per module: `writeOwn`'s prefix, the part of the key
+    /// that depends on nothing else in the project.
+    ///
+    /// **This is what the serial pass produces from M4-3 on.** An import's
+    /// contribution exists only once that import has been checked or loaded,
+    /// so the serial pass cannot finish a key it can no longer see the terms
+    /// of; what it can still do — reading and hashing every source and every
+    /// sibling `.js` — is all of it, and it keeps the `cache_key` row.
+    own: [][]u8 = &.{},
+    /// The core term every non-core module's key takes. Computed by the serial
+    /// pass while the recipe is `core_epoch` over core's KEYS, which a serial
+    /// pass can still see because a core module imports nothing outside core.
+    core_epoch: Key = none,
 
     pub const empty: Keys = .{ .keys = &.{}, .uncacheable = &.{} };
 
     pub fn deinit(k: *Keys, gpa: Allocator) void {
         gpa.free(k.keys);
         gpa.free(k.uncacheable);
+        for (k.own) |blob| gpa.free(blob);
+        gpa.free(k.own);
         k.* = empty;
+    }
+
+    /// `m`'s `own_terms` blob, or empty when the run computed none.
+    pub fn ownTerms(k: *const Keys, m: Graph.Index) []const u8 {
+        if (m.int() >= k.own.len) return &.{};
+        return k.own[m.int()];
+    }
+
+    /// Record the key the DAG finished for `m`. One writer per slot: the
+    /// worker that claimed the module.
+    pub fn set(k: *Keys, m: Graph.Index, key: Key) void {
+        if (m.int() >= k.keys.len) return;
+        k.keys[m.int()] = key;
     }
 
     pub fn len(k: *const Keys) usize {
@@ -276,8 +333,19 @@ pub const Options = struct {
     io: Io,
 };
 
-/// Every module's key, in two passes over `graph.order`: core, then the
-/// rest. `scratch` is reset by the caller.
+/// Every module's `own_terms` blob and cacheability bit, plus — while the core
+/// term is still `core_epoch` over core's KEYS — every CORE module's finished
+/// key and the epoch itself.
+///
+/// **Why core stays here and the rest does not.** A core module imports nothing
+/// outside core, so `graph.order` restricted to core is a valid order for it
+/// and a serial pass can finish every core key in one sweep. An APP module's
+/// key needs its imports' contributions, and from M4-3 on an import contributes
+/// something that exists only after it has been checked — so that half moves to
+/// the DAG, where the schedule already guarantees an import has finished before
+/// its importer is released.
+///
+/// `scratch` is reset by the caller.
 pub fn build(
     gpa: Allocator,
     scratch: Allocator,
@@ -291,69 +359,61 @@ pub fn build(
     var out: Keys = .{
         .keys = try gpa.alloc(Key, n),
         .uncacheable = try gpa.alloc(bool, n),
+        .own = try gpa.alloc([]u8, n),
     };
     errdefer out.deinit(gpa);
     @memset(out.keys, none);
     @memset(out.uncacheable, true);
+    @memset(out.own, &.{});
 
-    // Pass 1: the core package. A core module imports nothing outside core,
-    // so `graph.order` restricted to core is a valid order for it, and its
-    // own `core_epoch` is `none` by definition.
+    // Every module's own terms, and its cacheability. Uncacheability
+    // propagates along import edges and needs no key at all, so it stays
+    // serial: `graph.order` visits an import before its importer.
+    for (graph.order) |m| {
+        out.own[m.int()] = try ownTermsOf(gpa, scratch, graph, store, artifacts, interner, options, m);
+        var cacheable = !graph.isPoisoned(m) and
+            !(m.int() < options.reported.len and options.reported[m.int()]);
+        for (graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            if (!out.isCacheable(dep)) cacheable = false;
+        }
+        out.uncacheable[m.int()] = !cacheable;
+    }
+
+    // Core's keys, and the epoch over them.
     var core_entries: std.ArrayList(CoreEntry) = .empty;
     defer core_entries.deinit(scratch);
     for (graph.order) |m| {
         if (graph.module(m).package != .core) continue;
-        try one(scratch, graph, store, artifacts, interner, options, &out, m, none);
+        var imports: std.ArrayList(Import) = .empty;
+        defer imports.deinit(scratch);
+        for (graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            try imports.append(scratch, .{
+                .package = graph.module(dep).package,
+                .name = interner.slice(graph.moduleName(dep)),
+                .key = out.of(dep),
+            });
+        }
+        sortImports(&imports);
+        // A core module's own `core_epoch` term is `none` by definition.
+        out.keys[m.int()] = try finish(scratch, out.own[m.int()], none, imports.items);
         try core_entries.append(scratch, .{
             .name = interner.slice(graph.moduleName(m)),
             .key = out.keys[m.int()],
         });
     }
     std.mem.sort(CoreEntry, core_entries.items, {}, coreEntryLessThan);
-    const epoch = try coreEpoch(scratch, core_entries.items);
-
-    // Pass 2: everything else.
-    for (graph.order) |m| {
-        if (graph.module(m).package == .core) continue;
-        try one(scratch, graph, store, artifacts, interner, options, &out, m, epoch);
-    }
+    out.core_epoch = try coreEpoch(scratch, core_entries.items);
     return out;
 }
 
-fn coreEntryLessThan(_: void, a: CoreEntry, b: CoreEntry) bool {
-    return std.mem.lessThan(u8, a.name, b.name);
-}
-
-fn one(
-    scratch: Allocator,
-    graph: *const Graph,
-    store: *const SourceStore,
-    artifacts: *const Artifacts,
-    interner: *const InternPool.Global,
-    options: Options,
-    out: *Keys,
-    m: Graph.Index,
-    epoch: Key,
-) Allocator.Error!void {
-    const file = graph.moduleFile(m);
-    const module = graph.module(m);
-
-    var imports: std.ArrayList(Import) = .empty;
-    defer imports.deinit(scratch);
-    var cacheable = !graph.isPoisoned(m) and
-        !(m.int() < options.reported.len and options.reported[m.int()]);
-    for (graph.dependencies(m)) |dep| {
-        if (dep == m) continue;
-        if (!out.isCacheable(dep)) cacheable = false;
-        try imports.append(scratch, .{
-            .package = graph.module(dep).package,
-            .name = interner.slice(graph.moduleName(dep)),
-            .key = out.of(dep),
-        });
-    }
+/// Sort by `(package, name)` and drop duplicates, in place.
+///
+/// `graph.dependencies` is already deduplicated per module, but the sort is
+/// what a duplicate would have to survive, so the removal is here.
+pub fn sortImports(imports: *std.ArrayList(Import)) void {
     std.mem.sort(Import, imports.items, {}, importLessThan);
-    // `graph.dependencies` is already deduplicated per module, but the sort
-    // is what a duplicate would have to survive, so the removal is here.
     var unique: usize = 0;
     for (imports.items, 0..) |i, at| {
         if (at != 0 and sameImport(imports.items[unique - 1], i)) continue;
@@ -361,6 +421,24 @@ fn one(
         unique += 1;
     }
     imports.shrinkRetainingCapacity(unique);
+}
+
+fn coreEntryLessThan(_: void, a: CoreEntry, b: CoreEntry) bool {
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
+fn ownTermsOf(
+    gpa: Allocator,
+    scratch: Allocator,
+    graph: *const Graph,
+    store: *const SourceStore,
+    artifacts: *const Artifacts,
+    interner: *const InternPool.Global,
+    options: Options,
+    m: Graph.Index,
+) Allocator.Error![]u8 {
+    const file = graph.moduleFile(m);
+    const module = graph.module(m);
 
     var options_buffer: [options_buffer_len]u8 = undefined;
     const option_string = writeOptions(&options_buffer, .{
@@ -370,17 +448,17 @@ fn one(
         .pattern_budget = options.pattern_budget,
     });
 
-    out.keys[m.int()] = try compute(scratch, .{
+    var bytes: std.ArrayList(u8) = .empty;
+    errdefer bytes.deinit(gpa);
+    try writeOwn(gpa, &bytes, .{
         .build_id = options.build_id,
         .package = module.package,
         .name = interner.slice(module.name),
         .options = option_string,
         .source_hash = iface_bytes.hash(store.bytes(file)),
         .sibling_hash = try siblingHash(scratch, store, artifacts, options, file),
-        .core_epoch = epoch,
-        .imports = imports.items,
     });
-    out.uncacheable[m.int()] = !cacheable;
+    return bytes.toOwnedSlice(gpa);
 }
 
 fn importLessThan(_: void, a: Import, b: Import) bool {
@@ -619,6 +697,33 @@ test "the recipe is length-prefixed, so two different splits cannot agree" {
         .{ .package = .app, .name = "BC", .key = none },
     };
     try expectDifferentKeys(c, d);
+}
+
+test "the key's byte string is its own terms followed by the rest, exactly" {
+    // What makes finishing a key on the DAG the SAME key the serial pass
+    // produced: `writeBytes` is `writeOwn` then `writeRest`, so the split is a
+    // split of one byte string and not a second recipe. A commit that let the
+    // two drift would be a cache that misses everything, or worse.
+    const gpa = testing.allocator;
+    var t = sampleTerms();
+    t.sibling_hash = @splat(0xBB);
+    t.core_epoch = @splat(0xCC);
+    t.imports = &.{.{ .package = .app, .name = "Leaf", .key = @splat(0xDD) }};
+
+    var whole: std.ArrayList(u8) = .empty;
+    defer whole.deinit(gpa);
+    try writeBytes(gpa, &whole, t);
+
+    var own: std.ArrayList(u8) = .empty;
+    defer own.deinit(gpa);
+    try writeOwn(gpa, &own, t);
+    var split: std.ArrayList(u8) = .empty;
+    defer split.deinit(gpa);
+    try split.appendSlice(gpa, own.items);
+    try writeRest(gpa, &split, t.core_epoch, t.imports);
+
+    try testing.expectEqualSlices(u8, whole.items, split.items);
+    try testing.expectEqual(try compute(gpa, t), try finish(gpa, own.items, t.core_epoch, t.imports));
 }
 
 test "the key is a pure function: the same terms twice give the same bytes" {

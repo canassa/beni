@@ -83,6 +83,50 @@ pub fn load(
     interner: *InternPool.Global,
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
+    return loadWith(gpa, dir, key, .{ .grow = interner }, shell);
+}
+
+/// `load`, on a WORKER, re-interning through the non-mutating
+/// `InternPool.Global.find` (`fast-compiler.md` §8, `plans/m4-3.md` §4.3).
+///
+/// **This is what makes a load on the DAG legal at all.** `Global` is
+/// thread-confined, so a `getOrPut` from a worker is a data race; `find` is a
+/// read and is not. What it costs is that a string the session never interned
+/// makes the load fail — and *measured over the warm 100k corpus, `core` and
+/// `tests/corpus/run`, at `--jobs=1` and `--jobs=8`, 24 281 strings were
+/// re-interned on cross-process loads and 0 of them would have missed `find`*:
+/// every string a cache entry names is one some module of this build already
+/// interned, because an entry names declarations and modules of this build and
+/// M4-2 re-interns every module's whole `Bir.symbols` column on every run.
+///
+/// **And the posture is DEGRADE, not trap.** A `find` miss is a cache MISS and
+/// the module is checked, never an `internal` — so even if the argument is one
+/// day wrong, the failure is a slow build and not a wrong one.
+pub fn loadFinding(
+    gpa: Allocator,
+    dir: *const Dir,
+    key: Key.Key,
+    interner: *const InternPool.Global,
+    shell: *const Interface,
+) Allocator.Error!?Loaded {
+    return loadWith(gpa, dir, key, .{ .find = interner }, shell);
+}
+
+/// Which of the two interning postures a load takes. `iface_bytes`' own
+/// `Interning` union by another name, carried here so the two payload readers
+/// are chosen together and can never disagree.
+const Interning = union(enum) {
+    grow: *InternPool.Global,
+    find: *const InternPool.Global,
+};
+
+fn loadWith(
+    gpa: Allocator,
+    dir: *const Dir,
+    key: Key.Key,
+    interning: Interning,
+    shell: *const Interface,
+) Allocator.Error!?Loaded {
     const bytes = dir.load(gpa, key) orelse return null;
     var out: Loaded = .{ .bytes = bytes, .record = .empty, .sidecar = .empty, .diagnostics = &.{} };
     errdefer out.deinit(gpa);
@@ -94,17 +138,23 @@ pub fn load(
             return null;
         },
     };
-    out.record = iface_bytes.readGrowing(gpa, entry.interface, interner) catch |err| switch (err) {
+    out.record = (switch (interning) {
+        .grow => |pool| iface_bytes.readGrowing(gpa, entry.interface, pool),
+        .find => |pool| iface_bytes.read(gpa, entry.interface, pool),
+    }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        // `UnknownSymbol` cannot happen on this path — `readGrowing`
-        // interns what it does not find — but it is in the error set, and a
-        // cache turns everything that is not OOM into a miss.
+        // On the growing path `UnknownSymbol` cannot happen; on the finding
+        // path it is the degradation above. A cache turns everything that is
+        // not OOM into a miss either way.
         error.BadRecord, error.UnknownSymbol => {
             out.deinit(gpa);
             return null;
         },
     };
-    out.sidecar = dispatch_bytes.readGrowing(gpa, entry.dispatch, interner) catch |err| switch (err) {
+    out.sidecar = (switch (interning) {
+        .grow => |pool| dispatch_bytes.readGrowing(gpa, entry.dispatch, pool),
+        .find => |pool| dispatch_bytes.read(gpa, entry.dispatch, pool),
+    }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.BadSidecar, error.UnknownSymbol => {
             out.deinit(gpa);

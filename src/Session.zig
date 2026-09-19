@@ -1298,15 +1298,17 @@ fn checkSerial(session: *Session) RunError!void {
         }
     }
 
-    // The cache keys (`fast-compiler.md` §8), serially, between resolution
-    // and the check: `quiet` is what says which modules have no well-founded
-    // key, and an import's key must exist before its importer's.
+    // The keys' OWN terms (`fast-compiler.md` §8), serially, between
+    // resolution and the check: `quiet` is what says which modules have no
+    // well-founded key, and the import half is finished on the DAG.
     try session.computeKeys(quiet);
 
-    // Then the entries, still serially: `InternPool.Global` is thread-
-    // confined and a cross-process load must `getOrPut`, which is why
-    // reading is here and not on the DAG (`plans/m4-1.md` decision 9).
-    const cached = try gpa.alloc(?CacheEntry.Loaded, session.graph.count());
+    const n = session.graph.count();
+    // The entries land here, one slot per module, written by that module's
+    // own worker — `InternPool.Global` is thread-confined, and what makes a
+    // load on a worker legal is that it re-interns through the non-mutating
+    // `find` (`CacheEntry.loadFinding`).
+    const cached = try gpa.alloc(?CacheEntry.Loaded, n);
     defer {
         for (cached) |*slot| {
             if (slot.*) |*l| l.deinit(gpa);
@@ -1314,27 +1316,47 @@ fn checkSerial(session: *Session) RunError!void {
         gpa.free(cached);
     }
     @memset(cached, null);
-    try session.loadEntries(cached);
-    // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
-    // §8), recorded here rather than after the check: what they are about is
-    // what was LOADED, and the check is what consumes it.
-    {
-        var hits: u64 = 0;
-        var misses: u64 = 0;
-        for (0..session.graph.count()) |i| {
-            if (!session.keys.isCacheable(@enumFromInt(i))) continue;
-            if (cached[i] != null) hits += 1 else misses += 1;
-        }
-        session.profile.addCounter(.cache_hits, hits);
-        session.profile.addCounter(.cache_misses, misses);
-        session.profile.addCounter(.modules_checked, session.graph.count() - hits);
-    }
+
+    gpa.free(session.iface_hashes);
+    gpa.free(session.digests);
+    session.iface_hashes = &.{};
+    session.digests = &.{};
+    session.iface_hashes = try gpa.alloc([16]u8, n);
+    session.digests = try gpa.alloc(Digest.Digest, n);
+    @memset(session.iface_hashes, Digest.none);
+    @memset(session.digests, Digest.none);
+    const hit = try gpa.alloc(bool, n);
+    defer gpa.free(hit);
+    @memset(hit, false);
+
+    var cutoff: Check.Cutoff = .{
+        .keys = &session.keys,
+        .dir = session.options.cache,
+        .interner = &session.interner,
+        .iface_hash = session.iface_hashes,
+        .digest = session.digests,
+        .hit = hit,
+    };
 
     session.checked.deinit(gpa);
     // `check` is one event per MODULE (checker.md §9), emitted by the
     // checker itself on the worker that took the module, with `constrain`,
     // `solve` and `exhaustive` nested inside each.
-    session.checked = try runCheckOnBigStack(session, quiet, cached);
+    session.checked = try runCheckOnBigStack(session, quiet, cached, &cutoff);
+    // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
+    // §8). They are summed from the per-module flags the workers set, because
+    // the decision is now theirs: there is no serial load pass left to count.
+    {
+        var hits: u64 = 0;
+        var misses: u64 = 0;
+        for (0..n) |i| {
+            if (!session.keys.isCacheable(@enumFromInt(i))) continue;
+            if (hit[i]) hits += 1 else misses += 1;
+        }
+        session.profile.addCounter(.cache_hits, hits);
+        session.profile.addCounter(.cache_misses, misses);
+        session.profile.addCounter(.modules_checked, n - hits);
+    }
     // By name, so a counter added to `Solve.Counters` without a matching
     // `Profile.Counter` is a compile error rather than a number that never
     // reaches the trace.
@@ -1342,106 +1364,7 @@ fn checkSerial(session: *Session) RunError!void {
         session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
     }
     try session.reportCheckDiagnostics();
-    // The interface hashes and dependency digests (`checker.md` §7), serially,
-    // in `graph.order`: an import's pair must exist before its importer's, and
-    // a module's own record exists only once it has been checked or installed.
-    try session.computeDigests();
     try session.storeEntries(cached);
-}
-
-/// One interface hash and one dependency digest per module (`checker.md` §7,
-/// *The dependency digest*), serially, in `graph.order` — the order that makes
-/// an import's pair available before its importer's, exactly as `Key.build`'s
-/// two passes do for keys.
-///
-/// It runs on every checking run, with or without a cache directory, for the
-/// reason `Session.digests` gives: one code path, and a cost that is in the
-/// trace rather than in a branch.
-fn computeDigests(session: *Session) RunError!void {
-    const gpa = session.gpa;
-    const worker = &session.workers[0];
-    const scratch = worker.arena.allocator();
-    const token = session.profile.begin();
-    const n = session.graph.count();
-
-    gpa.free(session.iface_hashes);
-    gpa.free(session.digests);
-    session.iface_hashes = try gpa.alloc([16]u8, n);
-    session.digests = try gpa.alloc(Digest.Digest, n);
-    @memset(session.iface_hashes, Digest.none);
-    @memset(session.digests, Digest.none);
-
-    const s: Digest.Session = .{
-        .graph = &session.graph,
-        .artifacts = &session.artifacts,
-        .types = &session.checked.types,
-        .interfaces = session.resolution.interfaces,
-        .dispatch = session.checked.dispatch,
-        .interner = &session.interner,
-    };
-
-    for (session.graph.order) |m| {
-        const record = try iface_bytes.write(scratch, &session.resolution.interfaces[m.int()], &session.interner);
-        session.iface_hashes[m.int()] = iface_bytes.hash(record);
-
-        var imports: std.ArrayList(Digest.Import) = .empty;
-        for (session.graph.dependencies(m)) |dep| {
-            if (dep == m) continue;
-            try imports.append(scratch, .{
-                .package = session.graph.module(dep).package,
-                .name = session.interner.slice(session.graph.moduleName(dep)),
-                .iface_hash = session.iface_hashes[dep.int()],
-                .digest = session.digests[dep.int()],
-            });
-        }
-        std.mem.sort(Digest.Import, imports.items, {}, importLessThan);
-        var unique: usize = 0;
-        for (imports.items, 0..) |i, at| {
-            if (at != 0 and sameImport(imports.items[unique - 1], i)) continue;
-            imports.items[unique] = i;
-            unique += 1;
-        }
-        imports.shrinkRetainingCapacity(unique);
-
-        session.digests[m.int()] = try Digest.collect(scratch, s, m, imports.items);
-        // Per module, not per pass: the only thing that has to outlive one
-        // module is the two 16-byte values, and both are in session memory.
-        worker.arena.reset(.retain_capacity);
-    }
-    session.profile.end(0, token, .dep_digest, Profile.Event.no_file, 0);
-}
-
-fn importLessThan(_: void, a: Digest.Import, b: Digest.Import) bool {
-    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
-    return std.mem.lessThan(u8, a.name, b.name);
-}
-
-fn sameImport(a: Digest.Import, b: Digest.Import) bool {
-    return a.package == b.package and std.mem.eql(u8, a.name, b.name);
-}
-
-/// Read one entry per cacheable module, serially, before any worker starts.
-///
-/// Every failure is a miss and nothing is said about it: a stale cache must
-/// be indistinguishable from a cold build (`frontend.md` §1). An uncacheable
-/// module is not even looked up — it has no well-founded key, so its key
-/// names nothing.
-fn loadEntries(session: *Session, out: []?CacheEntry.Loaded) RunError!void {
-    const cache = session.options.cache orelse return;
-    const gpa = session.gpa;
-    const token = session.profile.begin();
-    for (out, 0..) |*slot, i| {
-        const m: Graph.Index = @enumFromInt(i);
-        if (!session.keys.isCacheable(m)) continue;
-        slot.* = try CacheEntry.load(
-            gpa,
-            cache,
-            session.keys.of(m),
-            &session.interner,
-            &session.resolution.interfaces[i],
-        );
-    }
-    session.profile.end(0, token, .cache_load, Profile.Event.no_file, 0);
 }
 
 /// Write one cache entry per module whose check produced nothing to hide
@@ -1635,11 +1558,12 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 /// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
 pub const check_stack_size = Check.stack_size;
 
-fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded) RunError!Check {
+fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded, cutoff: *Check.Cutoff) RunError!Check {
     const Runner = struct {
         session: *Session,
         quiet: []const bool,
         cached: []?CacheEntry.Loaded,
+        cutoff: *Check.Cutoff,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -1662,11 +1586,12 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .roundtrip_interfaces = r.session.options.roundtrip_interfaces,
                     .roundtrip_dispatch = r.session.options.roundtrip_dispatch,
                     .cached = r.cached,
+                    .cutoff = r.cutoff,
                 },
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached };
+    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff };
     const thread = try std.Thread.spawn(.{ .stack_size = check_stack_size }, Runner.go, .{&runner});
     thread.join();
     return runner.result;

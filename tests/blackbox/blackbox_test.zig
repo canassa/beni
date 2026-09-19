@@ -577,10 +577,16 @@ test "--self-profile records every phase of every file and every counter, exactl
     // because what they measure is a graph and a constraint tree, not a
     // span of source. Per module and not per run, because "this module was
     // not re-checked" is what M4's incrementality tests have to see.
-    var per_module_seen: [files.len][5]bool = @splat(@splat(false));
-    var serial: [7]bool = @splat(false);
+    var per_module_seen: [files.len][7]bool = @splat(@splat(false));
+    var serial: [6]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
-    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive" };
+    // `cache_load` and `dep_digest` are per MODULE from M4-3 on, not serial
+    // passes: the key is finished, the entry is loaded and the two published
+    // values are computed on the worker that claimed the module, because an
+    // import's contribution exists only once that import has been checked
+    // (`fast-compiler.md` §8). Both are emitted with or without a cache
+    // directory, so that there is one code path rather than two.
+    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "cache_load", "dep_digest" };
     // `types` is serial and once per run (checker.md §5): numbering every
     // declared type and settling equatability. It is in the trace because
     // it can DOMINATE a build — a project of long alias chains spent 1.3 s
@@ -588,14 +594,13 @@ test "--self-profile records every phase of every file and every counter, exactl
     // trace the instrument.
     //
     // `cache_key` is serial too, and it is here on EVERY run and not only a
-    // cached one (`fast-compiler.md` §8): the keys are computed with or
-    // without a cache directory, so that there is one code path rather than
-    // two, and so that what the key pass costs is a row in the trace rather
+    // cached one (`fast-compiler.md` §8). What it still does serially from
+    // M4-3 on is the part of the key that depends on nothing else in the
+    // project — reading and hashing every source and every sibling `.js` —
+    // with or without a cache directory, so that there is one code path
+    // rather than two, and so that what it costs is a row in the trace rather
     // than a number nobody has.
-    // `dep_digest` is `cache_key`'s twin and is here for the same reason: it
-    // runs on every checking run, cache directory or not, and a cost that does
-    // not appear in the trace defeats the instrument (`checker.md` §7).
-    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "types", "cache_key", "dep_digest", "render" };
+    const serial_names = [_][]const u8{ "enumerate", "merge_interners", "graph", "types", "cache_key", "render" };
     var counters: [13]?u64 = @splat(null);
     for (parsed.value.traceEvents) |e| {
         if (std.mem.eql(u8, e.ph, "X")) {
@@ -638,8 +643,8 @@ test "--self-profile records every phase of every file and every counter, exactl
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([files.len][5]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
-    try testing.expectEqual([7]bool{ true, true, true, true, true, true, true }, serial);
+    try testing.expectEqual([files.len][7]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
+    try testing.expectEqual([6]bool{ true, true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
     // `insts` are the AST and BIR sizes of these three modules, which

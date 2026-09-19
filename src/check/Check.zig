@@ -65,7 +65,19 @@ const Types = @import("Types.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
 const CacheEntry = @import("../cache/Entry.zig");
+const CacheDir = @import("../cache/Dir.zig");
+const Key = @import("../cache/Key.zig");
+const Digest = @import("../cache/Digest.zig");
 const reads = @import("reads.zig");
+
+fn digestImportLessThan(_: void, a: Digest.Import, b: Digest.Import) bool {
+    if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
+fn sameDigestImport(a: Digest.Import, b: Digest.Import) bool {
+    return a.package == b.package and std.mem.eql(u8, a.name, b.name);
+}
 
 const Check = @This();
 
@@ -191,6 +203,48 @@ pub const Options = struct {
     /// out and leaves `.empty` behind; the caller still owns the entry's
     /// bytes and frees them afterwards.
     cached: []?CacheEntry.Loaded = &.{},
+    /// The firewall cutoff's per-module work (`fast-compiler.md` §8). Null on
+    /// a run that computes no keys at all — every checking run has one.
+    cutoff: ?*Cutoff = null,
+};
+
+/// The key, the entry load and the two published values, done ON THE WORKER
+/// that claimed the module (`fast-compiler.md` §8, `plans/m4-3.md` §8).
+///
+/// **Why it cannot stay a serial pre-pass.** M4-1 computed every key in one
+/// serial pass and loaded every entry in a second, which worked because an
+/// import contributed its own KEY and a key is a function of sources alone.
+/// From M4-3 an import contributes its `(interface hash, dependency digest)`
+/// pair, and that pair exists only once the import has been CHECKED or LOADED
+/// — so the serial pass could only finish the keys of modules all of whose
+/// imports hit, and the case the cutoff exists for is precisely the one where
+/// an import MISSED and was re-checked to the same interface.
+///
+/// **What makes it deterministic** is that a key is a function of `own_terms`
+/// and of values published by modules the schedule guarantees are complete
+/// before this one is released (`buildSchedule`, `finish`), so no key's value
+/// depends on which worker got there first. **One writer per slot**, the
+/// discipline `interfaces[m]`, `dispatch[m]` and `types.ref_ids[m]` already
+/// keep. And at `--jobs=1` the serial walk is `graph.order`, so keys are
+/// finished in exactly the order M4-1's serial pass used — one code path and
+/// one scheduling rule.
+pub const Cutoff = struct {
+    /// The serial pass's `own_terms` blobs, and the slots this fills.
+    keys: *Key.Keys,
+    /// The cache directory, or null. A run with none still finishes every
+    /// key: one code path, and "was a key computed?" is exactly the kind of
+    /// condition a cache bug hides behind.
+    dir: ?*const CacheDir = null,
+    /// Read-only, and read-only is the point: a worker re-interns through
+    /// `InternPool.Global.find` (`CacheEntry.loadFinding`).
+    interner: *const InternPool.Global,
+    /// One slot per module, written by that module's own worker: the interface
+    /// hash and the dependency digest its dependents fold into their keys.
+    iface_hash: [][16]u8,
+    digest: []Digest.Digest,
+    /// One slot per module: whether it was a HIT. Summed after the run into
+    /// the three counters `fast-compiler.md` §8's acceptance test asserts.
+    hit: []bool,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
@@ -563,12 +617,109 @@ const Driver = struct {
     }
 
     fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, recorder: *reads.Recorder) Error!void {
-        reads.begin(recorder, m);
-        // On every path out, including the failing one: a recorder left
-        // published would attribute the NEXT module's reads to this one.
-        defer reads.end();
-        try d.checkInner(m, scratch, patterns, tid);
-        try d.verifyReads(m, recorder);
+        // The key and the entry load, before the check: whichever of the two
+        // paths runs, it runs with the key already finished.
+        try d.claim(m, scratch, tid);
+        {
+            reads.begin(recorder, m);
+            // On every path out, including the failing one: a recorder left
+            // published would attribute the NEXT module's reads to this one.
+            defer reads.end();
+            try d.checkInner(m, scratch, patterns, tid);
+            try d.verifyReads(m, recorder);
+        }
+        // **Published before `finish(m)` releases the dependents.** `finish`
+        // is what drops their blocker counts, and a dependent that woke to an
+        // unwritten slot would fold `none` into its key — a wrong answer that
+        // depends on thread timing, which is the one thing §10 forbids.
+        try d.publish(m, scratch, tid);
+    }
+
+    /// Finish `m`'s key and try to load its entry, on this worker.
+    fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
+        const cutoff = d.options.cutoff orelse return;
+        // `cache_load` is per MODULE from here on, not one serial pass: it is
+        // the first time reading an entry is parallel at all, and "what did
+        // the load cost once it was on the DAG?" is a number the slice owes.
+        const token = if (d.options.profile) |p| p.begin() else null;
+        defer if (d.options.profile) |p| {
+            p.end(tid, token.?, .cache_load, @intFromEnum(d.graph.moduleFile(m)), 0);
+        };
+        // A core module's key is finished by the serial pass, which can still
+        // see every term of it: core imports nothing outside core.
+        if (d.graph.module(m).package != .core) {
+            var imports: std.ArrayList(Key.Import) = .empty;
+            defer imports.deinit(scratch.allocator());
+            for (d.graph.dependencies(m)) |dep| {
+                if (dep == m) continue;
+                try imports.append(scratch.allocator(), .{
+                    .package = d.graph.module(dep).package,
+                    .name = d.interner.slice(d.graph.moduleName(dep)),
+                    .key = cutoff.keys.of(dep),
+                });
+            }
+            Key.sortImports(&imports);
+            cutoff.keys.set(m, try Key.finish(
+                scratch.allocator(),
+                cutoff.keys.ownTerms(m),
+                cutoff.keys.core_epoch,
+                imports.items,
+            ));
+        }
+        const dir = cutoff.dir orelse return;
+        if (!cutoff.keys.isCacheable(m)) return;
+        if (m.int() >= d.options.cached.len) return;
+        d.options.cached[m.int()] = try CacheEntry.loadFinding(
+            d.gpa,
+            dir,
+            cutoff.keys.of(m),
+            cutoff.interner,
+            &d.interfaces[m.int()],
+        );
+        cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
+    }
+
+    /// Publish `m`'s interface hash and dependency digest, for its dependents.
+    fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
+        const cutoff = d.options.cutoff orelse return;
+        // Per MODULE, on the worker that produced it. `dep_digest` is
+        // `cache_key`'s twin and is in the trace for the same reason: it runs
+        // on every checking run, cache directory or not.
+        const token = if (d.options.profile) |p| p.begin() else null;
+        defer if (d.options.profile) |p| {
+            p.end(tid, token.?, .dep_digest, @intFromEnum(d.graph.moduleFile(m)), 0);
+        };
+        const record = try iface_bytes.write(scratch.allocator(), &d.interfaces[m.int()], d.interner);
+        cutoff.iface_hash[m.int()] = iface_bytes.hash(record);
+
+        var imports: std.ArrayList(Digest.Import) = .empty;
+        defer imports.deinit(scratch.allocator());
+        for (d.graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            try imports.append(scratch.allocator(), .{
+                .package = d.graph.module(dep).package,
+                .name = d.interner.slice(d.graph.moduleName(dep)),
+                .iface_hash = cutoff.iface_hash[dep.int()],
+                .digest = cutoff.digest[dep.int()],
+            });
+        }
+        std.mem.sort(Digest.Import, imports.items, {}, digestImportLessThan);
+        var unique: usize = 0;
+        for (imports.items, 0..) |i, at| {
+            if (at != 0 and sameDigestImport(imports.items[unique - 1], i)) continue;
+            imports.items[unique] = i;
+            unique += 1;
+        }
+        imports.shrinkRetainingCapacity(unique);
+
+        cutoff.digest[m.int()] = try Digest.collect(scratch.allocator(), .{
+            .graph = d.graph,
+            .artifacts = d.artifacts,
+            .types = d.types,
+            .interfaces = d.interfaces,
+            .dispatch = d.dispatch,
+            .interner = d.interner,
+        }, m, imports.items);
     }
 
     /// The covered-read self-check (`reads.zig`, `plans/m4-3.md` §9 M3-a).
