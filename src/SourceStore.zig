@@ -96,6 +96,11 @@ const Pending = struct {
 
 pub const extension = ".beni";
 
+/// The most bytes an argument path may have. A longer one could not be
+/// opened anyway (`NameTooLong` is what the OS would say), and this is the
+/// size of the buffer `normalize` works in.
+pub const max_path_bytes = std.fs.max_path_bytes;
+
 /// The bytes column before `read`: a static empty string, never allocated.
 /// Compared by pointer in `freeBytes`, because an EMPTY file also reads as
 /// a zero-length slice — one that was allocated and must be freed.
@@ -141,6 +146,13 @@ pub fn packages(store: *const SourceStore) []const Package {
     return store.files.items(.package);
 }
 
+/// Whether the file's bytes came from the binary rather than from disk: a
+/// core or platform module that was never walked, so its path names nothing
+/// under the directory the user pointed at.
+pub fn isEmbedded(store: *const SourceStore, index: Index) bool {
+    return store.files.items(.embedded)[index.int()];
+}
+
 pub fn bytes(store: *const SourceStore, index: Index) [:0]const u8 {
     return store.files.items(.bytes)[index.int()];
 }
@@ -175,19 +187,31 @@ pub const AddPathError = Allocator.Error || Io.Dir.StatFileError || Io.Dir.OpenE
 /// (hidden entries skipped). `root`, when given, is the `--root` the module
 /// name is relative to; otherwise the directory itself, or the file's own
 /// directory (frontend.md §1). Nothing is numbered until `finish`.
+///
+/// The argument and the root are normalised LEXICALLY first (`normalize`),
+/// and every path the walk builds under them is normalised by construction,
+/// so `.` is a usable path: `beni check .` walks `.`, finds `Aa.beni` rather
+/// than `./Aa.beni`, and names the module `Aa`.
 pub fn addPath(store: *SourceStore, gpa: Allocator, io: Io, arg: []const u8, root: ?[]const u8, pkg: Package) AddPathError!void {
-    const trimmed = trimSlashes(arg);
+    var arg_buffer: [max_path_bytes]u8 = undefined;
+    var root_buffer: [max_path_bytes]u8 = undefined;
+    if (arg.len > arg_buffer.len) return error.NameTooLong;
+    const trimmed = normalize(&arg_buffer, arg);
+    const normalized_root: ?[]const u8 = if (root) |r| blk: {
+        if (r.len > root_buffer.len) return error.NameTooLong;
+        break :blk normalize(&root_buffer, r);
+    } else null;
     const cwd = Io.Dir.cwd();
     const stat = try cwd.statFile(io, trimmed, .{});
     switch (stat.kind) {
         .directory => {
-            const effective_root = if (root) |r| trimSlashes(r) else trimmed;
+            const effective_root = normalized_root orelse trimmed;
             try store.walk(gpa, io, trimmed, effective_root, pkg);
         },
         else => {
             if (!std.mem.endsWith(u8, trimmed, extension)) return error.NotABeniFile;
-            const rel_start: ?u32 = if (root) |r|
-                relStart(trimmed, trimSlashes(r))
+            const rel_start: ?u32 = if (normalized_root) |r|
+                relStart(trimmed, r)
             else if (std.mem.lastIndexOfScalar(u8, trimmed, '/')) |slash|
                 @intCast(slash + 1)
             else
@@ -197,14 +221,49 @@ pub fn addPath(store: *SourceStore, gpa: Allocator, io: Io, arg: []const u8, roo
     }
 }
 
-fn trimSlashes(p: []const u8) []const u8 {
-    const t = std.mem.trimEnd(u8, p, "/");
-    return if (t.len == 0 and p.len > 0) p[0..1] else t;
+/// Normalise `p` into `buf` (which must hold `@max(p.len, 1)` bytes) and
+/// return the slice of it that holds the result: empty segments and `.`
+/// segments are dropped, so `./Aa.beni`, `.//Aa.beni` and `./sub/../Aa.beni`
+/// become `Aa.beni`, `sub/../Aa.beni`, and a trailing slash is trimmed.
+/// A path that normalises to nothing is `.` (`/` if it was absolute).
+///
+/// **Lexical only, and `..` is never resolved.** Collapsing `a/../b` to `b`
+/// is wrong the moment `a` is a symlink, and resolving the path for real
+/// (`realpath`) would put an absolute path into every diagnostic where the
+/// user typed a relative one. So `..` is left exactly as written: the path
+/// still names the file the shell would name, and a `..` that survives into
+/// the part BELOW the source root is not a module name — it fails
+/// `isUpperIdent` and the file is `invalid_module_path`, which is the honest
+/// answer for `--root=src src/../src/A.beni`.
+pub fn normalize(buf: []u8, p: []const u8) []const u8 {
+    const absolute = p.len != 0 and p[0] == '/';
+    var len: usize = 0;
+    if (absolute) {
+        buf[0] = '/';
+        len = 1;
+    }
+    var segments = std.mem.splitScalar(u8, p, '/');
+    while (segments.next()) |segment| {
+        if (segment.len == 0 or std.mem.eql(u8, segment, ".")) continue;
+        if (len > @intFromBool(absolute)) {
+            buf[len] = '/';
+            len += 1;
+        }
+        @memcpy(buf[len..][0..segment.len], segment);
+        len += segment.len;
+    }
+    if (len == 0) {
+        buf[0] = '.';
+        return buf[0..1];
+    }
+    return buf[0..len];
 }
 
-/// Offset in `p` after `root/`, or null when `p` is not under `root`.
+/// Offset in `p` after `root/`, or null when `p` is not under `root`. Both
+/// are normalised, so this is a prefix test and nothing more.
 fn relStart(p: []const u8, root: []const u8) ?u32 {
     if (std.mem.eql(u8, root, ".")) return 0;
+    if (std.mem.eql(u8, root, "/")) return 1;
     if (p.len > root.len + 1 and std.mem.startsWith(u8, p, root) and p[root.len] == '/') {
         return @intCast(root.len + 1);
     }
@@ -278,13 +337,23 @@ fn walk(store: *SourceStore, gpa: Allocator, io: Io, dir_path: []const u8, root:
     }.lessThan);
 
     for (entries.items) |e| {
-        const child = try std.fs.path.join(gpa, &.{ dir_path, e.name });
+        const child = try joinEntry(gpa, dir_path, e.name);
         defer gpa.free(child);
         switch (e.kind) {
             .directory => try store.walk(gpa, io, child, root, pkg),
             else => try store.addPending(gpa, child, relStart(child, root), pkg),
         }
     }
+}
+
+/// `dir_path` (already normalised) plus one entry name, still normalised:
+/// the walk never writes the `./` prefix that `std.fs.path.join` would leave
+/// on a walk of `.`, because a stored path with one in it is not the path
+/// relative to the root and its first segment is not a module name.
+fn joinEntry(gpa: Allocator, dir_path: []const u8, name: []const u8) Allocator.Error![]u8 {
+    if (std.mem.eql(u8, dir_path, ".")) return gpa.dupe(u8, name);
+    const separator: []const u8 = if (std.mem.endsWith(u8, dir_path, "/")) "" else "/";
+    return std.fmt.allocPrint(gpa, "{s}{s}{s}", .{ dir_path, separator, name });
 }
 
 /// Sort and deduplicate the pending paths, derive module names, and assign
@@ -456,4 +525,44 @@ test "relStart" {
     try testing.expectEqual(@as(?u32, null), relStart("srcs/Main.beni", "src"));
     try testing.expectEqual(@as(?u32, null), relStart("Main.beni", "src"));
     try testing.expectEqual(@as(?u32, 0), relStart("Main.beni", "."));
+    try testing.expectEqual(@as(?u32, 1), relStart("/Main.beni", "/"));
+}
+
+test "normalize drops `.` and empty segments and keeps everything else" {
+    const cases = [_]struct { in: []const u8, want: []const u8 }{
+        .{ .in = ".", .want = "." },
+        .{ .in = "./", .want = "." },
+        .{ .in = ".//.", .want = "." },
+        .{ .in = "./Aa.beni", .want = "Aa.beni" },
+        .{ .in = ".//Aa.beni", .want = "Aa.beni" },
+        .{ .in = "src/./Main.beni", .want = "src/Main.beni" },
+        .{ .in = "src//Main.beni", .want = "src/Main.beni" },
+        .{ .in = "src/", .want = "src" },
+        .{ .in = "src///", .want = "src" },
+        .{ .in = "/", .want = "/" },
+        .{ .in = "//", .want = "/" },
+        .{ .in = "/tmp/./p/Main.beni", .want = "/tmp/p/Main.beni" },
+        // `..` is never resolved: the path still names what the shell names.
+        .{ .in = "./sub/..", .want = "sub/.." },
+        .{ .in = "../proj/Main.beni", .want = "../proj/Main.beni" },
+        .{ .in = "", .want = "." },
+    };
+    var buffer: [max_path_bytes]u8 = undefined;
+    for (cases) |case| {
+        try testing.expectEqualStrings(case.want, normalize(&buffer, case.in));
+    }
+}
+
+test "joinEntry writes no `./` prefix when the walk is rooted at `.`" {
+    const cases = [_]struct { dir: []const u8, name: []const u8, want: []const u8 }{
+        .{ .dir = ".", .name = "Aa.beni", .want = "Aa.beni" },
+        .{ .dir = "src", .name = "Aa.beni", .want = "src/Aa.beni" },
+        .{ .dir = "/", .name = "Aa.beni", .want = "/Aa.beni" },
+        .{ .dir = "sub/..", .name = "Aa.beni", .want = "sub/../Aa.beni" },
+    };
+    for (cases) |case| {
+        const got = try joinEntry(testing.allocator, case.dir, case.name);
+        defer testing.allocator.free(got);
+        try testing.expectEqualStrings(case.want, got);
+    }
 }

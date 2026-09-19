@@ -141,6 +141,196 @@ test "check on a file whose path segment is not an upper identifier: exactly one
     }, r.diagnostics[0]);
 }
 
+// `.` is how anyone points a compiler at the project they are standing in,
+// and until the paths were normalised it was the one spelling that did not
+// work: the walk joined the root and the entry into `./Aa.beni`, whose first
+// segment `.` is not an upper identifier, so every file in the project came
+// back `invalid_module_path` — a fault of the driver's, blamed on the user's
+// source. `frontend.md` §1: the module name is the path relative to the
+// source root, and for the root `.` that is `Aa.beni`.
+test "`.` is a usable path for check, build and fmt, however it is spelled" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain =\n    Node.printLines [ Sub.Hello.hello \"x\" ]\n");
+    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s =\n    s\n");
+    const absolute = try w.projectPath();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Every one of these names the project directory. `./Sub/..` is there
+    // because `..` is NOT resolved lexically — the path is left as written,
+    // so it still names this directory and the module below it is still
+    // `Main`.
+    const spellings = [_][]const u8{ ".", "./", ".//", "./.", "./Sub/..", absolute };
+    var results: [spellings.len]world.Result = undefined;
+    for (spellings, &results) |spelling, *r| r.* = try w.run(&.{ "check", "--platform=node", spelling });
+    const rooted = try w.run(&.{ "check", "--platform=node", "--root=.", "." });
+    const formatted = try w.run(&.{ "fmt", "--check", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (spellings, results) |spelling, r| {
+        if (r.exit_code != 0 or r.diagnostics.len != 0) {
+            std.debug.print("`check {s}` exited {d}:\n{s}\n", .{ spelling, r.exit_code, r.stderr });
+            return error.SpellingRejected;
+        }
+    }
+    try testing.expectEqual(@as(u8, 0), rooted.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), rooted.diagnostics);
+    try testing.expectEqual(@as(u8, 0), formatted.exit_code);
+    try testing.expectEqualStrings("", formatted.stdout);
+}
+
+// The other half: what the paths are SPELLED as afterwards. A normalisation
+// that turned `.` into an absolute path would fix the exit code and make
+// every diagnostic name a file the user never typed, so the rule is lexical
+// — `./` and `//` segments are dropped and nothing else moves.
+test "a diagnostic under `.` names the file the way the user would" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Sub/bad-name.beni", "x = 1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dot = try w.run(&.{ "check", "." });
+    const slash = try w.run(&.{ "check", ".//" });
+    const sub = try w.run(&.{ "check", "./Sub" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Under `.` the module path is `Sub/bad-name`, and `bad-name` is what
+    // is wrong with it — not the `.`.
+    try testing.expectEqual(@as(u8, 1), dot.exit_code);
+    try testing.expectEqual(@as(usize, 1), dot.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.invalid_module_path, dot.diagnostics[0].code);
+    try testing.expectEqualStrings("Sub/bad-name.beni", dot.diagnostics[0].span.file);
+    try testing.expectEqualStrings("Sub/bad-name.beni", slash.diagnostics[0].span.file);
+    // With the directory as the root the module path is just the file name.
+    try testing.expectEqual(@as(usize, 1), sub.diagnostics.len);
+    try testing.expectEqualStrings("Sub/bad-name.beni", sub.diagnostics[0].span.file);
+    try testing.expect(std.mem.indexOf(u8, sub.diagnostics[0].message, "`Sub/bad-name.beni`") != null);
+}
+
+// Determinism (fast-compiler.md §10): the module index comes from the sorted
+// path, so normalising AFTER the sort would make `.` and `$PWD` order the
+// files differently. They are normalised at enumeration, before anything is
+// numbered, and the emitted program is the proof — two builds of the same
+// directory named two ways, byte for byte.
+test "`.` and the absolute path of the same directory emit byte-identical output" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Node exposing (Program)\nimport Sub.Hello\n\n\nmain : Program\nmain =\n    Node.printLines [ Sub.Hello.hello \"x\" ]\n");
+    try w.write("Sub/Hello.beni", "pub hello : String -> String\nhello s =\n    s\n");
+    const absolute = try w.projectPath();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const by_dot = try w.runWith(&.{ "build", "--platform=node", "--out=dot", "." }, .{ .raw_diagnostics = true });
+    const by_absolute = try w.runWith(&.{ "build", "--platform=node", "--out=abs", absolute }, .{ .raw_diagnostics = true });
+    const hash_dot = try w.runWith(&.{ "check", "--platform=node", "--iface-hash", "." }, .{ .raw_diagnostics = true });
+    const hash_absolute = try w.runWith(&.{ "check", "--platform=node", "--iface-hash", absolute }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), by_dot.exit_code);
+    try testing.expectEqual(@as(u8, 0), by_absolute.exit_code);
+    try testing.expectEqualStrings("", by_dot.stderr);
+    try testing.expectEqualStrings("", by_absolute.stderr);
+    try testing.expectEqualStrings(hash_dot.stdout, hash_absolute.stdout);
+
+    const dot_files = try w.listFiles("dot");
+    const absolute_files = try w.listFiles("abs");
+    try testing.expect(dot_files.len > 1);
+    try testing.expectEqual(dot_files.len, absolute_files.len);
+    var dot_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    var absolute_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    for (dot_files, absolute_files) |a, b| {
+        try testing.expectEqualStrings(a, b);
+        const from_dot = try w.read(try std.fmt.bufPrint(&dot_buffer, "dot/{s}", .{a}));
+        const from_absolute = try w.read(try std.fmt.bufPrint(&absolute_buffer, "abs/{s}", .{b}));
+        try testing.expectEqualStrings(from_dot, from_absolute);
+    }
+}
+
+// One argv may name the same file two ways — `.` walks it and the path names
+// it again — and a file is one module however many times it is named
+// (`SourceStore.finish` dedups by path). That dedup is by the NORMALISED
+// path, so `./Main.beni` and the walk's `Main.beni` are one entry and not a
+// `duplicate_module`.
+test "a mixed argv naming a file the walk already found is still one module" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "main = notDefined\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const once = try w.run(&.{ "check", "." });
+    const four_ways = try w.run(&.{ "check", ".", "./Main.beni", ".//Main.beni", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), once.exit_code);
+    try testing.expectEqual(@as(usize, 1), once.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.unbound_variable, once.diagnostics[0].code);
+    try testing.expectEqualDeep(once.diagnostics, four_ways.diagnostics);
+    try testing.expectEqual(once.exit_code, four_ways.exit_code);
+}
+
+// `frontend.md` §1: formatting "is per file and resolves nothing". A module
+// name is a resolution concept — it is what an `import` finds — so `fmt` has
+// no business deriving one, and a file whose path names no module is still a
+// file the formatter can read, parse and print. `check` on the same file
+// still says `invalid_module_path`, because checking it means resolving it.
+test "fmt formats a file whose path names no module; check still refuses it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("not-a-module.beni", "x =\n  1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const listed = try w.run(&.{ "fmt", "--check", "." });
+    const printed = try w.runWith(&.{ "fmt", "--stdout", "not-a-module.beni" }, .{ .raw_diagnostics = true });
+    const written = try w.run(&.{ "fmt", "not-a-module.beni" });
+    const checked = try w.run(&.{ "check", "not-a-module.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), listed.exit_code); // it WOULD change
+    try testing.expectEqualStrings("not-a-module.beni\n", listed.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), listed.diagnostics);
+    try testing.expectEqualStrings("x =\n    1\n", printed.stdout);
+    try testing.expectEqual(@as(u8, 0), written.exit_code);
+    try testing.expectEqualStrings("x =\n    1\n", try w.read("not-a-module.beni"));
+    try testing.expectEqual(@as(u8, 1), checked.exit_code);
+    try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.invalid_module_path, checked.diagnostics[0].code);
+}
+
 test "--root changes which path segments name the module" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -182,6 +182,65 @@ pub const World = struct {
         try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o755), .{});
     }
 
+    /// The absolute path of the project directory: the SAME directory the
+    /// child's cwd is, spelled the other way. A scenario that pins "`.` and
+    /// `$PWD` are the same project" needs both spellings, and no scenario
+    /// may hardcode one — the world is a fresh temporary directory.
+    pub fn projectPath(world: *World) ![]const u8 {
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const n = try world.tmp.dir.realPath(world.io, &buffer);
+        return world.arena.allocator().dupe(u8, buffer[0..n]);
+    }
+
+    /// The POSIX mode bits of `rel_path`, following symlinks. `fmt` rewrites
+    /// the user's files in place, so "the file came back with the mode it
+    /// had" is a claim about an output and belongs in this harness.
+    pub fn mode(world: *World, rel_path: []const u8) !u32 {
+        const stat = try world.tmp.dir.statFile(world.io, rel_path, .{});
+        return @intCast(@intFromEnum(stat.permissions));
+    }
+
+    /// Set the mode bits of `rel_path`. Returns false when the filesystem
+    /// did not take them (a mount without permissions, or root), so a
+    /// scenario says so instead of asserting what the machine will not do.
+    pub fn setMode(world: *World, rel_path: []const u8, bits: u32) !bool {
+        try world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(bits), .{});
+        return try world.mode(rel_path) == bits;
+    }
+
+    /// The file kind of `rel_path` WITHOUT following a symlink, so a
+    /// scenario can tell a link from the file that replaced it.
+    pub fn kind(world: *World, rel_path: []const u8) !std.Io.File.Kind {
+        const stat = try world.tmp.dir.statFile(world.io, rel_path, .{ .follow_symlinks = false });
+        return stat.kind;
+    }
+
+    /// What the symlink at `rel_path` points at, exactly as written. Owned
+    /// by the world.
+    pub fn readLink(world: *World, rel_path: []const u8) ![]const u8 {
+        var buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const n = try world.tmp.dir.readLink(world.io, rel_path, &buffer);
+        return world.arena.allocator().dupe(u8, buffer[0..n]);
+    }
+
+    /// The last-modified time of `rel_path` in nanoseconds: what a "nothing
+    /// to do, so nothing was touched" claim compares.
+    pub fn mtime(world: *World, rel_path: []const u8) !i96 {
+        const stat = try world.tmp.dir.statFile(world.io, rel_path, .{});
+        return stat.mtime.nanoseconds;
+    }
+
+    /// The link count of `rel_path`: how many names the file has.
+    pub fn linkCount(world: *World, rel_path: []const u8) !u64 {
+        const stat = try world.tmp.dir.statFile(world.io, rel_path, .{});
+        return @intCast(stat.nlink);
+    }
+
+    /// Give `rel_path` a second name in the same directory (a hard link).
+    pub fn hardLink(world: *World, rel_path: []const u8, new_path: []const u8) !void {
+        try world.tmp.dir.hardLink(rel_path, world.tmp.dir, new_path, world.io, .{});
+    }
+
     /// Read a file from the project. Owned by the world.
     pub fn read(world: *World, rel_path: []const u8) ![]u8 {
         return world.tmp.dir.readFileAlloc(world.io, rel_path, world.arena.allocator(), .limited(max_stream_bytes));

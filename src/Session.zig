@@ -211,6 +211,12 @@ pub const IoFailure = struct {
 pub const Phases = struct {
     per_file: *const fn (session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void,
     after: ?*const fn (session: *Session) RunError!void = null,
+    /// Whether a file's path has to name a MODULE. True everywhere but
+    /// `fmt`: formatting "is per file and resolves nothing" (`frontend.md`
+    /// §1), so a module name is not a thing it has an opinion about — and a
+    /// `beni fmt` that refuses `notes.beni` or `my-scratch.beni` refuses to
+    /// do the one job it has for a file it can read, parse and print.
+    module_names: bool = true,
 };
 
 /// M1a: read the bytes, tokenize, install the lexical artifacts, report
@@ -243,7 +249,7 @@ pub const check_phases: Phases = .{ .per_file = lowerPhase, .after = checkSerial
 /// command that follows only compares, writes and prints, walking files in
 /// index order. Output order and bytes are therefore a function of the
 /// sorted path list alone and not of `--jobs`.
-pub const format_phases: Phases = .{ .per_file = formatPhase };
+pub const format_phases: Phases = .{ .per_file = formatPhase, .module_names = false };
 
 pub const Worker = struct {
     index: u32,
@@ -380,11 +386,14 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     session.profile.end(0, enumerate_token, .enumerate, Profile.Event.no_file, 0);
 
     // Module-path validation is decided by the path alone, so it is
-    // reported here, serially, before any worker touches the file.
-    for (0..session.store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
-        if (session.store.modulePathValid(file)) continue;
-        try session.reportInvalidModulePath(file);
+    // reported here, serially, before any worker touches the file — and not
+    // at all for the phases that never ask a file its module name.
+    if (phases.module_names) {
+        for (0..session.store.count()) |i| {
+            const file: SourceStore.Index = @enumFromInt(i);
+            if (session.store.modulePathValid(file)) continue;
+            try session.reportInvalidModulePath(file);
+        }
     }
 
     // 2. Per-file phases on workers.
@@ -730,13 +739,13 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 /// printed or listed (`fmt/Command.zig`), so it is not formatted at all —
 /// and the worker can decide that by itself, which is what keeps this phase
 /// free of cross-file knowledge. Every diagnostic a `fmt` run can produce
-/// for a file is already known here: the module-path check is a function of
-/// the path alone (`run` reports it serially before any worker starts), and
-/// the lexer's and the parser's have both finished for this file. Skipped
-/// files leave `formatted` null, which is what the command tests.
+/// for a file is already known here: the lexer's and the parser's have both
+/// finished for this file, and `format_phases` asks for no others
+/// (`module_names = false`, so a path that names no module is still
+/// formatted — `frontend.md` §1). Skipped files leave `formatted` null,
+/// which is what the command tests.
 fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
     try parsePhase(session, worker, file);
-    if (!session.store.modulePathValid(file)) return;
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
     const tree = session.artifacts.ast(file);
     if (tree.errors.len != 0) return;

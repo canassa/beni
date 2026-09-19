@@ -11,11 +11,14 @@
 //! therefore a function of the input alone, not of `--jobs`; the
 //! determinism scenario compares all three across `--jobs=1` and `--jobs=8`.
 //!
-//! A file with any diagnostic — lexical, syntactic, or an invalid module
-//! path — has no canonical form and is never written, printed or listed:
-//! its diagnostics are the whole output for it, and the exit code is 1. The
-//! worker decides that (a file's diagnostics are all known by the end of
-//! its own phase), and leaves `formatted` null; here, null means skip.
+//! A file with any diagnostic — lexical or syntactic — has no canonical
+//! form and is never written, printed or listed: its diagnostics are the
+//! whole output for it, and the exit code is 1. The worker decides that (a
+//! file's diagnostics are all known by the end of its own phase), and leaves
+//! `formatted` null; here, null means skip. **A module name is not among
+//! them**: formatting "is per file and resolves nothing" (`frontend.md` §1),
+//! so `beni fmt notes.beni` formats a file whose path names no module
+//! (`Session.format_phases` sets `module_names = false`).
 //!
 //! In-place writes go through `Io.Dir.createFileAtomic` + `replace`: the
 //! text lands in a temporary file in the same directory and is renamed over

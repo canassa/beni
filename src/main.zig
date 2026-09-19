@@ -273,20 +273,40 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
 /// still legal — `dump --stage=interface core/List.beni` dumps `List`.
 /// Null when the argument was a directory (or is not in the store at all).
 fn dumpTarget(session: *const Session, arg: []const u8) ?SourceStore.Index {
-    if (session.store.find(std.mem.trimEnd(u8, arg, "/"))) |file| return file;
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    if (session.store.find(storePath(&buffer, arg))) |file| return file;
     return if (session.store.count() == 1) @enumFromInt(0) else null;
+}
+
+/// The argument as the STORE spells it. Enumeration normalises every path
+/// lexically (`SourceStore.normalize`), so an argument that is looked up or
+/// prefix-matched against `store.paths()` has to be normalised the same way
+/// or `beni dump --stage=interface ./src` finds nothing.
+fn storePath(buffer: []u8, arg: []const u8) []const u8 {
+    if (arg.len > buffer.len) return arg;
+    return SourceStore.normalize(buffer, arg);
+}
+
+/// Whether the enumerated path `p` lies under the directory argument `dir`,
+/// both normalised. `.` is the source root itself, so everything the walk
+/// found is under it — everything, that is, that the walk found: an
+/// `embedded` core or platform module is filtered out by the caller.
+fn underDir(p: []const u8, dir: []const u8) bool {
+    if (std.mem.eql(u8, dir, ".")) return !std.mem.startsWith(u8, p, "/") and !std.mem.startsWith(u8, p, "../");
+    return p.len > dir.len and std.mem.startsWith(u8, p, dir) and p[dir.len] == '/';
 }
 
 /// Every module under the directory `arg`, in path order: the interface
 /// golden of a whole project. Modules the run pulled in from elsewhere —
 /// the core package — are not under it and are not printed.
 fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8, raw: bool) u8 {
-    const dir = std.mem.trimEnd(u8, arg, "/");
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const dir = storePath(&buffer, arg);
     var printed: u32 = 0;
     for (0..session.store.count()) |i| {
         const f: SourceStore.Index = @enumFromInt(i);
         const p = session.store.path(f);
-        if (!(p.len > dir.len and std.mem.startsWith(u8, p, dir) and p[dir.len] == '/')) continue;
+        if (session.store.isEmbedded(f) or !underDir(p, dir)) continue;
         const m = moduleOf(session, f) orelse continue;
         const iface = &session.resolution.interfaces[m.int()];
         if (raw)
@@ -302,12 +322,13 @@ fn dumpProjectInterfaces(gpa: std.mem.Allocator, session: *Session, stdout: *Io.
 /// Every module under the directory `arg`, in path order: the dispatch
 /// golden of a whole project (§7.3).
 fn dumpProjectDispatch(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, arg: []const u8) u8 {
-    const dir = std.mem.trimEnd(u8, arg, "/");
+    var buffer: [SourceStore.max_path_bytes]u8 = undefined;
+    const dir = storePath(&buffer, arg);
     var printed: u32 = 0;
     for (0..session.store.count()) |i| {
         const f: SourceStore.Index = @enumFromInt(i);
         const p = session.store.path(f);
-        if (!(p.len > dir.len and std.mem.startsWith(u8, p, dir) and p[dir.len] == '/')) continue;
+        if (session.store.isEmbedded(f) or !underDir(p, dir)) continue;
         const m = moduleOf(session, f) orelse continue;
         if (m.int() >= session.checked.dispatch.len) continue;
         beni.dump.dispatch.write(

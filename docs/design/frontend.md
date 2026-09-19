@@ -43,7 +43,8 @@ editor, a pre-commit hook, CI, M4's daemon and M5's LSP all run `check` rather t
 only core must stay checkable with no flag, and demanding one would make `check` unusable on the
 inputs that need no platform — so the flag is optional everywhere but `build`, and the cost of
 leaving it off is an honest `unknown_module`. `fmt` does not take it: formatting is per file and
-resolves nothing.
+resolves nothing — and it derives no module name either, so `beni fmt notes.beni` formats a file
+whose path names no module, while `beni check` on that same file still says `invalid_module_path`.
 
 That `unknown_module` (and `unknown_module_alias`, for the qualified uses that follow it) gains a
 closing paragraph naming the flag **when, and only when, the module it could not find is a module of
@@ -77,6 +78,16 @@ in **sorted path order** and numbered before any parallel work starts — that f
 stable id every later structure is keyed by. Module names come from the path relative to
 `--root`; without `--root`, the root is the directory argument for directory paths and the file's
 own directory for file paths (so `beni check Main.beni` names the module `Main`).
+
+Every path — the arguments, `--root`, and everything the walk builds under them — is normalised
+**lexically** before anything is sorted or numbered: empty and `.` segments are dropped and a
+trailing slash is trimmed, so `.`, `./`, `.//` and `./.` are the same directory and `./Aa.beni`
+under the root `.` is the module `Aa`. Nothing else moves: `..` is never resolved (`a/../b` is not
+`b` when `a` is a symlink) and no path is ever made absolute, because a diagnostic must name the
+file the way the user typed it. A `..` that survives into the part BELOW the source root is not a
+module name and the file is `invalid_module_path`, like any other segment that is not an upper
+identifier. Normalising before the sort is what makes `beni check .` and `beni check "$PWD"` the
+same build: same modules, same order, byte-identical emitted output and `--iface-hash`.
 
 Exit codes: `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O
 failure (bad flag, unreadable path). `fmt --check` exits `1` if any file would change.
