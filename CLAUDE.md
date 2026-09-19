@@ -17,7 +17,11 @@ rebuilds.
   the receiver type's `eq`/`compare`, derived when it declares none. Contract:
   [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) — the file
   name is historical, the document is normative.
-- **Target**: modern JavaScript, ES modules. `Int` is a double.
+- **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
+  browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
+  Node is today's only platform because it is what the test harness needs, not because it is
+  the goal: weigh every design choice — the fiber runtime's scheduler, output size, chunking,
+  source maps, what `main` is — by what it does in a browser first.
 - **Compiler**: Zig 0.16, pinned with Node 24 by `flake.nix`; `direnv allow`
   puts both on `PATH`.
 - **Budgets**: >250k LOC/s cold per core for checking, an 800 ms cold build for

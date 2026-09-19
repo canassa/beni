@@ -77,6 +77,13 @@ refused (`a9b77c9`); `String.indexes` non-overlapping like Elm, `contains s ""` 
 
 ## 4. What would come next, in order — nothing here is started
 
+**Re-weight everything below by the owner's statement of 2026-09-19: beni is primarily a BROWSER
+language and the browser platform comes before Node.** `plans/queue.md`'s last section lists what that
+changes: platform order (browser and its UI architecture first), the effects spike (a platform-neutral
+kernel whose first real host is the browser; the Elm-Architecture question becomes central; A8's exit
+codes are the Node half only), runtime measurements (all Node-only so far), output size / the
+single-file bundle / chunking / `lazy`, source maps, and a browser test harness.
+
 1. ~~Land M4-3~~ — done. Its two misses are queue 55.
 2. **M4-4** — whole-program passes made incremental and the emit-side cutoff; `decode`'s 10 ms;
    the 4.68 ms serial floor. Needs a spec (not written).
