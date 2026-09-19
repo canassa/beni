@@ -267,4 +267,8 @@ primary-source evidence on how Roc's compiler works and why.
 
 `references/` holds large vendored submodules: the Zig compiler and std (the
 gold standard for both idiomatic Zig and the data-oriented architecture beni
-copies) and `elm-core`. Commit the submodule *pointer*, never vendored contents.
+copies), `elm-core`, and **`references/effect`** — Effect-TS v4 (`main` at
+`4.0.0-rc.116`, pinned 2026-09-19, shallow), the owner's **gold standard for the
+effects work**: beni aims at Effect's level of quality and API coverage, while
+not inheriting what Effect must do only because it lives in TypeScript
+(generators, type-level encodings). Commit the submodule *pointer*, never vendored contents.

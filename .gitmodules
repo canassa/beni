@@ -10,3 +10,7 @@
 [submodule "references/elm-core"]
 	path = references/elm-core
 	url = https://github.com/elm/core.git
+[submodule "references/effect"]
+	path = references/effect
+	url = https://github.com/Effect-TS/effect
+	shallow = true

@@ -124,3 +124,17 @@ wrong answer, exhaustiveness, managed effects); a capability gap is filled insid
 platform), because only they may write `foreign`; where no guarantee is at stake, warn — do not
 refuse. `--release` refusing `Debug` was confirmed by the owner AFTER stating this, on the ground that
 `Debug.toString` reflects the representation the release optimiser must be free to change.
+
+## Owner decision, 2026-09-19: **effects gets a full spike, and Effect-TS v4 is the gold standard**
+
+"We need a full-blown spike and investigation… I want to achieve Effect-TS levels of quality and API
+coverage." `references/effect` is vendored (Effect-TS/effect `main`, `4.0.0-rc.116`, shallow). Effect
+has to deal with generators and TypeScript and beni does not — learn from it regardless. Agents
+investigate, document and plan the spike; the spike itself follows M4 slices 1–3 (owner: M4 first).
+
+| # | Slice | State | Notes |
+|---|---|---|---|
+| E-R1 | Research: Effect v4's runtime — fibers, scheduler, interruption, scopes/finalizers, the `Exit`/`Cause` model | in flight | read-only, docs out: `docs/design/research/21-…` |
+| E-R2 | Research: Effect v4's API surface — what "API coverage" means: the module map, what is essential vs TypeScript-induced, what maps onto beni's two-bit design | in flight | `docs/design/research/22-…` |
+| E-R3 | Research: errors, services/layers, resources, concurrency combinators, streams, schedule/retry — semantics beni must match or deliberately decline | in flight | `docs/design/research/23-…` |
+| E-P | The spike plan: fold E-R1..3 and `plans/effects-plan.md` into `plans/effects-spike.md` (slices, measurements, acceptance), for the owner | after E-R1..3 | |
