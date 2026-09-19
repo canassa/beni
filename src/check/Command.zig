@@ -47,6 +47,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     options.informational = true;
     options.platform = check.platform;
     options.cache_build_id = check.cache.build_id;
+    options.frontend_keys = check.cache.frontend_keys;
 
     // The cache directory is opened HERE and not inside the session, because
     // the one failure a cache is allowed to have is a usage failure and the
@@ -88,6 +89,11 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // that does not compile has keys all the same.
     if (check.cache.keys) {
         printCacheKeys(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    // Before the exit-code branch for the same reason, and AFTER the module
+    // keys so a fixture that passes both reads one block then the other.
+    if (check.cache.frontend_keys) {
+        printFrontendKeys(stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
     }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
@@ -214,6 +220,30 @@ fn printCacheKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
     }
     std.mem.sort(Line, lines, {}, Line.lessThan);
     for (lines) |line| try stdout.print("{s} {s}\n", .{ line.key, &line.digits });
+    try stdout.flush();
+}
+
+/// `--frontend-keys`: one `<path> <32 hex digits>` line per FILE on stdout,
+/// sorted by path (`fast-compiler.md` §8, `frontend.md` §1).
+///
+/// `--cache-keys`' twin, and deliberately the same shape, because the two
+/// answer the two halves of the question M4-2 exists for: the module key says
+/// whether a module's CHECK would have to run again, and the file key whether
+/// its front end would. A body edit in a leaf moves one of these and three of
+/// those, and an edit-scenario fixture asserts exactly that, with no cache
+/// directory in sight.
+///
+/// Keyed on the PATH and not on the module name, because the front end is per
+/// file: a path that names no module still has tokens and a line table. The
+/// store's paths are already sorted — `SourceStore.finish` numbers them that
+/// way and the file index is that order — so this walks them and asserts
+/// nothing about ordering that enumeration did not already fix.
+fn printFrontendKeys(stdout: *Io.Writer, session: *Session) !void {
+    const FileKey = @import("../cache/FileKey.zig");
+    for (0..session.store.count()) |i| {
+        const file: @TypeOf(session.store).Index = @enumFromInt(i);
+        try stdout.print("{s} {s}\n", .{ session.store.path(file), &FileKey.hex(session.file_keys[i]) });
+    }
     try stdout.flush();
 }
 

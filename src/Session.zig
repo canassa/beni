@@ -62,6 +62,7 @@ const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
 const Solve = @import("check/Solve.zig");
 const Key = @import("cache/Key.zig");
+const FileKey = @import("cache/FileKey.zig");
 const CacheDir = @import("cache/Dir.zig");
 const entry_bytes = @import("cache/entry_bytes.zig");
 const CacheEntry = @import("cache/Entry.zig");
@@ -114,6 +115,22 @@ checked: Check = .empty,
 /// condition a cache bug hides behind. What it costs is the `cache_key`
 /// profile row.
 keys: Key.Keys = .empty,
+/// One FRONT-END key per FILE (`cache/FileKey.zig`), in file index order,
+/// computed on the worker that took the file. `FileKey.none` for a file whose
+/// key this run did not need.
+///
+/// Unlike `keys`, which is filled on every checking run for one-code-path's
+/// sake, this is filled only when something asks for it: `--cache-dir`,
+/// `--roundtrip-frontend` or `--frontend-keys` (`wantsFileKeys`). The module
+/// key pass is serial and its cost is one profile row; the file key is paid on
+/// the per-file phase by every command that lowers, `dump --stage=bir`
+/// included, and 0.6 ms of source hashing that nothing reads is a cost a dump
+/// should not carry.
+file_keys: []FileKey.FileKey = &.{},
+/// The compiler build id every file key is computed with, resolved once at
+/// `init` rather than per file: `--cache-build-id` substitutes a hash of its
+/// bytes, and hashing that string 634 times would be 634 times too many.
+build_id_bytes: [16]u8 = @splat(0),
 /// Every diagnostic of the last run, in emission order after `run`.
 /// Messages are gpa-owned; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
@@ -184,6 +201,9 @@ pub const Options = struct {
     /// per-file phase ends — before `Resolve`, before the graph, before
     /// anything downstream reads them.
     roundtrip_frontend: bool = false,
+    /// `--frontend-keys` (`Cli.Cache`, `frontend.md` §1): make `check` print
+    /// one `<path> <32 hex digits>` line per file on stdout, sorted by path.
+    frontend_keys: bool = false,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9). Set by `check` and
     /// `build`, which are the two subcommands the decision names (A.83);
@@ -380,6 +400,7 @@ pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
         .workers = &.{},
     };
     errdefer session.interner.deinit(gpa);
+    session.build_id_bytes = compilerBuildId(options.cache_build_id);
     session.profile = try Profile.init(gpa, io, .{
         .enabled = options.self_profile != null,
         .threads = options.jobs,
@@ -406,6 +427,7 @@ pub fn deinit(session: *Session) void {
         worker.arena.deinit();
     }
     gpa.free(session.workers);
+    gpa.free(session.file_keys);
     session.keys.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
@@ -451,6 +473,12 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     }
     try session.store.finish(gpa);
     try session.artifacts.resize(gpa, session.store.count());
+    // Sized before any worker starts, and written only by the worker that
+    // took the file — the one-index-one-writer discipline `Artifacts.set`
+    // follows, which is what keeps the column independent of `--jobs`.
+    gpa.free(session.file_keys);
+    session.file_keys = try gpa.alloc(FileKey.FileKey, session.store.count());
+    @memset(session.file_keys, FileKey.none);
     session.profile.end(0, enumerate_token, .enumerate, Profile.Event.no_file, 0);
 
     // Module-path validation is decided by the path alone, so it is
@@ -804,7 +832,38 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 
     session.artifacts.files.items(.bir)[file.int()] = bir;
 
+    if (session.wantsFileKeys()) session.file_keys[file.int()] = session.fileKey(file);
     if (session.options.roundtrip_frontend) try roundTripFrontend(session, worker, file, diagnostics_mark);
+}
+
+/// Whether this run needs a front-end key per file at all.
+///
+/// A departure from M4-1's "one code path, and the cost is in the trace":
+/// there the key pass is serial and once, here it is on the per-file phase
+/// every lowering command runs, and a `dump --stage=bir` that hashed every
+/// source for a key nothing reads would be paying 0.6 ms for nothing. The
+/// three flags that ask for it are exactly the three that read it.
+pub fn wantsFileKeys(session: *const Session) bool {
+    return session.options.cache != null or
+        session.options.roundtrip_frontend or
+        session.options.frontend_keys;
+}
+
+/// `file`'s front-end key (`cache/FileKey.zig`): the compiler build id, the
+/// package, `Lower.Options`' two permission bits, the dotted module name and
+/// the source hash — the inputs to lowering and nothing else.
+///
+/// On the worker, with no allocation: the recipe fits a stack buffer, and the
+/// source hash is `iface_bytes.hash` over bytes the phase has already read.
+fn fileKey(session: *const Session, file: SourceStore.Index) FileKey.FileKey {
+    return FileKey.compute(.{
+        .build_id = session.build_id_bytes,
+        .package = session.store.package(file),
+        .core = session.fileIsCore(file),
+        .platform = session.fileMayDeclareForeign(file),
+        .name = session.store.moduleName(file),
+        .source_hash = iface_bytes.hash(session.store.bytes(file)),
+    });
 }
 
 /// `--roundtrip-frontend` (`fast-compiler.md` §8): write this file's
@@ -846,11 +905,9 @@ fn roundTripFrontend(session: *Session, worker: *Worker, file: SourceStore.Index
         });
     }
 
+    const key = session.file_keys[file.int()];
     const bytes = try artifact_bytes.write(gpa, scratch, .{
-        // M2-c has no file key yet and needs none: the round trip is within
-        // one process and the header's key is checked against the one it was
-        // written with. M2-d makes it the file key of `cache/FileKey.zig`.
-        .key = @splat(0),
+        .key = key,
         .bir = session.artifacts.bir(file),
         .interner = &worker.interner,
         .tokens = session.artifacts.tokens(file),
@@ -859,7 +916,7 @@ fn roundTripFrontend(session: *Session, worker: *Worker, file: SourceStore.Index
     });
     defer gpa.free(bytes);
 
-    var loaded = try artifact_bytes.read(gpa, bytes, @splat(0));
+    var loaded = try artifact_bytes.read(gpa, bytes, key);
     errdefer loaded.deinit(gpa);
     try loaded.intern(gpa, scratch, &worker.interner);
     if (!loaded.bir.verify(@intCast(loaded.tokens.len))) return error.ArtifactVerifyFailed;

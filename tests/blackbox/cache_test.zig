@@ -1781,3 +1781,269 @@ fn ifaceHashes(w: *World, arena: std.mem.Allocator) ![]const Entry {
     }
     return parseKeys(arena, r.stdout);
 }
+
+// ---------------------------------------------------------------------------
+// The FILE key, and its edit-scenario table (`plans/m4-2.md` §9.1)
+// ---------------------------------------------------------------------------
+//
+// **The point of every row below is the DIVERGENCE between the two key
+// columns**, which is why M4-2 needs a second key at all. A module key folds
+// every import's key, so a body edit in a leaf moves three of them; a file
+// key holds one file's lowering inputs and nothing else, so the same edit
+// moves one. The leaf re-lowers; its importers re-check WITHOUT re-lowering.
+//
+// Asserted against `--frontend-keys` here, before a byte reaches disk, in
+// exactly the way `--cache-keys` pins the module table above. The counters
+// that follow in M2-f can then only confirm what this file already fixed.
+
+/// `beni check --frontend-keys <flags> <paths>`, parsed. One
+/// `<path> <32 hex digits>` line per FILE, sorted by path.
+fn fileKeysOf(w: *World, arena: std.mem.Allocator, extra: []const []const u8) ![]const Entry {
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(arena, &.{ "check", "--frontend-keys" });
+    try argv.appendSlice(arena, extra);
+    const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0) {
+        std.debug.print("check --frontend-keys exited {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.CheckFailed;
+    }
+    return parseKeys(arena, r.stdout);
+}
+
+fn baselineFileKeys(w: *World, arena: std.mem.Allocator) ![]const Entry {
+    return fileKeysOf(w, arena, &.{ "--jobs=1", "src" });
+}
+
+const leaf_file = "src/Leaf.beni";
+const mid_file = "src/Mid.beni";
+const top_file = "src/Top.beni";
+const app_files = [_][]const u8{ leaf_file, mid_file, top_file };
+
+test "--frontend-keys prints one sorted line per FILE, core included, and no two agree" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const keys = try baselineFileKeys(&w, arena);
+    try testing.expect(lookup(keys, leaf_file) != null);
+    try testing.expect(lookup(keys, mid_file) != null);
+    try testing.expect(lookup(keys, top_file) != null);
+    try testing.expect(lookup(keys, "core/Basics.beni") != null);
+    try testing.expect(keys.len >= 12);
+
+    // A recipe that dropped the module name would give every file of one
+    // project the same key, and every row below would still pass.
+    for (keys, 0..) |a, i| {
+        for (keys[i + 1 ..]) |b| {
+            if (std.mem.eql(u8, a.digits, b.digits)) {
+                std.debug.print("{s} and {s} share a file key\n", .{ a.name, b.name });
+                return error.KeysCollided;
+            }
+        }
+    }
+
+    // It does not depend on `--jobs`: the key is computed on whichever
+    // worker took the file, and which worker that is must be unobservable.
+    try expectMoved("--jobs=8", keys, try fileKeysOf(&w, arena, &.{ "--jobs=8", "src" }), &.{});
+    // …and it is hidden, like every flag of its family.
+    const help = try w.runWith(&.{"--help"}, .{ .raw_diagnostics = true });
+    try testing.expect(std.mem.indexOf(u8, help.stdout, "--frontend-keys") == null);
+    // `build` does not take it, for `--cache-keys`' reason: stdout is the
+    // product, and a build's product is the files it wrote.
+    const on_build = try w.runWith(&.{ "build", "--platform=node", "--frontend-keys", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), on_build.exit_code);
+}
+
+test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
+    // Rows 1 to 5 of `plans/m4-2.md` §9.1 in one fixture, because they are
+    // one claim with five kinds of edit: whatever was done to `Leaf`, only
+    // `Leaf`'s front end is thrown away — while the module table above shows
+    // all three modules re-checking for the same edits.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const base_files = try baselineFileKeys(&w, arena);
+    const base_modules = try baselineKeys(&w, arena);
+
+    // Row 1: nothing. Rewritten with identical bytes, so a key that moved
+    // here would be one that read an mtime.
+    try w.write(leaf_file, leaf_source);
+    try expectMoved("row 1, file keys", base_files, try baselineFileKeys(&w, arena), &.{});
+
+    const Row = struct { what: []const u8, source: []const u8 };
+    const rows = [_]Row{
+        // Row 2: a body edit.
+        .{ .what = "a body edit", .source =
+        \\pub foreign twice : Int -> Int
+        \\
+        \\
+        \\pub one : Int
+        \\one =
+        \\    2
+        \\
+        },
+        // Row 3: a comment only. A comment is a token and `Bir` carries
+        // `doc_start`/`doc_end`, so the file key MUST move — and this row
+        // pins that it moves for `Leaf` ALONE. What it costs is one file's
+        // lex, parse and lower; doing better needs a form-insensitive key,
+        // which is M4-3's question and not this slice's.
+        .{ .what = "a comment only", .source = "-- a comment nobody reads\n" ++ leaf_source },
+        // Row 4: whitespace only — every token `start` after it moves.
+        .{ .what = "whitespace only", .source = "\n" ++ leaf_source },
+        // Row 5: a `pub` signature — one ADDED, so `Mid` still compiles and
+        // the row measures the key rather than a type error.
+        .{ .what = "a pub signature", .source = leaf_source ++
+            \\
+            \\pub extra : Int
+            \\extra =
+            \\    3
+            \\
+        },
+    };
+    for (rows) |row| {
+        try w.write(leaf_file, leaf_source);
+        const before_files = try baselineFileKeys(&w, arena);
+        const before_modules = try baselineKeys(&w, arena);
+        try w.write(leaf_file, row.source);
+        try expectMoved(row.what, before_files, try baselineFileKeys(&w, arena), &.{leaf_file});
+        // The divergence, stated on the same edit: three module keys move
+        // where one file key did.
+        try expectMoved(row.what, before_modules, try baselineKeys(&w, arena), &all_app);
+    }
+    try w.write(leaf_file, leaf_source);
+    try expectMoved("restored", base_files, try baselineFileKeys(&w, arena), &.{});
+    try expectMoved("restored", base_modules, try baselineKeys(&w, arena), &.{});
+}
+
+test "file-key rows 6 and 7: the name is an input and the path is not" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    const base = try baselineFileKeys(&w, arena);
+    const leaf_key = lookup(base, leaf_file).?;
+
+    // Row 7: `Leaf` MOVED to another directory, same module name and the
+    // same bytes. Its key does not move — the proof that the recipe holds no
+    // path, and what makes `beni check src` and
+    // `cd .. && beni check proj/src` share one artifact.
+    try w.write("src2/Leaf.beni", leaf_source);
+    try w.write("src2/beni.json", manifest);
+    const moved = try fileKeysOf(&w, arena, &.{ "--jobs=1", "--root=src2", "src2/Leaf.beni" });
+    try testing.expectEqualStrings(leaf_key, lookup(moved, "src2/Leaf.beni").?);
+
+    // Row 6: renamed to `Sprout`, bytes IDENTICAL. `Lower.Options.module_name`
+    // is an input to lowering — `self_import` reads it — so identical bytes
+    // under a new name are a new artifact.
+    try w.write("src2/Sprout.beni", leaf_source);
+    const renamed = try fileKeysOf(&w, arena, &.{ "--jobs=1", "--root=src2", "src2/Sprout.beni" });
+    const sprout_key = lookup(renamed, "src2/Sprout.beni").?;
+    if (std.mem.eql(u8, leaf_key, sprout_key)) {
+        std.debug.print("`Sprout` and `Leaf` share a file key though their module names differ\n", .{});
+        return error.KeysCollided;
+    }
+
+    // And the claim the whole slice's safety rests on: **two DIFFERENT
+    // modules with byte-identical sources do not share an artifact**,
+    // because the key holds the module name.
+    try w.write("src/Twin.beni", leaf_source);
+    const with_twin = try fileKeysOf(&w, arena, &.{ "--jobs=1", "src" });
+    if (std.mem.eql(u8, lookup(with_twin, "src/Twin.beni").?, lookup(with_twin, leaf_file).?)) {
+        std.debug.print("`Twin` and `Leaf` share a file key though their module names differ\n", .{});
+        return error.KeysCollided;
+    }
+    // …and adding it moved nothing that already existed (row 14).
+    try expectMoved("a new unrelated file", base, with_twin, &.{"src/Twin.beni"});
+}
+
+test "file-key rows 11 to 15: which flags reach lowering and which do not" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    const base = try baselineFileKeys(&w, arena);
+    const base_modules = try baselineKeys(&w, arena);
+
+    // Row 11: `--pattern-budget` does not reach lowering, so no file key
+    // moves — while every MODULE key does, because exhausting the budget is
+    // an error of that module. This row is why the file key is a second
+    // recipe and not a subset computed from the first.
+    try expectMoved(
+        "--pattern-budget, file keys",
+        base,
+        try fileKeysOf(&w, arena, &.{ "--jobs=1", "--pattern-budget=5000", "src" }),
+        &.{},
+    );
+    try expectEveryKeyMoved(
+        "--pattern-budget, module keys",
+        base_modules,
+        try keysOf(&w, arena, &.{ "--jobs=1", "--pattern-budget=5000", "src" }),
+    );
+
+    // Row 15: a sibling `.js` is not a lowering input, so editing one moves
+    // no file key at all — and all three module keys.
+    try w.write("src/Leaf.js", "export const twice = (n) => n + n;\n");
+    try expectMoved("an edited sibling .js", base, try baselineFileKeys(&w, arena), &.{});
+    try expectMoved("an edited sibling .js", base_modules, try baselineKeys(&w, arena), &all_app);
+    try w.write("src/Leaf.js", leaf_sibling);
+
+    // Row 12: a different compiler build id discards everything, file keys
+    // included — the mechanism that makes "a format change is a version bump
+    // and a cache discard" true for this file too.
+    try expectEveryFileKeyMoved(
+        "--cache-build-id",
+        base,
+        try fileKeysOf(&w, arena, &.{ "--jobs=1", "--cache-build-id=other", "src" }),
+    );
+
+    // Row 13: `--core` changes `Lower.Options.core` for every APP file, so
+    // every app file's key moves — and core's own does not, because a core
+    // module is core either way.
+    {
+        const with_core = try fileKeysOf(&w, arena, &.{ "--jobs=1", "--core", "src" });
+        var moved: std.ArrayList([]const u8) = .empty;
+        defer moved.deinit(testing.allocator);
+        for (base) |b| {
+            const now = lookup(with_core, b.name) orelse continue;
+            if (!std.mem.eql(u8, b.digits, now)) try moved.append(testing.allocator, b.name);
+        }
+        std.mem.sort([]const u8, moved.items, {}, lessThanText);
+        var want: std.ArrayList([]const u8) = .empty;
+        defer want.deinit(testing.allocator);
+        try want.appendSlice(testing.allocator, &app_files);
+        std.mem.sort([]const u8, want.items, {}, lessThanText);
+        if (!sameNames(moved.items, want.items)) {
+            std.debug.print("--core moved {d} file keys, expected the three app files\n", .{moved.items.len});
+            for (moved.items) |m| std.debug.print("  {s}\n", .{m});
+            return error.WrongKeysMoved;
+        }
+    }
+}
+
+fn expectEveryFileKeyMoved(what: []const u8, before: []const Entry, after: []const Entry) !void {
+    try testing.expectEqual(before.len, after.len);
+    var saw_core = false;
+    for (before) |b| {
+        const now = lookup(after, b.name) orelse {
+            std.debug.print("{s}: {s} vanished\n", .{ what, b.name });
+            return error.ModuleVanished;
+        };
+        if (std.mem.eql(u8, b.digits, now)) {
+            std.debug.print("{s}: {s}'s file key did not move\n", .{ what, b.name });
+            return error.KeyDidNotMove;
+        }
+        if (std.mem.startsWith(u8, b.name, "core/")) saw_core = true;
+    }
+    try testing.expect(saw_core);
+}

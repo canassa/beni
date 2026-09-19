@@ -177,6 +177,17 @@ pub const Cache = struct {
     /// reached, with no cache directory involved — which is why it lands
     /// before a byte is ever written to disk.
     keys: bool = false,
+    /// `--frontend-keys` — hidden, `check`'s alone, and `--cache-keys`' twin
+    /// (M4-2, `frontend.md` §1). One `<path> <32 hex digits>` line per FILE
+    /// on stdout, sorted by path.
+    ///
+    /// The two are printed side by side in the edit-scenario table because
+    /// the DIVERGENCE between them is the whole reason M4-2 exists: a body
+    /// edit in a leaf moves one file key and three module keys, so the leaf
+    /// re-lowers and its importers re-check without re-lowering. A key per
+    /// file and not per module, because the front end is per file — a path
+    /// that names no module still has one.
+    frontend_keys: bool = false,
 };
 
 pub const Check = struct {
@@ -487,6 +498,12 @@ const CheckSpecific = struct {
         if (std.mem.eql(u8, name, "--cache-keys")) {
             if (value != null) return noValue(name);
             self.cache.keys = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--frontend-keys")) {
+            if (value != null) return noValue(name);
+            self.cache.frontend_keys = true;
             self.consumed = true;
             return null;
         }

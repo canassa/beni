@@ -69,6 +69,7 @@ pub const frontend = struct {
 };
 pub const cache = struct {
     pub const Key = @import("cache/Key.zig");
+    pub const FileKey = @import("cache/FileKey.zig");
     pub const entry_bytes = @import("cache/entry_bytes.zig");
     pub const dispatch_bytes = @import("cache/dispatch_bytes.zig");
     pub const Dir = @import("cache/Dir.zig");
