@@ -144,6 +144,9 @@ file_keys: []FileKey.FileKey = &.{},
 /// costs is the `dep_digest` profile row.
 iface_hashes: [][16]u8 = &.{},
 digests: []Digest.Digest = &.{},
+/// `--cutoff-compare`'s second key per module, or empty. Printed and never
+/// used: the run is driven by `keys`.
+compare_keys: []Key.Key = &.{},
 /// The compiler build id every file key is computed with, resolved once at
 /// `init` rather than per file: `--cache-build-id` substitutes a hash of its
 /// bytes, and hashing that string 634 times would be 634 times too many.
@@ -221,6 +224,11 @@ pub const Options = struct {
     /// `--frontend-keys` (`Cli.Cache`, `frontend.md` §1): make `check` print
     /// one `<path> <32 hex digits>` line per file on stdout, sorted by path.
     frontend_keys: bool = false,
+    /// `--cutoff-compare` (`Cli.Cache`): compute the CUTOFF key beside the one
+    /// the run uses, into `Session.compare_keys`. Hidden, and it changes not
+    /// one byte of what the run does — the key it computes is printed and
+    /// never used.
+    cutoff_compare: bool = false,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9). Set by `check` and
     /// `build`, which are the two subcommands the decision names (A.83);
@@ -455,6 +463,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.file_keys);
     gpa.free(session.iface_hashes);
     gpa.free(session.digests);
+    gpa.free(session.compare_keys);
     session.keys.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
@@ -1329,6 +1338,13 @@ fn checkSerial(session: *Session) RunError!void {
     defer gpa.free(hit);
     @memset(hit, false);
 
+    gpa.free(session.compare_keys);
+    session.compare_keys = &.{};
+    if (session.options.cutoff_compare) {
+        session.compare_keys = try gpa.alloc(Key.Key, n);
+        @memset(session.compare_keys, Key.none);
+    }
+
     var cutoff: Check.Cutoff = .{
         .keys = &session.keys,
         .dir = session.options.cache,
@@ -1336,6 +1352,7 @@ fn checkSerial(session: *Session) RunError!void {
         .iface_hash = session.iface_hashes,
         .digest = session.digests,
         .hit = hit,
+        .compare = session.compare_keys,
     };
 
     session.checked.deinit(gpa);

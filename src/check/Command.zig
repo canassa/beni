@@ -49,6 +49,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     options.platform = check.platform;
     options.cache_build_id = check.cache.build_id;
     options.frontend_keys = check.cache.frontend_keys;
+    options.cutoff_compare = check.cache.cutoff_compare;
 
     // The cache directory is opened HERE and not inside the session, because
     // the one failure a cache is allowed to have is a usage failure and the
@@ -101,6 +102,11 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // publishes and the digest is what its dependents read.
     if (check.cache.dep_digest) {
         printDependencyDigests(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    // Last, so a fixture that passes several flags reads the blocks in the
+    // order the flags are documented in.
+    if (check.cache.cutoff_compare) {
+        printCompareKeys(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
     }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
@@ -223,6 +229,44 @@ fn printCacheKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
                 session.interner.slice(session.graph.moduleName(m)),
             }),
             .digits = Key.hex(session.keys.of(m)),
+        };
+    }
+    std.mem.sort(Line, lines, {}, Line.lessThan);
+    for (lines) |line| try stdout.print("{s} {s}\n", .{ line.key, &line.digits });
+    try stdout.flush();
+}
+
+/// `--cutoff-compare`: one `<package>:<Module> <32 hex digits>` line per module
+/// on stdout, sorted by that key — the key under the CUTOFF recipe, beside the
+/// one the run actually used.
+///
+/// It exists for ONE assertion, over two runs of an edited tree: **old key
+/// equal ⇒ new key equal** (`Cli.Cache.cutoff_compare`). A test that compared
+/// only the keys in use could not make it, because the run is driven by one
+/// recipe at a time.
+fn printCompareKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const Line = struct {
+        key: []const u8,
+        digits: [32]u8,
+
+        fn lessThan(_: void, a: @This(), b: @This()) bool {
+            return std.mem.lessThan(u8, a.key, b.key);
+        }
+    };
+    const lines = try arena.alloc(Line, session.graph.count());
+    for (lines, 0..) |*line, i| {
+        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const file = session.graph.moduleFile(m);
+        line.* = .{
+            .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{
+                session.store.package(file),
+                session.interner.slice(session.graph.moduleName(m)),
+            }),
+            .digits = Key.hex(if (i < session.compare_keys.len) session.compare_keys[i] else Key.none),
         };
     }
     std.mem.sort(Line, lines, {}, Line.lessThan);

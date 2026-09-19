@@ -603,6 +603,98 @@ test "the digest wave is transitive, and a hash wave is not" {
 }
 
 // ---------------------------------------------------------------------------
+// The coarsening invariant (`plans/m4-3.md` §9 M3-e)
+// ---------------------------------------------------------------------------
+
+/// Both key blocks of one `check --cache-keys --cutoff-compare` run: the key
+/// the run used, and the key the CUTOFF recipe would give.
+fn keyPairOf(w: *World, arena: std.mem.Allocator, jobs: []const u8, expect_errors: bool) !Pair {
+    const r = try w.runWith(
+        &.{ "check", "--cache-keys", "--cutoff-compare", jobs, "src" },
+        .{ .raw_diagnostics = true },
+    );
+    if ((r.exit_code != 0) != expect_errors) {
+        std.debug.print("check exited {d} (errors expected: {})\n{s}\n", .{ r.exit_code, expect_errors, r.stderr });
+        return error.UnexpectedExit;
+    }
+    var lines: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (it.next()) |line| {
+        if (line.len != 0) try lines.append(arena, line);
+    }
+    const half = lines.items.len / 2;
+    return .{
+        .hashes = try parseBlock(arena, lines.items[0..half]),
+        .digests = try parseBlock(arena, lines.items[half..]),
+    };
+}
+
+test "the coarsening invariant: an unmoved OLD key never moves the NEW one" {
+    // **The one direction that must hold**, over every edit class of the table
+    // above, at both `--jobs`. The cutoff key is COARSER than the transitive
+    // one and may never be finer: the old key is inductively every source byte
+    // that can reach this module's check, so two builds whose old keys agree
+    // have identical sources for the whole reachable set — and identical
+    // sources give identical records and identical digests.
+    //
+    // A violation would mean the new key depends on something the old one did
+    // not, which is impossible unless a term is wrong. It is the only thing
+    // that could make the cutoff unsound toward a WRONG ANSWER rather than
+    // toward a slow build, and it is the reason the two recipes run side by
+    // side for one commit before the switch.
+    //
+    // The other direction is not asserted here and must not be: it IS the
+    // cutoff, and what validates it is output identity.
+    const edits = [_]struct { what: []const u8, leaf: []const u8, errors: bool = false }{
+        .{ .what = "a comment", .leaf = "-- a new comment\n" ++ leaf_source },
+        .{ .what = "whitespace", .leaf = leaf_source ++ "\n\n" },
+        .{ .what = "a private value", .leaf = leaf_source ++ "\n\nhelper : Int\nhelper =\n    7\n" },
+        .{ .what = "a private type", .leaf = leaf_source ++ "\n\ntype Unmentioned\n    = U Int\n" },
+        .{ .what = "a pub signature", .leaf = replace(leaf_source, "pub one : Int", "pub one : Float") },
+        .{ .what = "a new pub value", .leaf = leaf_source ++ "\n\npub extra : Int\nextra =\n    2\n" },
+        .{
+            .what = "a private payload becomes a function",
+            .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int -> Int)"),
+            .errors = true,
+        },
+        .{
+            .what = "an alias body no scheme names",
+            .leaf = replace(leaf_source, "pub type alias Pair =\n    { a : Int }", "pub type alias Pair =\n    { z : Int }"),
+            .errors = true,
+        },
+        .{ .what = "a private type made pub", .leaf = replace(leaf_source, "type Hidden\n", "pub type Hidden\n") },
+    };
+
+    for ([_][]const u8{ "--jobs=1", "--jobs=8" }) |jobs| {
+        for (edits) |edit| {
+            var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+            defer arena_state.deinit();
+            const arena = arena_state.allocator();
+            var w = try World.init(testing.allocator, testing.io);
+            defer w.deinit();
+            try writeProject(&w);
+
+            const before = try keyPairOf(&w, arena, jobs, false);
+            try w.write("src/Leaf.beni", edit.leaf);
+            const after = try keyPairOf(&w, arena, jobs, edit.errors);
+
+            for (before.hashes) |old| {
+                const old_now = lookup(after.hashes, old.name) orelse continue;
+                if (!std.mem.eql(u8, old.digits, old_now)) continue; // old key moved: says nothing
+                const new_before = lookup(before.digests, old.name).?;
+                const new_after = lookup(after.digests, old.name).?;
+                if (std.mem.eql(u8, new_before, new_after)) continue;
+                std.debug.print(
+                    "{s} {s}: {s}'s OLD key did not move and its CUTOFF key did ({s} -> {s})\n",
+                    .{ jobs, edit.what, old.name, new_before, new_after },
+                );
+                return error.CutoffKeyIsFiner;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The cached WARNING (`plans/m4-3.md` §14 risk 4)
 // ---------------------------------------------------------------------------
 

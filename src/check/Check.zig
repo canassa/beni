@@ -79,6 +79,10 @@ fn sameDigestImport(a: Digest.Import, b: Digest.Import) bool {
     return a.package == b.package and std.mem.eql(u8, a.name, b.name);
 }
 
+fn coreEntryLessThan(_: void, a: Digest.CoreEntry, b: Digest.CoreEntry) bool {
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
 const Check = @This();
 
 /// Re-exported so `Session` can name the pattern-usefulness budget without
@@ -245,6 +249,20 @@ pub const Cutoff = struct {
     /// One slot per module: whether it was a HIT. Summed after the run into
     /// the three counters `fast-compiler.md` §8's acceptance test asserts.
     hit: []bool,
+    /// `--cutoff-compare` (hidden): also compute the CUTOFF key beside the one
+    /// in use, so a fixture can assert the one direction that must hold —
+    /// **old key equal ⇒ new key equal**. The new key is coarser and never
+    /// finer; a violation would mean the new key depends on something the old
+    /// transitive key did not, which is impossible unless a term is wrong.
+    ///
+    /// The other direction IS the cutoff, and what validates it is output
+    /// identity (`plans/m4-3.md` §10.2), not an assertion.
+    compare: []Key.Key = &.{},
+    /// `core_surface`: one hash over the core package's sorted
+    /// `(module name, interface hash, digest)` list, computed once by the
+    /// driver after the last core module publishes and before any non-core
+    /// module's key is finished.
+    core_surface: Digest.Digest = Digest.none,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
@@ -438,6 +456,23 @@ const Driver = struct {
     dependent_start: []u32 = &.{},
     /// Modules finished, so the workers know when to stop.
     finished: usize = 0,
+    /// **`core_surface`'s barrier** (`plans/m4-3.md` §7.1). Core modules the
+    /// walk has not yet published; while it is non-zero, no NON-core module is
+    /// ready, because `core_surface` is one term over core's whole public face
+    /// and a key finished before it existed would be a key that depends on
+    /// thread timing.
+    ///
+    /// It is a gate on the existing schedule and not a wait on a condition: a
+    /// worker that BLOCKED on core while core modules sat unclaimed in the
+    /// queue would deadlock at `--jobs=n` the moment `n` non-core modules were
+    /// claimed first. Instead every non-core module carries one extra blocker
+    /// until the last core module finishes, which is `buildSchedule`'s own
+    /// mechanism and is provably deadlock-free — a core module never depends
+    /// on a non-core one.
+    ///
+    /// At `--jobs=1` it costs nothing at all: the walk is reordered to put
+    /// core first, which `graph.order` permits for the same reason.
+    core_pending: usize = 0,
     /// The first allocation failure any worker hit. One flag for all of
     /// them: the run is over either way.
     failure: ?Error = null,
@@ -487,10 +522,46 @@ const Driver = struct {
         defer patterns.deinit();
         var recorder: reads.Recorder = try .init(d.gpa, d.graph.count());
         defer recorder.deinit(d.gpa);
-        for (d.graph.order) |m| {
-            try d.check(m, scratch, &patterns, 0, &recorder);
-            scratch.reset(.retain_capacity);
+        // Core first, then the rest — still a topological order, because a
+        // core module imports nothing outside core, and the order in which
+        // `core_surface` becomes computable at `--jobs=1`. Within each half
+        // the sequence is `graph.order`'s, so the walk is a function of the
+        // input alone (`fast-compiler.md` §10).
+        for (0..d.graph.count()) |i| {
+            if (d.graph.module(@enumFromInt(i)).package == .core) d.core_pending += 1;
         }
+        for ([_]bool{ true, false }) |core| {
+            for (d.graph.order) |m| {
+                if ((d.graph.module(m).package == .core) != core) continue;
+                try d.check(m, scratch, &patterns, 0, &recorder);
+                scratch.reset(.retain_capacity);
+                if (core and d.core_pending != 0) d.core_pending -= 1;
+                if (d.core_pending == 0) try d.closeCoreSurface(scratch);
+                scratch.reset(.retain_capacity);
+            }
+        }
+    }
+
+    /// Compute `core_surface` once, the moment the last core module has
+    /// published. Called from `finish` under the lock on the parallel path and
+    /// straight after each module on the serial one.
+    fn closeCoreSurface(d: *Driver, scratch: *Arena) Error!void {
+        const cutoff = d.options.cutoff orelse return;
+        if (d.core_pending != 0) return;
+        if (!std.mem.eql(u8, &cutoff.core_surface, &Digest.none)) return;
+        var entries: std.ArrayList(Digest.CoreEntry) = .empty;
+        defer entries.deinit(scratch.allocator());
+        for (0..d.graph.count()) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            if (d.graph.module(m).package != .core) continue;
+            try entries.append(scratch.allocator(), .{
+                .name = d.interner.slice(d.graph.moduleName(m)),
+                .iface_hash = cutoff.iface_hash[i],
+                .digest = cutoff.digest[i],
+            });
+        }
+        std.mem.sort(Digest.CoreEntry, entries.items, {}, coreEntryLessThan);
+        cutoff.core_surface = try Digest.coreSurface(scratch.allocator(), entries.items);
     }
 
     /// The ready queue and the reverse edges, built once before any thread
@@ -534,12 +605,37 @@ const Driver = struct {
             }
         }
 
+        // `core_surface`'s gate: one extra blocker on every non-core module
+        // until the last core module has published (see `core_pending`).
+        d.core_pending = 0;
+        for (0..n) |i| {
+            if (d.graph.module(@enumFromInt(i)).package == .core) d.core_pending += 1;
+        }
+        if (d.core_pending != 0) {
+            for (0..n) |i| {
+                if (d.graph.module(@enumFromInt(i)).package == .core) continue;
+                d.blockers[i] += 1;
+            }
+        }
+
         d.queue = try gpa.alloc(Graph.Index, n);
         // Seeded in the graph's order, so the first modules claimed are the
         // ones the serial path would have taken first.
         for (d.graph.order) |m| {
             if (d.blockers[m.int()] != 0) continue;
             d.queue[d.queue_len] = m;
+            d.queue_len += 1;
+        }
+    }
+
+    /// Drop the core gate from every non-core module and enqueue what that
+    /// released. Under the lock, once.
+    fn openCoreGate(d: *Driver) void {
+        for (0..d.graph.count()) |i| {
+            if (d.graph.module(@enumFromInt(i)).package == .core) continue;
+            d.blockers[i] -= 1;
+            if (d.blockers[i] != 0) continue;
+            d.queue[d.queue_len] = @enumFromInt(@as(u32, @intCast(i)));
             d.queue_len += 1;
         }
     }
@@ -607,6 +703,19 @@ const Driver = struct {
         if (result) |_| {} else |err| {
             if (d.failure == null) d.failure = err;
         }
+        if (d.graph.module(m).package == .core and d.core_pending != 0) {
+            d.core_pending -= 1;
+            if (d.core_pending == 0) {
+                // The last core module has PUBLISHED — `check` publishes
+                // before it returns, and `finish` is what releases anybody.
+                var arena: Arena = .init(std.heap.page_allocator);
+                defer arena.deinit();
+                d.closeCoreSurface(&arena) catch |err| {
+                    if (d.failure == null) d.failure = err;
+                };
+                d.openCoreGate();
+            }
+        }
         for (d.dependents[d.dependent_start[m.int()]..d.dependent_start[m.int() + 1]]) |dependent| {
             d.blockers[dependent.int()] -= 1;
             if (d.blockers[dependent.int()] != 0) continue;
@@ -666,6 +775,7 @@ const Driver = struct {
                 imports.items,
             ));
         }
+        try d.compareKey(m, scratch);
         const dir = cutoff.dir orelse return;
         if (!cutoff.keys.isCacheable(m)) return;
         if (m.int() >= d.options.cached.len) return;
@@ -677,6 +787,39 @@ const Driver = struct {
             &d.interfaces[m.int()],
         );
         cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
+    }
+
+    /// `--cutoff-compare`: `m`'s key under the CUTOFF recipe, beside the one
+    /// the run is using (`Cutoff.compare`).
+    ///
+    /// The imports' pairs are published values, so this runs on the same
+    /// worker at the same moment as the key it accompanies; `core_surface` has
+    /// been computed by then for every non-core module, which is what the gate
+    /// in `buildSchedule` is for.
+    fn compareKey(d: *Driver, m: Graph.Index, scratch: *Arena) Error!void {
+        const cutoff = d.options.cutoff orelse return;
+        if (m.int() >= cutoff.compare.len) return;
+        var pairs: std.ArrayList(Key.ImportPair) = .empty;
+        defer pairs.deinit(scratch.allocator());
+        for (d.graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            try pairs.append(scratch.allocator(), .{
+                .package = d.graph.module(dep).package,
+                .name = d.interner.slice(d.graph.moduleName(dep)),
+                .iface_hash = cutoff.iface_hash[dep.int()],
+                .digest = cutoff.digest[dep.int()],
+            });
+        }
+        Key.sortPairs(&pairs);
+        // A CORE module's own core term is `none` by definition, exactly as
+        // `core_epoch` is: core is not a dependency of itself.
+        const surface = if (d.graph.module(m).package == .core) Digest.none else cutoff.core_surface;
+        cutoff.compare[m.int()] = try Key.finishPairs(
+            scratch.allocator(),
+            cutoff.keys.ownTerms(m),
+            surface,
+            pairs.items,
+        );
     }
 
     /// Publish `m`'s interface hash and dependency digest, for its dependents.

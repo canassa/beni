@@ -200,6 +200,18 @@ pub const Cache = struct {
     /// invalidation table is fixtures against it, with no cache directory in
     /// sight.
     dep_digest: bool = false,
+    /// `--cutoff-compare` — hidden, `check`'s alone. Compute the CUTOFF key
+    /// beside the one the run uses, and print a second `--cache-keys` block
+    /// for it (`fast-compiler.md` §8, `plans/m4-3.md` §9 M3-e).
+    ///
+    /// It exists for ONE assertion, over two runs of an edited tree: **old key
+    /// equal ⇒ new key equal.** The cutoff key is COARSER than the transitive
+    /// one and may never be finer; a violation would mean it depends on
+    /// something the old key did not, which is impossible unless a term is
+    /// wrong — a determinism bug in the digest, and the only thing that could
+    /// make the cutoff unsound toward a wrong answer. The other direction IS
+    /// the cutoff, and what validates it is output identity.
+    cutoff_compare: bool = false,
 };
 
 pub const Check = struct {
@@ -522,6 +534,12 @@ const CheckSpecific = struct {
         if (std.mem.eql(u8, name, "--dep-digest")) {
             if (value != null) return noValue(name);
             self.cache.dep_digest = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--cutoff-compare")) {
+            if (value != null) return noValue(name);
+            self.cache.cutoff_compare = true;
             self.consumed = true;
             return null;
         }

@@ -117,21 +117,25 @@ pub const Terms = struct {
 /// same 16 bytes for two different inputs would be invisible to a test that
 /// only ever compared keys.
 pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
+    try out.appendSlice(gpa, magic);
+    try appendInt(gpa, out, u32, key_version);
     try writeOwn(gpa, out, t);
     try writeRest(gpa, out, t.core_epoch, t.imports);
 }
 
-/// The prefix with NO import term: package, name, option string, source hash,
-/// sibling hash, and the three constants in front of them.
+/// The middle with NO import term: build id, package, name, option string,
+/// source hash, sibling hash.
 ///
-/// **It is a prefix and not a hash**, which is the whole point: the key's bytes
-/// are one string and the part that depends on nothing else in the project can
-/// be produced serially, once, while the rest is appended on the DAG by the
-/// worker that claimed the module. `writeBytes` is the two halves in order, and
-/// a test asserts that it still is.
+/// **It is a slice of the byte string and not a hash of one**, which is the
+/// whole point: the key's bytes are one string, and the part that depends on
+/// nothing else in the project can be produced serially, once, while the rest
+/// is appended on the DAG by the worker that claimed the module. `writeBytes`
+/// is magic, version, this and `writeRest`, in that order, and a test asserts
+/// that it still is.
+///
+/// The magic and the version are deliberately NOT here: `--cutoff-compare`
+/// computes both recipes from one blob, and the two differ in their version.
 pub fn writeOwn(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
-    try out.appendSlice(gpa, magic);
-    try appendInt(gpa, out, u32, key_version);
     try out.appendSlice(gpa, &t.build_id);
     try out.append(gpa, @intFromEnum(t.package));
     try appendInt(gpa, out, u32, @intCast(t.name.len));
@@ -161,9 +165,77 @@ pub fn writeRest(gpa: Allocator, out: *std.ArrayList(u8), core: Key, imports: []
 pub fn finish(scratch: Allocator, own: []const u8, core: Key, imports: []const Import) Allocator.Error!Key {
     var bytes: std.ArrayList(u8) = .empty;
     defer bytes.deinit(scratch);
+    try bytes.appendSlice(scratch, magic);
+    try appendInt(scratch, &bytes, u32, key_version);
     try bytes.appendSlice(scratch, own);
     try writeRest(scratch, &bytes, core, imports);
     return iface_bytes.hash(bytes.items);
+}
+
+// ---------------------------------------------------------------------------
+// The CUTOFF recipe (`fast-compiler.md` §8, *The firewall cutoff*)
+// ---------------------------------------------------------------------------
+
+/// The recipe in which an import contributes its `(interface hash, dependency
+/// digest)` pair in place of its key, and `core_epoch` becomes `core_surface`.
+///
+/// **The new key is COARSER than the old one and never finer**, and that is the
+/// invariant `--cutoff-compare` asserts: old key equal ⇒ new key equal. The old
+/// key is inductively every source byte that can reach this module's check, so
+/// two builds with equal old keys have identical sources for the whole reachable
+/// set — and identical sources give identical records and identical digests.
+/// The OTHER direction is the cutoff itself, and what validates it is output
+/// identity, not an assertion.
+pub const cutoff_key_version: u32 = 2;
+
+/// One direct import's contribution under the cutoff recipe.
+pub const ImportPair = struct {
+    package: SourceStore.Package,
+    name: []const u8,
+    iface_hash: [16]u8,
+    digest: [16]u8,
+};
+
+/// `m`'s key under the cutoff recipe.
+pub fn finishPairs(
+    scratch: Allocator,
+    own: []const u8,
+    core_surface: Key,
+    imports: []const ImportPair,
+) Allocator.Error!Key {
+    var bytes: std.ArrayList(u8) = .empty;
+    defer bytes.deinit(scratch);
+    try bytes.appendSlice(scratch, magic);
+    try appendInt(scratch, &bytes, u32, cutoff_key_version);
+    try bytes.appendSlice(scratch, own);
+    try bytes.appendSlice(scratch, &core_surface);
+    try appendInt(scratch, &bytes, u32, @intCast(imports.len));
+    for (imports) |i| {
+        try bytes.append(scratch, @intFromEnum(i.package));
+        try appendInt(scratch, &bytes, u32, @intCast(i.name.len));
+        try bytes.appendSlice(scratch, i.name);
+        try bytes.appendSlice(scratch, &i.iface_hash);
+        try bytes.appendSlice(scratch, &i.digest);
+    }
+    return iface_bytes.hash(bytes.items);
+}
+
+pub fn sortPairs(imports: *std.ArrayList(ImportPair)) void {
+    const Less = struct {
+        fn f(_: void, a: ImportPair, b: ImportPair) bool {
+            if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
+            return std.mem.lessThan(u8, a.name, b.name);
+        }
+    };
+    std.mem.sort(ImportPair, imports.items, {}, Less.f);
+    var unique: usize = 0;
+    for (imports.items, 0..) |i, at| {
+        if (at != 0 and imports.items[unique - 1].package == i.package and
+            std.mem.eql(u8, imports.items[unique - 1].name, i.name)) continue;
+        imports.items[unique] = i;
+        unique += 1;
+    }
+    imports.shrinkRetainingCapacity(unique);
 }
 
 pub fn compute(gpa: Allocator, t: Terms) Allocator.Error!Key {
@@ -719,11 +791,43 @@ test "the key's byte string is its own terms followed by the rest, exactly" {
     try writeOwn(gpa, &own, t);
     var split: std.ArrayList(u8) = .empty;
     defer split.deinit(gpa);
+    try split.appendSlice(gpa, magic);
+    try appendInt(gpa, &split, u32, key_version);
     try split.appendSlice(gpa, own.items);
     try writeRest(gpa, &split, t.core_epoch, t.imports);
 
     try testing.expectEqualSlices(u8, whole.items, split.items);
     try testing.expectEqual(try compute(gpa, t), try finish(gpa, own.items, t.core_epoch, t.imports));
+}
+
+test "the cutoff recipe is a different key, and every one of its terms moves it" {
+    const gpa = testing.allocator;
+    var own: std.ArrayList(u8) = .empty;
+    defer own.deinit(gpa);
+    try writeOwn(gpa, &own, sampleTerms());
+
+    const pairs: []const ImportPair = &.{
+        .{ .package = .app, .name = "Leaf", .iface_hash = @splat(1), .digest = @splat(2) },
+    };
+    const base = try finishPairs(gpa, own.items, none, pairs);
+    // Same own terms, same import NAME, a different version word: the two
+    // recipes may never agree, or an entry written by one would be read by
+    // the other.
+    try testing.expect(!std.mem.eql(u8, &base, &try finish(gpa, own.items, none, &.{
+        .{ .package = .app, .name = "Leaf", .key = @splat(1) },
+    })));
+    try testing.expectEqual(base, try finishPairs(gpa, own.items, none, pairs));
+
+    // An import's HASH and its DIGEST each move it: the first is the firewall
+    // and the second is what the firewall alone cannot see.
+    try testing.expect(!std.mem.eql(u8, &base, &try finishPairs(gpa, own.items, none, &.{
+        .{ .package = .app, .name = "Leaf", .iface_hash = @splat(9), .digest = @splat(2) },
+    })));
+    try testing.expect(!std.mem.eql(u8, &base, &try finishPairs(gpa, own.items, none, &.{
+        .{ .package = .app, .name = "Leaf", .iface_hash = @splat(1), .digest = @splat(9) },
+    })));
+    // And `core_surface`.
+    try testing.expect(!std.mem.eql(u8, &base, &try finishPairs(gpa, own.items, @splat(7), pairs)));
 }
 
 test "the key is a pure function: the same terms twice give the same bytes" {
