@@ -283,6 +283,18 @@ becomes is not known until the checker runs, so the checker's dispatch table car
 two consumers — emission order and the future DCE — must read both.
 → [`static-dispatch-spike.md`](static-dispatch-spike.md) §1.4, §2.4.
 
+**A declaration's `params` is its arity, and a `foreign` has no definition to count.** For a value
+with a body, `params` is the length of the definition's parameter list. A `foreign` has an
+annotation and no definition, so its `params` is the number of parameters the **annotation**
+declares — *n* for `T1, …, Tn -> R`, and 0 for an annotation that is not a function type, which is
+a `foreign` bound to a value rather than to a function. That is the same number
+[`boundary.md`](boundary.md) §4's check 4 measures the sibling export against, and check 4 reads it
+back off `params` rather than recomputing it, so the two cannot drift. Leaving it at 0 was a
+miscompile and not a cosmetic gap: every reader of `params` then takes a `foreign` function for a
+nullary value, and the backend eta-expanded a constrained `foreign` used in value position inside
+its own module to `() => List$eq(m0)` — a nullary closure where a binary method was promised
+([`static-dispatch-spike.md`](static-dispatch-spike.md) §8.2).
+
 ### 3.7 Formatting
 
 `Format.zig` walks the AST once, printing to a `std.Io.Writer`. Layout decisions ("fits on one

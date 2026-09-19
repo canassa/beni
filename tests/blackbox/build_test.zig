@@ -1312,6 +1312,238 @@ test "check 4: every export form a sibling may use, at the right arity, builds a
     try testing.expectEqualStrings("", program.stderr);
 }
 
+test "a constrained `foreign` in value position inside its own module keeps its declared arity" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // static-dispatch-spike.md §8.2: a target that takes evidence, used as
+    // a VALUE, is `(a, b) => name(evidence…, a, b)` over the target's own
+    // beni arity. A `foreign` had no arity to expand over — `bir/Lower`
+    // took `params` from a DEFINITION's parameter list and a `foreign` has
+    // none — so `js/Lower.targetArity` said 0 and the evidence slot was
+    // handed `() => Prog$eq(Prog$eq$prim)`, a nullary closure where a
+    // binary method was promised. The build exited 0 and the program
+    // crashed; the same expression in any module that did not DECLARE the
+    // `foreign` compiled correctly, which is why `core/List.beni`'s own doc
+    // examples were the only thing that caught it.
+    //
+    // Both ways a value position is reached, in one module:
+    //
+    //   1. `asEvidence` — the derived `eq` of `Maybe` is handed this
+    //      module's `eq` for its element (§9.4);
+    //   2. `asValue` — a bare reference passed as an ordinary function
+    //      argument (§8.2's "a constrained value used as a value is its
+    //      eta-expansion").
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\import List
+        \\import Maybe exposing (Maybe)
+        \\
+        \\
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub type Bag a
+        \\    = Bag (List a)
+        \\
+        \\
+        \\pub foreign eq : Bag a, Bag a -> Bool
+        \\    where a.eq : a, a -> Bool
+        \\
+        \\
+        \\apply : Bag Int, Bag Int, (Bag Int, Bag Int -> Bool) -> Bool
+        \\apply left right f =
+        \\    f left right
+        \\
+        \\
+        \\pub asEvidence : List Int, List Int -> Bool
+        \\asEvidence xs ys =
+        \\    (Just (Bag xs)) == (Just (Bag ys))
+        \\
+        \\
+        \\pub asValue : List Int, List Int -> Bool
+        \\asValue xs ys =
+        \\    apply (Bag xs) (Bag ys) eq
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\
+        \\export const eq = (m0, left, right) => {
+        \\  let a = left.a;
+        \\  let b = right.a;
+        \\  while (a.$ === 1 && b.$ === 1) {
+        \\    if (!m0(a.a, b.a)) return false;
+        \\    a = a.b;
+        \\    b = b.b;
+        \\  }
+        \\  return a.$ === b.$;
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\import String
+        \\
+        \\
+        \\yn : Bool -> String
+        \\yn b =
+        \\    if b then
+        \\        "T"
+        \\
+        \\    else
+        \\        "F"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say
+        \\        (String.concat
+        \\            [ yn (Prog.asEvidence [ 1, 2 ] [ 1, 2 ])
+        \\            , yn (Prog.asEvidence [ 1, 2 ] [ 1, 3 ])
+        \\            , yn (Prog.asValue [ 1, 2 ] [ 1, 2 ])
+        \\            , yn (Prog.asValue [ 1, 2 ] [ 9 ])
+        \\            ]
+        \\        )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Both answers both ways round: the defect crashed on the first, and a
+    // sibling forgiving enough to survive it would have answered the second
+    // wrong, which is the failure mode worth guarding.
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("TFTF!\n", program.stdout);
+    try testing.expectEqualStrings("", program.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The shape claim the run can only prove by crashing: no evidence slot
+    // in the module holds a nullary closure over a binary method. Narrow on
+    // purpose — the parameter names are `$p$N` counters and goldening the
+    // whole arrow would churn on any change to them.
+    const prog_mjs = try w.read("out/platform/Prog.mjs");
+    try testing.expect(std.mem.indexOf(u8, prog_mjs, "() => Prog$eq(") == null);
+}
+
+test "an unconstrained `foreign` in value position inside its own module is the bare name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The other half of §8.2's rule, and the guard on the fix above: a
+    // target that takes NO evidence is the bare name, eta-expanding it
+    // would be wrong, and a `foreign` now carries a `params` that says how
+    // wide the expansion WOULD be. Both positions, so the guard covers the
+    // one that reaches `targetValue`:
+    //
+    //   1. `doubled` — an ordinary function argument;
+    //   2. `boxed` — an evidence slot, where `Box`'s `eq` is this module's
+    //      own unconstrained `foreign` and §8.2's table says bare name.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\import List
+        \\import Maybe exposing (Maybe)
+        \\
+        \\
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign twice : Int -> Int
+        \\
+        \\
+        \\pub type Box
+        \\    = Box Int
+        \\
+        \\
+        \\pub foreign eq : Box, Box -> Bool
+        \\
+        \\
+        \\pub doubled : List Int -> List Int
+        \\doubled xs =
+        \\    List.map xs twice
+        \\
+        \\
+        \\pub boxed : Int, Int -> Bool
+        \\boxed left right =
+        \\    (Just (Box left)) == (Just (Box right))
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\export const twice = (n) => n + n;
+        \\export const eq = (left, right) => left.a === right.a;
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\import List
+        \\import String
+        \\
+        \\
+        \\yn : Bool -> String
+        \\yn b =
+        \\    if b then
+        \\        "T"
+        \\
+        \\    else
+        \\        "F"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say
+        \\        (String.concat
+        \\            [ String.fromInt (List.sum (Prog.doubled [ 1, 2, 3 ]))
+        \\            , yn (Prog.boxed 1 1)
+        \\            , yn (Prog.boxed 1 2)
+        \\            ]
+        \\        )
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("12TF!\n", program.stdout);
+    try testing.expectEqualStrings("", program.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Both uses name the import directly; neither is wrapped.
+    const prog_mjs = try w.read("out/platform/Prog.mjs");
+    try testing.expect(std.mem.indexOf(u8, prog_mjs, "List$map(xs$1, Prog$twice)") != null);
+    try testing.expect(std.mem.indexOf(u8, prog_mjs, "Maybe$Maybe$$eq(Prog$eq,") != null);
+}
+
 test "--library needs no main, writes no entry file, and roots at the exported surface" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

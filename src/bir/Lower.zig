@@ -879,7 +879,16 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
             },
             .foreign_value => {
                 const fv = l.tree.fullForeignValue(src.node);
-                l.decls.items[i].annotation = (try l.lowerRootType(fv.type_expr)).toOptional();
+                const annotation = try l.lowerRootType(fv.type_expr);
+                l.decls.items[i].annotation = annotation.toOptional();
+                // §3.6: a `foreign` has no definition to count parameters
+                // from, so its `params` is what its ANNOTATION declares —
+                // the same number `boundary.md` §4's check 4 measures the
+                // sibling export against. Without it every reader of
+                // `params` sees a nullary value, and `js/Lower.targetArity`
+                // eta-expanded `List.eq` used from inside `core/List.beni`
+                // to `() => List$eq(m0)`.
+                l.decls.items[i].params = l.typeFnArity(annotation);
                 try l.lowerWhere(fv.header, fv.name);
             },
             .type_alias => {
@@ -1297,6 +1306,17 @@ fn resolveQualified(l: *Lower, token: TokenIndex, tag: Inst.Tag, ref_kind: Bir.R
 fn lowerRootType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     l.type_vars_seen.clearRetainingCapacity();
     return l.lowerType(node);
+}
+
+/// The parameter count a lowered type declares: `n` for `T1, …, Tn -> R`,
+/// and 0 for everything else — a `foreign` whose annotation is not a
+/// function type binds to a VALUE and has no parameters at all
+/// (`boundary.md` §4). Reads the `SubRange` record `type_fn`'s `lhs` points
+/// at, which is the shape `Bir.subRange` reads once the arrays are frozen.
+fn typeFnArity(l: *const Lower, inst: Index) u32 {
+    if (l.insts.items(.tag)[inst.int()] != .type_fn) return 0;
+    const at = l.insts.items(.data)[inst.int()].lhs;
+    return l.extra.items[at + 1] - l.extra.items[at];
 }
 
 fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {

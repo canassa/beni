@@ -73,13 +73,6 @@ const cycle_reason =
     "which core's own module graph already has pointing the other way — so no module " ++
     "with this module's scope is allowed to hold the example";
 
-const evidence_reason =
-    "blocked: a `List` compared INSIDE `core/List.beni` as part of a larger value " ++
-    "(a `Maybe`, a tuple) emits `() => List$eq(m0)` — a nullary closure where a binary " ++
-    "method was promised — and the program crashes. `core/String.beni` compiles the same " ++
-    "expression correctly, so it is `Lower.targetArity`'s `.top` branch reading " ++
-    "`bir.decls[].params`, which a `foreign` declaration leaves at 0";
-
 const skips = [_]Skip{
     .{ .module = "Basics", .text = "eq [ 1, 2 ] [ 1, 2 ] == True", .reason = cycle_reason },
     .{ .module = "Basics", .text = "append \"butter\" \"fly\" == \"butterfly\"", .reason = cycle_reason },
@@ -87,10 +80,6 @@ const skips = [_]Skip{
     .{ .module = "Basics", .text = "List.map [ 1, 2, 3 ] (always 0 _) == [ 0, 0, 0 ]", .reason = cycle_reason },
     .{ .module = "List", .text = "indexedMap [ \"a\", \"b\" ] (\\i x -> ( i, x )) == [ ( 0, \"a\" ), ( 1, \"b\" ) ]", .reason = cycle_reason },
     .{ .module = "List", .text = "intersperse [ \"turtles\", \"turtles\" ] \"on\" == [ \"turtles\", \"on\", \"turtles\" ]", .reason = cycle_reason },
-    .{ .module = "List", .text = "tail [ 1, 2, 3 ] == Just [ 2, 3 ]", .reason = evidence_reason },
-    .{ .module = "List", .text = "tail [] == Nothing", .reason = evidence_reason },
-    .{ .module = "List", .text = "partition [ 1, 2, 3, 4 ] (\\n -> modBy n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )", .reason = evidence_reason },
-    .{ .module = "List", .text = "unzip [ ( 0, True ), ( 17, False ) ] == ( [ 0, 17 ], [ True, False ] )", .reason = evidence_reason },
 };
 
 /// The first `==` at bracket depth zero and outside a literal. Returns the

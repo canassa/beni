@@ -404,7 +404,7 @@ const Emitter = struct {
                     .name = e.session.interner.slice(b.symbol(d.name)),
                     .token = d.name_token,
                     .evidence = @intCast(dispatch.declEvidence(@intCast(index)).len),
-                    .params = annotationArity(b, d),
+                    .params = annotationArity(d),
                     .is_function = isFunctionAnnotation(b, d),
                 });
             }
@@ -1165,11 +1165,16 @@ fn plural(n: u32) []const u8 {
 /// How many parameters a `foreign` declaration's annotation lists, or null
 /// when it has none to read. A non-function annotation is zero: `foreign pi
 /// : Float` binds to a value and not to a `() => …`.
-fn annotationArity(b: *const Bir, d: Bir.Decl) ?u32 {
-    const annotation = d.annotation.unwrap() orelse return null;
-    if (b.instTag(annotation) != .type_fn) return 0;
-    const data = b.instData(annotation);
-    return @intCast(b.extraSlice(b.subRange(@enumFromInt(data.lhs)), Bir.Inst.Index).len);
+///
+/// **It is `params`, read back.** `bir/Lower` counts a `foreign`'s
+/// parameters off exactly this annotation and records them there
+/// (`frontend.md` §3.6), so check 4 and `js/Lower.targetArity` measure the
+/// sibling against ONE number. Computing it a second time here is how the
+/// two came to disagree: the backend eta-expanded `List.eq` at arity 0
+/// while this check happily accepted its binary sibling.
+fn annotationArity(d: Bir.Decl) ?u32 {
+    _ = d.annotation.unwrap() orelse return null;
+    return d.params;
 }
 
 fn isFunctionAnnotation(b: *const Bir, d: Bir.Decl) bool {

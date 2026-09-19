@@ -203,7 +203,7 @@ mapping.
 | `let` | a VALUE binding is a `const` in the enclosing statement list, in written order; a binding whose right-hand side is a **function** is a `function` declaration, which JavaScript **hoists** — every one of them, not only the mutually recursive ones. The hoisting is what makes mutual recursion between `let` functions work, and `language.md` §7's initialisation rule is stated in terms of it: a value may not read a `const` below it, and may read a `function` anywhere |
 | string interpolation | template literal |
 | `?` | a test and an early `return` of the failure, in statements, over the subject bound once (below) |
-| `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4) |
+| `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4). Its **arity is its annotation's**, carried on the declaration's `params` by lowering (`frontend.md` §3.6): the backend reads targets and never types (§3), so a `foreign` in value position eta-expands over that number like any other target |
 | method call, resolved to a declaration | a direct call of that declaration, receiver first: `x.m a` is `M$m(x, a)` |
 | method call on a `primitive` target | the JavaScript operator the surface origin names — `===` for `==`, and the `Order` result of `compare` tested in place rather than built |
 | return-type dispatch | a direct call of whatever the constrained variable resolved to, or of the evidence parameter standing in for it |

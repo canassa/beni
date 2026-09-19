@@ -545,9 +545,16 @@ pub const Decl = struct {
     doc_end: u32,
     /// Values: the number of parameters. Types, aliases, foreign types: the
     /// number of type parameters.
+    ///
+    /// A `foreign_value` has no definition, so its count is its
+    /// ANNOTATION's — `n` for `T1, …, Tn -> R`, 0 for an annotation that is
+    /// not a function type (`frontend.md` §3.6, `boundary.md` §4 check 4).
     params: u32,
     /// Values: `SubRange` of parameter pattern instructions. Types: the
     /// range of parameter names in `symbols` (`type_params_start..end`).
+    ///
+    /// **EMPTY on a `foreign_value` even when `params` is not.** A `foreign`
+    /// declares an arity and binds no names: there are no patterns to hold.
     params_start: ExtraIndex,
     params_end: ExtraIndex,
     /// Type declarations: the parameter names as `symbols[start..end]`.
