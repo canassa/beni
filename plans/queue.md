@@ -96,10 +96,10 @@ by owner decision, 2026-09-19", design text kept.
 
 | # | Slice | State | Notes |
 |---|---|---|---|
-| 46 | **`beni check .` (and `fmt --check .`, `build .`) reject every file with `invalid_module_path`** — the walk does not normalise `./`; absolute and `../proj` forms work | in flight (worktree) | found by the robustness audit; no test anywhere passes `.` |
-| 47 | `beni fmt` resets a rewritten file's mode to 0644 (a 0600 file becomes world-readable; a 0444 file is rewritten anyway) and replaces a symlink with a regular file, leaving the target unformatted | in flight (same slice) | temp + `rename` write path; one fix serves both |
-| 48 | `beni dump` exits 0 while printing an error diagnostic; `frontend.md` §1 and `beni help` say exit 1, `src/main.zig:6-15` says it is deliberate | in flight (same slice) — manager decision: the document wins, `dump` exits 1 when it printed an error | |
-| 49 | `tests/corpus/README.md` says the `fmt/` kind checks "the same comments in the same order"; `corpus_test.zig`'s `format()` does not (the AST dump drops plain `--` comments) | in flight (same slice) | ~10 lines to make the claim true |
+| 46 | **`beni check .` (and `fmt --check .`, `build .`) reject every file with `invalid_module_path`** — the walk does not normalise `./`; absolute and `../proj` forms work | **done** | found by the robustness audit; no test anywhere passes `.` |
+| 47 | `beni fmt` resets a rewritten file's mode to 0644 (a 0600 file becomes world-readable; a 0444 file is rewritten anyway) and replaces a symlink with a regular file, leaving the target unformatted | **done** | temp + `rename` write path; one fix serves both |
+| 48 | `beni dump` exits 0 while printing an error diagnostic; `frontend.md` §1 and `beni help` say exit 1, `src/main.zig:6-15` says it is deliberate | **done** — `dump` exits 1 over an error (manager decision: the document wins) | |
+| 49 | `tests/corpus/README.md` says the `fmt/` kind checks "the same comments in the same order"; `corpus_test.zig`'s `format()` does not (the AST dump drops plain `--` comments) | **done** | ~10 lines to make the claim true |
 
 ## Owner decision, 2026-09-19: **`--release` refuses `Debug`**
 
