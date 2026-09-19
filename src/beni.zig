@@ -66,6 +66,7 @@ pub const resolve = struct {
 };
 pub const cache = struct {
     pub const Key = @import("cache/Key.zig");
+    pub const entry_bytes = @import("cache/entry_bytes.zig");
 };
 pub const check = struct {
     pub const TypeStore = @import("check/TypeStore.zig");
