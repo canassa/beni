@@ -365,6 +365,12 @@ pass rate are visible on their own); `dispatch` → `dump --stage=dispatch` equa
 `BENI_WRITE_EXPECTED=1` blesses; the failure message says so; the
 value is fully materialised before any golden is written.
 
+`tests/blackbox/docs_test.zig` is the doc-example gate for `core/`: it extracts every
+`--|     <expr> == <value>` from `core/*.beni`, appends each one verbatim to a temp copy of its
+own module, and builds and runs that core, so an example that stops compiling or stops being true
+fails the suite. `checker.md` Appendix B is the contract — the recognised form, the in-module
+scope, and the rule that a skip needs a reason and dies with the line it excused.
+
 ## 8. Milestones, acceptance
 
 **M0 — skeleton.** `zig build`, `zig build test`, `zig build test-blackbox`, `zig build bench`,

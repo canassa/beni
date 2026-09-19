@@ -71,8 +71,8 @@ singleton key value =
 --| `Nothing`. This is useful when you are not sure if a key will be in the
 --| dictionary.
 --|
---|     get animals "Tom" == Just Cat
---|     get animals "Jerry" == Nothing
+--|     get (fromList [ ( "Tom", "cat" ) ]) "Tom" == Just "cat"
+--|     get (fromList [ ( "Tom", "cat" ) ]) "Jerry" == Nothing
 pub get : Dict k v, k -> Maybe v
     where k.compare : k, k -> Order
 get (Dict tree) targetKey =
@@ -100,7 +100,8 @@ getHelp tree targetKey =
 
 --| Determine if a key is in a dictionary.
 --|
---|     member animals "Tom" == True
+--|     member (fromList [ ( "Tom", "cat" ) ]) "Tom" == True
+--|     member (fromList [ ( "Tom", "cat" ) ]) "Jerry" == False
 pub member : Dict k v, k -> Bool
     where k.compare : k, k -> Order
 member dict key =
@@ -505,7 +506,7 @@ mapTree tree func =
 --| Fold over the key-value pairs in a dictionary from lowest key to highest
 --| key.
 --|
---|     foldl animals 0 (\_ _ count -> count + 1) == size animals
+--|     foldl (fromList [ ( "a", 1 ), ( "b", 2 ) ]) 0 (\_ _ count -> count + 1) == 2
 pub foldl : Dict k v, b, (k, v, b -> b) -> b
 foldl (Dict tree) acc func =
     foldlTree tree acc func
@@ -524,7 +525,7 @@ foldlTree tree acc func =
 --| Fold over the key-value pairs in a dictionary from highest key to lowest
 --| key.
 --|
---|     foldr animals [] (\key _ names -> key :: names) == keys animals
+--|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (\key _ names -> key :: names) == [ "a", "b" ]
 pub foldr : Dict k v, b, (k, v, b -> b) -> b
 foldr (Dict tree) acc func =
     foldrTree tree acc func

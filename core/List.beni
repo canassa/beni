@@ -189,7 +189,7 @@ indexedMap xs func =
 
 --| Keep the elements that pass the test.
 --|
---|     filter [ 1, 2, 3, 4 ] isEven == [ 2, 4 ]
+--|     filter [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == [ 2, 4 ]
 --|
 --| `isGood` is asked about the first element first, so this is a `foldl` and
 --| a `reverse` rather than a `foldr` (see `map`).
@@ -259,8 +259,8 @@ member xs value =
 
 --| Determine if all elements satisfy some test.
 --|
---|     all [ 2, 4 ] isEven == True
---|     all [] isEven == True
+--|     all [ 2, 4 ] (\n -> modBy n 2 == 0) == True
+--|     all [] (\n -> modBy n 2 == 0) == True
 pub all : List a, (a -> Bool) -> Bool
 all list isOkay =
     not (any list (\x -> not (isOkay x)))
@@ -268,8 +268,8 @@ all list isOkay =
 
 --| Determine if any elements satisfy some test.
 --|
---|     any [ 2, 3 ] isEven == True
---|     any [] isEven == False
+--|     any [ 2, 3 ] (\n -> modBy n 2 == 0) == True
+--|     any [] (\n -> modBy n 2 == 0) == False
 pub any : List a, (a -> Bool) -> Bool
 any list isOkay =
     case list of
@@ -684,7 +684,7 @@ drop list n =
 --| that satisfy the test, and the second list contains all the value that do
 --| not.
 --|
---|     partition [ 1, 2, 3, 4 ] isEven == ( [ 2, 4 ], [ 1, 3 ] )
+--|     partition [ 1, 2, 3, 4 ] (\n -> modBy n 2 == 0) == ( [ 2, 4 ], [ 1, 3 ] )
 --|
 --| `pred` is asked about the first element first, so this is a `foldl` and a
 --| `reverse` of each half rather than a `foldr` (see `map`).

@@ -1023,6 +1023,19 @@ Written in beni, `pub` per declaration, doc comments on everything public. The s
 Elm 0.19's `elm/core` minus `comparable`, `compappend` and the effect modules
 (`fast-compiler.md` §3.1).
 
+**The doc examples are checked, and they are normative about behaviour.** A doc-comment line of
+exactly `--|`, five spaces and a non-space character is an EXAMPLE, and a following `--|` line
+indented further continues it; an example holding a `==` at bracket depth zero, outside string and
+character literals, is an ASSERTION and everything else is prose. `tests/blackbox/docs_test.zig`
+appends every assertion VERBATIM to a temp copy of its own module as `pub docExample_<line> : ()
+-> Bool`, so it is read in the scope the reader of that doc comment reads it in — unqualified
+names resolve to the module's own, and no qualifier is invented — then builds the temp core
+against the node platform and runs it: every assertion must COMPILE as a `Bool` equality and must
+be TRUE. An example the mechanism cannot take is named in that file's `skips` with a reason, the
+list is printed on every run, and a skip matching no example fails the gate, so the excuse cannot
+outlive the line. Fixing the example is preferred to excusing it: an example naming a value the
+docs never define is a defect in the doc, not a candidate for the skip list.
+
 **This appendix was rewritten on 2026-09-18 for static dispatch**, and
 [`static-dispatch-spike.md`](static-dispatch-spike.md) §5 is what it defers to for the `Basics`,
 `List`, `Dict` and `Set` rows: that section is the site-by-site record of the change and this one is
