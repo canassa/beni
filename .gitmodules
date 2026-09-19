@@ -14,3 +14,11 @@
 	path = references/effect
 	url = https://github.com/Effect-TS/effect
 	shallow = true
+[submodule "references/elm-browser"]
+	path = references/elm-browser
+	url = https://github.com/elm/browser
+	shallow = true
+[submodule "references/elm-virtual-dom"]
+	path = references/elm-virtual-dom
+	url = https://github.com/elm/virtual-dom
+	shallow = true

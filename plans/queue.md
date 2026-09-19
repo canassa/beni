@@ -172,3 +172,16 @@ What this re-weights (nothing here is started; implementation is parked):
 | **Source maps** (M5) | Debugging emitted JS in browser devtools without them is poor; `--source-maps` is refused today. Moves up |
 | **Testing** | The whole corpus runs under Node. A browser platform needs a headless-browser harness (or a DOM-less core it can be tested against under Node) — a harness design question before B4 |
 | **What is unaffected** | The compiler, checker, cache, optimiser and `core/` are platform-neutral; rule 6's wall and the four boundary checks apply to a browser platform exactly as to Node |
+
+## Owner decision, 2026-09-20: **un-park for RESEARCH only — a design pass on "what is a beni browser program?"**
+
+Implementation stays parked; this pass changes no code. Same shape as the Effect investigation:
+read what exists, measure in a real browser, end with a decision sheet for the owner.
+`references/elm-browser` and `references/elm-virtual-dom` are vendored (shallow) beside `elm-core`.
+
+| # | Report | State |
+|---|---|---|
+| B-R1 | **24 — Elm's browser runtime as built**: `Platform`/`Scheduler`/effect managers (`elm-core`), `Browser.*` programs, the virtual DOM (diff, patch, keyed, lazy, event delegation), animation-frame batching, ports, navigation — what each piece exists FOR, and which exist only because Elm has `Cmd`/`Sub`/`Task` | in flight |
+| B-R2 | **25 — the design space for UI under transparent effects**: what a browser program looks like when an effectful call is just a call — TEA kept, TEA with effects in `update`, components with local state, signals/fine-grained reactivity, fibers per component; how Effect users build UI (`packages/atom`), Lustre, Leptos/Dioxus, Solid, React's concurrent model, Compose; rule 7 applied | in flight |
+| B-R3 | **26 — the browser as a host for beni's fiber runtime, measured**: the event loop, the scheduling primitives (no `setImmediate`; `MessageChannel`, `scheduler.postTask`, `setTimeout` clamping, `requestAnimationFrame`, microtasks), the yield budget re-measured in Chrome, input latency under a busy fiber, what `sync` must cover (`view`, event handlers, rAF), loading/size budgets, and how a browser platform is TESTED (headless Chrome is on this machine) | in flight |
+| B-P | Synthesis: `plans/browser-decisions.md` (the owner's sheet) and `plans/browser-platform.md` (the design + slice plan, and what it changes in `plans/effects-spike.md`) | after B-R1..3 |
