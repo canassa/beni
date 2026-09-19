@@ -139,3 +139,9 @@ investigate, document and plan the spike; the spike itself follows M4 slices 1�
 | E-R3 | Research: errors, services/layers, resources, concurrency combinators, streams, schedule/retry — semantics beni must match or deliberately decline | **done** — report 23 | `docs/design/research/23-…` |
 | E-P | The spike plan: fold E-R1..3 and `plans/effects-plan.md` into `plans/effects-spike.md` (slices, measurements, acceptance), for the owner | **done** — `plans/effects-spike.md`, `plans/effects-decisions.md` (16 / 11 / 9 decisions by tier; five-question shortlist) | |
 | 51 | **A shipped beni program cannot log**: `Debug` is the only way to write a diagnostic line and `--release` refuses it (owner decision). Rule 7: fill the gap inside the wall — a platform logging function (`Node.log`/`Log.info…`), not `Debug` | todo — needs a small design (what it returns while there are no effects: a `Program` step? or wait for the `impure` bit) | found by report 22 §0 finding 5 |
+
+## Owner decisions on effects, 2026-09-19 (sheet: `plans/effects-decisions.md`)
+
+| Sheet item | Decision |
+|---|---|
+| **A6** — does `sync` ship in the first cut? | **(a) yes**, right after the two bits — it is the one guarantee-bearing item: without it there is no boundary check at all |
