@@ -1,0 +1,69 @@
+-- `core/Int32.beni`'s arithmetic, at the two ends of the 32-bit line.
+--
+-- `Int` is a double and silently inexact past 2^53 (`fast-compiler.md`
+-- §3.1); `Int32` is the escape hatch, and every result here is a
+-- two's-complement wrap rather than a loss of precision or a throw.
+--
+-- **The `mul` lines are the ones worth reading.** `0x7fffffff *
+-- 0x7fffffff` is 4611686014132420609 and `123456789 * 987654321` is
+-- 121932631112635269, both past 2^53, so a naive `(a * b) | 0` has already
+-- lost the low bits the answer is made of and would print 0 and -67153024
+-- instead of 1 and -67153019. `Math.imul` is the whole reason this module
+-- exists, and these two lines are what tell it from the naive form. Every
+-- value below was computed independently in node before it was written
+-- down.
+--
+-- Division by zero is `zero` for all three of `div`, `rem` and `mod`,
+-- which is what `Basics.idiv`, `remainderBy` and `modBy` do
+-- (`run/CoreNumericExtremes`, `core/Basics.js`). `minValue / -1` is the
+-- one true overflow of 32-bit division and wraps back to `minValue`.
+import Int32 exposing (Int32)
+import Node exposing (Program)
+import String
+
+
+show : Int32 -> String
+show n =
+    String.fromInt (Int32.toInt n)
+
+
+minusOne : Int32
+minusOne =
+    Int32.fromInt (-1)
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Int32.add Int32.maxValue Int32.one)
+        , show (Int32.add Int32.minValue minusOne)
+        , show (Int32.sub Int32.minValue Int32.one)
+        , show (Int32.sub Int32.maxValue minusOne)
+        , show (Int32.add (Int32.fromInt 2000000000) (Int32.fromInt 2000000000))
+        , show (Int32.mul Int32.maxValue Int32.maxValue)
+        , show (Int32.mul (Int32.fromInt 123456789) (Int32.fromInt 987654321))
+        , show (Int32.mul (Int32.fromInt 65536) (Int32.fromInt 65536))
+        , show (Int32.mul Int32.minValue minusOne)
+        , show (Int32.mul minusOne minusOne)
+        , show (Int32.neg Int32.minValue)
+        , show (Int32.neg Int32.maxValue)
+        , show (Int32.div Int32.minValue minusOne)
+        , show (Int32.div (Int32.fromInt 7) (Int32.fromInt 2))
+        , show (Int32.div (Int32.fromInt (-7)) (Int32.fromInt 2))
+        , show (Int32.div (Int32.fromInt 7) (Int32.fromInt (-2)))
+        , show (Int32.div (Int32.fromInt 7) Int32.zero)
+        , show (Int32.rem (Int32.fromInt 7) (Int32.fromInt 3))
+        , show (Int32.rem (Int32.fromInt (-7)) (Int32.fromInt 3))
+        , show (Int32.rem (Int32.fromInt 7) (Int32.fromInt (-3)))
+        , show (Int32.rem (Int32.fromInt 7) Int32.zero)
+        , show (Int32.rem Int32.minValue minusOne)
+        , show (Int32.mod (Int32.fromInt 7) (Int32.fromInt 3))
+        , show (Int32.mod (Int32.fromInt (-7)) (Int32.fromInt 3))
+        , show (Int32.mod (Int32.fromInt 7) (Int32.fromInt (-3)))
+        , show (Int32.mod (Int32.fromInt 7) Int32.zero)
+        , show (Int32.fromInt 4294967296)
+        , show (Int32.fromInt 2147483648)
+        , show (Int32.fromInt (-2147483649))
+        , show (Int32.fromInt 0xdeadbeef)
+        , String.fromInt (Int32.toUnsignedInt Int32.minValue)
+        ]

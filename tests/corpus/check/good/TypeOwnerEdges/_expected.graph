@@ -11,6 +11,7 @@ core:Debug -> core:String
 core:Dict -> core:Basics
 core:Dict -> core:List
 core:Dict -> core:Maybe
+core:Int32 -> core:Basics
 core:List -> core:Basics
 core:List -> core:Maybe
 core:Result -> core:Maybe

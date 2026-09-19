@@ -280,6 +280,13 @@ Evidence for the first four is in [`research/08-roc-language-answers.md`](resear
   available on it. `Int64` over BigInt can follow. The stance's exemplar: a capability Elm lacks,
   added inside the wall with no hole cut.
 
+  **Built 2026-09-19**, and two words of the paragraph above are corrected by what was built.
+  It is a `pub equatable foreign type`, not an `opaque type` — a type with no beni representation
+  is what `foreign type` means (`language.md` §5.4) — and while `*` is indeed unavailable, `==` and
+  `<` are NOT, because `core/Int32.beni` declares its own `pub eq` and `pub compare` and the module
+  rule makes them the type's methods. The signature list is `checker.md` Appendix B, the paragraph
+  a reader meets first is `language.md` §2.5, and it is deliberately not in the prelude.
+
 ### Still open
 
 Each is cheaper to take now than later:

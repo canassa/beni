@@ -29,9 +29,12 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
   seven were stale when the list was written** and one is not a backend item at all: interpolation,
   tuples and record update worked in M3a (`plans/m3b-audit.md` measured every row of §4 against the
   code), tail-call loops landed in `bbfc869` (§8), decision trees in `cf7806f` (§7), and `?` with
-  this slice (§4). What is left is **`Int32`**, which is a *language* gap and not a codegen one —
-  no type, no `core` module, no paragraph in `language.md` — and needs an owner decision rather
-  than an emitter.
+  this slice (§4). **`Int32` landed on 2026-09-19 and the list is spent.** It was a *language* gap
+  and never a codegen one — no type, no `core` module, no paragraph in `language.md` — and what
+  built it is `core/Int32.beni` with its sibling, `language.md` §2.5 and Appendix A, and
+  `checker.md` Appendix B's signature list. The emitter needed **no change at all**: an `Int32` is
+  a number, its operations are ordinary `foreign` calls, and `==`/`<` on one resolve through the
+  module rule to the module's own `pub eq`/`pub compare` like any other type's.
 - **M3c — the optimiser.** Reachability elimination, reachability-driven inlining, local
   dead-binding elimination, renaming, field ambiguation, compact printing. *Acceptance: §9's size
   and throughput numbers, and §9's size and throughput numbers alone; the direct-call share that used to decide §9.3 is
@@ -217,7 +220,8 @@ mapping.
 | tuple | fixed-shape object per arity, no runtime tag |
 | list | cons cells (`{$:1, a, b}` / the empty singleton), pending M3c's benchmark of a vector trie |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
-| `Int` | a number; `Int32` a number kept in range by its operations (§3.1) |
+| `Int` | a number |
+| `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B) |
 | `case` | a decision tree (§7) |
 | `if` | conditional expression when both arms are expressions, else `if`/`else` |
 | `let` | a VALUE binding is a `const` in the enclosing statement list, in written order; a binding whose right-hand side is a **function** is a `function` declaration, which JavaScript **hoists** — every one of them, not only the mutually recursive ones. The hoisting is what makes mutual recursion between `let` functions work, and `language.md` §7's initialisation rule is stated in terms of it: a value may not read a `const` below it, and may read a `function` anywhere |

@@ -37,9 +37,9 @@ its decision trees for pattern matching and its `?` have landed
 ([`backend.md`](docs/design/backend.md) §8, §7, §4); and M3c's first piece,
 **reachability-driven dead code elimination**, has landed with it (§9,
 `src/js/Reach.zig`) — an empty program went from 70 684 bytes in 19 files to
-2 147 in 5, with `derived_bytes` exactly 0. **M3b's list in §1 is otherwise
-spent**: interpolation, tuples and record update worked in M3a, and `Int32` is
-a language gap (no type, no module, no paragraph) and not a codegen one.
+2 147 in 5, with `derived_bytes` exactly 0. **M3b's list in §1 is now spent**:
+interpolation, tuples and record update worked in M3a, and `Int32` — the last
+item, a language gap and not a codegen one — was built on 2026-09-19.
 [`backend.md`](docs/design/backend.md) is the contract,
 [`fast-compiler.md`](docs/design/fast-compiler.md) §13 the build order.
 
@@ -66,7 +66,19 @@ is its only instrument for evaluation order (24 of the 121 fixtures);
 in M3c: **item 4**, type-directed field ambiguation, which needs a per-build
 field-interference artifact the backend
 does not receive (§9's *What the second slice owes*), integer constructor tags
-riding with it, and chunking (§10). `Int32`'s owner decision is still open.
+riding with it, and chunking (§10).
+
+**`core/Int32` has landed** (2026-09-19), the owner's decision taken: exact
+32-bit work has its own type, total and wrapping, with `mul` on `Math.imul`
+because a 32-bit product can exceed 2⁵³ and `Bitwise` alone therefore cannot
+fake it. Only core may write `foreign` (rule 6), so if core did not ship
+wrapping multiply nobody could add it. `*` is deliberately unavailable and
+`==`/`<` are, through the module's own `pub eq`/`pub compare`; it is **not** in
+the prelude, so `import Int32`. `language.md` §2.5 and Appendix A,
+[`checker.md`](docs/design/checker.md) Appendix B's signature list,
+[`backend.md`](docs/design/backend.md) §1 and §4. The emitter needed no change;
+`tests/corpus/run/Int32Hash` writes FNV-1a, xorshift32 and murmur3's `fmix32`
+in beni and checks them against published vectors.
 
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`

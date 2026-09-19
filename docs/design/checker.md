@@ -1164,11 +1164,49 @@ the inventory. Three things moved. `Char` and `String` are **declared by their o
 `core/Dict/String.beni` and `core/Dict/Int.beni` are **deleted**: they existed only to hide the
 comparator argument, and there is nothing left to hide.
 
-- `Int32` (its own module): `pub opaque type Int32`, with total wrapping arithmetic — `mul` bound
-  to `Math.imul`, `add`/`sub` to the truncating form, `and`/`or`/`xor`/shifts to the native
-  operators, plus `fromInt` (truncating) and `toInt` (identity). The escape hatch of
-  `fast-compiler.md` §3.1: `Int` is a double, and exact 32-bit work has a type that says so. `*` is
-  deliberately unavailable on it, which is what makes mask-after-multiply unreachable.
+- `Int32` (its own module, **built 2026-09-19**): the escape hatch of `fast-compiler.md` §3.1 —
+  `Int` is a double, and exact 32-bit work has a type that says so. `*` is deliberately unavailable
+  on it, which is what makes mask-after-multiply unreachable; `==` and `<` are available, because
+  the module declares its own `pub eq` and `pub compare` and the module rule
+  (`static-dispatch-spike.md` §1.2, §3.3) makes them the type's methods, exactly as `String`'s
+  `compare` is `String`'s. It is **not** in the well-known method table of §3.2 and needs nothing
+  from it. Not in the prelude (`language.md` Appendix A, §2.5): `import Int32`.
+
+  The declaration is `pub equatable foreign type Int32`, not the `pub opaque type Int32` this
+  bullet said before it was built. A `foreign type` is what a type with no beni representation is
+  (`language.md` §5.4) — the value is an ordinary JavaScript number kept in int32 range by its
+  operations (`backend.md` §4) — and `equatable` is what makes a record or custom type holding one
+  derive its own `eq` (`Types.Entry.equatable`); `comparable` comes from the `pub compare`, through
+  `declaresPubCompare`.
+
+  Every function is **total**: every result is a 32-bit value, nothing throws, and division by zero
+  is `zero` for all three of `div`, `rem` and `mod` — the answer `Basics.idiv`, `remainderBy` and
+  `modBy` already give. `minValue / -1` wraps to `minValue`. A shift count is an `Int` and is taken
+  **modulo 32**, which is what JavaScript's shift operators do with it.
+
+  | | Signature | |
+  |---|---|---|
+  | `fromInt` | `Int -> Int32` | **`foreign`**. Truncating (`\| 0`), so it is total: a fraction goes towards zero, a NaN or an infinity is zero |
+  | `toInt` | `Int32 -> Int` | **`foreign`**. Signed, so the top bit reads as negative; exact |
+  | `toUnsignedInt` | `Int32 -> Int` | **`foreign`**. 0…4294967295, the form hash and checksum vectors are published in |
+  | `add` `sub` `mul` | `Int32, Int32 -> Int32` | **`foreign`**. `mul` is `Math.imul`, and is the whole reason the module exists: a 32-bit product can exceed 2⁵³, so `(a * b) \| 0` is already wrong |
+  | `div` `rem` `mod` | `Int32, Int32 -> Int32` | **`foreign`**. `div` truncates towards zero; `rem` takes the sign of the dividend (`remainderBy`), `mod` the sign of the divisor (`modBy`) |
+  | `and` `or` `xor` | `Int32, Int32 -> Int32` | **`foreign`**. The native operators, already exactly 32-bit |
+  | `shiftLeft` `shiftRight` `shiftRightZero` | `Int32, Int -> Int32` | **`foreign`**. Arithmetic `>>` and logical `>>>`; the logical one is brought back into signed range, because `>>>` in JavaScript answers unsigned |
+  | `zero` `one` `minValue` `maxValue` | `Int32` | beni, over `fromInt` |
+  | `neg` `complement` | `Int32 -> Int32` | beni. `neg` is `sub zero n`, `complement` is `xor n (fromInt -1)` |
+  | `rotateLeft` `rotateRight` | `Int32, Int -> Int32` | beni, over the shifts and `or`. What xorshift and murmur mix with |
+  | `eq` | `Int32, Int32 -> Bool` | beni. What `==` and `/=` mean on one |
+  | `compare` | `Int32, Int32 -> Order` | beni, over `Basics.compare`. **Signed**, and what `<` and its three relatives mean |
+
+  **Deliberately absent.** No `toString`/`fromString`: `String.fromInt (Int32.toInt n)` and
+  `Int32.fromInt` over `String.toInt` are two obvious calls, and adding them would make `Int32`
+  import `String` for nothing. No `min`/`max`/`abs`/`clamp`: `Basics`' are `number`-kinded and do
+  not apply, and a hash, PRNG, checksum or binary-format author — the audience this module was
+  sized for — needs none of them; `compare` is there when one is wanted. No `pow`, no `Int64`
+  (`fast-compiler.md` §3.1 leaves that for BigInt), no bit-at-index accessors, no
+  `fromBytes`/`toBytes` — those belong to a binary-format library written OVER this one, which is
+  the point of shipping the primitive inside the wall.
 **Two conventions govern every signature below** (`fast-compiler.md` §9.3 items 2 and 8,
 `language.md` §6.7). Function types are **n-ary**, `A, B -> C`. Argument order is **subject first
 and function last**, so that `|>` inserts at the first argument and `<-` reaches the last. Where a

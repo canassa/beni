@@ -1,0 +1,342 @@
+--! Exact 32-bit integers, for the arithmetic `Int` cannot do.
+--!
+--! `Int` is a double (`fast-compiler.md` §3.1): exact to 9007199254740991
+--! and silently inexact after it. That is the right default and the wrong
+--! tool for hashing, checksums, pseudo-random numbers and binary formats,
+--! which are specified as arithmetic that WRAPS at 32 bits. Bit operations
+--! alone do not get you there, because a 32-bit product can exceed 2^53 —
+--! `0x7fffffff * 0x7fffffff` is off by more than a rounding error before
+--! anything masks it — so a wrapping multiply cannot be faked on doubles.
+--! Elm's own random and hashing libraries splitting every multiply into
+--! 16-bit halves by hand is the evidence.
+--!
+--! `Int32` is that multiply, and the rest of a wrapping 32-bit machine with
+--! it. Every function here is TOTAL: every result is a two's-complement
+--! 32-bit value, nothing overflows into inexactness, nothing throws, and
+--! division by zero is `zero` rather than an exception or an infinity —
+--! the same answer `Basics.idiv`, `modBy` and `remainderBy` give.
+--!
+--! **`Int32` is not in the prelude** (`language.md` Appendix A). Write
+--! `import Int32` and either qualify the names or call them as methods:
+--! `Int32.add a b`, `a.add b` and `a |> Int32.add b` are the same call.
+--!
+--! **The arithmetic operators do not work on it, and that is the point.**
+--! `+`, `-`, `*`, `/`, `//` and `^` are `number`-kinded — `Int` and
+--! `Float` — and `Int32` is neither, so `a + b` on two of them does not
+--! compile. Write `add a b`. An operator that read like `Int`'s would hide
+--! the one thing this type exists to say, which is that its arithmetic
+--! wraps. `==`, `/=`, `<`, `<=`, `>` and `>=` DO work: `eq` and `compare`
+--! below are this module's own well-known methods
+--! (`static-dispatch-spike.md` §3.3), so an `Int32` is also a `Dict` key, a
+--! `Set` member and sortable by `List.sort`, and a record or custom type
+--! holding one derives its `eq` and `compare` from these. The order is
+--! SIGNED: `minValue < zero < maxValue`.
+--!
+--! **There is no `Int32` literal.** Write `fromInt 7`, or `fromInt
+--! 0xdeadbeef` for a bit pattern — `fromInt` truncates to 32 bits, so a
+--! literal past `maxValue` is its low 32 bits and never an error.
+--!
+--! Argument order is subject first, so `x.shiftLeft 5` and
+--! `x |> Int32.shiftLeft 5` both read as "shift x left by 5".
+--!
+--! The `foreign` declarations here are the machine operations and the two
+--! boundaries, and nothing else:
+--!
+--!   - `fromInt` `toInt` `toUnsignedInt` — the number/`Int32` boundary,
+--!     which is a truncation in one direction and a reinterpretation in the
+--!     other.
+--!   - `add` `sub` `mul` `div` `rem` `mod` — wrapping arithmetic. `mul` is
+--!     `Math.imul`, which is the whole reason this module exists.
+--!   - `and` `or` `xor` `shiftLeft` `shiftRight` `shiftRightZero` — the
+--!     native bit operators, which are already exactly 32-bit.
+--!
+--! Everything else — `neg`, `complement`, `rotateLeft`, `rotateRight`, the
+--! four constants, `eq` and `compare` — is written in beni over those, so
+--! it is type-checked, eliminable and documented by the examples below.
+
+--| A signed 32-bit integer, in two's-complement. Its arithmetic wraps
+--| rather than losing precision, which is the difference between it and
+--| `Int`.
+--|
+--|     toInt (fromInt 7) == 7
+--|
+--| Two `Int32`s are equal when they are the same 32-bit value, and they are
+--| ordered as signed integers.
+pub equatable foreign type Int32
+
+
+--| Truncate an `Int` to 32 bits, keeping the low bits. This is the only way
+--| to make an `Int32`, and it is total: every `Int` has an answer.
+--|
+--|     toInt (fromInt 7) == 7
+--|     toInt (fromInt 0xdeadbeef) == -559038737
+--|     toInt (fromInt 4294967296) == 0
+--|     toInt (fromInt 2147483648) == -2147483648
+--|     toInt (fromInt (-2147483649)) == 2147483647
+--|
+--| A value that is not a whole number in range is brought into range the
+--| same way JavaScript's `| 0` does, so nothing here can fail: a fraction
+--| is truncated towards zero, and a NaN or an infinity is `zero`.
+--|
+--|     toInt (fromInt (truncate 3.7)) == 3
+pub foreign fromInt : Int -> Int32
+
+
+--| Read an `Int32` back as an `Int`, SIGNED — so a value with the top bit
+--| set comes back negative.
+--|
+--|     toInt (fromInt 0x7fffffff) == 2147483647
+--|     toInt (fromInt 0x80000000) == -2147483648
+--|     toInt (fromInt 0xffffffff) == -1
+--|
+--| This never loses anything: every 32-bit value fits an `Int` exactly.
+pub foreign toInt : Int32 -> Int
+
+
+--| Read an `Int32` back as an `Int`, UNSIGNED — always in 0 to 4294967295.
+--|
+--|     toUnsignedInt (fromInt 0x7fffffff) == 2147483647
+--|     toUnsignedInt (fromInt 0x80000000) == 2147483648
+--|     toUnsignedInt (fromInt 0xffffffff) == 4294967295
+--|     toUnsignedInt (fromInt (-1)) == 4294967295
+--|
+--| Hash functions, checksums and binary formats are published in unsigned
+--| terms, so this is what you print a result with when you want to compare
+--| it against someone else's test vectors.
+pub foreign toUnsignedInt : Int32 -> Int
+
+
+--| Add, wrapping at 32 bits.
+--|
+--|     toInt (add (fromInt 1) (fromInt 2)) == 3
+--|     add maxValue one == minValue
+--|     add minValue (fromInt (-1)) == maxValue
+pub foreign add : Int32, Int32 -> Int32
+
+
+--| Subtract, wrapping at 32 bits.
+--|
+--|     toInt (sub (fromInt 3) (fromInt 1)) == 2
+--|     sub minValue one == maxValue
+--|     sub maxValue (fromInt (-1)) == minValue
+pub foreign sub : Int32, Int32 -> Int32
+
+
+--| Multiply, wrapping at 32 bits — the operation `Int` cannot fake.
+--|
+--|     toInt (mul (fromInt 6) (fromInt 7)) == 42
+--|
+--| The low 32 bits of the true product, always. The two cases below are the
+--| ones that tell a correct implementation from a naive `(a * b) | 0`: the
+--| true products are 4611686014132420609 and 121932631112635269, both past
+--| 2^53, so the double has already lost the low bits the answer is made of,
+--| and the naive form answers 0 and -67153024 instead.
+--|
+--|     toInt (mul maxValue maxValue) == 1
+--|     toInt (mul (fromInt 123456789) (fromInt 987654321)) == -67153019
+--|     mul minValue (fromInt (-1)) == minValue
+pub foreign mul : Int32, Int32 -> Int32
+
+
+--| Integer division, truncated towards zero. **Division by zero is `zero`**,
+--| as it is for `Basics.idiv`: `Int32` has no infinity and no exception, so
+--| returning one would put a value in the type that the type does not hold.
+--|
+--|     toInt (div (fromInt 7) (fromInt 2)) == 3
+--|     toInt (div (fromInt (-7)) (fromInt 2)) == -3
+--|     div (fromInt 7) zero == zero
+--|
+--| `minValue / -1` is the one true overflow of 32-bit division — the answer
+--| is 2147483648, which is not an `Int32` — and it wraps like everything
+--| else here.
+--|
+--|     div minValue (fromInt (-1)) == minValue
+pub foreign div : Int32, Int32 -> Int32
+
+
+--| Remainder, taking the sign of the DIVIDEND, like `Basics.remainderBy`
+--| and like `%` in JavaScript. Zero for a zero divisor.
+--|
+--|     toInt (rem (fromInt 7) (fromInt 3)) == 1
+--|     toInt (rem (fromInt (-7)) (fromInt 3)) == -1
+--|     rem (fromInt 7) zero == zero
+--|     rem minValue (fromInt (-1)) == zero
+pub foreign rem : Int32, Int32 -> Int32
+
+
+--| Modulus, taking the sign of the DIVISOR, like `Basics.modBy`. Zero for a
+--| zero divisor. This is the one you want for wrapping an index into a
+--| table.
+--|
+--|     toInt (mod (fromInt 7) (fromInt 3)) == 1
+--|     toInt (mod (fromInt (-7)) (fromInt 3)) == 2
+--|     mod (fromInt 7) zero == zero
+pub foreign mod : Int32, Int32 -> Int32
+
+
+--| Bitwise and.
+--|
+--|     toInt (and (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0x0f000f00
+--|     and (fromInt 0xdeadbeef) zero == zero
+pub foreign and : Int32, Int32 -> Int32
+
+
+--| Bitwise or.
+--|
+--|     toUnsignedInt (or (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xff0fff0f
+--|     or (fromInt 0xdeadbeef) zero == fromInt 0xdeadbeef
+pub foreign or : Int32, Int32 -> Int32
+
+
+--| Bitwise exclusive or.
+--|
+--|     toUnsignedInt (xor (fromInt 0xff00ff00) (fromInt 0x0f0f0f0f)) == 0xf00ff00f
+--|     xor (fromInt 0xdeadbeef) (fromInt 0xdeadbeef) == zero
+pub foreign xor : Int32, Int32 -> Int32
+
+
+--| Shift left, filling with zeros. **The count is taken modulo 32**, which
+--| is what JavaScript's `<<` does with it: only its low five bits are read,
+--| so a count of 32 is a shift of 0 and a count of -1 is a shift of 31.
+--|
+--|     toInt (shiftLeft one 4) == 16
+--|     shiftLeft one 31 == minValue
+--|     shiftLeft one 32 == one
+--|     shiftLeft one 33 == fromInt 2
+pub foreign shiftLeft : Int32, Int -> Int32
+
+
+--| Shift right, ARITHMETIC: the sign bit is copied into the top, so a
+--| negative number stays negative. The count is taken modulo 32, as above.
+--|
+--|     toInt (shiftRight (fromInt 16) 4) == 1
+--|     toInt (shiftRight (fromInt (-16)) 4) == -1
+--|     shiftRight (fromInt (-1)) 31 == fromInt (-1)
+pub foreign shiftRight : Int32, Int -> Int32
+
+
+--| Shift right, LOGICAL: zeros are shifted into the top, so the result of a
+--| non-zero shift is never negative. The count is taken modulo 32, as
+--| above.
+--|
+--|     toInt (shiftRightZero (fromInt 16) 4) == 1
+--|     toInt (shiftRightZero (fromInt (-16)) 4) == 268435455
+--|     toInt (shiftRightZero (fromInt (-1)) 31) == 1
+--|
+--| This is JavaScript's `>>>`, whose result is unsigned; it is brought back
+--| into signed 32-bit range here so that it stays an `Int32`, and a shift
+--| of 0 is therefore the identity rather than a conversion.
+--|
+--|     shiftRightZero (fromInt (-1)) 0 == fromInt (-1)
+pub foreign shiftRightZero : Int32, Int -> Int32
+
+
+--| Zero.
+--|
+--|     toInt zero == 0
+pub zero : Int32
+zero =
+    fromInt 0
+
+
+--| One.
+--|
+--|     toInt one == 1
+pub one : Int32
+one =
+    fromInt 1
+
+
+--| The smallest `Int32`, -2147483648. There is no `Int32` whose `neg` or
+--| `abs` this is, which is the two's-complement asymmetry and not a defect.
+--|
+--|     toInt minValue == -2147483648
+--|     neg minValue == minValue
+pub minValue : Int32
+minValue =
+    fromInt (-2147483648)
+
+
+--| The largest `Int32`, 2147483647.
+--|
+--|     toInt maxValue == 2147483647
+--|     add maxValue one == minValue
+pub maxValue : Int32
+maxValue =
+    fromInt 2147483647
+
+
+--| Negate, wrapping. Written as a subtraction from zero, exactly as
+--| `Basics.negate` is.
+--|
+--|     toInt (neg (fromInt 42)) == -42
+--|     neg zero == zero
+--|     neg minValue == minValue
+pub neg : Int32 -> Int32
+neg n =
+    sub zero n
+
+
+--| Flip every bit — JavaScript's `~`, written as an exclusive or with all
+--| ones because that is what it is.
+--|
+--|     toInt (complement zero) == -1
+--|     toInt (complement (fromInt 0x0f0f0f0f)) == -252645136
+--|     complement (complement (fromInt 12345)) == fromInt 12345
+pub complement : Int32 -> Int32
+complement n =
+    xor n (fromInt (-1))
+
+
+--| Rotate left: the bits shifted off the top come back in at the bottom.
+--| Rotation is what a hash or a PRNG mixes with, and it is not a shift —
+--| nothing is lost.
+--|
+--|     rotateLeft one 1 == fromInt 2
+--|     rotateLeft minValue 1 == one
+--|     rotateLeft (fromInt 0x12345678) 8 == fromInt 0x34567812
+--|     rotateLeft (fromInt 12345) 0 == fromInt 12345
+--|     rotateLeft (fromInt 12345) 32 == fromInt 12345
+pub rotateLeft : Int32, Int -> Int32
+rotateLeft n count =
+    or (shiftLeft n count) (shiftRightZero n (32 - count))
+
+
+--| Rotate right, the mirror of `rotateLeft`.
+--|
+--|     rotateRight (fromInt 2) 1 == one
+--|     rotateRight one 1 == minValue
+--|     rotateRight (fromInt 0x12345678) 8 == fromInt 0x78123456
+--|     rotateRight (fromInt 12345) 0 == fromInt 12345
+pub rotateRight : Int32, Int -> Int32
+rotateRight n count =
+    or (shiftRightZero n count) (shiftLeft n (32 - count))
+
+
+--| Whether two `Int32`s are the same 32-bit value. This is what `==` and
+--| `/=` on them mean (`static-dispatch-spike.md` §3.3), and it stays
+--| callable by name.
+--|
+--|     eq (fromInt 5) (fromInt 5) == True
+--|     eq (fromInt 5) (fromInt 6) == False
+--|     eq (fromInt 4294967296) zero == True
+pub eq : Int32, Int32 -> Bool
+eq a b =
+    toInt a == toInt b
+
+
+--| Compare two `Int32`s as SIGNED integers. This is what `<`, `<=`, `>` and
+--| `>=` on them mean, and it is what makes an `Int32` a `Dict` key, a `Set`
+--| member and sortable.
+--|
+--|     compare (fromInt 1) (fromInt 2) == LT
+--|     compare (fromInt 2) (fromInt 2) == EQ
+--|     compare minValue maxValue == LT
+--|     compare (fromInt (-1)) zero == LT
+--|
+--| Signed, not unsigned: `fromInt 0xffffffff` is -1 and sorts below `zero`,
+--| however you print it. Sort a hash table by `toUnsignedInt` when you want
+--| the other order.
+pub compare : Int32, Int32 -> Order
+compare a b =
+    Basics.compare (toInt a) (toInt b)

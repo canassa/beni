@@ -155,6 +155,23 @@ exponent := [eE] [+-]? [0-9]+
 | a float only before a digit | numeric lexing continues past `.` **only if the next byte is a digit**: `1.e5` lexes as `int` `dot_lower` (a field access on a literal, rejected by the checker), not as a float. (`fast-compiler.md` §3.2 mentions `e`/`E` after the dot as well; the grammar above has no such form, so the lexer does not take it.) `x.0` never starts a float because it starts with a lower identifier (§2.4). |
 | not accepted | underscores, a leading `+`, octal/binary, a trailing `.`; a `-` is never part of a literal (§6.5, negation). An identifier character immediately after a number (`12abc`, `0x1G`) is `invalid_number`. |
 
+**Three numeric types, two of them written as literals.** An `int` literal is `number`-kinded and
+resolves to `Int` or `Float`; a `float` literal is `Float`. `Int` is a **double** — exact to
+9007199254740991 and silently inexact past it — which is the right default and the wrong tool for
+hashing, checksums, PRNGs and binary formats. Those get **`Int32`**, `core/Int32.beni`'s
+`pub equatable foreign type`: a signed 32-bit integer in two's-complement whose arithmetic wraps.
+Every one of its operations is total — a result is always a 32-bit value, nothing throws, and
+division by zero is zero, as it is for `Basics.idiv`, `modBy` and `remainderBy`
+(`fast-compiler.md` §3.1, `checker.md` Appendix B).
+
+| About `Int32` | |
+|---|---|
+| literals | **there is none**. `Int32.fromInt 7`, or `Int32.fromInt 0xdeadbeef` for a bit pattern: `fromInt` truncates to 32 bits, so a literal past 2147483647 is its low 32 bits and never an error. `Int32.toInt` and `Int32.toUnsignedInt` go back, signed and unsigned. |
+| `+` `-` `*` `/` `//` `^` | **do not work on it, by design.** They are `number`-kinded — `Int` or `Float` — and `Int32` is neither, so `a + b` on two of them is `kind_mismatch`. An operator that read like `Int`'s would hide the one thing the type exists to say. Write `Int32.add`, `sub`, `mul`, `div`, `rem`, `mod`, or call one as a method: `a.add b`. The diagnostic names them. |
+| `==` `/=` `<` `<=` `>` `>=` | **do work.** `core/Int32.beni` declares its own `pub eq` and `pub compare`, and the module rule (`static-dispatch-spike.md` §1.2, §3.3) makes them the type's methods — so an `Int32` is a `Dict` key, a `Set` member and sortable, and a record or custom type holding one derives its own `eq`/`compare` from them. The order is **signed**: `minValue < zero < maxValue`, and `Int32.fromInt 0xffffffff` is -1. |
+| overflow | **two's-complement wrap, always, and never an exception** — that is the guarantee the type buys: no runtime error and no silent inexactness. `minValue` has no negation in the type and `neg minValue` is `minValue`. |
+| prelude | **not in it** (Appendix A). `import Int32` is required, and no other module's meaning changes. |
+
 ### 2.6 Strings and interpolation
 
 ```
@@ -928,6 +945,13 @@ fromPolar isNaN isInfinite identity always never
 Lowering resolves each to `import_value(Basics, name)` / `import_ctor(Maybe, Just)` etc., the same
 form an explicit `import Basics exposing (max)` would produce, so nothing downstream knows the
 prelude exists.
+
+**`Int32` is deliberately absent from every row above** (§2.5). It is a core module like any other
+and reaching for it is `import Int32`: it is the escape hatch of `fast-compiler.md` §3.1 rather
+than part of the language everyone writes, and putting `Int32.add` a keystroke away from `+` would
+make the type look like an alternative `Int` instead of the specialist it is. The absence is also
+mechanical — the `InternPool.WellKnown` indices ARE the prelude membership test, so a name in that
+enum is a prelude name, and `Int32` may not join it.
 
 **Which module a prelude type belongs to moved for two of them, and the table above did not change.**
 `String` and `Char` are declared in `String` and `Char` rather than in `Basics` (§5.4), because the

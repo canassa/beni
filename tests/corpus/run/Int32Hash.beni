@@ -1,0 +1,112 @@
+-- The proof that `Int32` is a capability and not a decoration: three
+-- published 32-bit algorithms, written in beni, checked against their
+-- published test vectors.
+--
+-- None of them can be written over `Int`. Each is a chain of wrapping
+-- MULTIPLIES, and a 32-bit product can reach 4611686014132420609 — past
+-- 2^53, where a double has already lost the low bits the next step reads.
+-- That is `fast-compiler.md` §3.1's argument for the type, and this file is
+-- it executed. `Bitwise` alone would not do: xorshift32 is shifts and xors
+-- and needs none, but FNV-1a and `fmix32` are multiplies and nothing else
+-- would give them.
+--
+--   - **FNV-1a, 32-bit.** Offset basis 0x811c9dc5, prime 0x01000193, and
+--     `hash = (hash xor byte) * prime` per byte. The vectors are the ones
+--     the FNV reference publishes: "" is 0x811c9dc5, "a" is 0xe40c292c and
+--     "foobar" is 0xbf9cf968 — 2166136261, 3826002220 and 3214735720
+--     unsigned. The input is ASCII, so a `Char`'s code point is its byte.
+--   - **xorshift32**, Marsaglia's `x ^= x << 13; x ^= x >>> 17; x ^= x <<
+--     5`. From seed 1 the sequence starts 270369, 67634689, 2647435461.
+--     The middle step is the LOGICAL shift: with an arithmetic one the
+--     sequence is wrong from its second term.
+--   - **`fmix32`**, murmur3's finaliser. Two multiplies by 0x85ebca6b and
+--     0xc2b2ae35 around three logical shifts; `fmix32 0` is 0, which is the
+--     known fixed point, and `fmix32 0x9747b28c` is 3954623016.
+--
+-- Everything is printed through `toUnsignedInt`, because that is the form
+-- these vectors are published in — `toInt` of the same values is negative
+-- wherever the top bit is set, which is the signed/unsigned decision
+-- `core/Int32.beni` documents. Every value below was computed
+-- independently in node before it was written down.
+import Int32 exposing (Int32)
+import List
+import Node exposing (Program)
+import String
+
+
+unsigned : Int32 -> String
+unsigned n =
+    String.fromInt (Int32.toUnsignedInt n)
+
+
+fnvPrime : Int32
+fnvPrime =
+    Int32.fromInt 0x01000193
+
+
+fnvOffset : Int32
+fnvOffset =
+    Int32.fromInt 0x811C9DC5
+
+
+fnv1a : String -> Int32
+fnv1a text =
+    List.foldl (String.toList text) fnvOffset fnvStep
+
+
+fnvStep : Char, Int32 -> Int32
+fnvStep char hash =
+    Int32.mul (Int32.xor hash (Int32.fromInt (Char.toCode char))) fnvPrime
+
+
+xorshift32 : Int32 -> Int32
+xorshift32 seed =
+    let
+        a =
+            Int32.xor seed (Int32.shiftLeft seed 13)
+
+        b =
+            Int32.xor a (Int32.shiftRightZero a 17)
+    in
+    Int32.xor b (Int32.shiftLeft b 5)
+
+
+xorshiftRun : Int32, Int -> List Int32
+xorshiftRun seed count =
+    if count <= 0 then
+        []
+    else
+        let
+            next =
+                xorshift32 seed
+        in
+        next :: xorshiftRun next (count - 1)
+
+
+fmix32 : Int32 -> Int32
+fmix32 h =
+    let
+        a =
+            Int32.xor h (Int32.shiftRightZero h 16)
+
+        b =
+            Int32.mul a (Int32.fromInt 0x85EBCA6B)
+
+        c =
+            Int32.xor b (Int32.shiftRightZero b 13)
+
+        d =
+            Int32.mul c (Int32.fromInt 0xC2B2AE35)
+    in
+    Int32.xor d (Int32.shiftRightZero d 16)
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map [ "", "a", "foobar", "hello", "beni" ] (\text -> unsigned (fnv1a text))
+            ++ List.map (xorshiftRun Int32.one 8) unsigned
+            ++ List.map
+                [ 0, 1, 2, 0x9747B28C, 123456789 ]
+                (\n -> unsigned (fmix32 (Int32.fromInt n)))
+        )

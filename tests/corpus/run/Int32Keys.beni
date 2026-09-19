@@ -1,0 +1,83 @@
+-- An `Int32` wherever the language asks a type for its `eq` and `compare`.
+--
+-- `Int32` is a `foreign type`, so there are no constructors to derive
+-- either method from (`static-dispatch-spike.md` §3.3). What answers for it
+-- is step 1 of the same rule: `core/Int32.beni` declares its own `pub eq`
+-- and `pub compare`, and the module rule makes them the type's methods —
+-- the way `String` has always answered `compare`. So `==` and `<` work, a
+-- `Dict` keyed by one sorts its keys, a `Set` deduplicates them, and
+-- `List.sort` discharges its `where a.compare` against them.
+--
+-- **The ordering is SIGNED**, which is the decision worth pinning: the
+-- three values below are 0xffffffff, 0x80000000 and 1, and an unsigned sort
+-- would put 1 first. Signed, `minValue` is first and -1 is below 0.
+--
+-- The last two lines are the reason a `foreign type` needed its own `eq`
+-- at all: a record and a custom type holding an `Int32` derive THEIR `eq`
+-- and `compare` structurally, and each position asks the type at it for its
+-- own method — so `Sample` and `Tagged` are ordered by `Int32.compare`
+-- without either of them mentioning it.
+import Dict exposing (Dict)
+import Int32 exposing (Int32)
+import List
+import Node exposing (Program)
+import Set
+import String
+
+
+type alias Sample =
+    { id : Int32, label : String }
+
+
+type Tagged
+    = Tagged Int32
+    | Untagged
+
+
+show : Int32 -> String
+show n =
+    String.fromInt (Int32.toInt n)
+
+
+yesNo : Bool -> String
+yesNo b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+samples : List Int32
+samples =
+    [ Int32.fromInt 0xFFFFFFFF, Int32.minValue, Int32.one, Int32.zero, Int32.maxValue ]
+
+
+counts : Dict Int32 String
+counts =
+    Dict.fromList
+        [ ( Int32.fromInt 7, "seven" )
+        , ( Int32.minValue, "min" )
+        , ( Int32.fromInt (-1), "minus one" )
+        , ( Int32.maxValue, "max" )
+        ]
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map (List.sort samples) show
+            ++ List.map (Set.toList (Set.fromList (samples ++ samples))) show
+            ++ List.map (Dict.keys counts) show
+            ++ Dict.values counts
+            ++ [ yesNo (Dict.member counts Int32.minValue)
+               , yesNo (Dict.member counts Int32.zero)
+               , yesNo (Int32.fromInt 0xFFFFFFFF == Int32.fromInt (-1))
+               , yesNo (Int32.minValue < Int32.zero)
+               , yesNo (Int32.fromInt 0xFFFFFFFF < Int32.zero)
+               , yesNo ({ id = Int32.one, label = "a" } == { id = Int32.fromInt 1, label = "a" })
+               , yesNo ({ id = Int32.one, label = "a" } < { id = Int32.fromInt 2, label = "a" })
+               , yesNo (Tagged Int32.minValue < Tagged Int32.maxValue)
+               , yesNo (Tagged Int32.one == Tagged (Int32.fromInt 0x0100000001))
+               , yesNo (Untagged < Tagged Int32.minValue)
+               ]
+        )
