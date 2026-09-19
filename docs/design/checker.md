@@ -970,6 +970,35 @@ subject is already supplied. Each fixture asserts the whole diagnostic. The dire
 that scored 37 of 38 under currying are re-cut rather than kept, because a different rule now
 produces their message, and `ComposeMissingArg` goes with `>>` and `<<`.
 
+### 8.4 The 80-column rule, enforced after interpolation
+
+Added 2026-09-19 (queue slice 45). **A diagnostic's prose is 80 columns wide, and the width is
+measured on the message the reader gets, not on the format string the author wrote.** Every message
+in the compiler is a multi-line string literal wrapped by hand around `{s}` holes, and the width of
+what goes into a hole — a type, a path, a module, a name — is not known where the wrapping was
+done. `main_not_program`'s second paragraph was written to fit and then spliced `Basics.Int` into
+its first line, which came out at 85 columns; a sweep of `tests/corpus/**/*.diag` found 131 such
+lines across 50 goldens, in codes as far apart as `shadowing` and `unclosed_delimiter`. Fixing the
+prose fixes one message; the rule is enforced where the message is finished.
+
+`render/wrap.zig` re-wraps every message on its way into a diagnostic — once, at
+`Session.Worker.reportAs` for the check waves and at `Session.renderLate` for the emit wave. Four
+properties make it safe to run over prose nobody re-read:
+
+- **Only an over-wide paragraph moves.** A paragraph whose every line already fits is copied
+  through byte for byte, so the pass is idempotent and a golden moves only where the rule was
+  broken.
+- **A backticked span is never broken.** `` `import x from "node:x";` `` is one unit however many
+  spaces are inside it; a line break in the middle of code the reader is meant to copy is worse
+  than an overrun, so a span wider than 80 is the one case that still overruns.
+- **A paragraph with structure is left alone** — an indented block is a code sample, and a line
+  beginning `-`, `|`, `#`, `>` or a digit is a list, a table or a quotation. This is also what
+  keeps §8.2's business separate from this one: a 625-column record printed by `Render.zig` into
+  an indented block is bounded by `max_depth` and `max_ext_links`, never by a wrap.
+- **A column is a code point.** The messages are full of `§`, `—` and `…`, each one column wide
+  and two or three bytes long, and the hand-wrapped prose this rule has to agree with was measured
+  by eye.
+
 ## 9. Measurement
 
 - `bench` gains a `check` phase: whole-project check throughput (LOC/s) on the generated

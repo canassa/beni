@@ -724,15 +724,28 @@ test "check 2: the sibling file must export exactly the declared names" {
     for (r.diagnostics) |d| {
         try testing.expectEqual(diagnostic.Code.foreign_export_mismatch, d.code);
         try testing.expectEqualStrings("FOREIGN EXPORT MISMATCH", d.title);
-        try testing.expectEqualStrings("myplat/Prog.beni", d.span.file);
     }
-    // Diagnostics are sorted by position, and the two declarations are on
-    // different lines, so the pair is asserted as a set.
+    // **The two arms point at different files** (`boundary.md` §4, check 2,
+    // *a diagnostic points at the file whose text is wrong*). A declaration
+    // with no export is a promise the `.beni` made and did not keep, so the
+    // caret is there; an export nothing declares is the `.js` file's own
+    // surplus, so the caret is THERE, under the name. Both used to land on
+    // `Prog.beni`, the second of them on whichever `foreign` came first —
+    // an arbitrary line with nothing to do with `whisper`.
     var missing = false;
     var extra = false;
     for (r.diagnostics) |d| {
-        if (std.mem.indexOf(u8, d.message, "does not export `shout`") != null) missing = true;
-        if (std.mem.indexOf(u8, d.message, "exports `whisper`") != null) extra = true;
+        if (std.mem.indexOf(u8, d.message, "does not export `shout`") != null) {
+            missing = true;
+            try testing.expectEqualStrings("myplat/Prog.beni", d.span.file);
+        }
+        if (std.mem.indexOf(u8, d.message, "exports `whisper`") != null) {
+            extra = true;
+            try testing.expectEqualStrings("myplat/Prog.js", d.span.file);
+            // Line 2, column 14: under `whisper` itself.
+            try testing.expectEqual(@as(u32, 2), d.span.start.line);
+            try testing.expectEqual(@as(u32, 14), d.span.start.col);
+        }
     }
     try testing.expect(missing);
     try testing.expect(extra);
@@ -780,11 +793,78 @@ test "check 3: a sibling file may not reach a name it never imported" {
     try testing.expectEqual(diagnostic.Code.foreign_unbound_reference, r.diagnostics[0].code);
     try testing.expectEqualStrings("UNBOUND JAVASCRIPT REFERENCE", r.diagnostics[0].title);
     try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "uses `process`") != null);
+    // **The caret is in the `.js`** (`boundary.md` §4): line 1, column 46,
+    // under `process` itself. It used to be on `Prog.beni`'s first
+    // `foreign`, an arbitrary declaration with nothing to do with the fault.
+    try testing.expectEqualStrings("myplat/Prog.js", r.diagnostics[0].span.file);
+    try testing.expectEqual(@as(u32, 1), r.diagnostics[0].span.start.line);
+    try testing.expectEqual(@as(u32, 46), r.diagnostics[0].span.start.col);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expect(!w.exists("out"));
+}
+
+test "a fault in a PACKAGE sibling names that package's file, with its own excerpt" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `boundary.md` §4's rule is that a diagnostic points at the file whose
+    // text is wrong — including a file the user never wrote and the
+    // `SourceStore` does not hold. Core's siblings are the case: they are
+    // ASSETS, carried in the binary or, as here, read from `--core-root`,
+    // and the renderer's excerpt lookup only knows beni sources. A fault in
+    // one used to land on a `foreign` declaration in the `.beni` beside it.
+    //
+    // `--core-root` is what makes this reachable at all: the copy embedded
+    // in the compiler is checked clean by `js/Sibling.zig`'s own test over
+    // `core_package.assets`, so a broken embedded sibling cannot be built
+    // from a test. The only difference between the two is which branch of
+    // `Emit.readAsset` produced the bytes; everything after it — the
+    // scanner's offsets, the position, the excerpt — is the same code on
+    // the same bytes.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("mycore/Basics.beni", "pub equatable foreign type Int\n\n\npub type Bool\n    = True\n    | False\n");
+    try w.write("mycore/Basics.js", "export {};\n");
+    try w.write("mycore/String.beni", "pub equatable foreign type String\n");
+    try w.write("mycore/String.js", "export {};\n");
+    try w.write("mycore/List.beni", "pub equatable foreign type List a\n\n\npub foreign length : List a -> Int\n");
+    try w.write("mycore/List.js", "export const length = (xs) => xs.length + process.pid;\n");
+    try writeUserPlatform(&w);
+    try w.write("Main.beni", "pub x : Int\nx =\n    1\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(
+        &.{ "check", "--core-root=mycore", "--platform=myplat", "Main.beni" },
+        .{ .raw_diagnostics = true },
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    // The whole rendering, because the excerpt is the point: the header
+    // names the `.js`, and the line under it is that file's own text.
+    try testing.expectEqualStrings(
+        "-- UNBOUND JAVASCRIPT REFERENCE ---------------------------- mycore/List.js:1:43\n" ++
+            "\n" ++
+            "This file uses `process`, which it never imports.\n" ++
+            "\n" ++
+            "A sibling file's references have to be covered by its own `import`\n" ++
+            "statements (`docs/design/boundary.md` §4, check 3). That is what keeps dead\n" ++
+            "code elimination declaration-granular: the compiler reads the imports to\n" ++
+            "learn the file's dependencies, and a name that comes from nowhere is an edge\n" ++
+            "it cannot see. Write `import process from \"node:process\";` — or whatever module\n" ++
+            "really provides it — at the top of this file.\n" ++
+            "\n" ++
+            "1|export const length = (xs) => xs.length + process.pid;\n" ++
+            "                                            ^^^^^^^\n",
+        r.stderr,
+    );
 }
 
 test "a sibling that imports another file is refused, not silently broken" {
@@ -1640,11 +1720,24 @@ test "`main` is resolved per platform: it must exist and have the platform's Pro
     try testing.expectEqual(@as(usize, 1), absent.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.missing_main, absent.diagnostics[0].code);
     try testing.expect(std.mem.indexOf(u8, absent.diagnostics[0].message, "Node.Program") != null);
+    // An absence has no token (`boundary.md` §5): the whole-file 1:1 of the
+    // first app module by path, and no excerpt. It used to underline the
+    // file's FIRST TOKEN, which in the corpus golden is an `import`.
+    try testing.expectEqualStrings("Main.beni", absent.diagnostics[0].span.file);
+    try testing.expectEqual(@as(u32, 1), absent.diagnostics[0].span.start.line);
+    try testing.expectEqual(@as(u32, 1), absent.diagnostics[0].span.start.col);
 
     try testing.expectEqual(@as(u8, 1), wrong.exit_code);
     try testing.expectEqual(@as(usize, 1), wrong.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.main_not_program, wrong.diagnostics[0].code);
-    try testing.expect(std.mem.indexOf(u8, wrong.diagnostics[0].message, "Basics.Int") != null);
+    // **The type is named as the author could write it** (`checker.md`
+    // §8.2): the user wrote `Int`, so the message says `Int`. It used to
+    // print the resolver's `Basics.Int`, which is a name no beni source may
+    // contain. `Node.Program` keeps its qualifier, because this module has
+    // no import that would let `Program` be read bare.
+    try testing.expect(std.mem.indexOf(u8, wrong.diagnostics[0].message, "annotated `Int`") != null);
+    try testing.expect(std.mem.indexOf(u8, wrong.diagnostics[0].message, "Basics.Int") == null);
+    try testing.expect(std.mem.indexOf(u8, wrong.diagnostics[0].message, "`Node.Program`") != null);
 
     try testing.expectEqual(@as(u8, 1), unannotated.exit_code);
     try testing.expectEqual(@as(usize, 1), unannotated.diagnostics.len);

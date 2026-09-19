@@ -77,6 +77,19 @@ pub const Arity = union(enum) {
 pub const Export = struct {
     name: []const u8,
     arity: Arity,
+    /// Byte offset of the name AS WRITTEN in the file. `boundary.md` §4's
+    /// rule is that a diagnostic points at the file whose text is wrong, so
+    /// an export nothing declares is underlined HERE and not on some
+    /// innocent `foreign` in the module. For `export { g as f }` it is `f`,
+    /// the name check 2 compares; for `export default …`, the `default`.
+    offset: u32,
+};
+
+/// A name the file uses, or a specifier it imports, and where it is
+/// written. Both feed a diagnostic that points into the `.js`.
+pub const Located = struct {
+    text: []const u8,
+    offset: u32,
 };
 
 /// What the scan found. All slices point into the scanned bytes.
@@ -84,8 +97,8 @@ pub const Scan = struct {
     /// Names the file exports, in source order, with their arities.
     exports: []const Export,
     /// Identifiers referenced that are neither bound in the file, nor
-    /// imported by it, nor a standard global.
-    unbound: []const []const u8,
+    /// imported by it, nor a standard global — first occurrence of each.
+    unbound: []const Located,
     /// Module specifiers that name a FILE rather than a package — `./x.js`,
     /// `../y.mjs` — with their quotes, in source order.
     ///
@@ -95,7 +108,7 @@ pub const Scan = struct {
     /// against the source names would then point at nothing. Rewriting them
     /// is M3b's; refusing them is M3a's, because the alternative is a build
     /// that succeeds and a program that cannot load.
-    relative_imports: []const []const u8,
+    relative_imports: []const Located,
 };
 
 /// Scan `source`. Everything returned is owned by `arena`.
@@ -105,8 +118,8 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
 
     var exports: std.ArrayList(Export) = .empty;
     var bound: std.StringHashMapUnmanaged(void) = .empty;
-    var referenced: std.ArrayList([]const u8) = .empty;
-    var relative: std.ArrayList([]const u8) = .empty;
+    var referenced: std.ArrayList(Located) = .empty;
+    var relative: std.ArrayList(Located) = .empty;
 
     const items = tokens.items;
     // Check 4's table, built before the walk below so that `export { a, b
@@ -123,7 +136,7 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
         if (eql(token.text, "import")) {
             const end = try collectImport(arena, items, i, &bound);
             if (end < items.len and items[end].kind == .string and isRelative(items[end].text)) {
-                try relative.append(arena, items[end].text);
+                try relative.append(arena, .{ .text = items[end].text, .offset = items[end].offset });
             }
             i = end;
             continue;
@@ -145,7 +158,7 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
             i = try collectParenNames(arena, items, i, &bound);
             continue;
         }
-        if (isReference(items, i)) try referenced.append(arena, token.text);
+        if (isReference(items, i)) try referenced.append(arena, .{ .text = token.text, .offset = token.offset });
     }
     // Arrow parameter lists that do not start at an identifier — `(a) =>`
     // after a `=`, a `(`, or a comma — are found by a second sweep over
@@ -166,13 +179,16 @@ pub fn scan(arena: Allocator, source: []const u8) Allocator.Error!Scan {
         try bound.put(arena, token.text, {});
     }
 
-    var unbound: std.ArrayList([]const u8) = .empty;
+    // The FIRST occurrence of each name, which is the one the diagnostic
+    // underlines: a reader who fixes the import fixes every later use too,
+    // and reporting them all would be one error per use of `process`.
+    var unbound: std.ArrayList(Located) = .empty;
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     for (referenced.items) |reference| {
-        if (bound.contains(reference)) continue;
-        if (isStandardGlobal(reference)) continue;
-        if (seen.contains(reference)) continue;
-        try seen.put(arena, reference, {});
+        if (bound.contains(reference.text)) continue;
+        if (isStandardGlobal(reference.text)) continue;
+        if (seen.contains(reference.text)) continue;
+        try seen.put(arena, reference.text, {});
         try unbound.append(arena, reference);
     }
     return .{ .exports = exports.items, .unbound = unbound.items, .relative_imports = relative.items };
@@ -271,14 +287,14 @@ fn collectExport(
     if (items[i].kind == .ident and eql(items[i].text, "default")) {
         // A `default` export can never match a `foreign` name, so check 2
         // refuses it before check 4 has anything to say.
-        try exports.append(arena, .{ .name = "default", .arity = .opaque_value });
+        try exports.append(arena, .{ .name = "default", .arity = .opaque_value, .offset = items[i].offset });
         return i;
     }
     if (items[i].kind == .punct and eql(items[i].text, "{")) {
         // `export { a, b as c }`: the EXPORTED name is the one after `as`,
         // and the ARITY belongs to the local name in front of it.
-        var local: ?[]const u8 = null;
-        var exported: ?[]const u8 = null;
+        var local: ?Located = null;
+        var exported: ?Located = null;
         var renamed = false;
         i += 1;
         while (i < items.len and !(items[i].kind == .punct and eql(items[i].text, "}"))) : (i += 1) {
@@ -289,11 +305,11 @@ fn collectExport(
             }
             if (token.kind == .ident) {
                 if (renamed) {
-                    exported = token.text;
+                    exported = .{ .text = token.text, .offset = token.offset };
                     renamed = false;
                 } else {
                     try flushClause(arena, exports, arities, local, exported);
-                    local = token.text;
+                    local = .{ .text = token.text, .offset = token.offset };
                     exported = null;
                 }
                 continue;
@@ -312,7 +328,11 @@ fn collectExport(
         // from `collectArities`, which saw this same declaration.
         if (i + 1 < items.len and items[i + 1].kind == .ident) {
             const name = items[i + 1].text;
-            try exports.append(arena, .{ .name = name, .arity = arityOf(arities, name) });
+            try exports.append(arena, .{
+                .name = name,
+                .arity = arityOf(arities, name),
+                .offset = items[i + 1].offset,
+            });
         }
         return collectDeclaration(arena, items, i, bound);
     }
@@ -324,13 +344,17 @@ fn flushClause(
     arena: Allocator,
     exports: *std.ArrayList(Export),
     arities: *const std.StringHashMapUnmanaged(Arity),
-    local: ?[]const u8,
-    exported: ?[]const u8,
+    local: ?Located,
+    exported: ?Located,
 ) Allocator.Error!void {
     const name = local orelse return;
+    // The EXPORTED name is what check 2 compares and therefore what the
+    // caret goes under; the arity belongs to the local name in front of it.
+    const written = exported orelse name;
     try exports.append(arena, .{
-        .name = exported orelse name,
-        .arity = arityOf(arities, name),
+        .name = written.text,
+        .arity = arityOf(arities, name.text),
+        .offset = written.offset,
     });
 }
 
@@ -467,6 +491,11 @@ fn collectParenNames(arena: Allocator, items: []const Token, at: usize, bound: *
 const Token = struct {
     kind: enum { ident, punct, string, number },
     text: []const u8,
+    /// Byte offset of `text` in the scanned file. Carried on every token
+    /// because the checks report against the `.js` itself (`boundary.md`
+    /// §4), and the offset is what turns a finding into a line, a column
+    /// and an excerpt.
+    offset: u32,
 };
 
 fn isIdentStart(c: u8) bool {
@@ -507,7 +536,7 @@ fn tokenize(arena: Allocator, source: []const u8, out: *std.ArrayList(Token)) Al
                 i += 1;
             }
             i = @min(i + 1, source.len);
-            try out.append(arena, .{ .kind = .string, .text = source[start..@min(i, source.len)] });
+            try out.append(arena, .{ .kind = .string, .text = source[start..@min(i, source.len)], .offset = @intCast(start) });
             continue;
         }
         if (c == '`') {
@@ -531,7 +560,7 @@ fn tokenize(arena: Allocator, source: []const u8, out: *std.ArrayList(Token)) Al
                 if (depth == 0 and source[i] == '`') break;
             }
             i = @min(i + 1, source.len);
-            try out.append(arena, .{ .kind = .string, .text = source[start..@min(i, source.len)] });
+            try out.append(arena, .{ .kind = .string, .text = source[start..@min(i, source.len)], .offset = @intCast(start) });
             continue;
         }
         if (c == '/' and regexAllowed(out.items)) {
@@ -550,30 +579,30 @@ fn tokenize(arena: Allocator, source: []const u8, out: *std.ArrayList(Token)) Al
             }
             i = @min(i + 1, source.len);
             while (i < source.len and std.ascii.isAlphabetic(source[i])) i += 1;
-            try out.append(arena, .{ .kind = .string, .text = source[start..@min(i, source.len)] });
+            try out.append(arena, .{ .kind = .string, .text = source[start..@min(i, source.len)], .offset = @intCast(start) });
             continue;
         }
         if (std.ascii.isDigit(c)) {
             const start = i;
             while (i < source.len and (isIdentPart(source[i]) or source[i] == '.')) i += 1;
-            try out.append(arena, .{ .kind = .number, .text = source[start..i] });
+            try out.append(arena, .{ .kind = .number, .text = source[start..i], .offset = @intCast(start) });
             continue;
         }
         if (isIdentStart(c)) {
             const start = i;
             while (i < source.len and isIdentPart(source[i])) i += 1;
-            try out.append(arena, .{ .kind = .ident, .text = source[start..i] });
+            try out.append(arena, .{ .kind = .ident, .text = source[start..i], .offset = @intCast(start) });
             continue;
         }
         // Punctuation: the multi-character forms this scanner cares about
         // are `=>` and `...`; everything else is one byte, which is enough
         // because nothing below inspects an operator's spelling.
         if (c == '=' and i + 1 < source.len and source[i + 1] == '>') {
-            try out.append(arena, .{ .kind = .punct, .text = source[i .. i + 2] });
+            try out.append(arena, .{ .kind = .punct, .text = source[i .. i + 2], .offset = @intCast(i) });
             i += 2;
             continue;
         }
-        try out.append(arena, .{ .kind = .punct, .text = source[i .. i + 1] });
+        try out.append(arena, .{ .kind = .punct, .text = source[i .. i + 1], .offset = @intCast(i) });
         i += 1;
     }
 }
@@ -733,7 +762,7 @@ test "check 3: a host global that was never imported is unbound" {
         \\export const write = (s) => { process.stdout.write(s); };
     );
     try testing.expectEqual(@as(usize, 1), result.unbound.len);
-    try testing.expectEqualStrings("process", result.unbound[0]);
+    try testing.expectEqualStrings("process", result.unbound[0].text);
 }
 
 test "check 3: importing it is the fix" {
@@ -772,8 +801,8 @@ test "a specifier naming a file is reported; a bare one is not" {
         \\export const one = () => cons(1, helper(process, lodash));
     );
     try testing.expectEqual(@as(usize, 2), result.relative_imports.len);
-    try testing.expectEqualStrings("\"./List.js\"", result.relative_imports[0]);
-    try testing.expectEqualStrings("\"../shared/helper.mjs\"", result.relative_imports[1]);
+    try testing.expectEqualStrings("\"./List.js\"", result.relative_imports[0].text);
+    try testing.expectEqualStrings("\"../shared/helper.mjs\"", result.relative_imports[1].text);
     try testing.expectEqual(@as(usize, 0), result.unbound.len);
 }
 
@@ -820,7 +849,7 @@ test "every sibling that ships in the box passes checks 3 and 4" {
         if (!std.mem.endsWith(u8, asset.path, ".js")) continue;
         const result = try scanOnce(a.allocator(), asset.bytes);
         if (result.unbound.len != 0) {
-            std.debug.print("{s} reaches `{s}` without importing it\n", .{ asset.path, result.unbound[0] });
+            std.debug.print("{s} reaches `{s}` without importing it\n", .{ asset.path, result.unbound[0].text });
             return error.UnboundReference;
         }
         try testing.expect(result.exports.len != 0);
@@ -832,7 +861,7 @@ test "every sibling that ships in the box passes checks 3 and 4" {
             if (!std.mem.endsWith(u8, asset.path, ".js")) continue;
             const result = try scanOnce(a.allocator(), asset.bytes);
             if (result.unbound.len != 0) {
-                std.debug.print("{s} reaches `{s}` without importing it\n", .{ asset.path, result.unbound[0] });
+                std.debug.print("{s} reaches `{s}` without importing it\n", .{ asset.path, result.unbound[0].text });
                 return error.UnboundReference;
             }
             try testing.expect(result.exports.len != 0);

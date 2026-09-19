@@ -67,6 +67,7 @@ const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
 const Manifest = @import("Manifest.zig");
+const prelude = @import("../bir/prelude.zig");
 
 const Emit = @This();
 
@@ -79,15 +80,13 @@ pub const Item = struct {
     token: u32,
     /// Owned by the caller's allocator.
     message: []const u8,
-    /// A path to report AGAINST INSTEAD of `file`, for a fault in a file
-    /// that is not beni source and therefore has no tokens — a platform's
-    /// `beni.json`. The span is then the whole-file 1:1 that
-    /// `Session.reportInvalidModulePath` already uses for a fault about a
-    /// file rather than a place in one, and no excerpt is rendered because
-    /// the path is not in the source store. Scratch-owned, so it lives as
-    /// long as the arena the caller passed to `run`, which outlives the
-    /// render. `file` and `token` are ignored when this is set.
-    path: ?[]const u8 = null,
+    /// Where to report INSTEAD of `file`'s token, for a fault whose text is
+    /// not in a beni source file: a sibling `.js`, a platform's
+    /// `beni.json`, or a beni file this names without pointing inside it.
+    /// Scratch-owned, so it lives as long as the arena the caller passed to
+    /// `run`, which outlives the render. `file` and `token` are ignored
+    /// when this is set.
+    at: ?Session.At = null,
 };
 
 /// What a platform package tells the emitter (boundary.md §5.2).
@@ -327,7 +326,7 @@ const Emitter = struct {
     /// manifest failure is an exit-2 line naming the path
     /// (`src/platform.zig`), and this is the same honesty inside a
     /// diagnostic.
-    fn reportInFile(e: *Emitter, code: diagnostic.Code, path: []const u8, comptime fmt: []const u8, args: anytype) !void {
+    fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{
@@ -335,8 +334,40 @@ const Emitter = struct {
             .file = @enumFromInt(0),
             .token = 0,
             .message = message,
-            .path = path,
+            .at = at,
         });
+    }
+
+    /// `boundary.md` §4's *a diagnostic points at the file whose text is
+    /// wrong*: an `At` covering `length` bytes of `source` from `offset`,
+    /// which is what `js/Sibling.zig` hands back for every export,
+    /// reference and specifier it reads.
+    fn inSibling(path: []const u8, source: []const u8, offset: u32, length: u32) Session.At {
+        return .{
+            .path = path,
+            .start = positionIn(source, offset),
+            .end = positionIn(source, offset + length),
+            .source = source,
+        };
+    }
+
+    /// 1-based line and byte column of `offset` in `text`.
+    ///
+    /// A sibling `.js` has no token list and no line table — it is not beni
+    /// source and nothing but a diagnostic ever asks it for a position — so
+    /// this counts newlines rather than building one. It runs once per
+    /// diagnostic, on the error path, over a file `max_asset_bytes` bounds.
+    fn positionIn(text: []const u8, offset: u32) diagnostic.Position {
+        const end = @min(offset, text.len);
+        var line: u32 = 1;
+        var line_start: usize = 0;
+        var at: usize = 0;
+        while (std.mem.indexOfScalarPos(u8, text[0..end], at, '\n')) |nl| {
+            line += 1;
+            line_start = nl + 1;
+            at = nl + 1;
+        }
+        return .{ .line = line, .col = @intCast(end - line_start + 1) };
     }
 
     // ---- boundary.md §4, check 1: the two-shape type rule -----------------
@@ -430,13 +461,18 @@ const Emitter = struct {
             };
 
             const found = try Sibling.scan(e.scratch, bytes);
-            try e.compareExports(file, first_token, sibling_path, declared.items, found.exports);
+            try e.compareExports(file, sibling_path, bytes, declared.items, found.exports);
+            // The next two faults are the `.js` file's own, so they are
+            // reported IN it: path, line, column and an excerpt with the
+            // caret under the specifier or the name (`boundary.md` §4, *a
+            // diagnostic points at the file whose text is wrong*). They
+            // used to land on this module's first `foreign` declaration,
+            // which is an arbitrary line that has nothing to do with either.
             for (found.relative_imports) |specifier| {
-                try e.report(
+                try e.reportInFile(
                     .not_implemented,
-                    file,
-                    first_token,
-                    \\`{s}` imports {s}, and I cannot relocate that yet.
+                    inSibling(sibling_path, bytes, specifier.offset, @intCast(specifier.text.len)),
+                    \\This file imports {s}, and I cannot relocate that yet.
                     \\
                     \\A sibling file is RENAMED as it is copied into the output — `{s}` becomes
                     \\`<Module>{s}`, so that every emitted file is an ES module by extension
@@ -445,41 +481,48 @@ const Emitter = struct {
                     \\failed to load. Rewriting them is M3b's; for now, import a package
                     \\(`node:process`, a dependency) or inline the helper.
                 ,
-                    .{ sibling_path, specifier, std.fs.path.basename(sibling_path), foreign_extension },
+                    .{ specifier.text, std.fs.path.basename(sibling_path), foreign_extension },
                 );
             }
             for (found.unbound) |reference| {
-                try e.report(
+                try e.reportInFile(
                     .foreign_unbound_reference,
-                    file,
-                    first_token,
-                    \\`{s}` uses `{s}`, which it never imports.
+                    inSibling(sibling_path, bytes, reference.offset, @intCast(reference.text.len)),
+                    \\This file uses `{s}`, which it never imports.
                     \\
                     \\A sibling file's references have to be covered by its own `import`
                     \\statements (`docs/design/boundary.md` §4, check 3). That is what keeps dead
                     \\code elimination declaration-granular: the compiler reads the imports to
                     \\learn the file's dependencies, and a name that comes from nowhere is an edge
                     \\it cannot see. Write `import {s} from "node:{s}";` — or whatever module
-                    \\really provides it — at the top of the file.
+                    \\really provides it — at the top of this file.
                 ,
-                    .{ sibling_path, reference, reference, reference },
+                    .{ reference.text, reference.text, reference.text },
                 );
             }
         }
     }
 
+    /// Check 2, whose two arms point at DIFFERENT files, because they are
+    /// two different mistakes (`boundary.md` §4).
+    ///
+    /// A declaration with no export is the beni file's promise gone
+    /// unkept — the promise is written there, so the caret goes there and
+    /// the message names the `.js`. An export nothing declares is the
+    /// `.js` file's own surplus, so the caret goes THERE and the message
+    /// names the module.
     fn compareExports(
         e: *Emitter,
         file: SourceStore.Index,
-        token: u32,
         sibling_path: []const u8,
+        sibling_source: []const u8,
         declared: []const Declared,
         exported: []const Sibling.Export,
     ) !void {
         for (declared) |entry| {
             const name = entry.name;
             if (find(exported, name)) |found| {
-                try e.checkArity(file, sibling_path, entry, found.arity);
+                try e.checkArity(file, sibling_path, sibling_source, entry, found);
                 continue;
             }
             try e.report(
@@ -495,22 +538,22 @@ const Emitter = struct {
                 .{ sibling_path, name, name },
             );
         }
+        const module_path = e.session.store.path(file);
         for (exported) |entry| {
             const name = entry.name;
             if (containsDeclared(declared, name)) continue;
-            try e.report(
+            try e.reportInFile(
                 .foreign_export_mismatch,
-                file,
-                token,
-                \\`{s}` exports `{s}`, which is not a `foreign` value of this module.
+                inSibling(sibling_path, sibling_source, entry.offset, @intCast(name.len)),
+                \\This file exports `{s}`, and `{s}` declares no `foreign {s}`.
                 \\
                 \\A sibling JavaScript file exports exactly the `foreign` values its module
                 \\declares — no more, no fewer (`docs/design/boundary.md` §4, check 2). One
                 \\export per foreign value is one node in the dependency graph per foreign value,
                 \\which is what keeps elimination declaration-granular; an extra export is a node
-                \\nothing can reach. Declare `foreign {s} : …`, or stop exporting it.
+                \\nothing can reach. Declare `foreign {s} : …` in `{s}`, or stop exporting it here.
             ,
-                .{ sibling_path, name, name },
+                .{ name, module_path, name, name, module_path },
             );
         }
     }
@@ -519,15 +562,24 @@ const Emitter = struct {
     /// parameters, and a `foreign` that is not a function is not written as
     /// one. A declaration with no annotation is skipped — the parser
     /// reported that already and the sibling is not the problem.
+    ///
+    /// **This one keeps the beni declaration as its region** (`boundary.md`
+    /// §4, check 4), because the expected count is written there and the
+    /// export is only where it was miscounted. The message names the `.js`
+    /// with its LINE AND COLUMN, so the other half is one jump away.
     fn checkArity(
         e: *Emitter,
         file: SourceStore.Index,
         sibling_path: []const u8,
+        sibling_source: []const u8,
         entry: Declared,
-        arity: Sibling.Arity,
+        found: Sibling.Export,
     ) !void {
+        const arity = found.arity;
         const params = entry.params orelse return;
         const expected = entry.evidence + params;
+        const at = positionIn(sibling_source, found.offset);
+        const site = try std.fmt.allocPrint(e.scratch, "{s}:{d}:{d}", .{ sibling_path, at.line, at.col });
         // A `foreign` that is not a function binds to a VALUE, so any
         // function literal is wrong for it and the count never comes into
         // it — `() => …` and `(...xs) => …` are the same mistake.
@@ -544,7 +596,7 @@ const Emitter = struct {
                 \\(`docs/design/boundary.md` §4, check 4). `core/Basics.js` writes `pi` as
                 \\`Math.PI` for exactly this reason.
             ,
-                .{ sibling_path, entry.name, entry.name, entry.name },
+                .{ site, entry.name, entry.name, entry.name },
             );
             return;
         }
@@ -560,7 +612,7 @@ const Emitter = struct {
                     \\{s}
                 ,
                     .{
-                        sibling_path,
+                        site,
                         entry.name,
                         written,
                         plural(written),
@@ -585,7 +637,7 @@ const Emitter = struct {
                     \\write `export const {s} = (…) => other(…);` instead.
                 ,
                     .{
-                        sibling_path,
+                        site,
                         entry.name,
                         entry.name,
                         expected,
@@ -609,7 +661,7 @@ const Emitter = struct {
                     \\parameter list with no fixed length is refused rather than trusted
                     \\(`docs/design/boundary.md` §4, check 4). Write the {d} parameter{s} out.
                 ,
-                    .{ sibling_path, entry.name, try e.arityRule(entry), expected, plural(expected) },
+                    .{ site, entry.name, try e.arityRule(entry), expected, plural(expected) },
                 );
             },
         }
@@ -697,18 +749,34 @@ const Emitter = struct {
             }
         }
         const entry = found orelse {
-            const file: SourceStore.Index = @enumFromInt(0);
-            try e.report(
+            // **An absence has no token** (§5). It used to be reported on
+            // file 0, token 0 — whatever the run enumerated first, which in
+            // the corpus golden was an `import` and read as if the import
+            // were the mistake. There is no honest thing to underline, so
+            // nothing is: the diagnostic is reported against a FILE at 1:1
+            // with no excerpt, and the message says which file and why.
+            // Which file is `rule 5` deterministic — the first app module
+            // by module index, which comes from the sorted path and never
+            // from argument or completion order.
+            const app = e.firstAppModule();
+            const path = if (app) |a| e.session.store.path(e.graph().moduleFile(a)) else "";
+            try e.reportInFile(
                 .missing_main,
-                file,
-                0,
-                \\I cannot find `main`.
+                .{ .path = path, .source = null },
+                \\I cannot find `main` in this project.
                 \\
                 \\A program's entry point is a declaration called `main` whose type is the
                 \\`Program` the platform owns — here `{s}` (`docs/design/boundary.md` §5). Add
-                \\one to a module of this project.
+                \\one to any module of this project.
+                \\
+                \\There is nothing to underline, because the mistake is an absence: this is
+                \\reported against `{s}`, {s}.
             ,
-                .{e.options.platform.program},
+                .{
+                    try e.writtenProgramName(null),
+                    path,
+                    try e.entryFileRule(),
+                },
             );
             return null;
         };
@@ -744,10 +812,13 @@ const Emitter = struct {
             \\
             \\above the definition.
         ,
-            .{shortName(e.options.platform.program)},
+            .{try e.writtenProgramName(entry.module)},
         );
-        const actual = e.typeName(b, annotation) orelse "";
-        if (std.mem.eql(u8, actual, e.options.platform.program)) return;
+        const actual = e.typeName(b, annotation);
+        if (actual) |t| {
+            if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program)) and
+                std.mem.eql(u8, t.name, shortName(e.options.platform.program))) return;
+        }
         try e.report(
             .main_not_program,
             file,
@@ -758,13 +829,19 @@ const Emitter = struct {
             \\hands out the only values of it (`docs/design/boundary.md` §5); a `Program` is
             \\what you get back from one of its functions.
         ,
-            .{ e.options.platform.program, if (actual.len == 0) "something else" else actual },
+            .{
+                try e.writtenProgramName(entry.module),
+                if (actual) |t| e.writtenTypeName(entry.module, t) else "something else",
+            },
         );
     }
 
-    /// `Module.Type` for a resolved type reference, or null for anything
-    /// else (a function, a record, an application).
-    fn typeName(e: *Emitter, b: *const Bir, inst: Bir.Inst.Index) ?[]const u8 {
+    /// A resolved type reference, split into the two halves a message needs.
+    const TypeRef = struct { module: []const u8, name: []const u8 };
+
+    /// The type a reference names, or null for anything else (a function, a
+    /// record, an application).
+    fn typeName(e: *Emitter, b: *const Bir, inst: Bir.Inst.Index) ?TypeRef {
         const d = b.instData(inst);
         switch (b.instTag(inst)) {
             .ext_type => {
@@ -772,19 +849,109 @@ const Emitter = struct {
                 if (m.int() >= e.session.resolution.interfaces.len) return null;
                 const iface = &e.session.resolution.interfaces[m.int()];
                 if (d.rhs >= iface.types.len) return null;
-                const module = e.session.interner.slice(e.graph().moduleName(m));
-                const name = e.session.interner.slice(iface.symbols[@intFromEnum(iface.types[d.rhs].name)]);
-                return std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ module, name }) catch null;
+                return .{
+                    .module = e.session.interner.slice(e.graph().moduleName(m)),
+                    .name = e.session.interner.slice(iface.symbols[@intFromEnum(iface.types[d.rhs].name)]),
+                };
             },
             .type_top => {
                 if (d.lhs >= b.decls.len) return null;
-                return std.fmt.allocPrint(e.scratch, "{s}.{s}", .{
-                    e.session.store.moduleName(e.graph().moduleFile(e.currentModuleOf(b))),
-                    e.session.interner.slice(b.symbol(b.decls[d.lhs].name)),
-                }) catch null;
+                return .{
+                    .module = e.session.store.moduleName(e.graph().moduleFile(e.currentModuleOf(b))),
+                    .name = e.session.interner.slice(b.symbol(b.decls[d.lhs].name)),
+                };
             },
             else => return null,
         }
+    }
+
+    /// **A type is printed the way the reader could write it** where the
+    /// diagnostic points (`checker.md` §8.2's rule, applied to a message
+    /// the checker does not raise).
+    ///
+    /// `Render.zig` prints every type name bare because it prints from a
+    /// type store, where a name has no module attached; this message reads
+    /// a BIR annotation instead, and used to print the resolver's internal
+    /// `Module.Name` — so a user who wrote `main : Int` was told about
+    /// `Basics.Int`, which is a name no beni source may contain. The rule
+    /// here is the conservative one: bare when `scope` can read it bare —
+    /// the prelude (`language.md` Appendix A), the module's own types, and
+    /// a name an import exposes — and `Alias.Name` otherwise, which is
+    /// always writable given the import that is already there.
+    fn writtenTypeName(e: *Emitter, scope: Graph.Index, t: TypeRef) []const u8 {
+        if (e.readsBare(scope, t)) return t.name;
+        const b = e.bir(scope);
+        for (b.imports) |imp| {
+            if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(imp.module)), t.module)) continue;
+            const alias = e.session.interner.slice(b.symbol(imp.alias));
+            return std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ alias, t.name }) catch t.name;
+        }
+        return std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ t.module, t.name }) catch t.name;
+    }
+
+    /// Whether `scope` may write `t` with no qualifier at all.
+    fn readsBare(e: *Emitter, scope: Graph.Index, t: TypeRef) bool {
+        // The module's own declarations.
+        if (std.mem.eql(u8, e.session.store.moduleName(e.graph().moduleFile(scope)), t.module)) return true;
+        const symbol = e.session.interner.find(t.name) orelse return false;
+        // The prelude (Appendix A): in scope in every module, with no
+        // import to qualify it by.
+        if (prelude.wellKnown(symbol)) |w| {
+            if (prelude.typeModule(w)) |owner| {
+                if (std.mem.eql(u8, e.session.interner.slice(owner.symbol()), t.module)) return true;
+            }
+        }
+        const b = e.bir(scope);
+        for (b.imports) |imp| {
+            if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(imp.module)), t.module)) continue;
+            for (b.importExposed(imp)) |name| {
+                if (b.symbol(name.name) == symbol) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The platform's `Program` as the module the diagnostic points at
+    /// could write it. `scope` is null when there is no module to ask —
+    /// `missing_main` before an entry module exists — and the answer is
+    /// then the manifest's own module-qualified spelling, which is always
+    /// readable.
+    fn writtenProgramName(e: *Emitter, scope: ?Graph.Index) ![]const u8 {
+        const qualified = e.options.platform.program;
+        const at = scope orelse e.firstAppModule() orelse return qualified;
+        return e.writtenTypeName(at, .{
+            .module = platformModule(qualified),
+            .name = shortName(qualified),
+        });
+    }
+
+    /// The first module of the ROOT package by module index — the sorted
+    /// path, never argument or completion order (CLAUDE.md rule 5). It is
+    /// the file `missing_main` is reported against, because an absence has
+    /// no file of its own and this one is the same however the build was
+    /// invoked.
+    fn firstAppModule(e: *Emitter) ?Graph.Index {
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            if (e.session.store.package(e.graph().moduleFile(m)) == .app) return m;
+        }
+        return null;
+    }
+
+    /// Why `missing_main` names the file it names, in a form that can be
+    /// finished with a full stop.
+    fn entryFileRule(e: *Emitter) ![]const u8 {
+        var count: u32 = 0;
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            if (e.session.store.package(e.graph().moduleFile(m)) == .app) count += 1;
+        }
+        if (count <= 1) return "this project's only module";
+        return std.fmt.allocPrint(
+            e.scratch,
+            "the first of this project's {d} modules by path",
+            .{count},
+        );
     }
 
     fn currentModuleOf(e: *Emitter, b: *const Bir) Graph.Index {
@@ -971,7 +1138,7 @@ const Emitter = struct {
             });
             try e.reportInFile(
                 .foreign_sibling_missing,
-                manifest_path,
+                .{ .path = manifest_path },
                 \\I cannot find the platform's runtime file `{s}`.
                 \\
                 \\A platform declares its output shape in its manifest (`"runtime"`), and that
@@ -1192,6 +1359,13 @@ fn containsDeclared(haystack: []const Emitter.Declared, needle: []const u8) bool
 fn shortName(qualified: []const u8) []const u8 {
     const dot = std.mem.lastIndexOfScalar(u8, qualified, '.') orelse return qualified;
     return qualified[dot + 1 ..];
+}
+
+/// The module half of a manifest's `"program"` key (`Node.Program` →
+/// `Node`), or the whole string when it names no module.
+fn platformModule(qualified: []const u8) []const u8 {
+    const dot = std.mem.lastIndexOfScalar(u8, qualified, '.') orelse return qualified;
+    return qualified[0..dot];
 }
 
 /// The first type variable reachable from `inst`, or null when the type is

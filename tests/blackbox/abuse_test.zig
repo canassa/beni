@@ -139,7 +139,7 @@ test "a 10 MB file that is one identifier is a definition without `=`" {
         .severity = .@"error",
         .span = .{ .file = "Big.beni", .start = .{ .line = 2, .col = 1 }, .end = .{ .line = 2, .col = 1 } },
         .title = "EXPECTED TOKEN",
-        .message = "I got to the end of the file while parsing a definition. I was expecting `=` next.",
+        .message = "I got to the end of the file while parsing a definition. I was expecting `=`\nnext.",
     }}, r.diagnostics);
 
     // ┌─────────────────────────────────────────┐
@@ -245,7 +245,7 @@ test "100 000 nested lambdas report every shadowed parameter, then stop nesting"
         .severity = .@"error",
         .span = .{ .file = "Lambdas.beni", .start = .{ .line = 2, .col = 12 }, .end = .{ .line = 2, .col = 13 } },
         .title = "SHADOWING",
-        .message = "The name `x` is already bound on line 2.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope, whether\nfrom an enclosing binding, a top-level declaration, an `exposing` list or the\nprelude. Rename one of them.",
+        .message = "The name `x` is already bound on line 2.\n\nShadowing is not allowed: a binding cannot reuse a name that is in scope,\nwhether from an enclosing binding, a top-level declaration, an `exposing` list\nor the prelude. Rename one of them.",
     }, r.diagnostics[0]);
     try testing.expectEqualDeep(nestingTooDeep("Lambdas.beni", 2, 24576, 1), r.diagnostics[r.diagnostics.len - 1]);
     var shadowings: usize = 0;
@@ -558,14 +558,14 @@ test "unterminated string, char, interpolation, paren, bracket and brace at EOF"
                 .severity = .@"error",
                 .span = .{ .file = "Paren.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 9 } },
                 .title = "UNCLOSED DELIMITER",
-                .message = "I was parsing a parenthesised expression and got to the end of the file without finding the `)` that\ncloses this `(`.",
+                .message = "I was parsing a parenthesised expression and got to the end of the file without\nfinding the `)` that closes this `(`.",
             },
             .{
                 .code = .unexpected_token,
                 .severity = .@"error",
                 .span = .{ .file = "Paren.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 9 } },
                 .title = "UNEXPECTED TOKEN",
-                .message = "I got to the end of the file while parsing a parenthesised expression. I was expecting an expression.",
+                .message = "I got to the end of the file while parsing a parenthesised expression. I was\nexpecting an expression.",
             },
         } },
         .{ .path = "Bracket.beni", .source = "main = [", .want = &.{
@@ -581,7 +581,7 @@ test "unterminated string, char, interpolation, paren, bracket and brace at EOF"
                 .severity = .@"error",
                 .span = .{ .file = "Bracket.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 9 } },
                 .title = "UNEXPECTED TOKEN",
-                .message = "I got to the end of the file while parsing a list. I was expecting an expression.",
+                .message = "I got to the end of the file while parsing a list. I was expecting an\nexpression.",
             },
         } },
         .{ .path = "Brace.beni", .source = "main = {", .want = &.{
@@ -590,14 +590,14 @@ test "unterminated string, char, interpolation, paren, bracket and brace at EOF"
                 .severity = .@"error",
                 .span = .{ .file = "Brace.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 9 } },
                 .title = "UNCLOSED DELIMITER",
-                .message = "I was parsing a record and got to the end of the file without finding the `}` that\ncloses this `{`.",
+                .message = "I was parsing a record and got to the end of the file without finding the `}`\nthat closes this `{`.",
             },
             .{
                 .code = .unexpected_token,
                 .severity = .@"error",
                 .span = .{ .file = "Brace.beni", .start = .{ .line = 1, .col = 9 }, .end = .{ .line = 1, .col = 9 } },
                 .title = "UNEXPECTED TOKEN",
-                .message = "I got to the end of the file while parsing a record. I was expecting a field name.",
+                .message = "I got to the end of the file while parsing a record. I was expecting a field\nname.",
             },
         } },
     };
@@ -680,7 +680,7 @@ test "a file that is only a backslash cannot begin a declaration" {
         .severity = .@"error",
         .span = .{ .file = "Lambda.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 2 } },
         .title = "EXPECTED DECLARATION",
-        .message = "I was parsing the top level of this module and ran into `\\` on column 1, which cannot begin a declaration.\n\nA line that starts on column 1 begins a new import or declaration:\n\n    import Json.Decode\n    type alias Point = { x : Int, y : Int }\n    type Shape = Circle Float | Rect Float Float\n    area : Shape -> Float\n    area shape = ...\n\nEverything that belongs to the previous declaration must be indented by at\nleast one space.",
+        .message = "I was parsing the top level of this module and ran into `\\` on column 1, which\ncannot begin a declaration.\n\nA line that starts on column 1 begins a new import or declaration:\n\n    import Json.Decode\n    type alias Point = { x : Int, y : Int }\n    type Shape = Circle Float | Rect Float Float\n    area : Shape -> Float\n    area shape = ...\n\nEverything that belongs to the previous declaration must be indented by at\nleast one space.",
     }}, r.diagnostics);
 
     // ┌─────────────────────────────────────────┐
@@ -866,7 +866,7 @@ test "a hidden .beni file is skipped by the walk and invalid_module_path when na
             .severity = .@"error",
             .span = .{ .file = "src/.hidden.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
             .title = "INVALID MODULE PATH",
-            .message = "I cannot turn the path `src/.hidden.beni` into a module name.\n\nA module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`. Every\nsegment of the path after the source root must be an upper identifier — a capital\nletter followed by letters, digits or underscores.",
+            .message = "I cannot turn the path `src/.hidden.beni` into a module name.\n\nA module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`.\nEvery segment of the path after the source root must be an upper identifier — a\ncapital letter followed by letters, digits or underscores.",
         },
         .{
             .code = .unbound_variable,

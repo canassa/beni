@@ -65,9 +65,20 @@ never imported, an arity that disagrees, a relative import — and the golden
 is what the compiler said about it.
 
 Paths in the golden are relative to the temporary project (`Main.beni`,
-`platform/Prog.beni`) because the fixture is copied there, for the reason
-`run/` copies: a build writes an `out/` that has no business in the
-repository.
+`platform/Prog.beni`, `platform/Prog.js`) because the fixture is copied
+there, for the reason `run/` copies: a build writes an `out/` that has no
+business in the repository.
+
+**Some of these goldens point into a `.js`**, which no other corpus kind
+does: `boundary.md` §4's rule is that a diagnostic points at the file whose
+text is wrong, so an export nothing declares, a name the sibling never
+imported and a relative specifier are reported IN the sibling, with its line,
+its column and an excerpt of its text. The faults that concern both files —
+a `foreign` with no export, an arity that disagrees — keep the beni
+declaration, because that is where the promise is written, and name the `.js`
+in the message. `MissingMain/` is the other odd one: an absence has no token,
+so it is the whole-file `1:1` of the first app module by path, with no
+excerpt.
 
 ## What is here
 

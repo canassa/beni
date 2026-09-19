@@ -135,9 +135,9 @@ test "check on a file whose path segment is not an upper identifier: exactly one
         .title = "INVALID MODULE PATH",
         .message = "I cannot turn the path `src/bad-name.beni` into a module name.\n" ++
             "\n" ++
-            "A module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`. Every\n" ++
-            "segment of the path after the source root must be an upper identifier — a capital\n" ++
-            "letter followed by letters, digits or underscores.",
+            "A module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`.\n" ++
+            "Every segment of the path after the source root must be an upper identifier — a\n" ++
+            "capital letter followed by letters, digits or underscores.",
     }, r.diagnostics[0]);
 }
 
@@ -191,9 +191,9 @@ test "the text renderer lays the diagnostic out Elm-style with an excerpt" {
             "\n" ++
             "I cannot turn the path `src/bad-name.beni` into a module name.\n" ++
             "\n" ++
-            "A module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`. Every\n" ++
-            "segment of the path after the source root must be an upper identifier — a capital\n" ++
-            "letter followed by letters, digits or underscores.\n" ++
+            "A module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`.\n" ++
+            "Every segment of the path after the source root must be an upper identifier — a\n" ++
+            "capital letter followed by letters, digits or underscores.\n" ++
             "\n" ++
             "1|x = 1\n" ++
             "  ^\n",
@@ -1052,8 +1052,8 @@ test "check with two syntax errors in different declarations reports both, in or
             .severity = .@"error",
             .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 5 }, .end = .{ .line = 2, .col = 6 } },
             .title = "UNCLOSED DELIMITER",
-            .message = "I was parsing a parenthesised expression and ran into `g` on column 1 before finding the `)` that\n" ++
-                "closes this `(`.\n" ++
+            .message = "I was parsing a parenthesised expression and ran into `g` on column 1 before\n" ++
+                "finding the `)` that closes this `(`.\n" ++
                 "\n" ++
                 "Everything inside the brackets must be indented more than column 1, the column\n" ++
                 "of the block they are in. `g` is not, so the block ended there and the `)` is\n" ++
@@ -1504,9 +1504,9 @@ test "check reports a let binding that shadows a parameter" {
         .title = "SHADOWING",
         .message = "The name `x` is already bound on line 1.\n" ++
             "\n" ++
-            "Shadowing is not allowed: a binding cannot reuse a name that is in scope, whether\n" ++
-            "from an enclosing binding, a top-level declaration, an `exposing` list or the\n" ++
-            "prelude. Rename one of them.",
+            "Shadowing is not allowed: a binding cannot reuse a name that is in scope,\n" ++
+            "whether from an enclosing binding, a top-level declaration, an `exposing` list\n" ++
+            "or the prelude. Rename one of them.",
     }}), r.diagnostics);
 }
 
@@ -1788,8 +1788,8 @@ test "duplicate_module: two roots, one module name, reported on the second path"
         .title = "DUPLICATE MODULE",
         .message = "Two files claim the module name `M`.\n" ++
             "\n" ++
-            "The other one is `a/M.beni`. A module's name comes from its path, so two paths that\n" ++
-            "differ only outside the source root collide. Move or rename one of them.",
+            "The other one is `a/M.beni`. A module's name comes from its path, so two paths\n" ++
+            "that differ only outside the source root collide. Move or rename one of them.",
     }}), r.diagnostics);
 }
 
@@ -1935,7 +1935,8 @@ test "--core-root replaces the embedded core package" {
         .title = "UNKNOWN MODULE",
         .message = "I cannot find a module named `String`.\n" ++
             "\n" ++
-            "The qualified name `String.String` needs it. Check the spelling, or add an import.",
+            "The qualified name `String.String` needs it. Check the spelling, or add an\n" ++
+            "import.",
     }}), missing.diagnostics);
     // The same project against the real core package is clean, so the
     // difference above is the flag and nothing else.

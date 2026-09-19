@@ -54,6 +54,7 @@ const Format = @import("fmt/Format.zig");
 const LowerDiagnostics = @import("bir/Diagnostics.zig");
 const render_text = @import("render/text.zig");
 const render_json = @import("render/json.zig");
+const wrap = @import("render/wrap.zig");
 const Graph = @import("resolve/Graph.zig");
 const Interface = @import("resolve/Interface.zig");
 const Resolve = @import("resolve/Resolve.zig");
@@ -99,6 +100,10 @@ checked: Check = .empty,
 /// Every diagnostic of the last run, in emission order after `run`.
 /// Messages are gpa-owned; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
+/// Set for the duration of ONE `renderLate` call: the files a late
+/// diagnostic points at that the store does not hold, or must not be asked
+/// for. Borrowed from that call's stack.
+late_sources: []const LateSource = &.{},
 /// Set when `run` fails on I/O so `main` can say which path.
 io_failure: ?IoFailure = null,
 /// Shared by all workers: the next file index to claim.
@@ -261,7 +266,10 @@ pub const Worker = struct {
     pub const Pending = struct { file: SourceStore.Index, diagnostic: diagnostic.Diagnostic };
 
     /// Record a diagnostic for `file`. `message` is copied into gpa memory
-    /// owned by the session.
+    /// owned by the session, and re-wrapped on the way (`render/wrap.zig`):
+    /// every message is a format string wrapped by hand around holes whose
+    /// contents are not known until here, so the 80-column rule is enforced
+    /// AFTER interpolation or not at all.
     pub fn report(worker: *Worker, session: *Session, file: SourceStore.Index, code: diagnostic.Code, start: diagnostic.Position, end: diagnostic.Position, message: []const u8) Allocator.Error!void {
         return worker.reportAs(session, file, code, .@"error", start, end, message);
     }
@@ -272,7 +280,7 @@ pub const Worker = struct {
     /// turning a passing build into a failing one
     /// (static-dispatch-spike.md §10 preamble, A.83).
     pub fn reportAs(worker: *Worker, session: *Session, file: SourceStore.Index, code: diagnostic.Code, severity: diagnostic.Severity, start: diagnostic.Position, end: diagnostic.Position, message: []const u8) Allocator.Error!void {
-        const owned = try session.gpa.dupe(u8, message);
+        const owned = try wrap.reflow(session.gpa, message);
         errdefer session.gpa.free(owned);
         try worker.diagnostics.append(session.gpa, .{ .file = file, .diagnostic = .{
             .code = code,
@@ -1026,13 +1034,17 @@ fn symbolText(session: *const Session, s: InternPool.Symbol.Optional) []const u8
 
 fn reportInvalidModulePath(session: *Session, file: SourceStore.Index) Allocator.Error!void {
     const p = session.store.path(file);
-    const message = try std.fmt.allocPrint(session.gpa,
+    const formatted = try std.fmt.allocPrint(session.gpa,
         \\I cannot turn the path `{s}` into a module name.
         \\
         \\A module name comes from the path: `src/Json/Decode.beni` is `Json.Decode`. Every
         \\segment of the path after the source root must be an upper identifier — a capital
         \\letter followed by letters, digits or underscores.
     , .{p});
+    defer session.gpa.free(formatted);
+    // The path is interpolated, so the first line's width is the user's and
+    // not this file's: re-wrap like every other message (`render/wrap.zig`).
+    const message = try wrap.reflow(session.gpa, formatted);
     errdefer session.gpa.free(message);
     // Reported on worker 0's list so it is collected like any other; the
     // sort keys it by file and position regardless.
@@ -1093,14 +1105,51 @@ pub const LateItem = struct {
     /// Token index into `file`'s token list.
     token: u32,
     message: []const u8,
-    /// A path to report against INSTEAD of `file`, for a fault in a file
-    /// that is not beni source and so has no tokens — a platform's
-    /// `beni.json`. The span is then the whole-file 1:1 that
-    /// `reportInvalidModulePath` uses for the same kind of fault, and
-    /// `lookupSource` finds nothing under the path, so the renderer prints
-    /// no excerpt. Borrowed for the call, like `message`.
-    path: ?[]const u8 = null,
+    /// Where to report INSTEAD of `file`'s token, for a fault whose text is
+    /// not in a beni source file. `file` and `token` are ignored when this
+    /// is set. Borrowed for the call, like `message`.
+    at: ?At = null,
 };
+
+/// A place in a file the `SourceStore` does not hold: a sibling `.js`
+/// (read from disk, or carried in the binary for `core/`), a platform's
+/// `beni.json`, or a beni file a diagnostic names WITHOUT pointing inside
+/// it.
+///
+/// `boundary.md` §4's rule is that a diagnostic points at the file whose
+/// text is wrong, and a sibling's text is exactly as wrong as a module's.
+/// The scanner knows the byte offset of every export, reference and
+/// specifier it reads (`js/Sibling.zig`), so the only thing missing was a
+/// way to carry a position and the bytes to cut an excerpt from — the
+/// store cannot supply either, because a `.js` is not one of its files.
+pub const At = struct {
+    path: []const u8,
+    /// Default is the whole-file 1:1 that `reportInvalidModulePath` uses
+    /// for a fault about a file rather than a place in one.
+    start: diagnostic.Position = .{ .line = 1, .col = 1 },
+    end: diagnostic.Position = .{ .line = 1, .col = 1 },
+    /// `path`'s bytes, for the excerpt. **`null` means no excerpt for THIS
+    /// diagnostic**, and says so even when the store holds `path`:
+    /// `missing_main` reports against a module that is perfectly fine, so
+    /// underlining any of its text would be a lie — and a warning in the
+    /// same file, in the same stream, still gets its own. That is why
+    /// `render/text.zig`'s lookup is asked per diagnostic. Borrowed for the
+    /// call.
+    source: ?[]const u8 = null,
+};
+
+/// What `renderLate` hands `lookupSource` for the duration of one render:
+/// one entry per late item that carried an `At`, keyed by the whole SPAN
+/// rather than by the path. The path alone is not enough, because two
+/// diagnostics in one stream may name the same file and want different
+/// answers — `missing_main` wants none, and a warning ten lines down wants
+/// its own line.
+const LateSource = struct { span: diagnostic.Span, source: ?[]const u8 };
+
+fn sameSpan(a: diagnostic.Span, b: diagnostic.Span) bool {
+    return std.mem.eql(u8, a.file, b.file) and
+        a.start.order(b.start) == .eq and a.end.order(b.end) == .eq;
+}
 
 /// Render `items` on `stderr` in the run's diagnostics format, sorted by the
 /// schema's comparator like every other wave. Returns how many of `items`
@@ -1120,22 +1169,41 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     const gpa = session.gpa;
     const rendered = try gpa.alloc(diagnostic.Diagnostic, items.len + held.len);
     defer gpa.free(rendered);
+    // The late messages are re-wrapped here rather than where they were
+    // built, so that every message in the stream passes through exactly one
+    // wrap (`render/wrap.zig`); `held` already did on its way into a
+    // worker's list.
+    var late_messages: std.ArrayList([]u8) = .empty;
+    defer {
+        for (late_messages.items) |m| gpa.free(m);
+        late_messages.deinit(gpa);
+    }
+    try late_messages.ensureTotalCapacityPrecise(gpa, items.len);
+    var late_sources: std.ArrayList(LateSource) = .empty;
+    defer late_sources.deinit(gpa);
     for (items, rendered[0..items.len]) |item, *slot| {
-        const whole_file: diagnostic.Position = .{ .line = 1, .col = 1 };
-        const start, const end = if (item.path == null)
-            session.tokenSpan(item.file, item.token)
+        const start, const end = if (item.at) |at|
+            .{ at.start, at.end }
         else
-            .{ whole_file, whole_file };
+            session.tokenSpan(item.file, item.token);
+        late_messages.appendAssumeCapacity(try wrap.reflow(gpa, item.message));
         slot.* = .{
             .code = item.code,
             .severity = .@"error",
-            .span = .{ .file = item.path orelse session.store.path(item.file), .start = start, .end = end },
+            .span = .{
+                .file = if (item.at) |at| at.path else session.store.path(item.file),
+                .start = start,
+                .end = end,
+            },
             .title = diagnostic.title(item.code),
-            .message = item.message,
+            .message = late_messages.items[late_messages.items.len - 1],
         };
+        if (item.at) |at| try late_sources.append(gpa, .{ .span = slot.span, .source = at.source });
     }
     @memcpy(rendered[items.len..], held);
     diagnostic.sort(rendered);
+    session.late_sources = late_sources.items;
+    defer session.late_sources = &.{};
     try session.render(rendered, stderr);
     var errors: u32 = 0;
     for (rendered[0..items.len]) |d| {
@@ -1155,9 +1223,16 @@ fn render(session: *Session, items: []const diagnostic.Diagnostic, stderr: *Io.W
     try stderr.flush();
 }
 
-fn lookupSource(context: *const anyopaque, file: []const u8) ?[]const u8 {
+/// The bytes the text renderer cuts an excerpt from. `late_sources` comes
+/// first and is AUTHORITATIVE for the span it names: a sibling `.js` is not
+/// in the store at all, and an entry with no source means this diagnostic
+/// shows no excerpt even when the store does hold its file (`At.source`).
+fn lookupSource(context: *const anyopaque, d: *const diagnostic.Diagnostic) ?[]const u8 {
     const session: *const Session = @ptrCast(@alignCast(context));
-    const index = session.store.find(file) orelse return null;
+    for (session.late_sources) |entry| {
+        if (sameSpan(entry.span, d.span)) return entry.source;
+    }
+    const index = session.store.find(d.span.file) orelse return null;
     return session.store.bytes(index);
 }
 

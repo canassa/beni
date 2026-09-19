@@ -168,6 +168,33 @@ Four checks run at build time, and all four are things Elm does not do:
    fooled. The fix is always the same — write the parameter list out:
    `export const f = (a, b) => g(a, b);`.
 
+**A diagnostic points at the file whose text is wrong** (2026-09-19, queue slice 45). The four
+checks compare two files, so each one has to say WHICH of them the author must edit, and the caret
+is that answer. The scanner already knows the byte offset of every export, reference and specifier
+it reads, so a fault in the JavaScript is reported IN the JavaScript — path, line, column and an
+excerpt of that line — exactly as a fault in a module is reported in the module. It does not matter
+that a sibling is not beni source, nor that its bytes came from the compiler's own assets rather
+than from disk: `core/List.js` names `core/List.js`.
+
+| Fault | Region | The other file |
+|---|---|---|
+| check 1, `foreign_bad_shape` | the `foreign` declaration | — |
+| `foreign_sibling_missing` | the module's first `foreign` | named in the message |
+| check 2, declared and not exported | the `foreign` declaration | named in the message |
+| check 2, exported and not declared | the `export` name, in the `.js` | named in the message |
+| check 3, `foreign_unbound_reference` | the reference, in the `.js` | — |
+| check 4, `foreign_arity_mismatch` | the `foreign` declaration | named `path:line:col` |
+| a relative `import` (`backend.md` §2) | the specifier, in the `.js` | — |
+
+The split is not stylistic. **Where a fault concerns both files, the region is the beni
+declaration, because that is where the promise is written**: a declaration with no export, and an
+arity that disagrees, are both the module saying something the sibling does not honour, and the
+edit that resolves them may be on either side. Where the fault is the `.js` file's alone — an
+export nothing declares, a name from nowhere, a specifier that cannot be relocated — the module
+is innocent and the caret must not be on it. All three of those used to land on the module's FIRST
+`foreign` declaration, an arbitrary line chosen only because it was the one the check had a token
+for.
+
 **This rule was documented and unenforced for one day and is now check 4** (2026-09-18, queue slice
 4). While it was unenforced a sibling that forgot its leading evidence parameter built cleanly and
 failed at run time — the `List.eq` shape above, with the evidence function arriving where the first
@@ -214,6 +241,23 @@ platform rather than hardcoding one, and a platform may offer more than one entr
 infers something and the build cannot tell whether it is this platform's `Program`; with one, the
 checker has already proved the body matches, so comparing the annotation is a complete check that
 costs no inference.
+
+**An absence has no token, so `missing_main` underlines nothing** (2026-09-19, queue slice 45). It
+is reported against a FILE at `1:1` with no excerpt, the form
+`Session.reportInvalidModulePath` already uses for a fault about a file rather than a place in
+one, and the message says which file it named and why. The file is the first module of the root
+package by module index — the sorted path, never argument or completion order (`fast-compiler.md`
+§10) — so the diagnostic is the same however the build was invoked, and the message says so when
+the project has more than one module. It used to be reported on file 0, token 0: whatever source
+the run enumerated first, at its first token, which in the corpus fixture is an `import` and reads
+as if the import were the mistake.
+
+**`main_not_program` names both types as the author could write them** — the prelude bare
+(`language.md` Appendix A), the entry module's own types bare, a name an import exposes bare, and
+`Alias.Name` otherwise. `Render.zig` prints every type name bare because it prints from a type
+store, where a name carries no module (`checker.md` §8.2); this message reads a BIR annotation
+instead and used to print the resolver's internal spelling, so a user who wrote `main : Int` was
+told about `Basics.Int` — a name no beni source may contain.
 
 **A platform declares its output shape with two manifest keys**: `program`, the module-qualified
 opaque type `main` must have, and `runtime`, the JavaScript file whose `run` export receives

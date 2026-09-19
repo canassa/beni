@@ -21,14 +21,22 @@ const diagnostic = @import("diagnostic");
 
 /// Where the excerpt bytes come from. `lookup` returns the whole file, or
 /// null when the renderer should skip the excerpt.
+///
+/// **It is asked per DIAGNOSTIC, not per path.** Most callers answer from
+/// the path alone, but "this one has no excerpt" is a property of the
+/// diagnostic: `missing_main` reports an absence against a module that is
+/// perfectly fine (`boundary.md` §5), so underlining any of that module's
+/// text would be a lie — while another diagnostic in the same file, in the
+/// same stream, must still get its own excerpt. A path-keyed lookup cannot
+/// say both.
 pub const Sources = struct {
     context: *const anyopaque,
-    lookup: *const fn (context: *const anyopaque, file: []const u8) ?[]const u8,
+    lookup: *const fn (context: *const anyopaque, d: *const diagnostic.Diagnostic) ?[]const u8,
 
     /// A source set with no files at all: every excerpt is skipped.
     pub const none: Sources = .{ .context = undefined, .lookup = lookupNone };
 
-    fn lookupNone(_: *const anyopaque, _: []const u8) ?[]const u8 {
+    fn lookupNone(_: *const anyopaque, _: *const diagnostic.Diagnostic) ?[]const u8 {
         return null;
     }
 };
@@ -66,7 +74,7 @@ pub fn render(writer: *std.Io.Writer, diagnostics: []const diagnostic.Diagnostic
     var cursor: Cursor = .{};
     for (diagnostics, 0..) |d, i| {
         if (i != 0) try writer.writeByte('\n');
-        try renderOneAt(writer, d, sources.lookup(sources.context, d.span.file), &cursor);
+        try renderOneAt(writer, d, sources.lookup(sources.context, &d), &cursor);
     }
 }
 
@@ -260,7 +268,7 @@ test "excerpts for many diagnostics in one file are found by resuming, not resca
     try std.testing.expectEqual(lines, found);
 }
 
-fn lookupOnly(context: *const anyopaque, _: []const u8) ?[]const u8 {
+fn lookupOnly(context: *const anyopaque, _: *const diagnostic.Diagnostic) ?[]const u8 {
     const text: *const []const u8 = @ptrCast(@alignCast(context));
     return text.*;
 }
@@ -331,8 +339,8 @@ test "renderOne without a source skips the excerpt; multi-line spans get one car
 
 test "render separates diagnostics with a blank line and writes nothing for none" {
     const Ctx = struct {
-        fn lookup(_: *const anyopaque, file: []const u8) ?[]const u8 {
-            return if (std.mem.eql(u8, file, "A.beni")) "a\n" else null;
+        fn lookup(_: *const anyopaque, d: *const diagnostic.Diagnostic) ?[]const u8 {
+            return if (std.mem.eql(u8, d.span.file, "A.beni")) "a\n" else null;
         }
     };
     const sources: Sources = .{ .context = undefined, .lookup = Ctx.lookup };

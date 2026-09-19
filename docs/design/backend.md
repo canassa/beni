@@ -144,7 +144,10 @@ The rename has one consequence M3a refuses rather than gets wrong: **a sibling m
 another FILE.** `import { cons } from "./List.js"` is written against a name the copy no longer has,
 and rewriting the specifier is M3b's. A bare specifier — `node:process`, a package — survives the
 copy untouched and is what `boundary.md` §4's third check is really about, so nothing that check
-blesses is lost today except sharing a helper file between two siblings.
+blesses is lost today except sharing a helper file between two siblings. The `not_implemented` this
+raises **points at the specifier itself, inside the `.js`**, by `boundary.md` §4's *a diagnostic
+points at the file whose text is wrong*; it used to land on the first `foreign` declaration of the
+module beside it, which is a line nobody would think to look at.
 
 **No `package.json` is written into the output, and that is deliberate.** `.mjs` already makes every
 file an ES module whatever any `package.json` says, so one would add nothing — and it would put back
