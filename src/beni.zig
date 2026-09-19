@@ -71,6 +71,7 @@ pub const cache = struct {
     pub const Key = @import("cache/Key.zig");
     pub const FileKey = @import("cache/FileKey.zig");
     pub const entry_bytes = @import("cache/entry_bytes.zig");
+    pub const type_body = @import("cache/type_body.zig");
     pub const dispatch_bytes = @import("cache/dispatch_bytes.zig");
     pub const Dir = @import("cache/Dir.zig");
 };
@@ -83,6 +84,7 @@ pub const check = struct {
     pub const Render = @import("check/Render.zig");
     pub const Diagnostics = @import("check/Diagnostics.zig");
     pub const Check = @import("check/Check.zig");
+    pub const reads = @import("check/reads.zig");
     pub const Dispatch = @import("check/Dispatch.zig");
     pub const Command = @import("check/Command.zig");
 };
