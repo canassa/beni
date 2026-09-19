@@ -167,6 +167,17 @@ pub const Solver = struct {
     counters: Counters = .{},
     /// Variables whose `copy` memo one instantiation set, cleared after it.
     touched: std.ArrayList(Var) = .empty,
+    /// Whether the type the last `makeCopy` produced can carry a method
+    /// constraint ANYWHERE inside it (§7.2).
+    ///
+    /// `copyHelp` walks exactly the nodes `Schemes.quantifierOrder` then
+    /// walks on the copy, so a walk that met no constrained variable proves
+    /// `tagInstantiated` would number nothing and write nothing — and on
+    /// code that uses no dispatch that is every instantiation. It is set
+    /// CONSERVATIVELY wherever `copyHelp` shares a subtree instead of
+    /// descending into it (a non-generalised root, the depth guard), so it
+    /// can only be true too often, never false too often.
+    copy_constrained: bool = false,
     /// Constraint indices `promote` has already emitted sites for. Two
     /// declarations of one mutually recursive group share their generalised
     /// variables, so without this each of them emits the same
@@ -1294,8 +1305,19 @@ pub const Solver = struct {
         // inferred `where` get the arguments their recursion needs.
         const shared = s.env.bir.instTag(node.region) == .top;
         var tag_cursor = base;
-        try s.tagInstantiated(copy, site, &tag_cursor, mark, shared, Dispatch.Site.no_parent);
-        s.commitEvidence(site, @max(read_cursor, tag_cursor));
+        // `copy_constrained` false means the walk `makeCopy` just did met
+        // no method constraint, so the walk `tagInstantiated` would do over
+        // the same nodes has nothing to number: it would leave `tag_cursor`
+        // where it is and write no site. Skipping it is what keeps the
+        // numbering off the back of code that dispatches on nothing — it is
+        // one instantiation's second full traversal of its own type.
+        if (s.copy_constrained) {
+            try s.tagInstantiated(copy, site, &tag_cursor, mark, shared, Dispatch.Site.no_parent);
+        }
+        // Nothing numbered a slot, so the cursor goes back exactly as it
+        // came out and the write is a lookup that stores what it read.
+        const next = @max(read_cursor, tag_cursor);
+        if (next != base) s.commitEvidence(site, next);
         try s.unify(target, copy, node.region, node.category);
     }
 
@@ -1476,6 +1498,7 @@ pub const Solver = struct {
     /// cleared through `touched` rather than by walking the copy again.
     pub fn makeCopy(s: *Solver, v: Var) Error!Var {
         const start = s.touched.items.len;
+        s.copy_constrained = false;
         const copy = try s.copyHelp(v);
         for (s.touched.items[start..]) |t| s.store().setCopy(t, .none);
         s.touched.shrinkRetainingCapacity(start);
@@ -1490,7 +1513,10 @@ pub const Solver = struct {
         // Returning the original variable shares it with the copy, which is
         // wrong but monotone — it can only make a type LESS general, never
         // silently accept more.
-        if (s.depth > max_depth) return v;
+        if (s.depth > max_depth) {
+            s.copy_constrained = true;
+            return v;
+        }
 
         const st = s.store();
         const root = st.find(v);
@@ -1498,9 +1524,24 @@ pub const Solver = struct {
         // Only a GENERALISED variable is copied. Everything else is shared
         // with the enclosing scope and must stay the same node — that is
         // what makes a lambda parameter monomorphic.
-        if (st.rank(root) != TypeStore.generalized) return root;
+        if (st.rank(root) != TypeStore.generalized) {
+            // NOT descended into, and `Schemes.orderWalk` does descend into
+            // it, so nothing here can say whether something inside carries a
+            // constraint: `copy_constrained` has to assume it does, unless
+            // the store holds no constraint at all. Reading the root's own
+            // content to answer exactly for a shared LEAF was measured and
+            // is SLOWER — the branch costs more than the skips it buys.
+            if (st.constraints.items.len != 0) s.copy_constrained = true;
+            return root;
+        }
 
         const content = st.content(root);
+        switch (content) {
+            .flex, .rigid => |flags| if (flags.constraints != .none) {
+                s.copy_constrained = true;
+            },
+            else => {},
+        }
         const copy = try s.fresh(content);
         st.setCopy(root, copy.toOptional());
         try s.touched.append(s.gpa, root);
