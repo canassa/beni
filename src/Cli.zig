@@ -117,6 +117,13 @@ pub const Common = struct {
     /// was the alternative and is refused: the suite is black-box, and an
     /// in-source hook would move the assertion off the thing that ships.
     roundtrip_interfaces: bool = false,
+    /// `--roundtrip-dispatch` — hidden, and `--roundtrip-interfaces`' twin
+    /// for the cache entry's sidecar (`fast-compiler.md` §8).
+    ///
+    /// On `Common` rather than on `check` and `build`, exactly as its twin
+    /// is, because every command that resolves runs the checker and the
+    /// acceptance matrix has to be able to pass it to `dump` as well.
+    roundtrip_dispatch: bool = false,
     /// `--iface-hash` — hidden, for `--roundtrip-interfaces`' reasons.
     /// Makes `check` print one `<package>:<Module> <32 hex digits>` line per
     /// module, `core` and the platform included, sorted by that key.
@@ -365,6 +372,11 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--roundtrip-interfaces")) {
         if (value != null) return noValue(name);
         common.roundtrip_interfaces = true;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--roundtrip-dispatch")) {
+        if (value != null) return noValue(name);
+        common.roundtrip_dispatch = true;
         return null;
     }
     if (std.mem.eql(u8, name, "--iface-hash")) {
@@ -915,6 +927,32 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try expectUsage("beni: unknown option '--allow-debug'; run 'beni help' for usage", &.{ "check", "--allow-debug", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "--allow-debug") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "allow-debug") == null);
+
+    // `--roundtrip-dispatch` is a fourth, and on `Common` for its twin's
+    // reason: the acceptance matrix passes it to `dump` as well as to
+    // `check` and `build`.
+    try expectCommand(
+        .{ .check = .{ .common = .{ .roundtrip_dispatch = true }, .paths = &.{"src"} } },
+        &.{ "check", "--roundtrip-dispatch", "src" },
+    );
+    try expectCommand(
+        .{ .dump = .{ .common = .{ .roundtrip_dispatch = true }, .stage = .dispatch, .file = "M.beni" } },
+        &.{ "dump", "--stage=dispatch", "--roundtrip-dispatch", "M.beni" },
+    );
+    try expectCommand(
+        .{ .build = .{
+            .common = .{ .roundtrip_interfaces = true, .roundtrip_dispatch = true },
+            .platform = "node",
+            .paths = &.{"src"},
+        } },
+        &.{ "build", "--platform=node", "--roundtrip-interfaces", "--roundtrip-dispatch", "src" },
+    );
+    try expectUsage(
+        "beni: option '--roundtrip-dispatch' does not take a value",
+        &.{ "check", "--roundtrip-dispatch=1", "src" },
+    );
+    try testing.expect(std.mem.indexOf(u8, usage, "--roundtrip-dispatch") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "dispatch-") == null);
 }
 
 test "--cache-build-id is check's and build's, hidden, and nobody else's" {

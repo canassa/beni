@@ -167,6 +167,11 @@ pub const Options = struct {
     /// deserialize of itself the moment its check finishes, before any
     /// dependent reads it.
     roundtrip_interfaces: bool = false,
+    /// `--roundtrip-dispatch` (`Cli.Common`, `fast-compiler.md` §8): the
+    /// twin of the flag above for the dispatch sidecar, so every emitted
+    /// file downstream is built from a table that has been through the
+    /// format.
+    roundtrip_dispatch: bool = false,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9). Set by `check` and
     /// `build`, which are the two subcommands the decision names (A.83);
@@ -988,6 +993,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                     .jobs = @intCast(r.session.workers.len),
                     .pattern_budget = r.session.options.pattern_budget,
                     .roundtrip_interfaces = r.session.options.roundtrip_interfaces,
+                    .roundtrip_dispatch = r.session.options.roundtrip_dispatch,
                 },
             );
         }

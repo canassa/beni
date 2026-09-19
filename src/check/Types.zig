@@ -300,7 +300,7 @@ pub fn resolveRefs(
 /// The type named `name` declared by the module `(package, module)`, or
 /// `.none`. The only name lookup on the type table, and it is a one-off:
 /// see `resolveRefs`.
-fn find(types: *const Types, graph: *const Graph, package: SourceStore.Package, module: Symbol, type_name: Symbol) TypeId {
+pub fn find(types: *const Types, graph: *const Graph, package: SourceStore.Package, module: Symbol, type_name: Symbol) TypeId {
     const m = graph.find(package, module) orelse return .none;
     if (m.int() + 1 >= types.entry_offsets.len) return .none;
     const from = types.entry_offsets[m.int()];

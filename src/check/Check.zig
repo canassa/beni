@@ -63,6 +63,7 @@ const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
+const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
 
 const Check = @This();
 
@@ -167,6 +168,18 @@ pub const Options = struct {
     /// dump, every dispatch table and every emitted file downstream is
     /// built from bytes that have been through the format.
     roundtrip_interfaces: bool = false,
+    /// `--roundtrip-dispatch` (`fast-compiler.md` §8), the twin of the flag
+    /// above for the cache entry's sidecar: write every module's dispatch
+    /// table to bytes, read it back and re-resolve it IN PLACE the moment
+    /// its check finishes, so every emitted file downstream is built from a
+    /// table that has been through the format.
+    ///
+    /// It matters more than its twin does. The record has `dump --stage=raw`
+    /// and a golden; the dispatch table's loss shows up as different
+    /// JavaScript or a `requireLive` failure, which is a wrong PROGRAM, and
+    /// `plans/m4-plan.md` §8 risk 2 names the sidecar as where a silent
+    /// miscompile can hide.
+    roundtrip_dispatch: bool = false,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
@@ -540,6 +553,7 @@ const Driver = struct {
             .informational = d.options.informational,
             .dispatch = &d.dispatch[m.int()],
             .roundtrip_interfaces = d.options.roundtrip_interfaces,
+            .roundtrip_dispatch = d.options.roundtrip_dispatch,
         };
         d.counters[m.int()] = try one.run(if (d.kept.len != 0) &d.kept[m.int()] else null);
     }
@@ -570,6 +584,8 @@ const ModuleCheck = struct {
     informational: bool = false,
     /// `Options.roundtrip_interfaces`, for this module.
     roundtrip_interfaces: bool = false,
+    /// `Options.roundtrip_dispatch`, for this module.
+    roundtrip_dispatch: bool = false,
     /// This module's slot of the run's dispatch tables (§7.1), filled at
     /// the end of `run`.
     dispatch: *Dispatch = undefined,
@@ -731,6 +747,12 @@ const ModuleCheck = struct {
             DerivedNamer.write,
             @ptrCast(&namer),
         );
+        // `--roundtrip-dispatch` goes HERE and nowhere else: the table is
+        // finished and nobody has read it yet. BEFORE `Cycles.run` on
+        // purpose — the cycle pass walks this table, so putting the round
+        // trip first makes even the value-cycle diagnostics a product of
+        // bytes that have been through the format.
+        if (mc.roundtrip_dispatch) try mc.roundtripDispatch(&reporter);
 
         // 8. Top-level value cycles (checker.md §6.7). After the dispatch
         //    table is FINISHED, because a `method_call` adds no `refs` edge
@@ -1159,6 +1181,42 @@ const ModuleCheck = struct {
         };
         iface.deinit(gpa);
         iface.* = loaded;
+    }
+
+    /// Replace this module's dispatch table with serialize → bytes →
+    /// deserialize → re-resolve of itself (`fast-compiler.md` §8's
+    /// `--roundtrip-dispatch`).
+    ///
+    /// The point is that NOTHING downstream can tell: `Cycles`, `Reach`,
+    /// `js/Lower` and the emitter all read this table, so the strongest
+    /// single assertion available is that the whole output tree comes out
+    /// the same over the whole corpus.
+    ///
+    /// A failure here is `internal` and not a cache miss, for the reason
+    /// `roundtripInterface` gives: under this flag a table is written and
+    /// read back inside ONE session, so `BadSidecar` can only mean the
+    /// writer and the reader disagree and `UnknownSymbol` can only mean a
+    /// name the session itself interned is missing from its own pool.
+    fn roundtripDispatch(mc: *ModuleCheck, reporter: *Diagnostics.Reporter) Error!void {
+        const gpa = mc.gpa;
+        const bytes = try dispatch_bytes.write(gpa, mc.dispatch, mc.graph, mc.types, mc.interner);
+        defer gpa.free(bytes);
+        var loaded = dispatch_bytes.read(gpa, bytes, mc.interner) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.BadSidecar => return reporter.internalAlways(
+                @enumFromInt(0),
+                "this module's dispatch table did not load back from its own bytes",
+            ),
+            error.UnknownSymbol => return reporter.internalAlways(
+                @enumFromInt(0),
+                "this module's dispatch table names a string the session's interner does not hold",
+            ),
+        };
+        dispatch_bytes.resolve(&loaded, mc.graph, mc.types);
+        mc.dispatch.deinit(gpa);
+        mc.dispatch.* = loaded.table;
+        loaded.table = .empty;
+        loaded.deinit(gpa);
     }
 
     /// Every visible constructor's argument types, as terms (checker.md §7's

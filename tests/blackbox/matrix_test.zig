@@ -96,11 +96,18 @@ const Variant = struct {
     flags: []const []const u8,
 };
 
+/// The round-tripped variants pass BOTH flags, so the dispatch sidecar's
+/// format is proven lossless over the same fixtures at no extra runs
+/// (`plans/m4-1.md` M1-d). The two belong together: a `run/` fixture whose
+/// emitted JavaScript is byte-identical through the record AND through the
+/// table is the strongest single claim available about either, and the
+/// sidecar is the one whose loss shows up as a wrong program rather than a
+/// wrong message.
 const variants = [_]Variant{
     .{ .label = "cold --jobs=1", .flags = &.{"--jobs=1"} },
     .{ .label = "cold --jobs=8", .flags = &.{"--jobs=8"} },
-    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--roundtrip-interfaces" } },
-    .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--roundtrip-interfaces" } },
+    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--roundtrip-interfaces", "--roundtrip-dispatch" } },
+    .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--roundtrip-interfaces", "--roundtrip-dispatch" } },
 };
 
 const Fixture = struct {
