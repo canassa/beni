@@ -79,6 +79,16 @@ pub const Phase = enum {
     /// (`fast-compiler.md` §8). It is emitted on a MISS too, with zero bytes,
     /// so the row counts every lookup and not only the ones that paid off.
     frontend_load,
+    /// The four halves of `frontend_load`, nested inside it, which is the
+    /// split `plans/m4-2.md` §11 measurement 4 asks for and the one the
+    /// symbol decision rests on: the `open`+`read`, the body-hash check and
+    /// column decode, the structural `verify`, and the re-intern of the
+    /// string table into the worker's `Local` pool. They double-count against
+    /// their parent, like `constrain` and `solve` inside `check`.
+    frontend_read,
+    frontend_decode,
+    frontend_verify,
+    frontend_intern,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.

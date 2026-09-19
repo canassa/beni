@@ -911,18 +911,30 @@ fn loadFrontend(
     const token = session.profile.begin();
     const key = session.file_keys[file.int()];
 
+    const read_token = session.profile.begin();
     const bytes = cache.loadFrontend(gpa, &worker.artifact_buffer, key) orelse
         return miss(session, worker, token, file);
+    session.profile.end(worker.index, read_token, .frontend_read, file.int(), @intCast(bytes.len));
+
+    const decode_token = session.profile.begin();
     var loaded = artifact_bytes.read(gpa, bytes, key) catch |err| switch (err) {
         error.BadArtifact => return miss(session, worker, token, file),
         error.OutOfMemory => return error.OutOfMemory,
     };
     errdefer loaded.deinit(gpa);
-    if (!loaded.bir.verify(@intCast(loaded.tokens.len))) {
+    session.profile.end(worker.index, decode_token, .frontend_decode, file.int(), @intCast(bytes.len));
+
+    const verify_token = session.profile.begin();
+    const structural = loaded.bir.verify(@intCast(loaded.tokens.len));
+    session.profile.end(worker.index, verify_token, .frontend_verify, file.int(), 0);
+    if (!structural) {
         loaded.deinit(gpa);
         return miss(session, worker, token, file);
     }
+
+    const intern_token = session.profile.begin();
     try loaded.intern(gpa, worker.arena.allocator(), &worker.interner);
+    session.profile.end(worker.index, intern_token, .frontend_intern, file.int(), 0);
     try installFrontend(session, worker, file, &loaded, diagnostics_mark, .fresh);
 
     worker.addCounter(.frontend_hits, 1);

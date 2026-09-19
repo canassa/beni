@@ -1357,6 +1357,7 @@ test "a read-only cache directory is an ordinary run that writes nothing" {
     try writeProject(&w);
     try w.createDir("locked");
     if (!try w.makeDirUnwritable("locked")) return; // root, or a filesystem with no permissions
+    defer w.restoreDirMode("locked");
 
     const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
     const locked = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=locked", "src" }, "locked.json");
@@ -1873,6 +1874,7 @@ test "a pre-warmed cache directory made read-only still hits everything" {
 
     const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
     if (!try w.makeDirUnwritable("cache")) return;
+    defer w.restoreDirMode("cache");
     const warm = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "warm.json");
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
     try testing.expectEqualStrings("", warm.result.stderr);

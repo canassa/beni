@@ -191,6 +191,16 @@ pub const World = struct {
         return false;
     }
 
+    /// Undo `makeDirUnwritable`. **Every caller must `defer` this**, and not
+    /// for tidiness: `deinit`'s cleanup cannot unlink anything inside a 0555
+    /// directory, so a scenario that leaves one leaves a tree behind in
+    /// `.zig-cache/tmp/` that `git worktree remove` then refuses to delete.
+    /// Silent on failure, because a test that already failed must not fail
+    /// again on the way out.
+    pub fn restoreDirMode(world: *World, rel_path: []const u8) void {
+        world.tmp.dir.setFilePermissions(world.io, rel_path, @enumFromInt(0o755), .{}) catch {};
+    }
+
     /// Make `rel_path` executable (chmod 755), so a scenario can point a
     /// harness script at a stand-in for the compiler. `write` creates a
     /// plain data file, and a harness that takes a `--beni=<path>` checks
