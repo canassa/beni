@@ -80,7 +80,7 @@ first", to be confirmed; the daemon-phase decisions D6–D9 are not needed befor
 | # | Slice | State | Notes |
 |---|---|---|---|
 | M4-1 | The content-hash cache key, the unhashed sidecar (`plans/m4-slice-zero.md` §4's disposition table), the "produced by a clean check" bit, a `stat` column on `SourceStore` | **done** — nine commits; warm `check` 63 ms vs 131 cold (`--jobs=1`, 100k lines), warm ≠ cold never observed; cold-path writes cost 33 ms and stay serial until M4-2 | spec first; fixtures: a module cached while broken is never reused, a sibling `.js` edit invalidates only that emit unit, a compiler-build change discards the cache |
-| M4-2 | Pre-resolve BIR, AST, tokens, comments, diagnostics on disk (mmap, validated on load) | spec **done**; code in flight (worktree) — the AST is NOT cached (nothing reads it after `lower`); predicted warm `check` 28–38 ms | corrupt-cache fixture per artifact; budget: cold start with a warm cache < 120 ms |
+| M4-2 | Pre-resolve BIR, AST, tokens, comments, diagnostics on disk (mmap, validated on load) | **done** — warm `check` 62 → 39.5 ms, warm `build` 122 → 100.5 ms: the `< 120 ms` warm-start budget is met for the first time; `decode` (10 ms) is what is left, and it is M4-4's | corrupt-cache fixture per artifact; budget: cold start with a warm cache < 120 ms |
 | M4-3 | The firewall cutoff: unchanged interface hash ⇒ dependents not re-checked; needs the five re-entrancy fixes and the three "pure per module" corrections | todo | the incremental-determinism matrix; the three warm budgets 15 / 60 / 25 ms |
 
 ## Owner decision, 2026-09-19: **`lazy` is parked**
