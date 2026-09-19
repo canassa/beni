@@ -1493,6 +1493,182 @@ test "fmt in place rewrites the file to its canonical form, and a second run cha
     try testing.expectEqual(@as(usize, 2), count);
 }
 
+// The formatter rewrites the user's files in place, so everything about a
+// file that is not its contents is an output of `fmt` too. Write-to-temp +
+// `rename` carried the temporary's own mode onto the destination: every
+// rewritten file came back `0644`, which made a `0600` source file
+// world-readable and cost a `0755` script its `x`.
+test "fmt in place keeps the file's mode" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const modes = [_]u32{ 0o600, 0o640, 0o700, 0o755, 0o664 };
+    var names: [modes.len][]const u8 = undefined;
+    var buffers: [modes.len][32]u8 = undefined;
+    for (modes, &names, &buffers) |bits, *name, *buffer| {
+        name.* = try std.fmt.bufPrint(buffer, "M{o}.beni", .{bits});
+        try w.write(name.*, ugly_module);
+        if (!try w.setMode(name.*, bits)) {
+            std.debug.print("this filesystem does not carry permissions; nothing to assert\n", .{});
+            return;
+        }
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    for (modes, names) |bits, name| {
+        try testing.expectEqualStrings(canonical_module, try w.read(name));
+        try testing.expectEqual(bits, try w.mode(name));
+    }
+}
+
+// A file the user marked read-only is not the formatter's to rewrite, and
+// `rename` does not consult the destination's mode — only the directory's —
+// so a `0444` module was silently rewritten. Refusing it is an I/O failure:
+// exit 2 (`frontend.md` §1), the file untouched, and the run's other files
+// still formatted.
+test "fmt refuses a file it cannot write and leaves every byte of it alone" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("ReadOnly.beni", ugly_module);
+    try w.write("Writable.beni", ugly_module);
+    try w.write("locked/Inside.beni", ugly_module);
+    if (!try w.setMode("ReadOnly.beni", 0o444)) {
+        std.debug.print("this filesystem does not carry permissions; nothing to assert\n", .{});
+        return;
+    }
+    _ = try w.setMode("locked", 0o555);
+    defer _ = w.setMode("locked", 0o755) catch false;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "fmt", "." }, .{ .raw_diagnostics = true });
+    const one = try w.runWith(&.{ "fmt", "ReadOnly.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqual(@as(u8, 2), one.exit_code);
+    try testing.expectEqualStrings("beni: cannot write 'ReadOnly.beni': AccessDenied\n", one.stderr);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "cannot write 'ReadOnly.beni': AccessDenied") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "cannot write 'locked/Inside.beni': AccessDenied") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(ugly_module, try w.read("ReadOnly.beni"));
+    try testing.expectEqual(@as(u32, 0o444), try w.mode("ReadOnly.beni"));
+    try testing.expectEqualStrings(ugly_module, try w.read("locked/Inside.beni"));
+    // The refusal is per file: everything else in the run was still done.
+    try testing.expectEqualStrings(canonical_module, try w.read("Writable.beni"));
+}
+
+// `rename` replaces the NAME it is given, so a symlink handed to `fmt` came
+// back as a regular file holding the formatted text while the module it
+// pointed at kept its old bytes — the link destroyed, the real file
+// unformatted, exit 0. The link is now followed to the file it names, which
+// is what `gofmt` and `zig fmt` do.
+test "fmt writes through a symlink and leaves the link itself alone" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("elsewhere/Target.beni", ugly_module);
+    _ = try w.setMode("elsewhere/Target.beni", 0o600);
+    try w.symlink("elsewhere/Target.beni", "Link.beni");
+    try w.symlink("Nowhere.beni", "Dangling.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "fmt", "Link.beni" }, .{ .raw_diagnostics = true });
+    const again = try w.runWith(&.{ "fmt", "--check", "Link.beni" }, .{ .raw_diagnostics = true });
+    const dangling = try w.runWith(&.{ "fmt", "Dangling.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    // The write reached the target, so a second pass has nothing to do.
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+    try testing.expectEqualStrings("", again.stdout);
+    // A link to nothing is an unreadable path, which is exit 2 and not a
+    // regular file created where the link was.
+    try testing.expectEqual(@as(u8, 2), dangling.exit_code);
+    try testing.expectEqualStrings("beni: cannot read 'Dangling.beni': FileNotFound\n", dangling.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(std.Io.File.Kind.sym_link, try w.kind("Link.beni"));
+    try testing.expectEqualStrings("elsewhere/Target.beni", try w.readLink("Link.beni"));
+    try testing.expectEqualStrings(canonical_module, try w.read("elsewhere/Target.beni"));
+    try testing.expectEqual(@as(u32, 0o600), try w.mode("elsewhere/Target.beni"));
+    try testing.expectEqual(std.Io.File.Kind.sym_link, try w.kind("Dangling.beni"));
+}
+
+// Two claims about doing nothing. A file that is already canonical is not
+// written at all — its mtime is what editors and build tools watch — and a
+// rename BREAKS a hard link, which is accepted (atomicity is worth more than
+// a link count) and therefore pinned: if that trade is ever reversed, this
+// is the test that says so.
+test "fmt touches nothing when there is nothing to do, and breaks a hard link when there is" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Fine.beni", canonical_module);
+    _ = try w.setMode("Fine.beni", 0o600);
+    try w.write("Linked.beni", ugly_module);
+    try w.hardLink("Linked.beni", "Second.beni");
+    const before = try w.mtime("Fine.beni");
+    try testing.expectEqual(@as(u64, 2), try w.linkCount("Linked.beni"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "fmt", "Fine.beni", "Linked.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(before, try w.mtime("Fine.beni"));
+    try testing.expectEqual(@as(u32, 0o600), try w.mode("Fine.beni"));
+    try testing.expectEqualStrings(canonical_module, try w.read("Linked.beni"));
+    // Accepted and documented (`fmt/Command.zig`): the other name is now a
+    // file of its own, holding what it held.
+    try testing.expectEqualStrings(ugly_module, try w.read("Second.beni"));
+    try testing.expectEqual(@as(u64, 1), try w.linkCount("Linked.beni"));
+}
+
 test "fmt on a file with a syntax error reports the whole diagnostic, prints nothing, and leaves every byte alone" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

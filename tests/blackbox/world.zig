@@ -192,12 +192,13 @@ pub const World = struct {
         return world.arena.allocator().dupe(u8, buffer[0..n]);
     }
 
-    /// The POSIX mode bits of `rel_path`, following symlinks. `fmt` rewrites
-    /// the user's files in place, so "the file came back with the mode it
-    /// had" is a claim about an output and belongs in this harness.
+    /// The POSIX permission bits of `rel_path`, following symlinks — the
+    /// file-type bits `Stat.permissions` also carries are masked off. `fmt`
+    /// rewrites the user's files in place, so "the file came back with the
+    /// mode it had" is a claim about an output and belongs in this harness.
     pub fn mode(world: *World, rel_path: []const u8) !u32 {
         const stat = try world.tmp.dir.statFile(world.io, rel_path, .{});
-        return @intCast(@intFromEnum(stat.permissions));
+        return @as(u32, @intCast(@intFromEnum(stat.permissions))) & 0o7777;
     }
 
     /// Set the mode bits of `rel_path`. Returns false when the filesystem

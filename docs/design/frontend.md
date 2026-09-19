@@ -92,6 +92,16 @@ same build: same modules, same order, byte-identical emitted output and `--iface
 Exit codes: `0` no errors, `1` at least one `error`-severity diagnostic, `2` usage or I/O
 failure (bad flag, unreadable path). `fmt --check` exits `1` if any file would change.
 
+A `fmt` that rewrites a file in place keeps everything about it that is not its contents. The mode
+is preserved. A symlink is **followed**: the link stays a link and the file it names is the one
+rewritten, in that file's own directory. A file the process cannot write — a `0444` module, or one
+in a directory it cannot write — is **refused**, with `beni: cannot write '<path>'` and exit `2`
+(an I/O failure), and keeps every byte; the other files of the same run are still formatted. Two
+things do not survive, both accepted: ownership, which no unprivileged rename carries, and a hard
+link, whose other names keep the old contents — the write is a temporary file renamed into place,
+which is what makes a crash mid-format leave either the old bytes or the new ones and never half
+a module.
+
 Streams: `stdout` carries the product (dump text, `fmt --stdout` output, nothing for `check`).
 `stderr` carries diagnostics and nothing else. Diagnostics are sorted by file path, then start
 position, then code — regardless of `--jobs`.

@@ -25,7 +25,9 @@
 //! the original, so a crash or a full disk leaves either the old bytes or
 //! the new ones, never a truncated module. A file whose formatted text
 //! equals its source is not touched at all (its mtime stays put, which is
-//! what editors and build tools watching it want).
+//! what editors and build tools watching it want). What the rename must not
+//! take with it — the file's mode, and the link when the path is a symlink
+//! — is `writeAtomic`'s business, at the bottom of this file.
 //!
 //! Exit codes: 2 for a usage or I/O failure (a path that cannot be read, a
 //! file that cannot be written, `--stdout` with more than one file), 1 when
@@ -98,10 +100,53 @@ fn emitAll(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, fmt: Cli.F
 }
 
 /// Replace `path` with `text` through a temporary file in the same
-/// directory, renamed over the original.
+/// directory, renamed over the original — keeping everything about the file
+/// that is not its contents.
+///
+/// **A symlink is followed.** `rename` replaces the name it is given, so a
+/// link handed to `fmt` was turned into a regular file holding the formatted
+/// text while the module it pointed at kept the old bytes: the link
+/// destroyed, the file unformatted, exit 0. The destination is resolved
+/// first and the temporary lands in the TARGET's directory, so the link is
+/// untouched and the real file is the one rewritten. (The walk still never
+/// follows a link — `SourceStore.walk` — so this is about a path the user
+/// named.)
+///
+/// **The mode is preserved.** The temporary is created with the
+/// destination's permissions AND chmod'd to them before the rename, because
+/// `createFile` puts the mode through the process umask: without the second
+/// step a `0666` file comes back `0644`. Before this, every rewritten file
+/// came back at the umask default whatever it had been — a `0600` source
+/// file became world-readable and a `0755` script lost its `x`.
+///
+/// **A file the user cannot write is refused**, not rewritten: `0444` means
+/// what it says, and silently ignoring it was the worst of the three
+/// possible answers. The refusal is an I/O failure — exit 2 (`frontend.md`
+/// §1) — and the file keeps every byte.
+///
+/// Two things are NOT preserved, both by design. Ownership does not survive
+/// a rename for an unprivileged process, so a file someone else owns in a
+/// directory this user can write changes hands; that is what the filesystem
+/// offers. And a rename breaks a HARD link: the other names keep the old
+/// contents. Writing in place would keep them and give up atomicity for
+/// every file, and "a crash mid-format never leaves a truncated module" is
+/// worth more than a link count a source tree almost never has.
 fn writeAtomic(io: Io, path: []const u8, text: []const u8) !void {
-    var atomic = try Io.Dir.cwd().createFileAtomic(io, path, .{ .replace = true });
+    const cwd = Io.Dir.cwd();
+    var resolved: [SourceStore.max_path_bytes]u8 = undefined;
+    const link = (try cwd.statFile(io, path, .{ .follow_symlinks = false })).kind == .sym_link;
+    const destination = if (link) resolved[0..try cwd.realPathFile(io, path, &resolved)] else path;
+
+    const permissions = (try cwd.statFile(io, destination, .{})).permissions;
+    try cwd.access(io, destination, .{ .write = true });
+
+    var atomic = try cwd.createFileAtomic(io, destination, .{ .replace = true, .permissions = permissions });
     defer atomic.deinit(io);
+    // The mode the temporary was created with went through the umask; this
+    // one does not. It is set on the open file, so it travels with the
+    // inode through the rename. A filesystem that cannot chmod still gets
+    // the text — the alternative is refusing to format over a detail.
+    atomic.file.setPermissions(io, permissions) catch {};
     try atomic.file.writeStreamingAll(io, text);
     try atomic.replace(io);
 }
