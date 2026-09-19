@@ -1546,6 +1546,189 @@ test "a module with a warning is cached and replays it byte for byte" {
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
 }
 
+// ---------------------------------------------------------------------------
+// Every flag is classified, and the classification is falsifiable
+// ---------------------------------------------------------------------------
+
+test "a flag that is not in the key cannot change one byte of one entry" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `fast-compiler.md` §8 lists every flag on `Cli.Common`, `Cli.Check`
+    // and `Cli.Build` and says, for each, why it is IN the key or OUT of it.
+    // The rows above falsify the "in" half — change it and the key moves.
+    // This is the "out" half, and it is the one a key that was too WIDE
+    // would fail: a flag that is out of the key must not reach a cached
+    // byte either, or two builds that differ only in it would write two
+    // different entries under one name and the later one would win by
+    // accident.
+    //
+    // The backend's three are the interesting ones. They are out of the key
+    // because no emitted byte is cached in M4-1, and nothing but this says
+    // so out loud.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    const Pair = struct {
+        what: []const u8,
+        a: []const []const u8,
+        b: []const []const u8,
+        build: bool = false,
+    };
+    const pairs = [_]Pair{
+        // Output is identical for every `n`, and keying on it would hide
+        // the very bug the determinism rule forbids.
+        .{ .what = "--jobs", .a = &.{"--jobs=1"}, .b = &.{"--jobs=8"} },
+        // Rendering flags: they select how a message is printed.
+        .{ .what = "--diagnostics", .a = &.{"--diagnostics=text"}, .b = &.{"--diagnostics=json"} },
+        .{ .what = "--explain", .a = &.{}, .b = &.{"--explain"} },
+        // A round trip must produce the same record, and exempting it would
+        // excuse it from the acceptance matrix.
+        .{ .what = "--roundtrip-interfaces", .a = &.{}, .b = &.{"--roundtrip-interfaces"} },
+        .{ .what = "--roundtrip-dispatch", .a = &.{}, .b = &.{"--roundtrip-dispatch"} },
+        // `--root` reaches the key through the module name and nowhere
+        // else, so naming the root a module already has cannot move a byte.
+        .{ .what = "--root", .a = &.{}, .b = &.{"--root=src"} },
+        // The backend's, all four: no emitted byte is cached in M4-1.
+        .{ .what = "--out", .a = &.{"--out=outa"}, .b = &.{"--out=outb"}, .build = true },
+        .{ .what = "--library", .a = &.{"--out=outc"}, .b = &.{ "--out=outd", "--library" }, .build = true },
+        .{ .what = "--release", .a = &.{"--out=oute"}, .b = &.{ "--out=outf", "--release" }, .build = true },
+        // `--allow-debug` is the fourth and it gets its own scenario below,
+        // because saying anything about it needs a project that reaches
+        // `Debug` — on this one the flag lifts a refusal that never fires.
+    };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY                        │
+    // └─────────────────────────────────────────┘
+    for (pairs, 0..) |pair, i| {
+        const dir_a = try std.fmt.allocPrint(arena, "ca{d}", .{i});
+        const dir_b = try std.fmt.allocPrint(arena, "cb{d}", .{i});
+        try runFlagged(&w, arena, pair.build, pair.a, dir_a);
+        try runFlagged(&w, arena, pair.build, pair.b, dir_b);
+        expectSameCache(&w, arena, dir_a, dir_b) catch |err| {
+            std.debug.print("{s} reached a cached byte and must not\n", .{pair.what});
+            return err;
+        };
+    }
+}
+
+test "--allow-debug lifts a refusal raised after the cache was written" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The fourth backend flag, and the one whose classification is sharpest.
+    // `backend.md` §9 refuses a `--release` build that still reaches
+    // `Debug`; `--allow-debug` lifts that refusal. It cannot touch a cached
+    // byte, and not merely because no emitted byte is cached: the refusal is
+    // raised in `Emit.run`, after `eliminate` and long after `Session.run`
+    // returned, and `Session.run` is where the entries are written. By the
+    // time the flag is consulted the cache is already on disk.
+    //
+    // So the two runs differ in EXIT CODE — 1 against 0 — and agree on every
+    // entry, which is a stronger statement than the table's rows can make.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("src/Noisy.beni",
+        \\pub shout : Int -> Int
+        \\shout n =
+        \\    Debug.log n "shouting"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const refused = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--library", "--release", "--out=refused", "--cache-dir=ra", "src" },
+        "refused.json",
+    );
+    const allowed = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--library", "--release", "--allow-debug", "--out=allowed", "--cache-dir=rb", "src" },
+        "allowed.json",
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // The fixture really does divide the two, or the rest proves nothing.
+    try testing.expectEqual(@as(u8, 1), refused.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), allowed.result.exit_code);
+    try testing.expect(std.mem.indexOf(u8, refused.result.stderr, "debug_in_release") != null or
+        std.mem.indexOf(u8, refused.result.stderr, "DEBUG") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The refused build wrote its entries all the same, and they are the
+    // allowed build's entries byte for byte.
+    try testing.expect(refused.counters.bytes > 0);
+    try expectSameCache(&w, arena, "ra", "rb");
+
+    // …and the refused build's own cache is warm for the next run of either
+    // spelling, which is what "the cache was already on disk" means.
+    const again = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--library", "--release", "--allow-debug", "--out=again", "--cache-dir=ra", "src" },
+        "again.json",
+    );
+    try testing.expectEqual(@as(u8, 0), again.result.exit_code);
+    try testing.expectEqual(@as(u64, 0), again.counters.checked);
+}
+
+fn runFlagged(
+    w: *World,
+    arena: std.mem.Allocator,
+    is_build: bool,
+    flags: []const []const u8,
+    dir: []const u8,
+) !void {
+    var argv: std.ArrayList([]const u8) = .empty;
+    if (is_build) {
+        try argv.appendSlice(arena, &.{ "build", "--platform=node", "--library" });
+    } else {
+        try argv.append(arena, "check");
+    }
+    try argv.appendSlice(arena, flags);
+    try argv.append(arena, try std.fmt.allocPrint(arena, "--cache-dir={s}", .{dir}));
+    try argv.append(arena, "src");
+    const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0) {
+        std.debug.print("a flag-classification run exited {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.CheckFailed;
+    }
+}
+
+/// Two cache directories hold the same entries under the same names, with
+/// the same bytes. Not "the entries a test thought to name": an entry that
+/// appears under one configuration and not the other is exactly the
+/// difference this asserts the absence of.
+fn expectSameCache(w: *World, arena: std.mem.Allocator, a: []const u8, b: []const u8) !void {
+    const left = try w.listFiles(a);
+    const right = try w.listFiles(b);
+    try testing.expect(left.len > 0);
+    try testing.expectEqual(left.len, right.len);
+    for (left, right) |x, y| {
+        try testing.expectEqualStrings(x, y);
+        const xb = try w.read(try std.fs.path.join(arena, &.{ a, x }));
+        const yb = try w.read(try std.fs.path.join(arena, &.{ b, y }));
+        try testing.expectEqualStrings(xb, yb);
+    }
+}
+
 /// `--cache-keys` for a project that does not compile. The keys exist all
 /// the same — the firewall's question is about inputs, not about success —
 /// and a scenario that asserts "this module has no entry" needs its key.
