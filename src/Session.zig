@@ -718,6 +718,7 @@ fn lexPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerro
     try Tokenizer.tokenize(gpa, text, &worker.interner, &out);
     session.profile.end(worker.index, lex_token, .lex, file.int(), @intCast(text.len));
     worker.addCounter(.tokens, out.tokens.len);
+    worker.addCounter(.files_lexed, 1);
 
     const line_starts = try out.line_starts.toOwnedSlice(gpa);
     session.store.setLineStarts(gpa, file, line_starts);
@@ -769,6 +770,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     errdefer tree.deinit(gpa);
     session.profile.end(worker.index, parse_token, .parse, file.int(), @intCast(text.len));
     worker.addCounter(.nodes, tree.nodes.len);
+    worker.addCounter(.files_parsed, 1);
 
     var message: Io.Writer.Allocating = .init(gpa);
     defer message.deinit();
@@ -814,6 +816,7 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     errdefer bir.deinit(gpa);
     session.profile.end(worker.index, lower_token, .lower, file.int(), @intCast(text.len));
     worker.addCounter(.insts, bir.insts.len);
+    worker.addCounter(.files_lowered, 1);
 
     var message: Io.Writer.Allocating = .init(gpa);
     defer message.deinit();
@@ -834,6 +837,77 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 
     if (session.wantsFileKeys()) session.file_keys[file.int()] = session.fileKey(file);
     if (session.options.roundtrip_frontend) try roundTripFrontend(session, worker, file, diagnostics_mark);
+    if (session.options.cache) |cache| try storeFrontend(session, worker, cache, file, diagnostics_mark);
+}
+
+/// This file's rendered front-end diagnostics, as rows, borrowed from the
+/// worker's own list. Everything appended from `mark` on is this file's: a
+/// worker takes one file at a time.
+fn frontendDiagnostics(
+    worker: *Worker,
+    scratch: Allocator,
+    mark: usize,
+    out: *std.ArrayList(artifact_bytes.Diagnostic),
+) Allocator.Error!void {
+    for (worker.diagnostics.items[mark..]) |p| {
+        try out.append(scratch, .{
+            .code = @intFromEnum(p.diagnostic.code),
+            .severity = @intFromEnum(p.diagnostic.severity),
+            .start_line = p.diagnostic.span.start.line,
+            .start_col = p.diagnostic.span.start.col,
+            .end_line = p.diagnostic.span.end.line,
+            .end_col = p.diagnostic.span.end.col,
+            .message = p.diagnostic.message,
+        });
+    }
+}
+
+/// Write this file's front-end artifact, from the worker that produced it
+/// (`plans/m4-2.md` §6 A).
+///
+/// **A file whose front end produced an `error` is never written.** That is
+/// M4-1's "produced by a clean check" bit, one phase earlier and for the same
+/// reason: a file that did not lex, parse or lower has a `Bir` the recovery
+/// invented, and a later run that installed it would be reporting the
+/// recovery's guesses as facts. `warning`s ARE written and replayed, because
+/// a warning is a true statement about a file that compiled.
+///
+/// Every failure is silent, like every other cache write: the run must be
+/// byte-identical to one with no cache at all.
+fn storeFrontend(
+    session: *Session,
+    worker: *Worker,
+    cache: *const CacheDir,
+    file: SourceStore.Index,
+    diagnostics_mark: usize,
+) anyerror!void {
+    const gpa = session.gpa;
+    const scratch = worker.arena.allocator();
+    const token = session.profile.begin();
+
+    var rows: std.ArrayList(artifact_bytes.Diagnostic) = .empty;
+    defer rows.deinit(scratch);
+    try frontendDiagnostics(worker, scratch, diagnostics_mark, &rows);
+    for (rows.items) |row| {
+        if (row.severity == @intFromEnum(diagnostic.Severity.@"error")) {
+            session.profile.end(worker.index, token, .frontend_store, file.int(), 0);
+            return;
+        }
+    }
+
+    const bytes = try artifact_bytes.write(gpa, scratch, .{
+        .key = session.file_keys[file.int()],
+        .bir = session.artifacts.bir(file),
+        .interner = &worker.interner,
+        .tokens = session.artifacts.tokens(file),
+        .line_starts = session.store.lineStarts(file),
+        .diagnostics = rows.items,
+    });
+    defer gpa.free(bytes);
+    if (cache.storeFrontend(session.file_keys[file.int()], bytes)) {
+        worker.addCounter(.frontend_bytes, bytes.len);
+    }
+    session.profile.end(worker.index, token, .frontend_store, file.int(), @intCast(bytes.len));
 }
 
 /// Whether this run needs a front-end key per file at all.
@@ -893,17 +967,7 @@ fn roundTripFrontend(session: *Session, worker: *Worker, file: SourceStore.Index
 
     var rows: std.ArrayList(artifact_bytes.Diagnostic) = .empty;
     defer rows.deinit(scratch);
-    for (worker.diagnostics.items[diagnostics_mark..]) |p| {
-        try rows.append(scratch, .{
-            .code = @intFromEnum(p.diagnostic.code),
-            .severity = @intFromEnum(p.diagnostic.severity),
-            .start_line = p.diagnostic.span.start.line,
-            .start_col = p.diagnostic.span.start.col,
-            .end_line = p.diagnostic.span.end.line,
-            .end_col = p.diagnostic.span.end.col,
-            .message = p.diagnostic.message,
-        });
-    }
+    try frontendDiagnostics(worker, scratch, diagnostics_mark, &rows);
 
     const key = session.file_keys[file.int()];
     const bytes = try artifact_bytes.write(gpa, scratch, .{

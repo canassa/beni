@@ -67,6 +67,13 @@ pub const Phase = enum {
     /// written, which is the number `plans/m4-1.md` §7 measurement 3 exists
     /// to watch on the cold path.
     cache_store,
+    /// Writing one file's front-end artifact, **on the worker that produced
+    /// it**, inside the per-file phase (`fast-compiler.md` §8, `plans/m4-2.md`
+    /// §6 A). Not a serial pass and not a pass of its own: that phase already
+    /// does file I/O, is already parallel, and already reports nothing on
+    /// failure. Its own row because the cold-path cost of six times M4-1's
+    /// bytes is the number §6 B was argued on.
+    frontend_store,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.
@@ -148,6 +155,18 @@ pub const Counter = enum {
     /// Bytes written to the cache directory this run, over the entries that
     /// were actually stored. Zero without `--cache-dir`.
     cache_bytes,
+    /// The front-end cache (`fast-compiler.md` §8, M4-2). **These three are
+    /// the load-bearing half of the slice**: a phase that did not run is
+    /// otherwise indistinguishable from a phase that ran fast, and §12's rule
+    /// that a cost which does not appear in the trace defeats the instrument
+    /// has a converse — a SAVING that does not appear in a counter is a
+    /// timing and not a fact. A warm run must report 0 for all three.
+    files_lexed,
+    files_parsed,
+    files_lowered,
+    /// Bytes of front-end artifact written this run, over the files actually
+    /// stored. Zero without `--cache-dir`.
+    frontend_bytes,
 
     pub const count = @typeInfo(Counter).@"enum".fields.len;
 };

@@ -733,6 +733,13 @@ const Counters = struct {
     misses: u64 = 0,
     checked: u64 = 0,
     bytes: u64 = 0,
+    /// M4-2's three (`fast-compiler.md` §8): a phase that did not run is
+    /// otherwise indistinguishable from a phase that ran fast.
+    lexed: u64 = 0,
+    parsed: u64 = 0,
+    lowered: u64 = 0,
+    files: u64 = 0,
+    frontend_bytes: u64 = 0,
 };
 
 const Run = struct {
@@ -755,6 +762,11 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
             cache_misses: ?u64 = null,
             modules_checked: ?u64 = null,
             cache_bytes: ?u64 = null,
+            files_lexed: ?u64 = null,
+            files_parsed: ?u64 = null,
+            files_lowered: ?u64 = null,
+            files: ?u64 = null,
+            frontend_bytes: ?u64 = null,
         } = .{},
     };
     const text = try w.read(trace);
@@ -772,6 +784,11 @@ fn runCounted(w: *World, arena: std.mem.Allocator, args: []const []const u8, tra
         if (e.args.cache_misses) |v| counters.misses = v;
         if (e.args.modules_checked) |v| counters.checked = v;
         if (e.args.cache_bytes) |v| counters.bytes = v;
+        if (e.args.files_lexed) |v| counters.lexed = v;
+        if (e.args.files_parsed) |v| counters.parsed = v;
+        if (e.args.files_lowered) |v| counters.lowered = v;
+        if (e.args.files) |v| counters.files = v;
+        if (e.args.frontend_bytes) |v| counters.frontend_bytes = v;
     }
     return .{ .result = r, .counters = counters };
 }
@@ -819,7 +836,7 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
     // A run with no cache directory writes nothing, whatever it counted.
     try testing.expectEqual(@as(u64, 0), plain.counters.bytes);
 
-    const files = try w.listFiles("cache");
+    const files = try entriesOnly(arena, try w.listFiles("cache"));
     try testing.expectEqual(@as(usize, @intCast(cached.counters.misses)), files.len);
     for (files) |f| {
         // `v<n>/<kk>/<rest>.bec`, two levels of fan-out over the key's hex.
@@ -827,12 +844,160 @@ test "a cold run with --cache-dir writes entries and does not move one byte of o
         try testing.expect(std.mem.endsWith(u8, f, ".bec"));
         try testing.expectEqual(@as(usize, "v1/".len + 2 + 1 + 30 + ".bec".len), f.len);
     }
+    // The front-end artifacts share the directory and the fan-out under a
+    // SECOND key (M4-2): one `.bef` per FILE, beside one `.bec` per module.
+    const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
+    try testing.expect(artifacts.len > 0);
+    for (artifacts) |f| {
+        try testing.expect(std.mem.startsWith(u8, f, "v1/"));
+        try testing.expectEqual(@as(usize, "v1/".len + 2 + 1 + 30 + ".bef".len), f.len);
+    }
 
     // Running again writes the same files and no more: the name is the key,
     // so a second cold run overwrites rather than accumulating.
     _ = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "again.json");
     const again = try w.listFiles("cache");
-    try testing.expectEqual(files.len, again.len);
+    try testing.expectEqual(files.len + artifacts.len, again.len);
+}
+
+test "a cold run lexes, parses and lowers every file and writes one artifact for each" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // M2-e's assertion, and the floor the warm one is measured against: a
+    // COLD run does all the work, and the three counters say so. Without
+    // them "the front end did not run" on a warm run would be a timing
+    // rather than a fact (`fast-compiler.md` §8, `frontend.md` §6).
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(plain.result.exit_code, cold.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stderr, cold.result.stderr);
+    try testing.expectEqualStrings(plain.result.stdout, cold.result.stdout);
+
+    // Every file, on both runs: a cache directory does not change what the
+    // front end does on a cold run, it only makes it write.
+    for ([_]Run{ plain, cold }) |run| {
+        try testing.expect(run.counters.files > 0);
+        try testing.expectEqual(run.counters.files, run.counters.lexed);
+        try testing.expectEqual(run.counters.files, run.counters.parsed);
+        try testing.expectEqual(run.counters.files, run.counters.lowered);
+    }
+    // A run with no cache directory writes no artifact, whatever it lowered.
+    try testing.expectEqual(@as(u64, 0), plain.counters.frontend_bytes);
+    try testing.expect(cold.counters.frontend_bytes > 0);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One `.bef` per FILE — more than the `.bec` count, because a file key
+    // is per file and a module key is per module, and core's files are both.
+    const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
+    try testing.expectEqual(@as(usize, @intCast(cold.counters.files)), artifacts.len);
+}
+
+test "a file whose front end failed is never written, and its neighbours are" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // M4-1's "produced by a clean check" bit, one phase earlier and for the
+    // same reason: a file that did not parse has a `Bir` the recovery
+    // invented, and a later run that installed it would report the
+    // recovery's guesses as facts.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("src/Broken.beni", "pub x = = =\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "broken.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.result.exit_code);
+    const artifacts = try artifactsOnly(arena, try w.listFiles("cache"));
+    // Every file but the broken one. The count is the assertion: naming the
+    // absent key would need the file key of a file that does not compile,
+    // and `--frontend-keys` prints those too — so both halves are checked.
+    try testing.expectEqual(@as(usize, @intCast(r.counters.files - 1)), artifacts.len);
+
+    const keys = try fileKeysOfAllowingErrors(&w, arena);
+    const broken_digits = lookup(keys, "src/Broken.beni").?;
+    var broken_name: [40]u8 = undefined;
+    const broken_path = artifactPathFor(&broken_name, broken_digits);
+    for (artifacts) |f| {
+        if (std.mem.eql(u8, f, broken_path)) {
+            std.debug.print("a front-end artifact exists for the file that did not parse\n", .{});
+            return error.UnexpectedEntry;
+        }
+    }
+    // …and the file beside it was written, so this is not "nothing was".
+    const leaf_digits = lookup(keys, leaf_file).?;
+    var leaf_name: [40]u8 = undefined;
+    const leaf_path = artifactPathFor(&leaf_name, leaf_digits);
+    var found = false;
+    for (artifacts) |f| {
+        if (std.mem.eql(u8, f, leaf_path)) found = true;
+    }
+    if (!found) {
+        std.debug.print("no front-end artifact for {s}\n", .{leaf_file});
+        return error.MissingEntry;
+    }
+
+    // After the fix, it is written like any other.
+    try w.write("src/Broken.beni", "pub x : Int\nx =\n    1\n");
+    const fixed = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "fixed.json");
+    try testing.expectEqual(@as(u8, 0), fixed.result.exit_code);
+    const after = try artifactsOnly(arena, try w.listFiles("cache"));
+    try testing.expectEqual(@as(usize, @intCast(fixed.counters.files)), after.len);
+}
+
+/// `v1/<kk>/<rest>.bef`, the artifact path a file key names.
+fn artifactPathFor(buffer: *[40]u8, digits: []const u8) []const u8 {
+    return std.fmt.bufPrint(buffer, "v1/{s}/{s}.bef", .{ digits[0..2], digits[2..] }) catch unreachable;
+}
+
+fn fileKeysOfAllowingErrors(w: *World, arena: std.mem.Allocator) ![]const Entry {
+    const r = try w.runWith(&.{ "check", "--frontend-keys", "--jobs=1", "src" }, .{ .raw_diagnostics = true });
+    return parseKeys(arena, r.stdout);
+}
+
+/// The `.bec` entries of a cache listing — M4-1's, one per MODULE.
+fn entriesOnly(arena: std.mem.Allocator, files: []const []const u8) ![]const []const u8 {
+    return withExtension(arena, files, ".bec");
+}
+
+/// The `.bef` front-end artifacts — M4-2's, one per FILE, under a different
+/// key in the same fan-out.
+fn artifactsOnly(arena: std.mem.Allocator, files: []const []const u8) ![]const []const u8 {
+    return withExtension(arena, files, ".bef");
+}
+
+fn withExtension(arena: std.mem.Allocator, files: []const []const u8, ext: []const u8) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    for (files) |f| {
+        if (std.mem.endsWith(u8, f, ext)) try out.append(arena, f);
+    }
+    return out.items;
 }
 
 test "--no-cache beside --cache-dir reads nothing and writes nothing" {
@@ -1348,8 +1513,11 @@ test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
 
     const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "src" }, "plain.json");
     const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "cold.json");
-    const files = try w.listFiles("cache");
-    try testing.expect(files.len > 0);
+    // The `.bec` entries only: a ruined `.bef` is a FRONT-END miss and does
+    // not move `cache_misses`, so the row below would be measuring the wrong
+    // counter. `plans/m4-2.md` §9.4's own table for `.bef` is the twin test.
+    const files = try entriesOnly(arena, try w.listFiles("cache"));
+    try testing.expect(files.len > 1);
     const victim = try std.fs.path.join(arena, &.{ "cache", files[0] });
     const good = try w.read(victim);
     try testing.expect(good.len > 64);

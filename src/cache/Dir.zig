@@ -12,12 +12,32 @@
 //! two builds of one project with different options then fight over one file,
 //! and a stale entry becomes a wrong answer instead of an unreferenced one.*
 //!
-//! **Writing is write-to-temp-then-`rename` inside the same directory and
-//! there are no locks.** Two processes that compute the same key write
-//! identical bytes and the later rename is harmless; two that compute
-//! different keys never touch one file. *Rejected: a lockfile — a crashed
-//! build then wedges the next one, and `rename` already gives every property
-//! needed.* `Io.Dir.createFileAtomic` is that mechanism in std's own shape.
+//! **Writing is a plain `create` + one sequential write, with no temp file,
+//! no `rename` and no locks** (`plans/m4-2.md` §6 B, measured: 26.1 → 12.9 ms
+//! serial for 633 entries on btrfs, 15.9 → 7.0 ms on eight workers). Two
+//! processes that compute the same key write IDENTICAL bytes, so any
+//! interleaving is still the right bytes; two that compute different keys
+//! never touch one file. *Rejected: keeping `rename` — 13 ms of a cold build
+//! to buy an atomicity a content-addressed name already provides, and the
+//! argument this file's header used to make for it was about not wedging the
+//! next build, which a plain create does not do either. Rejected: a lockfile,
+//! for the same reason it always was.*
+//!
+//! **Four conditions make that safe, and each is a property something else
+//! enforces.** (1) One `create` and ONE sequential write of ONE buffer — no
+//! seek, no sparse region — and the header carries the file's total length,
+//! which the reader checks FIRST, so every prefix a concurrent reader can
+//! observe is a miss (`frontend/artifact_bytes.zig`'s header states the
+//! invariant; `cache/entry_bytes.zig` is covered by its section-table
+//! bounds). (2) The file is opened with TRUNCATE and not `O_EXCL`, so a
+//! stale partial file from a crashed process is overwritten by the next
+//! miss rather than being believed forever — which is what makes the
+//! failure self-healing and what the "corrupt → miss → overwritten" fixtures
+//! demand. (3) Two writers of one name write the same bytes, so a reader
+//! racing them cannot see a mixture that is not that file. (4) A
+//! content-hash name guards IDENTITY and not integrity, so the front-end
+//! artifact carries a SipHash over its own body; a same-length file with
+//! flipped bits is refused by that and not by the name.
 //!
 //! **No garbage collection in M4-1** and no size cap: entries accumulate at
 //! ~2 kB per checked module per distinct key, and the remedy is deleting the
@@ -113,12 +133,35 @@ pub fn close(d: *Dir) void {
 /// what makes a lookup a single `open` with no index to keep consistent.
 pub const name_len = "v4294967295/".len + 2 + 1 + 30 + ".bec".len;
 
+/// The two file kinds the directory holds, under two different keys
+/// (`fast-compiler.md` §8): M4-1's cache entry under the MODULE key, and
+/// M4-2's front-end artifact under the FILE key. Same fan-out, same
+/// directory, same "a bad file is a MISS" posture — a file is named by one
+/// key or it is not content-addressed, which is why there are two files and
+/// not two independently-keyed sections of one.
+pub const Kind = enum {
+    entry,
+    frontend,
+
+    fn extension(k: Kind) []const u8 {
+        return switch (k) {
+            .entry => ".bec",
+            .frontend => ".bef",
+        };
+    }
+};
+
 pub fn entryPath(buffer: *[name_len]u8, key: Key.Key) []const u8 {
+    return filePath(buffer, .entry, key);
+}
+
+pub fn filePath(buffer: *[name_len]u8, kind: Kind, key: Key.Key) []const u8 {
     const digits = Key.hex(key);
-    return std.fmt.bufPrint(buffer, "v{d}/{s}/{s}.bec", .{
+    return std.fmt.bufPrint(buffer, "v{d}/{s}/{s}{s}", .{
         layout_version,
         digits[0..2],
         digits[2..],
+        kind.extension(),
     }) catch unreachable; // `name_len` is the bound
 }
 
@@ -126,15 +169,35 @@ pub fn entryPath(buffer: *[name_len]u8, key: Key.Key) []const u8 {
 /// must be byte-identical to one with no cache — and the return says whether
 /// anything was written, for the counter.
 pub fn store(d: *const Dir, key: Key.Key, bytes: []const u8) bool {
+    return d.write(.entry, key, bytes);
+}
+
+/// Write `bytes` as the front-end artifact for `key`, from the WORKER that
+/// produced it (`plans/m4-2.md` §6 A). Silent on failure, like `store`.
+pub fn storeFrontend(d: *const Dir, key: Key.Key, bytes: []const u8) bool {
+    return d.write(.frontend, key, bytes);
+}
+
+/// One `create` with TRUNCATE, one sequential `writeStreamingAll` of one
+/// buffer. See this file's header for the four conditions that make the
+/// missing `rename` safe.
+///
+/// The fan-out directory is created only when the write says it is missing,
+/// which is once per two-hex-digit bucket per run rather than once per file:
+/// `createFileAtomic`'s `make_path` used to pay that on every entry.
+fn write(d: *const Dir, kind: Kind, key: Key.Key, bytes: []const u8) bool {
     var buffer: [name_len]u8 = undefined;
-    const path = entryPath(&buffer, key);
-    // `make_path` creates `v<n>/<kk>` on the way; `replace` is the
-    // write-to-temp-then-rename this file's header describes, and it is what
-    // makes two processes racing on one key harmless.
-    var file = d.handle.createFileAtomic(d.io, path, .{ .make_path = true, .replace = true }) catch return false;
-    defer file.deinit(d.io);
-    file.file.writeStreamingAll(d.io, bytes) catch return false;
-    file.replace(d.io) catch return false;
+    const p = filePath(&buffer, kind, key);
+    var file = d.handle.createFile(d.io, p, .{}) catch |err| switch (err) {
+        error.FileNotFound => blk: {
+            const slash = std.mem.lastIndexOfScalar(u8, p, '/') orelse return false;
+            d.handle.createDirPath(d.io, p[0..slash]) catch return false;
+            break :blk d.handle.createFile(d.io, p, .{}) catch return false;
+        },
+        else => return false,
+    };
+    defer file.close(d.io);
+    file.writeStreamingAll(d.io, bytes) catch return false;
     return true;
 }
 
@@ -145,8 +208,35 @@ pub fn store(d: *const Dir, key: Key.Key, bytes: []const u8) bool {
 /// none of them is a diagnostic and none is an exit code.
 pub fn load(d: *const Dir, gpa: Allocator, key: Key.Key) ?[]u8 {
     var buffer: [name_len]u8 = undefined;
-    const path = entryPath(&buffer, key);
-    return d.handle.readFileAlloc(d.io, path, gpa, .limited(max_entry_bytes)) catch null;
+    const p = filePath(&buffer, .entry, key);
+    return d.handle.readFileAlloc(d.io, p, gpa, .limited(max_entry_bytes)) catch null;
+}
+
+/// The front-end artifact for `key`, read into `scratch.*` and returned as a
+/// slice of it, or null.
+///
+/// **`open` + `read` into a REUSED buffer, not `readFileAlloc` and not
+/// `mmap`** (`plans/m4-2.md` §4, measured on btrfs over 633 files at 13 kB):
+/// a read into a reused buffer is 2.23 ms, `readFileAlloc` into an arena is
+/// 5.76, and `open`+`mmap`+`munmap` is 4.99 whether the loader touches one
+/// byte or every page — so what an `mmap` costs at this granularity is the
+/// syscall pair and not the paging. One mapping over MANY entries is the
+/// shape that wins, and that is the pack file, which is M4-4's.
+///
+/// `scratch` is the worker's own buffer and grows to the largest artifact
+/// that worker has read; `gpa` owns it and the caller frees it once.
+pub fn loadFrontend(d: *const Dir, gpa: Allocator, scratch: *std.ArrayList(u8), key: Key.Key) ?[]const u8 {
+    var buffer: [name_len]u8 = undefined;
+    const p = filePath(&buffer, .frontend, key);
+    var file = d.handle.openFile(d.io, p, .{}) catch return null;
+    defer file.close(d.io);
+    const size = file.getEndPos(d.io) catch return null;
+    if (size == 0 or size > max_entry_bytes) return null;
+    scratch.clearRetainingCapacity();
+    scratch.ensureTotalCapacity(gpa, @intCast(size)) catch return null;
+    scratch.items.len = @intCast(size);
+    file.readStreamingAll(d.io, scratch.items) catch return null;
+    return scratch.items;
 }
 
 // ---------------------------------------------------------------------------
