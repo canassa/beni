@@ -64,6 +64,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
+const CacheEntry = @import("../cache/Entry.zig");
 
 const Check = @This();
 
@@ -180,6 +181,15 @@ pub const Options = struct {
     /// `plans/m4-plan.md` §8 risk 2 names the sidecar as where a silent
     /// miscompile can hide.
     roundtrip_dispatch: bool = false,
+    /// One slot per graph module: the cache entry a serial pre-pass loaded
+    /// for it, or null (`fast-compiler.md` §8). A non-null slot is a HIT —
+    /// the whole of `ModuleCheck.run` is skipped and the entry is installed
+    /// instead.
+    ///
+    /// The slots are borrowed. The hit path MOVES the record and the table
+    /// out and leaves `.empty` behind; the caller still owns the entry's
+    /// bytes and frees them afterwards.
+    cached: []?CacheEntry.Loaded = &.{},
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
@@ -534,6 +544,9 @@ const Driver = struct {
     }
 
     fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
+        if (m.int() < d.options.cached.len) {
+            if (d.options.cached[m.int()]) |*loaded| return d.install(m, loaded);
+        }
         var one: ModuleCheck = .{
             .gpa = d.gpa,
             .scratch = scratch,
@@ -556,6 +569,66 @@ const Driver = struct {
             .roundtrip_dispatch = d.options.roundtrip_dispatch,
         };
         d.counters[m.int()] = try one.run(if (d.kept.len != 0) &d.kept[m.int()] else null);
+    }
+
+    /// A HIT: install the entry instead of checking the module
+    /// (`fast-compiler.md` §8's *What a hit skips, and what still runs*).
+    ///
+    /// `constrain`, `solve`, `exhaustive`, `deriveDeclaredTypes`, the binding
+    /// groups, `fillInterface`, `fillCtorTerms`, `Schemes.Writer.attach`,
+    /// `dispatch.finish` and `Cycles.run` never run for this module. What
+    /// does run is exactly four things, and this function is all four.
+    ///
+    /// It runs on the DAG, on whichever worker claimed the module, for one
+    /// reason: `Types` is built and read-only by then, and translating the
+    /// sidecar's two reference tables needs it. Every write it makes is to
+    /// this module's own slot, which is what makes it as safe here as a
+    /// check is.
+    fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!void {
+        const gpa = d.gpa;
+
+        // 1. The record replaces the shell WHOLESALE, which is why
+        //    `Schemes.Writer.attach`'s non-idempotence does not bite —
+        //    nothing re-attaches to a loaded record — and it is the same
+        //    move `--roundtrip-interfaces` already makes.
+        d.interfaces[m.int()].deinit(gpa);
+        d.interfaces[m.int()] = loaded.record;
+        loaded.record = .empty;
+
+        // 2. The dispatch table, once its two reference tables are this
+        //    session's ids.
+        dispatch_bytes.resolve(&loaded.sidecar, d.graph, d.types);
+        d.dispatch[m.int()].deinit(gpa);
+        d.dispatch[m.int()] = loaded.sidecar.table;
+        loaded.sidecar.table = .empty;
+
+        // 3. The diagnostics, replayed. The message is the prose the
+        //    checker rendered when it wrote the entry; the SPAN is not
+        //    stored and is recomputed from this build's `SourceStore`, so a
+        //    module that moved without changing its name still points at
+        //    the right file.
+        const list = &d.per_module[m.int()];
+        try list.ensureUnusedCapacity(gpa, loaded.diagnostics.len);
+        for (loaded.diagnostics) |row| {
+            const message = try gpa.dupe(u8, row.message);
+            errdefer gpa.free(message);
+            list.appendAssumeCapacity(.{
+                .code = @enumFromInt(row.code),
+                .module = m,
+                .region = @enumFromInt(row.region),
+                .severity = @enumFromInt(row.severity),
+                .token = if (row.has_token) row.token else null,
+                .message = message,
+            });
+        }
+
+        // 4. `Types.ref_ids`, which is not part of the record and is
+        //    recomputed once per module per build — here for the same
+        //    reason `fillInterface` does it for a miss, and against
+        //    whichever record ended up in the slot.
+        const ref_ids = &d.types.ref_ids[m.int()];
+        gpa.free(ref_ids.*);
+        ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
     }
 };
 

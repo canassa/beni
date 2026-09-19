@@ -315,6 +315,36 @@ fn pad4(n: usize) usize {
 /// caller never has to trust one — which is what makes a corrupt file a
 /// cache miss rather than a wrong answer.
 pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Global) ReadError!Interface {
+    var in: Interning = .{ .find = interner };
+    return decode(gpa, bytes, &in);
+}
+
+/// `read`, through `getOrPut`. M4-1's cross-process load is the case the
+/// header reserves this for: a record written by an earlier process names
+/// strings this session may never have interned, and the load runs serially
+/// before any worker starts, which is where growing the pool belongs.
+pub fn readGrowing(gpa: Allocator, bytes: []const u8, interner: *InternPool.Global) ReadError!Interface {
+    var in: Interning = .{ .get_or_put = .{ .pool = interner, .gpa = gpa } };
+    return decode(gpa, bytes, &in);
+}
+
+/// How a string in the bytes becomes a `Symbol`: the non-mutating lookup for
+/// an in-session round trip, and `getOrPut` for the serial cross-process
+/// load. One indirection rather than two decoders, so the two paths cannot
+/// drift apart about what the format means.
+const Interning = union(enum) {
+    find: *const InternPool.Global,
+    get_or_put: struct { pool: *InternPool.Global, gpa: Allocator },
+
+    fn symbol(i: *Interning, text: []const u8) ReadError!Symbol {
+        return switch (i.*) {
+            .find => |pool| pool.find(text) orelse error.UnknownSymbol,
+            .get_or_put => |g| g.pool.getOrPut(g.gpa, text),
+        };
+    }
+};
+
+fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!Interface {
     if (bytes.len < body_start) return error.BadRecord;
     if (!std.mem.eql(u8, bytes[0..8], magic)) return error.BadRecord;
     if (std.mem.readInt(u32, bytes[8..12], .little) != format_version) return error.BadRecord;
@@ -359,7 +389,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Globa
             if (@as(u64, offset) + 4 > blob.len) return error.BadRecord;
             const len = std.mem.readInt(u32, blob[offset..][0..4], .little);
             if (@as(u64, offset) + 4 + @as(u64, len) > blob.len) return error.BadRecord;
-            s.* = interner.find(blob[offset + 4 ..][0..len]) orelse return error.UnknownSymbol;
+            s.* = try interning.symbol(blob[offset + 4 ..][0..len]);
         }
     }
     {

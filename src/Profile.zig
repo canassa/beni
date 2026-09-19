@@ -57,6 +57,11 @@ pub const Phase = enum {
     /// does not appear in the trace defeats the instrument
     /// (`fast-compiler.md` §12).
     cache_key,
+    /// Reading the cache entries, serial, once per run before the workers
+    /// start (`fast-compiler.md` §8): `InternPool.Global` is thread-confined
+    /// and a cross-process load must `getOrPut`, so the reads cannot be on
+    /// the DAG.
+    cache_load,
     /// Writing the cache entries, serial, once per run after the check
     /// (`fast-compiler.md` §8). One `create` and one `rename` per module
     /// written, which is the number `plans/m4-1.md` §7 measurement 3 exists

@@ -64,6 +64,7 @@ const Solve = @import("check/Solve.zig");
 const Key = @import("cache/Key.zig");
 const CacheDir = @import("cache/Dir.zig");
 const entry_bytes = @import("cache/entry_bytes.zig");
+const CacheEntry = @import("cache/Entry.zig");
 const dispatch_bytes = @import("cache/dispatch_bytes.zig");
 const iface_bytes = @import("resolve/iface_bytes.zig");
 const build_id = @import("build_id.zig");
@@ -874,11 +875,38 @@ fn checkSerial(session: *Session) RunError!void {
     // key, and an import's key must exist before its importer's.
     try session.computeKeys(quiet);
 
+    // Then the entries, still serially: `InternPool.Global` is thread-
+    // confined and a cross-process load must `getOrPut`, which is why
+    // reading is here and not on the DAG (`plans/m4-1.md` decision 9).
+    const cached = try gpa.alloc(?CacheEntry.Loaded, session.graph.count());
+    defer {
+        for (cached) |*slot| {
+            if (slot.*) |*l| l.deinit(gpa);
+        }
+        gpa.free(cached);
+    }
+    @memset(cached, null);
+    try session.loadEntries(cached);
+    // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
+    // §8), recorded here rather than after the check: what they are about is
+    // what was LOADED, and the check is what consumes it.
+    {
+        var hits: u64 = 0;
+        var misses: u64 = 0;
+        for (0..session.graph.count()) |i| {
+            if (!session.keys.isCacheable(@enumFromInt(i))) continue;
+            if (cached[i] != null) hits += 1 else misses += 1;
+        }
+        session.profile.addCounter(.cache_hits, hits);
+        session.profile.addCounter(.cache_misses, misses);
+        session.profile.addCounter(.modules_checked, session.graph.count() - hits);
+    }
+
     session.checked.deinit(gpa);
     // `check` is one event per MODULE (checker.md §9), emitted by the
     // checker itself on the worker that took the module, with `constrain`,
     // `solve` and `exhaustive` nested inside each.
-    session.checked = try runCheckOnBigStack(session, quiet);
+    session.checked = try runCheckOnBigStack(session, quiet, cached);
     // By name, so a counter added to `Solve.Counters` without a matching
     // `Profile.Counter` is a compile error rather than a number that never
     // reaches the trace.
@@ -886,18 +914,31 @@ fn checkSerial(session: *Session) RunError!void {
         session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
     }
     try session.reportCheckDiagnostics();
-    // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
-    // §8). They are recorded on every run, cache or no cache, so that "this
-    // run re-checked everything" is a number rather than an inference.
-    {
-        var misses: u64 = 0;
-        for (0..session.graph.count()) |i| {
-            if (session.keys.isCacheable(@enumFromInt(i))) misses += 1;
-        }
-        session.profile.addCounter(.cache_misses, misses);
-        session.profile.addCounter(.modules_checked, session.graph.count());
+    try session.storeEntries(cached);
+}
+
+/// Read one entry per cacheable module, serially, before any worker starts.
+///
+/// Every failure is a miss and nothing is said about it: a stale cache must
+/// be indistinguishable from a cold build (`frontend.md` §1). An uncacheable
+/// module is not even looked up — it has no well-founded key, so its key
+/// names nothing.
+fn loadEntries(session: *Session, out: []?CacheEntry.Loaded) RunError!void {
+    const cache = session.options.cache orelse return;
+    const gpa = session.gpa;
+    const token = session.profile.begin();
+    for (out, 0..) |*slot, i| {
+        const m: Graph.Index = @enumFromInt(i);
+        if (!session.keys.isCacheable(m)) continue;
+        slot.* = try CacheEntry.load(
+            gpa,
+            cache,
+            session.keys.of(m),
+            &session.interner,
+            &session.resolution.interfaces[i],
+        );
     }
-    try session.storeEntries();
+    session.profile.end(0, token, .cache_load, Profile.Event.no_file, 0);
 }
 
 /// Write one cache entry per module whose check produced nothing to hide
@@ -916,7 +957,7 @@ fn checkSerial(session: *Session) RunError!void {
 /// Serial, and after `Check.run` rather than on the checking worker
 /// (`plans/m4-1.md` decision 9 is about reads; this is where the writes'
 /// cost is measurable). Every failure is silent.
-fn storeEntries(session: *Session) RunError!void {
+fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!void {
     const cache = session.options.cache orelse return;
     const gpa = session.gpa;
     const token = session.profile.begin();
@@ -943,6 +984,11 @@ fn storeEntries(session: *Session) RunError!void {
         const m: Graph.Index = @enumFromInt(i);
         if (!session.keys.isCacheable(m)) continue;
         if (!clean[i]) continue;
+        // A hit is already on disk under this very key, and re-writing it
+        // would produce the same bytes at the price of a create and a
+        // rename per module — which is exactly the cost `plans/m4-1.md` §7
+        // measurement 3 exists to watch.
+        if (i < cached.len and cached[i] != null) continue;
 
         const entry = session.entryBytes(gpa, m) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -1086,10 +1132,11 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 /// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
 pub const check_stack_size = Check.stack_size;
 
-fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
+fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded) RunError!Check {
     const Runner = struct {
         session: *Session,
         quiet: []const bool,
+        cached: []?CacheEntry.Loaded,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -1111,11 +1158,12 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool) RunError!Check {
                     .pattern_budget = r.session.options.pattern_budget,
                     .roundtrip_interfaces = r.session.options.roundtrip_interfaces,
                     .roundtrip_dispatch = r.session.options.roundtrip_dispatch,
+                    .cached = r.cached,
                 },
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet };
+    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached };
     const thread = try std.Thread.spawn(.{ .stack_size = check_stack_size }, Runner.go, .{&runner});
     thread.join();
     return runner.result;
