@@ -475,6 +475,23 @@ pub const Reporter = struct {
             ) catch return error.OutOfMemory;
             return;
         }
+        // `Int` and `Int32` are different types on purpose
+        // (`fast-compiler.md` §3.1), so the conversion is written out. The
+        // same shape as the `Int`/`Float` note above, and for the same
+        // reason: the reader's next question is "how do I get from one to
+        // the other".
+        if ((r.isCoreInt32(expected) and (a == wk.int or a_kind == .number)) or
+            (r.isCoreInt32(actual) and (e == wk.int or e_kind == .number)))
+        {
+            w.writeAll(
+                \\
+                \\Hint: beni does not implicitly convert between `Int` and `Int32`. Use
+                \\`Int32.fromInt` to go one way, and `Int32.toInt` or `Int32.toUnsignedInt`
+                \\to go the other.
+                \\
+            ) catch return error.OutOfMemory;
+            return;
+        }
         // A number where a String was wanted, or the reverse.
         if (e == wk.string and (a == wk.int or a_kind == .number)) {
             w.writeAll(
@@ -741,7 +758,22 @@ pub const Reporter = struct {
         w.print("\n\n{s}\n\n    ", .{lines.wanted}) catch return error.OutOfMemory;
         Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
         switch (kind) {
-            .number => w.writeAll(
+            // `Int32` is the one type a reader is likely to have reached
+            // for ON PURPOSE and then found the operators missing, so it
+            // gets the hint that says what to write instead. The general
+            // sentence would send them looking for a conversion that does
+            // not exist (`core/Int32.beni`, `fast-compiler.md` §3.1).
+            .number => if (r.isCoreInt32(expected) or r.isCoreInt32(actual)) w.writeAll(
+                \\
+                \\
+                \\One of those has to be a number — an `Int` or a `Float` — and it is not.
+                \\
+                \\Hint: `Int32` has no arithmetic operators on purpose: its arithmetic wraps
+                \\at 32 bits, and `+` reading like `Int`'s would hide that. Use `Int32.add`,
+                \\`sub`, `mul`, `div`, `rem` or `mod` — as a method, `a.add b`, or qualified,
+                \\`Int32.add a b`. `==`, `<` and the other comparisons do work.
+                \\
+            ) catch return error.OutOfMemory else w.writeAll(
                 \\
                 \\
                 \\One of those has to be a number — an `Int` or a `Float` — and it is not.
@@ -1951,7 +1983,7 @@ pub const Reporter = struct {
                 // Every operator of language.md §6.5 desugars to a call of
                 // a core function nobody writes by hand, so naming the
                 // function would name something the author never typed.
-                if (operatorSpelling(symbol)) |op| return .{ .kind = .operator, .name = op };
+                if (r.operatorCallee(@enumFromInt(data.lhs), symbol)) |op| return .{ .kind = .operator, .name = op };
                 return .{ .kind = .function, .name = r.env.interner.slice(symbol) };
             },
             .ext_ctor => {
@@ -1974,11 +2006,45 @@ pub const Reporter = struct {
             else => return .anonymous,
         }
     }
+
+    /// `operatorSpelling`, but only for the core value the operator really
+    /// desugars to. **The name alone is not enough**, and saying it was is
+    /// how `Int32.add a b` came to be reported as "the (+) operator" — an
+    /// operator the author never typed and one that, on an `Int32`, does
+    /// not exist at all (`core/Int32.beni`). `List.eq`, `List.compare` and
+    /// `String.append` share a name with a desugaring the same way. Every
+    /// operator of language.md §6.5 lowers to a value of `core/Basics`,
+    /// except `::`, which lowers to `core/List`'s `cons`.
+    fn operatorCallee(r: *const Reporter, module: Graph.Index, symbol: Symbol) ?[]const u8 {
+        const spelling = operatorSpelling(symbol) orelse return null;
+        const owner: InternPool.WellKnown =
+            if (symbol == InternPool.WellKnown.cons.symbol()) .List else .Basics;
+        const declared = r.env.graph.find(.core, owner.symbol()) orelse return null;
+        return if (declared == module) spelling else null;
+    }
+
+    /// Whether `v` is `core/Int32.beni`'s `Int32`, asked by NAME and only
+    /// on the error path. `Int32` has no `Types.WellKnown` slot because it
+    /// has no `InternPool.WellKnown` symbol, and it may not gain one: that
+    /// enum's indices are exactly what lowering compares a symbol against
+    /// to decide "is this a prelude name?" (`InternPool.WellKnown`), and
+    /// `Int32` is deliberately not in the prelude (`language.md` Appendix
+    /// A). One string compare per reported mismatch is the right price.
+    fn isCoreInt32(r: *const Reporter, v: Var) bool {
+        const id = r.primitiveOf(v);
+        if (id == .none) return false;
+        const e = r.env.types.entry(id);
+        if (e.package != .core) return false;
+        return std.mem.eql(u8, r.env.interner.slice(e.module_name), "Int32") and
+            std.mem.eql(u8, r.env.interner.slice(e.name), "Int32");
+    }
 };
 
 /// The operator a core function is the desugaring of (language.md §6.5), or
 /// null for an ordinary name. The symbols are the well-known prefix of the
-/// intern pool, so this is a switch on an integer.
+/// intern pool, so this is a switch on an integer. It answers on the name
+/// alone, so a CALLEE is named through `Reporter.operatorCallee`, which
+/// checks the module too.
 pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
     const wk = InternPool.WellKnown;
     const pairs = .{

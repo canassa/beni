@@ -1,0 +1,38 @@
+-- check/bad: `+`, `-`, `*` and `//` on two `Int32`s, which is the mistake
+-- every reader of `core/Int32.beni` makes once.
+--
+-- Three `kind_mismatch` and, for `//`, two `type_mismatch`: `+`, `-` and
+-- `*` are `number`-kinded so the kind is what fails, while `//` is
+-- `Basics.idiv : Int, Int -> Int` and fails as an ordinary mismatch, once
+-- per operand. `Int32` is deliberately neither (`fast-compiler.md` §3.1):
+-- an operator that read like `Int`'s would hide the one thing the type
+-- exists to say, which is that its arithmetic WRAPS. The hint is the whole
+-- point of the fixture: the generic "`+`, `-`, `*` and `/` work on numbers
+-- only. To join text use `++`." sends an `Int32` reader looking for a
+-- conversion that does not exist, so a mismatch with `Int32` on either side
+-- gets its own sentence naming `Int32.add` and friends
+-- (`src/check/Diagnostics.zig`, `kindNotSatisfied`).
+--
+-- `Int32NoOperatorsMixed` is the other half: `Int` and `Int32` in the same
+-- call, which is an ordinary `type_mismatch` naming both.
+import Int32 exposing (Int32)
+
+
+sum : Int32, Int32 -> Int32
+sum a b =
+    a + b
+
+
+difference : Int32, Int32 -> Int32
+difference a b =
+    a - b
+
+
+product : Int32, Int32 -> Int32
+product a b =
+    a * b
+
+
+quotient : Int32, Int32 -> Int32
+quotient a b =
+    a // b

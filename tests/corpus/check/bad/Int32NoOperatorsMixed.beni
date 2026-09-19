@@ -1,0 +1,24 @@
+-- check/bad: an `Int` where an `Int32` belongs, and the reverse. Neither
+-- converts on its own (`fast-compiler.md` §3.1) and the message has to name
+-- BOTH types and the two conversions, or the reader is left guessing which
+-- direction they are going.
+--
+-- The callee is named `add` here and not `(+)`. Every operator of
+-- `language.md` §6.5 desugars to a `core/Basics` value, and the reporter
+-- used to name an operator on the CALLEE'S NAME ALONE — so `Int32.add`,
+-- which shares a name with `+`'s desugaring and is not an operator at all,
+-- was reported as "the (+) operator", an operator that does not exist on
+-- this type. `List.eq` and `String.append` collided the same way. The
+-- second declaration is the control: `Int32.toInt a + a` really is `+`, and
+-- it is still named "(+)".
+import Int32 exposing (Int32)
+
+
+widen : Int32, Int -> Int32
+widen a b =
+    Int32.add a b
+
+
+narrow : Int32 -> Int
+narrow a =
+    Int32.toInt a + a
