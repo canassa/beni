@@ -136,6 +136,6 @@ investigate, document and plan the spike; the spike itself follows M4 slices 1�
 |---|---|---|---|
 | E-R1 | Research: Effect v4's runtime — fibers, scheduler, interruption, scopes/finalizers, the `Exit`/`Cause` model | **done** — report 21 | read-only, docs out: `docs/design/research/21-…` |
 | E-R2 | Research: Effect v4's API surface — what "API coverage" means: the module map, what is essential vs TypeScript-induced, what maps onto beni's two-bit design | **done** — report 22 | `docs/design/research/22-…` |
-| E-R3 | Research: errors, services/layers, resources, concurrency combinators, streams, schedule/retry — semantics beni must match or deliberately decline | in flight | `docs/design/research/23-…` |
+| E-R3 | Research: errors, services/layers, resources, concurrency combinators, streams, schedule/retry — semantics beni must match or deliberately decline | **done** — report 23 | `docs/design/research/23-…` |
 | E-P | The spike plan: fold E-R1..3 and `plans/effects-plan.md` into `plans/effects-spike.md` (slices, measurements, acceptance), for the owner | after E-R1..3 | |
 | 51 | **A shipped beni program cannot log**: `Debug` is the only way to write a diagnostic line and `--release` refuses it (owner decision). Rule 7: fill the gap inside the wall — a platform logging function (`Node.log`/`Log.info…`), not `Debug` | todo — needs a small design (what it returns while there are no effects: a `Program` step? or wait for the `impure` bit) | found by report 22 §0 finding 5 |
