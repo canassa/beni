@@ -70,3 +70,15 @@ one commit each, nothing force-pushed, no history rewritten.
 | 43 | **A `foreign` with evidence, referenced from INSIDE its own module in value position, is eta-expanded at arity 0** — `Maybe (List a)` compared inside `core/List.beni` emits `() => List$eq(List$eq$prim)` and crashes after a clean build. `Lower.targetArity`'s `.top` branch reads `bir.decls[…].params`, which `bir/Lower.newDecl` leaves 0 for a `foreign` | **done** | found by the doc-example gate on its first run; four doc examples are skipped until it lands |
 | 44 | Check-tax leads, not built: `evidence_next` hash map allocated per binding group (≈ 4.8 % of `check`; needs `commitEvidence` to be fallible — a spec sentence first); `tagInstantiated`'s remaining traversals (≈ 2.5 %, needs a "constrained below" bit in the store); `constrain` +2.3 ms unattributed; six gpa containers per `Solver` | todo | `plans/check-tax.md` §5; each must be proved output-identical the way `copy_constrained` was |
 | 45 | Boundary diagnostics about a defect in a sibling `.js` anchor their caret on the module's FIRST `foreign` declaration (`foreign_export_mismatch`'s extra-export arm, `foreign_unbound_reference`, `not_implemented` for a sibling import); `missing_main` underlines the file's first token (an `import`); two messages overrun the 80-column wrap where a type name is spliced in after wrapping, and print `Basics.Int` where the user wrote `Int` | **done** | found by reading the nine new `build/bad` goldens |
+
+## Owner decision, 2026-09-19: **M4 first**
+
+`plans/m4-plan.md` D5: the order is M4 slices 1–3, then effects, then M3d. Proceeding on the plan's
+own slice order (§6), which is cache-first, socket-last (D1's recommendation — assumed with "M4
+first", to be confirmed; the daemon-phase decisions D6–D9 are not needed before M4-5).
+
+| # | Slice | State | Notes |
+|---|---|---|---|
+| M4-1 | The content-hash cache key, the unhashed sidecar (`plans/m4-slice-zero.md` §4's disposition table), the "produced by a clean check" bit, a `stat` column on `SourceStore` | spec in flight | spec first; fixtures: a module cached while broken is never reused, a sibling `.js` edit invalidates only that emit unit, a compiler-build change discards the cache |
+| M4-2 | Pre-resolve BIR, AST, tokens, comments, diagnostics on disk (mmap, validated on load) | todo | corrupt-cache fixture per artifact; budget: cold start with a warm cache < 120 ms |
+| M4-3 | The firewall cutoff: unchanged interface hash ⇒ dependents not re-checked; needs the five re-entrancy fixes and the three "pure per module" corrections | todo | the incremental-determinism matrix; the three warm budgets 15 / 60 / 25 ms |
