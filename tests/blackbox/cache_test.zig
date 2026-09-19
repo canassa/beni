@@ -353,15 +353,16 @@ test "row 1: nothing changed moves no key" {
     try expectMoved("a rewrite with identical bytes", base, try baselineKeys(&w, arena), &.{});
 }
 
-test "row 2: a comment in Leaf moves Leaf, Mid and Top" {
+test "row 2: a comment in Leaf moves LEAF ALONE — the cutoff" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // **The row that states M4-1's cost, out loud.** The interface hash does
-    // NOT move for a comment — that is what M4-3's cutoff will use — but the
-    // KEY does, and an importer's key carries its import's key, so the whole
-    // chain is re-checked. `fast-compiler.md` §8 says so twice for exactly
-    // this reason, and this fixture is where it stops being a claim.
+    // **The row M4-3 exists to change, and the before is in this file's
+    // history.** Under M4-1 a comment moved all three keys, because an
+    // importer's key carried its import's KEY. It now moves one: an import
+    // contributes its `(interface hash, dependency digest)` pair, and a
+    // comment moves neither. `fast-compiler.md` §8 called this "the number
+    // M4-3 exists to fix"; this is the fix, asserted.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -379,9 +380,9 @@ test "row 2: a comment in Leaf moves Leaf, Mid and Top" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectMoved("a comment in Leaf", base, try baselineKeys(&w, arena), &all_app);
-    // …and the interface hash did not, which is the whole difference between
-    // this slice and M4-3.
+    try expectMoved("a comment in Leaf", base, try baselineKeys(&w, arena), &.{"app:Leaf"});
+    // …and the interface hash did not move at all, which is why `Mid` and
+    // `Top` are spared.
     try expectMoved("a comment in Leaf, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
 }
 
@@ -405,7 +406,9 @@ test "row 3: the body of an annotated pub in Leaf moves Leaf, Mid and Top" {
         \\
     );
 
-    try expectMoved("an annotated body in Leaf", base, try baselineKeys(&w, arena), &all_app);
+    // The cutoff: an ANNOTATED body is invisible to a dependent, so neither
+    // the record nor the digest moves and the leaf re-checks alone.
+    try expectMoved("an annotated body in Leaf", base, try baselineKeys(&w, arena), &.{"app:Leaf"});
     // Report 19 §4: every annotated row measures 0 interface changes,
     // because an annotation is exactly what a dependent sees.
     try expectMoved("an annotated body, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
@@ -491,7 +494,12 @@ test "row 5: a PRIVATE type added to Leaf moves Leaf, Mid and Top but no interfa
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectMoved("a private type in Leaf", base, try baselineKeys(&w, arena), &all_app);
+    // `plans/m4-1.md` §6.1's row 5, KEPT through the cutoff: a `TypeId` is a
+    // whole-program dense index and adding a private type renumbers most of
+    // the table, and nothing a dependent emits or reports carries one — so
+    // the digest, which is keyed by NAME over the set the record names, does
+    // not move either and the leaf re-checks alone.
+    try expectMoved("a private type in Leaf", base, try baselineKeys(&w, arena), &.{"app:Leaf"});
     // Slice zero §11.3's E4 row, restated: a private type moves no interface
     // hash at all, not even the edited module's own.
     try expectMoved("a private type, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
@@ -557,7 +565,9 @@ test "row 7: Leaf's sibling .js moves Leaf, Mid and Top, and no interface" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectMoved("Leaf's sibling .js", base, try baselineKeys(&w, arena), &all_app);
+    // The sibling is in the leaf's own terms and in nothing a dependent can
+    // observe, so the cutoff spares the importers.
+    try expectMoved("Leaf's sibling .js", base, try baselineKeys(&w, arena), &.{"app:Leaf"});
     try expectMoved("Leaf's sibling .js, by interface hash", iface_before, try ifaceHashes(&w, arena), &.{});
 }
 
@@ -1066,9 +1076,14 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     try testing.expectEqual(@as(u64, 1), edited.counters.parsed);
     try testing.expectEqual(@as(u64, 1), edited.counters.lowered);
     try testing.expectEqual(edited.counters.files - 1, edited.counters.frontend_hits);
-    // THREE modules re-checked — `Leaf`, `Mid` and `Top` — because the
-    // module key is inductive over imports and the file key is not.
-    try testing.expectEqual(@as(u64, 3), edited.counters.checked);
+    // ONE module re-checked — the leaf alone — since M4-3. Under M4-1 and
+    // M4-2 this was 3, because the module key folded its imports' KEYS and a
+    // body edit moved the leaf's; it now folds their `(interface hash,
+    // dependency digest)` pairs, and an ANNOTATED body edit moves neither.
+    // The counters are what make "the two invalidations are different" a
+    // fact: one file re-lowered, one module re-checked, and the importers
+    // touched by neither.
+    try testing.expectEqual(@as(u64, 1), edited.counters.checked);
 
     // And the run after it is fully warm again, which is what says the edited
     // file's artifact was written rather than merely not read.
@@ -1526,15 +1541,19 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     try testing.expectEqual(@as(u64, 0), warm.counters.bytes);
 }
 
-test "an edit re-checks its module and its importers and nothing else" {
+test "a comment re-checks ONE module — the counters' half of the cutoff" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The counters' half of the edit-scenario table, and M4-1's cost made
-    // visible: a comment in `Leaf` re-checks `Mid` and `Top` as well,
-    // because an importer's key carries its import's key. **That is the
-    // number M4-3 exists to fix**, and it is asserted rather than lamented
-    // so that the day it changes, this fixture says so.
+    // **The counters' half of the cutoff, and the number M4-3 existed to
+    // fix.** Under M4-1 a comment in `Leaf` re-checked `Mid` and `Top` too,
+    // because an importer's key carried its import's KEY; that fixture said
+    // "the day it changes, this says so", and this is the day. An import now
+    // contributes its `(interface hash, dependency digest)` pair, a comment
+    // moves neither, and the importers are HITS.
+    //
+    // Byte-identity alone would pass a cache that never hits, which is why
+    // the counter is asserted and not only the output.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -1556,10 +1575,11 @@ test "an edit re-checks its module and its importers and nothing else" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), after.result.exit_code);
     try testing.expectEqualStrings("", after.result.stderr);
-    // Exactly the three app modules missed; core hit.
-    try testing.expectEqual(@as(u64, 3), after.counters.misses);
-    try testing.expectEqual(@as(u64, 3), after.counters.checked);
-    try testing.expectEqual(cold.counters.misses - 3, after.counters.hits);
+    // Exactly ONE module missed — the edited leaf — and everything else,
+    // core and the two importers alike, hit.
+    try testing.expectEqual(@as(u64, 1), after.counters.misses);
+    try testing.expectEqual(@as(u64, 1), after.counters.checked);
+    try testing.expectEqual(cold.counters.misses - 1, after.counters.hits);
 
     // A new unrelated file costs one miss and nothing else.
     try w.write("src/Aardvark.beni", "pub zero : Int\nzero =\n    0\n");
@@ -2408,7 +2428,11 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
     try w.write(leaf_file, leaf_source);
     try expectMoved("row 1, file keys", base_files, try baselineFileKeys(&w, arena), &.{});
 
-    const Row = struct { what: []const u8, source: []const u8 };
+    // `modules` is where the CUTOFF shows: a file-key move is a re-lowering
+    // and a module-key move is a re-check, and since M4-3 the second is far
+    // rarer than the first. Only the row that moves the interface hash
+    // reaches the importers at all.
+    const Row = struct { what: []const u8, source: []const u8, modules: []const []const u8 = &.{"app:Leaf"} };
     const rows = [_]Row{
         // Row 2: a body edit.
         .{ .what = "a body edit", .source =
@@ -2430,7 +2454,7 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
         .{ .what = "whitespace only", .source = "\n" ++ leaf_source },
         // Row 5: a `pub` signature — one ADDED, so `Mid` still compiles and
         // the row measures the key rather than a type error.
-        .{ .what = "a pub signature", .source = leaf_source ++
+        .{ .what = "a pub signature", .modules = &all_app, .source = leaf_source ++
             \\
             \\pub extra : Int
             \\extra =
@@ -2444,9 +2468,10 @@ test "file-key rows 1-5: an edit in Leaf moves LEAF's file key and no other" {
         const before_modules = try baselineKeys(&w, arena);
         try w.write(leaf_file, row.source);
         try expectMoved(row.what, before_files, try baselineFileKeys(&w, arena), &.{leaf_file});
-        // The divergence, stated on the same edit: three module keys move
-        // where one file key did.
-        try expectMoved(row.what, before_modules, try baselineKeys(&w, arena), &all_app);
+        // The divergence, stated on the same edit — and since M4-3 it runs
+        // the other way for three rows of four: one file key moves and no
+        // module key but the leaf's own.
+        try expectMoved(row.what, before_modules, try baselineKeys(&w, arena), row.modules);
     }
     try w.write(leaf_file, leaf_source);
     try expectMoved("restored", base_files, try baselineFileKeys(&w, arena), &.{});
@@ -2523,10 +2548,12 @@ test "file-key rows 11 to 15: which flags reach lowering and which do not" {
     );
 
     // Row 15: a sibling `.js` is not a lowering input, so editing one moves
-    // no file key at all — and all three module keys.
+    // no file key at all — and, since M4-3, only the declaring module's own
+    // key: the sibling hash is one of that module's OWN terms and no importer
+    // can observe it through the record or the digest.
     try w.write("src/Leaf.js", "export const twice = (n) => n + n;\n");
     try expectMoved("an edited sibling .js", base, try baselineFileKeys(&w, arena), &.{});
-    try expectMoved("an edited sibling .js", base_modules, try baselineKeys(&w, arena), &all_app);
+    try expectMoved("an edited sibling .js", base_modules, try baselineKeys(&w, arena), &.{"app:Leaf"});
     try w.write("src/Leaf.js", leaf_sibling);
 
     // Row 12: a different compiler build id discards everything, file keys

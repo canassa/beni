@@ -4,7 +4,7 @@
 //!
 //! ```
 //! "BENIKEY\x00"           8       magic
-//! key_version: u32                bumped whenever this recipe changes
+//! key_version: u32                2 — the firewall cutoff
 //! build_id: [16]u8                the compiler build id (`src/build_id.zig`)
 //! package: u8                     SourceStore.Package — app, core or platform
 //! name_len: u32, name             the DOTTED module name ("Json.Decode"), UTF-8
@@ -12,22 +12,33 @@
 //! source_hash: [16]u8             over the module's source bytes
 //! sibling_hash: [16]u8            over its sibling .js, or 16 zero bytes when
 //!                                 it declares no `foreign`
-//! core_epoch: [16]u8              over every core module's key; 16 zero bytes
+//! core_surface: [16]u8            over the core package's sorted (module name,
+//!                                 interface hash, digest) list; 16 zero bytes
 //!                                 for a core module itself
 //! import_count: u32
 //!   per direct import, sorted by (package, name), duplicates removed:
-//!     package: u8, name_len: u32, name, key: [16]u8
+//!     package: u8, name_len: u32, name,
+//!     iface_hash: [16]u8,         `iface_bytes.hash` over the import's record
+//!     digest: [16]u8              the import's dependency digest
 //! ```
 //!
-//! **An import contributes its KEY, not its interface hash**, which is the
-//! slice's central decision. A key is inductively the whole transitive input
-//! set, so an equal key means every byte that could reach this module's check
-//! is identical — and so is every whole-program fact recomputed from them.
-//! The interface-hash form is *weaker* than the record, because a dependent's
-//! check reads facts about its dependencies the record does not carry; proving
-//! that enumeration complete is the whole content of M4-3. The cost is stated
-//! plainly: **a comment-only edit to a leaf re-checks every transitive
-//! importer**, because the leaf's key moved though its interface hash did not.
+//! **An import contributes its `(interface hash, dependency digest)` PAIR, and
+//! that pair replaces its key.** It is the slice `fast-compiler.md` §8.1 has
+//! been pointing at since the document was written: a module is re-checked only
+//! when something it can OBSERVE about one of its imports changed. M4-1 keyed on
+//! the import's own key, which is inductively every source byte that can reach
+//! the check — correct, and so coarse that **a comment in one leaf re-checked
+//! 624 of 634 modules** while moving 0 of 634 interface hashes.
+//!
+//! What the record does not say, the digest does (`checker.md` §7): the settled
+//! `equatable`/`comparable`/`has_function` bits of a type no `types` row
+//! describes, an alias expansion no scheme mentions, and the set of derived
+//! functions the module emits. Two gaps are demonstrated rather than argued, and
+//! either is a wrong program without it (`plans/m4-3.md` §6).
+//!
+//! **The transitive recipe survives as `finishTransitive`**, under version 1 and
+//! stored nowhere, for `--cutoff-compare`'s invariant alone: old key equal ⇒ new
+//! key equal.
 //!
 //! **The DOTTED MODULE NAME, never a path and never a `Graph.Index`.** A path
 //! depends on the cwd the compiler was run from and on `--root`; an index
@@ -39,15 +50,15 @@
 //! **`core` is an unconditional input of every module's check**, with no
 //! import edge to say so: the solver reaches `core/Basics` directly, the
 //! well-known types come from core's interfaces, and `Reach` reads core's
-//! `Bir`. `core_epoch`, one hash over the sorted `(module name, key)` list of
-//! the core package, is how the key says so.
+//! `Bir`. `core_surface`, one hash over the sorted `(module name, interface
+//! hash, digest)` list of the core package, is how the key says so — and it is
+//! `core_epoch` with its term changed and nothing else, which buys the property
+//! that an edit to core no module can observe re-checks nothing outside core.
 //!
-//! **Keys are computed serially, in `graph.order`**, which is why an import's
-//! key is always available before its importer's. Core first, all of it, so
-//! that `core_epoch` exists before any module that needs it — `graph.order`
-//! puts dependencies before dependents but does not promise that every core
-//! module precedes every app one, and a module that resolves no prelude name
-//! has no edge to core at all.
+//! **Keys are finished ON THE DAG**, by the worker that claimed the module
+//! (`Check.Driver.claim`): an import's pair exists only once that import has
+//! been checked or loaded. What is still serial here is the part with no import
+//! term — `writeOwn`'s middle — and the propagation of uncacheability.
 //!
 //! **Uncacheability propagates.** A module the graph poisoned, or one an
 //! earlier phase already reported on, has no well-founded key: it is marked
@@ -72,8 +83,16 @@ pub const magic = "BENIKEY\x00";
 
 /// Bumped whenever the meaning of any byte of the recipe changes. Every
 /// entry written by an older recipe then misses, which is the only
-/// migration a cache ever needs.
-pub const key_version: u32 = 1;
+/// migration a cache ever needs. **2 since M4-3.** An import contributes its `(interface hash, dependency
+/// digest)` pair in place of its key, and `core_epoch` becomes `core_surface`
+/// — the firewall cutoff (`fast-compiler.md` §8).
+pub const key_version: u32 = 2;
+
+/// The recipe M4-1 and M4-2 used: an import contributes its own KEY, and the
+/// core term is `core_epoch` over core's keys. **Nothing is stored under it.**
+/// It survives only for `--cutoff-compare`'s invariant, which needs both keys
+/// of one run (`finishTransitive`).
+pub const transitive_key_version: u32 = 1;
 
 /// 128 bits, so that an accidental collision has to be impossible rather
 /// than unlikely: a collision here is a wrong answer that depends on
@@ -112,13 +131,13 @@ pub const Terms = struct {
     imports: []const Import = &.{},
 };
 
-/// The recipe's byte string, appended to `out`. Exposed so a test can assert
-/// the BYTES rather than only the digest: a recipe change that produced the
-/// same 16 bytes for two different inputs would be invisible to a test that
-/// only ever compared keys.
+/// **The TRANSITIVE recipe's byte string** — M4-1's, which `finishTransitive`
+/// implements and `--cutoff-compare` still computes. The recipe in use is
+/// `finish`, whose import term is a pair rather than a key; it takes the same
+/// `writeOwn` middle and differs in the version word and in the terms after it.
 pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.Error!void {
     try out.appendSlice(gpa, magic);
-    try appendInt(gpa, out, u32, key_version);
+    try appendInt(gpa, out, u32, transitive_key_version);
     try writeOwn(gpa, out, t);
     try writeRest(gpa, out, t.core_epoch, t.imports);
 }
@@ -162,11 +181,11 @@ pub fn writeRest(gpa: Allocator, out: *std.ArrayList(u8), core: Key, imports: []
 ///
 /// This is the function the worker that claimed `m` calls. `scratch` holds one
 /// module's byte string and may be reset the moment it returns.
-pub fn finish(scratch: Allocator, own: []const u8, core: Key, imports: []const Import) Allocator.Error!Key {
+pub fn finishTransitive(scratch: Allocator, own: []const u8, core: Key, imports: []const Import) Allocator.Error!Key {
     var bytes: std.ArrayList(u8) = .empty;
     defer bytes.deinit(scratch);
     try bytes.appendSlice(scratch, magic);
-    try appendInt(scratch, &bytes, u32, key_version);
+    try appendInt(scratch, &bytes, u32, transitive_key_version);
     try bytes.appendSlice(scratch, own);
     try writeRest(scratch, &bytes, core, imports);
     return iface_bytes.hash(bytes.items);
@@ -186,8 +205,6 @@ pub fn finish(scratch: Allocator, own: []const u8, core: Key, imports: []const I
 /// set — and identical sources give identical records and identical digests.
 /// The OTHER direction is the cutoff itself, and what validates it is output
 /// identity, not an assertion.
-pub const cutoff_key_version: u32 = 2;
-
 /// One direct import's contribution under the cutoff recipe.
 pub const ImportPair = struct {
     package: SourceStore.Package,
@@ -196,8 +213,8 @@ pub const ImportPair = struct {
     digest: [16]u8,
 };
 
-/// `m`'s key under the cutoff recipe.
-pub fn finishPairs(
+/// `m`'s key: the recipe in use since M4-3.
+pub fn finish(
     scratch: Allocator,
     own: []const u8,
     core_surface: Key,
@@ -206,7 +223,7 @@ pub fn finishPairs(
     var bytes: std.ArrayList(u8) = .empty;
     defer bytes.deinit(scratch);
     try bytes.appendSlice(scratch, magic);
-    try appendInt(scratch, &bytes, u32, cutoff_key_version);
+    try appendInt(scratch, &bytes, u32, key_version);
     try bytes.appendSlice(scratch, own);
     try bytes.appendSlice(scratch, &core_surface);
     try appendInt(scratch, &bytes, u32, @intCast(imports.len));
@@ -405,17 +422,16 @@ pub const Options = struct {
     io: Io,
 };
 
-/// Every module's `own_terms` blob and cacheability bit, plus — while the core
-/// term is still `core_epoch` over core's KEYS — every CORE module's finished
-/// key and the epoch itself.
+/// Every module's `own_terms` blob and cacheability bit — everything about a
+/// key that depends on nothing else in the project.
 ///
-/// **Why core stays here and the rest does not.** A core module imports nothing
-/// outside core, so `graph.order` restricted to core is a valid order for it
-/// and a serial pass can finish every core key in one sweep. An APP module's
-/// key needs its imports' contributions, and from M4-3 on an import contributes
-/// something that exists only after it has been checked — so that half moves to
-/// the DAG, where the schedule already guarantees an import has finished before
-/// its importer is released.
+/// **No key is finished here any more.** From M4-3 an import contributes its
+/// `(interface hash, dependency digest)` pair, which exists only once that
+/// import has been CHECKED or LOADED, so every key is finished on the DAG by
+/// the worker that claimed the module (`Check.Driver.claim`). What stays is
+/// what this pass was always the expensive part of: reading and hashing every
+/// source and every sibling `.js`, and propagating uncacheability along the
+/// import edges, which needs no key at all.
 ///
 /// `scratch` is reset by the caller.
 pub fn build(
@@ -452,31 +468,6 @@ pub fn build(
         out.uncacheable[m.int()] = !cacheable;
     }
 
-    // Core's keys, and the epoch over them.
-    var core_entries: std.ArrayList(CoreEntry) = .empty;
-    defer core_entries.deinit(scratch);
-    for (graph.order) |m| {
-        if (graph.module(m).package != .core) continue;
-        var imports: std.ArrayList(Import) = .empty;
-        defer imports.deinit(scratch);
-        for (graph.dependencies(m)) |dep| {
-            if (dep == m) continue;
-            try imports.append(scratch, .{
-                .package = graph.module(dep).package,
-                .name = interner.slice(graph.moduleName(dep)),
-                .key = out.of(dep),
-            });
-        }
-        sortImports(&imports);
-        // A core module's own `core_epoch` term is `none` by definition.
-        out.keys[m.int()] = try finish(scratch, out.own[m.int()], none, imports.items);
-        try core_entries.append(scratch, .{
-            .name = interner.slice(graph.moduleName(m)),
-            .key = out.keys[m.int()],
-        });
-    }
-    std.mem.sort(CoreEntry, core_entries.items, {}, coreEntryLessThan);
-    out.core_epoch = try coreEpoch(scratch, core_entries.items);
     return out;
 }
 
@@ -650,7 +641,7 @@ test "the key's byte string is the recipe, field by field" {
     var at: usize = 0;
     try testing.expectEqualStrings(magic, bytes.items[at..][0..8]);
     at += 8;
-    try testing.expectEqual(key_version, std.mem.readInt(u32, bytes.items[at..][0..4], .little));
+    try testing.expectEqual(transitive_key_version, std.mem.readInt(u32, bytes.items[at..][0..4], .little));
     at += 4;
     try testing.expectEqualSlices(u8, &sample_build_id, bytes.items[at..][0..16]);
     at += 16;
@@ -792,12 +783,12 @@ test "the key's byte string is its own terms followed by the rest, exactly" {
     var split: std.ArrayList(u8) = .empty;
     defer split.deinit(gpa);
     try split.appendSlice(gpa, magic);
-    try appendInt(gpa, &split, u32, key_version);
+    try appendInt(gpa, &split, u32, transitive_key_version);
     try split.appendSlice(gpa, own.items);
     try writeRest(gpa, &split, t.core_epoch, t.imports);
 
     try testing.expectEqualSlices(u8, whole.items, split.items);
-    try testing.expectEqual(try compute(gpa, t), try finish(gpa, own.items, t.core_epoch, t.imports));
+    try testing.expectEqual(try compute(gpa, t), try finishTransitive(gpa, own.items, t.core_epoch, t.imports));
 }
 
 test "the cutoff recipe is a different key, and every one of its terms moves it" {
@@ -809,25 +800,25 @@ test "the cutoff recipe is a different key, and every one of its terms moves it"
     const pairs: []const ImportPair = &.{
         .{ .package = .app, .name = "Leaf", .iface_hash = @splat(1), .digest = @splat(2) },
     };
-    const base = try finishPairs(gpa, own.items, none, pairs);
+    const base = try finish(gpa, own.items, none, pairs);
     // Same own terms, same import NAME, a different version word: the two
     // recipes may never agree, or an entry written by one would be read by
     // the other.
-    try testing.expect(!std.mem.eql(u8, &base, &try finish(gpa, own.items, none, &.{
+    try testing.expect(!std.mem.eql(u8, &base, &try finishTransitive(gpa, own.items, none, &.{
         .{ .package = .app, .name = "Leaf", .key = @splat(1) },
     })));
-    try testing.expectEqual(base, try finishPairs(gpa, own.items, none, pairs));
+    try testing.expectEqual(base, try finish(gpa, own.items, none, pairs));
 
     // An import's HASH and its DIGEST each move it: the first is the firewall
     // and the second is what the firewall alone cannot see.
-    try testing.expect(!std.mem.eql(u8, &base, &try finishPairs(gpa, own.items, none, &.{
+    try testing.expect(!std.mem.eql(u8, &base, &try finish(gpa, own.items, none, &.{
         .{ .package = .app, .name = "Leaf", .iface_hash = @splat(9), .digest = @splat(2) },
     })));
-    try testing.expect(!std.mem.eql(u8, &base, &try finishPairs(gpa, own.items, none, &.{
+    try testing.expect(!std.mem.eql(u8, &base, &try finish(gpa, own.items, none, &.{
         .{ .package = .app, .name = "Leaf", .iface_hash = @splat(1), .digest = @splat(9) },
     })));
     // And `core_surface`.
-    try testing.expect(!std.mem.eql(u8, &base, &try finishPairs(gpa, own.items, @splat(7), pairs)));
+    try testing.expect(!std.mem.eql(u8, &base, &try finish(gpa, own.items, @splat(7), pairs)));
 }
 
 test "the key is a pure function: the same terms twice give the same bytes" {

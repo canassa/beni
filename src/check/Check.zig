@@ -83,6 +83,10 @@ fn coreEntryLessThan(_: void, a: Digest.CoreEntry, b: Digest.CoreEntry) bool {
     return std.mem.lessThan(u8, a.name, b.name);
 }
 
+fn oldCoreEntryLessThan(_: void, a: Key.CoreEntry, b: Key.CoreEntry) bool {
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
 const Check = @This();
 
 /// Re-exported so `Session` can name the pattern-usefulness budget without
@@ -263,6 +267,10 @@ pub const Cutoff = struct {
     /// driver after the last core module publishes and before any non-core
     /// module's key is finished.
     core_surface: Digest.Digest = Digest.none,
+    /// `--cutoff-compare`'s own core term: `core_epoch` over core's TRANSITIVE
+    /// keys, computed at the same barrier as `core_surface` so the two recipes
+    /// see the same moment.
+    core_epoch: Key.Key = Key.none,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.
@@ -562,6 +570,20 @@ const Driver = struct {
         }
         std.mem.sort(Digest.CoreEntry, entries.items, {}, coreEntryLessThan);
         cutoff.core_surface = try Digest.coreSurface(scratch.allocator(), entries.items);
+
+        if (cutoff.compare.len == 0) return;
+        var old: std.ArrayList(Key.CoreEntry) = .empty;
+        defer old.deinit(scratch.allocator());
+        for (0..d.graph.count()) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            if (d.graph.module(m).package != .core) continue;
+            try old.append(scratch.allocator(), .{
+                .name = d.interner.slice(d.graph.moduleName(m)),
+                .key = cutoff.compare[i],
+            });
+        }
+        std.mem.sort(Key.CoreEntry, old.items, {}, oldCoreEntryLessThan);
+        cutoff.core_epoch = try Key.coreEpoch(scratch.allocator(), old.items);
     }
 
     /// The ready queue and the reverse edges, built once before any thread
@@ -754,27 +776,27 @@ const Driver = struct {
         defer if (d.options.profile) |p| {
             p.end(tid, token.?, .cache_load, @intFromEnum(d.graph.moduleFile(m)), 0);
         };
-        // A core module's key is finished by the serial pass, which can still
-        // see every term of it: core imports nothing outside core.
-        if (d.graph.module(m).package != .core) {
-            var imports: std.ArrayList(Key.Import) = .empty;
-            defer imports.deinit(scratch.allocator());
-            for (d.graph.dependencies(m)) |dep| {
-                if (dep == m) continue;
-                try imports.append(scratch.allocator(), .{
-                    .package = d.graph.module(dep).package,
-                    .name = d.interner.slice(d.graph.moduleName(dep)),
-                    .key = cutoff.keys.of(dep),
-                });
-            }
-            Key.sortImports(&imports);
-            cutoff.keys.set(m, try Key.finish(
-                scratch.allocator(),
-                cutoff.keys.ownTerms(m),
-                cutoff.keys.core_epoch,
-                imports.items,
-            ));
+        var pairs: std.ArrayList(Key.ImportPair) = .empty;
+        defer pairs.deinit(scratch.allocator());
+        for (d.graph.dependencies(m)) |dep| {
+            if (dep == m) continue;
+            try pairs.append(scratch.allocator(), .{
+                .package = d.graph.module(dep).package,
+                .name = d.interner.slice(d.graph.moduleName(dep)),
+                .iface_hash = cutoff.iface_hash[dep.int()],
+                .digest = cutoff.digest[dep.int()],
+            });
         }
+        Key.sortPairs(&pairs);
+        // A CORE module's own core term is `none` by definition: core is not a
+        // dependency of itself, exactly as `core_epoch` was not.
+        const surface = if (d.graph.module(m).package == .core) Digest.none else cutoff.core_surface;
+        cutoff.keys.set(m, try Key.finish(
+            scratch.allocator(),
+            cutoff.keys.ownTerms(m),
+            surface,
+            pairs.items,
+        ));
         try d.compareKey(m, scratch);
         const dir = cutoff.dir orelse return;
         if (!cutoff.keys.isCacheable(m)) return;
@@ -789,36 +811,33 @@ const Driver = struct {
         cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
     }
 
-    /// `--cutoff-compare`: `m`'s key under the CUTOFF recipe, beside the one
-    /// the run is using (`Cutoff.compare`).
+    /// `--cutoff-compare`: `m`'s key under the TRANSITIVE recipe M4-1 and M4-2
+    /// used, beside the cutoff key the run is now driven by.
     ///
-    /// The imports' pairs are published values, so this runs on the same
-    /// worker at the same moment as the key it accompanies; `core_surface` has
-    /// been computed by then for every non-core module, which is what the gate
-    /// in `buildSchedule` is for.
+    /// It is itself inductive — over `compare`, not over the keys in use — so
+    /// it reproduces the old recipe exactly, including its `core_epoch` term.
+    /// Nothing is ever stored under it: it exists for the one invariant, **old
+    /// key equal ⇒ new key equal**, which needs both keys of one run.
     fn compareKey(d: *Driver, m: Graph.Index, scratch: *Arena) Error!void {
         const cutoff = d.options.cutoff orelse return;
         if (m.int() >= cutoff.compare.len) return;
-        var pairs: std.ArrayList(Key.ImportPair) = .empty;
-        defer pairs.deinit(scratch.allocator());
+        var imports: std.ArrayList(Key.Import) = .empty;
+        defer imports.deinit(scratch.allocator());
         for (d.graph.dependencies(m)) |dep| {
             if (dep == m) continue;
-            try pairs.append(scratch.allocator(), .{
+            try imports.append(scratch.allocator(), .{
                 .package = d.graph.module(dep).package,
                 .name = d.interner.slice(d.graph.moduleName(dep)),
-                .iface_hash = cutoff.iface_hash[dep.int()],
-                .digest = cutoff.digest[dep.int()],
+                .key = cutoff.compare[dep.int()],
             });
         }
-        Key.sortPairs(&pairs);
-        // A CORE module's own core term is `none` by definition, exactly as
-        // `core_epoch` is: core is not a dependency of itself.
-        const surface = if (d.graph.module(m).package == .core) Digest.none else cutoff.core_surface;
-        cutoff.compare[m.int()] = try Key.finishPairs(
+        Key.sortImports(&imports);
+        const epoch = if (d.graph.module(m).package == .core) Key.none else cutoff.core_epoch;
+        cutoff.compare[m.int()] = try Key.finishTransitive(
             scratch.allocator(),
             cutoff.keys.ownTerms(m),
-            surface,
-            pairs.items,
+            epoch,
+            imports.items,
         );
     }
 

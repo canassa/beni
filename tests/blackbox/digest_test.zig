@@ -606,8 +606,12 @@ test "the digest wave is transitive, and a hash wave is not" {
 // The coarsening invariant (`plans/m4-3.md` §9 M3-e)
 // ---------------------------------------------------------------------------
 
-/// Both key blocks of one `check --cache-keys --cutoff-compare` run: the key
-/// the run used, and the key the CUTOFF recipe would give.
+/// Both key blocks of one `check --cache-keys --cutoff-compare` run.
+///
+/// `hashes` is the key the run USED — the cutoff recipe, `(interface hash,
+/// dependency digest)` per import — and `digests` is the TRANSITIVE key M4-1
+/// and M4-2 were driven by, computed beside it and stored nowhere. The field
+/// names are `Pair`'s and mean something else here; `Keys` below reads better.
 fn keyPairOf(w: *World, arena: std.mem.Allocator, jobs: []const u8, expect_errors: bool) !Pair {
     const r = try w.runWith(
         &.{ "check", "--cache-keys", "--cutoff-compare", jobs, "src" },
@@ -678,17 +682,37 @@ test "the coarsening invariant: an unmoved OLD key never moves the NEW one" {
             try w.write("src/Leaf.beni", edit.leaf);
             const after = try keyPairOf(&w, arena, jobs, edit.errors);
 
-            for (before.hashes) |old| {
-                const old_now = lookup(after.hashes, old.name) orelse continue;
-                if (!std.mem.eql(u8, old.digits, old_now)) continue; // old key moved: says nothing
-                const new_before = lookup(before.digests, old.name).?;
-                const new_after = lookup(after.digests, old.name).?;
+            // `hashes` is the key IN USE (the cutoff recipe) and `digests` is
+            // the TRANSITIVE key beside it — see `keyPairOf`.
+            var cut_off: usize = 0;
+            for (before.digests) |old| {
+                const old_now = lookup(after.digests, old.name) orelse continue;
+                if (!std.mem.eql(u8, old.digits, old_now)) continue; // transitive key moved: says nothing
+                const new_before = lookup(before.hashes, old.name).?;
+                const new_after = lookup(after.hashes, old.name).?;
                 if (std.mem.eql(u8, new_before, new_after)) continue;
                 std.debug.print(
-                    "{s} {s}: {s}'s OLD key did not move and its CUTOFF key did ({s} -> {s})\n",
+                    "{s} {s}: {s}'s TRANSITIVE key did not move and its key DID ({s} -> {s})\n",
                     .{ jobs, edit.what, old.name, new_before, new_after },
                 );
                 return error.CutoffKeyIsFiner;
+            }
+            // And the direction the invariant does NOT assert is the cutoff
+            // itself, so it had better happen: a comment in `Leaf` must move
+            // the transitive keys of `Mid`, `Side` and `Top` and leave their
+            // real keys alone. Counted rather than named, because which
+            // modules are cut off is §10.1's table's business and this test's
+            // job is only to prove the two recipes are not the same function.
+            for (before.digests) |old| {
+                const old_now = lookup(after.digests, old.name) orelse continue;
+                if (std.mem.eql(u8, old.digits, old_now)) continue;
+                const new_before = lookup(before.hashes, old.name).?;
+                const new_after = lookup(after.hashes, old.name).?;
+                if (std.mem.eql(u8, new_before, new_after)) cut_off += 1;
+            }
+            if (std.mem.eql(u8, edit.what, "a comment") and cut_off == 0) {
+                std.debug.print("{s}: a comment cut NOTHING off\n", .{jobs});
+                return error.NothingWasCutOff;
             }
         }
     }
