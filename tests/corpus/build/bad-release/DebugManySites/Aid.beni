@@ -1,0 +1,8 @@
+-- The other module of the cap fixture, and the one that proves the ORDER:
+-- `Aid.beni` sorts before `Main.beni`, so both of its sites are listed
+-- before any of `Main`'s.
+
+
+pub help : Int -> String
+help n =
+    Debug.toString (Debug.log n "help")

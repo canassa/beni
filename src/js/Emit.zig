@@ -53,6 +53,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const diagnostic = @import("diagnostic");
 const Bir = @import("../bir/Bir.zig");
+const Edges = @import("../check/Edges.zig");
 const Graph = @import("../resolve/Graph.zig");
 const InternPool = @import("../InternPool.zig");
 const Session = @import("../Session.zig");
@@ -126,6 +127,12 @@ pub const Options = struct {
     /// output does not move by one byte**, which is what makes "a golden
     /// moved" a finding rather than a blessing for the whole slice.
     release: bool = false,
+    /// `--allow-debug`, the hidden test-only flag (`src/Cli.zig`): turn off
+    /// §9's refusal of a `--release` build that reaches `core/Debug`, and
+    /// nothing else. It changes no emitted byte in either mode; it exists so
+    /// that the corpus's `--release` second pass can keep running the
+    /// fixtures whose instrument is `Debug.log`.
+    allow_debug: bool = false,
     // No `source_maps`: the VLQ encoder is M5 (§11), so `--source-maps` is
     // refused in `Cli.parseBuild` and never reaches here. Positions ride in
     // the IR from M3a either way (§9.6).
@@ -184,6 +191,15 @@ pub fn run(
     // all, so the pass pays for itself in emit time rather than costing
     // anything.
     try e.eliminate(entry);
+
+    // §9's *The release optimiser*: a `--release` build that still reaches
+    // `Debug` is refused (the owner's decision, 2026-09-19). Here and not
+    // earlier, because reachability is what "this build uses it" means; here
+    // and not later, because nothing may be lowered or written.
+    if (options.release and !options.allow_debug) {
+        try e.refuseDebug();
+        if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    }
 
     // Everything is produced into `pending` first and written afterwards.
     // A diagnostic can still appear here — `?` is not compiled yet
@@ -991,6 +1007,168 @@ const Emitter = struct {
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
             .library = e.options.library,
         });
+    }
+
+    // ---- backend.md §9: `--release` refuses `Debug` ----------------------
+
+    /// One live declaration's reference to a `pub` value of `core/Debug`.
+    /// Flat, and ordered by construction: modules in `Graph.Index` order,
+    /// which is sorted path (CLAUDE.md rule 5), then declarations in source
+    /// order, then references in instruction order.
+    const DebugSite = struct {
+        file: SourceStore.Index,
+        /// The reference itself where the instruction stream has one, and
+        /// the referring declaration's name otherwise.
+        token: u32,
+        /// The referring module and declaration, for the message.
+        module: []const u8,
+        decl: []const u8,
+        /// `log`, `toString` or `todo`.
+        used: []const u8,
+    };
+
+    /// How many sites the message lists before it counts the rest. A program
+    /// full of logs prints a diagnostic, not a wall.
+    const max_debug_sites = 5;
+
+    /// **A `--release` build that reaches `Debug` is refused** (§9's *The
+    /// release optimiser*; the owner's decision, 2026-09-19, which is Elm's
+    /// rule for `--optimize`).
+    ///
+    /// **The rule is reachability and nothing softer.** A `Debug` call in a
+    /// declaration §9's walk drops — an unused helper — does not refuse the
+    /// build, because the build does not ship it; reachability is the honest
+    /// definition of "this build uses it" and it is already computed, so
+    /// there is no second notion of use to disagree with the first. A
+    /// development build is untouched.
+    ///
+    /// **Why it is refused rather than tolerated.** `Debug.toString` reads a
+    /// value's runtime representation — field names, constructor tags —
+    /// which is exactly the surface a release optimiser must be free to
+    /// change: §9's *Item 4* had to carry "if `Debug` survives reachability,
+    /// renaming is off for the build", and integer constructor tags
+    /// (`fast-compiler.md` §9.5) want the same pin. And a `Debug.log` inside
+    /// a binding nothing reads is dropped whole by item 1
+    /// (`language.md` §6's *What an optimiser may assume*), which is the one
+    /// place the two builds print different things. With the refusal, "a
+    /// release build behaves exactly as the development build does" holds
+    /// with no exception and no pinned set.
+    ///
+    /// **The sites.** The `Live` set says WHETHER, and the instruction
+    /// stream says WHERE: an `ext_value` naming a `Debug` value inside a
+    /// live declaration's contiguous range is a use site with a token of its
+    /// own. `Edges.declEdges` — the shared walk §9 and `check/Cycles.zig`
+    /// both read — is then consulted for the same declaration, so a
+    /// reference through a leg the instruction scan cannot see (leg 3's
+    /// dispatch targets) still refuses the build; it has no token, so that
+    /// site falls back to the declaration's name.
+    fn refuseDebug(e: *Emitter) !void {
+        const debug = e.graph().lookup(.core, InternPool.WellKnown.Debug.symbol()) orelse return;
+        if (debug.int() >= e.session.resolution.provenance.len) return;
+        const debug_bir = e.bir(debug);
+        const provenance = &e.session.resolution.provenance[debug.int()];
+
+        // The fast path, and it is nearly every build: nothing of `Debug`
+        // survived, so there is nothing to look for.
+        var survived = false;
+        for (0..debug_bir.decls.len) |i| {
+            if (e.live.decl(debug, i)) survived = true;
+        }
+        if (!survived) return;
+
+        var sites: std.ArrayList(DebugSite) = .empty;
+        var stream: std.ArrayList(Edges.Edge) = .empty;
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            if (m == debug) continue;
+            const b = e.bir(m);
+            const file = e.graph().moduleFile(m);
+            const tags = b.insts.items(.tag);
+            const data = b.insts.items(.data);
+            const tokens = b.insts.items(.main_token);
+            for (b.decls, 0..) |d, index| {
+                if (d.kind != .value or !e.live.decl(m, index)) continue;
+                const before = sites.items.len;
+                const start = @min(d.inst_start.int(), b.insts.len);
+                const end = @min(d.inst_end.int(), b.insts.len);
+                for (tags[start..end], data[start..end], tokens[start..end]) |tag, payload, token| {
+                    if (tag != .ext_value or payload.lhs != debug.int()) continue;
+                    const target = provenance.valueDecl(payload.rhs) orelse continue;
+                    try sites.append(e.scratch, e.debugSite(b, d, file, token, debug_bir, target.int()));
+                }
+                if (sites.items.len != before) continue;
+                // Nothing in the instructions, so ask the shared walk: leg 3
+                // is the only other way to name another module's value, and
+                // it carries no token.
+                stream.clearRetainingCapacity();
+                try Edges.declEdges(&stream, e.scratch, b, e.dispatchOf(m), @intCast(index));
+                for (stream.items) |edge| {
+                    const ext = switch (edge) {
+                        .ext => |x| x,
+                        else => continue,
+                    };
+                    if (ext.module != debug) continue;
+                    const target = provenance.valueDecl(ext.value) orelse continue;
+                    try sites.append(e.scratch, e.debugSite(b, d, file, d.name_token, debug_bir, target.int()));
+                    break;
+                }
+            }
+        }
+        if (sites.items.len == 0) return;
+
+        // One diagnostic with a list, the shape `duplicate_main` set: two
+        // locations in one message rather than two messages. The list is
+        // `-` lines, which `checker.md` §8.4's wrap leaves alone.
+        var list: std.ArrayList(u8) = .empty;
+        for (sites.items[0..@min(sites.items.len, max_debug_sites)]) |site| {
+            const at = e.tokenPosition(site.file, site.token);
+            try list.print(e.scratch, "- `{s}:{d}:{d}` — `{s}.{s}` uses `Debug.{s}`\n", .{
+                e.session.store.path(site.file),
+                at.line,
+                at.col,
+                site.module,
+                site.decl,
+                site.used,
+            });
+        }
+        if (sites.items.len > max_debug_sites) {
+            try list.print(e.scratch, "- … and {d} more.\n", .{sites.items.len - max_debug_sites});
+        }
+
+        const first = sites.items[0];
+        try e.report(
+            .debug_in_release,
+            first.file,
+            first.token,
+            \\This `--release` build reaches `Debug`.
+            \\
+            \\{s}
+            \\`Debug` is for developing: `toString` reads a value's runtime representation,
+            \\which a release build is free to change; a `Debug.log` in a binding nothing
+            \\reads is dropped along with the binding; and `todo` crashes. A release build
+            \\must behave exactly as the development build does, so it may not reach `Debug`
+            \\at all. Remove the call, or build without `--release`.
+        ,
+            .{list.items},
+        );
+    }
+
+    fn debugSite(
+        e: *Emitter,
+        b: *const Bir,
+        d: Bir.Decl,
+        file: SourceStore.Index,
+        token: u32,
+        debug_bir: *const Bir,
+        target: usize,
+    ) DebugSite {
+        return .{
+            .file = file,
+            .token = token,
+            .module = e.session.store.moduleName(file),
+            .decl = e.session.interner.slice(b.symbol(d.name)),
+            .used = e.session.interner.slice(debug_bir.symbol(debug_bir.decls[target].name)),
+        };
     }
 
     /// The declaration a module exports as its entry point (§5): `main` of

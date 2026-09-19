@@ -1,0 +1,37 @@
+-- build/bad-release: the CAP. Seven reachable references to `Debug`, and the
+-- message lists the first five and then says "… and 2 more." (`backend.md`
+-- §9) — a program full of logs gets a diagnostic and not a wall.
+--
+-- The five that are listed are the first five in order: modules by
+-- `Graph.Index`, which is sorted path (CLAUDE.md rule 5), then declarations
+-- in source order, then references in instruction order. `Aid.beni` sorts
+-- before `Main.beni`, so its two sites head the list whatever order the
+-- arguments or the worker threads arrived in.
+import Aid
+import Node exposing (Program)
+import String
+
+
+step : Int -> Int
+step n =
+    Debug.log (n + 1) "step"
+
+
+twice : Int -> Int
+twice n =
+    Debug.log (Debug.log (n * 2) "inner") "outer"
+
+
+label : Int -> String
+label n =
+    Debug.toString (Debug.log n "label")
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (step 1)
+        , String.fromInt (twice 2)
+        , label 3
+        , Aid.help 4
+        ]

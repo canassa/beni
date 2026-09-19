@@ -96,6 +96,12 @@ function parseArgs(argv) {
       // `backend.md` §9: the release optimiser is a size change and must not
       // be a speed one. The floor is built with the flag too, so the
       // subtraction stays honest — a release floor loads a release core.
+      //
+      // No `--allow-debug` here, unlike `bench/size.mjs`: no program under
+      // `bench/runtime/` reaches `Debug` and none may, because a benchmark
+      // that writes to the console is timing the console. A `--release`
+      // build that did would now be refused, loudly, which is the answer
+      // this script wants.
       case "--release":
         options.release = true;
         break;

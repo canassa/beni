@@ -715,7 +715,17 @@ exactly two — `Debug.log`, which writes a line, and a platform package's `fore
 
 - **A binding whose value is never used may be dropped whole**, everything inside it included, a
   `Debug.log` among it. That is `backend.md` §9's dead-binding elimination and its reachability
-  pass, and purity is why neither needs a bundler's `sideEffects` guesswork.
+  pass, and purity is why neither needs a bundler's `sideEffects` guesswork. **The `Debug.log`
+  clause is no longer a licence any build a user can run will spend, and it is kept because it is
+  the reason the pass may ask nothing about a right-hand side.** Amended 2026-09-19: dead-BINDING
+  elimination is `--release`'s alone — a development build eliminates whole declarations and never
+  looks inside a body — and a `--release` build that reaches `Debug` is now refused outright
+  (`backend.md` §9's *`Debug` is refused, not pinned*). So the two never meet outside the corpus
+  harness, where the hidden `--allow-debug` flag puts them back together to keep
+  `run/ReleaseDeadDebug` asserting the rule. What the clause still settles is the shape of the
+  pass: it drops a binding on its use count alone and asks nothing about the initialiser, rather
+  than testing "does this call a `foreign`?", which is the `sideEffects` guesswork one sentence
+  up.
 - **Two evaluations that both survive may not be reordered against each other**, and neither may be
   duplicated into a position where it runs more often than the table above says. Inlining
   substitutes a *body*, never an argument expression: an argument is evaluated once, at the call,
@@ -855,6 +865,7 @@ pattern_budget_exhausted
 let_forward_reference
 cyclic_value
 duplicate_main
+debug_in_release
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -875,7 +886,8 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | the fifth-from-last line | M3a again | `foreign_arity_mismatch`, appended on 2026-09-18 rather than filed with its four siblings above, so that no line moved. It is [`boundary.md`](boundary.md) §4's **check 4**: a sibling export's parameter count must be the declaration's evidence count plus its declared arity, and the two export forms whose parameter list cannot be counted — a bare name and a rest parameter — are refused under the same code (`static-dispatch-spike.md` A.84) |
 | the fourth-from-last line | M2c again | `pattern_budget_exhausted`, appended on 2026-09-18 (queue slice 14) rather than filed with the exhaustiveness pair above, so that again no line moved. It is the one code of the three that is about the compiler and not the program: deciding a `case` can cost exponentially much, so the analysis spends a bounded amount of work on it (`--pattern-budget=<n>`), and a `case` it could not decide is **refused** rather than passed over in silence. Silence there was an exit-0 miscompile, because [`backend.md`](backend.md) §7 compiles a `case` to a decision tree with no default arm on the strength of the checker having proved it exhaustive. The message names the budget in force and says the two ways past it: split the match, or raise the flag |
 | the third- and second-from-last lines | M3 again | the two halves of §7's **initialisation** rule, appended on 2026-09-18 (queue slices 21 and 23) and again never inserted. `let_forward_reference` is lowering's, about a `let` value binding that reads one written below it; `cyclic_value` is the checker's (`checker.md` §6.7), about a top-level value reachable from its own initialiser. They are one defect at two scopes: a name that is in scope but has no value yet, emitted as a JavaScript `const` and read inside its temporal dead zone. Both were exit-0 paths from a well-typed program to a `ReferenceError` at load, and both are refusals rather than reorderings — the first because §6's table says `let` bindings run in written order, the second because a circle has no order to be put into |
-| the last line | M3a again | `duplicate_main`, appended on 2026-09-19 (queue slice 37), again never inserted. A project with more than one `main` was refused under `missing_main`, whose title — MISSING MAIN — says the opposite of the message printed under it, and whose code told a tool routing on it that a project with two entry points had none. A build is a pair of ONE entry point and ONE platform ([`boundary.md`](boundary.md) §5.3), so two `main`s are two builds, which is a different edit from the one "MISSING MAIN" asks for. The message names both modules and both locations, and which of the two it calls the first is the lower module index — the sorted path, never argument or completion order (CLAUDE.md rule 5). `--library` turns the whole rule off, `missing_main` with it |
+| the second-from-last line | M3a again | `duplicate_main`, appended on 2026-09-19 (queue slice 37), again never inserted. A project with more than one `main` was refused under `missing_main`, whose title — MISSING MAIN — says the opposite of the message printed under it, and whose code told a tool routing on it that a project with two entry points had none. A build is a pair of ONE entry point and ONE platform ([`boundary.md`](boundary.md) §5.3), so two `main`s are two builds, which is a different edit from the one "MISSING MAIN" asks for. The message names both modules and both locations, and which of the two it calls the first is the lower module index — the sorted path, never argument or completion order (CLAUDE.md rule 5). `--library` turns the whole rule off, `missing_main` with it |
+| the last line | M3c | `debug_in_release`, appended on 2026-09-19 (queue slice 50), again never inserted. It is the **one code in this catalogue a development build cannot produce**: a `--release` build in which any `pub` value of `core/Debug` — `log`, `toString`, `todo`, which is the whole module — survives [`backend.md`](backend.md) §9's reachability elimination is refused, exit 1, nothing written. That is Elm 0.19's rule for `--optimize`, taken by the owner on 2026-09-19 once M3c's first release slice had landed, and its reasons are §9's *`Debug` is refused, not pinned*: `Debug.toString` reflects on the runtime representation a release optimiser must stay free to change, a `Debug.log` inside a dead binding is dropped whole by §9 item 1 (§6's *What an optimiser may assume*), and a `Debug` call in a shipped build is almost always an accident. The rule is **reachability** and nothing softer — a `Debug.log` in a declaration the walk drops does not refuse the build, because the build does not ship it. The message names the use sites, at most five and then a count, in module-index then source order (CLAUDE.md rule 5) |
 
 **The three generic syntax codes**, all carrying Elm-style prose — what the parser was in the middle
 of, what it saw, and what it expected, e.g. *I was parsing the branches of this `case` and ran into

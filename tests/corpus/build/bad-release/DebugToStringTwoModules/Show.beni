@@ -1,0 +1,9 @@
+-- The module that writes the call. `Debug.toString` is the half of the rule
+-- that is about the REPRESENTATION rather than the console: it reads field
+-- names and constructor tags, which is exactly what a release optimiser must
+-- stay free to change (`backend.md` §9's *Item 4*, `fast-compiler.md` §9.5).
+
+
+pub render : Int -> String
+render n =
+    Debug.toString n

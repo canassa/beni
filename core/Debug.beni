@@ -2,6 +2,10 @@
 --! meant for shipping code: a release build should not be printing to the
 --! console or crashing on a `todo`.
 --!
+--! **A `--release` build that reaches any of these three is refused**, with
+--! the use sites named, so "not meant for shipping code" is a rule and not
+--! only advice.
+--!
 --! All three declarations are `foreign`, because all three do something the
 --! language itself cannot: write to the outside world, stop the program, and
 --! look at a value's representation without knowing its type.

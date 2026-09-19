@@ -17,6 +17,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
+| `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
 | `run/` | `build --platform=node`, then `node out/main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
@@ -37,6 +38,13 @@ platform, and three (`missing_main`, `main_not_program`, `duplicate_main`)
 need a build, `check --platform` having deliberately no opinion about
 `main`. See `build/bad/README.md`, and `plans/coverage-audit.md` Part A for
 the three that are still blackbox-only.
+
+`build/bad-release/` is that kind again with `--release` added and
+`--allow-debug` left off: a fixture there must build **clean** without the
+flag and fail with it, which is the only way to state `debug_in_release` —
+the one code in the catalogue a development build cannot produce
+(`backend.md` §9's *`Debug` is refused, not pinned*). Its own
+`README.md` has the four assertions.
 
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).

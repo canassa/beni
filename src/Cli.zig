@@ -155,6 +155,24 @@ pub const Build = struct {
     /// nothing** — elimination is always on and there are no source maps to
     /// switch off.
     release: bool = false,
+    /// `--allow-debug` — **hidden**, and hidden for exactly
+    /// `--roundtrip-interfaces`' reason: it is diagnostic surface, not
+    /// product surface.
+    ///
+    /// It turns off one thing and nothing else — `backend.md` §9's refusal
+    /// of a `--release` build that still reaches `core/Debug` — and it does
+    /// not change a byte of what either build emits. It exists because
+    /// `Debug.log` is the corpus's only instrument for observing evaluation
+    /// order, and the `--release` second pass over all 121 `run/` fixtures
+    /// is what proved the wide inliner unsafe (`backend.md` §9 item 1). A
+    /// refusal with no way past it would blind that pass, which is the one
+    /// guard a minifier's failure mode has.
+    ///
+    /// Absent from `usage`, and from `backend.md` §2's table, for the same
+    /// reason: a user has no business reaching for it, and the alternative —
+    /// a test-only entry point — would move the assertion off the thing
+    /// that ships.
+    allow_debug: bool = false,
     /// No `source_maps` field: `parseBuild` refuses that flag outright, so
     /// nothing downstream can be handed a setting the backend does not
     /// honour.
@@ -399,6 +417,7 @@ const BuildSpecific = struct {
     source_maps: bool = false,
     release: bool = false,
     library: bool = false,
+    allow_debug: bool = false,
 
     fn apply(self: *BuildSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
@@ -419,6 +438,12 @@ const BuildSpecific = struct {
         } else if (std.mem.eql(u8, name, "--library")) {
             if (value != null) return noValue(name);
             self.library = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--allow-debug")) {
+            // The third hidden flag (see `Build.allow_debug`). Accepted like
+            // `--library`, absent from `usage`.
+            if (value != null) return noValue(name);
+            self.allow_debug = true;
             self.consumed = true;
         }
         return null;
@@ -456,6 +481,7 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
         .out = s.specific.out orelse default_out,
         .library = s.specific.library,
         .release = s.specific.release,
+        .allow_debug = s.specific.allow_debug,
         .paths = paths,
     } } };
 }
@@ -812,6 +838,26 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try testing.expect(std.mem.indexOf(u8, usage, "--iface-hash") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "iface") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "roundtrip") == null);
+
+    // The third, appended 2026-09-19 with `backend.md` §9's refusal of
+    // `Debug` under `--release` (queue slice 50). It is `build`'s alone —
+    // nothing else emits — and it is hidden for the same reason: the corpus
+    // harness needs it to keep running the `--release` second pass over the
+    // 24 `run/` fixtures that use `Debug.log`, and a user does not.
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .allow_debug = true, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--release", "--allow-debug", "src" },
+    );
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .allow_debug = true, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--allow-debug", "src" },
+    );
+    try expectUsage("beni: option '--allow-debug' does not take a value", &.{ "build", "--platform=node", "--allow-debug=1", "src" });
+    // It is not `check`'s, `fmt`'s or `dump`'s: those emit nothing, so there
+    // is no refusal for it to lift.
+    try expectUsage("beni: unknown option '--allow-debug'; run 'beni help' for usage", &.{ "check", "--allow-debug", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "--allow-debug") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "allow-debug") == null);
 }
 
 test "usage text mentions every subcommand" {

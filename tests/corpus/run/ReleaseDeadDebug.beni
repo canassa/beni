@@ -24,6 +24,18 @@
 -- name, and a `.release-expected` is how a fixture says so out loud instead
 -- of a harness quietly accepting two answers everywhere.
 --
+-- **What it pins narrowed on 2026-09-19, and the fixture stays.** A
+-- `--release` build that reaches `Debug` is now REFUSED (§9's *`Debug` is
+-- refused, not pinned*), so nobody can build this program in release; the
+-- corpus's release pass gets there through the hidden, test-only
+-- `--allow-debug`. So the claim is exactly: *under the test-only flag, a
+-- dead binding's `Debug.log` is dropped and a surviving one is not, and the
+-- surviving order does not move*. That is item 1's zero-use rule, still the
+-- only thing in the compiler that can be SEEN, and it is now a harness-only
+-- fact rather than a difference a user can build. The user-facing invariant
+-- is the stronger one: a release build behaves exactly as the development
+-- build does, because a build like this one is refused.
+--
 -- `dropped` is the third kind and belongs to `run/DceDebugLog`: a whole
 -- declaration nothing reaches, deleted by the reachability walk in BOTH
 -- builds, so neither golden has its line.

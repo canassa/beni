@@ -1983,6 +1983,271 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     try testing.expect(!w.exists("maps"));
 }
 
+test "--release refuses a build that reaches Debug; the same program builds and logs without the flag" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9's *`Debug` is refused, not pinned* (the owner's
+    // decision, 2026-09-19, which is Elm's `--optimize` rule). Three builds
+    // of ONE program, which is what makes this a claim about the flag:
+    // development builds and logs, `--release` is refused, and the hidden
+    // `--allow-debug` builds and logs again.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\report : Int -> Int
+        \\report n =
+        \\    Debug.log (n + 1) "report"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ String.fromInt (report 2) ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dev = try w.run(&.{ "build", "--platform=node", "--out=dev", "Main.beni" });
+    const rel = try w.run(&.{ "build", "--platform=node", "--release", "--out=rel", "Main.beni" });
+    const allowed = try w.run(&.{ "build", "--platform=node", "--release", "--allow-debug", "--out=allow", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dev.exit_code);
+    try testing.expectEqual(@as(usize, 0), dev.diagnostics.len);
+
+    try testing.expectEqual(@as(u8, 1), rel.exit_code);
+    try testing.expectEqual(@as(usize, 1), rel.diagnostics.len);
+    // The whole diagnostic: the region is the REFERENCE and not the
+    // declaration, and the message names the module, the declaration and
+    // which `Debug` value was used.
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .debug_in_release,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 7, .col = 5 }, .end = .{ .line = 7, .col = 14 } },
+        .title = "DEBUG IN A RELEASE BUILD",
+        .message =
+        \\This `--release` build reaches `Debug`.
+        \\
+        \\- `Main.beni:7:5` — `Main.report` uses `Debug.log`
+        \\
+        \\`Debug` is for developing: `toString` reads a value's runtime representation,
+        \\which a release build is free to change; a `Debug.log` in a binding nothing
+        \\reads is dropped along with the binding; and `todo` crashes. A release build
+        \\must behave exactly as the development build does, so it may not reach `Debug`
+        \\at all. Remove the call, or build without `--release`.
+        ,
+    }, rel.diagnostics[0]);
+
+    try testing.expectEqual(@as(u8, 0), allowed.exit_code);
+    try testing.expectEqual(@as(usize, 0), allowed.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // A refused build writes nothing at all — the refusal runs before
+    // lowering, so there is not even a half-written tree to clean up.
+    try testing.expect(!w.exists("rel"));
+
+    const dev_run = try w.node("dev/main.mjs");
+    try testing.expectEqual(@as(u8, 0), dev_run.exit_code);
+    try testing.expectEqualStrings("report: 3\n3\n", dev_run.stdout);
+    const allowed_run = try w.node("allow/main.mjs");
+    try testing.expectEqual(@as(u8, 0), allowed_run.exit_code);
+    try testing.expectEqualStrings("report: 3\n3\n", allowed_run.stdout);
+}
+
+test "a Debug call that reachability drops does not refuse the release build" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The other half of the rule (`backend.md` §9): **reachability is the
+    // definition of "this build uses it"**, and nothing softer is. `unused`
+    // holds a `Debug.log` and nothing reaches it, so §9's walk drops the
+    // whole declaration and the build ships no `Debug` — which is exactly
+    // what the refusal is about. A source-text test would refuse this
+    // program, and would be wrong to.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\unused : Int -> Int
+        \\unused n =
+        \\    Debug.log n "unused"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "x"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--release", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const program = try w.node("out/main.mjs");
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("x\n", program.stdout);
+    // And the proof that it really was dropped rather than merely quiet:
+    // core's `Debug` module is not in the output tree at all.
+    try testing.expect(!w.exists("out/core/Debug.mjs"));
+}
+
+test "--release --library refuses Debug reachable from the exported surface, and not below it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9: the rule is the same rule with the same root set as
+    // everything else `--library` changes — every name the root package's
+    // modules export is a root, so a `Debug` reached from `exported`
+    // refuses the build while one under a `private` nothing exports does
+    // not. Two libraries, one flag pair, so the difference is the roots and
+    // nothing else.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Lib.beni",
+        \\pub exported : Int -> String
+        \\exported n =
+        \\    Debug.toString n
+        \\
+    );
+    try w.write("Quiet.beni",
+        \\private : Int -> String
+        \\private n =
+        \\    Debug.toString n
+        \\
+        \\
+        \\pub exported : Int -> Int
+        \\exported n =
+        \\    n + 1
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const reached = try w.run(&.{ "build", "--platform=node", "--release", "--library", "--out=lib", "Lib.beni" });
+    const quiet = try w.run(&.{ "build", "--platform=node", "--release", "--library", "--out=quiet", "Quiet.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), reached.exit_code);
+    try testing.expectEqual(@as(usize, 1), reached.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .debug_in_release,
+        .severity = .@"error",
+        .span = .{ .file = "Lib.beni", .start = .{ .line = 3, .col = 5 }, .end = .{ .line = 3, .col = 19 } },
+        .title = "DEBUG IN A RELEASE BUILD",
+        .message =
+        \\This `--release` build reaches `Debug`.
+        \\
+        \\- `Lib.beni:3:5` — `Lib.exported` uses `Debug.toString`
+        \\
+        \\`Debug` is for developing: `toString` reads a value's runtime representation,
+        \\which a release build is free to change; a `Debug.log` in a binding nothing
+        \\reads is dropped along with the binding; and `todo` crashes. A release build
+        \\must behave exactly as the development build does, so it may not reach `Debug`
+        \\at all. Remove the call, or build without `--release`.
+        ,
+    }, reached.diagnostics[0]);
+
+    try testing.expectEqual(@as(u8, 0), quiet.exit_code);
+    try testing.expectEqual(@as(usize, 0), quiet.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("lib"));
+    try testing.expect(w.exists("quiet/Quiet.mjs"));
+}
+
+test "the debug_in_release site list does not depend on thread count or argument order" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // CLAUDE.md rule 5, applied to a diagnostic that walks EVERY module of
+    // the build and lists what it found. The order is modules by
+    // `Graph.Index` — sorted path — then source order, so `Aid.beni`'s
+    // sites precede `Main.beni`'s whichever way the arguments are written
+    // and however many workers ran.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Aid.beni",
+        \\pub help : Int -> String
+        \\help n =
+        \\    Debug.toString (Debug.log n "help")
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Aid
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (Aid.help 1)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.runWith(
+        &.{ "build", "--platform=node", "--release", "--jobs=1", "--out=a", "Aid.beni", "Main.beni" },
+        .{ .raw_diagnostics = true },
+    );
+    const many = try w.runWith(
+        &.{ "build", "--platform=node", "--release", "--jobs=8", "--out=b", "Aid.beni", "Main.beni" },
+        .{ .raw_diagnostics = true },
+    );
+    const reversed = try w.runWith(
+        &.{ "build", "--platform=node", "--release", "--jobs=8", "--out=c", "Main.beni", "Aid.beni" },
+        .{ .raw_diagnostics = true },
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), one.exit_code);
+    try testing.expectEqual(@as(u8, 1), many.exit_code);
+    try testing.expectEqual(@as(u8, 1), reversed.exit_code);
+    // Byte for byte, all three: the rendered text, list and caret included.
+    try testing.expectEqualStrings(one.stderr, many.stderr);
+    try testing.expectEqualStrings(one.stderr, reversed.stderr);
+    // And the list really is in sorted-path order, `toString` before the
+    // `log` it is applied to, which is instruction order inside one
+    // declaration.
+    try testing.expect(std.mem.indexOf(u8, one.stderr, "- `Aid.beni:3:5` — `Aid.help` uses `Debug.toString`\n- `Aid.beni:3:21` — `Aid.help` uses `Debug.log`\n") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("a"));
+    try testing.expect(!w.exists("b"));
+    try testing.expect(!w.exists("c"));
+}
+
 test "--source-maps is refused rather than silently writing no .map file" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

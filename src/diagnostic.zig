@@ -222,6 +222,15 @@ pub const Code = enum {
     /// entry point and ONE platform, so two `main`s are two builds — a
     /// different edit from the one "MISSING MAIN" asks for.
     duplicate_main,
+    /// M3c (`backend.md` §9's *The release optimiser*), appended on
+    /// 2026-09-19 (queue slice 50): a `--release` build in which a `pub`
+    /// value of `core/Debug` survives §9's reachability walk. The owner took
+    /// Elm's rule that day — `Debug.toString` reflects on the runtime
+    /// representation the optimiser must be free to change, and a
+    /// `Debug.log` inside a binding nothing reads is dropped whole by item 1
+    /// — so that "a release build behaves exactly as the development build
+    /// does" holds without exception. The message names the use sites.
+    debug_in_release,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -334,6 +343,7 @@ pub fn title(code: Code) []const u8 {
         .ambiguous_method_receiver => "CONSTRAINT IN AN INFERRED INTERFACE",
         .constrained_constant => "CONSTRAINED CONSTANT",
         .too_many_inferred_constraints => "TOO MANY INFERRED CONSTRAINTS",
+        .debug_in_release => "DEBUG IN A RELEASE BUILD",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

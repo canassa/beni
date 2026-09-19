@@ -74,7 +74,7 @@ beni build [options] <entry>...      compile to JavaScript
 | Flag | Meaning | Default |
 |---|---|---|
 | `--platform=<name>` | which platform package supplies `main`'s type and the runtime | required |
-| `--release` | dead bindings out, short names, compact printing, joined `const`s (§9); later chunks (§10), integer tags, maps off | off |
+| `--release` | dead bindings out, short names, compact printing, joined `const`s (§9); **refuses a build that reaches `Debug`**; later chunks (§10), integer tags, maps off | off |
 | `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (§9) | off |
 | `--out=<dir>` | output directory | `out/` |
 | `--source-maps` | emit `.map` files | M5; refused today, on in dev and off in release once §11 lands |
@@ -97,7 +97,24 @@ switch source maps off, because there are none to switch. `--source-maps` keeps 
 `:369-371` and keeps it in a `--release` build too, so the pair `--release --source-maps` exits 2 on
 the source-map line. The one thing it changes beyond §9's four passes: the entry file's two-line
 header comment goes, which is 135 bytes of the floor's 2 009. `dump --stage=…` is untouched for the same reason §9 gives: every stage is
-before the backend. **Development output does not move by one byte** — every `emit/` golden, every
+before the backend.
+
+**`--release` does refuse one thing, and it is not a flag: a build that reaches `Debug`** (the
+owner's decision, 2026-09-19; the rule and the reasons are §9's *The release optimiser*, under *`Debug`
+is refused, not pinned*). It exits `1` with `debug_in_release`, writes nothing to `--out`, and names
+the use sites. That is Elm's rule for `--optimize`, and it is what lets this section's "a release
+build behaves exactly as the development build does" stand with no exception. It is a refusal of a
+PROGRAM and not of a flag, so unlike `--source-maps` it is a diagnostic on stderr and exit `1`
+rather than a usage line and exit `2`.
+
+**There is a third hidden flag, `--allow-debug`** (`src/Cli.zig`, alongside `--roundtrip-interfaces`
+and `--iface-hash`), absent from the table above and from `beni help` for their reason: it is
+diagnostic surface, not product surface. It turns that refusal off and changes nothing else — not
+one emitted byte, in either mode. It exists because `Debug.log` is the corpus's only instrument for
+observing evaluation order and the `--release` second pass over `run/` is what proved the wide
+inliner unsafe (§9 item 1); a refusal with no way past it would silently stop 24 of the 121 fixtures
+from being built in release at all. `tests/corpus/build/bad-release/` is the kind that does NOT pass
+it. **Development output does not move by one byte** — every `emit/` golden, every
 `run/` `.expected` and every `bench/size.mjs` figure in this document is a dev-build figure and stays
 one — which is what makes "a golden moved" a finding rather than a blessing for the whole slice.
 
@@ -1432,6 +1449,74 @@ exists to avoid. It costs **1 643 of the floor's 2 147 bytes (76%)**, **13 773 o
 `Dictionaries` has fallen 17 722 → 6 198 bytes, −65%, and the siblings are **69% of what ships** —
 the same answer §9's *Purity* paragraph reached about sibling-level elimination, for the same reason.
 
+#### `Debug` is refused, not pinned
+
+**The owner's decision, 2026-09-19, and it is Elm's rule for `--optimize`: a `--release` build that
+reaches `Debug` is refused.** Three reasons, and the third is the one that closes the section.
+
+- **`Debug.toString` reflects on the runtime representation** — field names, constructor tags — which
+  is exactly the surface a release optimiser must stay free to change. `fast-compiler.md` §9.5 lists
+  integer constructor tags as a release feature, and *Item 4* below had to carry the rule "if `Debug`
+  survives reachability, renaming is off for the build". Under this decision that pin is unnecessary:
+  a release build cannot contain `Debug`, so nothing has to be held back for it.
+- **`Debug.log` inside a dead binding is dropped whole** by item 1, which `language.md` §6's *What an
+  optimiser may assume* licenses in so many words. That is the one place a release build prints
+  something different from a development build, and `tests/corpus/run/ReleaseDeadDebug` is the one
+  fixture that pins it.
+- **A `Debug.log` or a `Debug.todo` in a shipped build is almost always an accident.** The module's
+  own documentation says it is not meant for shipping code; the compiler now says the same thing at
+  the one moment the author can act on it.
+
+With the refusal, **"a release build behaves exactly as the development build does" holds without
+exception**, which is worth more than the one fixture it costs.
+
+**The rule.** A `--release` build in which any `pub` value of `core/Debug` — `log`, `toString`,
+`todo`, which is the whole module — **survives reachability elimination** is refused: exit `1`,
+nothing written to `--out`, one diagnostic. It applies to an application build and to `--release
+--library` alike, the roots in each case being §9's *Roots* above. A development build is untouched.
+
+**Reachability is the definition of "this build uses it", and nothing softer is.** A `Debug.log` in a
+declaration the walk drops — an unused helper, a `pub` value no `main` reaches — does **not** refuse
+the build, because the build does not ship it. That answer is already computed, by the pass that
+decides what ships, so there is no second notion of "use" to disagree with the first; `Live` after
+the walk is read and no graph is re-derived. It is also the honest answer: the thing the rule is
+about is whether the optimiser's licence and the shipped program can collide, and an eliminated
+declaration is not a shipped program.
+
+**Where it runs:** `Emit.run`, between `eliminate` and `emitModules` — after the walk, so "reaches"
+means what shipped; before lowering, so nothing is lowered, nothing is renamed and nothing is
+written (`src/js/Emit.zig`, `Emitter.refuseDebug`).
+
+**The diagnostic is `debug_in_release`** (`language.md` §10, appended at the end of the catalogue),
+title **DEBUG IN A RELEASE BUILD**, and **it names where**. The `Live` set says *whether*; the
+instruction stream says *where* — an `ext_value` instruction naming a `Debug` value inside a live
+declaration's contiguous range is a use site with a token of its own, so the region is the reference
+and not the declaration. `check/Edges.zig`'s shared walk is then consulted for a live declaration the
+instruction scan found nothing in, so a reference through leg 3 (a dispatch target) still refuses the
+build; that site has no token and falls back to the declaration's name, which is the documented
+second best. **One diagnostic with a list**, the shape `duplicate_main` set, and the list is `-`
+lines, which `checker.md` §8.4's wrap leaves alone. The order is modules by `Graph.Index` — sorted
+path, never argument or completion order (CLAUDE.md rule 5) — then declarations in source order, then
+references in instruction order, and the region of the diagnostic is the first site. **Capped at
+five**, with `… and N more.`, so a program full of logs prints a diagnostic and not a wall.
+
+**What it costs the corpus, and what pays for it.** `Debug.log` is the only instrument `run/` has for
+observing evaluation order — `EvalOrder*`, `CallbackOrder*`, `QuestionOrder`, `SortByKeyOnce`,
+`ReleaseInlineOrder`, 24 of the 121 fixtures — and the `--release` second pass over exactly those is
+what proved the wide inliner unsafe (item 1's rejected wider licence; four fixtures broke). So the
+refusal has a way past it for the harness and only for the harness: **`--allow-debug`**, hidden, §2.
+The `run/` release pass and `emit/release/` pass it **uniformly** — uniformly rather than per
+fixture, because a fixture can reach `Debug` through a module it imports and no grep over its own
+text would know. `tests/corpus/build/bad-release/` is the kind that does not pass it, and every
+fixture there is asserted to build clean without `--release` first, so a fixture that is merely
+broken cannot pass for a claim about the flag.
+
+**`run/ReleaseDeadDebug` stays, and what it pins narrows.** Under the flag, a release build still
+drops a dead binding's `Debug.log` and a dev build still keeps it, so the fixture and its
+`.release-expected` still state item 1's zero-use rule out loud. What they no longer state is
+anything a user can see: a build like that is refused. The mechanism is a harness-only fact from
+2026-09-19 on.
+
 #### Item 1 — local dead bindings, and the single use that follows them
 
 One pass over `JsIr`, **per function body**, after lowering and before printing. `Reach` decided
@@ -1866,9 +1951,18 @@ both, so `slotName` (`src/js/Lower.zig:430-437`) costs the field alphabet nothin
 | the `$` tag and the `a`/`b`/`c`… slots | not fields, and already one character |
 | a `<T>$$order` key | it is a **constructor tag name**, read dynamically as `M$T$$order[x]` (`Lower.orderTable`, `src/js/Lower.zig:2229-2272`; `orderLookup`, `:2282-2286`). Not item 4's — but it is worth recording that report 12 §5.4's "no `obj[dynamicString]` exists" is **false of today's output**, and the integer-tag item is where that is paid |
 | anything inside a `*.foreign.mjs` | copied verbatim, never parsed |
-| **every field, if `Debug` survives** | below |
+| ~~**every field, if `Debug` survives**~~ | below — **withdrawn 2026-09-19**: a release build cannot reach `Debug`, so there is nothing to pin |
 
-**`Debug` is the whole of the pinned set, and the corpus proves it.** With every field renamed, **103
+**`Debug` was the whole of the pinned set, and the pin is now unnecessary.** The measurement below
+stands and is kept, because it is what the pin was reasoned from; what changed on 2026-09-19 is the
+other rule, the one this section called the owner's and declined to take. **The owner took it**: a
+`--release` build that reaches `Debug` is refused (*`Debug` is refused, not pinned*, above). So the
+membership test below is not needed — a release build has no `Debug` in it to notice a renamed field
+— and `run/ReleaseDeadDebug`'s `.release-expected` is not deleted but demoted: it is asserted under
+the hidden `--allow-debug` flag and is a harness-only fact. Item 4 is still declined, on its own
+numbers; this paragraph only removes the constraint it would have had to honour.
+
+**The measurement that found the pin, kept.** With every field renamed, **103
 of the 107 `run/` programs still print their `.expected` byte for byte**. The four that do not —
 `DebugLog`, `EvalOrderLiterals`, `EvalOrderRecordFields`, `QuestionOrder` — each turn a
 `{ name = "Ada" }` into `{ a = "Ada" }`. Nothing else notices: `Basics.eq`'s `Object.keys` walk
@@ -1881,10 +1975,12 @@ There is no per-type answer available: `Debug.log : a, String -> a` is a type va
 can arrive through any number of generic frames, so "which records reach Debug" is not a question the
 backend can ask. **The conservative rule needs no decision and is one membership test**: if `core/Debug`'s
 `log` or `toString` survives §9's reachability walk — a *foreign binding* node, §9's table — field
-renaming is off for the whole build. **The other rule is the owner's**: Elm 0.19 refuses `Debug` under
-`--optimize`, beni does not, and §9's own `run/ReleaseDeadDebug` asserts a `Debug.log` line under
-`--release` through a `.release-expected` of its own (`tests/blackbox/corpus_test.zig:481-498`).
-Taking Elm's rule would delete the pin; **this section does not take it.**
+renaming is off for the whole build. **The other rule was the owner's, and on 2026-09-19 the owner
+took it**: Elm 0.19 refuses `Debug` under `--optimize` and **beni now does too** (*`Debug` is refused,
+not pinned*, above). That deletes the pin, exactly as this paragraph said it would — a release build
+cannot reach `Debug`, so the membership test has nothing to protect. `run/ReleaseDeadDebug` keeps its
+`.release-expected`, now asserted under the hidden `--allow-debug` flag, which makes it a statement
+about item 1's zero-use rule and no longer a statement about anything a user can build.
 
 **Every order stays SOURCE-name order, and that is what makes this a print-time substitution.** Three
 places read a record's fields sorted by name and all three keep sorting on the source text:

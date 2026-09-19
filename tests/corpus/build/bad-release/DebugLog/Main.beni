@@ -1,0 +1,23 @@
+-- build/bad-release: `backend.md` §9's *The release optimiser* — a
+-- `--release` build that reaches `Debug.log` is refused (2026-09-19).
+--
+-- `report` is reachable from `main`, so the `Debug.log` in it survives §9's
+-- reachability walk and this build ships a call that writes to the console.
+-- The region is the REFERENCE, not the declaration, and the message names
+-- the module, the declaration and which `Debug` value it used.
+--
+-- The same program builds clean without `--release`, which the harness
+-- asserts before it asserts this — that is what makes the fixture a claim
+-- about the flag.
+import Node exposing (Program)
+import String
+
+
+report : Int -> Int
+report n =
+    Debug.log (n + 1) "report"
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (report 2) ]

@@ -328,6 +328,14 @@ function measureTree(outDir) {
 /// line would stop measuring anything.
 /// `release` passes `--release` and writes to `out-release/`, so the two
 /// builds of one project cannot read each other's output.
+///
+/// It also passes `--allow-debug`, the hidden test-only flag: since
+/// 2026-09-19 a `--release` build that reaches `Debug` is refused
+/// (`backend.md` §9's *`Debug` is refused, not pinned*), and 24 of the 121
+/// programs under the default corpus `tests/corpus/run` use `Debug.log` as
+/// their instrument for evaluation order. Without the flag the release
+/// column would simply stop existing for a fifth of the table, which is a
+/// worse answer than measuring the bytes those programs actually emit.
 function buildProject(beni, work, projectDir, sources, library = false, release = false) {
   const projectRel = relative(work, projectDir).split(sep).join("/");
   const out = release ? "out-release" : "out";
@@ -341,7 +349,7 @@ function buildProject(beni, work, projectDir, sources, library = false, release 
       `--out=${projectRel}/${out}`,
       `--root=${projectRel}`,
       ...(library ? ["--library"] : []),
-      ...(release ? ["--release"] : []),
+      ...(release ? ["--release", "--allow-debug"] : []),
       ...sources.map((s) => `${projectRel}/${s}`),
     ],
     work,

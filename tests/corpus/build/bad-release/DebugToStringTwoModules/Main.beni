@@ -1,0 +1,12 @@
+-- build/bad-release: the site named is in the module that CALLS `Debug`,
+-- not in the module the call is reached from (`backend.md` §9).
+--
+-- `Main.main` names `Show.render`, which is where `Debug.toString` is
+-- written. One diagnostic, one site, and its span is inside `Show.beni`.
+import Node exposing (Program)
+import Show
+
+
+main : Program
+main =
+    Node.print (Show.render 41)

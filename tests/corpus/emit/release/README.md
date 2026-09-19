@@ -10,6 +10,14 @@ about what a program COMPUTES is `run/`'s, and every `run/` fixture already
 runs a second time under `--release`, so behaviour is covered there without a
 single file being added here.
 
+**`--allow-debug` rides with `--release` here**, as it does on `run/`'s
+release pass: since 2026-09-19 a `--release` build that reaches `Debug` is
+refused (`backend.md` §9's *`Debug` is refused, not pinned*), and the corpus
+applies the hidden flag uniformly to both release passes so that a shape
+golden can be about a `Debug`-using program the day one is wanted. No fixture
+here uses `Debug` today. The refusal itself lives in `build/bad-release/`,
+which passes no such flag.
+
 A directory is a multi-module project, exactly as under `emit/app/`: every
 `.beni` in it is copied into one build and `_expected.js` is the module named
 after the directory. That is how a claim about two files agreeing — an

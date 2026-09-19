@@ -30,6 +30,8 @@
 //!   build/bad/X/ (a directory)      a whole project that must FAIL to build:
 //!                                   exit 1, `_expected.diag` is the whole
 //!                                   diagnostic list, and no `out/` is written
+//!   build/bad-release/X/            the same, with `--release` added — and
+//!                                   without `--allow-debug` (backend.md §9)
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
 //!
 //! A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`)
@@ -65,6 +67,7 @@ const Kind = enum {
     check_args,
     check_depth,
     build_bad,
+    build_bad_release,
     run,
     emit,
     regress,
@@ -81,6 +84,7 @@ const Kind = enum {
             .check_args => corpus_root ++ "/check/args",
             .check_depth => corpus_root ++ "/check/depth",
             .build_bad => corpus_root ++ "/build/bad",
+            .build_bad_release => corpus_root ++ "/build/bad-release",
             .run => corpus_root ++ "/run",
             .emit => corpus_root ++ "/emit",
             .regress => corpus_root ++ "/regress",
@@ -90,7 +94,14 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .build_bad;
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or
+            kind == .build_bad or kind == .build_bad_release;
+    }
+
+    /// Whether the build this kind runs carries `--release` (and, for the
+    /// same reason the kind exists, NOT `--allow-debug`).
+    fn isRelease(kind: Kind) bool {
+        return kind == .build_bad_release;
     }
 };
 
@@ -167,6 +178,17 @@ test "corpus: check/depth" {
 // (`plans/coverage-audit.md` Part A).
 test "corpus: build/bad" {
     try walk(.build_bad);
+}
+
+// The same kind with `--release` and WITHOUT `--allow-debug` (`backend.md`
+// §9's *The release optimiser*). Its own directory rather than a flag file
+// in `build/bad/`, because the flag is the whole assertion: every fixture
+// here builds clean in development and is refused in release, which is a
+// claim no other kind can make — `run/` passes `--allow-debug` on its
+// release pass so that `Debug.log` keeps working as its instrument, and
+// `build/bad/` never passes `--release` at all.
+test "corpus: build/bad-release" {
+    try walk(.build_bad_release);
 }
 
 test "corpus: run" {
@@ -357,7 +379,7 @@ const Case = struct {
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
-            .build_bad => try c.buildBad(),
+            .build_bad, .build_bad_release => try c.buildBad(),
             .run => try c.runProgram(),
             .emit => try c.emitted(),
             .regress => {
@@ -474,6 +496,13 @@ const Case = struct {
     /// fixtures write whole trees rather than one file, so the previous
     /// fixture's platform package would still be sitting in a shared one and
     /// its modules would be compiled into this build.
+    ///
+    /// **`build/bad-release/` is the same three assertions with `--release`
+    /// added** (`backend.md` §9), plus a fourth that only this kind can
+    /// make: the very same project must build CLEAN without the flag. That
+    /// is what makes a fixture here a claim about `--release` and not about
+    /// the program — `debug_in_release` is the one code in the catalogue
+    /// that a development build does not have.
     fn buildBad(c: Case) !void {
         if (!c.fixture.project) {
             std.debug.print("{s}: a build/bad fixture is a DIRECTORY holding a whole project\n", .{c.fixture.name});
@@ -507,7 +536,27 @@ const Case = struct {
             if (has_platform) "--platform=platform" else "--platform=node",
             "--out=out",
         });
+        if (c.kind.isRelease()) try args.append(c.arena, "--release");
         try args.appendSlice(c.arena, sources.items);
+
+        // The fourth assertion, and it is `build/bad-release/`'s alone: the
+        // same sources, same platform, no `--release`, must build clean.
+        // Without it a fixture that is simply broken would pass here and
+        // claim to be about the flag.
+        if (c.kind.isRelease()) {
+            var dev: std.ArrayList([]const u8) = .empty;
+            try dev.appendSlice(c.arena, args.items[0..3]);
+            try dev.append(c.arena, "--out=dev");
+            try dev.appendSlice(c.arena, sources.items);
+            const ok = try w.runWith(try c.argv(dev.items), .{ .raw_diagnostics = true });
+            if (ok.exit_code != 0 or ok.stderr.len != 0) {
+                std.debug.print(
+                    "{s}: a build/bad-release fixture must build CLEAN without --release; it exited {d}\n--- stderr ---\n{s}\n",
+                    .{ c.fixture.name, ok.exit_code, ok.stderr },
+                );
+                return error.DevBuildFailed;
+            }
+        }
 
         const built = try w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true });
         if (built.exit_code != 1) {
@@ -577,6 +626,19 @@ const Case = struct {
     /// exists for the one claim §9 makes that the two outputs legitimately
     /// differ on: a dead local binding holding a `Debug.log` is dropped in
     /// release and kept in dev.
+    ///
+    /// **The release pass carries `--allow-debug`, uniformly** (`backend.md`
+    /// §9's *The release optimiser*). Since 2026-09-19 a `--release` build
+    /// that reaches `Debug` is REFUSED, and `Debug.log` is this corpus's
+    /// only instrument for observing evaluation order: 24 of the 121
+    /// fixtures use it, among them every `EvalOrder*`, `CallbackOrder*`,
+    /// `QuestionOrder` and `SortByKeyOnce` — the very fixtures whose
+    /// `--release` run proved the wide inliner unsafe. Without the flag the
+    /// second pass would silently stop running them, which is the decay
+    /// this pass exists to prevent. Uniformly rather than per fixture,
+    /// because a fixture can reach `Debug` through a module it imports and
+    /// no grep over its own text would know. That the refusal itself works
+    /// is `build/bad-release/`'s, where no flag is passed.
     fn runProgram(c: Case) !void {
         const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
         try c.w.write(c.fixture.name, source);
@@ -589,7 +651,7 @@ const Case = struct {
         const separate = c.goldenExists("release-expected");
         try c.runOnce(
             "release",
-            &.{ "build", "--platform=node", "--release", "--out=release", c.fixture.name },
+            &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release", c.fixture.name },
             if (separate) "release-expected" else "expected",
             c.bless and separate,
         );
@@ -673,7 +735,10 @@ const Case = struct {
         var args: std.ArrayList([]const u8) = .empty;
         try args.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
         if (!c.fixture.app) try args.append(c.arena, "--library");
-        if (c.fixture.release) try args.append(c.arena, "--release");
+        // `--allow-debug` rides with `--release` here for `run/`'s reason:
+        // one rule for the whole corpus, so that a shape golden can be about
+        // a `Debug`-using program the day one is wanted.
+        if (c.fixture.release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
         try args.appendSlice(c.arena, sources.items);
 
         const built = try c.inProject(args.items);

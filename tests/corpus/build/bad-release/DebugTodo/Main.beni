@@ -1,0 +1,15 @@
+-- build/bad-release: the third of `core/Debug`'s three `pub` values.
+-- `Debug.todo` crashes the program with a message, which is a perfectly good
+-- thing to have halfway through an afternoon and never a thing to ship — the
+-- other half of why `--release` refuses the module whole (`backend.md` §9).
+import Node exposing (Program)
+
+
+settings : String
+settings =
+    Debug.todo "render the settings page"
+
+
+main : Program
+main =
+    Node.print settings
