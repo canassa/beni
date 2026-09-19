@@ -781,7 +781,9 @@ cache directory is machine-local and its key says so.
 **The one column that changes shape is `symbols`.** In memory it is `[]Symbol`, an index into the
 session interner whose numbering depends on which worker interned which file (`InternPool`'s header,
 `Session.zig:16-22`). On disk `symbols[i]` is instead a byte offset into `strings`, and loading
-re-interns each string through `InternPool.Global.getOrPut`. The column keeps its length and its
+re-interns each string — through the non-mutating `InternPool.Global.find` when a record is round-tripped
+inside a session (it runs on a worker and `Global` is thread-confined; every string was interned by that
+session, so a miss is `internal`), and through `getOrPut` only on M4-1's serial load, before workers start. The column keeps its length and its
 order — every `SymbolIndex` in every other column means what it meant — and only its *contents* are
 translated, which is `Global.merge` run backwards. Two slots holding the same text may share one
 `strings` record; the blob is built in first-occurrence order over the column, so sharing does not
@@ -812,8 +814,8 @@ stale cache must be indistinguishable from a cold build, so none of these is a d
 is an exit code. Past the header the record is taken as-is and every index is bounds-checked **at
 use**, which is the posture `range`, `typeRef`, `quantified`, `quantifiedConstraint`,
 `ctorQuantified` and `quantifiedSymbol` already take (`src/resolve/Interface.zig:411-467`) and
-`Schemes.Reader` mirrors (`src/check/Schemes.zig:769`, `:818`, `:836`). Three accessors do not and
-must, because a loaded record reaches them: `term` (`Interface.zig:419`), `scheme` (`:432`) with
+`Schemes.Reader` mirrors (`src/check/Schemes.zig:769`, `:818`, `:836`). Four accessors did not and
+now do (`506f596`), because a loaded record reaches them: `term` (`Interface.zig:419`), `scheme` (`:432`) with
 `valueScheme` (`:471`), and `symbol` (`:477`). A loaded record never reports: the module that wrote
 it reported when it wrote it (`Schemes.zig:763-768`). A record that is structurally valid and
 nevertheless *wrong* — written by a different compiler build, or edited — is the cache key's

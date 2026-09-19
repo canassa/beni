@@ -733,7 +733,7 @@ hash is not.
 deserializes every module's record in place the moment its check finishes, so every dependent, every
 dump, every dispatch table and every emitted file is built from bytes that have been through the
 format. `--iface-hash` makes `check` print one `<package>:<Module> <32 hex digits>` line per module,
-including `core` and the platform, sorted by module path. Both are accepted like `--jobs`, are absent
+including `core` and the platform, sorted by the printed key `<package>:<Module>`, as text. Both are accepted like `--jobs`, are absent
 from `--help` and from `checker.md` §2's table, and are diagnostic surface rather than product
 surface. A test-only entry point was the alternative and is refused: the suite is black-box (the
 binary driven by files and flags), and an in-source hook would move the assertion off the thing that
