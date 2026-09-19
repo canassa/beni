@@ -214,6 +214,28 @@ surface to make something convenient — and note that §4's list of accepted
 export FORMS is part of the contract, so a sibling writes its parameter list at
 the export.
 
+### 7. Guarantees, not restrictions
+
+The owner's stance, 2026-09-19: **"Beni's job is to make the error guarantees —
+like Elm does — but not to enforce anything on the devs. If devs need to reach
+for `Int32` then let them."** `Int32` was an *example* of it, not the point.
+
+Test every rule against the guarantee it buys. A rule that protects one — no
+runtime exception, no silent wrong answer, exhaustive matches, managed effects —
+stays, and is an error: irrefutable patterns in parameters, cyclic values, the
+`foreign` wall and its arity check are all of this kind. A rule that only
+encodes taste, or "you should not need that", does not belong: make it a
+warning, give it an escape hatch, or drop it. The cap of 64 inferred constraints
+is the model of a limit done right — it bounds a real blow-up and an annotation
+lifts it.
+
+A capability gap is filled **inside the wall**, not answered with "work around
+it". Rule 6 means an ordinary developer cannot write `foreign`, so whatever
+`core/` and the platforms do not ship, the language is withholding — wrapping
+32-bit multiply was Elm's example of exactly that
+([`fast-compiler.md`](docs/design/fast-compiler.md) §3.1). When recommending a
+refusal where no guarantee is at stake, say so and offer the warning.
+
 ## Operational
 
 ### Captain's log — `plans/diary.md` (APPEND AFTER EVERY SESSION)
