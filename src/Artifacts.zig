@@ -126,6 +126,30 @@ pub fn birMut(a: *Artifacts, index: SourceStore.Index) *Bir {
     return &a.files.items(.bir)[index.int()];
 }
 
+/// Install `index`'s Bir, taking ownership and freeing whatever was there.
+///
+/// The one-column-set-at-a-time counterpart of `set`, for M4-2: a file whose
+/// artifact was loaded from disk, or round-tripped through the format in
+/// place, replaces its `Bir` and its token spans and keeps everything the
+/// artifact does not carry. Safe from a worker for its own index, like `set`.
+pub fn setBir(a: *Artifacts, gpa: Allocator, index: SourceStore.Index, replacement: Bir) void {
+    const slot = &a.files.items(.bir)[index.int()];
+    slot.deinit(gpa);
+    slot.* = replacement;
+}
+
+/// The file's token list for in-place rewriting of the two columns M4-2
+/// caches, `tag` and `start`.
+///
+/// `line` and `payload` are NOT cached (`frontend.md` §3.2) and are not
+/// touched here: on a round trip the live ones stay, which is what keeps
+/// `dump --stage=tokens` and `fmt` — the two commands that still read them —
+/// unchanged under the flag; on a cache hit there is no live list and both
+/// are zero, which nothing downstream of `lower` reads.
+pub fn tokensMut(a: *Artifacts, index: SourceStore.Index) *Token.TokenList {
+    return &a.files.items(.tokens)[index.int()];
+}
+
 /// The file's canonical text, or null when it was not formatted (see
 /// `File.formatted`).
 pub fn formatted(a: *const Artifacts, index: SourceStore.Index) ?[]const u8 {

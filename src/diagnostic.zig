@@ -376,6 +376,22 @@ pub fn sort(diagnostics: []Diagnostic) void {
 /// `offset - line_starts[line] + 1`). `line_starts` is the tokenizer's table:
 /// `line_starts[0] == 0`, one entry per newline, ascending. An offset at or
 /// past the end of the file lands on the last line.
+/// The code `raw` names, or null when no version of this compiler defines
+/// one. A cached diagnostic stores its code as an integer, which is
+/// meaningful only for the build the key names — and a value the enum does
+/// not define must be a miss rather than an `@enumFromInt` past the end.
+pub fn codeFromInt(raw: u16) ?Code {
+    const fields = @typeInfo(Code).@"enum".fields;
+    if (raw >= fields.len) return null;
+    return @enumFromInt(raw);
+}
+
+pub fn severityFromInt(raw: u8) ?Severity {
+    const fields = @typeInfo(Severity).@"enum".fields;
+    if (raw >= fields.len) return null;
+    return @enumFromInt(raw);
+}
+
 pub fn position(line_starts: []const u32, offset: u32) Position {
     std.debug.assert(line_starts.len > 0);
     // Largest `l` with `line_starts[l] <= offset`.

@@ -128,18 +128,21 @@ const Variant = struct {
     flags: []const []const u8,
 };
 
-/// The round-tripped variants pass BOTH flags, so the dispatch sidecar's
-/// format is proven lossless over the same fixtures at no extra runs
-/// (`plans/m4-1.md` M1-d). The two belong together: a `run/` fixture whose
-/// emitted JavaScript is byte-identical through the record AND through the
-/// table is the strongest single claim available about either, and the
-/// sidecar is the one whose loss shows up as a wrong program rather than a
-/// wrong message.
+/// The round-tripped variants pass ALL THREE flags, so the dispatch
+/// sidecar's format and the front-end artifact's are proven lossless over the
+/// same fixtures at no extra runs (`plans/m4-1.md` M1-d, `plans/m4-2.md`
+/// M2-c). They belong together: a `run/` fixture whose emitted JavaScript is
+/// byte-identical through the record, through the table AND through the
+/// `Bir` that was written to bytes and read back before `Resolve` ever saw it
+/// is the strongest single claim available about any of them. The sidecar is
+/// the one whose loss shows up as a wrong program rather than a wrong
+/// message; the front-end artifact is the one whose loss shows up as a wrong
+/// program that depends on HISTORY, which is worse.
 const variants = [_]Variant{
     .{ .label = "cold --jobs=1", .flags = &.{"--jobs=1"} },
     .{ .label = "cold --jobs=8", .flags = &.{"--jobs=8"} },
-    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--roundtrip-interfaces", "--roundtrip-dispatch" } },
-    .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--roundtrip-interfaces", "--roundtrip-dispatch" } },
+    .{ .label = "round-tripped --jobs=1", .flags = &.{ "--jobs=1", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
+    .{ .label = "round-tripped --jobs=8", .flags = &.{ "--jobs=8", "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend" } },
     // The cache axis (`fast-compiler.md` §8, M4-1): a COLD-WITH-CACHE run at
     // `--jobs=1` into a fresh directory, then a WARM one at `--jobs=8`
     // against it. Both must be byte-identical to variant 0 on every stream

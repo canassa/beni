@@ -118,6 +118,7 @@ pub fn build(b: *std.Build) void {
         "tests/blackbox/cache_test.zig",
         "tests/blackbox/check_test.zig",
         "tests/blackbox/docs_test.zig",
+        "tests/blackbox/frontend_test.zig",
         "tests/blackbox/iface_test.zig",
         "tests/blackbox/matrix_test.zig",
     }) |root| {

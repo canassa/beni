@@ -128,6 +128,18 @@ pub const Common = struct {
     /// is, because every command that resolves runs the checker and the
     /// acceptance matrix has to be able to pass it to `dump` as well.
     roundtrip_dispatch: bool = false,
+    /// `--roundtrip-frontend` — hidden, and the third of that family
+    /// (`fast-compiler.md` §8's *The front-end artifacts, and the file key*,
+    /// `frontend.md` §1). The first that is not the checker's: every file's
+    /// `Bir`, token spans, line-start table and front-end diagnostics are
+    /// written to bytes and read back IN PLACE the moment its per-file phase
+    /// ends and before anything downstream reads them.
+    ///
+    /// On `Common` like its two siblings, because `dump` has to be able to
+    /// take it: `dump --stage=bir` is the lossless textual form of exactly
+    /// these artifacts and is therefore the identity oracle the round trip is
+    /// asserted against.
+    roundtrip_frontend: bool = false,
     /// `--iface-hash` — hidden, for `--roundtrip-interfaces`' reasons.
     /// Makes `check` print one `<package>:<Module> <32 hex digits>` line per
     /// module, `core` and the platform included, sorted by that key.
@@ -390,6 +402,11 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--roundtrip-dispatch")) {
         if (value != null) return noValue(name);
         common.roundtrip_dispatch = true;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--roundtrip-frontend")) {
+        if (value != null) return noValue(name);
+        common.roundtrip_frontend = true;
         return null;
     }
     if (std.mem.eql(u8, name, "--iface-hash")) {
@@ -979,6 +996,28 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     );
     try testing.expect(std.mem.indexOf(u8, usage, "--roundtrip-dispatch") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "dispatch-") == null);
+
+    // `--roundtrip-frontend` is the fifth, and the first that is not the
+    // checker's (`plans/m4-2.md` M2-c). It is on `Common` because `dump` and
+    // `fmt` are the identity oracles it is asserted against.
+    try expectCommand(
+        .{ .check = .{ .common = .{ .roundtrip_frontend = true }, .paths = &.{"src"} } },
+        &.{ "check", "--roundtrip-frontend", "src" },
+    );
+    try expectCommand(
+        .{ .dump = .{ .common = .{ .roundtrip_frontend = true }, .stage = .bir, .file = "M.beni" } },
+        &.{ "dump", "--stage=bir", "--roundtrip-frontend", "M.beni" },
+    );
+    try expectCommand(
+        .{ .fmt = .{ .common = .{ .roundtrip_frontend = true }, .stdout = true, .paths = &.{"M.beni"} } },
+        &.{ "fmt", "--stdout", "--roundtrip-frontend", "M.beni" },
+    );
+    try expectUsage(
+        "beni: option '--roundtrip-frontend' does not take a value",
+        &.{ "check", "--roundtrip-frontend=1", "src" },
+    );
+    try testing.expect(std.mem.indexOf(u8, usage, "--roundtrip-frontend") == null);
+    try testing.expect(std.mem.indexOf(u8, usage, "frontend") == null);
 }
 
 test "--cache-build-id is check's and build's, hidden, and nobody else's" {

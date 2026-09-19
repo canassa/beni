@@ -71,6 +71,7 @@ const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
 const platform_packages = @import("platform_packages");
 const Manifest = @import("js/Manifest.zig");
+const artifact_bytes = @import("frontend/artifact_bytes.zig");
 
 const Session = @This();
 
@@ -177,6 +178,12 @@ pub const Options = struct {
     /// file downstream is built from a table that has been through the
     /// format.
     roundtrip_dispatch: bool = false,
+    /// `--roundtrip-frontend` (`Cli.Common`, `fast-compiler.md` §8): every
+    /// file's `Bir`, token spans, line-start table and rendered front-end
+    /// diagnostics are written to bytes and read back IN PLACE the moment its
+    /// per-file phase ends — before `Resolve`, before the graph, before
+    /// anything downstream reads them.
+    roundtrip_frontend: bool = false,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9). Set by `check` and
     /// `build`, which are the two subcommands the decision names (A.83);
@@ -327,6 +334,34 @@ pub const Worker = struct {
             .title = diagnostic.title(code),
             .message = owned,
         } });
+    }
+
+    /// Append a diagnostic whose prose has ALREADY been through
+    /// `render/wrap.zig` — one replayed from a front-end artifact (M4-2).
+    ///
+    /// It is `reportAs` minus the reflow, and the difference is the whole
+    /// point: a stored message was wrapped when the phase that will not run
+    /// rendered it, and wrapping it a second time is not guaranteed to be
+    /// the identity. Every message in the stream still passes through
+    /// exactly one wrap.
+    pub fn replay(worker: *Worker, session: *Session, file: SourceStore.Index, code: diagnostic.Code, severity: diagnostic.Severity, start: diagnostic.Position, end: diagnostic.Position, message: []const u8) Allocator.Error!void {
+        const owned = try session.gpa.dupe(u8, message);
+        errdefer session.gpa.free(owned);
+        try worker.diagnostics.append(session.gpa, .{ .file = file, .diagnostic = .{
+            .code = code,
+            .severity = severity,
+            .span = .{ .file = session.store.path(file), .start = start, .end = end },
+            .title = diagnostic.title(code),
+            .message = owned,
+        } });
+    }
+
+    /// Drop every diagnostic this worker appended from `mark` on, freeing
+    /// the messages. `mark` is a length taken before the phase reported
+    /// anything for the file being replaced.
+    fn truncateDiagnostics(worker: *Worker, gpa: Allocator, mark: usize) void {
+        for (worker.diagnostics.items[mark..]) |p| gpa.free(p.diagnostic.message);
+        worker.diagnostics.shrinkRetainingCapacity(mark);
     }
 
     pub fn addCounter(worker: *Worker, counter: Profile.Counter, value: u64) void {
@@ -730,6 +765,11 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
 /// to session storage next to the tree, its symbols local to the worker
 /// until the merge.
 fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyerror!void {
+    // Where this file's diagnostics begin in this worker's list. A worker
+    // takes one file at a time, so everything appended from here on is this
+    // file's — which is what lets the round trip REPLACE them with the rows
+    // it read back rather than merely compare them.
+    const diagnostics_mark = worker.diagnostics.items.len;
     try parsePhase(session, worker, file);
     const gpa = session.gpa;
     const text = session.store.bytes(file);
@@ -763,6 +803,146 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     }
 
     session.artifacts.files.items(.bir)[file.int()] = bir;
+
+    if (session.options.roundtrip_frontend) try roundTripFrontend(session, worker, file, diagnostics_mark);
+}
+
+/// `--roundtrip-frontend` (`fast-compiler.md` §8): write this file's
+/// artifacts to bytes, read them back, and INSTALL what came back — before
+/// `Resolve` runs and before anything downstream has read a thing.
+///
+/// It runs inside the phase rather than after it, and that is deliberate: it
+/// is what makes the oracle strong. Every dump, every diagnostic, every
+/// dispatch table and every emitted byte of a run with the flag is built from
+/// artifacts that have been through the format, so a fixture that differs is
+/// a lossy format and not a lossy test.
+///
+/// **What is replaced and what is kept.** The `Bir` wholesale; the token
+/// `tag` and `start` columns in place; the line-start table; and this file's
+/// rendered diagnostics, dropped and re-appended from the bytes. The `Ast`,
+/// the `comments`, the lexer's offset-only diagnostics and the token `line`
+/// and `payload` columns are KEPT, because they are not artifacts (§3) — and
+/// keeping them is what makes `dump --stage=ast|tokens` and `fmt` unchanged
+/// under the flag by construction, which the acceptance matrix asserts rather
+/// than assumes.
+///
+/// A `verify` that refuses what this very process just wrote is a bug in the
+/// format, not a stale file, so it FAILS the run instead of falling back.
+fn roundTripFrontend(session: *Session, worker: *Worker, file: SourceStore.Index, diagnostics_mark: usize) anyerror!void {
+    const gpa = session.gpa;
+    const scratch = worker.arena.allocator();
+
+    var rows: std.ArrayList(artifact_bytes.Diagnostic) = .empty;
+    defer rows.deinit(scratch);
+    for (worker.diagnostics.items[diagnostics_mark..]) |p| {
+        try rows.append(scratch, .{
+            .code = @intFromEnum(p.diagnostic.code),
+            .severity = @intFromEnum(p.diagnostic.severity),
+            .start_line = p.diagnostic.span.start.line,
+            .start_col = p.diagnostic.span.start.col,
+            .end_line = p.diagnostic.span.end.line,
+            .end_col = p.diagnostic.span.end.col,
+            .message = p.diagnostic.message,
+        });
+    }
+
+    const bytes = try artifact_bytes.write(gpa, scratch, .{
+        // M2-c has no file key yet and needs none: the round trip is within
+        // one process and the header's key is checked against the one it was
+        // written with. M2-d makes it the file key of `cache/FileKey.zig`.
+        .key = @splat(0),
+        .bir = session.artifacts.bir(file),
+        .interner = &worker.interner,
+        .tokens = session.artifacts.tokens(file),
+        .line_starts = session.store.lineStarts(file),
+        .diagnostics = rows.items,
+    });
+    defer gpa.free(bytes);
+
+    var loaded = try artifact_bytes.read(gpa, bytes, @splat(0));
+    errdefer loaded.deinit(gpa);
+    try loaded.intern(gpa, scratch, &worker.interner);
+    if (!loaded.bir.verify(@intCast(loaded.tokens.len))) return error.ArtifactVerifyFailed;
+
+    try installFrontend(session, worker, file, &loaded, diagnostics_mark, .in_place);
+}
+
+/// Put a loaded artifact in place of what the phase produced (or would have).
+///
+/// Consumes `loaded`: the `Bir` and the line-start table are handed to the
+/// session by pointer, the token spans are copied into the live columns, and
+/// the diagnostics are duped out of the read buffer, which the caller then
+/// frees. Every column that stays is `session.gpa`'s, exactly as a lexed or
+/// lowered one is — `plans/m4-2.md` §10's ownership rule, so that a daemon
+/// can free one file's columns and rebuild them without touching another's.
+const InstallKind = enum {
+    /// The phase ran and its output is being replaced by its own bytes
+    /// (`--roundtrip-frontend`): the live token list stays and only the two
+    /// cached columns are overwritten, so `line` and `payload` survive for
+    /// `dump --stage=tokens` and `fmt`.
+    in_place,
+    /// The phase did not run (a cache hit): every column this file has comes
+    /// from the artifact, and the ones it does not carry are empty.
+    fresh,
+};
+
+fn installFrontend(
+    session: *Session,
+    worker: *Worker,
+    file: SourceStore.Index,
+    loaded: *artifact_bytes.Loaded,
+    diagnostics_mark: usize,
+    kind: InstallKind,
+) anyerror!void {
+    const gpa = session.gpa;
+
+    // The diagnostics first, because a failure here must not leave the file
+    // with half an artifact installed.
+    worker.truncateDiagnostics(gpa, diagnostics_mark);
+    for (loaded.diagnostics) |d| {
+        const code = diagnostic.codeFromInt(d.code) orelse return error.ArtifactVerifyFailed;
+        const severity = diagnostic.severityFromInt(d.severity) orelse return error.ArtifactVerifyFailed;
+        try worker.replay(
+            session,
+            file,
+            code,
+            severity,
+            .{ .line = d.start_line, .col = d.start_col },
+            .{ .line = d.end_line, .col = d.end_col },
+            d.message,
+        );
+    }
+
+    switch (kind) {
+        .in_place => {
+            const tokens = session.artifacts.tokensMut(file);
+            if (tokens.len != loaded.tokens.len) return error.ArtifactVerifyFailed;
+            @memcpy(tokens.items(.tag), loaded.tokens.items(.tag));
+            @memcpy(tokens.items(.start), loaded.tokens.items(.start));
+            loaded.tokens.deinit(gpa);
+            loaded.tokens = .empty;
+            session.artifacts.setBir(gpa, file, loaded.bir);
+            loaded.bir = .empty;
+        },
+        .fresh => {
+            session.artifacts.set(gpa, file, .{
+                .tokens = loaded.tokens,
+                .comments = &.{},
+                .lex_diagnostics = &.{},
+                .ast = .empty,
+                .bir = loaded.bir,
+                .formatted = null,
+                .worker = worker.index,
+            });
+            loaded.tokens = .empty;
+            loaded.bir = .empty;
+        },
+    }
+
+    session.store.setLineStarts(gpa, file, loaded.line_starts);
+    loaded.line_starts = &.{};
+    gpa.free(loaded.diagnostics);
+    loaded.diagnostics = &.{};
 }
 
 /// The M1d per-file phase: everything `parsePhase` does, then the formatter
