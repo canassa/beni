@@ -5,22 +5,24 @@ in flight (M4-3) finishes. This file is the single place to resume from; the run
 `plans/queue.md`, the history is `plans/diary.md`, the numbers are
 `plans/state-of-the-compiler.md`.
 
-## 1. In flight when work was parked
+## 1. Nothing is in flight
 
-**M4-3 — the firewall cutoff.** An implementer is working in the worktree
-`.claude/worktrees/agent-a2f139befb4674d71` on branch `slice/m4-3`, from the spec in commit
-`4b51386` (`fast-compiler.md` §8 *The firewall cutoff, and the dependency digest*, `checker.md` §7
-*The dependency digest*, `plans/m4-3.md`). Nine commits are expected, M3-a … M3-i, the last code
-commit flipping the cache to on-by-default.
+**M4-3 — the firewall cutoff — landed after work was parked** (`92cfca8`..`ed8385f`; validated by the
+manager, no new agent): rebased, four gates green on the tip, and exercised by hand — a comment in a
+leaf re-checked 1 module of 15 (it was 3 under M4-1), a body edit likewise, and the demonstrated
+miscompile (a private type's payload becoming a function) correctly re-checked the importer and
+reported `NOT EQUATABLE`, byte-identical to `--no-cache`.
 
-When it reports, the manager's job is unchanged and needs no new agent: rebase onto `master` (or
-send it back to its implementer if the conflict recurs per commit), run the four gates on the tip
-(`zig build && zig build test && zig build test-blackbox && zig build fmt-check`), exercise the
-cutoff by hand (comment in a leaf → only the leaf re-checks; the two demonstrated miscompiles in
-`plans/m4-3.md` stay caught; truncate entries → misses, identical output to `--no-cache`),
-cherry-pick, push, update the queue and the diary. **If it has not reported, or its work is not
-wanted, the branch can simply be left: nothing on `master` depends on it.** If the default flip
-(M3-h) lands, note it prominently — it changes what every user sees (`.beni-cache/` appears).
+**It changes what every user sees: the cache is now ON BY DEFAULT.** `beni check`/`build` create
+`.beni-cache/` in the working directory (git-ignored here); `--no-cache` opts out, `rm -rf
+.beni-cache` is the remedy, an unwritable location degrades silently. The flip is one commit
+(`9136953`) and reverts cleanly to M4-2 behaviour.
+
+Two honest misses, recorded as queue 55 and in `plans/m4-3.md` §16: a `pub` SIGNATURE edit still
+re-checks 624 of 634 modules (127–134 ms against the 41–47 predicted — the interface-hash term in the
+digest chain is load-bearing, so it is slow rather than wrong), and the no-edit warm floor went
+41 → 44 ms. Measured wins: a comment / whitespace / private value / private type in a leaf, 117 → 45 ms;
+warm `build --library` 106 ms (`< 120 ms` met).
 
 ## 2. What is on `master` (all pushed, gates green)
 
@@ -31,7 +33,7 @@ wanted, the branch can simply be left: nothing on `master` depends on it.** If t
   `Debug`. Left in M3: static multi-entry chunking and the single-file release bundle (M3d, specified
   in `backend.md` §10, not built). Field ambiguation specified and declined on measurement.
 - **Incrementality (M4)**: M4-0 serialized interfaces + hash + the round-trip acceptance matrix;
-  M4-1 the persistent cache (`--cache-dir`, off by default); M4-2 front-end artifacts on disk. Warm
+  M4-1 the persistent cache; M4-2 front-end artifacts on disk; **M4-3 the firewall cutoff, cache ON by default**. Warm
   `check` of 100k lines: 39.5 ms (131 cold); warm `build` 100.5 ms — the `< 120 ms` budget is met.
 - **Tooling**: `check --platform`, `beni check .`, `fmt` keeps modes and symlinks, `dump` exits 1
   over an error, diagnostics point into the file whose text is wrong.
@@ -77,7 +79,7 @@ refused (`a9b77c9`); `String.indexes` non-overlapping like Elm, `contains s ""` 
 
 ## 4. What would come next, in order — nothing here is started
 
-1. Land M4-3 if it reports (§1).
+1. ~~Land M4-3~~ — done. Its two misses are queue 55.
 2. **M4-4** — whole-program passes made incremental and the emit-side cutoff; `decode`'s 10 ms;
    the 4.68 ms serial floor. Needs a spec (not written).
 3. **M4-5** — the daemon. Owner decisions D6–D9 in `plans/m4-plan.md` (protocol, memory ceiling,
