@@ -64,6 +64,9 @@ pub const resolve = struct {
     pub const iface_bytes = @import("resolve/iface_bytes.zig");
     pub const Diagnostics = @import("resolve/Diagnostics.zig");
 };
+pub const frontend = struct {
+    pub const artifact_bytes = @import("frontend/artifact_bytes.zig");
+};
 pub const cache = struct {
     pub const Key = @import("cache/Key.zig");
     pub const entry_bytes = @import("cache/entry_bytes.zig");
@@ -102,6 +105,7 @@ test {
     std.testing.refAllDecls(parse);
     std.testing.refAllDecls(bir);
     std.testing.refAllDecls(resolve);
+    std.testing.refAllDecls(frontend);
     std.testing.refAllDecls(cache);
     std.testing.refAllDecls(check);
     std.testing.refAllDecls(dump);
