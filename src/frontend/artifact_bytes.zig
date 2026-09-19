@@ -556,6 +556,13 @@ pub fn read(gpa: Allocator, bytes: []const u8, key: [16]u8) ReadError!Loaded {
     // shorter than the length the header claims.
     if (std.mem.readInt(u32, bytes[32..36], .little) != bytes.len) return error.BadArtifact;
     if (std.mem.readInt(u32, bytes[12..16], .little) != Section.count) return error.BadArtifact;
+    // The reserved word must be zero. It costs nothing to check and it is
+    // what makes the mutation sweep's accepted-mutant count exactly zero:
+    // every byte of the file is then either read, checked, or covered by
+    // `body_hash` — there is no byte a flip can land in unnoticed. A future
+    // version that wants the word bumps `format_version`, which is the
+    // policy for every other byte here too.
+    if (std.mem.readInt(u32, bytes[36..40], .little) != 0) return error.BadArtifact;
     // The file NAME is the key, so this is the check that does not trust the
     // directory: a file copied, renamed or left by a compiler whose build id
     // has moved is a miss here rather than a `Bir` installed for the wrong
@@ -810,9 +817,9 @@ const Sample = struct {
         var bir: Bir = .empty;
         var insts: Bir.InstList = .empty;
         errdefer insts.deinit(gpa);
-        try insts.append(gpa, .{ .tag = .top, .main_token = 3, .data = .{ .lhs = 0, .rhs = 0 } });
-        try insts.append(gpa, .{ .tag = .int, .main_token = 5, .data = .{ .lhs = 0, .rhs = 3 } });
-        try insts.append(gpa, .{ .tag = .call, .main_token = 7, .data = .{ .lhs = 0, .rhs = 0 } });
+        try insts.append(gpa, .{ .tag = .top, .main_token = 0, .data = .{ .lhs = 0, .rhs = 0 } });
+        try insts.append(gpa, .{ .tag = .int, .main_token = 1, .data = .{ .lhs = 0, .rhs = 3 } });
+        try insts.append(gpa, .{ .tag = .call, .main_token = 2, .data = .{ .lhs = 0, .rhs = 0 } });
         bir.insts = insts.toOwnedSlice();
         bir.extra = try gpa.dupe(u32, &.{ 1, 2, 3, 0 });
         bir.string_bytes = try gpa.dupe(u8, "123");
@@ -822,7 +829,7 @@ const Sample = struct {
         bir.decls = try gpa.dupe(Bir.Decl, &.{.{
             .kind = .value,
             .name = @enumFromInt(0),
-            .name_token = 3,
+            .name_token = 0,
             .is_pub = true,
             .is_opaque = false,
             .is_equatable = false,
@@ -848,7 +855,7 @@ const Sample = struct {
         }});
         bir.ctors = try gpa.dupe(Bir.Ctor, &.{.{
             .name = @enumFromInt(1),
-            .name_token = 4,
+            .name_token = 1,
             .decl = @enumFromInt(0),
             .args_start = @enumFromInt(0),
             .args_end = @enumFromInt(0),
@@ -1121,6 +1128,189 @@ test "the corrupt-artifact table: each shape is a miss, never a crash" {
         std.mem.writeInt(u32, copy[record + 4 ..][0..4], 1_000_000, .little);
         reseal(copy);
         try expectMiss(gpa, copy, "a `strings` record overrunning its blob");
+    }
+}
+
+// **The mutation sweep** (`plans/m4-2.md` §9.4 item 24), in the shape
+// `resolve/iface_bytes.zig` established and `cache/entry_bytes.zig` repeated:
+// one real artifact, every byte flipped in turn and set to `0x00` and
+// `0xFF`, with every outcome either a load `verify` accepts or a refusal —
+// never a trap, never a read past the buffer. Deterministic, bounded, and run
+// under `zig build test`, which is Debug, so a read past a slice is a panic
+// rather than a silent wrong answer.
+//
+// **It runs twice, and the two halves answer two different questions.**
+//
+// RESEALED: the body hash is recomputed after each mutation, so the hash is
+// out of the way and every structural check is the thing under test. Some
+// mutants load — a byte in a section's padding, a `line_starts` entry, a
+// diagnostic's prose — and that is required, because a sweep in which
+// nothing ever loaded would prove only that the reader says no.
+//
+// AS IS: the hash is left alone, which is what a flipped bit on a disk
+// actually looks like. **Nothing may be accepted.** That is the integrity
+// claim a content-addressed name cannot make on its own — the name says the
+// bytes were written for this key, not that the disk kept them — and it is
+// why `body_hash` is in the header at all.
+test "fuzz: every mutation is refused, and with the hash resealed some still load" {
+    const gpa = testing.allocator;
+    var sample = try Sample.init(gpa);
+    defer sample.deinit(gpa);
+    const bytes = try write(gpa, gpa, sample.input(&sample_diagnostics));
+    defer gpa.free(bytes);
+    try testing.expect(bytes.len > 512);
+    const token_count: u32 = @intCast(sample.tokens.len);
+
+    const copy = try gpa.dupe(u8, bytes);
+    defer gpa.free(copy);
+
+    var resealed_loaded: usize = 0;
+    var resealed_refused: usize = 0;
+    var as_is_loaded: usize = 0;
+    var attempts: usize = 0;
+
+    for ([_]bool{ true, false }) |reseal_it| {
+        for (0..bytes.len) |at| {
+            for ([_]u8{ 0x00, 0xFF, 0x5A }) |value| {
+                const was = copy[at];
+                copy[at] = if (value == 0x5A) was ^ 0x5A else value;
+                if (copy[at] == was) {
+                    copy[at] = was;
+                    continue;
+                }
+                if (reseal_it) reseal(copy);
+                attempts += 1;
+                if (read(gpa, copy, sample_key)) |loaded_const| {
+                    var loaded = loaded_const;
+                    defer loaded.deinit(gpa);
+                    // A loaded artifact must satisfy `verify` or be refused
+                    // by it; either way the caller never sees an index that
+                    // leaves its array.
+                    if (loaded.bir.verify(token_count)) {
+                        if (reseal_it) resealed_loaded += 1 else as_is_loaded += 1;
+                    } else {
+                        resealed_refused += 1;
+                    }
+                } else |err| {
+                    try testing.expectEqual(error.BadArtifact, err);
+                    resealed_refused += 1;
+                }
+                copy[at] = was;
+                if (reseal_it) reseal(copy);
+            }
+        }
+    }
+
+    // The integrity claim: with the hash as the writer left it, **no**
+    // mutation of any byte of the file is accepted.
+    try testing.expectEqual(@as(usize, 0), as_is_loaded);
+    // And the sweep is not vacuous: with the hash resealed, mutations that
+    // land where the format has slack do load.
+    try testing.expect(resealed_loaded > 50);
+    try testing.expect(resealed_refused > 50);
+    try testing.expect(attempts > 2000);
+}
+
+test "verify refuses the structural faults a well-typed record can still have" {
+    // `plans/m4-2.md` §9.4's structural half, stated against `Bir.verify`
+    // directly so a failure names the promise rather than a byte offset.
+    const gpa = testing.allocator;
+    var sample = try Sample.init(gpa);
+    defer sample.deinit(gpa);
+    const token_count: u32 = @intCast(sample.tokens.len);
+    try testing.expect(sample.bir.verify(token_count));
+
+    // A `main_token` past the token list.
+    {
+        const slot = &sample.bir.insts.items(.main_token)[0];
+        const was = slot.*;
+        slot.* = token_count;
+        try testing.expect(!sample.bir.verify(token_count));
+        slot.* = was;
+    }
+    const decls: []Bir.Decl = @constCast(sample.bir.decls);
+    const Case = struct { what: []const u8, apply: *const fn (*Bir.Decl) void };
+    const cases = [_]Case{
+        .{ .what = "inst_end before inst_start", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.inst_end = @enumFromInt(0);
+                d.inst_start = @enumFromInt(1);
+            }
+        }.go },
+        .{ .what = "an instruction range past the column", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.inst_end = @enumFromInt(99);
+            }
+        }.go },
+        .{ .what = "a locals range past the table", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.locals_end = 99;
+            }
+        }.go },
+        .{ .what = "a refs range past the table", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.refs_end = 99;
+            }
+        }.go },
+        .{ .what = "a ctors range past the table", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.ctors_end = 99;
+            }
+        }.go },
+        .{ .what = "a type_params range past `symbols`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.type_params_end = 99;
+            }
+        }.go },
+        .{ .what = "a `where` range past `extra`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.where_end = @enumFromInt(99);
+            }
+        }.go },
+        .{ .what = "a SymbolIndex past `symbols`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.name = @enumFromInt(99);
+            }
+        }.go },
+        .{ .what = "a body past `insts`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.body = @enumFromInt(99);
+            }
+        }.go },
+        .{ .what = "a name_token past the token list", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.name_token = 4242;
+            }
+        }.go },
+    };
+    for (cases) |c| {
+        const was = decls[0];
+        c.apply(&decls[0]);
+        if (sample.bir.verify(token_count)) {
+            std.debug.print("verify accepted {s}\n", .{c.what});
+            return error.VerifyAcceptedABadRecord;
+        }
+        decls[0] = was;
+    }
+    try testing.expect(sample.bir.verify(token_count));
+
+    // Two declarations whose instruction ranges OVERLAP: each is in bounds
+    // on its own, and the partition `Bir.zig:10-14` promises is broken.
+    {
+        const two = try gpa.alloc(Bir.Decl, 2);
+        defer gpa.free(two);
+        two[0] = decls[0];
+        two[1] = decls[0];
+        two[0].inst_start = @enumFromInt(0);
+        two[0].inst_end = @enumFromInt(2);
+        two[1].inst_start = @enumFromInt(1);
+        two[1].inst_end = @enumFromInt(3);
+        const was = sample.bir.decls;
+        sample.bir.decls = two;
+        try testing.expect(!sample.bir.verify(token_count));
+        two[1].inst_start = @enumFromInt(2);
+        try testing.expect(sample.bir.verify(token_count));
+        sample.bir.decls = was;
     }
 }
 

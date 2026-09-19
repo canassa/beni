@@ -739,6 +739,101 @@ pub fn applyRemap(bir: *Bir, remap: []const Symbol) void {
     for (bir.symbols) |*s| s.* = remap[@intFromEnum(s.*)];
 }
 
+// ---- Invariants -------------------------------------------------------------
+
+/// Whether every index this record holds points inside the array it names,
+/// and whether the declaration ranges are the nested, ordered, non-
+/// overlapping partition `Bir.zig`'s header promises.
+///
+/// **This is the whole of the defence for a Bir that did not come from
+/// `Lower`** (`fast-compiler.md` §8, `plans/m4-2.md` §13 risk 1). `Reach`,
+/// `js/Lower`, `Types.build` and `Emit` index `insts`, `decls`, `refs` and
+/// `extra` DIRECTLY, with no bounds check — which is correct for a record the
+/// builder just made and is a crash or a wrong answer for one that came off a
+/// disk. A loaded artifact is checked here before it is installed; a lowered
+/// one satisfies it by construction, which is what the in-source tests below
+/// assert over the corpus's own fixtures.
+///
+/// It is a linear pass over the columns with no allocation, the shape
+/// `js/JsIr.zig:529`'s `verify` already has. What it does NOT check is the
+/// per-tag meaning of `lhs` and `rhs`: an `extra` index is only an index once
+/// the tag says so, and enumerating that is the checker's job, not a
+/// container's. What it therefore guarantees is the property every direct
+/// reader needs — no index leaves its array — and not that the program means
+/// what it meant.
+///
+/// `token_count` is the file's token count, because `main_token` and the
+/// four `*_token` fields index the token list and not this record.
+pub fn verify(bir: *const Bir, token_count: u32) bool {
+    const insts_len: u32 = @intCast(bir.insts.len);
+    const symbols_len: u32 = @intCast(bir.symbols.len);
+
+    for (bir.insts.items(.main_token)) |token| {
+        if (token >= token_count) return false;
+    }
+
+    var previous_end: u32 = 0;
+    for (bir.decls) |d| {
+        // Contiguous, in order, and inside the column: the partition
+        // `Bir.zig:10-14` promises, which is what lets a declaration be
+        // checked, cached or dumped on its own.
+        if (d.inst_start.int() < previous_end) return false;
+        if (d.inst_end.int() < d.inst_start.int()) return false;
+        if (d.inst_end.int() > insts_len) return false;
+        previous_end = d.inst_end.int();
+
+        if (!inRange(d.locals_start, d.locals_end, bir.locals.len)) return false;
+        if (!inRange(d.refs_start, d.refs_end, bir.refs.len)) return false;
+        if (!inRange(d.ctors_start, d.ctors_end, bir.ctors.len)) return false;
+        if (!inRange(d.type_params_start, d.type_params_end, bir.symbols.len)) return false;
+        if (!inRange(@intFromEnum(d.params_start), @intFromEnum(d.params_end), bir.extra.len)) return false;
+        if (!inRange(@intFromEnum(d.where_start), @intFromEnum(d.where_end), bir.extra.len)) return false;
+        if (!validSymbol(d.name, symbols_len)) return false;
+        if (!validOptionalInst(d.annotation, insts_len)) return false;
+        if (!validOptionalInst(d.body, insts_len)) return false;
+        if (d.name_token >= token_count) return false;
+    }
+
+    for (bir.ctors) |c| {
+        if (!validSymbol(c.name, symbols_len)) return false;
+        if (c.decl.int() >= bir.decls.len) return false;
+        if (!inRange(@intFromEnum(c.args_start), @intFromEnum(c.args_end), bir.extra.len)) return false;
+        if (c.name_token >= token_count) return false;
+    }
+    for (bir.locals) |l| {
+        if (!validSymbol(l.name, symbols_len)) return false;
+        if (l.inst.int() >= insts_len) return false;
+    }
+    for (bir.imports) |i| {
+        if (!validSymbol(i.module, symbols_len)) return false;
+        if (!validSymbol(i.alias, symbols_len)) return false;
+        if (!inRange(i.exposed_start, i.exposed_end, bir.exposed.len)) return false;
+        // A prelude row names no token, because no source wrote it.
+        if (!i.prelude and i.name_token >= token_count) return false;
+    }
+    for (bir.exposed) |e| {
+        if (!validSymbol(e.name, symbols_len)) return false;
+        if (e.token >= token_count) return false;
+    }
+    for (bir.interface) |d| {
+        if (d.int() >= bir.decls.len) return false;
+    }
+    return true;
+}
+
+fn inRange(start: u32, end: u32, len: usize) bool {
+    return start <= end and end <= len;
+}
+
+fn validSymbol(index: SymbolIndex, symbols_len: u32) bool {
+    return index == .none or @intFromEnum(index) < symbols_len;
+}
+
+fn validOptionalInst(index: Inst.OptionalIndex, insts_len: u32) bool {
+    const i = index.unwrap() orelse return true;
+    return i.int() < insts_len;
+}
+
 // ---- Raw access -------------------------------------------------------------
 
 pub fn instTag(bir: *const Bir, inst: Inst.Index) Inst.Tag {
