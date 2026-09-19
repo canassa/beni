@@ -286,6 +286,14 @@ pub const World = struct {
         }
     }
 
+    /// The absolute path of `rel_path` inside the project — `projectPath`
+    /// joined with a sub-path, for the scenarios that run the compiler
+    /// against the SAME tree spelled two ways: a relative path from the
+    /// project directory and an absolute one from somewhere else.
+    pub fn projectSubPath(world: *World, allocator: Allocator, rel_path: []const u8) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ try world.projectPath(), rel_path });
+    }
+
     pub fn exists(world: *World, rel_path: []const u8) bool {
         world.tmp.dir.access(world.io, rel_path, .{}) catch return false;
         return true;

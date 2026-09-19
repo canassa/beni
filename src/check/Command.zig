@@ -29,6 +29,7 @@ const Session = @import("../Session.zig");
 const Emit = @import("../js/Emit.zig");
 const platform = @import("../platform.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
+const Key = @import("../cache/Key.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -44,6 +45,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // `dump` or a `fmt` of the same file stays silent about them.
     options.informational = true;
     options.platform = check.platform;
+    options.cache_build_id = check.cache.build_id;
     // With a platform there is a SECOND wave of diagnostics — §4's checks
     // run after `run` returns — and two renders on one stream are two JSON
     // arrays, which is not the format (§1.1). Without one there is no second
@@ -67,6 +69,12 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // module whose dependent failed to compile still has one.
     if (check.common.iface_hash) {
         printInterfaceHashes(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    // Before the exit-code branch for `--iface-hash`'s reason: an edit
+    // scenario asks "which modules did this change reach?", and a project
+    // that does not compile has keys all the same.
+    if (check.cache.keys) {
+        printCacheKeys(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
     }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
@@ -150,6 +158,45 @@ fn printInterfaceHashes(gpa: Allocator, stdout: *Io.Writer, session: *Session) !
                 session.interner.slice(session.graph.moduleName(m)),
             }),
             .digits = iface_bytes.hashHex(iface_bytes.hash(bytes)),
+        };
+    }
+    std.mem.sort(Line, lines, {}, Line.lessThan);
+    for (lines) |line| try stdout.print("{s} {s}\n", .{ line.key, &line.digits });
+    try stdout.flush();
+}
+
+/// `--cache-keys`: one `<package>:<Module> <32 hex digits>` line per module
+/// on stdout, sorted by that key (`fast-compiler.md` §8, `frontend.md` §1).
+///
+/// `--iface-hash`'s twin, and deliberately the same shape, because the two
+/// answer the two halves of the same question: the hash says whether a
+/// module's public face moved, and the key says whether its own check would
+/// have to run again. An edit-scenario fixture asserts exactly which keys
+/// moved, with no cache directory in sight — which is what lets the whole
+/// invalidation table be pinned before a byte is ever written to disk.
+fn printCacheKeys(gpa: Allocator, stdout: *Io.Writer, session: *Session) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const Line = struct {
+        key: []const u8,
+        digits: [32]u8,
+
+        fn lessThan(_: void, a: @This(), b: @This()) bool {
+            return std.mem.lessThan(u8, a.key, b.key);
+        }
+    };
+    const lines = try arena.alloc(Line, session.graph.count());
+    for (lines, 0..) |*line, i| {
+        const m: @TypeOf(session.graph).Index = @enumFromInt(i);
+        const file = session.graph.moduleFile(m);
+        line.* = .{
+            .key = try std.fmt.allocPrint(arena, "{t}:{s}", .{
+                session.store.package(file),
+                session.interner.slice(session.graph.moduleName(m)),
+            }),
+            .digits = Key.hex(session.keys.of(m)),
         };
     }
     std.mem.sort(Line, lines, {}, Line.lessThan);

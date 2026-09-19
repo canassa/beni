@@ -38,6 +38,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // boundary.md §5.3).
     options.core_package = true;
     options.platform = build.platform;
+    options.cache_build_id = build.cache.build_id;
     options.manifest_root = build.common.root orelse ".";
     // `check` and `build` are the two subcommands that emit the
     // informational warnings of static-dispatch-spike.md §10 (A.83) — which

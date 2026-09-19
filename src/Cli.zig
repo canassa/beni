@@ -137,6 +137,14 @@ pub const Cache = struct {
     /// (`src/build_id.zig`), which is how "a compiler change discards the
     /// whole cache" is written as a fixture rather than as a rebuild.
     build_id: ?[]const u8 = null,
+    /// `--cache-keys` — hidden, and `check`'s alone. One
+    /// `<package>:<Module> <32 hex digits>` line per module on stdout,
+    /// sorted by that key, exactly as `--iface-hash` prints the record's.
+    ///
+    /// It is how an edit-scenario fixture asserts *which* modules a change
+    /// reached, with no cache directory involved — which is why it lands
+    /// before a byte is ever written to disk.
+    keys: bool = false,
 };
 
 pub const Check = struct {
@@ -416,6 +424,15 @@ const CheckSpecific = struct {
     fn apply(self: *CheckSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
         if (std.mem.eql(u8, name, "--platform")) {
             if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
+            return null;
+        }
+        // `check`'s alone: a `build` that printed keys on stdout would put
+        // them where `frontend.md` §1 gives the product, and a build's
+        // product is the files it wrote.
+        if (std.mem.eql(u8, name, "--cache-keys")) {
+            if (value != null) return noValue(name);
+            self.cache.keys = true;
+            self.consumed = true;
             return null;
         }
         if (applyCache(&self.cache, &self.consumed, name, value)) |u| return u;

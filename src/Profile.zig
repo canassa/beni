@@ -50,6 +50,13 @@ pub const Phase = enum {
     /// and does not appear in the trace defeats the instrument
     /// (`fast-compiler.md` §12).
     types,
+    /// The persistent cache's key pass (`fast-compiler.md` §8): serial, once
+    /// per run, over `graph.order`. It hashes every module's source and
+    /// every sibling `.js`, which is why it has a row of its own — it is the
+    /// one cost a run with no cache directory still pays, and a cost that
+    /// does not appear in the trace defeats the instrument
+    /// (`fast-compiler.md` §12).
+    cache_key,
     /// Type checking, per module (checker.md §9). `constrain` and `solve`
     /// are the two halves of `check` so the constraint/solve split of
     /// research/02 §1 is visible in a trace, not just in the source.

@@ -61,6 +61,8 @@ const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
 const Check = @import("check/Check.zig");
 const Solve = @import("check/Solve.zig");
+const Key = @import("cache/Key.zig");
+const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
 const platform_packages = @import("platform_packages");
 const Manifest = @import("js/Manifest.zig");
@@ -97,6 +99,15 @@ resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
 /// included the check step.
 checked: Check = .empty,
+/// One persistent-cache key per module (`fast-compiler.md` §8), computed
+/// serially between resolution and the check. Empty unless the phases
+/// included the check step.
+///
+/// Filled on every checking run, cache directory or not: it is one code path
+/// rather than two, and "was a key computed?" is exactly the kind of
+/// condition a cache bug hides behind. What it costs is the `cache_key`
+/// profile row.
+keys: Key.Keys = .empty,
 /// Every diagnostic of the last run, in emission order after `run`.
 /// Messages are gpa-owned; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
@@ -180,6 +191,11 @@ pub const Options = struct {
     /// an error, so `--pattern-budget=<n>` is a real flag and not only the
     /// knob the tests that prove the bound turn.
     pattern_budget: u32 = default_pattern_budget,
+    /// `--cache-build-id=<s>` (`Cli.Cache`, `fast-compiler.md` §8): these
+    /// bytes replace the compiler build id in every cache key, so a test can
+    /// prove that a compiler change discards the whole cache without
+    /// building a second compiler. Null is the real id.
+    cache_build_id: ?[]const u8 = null,
     /// Capacity of each worker's profile buffer. Allocated once at session
     /// start and never grown, so a worker records without allocating; a full
     /// buffer counts the drop and the trace says `dropped_events`.
@@ -339,6 +355,7 @@ pub fn deinit(session: *Session) void {
         worker.arena.deinit();
     }
     gpa.free(session.workers);
+    session.keys.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
     session.graph.deinit(gpa);
@@ -837,6 +854,11 @@ fn checkSerial(session: *Session) RunError!void {
         }
     }
 
+    // The cache keys (`fast-compiler.md` §8), serially, between resolution
+    // and the check: `quiet` is what says which modules have no well-founded
+    // key, and an import's key must exist before its importer's.
+    try session.computeKeys(quiet);
+
     session.checked.deinit(gpa);
     // `check` is one event per MODULE (checker.md §9), emitted by the
     // checker itself on the worker that took the module, with `constrain`,
@@ -849,6 +871,77 @@ fn checkSerial(session: *Session) RunError!void {
         session.profile.addCounter(@field(Profile.Counter, f.name), @field(session.checked.counters, f.name));
     }
     try session.reportCheckDiagnostics();
+}
+
+/// One persistent-cache key per module (`fast-compiler.md` §8, `cache/Key.zig`).
+///
+/// It runs on every checking run, with or without a cache directory, for the
+/// reason `Session.keys` gives: one code path, and a cost that is in the
+/// trace rather than in a branch. `reported` is `checkSerial`'s `quiet` — a
+/// module an earlier phase already spoke about has an interface the parser or
+/// the resolver guessed, so it has no well-founded key and neither has
+/// anything that imports it.
+fn computeKeys(session: *Session, reported: []const bool) RunError!void {
+    const gpa = session.gpa;
+    const worker = &session.workers[0];
+    const token = session.profile.begin();
+
+    const files = session.store.count();
+    const lower_core = try gpa.alloc(bool, files);
+    defer gpa.free(lower_core);
+    const lower_platform = try gpa.alloc(bool, files);
+    defer gpa.free(lower_platform);
+    for (0..files) |i| {
+        const file: SourceStore.Index = @enumFromInt(i);
+        lower_core[i] = session.fileIsCore(file);
+        lower_platform[i] = session.fileMayDeclareForeign(file);
+    }
+
+    // The siblings the compiler carries, so a `foreign` in `core/` hashes
+    // the bytes in the binary rather than a file the user does not have.
+    // Same rule `platform.collectEmbedded` follows: a `--core-root` run
+    // reads core from disk, so the embedded copy must not shadow it.
+    var embedded: std.ArrayList(Key.Asset) = .empty;
+    defer embedded.deinit(gpa);
+    if (session.options.core_root == null) {
+        for (core_package.assets) |asset| {
+            try embedded.append(gpa, .{ .path = asset.path, .bytes = asset.bytes });
+        }
+    }
+    for (platform_packages.platforms) |p| {
+        if (!std.mem.eql(u8, p.root, session.platform_root)) continue;
+        for (p.assets) |asset| try embedded.append(gpa, .{ .path = asset.path, .bytes = asset.bytes });
+    }
+
+    session.keys.deinit(gpa);
+    session.keys = try Key.build(
+        gpa,
+        worker.arena.allocator(),
+        &session.graph,
+        &session.store,
+        &session.artifacts,
+        &session.interner,
+        .{
+            .build_id = compilerBuildId(session.options.cache_build_id),
+            .informational = session.options.informational,
+            .pattern_budget = session.options.pattern_budget,
+            .lower_core = lower_core,
+            .lower_platform = lower_platform,
+            .reported = reported,
+            .embedded = embedded.items,
+            .io = session.io,
+        },
+    );
+    worker.arena.reset(.retain_capacity);
+    session.profile.end(0, token, .cache_key, Profile.Event.no_file, 0);
+}
+
+/// The build id a key is computed with: this compiler's, or the bytes
+/// `--cache-build-id=<s>` substituted for it, hashed down to sixteen so the
+/// term keeps its width whatever the string is.
+fn compilerBuildId(override: ?[]const u8) [16]u8 {
+    const text = override orelse return build_id.bytes;
+    return @import("resolve/iface_bytes.zig").hash(text);
 }
 
 /// Constraint generation and solving walk an expression TREE, and the
