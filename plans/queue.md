@@ -134,7 +134,7 @@ investigate, document and plan the spike; the spike itself follows M4 slices 1�
 
 | # | Slice | State | Notes |
 |---|---|---|---|
-| E-R1 | Research: Effect v4's runtime — fibers, scheduler, interruption, scopes/finalizers, the `Exit`/`Cause` model | in flight | read-only, docs out: `docs/design/research/21-…` |
+| E-R1 | Research: Effect v4's runtime — fibers, scheduler, interruption, scopes/finalizers, the `Exit`/`Cause` model | **done** — report 21 | read-only, docs out: `docs/design/research/21-…` |
 | E-R2 | Research: Effect v4's API surface — what "API coverage" means: the module map, what is essential vs TypeScript-induced, what maps onto beni's two-bit design | in flight | `docs/design/research/22-…` |
 | E-R3 | Research: errors, services/layers, resources, concurrency combinators, streams, schedule/retry — semantics beni must match or deliberately decline | in flight | `docs/design/research/23-…` |
 | E-P | The spike plan: fold E-R1..3 and `plans/effects-plan.md` into `plans/effects-spike.md` (slices, measurements, acceptance), for the owner | after E-R1..3 | |
