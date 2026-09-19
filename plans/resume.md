@@ -5,7 +5,22 @@ in flight (M4-3) finishes. This file is the single place to resume from; the run
 `plans/queue.md`, the history is `plans/diary.md`, the numbers are
 `plans/state-of-the-compiler.md`.
 
-## 1. Nothing is in flight
+## 0. Un-parked for RESEARCH only, 2026-09-20
+
+The owner said "Let's do 1": a read-and-measure design pass on **what a beni browser program is**.
+Three docs-only research agents were launched on 2026-09-20, each writing ONE new file and committing
+nothing: report 24 (`docs/design/research/24-elm-browser-runtime.md` — Elm's browser runtime as
+built, piece by piece, and which pieces exist because of the browser versus Elm's effect model),
+report 25 (`25-ui-architecture-design-space.md` — the UI architectures open to a language where an
+effectful call is just a call, one running example across all of them), report 26
+(`26-browser-host-measured.md` — scheduling primitives, the yield budget, input latency, the `sync`
+list, cancellation, loading and the test harness, measured in headless Chrome 153). After the manager
+validates and commits them, a synthesis produces `plans/browser-decisions.md` (the owner's decision
+sheet) and `plans/browser-platform.md`. **Implementation stays parked**; no code changes in this pass.
+If a session finds the reports absent or half-written, the briefs are in `plans/queue.md`'s last
+section (rows B-R1..B-R3, B-P) and the transcript; re-launch from there.
+
+## 1. No implementation is in flight
 
 **M4-3 — the firewall cutoff — landed after work was parked** (`92cfca8`..`ed8385f`; validated by the
 manager, no new agent): rebased, four gates green on the tip, and exercised by hand — a comment in a
