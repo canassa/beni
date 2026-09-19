@@ -139,7 +139,18 @@ that a compiler change discards the cache. `--cache-keys` makes `check` print on
 change reached, with no cache directory involved. `--roundtrip-dispatch` is `--roundtrip-interfaces`'
 twin for the dispatch sidecar: every module's table is written, read and re-resolved in place the
 moment its check finishes, so every emitted file downstream is built from a table that has been
-through the format.
+through the format. **`--roundtrip-frontend`** (M4-2) is the third of that family and the first that
+is not the checker's: every file's `Bir`, token spans, line-start table and front-end diagnostics are
+written to bytes and read back in place the moment its per-file phase ends and **before anything
+downstream reads them**, so every dump, every diagnostic, every dispatch table and every emitted byte
+is built from artifacts that have been through the format. It is on `Common` like its two siblings,
+because `dump` has to be able to take it: `dump --stage=tokens|ast|bir` is the lossless textual form
+of exactly these artifacts and is therefore the identity oracle the round trip is asserted against.
+An `ast` dump under the flag is unchanged by construction — the `Ast` is not among the artifacts
+(§3.5) — and that is a fact the acceptance matrix asserts rather than assumes. **`--frontend-keys`**
+is hidden too and is `--cache-keys`' twin: one `<path> <32 hex digits>` line per file on stdout,
+sorted by path, so an edit-scenario fixture can assert that a leaf's body edit moved that leaf's file
+key and no other — the claim the whole slice rests on — with no cache directory involved.
 
 ### 1.1 Diagnostics
 
@@ -258,6 +269,11 @@ IR, offsets not slices, arena per phase per worker, no `HashMap` keyed by a dens
 `[:0]const u8` (sentinel so the tokenizer needs no bounds check at EOF), and `line_starts:
 []u32` filled in by the tokenizer. Column of offset `o` on line `l` is `o - line_starts[l] + 1`.
 
+`line_starts` is the only thing the lexer leaves in the store, and **it is a cached artifact** (M4-2,
+`fast-compiler.md` §8): four reporters turn an offset into a `diagnostic.Position` through it, so a
+file whose lexer did not run still needs one. There is no size, mtime or inode column and M4-2 does
+not add one — a `stat` fast path is M4-5's, and §8 says why.
+
 ### 3.2 Tokens
 
 ```zig
@@ -275,6 +291,14 @@ Thirteen bytes per token in four columns. The design doc's five-byte token gains
 more than the column) and `payload` (identifiers are interned while scanning, §5.1 of the design
 doc). Length is re-derived from `tag` + `start` by a `slice(source, index)` helper; for
 identifiers and qualified names the tokenizer's scanner is re-run from `start`.
+
+**Two of the four columns survive `lower`, and only those two are cached** (M4-2,
+`fast-compiler.md` §8). `line` is the parser's — layout is decided per token — and `payload` is the
+parser's and lowering's; nothing reads either again. `tag` and `start` are read by four sites after
+the front end, all of them turning an instruction's `main_token` back into bytes: `Session.tokenSpan`
+and `moduleNameOfImport`, `Emit.tokenPosition`, and `js/Lower`'s `token_starts`. So the cached form
+is 5 bytes a token in two columns rather than 13 in four, and — the part that matters more than the
+size — **it holds no `Symbol`**, because `payload` is the only place a token ever did.
 
 ### 3.3 Interning
 
@@ -317,6 +341,15 @@ source order.
 Every node kind has a typed accessor (`ast.fullIf(index)`, `ast.fullCase(index)` …) mirroring
 `std.zig.Ast.full*` so consumers never decode `Data` by hand.
 
+**The `Ast` is not cached, and that is a decision and not an omission** (M4-2, `fast-compiler.md`
+§8). It is the easiest artifact in the compiler to cache — three flat arrays, no `Symbol`, no fixup
+pass (`src/parse/Ast.zig:8-9`) — and **nothing on a `check` or a `build` path reads one after
+`lower` returns**. Its three readers are the formatter, `dump --stage=ast`, and the parse phase that
+made it, and neither `fmt` nor `dump` takes a cache flag (§1). Caching it would be bytes written on
+every cold build and loaded by nothing. M5's LSP is the one consumer that will want a tree back, and
+it wants it for the file being edited, which is a miss by construction. The same reasoning excludes
+`comments`, whose only readers after lowering are the same two commands.
+
 ### 3.6 BIR
 
 Per file, arena-owned until merged. `Bir.zig` defines: a `MultiArrayList(Inst)` with
@@ -351,6 +384,24 @@ nullary value, and the backend eta-expanded a constrained `foreign` used in valu
 its own module to `() => List$eq(m0)` — a nullary closure where a binary method was promised
 ([`static-dispatch-spike.md`](static-dispatch-spike.md) §8.2).
 
+**The Bir has two states and only the first is cacheable** (M4-2, `fast-compiler.md` §8;
+`plans/m4-plan.md` §2.3). `Resolve` rewrites every `import_value`/`import_ctor`/`qualified`/
+`qualified_ctor`/`type_import`/`type_qualified` instruction **in place** into `ext_value`/`ext_ctor`/
+`ext_type`/`top`/`ctor`/`type_top`/`error`, so one array is a function of one file's text before it
+runs and graph-relative after. **The PRE-resolve form is what goes to disk**, and `Resolve` runs over
+a loaded Bir exactly as over a lowered one — 3.5 ms across 634 modules *(measured)*, the cheap half.
+Writing the post-resolve form would put a `Graph.Index` in a cache, which is the one thing a cache
+may not hold.
+
+Two more things the on-disk form settles, both already true of the structure. **The `symbols` column
+becomes offsets into a `strings` blob and is re-interned on load** — which is what the single-column
+design exists for: `applyRemap` (`src/bir/Bir.zig:738-740`) is the loop that rewrites it and is
+unchanged; only where the remap table comes from changes. And **`Lower.Options` is part of the file
+key**: `{core, platform, module_name}` are inputs to lowering, so the key carries the two permission
+bits and the dotted module name beside the source hash. Nothing else on the command line reaches
+lowering — `--pattern-budget` and the informational switch do not — which is why the file key is
+strictly narrower than the module key of `fast-compiler.md` §8.
+
 ### 3.7 Formatting
 
 `Format.zig` walks the AST once, printing to a `std.Io.Writer`. Layout decisions ("fits on one
@@ -380,6 +431,22 @@ one-line form. `language.md` §9 states the shape and
 runs the corpus at `--jobs=1` and `--jobs=8`, twice each, and byte-compares every stream and
 output file.
 
+**Step 2 gains a hit path with M4-2** (`fast-compiler.md` §8), and it is the whole of the slice's
+shape: the worker reads the file's bytes, hashes them into the file key, and — if the artifact is on
+disk and validates — installs the loaded `Bir`, token spans, line-start table and rendered front-end
+diagnostics instead of lexing, parsing and lowering; otherwise it does what it does today and
+**writes the artifact from that same worker before moving on**. Reading and writing both stay on the
+worker because the per-file phase already does file I/O and is already parallel; the one thing that
+may NOT stay there is the string table's re-interning, because `InternPool.Global` is thread-confined
+(`src/InternPool.zig:24-26`). So a hit interns into the **worker's own `Local` pool**, and step 3's
+existing merge carries it to the global one — the load produces exactly the kind of local numbering
+`Global.merge` was written to reconcile, so no rule changes and no new synchronisation appears.
+*Rejected: a serial pre-pass that loads every artifact before the workers start, as M4-1's entry
+reads do — that pass exists because the entry's re-intern must `getOrPut` into `Global`, and a
+per-file artifact has a `Local` to hand where the entry does not.* Step 4 is unchanged: a replayed
+diagnostic is appended to the worker's list in file order like any other, so the collect-and-sort is
+blind to which run produced it.
+
 ## 5. Bench harness
 
 `zig build bench [-- --corpus=<dir>] [-- --generate=<lines>]` runs each phase over every file in
@@ -408,6 +475,15 @@ Chrome trace-event JSON (`{"traceEvents":[...]}`), viewable in Perfetto/speedsco
 Counters are what the incrementality tests will assert in M4 ("dependents were not
 re-checked"), so they exist now. Recording is per-thread into a preallocated buffer; the
 serial write happens once at exit. With the flag off, the recording call is a branch on a bool.
+
+M4-2 adds two `X` rows and three counters, and the counters are the load-bearing half. The rows are
+`frontend_load` and `frontend_store`, per file, on the worker, so a trace shows the hit path where
+the `lex`/`parse`/`lower` rows used to be. The counters are **`files_lexed`, `files_parsed` and
+`files_lowered`**, and the acceptance test of the whole slice is that a warm run reports **0** for
+all three: a phase that did not run is otherwise indistinguishable from a phase that ran fast, and
+`fast-compiler.md` §12's rule is that a cost which does not appear in the trace defeats the
+instrument — its converse is that a saving which does not appear in a counter is a timing and not a
+fact.
 
 ## 7. Test harness
 

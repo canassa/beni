@@ -855,6 +855,14 @@ table     section_count × { offset: u32, len: u32 }        offsets from byte 0
 sections  in table order, each 4-byte aligned
 ```
 
+**This container is the compiler's, not this entry's.** The record uses it (above), the entry uses
+it here, and M4-2's front-end artifact uses it a third time with its own magic, its own key and its
+own section list (`fast-compiler.md` §8, *The front-end artifacts, and the file key*) — magic,
+`format_version`, the key repeated in the header, a `{offset, len}` table from byte 0, 4-byte
+alignment, zero-filled gaps, little-endian scalars, and a bad file a MISS. Three formats and one
+shape is deliberate: a reader written against one is written against all three, and the validation
+posture below is stated once.
+
 Three sections, in this order and no other: `interface`, `dispatch`, `diagnostics`. **`interface` is
 the bytes `iface_bytes.write` produced, verbatim**, so `iface_bytes.hash` over that section IS the
 interface hash §8.1's firewall compares and M4-3 re-derives nothing. The entry repeats its key in the

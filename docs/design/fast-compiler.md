@@ -711,6 +711,21 @@ format version and content hash. No general serialization library — rkyv-style
 *idea* to steal, not the dependency (04 §7). Roc calls this "zero-parse deserialization" and loads at
 roughly memcpy speed (05 §4). Only possible because of the no-pointers rule in §5.
 
+*Corrected 2026-09-19, on the `mmap` clause only, from M4-2's measurements (`plans/m4-2.md` §4).
+Everything else here stands: flat arrays as byte ranges, a header, a format version, validation on
+load, no serialization library. **But `mmap` per entry loses to `read` per entry at this granularity,
+measured.** 633 files on this machine's btrfs: `open` + `mmap` + `munmap` costs **4.5–5.0 ms**, and
+it costs the same whether the loader touches one byte or every page — the cost is the syscall pair,
+not the paging — against **1.9–2.3 ms** for `open` + `read` into a reused buffer. An `mmap` wins only
+with ONE mapping over MANY entries: one 8 MB pack file maps and reads its 633 headers in 0.05–0.28 ms.
+So the granularity decides the mechanism, and M4-2 is one file per key and therefore `read`. Two
+consequences follow and are taken deliberately: the on-disk form stays **little-endian by definition
+and host-alignment-independent**, exactly as the interface record is (`checker.md` §7), so nothing in
+a cache directory is machine-specific by layout; and §8.3's zero-copy load is not abandoned but
+**re-aimed at the pack file**, which is M4-4's to take when `Types`, the `Reach` edge lists and the
+emit cache arrive and the directory's shape is being revisited anyway. The numbers for that are in
+`plans/m4-2.md` §4 and §6 so it need not be measured twice.*
+
 ### The interface hash, and slice zero
 
 *Added 2026-09-18. Slice zero is the part of M4 that is the same under every answer to
@@ -907,6 +922,148 @@ fast-path (M4-2); the firewall cutoff, and with it the declared-type sidecar of
 any caching of emitted bytes (M4-4); `mmap` and §8.3's zero-copy load (M4-4, with the artifacts);
 the daemon, the socket protocol, the memory ceiling, watching and cancellation (M4-5, D6–D9
 **PENDING**); the declaration-level graph of §8.2 (M4-6).
+
+### The front-end artifacts, and the file key
+
+*Added 2026-09-19 for M4-2 (`plans/m4-2.md`), taken against owner decision D1 and D5. It changes not
+one byte of the interface record, the cache entry or the module key; it adds a SECOND file beside
+them, under a second key.*
+
+**What M4-2 is, in one sentence.** A file whose **file key** is unchanged is not read for its
+content, lexed, parsed or lowered: its pre-resolve `Bir`, its token spans, its line-start table and
+its front-end diagnostics are loaded from disk and installed, and `lex`, `parse` and `lower` never
+run for it. On the 100k corpus the front end is **41.9 ms of a 62 ms warm `check`** *(measured,
+`--jobs=1`)* — 67 % of it — and that is what this slice removes.
+
+**The artifact set is decided by who still reads what on a WARM run, and it is smaller than the
+front end produces.** Four things survive `lower` and go to disk; two do not.
+
+| Artifact | Who reads it after `lower` | Cached |
+|---|---|---|
+| **`Bir`, PRE-resolve** | `Resolve` (rewrites it in place), `Types.build`, `Cycles`, `Reach`, `js/Lower`, `Emit`, and the whole check on a miss | **yes** — and only the pre-resolve state, `plans/m4-plan.md` §2.3 |
+| **Token `tag` + `start`** | `Session.tokenSpan` and `moduleNameOfImport` (`Session.zig:1195`, `:1244`), `Emit.tokenPosition` (`js/Emit.zig:324`), `js/Lower`'s `token_starts` (`js/Emit.zig:1210`) | **yes**, those two columns and no others |
+| **`line_starts`** | every `diagnostic.position` call, in four reporters | **yes** |
+| **Front-end diagnostics**, as the lex/parse/lower phases RENDERED them | the collect-and-sort at the end of every run | **yes** — the phase that renders them does not run on a hit |
+| **`Ast`** | **nothing** on a `check` or a `build` path | **no** |
+| **`comments`** | `fmt` and `dump --stage=ast\|bir\|tokens` only | **no** |
+
+Tokens lose `line` and `payload` because only the parser and lowering read them, and dropping
+`payload` is what makes the token sections **hold no `Symbol` at all** — 13 bytes a token become 5.
+The `Ast` is the load-bearing omission: it is a pure, relocatable, symbol-free artifact
+(`plans/m4-plan.md` §2.1) and caching it would be easy, and no phase downstream of lowering reads
+one, so it would be bytes nobody loads. `fmt` and `dump` take no cache flag (`frontend.md` §1), and
+the one command that would want an AST back — M5's LSP — wants it for a file the user is editing,
+which is a miss by construction. *Rejected: caching tokens whole and the `Ast` with them, "because
+LSP will want it" — a cache pays for every byte it writes on every cold build and is asked for these
+bytes by nothing that exists.*
+
+**The file key is not the module key, and that is the whole reason for a second file.** M4-1's key
+folds every import's key, so a body edit in a leaf moves every transitive importer's module key. It
+must not move their FRONT END. The file key is a 128-bit value over this byte string, in this order,
+every integer little-endian, hashed with the same `SipHash128(1, 3)` and the same all-zero key
+everything else in the compiler uses:
+
+```
+"BENIFEK\x00"           8       magic
+key_version: u32                bumped whenever this recipe changes
+build_id: [16]u8                the compiler build id, exactly as the module key takes it
+package: u8                     SourceStore.Package — app, core or platform
+lower_bits: u8                  bit 0 `Lower.Options.core`, bit 1 `.platform`
+name_len: u32, name             the DOTTED module name, `Lower.Options.module_name`
+source_hash: [16]u8             over the module's source bytes
+```
+
+Those are `Lower`'s inputs and nothing else: lowering is given `(text, tokens, tree, interner,
+Options{core, platform, module_name})` (`src/Session.zig:735-744`, `src/bir/Lower.zig:149-162`) and
+is specified to read no other module (§6). **`--pattern-budget` and the informational switch are
+NOT in it**, although they are in the module key: neither reaches lowering, and putting them in
+would throw the front end away for a flag that cannot change a token. Nor is any import, any sibling
+`.js`, or `core_epoch` — a `Bir` is a function of one file. A module name is in it because
+`self_import` reads it; the package and the two permission bits because `foreign` and `equatable`
+are lexically gated.
+
+**Two files, not two sections of one.** `<dir>/v<n>/<key[0..2]>/<key[2..32]>.bec` is M4-1's entry
+under the module key and is untouched; `…/<file key>.bef` is the front end under the file key, same
+fan-out, same directory, same "a bad file is a MISS, never a message and never an exit code"
+posture. *Rejected: one file with two independently-keyed sections — a file is named by one key or
+it is not content-addressed, and the common edit is exactly the one that moves an importer's module
+key and leaves its file key alone, so the two would have to be rewritten together for no reason.*
+
+**The container is the entry's, and it is read rather than mapped.** Magic `"BENIFE\x00\x00"`, a
+`format_version`, a section count, the file key repeated in the header, then a section table of
+`{offset, len}` from byte 0, 4-byte aligned, gaps zero-filled, every scalar little-endian — the
+shape `checker.md` §7 fixes for the record and the entry, for the third time and deliberately, so
+there is one container in the compiler. Sections, in this order and no other: `bir_insts_tag`,
+`bir_insts_token`, `bir_insts_lhs`, `bir_insts_rhs`, `bir_extra`, `bir_string_bytes`, `bir_symbols`,
+`bir_decls`, `bir_ctors`, `bir_locals`, `bir_refs`, `bir_imports`, `bir_exposed`, `bir_interface`,
+`bir_diagnostics`, `token_tags`, `token_starts`, `line_starts`, `diagnostics`, `strings`. `insts` is
+split into its four SoA columns for the reason the record's `terms` is: that is what the structure
+already is. §8.3's `mmap` was measured and refused at this granularity; the correction is there.
+
+**Loading validates, and a bad artifact is a MISS.** Wrong magic, unknown version, a header key that
+is not the file's name, a section leaving the file, a `strings` record overrunning its blob: each is
+a miss and the file is lexed. Past the header the posture is the record's — bounds-checked at use —
+with one addition the `Bir` needs and the record does not: **`verify` walks the four structural
+promises before the artifact is installed**, because a loaded `Bir` reaches code that reads it by
+raw index with no check. Every `Decl.inst_start..inst_end` in range, nested and non-overlapping in
+declaration order as `src/bir/Bir.zig:10-14` promises; every `locals`, `refs`, `ctors`,
+`type_params` and `params` range in range; every `Inst.Tag`, `Decl.Kind`, `Local.Kind` and
+`Ref.Kind` a value its enum defines; every `SymbolIndex` inside `symbols`; every `main_token` inside
+`token_tags`. It is a linear pass over the columns with no allocation — the shape `JsIr.verify`
+already has (`src/js/JsIr.zig:509-532`) — and the slice must report its cost as a `frontend_load`
+sub-row against the 14.1 ms `lower` it replaces. *Rejected: trusting the bytes because the key
+covers them — the key says which compiler and which source, not that the disk kept them.*
+
+**The write pass, re-evaluated, which `plans/m4-1.md` §11.5 handed here.** Measured on this
+machine's btrfs, 633 files into a fresh tree, best of three, with the fan-out pre-created: a
+temp-file-plus-`rename` per entry costs **26.1 ms serial** and **15.9 ms on 8 threads**; a plain
+`create` with no temp and no rename costs **12.9 ms serial** and **7.0 ms on 8 threads**; and the
+entry SIZE barely moves any of them — 2.2 kB and 13 kB are within 10 % of each other, so it is
+syscalls and directory metadata, not bytes. Three decisions follow. **(1) The front-end artifact is
+written by the worker that produced it**, inside the per-file phase, which is already parallel and
+already does file I/O; it is not a serial pass and has no pass of its own. **(2) Both writers drop
+the temp-and-rename** and write the file directly. That is safe precisely because the name is a
+content hash: two processes racing on one key write IDENTICAL bytes, so an interleaving is still the
+right bytes; a reader seeing a partial file sees a short one and the section table's bounds check
+makes it a miss; and a crash mid-write leaves a truncated file that the next build's miss
+overwrites, so the failure is self-healing. *Rejected: keeping `rename` — it is 13 ms of a cold
+build to buy an atomicity that a content-addressed name already provides.* **(3) The pack file is
+recorded and not taken.** One file for the whole generation writes in 0.5–2.7 ms and maps in 0.05–0.28
+ms, 10–50× better than either, and it is where §8.3's zero-copy load goes — but it needs an index, a
+merge on write, and an answer for two processes whose key sets differ, none of which M4-2 has a
+fixture for. It is M4-4's, with these numbers.
+
+**The `stat` fast path stays out of M4-2, and moves to M4-5.** M4-1 deferred it here on the argument
+that it pays once the read is gone. It is not gone: the file key hashes the source, so the source is
+still read. What a `stat` path would save is `read` **5.2 ms** plus the source hash **0.6 ms**, minus
+**1.9 ms** for 633 `open`+`fstat` *(all measured)* — a net **~3.9 ms** of a predicted ~30 ms warm
+`check`. Against that it wants an index from PATH to file key, and a path in this compiler is never
+made absolute (`frontend.md` §1) — so the index would be keyed on how the build was invoked rather
+than on the file, and `beni check src` and `cd .. && beni check proj/src` would miss each other. **The
+rule it must obey when it does land is stated now so it is not re-derived: trust a `(size, mtime,
+inode)` match only when the mtime is OLDER than the index's own write time by more than the
+filesystem's timestamp granularity — git's "racy" rule — and hash otherwise.** That covers the edit
+made twice inside one tick, a checkout restoring an old mtime, a copied tree and a skewed clock; each
+of the others degrades to a hash, which is 0.6 ms. M4-5 is where it belongs because a daemon holds the
+sources in memory and the watcher already knows what changed.
+
+**Acceptance is the matrix, one hidden flag, and a counter that must be zero.** The matrix's cache
+axis already runs cold-then-warm and byte-compares everything, and gains no new shape — what it
+gains is an assertion: a warm run's `files_lexed`, `files_parsed` and `files_lowered` counters must
+be **0**, which is the only way "the front end did not run" is a fact rather than a timing.
+`--roundtrip-frontend` joins `--roundtrip-interfaces` and `--roundtrip-dispatch` as a hidden flag of
+the same family: every file's artifacts are serialized, deserialized and re-installed in place the
+moment its per-file phase ends and before anything downstream reads them, so every dump, every
+diagnostic, every dispatch table and every emitted byte is built from artifacts that have been
+through the format. It is passed with its two siblings on the matrix's round-tripped runs, at no
+extra invocations.
+
+**Explicitly not in M4-2**, each pointing at its owner: the firewall cutoff, and with it the
+declared-type sidecar's definition and hash (M4-3); the whole-program passes — `types`, `graph`,
+`merge_interners`, `eliminate`, the 4.68 ms serial floor of `plans/m4-plan.md` §4.3 — and any
+caching of emitted bytes (M4-4); the pack file and §8.3's zero-copy load (M4-4); the `stat` fast
+path (M4-5, above); the daemon, the memory ceiling, watching and cancellation (M4-5, D6–D9
+**PENDING**); the `Ast` an LSP will want (M5); the declaration-level graph of §8.2 (M4-6).
 
 ## 9. JavaScript backend
 
