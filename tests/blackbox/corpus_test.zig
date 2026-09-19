@@ -7,8 +7,9 @@
 //!   parse/bad/X.beni  + X.diag      `check --diagnostics=json` equals the golden;
 //!                                   a `.beni` WITHOUT `.diag` is a failure
 //!   fmt/X.beni        + X.expected  `fmt --stdout` equals the golden, formatting
-//!                                   the golden again is a fixed point, and both
-//!                                   parse to the same AST
+//!                                   the golden again is a fixed point, both parse
+//!                                   to the same AST, and both carry the same
+//!                                   comments in the same order
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
 //!   dispatch/X.beni   + X.dispatch  `dump --stage=dispatch` equals the golden
 //!   check/good/X.beni + X.iface     `check` exits 0 and `dump --stage=interface`
@@ -603,6 +604,24 @@ const Case = struct {
             std.debug.print("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
             return error.AstChanged;
         }
+
+        // Comment-preserving: the same comments, in the same order. The AST
+        // dump carries a doc comment as `(doc …)` and drops a plain `--` one
+        // entirely, so every claim above is blind to a comment the formatter
+        // lost, moved past its neighbour or rewrote — which is the data loss
+        // this kind exists to prevent, and it would have shown up only as a
+        // golden diff at bless time. The tokens dump lists every comment
+        // with its kind and its text (`frontend.md` §1.2).
+        const before_comments = try c.compiler(&.{ "dump", "--stage=tokens", fixture });
+        const after_comments = try c.inProject(&.{ "dump", "--stage=tokens", "Fixed.beni" });
+        try expectExit(0, before_comments);
+        try expectExit(0, after_comments);
+        const kept = try commentTrailer(c.arena, before_comments.stdout);
+        const printed = try commentTrailer(c.arena, after_comments.stdout);
+        if (!std.mem.eql(u8, kept, printed)) {
+            std.debug.print("{s}: formatting changed the comments\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, kept, printed });
+            return error.CommentsChanged;
+        }
     }
 
     /// Compile the fixture for the Node platform and run what came out.
@@ -857,6 +876,37 @@ const Case = struct {
         }
     }
 };
+
+/// The `-- comments` trailer of a tokens dump, one line per comment as
+/// `<kind> <body>`.
+///
+/// Two things are dropped on the way, because the formatter is allowed to
+/// change them: the POSITION, which is the whole point of moving a comment
+/// onto its own line, and the whitespace between the marker and the body,
+/// because `fmt/DocNoSpace` pins that `--|x` becomes `--| x`. The kind stays
+/// — a doc block turning into a plain comment is a change of meaning — and
+/// so does every byte of the body.
+fn commentTrailer(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
+    const heading = "-- comments\n";
+    const at = std.mem.indexOf(u8, dump, heading) orelse return "";
+    var out: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, dump[at + heading.len ..], '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        // `<line>:<col> <kind> <text>`, and the text runs to the end.
+        const after_position = std.mem.indexOfScalar(u8, line, ' ') orelse continue;
+        const rest = line[after_position + 1 ..];
+        const after_kind = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
+        const kind = rest[0..after_kind];
+        var body = std.mem.trimStart(u8, rest[@min(after_kind + 1, rest.len)..], "-");
+        if (body.len != 0 and (body[0] == '|' or body[0] == '!')) body = body[1..];
+        try out.appendSlice(arena, kind);
+        try out.append(arena, ' ');
+        try out.appendSlice(arena, std.mem.trimStart(u8, body, " \t"));
+        try out.append(arena, '\n');
+    }
+    return out.items;
+}
 
 /// An AST dump with its top-level `(import …)` entries (each with the
 /// `(exposed …)` lines under it) reordered by their text.

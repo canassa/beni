@@ -91,9 +91,13 @@ reason this corpus does not rot the way Elm's did:
   printed under Node and not text the compiler produced. A change that alters
   emitted SHAPE but not behaviour leaves every `run/` fixture green; a change
   that alters behaviour fails one, by name.
-- `fmt/` has two extra invariants checked mechanically: formatting an
-  `.expected` again is a fixed point, and `parse(fmt(s))` equals `parse(s)`
-  modulo positions, with the same comments in the same order.
+- `fmt/` has three extra invariants checked mechanically: formatting an
+  `.expected` again is a fixed point, `parse(fmt(s))` equals `parse(s)`
+  modulo positions, and the input and the output carry **the same comments
+  in the same order**. The last one is its own check — through
+  `dump --stage=tokens`, by kind and text — because the AST dump carries a
+  doc comment as `(doc …)` and drops a plain `--` one entirely, so a lost or
+  reordered comment used to show up only as a golden diff at bless time.
 - Abuse inputs are first-class: a hostile file must produce a diagnostic,
   never a panic, a hang or an OOM, and must leave no partial output behind.
 - Determinism, and the interface format: the walker in
