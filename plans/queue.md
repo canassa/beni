@@ -113,7 +113,7 @@ needs a hidden, test-only `--allow-debug` and must keep running them; `ReleaseDe
 
 | # | Slice | State | Notes |
 |---|---|---|---|
-| 50 | `--release` refuses a build that reaches `Debug` | in flight (worktree) | new code, fixtures, hidden `--allow-debug` for the corpus's second pass |
+| 50 | `--release` refuses a build that reaches `Debug` | **done** | new code, fixtures, hidden `--allow-debug` for the corpus's second pass |
 
 ## Owner's stance, 2026-09-19 (the test for every restriction)
 
