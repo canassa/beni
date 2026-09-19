@@ -1,0 +1,6 @@
+-- The smallest platform a fixture can carry: one `Program` type, one
+-- function that makes one, and a runtime that runs it (`boundary.md` §2).
+pub foreign type Program
+
+
+pub foreign say : String -> Program

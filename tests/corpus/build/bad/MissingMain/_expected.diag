@@ -1,0 +1,1 @@
+[{"code":"missing_main","severity":"error","span":{"file":"Main.beni","start":{"line":4,"col":1},"end":{"line":4,"col":7}},"title":"MISSING MAIN","message":"I cannot find `main`.\n\nA program's entry point is a declaration called `main` whose type is the\n`Program` the platform owns — here `Node.Program` (`docs/design/boundary.md` §5). Add\none to a module of this project."}]

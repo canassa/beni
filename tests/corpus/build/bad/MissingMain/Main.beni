@@ -1,0 +1,9 @@
+-- `missing_main` (boundary.md §5, checker.md §8.1): a project with no
+-- `main` anywhere is not a program. `check --platform` deliberately does
+-- NOT ask this question, so only a build can.
+import String
+
+
+greeting : String
+greeting =
+    String.fromInt 1

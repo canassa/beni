@@ -1,0 +1,11 @@
+-- `foreign_export_mismatch` (boundary.md §4, check 2), BOTH directions at
+-- once: `shout` is declared and not exported, and the sibling exports a
+-- `whisper` nothing declares. One export per foreign value is one node in
+-- the dependency graph per foreign value.
+pub foreign type Program
+
+
+pub foreign say : String -> Program
+
+
+pub foreign shout : String -> Program

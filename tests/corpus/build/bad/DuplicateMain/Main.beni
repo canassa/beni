@@ -1,0 +1,9 @@
+-- `duplicate_main` (boundary.md §5.3): a build is ONE entry point and ONE
+-- platform, so two modules declaring `main` are two builds. The second
+-- module is what carries the other half of this fixture.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.print "a"

@@ -16,6 +16,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
+| `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `run/` | `build --platform=node`, then `node out/main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
@@ -24,6 +25,18 @@ The two `check/` kinds also take a **directory** as one fixture: every
 `<name>/_expected.iface` or `<name>/_expected.diag`. Cross-module
 resolution needs more than one module to exist, so that is where imports,
 cycles and interfaces are actually tested (`docs/design/checker.md` §3).
+
+`build/bad/` is **only** the directory form, and there the whole directory
+is the project: every file under it is copied, not only the `.beni`s,
+because the fixture may carry its own **platform package** — the thing
+`boundary.md` §4's sibling checks are checks of. A `platform/`
+subdirectory means `--platform=platform`, and without one the build takes
+`--platform=node`; there is no per-fixture flag file. That kind exists
+because nine diagnostic codes could be produced nowhere else: six need a
+platform, and three (`missing_main`, `main_not_program`, `duplicate_main`)
+need a build, `check --platform` having deliberately no opinion about
+`main`. See `build/bad/README.md`, and `plans/coverage-audit.md` Part A for
+the three that are still blackbox-only.
 
 `bir/` files whose name starts with `core_` are run with `--core` so that
 `foreign` declarations are legal (`language.md` §5.4).

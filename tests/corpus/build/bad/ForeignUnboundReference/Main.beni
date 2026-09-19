@@ -1,0 +1,10 @@
+-- `foreign_unbound_reference` (boundary.md §4, check 3): the sibling reads
+-- a `process` it never imports. A name from nowhere is a dependency edge
+-- the compiler cannot see, and elimination is declaration-granular only
+-- because it can see them all.
+import Prog exposing (Program)
+
+
+main : Program
+main =
+    Prog.say "hello"

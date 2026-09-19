@@ -1,0 +1,6 @@
+-- `main_not_program` (boundary.md §5): the platform owns the type of the
+-- entry point and hands out the only values of it, so a `main` annotated
+-- anything else is refused before a line is emitted.
+main : Int
+main =
+    1

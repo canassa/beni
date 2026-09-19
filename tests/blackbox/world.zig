@@ -123,6 +123,30 @@ pub const World = struct {
         try world.tmp.dir.writeFile(world.io, .{ .sub_path = rel_path, .data = contents });
     }
 
+    /// Copy every file under `src_path` — a directory RELATIVE TO THE REPO
+    /// ROOT — into the project at the same relative layout, skipping names
+    /// that start with `skip_prefix` at any level.
+    ///
+    /// A corpus fixture that is a whole project is more than its `.beni`
+    /// files: `build/bad/` fixtures carry a platform package, which is a
+    /// manifest, modules and their sibling `.js`. Naming the files a
+    /// scenario expects would let a new one slip through, so the whole tree
+    /// is copied and the fixture directory IS the project.
+    pub fn copyTree(world: *World, src_path: []const u8, skip_prefix: []const u8) !void {
+        const arena = world.arena.allocator();
+        var dir = try Io.Dir.cwd().openDir(world.io, src_path, .{ .iterate = true });
+        defer dir.close(world.io);
+        var walker = try dir.walk(world.gpa);
+        defer walker.deinit();
+        while (try walker.next(world.io)) |entry| {
+            if (entry.kind != .file) continue;
+            if (std.mem.startsWith(u8, entry.basename, skip_prefix)) continue;
+            const from = try std.fs.path.join(arena, &.{ src_path, entry.path });
+            const bytes = try Io.Dir.cwd().readFileAlloc(world.io, from, arena, .limited(max_stream_bytes));
+            try world.write(entry.path, bytes);
+        }
+    }
+
     /// Create an empty directory (and its parents). A project shape a
     /// scenario needs that `write` cannot make, because an empty directory
     /// holds no file.

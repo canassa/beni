@@ -1,0 +1,11 @@
+-- `foreign_sibling_missing` (boundary.md §4): a module with `foreign`
+-- declarations binds them to a sibling `.js` of the same name, and the
+-- platform module here has none.
+import Extra
+import Prog exposing (Program)
+import String
+
+
+main : Program
+main =
+    Prog.say (String.fromInt (Extra.helper 1))

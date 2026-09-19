@@ -27,6 +27,9 @@
 //!                                   is a shape claim about the optimiser (§9)
 //!   check/depth/XOk.beni            checks clean: one level UNDER a guard
 //!   check/depth/XDeep.beni + .diag  one level OVER it, and says so
+//!   build/bad/X/ (a directory)      a whole project that must FAIL to build:
+//!                                   exit 1, `_expected.diag` is the whole
+//!                                   diagnostic list, and no `out/` is written
 //!   regress/X.beni    + .diag|.ast  behaves as bad or good by which golden exists
 //!
 //! A fixture under a `core/` subdirectory of its kind (`bir/core/Foreign.beni`)
@@ -61,6 +64,7 @@ const Kind = enum {
     check_bad,
     check_args,
     check_depth,
+    build_bad,
     run,
     emit,
     regress,
@@ -76,6 +80,7 @@ const Kind = enum {
             .check_bad => corpus_root ++ "/check/bad",
             .check_args => corpus_root ++ "/check/args",
             .check_depth => corpus_root ++ "/check/depth",
+            .build_bad => corpus_root ++ "/build/bad",
             .run => corpus_root ++ "/run",
             .emit => corpus_root ++ "/emit",
             .regress => corpus_root ++ "/regress",
@@ -85,7 +90,7 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch;
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .build_bad;
     }
 };
 
@@ -152,6 +157,18 @@ test "corpus: check/depth" {
 // Elm's deleted suite never had. A change that alters emitted shape but not
 // behaviour leaves every one of these green; a change that alters behaviour
 // fails one, by name.
+// A BUILD that must fail (`boundary.md` §4, §5). Its own kind because two
+// things no other kind can say are said here: the fixture carries its own
+// PLATFORM PACKAGE, which is what makes §4's four sibling checks reachable
+// at all, and the assertion is a build rather than a check — `check
+// --platform` deliberately does not look for `main`, so `missing_main`,
+// `main_not_program` and `duplicate_main` have no other kind to live in.
+// Nine diagnostic codes were blackbox-only for exactly these two reasons
+// (`plans/coverage-audit.md` Part A).
+test "corpus: build/bad" {
+    try walk(.build_bad);
+}
+
 test "corpus: run" {
     try walk(.run);
 }
@@ -340,6 +357,7 @@ const Case = struct {
             .check_good => try c.checkGood(),
             .check_bad, .check_args => try c.bad(),
             .check_depth => try c.depth(),
+            .build_bad => try c.buildBad(),
             .run => try c.runProgram(),
             .emit => try c.emitted(),
             .regress => {
@@ -431,6 +449,83 @@ const Case = struct {
             std.debug.print("{s}: one level under the guard must produce no diagnostic\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
+    }
+
+    /// A whole project that must FAIL to build (`boundary.md` §4, §5).
+    ///
+    /// The fixture directory IS the project: every file under it is copied
+    /// into the world (not only the `.beni`s, because a platform package is
+    /// a manifest, modules and their sibling `.js`), and the `.beni` files
+    /// at its top level, sorted, are the build's arguments.
+    ///
+    /// **The platform is a convention, not a flag file.** A `platform/`
+    /// subdirectory means `--platform=platform`, which is how a fixture
+    /// carries the package `boundary.md` §4's four sibling checks are
+    /// checks OF; without one the build takes the embedded `--platform=node`,
+    /// which is all the entry-point codes need. Nothing else is
+    /// configurable, so a fixture is still one directory and one golden.
+    ///
+    /// Three assertions, and the third is the point of a *build* kind: exit
+    /// 1, the whole diagnostic list as `_expected.diag`, and **no `out/`** —
+    /// a refused build leaves nothing behind, which is the half of §4 a
+    /// diagnostic golden cannot state.
+    ///
+    /// A world of its own per fixture, unlike every other kind: these
+    /// fixtures write whole trees rather than one file, so the previous
+    /// fixture's platform package would still be sitting in a shared one and
+    /// its modules would be compiled into this build.
+    fn buildBad(c: Case) !void {
+        if (!c.fixture.project) {
+            std.debug.print("{s}: a build/bad fixture is a DIRECTORY holding a whole project\n", .{c.fixture.name});
+            return error.NotAProjectFixture;
+        }
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const dir_path = try c.fixturePath();
+        try w.copyTree(dir_path, "_expected.");
+
+        var sources: std.ArrayList([]const u8) = .empty;
+        var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+        defer dir.close(testing.io);
+        var has_platform = false;
+        var it = dir.iterate();
+        while (try it.next(testing.io)) |entry| {
+            if (entry.kind == .directory and std.mem.eql(u8, entry.name, "platform")) has_platform = true;
+            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+            try sources.append(c.arena, try c.arena.dupe(u8, entry.name));
+        }
+        std.mem.sort([]const u8, sources.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(c.arena, &.{
+            "build",
+            "--diagnostics=json",
+            if (has_platform) "--platform=platform" else "--platform=node",
+            "--out=out",
+        });
+        try args.appendSlice(c.arena, sources.items);
+
+        const built = try w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true });
+        if (built.exit_code != 1) {
+            std.debug.print(
+                "{s}: a build/bad fixture must FAIL the build; it exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
+                .{ c.fixture.name, built.exit_code, built.stdout, built.stderr },
+            );
+            return error.BuildDidNotFail;
+        }
+        if (w.exists("out")) {
+            std.debug.print("{s}: a refused build must write no out/ (boundary.md §4)\n", .{c.fixture.name});
+            return error.RefusedBuildWroteOutput;
+        }
+        if (!c.goldenExists("diag") and !c.bless) {
+            std.debug.print("{s}: a build/bad fixture without its _expected.diag is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{c.fixture.name});
+            return error.MissingDiagGolden;
+        }
+        try c.expectGolden("diag", built.stderr);
     }
 
     fn format(c: Case) !void {

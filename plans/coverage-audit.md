@@ -60,6 +60,34 @@ reason is structural rather than an oversight: the corpus walker never passes
 returns before `Emit.checkContract`, so `--core` buys the privilege to write
 `foreign` and nothing else.
 
+### Update, 2026-09-19 — nine of the ten are now corpus fixtures
+
+The "what would unlock it" column above asked for two kinds and got one:
+**`tests/corpus/build/bad/`**, a directory fixture that is a whole project,
+built with `--platform=<its own `platform/` subdirectory, or node>`, which
+must exit 1, write no `out/`, and match `_expected.diag`. One kind covers
+both rows because a project that carries its own platform package is also a
+project that can be *built*. The nine that moved, one fixture each:
+`foreign_bad_shape`, `foreign_sibling_missing`, `foreign_export_mismatch`,
+`foreign_unbound_reference`, `foreign_arity_mismatch`, `not_implemented`,
+`missing_main`, `main_not_program`, and `duplicate_main` — which this table
+does not list because it predates the code. So **97 → 106 of 107 codes have
+a corpus fixture**, and one — `internal` — does not.
+
+`duplicate_module` is no longer in the count above for the reason it was
+never unlockable by a fixture: it needs two root paths in one argv, and a
+project fixture is one root. It, `internal` and the usage errors stay
+blackbox-only; `tests/corpus/build/bad/README.md` says so and why.
+
+The blackbox scenarios for all nine **stay**. They assert what a golden
+cannot: exit codes across `check` and `build`, byte-equality between the two
+commands' stderr, and the second site of `foreign_sibling_missing`, which is
+asset copying rather than `Emit.checkSiblings`.
+
+Reading the nine rendered messages in human form turned up five that are
+wrong or misleading; they are listed with the slice that added the fixtures
+and are not fixed here.
+
 Full table:
 
 | code | phase | corpus fixture(s) | blackbox | status |

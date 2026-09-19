@@ -1,0 +1,10 @@
+-- `not_implemented` (backend.md §2): a sibling is RENAMED as it is copied
+-- into the output, so a relative specifier would point at a name that no
+-- longer exists. A build that succeeded and produced a program that cannot
+-- load is the worst of both, so the relative import is refused instead.
+import Prog exposing (Program)
+
+
+main : Program
+main =
+    Prog.say "hello"

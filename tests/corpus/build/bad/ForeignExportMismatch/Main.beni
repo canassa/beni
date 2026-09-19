@@ -1,0 +1,6 @@
+import Prog exposing (Program)
+
+
+main : Program
+main =
+    Prog.say "hello"

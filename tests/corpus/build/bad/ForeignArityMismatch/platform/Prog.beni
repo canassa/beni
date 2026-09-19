@@ -1,0 +1,8 @@
+-- `foreign_arity_mismatch` (boundary.md §4, check 4): the annotation says
+-- two parameters and the sibling's function takes one. Every emitted call
+-- is saturated (backend.md §6), so the parameter that is never filled is an
+-- `undefined` arriving at run time in a program that built clean.
+pub foreign type Program
+
+
+pub foreign say : String, String -> Program

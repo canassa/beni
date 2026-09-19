@@ -33,6 +33,11 @@
 //! kind to re-assert what the dev build asserts. And the emitted program is
 //! not executed here — `corpus_test.zig` runs it, twice; this binary's
 //! claim is about bytes.
+//!
+//! `build/bad/` is here too, with no output tree to compare: a refused
+//! build writes nothing, so its claim is that the DIAGNOSTICS of a refusal
+//! are a function of the input and not of `--jobs` — which is the same
+//! claim, for the streams a failing build has instead of files.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -53,6 +58,7 @@ const Kind = enum {
     check_args,
     check_depth,
     dispatch,
+    build_bad,
     run,
     emit,
     regress,
@@ -64,6 +70,7 @@ const Kind = enum {
             .check_args => corpus_root ++ "/check/args",
             .check_depth => corpus_root ++ "/check/depth",
             .dispatch => corpus_root ++ "/dispatch",
+            .build_bad => corpus_root ++ "/build/bad",
             .run => corpus_root ++ "/run",
             .emit => corpus_root ++ "/emit",
             .regress => corpus_root ++ "/regress",
@@ -71,13 +78,13 @@ const Kind = enum {
     }
 
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch;
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .build_bad;
     }
 
     /// Whether a fixture of this kind is COMPILED (its assertion is the
     /// output tree) rather than checked (its assertion is a stream).
     fn builds(kind: Kind) bool {
-        return kind == .run or kind == .emit;
+        return kind == .run or kind == .emit or kind == .build_bad;
     }
 };
 
@@ -235,6 +242,7 @@ fn one(gpa: std.mem.Allocator, f: Fixture) !void {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
+    if (f.kind == .build_bad) return failedBuildMatrix(&w, arena, f);
     if (f.kind.builds()) return buildMatrix(&w, arena, f);
 
     const path = try std.fs.path.join(arena, &.{ f.dir, f.name });
@@ -266,6 +274,54 @@ fn streamMatrix(w: *World, arena: std.mem.Allocator, f: Fixture, args: []const [
         try expectSame(f, v, args[0], "exit code", b.exit_code, r.exit_code);
         try expectSameBytes(f, v, args[0], "stdout", b.stdout, r.stdout);
         try expectSameBytes(f, v, args[0], "stderr", b.stderr, r.stderr);
+    }
+}
+
+/// A `build/bad/` project four ways: the whole fixture tree is the project
+/// (`corpus_test.buildBad`), and a `platform/` subdirectory means
+/// `--platform=platform`. There is no output tree to compare — the build
+/// fails and §4 says it writes nothing — so the claim is the one that
+/// matters for a refusal: the DIAGNOSTICS a rejected build prints do not
+/// move with `--jobs` or with a round-tripped interface record.
+fn failedBuildMatrix(w: *World, arena: std.mem.Allocator, f: Fixture) !void {
+    const dir_path = try std.fs.path.join(arena, &.{ f.dir, f.name });
+    try w.copyTree(dir_path, "_expected.");
+
+    var sources: std.ArrayList([]const u8) = .empty;
+    var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+    defer dir.close(testing.io);
+    var has_platform = false;
+    var it = dir.iterate();
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind == .directory and std.mem.eql(u8, entry.name, "platform")) has_platform = true;
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        try sources.append(arena, try arena.dupe(u8, entry.name));
+    }
+    std.mem.sort([]const u8, sources.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+
+    var base: ?world.Result = null;
+    for (variants) |v| {
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(arena, &.{
+            "build",
+            "--diagnostics=json",
+            if (has_platform) "--platform=platform" else "--platform=node",
+            "--out=out",
+        });
+        try argv.appendSlice(arena, v.flags);
+        try argv.appendSlice(arena, sources.items);
+        const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
+        const b = base orelse {
+            base = r;
+            continue;
+        };
+        try expectSame(f, v, "build", "exit code", b.exit_code, r.exit_code);
+        try expectSameBytes(f, v, "build", "stdout", b.stdout, r.stdout);
+        try expectSameBytes(f, v, "build", "stderr", b.stderr, r.stderr);
     }
 }
 
