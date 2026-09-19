@@ -1065,6 +1065,159 @@ caching of emitted bytes (M4-4); the pack file and §8.3's zero-copy load (M4-4)
 path (M4-5, above); the daemon, the memory ceiling, watching and cancellation (M4-5, D6–D9
 **PENDING**); the `Ast` an LSP will want (M5); the declaration-level graph of §8.2 (M4-6).
 
+### The firewall cutoff, and the dependency digest
+
+*Added 2026-09-19 for M4-3 (`plans/m4-3.md`), taken against owner decision D1 and D5. It is the
+slice §8.1 has been pointing at since the document was written: the first one in which an importer
+is spared because its imports' PUBLIC FACE did not move, although their sources did. It changes not
+one byte of the interface record, the cache entry or the front-end artifact; it changes the module
+key, and it adds a second hash beside the interface hash.*
+
+**What M4-3 is, in one sentence.** A module is re-checked only when something it can OBSERVE about
+one of its imports changed — and "observe" is a closed, enumerated list, not a hope.
+
+**The measurement that says why.** On the 100k corpus, at the M4-2 tip *(measured, ReleaseFast,
+`--jobs=1`, ABBA, load 0.3–0.6)*: a fully warm `check` is **40 ms** and a cold one **130 ms**, but a
+warm `check` after **a comment added to one leaf module** is **115 ms** — 88 % of cold. A comment,
+a whitespace change, an added private value and an added private type all cost the same 115 ms, and
+so does the same edit made in a hub. The reason is M4-1's key induction: that one edit moves **624
+of 634 module keys** and **0 of 634 interface hashes**. The cache is doing almost nothing for the
+one case §2's budgets are about, and this slice is the whole of the difference.
+
+**An import contributes `(interface hash, dependency digest)`, and that pair replaces its key.** The
+key's recipe is otherwise unchanged and `key_version` bumps to 2:
+
+```
+"BENIKEY\x00"           8       magic
+key_version: u32                2
+build_id: [16]u8                the compiler build id, unchanged
+package: u8                     SourceStore.Package — app, core or platform
+name_len: u32, name             the DOTTED module name, unchanged
+options_len: u32, options       the canonical option string, unchanged
+source_hash: [16]u8             over the module's source bytes, unchanged
+sibling_hash: [16]u8            over its sibling .js, unchanged
+core_surface: [16]u8            REPLACES core_epoch — one hash over the core
+                                package's sorted (module name, interface hash,
+                                dependency digest) list; 16 zero bytes for a
+                                core module itself
+import_count: u32
+  per direct import, sorted by (package, name) as bytes, duplicates removed:
+    package: u8, name_len: u32, name,
+    iface_hash: [16]u8,         `iface_bytes.hash` over the import's record
+    digest: [16]u8              the import's dependency digest, below
+```
+
+**`core_surface` is `core_epoch` with its term changed and nothing else.** `core_epoch` hashed core's
+KEYS, so a comment in `core/Dict.beni` under `--core-root` moved every module in the project.
+Hashing core's `(interface hash, digest)` pairs instead costs the same one term and gives the
+property that matters: an edit to core that no module can observe re-checks nothing outside core.
+*Rejected: narrowing it to implicit import edges on the six modules `Types.findWellKnown` names.* It
+is sharper, and it is not worth the proof it would need — `js/Reach.zig:224` reaches `core/String`
+and `core/Basics` by scanning their `Bir` with no edge at all, and enumerating the build side's core
+reaches is M4-4's job, not this slice's. One term over ten modules is the honest price of not
+enumerating them yet.
+
+**The dependency digest is a SECOND hash per module, and it is deliberately not part of the
+interface hash.** Its bytes are `checker.md` §7. It carries what a dependent reads about a module
+that the record does not say, and it is separate for the reason §8.1's purity rule gives: adding a
+private type to a module must not move that module's interface hash, and it does not move its digest
+either — but the two facts have different owners, and folding the digest into the record would put a
+module's private business into the bytes every `.iface` golden and every `--stage=raw` output
+asserts. The record is the public face; the digest is the checking contract. `dump --stage=raw` and
+the `.iface` goldens do not move by one byte in this slice, and the record's `format_version` does
+not bump.
+
+**The digest is INDUCTIVE over direct imports, and that is what covers transitive reachability.** A
+module's check can read facts about a module it does not import: an inferred scheme may name `A.T`
+through `B` (`checker.md` §7's first `type_refs` consequence), and `Types.find` then resolves that
+name against `A`'s whole declaration list. So a key over direct imports alone would not be enough —
+and a key over the transitive closure of type-reachability would have to compute that closure, which
+is the thing nobody can compute before checking. The digest folds each direct import's
+`(interface hash, digest)` into its own bytes, so one level of import terms carries every level of
+reachability, exactly as M4-1's key is inductive over sources. *Rejected: an explicit reachability
+closure — it is the same answer computed twice, and the second computation is the one that can be
+wrong.*
+
+**Two facts are demonstrated, not argued, and either one is a wrong program without the digest**
+*(both measured; fixtures in `plans/m4-3.md` §7)*. A private type whose constructor payload becomes
+a function stops being `equatable`; the declaring module still checks clean and **its interface hash
+is byte-identical**, while an importer that compares two of its values goes from exit 0 to
+`not_equatable`. And a `pub type alias` whose body no module of its own mentions has its expansion
+nowhere in the record; renaming a field of it leaves the declaring module's hash byte-identical and
+turns an importer's clean build into `missing_field`. An interface-hash-only firewall answers exit 0
+to both, which is the one failure mode `checker.md` §7 says a compiler may not have.
+
+**`TypeId` values are not a dependency, and that is why a private type is free.** A `TypeId` is a
+whole-program dense index, so adding a private type anywhere renumbers most of the table — but
+nothing a dependent emits or reports carries one: the record spends `app`/`alias` on `type_refs`
+(§8.1's 2026-09-18 correction), the dispatch sidecar spends `Shape.nominal` on a name, the derived
+tables sort by emitted name TEXT, and `Exhaustive` compares ids without printing them. What a
+dependent observes is the `Types.Entry` FIELDS an id indexes, and the digest carries those by NAME.
+So `plans/m4-1.md` §6.1's row 5 is kept: a private type added to a leaf re-checks the leaf alone.
+
+**The key can no longer be computed in one serial pre-pass, and the DAG walk is where it moves.** An
+import's interface hash exists only once that import has been checked or loaded, so M4-1's serial
+`cache_key` phase splits in two. The part with no import term — package, name, option string, source
+hash, sibling hash — stays serial and keeps the `cache_key` row. The key itself is finished on the
+DAG, in the worker that claimed the module, from the two arrays the driver publishes as each module
+completes; the schedule already releases a module only when every import has finished
+(`src/check/Check.zig:530-544`), so the value is a function of the graph and never of thread timing,
+which is §10's rule. **The entry load moves with it**, onto the same worker, and re-interns through
+the NON-mutating `InternPool.Global.find` rather than `getOrPut` — which is what makes a load on a
+worker legal at all, since `Global` is thread-confined. A `find` miss is a cache MISS and recomputes,
+never an `internal`: the rule degrades instead of trapping. *Measured: over the warm 100k corpus,
+`core` and `tests/corpus/run`, at `--jobs=1` and `--jobs=8`, **24 281 strings were re-interned on
+cross-process loads and 0 of them would have missed `find`** — every string a cache entry names is
+one some module of this build already interned.* The serial `cache_load` pass therefore disappears
+and its 5.89 ms becomes per-worker work.
+
+**The enumeration is enforced by the compiler, not by the specification.** In a safe build every
+cross-module accessor records `(read module, kind of fact)` into the reading module's own set, and a
+module that took a cache-key decision must not read a fact whose kind is not on the list or whose
+module its key does not cover; either is `internal`. It compiles away in ReleaseFast, exactly as
+`Reach.requireLive` and `Rename.verify` do, and it is what turns an incomplete enumeration into a
+test failure instead of a stale answer in the field. *Measured: the census build this slice was
+specified from put an atomic increment on every one of those accessors and cost **nothing** — 128–131
+ms against 127–130 cold, 41 ms against 41 warm — so the safe-build version is affordable without
+argument.*
+
+**Acceptance is the incremental-determinism matrix of `plans/m4-plan.md` §4.5, made sharp.** For
+each project of a fixed set and each module of it, an edit from a fixed list of classes is applied,
+the project rebuilt warm, the edit reverted and the project rebuilt warm again; every stream and
+every output file must be byte-identical to a cold build at each step, **and** the counters must show
+the importer was skipped exactly when the enumeration says it may be — not merely that it was
+skipped. Byte-identity alone would pass a cache that never hits. The classes and the harness are
+`plans/m4-3.md` §8; a bounded subset joins `test-blackbox` and the full cross stays a documented
+`bench/` command.
+
+**The cache becomes the default in this slice, and that is its last commit.** `--cache-dir` keeps its
+meaning; with no flag the directory is `.beni-cache/` in the working directory, created on demand,
+and `--no-cache` is the escape. It is the last commit behind the harness so that the flip is a
+one-line revert, and it flips only once the safe-build self-check is green over the whole corpus at
+both `--jobs` and the matrix is green over every edit class. `.gitignore` it: a cache is machine-local
+by policy from the moment §8.3's zero-copy map lands, and is never committed. Deleting the directory
+is always safe and is the documented remedy; there is no `beni clean` and no garbage collection in
+M4-3, both of which stay M4-5's with the size cap.
+
+**What a one-shot process can be held to, and what it cannot.** §2's warm rows were written for a
+**daemon** — no process start, sources already in memory — and M4-3 is a one-shot process. Its floor
+is measured: `beni version` costs **1.14 ms** amortized over 200 invocations, and a fully warm
+`check` of the 100k corpus is **40 ms**, of which the front end is `read` 5.3 + `frontend_load` 15.6
+and the rest is `cache_load`, `resolve`, `merge_interners`, `graph`, `types`, `enumerate` and the key
+pass — every one of them O(project) and none of them removed by this slice. So **< 15 ms for a body
+edit is not reachable by a one-shot process in M4-3 and is not this slice's to miss**; it needs
+M4-4's whole-program passes and `frontend_decode`, and M4-5's daemon. What M4-3 *is* held to is the
+**< 60 ms exported-signature row**, which a one-shot should meet for the first time, and the
+**< 120 ms daemon-cold-start row**, which M4-2 already meets. Stating which budget a slice owns is
+what keeps the other two from being quietly missed.
+
+**Explicitly not in M4-3**, each pointing at its owner: the emit-side cutoff and any caching of
+emitted bytes, `frontend_decode`'s 10 ms, and the whole-program passes — `types`, `graph`,
+`merge_interners`, `eliminate` — with the pack file and §8.3's zero-copy load (M4-4); the `stat` fast
+path, the daemon, the socket protocol, the memory ceiling, watching and cancellation (M4-5, D6–D9
+**PENDING**); garbage collection and a size cap (M4-5); the `Ast` an LSP will want (M5); the
+declaration-level graph of §8.2 (M4-6, and only if these measurements demand it).
+
 ## 9. JavaScript backend
 
 ### 9.1 Dead code elimination — copy Elm's mechanism exactly

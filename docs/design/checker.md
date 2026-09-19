@@ -924,6 +924,114 @@ recomputes from the `Bir` and compares is what closes that gap — and **M4-4 ne
 `Types` goes incremental and a module's `Bir` may be absent for the first time. Writing them in M4-1
 would be bytes nobody reads.
 
+### The dependency digest
+
+*Specified 2026-09-19 for M4-3 (`plans/m4-3.md`); the key over it, the ordering and the acceptance
+test are `fast-compiler.md` §8. It is the sidecar the paragraph above has been promising, and it is a
+HASH in M4-3 and bytes on disk in M4-4.*
+
+**One sentence: the record is what a module PUBLISHES, the digest is what a module's dependents
+READ.** The two are different sets, and the gap between them is where a firewall keyed on the record
+alone answers exit 0 to a program the compiler rejects. Two such gaps are demonstrated rather than
+argued (`plans/m4-3.md` §6): a private type whose payload becomes a function stops being `equatable`
+without moving one byte of its module's record, and a `pub type alias` whose body no scheme of its
+own module mentions has its expansion nowhere in the record at all.
+
+The digest is a 128-bit value over this byte string, in this order, every integer little-endian,
+hashed with the same `std.hash.SipHash128(1, 3)` and the same all-zero key the record and the key
+use — one hash function in the compiler:
+
+```
+header    magic "BENIDEP\x00" (8)   digest_version: u32
+module    package: u8   name_len: u32, name          the DOTTED module name
+types     type_count: u32, then per type NAMED BY THIS MODULE'S RECORD,
+          sorted by name TEXT:
+            name_len: u32, name
+            arity: u8
+            kind: u8                 adt | alias | foreign
+            flags: u8                bit 0 opaque, bit 1 equatable,
+                                     bit 2 comparable, bit 3 has_function
+            body_len: u32, body      the alias expansion as interface TERMS
+                                     (tag, lhs, rhs triples and the `extra`
+                                     words they reach, `var(i)` meaning the
+                                     alias's own parameter i), or length 0
+                                     when the type is not an alias
+derived   derived_count: u32, then per NOMINAL row of this module's dispatch
+          `derived` table, sorted by the emitted name text:
+            kind: u8                 eq | compare
+            module_len: u32, module  the DECLARING module's name
+            name_len: u32, name      the type's name
+imports   import_count: u32, then per direct import, sorted by
+          (package, name), duplicates removed:
+            package: u8, name_len: u32, name,
+            iface_hash: [16]u8, digest: [16]u8
+```
+
+**"Named by this module's record" is a closed set, and that is the whole reason a private type stays
+free.** It is this module's `types` table — its `pub` types — plus every `type_refs` row whose module
+is this module, which is how a `pub` signature over a private type (`pub make : Hidden`) puts that
+type's name into its own record. A dependent can reach a type of this module only by naming it, and
+it can only name it through a `type_refs` row of some record it reads; every such row is absolute and
+is copied through unchanged, so a name reachable from anywhere is a name this record already holds. A
+private type nothing mentions is in no record, no dependent can name it, and it is in no digest —
+which is what keeps `plans/m4-1.md` §6.1's row 5 and makes a private type's addition cost the leaf
+alone.
+
+**Sorted by name TEXT and keyed by NAME, never by ordinal and never by `TypeId`**, for the reason the
+record's own orders exist: a `TypeId` is a whole-program dense index and a declaration ordinal moves
+when a private declaration is added, and a digest that moved for either would defeat the firewall
+exactly as the `TypeId` leak did. Nothing a dependent emits or reports carries a `TypeId` — `app` and
+`alias` spend theirs on `type_refs`, `Shape.nominal` becomes a name in the sidecar, the `derived`
+tables sort by emitted name text, and `Exhaustive` compares ids without ever printing one — so the
+VALUES are not a dependency and only the `Entry` fields they index are.
+
+**Why each row is there, and where it is read.**
+
+| Row | Why a dependent can see it | Site |
+|---|---|---|
+| `arity`, `kind` | in the record for a `pub` type; for a private one the record has a `type_refs` row and no `types` row, so nothing states either | `src/check/Types.zig:186`, reached by `find` at `:303` |
+| `equatable` | in the record for a `pub` type (`types` flag bit 1) and nowhere for a private one; `x == y` on an imported value reads it | `src/check/Solve.zig:3767`, `:1956-1963` |
+| `comparable` | in the record for NO type. It is the fixpoint's second bit, and it folds `declaresPubCompare`, which reads the declaring module's WRITTEN annotation and so is not derivable from a published scheme | `src/check/Solve.zig:3768`, `:3456`; `src/check/Types.zig:591-602` |
+| `has_function` | in the record for no type; §10.3 of the dispatch spec picks a different sentence by it | `src/check/Solve.zig:1962` |
+| the alias expansion | in the record only where a term mentions the alias — an `alias` term's range is its arguments followed by its expansion — and absent when no scheme of the declaring module names it | `Types.Builder.aliasBody`, `src/check/Types.zig:969` |
+| the nominal `derived` set | the declaring module emits these bodies and a dependent's cached dispatch table names them through `ext_derived`; it is not in the record because a derived row exists for a private type too, and putting it there would move the public hash for a private change | `src/check/Solve.zig:3375-3384` against `:3766-3773` |
+| the imports' `(hash, digest)` | one level of terms carrying every level of type-reachability (`fast-compiler.md` §8) | the recipe itself |
+
+**What is deliberately NOT in it**, each with the reason it may be left out. **Constructor names and
+arities** — already the record for a `pub` type, and a dependent cannot see a private type's
+constructors at all: `Exhaustive.ctorUnion` (`src/check/Exhaustive.zig:1151-1168`) and
+`Solve.allNullary` (`src/check/Solve.zig:3002-3010`) both reach them through `Interface.findType`,
+which a private type is not in. **The interface-slot → declaration-ordinal map** the paragraph above
+names — its only consumer is `Types.build` filling `by_interface`, and what a dependent reads through
+it is the type at interface slot `i`, which the record already states by name; the map is a session's
+internal translation and not a fact about the module. **`Provenance`** — the same argument, and it is
+`Bir.DeclIndex`es besides. **`declaresPubCompare` as a bit of its own** — it exists only to settle
+`comparable`, which is here. **Module metadata** — `(package, name)` is in the key's import terms and
+in every `type_refs` row.
+
+**The error paths need nothing, because an erroring module is never cached.** `Solve.privateInOtherModule`
+(`:3099-3107`), `Resolve.whyMissing` (`src/resolve/Resolve.zig:333-352`) and `Resolve.owningTypeName`
+(`:354-360`) read the target module's `Bir` to tell `private_method` from `unknown_method` and
+`private_name` from `unknown_import_name`. All three produce `error`-severity diagnostics, and
+`fast-compiler.md` §8's clean-check rule refuses to write an entry for a module whose own check
+produced one — so a stale choice between those messages can never be replayed. **In M4-3 nothing
+degrades for a second reason as well**: M4-2 loads every module's `Bir` from disk, so a dependency's
+`Bir` is present on every run, hit or miss. **M4-4 and M4-5 inherit both**: the moment `Types` goes
+incremental and a `Bir` may be absent, these three sites need the degradation their own comments
+already specify, and the digest grows the private VALUE names the first of them reads.
+
+**`alias_body` in the `Interface` layout above is withdrawn in favour of this.** It was declared and
+never implemented, and the digest is the better home: a PRIVATE alias is reachable by name and has no
+`types` row to carry one, so the record could not have covered the case at all; and keeping the
+expansion out of the record means this slice bumps no `format_version`, re-blesses no `.iface` golden
+and moves no `--stage=raw` byte.
+
+**`--dep-digest` is the instrument**, `--iface-hash`'s twin: hidden, `check`-only, one
+`<package>:<Module> <32 hex digits>` line per module including `core` and the platform, sorted by the
+printed key. It lands before the key changes, for the reason `--cache-keys` and `--frontend-keys`
+landed before their slices' writes — the whole edit-scenario table is fixtures against it, with no
+cache directory in sight.
+
 ## 8. Diagnostics
 
 Every code below joins the catalogue in `language.md` §10 (append there first, then in
