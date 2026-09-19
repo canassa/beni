@@ -1,0 +1,105 @@
+# Where beni stands — parked 2026-09-19
+
+**The owner parked implementation on 2026-09-19.** No new agents are to be launched after the one
+in flight (M4-3) finishes. This file is the single place to resume from; the running order is
+`plans/queue.md`, the history is `plans/diary.md`, the numbers are
+`plans/state-of-the-compiler.md`.
+
+## 1. In flight when work was parked
+
+**M4-3 — the firewall cutoff.** An implementer is working in the worktree
+`.claude/worktrees/agent-a2f139befb4674d71` on branch `slice/m4-3`, from the spec in commit
+`4b51386` (`fast-compiler.md` §8 *The firewall cutoff, and the dependency digest*, `checker.md` §7
+*The dependency digest*, `plans/m4-3.md`). Nine commits are expected, M3-a … M3-i, the last code
+commit flipping the cache to on-by-default.
+
+When it reports, the manager's job is unchanged and needs no new agent: rebase onto `master` (or
+send it back to its implementer if the conflict recurs per commit), run the four gates on the tip
+(`zig build && zig build test && zig build test-blackbox && zig build fmt-check`), exercise the
+cutoff by hand (comment in a leaf → only the leaf re-checks; the two demonstrated miscompiles in
+`plans/m4-3.md` stay caught; truncate entries → misses, identical output to `--no-cache`),
+cherry-pick, push, update the queue and the diary. **If it has not reported, or its work is not
+wanted, the branch can simply be left: nothing on `master` depends on it.** If the default flip
+(M3-h) lands, note it prominently — it changes what every user sees (`.beni-cache/` appears).
+
+## 2. What is on `master` (all pushed, gates green)
+
+- **Language**: Elm 0.19 with the listed departures; static dispatch adopted; `core/` of ten
+  modules including `Int32`; every doc example compiled and run (305).
+- **Backend (M3)**: tail-call loop, decision trees, `?`, reachability DCE (always on),
+  `--release` (dead bindings, narrow inlining, short names, compact printing), `--release` refuses
+  `Debug`. Left in M3: static multi-entry chunking and the single-file release bundle (M3d, specified
+  in `backend.md` §10, not built). Field ambiguation specified and declined on measurement.
+- **Incrementality (M4)**: M4-0 serialized interfaces + hash + the round-trip acceptance matrix;
+  M4-1 the persistent cache (`--cache-dir`, off by default); M4-2 front-end artifacts on disk. Warm
+  `check` of 100k lines: 39.5 ms (131 cold); warm `build` 100.5 ms — the `< 120 ms` budget is met.
+- **Tooling**: `check --platform`, `beni check .`, `fmt` keeps modes and symlinks, `dump` exits 1
+  over an error, diagnostics point into the file whose text is wrong.
+- **Rule 7** in `CLAUDE.md`: guarantees, not restrictions.
+
+## 3. Owner decisions taken (all recorded in `plans/queue.md` with dates)
+
+M4 first, then effects, then M3d · `lazy` parked until a browser platform and a large app want it ·
+`--release` refuses `Debug` · `Int32` built · effects gets a full spike with Effect-TS v4
+(`references/effect`, 4.0.0-rc.116) as the gold standard.
+
+**Effects decision sheet (`plans/effects-decisions.md`) — answered so far:**
+
+| Item | Decision |
+|---|---|
+| A1 | Defects (a throwing `foreign`, a stack overflow) are **fatal**, reported well; preventing them is the wall's job. Finalisers are infallible (`-> ()`). `Exit a = Done a \| Cancelled`. No `Cause`. |
+| A1 (interruption) | Invisible to the interrupted code; both `await` and `join`; the interrupter waits for cleanup by default; uninterruptible = acquire/release, finalisers, explicit `uninterruptible` + `restore`; children are interrupted before the parent's finalisers run (the reverse of Effect). |
+| A2, A3, A10, A11 | Settled by the above (`join` ≠ `await`; `bracket`'s release receives the outcome; combinators return after losers' cleanup; children first). |
+| A5 | `impure` is **used** from the slice that infers it — the optimiser consults it before dropping, inlining, merging or reordering. |
+| A6 | `sync` ships in the first cut. |
+| A8 | `main : Program` stays, body must not suspend; keep-alive while any fiber is parked; exit 0 / 1 / 130; never a silent exit 0. |
+
+**Still open on the sheet**: **A7 services** — in discussion when work was parked: option (b)
+(records of functions + `where` clauses, both exist today) was explained and looked right as the
+base; the open half is whether to add three fixed per-fiber slots (clock, scheduler, log context)
+with the runtime, and the written concession that beni will not have Effect's "everything provided
+at the entry point" proof. Also open: A4 (`retry` takes a `Schedule` — recommended yes), A9, A12–A16,
+and tiers B (settled by the spike's measurements) and C (can wait).
+
+**Not yet folded in**: `plans/effects-spike.md` and the spec obligations still describe the
+pre-decision state — the failure-value kernel piece disappears, four conformance cases change from
+"captured cause" to "crash with a known report", `Ref` stays in T0. Do that fold in ONE pass once A7
+is answered.
+
+**Manager decisions taken while the owner was offline** (each one commit, reversible; the owner has
+not yet confirmed them): warning-by-default for an unannotated `pub` that infers a `where`, and the
+cap of 64 inferred constraints (`9074538`); type-directed irrefutable patterns, `let` widened
+(`59e47f3`); an undecidable `case` is an error, budget 5 M (`f21ac4c`, `992ab59`); core callbacks in
+list order (`51ab217`); **`sortBy` computes each key once — differs from Elm, awaiting the owner's
+word** (`128002b`); `let` refuses forward value references (`3c8fbf8`); top-level value cycles
+refused (`a9b77c9`); `String.indexes` non-overlapping like Elm, `contains s ""` is `True`
+(`3edc718`, `0c6ef7b`); `dump` exits 1 over an error (`77e003a`); starting M4 slice zero.
+
+## 4. What would come next, in order — nothing here is started
+
+1. Land M4-3 if it reports (§1).
+2. **M4-4** — whole-program passes made incremental and the emit-side cutoff; `decode`'s 10 ms;
+   the 4.68 ms serial floor. Needs a spec (not written).
+3. **M4-5** — the daemon. Owner decisions D6–D9 in `plans/m4-plan.md` (protocol, memory ceiling,
+   watching, cancellation) are PENDING; the `stat` fast path lives here.
+4. **Effects**: finish the decision sheet (A7 first), fold the answers into
+   `plans/effects-spike.md`, then the spike (S0 baselines, S1 the hand-written kernel probe against
+   Effect v4's 82 ns/op, …).
+5. **M3d** reduced: static multi-entry chunking + the single-file `--release` bundle (−22 % brotli on
+   `Dictionaries` from concatenation alone).
+6. Small, independent, specified by their queue rows: 51 a platform logger (a shipped program
+   cannot log), 52 a fifth boundary check (`throw` in a sibling), 53 the hostile-input suite for
+   platforms, 54 the crash reporter, 44 the check-tax leads, 9 re-take the runtime measurements
+   without the 4×500 split, 10 a stale sentence in the effects proposal.
+
+## 5. How to resume
+
+Read, in this order: `CLAUDE.md` (rules 1–7), this file, the last three entries of
+`plans/diary.md`, `plans/queue.md` from the most recent "Owner decision" heading down. The working
+arrangement that produced all of the above: the main session plans, briefs and validates; Opus
+agents implement from written briefs, one worktree per building agent, at most five agents; every
+unit is validated by the manager (fail-first proven, gates on the combined tree, numbers re-run)
+before it is committed and pushed; measurements are taken ABBA on a quiet machine and any number
+taken otherwise is labelled. `../beni-s1` (the pre-dispatch compiler at `c870e9a`, ReleaseFast) is
+the C0 baseline for measurements — leave it in place or rebuild it per
+`plans/static-dispatch-resume.md`.
