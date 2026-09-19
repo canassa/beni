@@ -40,7 +40,7 @@ one commit each, nothing force-pushed, no history rewritten.
 | 14 | `check/Exhaustive.zig` reports nothing when `pattern_budget` runs out, so a non-exhaustive `case` can reach a default-free tree | **done** | exit-0 hole documented in `backend.md` §7; make budget exhaustion a diagnostic |
 | 15 | Core callback order: `List.map` ran right-to-left | **done** | found by the effects plan |
 | 16 | `?` codegen (`Lower.zig`), the last real M3b gap | **done** `b545b60` | after DCE lands (same file) |
-| 17 | `Int32`: absent from the language, listed in `backend.md` §1/§4 | **owner decision** | add `core/Int32` + a `language.md` paragraph, or strike the rows |
+| 17 | `Int32`: absent from the language, listed in `backend.md` §1/§4 | **owner decision 2026-09-19: build it** — in flight (worktree) | add `core/Int32` + a `language.md` paragraph, or strike the rows |
 | 18 | `language.md` has no evaluation-order section: "strict, left to right, in source order" lives only in the effects proposal §5; promote it, and say `let` bindings evaluate in written order (core's `Dict.mapTree`/`foldlTree` depend on it; M3c inlining must preserve it) | **done** | docs + a `run/` fixture pinning argument and `let` order |
 | 19 | `List.sortBy` calls its key function more than once per element, in merge order | **done** — manager decision: key once per element (decorate-sort-undecorate); costs R3 +18 % where the key is a field read, saves O(n log n) key calls otherwise | harmless while pure; under effects a hazard — decorate-sort-undecorate, measure allocation |
 | 20 | **Record literal evaluates fields in sorted-name order** (`Lower.zig` `recordNode` sorts, then lowers in sorted order) — observable via `Debug.log`, an effect-order bug later | **done** `2bf6f03` | fixture waiting in scratchpad `EvalOrderRecordFields.beni`; evaluate in written order into temporaries, sort only the emitted properties |
@@ -114,3 +114,13 @@ needs a hidden, test-only `--allow-debug` and must keep running them; `ReleaseDe
 | # | Slice | State | Notes |
 |---|---|---|---|
 | 50 | `--release` refuses a build that reaches `Debug` | in flight (worktree) | new code, fixtures, hidden `--allow-debug` for the corpus's second pass |
+
+## Owner's stance, 2026-09-19 (the test for every restriction)
+
+"Beni's job is to make the error guarantees — like Elm does — but not to enforce anything on the
+devs. If devs need to reach for Int32 then let them." `Int32` was an EXAMPLE of this, not a feature
+request in itself. So: a rule stays only if it protects a guarantee (no runtime exception, no silent
+wrong answer, exhaustiveness, managed effects); a capability gap is filled inside the wall (core or a
+platform), because only they may write `foreign`; where no guarantee is at stake, warn — do not
+refuse. `--release` refusing `Debug` was confirmed by the owner AFTER stating this, on the ground that
+`Debug.toString` reflects the representation the release optimiser must be free to change.
