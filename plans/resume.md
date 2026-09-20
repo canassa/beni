@@ -5,20 +5,31 @@ in flight (M4-3) finishes. This file is the single place to resume from; the run
 `plans/queue.md`, the history is `plans/diary.md`, the numbers are
 `plans/state-of-the-compiler.md`.
 
-## 0. Un-parked for RESEARCH only, 2026-09-20
+## 0. The browser design pass is DONE (2026-09-20) — the owner's answers are what is awaited
 
-The owner said "Let's do 1": a read-and-measure design pass on **what a beni browser program is**.
-Three docs-only research agents were launched on 2026-09-20, each writing ONE new file and committing
-nothing: report 24 (`docs/design/research/24-elm-browser-runtime.md` — Elm's browser runtime as
-built, piece by piece, and which pieces exist because of the browser versus Elm's effect model),
-report 25 (`25-ui-architecture-design-space.md` — the UI architectures open to a language where an
-effectful call is just a call, one running example across all of them), report 26
-(`26-browser-host-measured.md` — scheduling primitives, the yield budget, input latency, the `sync`
-list, cancellation, loading and the test harness, measured in headless Chrome 153). After the manager
-validates and commits them, a synthesis produces `plans/browser-decisions.md` (the owner's decision
-sheet) and `plans/browser-platform.md`. **Implementation stays parked**; no code changes in this pass.
-If a session finds the reports absent or half-written, the briefs are in `plans/queue.md`'s last
-section (rows B-R1..B-R3, B-P) and the transcript; re-launch from there.
+The owner un-parked RESEARCH only ("Let's do 1"): what is a beni browser program? Three reports, each
+validated by the manager (citations spot-checked, headline measurements re-run and reproduced), then
+a synthesis. **Implementation is still parked; no code changed; no agent is running.**
+
+- `docs/design/research/24-elm-browser-runtime.md` — Elm's runtime as built: 12 of 25 pieces exist
+  because of the browser; Elm's scheduler never yields (372 ms freeze, zero frames); 75.9 % of a
+  counter's bytes are kernel JavaScript.
+- `25-ui-architecture-design-space.md` — TEA with a pure `sync` `update` and effects as fibers handed
+  a `send` ranks first; `sync` on `update` is a concurrency proof; an effectful `update` is rejected.
+- `26-browser-host-measured.md` — `MessageChannel` on a ~1 ms slice; a microtask yield is worse than
+  none (P2 §7.5's microtask tier is to be withdrawn); one bundle reaches `main` 3.0× faster than 13
+  modules; a browser corpus kind costs ~10 ms per fixture.
+- **`plans/browser-decisions.md`** — the owner's sheet: W1–W24, **nine in tier 1 (W1–W9), each with a
+  recommendation; "go with the recommendations" is a usable answer.** Its "Answered by the owner"
+  block is blank.
+- **`plans/browser-platform.md`** — the worked program and its test, the kernel, slices B0–B9, the
+  output track O1–O3, the edits owed to normative documents once the owner answers (§4 — NOT yet
+  made), and a whole-project sequence. Recommended first un-parked implementation slice: **O1, the
+  single-file `--release` bundle** (needs no decision; `backend.md` §10 already specifies it);
+  runner-up B0, the headless-Chrome corpus kind.
+
+To resume: put W1–W9 to the owner case by case in plain language (they answer best that way), record
+the answers in the sheet's block, then do the docs pass in `browser-platform.md` §4 before any code.
 
 ## 1. No implementation is in flight
 
