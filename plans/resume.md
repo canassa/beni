@@ -33,9 +33,9 @@ report was validated by the manager (citations spot-checked; headline measuremen
   renderer, language / rendering / core tracks (most need NO effects slice), edits owed to normative
   documents (§4 — NOT yet made), risks, whole-project sequence. Recommended first un-parked slice:
   O1, the single-file `--release` bundle; runner-up X1 (scratchpad research, does not compete).
-- **Queue row 56**: a compiler defect found on the way — a `()` pattern under a constructor
-  (`Ok ()`, `Just ()`) is reported as a missing pattern and a valid program is rejected. Not fixed
-  (parked). It blocks `Result e ()`, so it goes first when implementation resumes.
+- **Queue row 56 — FIXED** (`b160152`): a `()` pattern under a constructor (`Ok ()`, `Just ()`) was
+  reported missing and a valid program rejected. The owner un-parked this ONE fix, red test first;
+  everything else stays parked.
 
 To resume: put the tier-1 questions to the owner case by case in plain language (they answer best that
 way; "go with the recommendations" is usable), record answers in the sheet's block, then do the docs
