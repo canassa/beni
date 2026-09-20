@@ -1048,7 +1048,17 @@ const Analysis = struct {
             // exactly one shape (language.md §3).
             .pat_wild, .pat_var, .pat_record => return an.anything(),
             .pat_as => return an.simplify(@enumFromInt(data.lhs), depth + 1),
-            .pat_unit => return an.makeCtor(try an.unitUnion(), 0, &.{}),
+            // `alt` is an ABSOLUTE index into `pats.alts`, so the unit's sole
+            // alternative is `alts_start` and not `0` — which they are equal
+            // to only when the unit union happens to be the first one interned.
+            // A `()` nested under anything (`Just ()`, `A () n`, `[ () ]`) is
+            // interned after that thing's union, so the literal `0` used to
+            // name an alternative of a DIFFERENT union and the relation could
+            // neither specialise the row nor count it.
+            .pat_unit => {
+                const un = try an.unitUnion();
+                return an.makeCtor(un, an.pats.unionAt(un).alts_start, &.{});
+            },
             .pat_int => return an.intLiteral(data),
             .pat_char => return an.newLiteral(.{ .kind = .char, .value = data.lhs }),
             .pat_string => return an.newLiteral(.{ .kind = .string, .off = data.lhs, .len = data.rhs }),

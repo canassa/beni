@@ -1,0 +1,147 @@
+-- run: `()` as a SUB-pattern — under a constructor, inside a tuple inside a
+-- constructor, inside a list, and in the irrefutable positions of
+-- `language.md` §7 (a parameter, a `let` pattern, a lambda parameter).
+--
+-- `Result e ()` is the shape of every "did it succeed", so `Ok ()` has to be
+-- a branch one can write. The exhaustiveness relation of `checker.md` §6
+-- used to see a nested `()` as an alternative of no union it knew, so every
+-- one of these `case`s was `missing_patterns` and the program did not
+-- compile at all; running it is what proves the decision tree of
+-- `backend.md` §7 takes the branch as well as the checker accepting it.
+import Node exposing (Program)
+import String
+
+
+type T
+    = A () Int
+    | B
+
+
+type Wrap
+    = Wrap ()
+
+
+-- `Maybe ()`: the unit is the payload of a real choice.
+maybeUnit : Maybe () -> Int
+maybeUnit m =
+    case m of
+        Just () ->
+            1
+
+        Nothing ->
+            0
+
+
+-- `Result String ()`: the "did it succeed" shape.
+resultUnit : Result String () -> Int
+resultUnit r =
+    case r of
+        Ok () ->
+            1
+
+        Err _ ->
+            0
+
+
+-- A unit inside a tuple inside a constructor.
+tupleUnit : Maybe ( (), Int ) -> Int
+tupleUnit m =
+    case m of
+        Just ( (), n ) ->
+            n
+
+        Nothing ->
+            0
+
+
+-- A unit as one field of a multi-field constructor of a user type.
+userCtor : T -> Int
+userCtor v =
+    case v of
+        A () n ->
+            n
+
+        B ->
+            0
+
+
+-- Nested twice.
+twice : Maybe (Maybe ()) -> Int
+twice m =
+    case m of
+        Just (Just ()) ->
+            2
+
+        Just Nothing ->
+            1
+
+        Nothing ->
+            0
+
+
+-- A unit inside a list pattern, both spellings.
+listUnit : List () -> Int
+listUnit xs =
+    case xs of
+        [] ->
+            0
+
+        [ () ] ->
+            1
+
+        () :: _ ->
+            2
+
+
+-- An irrefutable PARAMETER: `Wrap` is the only constructor of its type, so
+-- `Wrap ()` matches every value of it (`language.md` §7).
+unwrap : Wrap, Int -> Int
+unwrap (Wrap ()) n =
+    n
+
+
+-- A lookup table, so the `Flat` fast path of `checker.md` §6 rather than
+-- the two relations: every branch is a key, and a single-constructor
+-- wrapper around `()` contributes no key column at all.
+table : Wrap, Bool -> Int
+table w b =
+    case ( w, b ) of
+        ( Wrap (), True ) ->
+            1
+
+        ( Wrap (), False ) ->
+            0
+
+
+-- The same pattern as a lambda parameter, and as a `let` pattern.
+lambdaAndLet : Int
+lambdaAndLet =
+    let
+        (Wrap ()) =
+            Wrap ()
+    in
+    (\(Wrap ()) -> 9) (Wrap ())
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (maybeUnit (Just ()))
+        , String.fromInt (maybeUnit Nothing)
+        , String.fromInt (resultUnit (Ok ()))
+        , String.fromInt (resultUnit (Err "no"))
+        , String.fromInt (tupleUnit (Just ( (), 42 )))
+        , String.fromInt (tupleUnit Nothing)
+        , String.fromInt (userCtor (A () 7))
+        , String.fromInt (userCtor B)
+        , String.fromInt (twice (Just (Just ())))
+        , String.fromInt (twice (Just Nothing))
+        , String.fromInt (twice Nothing)
+        , String.fromInt (listUnit [])
+        , String.fromInt (listUnit [ () ])
+        , String.fromInt (listUnit [ (), () ])
+        , String.fromInt (unwrap (Wrap ()) 5)
+        , String.fromInt (table (Wrap ()) True)
+        , String.fromInt (table (Wrap ()) False)
+        , String.fromInt lambdaAndLet
+        ]

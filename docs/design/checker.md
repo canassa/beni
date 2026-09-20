@@ -417,7 +417,9 @@ bug, and the backend says so (`internal`) rather than guessing.
 After a module is solved, every `case` (including the ones `if` lowered to) is checked with
 Maranget's usefulness algorithm over the *solved* types: constructors of an ADT come from its
 type declaration (through the interface for imported types), literals are infinite (`_`
-required), lists are `[]`/`::`, tuples and records are products. Missing patterns →
+required), lists are `[]`/`::`, tuples and records are products, and `()` is a product of no
+fields — one alternative, matched by naming it, **at every depth**: `Just ()` covers `Just` exactly
+as `Just ( a, b )` covers it, and leaves only `Nothing` missing. Missing patterns →
 `missing_patterns` at the `case` with up to three example patterns rendered; a branch that can
 never match → `redundant_pattern` at the branch.
 This runs only on modules with no type errors in that declaration, so it never sees `err`.
