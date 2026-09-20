@@ -230,3 +230,18 @@ Solid-class speed require signals as the programming model? Research only; imple
 B-P2 is **done**: `plans/browser-decisions.md` revision 2 (W1–W45; W1, W4, W5, W10 withdrawn in place and
 re-issued; seventeen in tier 1) and `plans/browser-platform.md` revision 2 (JSX worked program, the
 template renderer, language / rendering / core tracks, experiment X1). **Awaiting the owner.**
+
+## Owner direction, 2026-09-21: schemas as powerful as Effect's
+
+On report 31 (derived codecs), the owner: **"We need something as powerful as Effect schemas. That's
+the gold standard."** So report 31's question 1 is answered — the bar is Effect v4's `Schema`
+(`references/effect/packages/effect/src/Schema*.ts`, `JsonSchema.ts`), not "lift the port generator":
+one description of how data maps to a type, from which come the reader, the writer (which therefore
+cannot disagree), validation rules, error reports with paths, defaults, renamed and optional fields,
+tagged unions, recursion, and further interpreters (JSON Schema, test-data generators, equality).
+The owner also asked why it would need new syntax. The manager's answer: it probably does not —
+Effect's is a library of ordinary values, and beni can have the compiler supply the default schema
+for a type the way it already supplies `eq`/`compare`, with differences expressed by ordinary
+functions over that value. Report 31's "C needs its own surface syntax" was an assumption. Not yet
+researched: Effect's Schema read as built (report 31 read only its exported surface), and a beni
+design that matches it. Research only when the owner says; implementation stays parked.
