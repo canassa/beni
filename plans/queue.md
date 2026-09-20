@@ -245,3 +245,16 @@ for a type the way it already supplies `eq`/`compare`, with differences expresse
 functions over that value. Report 31's "C needs its own surface syntax" was an assumption. Not yet
 researched: Effect's Schema read as built (report 31 read only its exported surface), and a beni
 design that matches it. Research only when the owner says; implementation stays parked.
+
+### Schemas (2026-09-21) and a second compiler defect found on the way
+
+Report 32 (`docs/design/research/32-schemas-at-effect-parity.md`) is the design for the owner's
+direction above: a `core/Schema` library of inspectable schema values plus a `schema` declaration
+that is pure sugar over it. 162 capabilities from Effect's `SCHEMA.md`: same 40, spelled differently
+67, not needed 39 (JavaScript-only distinctions), cannot 14 (ten of them one thing — computing a type
+from a type: pick / omit / partial), needs language help 2 (effectful reads). Twelve owner decisions
+K1–K12. **Awaiting the owner.**
+
+| # | Item | State |
+|---|---|---|
+| 57 | **A well-typed program that builds with exit 0 and THROWS at run time.** An annotated top-level value with no parameters and a `where` clause (`pub blank : List a where a.eq : a, a -> Bool` / `blank = []`) is emitted as a function of its evidence, and a monomorphic value defined from it (`blankInts : List Int = blank`) is emitted as a thunk `() => Blank$blank(Blank$eq$prim)` — but consumers read `Blank$blankInts` as a plain value: `List$length(Blank$blankInts)` → `TypeError: Cannot read properties of undefined (reading '$')`. Reproduced by the manager (two modules, `build --platform=node`, `node out/main.mjs`, exit 1). Spec gap: spike §8.1 says the checker refuses a constrained constant first, §10.10 scopes `constrained_constant` to INFERRED schemes, so the ANNOTATED case falls between them. This breaks the no-runtime-exception guarantee, so it outranks everything parked. Owes a fail-first `run/` or `check/bad/` fixture; the fix is either to refuse the annotated case too or to make the emitter and its consumers agree | todo (parked — the owner's word needed) |
