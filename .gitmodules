@@ -22,3 +22,13 @@
 	path = references/elm-virtual-dom
 	url = https://github.com/elm/virtual-dom
 	shallow = true
+[submodule "references/solid"]
+	path = references/solid
+	url = https://github.com/solidjs/solid
+	branch = next
+	shallow = true
+[submodule "references/dom-expressions"]
+	path = references/dom-expressions
+	url = https://github.com/ryansolid/dom-expressions
+	branch = next
+	shallow = true

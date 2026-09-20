@@ -185,3 +185,38 @@ read what exists, measure in a real browser, end with a decision sheet for the o
 | B-R2 | **25 — the design space for UI under transparent effects**: what a browser program looks like when an effectful call is just a call — TEA kept, TEA with effects in `update`, components with local state, signals/fine-grained reactivity, fibers per component; how Effect users build UI (`packages/atom`), Lustre, Leptos/Dioxus, Solid, React's concurrent model, Compose; rule 7 applied | **done** `d5c04c0` — C first (pure `sync` update, effects are fibers with a `send`); `sync` on update is a concurrency proof; ten owner decisions |
 | B-R3 | **26 — the browser as a host for beni's fiber runtime, measured**: the event loop, the scheduling primitives (no `setImmediate`; `MessageChannel`, `scheduler.postTask`, `setTimeout` clamping, `requestAnimationFrame`, microtasks), the yield budget re-measured in Chrome, input latency under a busy fiber, what `sync` must cover (`view`, event handlers, rAF), loading/size budgets, and how a browser platform is TESTED (headless Chrome is on this machine) | **done** `3302367` — `MessageChannel` on a ~1 ms slice; a microtask yield is worse than none; one bundle loads 3.0× faster; harness 10 ms/fixture. Manager re-ran e3b and e8: reproduce |
 | B-P | Synthesis: `plans/browser-decisions.md` (the owner's sheet) and `plans/browser-platform.md` (the design + slice plan, and what it changes in `plans/effects-spike.md`) | **done** — `plans/browser-decisions.md` (W1–W24, nine in tier 1, each with a recommendation) and `plans/browser-platform.md` (kernel, slices B0–B9, output track O1–O3, whole-project sequence). **Awaiting the owner on W1–W9.** Recommended first un-parked slice: O1, the single-file `--release` bundle |
+
+## Owner direction, 2026-09-20: built-in JSX, and a UI as fast as Solid
+
+The owner, after reading the browser design pass: **"I want built in JSX in the language. Also, clone
+and research SolidJS 2. I want a Beni UI to be fast, as fast as solid, the runtime cannot be a
+limitation."**
+
+Three things, and they re-open part of `plans/browser-decisions.md`:
+
+1. **JSX is a language feature**, not a library convention — so it is a `language.md` change (grammar,
+   lexer, formatter, typing of elements / attributes / children / components) and the COMPILER sees
+   markup. That is the opening Solid exploits: a compiler that sees the template can split static
+   structure from dynamic holes and emit direct DOM updates, with no virtual DOM to diff.
+2. **Solid 2 is the performance gold standard for UI**, as Effect v4 is for effects. Vendored:
+   `references/solid` (`next`, 2.0.0-rc.9, with `packages/signals` — the new reactive core — in-tree)
+   and `references/dom-expressions` (`next`, the JSX compiler and DOM runtime Solid is built on).
+3. **"The runtime cannot be a limitation"** is a requirement on the ARCHITECTURE, not a tuning target.
+   Report 25 ranked signals fourth and assumed a virtual DOM throughout (its own §13 lists "whether
+   beni has a virtual DOM at all" as undetermined); W1's rider "`view` returns a data tree the platform
+   renders" and W4/W10 rest on that assumption. **W1, W4, W5, W6 and W10 are therefore NOT to be put to
+   the owner as they stand**; they are re-issued after the research below. What does not move: `sync`
+   handlers, the scheduler (W3), the defect rule (W2), key namespacing (W7), callbacks (W8), `main`
+   (W9), and report 25's finding that an `update` which may suspend is wrong.
+
+The open question the research must answer with measurements: **can beni keep TEA's guarantees (one
+model, atomic `sync` `update`, exhaustive messages, time travel) AND render as fast as Solid** — by
+having the compiler turn JSX into templates whose holes are updated directly from the model — or does
+Solid-class speed require signals as the programming model? Research only; implementation stays parked.
+
+| # | Item | State |
+|---|---|---|
+| B-R4 | **27 — Solid 2 as built**: `packages/signals` (the reactive graph, ownership, scheduling/batching, async and boundaries), `dom-expressions` (what JSX compiles to: template cloning, hole walking, delegated events, `For`/keyed reconciliation), where the speed comes from piece by piece, what is there only because of JavaScript/TypeScript | in flight |
+| B-R5 | **28 — JSX in beni**: the language design — grammar in an indentation-sensitive language where `<` is an operator, typing, components and props with no currying and static dispatch, children, the formatter, what the compiler emits; prior art read from source (Mint, ReScript, Reason, Fable/Feliz, Leptos `view!`, Dioxus `rsx!`, Svelte, Marko, Imba) | in flight |
+| B-R6 | **29 — how fast, measured**: js-framework-benchmark in headless Chrome on this machine — vanilla, Solid 1.9, Solid 2 rc, Elm, Svelte 5, ivi/Inferno, Leptos — plus HAND-WRITTEN prototypes of what a beni compiler could emit: (a) virtual DOM, (b) TEA + compiled templates with per-hole change checks on an immutable model, (c) signals. Does (b) reach Solid? | in flight |
+| B-P2 | Synthesis: re-issue W1/W4/W5/W6/W10, extend `plans/browser-decisions.md` with the JSX questions, revise `plans/browser-platform.md` | after B-R4..6 |
