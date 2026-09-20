@@ -326,3 +326,11 @@ not inheriting what Effect must do only because it lives in TypeScript
 on), pinned 2026-09-20, are the gold standard for UI performance (rule 8);
 `references/elm-browser` and `references/elm-virtual-dom` are Elm's browser
 runtime, read for report 24. Commit the submodule *pointer*, never vendored contents.
+
+**`references/talks/`** is the one part of `references/` that holds plain files: talks
+and streams kept as primary-source evidence, one directory each with `raw.txt`
+(the paste, never edited), `transcript.md` (time-linked, lightly corrected) and
+`notes.md` (the argument, a topic index, and what it means for beni's open
+decisions). Auto-caption transcripts are unverified — quote from the video. A
+talk is somebody's argument and is never normative. Its
+[`README.md`](references/talks/README.md) is the index and the convention.
