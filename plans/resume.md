@@ -137,7 +137,7 @@ single-file bundle / chunking / `lazy`, source maps, and a browser test harness.
 
 ## 5. How to resume
 
-Read, in this order: `CLAUDE.md` (rules 1–7), this file, the last three entries of
+Read, in this order: `CLAUDE.md` (rules 1–8), this file, the last three entries of
 `plans/diary.md`, `plans/queue.md` from the most recent "Owner decision" heading down. The working
 arrangement that produced all of the above: the main session plans, briefs and validates; Opus
 agents implement from written briefs, one worktree per building agent, at most five agents; every

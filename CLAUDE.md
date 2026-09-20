@@ -261,6 +261,39 @@ it". Rule 6 means an ordinary developer cannot write `foreign`, so whatever
 ([`fast-compiler.md`](docs/design/fast-compiler.md) §3.1). When recommending a
 refusal where no guarantee is at stake, say so and offer the warning.
 
+### 8. The UI is as fast as Solid, and JSX is part of the language
+
+The owner, 2026-09-20: **"I want built in JSX in the language. … I want a Beni UI
+to be fast, as fast as solid, the runtime cannot be a limitation."**
+
+**SolidJS 2 is the performance gold standard for UI**, as Effect v4 is for
+effects. No UI design is recommended on an assumption about speed: it is
+measured against Solid 2 with report 29's harness (js-framework-benchmark in
+headless Chrome, plus the static-heavy page the table benchmark cannot see), and
+a design whose runtime is structurally slower is not proposed. Quote orderings
+and per-operation medians; a geometric mean of ratios over sub-millisecond
+operations did not reproduce and is never a parity claim.
+
+What the evidence says today
+([`research/27`](docs/design/research/27-solid-2-as-built.md),
+[`28`](docs/design/research/28-jsx-in-beni.md),
+[`29`](docs/design/research/29-rendering-strategies-measured.md)): most of
+Solid's speed is its **compiler**, not its signals, and that half is open to The
+Elm Architecture — `view` compiled to cloned templates with a reference check
+per dynamic hole beats Solid 2 on script on every benchmark operation, while a
+**virtual DOM is the slowest sensible design measured** and is a fallback at
+most, never the architecture. It works because values are immutable and a record
+update is a spread, so an untouched value is the *same object*: **field identity
+is load-bearing**, and no optimiser change may break it. Signals stay possible
+as a library and are not forbidden (rule 7); they buy no speed.
+
+**JSX is a language feature** — grammar, typing, formatter, codegen — specified
+before it is built (rule 1), with the element and attribute vocabulary declared
+by a platform package, never known to the compiler (rule 6). The plain-call
+form stays and produces the same type. The open decisions are the owner's, in
+[`plans/browser-decisions.md`](plans/browser-decisions.md); the plan is
+[`plans/browser-platform.md`](plans/browser-platform.md).
+
 ## Operational
 
 ### Captain's log — `plans/diary.md` (APPEND AFTER EVERY SESSION)
@@ -287,4 +320,9 @@ copies), `elm-core`, and **`references/effect`** — Effect-TS v4 (`main` at
 `4.0.0-rc.116`, pinned 2026-09-19, shallow), the owner's **gold standard for the
 effects work**: beni aims at Effect's level of quality and API coverage, while
 not inheriting what Effect must do only because it lives in TypeScript
-(generators, type-level encodings). Commit the submodule *pointer*, never vendored contents.
+(generators, type-level encodings). **`references/solid`** (SolidJS 2, branch
+`next`, `2.0.0-rc.9`, with its signals core in-tree) and
+**`references/dom-expressions`** (the JSX compiler and DOM runtime Solid is built
+on), pinned 2026-09-20, are the gold standard for UI performance (rule 8);
+`references/elm-browser` and `references/elm-virtual-dom` are Elm's browser
+runtime, read for report 24. Commit the submodule *pointer*, never vendored contents.
