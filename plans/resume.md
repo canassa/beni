@@ -5,31 +5,41 @@ in flight (M4-3) finishes. This file is the single place to resume from; the run
 `plans/queue.md`, the history is `plans/diary.md`, the numbers are
 `plans/state-of-the-compiler.md`.
 
-## 0. The browser design pass is DONE (2026-09-20) — the owner's answers are what is awaited
+## 0. The browser design pass is DONE, twice (2026-09-20) — the owner's answers are what is awaited
 
-The owner un-parked RESEARCH only ("Let's do 1"): what is a beni browser program? Three reports, each
-validated by the manager (citations spot-checked, headline measurements re-run and reproduced), then
-a synthesis. **Implementation is still parked; no code changed; no agent is running.**
+The owner un-parked RESEARCH only. **Implementation is still parked; no code changed; no agent is
+running.** Round one (reports 24–26) asked what a beni browser program is and recommended The Elm
+Architecture, assuming a virtual DOM. The owner then said: **"I want built in JSX in the language.
+Also, clone and research SolidJS 2. I want a Beni UI to be fast, as fast as solid, the runtime cannot
+be a limitation."** Round two (reports 27–29) answered that, and the synthesis was revised. Every
+report was validated by the manager (citations spot-checked; headline measurements re-run).
 
-- `docs/design/research/24-elm-browser-runtime.md` — Elm's runtime as built: 12 of 25 pieces exist
-  because of the browser; Elm's scheduler never yields (372 ms freeze, zero frames); 75.9 % of a
-  counter's bytes are kernel JavaScript.
-- `25-ui-architecture-design-space.md` — TEA with a pure `sync` `update` and effects as fibers handed
-  a `send` ranks first; `sync` on `update` is a concurrency proof; an effectful `update` is rejected.
-- `26-browser-host-measured.md` — `MessageChannel` on a ~1 ms slice; a microtask yield is worse than
-  none (P2 §7.5's microtask tier is to be withdrawn); one bundle reaches `main` 3.0× faster than 13
-  modules; a browser corpus kind costs ~10 ms per fixture.
-- **`plans/browser-decisions.md`** — the owner's sheet: W1–W24, **nine in tier 1 (W1–W9), each with a
-  recommendation; "go with the recommendations" is a usable answer.** Its "Answered by the owner"
-  block is blank.
-- **`plans/browser-platform.md`** — the worked program and its test, the kernel, slices B0–B9, the
-  output track O1–O3, the edits owed to normative documents once the owner answers (§4 — NOT yet
-  made), and a whole-project sequence. Recommended first un-parked implementation slice: **O1, the
-  single-file `--release` bundle** (needs no decision; `backend.md` §10 already specifies it);
-  runner-up B0, the headless-Chrome corpus kind.
+- `docs/design/research/24` Elm's browser runtime as built · `25` the UI architecture design space ·
+  `26` the browser as a host, measured (`MessageChannel` on a ~1 ms slice; microtask yields harmful;
+  one bundle loads 3.0× faster than 13 modules).
+- `27` Solid 2 as built (`references/solid` `next` 2.0.0-rc.9, `references/dom-expressions`): the
+  browser is the cost, then the COMPILER — available to TEA — and last the signal graph; signals need
+  no fiber slot after all. `28` JSX in beni: an element is an atom at operand start, quoted text, a
+  tag is a name, typed holes, ~1 300–1 900 lines of Zig, and the speed does not depend on JSX. `29`
+  measured: TEA + compiled templates + per-hole `===` beats Solid 2 on script on 9 of 9 benchmark
+  operations; a virtual DOM is the slowest sensible design; READ ITS VALIDATION NOTE — the ordering
+  reproduces, the "equals vanilla (0.989)" figure does not.
+- **`plans/browser-decisions.md` revision 2** — W1–W45; W1, W4, W5, W10 withdrawn in place and
+  re-issued; **seventeen in tier 1** (W25–W35 plus W2, W3, W6, W7, W8, W9), each with a
+  recommendation; opens with "What the owner asked for, and what the evidence says". Its "Answered by
+  the owner" block is blank. **W29 is genuinely open**: what an `Html msg` value is at run time when a
+  view helper returns one, and what the compiler's fallback costs — experiment X1 settles it.
+- **`plans/browser-platform.md` revision 2** — the typeahead in the recommended JSX, the template
+  renderer, language / rendering / core tracks (most need NO effects slice), edits owed to normative
+  documents (§4 — NOT yet made), risks, whole-project sequence. Recommended first un-parked slice:
+  O1, the single-file `--release` bundle; runner-up X1 (scratchpad research, does not compete).
+- **Queue row 56**: a compiler defect found on the way — a `()` pattern under a constructor
+  (`Ok ()`, `Just ()`) is reported as a missing pattern and a valid program is rejected. Not fixed
+  (parked). It blocks `Result e ()`, so it goes first when implementation resumes.
 
-To resume: put W1–W9 to the owner case by case in plain language (they answer best that way), record
-the answers in the sheet's block, then do the docs pass in `browser-platform.md` §4 before any code.
+To resume: put the tier-1 questions to the owner case by case in plain language (they answer best that
+way; "go with the recommendations" is usable), record answers in the sheet's block, then do the docs
+pass in `browser-platform.md` §4 before any code.
 
 ## 1. No implementation is in flight
 

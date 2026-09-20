@@ -1,43 +1,54 @@
 # The browser platform — the plan
 
-**Status:** plan, 2026-09-20. **Implementation is parked.** Nothing here is started and nothing here
-is normative: the normative documents are `boundary.md`, `backend.md` and
+**Status:** plan **revision 2**, 2026-09-20. **Implementation is parked.** Nothing here is started
+and nothing here is normative: the normative documents are `language.md`, `frontend.md`,
+`checker.md`, `backend.md`, `boundary.md` and
 [`transparent-effects-proposal.md`](../docs/design/transparent-effects-proposal.md) (**P2**), and §4
-below lists the edits this plan would owe them *once the owner answers*
+lists the edits this plan would owe them *once the owner answers*
 [`plans/browser-decisions.md`](browser-decisions.md).
 
+**What changed in revision 2.** The owner read revision 1 and asked for built-in JSX and for a UI as
+fast as Solid. Three reports answered, and the plan changes in three places. The **virtual DOM is
+gone** from §2 — it is replaced by a compiled-template renderer, on measured grounds. Two **new
+tracks** appear in §3, a language track for JSX and a rendering track for templates, and the most
+useful fact in this document is that **almost none of either needs anything from the effects spike**.
+And one question is **not answered** and is named as such: what an `Html msg` value is at run time
+(W29), with a prototype experiment (**X1**) that settles it.
+
 **How to read it.** Every part is marked with the `W` ids it depends on, so the plan survives the
-owner choosing differently. Where a part would simply disappear under another answer, it says so.
-Evidence is **R24** ([`research/24`](../docs/design/research/24-elm-browser-runtime.md)), **R25**
-([`research/25`](../docs/design/research/25-ui-architecture-design-space.md)) and **R26**
-([`research/26`](../docs/design/research/26-browser-host-measured.md)); no number appears without its
-source and its caveat.
+owner choosing differently. Evidence is **R24** … **R29** (`docs/design/research/24…29`); no number
+appears without its source and its caveat. Three caveats run through every figure in §2 and §3 and
+are not repeated at each one: **headless Chrome 153, one engine, one machine**; R29's prototypes are
+**hand-written, not compiler output**; and **most benchmark operations are paint-bound**, so a script
+ratio of 2× is 2–15 % end to end (R27 §10.4, R29 §5.5).
 
 ---
 
 ## 1. What a beni browser program is
 
-*Depends on: **W1** (TEA, commands handed a `send`), **W5** (the render phases), **W6**
-(subscriptions), **W8** (`sync` handlers), **W9** (`main`). Under a different W1 this page is
-rewritten; under a different W5/W6 it loses a line each.*
+*Depends on: **W25** (TEA, commands handed a `send`), **W26** (compiled templates), **W28** (the
+render phases), **W6** (subscriptions), **W8** (`sync` handlers), **W9** (`main`), **W30**–**W34**
+(the JSX surface). Under a different W25 this page is rewritten; under a different W30/W31 the markup
+is respelled and nothing else moves, because JSX desugars to the plain-call form.*
 
 This is the page that replaces P2 §6.6. It is R25 §2's running example — a search box that debounces,
-cancels the stale request, and toggles a favourite optimistically — in its option-C form, trimmed to
-one screen, with its test beside it.
+cancels the stale request, and toggles a favourite optimistically — in its option-C form, with its
+view in the recommended JSX surface, and its test beside it.
 
-**Marking.** `[proposed]` marks an API or a semantics that does not exist: the `Browser` package
-whole, `Cmd`/`Send`, `Task.sleep`, `Ref`, and the `sync` keyword (P2 §3.2, decided by A6 but not
-built). Everything else is `language.md` as it stands today: calls are saturated, function types are
-n-ary, `|>` is pipe-first, `where` sits on a top-level annotation, and at most one `_` appears per
-application.
+**Marking.** `[proposed]` marks anything that does not exist: the `Browser` package whole,
+`Cmd`/`Send`, `Task.sleep`, `Ref`, the `sync` keyword (decided by A6, not built), and **all markup**.
+Everything else is `language.md` as it stands today: calls are saturated, function types are n-ary,
+`|>` is pipe-first, `where` sits on a top-level annotation, and at most one `_` appears per
+application. **The markup is confined to `view` functions**, so the rest of the file parses today.
 
 ### 1.1 The program
 
 ```elm
 --! `Typeahead` — a whole beni browser program. [proposed] throughout: the
---! `Browser` package, `Cmd`, `Send`, `Task`, `Duration`, and the `sync`
---! keyword. Three small helpers are elided for space: `statusOf`,
---! `setMember` and `viewStatus`, all pure, all in R25 §2.2.
+--! `Browser` package, `Cmd`, `Send`, `Task`, `Duration`, the `sync` keyword,
+--! and every element in `view`/`viewStatus`/`viewHit`. Five small helpers are
+--! elided for space — `statusOf`, `setMember`, `errorText`, `boolText` and
+--! `realApi` — all pure, all ordinary beni.
 import Browser exposing (Sub)
 import Browser.Cmd as Cmd exposing (Cmd, Send)
 import Browser.Html as Html exposing (Html)
@@ -77,10 +88,19 @@ type Status
     | Loaded (List Hit)
 
 
+--| Grouped rather than flat, deliberately. A `{ r | f = x }` is emitted as a
+--| spread, and V8's fast object-clone path gives up above ~17 fields: 29.9 ns
+--| at 17, 222.6 ns at 18 (R27 §5.6). It is also what the renderer wants — a
+--| hole compares the record it READS FROM, never the root model, which always
+--| changes. W39, and X1 is the measurement that confirms or overturns it.
+type alias Search =
+    { query : String, status : Status }
+
+
 type alias Model =
-    { query : String
-    , status : Status
+    { search : Search
     , favourites : Set HitId
+    , saving : Set HitId
     , width : Int
     }
 
@@ -103,33 +123,51 @@ type Key
 
 sync init : Api, () -> ( Model, Cmd Msg )
 init _ _ =
-    ( { query = "", status = Idle, favourites = Set.empty, width = 0 }
+    ( { search = { query = "", status = Idle }
+      , favourites = Set.empty
+      , saving = Set.empty
+      , width = 0
+      }
     , Cmd.none
     )
 
 
+--| `language.md` §6.3: a record update's target is a plain NAME — `{ r.a | … }`
+--| is not allowed — so a nested update binds the sub-record first. That is the
+--| whole ergonomic cost of grouping, and it is one `let` line.
 sync update : Api, Msg, Model -> ( Model, Cmd Msg )
 update api msg model =
     case msg of
         Typed q ->
-            ( { model | query = q, status = Loading }
+            let
+                s = model.search
+            in
+            ( { model | search = { s | query = q, status = Loading } }
             , Cmd.performKeyed SearchKey Cmd.Restart (searchEffect api q _)
             )
 
         GotHits result ->
-            ( { model | status = statusOf result }, Cmd.none )
+            let
+                s = model.search
+            in
+            ( { model | search = { s | status = statusOf result } }, Cmd.none )
 
         Favourited id want ->
-            ( { model | favourites = setMember model.favourites id want }
-            , Cmd.performKeyed (FavouriteKey id) Cmd.Restart
-                (saveEffect api id want _)
+            ( { model
+                | favourites = setMember model.favourites id want
+                , saving = Set.insert model.saving id
+              }
+            , Cmd.performKeyed (FavouriteKey id) Cmd.Restart (saveEffect api id want _)
             )
 
-        Saved _ _ (Ok ()) ->
-            ( model, Cmd.none )
+        Saved id _ (Ok _) ->
+            ( { model | saving = Set.remove model.saving id }, Cmd.none )
 
         Saved id want (Err _) ->
-            ( { model | favourites = setMember model.favourites id (not want) }
+            ( { model
+                | favourites = setMember model.favourites id (not want)
+                , saving = Set.remove model.saving id
+              }
             , Cmd.none
             )
 
@@ -165,14 +203,59 @@ subscriptions _ =
 
 
 --| `view` is `sync` and pure. Every handler is `sync` too: it may call
---| `preventDefault`, and if it wants to do slow work it spawns a fiber and
---| returns (R26 §5.1 — one macrotask hop and the link has already navigated).
+--| `preventDefault`, and if it wants slow work it spawns a fiber and returns
+--| (R26 §5.1 — one macrotask hop and the link has already navigated).
 sync view : Model -> Html Msg
 view model =
-    Html.div []
-        [ Html.input [ Html.value model.query, Html.onInput Typed ] []
-        , viewStatus model
-        ]
+    <div class="typeahead" style={Html.style [ ( "max-width", "${model.width}px" ) ]}>
+        <input
+            class="query"
+            value={model.search.query}
+            placeholder="Search…"
+            onInput={Typed}
+        />
+        {viewStatus model}
+    </div>
+
+
+sync viewStatus : Model -> Html Msg
+viewStatus model =
+    case model.search.status of
+        Idle ->
+            <p class="hint">"Start typing."</p>
+
+        Loading ->
+            <p class="hint" "aria-busy"="true">"Searching…"</p>
+
+        Failed err ->
+            <p class="error" role="alert">"Could not search: ${errorText err}"</p>
+
+        Loaded [] ->
+            <p class="hint">"No results for “${model.search.query}”."</p>
+
+        Loaded hits ->
+            <ul class="results">
+                {Html.keyed (List.map hits (\hit -> ( hit.id, viewHit model hit )))}
+            </ul>
+
+
+sync viewHit : Model, Hit -> Html Msg
+viewHit model hit =
+    let
+        isFav = Set.member model.favourites hit.id
+        isSaving = Set.member model.saving hit.id
+    in
+    <li class="hit">
+        <span class="title">{hit.title}</span>
+        <button
+            class="fav"
+            disabled={isSaving}
+            "aria-pressed"={boolText isFav}
+            onClick={Favourited hit.id (not isFav)}
+        >
+            {if isFav then "★" else "☆"}
+        </button>
+    </li>
 
 
 main : Program
@@ -185,22 +268,41 @@ main =
         }
 ```
 
-Three notes on the shape, because each is a design decision rather than a style choice.
+Six things to notice, because each is a rule earning its keep rather than a style choice.
 
-- **`searchEffect api q _` is a placeholder, not a lambda.** `language.md` §6.7 allows at most one
-  `_` per application, and this is the shape it was designed for (R25 §5.2). The two lambdas in
-  `main` are the price of the same rule: `update realApi _ _` is `multiple_placeholders`, so a
-  service threaded into a two-parameter `update` is written as a lambda — one per entry point, and
-  R25 §3.6 is where the no-currying decision first costs a visible keystroke.
+- **`{hit.title}` is a `String` hole, and no `Html.text` wrapper is written.** The checker knows the
+  type, so the compiler inserts the conversion and the update is `node.data = hit.title`. Lustre's
+  own React-migration guide names that wrapper as the cost of the plain-call form; this is the
+  clearest thing JSX buys beni that `Html.div [] []` cannot (R28 §4.4).
+- **`{if isFav then "★" else "☆"}` is also a `String` hole** — an ordinary `if` expression, no
+  `<Show>`. And `viewStatus`'s five branches are five templates with the hole swapping between
+  them, which is the shape `src/js/Decision.zig` already produces for a `case` (R28 §4.5).
+- **`"aria-pressed"={…}` is the quoted-name escape** from the typed vocabulary: no hyphen join in the
+  parser, no `attr:` namespace, and the reader can see at a glance that it left the typed set. It is
+  stolen from Dioxus and Sycamore (R28 §5.2).
+- **`Html.keyed` makes the list hole a `Keyed msg`**, a *different type* from `List (Html msg)`, so
+  the keyed reconciler is chosen **by the type** rather than by a convention the compiler has to
+  trust. Without it the build warns (W33).
+- **`searchEffect api q _` is a placeholder, not a lambda.** `language.md` §6.7 allows at most one `_`
+  per application, and this is the shape it was designed for. The two lambdas in `main` are the price
+  of the same rule.
 - **The `Api` record is not in the `Model`.** A model holding a function has no derived `eq`, which
-  costs the `==` a test wants to write, any render memoisation, and a time-travel diff (R25 §2.2).
-- **`sync` is written on the annotation**, by analogy with `pub`. Where it goes is W17 and P2 §3.2's
-  grammar puts it on the definition; this page assumes the recommendation.
+  costs the `==` a test wants to write, and a time-travel diff (R25 §2.2).
+
+**And the plain-call form of one branch, because it is the same program.** `bir/Lower.zig` desugars
+an element to exactly these calls, and an `emit/` golden proves the two emit identical bytes
+(R28 rule 19, §10 objection 4):
+
+```elm
+Loaded hits ->
+    Html.ul [ Html.class "results" ]
+        [ Html.keyed (List.map hits (\hit -> ( hit.id, viewHit model hit ))) ]
+```
 
 ### 1.2 The test, with no browser and no wall clock
 
 *Depends on: **W16** (a `TestStore` in the platform), **A13** (a swappable clock), **A7** (services
-are records).*
+are records). Unchanged from revision 1 — the rendering strategy is invisible to it.*
 
 ```elm
 --! [proposed] `Browser.Test` and `Ref` (effects T0). Runs under the NODE
@@ -230,20 +332,26 @@ typeaheadDebounces calls =
         t3 = Test.send t2 (Typed "ab")
         t4 = Test.advance t3 (Duration.millis 300)
     in
-    Ref.get calls == [ "ab" ] && (Test.model t4).status == Loaded [ ... ]
+    Ref.get calls == [ "ab" ] && (Test.model t4).search.status == Loaded [ ... ]
 ```
 
-Two end-of-test assertions are worth copying verbatim in spirit from TCA (R25 §9.6): *"the store
-received N unexpected actions"* and *"an effect returned for this action is still running; it must
-complete before the end of the test."* The second is only checkable because the runtime knows what
-is in flight — which Elm's does not, and which is the whole reason cancellation is testable here.
+Two end-of-test assertions are worth copying in spirit from TCA (R25 §9.6): *"the store received N
+unexpected actions"* and *"an effect returned for this action is still running; it must complete
+before the end of the test."* The second is only checkable because the runtime knows what is in
+flight — which Elm's does not.
+
+**And one addition in revision 2.** The same `view` can be tested with no browser at all, because
+**W38's render-to-string platform is a second implementation of the same markup interface**:
+`Test.render (view model)` returns a `String` and a `run/` fixture compares bytes. That is how rule 3
+is satisfied for views before any browser slice exists, and it is what proves the markup interface is
+a real interface rather than a browser API wearing a hat (R28 §8.3).
 
 ---
 
 ## 2. The kernel and the layers
 
-*Depends on: **W1**, **W3** (the scheduler), **W5**, **W6**, **W8**, **W10** (how much of the
-renderer is beni).*
+*Depends on: **W25**, **W26**, **W3** (the scheduler), **W28**, **W6**, **W8**, **W29** (the
+fallback).*
 
 ### 2.1 The kernel — five things, and everything else sits on them
 
@@ -251,9 +359,10 @@ R25 §10.1. The kernel is where the *guarantees* live; the architecture is a lib
 
 1. **A root scope tied to the mount.** `Browser.element` opens a `Scope`; unmount closes it; every
    fiber below is interrupted, children first, finalisers run, and the caller waits (A1). This is the
-   one guarantee no JavaScript framework can make.
-2. **A `sync`, pure render.** The kernel's entry point demands a function that cannot suspend — and,
-   if memoisation is offered, cannot be impure (W4).
+   one guarantee no JavaScript framework can make. Solid arrived at the same disposal order
+   independently and has shipped it for years, which is confirmation rather than coincidence
+   (R27 §2.2).
+2. **A `sync`, pure render.** The kernel's entry point demands a function that cannot suspend.
 3. **A `sync` event→fiber bridge.** A DOM handler is `sync` so `preventDefault` works; starting a
    fiber from a handler is a kernel call, so the fiber is always parented in the root scope and can
    never be orphaned.
@@ -262,347 +371,640 @@ R25 §10.1. The kernel is where the *guarantees* live; the architecture is a lib
 5. **One frame-aware loop.** The kernel owns the render tick and the yield budget. Two libraries in
    one page must not each own a `requestAnimationFrame`.
 
+**What revision 2 adds to the kernel's claim of neutrality.** Revision 1 said the kernel could host
+four of R25's five architectures and not signals, because signals needed a fourth per-fiber slot.
+**That was wrong** and is corrected: R27 §8.6 shows a plain module-level variable in the platform's
+JavaScript is correct provided tracked computations are `sync`, which item 3 above already requires.
+So the kernel hosts all five. Signals are unshipped and never forbidden (W19).
+
 ### 2.2 The pieces, and which side of the wall each is on
 
 Rule 6: only a platform package may write `foreign`, so every line in the "JS" column is behind the
 wall and is the platform's responsibility. Elm's equivalent is R24 §0.1's table. **Size estimates are
-estimates**, derived from R24 §11.3's byte attribution of an `--optimize` Elm counter, and are stated
-so W11's measurement can contradict them.
+estimates** and §2.6 says what they are now worth.
 
 | Piece | Elm's equivalent (R24) | Side | Guarantee it carries | Rough size |
 |---|---|---|---|---|
-| **Mount + model cell + dispatcher** | `_Platform_initialize` minus the bag machinery (R24 §2.2, §2.5) | **beni**, over a `Ref` | one source of truth; every message applied atomically (W1) | ~80 lines beni |
-| **The render loop / animator** | `_Browser_makeAnimator`, 26 lines (R24 §6.9) | **JS** | one render per frame; a render is never caught half-applied | ~40 lines JS |
-| **Virtual DOM: node and fact construction** | `VirtualDom.js:54-224`, `organizeFacts` | **beni** | `view` is a pure function returning data | ~150 lines beni |
-| **Virtual DOM: the diff** | `_VirtualDom_diff*`, ~450 lines (R24 §6.4, §6.5) | **beni**, W10 | none by itself; it is where the language earns its keep | ~400 lines beni |
-| **Virtual DOM: render, patch, keyed reorder** | `_VirtualDom_render`, `applyPatches`, ~500 lines | **JS** | reads batched before writes (R26 §5.5: 1 139× otherwise) | ~350 lines JS |
-| **Event registration and dispatch** | `makeCallback`, `applyEvents`, ~107 lines (R24 §6.6) | **JS** + a `sync` beni closure | `preventDefault`/`stopPropagation` work (W8) | ~90 lines JS |
-| **XSS sanitisers** | `VirtualDom.js:274-333`, ~60 lines (R24 §6.3) | **JS** (four regexes) | a `view` cannot inject script — a rule-7 guarantee | ~60 lines JS |
-| **The fiber kernel and scheduler** | `Scheduler.js`, 195 lines — which has **seven of thirteen** pieces and no yield at all (R24 §3.6) | **JS**, platform-neutral, the browser its first host | structured lifetimes, prompt cancellation, a page that keeps breathing | ~1 260 lines JS (r21 §0.4's estimate) |
-| **The browser scheduler slot** | none — Elm has a FIFO with no escape | **JS** | input p90 ≈ the slice (R26 §3.3) | ~30 lines JS (W3) |
-| **The command runner**: `Dict Key (Fiber ())`, four policies, key paths | `elm/http`'s effect manager, which only kernel code may write (R25 §3.2, §8.7) | **beni** | keyed cancellation as ordinary library code | ~80 lines beni |
-| **Subscriptions**: the declared set, the diff, a scoped fiber per key | `Browser/Events.elm`'s three-way `Dict.merge` (R24 §5.2) | **beni** over a JS registration primitive | a listener nobody wants stops, unwritten (W6) | ~80 lines beni, ~30 JS |
-| **Navigation** | `_Browser_application`'s link guard and `popstate` (R24 §7.1) | **JS** for interception, **beni** for the capability record | a single-page app cannot lose a click | ~70 lines JS |
-| **`Browser.Dom`** — focus, viewport, `getElement` | `_Browser_withNode`, an rAF before every DOM read (R24 §8.2) | **JS** foreigns + W5's after-render point | a read sees the tree the program just described | ~90 lines JS |
-| **Interop** — ports | `Platform.js:332-471` (R24 §9) | **beni** codec, generated; **JS** transport | a malformed payload is a `Result`, not a crash (`boundary.md` §3.1) | B3's, already specified |
-| **Defect teardown + screen** | none — Elm wedges silently (R24 §3.5) | **JS** flag + `AbortController`, **beni** report | nothing runs on state nobody can vouch for (W2) | ~40 lines JS |
+| **Mount + model cell + dispatcher** | `_Platform_initialize` minus the bag machinery | **beni**, over a `Ref` | one source of truth; every message applied atomically (W25) | ~80 lines beni |
+| **The render loop / animator** | `_Browser_makeAnimator`, 26 lines | **JS** | one render per frame; a render is never caught half-applied | ~40 lines JS |
+| **Template extraction and hole paths** | *none — Elm has no equivalent* | **compiler** (`backend.md` §11) | the static structure of a view is built once, not described per frame | a compiler pass, W26/R1 |
+| **The template runtime**: `cloneNode` from a `<template>`, the sibling walk, per-hole writes | `_VirtualDom_render` and the fact appliers, ~500 lines | **JS** | reads batched before writes (R26 §5.5: 1 139× otherwise) | ~1.7 kB brotli measured as a prototype (R29 §12.1); see §2.6 |
+| **The per-hole check** | `_VirtualDom_diff*`, ~450 lines | **compiler-emitted JS** | `===` on an immutable value means "deeply unchanged" — **this is W27's promise, cashed** | emitted per hole |
+| **The keyed list hole** | `_VirtualDom_diffKeyedChildren` | **JS** reconciler + **compiler** call site | a reordered list reuses the right DOM subtree (W33) | ~160 lines JS (`udomdiff`-shaped) |
+| **The fallback tree path** | the whole virtual DOM | **undecided — W29** | correctness where the recogniser cannot prove the shape | §2.3, unmeasured |
+| **Event registration and dispatch** | `makeCallback`, `applyEvents`, ~107 lines | **JS** + a `sync` beni closure | `preventDefault`/`stopPropagation` work (W8) | ~90 lines JS |
+| **XSS sanitisers** | `VirtualDom.js:274-333`, ~60 lines | **JS** (four regexes) | a `view` cannot inject script — a rule-7 guarantee, and R24 §6.3 says there is no cheaper way | ~60 lines JS |
+| **The element and attribute vocabulary** | none — Elm's is `elm/html` | **beni**, in the platform package | an unknown attribute is `unbound_variable` with "did you mean" (W37) | a few hundred lines of beni declarations |
+| **The fiber kernel and scheduler** | `Scheduler.js`, 195 lines with no yield at all | **JS**, platform-neutral, the browser its first host | structured lifetimes, prompt cancellation, a page that keeps breathing | ~1 260 lines JS (r21 §0.4's estimate) |
+| **The browser scheduler slot** | none | **JS** | input p90 ≈ the slice (R26 §3.3) | ~30 lines JS (W3) |
+| **The command runner**: `Dict Key (Fiber ())`, four policies, key paths | `elm/http`'s effect manager, which only kernel code may write | **beni** | keyed cancellation as ordinary library code | ~80 lines beni |
+| **Subscriptions**: the declared set, the diff, a scoped fiber per key | `Browser/Events.elm`'s three-way `Dict.merge` | **beni** over a JS registration primitive | a listener nobody wants stops, unwritten (W6) | ~80 lines beni, ~30 JS |
+| **Navigation** | `_Browser_application`'s link guard and `popstate` | **JS** for interception, **beni** for the capability record | a single-page app cannot lose a click | ~70 lines JS |
+| **`Browser.Dom`** — focus, viewport, `getElement` | `_Browser_withNode`, an rAF before every read | **JS** foreigns + W28's after-render point | a read sees the tree the program just described | ~90 lines JS |
+| **Interop** — ports | `Platform.js:332-471` | **beni** codec, generated; **JS** transport | a malformed payload is a `Result`, not a crash | B3's, already specified |
+| **Defect teardown + screen** | none — Elm wedges silently | **JS** flag + `AbortController`, **beni** report | nothing runs on state nobody can vouch for (W2) | ~40 lines JS |
 
-**How much JavaScript the wall has to hold.** Elm's is ~3–4 k lines. The column above adds up to
-roughly **2 000 lines of JavaScript** (of which the fiber kernel is 1 260 and is not browser-specific)
-plus **~800 lines of beni**. That is the ambition stated as a number; W11 is the measurement that
-tests it.
+**What moved.** Revision 1 had four virtual-DOM rows totalling ~1 000 lines, of which ~550 were to be
+written in beni (node construction and the diff), and it called that *"the plan's most load-bearing
+feasibility claim"*. All four are gone. What replaces them is a **compiler pass** plus a **small
+JavaScript runtime**, and the beni side of the renderer shrinks to the element vocabulary — which is
+declarations, not algorithm. The one thing that got *harder* is the fallback (W29), and it is the one
+thing that is not designed.
 
-### 2.3 Can the diff really be written in beni? — honestly
+### 2.3 What the compiler emits, and what the runtime behind the wall does
 
-*Depends on: **W10**. This is the plan's most load-bearing feasibility claim.*
+*Depends on: **W26**, **W29**, **W37**. This replaces revision 1's "can the diff really be written in
+beni?", which was answering a question that no longer exists.*
 
-R24 §6.4 is the evidence. Elm's diff leans on four things, and beni has two of them.
+**The seam.** JSX desugars in `bir/Lower.zig` to ordinary saturated calls —
+`Html.div [ Html.class "x" ] [ kid ]` — so BIR contains no markup and every existing pass works
+unchanged (R28 §8.1). A **later, `--release`-gated pass recognises that call shape structurally** and
+replaces it with a template and holes. Recognising rather than lowering separately is what makes the
+plain-call form get the same treatment, which is rule 7's answer to "two ways to write the same
+thing" (R28 §10 objection 4). Leptos proves the predicate is structural rather than syntactic: its
+default strategy is an `is_inert_element` walk that collapses any subtree with no components, blocks
+or special attributes into one static string.
 
-- **A flat array of patch records built by mutation, each carrying a traversal index.** beni can
-  build a `List Patch` functionally instead; the JS patcher walks it. Cost: one allocation per patch
-  and one crossing per patch instead of one array. Fine.
-- **`__descendantsCount` maintained at construction**, which lets the patcher skip whole subtrees of
-  real DOM. Trivially expressible as a field on a beni node; it is computed at construction anyway.
-- **A reference-equality short-circuit: `if (x === y) return;`** — which makes an unchanged subtree
-  free whenever the view function happened to share it. **beni has no reference equality.** `==` is a
-  structural, derived `eq`, which on a big tree is O(n) and therefore worse than the diff it is
-  trying to avoid. The honest options are: give it up (the diff is then always proportional to the
-  view, which is what it is anyway for a view that allocates a fresh tree), or bless a platform
-  `foreign refEq : a, a -> Bool` — which is the same reference-identity promise W4 says `lazy`
-  needs, arriving by a different door.
-- **A structural comparison of two event decoders** (`_Json_equality`), so an inline decoder in a
-  view does not cause a listener to be re-added. beni cannot compare two closures at all. **But Elm's
-  own mechanism does not need it**: the listener registered with the DOM is a *stable* JS callback
-  whose handler lives in a mutable field, so a fresh handler every frame causes **zero**
-  add/remove pairs, and only a change of handler *variant* re-registers, because the variant decides
-  the `passive` flag (R24 §6.6). So beni adopts the same design and drops the decoder comparison
-  entirely — provided the node representation carries the handler's variant as **data** beside the
-  closure (`Normal` / `MayStopPropagation` / `MayPreventDefault` / `Custom`).
+**What the pass emits, for one row of a table** (R29 §7.1's `p2-tpl`, which is the measured shape):
 
-**Verdict: feasible, with one named loss** (the shared-subtree short-circuit) that W4's answer can
-buy back. What is *not* known is whether a diff written in beni is fast enough on a realistic tree,
-because **nobody has measured a diff on a realistic tree at all** — R24 §12 says so explicitly, and
-its only timing is 2 940 ns for a synchronous render of a three-node view.
+```js
+// 1. the static markup, once per template, hoisted and deduplicated on markup alone
+const ROW_TPL = document.createElement("template");
+ROW_TPL.innerHTML = '<tr><td class="col-md-1"> </td>…</tr>';
+const ROW_PROTO = ROW_TPL.content.firstChild;
+
+// 2. the mount: one native subtree clone, then a compile-time sibling walk to each hole
+function makeRow(row, selected) {
+  const el = ROW_PROTO.cloneNode(true);
+  const idT = el.firstChild.firstChild;                        // hole path [0,0]
+  const lbT = el.firstChild.nextSibling.firstChild.firstChild; // hole path [1,0,0]
+  idT.nodeValue = row.id;  lbT.nodeValue = row.label;
+  return { el, row, sel: row.id === selected, idT, lbT };
+}
+
+// 3. the update: ONE reference comparison per hole. `row === inst.row` IS the strategy.
+function updateRow(inst, row, selected) {
+  if (inst.row !== row) {
+    if (inst.row.label !== row.label) inst.lbT.nodeValue = row.label;
+    inst.row = row;
+  }
+  const sel = row.id === selected;
+  if (inst.sel !== sel) { inst.el.className = sel ? "danger" : ""; inst.sel = sel; }
+}
+```
+
+**Five properties of that shape, each with its evidence.**
+
+1. **Template cloning beats every other way of building markup.** Building 1 000 rows into a detached
+   `<tbody>`: `cloneNode` from a `<template>` **2 653 µs**, `createElement` chains 3 822,
+   `innerHTML` of the whole body 4 620, a virtual DOM's create path 4 658 (R29 §11.4). 1.44× over
+   `createElement` and 1.76× over the vdom. `innerHTML` being slowest is worth recording, because it
+   is the opposite of most people's intuition.
+2. **Static attributes cost nothing at run time**, because they are baked into the template string.
+   Solid's instrumented 1 000-row mount shows `setAttribute: 0` and `createTextNode: 0` (R27 §6.2).
+3. **The per-hole check is ~1 ns in a tight loop over dense arrays and ~68 ns per row in a real
+   renderer** that iterates a `Map` and touches three fields of an instance object (R27 §5.5,
+   R29 §7.4). **Use 68 ns, not 1 ns, when setting a budget** (W36) — and note that a renderer keeping
+   its instances in a dense array parallel to the model would be nearer the floor.
+4. **An unchanged row costs one pointer compare and zero allocations.** That is the whole of W27's
+   identity promise, cashed. It is also why a compiled template retains **189 bytes of JavaScript
+   heap per row against a signal graph's 977 and a virtual DOM's 790–859** (R29 §9.1).
+5. **The `moved` flag means the keyed reconciler is not even entered when nothing moved**, which is
+   the common case for a selection change or a label edit (R29 §7.1).
+
+**The keyed list hole.** `Keyed msg` (W33) compiles to a `key → instance` map plus an array
+reconciler — R29 used `reconcileArrays` from `dom-expressions`, itself WebReflection's `udomdiff`,
+with the `$$SLOT` ownership tags dropped because a whole-program compiler assigns every node exactly
+one owning slot (R27 §6.11). **So beni and Solid use the same array reconciler**, and any difference
+between them is not the reconciler. Do **not** copy Elm's keyed diff: it is a single forward pass with
+one element of lookahead, so "swap rows 1 and 998" falls to its `break` path (R24 §6.5).
+
+**Events, and the one rule that is not obvious.** Delegation is a single property write plus one
+`delegateEvents` call for the whole program: Solid's instrumented mount of 1 000 rows shows
+**`addEventListener: 1`** for a thousand handlers (R27 §6.2). beni can always take Solid's
+fast path, because Solid only falls back to its runtime helper when the handler is not a resolvable
+function and beni always knows. **And the node representation must carry the handler's *variant* as
+data beside the closure** — `Normal` / `MayStopPropagation` / `MayPreventDefault` / `Custom` — because
+the variant decides the listener's `passive` flag (R24 §6.6, W34). beni cannot compare two closures
+for equality, so Elm's design (a *stable* JS callback whose handler lives in a mutable field, giving
+zero add/remove pairs for a fresh closure each frame) is not an optimisation for beni; it is the only
+workable design.
+
+#### The fallback path, and why it is not designed here
+
+**This is W29 and it is open.** The shape above assumes the recogniser can see the whole path from a
+root template to every hole. It can when `view` is one literal expression. It cannot when an
+`Html msg` value escapes — and §1.1's own view does that three times: `{viewStatus model}` is a
+helper's result in a hole, `List.map hits (\hit -> … viewHit model hit)` puts `Html msg` values
+through a list, and a component's `children` field holds one. Add recursion — a tree widget — which
+cannot be inlined at all.
+
+Three shapes are on the table, and **[`plans/browser-decisions.md`](browser-decisions.md) W29 states
+them and §5 risk 1 names the experiment (X1) that chooses between them**: inline everything; make a
+mounted template instance a real `Html msg` value at the seam; or keep a small tree-and-diff as the
+fallback for subtrees the recogniser cannot prove.
+
+**What the plan commits to regardless of the answer**, because all three need it:
+
+- **`backend.md` §11 must define the fallback before it defines the fast path**, so that "what
+  happens when the recogniser fails" is a specified behaviour rather than a bug found later.
+- **The pass must be able to report what it did.** A view that is fast until someone extracts a
+  helper, with nothing saying so, is a silent cliff. A `dump` stage or a `--release` report naming
+  the holes that fell back is the mitigation, and it is cheap.
+- **The template id must be derived from the module index and the instruction index, never from a
+  counter shared across workers.** That is the one place a template-lowering implementer can break
+  rule 5, and it belongs in the spec (R28 §9.3). Dioxus needed a compile-time content hash for the
+  same problem arriving by another door.
+- **Development output must not move.** The `--release` slice's proof was *"development output did
+  not move by one byte"*; a `--release`-gated template pass can make the same claim, and the `emit/`
+  corpus is what makes it a test.
 
 ### 2.4 The render loop contract
 
-*Depends on: **W5**.*
+*Depends on: **W28**.*
 
 1. **One render per frame.** N messages between frames cost N model writes and one
    `requestAnimationFrame`. Measured in Elm: five messages in one synchronous loop → one DOM update,
-   on the next frame (R24 §6.9).
+   on the next frame (R24 §6.9). **And frame batching is worth more to a template renderer than it is
+   to Solid**, not less: Solid renders once per microtask flush and gets away with it because its
+   graph already skips unaffected work, whereas a top-down re-run would duplicate the whole view pass
+   (R27 §3.6).
 2. **An explicit "render now",** for the case Elm documents: a `<input type="text">` holds its own
-   state, and a fast typist outruns the frame. Elm reaches this by an unrelated-looking API choice —
-   `// stopPropagation implies isSync` (R24 §6.6) — and beni decides the two separately.
+   state and a fast typist outruns the frame. Elm reaches this by an unrelated-looking API choice —
+   `// stopPropagation implies isSync` — and beni decides the two separately.
 3. **One after-render suspension point.** `Browser.afterRender ()` parks until the pending view has
    been applied, so `afterRender (); Dom.focus "search"` is the sequencing written down instead of
-   hidden. Better than Elm in one way: Elm's `_Browser_withNode` costs a frame *unconditionally*,
-   even when the node has existed for minutes (R24 §8.2), where `afterRender` can return immediately
-   when nothing is pending.
-4. **The patch pass batches reads before writes**, and nothing in it may suspend. R26 §5.4: a rAF
-   callback that hopped one macrotask resumed 10.1 ms later and its write landed in the *next*
-   frame. R26 §5.5: interleaved read/write over 3 000 nodes cost **2 846 ms against 2.5 ms** batched.
+   hidden. Better than Elm in one way: `_Browser_withNode` costs a frame *unconditionally*, even when
+   the node has existed for minutes, where `afterRender` can return immediately when nothing is
+   pending.
+4. **The hole pass batches reads before writes**, and nothing in it may suspend. R26 §5.4: a rAF
+   callback that hopped one macrotask resumed 10.1 ms later and its write landed in the *next* frame.
+   R26 §5.5: interleaved read/write over 3 000 nodes cost **2 846 ms against 2.5 ms** batched.
 5. **The frame budget is real.** R26 §5.6, headless Chrome: 4.7 ms of work per frame is free, 18.6 ms
-   costs a frame, 55.8 ms costs four. That is the measured basis for W3's ~5 ms slice ceiling. (No
-   display, no vsync, so frame *jitter* is not represented — R26 §1.4.)
+   costs a frame, 55.8 ms costs four. (No display, no vsync, so frame *jitter* is not represented.)
+6. **A published change-detection budget: 1 ms at 60 Hz**, from "`update` returned" to "the DOM is
+   consistent with the model", excluding layout and paint (W36). Every strategy R29 measured except
+   the plain virtual DOM meets it at 1 000 rows with an order of magnitude to spare.
 
 ### 2.5 One obligation the reports have separately and nobody joined
 
-*Depends on: **W1**. This is a design obligation, not a question.*
+*Depends on: **W25**. This is a design obligation, not a question. Unchanged from revision 1.*
 
 `Send msg` is `sync (msg -> ())` and re-enters the dispatcher synchronously. So a fiber's `send`
 calls `update`, which may return a command that spawns a fiber, which may send again — **inside the
 first send**. Elm has exactly this hazard and guards it with a queued dispatch and a nineteen-line
 comment naming three issue numbers (R24 §2.4), and R24 says in terms that *"beni's fiber runtime has
 the same class of problem"*. It is the same class as the re-entrant interrupt the effects spike
-already owns (`plans/effects-spike.md` S6, r21 §0.3 item 1). **The dispatcher needs a drain flag or a
-queue, specified before it is written, with a fixture.**
+already owns. **The dispatcher needs a drain flag or a queue, specified before it is written, with a
+fixture.**
 
-### 2.6 Interop, navigation and the defect screen, in one paragraph each
+### 2.6 The size budget, re-derived
+
+*Depends on: **W11**. Revision 1's figure assumed a virtual DOM and is now an estimate of the wrong
+thing.*
+
+**What revision 1 said.** R24 §11.4 estimated a beni counter at **35–50 kB raw**, against Elm's
+109 530 B raw / 22 723 brotli, and said plainly it was *"an estimate from the column above, not a
+measurement"*. That column was a byte attribution of an `--optimize` Elm counter in which the virtual
+DOM is **29 782 B, 27.2 % of the whole** (R24 §11.3).
+
+**What changes.** The virtual DOM is gone, and R29 §12.1 measures what replaces it — with a large
+caveat attached. The template prototypes are **1 682–1 808 bytes brotli, minified**, against a signal
+runtime's 22 375 and ivi's 3 878. They are *not shipping renderers*: they contain no element or
+attribute vocabulary, no event system beyond one delegated `click` listener, no XSS sanitisation, no
+`requestAnimationFrame` batching, no subscriptions, no scheduler and no fiber runtime.
+
+**So the honest form of the budget is a decomposition, not a number:**
+
+| Layer | Estimate | Source and confidence |
+|---|---|---|
+| beni's runtime-free floor today | 2 147 B raw / **833 brotli** | measured (`backend.md` §9) |
+| the template runtime (clone, hole walk, per-hole writes, keyed reconciler) | **~1.7 kB brotli** | measured as a prototype, R29 §12.1 — a lower bound |
+| XSS sanitisers | ~60 lines | R24 §6.3: *"there is no cheaper way to get it"* |
+| events, delegation, the `passive` variant | ~90 lines JS | estimate, R24 §6.6's shape |
+| the animator and after-render phase | ~40 lines JS | estimate |
+| the element and attribute vocabulary | **unknown, and it is the big one** | it is beni declarations, so `Reach.zig` drops what a page does not use — which is exactly why Elm's per-file kernel DCE cannot (R24 §11.3) |
+| the fiber kernel and scheduler | ~1 260 lines JS | r21 §0.4's estimate; not browser-specific, and **not loaded by a page with no effects at all** |
+
+**The one claim worth making now**, because it is the difference the measurement actually supports:
+**a template renderer is ~1.7 kB brotli of machinery where a signal graph is ~22 kB**, and whatever
+else a platform adds, it adds to both (R29 §12.1). For comparison from Solid's own side: with its
+reactive core bundled in, `{template}` alone is **255 brotli bytes** and `{template, insert}` is
+**10 350** — *"one dynamic text hole costs 10 kB"*, because `insert` is the door to the reactive core
+(R27 §6.9). beni's version of that door is a compiler pass.
+
+**Two things the budget must not do.** It must not quote effects' ≤ 5 kB gzip figure, which covers
+the fiber kernel only (R25's F10, `plans/effects-decisions.md` B9). And it must not quote R29's
+prototype brotli figures as a platform target. **W11's number is set after slice R1 has a real
+emitter and B1 has a real platform**, and not before.
+
+### 2.7 Interop, navigation and the defect screen, in one paragraph each
 
 - **Interop** is `boundary.md` §3.1's ports, already specified and already better than Elm's: a codec
   generated from the declared type, a depth bound, and a decode failure **as a value** where Elm's is
-  `__Debug_crash` (R24 §0.2 item 8, §9.4). The distinction to keep in the spec: a bad payload is
-  malformed input from *outside* the wall, which is what a `Result` is for, and not a defect in A1's
-  sense. What is new is the *other* direction — a `foreign` that holds a beni closure and calls it
-  from a listener — which is W8 and a gap in `boundary.md` §4.
-- **Navigation** is a capability record (A7), not Elm's opaque `Key` phantom: `nav.pushUrl url`,
-  where `nav` came from the platform, which is the same unforgeability and is additionally testable
-  with a fake (R24 §7.3). Preserve Elm's asymmetry: `load` and `reload` take no capability, because a
-  full page load cannot desynchronise a router that is about to be destroyed. The link-click guard is
-  a browser fact and copies across unchanged: no modifier keys, primary button, no `target`, no
-  `download`, then `preventDefault` (R24 §7.1).
-- **The defect screen** is W2's (b)+(c): a `dead` flag the scheduler and every listener test, a
-  single `AbortController` that removes every listener the platform installed (R26 §6.3), the root
-  scope closed so finalisers run and requests abort, and — **in development builds only** — a report
-  written into the root. It is `plans/queue.md` row 54 (the crash reporter) with a browser half.
+  `__Debug_crash`. The distinction to keep: a bad payload is malformed input from *outside* the wall,
+  which is what a `Result` is for, and not a defect in A1's sense. What is new is the *other*
+  direction — a `foreign` that holds a beni closure and calls it from a listener — which is W8 and a
+  gap in `boundary.md` §4.
+- **Navigation** is a capability record (A7), not Elm's opaque `Key` phantom: `nav.pushUrl url`, which
+  is the same unforgeability and is additionally testable with a fake (R24 §7.3). Preserve Elm's
+  asymmetry: `load` and `reload` take no capability, because a full page load cannot desynchronise a
+  router that is about to be destroyed. The link-click guard copies across unchanged: no modifier
+  keys, primary button, no `target`, no `download`, then `preventDefault`.
+- **The defect screen** is W2's (b)+(c): a `dead` flag the scheduler and every listener test, a single
+  `AbortController` that removes every listener the platform installed, the root scope closed so
+  finalisers run and requests abort, and — **in development builds only** — a report written into the
+  root. Solid does the first half and not the second, and its own issue #3338 comment says why that
+  is a problem (R27 §9.2). It is `plans/queue.md` row 54 with a browser half.
 
 ---
 
-## 3. Order of work — the slices
+## 3. Order of work — the tracks and the slices
 
-Each slice: goal · what it proves · its black-box test kind · what it needs from the effects spike
-(`plans/effects-spike.md`'s S0…) · exit criterion. **Three of them and the whole output track need
-nothing from effects at all**, which is the single most useful fact in this section.
+Each slice: goal · what it proves · its black-box test kind · what it needs from the effects spike ·
+exit criterion.
+
+### What needs effects, and what does not — the most useful fact in this document
+
+**Today nothing in beni can suspend.** There are no fibers, no effects, no `sync` keyword. So a TEA
+loop with no commands and no subscriptions is an ordinary total program, `sync` is vacuously true of
+every function in it, and **the entire language track, the entire rendering track, the core item and
+the first two browser slices can be built and tested with no effects work at all.**
+
+| Track | Needs from effects |
+|---|---|
+| **L** — JSX: parser, formatter, desugar, typed holes, the identity promise | **none** |
+| **R** — templates: the recogniser, the keyed list hole, the field analysis | **none** |
+| **C** — an indexable sequence in `core/` | **none** |
+| **X** — the three experiments | **none** (they are read-only scratchpad work) |
+| **O** — output: the bundle, sibling minification, source maps | **none** |
+| **B0, B1** — the browser harness and a static render | **none** |
+| **B2′, B3** — the renderer in a page, the TEA loop | **none today**; **S2 + S3** (the two bits, then `sync`) once anything can suspend, because that is when the `sync` handler rule stops being vacuous |
+| **B4 onward** — the fiber kernel, commands, subscriptions, the defect screen | **S4–S11** |
+
+**The one consequence to plan around**: the `sync` keyword does not parse yet, so L and R work is
+written without it and the annotations gain it when S3 lands. That is a mechanical edit across the
+platform's signatures, and it is the only thing the ordering costs.
+
+### The language track — JSX *(needs nothing from effects)*
+
+| # | Slice | Depends on |
+|---|---|---|
+| **L1** | JSX as pure sugar: parser, formatter, desugar, and a render-to-string platform | W30, W31, W32, W38 |
+| **L2** | Typed child holes and the attribute vocabulary in the checker | L1, W33, W34, W37 |
+| **L3** | The identity promise, specified and pinned | W27 |
+
+**L1 — JSX as sugar.** *Spec first (rule 1): `language.md` §3's grammar, a new subsection beside
+*Evaluation order* carrying R28 §11.1's twenty rules, §9's formatting rules and §10's new codes
+appended never inserted; `frontend.md`'s new §9.*
+- *Goal.* `parseElement` on `op_lt` at operand start; quoted text children; a tag name resolved as an
+  ordinary name; attributes desugared to calls in the tag's namespace; `bir/Lower.zig` producing
+  **exactly the calls the plain form produces**. Plus a **render-to-string platform**, which is a
+  second implementation of the markup interface and is what lets `tests/corpus/run/` execute a view
+  under Node where there is no DOM.
+- *Cost.* ≈1 300–1 900 lines of Zig, of which **0–30 are in the lexer** and 80–150 in the checker
+  (R28 §9.1). One new token (`...`) or a different spelling for spread; two parser-level joins.
+  **No lexer mode**, which is what keeps the >250k LOC/s budget safe by construction (R28 §9.2), and
+  **no change to the interface hash or the M4 cache format** beyond a new token enum value, which the
+  compiler-build-id key already invalidates (R28 §9.3).
+- *Test kind.* `fmt/` for the formatter (idempotence, attribute break-all, closing-tag alignment);
+  `check/bad/` for `unclosed_element`, `mismatched_closing_tag`, `element_as_argument`,
+  `duplicate_attribute`; **`emit/` for rule 19**; `run/` for the rendered string.
+- *Exit.* **Three things, and the first is the whole point.** (1) An `emit/Jsx*.js` golden is
+  **byte-identical** to the `emit/` golden of the same view written as `Html.div [] []` — that is what
+  makes "two ways to write the same thing" a spelling rather than a second language. (2) §1.1's
+  `view`, `viewStatus` and `viewHit` render to the expected string in a `run/` fixture under Node.
+  (3) `zig build bench` shows no regression on a markup-free corpus, and a markup-heavy corpus is
+  added so the question can be asked at all — R28 §15 records that nobody has measured one because
+  none exists.
+
+**L2 — typed child holes and the vocabulary.**
+- *Goal.* `checker.md` §6.1 gains one obligation — `renderable(var, region)` beside `equatable`,
+  `interpolatable`, `tuple_index` and the method obligation — with its discharge arm in §6.4 and
+  `child_not_renderable`'s message in §8. The accepted hole types are `String`, `Int`, `Float`,
+  `Bool`, `Char`, `Html msg`, `Maybe (Html msg)`, `List (Html msg)`, `Keyed msg` (R28 §4.4). The
+  element and attribute namespace is a platform package's `pub` declarations (W37).
+- *What it proves.* That **no `Html.text` wrapper is ever written** and that an unknown attribute is
+  `unbound_variable` with "did you mean" — which is better than any of the prior art, because
+  Leptos's and Dioxus's unknown-attribute error is whatever rustc says about a missing method with
+  the view type spliced in (R28 §2.4).
+- *Rule 7.* The closed hole set is a restriction and it buys a guarantee: every hole has a known
+  update strategy, so nothing renders through a generic `toString` the release optimiser is free to
+  change. The escape hatch never closes — `Html.text (myRender x)` is always available.
+- *Exit.* `child_not_renderable` names the type and the accepted shapes; the typeahead compiles with
+  no wrappers; a `check/bad` fixture per code.
+
+**L3 — the identity promise, specified and pinned.** *This is the slice that makes W26 sound.*
+- *Goal.* One paragraph in `language.md` §6: **an update preserves the identity of every field it does
+  not name, and no optimiser pass may break it.**
+- *How a black-box test can possibly assert it*, since beni has no reference equality: **two ways,
+  and both are needed.** (1) `emit/` goldens pinning the spread shape — `({ ...p, x: … })` — under
+  **both** the development and the `--release` build, because `--release` is where an optimiser would
+  break it and the corpus already builds every `run/` program a second time under the flag. (2) A
+  test-only `foreign refEq : a, a -> Bool` in the **render-to-string platform** (rule 6 permits it;
+  only platforms may write `foreign`), so a `run/` fixture can assert
+  `refEq model.rows (update (Select 3) model).rows` directly. Without (2) the promise is pinned by
+  shape and not by behaviour.
+- *Exit.* Both fixtures fail before the guarantee is written and pass after; a deliberately-broken
+  optimiser pass makes (2) fail.
+
+### The rendering track — compiled templates *(needs nothing from effects)*
+
+| # | Slice | Depends on |
+|---|---|---|
+| **R1** | The template recogniser and lowering — `backend.md` new §11 | W26, **W29 via X1**, W37 |
+| **R2** | The keyed list hole and the unkeyed warning | R1, W33 |
+| **R3** | The field-dependency analysis, and the selector pattern only if asked | R1, W42, **X3** |
+
+**R1 — the recogniser and the lowering.** *Spec first: `backend.md`'s new §11.*
+- *Goal.* A `--release`-gated pass over BIR that recognises the `Html.*` call shape, extracts a
+  template, computes hole paths, and emits the mount/update pair of §2.3. Plus the platform-declared
+  well-known runtime names (W37) and the fallback (W29).
+- *Cost.* ≈600–1 000 lines of Zig (R28 §9.1's lowering (ii) row), plus the JavaScript runtime.
+- *Test kind.* `emit/release/` for shape — it is already the golden directory for release-shape
+  claims. `run/` through the render-to-string platform for behaviour with no browser. `browser/` for
+  behaviour in a page, once B0 exists.
+- *Exit — and this is where the owner's requirement is met or not.* **A real compiler-emitted P2 is
+  re-measured against Solid 2 with R29's own harness.** The bar, from R29 §5.4's script medians at
+  1 000 rows under the benchmark's official throttling:
+
+  | operation | Solid 2.0.0-rc.9 | the P2 prototype | the emitter must |
+  |---|--:|--:|---|
+  | create 1k | 3.88 | 2.45 | beat Solid 2 |
+  | replace 1k | 9.17 | 7.00 | beat Solid 2 |
+  | update every 10th | 2.35 | 1.08 | beat Solid 2 |
+  | **select** | **2.60** | **1.71** | **beat Solid 2 — this is the discriminating operation** |
+  | swap | 1.29 | 0.88 | beat Solid 2 |
+  | remove | 0.83 | 0.51 | beat Solid 2 |
+  | create 10k | 50.98 | 30.06 | beat Solid 2 |
+  | append 1k | 4.55 | 2.70 | beat Solid 2 |
+  | clear | 18.04 | 16.76 | beat Solid 2 |
+
+  **Four rules for reading that table when the time comes.** (i) **Re-run Solid 2 in the same batch on
+  the same machine**; never compare against these stored numbers, which are machine- and
+  load-dependent. (ii) **Judge on the per-operation script medians, never on a geometric mean** — the
+  manager's re-run reproduced the ordering and the per-op medians to ~10 % but moved a
+  ratio-of-ratios headline by 27 %, and R29 now records a noise floor of about ±0.25 on that column.
+  (iii) Allow the emitter **up to 20 % worse than the hand-written prototype** and still call it a
+  pass; it is a different kind of artefact and R29 §14 says the gap is unmeasured. (iv) Also re-run
+  R29's **E1 static-heavy page** (2 000 elements, 50 holes, one changing), because the table benchmark's
+  list hole is the whole app and E1 is the shape almost every real screen has.
+
+**R2 — the keyed list hole.**
+- *Goal.* `Keyed msg` from `Html.keyed`, the `udomdiff`-shaped reconciler behind the wall, and the
+  default-on root-package warning `unkeyed_list_hole` with `Html.unkeyed` as the named escape.
+- *What it proves.* That a reordered list reuses the right DOM subtree, which is the one correctness
+  property the whole rendering strategy cannot get from reference equality alone.
+- *Test kind.* `browser/` — a list reordered with a focused input inside a row, asserting the focus
+  followed the row. Plus a `check/` fixture for the warning and one for the escape hatch silencing it.
+- *Exit.* The focus test passes keyed and fails unkeyed (which is the point of the warning); the
+  warning fires exactly once per unkeyed hole in the root package and never in a dependency.
+
+**R3 — the field-dependency analysis.** *Do not start this before **X3** has retired the Svelte-5
+question (§5 risk 5).*
+- *Goal.* Rung 3: a per-hole free-variable analysis over the view body — an ordinary use-def walk —
+  so a message that changes one model field visits only the holes that read it.
+- *What it is worth, honestly.* `select` 1.71 → 0.49 ms of script at 1 000 rows, of which **four
+  fifths is the field diff and one fifth is the separate selector pattern** (R29 §7.4). And on a page
+  where each hole has a field to itself it is *marginally slower* than R1 — 3.5 µs against 2.25 —
+  because a field-level diff is then exactly the comparisons the per-hole check already did (R29
+  §11.1). **The analysis pays where one field feeds many holes, and not otherwise.**
+- *What it costs the compiler is unmeasured*, because there is no implementation (R29 §14). It is a
+  walk over one function body against a >250k LOC/s budget, so the expectation is noise; that is an
+  expectation, not a measurement, and the slice must publish the number.
+- *Rung 4, the equality-keyed selector, is not part of this slice* and is W43. The option to refuse
+  is a platform `createSelector` the programmer writes: it is a performance annotation whose absence
+  is silent and whose presence says something the compiler can already see.
+
+### The core item *(needs nothing from effects)*
+
+**C1 — an indexable sequence.** *Depends on **W35**, and on **X2** first.*
+- *Goal.* `core/Array`: `get`, `set`, `push`, `slice`, `length` in O(1), and `List` interconversion.
+- *Why, and it is not speed.* R29 §10.3 measures beni's real compiled `update` for "swap rows 1 and
+  998" at **81× an array's at 1 000 rows and 64× at 10 000** — but the absolute worst case is 0.21 ms,
+  1.3 % of a frame. **The finding is that `get` does not exist**: a beni program cannot name element
+  *i* of a sequence in better than O(i), `List.length` is a fold (20.8 µs at 10 000 rows), and a
+  renderer must materialise an array to reconcile. Rule 6 means an ordinary developer cannot fill
+  that gap; rule 7 says the language is therefore withholding it.
+- *What X2 must settle first.* R29 §10.4 is explicit: its "array" column is a **copy-on-write
+  JavaScript array**, not a persistent vector, and a 32-way trie loses to a plain copy-on-write array
+  for `Append`, `Remove` and a full walk. **Nobody has measured which shape beni should ship.**
+- *Exit.* `backend.md` §4's parked *"pending M3c's benchmark of a vector trie"* is discharged with a
+  written answer; the corpus's `Swap`-shaped fixture is O(1) rather than three walks.
+
+### The experiments *(read-only, scratchpad, no compiler change, no answered W required)*
+
+| # | Experiment | Retires | Size |
+|---|---|---|---|
+| **X1** | **The fallback-tree experiment.** Take R29's `p2-tpl` harness and §1.1's typeahead. Write the view three ways — everything inline (best case); helpers returning `Html msg` into holes (idiomatic, which is what §1.1 actually is); one hole whose subtree the recogniser is told it may not see through (worst case). Hand-emit the three candidate shapes — full template; template with a mounted-instance seam; template with a diffed subtree. Measure per-message script on R29's E1 page and on the 1 000-row table. **Deliverable: the fraction of a realistic view that falls back under each option, and the per-message cost of the seam.** Fold in W39's unmeasured question at the same time: does a nested model's two small clones plus the extra hole indirection beat one wide clone in a real view? | **W29**, the design's one open technical question, and **W39** | one prototype page, comparable to one of R29's |
+| **X2** | **Which array.** Copy-on-write JS array against a 32-way persistent trie against today's cons list, on `get`, `set`, `push`, `append`, `filter`, `map` and a full walk, at 1 000 and 10 000 elements, with retained-heap-per-element beside each. Use R29's `listmicro.js` harness and beni's own compiled `update` where possible | **W35**'s second half | half a day |
+| **X3** | **Why Svelte 5 replaced compile-time invalidation with signals.** Primary sources: Svelte's own runes RFC and announcement, the `$$invalidate`/`$$dirty` code in a Svelte 4 tag, and whether the 31-bit-per-component ceiling is discussed in the migration notes. **If the reasons are Svelte-specific they do not transfer; if they are fundamental to compiler-derived dependency graphs they kill R3** | **W42**'s risk | half a day, read-only |
+
+### The browser track *(revised)*
 
 | # | Slice | Needs from effects | Depends on |
 |---|---|---|---|
 | **B0** | The browser test harness as a corpus kind | **none** | — |
 | **B1** | Platform package skeleton, `main` for a page, a static render | **none** | B0 |
-| **B2** | The virtual DOM and events with `sync` handlers | **S2 + S3** (the bits, then `sync`) | B1, W8, W10 |
-| **B3** | The TEA loop with a pure `update`, no effects | **S3** | B2, W1 |
+| **B2′** | The **template renderer** and events with `sync` handlers | **none today**; S2 + S3 once anything can suspend | B1, L1, R1, W8 |
+| **B3** | The TEA loop with a pure `update`, no effects | **none today**; S3 later | B2′, W25 |
 | **B4** | The fiber kernel hosted on `MessageChannel`, with the slice rule | **S4, S5, S6, S11** | B3, W3 |
-| **B5** | Commands as fibers with `send`, keyed scopes, cancellation | **S6, S7, S8, S10, S11** | B4, W1, W7 |
+| **B5** | Commands as fibers with `send`, keyed scopes, cancellation | **S6, S7, S8, S10, S11** | B4, W25, W7 |
 | **B6** | Subscriptions | **S8** | B5, W6 |
 | **B7** | Navigation | none beyond B5 | B5 |
 | **B8** | Interop (ports) | none | boundary milestone B3 |
 | **B9** | The defect screen and crash reporter | **S9** | B4, W2 |
 | **O1** | The single-file `--release` bundle | **none** | — |
 | **O2** | Minifying sibling JavaScript | **none** | O1, W14 |
-| **O3** | Source maps | **none** (but S4's lowering must not foreclose them) | — |
+| **O3** | Source maps | **none** (S4's lowering must not foreclose them) | — |
 
-**B0 — the browser test harness as a corpus kind.** *Needs no effects work, no platform and no
-compiler change.*
+**B0 — the browser test harness as a corpus kind.** *No effects work, no platform, no compiler change.*
 - *Goal.* A `tests/corpus/browser/` kind driven by one long-lived headless Chrome, a fresh `Target`
   per fixture, up to 8 in flight, with CDP virtual time on by default for any fixture that mentions
   time.
-- *What it proves.* That a browser kind is affordable, and that the determinism rule (rule 5)
-  survives it: a fixture's observable output is the page's text, its console stream and a
-  platform-defined exit global, all byte-comparable at `--jobs=1` and `--jobs=8`.
-- *Test kind.* It **is** the test kind. The bring-up fixture is a static ES-module page.
 - *Exit.* **≤ +2 % of `zig build test-blackbox`.** R26 §9.1 measured 10.0 ms per fixture at 8-way
-  parallelism, against a gate of 1 m 50 s for 668 fixtures; 125 browser fixtures cost 1.3 s, +1.2 %
-  (§9.4). Process reuse is worth **15×** (272 → 18.5 ms) and is the single decision that matters.
-- *What happens with no Chrome.* **Skip loudly, never silently pass.** The harness reports the kind
-  as skipped with the reason and a non-zero count in the summary; a green gate that silently ran zero
-  browser fixtures is precisely the failure CLAUDE.md rule 3 warns about. The DOM emulators are not
-  an answer: `jsdom` and `happy-dom` are 13–28× more expensive per fixture **and neither has
+  parallelism against a gate of 1 m 50 s for 668 fixtures; 125 browser fixtures cost 1.3 s, +1.2 %.
+  Process reuse is worth **15×** and is the single decision that matters.
+- *What happens with no Chrome.* **Skip loudly, never silently pass.** The DOM emulators are not an
+  answer: `jsdom` and `happy-dom` are 13–28× more expensive per fixture **and neither has
   `MessageChannel`** — the exact primitive W3 builds the scheduler on (R26 §9.2).
-- *Also settles.* W15 (virtual time: five chained 10-second timers, 50 000 ms, in **0.9 ms** of real
-  time — R26 §9.3), and W9's exit-code convention.
+- *Also settles.* W15 (virtual time: 50 000 ms of chained timers in 0.9 ms of real time) and W9's exit
+  convention.
 
-**B1 — the platform package, `main` for a page, and a static render.** *Needs no effects work.*
-- *Goal.* `platforms/browser/` with a `beni.json` declaring `program` and `runtime`
-  (`boundary.md` §5.2), a `Program` that is a mount descriptor, and a `view` with no events rendered
-  once into a root node.
-- *What it proves.* That the artifact shape, the `runtime` hand-off and `main : Program` need no
-  compiler change — exactly as R26 §8.1 found when it loaded a Node-built program in a browser by
-  replacing **one** file, the five-line `runtime.foreign.mjs` stub, and every other sibling needed no
-  change at all.
-- *Test kind.* `tests/corpus/browser/` — the page's text after mount.
-- *Exit.* The empty mounted page's floor measured, dev and `--release`, into `bench/size.mjs`. It is
-  the first half of W11; today's runtime-free floor is 2 147 B raw / 833 brotli.
+**B1 — the platform package, `main` for a page, a static render.** *No effects work.*
+- *Goal.* `platforms/browser/` with a `beni.json` declaring `program` and `runtime`, a `Program` that
+  is a mount descriptor, and a `view` with no events rendered once into a root node.
+- *What it proves.* That the artifact shape and the `runtime` hand-off need no compiler change —
+  exactly as R26 §8.1 found when it loaded a Node-built program in a browser by replacing **one** file.
+- *Exit.* The empty mounted page's floor measured, dev and `--release`, into `bench/size.mjs`. First
+  half of W11; today's runtime-free floor is 2 147 B raw / 833 brotli.
 
-**B2 — the virtual DOM and events.** *Needs **S2** (the two bits) and **S3** (`sync`).*
-- *Goal.* §2.2's renderer: node construction and the diff in beni, render/patch/events/XSS in
-  JavaScript, handlers `sync` and carrying a variant.
-- *What it proves.* W10's feasibility claim, and W8's registration rule end to end.
+**B2′ — the template renderer and events.** *Replaces revision 1's B2, which built a virtual DOM.*
+- *Goal.* §2.3's renderer in a page: the template runtime behind the wall, the compiler's mount/update
+  pair from R1, delegated events, handlers `sync` and carrying a variant, XSS sanitisers.
+- *What it proves.* W26 end to end, W8's registration rule, and R1's numbers in a real page rather
+  than in a prototype.
 - *Test kind.* `browser/` for behaviour (a keyed list reordered, a controlled input, a
-  `preventDefault`ed link that does **not** navigate) plus `emit/` for shape. A `check/bad/` fixture
-  for a handler that suspends — which is S3's diagnostic seen from the platform side.
+  `preventDefault`ed link that does **not** navigate) plus `emit/release/` for shape. A `check/bad/`
+  fixture for a handler that suspends, once `sync` exists.
 - *Exit.* The counter's bytes, dev and `--release`, against R24 §11.3's Elm decomposition (Elm's
-  virtual DOM is 29 782 B, 27.2 % of a counter); and a diff-cost number on a tree with hundreds of
-  nodes, which **nobody has ever measured** (R24 §12) so there is no figure to beat — record it as
-  the first.
+  virtual DOM alone is 29 782 B, 27.2 % of a counter); `addEventListener` called **once** for a
+  1 000-handler list, which is Solid's measured figure and is the delegation working (R27 §6.2).
 
-**B3 — the TEA loop with a pure `update`.** *Needs **S3**.*
-- *Goal.* `Browser.element` with `init`/`update`/`view`, no commands, no subscriptions; the model
-  cell, the dispatcher with §2.5's re-entrancy guard, and the animator.
-- *What it proves.* R24 §6.9's frame contract holds in beni: N messages between frames produce one
-  render.
-- *Test kind.* `browser/`, plus a DOM-free `run/` fixture under Node driving the same loop — R26
-  §9.1 measures a plain node process at 26 ms per fixture, which is where a fast inner loop lives.
-- *Exit.* Five messages in one turn produce one DOM mutation; the render-now path produces five.
+**B3 — the TEA loop with a pure `update`.** `Browser.element` with `init`/`update`/`view`, no commands,
+no subscriptions; the model cell, the dispatcher with §2.5's re-entrancy guard, and the animator.
+*Proves* R24 §6.9's frame contract holds in beni. *Test:* `browser/`, plus a DOM-free `run/` fixture
+under Node driving the same loop through the render-to-string platform. *Exit:* five messages in one
+turn produce one DOM mutation; the render-now path produces five.
 
-**B4 — the fiber kernel on `MessageChannel`.** *Needs **S4** (the lowering), **S5** (the kernel),
-**S6** (interruption), **S11** (the scheduler slot).*
-- *Goal.* The kernel of `plans/effects-spike.md` S5 hosted in the browser, with W3's rule: count 256
-  ops, read `Date.now()`, yield through `MessageChannel` on a 1 ms slice.
-- *What it proves.* **R26's numbers with a real beni fiber.** R26 could only use a 465 ns stand-in
-  work unit and says every op-count figure must be re-derived once a beni fiber exists (R26 §12 item
-  8). This is `plans/effects-spike.md` E-M10's browser half, closed.
-- *Test kind.* `bench/fiber/` plus a `browser/` fixture that runs a long computation while injected
-  input arrives.
-- *Exit.* Input p90 **≤ 2 ms** at the chosen slice (R26 §3.3 measured p90 = 1 ms at every slice
-  ≤ 0.5 ms and 2 ms at 1.95 ms); yield overhead **≤ 1.02×** against an interleaved no-yield baseline
-  (R26 §3.4); zero `longtask` entries. And the negative control: the microtask variant must reproduce
-  R26 §3.2's catastrophe, or the harness is not measuring what it thinks.
+**B4 — the fiber kernel on `MessageChannel`.** *Needs S4, S5, S6, S11.* W3's rule: count 256 ops, read
+`Date.now()`, yield through `MessageChannel` on a 1 ms slice. *Proves* **R26's numbers with a real
+beni fiber** — R26 could only use a 465 ns stand-in. *Exit:* input p90 **≤ 2 ms**; yield overhead
+**≤ 1.02×**; zero `longtask` entries. And the negative control: the microtask variant must reproduce
+R26 §3.2's catastrophe, or the harness is not measuring what it thinks.
 
-**B5 — commands as fibers, keyed scopes, cancellation.** *Needs **S6**, **S7**, **S8**, **S10**,
-**S11**.*
-- *Goal.* §1.1's `Cmd`: `perform`, `performKeyed`, `cancel`, the four policies of `boundary.md` §5.4,
-  key paths pushed by `Cmd.map` (W7), and `Send` as a plain `sync` function so a test can fake it
-  with one lambda.
-- *What it proves.* The whole architecture. It is R25 §12's first prototype experiment and R25 §9.6's
-  test in one.
-- *Test kind.* `run/` under Node with a fake clock and a fake `Api` — the typeahead of §1.2 — **and**
-  a `browser/` fixture that mounts, starts a request, unmounts, and asserts the listener was removed
-  and the request aborted from the closing of **one** scope.
-- *Exit.* One `search` call for two keystrokes inside the debounce window; the stale fiber's
-  finaliser observed to run; deterministic at `--jobs=1` and `--jobs=8`. And cancellation latency in
-  a page: R26 §6.1 measured the owned-continuation path at **50 ms against native `async` +
-  `AbortController`'s 301 ms** in Chrome, so **≤ 60 ms** is the bar (the same one E-M7 sets on Node).
+**B5 — commands as fibers, keyed scopes, cancellation.** *Needs S6, S7, S8, S10, S11.* §1.1's `Cmd`:
+`perform`, `performKeyed`, `cancel`, the four policies, key paths pushed by `Cmd.map` (W7). *Proves*
+the whole architecture. *Test:* `run/` under Node with a fake clock and a fake `Api` — §1.2's
+typeahead — **and** a `browser/` fixture that mounts, starts a request, unmounts, and asserts the
+listener was removed and the request aborted from the closing of **one** scope. *Exit:* one `search`
+call for two keystrokes inside the debounce window; cancellation latency **≤ 60 ms** in a page (R26
+§6.1 measured the owned-continuation path at 50 ms against native `async` + `AbortController`'s 301).
 
-**B6 — subscriptions.** *Needs **S8** (scopes and `bracket`).* `subscriptions : Model -> Sub Msg`,
-diffed by key after every message, one scoped fiber per live key. *Proves* W6's leak-freedom.
-*Test:* `browser/` — a subscription that the model stops wanting, with the listener's removal
-asserted. *Exit:* no `removeEventListener` appears in user code anywhere in the corpus.
+**B6–B9** are unchanged from revision 1: subscriptions (S8), navigation, ports, and the defect screen
+(S9). B9's exit is that after a defect no further fiber resumes, no listener fires, and the
+`AbortController` has fired — verified in the page.
 
-**B7 — navigation.** *Needs nothing beyond B5.* Link interception, `popstate`, and the capability
-record. *Proves* that A7's services express Elm's `Key` better than Elm does (R24 §7.3). *Test:*
-`browser/` — a click on an internal `<a>` that does not leave the page, and one on an external
-one that does. *Exit:* R24 §7.1's guard reproduced, modifier keys and `download` included.
-
-**B8 — interop.** *Needs nothing from effects.* `boundary.md` milestone B3's ports, in a page.
-*Proves* that the codec and the depth bound work identically on both platforms. *Test:* `browser/`
-with a hostile-payload fixture (queue row 53's suite, browser half).
-
-**B9 — the defect screen.** *Needs **S9** (the failure value and its renderer).* W2's (a)+(b)+(c).
-*Proves* that "fatal" exists in a page at all — R26 §7.1 measured that the browser gives you nothing
-to be fatal with. *Test:* `browser/bad/`-shaped: a program that defects, with the expected report and
-the expected exit global. *Exit:* after a defect, no further fiber resumes, no listener fires, and
-the `AbortController` has fired — verified in the page.
-
-### The output track, which is independent of all of the above
+### The output track, which is independent of everything above
 
 **O1 — the single-file `--release` bundle.** *No dependency on anything in this plan or in effects.*
 `backend.md` §10 already specifies it and states that *"with one entry point and no `lazy`, a release
-build is exactly one file"* — the degenerate case needs no colouring lattice, no merge pass, no
-threshold and none of §10's PENDING decisions. *Exit:* §10's acceptance criterion 1
-(`split_brotli_bytes == brotli_bytes`), every `emit/` and dev golden byte-identical, and R26 §8.2's
-**3.0× to `main` on 4G** reproduced. *Caveat to carry:* that figure is HTTP/1.1; over HTTP/2 the
-`modulepreload` alternative improves and the bundle row does not, so the true multiple is somewhere
-between 3.0× and the compression-only ratio (R26 §12 item 5).
+build is exactly one file"* — the degenerate case needs no colouring lattice, no merge pass and none
+of §10's PENDING decisions. *Exit:* §10's acceptance criterion 1 (`split_brotli_bytes ==
+brotli_bytes`), every `emit/` and dev golden byte-identical, and R26 §8.2's **3.0× to `main` on 4G**
+reproduced. *Caveat:* that figure is HTTP/1.1; over HTTP/2 the `modulepreload` alternative improves
+and the bundle row does not. R29 §12.2 sees the same shape from another angle: the nine-file
+prototypes pay **19.8 ms of resource time against 2.4** even on localhost.
 
-**O2 — minifying sibling JavaScript.** *Depends on **W14**, and it is the open one.* Sibling
-`.foreign.mjs` files are **71.6 %** of `Dictionaries`' raw bytes and whole-line comments are 42 % of
-the tree; bundling with minification takes it 6 380 → **3 269** brotli (R26 §8.3). **What
-minification must preserve, and whose job it is:** `boundary.md` §4's checks read the sibling's
-*source text* — check 2 counts its exports, check 3 classifies its identifiers lexically, check 4
-counts the parameter list **at the export** and §4 says in terms that the accepted export *forms* are
-part of the contract. So a minifier that rewrites `export function f(a, b)` into a different form
-breaks check 4. Two ways out: **(a) a platform-build job** — the platform ships its siblings already
-minified and the checks run against what it shipped, which keeps the compiler out of it entirely and
-is consistent with rule 6; or **(b) a compiler job** run *after* the four checks have passed, on the
-copy being written, never on the copy being read. (a) is simpler and is probably right; (b) is what
-gets `core/`'s own siblings, which the platform does not own. Either way it collides with W2: a
-minified `core/` makes a defect report point into text nobody can read.
+**O2 — minifying sibling JavaScript.** *Depends on **W14**.* Siblings are **71.6 %** of
+`Dictionaries`' raw bytes and whole-line comments are 42 % of the tree; bundling with minification
+takes it 6 380 → **3 269** brotli (R26 §8.3), and R29 §12.1 measures the same gap on a nine-file
+prototype at **2.8×** (10 592 as served against 3 758 minified). **What minification must preserve:**
+`boundary.md` §4's checks read the sibling's *source text* — check 4 counts the parameter list **at
+the export** and §4 says the accepted export forms are part of the contract — so a minifier that
+rewrites `export function f(a, b)` into a different form breaks check 4. Two ways out: **(a) a
+platform-build job**, the platform ships its siblings already minified and the checks run against
+what it shipped, which keeps the compiler out of it and is consistent with rule 6; or **(b) a
+compiler job** run *after* the four checks pass, on the copy being written, never on the copy being
+read. (a) is simpler; (b) is what gets `core/`'s own siblings, which the platform does not own. Either
+way it collides with W2: a minified `core/` makes a defect report point into text nobody can read.
 
 **O3 — source maps.** `--source-maps` is refused today and debugging emitted JavaScript in browser
-devtools without them is poor; the browser-first decision moves it up (`plans/queue.md`). Nothing in
-this plan blocks it, and `plans/effects-spike.md` §1.3 already requires that S4's lowering not
-foreclose it.
+devtools without them is poor. Nothing in this plan blocks it, and R1's template lowering must not
+foreclose them either — a hole's update code has a source position, and `backend.md` §11 should say
+so while it is being written rather than after.
 
 ---
 
 ## 4. What changes elsewhere
 
-Owed **once the owner answers**, one line each. Rule 2: no section is renumbered anywhere.
+Owed **once the owner answers**, one line each. Rule 2: no section is renumbered anywhere; every
+addition is a new section at the end of its document or a row in an existing table.
 
 | File | Section | Edit |
 |---|---|---|
-| `transparent-effects-proposal.md` | §6.6 | Replaced: the one-claim TEA page becomes a pointer to the browser platform spec and to §1 of this plan (W1) |
-| `transparent-effects-proposal.md` | §7.5 | The microtask tier is **withdrawn** for the browser; one tier, a macrotask every slice; the 64 becomes a slice in milliseconds in the scheduler slot (W3, R26 §3.2, §3.4) |
-| `boundary.md` | §5 | `main`'s browser meaning: a mount descriptor, keep-alive stated as Node-only, and what replaces the exit code (W9) |
-| `boundary.md` | §5.3 | The one-line "Browser: The Elm Architecture" entry gains the command shape, the renderer and the defect behaviour |
-| `boundary.md` | §5.4 | Rewritten: `perform`/`performKeyed` beside `run`/`keyed`; keys are `compare`-able, **not** "equatable"; `Cmd.map` pushes a key-path segment; the four policies kept; the "Open" paragraph closed (W1, W7) |
-| `boundary.md` | §4 | A rule for a `foreign` that receives a beni function and calls it back: that parameter must be declared `sync`, checked the way check 4 is checked — by counting what is declared, not by parsing JavaScript (W8) |
-| `boundary.md` | §7.1 | *"roughly 45 %"* corrected: **71.9–75.9 %** of a small Elm program is hand-written runtime, and the user's own code is under 1 % (R24 §11.2) |
-| `boundary.md` | §8 | Milestone **B4** (the browser platform) expands into B0–B9 above; B3 (ports) stays its prerequisite |
+| `language.md` | §0, §3 | `Element` joins `Atom`'s alternatives, with the `Element`/`TagName`/`Attr`/`Child` productions and *"an element is an operand, never a bare argument"* (W30, W31) |
+| `language.md` | §6 | **Two additions.** A new subsection beside *Evaluation order* carrying R28 §11.1's twenty rules plus attribute and child evaluation order (left to right in source order, which is §6's existing application row). And **the identity promise** (W27) |
+| `language.md` | §9 | Element formatting: attribute break-all, children, self-closing normalisation (W41), closing-tag alignment, and the never-join-lines rule applied |
+| `language.md` | §10 | New codes **appended, never inserted**: `unclosed_element`, `mismatched_closing_tag`, `child_not_renderable`, `duplicate_attribute`, `element_as_argument`, `component_children_arity`, `void_element_with_children`, `unkeyed_list_hole` (a warning, root package only) |
+| `frontend.md` | §1.2, §3.5 | `dump --stage=ast` gains the element node tags; the new `Ast.Node.Tag` members named |
+| `frontend.md` | **new §9** | *Elements in the front end*: the parser's element production, the two recovery cases, keyword attribute names, the quoted-name rule, and the statement that **no lexer mode is added** and why |
+| `checker.md` | §6.1, §6.4, §8 | The `renderable` obligation beside `equatable`/`interpolatable`/`tuple_index`, its discharge arm, and `child_not_renderable`'s message shape (L2) |
+| `backend.md` | **new §11** | *Compiled templates*: the recogniser and its predicate, the template and hole representation, hole kinds and their update code, the keyed list hole, **the fallback (W29)**, the template-id derivation rule (module index + instruction index, never a shared counter), the path-overflow rule if a packed path is used, source positions for O3, and the `--release` gate |
+| `backend.md` | §4 | The parked *"pending M3c's benchmark of a vector trie"* is discharged by R29 §10 and replaced with C1's answer (W35) |
 | `backend.md` | §10 | The degenerate single-file case gains R26 §8.2's latency number and moves ahead of chunking (W13) |
-| `backend.md` | §9 | If W14 is answered yes, a sentence on sibling minification and where it sits relative to `boundary.md` §4's checks |
-| `plans/effects-spike.md` | §1.3 | *"The Elm Architecture… out of scope"* reversed; it is the central question and `plans/browser-decisions.md` is its answer |
-| `plans/effects-spike.md` | §0.3, S5 | The kernel is platform-neutral with the **browser** as first host, not `platforms/node/` |
-| `plans/effects-spike.md` | S11, E-M10 | The browser half of the budget sweep is **done** (R26 §0.1, §3), except for a re-take with a real beni fiber, which becomes B4's exit criterion |
-| `plans/effects-decisions.md` | A1, A8, B1, C9 | A browser paragraph each: what "fatal" means in a page; `main`/keep-alive/exit in a page; the budget answer; `lazy`'s un-parking price |
-| `plans/effects-plan.md` | §2.5 | If W4 is (a), the one-bool budget for an argument-position demand becomes two |
-| `language.md` | §6 | Only if W4 is (a): a reference-identity guarantee, which constrains every future optimiser pass (R24 §6.8). And the `sync`-on-annotation spelling if W17 says so |
-| `checker.md` | §7 | Only if W4 is (a): a second `Interface.Term.Tag` value and obligation kind |
-| `fast-compiler.md` | §13 | The build order: O1 ahead of chunking; B0–B9 interleaved with the effects spike as §6 below proposes |
-| `plans/queue.md` | rows 51–55 | Row 54 (the crash reporter) acquires W2 and becomes the defect screen; 52–53 gain a browser column; the browser-first section gains B0–B9 |
+| `backend.md` | §9 | If W14 is yes, a sentence on sibling minification and where it sits relative to `boundary.md` §4's checks |
+| `boundary.md` | **new §9** | *The markup interface*: a platform may declare an element namespace and a fixed list of well-known runtime names for template lowering, checked the way §4's check 4 is checked — by counting what is declared, never by parsing JavaScript; a platform that declares none gets the plain-call lowering and a working program; the render-to-string platform is the second implementation (W37, W38) |
+| `boundary.md` | §4 | A rule for a `foreign` that receives a beni function and calls it back: that parameter must be declared `sync` (W8) |
+| `boundary.md` | §5, §5.3, §5.4 | `main`'s browser meaning (W9); the *"Browser: The Elm Architecture"* entry gains the command shape, the renderer and the defect behaviour; §5.4 rewritten — `perform`/`performKeyed`, keys `compare`-able not "equatable", `Cmd.map` pushes a key-path segment, the "Open" paragraph closed (W25, W7) |
+| `boundary.md` | §7.1 | *"roughly 45 %"* corrected: **71.9–75.9 %** of a small Elm program is hand-written runtime, the user's own code under 1 % |
+| `boundary.md` | §8 | Milestone **B4** expands into B0–B9; the L, R and C tracks are added as prerequisites that need no effects work |
+| `transparent-effects-proposal.md` | §6.6 | Replaced by a pointer to this plan's §1 (W25) |
+| `transparent-effects-proposal.md` | §7.5 | The microtask tier is **withdrawn**; one tier, a macrotask every slice; the 64 becomes a slice in milliseconds in the scheduler slot (W3) |
+| `plans/effects-spike.md` | §1.3, §0.3, S5, S11 | TEA out-of-scope reversed; the kernel platform-neutral with the browser first; E-M10's browser half done except for B4's re-take |
+| `plans/effects-decisions.md` | A1, A8, B1, **C9** | A browser paragraph each. **C9 changes from "parked" to "closed"** if W26 is (b)/(c): `lazy` has no job under compiled templates (W27) |
+| `plans/effects-plan.md` | §2.5 | The one-bool budget for an argument-position demand **stays one** under the recommended W27, because the identity promise is a language guarantee rather than a second demand. It becomes two only if W26 answers (a) |
+| `fast-compiler.md` | §13 | The build order: the L, R and C tracks need nothing from effects and can precede the spike; O1 ahead of chunking |
+| `plans/queue.md` | rows 51–55, the browser sections | Row 54 becomes the defect screen; 52–53 gain a browser column; the browser-first section gains the L/R/C/X tracks |
 
 ---
 
 ## 5. Risks and unknowns, ranked
 
-Each is carried from a report's own *could not determine*, with the cheapest experiment that retires
-it.
+Each is carried from a report's own *could not determine* or from a conflict between two, with the
+cheapest experiment that retires it.
 
-1. **No real beni fiber has ever been measured in a browser.** Every §3 and §4 figure in R26 comes
-   from a 40-line micro-kernel with a 465 ns stand-in work unit (R26 §12 item 8). Every op-count
-   number in W3's recommendation has to be re-derived. *Cheapest retirement:* B4, which is why B4's
-   exit criterion is "re-take R26's table".
-2. **The diff's cost on a realistic tree is unmeasured, by anyone.** R24 §12 says so; its only figure
-   is 2 940 ns for a synchronous render of a **three-node** view. The whole "write the diff in beni"
-   ambition rests on an unmeasured quantity. *Cheapest retirement:* a standalone prototype before
-   B2 — build a 500-node tree in beni and in hand-written JavaScript, diff both, compare. It needs no
-   compiler change and no platform.
-3. **Whether a 1 ms slice survives a real page.** Every R26 measurement is a blank page with one
-   fiber; a page with a patch pass, CSS animations and a compositor may not give the thread back at
-   the same cadence (R26 §12 item 9). *Cheapest retirement:* B5's typeahead fixture with the input
-   histogram switched on — R25 §12 experiment 5 asked for exactly this, with a live typeahead as the
-   load.
-4. **Safari is entirely unmeasured**, and `scheduler.postTask`/`yield` are not in WebKit (R26 §12
-   item 1). *Cheapest retirement:* run R26's `postsrv.mjs`/`xengine.mjs` POST-back harness — which
-   needs no devtools protocol, which is how the Firefox columns exist — on any machine with Safari.
-5. **Input latency is Chrome-only**; there is no Firefox input injection without WebDriver BiDi
-   (R26 §12 item 7). *Cheapest retirement:* the same harness plus a BiDi client, or accept it and
-   say so in the spec.
-6. **The loading numbers are HTTP/1.1.** Over HTTP/2 the `modulepreload` row improves and the bundle
-   row does not, so 3.0× is an upper bound on the *gap* (R26 §12 item 5). *Cheapest retirement:* one
-   HTTP/2 server in R26's `e8-load.mjs`; a morning's work, and it changes O1's justification only in
-   degree.
-7. **`isInputPending`'s 45× is one measurement on a contaminated machine** (R26 §4.2's overhead
-   column was taken at load 0.39–0.55 and says so). *Cheapest retirement:* B4, on a quiet machine.
-8. **Hydration was never tested against real server-rendered markup.** Elm's `virtualize` maps every
-   attribute to an `ATTR` fact and ignores anything that is not an element or text; whether that
-   produces a clean first diff is unknown (R24 §12). *Cheapest retirement:* none needed until W22 is
-   asked; the insurance is to keep "build a tree from existing DOM" separable in B2's design.
-9. **Clipboard and fullscreen activation gating** could not be measured headless (R26 §12 item 4), so
-   the platform must not make a claim about them.
-10. **Elm's keyed diff may have pathological cases** beyond its one-element lookahead; the `break`
-    path was never benchmarked (R24 §12). It matters only if beni copies the algorithm, which B2
-    would. *Cheapest retirement:* fold a reversal and a rotation-by-two into B2's diff benchmark.
+1. **Nobody knows what an `Html msg` is at run time, or what the fallback costs.** R28 recommends
+   desugaring to ordinary calls and recognising them structurally; R29's prototypes never build a
+   tree at all; neither addresses the seam, and §1.1's own view crosses it three times. **This is the
+   plan's one unanswered technical question and it gates `backend.md` §11.** *Retirement:* **X1**,
+   one prototype page, no compiler change, no answered W required. Until X1 runs, every number in §2
+   and §3 describes a program whose whole view is one template.
+2. **The prototypes are not a compiler.** R29 §14 says so in terms: they bound what an emitter could
+   reach rather than predict it, and the gap is unmeasured. They also ship no element vocabulary, no
+   event system beyond one delegated listener, no XSS sanitisation, no rAF batching and no runtime.
+   *Retirement:* **R1**'s exit criterion, with the 20 % tolerance §3 states, and B2′'s size
+   measurement. Nothing before then may quote a prototype figure as a platform figure.
+3. **One engine, one machine, headless, software rasterisation.** Every rendering number is Chrome
+   153 `--headless=new` on one Ryzen; totals are roughly 2× the published ones and all of the
+   difference is paint (R29 §1.5). Safari and Firefox are entirely unmeasured for rendering, and
+   `scheduler.postTask`/`yield` are not in WebKit at all. *Retirement:* R26's POST-back harness — which
+   needs no devtools protocol, which is how its Firefox columns exist — run on any machine with
+   Safari, plus R29's page set driven by WebDriver BiDi.
+4. **One headline in R29 did not reproduce.** The manager's re-run reproduces the ranking and the
+   per-operation script medians to ~10 %, and **not** the claim that the field-directed prototype
+   reaches hand-written vanilla's script cost — a geometric mean of ratios dominated by
+   sub-millisecond operations, with a noise floor of about ±0.25. *Retirement:* none needed; the rule
+   is procedural, and §3's R1 exit criterion states it: judge on per-operation medians, re-run every
+   subject in the same batch, never quote the ratio-of-ratios.
+5. **Why Svelte 5 replaced compile-time invalidation with signals is unknown**, and Svelte 3/4 shipped
+   R3's rung 3 at scale for six years before replacing it. If the reasons are fundamental to
+   compiler-derived dependency graphs they kill R3; if they are Svelte-specific they do not transfer.
+   R28 and R29 did not chase it. *Retirement:* **X3**, half a day of primary-source reading, **before
+   R3 is specified** — and note it does **not** gate R1, which is another reason the two rungs are
+   separate slices.
+6. **A wide model record falls off V8's fast object-clone cliff.** 29.9 ns at 17 fields, **222.6 ns at
+   18**, 986 ns at 64, and a real TEA `Model` has 20–40 fields (R27 §5.6). It is 0.0025 % of a frame,
+   so it is guidance rather than a defect — but nobody has measured whether a **nested** model's two
+   small clones plus the extra hole indirection actually beat one wide clone in a real view.
+   *Retirement:* fold it into **X1**, which is already building three view shapes.
+7. **`f a <b` is a legal comparison today, so an element may never be a bare application argument.**
+   This is forced rather than risky (R28 §3.4), and the residual risk is a *diagnostic* one: the
+   shapes argument position can still parse are a vanishingly small set, but `<-div>` will say *"`<-`
+   is only legal in a `let` binding"* rather than *"I expected a tag name"* unless the message
+   special-cases it (R28 §3.5). *Retirement:* a `check/bad` fixture per confusable spelling in L1.
+8. **No real beni fiber has ever been measured in a browser.** Every R26 scheduler figure comes from
+   a 40-line micro-kernel with a 465 ns stand-in work unit. *Retirement:* **B4**, whose exit criterion
+   is "re-take R26's table".
+9. **Whether a 1 ms slice survives a real page.** Every R26 measurement is a blank page with one
+   fiber; a page with a hole pass, CSS animations and a compositor may not give the thread back at
+   the same cadence. *Retirement:* B5's typeahead fixture with the input histogram switched on.
+10. **The compile-time cost of the field analysis is unmeasured**, because there is no implementation
+    (R29 §14). A walk over one function body against a >250k LOC/s budget should be noise; that is an
+    expectation. *Retirement:* R3 publishes the number, and `bench` gains a markup-heavy corpus in L1
+    so there is something to measure it on — R28 §15 records that none exists today.
+11. **Which array shape `core/` should ship** is unmeasured: a 32-way trie loses to a plain
+    copy-on-write array for `Append`, `Remove` and a full walk (R29 §10.4). *Retirement:* **X2**.
+12. **The loading numbers are HTTP/1.1.** Over HTTP/2 the `modulepreload` row improves and the bundle
+    row does not, so 3.0× is an upper bound on the *gap*. *Retirement:* one HTTP/2 server in R26's
+    `e8-load.mjs`; it changes O1's justification only in degree.
+13. **Hydration was never tested against real server-rendered markup**, and R27 §6.8 adds two costs
+    nobody had priced: Solid's hydration is **+1 439 brotli bytes, +28 %** over its CSR runtime, and
+    its `isHydrating` check is an unconditional early return at **every attribute write site**, so a
+    CSR-only app pays it forever. *Retirement:* none needed until W22 is asked; the insurance is to
+    keep the two builds separable in R1's design and to never put a hydration check on the write path.
+14. **Clipboard and fullscreen activation gating** could not be measured headless, so the platform
+    must not make a claim about them.
 
 ---
 
@@ -613,41 +1015,57 @@ recommendation; the owner decides.*
 
 | Phase | Work | Depends on | Why here |
 |---|---|---|---|
-| **0** | **O1 — the single-file `--release` bundle** | nothing | Unblocked by every open decision; on `master`, not a branch; the largest measured payoff per unit of work anywhere in this plan |
-| **0** | Answer `plans/browser-decisions.md` tier 1 (W1–W9) | — | Nothing below B2 can be specified without W1, W5 and W8 |
+| **0** | **O1 — the single-file `--release` bundle** | nothing | Unblocked by every open decision; lands on `master`; the largest measured payoff per unit of work anywhere in this plan |
+| **0** | **X1 — the fallback-tree experiment** | nothing | Retires the design's one open technical question, for about one prototype page of work, and it is docs/research so it does not compete for the one-builder-at-a-time constraint |
+| **0** | Answer `plans/browser-decisions.md` tier 1 | — | Nothing in L, R or B2′ can be specified without W26, W27, W29 and W30–W33 |
 | **0** | **B0 — the browser corpus kind** | Chrome | The asset every later browser slice needs; +1.2 % of the gate |
-| **0** | The diff prototype (risk 2) | nothing | Retires the plan's one unmeasured feasibility claim for a day's work |
+| **1** | **L1 — JSX as sugar**, with the render-to-string platform | W30–W32, W38 | The feature the owner asked for, at its smallest, with the `emit/` golden that makes it a spelling rather than a second language. It also builds the platform every later view test needs |
+| **1** | **X2, X3** | nothing | Half a day each; X2 gates C1 and X3 gates R3 |
 | **1** | **B1** — the platform skeleton and a static render | B0 | Proves the artifact shape needs no compiler change |
-| **1** | Effects **S0 + S1** — baselines, and the kernel probe | M4-3 (landed) | Still the riskiest unknown in the project: if compiled closure-CPS does not beat 82 ns/op, the whole lowering reopens, and eleven more slices should not be spent first |
-| **2** | Effects **S2 + S3** — the two bits, then `sync` | S1 | `sync` is what B2 and B3 need, and it is independently adoptable (`plans/effects-spike.md` §1.2 option (b)) |
-| **2** | **B2 + B3** — the renderer, events, the TEA loop | S3 | A working, effect-free beni UI. This is the first point at which someone can write an application |
-| **3** | Effects **S4–S11** — the lowering and the kernel | S3 | Unchanged from the effects plan, with S5 re-aimed at a platform-neutral kernel and S11's sweep taking R26's browser answer as its input |
-| **3** | **B4 + B5** — the kernel in a page, then commands | S11, S10 | B4 re-takes R26's numbers; B5 is the architecture proof and the typeahead fixture |
-| **4** | **B6 + B7 + B9**, effects **S12–S15** | B5, S11 | Subscriptions, navigation, the defect screen, T0/T1 and the spike's report |
-| **4** | **O2 + O3** — sibling minification, source maps | W14 | Both are size/debuggability, both wait for a decision rather than for work |
-| **5** | **M4-4, M4-5** (the daemon), **B8** (ports), chunking | — | The daemon is what makes the compiler fast to *use*; it has been overtaken by browser-first and should be said so out loud rather than left implicitly next. Queue row 55's two honest M4-3 misses live here |
+| **2** | **L3 + R1** — the identity promise, then the template recogniser | X1, L1, W26, W27 | L3 first, because R1 is unsound without it. R1 is where the owner's speed requirement is met or missed |
+| **2** | **L2 + R2 + C1** — typed holes, the keyed list hole, `core/Array` | R1, X2 | Everything a real view needs; none of it touches effects |
+| **2** | **B2′ + B3** — the renderer in a page, the TEA loop | R1, B1 | **The first point at which someone can write a beni application**, and it is reached with no effects work at all |
+| **3** | Effects **S0 + S1** — baselines, and the kernel probe | M4-3 (landed) | Still the riskiest unknown in the project: if compiled closure-CPS does not beat 82 ns/op the whole lowering reopens |
+| **3** | Effects **S2 + S3** — the two bits, then `sync` | S1 | Where `sync` stops being vacuous; the L and R signatures gain the keyword |
+| **4** | Effects **S4–S11**, then **B4 + B5** | S3 | The kernel in a page, then commands and the architecture proof |
+| **4** | **R3** — the field analysis | X3, R1 | Deliberately last in the rendering track: it is worth 0.15 of a geometric mean, it is *slower* on a page where each hole has its own field, and X3 might kill it |
+| **5** | **B6–B9**, effects **S12–S15**, **O2 + O3** | B5 | Subscriptions, navigation, ports, the defect screen; sibling minification and source maps |
+| **6** | **M4-4, M4-5** (the daemon), chunking | — | The daemon makes the compiler fast to *use*; it has been overtaken by browser-first and should be said so out loud |
 
-**The recommended first un-parked implementation slice: O1, the single-file `--release` bundle.**
-Four reasons, in order of weight.
+**The recommended first un-parked implementation slice: still O1, the single-file `--release`
+bundle** — and the argument is re-made from scratch rather than carried over, because everything else
+in the plan moved.
 
-1. **It is unblocked by every question on the decision sheet.** It needs no W answer, no effects
-   slice, no platform and no new corpus kind.
-2. **It has the largest measured payoff of anything in the plan**: 358 ms to `main` against 1 059 ms
-   on 4G, 1 156 against 3 437 on fast 3G — 3.0× both times (R26 §8.2) — for a change `backend.md`
-   §10 has already specified down to the acceptance criteria.
-3. **It makes every later browser measurement real.** W11's size budget, B1's floor and B2's counter
-   are all judged on what a browser actually downloads, and today that is thirteen files with
-   unminified comments in them.
-4. **It lands on `master`, not on a branch**, so it does not compete with the effects spike for the
-   one-builder-at-a-time constraint and it cannot be stranded by an adoption decision.
+1. **It is unblocked by every question on the decision sheet**, including the eleven new ones. It
+   needs no W answer, no effects slice, no platform, no new corpus kind, and no experiment.
+2. **Its payoff is the largest measured one in the plan and it got larger.** 358 ms to `main` against
+   1 059 ms on 4G, 3.0× (R26 §8.2), for a change `backend.md` §10 has already specified down to its
+   acceptance criteria — and R29 §12.2 now shows the same module-graph tax from another angle, 19.8 ms
+   of resource time against 2.4 even on localhost where there is no round trip worth the name.
+3. **It makes every later size measurement real.** W11's budget, B1's floor, B2′'s counter and §2.6's
+   whole decomposition are judged on what a browser actually downloads, and today that is thirteen
+   unminified files.
+4. **It lands on `master`, not on a branch**, so it does not compete with anything for the
+   one-builder-at-a-time constraint and it cannot be stranded by a decision.
 
-The runner-up is **B0**, and the honest argument for putting it first instead is rule 3: the harness
-is the asset, and a browser platform with no way to test it is the thing the project has repeatedly
-been burned by. The argument against is that B0 tests nothing until B1 exists, and B1 needs W1. Doing
-O1 first costs B0 nothing, because they touch different files.
+**What changed in the argument.** Revision 1's runner-up was B0. It is now **X1**, and the honest case
+for X1 going first instead is that O1 is a *known* win of known size while X1 is the thing standing
+between the project and a specification it cannot write. **The tie-breaker is that they do not
+compete**: X1 is scratchpad research with no repository output, so it can run beside O1 rather than
+instead of it, exactly as the three reports ran beside M4. Recommend both, with X1's deliverable due
+before `backend.md` §11 is drafted.
+
+**Why L1 is not first**, even though JSX is what the owner asked for. It needs a specification pass
+before a line of Zig (rule 1: `language.md` §3, §6, §9, §10 and `frontend.md`'s new §9), it needs
+W30, W31 and W32 answered, and it needs a render-to-string platform to satisfy rule 3 at all. That is
+a genuine week of docs plus three owner answers, and none of it is blocked by O1 running first. **If
+the owner would rather see the feature than the bundle, the honest reordering is: answer W30–W32,
+write the `language.md` and `frontend.md` sections, and start L1** — and O1 then slips rather than
+disappears, because they touch different files.
 
 **What should *not* be first: the effects spike.** Not because it is less valuable — S1's question is
-the riskiest in the project — but because it is a branch that runs for days, it needs the owner's
-remaining tier-A answers (A4, A9, A12–A16) before S0, and browser-first has just changed where its
-kernel lands (S5) and what its scheduler defaults to (S11). It should start when those are folded in,
-which is one docs pass away.
+the riskiest in the project — but because §3 has just established that the language track, the
+rendering track, `core/Array` and the first three browser slices need **nothing** from it. Effects
+gates commands, subscriptions and the defect screen, and nothing else. It should start when its
+remaining tier-A answers are in and browser-first has been folded into S5 and S11, which is one docs
+pass away.
