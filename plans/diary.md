@@ -1714,3 +1714,181 @@ Spec first, red tests second, code third — and the order paid, because writing
 - **Not run on Linux.** Everything here is darwin. The three gates are owed on
   the owner's NixOS machine, and the harness invariant is the part most likely
   to have something to say there.
+
+## 2026-09-22 00:48 CEST — schema readiness review and reference checkout
+
+**What I did**
+
+- Read report 32 revision 2, its predecessor and owner decisions, and cross-checked
+  the relevant language, frontend, checker, backend, boundary, static-dispatch,
+  incrementality, effects and browser contracts. This was a design review, not an
+  implementation session; existing compiler and test edits were left alone.
+- At the owner's request, ran `git submodule update --init --recursive --jobs 8`.
+  All nine reference submodules checked out their recorded commits. Read the pinned
+  Effect schema guide, its flip/projection implementation and arbitrary-generation
+  limitations after checkout.
+- Checked JSON numeric loss with Node: `9007199254740991.1` parses to the safe
+  integer `9007199254740991`; `1e400` parses to Infinity; NaN stringifies as null.
+  No compiler tests or schema performance measurements were run.
+
+**What I learned**
+
+- The owner model is settled, but report 32 is not implementation-ready. Unrestricted
+  flipping contradicts a fallible decoder plus an infallible encoder. `typeOnly`
+  also needs program-side representation information the proposed Schema does not
+  retain. Effect retains both sides and allows failure in either direction.
+- Generic selection by `a.schema` loses structural record aliases' schema identity,
+  cannot select two wire forms for the same program type, and needs a namespace
+  ownership rule. Generic convenience signatures also encounter the existing rule
+  that every constraint variable must occur in the annotated type.
+- Arbitrary wire keys cannot all become ordinary record field names; flattened
+  union records reject legitimate variants sharing a key at different types.
+  Recursive schemas with transformed fields need an encoded recursive type beyond
+  the identity example. Opaque schemas need an explicit account of their private
+  representation and constructor.
+- The proposed reader representation does not thread options/path/depth; the
+  erased Variant omits structural readers/writers needed by choice. Node loses
+  recursive targets, literal values and structured checks. Unconditionally
+  successful sampling cannot handle an always-false check. These need executable
+  library proofs, not just signatures that type-check.
+- Lowering is per-file and cannot inspect an imported conversion's type as claimed.
+  Schema/Json ownership must also avoid an import cycle. JSON precision must be
+  addressed before token text is lost, and total writing needs rules for values
+  admitted by Int/Float but refused by the reader or JSON.
+- Recommended next work: settle encoding failure, generic schema selection,
+  namespace ownership and wire-presence/union representation; prove a small
+  library prototype with adversarial cases; measure browser behavior; then update
+  normative contracts and define acceptance fixtures before production slices.
+
+## 2026-09-22 00:56 CEST — schema decisions: failure, composition and imports
+
+**What I did**
+
+- Recorded the owner's three accepted decisions in `plans/queue.md`: encoding may
+  fail with `Result`; generic schemas receive explicit schema arguments; multiple
+  schemas may live in one module, reachable through full qualification or explicit
+  exposure of the schema name.
+- Added a notice to report 32 marking conflicting revision-2 recommendations as
+  superseded. A full specification revision remains owed; no implementation changed.
+
+**What I learned**
+
+- A schema's imported name keeps its members qualified: exposing `User` does not
+  expose bare `Type` or `parse`. Ordinary import behavior matters to the owner;
+  these decisions do not request a general-purpose namespace feature.
+- Fallible encoding and explicit schema arguments resolve two central design
+  conflicts. Wire presence, arbitrary keys and union representations remain open.
+
+## 2026-09-22 00:58 CEST — schema presence follows Effect
+
+**What I did**
+
+- Recorded the owner's acceptance of Effect's separate optionality and nullability
+  model in the queue and report 32's supersession notice. Missing/null/value remain
+  distinct unless an explicit transformation merges them. No implementation changed.
+
+**What I learned**
+
+- The convenient default is composable presence and nullability, not an automatic
+  merge into `Nothing`. Beni's syntax and presence types still need specification;
+  following these semantics does not require adding JavaScript `undefined`.
+
+## 2026-09-22 01:00 CEST — encoded tagged unions preserve variants
+
+**What I did**
+
+- Recorded the owner's acceptance of custom unions for a tagged schema's encoded
+  side, superseding report 32's flattened-record recommendation. Recorded the
+  accepted encoded/program constructor paths in the queue and updated the report's
+  supersession notice. Documentation only; no implementation changed.
+
+**What I learned**
+
+- `Message.Encoded.Count` and `Message.Count` keep each side's payload types tied
+  to its variant while the codec preserves the declared JSON shape. Variants can
+  therefore share a wire key with different types without renaming that key.
+
+## 2026-09-22 01:01 CEST — effectful schema transformations accepted
+
+**What I did**
+
+- Recorded the owner's agreement to support effectful transformations, with a
+  synchronous first delivery permitted, in the queue and report 32's update notice.
+  No implementation changed.
+
+**What I learned**
+
+- Separating validation and enrichment is a usage recommendation, not a restriction.
+  Stored-function effect propagation, suspension and cancellation need investigation
+  before committing to the schema representation; the capability decision does not
+  itself resolve H4 or commission runtime implementation.
+
+## 2026-09-22 01:04 CEST — schema field names and external keys
+
+**What I did**
+
+- Recorded the owner's agreement that `Type` and `Encoded` retain declared Beni
+  field names while `as` maps external keys. Updated the queue and report 32's
+  supersession notice. Documentation only; no implementation changed.
+
+**What I learned**
+
+- Arbitrary external keys need no quoted-field language feature: `userId` remains
+  the typed field on both sides even when the JSON key is `user-id`. This rule
+  applies to all renames, not just keys that are invalid Beni identifiers.
+
+## 2026-09-22 01:03 CEST — queue rows 57 and 59: a thunk where a value belonged, and a bound with a number behind it
+
+**What I did**
+
+- **Row 57**, the last exit-0 path to a runtime exception in the queue.
+  `pub blank : List a where a.eq : a, a -> Bool` / `blank = []` built with exit
+  0 and threw `TypeError` at load. A reference to a constrained value is its
+  eta-expansion (spike A.25), and at beni arity 0 an eta-expansion is a
+  **thunk**: `blankInts = () => blank(eq$prim)`, handed to `List.length`, while
+  every consumer reads the name as the list it is annotated to be. One branch
+  in `Lower.etaExpand` — at arity 0 the expansion is the call. Spec first: §8.1,
+  §8.2/A.25 and §10.10 corrected, A.85 appended. `run/ConstrainedConstant` is
+  the fixture, and with the branch reversed it is the **only** test that fails.
+- **Row 59**, the flaky 60 s bound on the 5 000-module abuse case. Now per-run:
+  60 s everywhere, 300 s for the one case whose input is 5 000 files.
+- Rows 57 and 59 closed; all three gates green on darwin.
+
+**What I learned**
+
+- **The spec was wrong in two places, and the second one is why nobody caught
+  the first.** §8.1 said a zero-parameter constrained declaration is refused by
+  the checker "so the backend never meets one". §10.10 explained at length why
+  the INFERRED case is refused — and said nothing about the annotated case
+  except that this code does not apply to it. Each section was locally coherent;
+  the hole was in the space between them, and it is exactly the space the
+  emitter walked into. When a document says another phase already handled
+  something, that sentence is a claim needing a test, not a fact.
+- **Rule 7 settled the fork cleanly, and it was not the smaller diff.** Refusing
+  the annotated constant would have been fewer lines than fixing the emitter,
+  and it was the wrong answer: both close the same hole, so the refusal buys no
+  guarantee and costs `Dict.empty` — a polymorphic constant carrying a
+  requirement is a shape anyone would want, and forcing it to grow a dummy
+  parameter is the "you should not need that" rule 7 rejects. The test for a
+  restriction is what guarantee it buys, and here the answer was *none*.
+- **A.25's reason did not say what I first read it as saying.** "A function-typed
+  value in flight must be a closure of known arity" is a claim about
+  FUNCTION-typed values. A constant is not one, so the closure was never an
+  arity fix that happened to be wrong at 0 — it was the emitter writing a type
+  error. The giveaway that the fix is right: **no `emit/` golden moved**, because
+  every eta-expansion that already existed had arity above zero.
+- **I recommended the wrong mechanism for row 59 and had to withdraw it.** Cpu
+  time is the right thing to bound, but reading a LIVE child's cpu time needs
+  per-pid rusage (`proc_pid_rusage` on macOS, `/proc/<pid>/stat` on Linux),
+  neither is in std, and `getrusage(RUSAGE_CHILDREN)` only counts children
+  already reaped — it says nothing about the run being bounded. Two non-portable
+  syscalls inside a test harness is a worse trade than a per-case wall-clock
+  bound. The numbers and that reasoning are in the harness doc comment so the
+  next person does not re-derive them.
+- **Two sessions were writing this repo at once.** A concurrent session appended
+  the 00:48 and 01:01 entries above and the schema decisions in the queue while
+  I was fixing rows 57 and 59. Nothing collided — its work is design records, mine
+  is code — but I committed my code separately first and left its files alone
+  until the owner said to proceed. Worth knowing the diary and the queue are the
+  two files where that can bite.
+- **Still not run on Linux**, both rows included.

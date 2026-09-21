@@ -8,6 +8,23 @@ enough. Most real life schemas have different representations."* · *"I am start
 new syntax camp."* · *"It needs feature parity with Effect schemas, like allowing custom
 transformations, etc."*
 
+**Owner update, 2026-09-22:** the readiness review settled seven further decisions:
+encoding may fail with `Result` (reverses K5); generic schemas take explicit schema
+arguments rather than selecting by the program type; and multiple schemas per module
+support both `Models.User.Type` and explicit `exposing (User)` (K13(b)); optionality
+and nullability are separate and composable, preserving missing/null/value unless
+explicitly merged (supersedes §4.4's `optional` rule); tagged unions have a custom
+union `Encoded`, with constructors such as `Message.Encoded.Count`, alongside
+program constructors such as `Message.Count` (K15(c), superseding the flattened
+record recommendation); effectful transformations are supported in the intended
+design (K10), with synchronous delivery allowed first and H4 investigation required
+before fixing the representation (supersedes §5.7's refusal recommendation); both
+`Type` and `Encoded` retain declared Beni field names, with `as` mapping only the
+external key (supersedes wire-named encoded record fields). See
+[`plans/queue.md`](../../../plans/queue.md), *Owner decisions on schemas, 2026-09-22*.
+The revision-2 signatures, representation and examples below have **not yet been revised**
+to implement those decisions; conflicting recommendations are superseded.
+
 **Status:** research. It designs and it argues; it does **not** decide, except where the owner
 already has. §0.4 lists the decisions: four are the owner's and are marked **DECIDED**, the rest
 are open and numbered **K1**–**K16**.

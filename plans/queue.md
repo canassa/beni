@@ -257,7 +257,7 @@ K1–K12. **Awaiting the owner.**
 
 | # | Item | State |
 |---|---|---|
-| 57 | **A well-typed program that builds with exit 0 and THROWS at run time.** An annotated top-level value with no parameters and a `where` clause (`pub blank : List a where a.eq : a, a -> Bool` / `blank = []`) is emitted as a function of its evidence, and a monomorphic value defined from it (`blankInts : List Int = blank`) is emitted as a thunk `() => Blank$blank(Blank$eq$prim)` — but consumers read `Blank$blankInts` as a plain value: `List$length(Blank$blankInts)` → `TypeError: Cannot read properties of undefined (reading '$')`. Reproduced by the manager (two modules, `build --platform=node`, `node out/main.mjs`, exit 1). Spec gap: spike §8.1 says the checker refuses a constrained constant first, §10.10 scopes `constrained_constant` to INFERRED schemes, so the ANNOTATED case falls between them. This breaks the no-runtime-exception guarantee, so it outranks everything parked. Owes a fail-first `run/` or `check/bad/` fixture; the fix is either to refuse the annotated case too or to make the emitter and its consumers agree | todo (parked — the owner's word needed) |
+| 57 | **A well-typed program that builds with exit 0 and THROWS at run time.** An annotated top-level value with no parameters and a `where` clause (`pub blank : List a where a.eq : a, a -> Bool` / `blank = []`) is emitted as a function of its evidence, and a monomorphic value defined from it (`blankInts : List Int = blank`) is emitted as a thunk `() => Blank$blank(Blank$eq$prim)` — but consumers read `Blank$blankInts` as a plain value: `List$length(Blank$blankInts)` → `TypeError: Cannot read properties of undefined (reading '$')`. Reproduced by the manager (two modules, `build --platform=node`, `node out/main.mjs`, exit 1). Spec gap: spike §8.1 says the checker refuses a constrained constant first, §10.10 scopes `constrained_constant` to INFERRED schemes, so the ANNOTATED case falls between them. This breaks the no-runtime-exception guarantee, so it outranks everything parked. Owes a fail-first `run/` or `check/bad/` fixture; the fix is either to refuse the annotated case too or to make the emitter and its consumers agree | **done** `aba6c04` (2026-09-22, on darwin): reproduced exactly — build exit 0, `TypeError` at load. **Two spec statements were wrong, not one**: spike §8.1 asserted the checker refuses a zero-parameter constrained declaration "so the backend never meets one", while §10.10 scopes `constrained_constant` to INFERRED schemes, so an annotated one walks past both. **Accepted rather than refused**, under CLAUDE.md rule 7: both fixes close the same exit-0 hole, so a refusal buys no guarantee and costs `Dict.empty`, which is the shape of the value anyone wants. A.25's reason — a function-typed value in flight must be a closure of known arity — is about FUNCTION-typed values, and a constant is not one, so the closure was never an arity fix but a type error the emitter wrote itself. One branch in `Lower.etaExpand`: at arity 0 the expansion is the CALL. §8.1, §8.2/A.25 and §10.10 corrected, A.85 appended; `tests/corpus/run/ConstrainedConstant` is the fixture, and with the branch reversed it is the ONLY test that fails. No `emit/` golden moved — every eta-expansion that already existed had arity above zero |
 
 ### Owner decisions on schemas, 2026-09-21 (report 32 to be revised around them)
 
@@ -277,6 +277,62 @@ K1–K12. **Awaiting the owner.**
   (`schema Email = String via …`) or their `Encoded` side is unknown; a tag's literal text cannot be
   a beni type, so a tagged union's `Encoded` is a custom type and the text lives in the reader/writer.
 
+### Owner decisions on schemas, 2026-09-22 — readiness review
+
+These decisions supersede the conflicting recommendations in report 32 revision 2.
+They settle direction; the revised representation and normative specification are still owed.
+
+- **Encoding may fail**, returning an ordinary `Result`, including custom transformations.
+  This reverses K5's total-writing requirement. Neither direction throws; flipping must
+  preserve failures in either direction.
+- **Generic schemas take explicit schema arguments.** A container is given the schema
+  for its contents, so two wire formats for the same program type remain selectable.
+  `Page.schema (UserV1.schema ())` and `Page.schema (UserV2.schema ())` illustrate the
+  agreed composition model; exact factory signatures remain to be specified.
+- **Multiple schemas per module, with ordinary imports and qualified access** — K13(b).
+  A module `Models` may declare `pub schema User` and `pub schema Order`.
+  `import Models` permits `Models.User.Type` / `Models.User.parse`; explicitly
+  `import Models exposing (User)` permits `User.Type` / `User.parse`. Exposing the
+  schema brings only `User` into scope, not bare `Type`, `parse`, or other members.
+  This does not commission a general-purpose namespace feature. The owner accepted
+  the recommendation after clarifying that this is explicit exposure, not a wildcard.
+- **Optionality and nullability are separate and composable, following Effect.**
+  Required/non-nullable is the default; optional permits a missing key; nullable
+  permits an explicit null; combining them preserves missing, null and a present
+  value as distinct states through decoding and encoding. Collapsing missing and
+  null requires an explicit transformation. This supersedes report 32 §4.4's
+  `optional` rule that merges both into `Nothing`. Exact Beni syntax and the types
+  representing presence remain to be specified; this decision does not introduce
+  JavaScript `undefined` or general null values into Beni.
+- **A tagged schema's `Encoded` is a custom union, not a flattened record** — K15(c).
+  Each variant retains its own encoded payload type, so variants may share a wire
+  key with different types. The accepted naming is `Message.Encoded.Text` /
+  `Message.Encoded.Count` for encoded constructors and `Message.Text` /
+  `Message.Count` for constructors of `Message.Type`. Both support ordinary
+  construction and pattern matching. The codec maps those constructors to the
+  declared discriminator and tags; JSON remains, for example,
+  `{ "kind": "count", "value": 42 }`. A transformed field may be a `String`
+  in the encoded payload and an `Int` in the program payload. These are agreed
+  design forms, not implemented syntax; representation, resolution and lowering
+  still need their specification pass.
+- **Effectful schema transformations are supported in the intended design** — K10.
+  Separating parsing and fetching is a developer choice, not a language restriction.
+  Synchronous schemas may ship first, but before fixing the representation, investigate
+  how inferred effects propagate through stored reader/writer functions and composition.
+  The design must accommodate suspension and cancellation without requiring a second,
+  incompatible schema API. This supersedes report 32 §5.7's recommendation to refuse
+  effectful transformations; it does not establish that H4 is already solved or
+  authorize implementation of the effects runtime.
+- **Both `Type` and `Encoded` use the declared Beni field names.** `as` maps that
+  field to its external key during reading/writing; it does not rename the field
+  in `Encoded`. For `{ userId : Int as "user-id" }`, the encoded Beni record is
+  `{ userId = 42 }` and the JSON is `{ "user-id": 42 }`. This applies consistently
+  to all renamed keys, including keys that are valid Beni identifiers. Field types
+  may still differ between the two sides because of transformations or presence.
+  This supersedes report 32's wire-named encoded record fields and supports arbitrary
+  external keys without adding quoted record fields to the language. `Encoded` is
+  a typed Beni representation of wire data, not its exact JSON object spelling.
+
 ### Found on macOS, 2026-09-21 — output paths that differ only by case
 
 | # | Item | State |
@@ -287,5 +343,5 @@ K1–K12. **Awaiting the owner.**
 
 | # | Item | State |
 |---|---|---|
-| 59 | **`abuse_test`'s "5 000 empty modules" is flaky on Apple Silicon at `--jobs=1`, against the harness's 60 s `CompilerTimeout`.** Measured on darwin with a warm cache, five runs of `check --jobs=1 src` over 5 000 empty modules: **12.05 s, 26.11 s, 59.16 s, 61.16 s (the failure), 24.29 s**. The default-jobs run beside it is **6.00, 6.00, 6.08 s** — three runs inside 80 ms. The work is identical and deterministic, so the variance is not the compiler: USER cpu time for the same run varies **6.77 s to 16.22 s**, which is the signature of a single-threaded process being scheduled onto an efficiency core rather than a performance core. The timeout was **not** raised — the owner's instruction was to measure before touching it, and the honest reading is that a wall-clock deadline cannot separate "hung" from "on an E-core" on this hardware. Options, none taken: pin the bound to cpu time rather than wall clock; raise it; or drop `--jobs=1` from this particular abuse case and keep the determinism claim in the determinism test, which already runs the corpus at `--jobs=1` and `--jobs=8`. Unrelated to row 58: `check` writes no output, so neither new check runs on this path, and it failed the same way before that work started. Frequency measured: **`test-blackbox` was green on 3 of 4 consecutive full runs** of the finished branch, red on the fourth, always this one case | todo |
+| 59 | **`abuse_test`'s "5 000 empty modules" is flaky on Apple Silicon at `--jobs=1`, against the harness's 60 s `CompilerTimeout`.** Measured on darwin with a warm cache, five runs of `check --jobs=1 src` over 5 000 empty modules: **12.05 s, 26.11 s, 59.16 s, 61.16 s (the failure), 24.29 s**. The default-jobs run beside it is **6.00, 6.00, 6.08 s** — three runs inside 80 ms. The work is identical and deterministic, so the variance is not the compiler: USER cpu time for the same run varies **6.77 s to 16.22 s**, which is the signature of a single-threaded process being scheduled onto an efficiency core rather than a performance core. The timeout was **not** raised — the owner's instruction was to measure before touching it, and the honest reading is that a wall-clock deadline cannot separate "hung" from "on an E-core" on this hardware. Options, none taken: pin the bound to cpu time rather than wall clock; raise it; or drop `--jobs=1` from this particular abuse case and keep the determinism claim in the determinism test, which already runs the corpus at `--jobs=1` and `--jobs=8`. Unrelated to row 58: `check` writes no output, so neither new check runs on this path, and it failed the same way before that work started. Frequency measured: **`test-blackbox` was green on 3 of 4 consecutive full runs** of the finished branch, red on the fourth, always this one case. **Done** `9171e08` (2026-09-22): the bound is now per-run — `world.default_timeout_ms` 60 s everywhere, `world.bulk_timeout_ms` 300 s (five times the worst measurement) for this one case. **A cpu-time bound was the first choice and was withdrawn**: reading a LIVE child's cpu time needs per-pid rusage (`proc_pid_rusage` on macOS, `/proc/<pid>/stat` on Linux), neither is in std, and `getrusage(RUSAGE_CHILDREN)` counts only children already reaped — so it says nothing about the run being bounded. Two non-portable syscalls in a test harness was the worse trade. The numbers and that reasoning live in the harness doc comment |
 | 60 | **The `--release` size figures quoted in `CLAUDE.md` are stale by about 1.9 kB.** It says `bench/corpus` fell *126 436 → 55 593* raw and *21 840 → 15 017* brotli. Measured today on darwin with the binary at `9ce4f65` (row 58 reversed out), the same corpus is **128 369 → 57 486** raw and **22 476 → 15 647** brotli. The −31% claim still holds and nothing about the release optimiser is in question; the absolute numbers were recorded at an earlier commit and core has grown since. Row 58 moved them by a further +46 raw, which is how the gap was noticed. Not corrected in place, because the right fix is one re-measurement of every figure in that paragraph against one binary rather than patching the two that happened to be checked | todo |
