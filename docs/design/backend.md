@@ -153,7 +153,7 @@ every file a build writes, the hand-written ones included** — M3a shipped copy
 and the platform's runtime out as `.js`, and Node then reparsed each one and warned
 `MODULE_TYPELESS_PACKAGE_JSON` on every start, whose own suggested remedy is adding `"type":
 "module"` to a `package.json`. That is the dependency this rule exists to avoid, arriving through
-the back door. A copied file cannot simply keep its stem, because `out/core/List.mjs` is already the
+the back door. A copied file cannot simply keep its stem, because `out/_core/List.mjs` is already the
 generated module, so it takes **`.foreign.mjs`**: it says which half of the module it is, and it
 cannot collide — a generated file is named for its module, every segment of a module name is an
 upper identifier, so no generated file has two dots in its base name. The `.js` names in `core/` and
@@ -173,6 +173,73 @@ module beside it, which is a line nobody would think to look at.
 file an ES module whatever any `package.json` says, so one would add nothing — and it would put back
 exactly the file the extension was chosen to avoid, inside a directory the user chose (`--out` may
 well point at something they own). A build writes only files it named itself.
+
+### The output tree does not depend on the file system's case sensitivity
+
+**A build's output is the same set of files on every file system.** That is the guarantee, and it
+is worth stating because it was not true. macOS (APFS) and Windows (NTFS) fold case by default, so
+two output paths that differ only by case are ONE file there: whichever is written second wins, and
+the build exits `0` having shipped something that throws at load. Until 2026-09-21 the entry file
+was `main.mjs` and the conventional entry module `Main.beni` emitted `Main.mjs` beside it — the same
+file on a case-insensitive system, the shim written second, so `out/Main.mjs` imported itself and
+every program built on a Mac died with `SyntaxError: does not provide an export named 'Main$main'`.
+31 of 277 `test-blackbox` cases failed there, all of them that.
+
+Two rules make it unreachable, and both are checks rather than conventions.
+
+**Rule 1 — a reserved output name begins with `_`, which no module path can.** A module is named by
+its path with `/` for `.` (`language.md` §5), and every segment must be an upper identifier, which
+begins with an ASCII capital letter (`SourceStore.isUpperIdent`). A leading `_` is therefore a
+region of the name space no module can reach, under case folding or otherwise — unlike a suffix or
+a subdirectory, which only moves the collision. The reserved names are:
+
+| Reserved | What it is | Was |
+|---|---|---|
+| `_main.mjs` | the entry file (§5, `boundary.md` §5.2), unless the platform declares another name | `main.mjs` |
+| `_core/` | the `core` package's directory | `core/` |
+| `_platform/` | the platform package's directory, holding its modules, their siblings and its runtime | `platform/` |
+
+All three were reachable before: `Main.beni` lands on `Main.mjs`, a user module `Core.List` on
+`Core/List.mjs`, `Platform.Node` on `Platform/Node.mjs`. Only the first had been hit.
+
+**A platform MAY declare the entry file's name**, which is `boundary.md` §5.2's *"a platform
+declares its output shape … rather than hardcoding one"* finished for the one part of the shape that
+was still hardcoded: the manifest's `"entry"` key. A declared name is subject to rule 1 and is
+checked when the platform is loaded — one path segment, beginning with `_`, ending in `.mjs`, with
+ASCII letters, digits, `_` or `-` between. Anything else is `invalid_entry_file`, reported against
+the manifest at `1:1` with no excerpt, the shape `foreign_sibling_missing` uses for a fault that is
+about a file rather than a place inside one. **Declaring the name is not on its own the fix**: a
+platform that declared `main.mjs` would put the defect straight back, which is why the rule is
+enforced and not documented.
+
+**Rule 2 — two output paths equal under case folding is a build error.** It is the backstop for
+whatever rule 1 does not reach, and one case is not exotic at all: two modules whose paths differ
+only by case — `Json.Decode` and `JSON.Decode` — are two modules on Linux and one file on macOS.
+Folding is **simple ASCII lower-casing**, nothing more: every module name segment is an ASCII upper
+identifier and the compiler's own reserved names are ASCII, so there is no Unicode case folding to
+perform and none is performed.
+
+The check runs over the list of files the build is about to write, **after everything is produced
+and before the first byte is written**, so a refused build leaves nothing behind exactly as
+`boundary.md` §4's checks do. The list is built in module order, which is sorted-path order and
+never completion order (CLAUDE.md rule 5), so the pair reported is the same at every `--jobs`. The
+diagnostic is `output_path_collision`; it names both output paths and the two files they came from,
+because the fault is in neither one alone.
+
+**It is a check of what is WRITTEN, not of what exists**, and that is the one place it differs from
+§4. §5's *Elimination decides what is written, never what is checked* is about a contract on
+privileged code, which holds whether or not anything imports it; this is a property of the output
+tree, so a module the reachability walk dropped cannot collide with anything, because it is not
+there. The guarantee is about the artifact, and the artifact is what survived.
+
+**What this costs to test, and why one fixture cannot exist.** A corpus fixture for rule 2's
+headline case would need `Json/Decode.beni` and `JSON/Decode.beni` checked into the repository, and
+those are one file on the very systems the rule is for — the repository would not survive a
+checkout on a Mac. So the collision is provoked two other ways: a platform whose runtime and whose
+sibling land on the same output name (constructible everywhere, because the two SOURCE paths differ
+by more than case), and a harness invariant that folds the written-file list after every build the
+black-box suite makes. The second is the one that would have caught this defect on Linux, where the
+file system hides it, and it costs nothing per case (§12).
 
 ## 3. `JsIr` — the second IR
 
@@ -367,7 +434,8 @@ Two consequences worth stating, because they are what the emitted shape looks li
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
 trace is readable; each module's sibling JavaScript beside it as `<Module>.foreign.mjs`, and the
-platform's runtime as `platform/<name>.foreign.mjs` (§2). Release: chunks (§10), every surviving declaration emitted into its chunk with a
+platform's runtime as `_platform/<name>.foreign.mjs` (§2, *The output tree does not depend on the
+file system's case sensitivity*, for why the reserved directories begin with `_`). Release: chunks (§10), every surviving declaration emitted into its chunk with a
 short name, and the cross-chunk bindings synthesised by the assigner — and with one entry point and
 no `lazy`, that is one file.
 
@@ -408,7 +476,7 @@ of them is a new mechanism:
   are use-driven. `emitModules` (`src/js/Emit.zig:673-717`) skips producing it. A **sibling file**
   is copied iff the module has a *surviving* `foreign_value`, which replaces `copyAssets`' current
   "declares any `foreign`" test (`src/js/Emit.zig:725-729`). The platform's runtime is still copied
-  unconditionally: `main.mjs` imports its `run` (§2), so it is a root by construction.
+  unconditionally: the entry file imports its `run` (§2), so it is a root by construction.
 - **Emission order is unchanged and still correct.** `emissionOrder` (`src/js/Lower.zig:496-538`)
   post-orders `bir.refs` plus the dispatch sites; its outer loop is restricted to surviving
   declarations, and it can reach nothing else, because every edge it walks is also a reachability
@@ -1243,7 +1311,7 @@ visit order cannot reach the bytes. `--jobs=1` against `--jobs=8` covers it with
 - **`main` of the entry module**, found as it is today (`Emit.findEntry`, `src/js/Emit.zig:541`).
   In an application build it is the **only** root.
 - **Whatever the platform calls back into.** Today that is `main` and nothing else: the artifact is
-  `main.mjs` handing `main` to the runtime's `run` export (`:763-781`), and the runtime sibling is
+  `_main.mjs` handing `main` to the runtime's `run` export (`:763-781`), and the runtime sibling is
   copied whole, so it needs no root of its own. When ports land (`boundary.md` B3) every port is a
   root and this line grows; nothing else in `boundary.md` §5 imposes a signature the compiler must
   keep alive.
@@ -1251,7 +1319,7 @@ visit order cannot reach the bytes. `--jobs=1` against `--jobs=8` covers it with
   callers are not in the build, so its public surface is its root set — which is exactly the export
   list §5 already computes: `pub` values with a body, every nominal `derived` row, **and the entry
   declaration when a module happens to have one**. `--library` also makes `main` optional and writes
-  no `main.mjs`.
+  no entry file.
 
   **That last clause is a correction, and §2's "a `main` that happens to exist is not special" is
   wrong as written.** §5's export list has three sources and the entry declaration is the third; a
@@ -1552,7 +1620,7 @@ value is never used may be dropped whole, everything inside it included, a `Debu
 The pass therefore asks nothing about the right-hand side. **A call of a `foreign` is droppable**,
 and the reason is not a special case: `boundary.md` §4 confines a `foreign` to a total pure function
 over admitted types or an effect *value*, and an effect value is data — `Node.printLines` returns
-`{code, out}` having written nothing, and the write happens in `platform/runtime.foreign.mjs`'s
+`{code, out}` having written nothing, and the write happens in `_platform/runtime.foreign.mjs`'s
 `run`, which only the entry file reaches. The two values that *can* notice are `Debug.log`, which
 writes when called, and `Debug.todo`, which throws when called; both are the violations
 `boundary.md` §4 names, and `language.md` §6 spends exactly this licence on them. *Alternative
@@ -2126,7 +2194,7 @@ point that prints a given list of statements into a caller's buffer; it prints `
 
 | Thing | Chunk | Why |
 |---|---|---|
-| the main chunk | **`out/main.mjs`**, with the platform's `run(main)` call last | it is already the file `Emit.emitEntry` writes (`src/js/Emit.zig:840-858`), so the artifact path does not move |
+| the main chunk | **`out/_main.mjs`**, with the platform's `run(main)` call last | it is already the file `Emit.emitEntry` writes, so the artifact path does not move — §2's rule 1 renamed it from `out/main.mjs` on 2026-09-21 and chunking inherits the new name, not a second one |
 | a colour that is one entry | `out/chunk/<Module>.<name>.mjs` | input-derived and readable: it names the declaration the author marked |
 | a colour of two or more | `out/chunk/shared.<i>.mjs`, `i` the colour's index in canonical colour order | input-derived; **no content hash**, so a golden is stable and rule 5 is met by construction |
 | a derived `eq` / `compare` | coloured like any other node (`Reach.Kind.derived`) | §9 already makes it a node |
@@ -2134,7 +2202,7 @@ point that prints a given list of statements into a caller's buffer; it prints `
 | `eq$prim`, `compare$prim`, `compare$char` | emitted per chunk that wants one | discovered by `Lowerer.needs` during lowering, not nodes (§9); three small functions, and duplicating beats a cross-chunk edge |
 | an eta-expanded evidence closure | the chunk of the declaration whose site built it | not a node; *"an eta-expansion is built from a site's targets, and the targets are the edges"* (§9) |
 | a `*.foreign.mjs` sibling | **its own file, unchunked**, at today's path; every chunk using one of its exports imports it | a sibling is copied whole and never parsed (`boundary.md` §4). ESM evaluates a module once, so duplicate imports cost specifiers and nothing else. Measured cost of not folding siblings into the bundle: 1 215 brotli bytes on `run/Dictionaries`, where the seven siblings are **54% of compressed output** — left on the table deliberately, because separating two siblings' scopes needs a JavaScript parser |
-| `platform/runtime.foreign.mjs` | its own file, imported by the main chunk | *"copied whole, so it needs no root of its own"* (§9) |
+| `_platform/runtime.foreign.mjs` | its own file, imported by the main chunk | *"copied whole, so it needs no root of its own"* (§9) |
 | a `--library` build | **one chunk** | a library's callers are not in the build, so there is no entry set to colour by; §9 already measures that elimination barely shrinks a library |
 
 ### Determinism, M4 and M5

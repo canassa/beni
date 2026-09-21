@@ -259,11 +259,14 @@ store, where a name carries no module (`checker.md` §8.2); this message reads a
 instead and used to print the resolver's internal spelling, so a user who wrote `main : Int` was
 told about `Basics.Int` — a name no beni source may contain.
 
-**A platform declares its output shape with two manifest keys**: `program`, the module-qualified
-opaque type `main` must have, and `runtime`, the JavaScript file whose `run` export receives
-`main`'s value. That is the smallest thing that is a real declaration rather than a hardcoded
-special case, and it is why a Bun or Deno platform needs no compiler change. Pin any addition here
-before B4 invents a second mechanism.
+**A platform declares its output shape with three manifest keys**: `program`, the module-qualified
+opaque type `main` must have; `runtime`, the JavaScript file whose `run` export receives `main`'s
+value; and `entry`, the name of the entry file itself, which is optional and defaults to
+`_main.mjs`. That is the smallest thing that is a real declaration rather than a hardcoded special
+case, and it is why a Bun or Deno platform needs no compiler change. Pin any addition here before B4
+invents a second mechanism. *`entry` was added on 2026-09-21; until then the entry file's name was
+the one part of the output shape this section claimed to declare and the emitter hardcoded
+(`backend.md` §2, rule 1).*
 
 Anything the platform manages is handed to `init` as a value **no other code can construct** — the
 unforgeable-capability trick. A user cannot fabricate a database handle or a socket; they can only
@@ -318,6 +321,20 @@ are the same.
 module a `<script type="module">` can load; a Node platform wants an entry file; a Workers runtime
 wants a specific export. The platform declares this, the same way it declares `main`, so §9.5's
 emitter is parameterised by it rather than hardcoding one.
+
+**The entry file's NAME is part of that shape, and it is `"entry"`** (added 2026-09-21). It is
+optional; a platform that omits it gets `_main.mjs`. A declared name is subject to `backend.md` §2's
+rule 1 and is checked when the platform is loaded, before anything is built: **one path segment,
+beginning with `_`, ending in `.mjs`, ASCII letters, digits, `_` or `-` between**. Anything else is
+`invalid_entry_file`, reported against `<platform root>/beni.json` at `1:1` with no excerpt — the
+shape the `"runtime"` failure below uses, and for the same reason.
+
+The leading `_` is not decoration and the check is not pedantry. A module is named by its path and
+every segment is an upper identifier (`language.md` §5), so `_` is the one region of the output name
+space no module can occupy — on a case-insensitive file system included, where `main.mjs` and the
+module `Main`'s `Main.mjs` are one file. Moving the name into this manifest without the rule would
+have been a worse outcome than leaving it hardcoded: it would let a platform author reintroduce, in
+data, a defect the compiler had just been taught to make impossible.
 
 **A `"runtime"` naming a file that is not there is `foreign_sibling_missing`, reported against the
 MANIFEST.** Every other manifest failure is an exit-2 line naming the path (§5.3, `src/platform.zig`),
