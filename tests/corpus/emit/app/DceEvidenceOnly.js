@@ -1,5 +1,5 @@
-import { String$length, String$fromInt } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$length, String$fromInt } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DceEvidenceOnly$byLength = (t$1) => {
   const text$2 = t$1.a;
   return String$length(text$2);

@@ -1,0 +1,13 @@
+-- `invalid_entry_file` (boundary.md §5.2): a platform may declare the entry
+-- file's name, and a declared name must be one no module can take — one path
+-- segment beginning with `_` and ending in `.mjs`. This platform declares
+-- `main.mjs`, which is exactly the name the module `Main` already folds onto
+-- (backend.md §2, rule 1), so moving the name into the manifest would have
+-- let a platform author put the old defect back in data. It is refused when
+-- the platform is loaded, against the manifest at 1:1 with no excerpt.
+import Prog exposing (Program)
+
+
+main : Program
+main =
+    Prog.say "hello"

@@ -1,4 +1,4 @@
-import { Node$printLines } from "./platform/Node.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DerivedEqNominal$Colour$$order = { Red: 0, Green: 1, Blue: 2 };
 const DerivedEqNominal$Shape$$order = { Circle: 0, Rect: 1 };
 const DerivedEqNominal$Tree$$order = { Leaf: 0, Node: 1 };

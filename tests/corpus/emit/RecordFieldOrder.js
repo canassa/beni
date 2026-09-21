@@ -1,5 +1,5 @@
-import { Basics$add } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$add } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const RecordFieldOrder$bump = (n$1) => Basics$add(n$1, 1);
 const RecordFieldOrder$sortedFields = (a$1, b$2) => ({ alpha: RecordFieldOrder$bump(a$1), zed: RecordFieldOrder$bump(b$2) });
 const RecordFieldOrder$unsortedFields = (a$1, b$2) => {

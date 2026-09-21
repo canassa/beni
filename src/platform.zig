@@ -72,6 +72,13 @@ fn finish(manifest: Manifest, root: []const u8) Error!Emit.Platform {
     return .{
         .program = manifest.program orelse return error.Incomplete,
         .runtime = manifest.runtime orelse return error.Incomplete,
+        // Optional, unlike the other two: a platform that says nothing
+        // about the entry file gets `backend.md` §2's reserved default. The
+        // NAME is checked in `Emit` and not here, because a bad one is a
+        // diagnostic against the manifest at 1:1 rather than one of §5.3's
+        // exit-2 lines — the same call `foreign_sibling_missing` makes
+        // about a `"runtime"` that is not there.
+        .entry = manifest.entry orelse Emit.default_entry_file,
         .root = root,
     };
 }

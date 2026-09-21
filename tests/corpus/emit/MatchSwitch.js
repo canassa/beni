@@ -1,5 +1,5 @@
-import { Basics$mul } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$mul } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const MatchSwitch$Colour$$order = { Red: 0, Green: 1, Blue: 2 };
 const MatchSwitch$Size$$order = { Small: 0, Medium: 1, Large: 2 };
 const MatchSwitch$Colour$$compare = ($x, $y) => {

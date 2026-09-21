@@ -1,5 +1,5 @@
-import { Node$printLines } from "./platform/Node.mjs";
-import { String$fromInt } from "./core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
+import { String$fromInt } from "./_core/String.mjs";
 const DceDerived$Kept$$eq = ($x, $y) => {
   if ($x.$ !== $y.$) {
     return false;

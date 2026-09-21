@@ -1,5 +1,5 @@
-import { Basics$sub, Basics$add } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$sub, Basics$add } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const TailCallLoop$countUp = ($in$0, $in$1, step$3) => {
   TailCallLoop$countUp: while (true) {
     const n$1 = $in$0;

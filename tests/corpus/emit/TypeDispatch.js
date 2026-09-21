@@ -1,5 +1,5 @@
-import { String$fromInt } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$fromInt } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const TypeDispatch$Metre$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const TypeDispatch$Metre$$eq = ($x, $y) => $x.a === $y.a;
 const TypeDispatch$fromInt = (n$1) => ({ $: "Metre", a: n$1 });

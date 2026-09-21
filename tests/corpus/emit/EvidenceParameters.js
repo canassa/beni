@@ -1,5 +1,5 @@
-import { Basics$mul } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$mul } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const EvidenceParameters$Metre$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const EvidenceParameters$Metre$$eq = ($x, $y) => $x.a === $y.a;
 const EvidenceParameters$scale = (m$1, factor$2) => {

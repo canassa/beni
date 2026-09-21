@@ -86,14 +86,14 @@ test "a program computes something and prints the right answer" {
     // platform's runtime (backend.md §5, boundary.md §5.2).
     for ([_][]const u8{
         "out/Main.mjs",
-        "out/main.mjs",
-        "out/core/Basics.mjs",
-        "out/core/Basics.foreign.mjs",
-        "out/core/List.mjs",
-        "out/core/List.foreign.mjs",
-        "out/platform/Node.mjs",
-        "out/platform/Node.foreign.mjs",
-        "out/platform/runtime.foreign.mjs",
+        "out/_main.mjs",
+        "out/_core/Basics.mjs",
+        "out/_core/Basics.foreign.mjs",
+        "out/_core/List.mjs",
+        "out/_core/List.foreign.mjs",
+        "out/_platform/Node.mjs",
+        "out/_platform/Node.foreign.mjs",
+        "out/_platform/runtime.foreign.mjs",
     }) |path| {
         if (!w.exists(path)) {
             std.debug.print("expected {s} to exist\n", .{path});
@@ -454,7 +454,7 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     try expectBuilt(one_r);
     try expectBuilt(many_r);
     try expectSameTree(&w, "one-rel", "many-rel");
-    const release_program = try w.node("one-rel/main.mjs");
+    const release_program = try w.node("one-rel/_main.mjs");
     try testing.expectEqual(@as(u8, 0), release_program.exit_code);
     try testing.expectEqualStrings("12\n", release_program.stdout);
     // Every file, not a chosen few: the point is that NOTHING moved, and a
@@ -479,7 +479,7 @@ test "a build with cross-module evidence is byte-identical at every --jobs" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY STATE                            │
     // └─────────────────────────────────────────┘
-    const program = try w.node("one/main.mjs");
+    const program = try w.node("one/_main.mjs");
     try testing.expectEqual(@as(u8, 0), program.exit_code);
     try testing.expectEqualStrings("12\n", program.stdout);
 }
@@ -604,7 +604,7 @@ test "modules import each other through ESM, and the program runs" {
     const main_mjs = try w.read("out/Main.mjs");
     try testing.expect(std.mem.indexOf(u8, main_mjs, "from \"./Geometry/Area.mjs\"") != null);
     const area_mjs = try w.read("out/Geometry/Area.mjs");
-    try testing.expect(std.mem.indexOf(u8, area_mjs, "from \"../core/Basics.mjs\"") != null);
+    try testing.expect(std.mem.indexOf(u8, area_mjs, "from \"../_core/Basics.mjs\"") != null);
 }
 
 test "a platform anyone may publish: a package that declares itself one in its manifest" {
@@ -638,6 +638,180 @@ test "a platform anyone may publish: a package that declares itself one in its m
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), program.exit_code);
     try testing.expectEqualStrings("hello!\n", program.stdout);
+}
+
+test "a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_`" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // backend.md §2, rule 1: `_core/` and `_platform/` are names no module
+    // path can reach, because every segment of a module name is an upper
+    // identifier. They used to be `core/` and `platform/`, which `Core.List`
+    // and `Platform.Node` land on exactly — two files on Linux and ONE on
+    // macOS, where core's `List` and the app's would overwrite each other.
+    // The proof is the program running with BOTH in it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Core/List.beni",
+        \\pub twice : Int -> Int
+        \\twice n =
+        \\    n * 2
+        \\
+    );
+    try w.write("src/Platform/Node.beni",
+        \\pub thrice : Int -> Int
+        \\thrice n =
+        \\    n * 3
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Core.List
+        \\import List
+        \\import Node exposing (Program)
+        \\import Platform.Node
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (Core.List.twice (Platform.Node.thrice (List.sum (List.range 1 3)))))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--root=src", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node(world.entry_file);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // 1 + 2 + 3 = 6, thrice 18, twice 36. A `Core.List` that had overwritten
+    // core's own `List` could not have produced it.
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("36\n", program.stdout);
+    try testing.expectEqualStrings("", program.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Four distinct files, and they stay distinct when the names are folded
+    // — which `world.runWith` has already asserted over the whole tree.
+    for ([_][]const u8{
+        "out/Core/List.mjs",
+        "out/Platform/Node.mjs",
+        "out/_core/List.mjs",
+        "out/_platform/Node.mjs",
+    }) |path| {
+        if (!w.exists(path)) {
+            std.debug.print("expected {s} to exist\n", .{path});
+            return error.MissingOutput;
+        }
+    }
+}
+
+test "a platform may declare the entry file's name, and that is what the build writes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §5.2: the entry file's NAME is part of the output shape a
+    // platform declares, and it was the one part the emitter still
+    // hardcoded. `"entry"` finishes the key set — subject to backend.md §2's
+    // rule 1, which is the next test.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/beni.json",
+        \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js", "entry": "_start.mjs" }
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const program = try w.node("out/_start.mjs");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("hello!\n", program.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The default name is not written as well: a platform declares ONE
+    // entry file.
+    try testing.expect(!w.exists("out/_main.mjs"));
+}
+
+test "a declared entry file name that a module could take is refused" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §5.2: moving the name into the manifest is not on its own
+    // the fix, because a platform could declare `main.mjs` and put back the
+    // collision with the module `Main` that rule 1 exists to make
+    // unreachable. So the declared name is checked, and `Index.mjs` — which
+    // has no leading `_` — is refused for the same reason `main.mjs` is.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/beni.json",
+        \\{ "platform": true, "name": "mine", "program": "Prog.Program", "runtime": "run.js", "entry": "Index.mjs" }
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .invalid_entry_file,
+        .severity = .@"error",
+        .span = .{ .file = "myplat/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "INVALID ENTRY FILE NAME",
+        .message = "This platform declares its entry file as `Index.mjs`, which is a name a module\n" ++
+            "could take.\n" ++
+            "\n" ++
+            "A module is named by its path and every segment is an upper identifier\n" ++
+            "(`docs/design/language.md` §5), so a name beginning with `_` is one no module\n" ++
+            "can ever occupy — on macOS and Windows included, where `Index.mjs` and a module\n" ++
+            "`Index`'s own file are one and the same. An entry file name is one path segment,\n" ++
+            "begins with `_`, ends in `.mjs`, and has ASCII letters, digits, `_` or `-`\n" ++
+            "between (`docs/design/boundary.md` §5.2).",
+    }, built.diagnostics[0]);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("out"));
 }
 
 test "an app package may declare itself a platform, and then `foreign` is legal in it" {
@@ -1517,7 +1691,7 @@ test "a constrained `foreign` in value position inside its own module keeps its 
     // in the module holds a nullary closure over a binary method. Narrow on
     // purpose — the parameter names are `$p$N` counters and goldening the
     // whole arrow would churn on any change to them.
-    const prog_mjs = try w.read("out/platform/Prog.mjs");
+    const prog_mjs = try w.read("out/_platform/Prog.mjs");
     try testing.expect(std.mem.indexOf(u8, prog_mjs, "() => Prog$eq(") == null);
 }
 
@@ -1619,7 +1793,7 @@ test "an unconstrained `foreign` in value position inside its own module is the 
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // Both uses name the import directly; neither is wrapped.
-    const prog_mjs = try w.read("out/platform/Prog.mjs");
+    const prog_mjs = try w.read("out/_platform/Prog.mjs");
     try testing.expect(std.mem.indexOf(u8, prog_mjs, "List$map(xs$1, Prog$twice)") != null);
     try testing.expect(std.mem.indexOf(u8, prog_mjs, "Maybe$Maybe$$eq(Prog$eq,") != null);
 }
@@ -1638,7 +1812,7 @@ test "--library needs no main, writes no entry file, and roots at the exported s
     // application build does differently:
     //
     //   1. `missing_main` does not fire, though nothing here declares one;
-    //   2. no `out/main.mjs` is written — it is the entry file and there is
+    //   2. no `out/_main.mjs` is written — it is the entry file and there is
     //      no entry;
     //   3. `exported` survives although nothing in the build calls it,
     //      while `private`, which is not exported and which nothing
@@ -1681,7 +1855,7 @@ test "--library needs no main, writes no entry file, and roots at the exported s
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("out/main.mjs"));
+    try testing.expect(!w.exists(world.entry_file));
     const js = try w.read("out/Lib.mjs");
     try testing.expect(std.mem.indexOf(u8, js, "Lib$exported") != null);
     try testing.expect(std.mem.indexOf(u8, js, "Lib$helper") != null);
@@ -1837,7 +2011,7 @@ test "two `main`s are TWO MAINS, naming both modules and both locations" {
     try testing.expect(!w.exists("out"));
     try testing.expect(w.exists("lib/Main.mjs"));
     try testing.expect(w.exists("lib/Other.mjs"));
-    try testing.expect(!w.exists("lib/main.mjs"));
+    try testing.expect(!w.exists("lib/_main.mjs"));
 }
 
 test "a `?` nothing reaches is not lowered, so nothing it needs is emitted" {
@@ -1967,7 +2141,7 @@ test "--release builds and runs, and --release --source-maps still exits 2 on th
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(r);
-    const program = try w.node("out/main.mjs");
+    const program = try w.node(world.entry_file);
     try testing.expectEqual(@as(u8, 0), program.exit_code);
     try testing.expectEqualStrings("x\n", program.stdout);
 
@@ -2056,10 +2230,10 @@ test "--release refuses a build that reaches Debug; the same program builds and 
     // lowering, so there is not even a half-written tree to clean up.
     try testing.expect(!w.exists("rel"));
 
-    const dev_run = try w.node("dev/main.mjs");
+    const dev_run = try w.node("dev/_main.mjs");
     try testing.expectEqual(@as(u8, 0), dev_run.exit_code);
     try testing.expectEqualStrings("report: 3\n3\n", dev_run.stdout);
-    const allowed_run = try w.node("allow/main.mjs");
+    const allowed_run = try w.node("allow/_main.mjs");
     try testing.expectEqual(@as(u8, 0), allowed_run.exit_code);
     try testing.expectEqualStrings("report: 3\n3\n", allowed_run.stdout);
 }
@@ -2105,12 +2279,12 @@ test "a Debug call that reachability drops does not refuse the release build" {
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    const program = try w.node("out/main.mjs");
+    const program = try w.node(world.entry_file);
     try testing.expectEqual(@as(u8, 0), program.exit_code);
     try testing.expectEqualStrings("x\n", program.stdout);
     // And the proof that it really was dropped rather than merely quiet:
     // core's `Debug` module is not in the output tree at all.
-    try testing.expect(!w.exists("out/core/Debug.mjs"));
+    try testing.expect(!w.exists("out/_core/Debug.mjs"));
 }
 
 test "--release --library refuses Debug reachable from the exported surface, and not below it" {

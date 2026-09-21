@@ -1,4 +1,4 @@
-import { Node$printLines } from "./platform/Node.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DceCtorPattern$describe = (s$1) => {
   switch (s$1.$) {
     case "Red":

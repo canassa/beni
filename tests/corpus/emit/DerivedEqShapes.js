@@ -1,4 +1,4 @@
-import { Node$printLines } from "./platform/Node.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DerivedEqShapes$eq$prim = ($x, $y) => $x === $y;
 const DerivedEqShapes$eq$r$x$y = ($m$0, $m$1, $x, $y) => $m$0($x.x, $y.x) && $m$1($x.y, $y.y);
 const DerivedEqShapes$eq$t2 = ($m$0, $m$1, $x, $y) => $m$0($x.a, $y.a) && $m$1($x.b, $y.b);

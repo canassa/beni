@@ -41,7 +41,7 @@ its decision trees for pattern matching and its `?` have landed
 ([`backend.md`](docs/design/backend.md) §8, §7, §4); and M3c's first piece,
 **reachability-driven dead code elimination**, has landed with it (§9,
 `src/js/Reach.zig`) — an empty program went from 70 684 bytes in 19 files to
-2 147 in 5, with `derived_bytes` exactly 0. **M3b's list in §1 is now spent**:
+2 149 in 5, with `derived_bytes` exactly 0. **M3b's list in §1 is now spent**:
 interpolation, tuples and record update worked in M3a, and `Int32` — the last
 item, a language gap and not a codegen one — was built on 2026-09-19.
 [`backend.md`](docs/design/backend.md) is the contract,
@@ -53,7 +53,7 @@ items 1, 2, 3 and 5: local dead bindings and single-use inlining
 compact printing and joined `const` runs (`src/js/Print.zig`). The flag is no
 longer refused; `--source-maps` still is. `bench/corpus` fell 126 436 → 55 593
 raw and 21 840 → **15 017** brotli (−31%), `run/Dictionaries` 7 008 → 5 860
-(−16%), the floor 833 → 789. **Development output did not move by one byte**,
+(−16%), the floor 835 → 789. **Development output did not move by one byte**,
 which is what makes an `emit/` golden that changes a finding. The whole `run/`
 corpus is built and run a SECOND time under the flag, 121 programs, +13 s of
 `test-blackbox`; `emit/release/` is the golden directory for shape claims and
@@ -71,6 +71,21 @@ in M3c: **item 4**, type-directed field ambiguation, which needs a per-build
 field-interference artifact the backend
 does not receive (§9's *What the second slice owes*), integer constructor tags
 riding with it, and chunking (§10).
+
+**The output tree's reserved names begin with `_`** (2026-09-21, queue row 58):
+`_main.mjs`, `_core/` and `_platform/`. They were `main.mjs`, `core/` and
+`platform/`, every one of them a name a module path can take — and the first was
+a live defect, not a hazard: `Main.beni` emits `Main.mjs`, which on APFS and
+NTFS IS `main.mjs`, so the entry shim overwrote the module and then imported
+itself. 31 of 277 `test-blackbox` cases failed on darwin, all of them that. A
+module name segment is an upper identifier, so `_` is the one region no module
+can reach; `output_path_collision` is the backstop for the rest, folding every
+path a build would write with ASCII lower-casing before the first byte is
+written. A platform may now declare the entry file's name (`"entry"`, subject to
+the same rule, `invalid_entry_file` otherwise), which finishes
+[`boundary.md`](docs/design/boundary.md) §5.2's "declares … rather than
+hardcoding". [`backend.md`](docs/design/backend.md) §2, *The output tree does
+not depend on the file system's case sensitivity*.
 
 **`core/Int32` has landed** (2026-09-19), the owner's decision taken: exact
 32-bit work has its own type, total and wrapping, with `mul` on `Math.imul`
@@ -110,7 +125,7 @@ A.83 — and dead-code elimination has landed.
    `src/js/Reach.zig`, always on for every build. Derivation is still eager, so
    every type ships an `eq` and a `compare` whether or not anything calls them;
    what changed is that a build no longer WRITES the ones it cannot reach. The
-   floor went from 70 684 bytes in 19 files to 2 147 in 5 and its
+   floor went from 70 684 bytes in 19 files to 2 149 in 5 and its
    `derived_bytes` from 3 159 to 0, so an output-size figure is no longer an
    upper bound. `--library` roots a build at its exported surface instead
    (§2), which is what `bench/corpus` and the `emit/` corpus are measured with.

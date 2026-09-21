@@ -37,8 +37,12 @@ pub const exe_relative = "zig-out/bin/beni";
 /// to the world's project directory.
 pub const default_out = "out";
 
-/// The entry file `beni build` writes (boundary.md §5.2).
-pub const entry_file = "out/main.mjs";
+/// The entry file `beni build` writes: `Emit.default_entry_file` under
+/// `default_out` (boundary.md §5.2, backend.md §2 rule 1). The leading `_`
+/// is why `exists("out/_main.mjs")` is a question about the entry file and
+/// not about a module called `Main` — on a case-insensitive file system
+/// `exists("out/main.mjs")` could not tell them apart.
+pub const entry_file = "out/_main.mjs";
 
 /// Wall-clock bound on one compiler run. Generous: the point is to turn a
 /// hang into a failure, not to measure.
@@ -344,7 +348,7 @@ pub const World = struct {
         return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir });
     }
 
-    /// `beni build --platform=node --out=out <paths>`, then `node out/main.mjs`.
+    /// `beni build --platform=node --out=out <paths>`, then `node out/_main.mjs`.
     /// The whole second boundary in one call, because every `run/` fixture
     /// and every codegen scenario wants exactly this pair.
     ///
@@ -382,7 +386,72 @@ pub const World = struct {
                 };
             }
         }
+        // `backend.md` §2's guarantee, asserted after every build the suite
+        // makes rather than in a scenario of its own (see the function).
+        if (options.cwd == null and result.exit_code == 0 and
+            args.len != 0 and std.mem.eql(u8, args[0], "build"))
+        {
+            try world.checkOutputPathFolding(args);
+        }
         return result;
+    }
+
+    /// **A build's output is the same set of files on every file system**
+    /// (`backend.md` §2, *The output tree does not depend on the file
+    /// system's case sensitivity*). Two written paths equal under ASCII
+    /// case folding break that: on APFS and NTFS they are ONE file, the
+    /// second write wins, and the build still exits 0.
+    ///
+    /// It is checked here, on every successful `build`, and not in a
+    /// scenario of its own, because **the defect is invisible where it
+    /// bites**. On a case-insensitive file system the two files already
+    /// collapsed into one, so a directory listing sees nothing wrong and
+    /// only the emitted program misbehaves — which is how `main.mjs`
+    /// against a module `Main`'s `Main.mjs` survived every green Linux run
+    /// until someone built on a Mac (queue row 58). On a case-SENSITIVE
+    /// file system both files are there and this fires. That is the whole
+    /// value: a Linux run catching a defect only a Mac can suffer, for one
+    /// directory listing per build.
+    fn checkOutputPathFolding(world: *World, args: []const []const u8) !void {
+        var out_dir: []const u8 = default_out;
+        for (args) |a| {
+            if (std.mem.startsWith(u8, a, "--out=")) out_dir = a["--out=".len..];
+        }
+        // An absolute `--out` is outside the project directory and
+        // `listFiles` reads relative to it; those scenarios assert their own
+        // tree.
+        if (out_dir.len == 0 or out_dir[0] == '/') return;
+
+        const arena = world.arena.allocator();
+        const files = try world.listFiles(out_dir);
+        const Entry = struct { folded: []const u8, written: []const u8 };
+        const entries = try arena.alloc(Entry, files.len);
+        for (files, entries) |written, *slot| {
+            const folded = try arena.dupe(u8, written);
+            for (folded) |*c| c.* = std.ascii.toLower(c.*);
+            slot.* = .{ .folded = folded, .written = written };
+        }
+        std.mem.sort(Entry, entries, {}, struct {
+            fn lessThan(_: void, x: Entry, y: Entry) bool {
+                return std.mem.lessThan(u8, x.folded, y.folded);
+            }
+        }.lessThan);
+        for (1..entries.len) |i| {
+            if (!std.mem.eql(u8, entries[i - 1].folded, entries[i].folded)) continue;
+            std.debug.print(
+                \\two output paths are equal under ASCII case folding, so they are ONE
+                \\file on macOS (APFS) and Windows (NTFS):
+                \\
+                \\  {s}/{s}
+                \\  {s}/{s}
+                \\
+                \\`backend.md` §2: a build's output is the same set of files on every
+                \\file system. The compiler must refuse this build with
+                \\`output_path_collision`, or not produce the pair at all.
+                \\
+            , .{ out_dir, entries[i - 1].written, out_dir, entries[i].written });
+            return error.OutputPathsCollide;
+        }
     }
 };
 

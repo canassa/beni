@@ -1855,7 +1855,7 @@ test "a warm build emits byte-identical JavaScript, and it runs" {
     // And the program the warm build wrote actually runs, which is the only
     // assertion that can catch a table that survived the format and means
     // something else.
-    const ran = try w.node("warm/main.mjs");
+    const ran = try w.node("warm/_main.mjs");
     try testing.expectEqual(@as(u8, 0), ran.exit_code);
     // `Rect 3 4` is the bigger of the two — a derived `compare` orders by
     // constructor first — so the area is 12.

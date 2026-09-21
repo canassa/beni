@@ -22,7 +22,7 @@
 // **The floor is a null beni PROGRAM, not an empty script.** An empty `.mjs`
 // measures the interpreter starting and nothing else; what every program
 // here actually pays before its first op is the interpreter start PLUS the
-// ESM load of `out/main.mjs`, the platform runtime and the whole of `core/`,
+// ESM load of `out/_main.mjs`, the platform runtime and the whole of `_core/`,
 // which is ~6 ms today and which C1 changes — `core/Dict` loses its
 // comparator plumbing and gains derived functions. So the floor is
 // `Node.done` compiled by the same binary in the same run, and a C1 floor is
@@ -227,14 +227,14 @@ function main() {
     for (let i = 0; i < options.runs; i++) {
       // Interleaved: the floor immediately before the program it is
       // subtracted from, every run.
-      const floorRun = timeOnce(nodeExe, "out/main.mjs", floorDir, []);
+      const floorRun = timeOnce(nodeExe, "out/_main.mjs", floorDir, []);
       if (floorRun.run.status !== 0) {
         process.stderr.write(`bench/runtime.mjs: the floor program exited ${floorRun.run.status}\n`);
         broke = true;
         break;
       }
       floorSamples.push(floorRun.ms);
-      const { ms, run } = timeOnce(nodeExe, "out/main.mjs", project, []);
+      const { ms, run } = timeOnce(nodeExe, "out/_main.mjs", project, []);
       if (run.status !== 0) {
         process.stderr.write(
           `bench/runtime.mjs: ${program} exited ${run.status}\n${run.stdout ?? ""}${run.stderr ?? ""}\n`,
@@ -261,7 +261,7 @@ function main() {
     let profile = null;
     if (options.cpuProf && /^R[46]/.test(program)) {
       mkdirSync(profDir, { recursive: true });
-      const run = spawnSync(nodeExe, ["--cpu-prof", `--cpu-prof-dir=${profDir}`, "out/main.mjs"], {
+      const run = spawnSync(nodeExe, ["--cpu-prof", `--cpu-prof-dir=${profDir}`, "out/_main.mjs"], {
         cwd: project,
         encoding: "utf8",
       });

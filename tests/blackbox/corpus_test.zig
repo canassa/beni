@@ -705,7 +705,7 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
 
-        const entry = try std.fmt.allocPrint(c.arena, "{s}/main.mjs", .{out_dir});
+        const entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out_dir});
         const program = c.w.node(entry) catch |err| {
             std.debug.print("{s} [{s}]: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
             return err;

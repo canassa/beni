@@ -1,6 +1,6 @@
-import { String$fromInt } from "./core/String.mjs";
-import { Basics$add } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$fromInt } from "./_core/String.mjs";
+import { Basics$add } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const MatchNested$Colour$$order = { Red: 0, Blue: 1 };
 const MatchNested$Inner$$order = { Leaf: 0, Pair: 1 };
 const MatchNested$Shape$$order = { Circle: 0, Square: 1, Tri: 2 };

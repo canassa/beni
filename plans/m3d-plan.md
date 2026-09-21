@@ -70,7 +70,7 @@ asynchronous operation in every JavaScript target there is. beni today is a pure
 language with no effect system: `main` is emitted as a module-level constant, evaluated at import
 time — measured, `const Main$main = Node$print(Main$greet("world"))` in `out/Main.mjs` — and the
 platform runtime is four lines that write `program.out` and set `process.exitCode`
-(`platforms/node/runtime.js`, copied to `out/platform/runtime.foreign.mjs`). **There is no point in a
+(`platforms/node/runtime.js`, copied to `out/_platform/runtime.foreign.mjs`). **There is no point in a
 beni program today at which anything can wait for anything.** Report 12 §4.3 is the paragraph that
 was supposed to dissolve this, and note its tense:
 
@@ -89,7 +89,7 @@ to the effects milestone. Four ways out.
 platform's `Program` interpreter resolves it:
 
 ```js
-// out/main.mjs — the platform owns the load
+// out/_main.mjs — the platform owns the load
 const mod = await import("./chunk/Admin.dashboard.mjs");
 run(Main$main, { "Admin$dashboard": mod.Admin$dashboard });
 ```
@@ -138,7 +138,7 @@ entries to the same seed set. **Verdict: this is the buildable half of M3d.**
 ### (c) Top-level `await import()` in the compiler-written entry file
 
 ```js
-// out/main.mjs — legal ESM, top-level await
+// out/_main.mjs — legal ESM, top-level await
 const { Admin$dashboard } = await import("./chunk/Admin.dashboard.mjs");
 run(Main$main);
 ```
@@ -147,7 +147,7 @@ This compiles and runs, and it loads the chunk **unconditionally, before `main`*
 slower static import. Making the load conditional needs a condition from the program, and a pure
 synchronous program cannot express one. **Verdict: reject as a design, keep as a mechanism** — it is
 the shape the entry file takes when effects land, and it needs no platform change, because
-`main.mjs` is compiler-written.
+`_main.mjs` is compiler-written.
 
 ### (d) `lazy` waits for effects; ship (b) now
 
@@ -254,7 +254,7 @@ opinion.
 
 | Thing | Chunk | Why |
 |---|---|---|
-| the main chunk | **`out/main.mjs`**, the platform's artifact, with `run(main)` appended | it is already the file `Emit.emitEntry` writes (`src/js/Emit.zig:840-858`); making it the main chunk keeps the artifact path unchanged |
+| the main chunk | **`out/_main.mjs`**, the platform's artifact, with `run(main)` appended | it is already the file `Emit.emitEntry` writes (`src/js/Emit.zig:840-858`); making it the main chunk keeps the artifact path unchanged |
 | a colour that is one lazy root | `out/chunk/<Module>.<name>.mjs` | readable, input-derived, and it names the thing the author marked |
 | a colour of two or more lazy roots | `out/chunk/shared.<i>.mjs`, `i` the colour's index in the canonical colour order | input-derived; no content hash, so a golden is stable |
 | a derived `eq`/`compare` | its own node, coloured like any other (`Reach.Kind.derived`) | §9 already makes it a node |
@@ -372,7 +372,7 @@ a build-contract change and needs decision 2. **D4 is blocked on effects E1–E3
 
 **What the corpus harness needs, and it is not free.** A `run/` fixture is a single `.beni` copied
 into a world and built (`tests/blackbox/corpus_test.zig:453-479`), and what is executed is the fixed
-path `out/main.mjs` (`tests/blackbox/world.zig:41`). Smallest honest change: a `run/` fixture that is
+path `out/_main.mjs` (`tests/blackbox/world.zig`). Smallest honest change: a `run/` fixture that is
 a **directory** builds every `.beni` in it in one invocation — the shape `emit/` already has
 (`:503-533`) — and runs each entry file in sorted order, concatenating stdout against one
 `.expected`. One `Kind` field and one loop, and it is what makes "both routes run" assertable.

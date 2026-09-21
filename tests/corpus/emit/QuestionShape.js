@@ -1,6 +1,6 @@
-import { Basics$add } from "./core/Basics.mjs";
-import { String$toInt, String$fromInt } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$add } from "./_core/Basics.mjs";
+import { String$toInt, String$fromInt } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const QuestionShape$maybe = (text$1) => {
   const $t$1 = String$toInt(text$1);
   if ($t$1.$ === "Nothing") {

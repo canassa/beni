@@ -13,7 +13,7 @@
 --
 -- **A sibling dropped one file too far is a load-time `ReferenceError`**:
 -- `core/String.foreign.mjs` is copied iff one of core/String's `foreign`
--- values survived (§5), and `out/core/String.mjs` imports the surviving
+-- values survived (§5), and `out/_core/String.mjs` imports the surviving
 -- ones by name. Copy the file and forget the import and the name is
 -- undefined; skip the copy and the import fails outright. Either way the
 -- program does not start, and the build exited 0.

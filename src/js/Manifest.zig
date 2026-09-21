@@ -8,7 +8,7 @@
 //! is what lets anyone ship a Bun platform, a Deno platform or a Workers
 //! platform without a compiler change (§5.1).
 //!
-//! M3a reads exactly four keys, and M4's package manifest will be a superset
+//! M3a reads exactly five keys, and M4's package manifest will be a superset
 //! rather than a replacement:
 //!
 //! ```json
@@ -23,6 +23,14 @@
 //!   `run` export is handed `main`'s value. This is §5.2's "a platform
 //!   declares its output shape", at the smallest size that is still a real
 //!   declaration rather than a hardcoded one.
+//! - `entry` — the name of the entry file itself, optional, defaulting to
+//!   `Emit.default_entry_file`. It completes the previous key: until
+//!   2026-09-21 the entry file's NAME was the one part of the output shape
+//!   §5.2 claimed a platform declares and the emitter hardcoded. A declared
+//!   name is checked against `backend.md` §2's rule 1 — one path segment,
+//!   leading `_`, trailing `.mjs` — because a key that could name
+//!   `main.mjs` would hand a platform author the collision with the module
+//!   `Main` that rule exists to make unreachable.
 //!
 //! An unknown key is ignored rather than rejected: a manifest is a forward
 //! compatibility surface, and M4 adds to it.
@@ -45,6 +53,7 @@ platform: bool = false,
 name: ?[]const u8 = null,
 program: ?[]const u8 = null,
 runtime: ?[]const u8 = null,
+entry: ?[]const u8 = null,
 
 pub const ParseError = error{
     /// Not JSON, or not a JSON object.
@@ -58,6 +67,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         name: ?[]const u8 = null,
         program: ?[]const u8 = null,
         runtime: ?[]const u8 = null,
+        entry: ?[]const u8 = null,
     };
     const parsed = std.json.parseFromSliceLeaky(Schema, arena, bytes, .{
         .ignore_unknown_fields = true,
@@ -71,6 +81,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .name = parsed.name,
         .program = parsed.program,
         .runtime = parsed.runtime,
+        .entry = parsed.entry,
     };
 }
 
@@ -105,6 +116,17 @@ test "a manifest that declares a platform" {
     try testing.expectEqualStrings("node", m.name.?);
     try testing.expectEqualStrings("Node.Program", m.program.?);
     try testing.expectEqualStrings("runtime.js", m.runtime.?);
+    // `entry` is optional; the emitter supplies `Emit.default_entry_file`.
+    try testing.expectEqual(@as(?[]const u8, null), m.entry);
+}
+
+test "a manifest may name the entry file" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "platform": true, "name": "web", "program": "Web.Program", "runtime": "runtime.js", "entry": "_index.mjs" }
+    );
+    try testing.expectEqualStrings("_index.mjs", m.entry.?);
 }
 
 test "an ordinary package, and forward compatibility" {

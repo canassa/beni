@@ -1,5 +1,5 @@
-import { List$eq } from "./core/List.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { List$eq } from "./_core/List.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DerivedEqList$eq$prim = ($x, $y) => $x === $y;
 const DerivedEqList$eq$r$x = ($m$0, $x, $y) => $m$0($x.x, $y.x);
 const DerivedEqList$sameInts = (a$1, b$2) => List$eq(DerivedEqList$eq$prim, a$1, b$2);

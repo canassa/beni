@@ -25,7 +25,7 @@
 //! names every one of them and prints the origin of each that answered
 //! `False`, so one `beni build --platform=node --core-root=<temp>` checks
 //! that every example COMPILES as a `Bool` equality and one `node
-//! out/main.mjs` checks that every one of them is TRUE. They are
+//! out/_main.mjs` checks that every one of them is TRUE. They are
 //! `() -> Bool` and not `Bool` so that nothing is forced at module load.
 //!
 //! **The skip list.** An example the mechanism cannot take is named in

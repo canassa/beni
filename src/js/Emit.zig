@@ -13,17 +13,34 @@
 //!
 //! ```
 //! out/Main.mjs                       the app's modules, mirroring their names
-//! out/core/List.mjs                  core, and its hand-written half beside it
-//! out/core/List.foreign.mjs
-//! out/platform/Node.mjs              the platform, its sibling, and its runtime
-//! out/platform/Node.foreign.mjs
-//! out/platform/runtime.foreign.mjs
-//! out/main.mjs                       the entry file: imports `main`, hands it to `run`
+//! out/_core/List.mjs                 core, and its hand-written half beside it
+//! out/_core/List.foreign.mjs
+//! out/_platform/Node.mjs             the platform, its sibling, and its runtime
+//! out/_platform/Node.foreign.mjs
+//! out/_platform/runtime.foreign.mjs
+//! out/_main.mjs                      the entry file: imports `main`, hands it to `run`
 //! ```
 //!
 //! Packages get a directory each because a module's identity is
 //! `(package, name)` (checker.md §4.1) and an app may perfectly well have
 //! its own `List`.
+//!
+//! **Every name the compiler reserves in that tree begins with `_`, and
+//! nothing else may collide with anything under case folding** (§2, *The
+//! output tree does not depend on the file system's case sensitivity*).
+//! A module is named by its path and every segment is an upper identifier,
+//! so `_` is the one region of the name space no module can reach — which
+//! is the whole reason the prefix is there. `core/`, `platform/` and
+//! `main.mjs` were all reachable: `Core.List` lands on `Core/List.mjs`,
+//! `Platform.Node` on `Platform/Node.mjs`, and `Main.beni` on `Main.mjs`,
+//! which on APFS and NTFS IS `main.mjs`. The last of those was a live
+//! defect and not a hazard — the entry shim was written second, so it
+//! overwrote the module and then imported itself.
+//!
+//! `checkOutputPaths` is the backstop for what the prefix does not reach
+//! (two modules `Json.Decode` and `JSON.Decode`, say): every produced path
+//! is folded with ASCII lower-casing and a duplicate is
+//! `output_path_collision`, before a byte is written.
 //!
 //! **Every emitted file is `.mjs`, the hand-written ones included** (§2:
 //! "so nothing depends on a `package.json` the user owns"). A sibling that
@@ -34,7 +51,7 @@
 //! JavaScript file is called and `language.md` §5.4 fixes the sibling's NAME
 //! and not its extension; only the copy is renamed.
 //!
-//! The copy cannot simply keep its stem — `out/core/List.mjs` is already the
+//! The copy cannot simply keep its stem — `out/_core/List.mjs` is already the
 //! generated module — so it gains `.foreign.mjs`, which reads as what it is
 //! and can never collide: a generated module's file name is its module name
 //! with `.` turned into `/`, and every segment of a module name is an upper
@@ -97,9 +114,33 @@ pub const Platform = struct {
     /// The runtime file, relative to the platform package root, whose `run`
     /// export is handed `main`'s value.
     runtime: []const u8,
+    /// The entry file's name in the output tree (`boundary.md` §5.2's
+    /// `"entry"`), already defaulted to `default_entry_file` by
+    /// `platform.finish`. Checked by `checkEntryFileName` before anything
+    /// is built: it is data a platform author writes, and §2's rule 1 has
+    /// to hold for a declared name exactly as it does for the default.
+    entry: []const u8 = default_entry_file,
     /// The platform package's root, as paths in the `SourceStore` spell it.
     root: []const u8,
 };
+
+/// The entry file a platform gets when its manifest does not name one
+/// (`backend.md` §2, rule 1; `boundary.md` §5.2).
+///
+/// The leading `_` is load-bearing and not a style: a module path segment
+/// must be an upper identifier (`SourceStore.isUpperIdent`), so no module
+/// can ever be written to a file whose name starts with `_`. It used to be
+/// `main.mjs`, which the module `Main` folds onto exactly.
+pub const default_entry_file = "_main.mjs";
+
+/// Output directory of the `core` package. Reserved, and `_`-prefixed for
+/// `default_entry_file`'s reason: a user module `Core.List` is legal and
+/// lands on `Core/List.mjs`.
+pub const core_dir = "_core/";
+
+/// Output directory of the platform package, its siblings and its runtime.
+/// Reserved for `core_dir`'s reason: `Platform.Node` is a legal module name.
+pub const platform_dir = "_platform/";
 
 /// A file the build must copy out verbatim: a sibling `.js`, or a
 /// platform's runtime. Embedded copies come from the binary; anything else
@@ -175,6 +216,12 @@ pub fn run(
     };
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
 
+    // §2's rule 1, on the one part of the output shape a platform declares
+    // (`boundary.md` §5.2). First, and before the entry-point search: a
+    // platform whose manifest names an impossible entry file is broken
+    // whatever the program does, and `--library` — which writes no entry
+    // file at all — must not be the way to find out it is fine.
+    try e.checkEntryFileName();
     try e.checkForeignShapes();
     try e.checkSiblings();
     // A library has no entry point and is not asked for one (§2): the
@@ -209,6 +256,8 @@ pub fn run(
     try e.emitModules(entry);
     try e.copyAssets();
     if (entry) |at| try e.emitEntry(at);
+    // §2's rule 2, with everything produced and nothing written yet.
+    try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
 
     try e.flush();
@@ -241,6 +290,9 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
         .io_failure = &io_failure,
     };
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
+    // A broken platform is broken for `check` too, and this is the check a
+    // platform author runs before committing (`frontend.md` §1).
+    try e.checkEntryFileName();
     try e.checkForeignShapes();
     try e.checkSiblings();
     return e.diagnostics.toOwnedSlice(gpa);
@@ -267,7 +319,13 @@ const Emitter = struct {
     files_written: u32 = 0,
     bytes_written: u64 = 0,
 
-    const Output = struct { path: []const u8, bytes: []const u8 };
+    /// One file the build will write. `origin` is the SOURCE file the
+    /// output was produced for — a module's `.beni`, a sibling's or the
+    /// runtime's `.js`, or, for the entry file that no source declares, the
+    /// platform's manifest. It exists for `checkOutputPaths`: a collision
+    /// is a fault of two inputs and naming only the output paths would
+    /// leave the reader to work out which files to rename.
+    const Output = struct { path: []const u8, bytes: []const u8, origin: []const u8 };
 
     fn nothingWritten(e: *Emitter, gpa: Allocator) Allocator.Error!Result {
         return .{
@@ -1245,7 +1303,7 @@ const Emitter = struct {
             });
             if (renamer) |r| try e.reportRenameFailure(&lowered.ir, file, r);
             defer e.gpa.free(text);
-            try e.produce(paths[i], text);
+            try e.produce(paths[i], text, source_path);
         }
     }
 
@@ -1301,7 +1359,7 @@ const Emitter = struct {
             const sibling_source = try e.siblingPath(source_path);
             const bytes = e.readAsset(sibling_source) orelse continue;
             const out = try e.siblingOutputPath(m);
-            try e.produce(out, bytes);
+            try e.produce(out, bytes, sibling_source);
         }
         // The platform's runtime (§5.2). It is not a sibling of any module,
         // so nothing above would have copied it.
@@ -1310,10 +1368,7 @@ const Emitter = struct {
             e.options.platform.runtime,
         });
         const bytes = e.readAsset(runtime_source) orelse {
-            const manifest_path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{
-                e.options.platform.root,
-                Manifest.file_name,
-            });
+            const manifest_path = try e.manifestPath();
             try e.reportInFile(
                 .foreign_sibling_missing,
                 .{ .path = manifest_path },
@@ -1327,7 +1382,7 @@ const Emitter = struct {
             );
             return;
         };
-        try e.produce(try e.runtimeOutputPath(), bytes);
+        try e.produce(try e.runtimeOutputPath(), bytes, runtime_source);
     }
 
     /// The entry file. A platform declares how `main` is invoked (§5.2) and
@@ -1368,7 +1423,17 @@ const Emitter = struct {
                 \\run({s});
                 \\
             , .{ runtime_path, imported, module_path, imported });
-        try e.produce("main.mjs", text);
+        // The NAME is the platform's (`boundary.md` §5.2's `"entry"`,
+        // defaulted to `default_entry_file` by `platform.finish` and checked
+        // by `checkEntryFileName`), so the manifest is what a collision
+        // would have to name: no beni source asked for this file.
+        try e.produce(e.options.platform.entry, text, try e.manifestPath());
+    }
+
+    /// `<platform root>/beni.json`, the file a fault in the platform's own
+    /// declaration is reported against (`boundary.md` §5.2).
+    fn manifestPath(e: *Emitter) ![]const u8 {
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name });
     }
 
     /// The short name `--release` gave the entry declaration, or null when
@@ -1396,8 +1461,8 @@ const Emitter = struct {
         const file = e.graph().moduleFile(m);
         const prefix: []const u8 = switch (e.session.store.package(file)) {
             .app => "",
-            .core => "core/",
-            .platform => "platform/",
+            .core => core_dir,
+            .platform => platform_dir,
         };
         const name = e.session.store.moduleName(file);
         var out: std.ArrayList(u8) = .empty;
@@ -1433,7 +1498,7 @@ const Emitter = struct {
     /// runtime is called `Node.js` from overwriting the module `Node`.
     fn runtimeOutputPath(e: *Emitter) ![]const u8 {
         const base = std.fs.path.basename(e.options.platform.runtime);
-        return std.fmt.allocPrint(e.scratch, "platform/{s}{s}", .{ stripExtension(base, ".js"), foreign_extension });
+        return std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ platform_dir, stripExtension(base, ".js"), foreign_extension });
     }
 
     /// The bytes of an asset: the embedded copy when the compiler carries
@@ -1447,11 +1512,116 @@ const Emitter = struct {
 
     /// Record one output file. `bytes` is copied into the scratch arena
     /// because the printer's buffer is freed as soon as the module is done.
-    fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8) Allocator.Error!void {
+    fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8, origin: []const u8) Allocator.Error!void {
         try e.pending.append(e.scratch, .{
             .path = try e.scratch.dupe(u8, relative_path),
             .bytes = try e.scratch.dupe(u8, bytes),
+            .origin = try e.scratch.dupe(u8, origin),
         });
+    }
+
+    /// **Rule 1's half that is data** (§2, *The output tree does not depend
+    /// on the file system's case sensitivity*; `boundary.md` §5.2): a
+    /// platform may name its own entry file, and a name a module could take
+    /// puts back the very collision the `_` prefix exists to prevent. So a
+    /// declared name is checked, and that check is the only reason `"entry"`
+    /// was safe to add at all.
+    ///
+    /// One path segment, a leading `_`, a trailing `.mjs`, ASCII letters,
+    /// digits, `_` or `-` between. A separator is refused rather than
+    /// resolved: `_a/_b.mjs` would put the entry inside a directory subject
+    /// to the same rule, and one segment is all any platform has wanted.
+    fn checkEntryFileName(e: *Emitter) !void {
+        const name = e.options.platform.entry;
+        if (entryNameIsLegal(name)) return;
+        try e.reportInFile(
+            .invalid_entry_file,
+            .{ .path = try e.manifestPath() },
+            \\This platform declares its entry file as `{s}`, which is a name a module
+            \\could take.
+            \\
+            \\A module is named by its path and every segment is an upper identifier
+            \\(`docs/design/language.md` §5), so a name beginning with `_` is one no module
+            \\can ever occupy — on macOS and Windows included, where `{s}` and a module
+            \\`{s}`'s own file are one and the same. An entry file name is one path segment,
+            \\begins with `_`, ends in `.mjs`, and has ASCII letters, digits, `_` or `-`
+            \\between (`docs/design/boundary.md` §5.2).
+        ,
+            .{ name, name, try e.collidingModuleName(name) },
+        );
+    }
+
+    /// The module a rejected entry file name would fold onto, for the
+    /// message: the stem with its first letter upper-cased, because a module
+    /// name segment always begins with a capital. `main.mjs` names `Main`
+    /// and not `main`, which is not a name any module can have — the point
+    /// of the sentence is the file the two would share.
+    fn collidingModuleName(e: *Emitter, name: []const u8) ![]const u8 {
+        const stem = stripExtension(std.fs.path.basename(name), ".mjs");
+        const out = try e.scratch.dupe(u8, stem);
+        if (out.len != 0) out[0] = std.ascii.toUpper(out[0]);
+        return out;
+    }
+
+    /// **Rule 2** (§2): two files this build would write whose paths are
+    /// equal under ASCII case folding. On APFS and NTFS they are ONE file,
+    /// the second write wins, and the build exits 0 having shipped
+    /// something that throws at load.
+    ///
+    /// Folding is `std.ascii.toLower` and nothing else. Every module name
+    /// segment is an ASCII upper identifier (`SourceStore.isUpperIdent`) and
+    /// every name the compiler reserves is ASCII, so there is no Unicode
+    /// case folding to perform and none is performed.
+    ///
+    /// It runs over `pending`, which is everything the build produced and
+    /// nothing it dropped, and it runs BEFORE `flush`, so a refused build
+    /// leaves nothing behind exactly as `boundary.md` §4's checks do.
+    /// `pending` is filled in module order — sorted path, never completion
+    /// order — and the comparison below breaks a tie on that index, so the
+    /// pair reported is the same at every `--jobs` (CLAUDE.md rule 5).
+    ///
+    /// It is a check of what is WRITTEN and not of what exists, which is the
+    /// one place it differs from §4: a module the reachability walk dropped
+    /// cannot collide with anything, because it is not there.
+    fn checkOutputPaths(e: *Emitter) !void {
+        const Folded = struct { key: []const u8, index: u32 };
+        const folded = try e.scratch.alloc(Folded, e.pending.items.len);
+        for (e.pending.items, folded, 0..) |output, *slot, index| {
+            const key = try e.scratch.dupe(u8, output.path);
+            for (key) |*c| c.* = std.ascii.toLower(c.*);
+            slot.* = .{ .key = key, .index = @intCast(index) };
+        }
+        std.mem.sort(Folded, folded, {}, struct {
+            fn lessThan(_: void, x: Folded, y: Folded) bool {
+                return switch (std.mem.order(u8, x.key, y.key)) {
+                    .lt => true,
+                    .gt => false,
+                    .eq => x.index < y.index,
+                };
+            }
+        }.lessThan);
+        for (1..folded.len) |i| {
+            if (!std.mem.eql(u8, folded[i - 1].key, folded[i].key)) continue;
+            const first = e.pending.items[folded[i - 1].index];
+            const second = e.pending.items[folded[i].index];
+            try e.reportInFile(
+                .output_path_collision,
+                .{ .path = first.origin },
+                \\Two files this build would write have the same name on a case-insensitive
+                \\file system:
+                \\
+                \\- `{s}`, written for `{s}`
+                \\- `{s}`, written for `{s}`
+                \\
+                \\macOS (APFS) and Windows (NTFS) fold case, so those are ONE file there and
+                \\the second would overwrite the first — the build would exit 0 and the program
+                \\would throw at load. A build's output is the same set of files on every file
+                \\system (`docs/design/backend.md` §2), so this is refused and nothing is
+                \\written. Rename one of the two sources.
+            ,
+                .{ first.path, first.origin, second.path, second.origin },
+            );
+        }
     }
 
     /// Write everything, in the order it was produced. The first failure
@@ -1482,6 +1652,24 @@ const Emitter = struct {
 /// `.mjs`; the `.foreign` part keeps the copy from colliding with the
 /// generated module of the same name and says which half of the module it is.
 pub const foreign_extension = ".foreign.mjs";
+
+/// Whether `name` is a legal entry file name (§2's rule 1, `boundary.md`
+/// §5.2's `"entry"`): one path segment, a leading `_`, a trailing `.mjs`,
+/// and ASCII letters, digits, `_` or `-` between.
+///
+/// The leading `_` is what does the work. A module path segment must be an
+/// upper identifier, so it begins with an ASCII capital letter
+/// (`SourceStore.isUpperIdent`) — and a name beginning with `_` is
+/// therefore one no module can ever be written to, on a case-insensitive
+/// file system included.
+fn entryNameIsLegal(name: []const u8) bool {
+    if (!std.mem.startsWith(u8, name, "_")) return false;
+    if (!std.mem.endsWith(u8, name, ".mjs")) return false;
+    const stem = name["_".len .. name.len - ".mjs".len];
+    if (stem.len == 0) return false;
+    for (stem) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '-')) return false;
+    return true;
+}
 
 /// `name` without `extension`, or `name` when it does not end in one.
 fn stripExtension(name: []const u8, extension: []const u8) []const u8 {
@@ -1628,10 +1816,32 @@ test "an ESM specifier is relative to the importing file's directory" {
     var a: std.heap.ArenaAllocator = .init(testing.allocator);
     defer a.deinit();
     const arena = a.allocator();
-    try testing.expectEqualStrings("./core/List.mjs", try relativeSpecifier(arena, "Main.mjs", "core/List.mjs"));
-    try testing.expectEqualStrings("../core/List.mjs", try relativeSpecifier(arena, "Dict/Int.mjs", "core/List.mjs"));
+    try testing.expectEqualStrings("./_core/List.mjs", try relativeSpecifier(arena, "Main.mjs", "_core/List.mjs"));
+    try testing.expectEqualStrings("../_core/List.mjs", try relativeSpecifier(arena, "Dict/Int.mjs", "_core/List.mjs"));
     try testing.expectEqualStrings("../../Main.mjs", try relativeSpecifier(arena, "a/b/C.mjs", "Main.mjs"));
     try testing.expectEqualStrings("./Main.mjs", try relativeSpecifier(arena, "Other.mjs", "Main.mjs"));
+}
+
+test "an entry file name is one `_`-prefixed segment ending in .mjs" {
+    // §2's rule 1: the leading `_` is the whole guarantee, because a module
+    // path segment must start with an ASCII capital.
+    try testing.expect(entryNameIsLegal("_main.mjs"));
+    try testing.expect(entryNameIsLegal("_start.mjs"));
+    try testing.expect(entryNameIsLegal("_index-2.mjs"));
+    try testing.expect(entryNameIsLegal("__.mjs"));
+    // The name the emitter used to hardcode, and the module it folded onto.
+    try testing.expect(!entryNameIsLegal("main.mjs"));
+    try testing.expect(!entryNameIsLegal("Main.mjs"));
+    // A separator would put the entry under a directory subject to the same
+    // rule, so it is refused rather than resolved.
+    try testing.expect(!entryNameIsLegal("_a/_b.mjs"));
+    try testing.expect(!entryNameIsLegal("../_main.mjs"));
+    // Extension and stem.
+    try testing.expect(!entryNameIsLegal("_main.js"));
+    try testing.expect(!entryNameIsLegal("_main"));
+    try testing.expect(!entryNameIsLegal(".mjs"));
+    try testing.expect(!entryNameIsLegal("_.mjs"));
+    try testing.expect(!entryNameIsLegal(""));
 }
 
 test "a qualified platform type shortens to its own name for the hint" {

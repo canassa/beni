@@ -1,5 +1,5 @@
-import{a,b}from"./core/Basics.mjs";
-import{c}from"./platform/Node.mjs";
+import{a,b}from"./_core/Basics.mjs";
+import{c}from"./_platform/Node.mjs";
 const d=(a,b)=>{const c=a.a<b.a?"LT":a.a>b.a?"GT":"EQ";if(c!=="EQ"){return c;}return a.b<b.b?"LT":a.b>b.b?"GT":"EQ";},
 e=(a,b)=>a.a===b.a&&a.b===b.b,
 f=(b)=>a(b.a,b.b),

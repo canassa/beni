@@ -1,5 +1,5 @@
-import { Basics$add } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$add } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const ConstantMethodCall$Counter$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? "GT" : "EQ";
 const ConstantMethodCall$Counter$$eq = ($x, $y) => $x.a === $y.a;
 const ConstantMethodCall$bump = (c$1, step$2) => {

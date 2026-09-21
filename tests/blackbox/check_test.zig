@@ -94,7 +94,7 @@ test "a program that imports its platform type-checks with --platform, and canno
     // Checking is not building: no output directory, whatever `build` would
     // have written.
     try testing.expect(!w.exists("out"));
-    try testing.expect(!w.exists("main.mjs"));
+    try testing.expect(!w.exists("_main.mjs"));
 }
 
 test "check and build report the same type error, byte for byte" {

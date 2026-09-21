@@ -1,5 +1,5 @@
-import { String$compare } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$compare } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DerivedEmissionOrder$Amber$$order = { Dawn: 0, Dusk: 1 };
 const DerivedEmissionOrder$Zinc$$order = { Plate: 0, Ingot: 1 };
 const DerivedEmissionOrder$Amber$$compare = ($x, $y) => {

@@ -1,5 +1,5 @@
-import { Node$printLines } from "./platform/Node.mjs";
-import { String$compare } from "./core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
+import { String$compare } from "./_core/String.mjs";
 const DerivedCompareNominal$Colour$$order = { Red: 0, Green: 1, Blue: 2 };
 const DerivedCompareNominal$Label$$order = { Initial: 0, Named: 1 };
 const DerivedCompareNominal$Outcome$$order = { Ok: 0, Err: 1 };

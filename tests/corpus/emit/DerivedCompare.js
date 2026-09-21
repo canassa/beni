@@ -1,5 +1,5 @@
-import { String$compare } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$compare } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DerivedCompare$compare$char = ($x, $y) => {
   const $a = $x.codePointAt(0);
   const $b = $y.codePointAt(0);

@@ -1,6 +1,6 @@
-import { String$fromInt, String$append } from "./core/String.mjs";
-import { Basics$add } from "./core/Basics.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$fromInt, String$append } from "./_core/String.mjs";
+import { Basics$add } from "./_core/Basics.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const MatchSharedLeaf$Flag$$order = { On: 0, Off: 1 };
 const MatchSharedLeaf$Flag$$compare = ($x, $y) => {
   const $a = MatchSharedLeaf$Flag$$order[$x];

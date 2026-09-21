@@ -1,5 +1,5 @@
-import { String$compare } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { String$compare } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const ComparisonOperators$ints = (a$1, b$2) => a$1 < b$2;
 const ComparisonOperators$chars = (a$1, b$2) => a$1.codePointAt(0) < b$2.codePointAt(0);
 const ComparisonOperators$strings = (a$1, b$2) => String$compare(a$1, b$2) === "LT";

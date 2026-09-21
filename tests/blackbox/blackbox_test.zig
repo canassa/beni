@@ -3373,7 +3373,7 @@ test "core/Basics carries the derived rows §3.2's table asks it for" {
     const built = try w.buildAndRun(&.{"Main.beni"});
     try testing.expectEqual(@as(u8, 0), built.build.exit_code);
     try testing.expectEqualStrings("True\n", built.program.?.stdout);
-    const basics = try w.read("out/core/Basics.mjs");
+    const basics = try w.read("out/_core/Basics.mjs");
     const table = std.mem.indexOf(u8, basics, "const Basics$Order$$order = ");
     const compare = std.mem.indexOf(u8, basics, "const Basics$Order$$compare = ");
     try testing.expect(table != null);
@@ -3623,7 +3623,7 @@ test "a pub foreign with a where clause takes its evidence in front of its own a
     // └─────────────────────────────────────────┘
     // 1 * 3 * 3. `NaN` is what a dropped or misplaced evidence argument
     // prints, and it is the failure this scenario exists to catch.
-    const program = try w.node("out/main.mjs");
+    const program = try w.node(world.entry_file);
     try testing.expectEqualStrings("9\n", program.stdout);
 }
 

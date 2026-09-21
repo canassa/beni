@@ -231,6 +231,21 @@ pub const Code = enum {
     /// — so that "a release build behaves exactly as the development build
     /// does" holds without exception. The message names the use sites.
     debug_in_release,
+    /// M3a again (`backend.md` §2's *The output tree does not depend on the
+    /// file system's case sensitivity*), appended on 2026-09-21 (queue row
+    /// 58): two files a build would write whose paths are equal under ASCII
+    /// case folding. On APFS and NTFS they are ONE file, the second write
+    /// wins, and the build exits 0 having shipped something that throws at
+    /// load — which is what `main.mjs` did to every module named `Main`.
+    /// Checked over the produced list before the first byte is written, so
+    /// a refused build leaves nothing behind.
+    output_path_collision,
+    /// The other half of the same guarantee (`boundary.md` §5.2): a
+    /// platform's `"entry"` key naming a file a module could take. The name
+    /// became declarable the same day; a declared name that does not begin
+    /// with `_` would let a platform author reintroduce, in data, the defect
+    /// the compiler had just been taught to make impossible.
+    invalid_entry_file,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -344,6 +359,8 @@ pub fn title(code: Code) []const u8 {
         .constrained_constant => "CONSTRAINED CONSTANT",
         .too_many_inferred_constraints => "TOO MANY INFERRED CONSTRAINTS",
         .debug_in_release => "DEBUG IN A RELEASE BUILD",
+        .output_path_collision => "OUTPUT PATHS COLLIDE",
+        .invalid_entry_file => "INVALID ENTRY FILE NAME",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

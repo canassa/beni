@@ -1,6 +1,6 @@
-import { Basics$add } from "./core/Basics.mjs";
-import { String$fromInt } from "./core/String.mjs";
-import { Node$printLines } from "./platform/Node.mjs";
+import { Basics$add } from "./_core/Basics.mjs";
+import { String$fromInt } from "./_core/String.mjs";
+import { Node$printLines } from "./_platform/Node.mjs";
 const DceUnusedValue$helper = (n$1) => Basics$add(n$1, 1);
 const DceUnusedValue$used = (n$1) => String$fromInt(DceUnusedValue$helper(n$1));
 const DceUnusedValue$main = Node$printLines({ $: 1, a: DceUnusedValue$used(1), b: { $: 0, a: null, b: null } });
