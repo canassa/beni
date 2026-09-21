@@ -44,9 +44,28 @@ pub const default_out = "out";
 /// `exists("out/main.mjs")` could not tell them apart.
 pub const entry_file = "out/_main.mjs";
 
-/// Wall-clock bound on one compiler run. Generous: the point is to turn a
-/// hang into a failure, not to measure.
-pub const timeout_ms: i64 = 60_000;
+/// Wall-clock bound on one compiler run, unless `RunOptions` raises it.
+/// Generous: the point is to turn a hang into a failure, not to measure.
+///
+/// **It is wall clock and not cpu time, and that is a compromise** (queue row
+/// 59). Wall clock cannot tell a hang from a run the scheduler parked: on
+/// Apple Silicon a single-threaded process can land on an efficiency core,
+/// and `check --jobs=1` over 5 000 empty modules was measured at 12.05,
+/// 24.29, 26.11, 59.16 and 61.16 s for identical deterministic work — with
+/// USER cpu itself varying 6.77 s to 16.22 s. A cpu-time bound would separate
+/// the two, but reading a LIVE child's cpu time needs per-pid rusage
+/// (`proc_pid_rusage` on macOS, `/proc/<pid>/stat` on Linux) and neither is
+/// in std; `getrusage(RUSAGE_CHILDREN)` counts only children already reaped,
+/// so it says nothing while the run is the thing being bounded. Rather than
+/// carry two non-portable syscalls in a test harness, the bound stays wall
+/// clock and the one case that needs more asks for more.
+pub const default_timeout_ms: i64 = 60_000;
+
+/// What a case gets when the thing being bounded is 5 000 files rather than a
+/// program: five times the worst run ever measured, so that no scheduling
+/// decision can reach it, and still a hang-detector. Raised from the default
+/// with a number in hand (queue row 59) and not before.
+pub const bulk_timeout_ms: i64 = 300_000;
 
 /// Largest stream the harness keeps. Beyond it the run fails loudly rather
 /// than silently truncating an assertion's input.
@@ -70,6 +89,10 @@ pub const RunOptions = struct {
     raw_diagnostics: bool = false,
     /// Where the child runs. Default: the world's project directory.
     cwd: ?std.process.Child.Cwd = null,
+    /// Wall-clock bound on this run. Raise it only for a case whose INPUT is
+    /// large enough that the default is measuring the machine rather than
+    /// catching a hang — see `bulk_timeout_ms`.
+    timeout_ms: i64 = default_timeout_ms,
 };
 
 pub const World = struct {
@@ -345,7 +368,7 @@ pub const World = struct {
         const arena = world.arena.allocator();
         const exe = world.node_exe orelse return error.NodeNotOnPath;
         const argv = try arena.dupe([]const u8, &.{ exe, script });
-        return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir });
+        return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir }, default_timeout_ms);
     }
 
     /// `beni build --platform=node --out=out <paths>`, then `node out/_main.mjs`.
@@ -376,7 +399,7 @@ pub const World = struct {
         if (wants_json) try argv.append(arena, "--diagnostics=json");
 
         const cwd = options.cwd orelse std.process.Child.Cwd{ .dir = world.tmp.dir };
-        var result = try spawnAndCapture(arena, world.gpa, world.io, argv.items, cwd);
+        var result = try spawnAndCapture(arena, world.gpa, world.io, argv.items, cwd, options.timeout_ms);
         if (wants_json) {
             const trimmed = std.mem.trim(u8, result.stderr, " \r\n");
             if (trimmed.len != 0) {
@@ -474,7 +497,14 @@ fn findOnPath(arena: Allocator, io: Io, name: []const u8) ?[]const u8 {
 /// Spawn `argv` with an EMPTY environment, capture both streams to EOF
 /// within `timeout_ms`, reap, and return everything. `arena` owns the
 /// captured bytes.
-pub fn spawnAndCapture(arena: Allocator, gpa: Allocator, io: Io, argv: []const []const u8, cwd: std.process.Child.Cwd) !Result {
+pub fn spawnAndCapture(
+    arena: Allocator,
+    gpa: Allocator,
+    io: Io,
+    argv: []const []const u8,
+    cwd: std.process.Child.Cwd,
+    timeout_ms: i64,
+) !Result {
     var env = std.process.Environ.Map.init(gpa);
     defer env.deinit();
 
@@ -491,7 +521,7 @@ pub fn spawnAndCapture(arena: Allocator, gpa: Allocator, io: Io, argv: []const [
 
     var stdout: std.ArrayList(u8) = .empty;
     var stderr: std.ArrayList(u8) = .empty;
-    try drain(arena, io, &child, &stdout, &stderr);
+    try drain(arena, io, &child, &stdout, &stderr, timeout_ms);
 
     const term = try child.wait(io);
     return .{
@@ -509,7 +539,14 @@ pub fn spawnAndCapture(arena: Allocator, gpa: Allocator, io: Io, argv: []const [
 /// Read both pipes to EOF, multiplexed with `poll`, within the deadline.
 /// A pipe that fills while the other is being read would block the child
 /// forever; polling both is what prevents that.
-fn drain(arena: Allocator, io: Io, child: *std.process.Child, stdout: *std.ArrayList(u8), stderr: *std.ArrayList(u8)) !void {
+fn drain(
+    arena: Allocator,
+    io: Io,
+    child: *std.process.Child,
+    stdout: *std.ArrayList(u8),
+    stderr: *std.ArrayList(u8),
+    timeout_ms: i64,
+) !void {
     const out_file = child.stdout.?;
     const err_file = child.stderr.?;
     var fds = [2]std.posix.pollfd{

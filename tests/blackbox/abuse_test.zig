@@ -765,8 +765,16 @@ test "5 000 empty modules produce identical output at --jobs=1 and the machine d
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const one = try w.run(&.{ "check", "--jobs=1", "src" });
-    const many = try w.run(&.{ "check", "src" });
+    // The bound is raised for this one case, with a number behind it (queue
+    // row 59): `--jobs=1` over 5 000 files was measured at 12.05, 24.29,
+    // 26.11, 59.16 and 61.16 s for identical deterministic work — the spread
+    // is a single thread landing on an efficiency core, not the compiler, and
+    // the default 60 s sat inside it. `world.bulk_timeout_ms` is five times
+    // the worst of those, so scheduling cannot reach it and a hang still
+    // fails. The default-jobs run beside it took 6.00, 6.00 and 6.08 s.
+    const bulk: world.RunOptions = .{ .timeout_ms = world.bulk_timeout_ms };
+    const one = try w.runWith(&.{ "check", "--jobs=1", "src" }, bulk);
+    const many = try w.runWith(&.{ "check", "src" }, bulk);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -959,7 +967,7 @@ test "a symlink loop in the tree terminates the walk instead of following it" {
 
 /// The invariants every scenario shares: the child EXITED with `code`
 /// rather than dying from a signal, and wrote nothing to stdout. A run that
-/// did not finish inside `world.timeout_ms` never reaches here — the
+/// did not finish inside its run's timeout never reaches here — the
 /// harness kills it and returns `error.CompilerTimeout`.
 ///
 /// stdout is checked here because no command in this file has stdout as its
