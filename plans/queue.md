@@ -258,3 +258,21 @@ K1–K12. **Awaiting the owner.**
 | # | Item | State |
 |---|---|---|
 | 57 | **A well-typed program that builds with exit 0 and THROWS at run time.** An annotated top-level value with no parameters and a `where` clause (`pub blank : List a where a.eq : a, a -> Bool` / `blank = []`) is emitted as a function of its evidence, and a monomorphic value defined from it (`blankInts : List Int = blank`) is emitted as a thunk `() => Blank$blank(Blank$eq$prim)` — but consumers read `Blank$blankInts` as a plain value: `List$length(Blank$blankInts)` → `TypeError: Cannot read properties of undefined (reading '$')`. Reproduced by the manager (two modules, `build --platform=node`, `node out/main.mjs`, exit 1). Spec gap: spike §8.1 says the checker refuses a constrained constant first, §10.10 scopes `constrained_constant` to INFERRED schemes, so the ANNOTATED case falls between them. This breaks the no-runtime-exception guarantee, so it outranks everything parked. Owes a fail-first `run/` or `check/bad/` fixture; the fix is either to refuse the annotated case too or to make the emitter and its consumers agree | todo (parked — the owner's word needed) |
+
+### Owner decisions on schemas, 2026-09-21 (report 32 to be revised around them)
+
+- **New syntax**: the owner leans to a `schema` declaration, at feature parity with Effect's Schema
+  including custom transformations.
+- **The schema is the defined thing, not a type.** "We are defining a schema User, not a type User."
+  `schema User = { … }` defines a schema; its two types hang off it and are reached through it, as
+  in Effect. This REPLACES report 32's K4 ("the declaration declares the type too") and K9 ("no wire
+  type"): both types exist from the first cut.
+- **Names: `User.Type` and `User.Encoded`** (Effect's names). **No shorthand**: bare `User` in a type
+  annotation is not the program type; a developer who wants a short name writes
+  `type alias Person = User.Type` themselves.
+- Nothing appears under an invented name (no `UserWire`), and no source is generated: the declaration
+  is the only text, as `type` is for `eq`/`compare`.
+- Follows from it (manager): a conversion carries both sides — `Conversion encoded a` — so the compiler
+  can read a field's `Encoded` type off a `via`; validated types need a declaration form too
+  (`schema Email = String via …`) or their `Encoded` side is unknown; a tag's literal text cannot be
+  a beni type, so a tagged union's `Encoded` is a custom type and the text lives in the reader/writer.
