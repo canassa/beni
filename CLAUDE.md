@@ -310,7 +310,9 @@ heading `## YYYY-MM-DD HH:MM TZ — <short title>` (get the real timestamp with
 `zig-developer` for any Zig syntax, stdlib or build-system question — Zig's API
 churns between releases, so do not answer from memory. `write-tests` for the
 testing discipline above. `commit` for the repo's commit format. `roc-zulip` for
-primary-source evidence on how Roc's compiler works and why.
+primary-source evidence on how Roc's compiler works and why, and `hackernews`
+for what practitioners reported about shipping a technology — the users talking
+back, where `references/talks/` is one person's prepared argument.
 
 ### References
 

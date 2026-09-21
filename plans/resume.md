@@ -41,6 +41,23 @@ To resume: put the tier-1 questions to the owner case by case in plain language 
 way; "go with the recommendations" is usable), record answers in the sheet's block, then do the docs
 pass in `browser-platform.md` §4 before any code.
 
+## 0a. Schemas (2026-09-21) — decided model, open K13–K16, and an OPEN COMPILER DEFECT
+
+- **Queue row 57 is an open defect that breaks the no-runtime-exception guarantee**: an annotated
+  top-level value with a `where` clause and no parameters builds with exit 0 and the program throws
+  `TypeError` at run time (repro in the queue row). Not fixed — the owner had not yet said to. It
+  outranks everything parked; ask first thing. The pattern that worked for row 56: one Opus agent in a
+  worktree, red black-box fixture first, the manager reverses the patch to prove fail-first.
+- The owner wants data in/out "as powerful as Effect schemas", by a **`schema` declaration**: the
+  schema is the defined thing, its types are `User.Type` / `User.Encoded`, no shorthand. Design:
+  `docs/design/research/32-schemas-at-effect-parity.md` (revision 2). **K13–K16 await the owner**
+  (what `User` is — a nested namespace vs one schema per file; field positions hold schemas and
+  `via` names the wire side; a tagged union's flattened `Encoded`; the five functions under the
+  schema's name); K3, K5–K8, K10–K12 carry recommendations. Explain in plain words with a `User`
+  and its JSON — see the memory note on vocabulary.
+- Also landed: report 30 (what Elm's users complained about on Hacker News), report 31 (derived
+  codecs — superseded in direction by report 32), the `hackernews` skill, `references/talks/`.
+
 ## 1. No implementation is in flight
 
 **M4-3 — the firewall cutoff — landed after work was parked** (`92cfca8`..`ed8385f`; validated by the

@@ -1412,3 +1412,196 @@ references. One Opus agent each; I validated and committed (`23f72f1`, and this 
   nobody wrote down); template bytes, not runtime bytes, are what grows.
 - Auto-captions are evidence of what was argued, not of what was said: 84 and 159 `[?]` remain, and
   the header of each transcript tells the reader to quote from the video.
+
+## 2026-09-20 21:16 CEST — a `hackernews` skill: search and retrieve HN threads
+
+**What I did**
+
+- Read `references/talks/` end to end — both `notes.md` and both auto-caption `transcript.md`,
+  about 85 000 words — after the owner asked for the talks in depth. No repo change from the
+  reading itself; the argument and the beni-facing readings were already captured by the session
+  that landed them.
+- Built `.claude/skills/hackernews/`, modelled on `roc-zulip`: `SKILL.md` plus three fish scripts
+  and two support files in `scripts/`.
+  - `hn-search.fish` — full-text over stories or comments, with `--type`, `--by-date`,
+    `--min-points`, `--min-comments`, `--after`/`--before`, `--author`, `--story`, `--in`,
+    `--loose`, `--json`.
+  - `hn-item.fish` — a story plus its entire comment tree, or a comment plus its replies, with
+    `--depth`/`--top`, `--limit`, `--grep`, `--width`; accepts a pasted `item?id=` URL.
+  - `hn-url.fish` — the HN discussion(s) of an article URL, ordered by comment count.
+  - `_common.fish` (request, retry, error shapes, date→epoch, the exact-phrase rule) and `hn.jq`
+    (HTML cleaning, wrapping, tree flattening, output formats).
+- Registered it in CLAUDE.md's Skills paragraph, next to `roc-zulip`.
+- Verified every flag and every error path against the live API, and fixed two bugs found that way:
+  `--in title` sent a non-searchable attribute and errored, and an author- or story-only search
+  printed an empty header.
+
+**What I learned**
+
+- **Algolia's typo tolerance makes an unquoted HN query useless.** `query=elm&tags=story` returns
+  5 496 hits, matching `Elon` and any URL containing the letters; `query="elm"` returns 1 087 real
+  ones. Relevance ranking hides this on `/search` and exposes it completely on `/search_by_date`,
+  so a chronological search that looks like noise is a quoting bug. The scripts quote by default
+  and `--loose` opts out. `restrictSearchableAttributes=title` is *not* a substitute — it still
+  returns 75 479 hits, because the typo match happens inside the title too.
+- Only `title`, `url`, `author`, `story_text` and `comment_text` are searchable. `story_title` is
+  returned on every comment record but is not indexed, and naming it is an API error — returned and
+  indexed are different sets.
+- **Comments carry no score** (`points` is always null, because HN does not publish them), so no
+  comment can honestly be described as highly upvoted. Any result set caps at 1 000 hits however
+  you page, while `nbHits` still reports the true total; date windows are the only way past it.
+- `/items/<id>` returns a whole nested tree in one request, at any size, and works on comment ids
+  too — so reading a 432-comment thread is one call, not a crawl.
+- A popular article has many submissions and almost all are dead: "Why I'm Leaving Elm" has four,
+  drawing 432, 87, 55 and 0 comments. Sorting by comment count is what makes `hn-url.fish` useful
+  rather than merely correct.
+- Putting every regex in `hn.jq` and loading it with `jq -L` avoids the fish→JSON→jq triple
+  escaping that `roc-zulip/scripts/_common.fish` carries a warning comment about.
+
+## 2026-09-20 21:36 CEST — report 30: what Elm's users complained about, 2011–2026
+
+**What I did**
+
+- Built a corpus with the new `hackernews` skill: searched `"elm"` as an exact phrase, took the
+  first five pages of relevance-ranked stories (100), kept the **80 with ≥ 20 comments**, and
+  downloaded every comment tree in full — **7 285 comments, 2 776 distinct commenters, 2011–2026**.
+- Fanned out **8 agents** over byte-balanced ~450 KB shards, each reading its shard in full against
+  a fixed schema (distinct-commenter counts, date ranges, verbatim quotes with ids,
+  production-vs-speculation flags, and the counter-case). Ran a mechanical term-frequency pass over
+  all 7 285 comments separately, so the frequency table is measured rather than inferred from eight
+  partial views.
+- **Spot-checked 38 load-bearing quotes against the source. Every id, author, date and wording
+  matched exactly, in all eight shards.**
+- Wrote [`docs/design/research/30-elm-complaints-on-hackernews.md`](../docs/design/research/30-elm-complaints-on-hackernews.md).
+
+**What I learned**
+
+- **The premise of the question did not survive the data.** Counting distinct commenters:
+  ecosystem 480, governance 234, ports/interop 188, forks 141, "dead" 119, type classes 108,
+  0.19 breakage 97, boilerplate 77 — and **centralized state, named explicitly, 20**. People left
+  Elm over interop, governance and ecosystem, not over TEA. Three of eight agents opened with an
+  unprompted caveat that their threads were thin on the state question.
+- **Where the state pain does show up, it attaches to `Msg`, not to `Model`** — "The Model for that
+  is pretty straightforward. It's just a tree of data. The Msg for that is what is being complained
+  about" (phamilton, #12076766). That relocates beni's open question: the tractable design target is
+  letting a subtree own a message type without every ancestor naming it, *not* adding local state.
+- **Two mechanical findings, not ergonomics.** (1) The message queue can silently drop a message,
+  because the delay between issuing and `update` is undefined — and the idiom people reach for to
+  cut `Msg` boilerplate (a coarse `SetModel`) is exactly the unsound one (dwohnitmok, #25098676).
+  (2) A whole-model rebuild destroys the reference identity `Html.Lazy` tests on, making it
+  "worthless" (Existenceblinks, #28223910) — which is the exact failure W27 exists to prevent, so
+  the corpus is evidence that beni's identity promise is load-bearing rather than theoretical.
+- **Four complaints beni already answers by construction**: privileged `comparable` (static
+  dispatch removes the caste), `Int` is a double (`core/Int32` shipped for that reason), the `lazy`
+  identity cliff (W27), and the `foreign` wall (rule 7) — where the escape valves users asked for
+  are rule 7's exact shape, "a scary compilation warning… like `unsafe` in Rust".
+- **One finding that could change `boundary.md`:** a production user gets synchronous, type-safe FFI
+  by encoding/decoding through a prototype hack and argues "it's still safe FFI!" — i.e. the safety
+  came from the **serialisation boundary, not the asynchrony** (1-more, #48806400). If that holds, a
+  synchronous codec-checked `foreign` closes the `Intl`-shaped gap without weakening a guarantee.
+- **Costs get pushed out of the program**, which is the strongest evidence that centralization has a
+  real price: one compiled build per language to avoid threading i18n through the model (#19302138),
+  a JS code generator emitting `main.elm` (#13620638), an 800-line diff to display a timezone
+  (#26865296).
+- **I got a number wrong and caught it in review.** I wrote that SSR appears "from perhaps five
+  commenters"; the measured figure is 28 distinct authors. The direction held — it is still an
+  order of magnitude below interop and governance — but the figure was invented rather than counted,
+  in a report whose whole standard is that figures get counted. Corrected before commit. Count it,
+  then write it.
+
+## 2026-09-20 23:12 CEST — report 31: derived codecs
+
+**What I did**
+
+- Wrote [`docs/design/research/31-derived-codecs.md`](../docs/design/research/31-derived-codecs.md),
+  assembling the evidence for `fast-compiler.md`'s undecided standing recommendation from report 18
+  ("decide structural codec derivation separately, needing no dispatch at all"). The report lays out
+  the design space and the open questions; it deliberately does not take the decision.
+- Sources: beni's own documents; the report 30 HN corpus for cost evidence; **Roc's Zulip via the
+  `roc-zulip` skill**; Effect v4's `Schema` as vendored. Found `references/roc` and
+  `references/zig` are **uninitialised submodules**, so no Roc source was readable — every Roc
+  claim is chat-sourced and flagged as such.
+
+**What I learned**
+
+- **Roc moved encode/decode off abilities and onto static dispatch with auto-derivation** — "Just
+  not abilities anymore" (Brendan Hansknecht, #ideas › Encode/Decode, 2025-12-29, 565607409).
+  Report 18 recommended deciding codec derivation *without* dispatch; the peer project beni's static
+  dispatch is modelled on did the opposite. The recommendation's premise now has a counterexample and
+  should not be carried forward unexamined.
+- **Roc's derivation is opt-in per type**, written in the declaration as `encoder_for : _` /
+  `parser_for : _` (Richard Feldman, 2026-07-26, 612853585) — not structural-by-default. Records,
+  lists, tuples and tag unions derive; derivation lags equality.
+- **Derivation broke on exactly the construct beni's capability roadmap depends on.** Roc derived
+  for an opaque over a record but not over a primitive — the validated-newtype case — and it
+  *panicked* (613054979); Feldman called it a bug. `boundary.md` §6 makes `Intl` first precisely
+  because it "establishes the validated-newtype pattern that every later capability reuses". A
+  second question neither thread settles: a derived decoder for a validated newtype must re-run the
+  smart constructor or it manufactures values violating the invariant.
+- **Derivation creates a new class of type error and it must be a diagnostic, not a panic.** Roc's
+  float case was resolved by closing it "at the checker … instead of panicking" (614066861). beni's
+  `Int` is a double, so the same question arrives immediately at 2⁵³.
+- **Derived-versus-hand-written is a false dichotomy.** Effect's `Schema` is one declaration
+  yielding both directions plus JSON Schema, with **2 100 lines of `SchemaTransformation`** for the
+  shape-mismatch case that is Elm's whole defence of hand-written decoders. The third option is a
+  declared bidirectional description, and it is the only one of the three that makes the round-trip
+  law checkable.
+- **The rule-7 case is the guarantee, not the keystrokes.** A hand-written encoder/decoder pair has
+  nothing checking that `decode (encode x) == x`. That is the justification that survives the
+  1:1-shape objection; "code the compiler could be writing" does not.
+- Corpus finding worth keeping: the JSON complaint peaked in 2017 and faded, but **codegen-as-the-
+  answer is the only sub-theme that grew after 0.19** — the demand was met outside the language, by
+  every team separately. Same pattern as i18n builds and generated `main` in report 30 §3.9.
+
+## 2026-09-21 21:25 CEST — schemas: from "derived codecs" to a `schema` declaration at Effect parity
+
+**What I did**
+
+A design conversation with the owner, starting from report 31 (another session's) and ending in a
+decided model. No code changed. One research agent, docs only, resumed once.
+
+- The owner set the bar — "as powerful as Effect schemas" — and then corrected my first three
+  proposals in turn: deriving a schema FROM a type is not enough ("there are two different types for
+  the same schema… most real life schemas have different representations"); new syntax is wanted;
+  and "we are defining a schema User, not a type User". Decided: `schema User = { … }` defines a
+  schema; its types are reached through it as **`User.Type` / `User.Encoded`**; **no shorthand**.
+  Recorded in `plans/queue.md` and memory.
+- A quick family-only web survey (Elm, Gren, Lamdera, Gleam, Roc, Mint, Derw, Grain, plus
+  rescript-schema and Thoth; no powerful type systems, no code generation — the owner's scope, after
+  they stopped my first, too-broad brief): two camps — write reader and writer by hand (Elm, Gleam),
+  or the compiler does it and cannot express a rename or a default (Roc, Mint, Lamdera); elm-codec
+  and rescript-schema in between; nobody has one declaration giving both types and both directions.
+- **Report 32** (`78e58b0`, revision 2 `e687c93`), designed from Effect's `SCHEMA.md` docs only:
+  164 capabilities answered (same 43, different 67, not needed 38, cannot 14 — ten of them
+  pick / omit / partial, a type computed from a type — help 2); `Schema e a` carries both sides;
+  a field position holds a SCHEMA, so `via` names the wire side (`createdAt : Int via Date.millis`);
+  a tagged union's `Encoded` is a flattened record; the schema is used as `User.parse` or passed as
+  `User.schema ()`. K1–K16; K13–K16 await the owner.
+- Validation: the agent's check projects re-run (exit 0); namespace claims verified with the binary
+  (`User.Type` resolves as a qualified type; a Capitalised name in expression position is always a
+  constructor); parity rows spot-checked against `SCHEMA.md`.
+- **The report found a real compiler defect and I reproduced it — queue row 57**: an annotated
+  top-level value with a `where` clause and no parameters builds with exit 0 and the program then
+  throws `TypeError` at run time. NOT fixed; the owner has not yet said to.
+- Committed the other session's work with this one at the owner's word: reports 30 and 31, the
+  `hackernews` skill, its `CLAUDE.md` line and its diary entries.
+- Answered two language questions from the docs and `core/`: beni has no `comparable` (static
+  dispatch replaced it; any type can be a `Dict` key), and no arrays, so no bounds checks — every
+  lookup returns `Maybe` or clamps; W35's `Array` would return `Maybe` on `get`.
+
+**What I learned**
+
+- **My vocabulary was the obstacle, twice.** "Codec", "derivation", "dispatch", "round-trip" made the
+  first explanation unreadable; then "what the compiler generates", shown as source, read as code
+  generation. What worked: one `User` and its JSON, and the two lists "what you write" / "what you
+  can then refer to".
+- The owner's model was better than mine each time it differed. "The schema is the thing" removed
+  the invented `UserWire` name and the implicit type, and forced the two-parameter `Schema` that
+  makes `Encoded` usable. Offer the sketch, then listen for the noun the owner uses.
+- "No new syntax needed" was wrong, and the report's unargued "needs syntax" was right for a reason
+  it did not give: without computing a type from a value, ONE text yielding TWO types is only
+  possible if the compiler reads the declaration.
+- Asking a design agent to verify grammar claims with the binary paid again: it is how the defect in
+  row 57 surfaced, and how `Schema.parse User text` was ruled out before anyone got attached to it.
+- A brief that is too broad gets stopped. The owner's four-line scope produced a better survey in
+  2.5 minutes than my 40-line one would have in fifteen.
