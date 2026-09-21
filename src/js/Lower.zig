@@ -2104,10 +2104,26 @@ const Lowerer = struct {
     /// front of the beni ones, so it is a function of the wrong arity, and
     /// `backend.md` §6 requires every function-typed value in flight to be
     /// a closure of known arity.
+    ///
+    /// **At `arity == 0` the expansion is the CALL** — `<name>(<bound…>)`
+    /// and not `() => <name>(<bound…>)` (A.85, queue row 57). A.25's reason
+    /// is a statement about FUNCTION-typed values, and a declaration of no
+    /// parameters is not one: `blank : List a where a.eq : …` is a list, so
+    /// a closure around it is a value of the wrong TYPE rather than a
+    /// function of the right arity. Wrapping it anyway is how
+    /// `blankInts = () => blank(eq$prim)` reached `List.length` in a
+    /// program that built with exit 0 and threw at load.
+    ///
+    /// The evidence is applied where the reference stands, so a top-level
+    /// constant evaluates once at load like any other: §7's initialisation
+    /// rule and `cyclic_value` already order top-level constants and refuse
+    /// circles, and `boundary.md` §4 confines a `foreign` to a total pure
+    /// function, so re-evaluating one inside a lambda body is unobservable.
     fn etaExpand(l: *Lowerer, callee: Node.Index, bound: []const Node.Index, arity: u32, p: u32) !Node.Index {
         var params: std.ArrayList(JsIr.NameIndex) = .empty;
         var args: std.ArrayList(Node.Index) = .empty;
         try args.appendSlice(l.scratch, bound);
+        if (arity == 0) return l.call(callee, args.items, p);
         for (0..arity) |_| {
             const n = try l.fresh(l.well.param);
             try params.append(l.scratch, n);

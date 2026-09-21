@@ -1,0 +1,58 @@
+-- An ANNOTATED constant of no parameters carrying a `where` clause
+-- (`docs/design/static-dispatch-spike.md` §8.1, §8.2, §10.10, A.85; queue
+-- row 57). It is the shape of `Dict.empty`: the requirement belongs to the
+-- TYPE and is carried for a later call, not used by the body.
+--
+-- It built with exit 0 and threw `TypeError: Cannot read properties of
+-- undefined (reading '$')` at LOAD. A reference to a constrained value is
+-- its eta-expansion (A.25), and at beni arity 0 an eta-expansion is a
+-- THUNK: `blankInts = () => blank(eq$prim)`, handed straight to
+-- `List.length`, while every consumer reads the name as the list it is
+-- annotated to be. `run/` and not `emit/` for that reason — the claim is
+-- that the program computes, not that a line looks a certain way.
+import List
+import Node exposing (Program)
+import String
+
+
+blank : List a
+    where a.eq : a, a -> Bool
+blank =
+    []
+
+
+-- Two instantiations at different types. Each site applies its OWN
+-- evidence, so neither may be a closure the other shares.
+blankInts : List Int
+blankInts =
+    blank
+
+
+blankStrings : List String
+blankStrings =
+    blank
+
+
+yn : Bool -> String
+yn b =
+    if b then
+        "T"
+
+    else
+        "F"
+
+
+-- The evidence is not decorative: `List.member` carries the same
+-- `a.eq` clause, so handing it the constant makes a wrong evidence value a
+-- wrong ANSWER rather than only a crash.
+main : Program
+main =
+    Node.print
+        (String.join
+            [ String.fromInt (List.length blankInts)
+            , String.fromInt (List.length blankStrings)
+            , yn (List.member blankInts 1)
+            , yn (List.member (List.append blankInts [ 1, 2 ]) 2)
+            ]
+            ","
+        )

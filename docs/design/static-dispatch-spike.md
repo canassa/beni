@@ -1657,9 +1657,21 @@ backend's ignorance of types changes: it reads targets, never types.
 export const Dict$insert = ($m$0, dict, key, value) => …;
 ```
 
-A declaration of **zero** beni parameters that has evidence would become a function, changing its
-type across the module boundary; the checker refuses it first (`constrained_constant`, §6.4), so
-the backend never meets one.
+A declaration of **zero** beni parameters that has evidence takes its evidence and returns the
+value: `Blank$blank = ($m$0) => …`. When the scheme was **inferred** the checker refuses it first
+(`constrained_constant`, §6.4, §10.10) — silently turning a declared constant into a function would
+change its type across the module boundary, and nothing in the source says it should. When the
+author **annotated** it, `pub blank : List a where a.eq : a, a -> Bool`, nothing is silent: the
+`where` clause is written down, and §10.10 scopes `constrained_constant` to inferred schemes
+precisely so that this case is not caught by it.
+
+*Corrected 2026-09-22 (queue row 57, A.85): this paragraph used to end "so the backend never meets
+one", and the backend did meet one.* A reference to such a value in value position was
+eta-expanded like any other constrained reference, and at arity 0 an eta-expansion degenerates into
+a **thunk** — `Main$blankInts = () => Blank$blank(Main$eq$prim)` — while every consumer reads the
+name as the value it is annotated to be. The program built with exit 0 and threw `TypeError` at
+load. The rule is §8.2's, below: at arity 0 the reference is the evidence **applied**, not a
+closure over it.
 
 **Only a top-level declaration has evidence parameters**, and a lambda never does. §6.4 rule (a)
 keeps a `let` binding from being generalised over a constrained variable, so no nested binding
@@ -2654,6 +2666,15 @@ empty constraint set, so the body's `compare` requirement is `missing_where_cons
 instead, and the fixture would assert the wrong code. `constrained_constant` is about a constraint
 that survived generalisation of an *inferred* scheme (§6.4).
 
+**The third spelling is legal, and this code does not apply to it** (2026-09-22, queue row 57,
+A.85). `pub blank : Dict k v where k.compare : k, k -> Order` is a constant whose requirement the
+author WROTE, so none of this code's reasoning reaches it: nothing is silent, nothing changes type
+behind anyone's back, and the `where` suffix is in the interface where a caller can read it. It
+emits as §8.1 says — a function of its evidence — and a reference to it applies that evidence at
+the site, which is §8.2's arity-0 rule. Refusing it as well was the alternative considered and
+rejected under CLAUDE.md rule 7: both fixes close the same exit-0 hole, so the refusal would have
+bought no guarantee and cost `Dict.empty`, which is the shape of the value anyone would want.
+
 ### 10.11 `too_many_inferred_constraints`
 
 Appended 2026-09-18, after §10.10 and after both catalogues, so no number above it moves (A.83).
@@ -3125,10 +3146,13 @@ record in it; both sides must compute the order from the same artifact, and the 
 only artifact both sides have. *Alternative:* record an explicit evidence order in the interface as
 its own list, which is more bytes in the record M4 hashes and one more thing to keep in sync.
 
-**A.25 — a constrained value used as a value is its eta-expansion** (§8.2) [B1]. Evidence whose
-target itself takes evidence — a constrained `pub` value, a derived function for a parametric or
-structural type — is emitted as `(l, r) => <name>(<its evidence…>, l, r)`, and so is a bare
-reference to a constrained value. *Why:* `backend.md` §6 (`backend.md:216`) requires a
+**A.25 — a constrained value used as a value is its eta-expansion, unless it takes no parameters**
+(§8.2) [B1]. Evidence whose target itself takes evidence — a constrained `pub` value, a derived
+function for a parametric or structural type — is emitted as `(l, r) => <name>(<its evidence…>, l,
+r)`, and so is a bare reference to a constrained value. **At beni arity 0 the eta-expansion is the
+call itself** — `<name>(<its evidence…>)` and never `() => <name>(<its evidence…>)` — because a
+declaration of no parameters is not function-typed, so a closure around it is a value of the wrong
+TYPE rather than a function of the right arity (amended 2026-09-22, A.85). *Why:* `backend.md` §6 (`backend.md:216`) requires a
 function-typed value in flight to be a closure of known arity; the bare name has the wrong arity and
 a call in that position passes a result, not a function. *Alternative:* a runtime partial-application
 helper, which is exactly the adapter `backend.md` §6 deleted and the one helper `boundary.md`'s wall
@@ -3928,3 +3952,18 @@ must not answer for the `eq` the module exports — and that is a deliberate exc
 **Every sibling in the repository passed unchanged**: five in `core/` and one in `platforms/node`,
 65 foreign values, including `List.eq` and `List.compare` with their evidence parameter. No `.js`
 file was edited to land this.
+
+**A.85 — an annotated constrained CONSTANT is legal, and its reference is the evidence applied**
+(§8.1, §8.2, §10.10, A.25) [queue row 57, 2026-09-22]. `pub blank : List a where a.eq : a, a ->
+Bool` / `blank = []` built with exit 0 and threw `TypeError: Cannot read properties of undefined`
+at load: `Lower.etaExpand` wrapped the reference in a closure, and at beni arity 0 that closure is
+a thunk rather than a function of the right arity, so `Main$blankInts = () => Blank$blank(ev)` was
+handed to `List$length`. Two spec statements were wrong rather than one — §8.1 asserted the
+backend "never meets one", and §10.10 explained why the inferred case is refused without saying
+what the annotated case does.
+
+| | Decision | Why | *Alternative* |
+|---|---|---|---|
+| 1 | the annotated zero-parameter constrained constant is **accepted**, not refused | CLAUDE.md rule 7: the guarantee at stake is no-runtime-exception, and BOTH fixes restore it, so a refusal would encode taste rather than buy a guarantee. What it would cost is real — `pub empty : Dict k v where k.compare : …` is the shape of `Dict.empty`, and forcing every polymorphic constant to grow a dummy parameter is exactly the "you should not need that" rule 7 rejects | extend `constrained_constant` to annotated declarations, which is the smaller diff and the worse language |
+| 2 | at beni arity 0 `etaExpand` emits the **call**, not a closure over it | A.25's reason — `backend.md` §6 wants a function-typed value in flight to be a closure of known arity — is a statement about FUNCTION-typed values. A constant is not one, so the closure is not an arity fix, it is a type error the emitter writes itself | special-case the consumer instead, which would mean every reader of a name knowing whether its producer was constrained |
+| 3 | the evidence is applied **where the reference stands**, so a top-level constant evaluates once at load like any other | it is the same expression in the same position; §7's initialisation rule and `cyclic_value` already order top-level constants and refuse circles, and `boundary.md` §4 confines a `foreign` to a total pure function, so re-evaluation in a lambda body cannot be observed | hoist it to a module-level cache, which buys nothing a `const` does not already buy |
