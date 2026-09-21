@@ -8,8 +8,48 @@ enough. Most real life schemas have different representations."* · *"I am start
 new syntax camp."* · *"It needs feature parity with Effect schemas, like allowing custom
 transformations, etc."*
 
-**Status:** research. It designs and it argues; it does **not** decide. §0 lists the twelve
-decisions that are the owner's, numbered **K1**–**K12**.
+**Status:** research. It designs and it argues; it does **not** decide, except where the owner
+already has. §0.4 lists the decisions: four are the owner's and are marked **DECIDED**, the rest
+are open and numbered **K1**–**K16**.
+
+---
+
+## Revision 2 — 2026-09-21
+
+The owner read revision 1 and settled the model. Their words, from
+[`plans/queue.md`](../../../plans/queue.md), *Owner decisions on schemas, 2026-09-21*:
+
+> **"We are defining a schema User, not a type User."** · Both types exist from the first cut and
+> are reached through the schema, as in Effect: **`User.Type`** and **`User.Encoded`**. · **No
+> shorthand**: bare `User` in a type annotation is not the program type; a developer who wants a
+> short name writes `type alias Person = User.Type` themselves. · Nothing appears under an invented
+> name (no `UserWire`), and no source is generated: the declaration is the only text.
+
+| What changed | Where | Why |
+|---|---|---|
+| **K4 is superseded** — the declaration no longer declares a type. `schema User = { … }` defines a **schema**, and `User.Type` / `User.Encoded` are reached through it | §0, §4.2 | the owner's decision |
+| **K9 is superseded** — there is a wire type after all, it is called `Encoded`, and it is reached through the schema rather than living under an invented name | §0, §4.6 | the owner's decision |
+| **K1 is reversed** — `Schema` carries **two** type parameters, `Schema e a`. Revision 1 dropped the wire parameter because a record's and a union's wire side could not be typed; under the owner's model `User.Encoded` has to be a real type anyway, and once it is, the two objections are answerable (§3.2) | §3 throughout | forced by the decision, and it buys the typed pair `decode` / `encode` that makes `Encoded` useful |
+| **K2 is amended** — a schema is still reached as `X.schema ()`, but almost no code writes that, because the namespace also holds `X.parse`, `X.read`, `X.write`, `X.decode`, `X.encode` | §0.3, §4.7 | the `()` survives for one verified reason (§4.7) and is now out of the way |
+| **A field position holds a SCHEMA, not a type** (new, **K14**) | §4.3 | it is the honest reading of "we are defining a schema", and it simplifies `as` / `via` / `default` into operations on the field's schema |
+| **`via` is flipped** relative to the owner's sketch: the field names the **wire** schema and the conversion says what it becomes — `createdAt : Int via Date.millis`, not `createdAt : Date via Date.millis` | §4.4 | under K14 the field position already holds a schema, so `Date` there would mean "the `Date` schema", which is not what the field is on the wire |
+| Three new open decisions | §0.4 | **K13** what kind of name `User` is · **K15** what a tagged union's `Encoded` is · **K16** what else the namespace holds |
+| Parity re-counted, two rows added, one row moved | §1, §2 | `Schema.flip` becomes expressible; `toType` / `toEncoded` gain rows |
+| All worked examples rewritten, and one added | §5 | §5.10 is a v1→v2 migration over **encoded** shapes, which is the example that shows what `Encoded` is for |
+| Cost and slice order revised | §8 | the namespace is new resolver work; the library gains a parameter |
+
+**One phrase this revision avoids.** The owner reacted badly to "the compiler generates" and "code
+generation", and they are the wrong words. Nothing is generated: **the declaration is the only text
+there is**, exactly as a `type` declaration is the only text behind `==`. What the compiler does is
+*read* the declaration and know two record types from it — which is not "computing a type from a
+value in the type system", the thing the owner's constraints forbid. The distinction matters, so
+here it is once, plainly: a type-level computation is a program a *user* writes in the type
+language, like TypeScript's `Partial<T>`; what happens here is the compiler reading one declaration
+and knowing what it says, like reading `type Colour = Red | Green` and knowing how `==` compares
+two colours. The first is a feature of the type system that users program; the second is the
+compiler doing its job.
+
+---
 
 **The constraints the owner set, and they bind every line below.** No code generation tools. No
 macros. No powerful type-system features — **no higher-kinded types, no type classes, no computing
@@ -21,36 +61,34 @@ a type from a value**. beni stays a simple Elm-family language.
 implementation was deliberately not read. Every beni sample that is **not** marked `[proposed]` was
 parse- and type-checked with the installed `./zig-out/bin/beni` and, where it matters, built and
 read back as emitted JavaScript; the transcripts are quoted where a claim rests on one (§3.9,
-§4.7). The model for how a new syntax is added is [report 28](28-jsx-in-beni.md) §0: sugar over a
-plain library form, the plain form stays, the vocabulary belongs to a library and not to the
+§4.7, §4.8). The model for how a new syntax is added is [report 28](28-jsx-in-beni.md) §0: sugar
+over a plain library form, the plain form stays, the vocabulary belongs to a library and not to the
 compiler, and the cost is estimated per compiler phase.
 
-**Vocabulary, once, in plain words.** A **schema** is one value that says three things about a type
-at the same time: what it looks like *on the wire* (in a JSON payload, a form submission, a
-`localStorage` entry), what it looks like *in the program*, and how to get from either to the
-other. **Reading** turns a wire value into a program value and can fail. **Writing** turns a
-program value into a wire value and cannot. A **wire key** is the name a field has on the wire,
-which need not be the name it has in the program: `user_name` on the wire, `name` in the program.
+**Vocabulary, once, in plain words.** A **schema** says three things about one kind of data at the
+same time: what it looks like *on the wire* (in a JSON payload, a form submission, a `localStorage`
+entry), what it looks like *in the program*, and how to get from either to the other. **Reading**
+turns a wire value into a program value and can fail. **Writing** turns a program value into a wire
+value and cannot. A **wire key** is the name a field has on the wire, which need not be the name it
+has in the program: `user_name` on the wire, `name` in the program. A schema's two types are its
+**`Encoded`** (the wire shape, as a beni type) and its **`Type`** (the program shape).
 
 ---
-
 ## 0. The design in two pages
 
-### 0.1 What you write, and what you get
+### 0.1 What you write
 
-Two layers, exactly as JSX is two layers in report 28.
+Two layers, as JSX is two layers in report 28.
 
-**Layer 1 is an ordinary beni library**, `core/Schema`. A `Schema a` is a value you build by
-calling functions. It holds three things: an inspectable description of the wire shape, a reader
-and a writer. Nothing in layer 1 is new language — every signature in §3 was checked against
-`language.md` as it stands today.
+**Layer 1 is an ordinary beni library**, `core/Schema`. A `Schema e a` is a value: it holds an
+inspectable description of the wire shape, a reader and a writer. `e` is the wire type, `a` the
+program type. Nothing in layer 1 is new language — every signature in §3 was checked against
+`language.md` as it stands.
 
-**Layer 2 is one new declaration**, `schema`, which the compiler understands. It produces the
-program type *and* its schema from one place, and desugars into layer-1 calls with no residue — so
-there is one semantics, one optimiser and one set of diagnostics, which is report 28 §10's answer
-to "two ways to write the same thing".
+**Layer 2 is one new declaration**, `schema`, which the compiler reads. It is the only text there
+is; from it you can refer to two types and a handful of values, all under the schema's own name.
 
-Five examples. `[proposed]` marks the declaration syntax; everything else is beni today.
+Five examples. `[proposed]` marks the declaration; everything else is beni today.
 
 **(1) A record whose wire shape is not its program shape.**
 
@@ -58,18 +96,13 @@ Five examples. `[proposed]` marks the declaration syntax; everything else is ben
 -- [proposed]
 pub schema User =
     { name : String as "user_name"
-    , createdAt : Date via Date.millis
+    , createdAt : Int via Date.millis
     , age : Int default 0
-    , email : Maybe Email
+    , email : Email optional
     }
 ```
 
-You get the type `User`, a reader that accepts
-`{"user_name":"ada","createdAt":1700000000000}`, and a writer that produces it again. `age` is `0`
-when the key is absent. `email` is `Nothing` when the key is absent *or* `null`, and is written
-only when it is `Just`.
-
-**(2) A custom type with a discriminator and per-variant wire names.**
+**(2) A tagged union.**
 
 ```elm
 -- [proposed]
@@ -78,213 +111,264 @@ pub schema Shape tagged "kind" of
     | Rect { w : Float, h : Float } as "rect"
 ```
 
-`{"kind":"circle","radius":2}` reads as `Circle { radius = 2 }`.
-
-**(3) A validated type owns its own schema**, so bad input can never produce an invalid value.
-`Email`'s constructor is private to its module and the only route in is `fromString`, so a reader
-that produces an `Email` ran the check — report 31 §4.2's live Roc bug cannot happen here, because
-there is no structural path past the constructor (K3). Full listing in §5.3; the schema is one
-line:
+**(3) A validated type — its module owns the only constructor, so bad input cannot forge one.**
 
 ```elm
-pub schema : () -> Schema Email
-schema () =
-    Schema.tried Schema.string fromString toString
+-- [proposed], in Email.beni
+pub opaque schema Email = String via conversion
 ```
 
-**(4) A generic container, with its element's schema arriving through a `where` clause.** This is
-the hand-written layer-1 form of what `schema Page a = { … }` generates, and it compiles today:
-`a.schema ()` is [`static-dispatch-spike.md`](../static-dispatch-spike.md) §4's return-type
-dispatch and the evidence arrives as a hidden leading parameter (§3.9 has the emitted JavaScript).
+**(4) A generic container.**
 
 ```elm
-pub type alias Page a =
+-- [proposed]
+pub schema Page a =
     { items : List a
-    , next : Maybe String
+    , next : String optional
     }
-
-
-pub schema : () -> Schema (Page a)
-    where a.schema : () -> Schema a
-schema () =
-    Schema.object
-        |> Schema.field "items" (Schema.list (a.schema ()))
-        |> Schema.optionalField "next" Schema.string
-        |> Schema.build
-            (\( ( (), i ), n ) -> { items = i, next = n })
-            (\p -> ( ( (), p.items ), p.next ))
 ```
 
-**(5) Running one.**
+**(5) Composition — a field whose type is another schema.**
 
 ```elm
-pub load : String -> Result (List Schema.Issue) (Page Money)
+-- [proposed]
+pub schema Order =
+    { id : String
+    , buyer : User          -- the `User` schema, not a type
+    , total : String via Money.conversion
+    }
+```
+
+### 0.2 What you can then refer to
+
+Nothing has an invented name. Everything hangs off the schema's own name:
+
+| You write | You can refer to | Which is |
+|---|---|---|
+| `schema User = { … }` | `User.Type` | `{ name : String, createdAt : Date, age : Int, email : Maybe Email.Type }` |
+| | `User.Encoded` | `{ user_name : String, createdAt : Int, age : Maybe Int, email : Maybe String }` |
+| | `User.schema` | `() -> Schema User.Encoded User.Type` |
+| | `User.parse`, `User.read`, `User.write` | JSON text and `Value` in and out |
+| | `User.decode`, `User.encode` | the typed pair, `User.Encoded ↔ User.Type` |
+| `schema Page a = { … }` | `Page.Type a`, `Page.Encoded e` | each an ordinary 1-ary type |
+| `schema Shape tagged "kind" of …` | `Shape.Type` | `Circle { radius : Float } \| Rect { w : Float, h : Float }` |
+| | `Shape.Encoded` | `{ kind : String, radius : Maybe Float, w : Maybe Float, h : Maybe Float }` — §4.6 |
+| `opaque schema Email = String via …` | `Email.Type` | an opaque type whose constructor is private to `Email.beni` |
+| | `Email.Encoded` | `String` |
+
+**No shorthand, by the owner's decision.** Bare `User` in a type position is not the program type.
+A short name is the developer's to make:
+
+```elm
+type alias Person =
+    User.Type
+
+
+pub greet : Person -> String
+greet p =
+    "hello ${p.name}"
+```
+
+Checked, exit 0, with a stand-in module: `User.Type` and `User.Encoded` already resolve today as
+module-qualified types, and `Page.Type Int` already resolves as an ordinary type application
+(§4.8).
+
+### 0.3 Using it
+
+```elm
+pub load : String -> Result (List Schema.Issue) (Page.Type User.Type)
 load text =
     Schema.parse (Page.schema ()) text
+
+
+pub toRow : User.Type -> User.Encoded
+toRow u =
+    User.encode u
 ```
 
-### 0.2 The three findings that shape everything else
+`Schema.parse (Page.schema ()) text` is how a schema is **composed**; `User.encode u` is how it is
+**used**, and most code only ever does the second. The `()` in `Page.schema ()` is not decoration —
+§4.7 shows the one verified reason it is there — and it appears only where a schema is passed to
+another schema.
 
-**Finding 1 — the wire side must not be a beni type parameter.** `Schema wire a` reads well until
-you write the wire type of a record: the wire side of `{ name : String, createdAt : Date }` is
-`{ user_name : String, createdAt : Int }`, and producing that type from the first is a *mapped
-type*, which the owner's constraints forbid and beni does not have. The same wall stands at a
-tagged union, where each variant's payload has a different wire type and a list's members must be
-one type (§3.5). So the wire side is **described by the value and typed as one ordinary type**,
-`Schema.Value`, a small JSON-shaped tree. The *information* the owner asked for is all there; only
-the type parameter goes (**K1**, argued in full in §3.2).
+### 0.4 The decisions
 
-**Finding 2 — every schema must be a function, not a constant.** Two independent reasons, both
-demonstrated against the live compiler:
+Four are the owner's and are settled. Twelve are open, numbered so that an id never moves.
 
-- a recursive type's schema names itself, and a top-level *value* reachable from its own
-  initialiser is `cyclic_value` (`language.md` §7); a top-level *function* may recurse freely;
-- a generic type's schema needs evidence, and spike §8.1 makes evidence a *leading parameter*, so a
-  zero-parameter declaration with evidence has to become a function — which §8.1 says the checker
-  refuses first and which it does not in fact refuse for an *annotated* declaration (§3.9 has the
-  resulting exit-0 miscompile, a `master` defect independent of this report).
+---
 
-So the shape is `schema : () -> Schema T`, uniformly (**K2**). Not a workaround: it is the same
-precaution `Dict.empty : () -> Dict k v` was written as during the static-dispatch spike (A.8), and
-uniformity is what lets one clause, `where a.schema : () -> Schema a`, serve every type.
+**DECIDED (owner, 2026-09-21) — the schema is the defined thing.** *"We are defining a schema User,
+not a type User."* `schema User = { … }` defines a schema; it does not double as a type
+declaration. **This supersedes K4** of revision 1, which said the declaration declares the type
+too. The consequence worked through in §4.2: `User` is a *name for a schema*, and the program type
+is `User.Type`.
 
-**Finding 3 — record schemas are built by name with no language feature at all.** This is the crux
-the brief names. The answer is a left-nested accumulator: `Schema.object` is the empty record,
-`Schema.field` adds one, `Schema.build` closes it with a pair of functions between the accumulator
-and the record. §3.4 evaluates the three candidates and §3.4.1 says why the rescript-schema builder
-is not available. The chain type-checks today, pipe-first, with no arity family and no cap:
+**DECIDED (owner, 2026-09-21) — both types exist, and they are called `Type` and `Encoded`.** As in
+Effect. **This supersedes K9** of revision 1, which recommended no wire type at all. Revision 1's
+argument — that a caller wanting the wire shape wants it as data — was half right and is answered
+in §3.2: the *description* is still data (`Schema.describe`), and the *type* is what makes the
+`decode` / `encode` pair, forms, fixtures and migrations typed.
+
+**DECIDED (owner, 2026-09-21) — no shorthand.** Bare `User` is not `User.Type`. A developer who
+wants a short name writes `type alias Person = User.Type`.
+
+**DECIDED (owner, 2026-09-21) — nothing under an invented name, and no generated source.** The
+declaration is the only text, the way `type` is the only text behind `==`.
+
+---
+
+**K1 — how many type parameters does `Schema` carry? REVERSED in revision 2.** Revision 1 said one
+(`Schema a`), because a record's wire type is a mapped type and a union's members must be one type.
+Revision 2 says **two**, `Schema e a`.
 
 ```elm
-Schema.object
-    |> Schema.field "user_name" Schema.string
-    |> Schema.field "age" Schema.int
-    |> Schema.build
-        (\( ( (), n ), a ) -> { name = n, age = a })
-        (\u -> ( ( (), u.name ), u.age ))
+pub decode : Schema e a, e -> Result (List Issue) a
+pub encode : Schema e a, a -> e
 ```
 
-The one seam where a hand-written call can still go wrong is that pair of functions. That is
-elm-codec's field-order bug surviving in one place instead of everywhere — and the `schema`
-declaration removes it, because the compiler writes the field list and both functions from one
-source. **That is the argument for layer 2 that is about a guarantee and not about keystrokes.**
+*Why the reversal is honest and not obedience:* the owner's decision makes `User.Encoded` a real
+type whatever the library does, so the question is no longer *whether* the wire type exists but
+whether the library may say it. Once it exists, both revision-1 objections have answers. The record
+objection: the compiler reads the declaration and knows both record types — it is not computing one
+from the other in the type system — and the hand-written form names its own encoded record and
+supplies two extra functions at `build` (§3.4). The union objection: a tagged union's `Encoded` is a
+*flattened record*, which is a type (K15, §4.6). And the gain is exactly what the second parameter
+is for — the typed `decode` / `encode` pair, without which `Encoded` is a name with nothing to do.
+*Cost, stated:* every library signature grows a parameter (`list : Schema e a -> Schema (List e)
+(List a)`), and a hand-written record schema writes four functions at `build` instead of two.
+*Reversible:* no, cheaply. *Rule 7:* nothing refused.
 
-### 0.3 The twelve decisions that are the owner's
+**K2 — is a schema reached as a value or a nullary function? AMENDED.** Still
+`X.schema : () -> Schema X.Encoded X.Type`, and §4.7 gives the one verified reason: `where a.schema`
+must be reachable by return-type dispatch, and `a.schema` with no arguments is a field access, not a
+method call (`language.md` §6.3) — verified, with the diagnostic quoted. What is new is that the
+namespace also holds `parse`, `read`, `write`, `decode`, `encode`, so the `()` appears only when one
+schema is passed to another. *Reversible:* yes, if `language.md` §6.3 ever admits a nullary method
+call on a constrained type variable. *Rule 7:* the cost is one `()` at a composition site.
 
-Each gives an example, the options, a recommendation, whether it is reversible, and — where
-something is refused — the CLAUDE.md rule 7 check: *what guarantee does the refusal buy, and what
-is the escape hatch?*
+**K3 — does every type get a schema automatically, the way it gets `eq`? STANDS.** No. A bodyless
+`schema Point` over an existing `type alias Point` asks for the structural one in one line, and
+`Point.Type` is then `Point` itself and `Point.Encoded` is its structural wire shape. Against the
+automatic version, three reasons, the first a guarantee: **a validated type must not get one** — a
+structural default peels `Email.Type` to `String` and wraps unchecked, which is report 31 §4.2's
+Roc panic; `eq` has one correct answer where a wire format has many, and a default one silently
+becomes a published contract that a field rename changes with no diagnostic; and Roc took the
+opt-in route after shipping derivation (report 31 §3.2). *Reversible:* yes, as a relaxation.
+*Rule 7:* refuses nothing; the hatch is one line, and the missing-schema diagnostic already exists
+and already names the fix (§4.9).
 
-**K1 — Is the wire side a beni type parameter?** `Schema wire a`, or `Schema a` with the wire
-described by the value.
-*Options:* (a) `Schema wire a`; (b) `Schema a` plus an inspectable `Node` and one `Value` type.
-*Recommend* **(b)**: (a) cannot type a record's wire side without mapped types, cannot type a
-union's members at all, and doubles every signature. *Reversible:* not cheaply — it is the
-library's central type. *Rule 7:* nothing refused; everything (a) can say, `describe` says.
+**K4 — SUPERSEDED** by the owner's first decision above. Kept in place so the id never moves.
 
-**K2 — Is a schema a value or a nullary function?** `pub schema : Schema User` or
-`pub schema : () -> Schema User`.
-*Options:* (a) a value, with functions only where a `where` clause is needed; (b) a nullary
-function, always. *Recommend* **(b)**, on Finding 2: (a) is refused for recursive types and
-miscompiles for generic ones, and a mixed rule would make the well-known method's type differ per
-type, so `where a.schema` could not be written once. *Reversible:* yes, if `constrained_constant`
-is extended to annotated declarations **and** a compiler-inserted thunk is added for recursive
-ones — two checker changes, not a design change. *Rule 7:* the cost is one `()` per use and a
-rebuilt schema value per call; §8.3 prices the rebuild.
+**K5 — can writing fail? STANDS.** No: `write : Schema e a, a -> Value` and
+`encode : Schema e a, a -> e` are both total. The guarantee is *a value you hold can always be
+serialised*, and without it every caller that only writes still pays a `Result`. *Rule 7:* what is
+refused is a conversion whose writing direction can fail, which says the program type admits values
+the wire cannot represent — a gap in the type, whose honest fix is to make those values
+unconstructible. **Flag this as the decision most likely to want revisiting**; under two parameters
+it is also more visible, because `encode`'s result type is now written down.
 
-**K3 — Does every type get a `schema` automatically, the way it gets `eq`?** Does `Point.schema`
-exist for `pub type alias Point = { x : Float, y : Float }` without being asked for?
-*Options:* (a) yes, derived structurally like `eq`/`compare`; (b) no, but `schema Point` with no
-body asks for the structural one in one line; (c) no, always write it out.
-*Recommend* **(b)**. Against (a), three reasons, the first a guarantee: **a validated type must not
-get one** — a structural default peels `Email` to `String` and wraps unchecked, which is exactly
-the Roc defect of report 31 §4.2, and there it was a runtime panic; `eq` has one correct answer
-where a wire format has many, and a default one silently becomes a published API contract that a
-field rename changes with no diagnostic; and Roc took (b) after shipping derivation (report 31
-§3.2). *Reversible:* yes — (b) → (a) is a relaxation. *Rule 7:* (b) refuses nothing; the hatch is
-one line, and the missing-schema diagnostic already exists and already names the fix (§4.5).
+**K6 — JSON only, or format-neutral? STANDS.** Format-neutral: one `Value` tree, with JSON text, a
+port payload, form data and query strings as adapters into it. The two-parameter shape sharpens
+this: `Encoded` is the *typed* wire shape and `Value` the *untyped* one, and the two steps are
+separately available (`readEncoded`, `writeEncoded`, §3.3), which is what makes §5.10's migration
+possible.
 
-**K4 — Does the `schema` declaration declare the type too?** `pub schema User = { name : String as
-"user_name" }`, versus a `type alias` plus a schema that names the fields again.
-*Options:* (a) one declaration produces both; (b) the schema annotates an existing type; (c)
-annotations go on the `type alias` itself. *Recommend* **(a)**, the owner's sketch: (b) writes
-every field name twice and invites drift; (c) puts wire vocabulary inside a type declaration, which
-is Scala's XML mistake one scope down (§9). A type you already have, or a *second* wire form for
-one, is written with layer 1 — the plain form rule 7 requires to stay, exercised in §5.8.
-*Reversible:* yes. *Rule 7:* nothing refused.
+**K7 — does `core` ship `Schema`, and is JSON text parsing `foreign`? STANDS.** Yes and yes. The
+well-known table (§4.9) must answer `schema` for `Int`, `String`, `List a`, and can only point at
+core; rule 6 says only core may write `foreign`, so if core does not ship `JSON.parse` nobody can.
+`core/Json.js` wraps it in `try`/`catch` and returns a `Result`, per
+[`boundary.md`](../boundary.md) §4.1.
 
-**K5 — Can writing fail?** `write : Schema a, a -> Value`, or `… -> Result (List Issue) Value`.
-*Options:* (a) total; (b) fallible, as Effect's encoding is. *Recommend* **(a)**: it is a guarantee
-— *a value you hold can always be serialised* — and without it every caller that only writes still
-pays a `Result`. *Reversible:* not cheaply; it is in every signature. *Rule 7:* what is refused is
-a conversion whose *writing* direction can fail, which says the program type admits values the wire
-cannot represent — a gap in the type, whose honest fix is to make those values unconstructible.
-Honest limitation: someone who genuinely wants a fallible writer must widen the wire schema so the
-reader refuses what the writer emitted, which is worse. **Flag this as the decision most likely to
-want revisiting.**
+**K8 — are ports re-specified on this? STANDS, and is now stronger.** A port's payload gains a
+*typed* `Encoded`, so the port's JavaScript side has a shape the compiler can name — which the
+existing generator cannot express at all. Still slice S6, still conditional on measuring a
+`readForeign` fast path against the generator (§8.5).
 
-**K6 — JSON only, or format-neutral?** *Options:* (a) `Schema` reads and writes JSON text; (b) one
-`Value` tree, with JSON text, a port payload, form data and query strings as *adapters* into it.
-*Recommend* **(b)**: Effect reached the same shape from the other end and needed four canonical
-codecs to do it; one `Value` plus adapters is the same coverage with one concept, and it is what
-lets a form builder and a query-string reader exist without a second library. *Reversible:* yes.
-*Rule 7:* nothing refused.
+**K9 — SUPERSEDED** by the owner's second decision above. Kept in place.
 
-**K7 — Does `core` ship `Schema`, and is JSON text parsing `foreign`?** *Options:* (a) a platform
-concern; (b) `core/Schema.beni` plus a `foreign` JSON pair in core. *Recommend* **(b)**. Report 31
-§7 question 6 asks this and nothing settles it; three things do now. The well-known table (§4.5)
-must answer `schema` for `Int`, `String`, `List a`, and can only point at core. Rule 6 says only
-core may write `foreign`, so if core does not ship `JSON.parse` nobody can — the `Int32` argument
-exactly. And a hand-written parser is a real cost against a native one. `core/Json.js` wraps
-`JSON.parse` in `try`/`catch` and returns a `Result`, per [`boundary.md`](../boundary.md) §4.1.
-*Reversible:* the module's location, yes; the `foreign`, no. *Rule 7:* nothing refused.
+**K10 — may a transformation perform an effect while reading? STANDS.** Conditionally, and the
+condition is a question the effects spec has not answered: `transparent-effects-proposal.md` §1
+makes `suspends` part of a function's type, and a `Schema e a` stores its reader in a *field*, not
+a parameter — §2's bit-polymorphism promise covers higher-order *parameters* and does not discuss
+fields. Until that has a position, layer 1 is sync-only and enrichment is a pass over the decoded
+value (§5.7 argues that is the right shape anyway).
 
-**K8 — Are ports re-specified on top of this?** *Options:* (a) keep
-[`boundary.md`](../boundary.md) §3.1's port codec generator as a second mechanism; (b) a port's
-payload type is one whose `schema` resolves, and the generator is deleted. *Recommend* **(b), but
-not in the first slice**: one admitted set instead of two, one depth bound instead of two, and a
-port payload gains renames, defaults and tagged unions for nothing — conditional on a measurement,
-because a port hands JavaScript straight across today and routing it through a `Value` tree costs
-an allocation per message (§8.5). *Reversible:* yes; deleting the generator is the last step.
-*Rule 7:* §3.1's refusals become "this type has no `schema`", the same set with a better message.
+**K11 — what does a wire number past 2⁵³ do? STANDS.** Refuse it with an ordinary `Refused` issue;
+the hatches are `Int32` and a `Schema.bigText` that keeps the digits as a `String`.
 
-**K9 — Is a `User.Wire` type generated?** *Options:* (a) also emit
-`pub type alias User.Wire = { user_name : String, … }`; (b) no wire type, and `describe` returns a
-`Node`. *Recommend* **(b)**. Ask who needs it: a caller who wants the wire shape wants it as
-*data* (a JSON Schema, a form, a fixture) and `Node` is that; a caller who wants it as a *type*
-wants to hand-build a wire value, which is writing the payload twice and is what the schema exists
-to prevent. Generating it also forces a name into a second namespace and makes a module's interface
-depend on its schema bodies. *Reversible:* yes, additively. *Rule 7:* nothing refused — the plain
-form can always declare its own record type and a schema between the two.
+**K12 — what happens to a wire key the schema does not mention? STANDS.** Ignore by default,
+`Reject` available, preserve not offered — a beni record is closed, so preserving means a declared
+`List ( String, Value )` field.
 
-**K10 — May a transformation perform an effect while reading?** e.g.
-`Schema.tried Schema.string Users.lookup Users.idOf`.
-*Options:* (a) yes, once the effects work lands; (b) never — reading is pure and enrichment is a
-pass after reading. *Recommend* **(a) conditionally**, and the condition is a question the effects
-spec has not answered:
-[`transparent-effects-proposal.md`](../transparent-effects-proposal.md) §1 makes `suspends` part of
-a function's *type*, and a `Schema a` stores its reader in a **field**, not a parameter — §2's
-bit-polymorphism promise covers higher-order *parameters* and does not discuss fields. Until that
-has a position, layer 1 is sync-only and enrichment is a pass over the decoded value, which is (b)
-and loses one traversal. *Reversible:* yes, additively either way. *Rule 7:* (b) as an interim
-withholds an Effect capability and says so. §3.7 has the detail, §5.7 argues the recommendation does
-not change when the question is answered, and §10 carries it as the main could-not-determine.
+**K13 — NEW: what kind of name is `User` after `schema User = { … }`?** `User.Type` lexes today as a
+single `qualified_upper` token and resolves as "the type `Type` in the module aliased `User`"
+(verified, §4.8). So a schema name must behave like a module alias.
 
-**K11 — What does a wire number past 2⁵³ do?** `Schema.parse Schema.int "9007199254740993"` reads
-back as 9007199254740992 — a silent wrong answer, the class rule 7 exists to refuse. Report 31 §4.3
-asks this and nothing answers it. *Options:* (a) accept it, as `JSON.parse` does; (b) refuse a wire
-number outside ±(2⁵³−1) with an ordinary `Refused` issue; (c) a compile-time diagnostic.
-*Recommend* **(b)**: (c) is not available because the offending value is data, not a type, and (a)
-is the silent wrong answer. The program gets a `Result` it already handles, and the two hatches are
-`Int32` (`language.md` §2.5) and a `Schema.bigText` that keeps the digits as a `String`.
-*Reversible:* yes. *Rule 7:* the refusal buys "no silent wrong answer at the boundary" and both
-hatches are named in the message.
+*Options:* **(a)** a **nested namespace** in the declaring module, visible unqualified in that file
+and reachable from outside through `exposing (User)`; **(b)** (a) plus full qualification
+`Models.User.Type`, which needs `resolveQualified` to split at more than the last dot; **(c)** **the
+module is the namespace** — one schema per file, `User.beni` holding the declaration and no name on
+it, so `User.Type` is an ordinary module-qualified type and **no compiler change is needed at all**
+(verified today, §4.8).
+*Recommendation:* **(a)**, with (c) named as the fallback if the resolver cost is unwelcome — (c)
+costs zero compiler work and buys one-schema-per-file, which is a real constraint on a module that
+naturally holds `Hit` and `HitPage` together. (b) is (a) plus a second dot-splitting rule and
+should wait until someone wants it.
+*Reversible:* (a) → (b) is additive; (a) → (c) is not.
+*Rule 7:* under (a), a `schema User` in a file that also has `import User` is refused
+(`duplicate_import_alias`); nothing else is withheld.
 
-**K12 — What happens to a wire key the schema does not mention?** *Options:* ignore (Effect's and
-Elm's default), reject, preserve. *Recommend* **ignore by default**, `Reject` available in
-`Options`, preserve **not** offered — a beni record is closed, so preserving means a
-`List ( String, Value )` field, which the author declares when they want it and which nothing can
-add behind their back. *Reversible:* yes. *Rule 7:* preserve is refused because there is nowhere to
-put values the type does not already mention; the hatch is one declared field.
+**K14 — NEW: does a field position hold a type or a schema?**
+
+```elm
+-- [proposed]
+pub schema Order =
+    { buyer : User }        -- the `User` SCHEMA, or the type `User.Type`?
+```
+
+*Options:* **(a)** a schema — `User` there names the schema, and the field's two types are
+`User.Type` and `User.Encoded`; **(b)** a type — `buyer : User.Type`, and the compiler looks up
+"the schema for `User.Type`" through the well-known method.
+*Recommendation:* **(a)**, and it is the honest reading of "we are defining a schema". Three things
+follow, and all three are simplifications: `String`, `Int`, `List a` in a field position are
+*schemas* under those names, so `name : String` needs no lookup at all; `as`, `via` and `default`
+become **operations on the field's schema** rather than three unrelated keywords (§4.4); and a type
+with **two** schemas — the v1/v2 case of §5.9, which is the case "derive the schema from the type"
+cannot do — stays reachable inside a declaration, because the field names the schema it means.
+Under (b) the second wire form is unreachable from any declaration.
+*Reversible:* no, cheaply — it is the reading of every declaration body.
+*Rule 7:* what (a) refuses is naming a bare program type in a field position when that type has no
+schema; the diagnostic says so and names `schema T` as the fix.
+
+**K15 — NEW: what is a tagged union's `Encoded`?** The tag's text (`"circle"`) cannot be a beni
+type, and beni has no structural sum type, so the encoded side of a union cannot mirror its shape.
+
+*Options:* **(a)** a **flattened record** — the tag key as `String`, then every field of every
+variant, each `Maybe` because only one variant's fields are present at a time; **(b)** `Value`,
+untyped; **(c)** a second nominal type with the same constructor names, reached through a nested
+namespace (`Shape.Encoded.Circle`), which lexes but needs a naming scheme nobody asked for.
+*Recommendation:* **(a)**, with the rule that two variants sharing a field name must agree on its
+encoded type or the declaration is refused. It is a real type, it is the actual wire shape of a
+flat tagged union, and it is what a form, a fixture and a migration want. Checked, exit 0 (§4.6).
+*What is lost relative to Effect:* the correlation between the tag and which fields are present is
+not in the type — `{ kind = "circle", w = Just 3 }` type-checks and the reader refuses it. Effect
+keeps that correlation because TypeScript has discriminated unions of object types; beni does not,
+and that is a fact of the language rather than of this design.
+*Reversible:* yes; (a) → (c) is additive.
+*Rule 7:* the refusal is the field-name disagreement, and it buys a type that cannot lie about a
+field's wire type. The hatch is to rename one variant's field with `as`.
+
+**K16 — NEW: what else does the namespace hold besides the two types?**
+
+*Options:* **(a)** `schema` only, so every use is `Schema.parse (User.schema ()) text`; **(b)**
+`schema` plus `parse`, `read`, `write`, `decode`, `encode`.
+*Recommendation:* **(b)**. It is five names, each a one-line application of `schema`, and it is what
+makes the common case read like the thing it is — `User.encode u`, `User.parse text` — while the
+`()` retreats to composition sites. It also makes K13(c) attractive, because under (c) these are
+literally ordinary `pub` values of a module and the whole declaration is sugar for text somebody
+could have written.
+*Reversible:* yes, additively.
+*Rule 7:* nothing refused; every one of the five is writable by hand over `X.schema ()`.
 
 ---
 
@@ -298,10 +382,12 @@ referent), **cannot** (not expressible under the owner's constraints; the row sa
 **help** (needs something from the language; the row says what) — and says where it lives: **D**
 the `schema` declaration, **L** the library, **B** both, **—** nowhere.
 
-**The counts. 162 rows: same 40, different 67, not needed 39, cannot 14, needs language help 2.**
-The sixteen non-routine rows are collected in §2.15 so they can be read without the table, together
-with the seven things the *compiler* must supply or the owner must decide, which are a different
-list and are numbered **H1**–**H7**.
+**The counts, revision 2. 164 rows: same 43, different 67, not needed 38, cannot 14, needs
+language help 2.** Two rows are new (163, 164) and one moved from *not needed* to *same* (105),
+all three because `Encoded` is now a type the library can name. The sixteen non-routine rows are
+collected in §2.15 so they can be read without the table, together with the eight things the
+*compiler* must supply or the owner must decide, which are a different list and are numbered
+**H1**–**H8**.
 
 ---
 
@@ -317,7 +403,7 @@ list and are numbered **H1**–**H7**.
 | 4 | `Schema.Undefined` / `Null` / `Void` (L264) | the three empties | **different** — one `Schema.null` for the wire's `null`; `undefined` and `void` have no beni referent | L |
 | 5 | coercion via `decodeTo(String, Getter.String())` (L221) | turn anything into a string | **different** — an explicit `Schema.tried`; beni will not guess, because a coercion that always succeeds hides the case it should have reported | L |
 | 6 | `Schema.Literal("tuna")` (L243) | this exact value and no other | **different** — `Schema.literal "tuna" : Schema ()`; there are no literal *types* in beni, so a literal schema carries no information into the program and exists to constrain the wire | L |
-| 7 | `Schema.Literals([…])` (L274) | a closed set of strings | **different** — `Schema.enumerated : List ( String, a ) -> Schema a`, which maps wire strings onto a beni custom type's constructors, exhaustively | B |
+| 7 | `Schema.Literals([…])` (L274) | a closed set of strings | **different** — `Schema.enumerated : List ( String, a ) -> Schema String a`, which maps wire strings onto a beni custom type's constructors, exhaustively | B |
 | 8 | `Schema.UniqueSymbol` (L256) | a symbol literal | **not needed** | — |
 | 9 | `.literals` / `.members` accessors (L282) | read the set back out | **different** — `Schema.describe` returns a `Node`, and `ChoiceNode` carries the tags | L |
 | 10 | `.check(isMinLength …)` and the eight other string checks (L296) | constrain a string | **same** — `Schema.checked`, plus the same named checks as library values | L |
@@ -326,7 +412,7 @@ list and are numbered **H1**–**H7**.
 | 13 | number checks `isBetween`/`isGreaterThan`/… (L336) | constrain a number | **same** | L |
 | 14 | `Schema.Finite` (L341) | not NaN, not infinity | **same** — `Schema.finite`; note the well-known table already records that `Float`'s `compare` is not a total order on NaN (spike §3.2) | L |
 | 15 | `isInt()` / `isInt32()` (L358) | whole numbers | **different** — `Schema.int` is a schema, not a check, because beni's `Int` is a type; `Schema.int32 : Schema Int32` for the 32-bit one | L |
-| 16 | BigInt filter factories `makeIsBetween(order)` (L369) | build checks for an ordered type | **different** — one generic `Schema.between : Schema a, a, a -> Schema a where a.compare : a, a -> Order`; static dispatch makes the `order` argument unnecessary | L |
+| 16 | BigInt filter factories `makeIsBetween(order)` (L369) | build checks for an ordered type | **different** — one generic `Schema.between : Schema e a, a, a -> Schema e a where a.compare : a, a -> Order`; static dispatch makes the `order` argument unnecessary | L |
 | 17 | `Schema.Date` (L405) | a valid `Date` | **different** — `Date` is a platform type, and its schema is a `via` conversion the platform package declares (`Date.millis`, `Date.iso8601`) | B |
 | 18 | `Schema.TemplateLiteral` (L410) | `${string}@${string}` as a *type* | **cannot** — beni has no literal or template types. Lost: the compile-time guarantee that a string matches a shape. Mitigation: a validated type (`Email`) whose constructor runs the check, which is strictly stronger at run time and weaker at compile time | — |
 | 19 | `Schema.TemplateLiteralParser` (L452) | split a string into typed parts | **different** — an ordinary `Schema.tried` over `String.split`; §5.6's `Money` is exactly this | L |
@@ -344,7 +430,7 @@ list and are numbered **H1**–**H7**.
 | 26 | `optionalKey(Schema.Never)` (L597) | a key that may appear but never has a value | **not needed** — a TypeScript type-level trick | — |
 | 27 | `withDecodingDefault*`, four APIs (L623) | substitute a value when the key is missing | **different** — one `default e` annotation; the four APIs are (key-absent vs also-`undefined`) × (wire-side vs program-side default), and beni has neither axis: there is no `undefined`, and `default` is always written in the **program** type because that is what the field's declared type is | B |
 | 28 | nested decoding defaults (L716) | a default inside a default | **same** — falls out; a nested `schema` is an ordinary field | B |
-| 29 | manual decoding defaults via `decodeTo` (L765) | a fallback rule more specific than "missing" | **different** — `Schema.recovered : Schema a, (List Issue -> Maybe a) -> Schema a` | L |
+| 29 | manual decoding defaults via `decodeTo` (L765) | a fallback rule more specific than "missing" | **different** — `Schema.recovered : Schema e a, (List Issue -> Maybe a) -> Schema e a` | L |
 | 30 | `OptionFromOptionalKey` and its two siblings (L855) | optional field as an `Option` | **same** — this *is* beni's only spelling; `Maybe` is not an alternative to absence, it is how absence is represented | B |
 | 31 | `annotateKey({description, messageMissingKey})` (L993) | document one key, and name its missing-key error | **different** — `-- |` doc comments on a declaration field feed `NamedNode`; a custom missing-key message is `Schema.expecting` in layer 1 | B |
 | 32 | `messageUnexpectedKey` (L1018) | custom message for an excess key | **different** — a field of `Options`, not an annotation, because it is one message per build and not per schema | L |
@@ -352,11 +438,11 @@ list and are numbered **H1**–**H7**.
 | 34 | `StructWithRest` / index signatures (L1046) | fixed keys plus any others | **different** — a declared field of type `List ( String, Value )` with `Schema.rest`; beni records are closed, so the catch-all has to be somewhere the type can see it | B |
 | 35 | `encodeKeys({userId: "user_id"})` (L1108) | rename keys on the wire only | **different** — `as "user_id"` on the field. This is the single most-wanted row in report 31 §4.1 | D |
 | 36 | reusing fields by spreading `.fields` (L1140) | share a group of fields between types | **different** — a nested record field (`meta : Timestamps`), or write the group out. See row 37 | B |
-| 37 | `mapFields(Struct.pick([…]))` (L1189) | a new schema keeping some fields | **cannot** — the result's decoded type is a record type nobody declared, and beni cannot compute a type from a type. Lost: deriving `UserSummary` from `User` mechanically. Mitigation: declare the second type and its schema; §4.8 sketches a later `schema B from A` sugar that copies *annotations* (syntax, not types) | — |
+| 37 | `mapFields(Struct.pick([…]))` (L1189) | a new schema keeping some fields | **cannot** — the result's decoded type is a record type nobody declared, and beni cannot compute a type from a type. Lost: deriving `UserSummary` from `User` mechanically. Mitigation: declare the second type and its schema; §4.11 names a later `schema B from A` sugar that copies the field list (syntax over syntax, not a type computation) | — |
 | 38 | `Struct.omit` (L1213) | as above, dropping fields | **cannot**, same reason | — |
 | 39 | `Struct.assign` / `fieldsAssign` (L1233) | add fields to a struct schema | **cannot**, same reason | — |
 | 40 | `unsafePreserveChecks` (L1265) | keep whole-struct filters across a field map | **not needed** — rows 37–39 do not exist | — |
-| 41 | `Struct.evolve` (L1295) | change one field's schema | **cannot** — and `Schema.atField : Schema a, String, (Schema x -> Schema x) -> Schema a` cannot be typed either, because `x` is not known | — |
+| 41 | `Struct.evolve` (L1295) | change one field's schema | **cannot** — and `Schema.atField : Schema e a, String, (Schema ex ax -> Schema ex ax) -> Schema e a` cannot be typed either, because `x` is not known | — |
 | 42 | `Struct.map(optionalKey)` — "partial" (L1320) | every field optional | **cannot**; this is `Partial<T>`, the mapped type. Lost: a PATCH-request schema derived from a resource schema. Mitigation: declare the patch type, whose fields are `Maybe`, and the two schemas side by side | — |
 | 43 | `Struct.mapPick` / `mapOmit` (L1343) | the same over a subset | **cannot**, same reason | — |
 | 44 | `Struct.evolveKeys` / `renameKeys` (L1385, L1412) | rename the *program* field names | **cannot** — again a computed record type. Note this is not row 35: that renames the wire, which beni does with `as` | — |
@@ -374,7 +460,7 @@ list and are numbered **H1**–**H7**.
 | 51 | `Schema.Array(item)` (L1753) | a homogeneous list | **same** — `Schema.list` | L |
 | 52 | `Schema.mutable` on arrays (L1757) | writable arrays | **not needed** | — |
 | 53 | `Schema.UniqueArray` (L1765) | no duplicates | **different** — `Schema.checked s "no duplicates" (…)`, and beni's derived `eq` supplies the comparison for free (spike §9), where Effect has to build an `Equivalence` first | L |
-| 54 | `Schema.Record(key, value)` (L1780) | a dictionary with dynamic keys | **different** — `Schema.dict : Schema a -> Schema (List ( String, a ))`, plus `Schema.dictInto : Schema a -> Schema (Dict String a)` when an ordered map is wanted | L |
+| 54 | `Schema.Record(key, value)` (L1780) | a dictionary with dynamic keys | **different** — `Schema.dict : Schema e a -> Schema (List ( String, e )) (List ( String, a ))`, plus `Schema.dictInto : Schema e a -> Schema (List ( String, e )) (Dict String a)` when an ordered map is wanted | L |
 | 55 | record key transformations (`snakeToCamel`) (L1786) | rewrite dynamic keys | **different** — `Schema.dictKeys : Schema (List ( String, a )), (String -> String), (String -> String) -> …`. Effect's duplicate-key rule (last write wins, completion order under concurrency) becomes a stated rule: **beni keeps the first** and reports the collision as an `Issue`, because "last one wins" is a silent wrong answer | L |
 | 56 | number keys (L1823) | `{1: "a"}` | **different** — the key schema is a conversion; keys are strings on the wire in every format | L |
 | 57 | literal struct from `Record(Literals, v)` (L1871) | a fixed key set from a union | **not needed** — that is a record, which beni declares directly | — |
@@ -383,7 +469,7 @@ list and are numbered **H1**–**H7**.
 
 | # | Effect | What it is for | beni | Where |
 |---|---|---|---|---|
-| 58 | `Schema.Union([A, B])`, first match wins (L1931) | a value that is one of several shapes | **different** — `Schema.oneOf : List (Attempt a) -> Schema a`, where an `Attempt` pairs a schema with a constructor of the *one* beni type the union decodes into. TypeScript's structural union has no beni referent; a beni union is a declared custom type | B |
+| 58 | `Schema.Union([A, B])`, first match wins (L1931) | a value that is one of several shapes | **different** — `Schema.oneOf : List (Attempt e a) -> Schema e a`, where an `Attempt` pairs a schema with a constructor of the *one* beni type the union decodes into. TypeScript's structural union has no beni referent; a beni union is a declared custom type | B |
 | 59 | excluding incompatible members / one message (L1939) | a readable error for a failed union | **same** — the `Issue` list names the tag key and the tags it knows (§3.6) | L |
 | 60 | exclusive union `{mode: "oneOf"}` (L1980) | exactly one member may match | **different** — `Schema.exactlyOneOf`, same list, different rule. Cheap, so worth having | L |
 | 61 | `Union.mapMembers` (L1997) | derive a union schema | **cannot** — computed union type | — |
@@ -395,31 +481,31 @@ list and are numbered **H1**–**H7**.
 
 | # | Effect | What it is for | beni | Where |
 |---|---|---|---|---|
-| 65 | `Schema.suspend(() => Category)` (L2235) | a schema that refers to itself | **same** — `Schema.deferred : (() -> Schema a) -> Schema a`, and because of K2 the argument is the schema function itself: `Schema.deferred commentSchema`. Effect needs `suspend` for TypeScript's sake; beni needs it because `language.md` §7 refuses a cyclic top-level *value* — a different reason for the same combinator (§5.5) | L |
+| 65 | `Schema.suspend(() => Category)` (L2235) | a schema that refers to itself | **same** — `Schema.deferred : (() -> Schema e a) -> Schema e a`, and because of K2 the argument is the schema function itself: `Schema.deferred commentSchema`. Effect needs `suspend` for TypeScript's sake; beni needs it because `language.md` §7 refuses a cyclic top-level *value* — a different reason for the same combinator (§5.5) | L |
 
 ### 2.6 Declaring custom types (L2315–L2521)
 
 | # | Effect | What it is for | beni | Where |
 |---|---|---|---|---|
-| 66 | `Schema.declare(isX)` (L2319) | teach Schema a type it cannot see into | **different** — `Schema.custom : Node, Reader a, (a -> Value) -> Schema a`. There is no type guard, because beni has no `unknown` to guard against: the only untyped input is `Value` | L |
-| 67 | `expected: "URL"` annotation (L2351) | a readable name in the error | **same** — `Schema.expecting : Schema a, String -> Schema a` | L |
+| 66 | `Schema.declare(isX)` (L2319) | teach Schema a type it cannot see into | **different** — `Schema.custom : Node, Reader e a, (a -> e) -> Schema e a`. There is no type guard, because beni has no `unknown` to guard against: the only untyped input is `Value` | L |
+| 67 | `expected: "URL"` annotation (L2351) | a readable name in the error | **same** — `Schema.expecting : Schema e a, String -> Schema e a` | L |
 | 68 | `toCodecJson` annotation + `Schema.link` (L2371) | give an opaque type a JSON form | **not needed** — every beni schema *is* its own wire description; there is no "opaque type with no wire form" to bridge to | — |
-| 69 | `Schema.declareConstructor` (parametric) (L2440) | a schema factory for `Box<A>` | **different** — an ordinary function `boxSchema : () -> Schema (Box a) where a.schema : () -> Schema a`. Effect's curried two-step call exists to fix TypeScript's inference; beni's `where` clause does the same job in the annotation (§5.4) | L |
+| 69 | `Schema.declareConstructor` (parametric) (L2440) | a schema factory for `Box<A>` | **different** — an ordinary function `boxSchema : () -> Schema (Box.Encoded e) (Box.Type a) where a.schema : () -> Schema e a`. Effect's curried two-step call exists to fix TypeScript's inference; beni's `where` clause does the same job in the annotation (§5.4) | L |
 | 70 | `Schema.instanceOf(URL)` (L2349) | shorthand for a class guard | **not needed** — no classes | — |
 
 ### 2.7 Validation — filters and refinements (L2523–L2919)
 
 | # | Effect | What it is for | beni | Where |
 |---|---|---|---|---|
-| 71 | `.check(makeFilter(p))` (L2523) | reject values the type admits | **same** — `Schema.checked : Schema a, String, (a -> Bool) -> Schema a` | L |
+| 71 | `.check(makeFilter(p))` (L2523) | reject values the type admits | **same** — `Schema.checked : Schema e a, String, (a -> Bool) -> Schema e a` | L |
 | 72 | filter `title` / `description` / `message` (L2543) | say what failed | **different** — one `String` message, because `title`/`description`/`message` is a three-way split beni has no reader for | L |
 | 73 | the identifier-vs-`expected`-vs-`message` precedence rule (L2562) | which label a formatter shows | **not needed** — one message, no precedence to specify | — |
-| 74 | filter return shapes: `true`/`false`/`string`/`Issue`/`{path,issue}`/array (L2591) | rich failures from one predicate | **different** — two functions instead of six shapes: `Schema.checked` (a `Bool`) and `Schema.judged : Schema a, (a -> List Issue) -> Schema a` (an empty list is success). Row 74's `{path,issue}` case — "password and confirmPassword must match" *at* `["password"]` — is what `judged` exists for | L |
+| 74 | filter return shapes: `true`/`false`/`string`/`Issue`/`{path,issue}`/array (L2591) | rich failures from one predicate | **different** — two functions instead of six shapes: `Schema.checked` (a `Bool`) and `Schema.judged : Schema e a, (a -> List Issue) -> Schema e a` (an empty list is success). Row 74's `{path,issue}` case — "password and confirmPassword must match" *at* `["password"]` — is what `judged` exists for | L |
 | 75 | schema type preserved after filtering (L2643) | `.fields` still reachable after `.check` | **not needed** — beni has no method-carrying schema type; `describe` reads through checks | — |
 | 76 | filters as first-class, reusable across types (L2682) | `isMinLength` on strings *and* arrays | **different** — `isMinLength` is structural polymorphism over "anything with a length", which beni cannot say; it gets `String.length` and `List.length` checks separately, or one check over a `where a.length : a -> Int` clause, which is the static-dispatch answer | L |
 | 77 | `{errors: "all"}` (L2726) | collect every failure | **same** — `Options.report = AllOf \| FirstOnly` | L |
 | 78 | `.abort()` on a filter (L2750) | stop after this one fails | **different** — `Schema.abortingCheck`, same idea | L |
-| 79 | `makeFilterGroup` (L2774) | a reusable bundle of checks | **different** — an ordinary function `Schema a -> Schema a`; beni composes functions, so a "group" needs no type | L |
+| 79 | `makeFilterGroup` (L2774) | a reusable bundle of checks | **different** — an ordinary function `Schema e a -> Schema e a`; beni composes functions, so a "group" needs no type | L |
 | 80 | `Schema.refine` (L2794) | narrow the *type* as well as the value | **cannot** — `arr is [string, string, ...string[]]` is a type computed from a predicate. Lost: `NonEmptyList` falling out of a check. Mitigation: declare `type NonEmpty a = NonEmpty a (List a)` and give it a schema; the check then lives in its constructor, which is beni's validated-type pattern and is stronger | — |
 | 81 | `Schema.brand("UserId")` (L2810) | two types that are both strings but must not mix | **different** — `pub opaque type UserId = UserId String` is a real nominal type, and a real one is better than a phantom one: it cannot be erased by a cast. Cost: one constructor allocation per value, where Effect's brand is free. Honest, and §8.3 prices it | B |
 | 82 | structural filters and their ordering rule (L2824) | "run length checks only after the items parsed" | **same** — the same rule, and it must be stated: a check on a record runs only if every field read (§3.6) | L |
@@ -443,19 +529,19 @@ list and are numbered **H1**–**H7**.
 
 | # | Effect | What it is for | beni | Where |
 |---|---|---|---|---|
-| 93 | transformations are first-class reusable values (L3153) | define `trim` once, use everywhere | **different** — `pub type alias Via b a = { from : b -> Result String a, to : a -> b }`, an ordinary record. This is what `via` takes (§4.4) | B |
-| 94 | `Transformation<T,E,RD,RE>` and five `Getter` kinds (L3197) | the transformation type | **different** — one `Via`. Effect's `TransformOptional` exists for `undefined`; `TransformEffect` is K10; `Passthrough` is `identity` | L |
-| 95 | `composeTransformation` (L3245) | chain two conversions | **different** — `Schema.viaThen : Via b a, Via c b -> Via c a`, or just compose the functions by naming the argument (`language.md` §0 removed `>>`) | L |
-| 96 | `decodeTo(target, transformation)` (L3279) | read into a *different* schema | **different** — `Schema.mapped : Schema b, (b -> a), (a -> b) -> Schema a` | L |
+| 93 | transformations are first-class reusable values (L3153) | define `trim` once, use everywhere | **different** — `pub type alias Conversion e a = { from : e -> Result String a, to : a -> e }`, an ordinary record that carries **both** sides. This is what `via` takes (§4.4) | B |
+| 94 | `Transformation<T,E,RD,RE>` and five `Getter` kinds (L3197) | the transformation type | **different** — one `Conversion`. Effect's `TransformOptional` exists for `undefined`; `TransformEffect` is K10; `Passthrough` is `identity` | L |
+| 95 | `composeTransformation` (L3245) | chain two conversions | **different** — `Schema.composed : Conversion e b, Conversion b a -> Conversion e a`, or just compose the functions by naming the argument (`language.md` §0 removed `>>`) | L |
+| 96 | `decodeTo(target, transformation)` (L3279) | read into a *different* schema | **different** — `Schema.mapped : Schema ei e, (e -> a), (a -> e) -> Schema ei a` | L |
 | 97 | `decode(transformation)` (L3310) | same type, transformed | **different** — `Schema.mapped` with the same type | L |
 | 98 | inline `transform({decode, encode})` (L3325) | a one-off total conversion | **same** — `Schema.mapped` | L |
-| 99 | `transformEffect` — fallible or async (L3349) | a conversion that can fail | **help** — the fallible half is `Schema.tried : Schema b, (b -> Result String a), (a -> b) -> Schema a`, reading may fail and writing may not (K5); the **async** half is K10, which is why this row is not simply `different` | L |
+| 99 | `transformEffect` — fallible or async (L3349) | a conversion that can fail | **help** — the fallible half is `Schema.tried : Schema ei e, (e -> Result String a), (a -> e) -> Schema ei a`, reading may fail and writing may not (K5); the **async** half is K10, which is why this row is not simply `different` | L |
 | 100 | schema composition by chaining `decodeTo` (L3373) | metres → kilometres → miles | **same** — `Schema.mapped` over a `Schema.mapped` | L |
 | 101 | `passthrough` / `passthroughSubtype` / `passthroughSupertype` (L3405) | compose when the two sides nearly line up | **not needed** — all three exist to negotiate TypeScript subtyping; beni unifies or it does not | — |
 | 102 | `{strict: false}` (L3464) | turn the above off | **not needed** | — |
 | 103 | `transformOptional` (L3487) | a conversion that may produce no value | **different** — the `Maybe` field combinators (row 24) cover the cases that survive | L |
-| 104 | `Getter.omit()` / `tagDefaultOmit` (L3549) | drop a key when writing | **different** — `Schema.omittedWhen : Schema a, (a -> Bool) -> Schema a` as a field modifier; the common case (a tag that is implied) does not arise, because beni's tag is the constructor | L |
-| 105 | `Schema.flip(schema)` (L3605) | swap the two directions | **not needed** — its uses are validating the encoding direction (beni's writing is total, K5) and producing an encoding-side JSON Schema (`describe` already returns the wire side, §6) | — |
+| 104 | `Getter.omit()` / `tagDefaultOmit` (L3549) | drop a key when writing | **different** — `Schema.omittedWhen : Schema e a, (a -> Bool) -> Schema e a` as a field modifier; the common case (a tag that is implied) does not arise, because beni's tag is the constructor | L |
+| 105 | `Schema.flip(schema)` (L3605) | swap the two directions | **same** — `Schema.flipped : Schema e a -> Schema a e`. **Moved from *not needed* in revision 1**, where there was no second parameter to swap; with both sides typed, swapping them is meaningful and is what an encoding-direction validator wants | L |
 | 106 | flipped constructors (L3659) | build an encoded value | **not needed** — K9; nobody should be hand-building wire values | — |
 
 ### 2.10 Classes and opaque types (L3683–L4629)
@@ -489,8 +575,8 @@ makes a type's methods the `pub` values of the module that declares it, which is
 | # | Effect | What it is for | beni | Where |
 |---|---|---|---|---|
 | 123 | `UnknownFromJsonString` (L4637) | parse JSON text to an untyped value | **same** — `Json.parse : String -> Result String Value`, `foreign` in core (K7) | L |
-| 124 | `fromJsonString(schema)` (L4654) | parse and validate in one | **same** — `Schema.parse : Schema a, String -> Result (List Issue) a` | L |
-| 125 | `StringFromBase64` / `Base64Url` / `Hex` / `UriComponent` (L4674) | string encodings | **same** — the same four as `Via` values | L |
+| 124 | `fromJsonString(schema)` (L4654) | parse and validate in one | **same** — `Schema.parse : Schema e a, String -> Result (List Issue) a` | L |
+| 125 | `StringFromBase64` / `Base64Url` / `Hex` / `UriComponent` (L4674) | string encodings | **same** — the same four as `Conversion` values | L |
 | 126 | `Uint8ArrayFrom*` (L4744) | the binary variants | **different** — later; beni has no byte array yet; [`boundary.md`](../boundary.md) §6 lists typed arrays as a roadmap capability, and this row is its first customer | L |
 | 127 | `fromFormData(schema)` (L4756) | read an HTML form, bracket notation for nesting | **same** — `Form.toValue : FormData -> Value` in the browser platform, then any schema. Effect needs `toCodecStringTree` beside it because its schemas are typed by their encoded side; beni needs nothing extra, because every leaf arriving as `Text` is a property of the *adapter*, and `Schema.int` reading a `Text` is one `tried` | L |
 | 128 | `fromURLSearchParams` (L4834) | the same for query strings | **same**, same adapter shape | L |
@@ -513,12 +599,12 @@ makes a type's methods the `pub` values of the module that declares it, which is
 | 140 | `overrideToEquivalence` (L5762) | replace the derived one | **same** — declare `pub eq` in the type's module and it wins (spike §3.3 step 1) | — |
 | 141 | `toIso` — optics from a schema (L5779) | edit deeply nested data | **not needed** — no optics library today; when there is one, `Node` is what it would read. Worth noting: record update already reaches one level, and `language.md` §6.3 refuses `{ r.a | … }`, so nested update is a real beni gap that optics would answer — see `plans/browser-platform.md` §1.1's "one `let` line" comment | — |
 | 142 | `toDifferJsonPatch` (L5839) | RFC 6902 patches for any typed value | **different** — a function over two `Value`s in a `schema-patch` package; it needs `write` and nothing else | L |
-| 143 | `SchemaRepresentation` — inspect a schema structurally (L5920) | see what a schema says | **same** — `Schema.describe : Schema a -> Node`, and §6 argues this is why the description must be data | L |
+| 143 | `SchemaRepresentation` — inspect a schema structurally (L5920) | see what a schema says | **same** — `Schema.describe : Schema e a -> Node`, and §6 argues this is why the description must be data | L |
 | 144 | `toJson` / `fromJson` of a representation (L6125) | store a schema, send a schema | **same** — `Node -> Value` works; the other direction is row 145 | L |
-| 145 | `fromRepresentation` + revivers (L6148) | rebuild a runtime schema from stored JSON | **cannot** — rebuilding yields a `Schema a` whose `a` came from the data, which is computing a type from a value. Lost: schema-over-the-wire, and runtime schema registries. Mitigation: the *description* still travels (row 144) and can be rendered, diffed and validated against; only the typed reader cannot be rebuilt | — |
+| 145 | `fromRepresentation` + revivers (L6148) | rebuild a runtime schema from stored JSON | **cannot** — rebuilding yields a `Schema e a` whose `e` and `a` came from the data, which is computing a type from a value. Lost: schema-over-the-wire, and runtime schema registries. Mitigation: the *description* still travels (row 144) and can be rendered, diffed and validated against; only the typed reader cannot be rebuilt | — |
 | 146 | `fromJsonSchemaDocument` — import JSON Schema (L6259) | consume someone's OpenAPI | **cannot** at run time, though available as a tool — an external generator that writes `schema` declarations into a file is not a language feature and is not forbidden; it is the same thing `json2elm` and `swagger-elm` are, and report 31 §2 shows every Elm shop built one. **Difference from Elm: here the generator's output is one declaration per type rather than two hand-maintained functions** | — |
 | 147 | `toCodeDocument` — generate source from a schema (L6324) | codegen | **same** — outside the language, as row 146 | — |
-| 148 | `Arbitrary.schema` — test data (`ARBITRARY.md` L758) | property-based testing | **different** — `Schema.sample : Schema a, Seed -> ( a, Seed )` over `Node`; report 17 §4.9 already has a seeded PRNG that is `pure`. Shrinking is a later, separate concern | L |
+| 148 | `Arbitrary.schema` — test data (`ARBITRARY.md` L758) | property-based testing | **different** — `Schema.sample : Schema e a, Seed -> ( a, Seed )` over `Node`; report 17 §4.9 already has a seeded PRNG that is `pure`. Shrinking is a later, separate concern | L |
 | 149 | `toStandardSchemaV1` (L6411) | interop with other JS validators | **not needed** — a JavaScript ecosystem contract; a platform package could adapt one if it ever mattered | — |
 
 ### 2.13 Parse options, errors, middleware (L6340–L6766)
@@ -532,7 +618,7 @@ makes a type's methods the `pub` values of the module that declares it, which is
 | 154 | `StandardSchemaV1FailureResult` over the wire (L6651) | send validation errors to a client | **same** — `Issue` gets its own `schema`, which is the feature eating its own tail and is a good test of it | B |
 | 155 | `catchDecoding(() => fallback)` (L6696) | a default when reading fails | **same** — `Schema.recovered` (row 29) | L |
 | 156 | `catchDecodingWithContext` (L6730) | a fallback from a service | **different** — an ordinary function argument; beni has no implicit context | L |
-| 157 | `middlewareDecoding` (L6761) | wrap the whole read | **different** — `Schema.around : Schema a, (Reader a -> Reader a) -> Schema a`, one function, which is what a middleware is | L |
+| 157 | `middlewareDecoding` (L6761) | wrap the whole read | **different** — `Schema.around : Schema e a, (Reader e a -> Reader e a) -> Schema e a`, one function, which is what a middleware is | L |
 
 ### 2.14 Type machinery and tooling (L6768–L7051, L40–L198)
 
@@ -540,9 +626,11 @@ makes a type's methods the `pub` values of the module that declares it, which is
 |---|---|---|---|---|
 | 158 | `resolveAnnotations`, user-extensible annotation keys (L6926) | attach arbitrary metadata | **different** — a closed `Node` with a `NamedNode String Node` and an `ExtraNode String Value` case; open extension by module augmentation is a TypeScript feature | L |
 | 159 | `resolveAnnotationsKey` — key-level annotations (L6983) | metadata on a field position | **same** — `ObjectNode` carries a per-field record | L |
-| 160 | separate `RD` / `RE` requirement parameters (L7004) | decoding needs a DB, encoding does not | **not needed** under K1; and under K10 it is the same question — beni's two inferred bits are per function, and a reader and a writer are two functions, so the split falls out without being written | — |
-| 161 | `Schema.is` / `asserts` type guards (L6170, migration L42) | narrow an `unknown` | **not needed** — there is no `unknown` in beni. `Schema.is : Schema a, Value -> Bool` is one line if anyone wants it | L |
+| 160 | separate `RD` / `RE` requirement parameters (L7004) | decoding needs a DB, encoding does not | **not needed** — and under K10 it is the same question — beni's two inferred bits are per function, and a reader and a writer are two functions, so the split falls out without being written | — |
+| 161 | `Schema.is` / `asserts` type guards (L6170, migration L42) | narrow an `unknown` | **not needed** — there is no `unknown` in beni. `Schema.is : Schema e a, Value -> Bool` is one line if anyone wants it | L |
 | 162 | JIT / AOT schema compilers (L68) | make parsing fast | **different** — beni compiles ahead of time by construction; the analogue is `--release` turning a schema value into a specialised reader (§8.3), which needs no `new Function` and works where CSP forbids one | — |
+| 163 | `Schema.toType(schema)` (L418, L5997, migration L18) | the schema with its transformations stripped, on the program side | **same** — `Schema.typeOnly : Schema e a -> Schema a a`. **New in revision 2**: revision 1 had no second parameter, so there was no projection to make | L |
+| 164 | `Schema.toEncoded(schema)` (L458, L5925, migration L17) | the same, on the wire side — validate a payload without running any conversion | **same** — `Schema.encodedOnly : Schema e a -> Schema e e`. **New in revision 2**, same reason; it is §5.10's first step done strictly | L |
 
 ### 2.15 The sixteen rows that are not routine
 
@@ -566,22 +654,23 @@ ways: **beni cannot compute a type from a type.**
 transformations), both blocked on the same question, **H4**.
 
 The mitigation for the ten type-computation rows is the same and is honest rather than clever:
-**declare the second type and its schema.** §4.8 sketches a later `schema Summary from User = …`
+**declare the second type and its schema.** §4.11 names a later `schema Summary from User = …`
 that copies *annotations* from another declaration — syntax over syntax, not a type computation, so
 it is available if the duplication proves painful. It is deliberately not in this design.
 
-**What the compiler must supply, or the owner decide (7).** A different list from the two above:
+**What the compiler must supply, or the owner decide (8).** A different list from the two above:
 these are not capabilities, they are the work and the open questions.
 
 | # | What is needed | Who owns it |
 |---|---|---|
 | H1 | the `schema` declaration: one new top-level form, grammar, lowering, formatter, diagnostics | §4, §8.1 |
-| H2 | `schema` as a well-known method with a compiler table for primitives and core containers, on the `eq`/`compare` model | §4.5 |
+| H2 | `schema` as a well-known method with a compiler table for primitives and core containers, on the `eq`/`compare` model. Needed only for HAND-WRITTEN generic schemas: inside a declaration a field names its schema outright (K14) | §4.9 |
 | H3 | `constrained_constant` extended to *annotated* declarations, or K2 taken — because today an annotated nullary declaration with a `where` clause is an exit-0 miscompile | §3.9 — **a `master` defect, independent of this report** |
 | H4 | a position on whether a function's `suspends` bit is polymorphic when the function is a *field of a record*, not a parameter | K10, §3.7 |
-| H5 | (only if the owner wants library-level renames) a compiler-checked field reference, so `Schema.rename .name "user_name"` can be checked. **Recommend not doing it** — §3.4.3 | K4 |
+| H5 | (only if the owner wants library-level renames) a compiler-checked field reference, so `Schema.rename .name "user_name"` can be checked. **Recommend not doing it** — §3.4 | — |
 | H6 | (only for the ten type-computation "cannot" rows) type-level record operations. **Recommend not doing it** | §2.15 |
 | H7 | a decision on `Int` past 2⁵³ at the boundary — a rule, not a feature | K11 |
+| **H8** | **new in revision 2** — the schema namespace: `resolveQualified` consulting a schema table before the import aliases, a namespace section in the interface, and `exposing` admitting a namespace name. **Zero under K13(c)** | K13, §4.8, §8.1 |
 
 ---
 
@@ -590,7 +679,7 @@ these are not capabilities, they are the work and the open questions.
 ### 3.1 The core types
 
 ```elm
---| What a wire value looks like, whatever the format.
+--| What a wire value looks like, whatever the format. The UNTYPED wire side.
 pub type Value
     = Null
     | Flag Bool
@@ -613,8 +702,7 @@ pub type Issue
     | Refused (List Step) String
 
 
---| The inspectable description. No type parameter: a description says what is
---| on the wire, and the wire has one type.
+--| The inspectable description of the wire shape.
 pub type Node
     = TextNode
     | NumberNode
@@ -630,216 +718,100 @@ pub type Node
     | DeferredNode
 
 
-pub type alias Reader a =
-    Value -> Result (List Issue) a
-
-
-pub opaque type Schema a
+--| `e` is the TYPED wire side, `a` the program side.
+pub opaque type Schema e a
     = Schema
         { node : Node
-        , read : Reader a
-        , write : a -> Value
+        , decode : e -> Result (List Issue) a
+        , encode : a -> e
+        , fromValue : Value -> Result (List Issue) e
+        , toValue : e -> Value
         }
+
+
+--| A two-way conversion that carries both sides, which is what lets the
+--| compiler read a field's `Encoded` type off a `via`.
+pub type alias Conversion e a =
+    { from : e -> Result String a
+    , to : a -> e
+    }
 ```
 
-**`Schema a` is opaque, not a `type alias` for the record.** Under `language.md` §6.3 and spike
+**Three levels, not two, and that is what the second parameter buys.** `Value` is the untyped wire
+(what `JSON.parse` gives you). `e` is the *typed* wire — `User.Encoded`, a beni record whose fields
+are named as the wire names them. `a` is the program value. A schema knows both steps separately:
+`fromValue`/`toValue` is the structural step (field names, shapes, primitive types) and
+`decode`/`encode` is the transformation step (`via`, defaults, validated constructors). Effect
+draws the line in the same place, and it is why `Encoded` is useful rather than decorative: §5.10's
+v1→v2 migration runs entirely on the wire side and never builds a program value.
+
+**`Schema e a` is opaque, not a `type alias` for the record.** Under `language.md` §6.3 and spike
 §1.2, `x.m a` on a *record* is a field call and on a *nominal* type is a method call. Opaque makes
 `s.checked "…" f` dispatch to `Schema.checked`, which is what gives the library the dot-call
-ergonomics of §3.8 — and it keeps the three fields private, so `Schema.custom` is the only way to
+ergonomics of §3.8 — and it keeps the five fields private, so `Schema.custom` is the only way to
 build an inconsistent one.
 
-**`Node` is the answer to "inspectable descriptions, not opaque function pairs."** A `Schema a`
-carries both: the functions do the work, and `Node` is what a JSON-Schema generator, a form builder
-or a documentation tool reads (§6). The two cannot drift, because every combinator builds them
-together in one expression.
+**`Node` stays.** The *type* says what the wire shape is to the type checker; the *description*
+says what it is to a program that wants to read it (§6). A JSON-Schema document, a form and a
+fixture generator all want data, and a type is not data.
 
-### 3.2 Why the wire side is not a type parameter (K1)
+### 3.2 Two parameters: revision 1's objections, answered (K1)
 
-`Schema wire a` is the obvious design and it fails three times.
+Revision 1 dropped the wire parameter for two reasons and a third worry. Here they are again, with
+what changed.
 
-**It cannot type a record.** `schema User = { name : String as "user_name", createdAt : Date via
-Date.millis }` has wire side `{ user_name : String, createdAt : Int }`. Producing that type from
-`User` is a mapped type: rename some keys, replace some value types, per field. beni has no
-construct that computes a record type from a record type, and adding one is the "no computing a
-type from a value / from a type" line the owner drew.
+**Objection 1 — a record's wire type is a mapped type.** The wire side of
+`{ name : String, createdAt : Date }` is `{ user_name : String, createdAt : Int }`, and *computing*
+the second from the first is `Partial<T>`-shaped type-level programming, which beni does not have
+and the owner forbids. **Still true, and no longer the question.** Under the owner's model the
+declaration states both, and the compiler reads them — one declaration, two record types, the same
+way `type Colour = Red | Green` gives the compiler everything it needs to compare two colours.
+Nothing in the *type system* computes anything. A **hand-written** schema names its own encoded
+record and supplies two more functions at `build` (§3.4), so nothing is derived there either.
 
-**It cannot type a union at all.** `Schema.choice "kind" [ circleVariant, rectVariant ]` needs the
-list to be homogeneous. Under `Schema wire a` the two members have *different* wire types, so the
-list has no element type. §3.5 shows that even under `Schema a` the payload type must be erased,
-and that erasure is exactly what a second parameter would re-expose.
+**Objection 2 — a union's members must be one type.** `choice "kind" [ circleVariant, rectVariant ]`
+needs a homogeneous list, and the variants' payloads differ. **Answered by K15**: the union's
+encoded side is a single flattened record, so `Schema Shape.Encoded Shape.Type` is one type and the
+per-variant payload types stay erased inside the closures exactly as in revision 1 (§3.5).
 
-**It doubles every signature for no reader.** Nothing in §6's derived artefacts reads the wire
-*type*; they read the wire *description*, because a JSON Schema document, a form and a fixture are
-all data.
-
-What is kept: `describe` returns the full wire shape as data, and the type checker still guarantees
-the program side. What is lost: a compile-time check that two schemas agree on their wire type —
-which is exactly the comparison `Schema.roundTrips` makes at run time (§7.2), and which nothing in
-the Effect docs shows anyone performing at the type level either.
-
-### 3.3 Primitives and composites
+**Worry 3 — it doubles every signature.** True, and it is the price. `list : Schema e a -> Schema
+(List e) (List a)` is longer than `list : Schema a -> Schema (List a)`, and a hand-written record
+schema writes four functions where revision 1 wrote two. What is bought is the pair that makes
+`Encoded` mean anything:
 
 ```elm
-pub describe : Schema a -> Node
-pub read : Schema a, Value -> Result (List Issue) a
-pub write : Schema a, a -> Value
-pub custom : Node, Reader a, (a -> Value) -> Schema a
-
-pub string : Schema String
-pub int : Schema Int
-pub float : Schema Float
-pub bool : Schema Bool
-pub null : Schema ()
-pub literal : String -> Schema ()
-pub value : Schema Value                       -- the identity schema
-
-pub list : Schema a -> Schema (List a)
-pub dict : Schema a -> Schema (List ( String, a ))
-pub nullable : Schema a -> Schema (Maybe a)
-pub pair : Schema a, Schema b -> Schema ( a, b )
-pub triple : Schema a, Schema b, Schema c -> Schema ( a, b, c )
-pub enumerated : List ( String, a ) -> Schema a
-    where a.eq : a, a -> Bool
+pub decode : Schema e a, e -> Result (List Issue) a
+pub encode : Schema e a, a -> e
 ```
 
-`enumerated` needs `a.eq` for its writing direction — it has to find the value in the table — and
-that is one line where every other language in the survey needs a hand-written `toString`. It is the
-static-dispatch dividend in miniature.
+Without them `User.Encoded` is a name the type checker knows and no function accepts. With them a
+form can hold `User.Encoded`, a fixture can be written as `User.Encoded`, a database row can be
+`User.Encoded`, and a migration can rewrite `V1.Encoded` into `V2.Encoded` without ever
+constructing a program value — which is §5.10, and which is the concrete answer to "what is
+`Encoded` for".
 
-### 3.4 The crux: building a record schema by name
+**One naming trap, found by the checker.** `e` is a prelude *value* (Euler's number), so a
+parameter may not be named `e`: `decode (Schema s) e =` is `SHADOWING`. As a *type* variable `e` is
+fine — type variables are a different namespace. The library names the value `enc`.
 
-Three candidates were evaluated. The brief names all three.
-
-**(a) Only the compiler may make record schemas** — the `schema` declaration is the sole
-constructor and the library offers adjustments. Rejected: it breaks report 28 §0's rule that the
-sugar must desugar into a form that stays available, it makes a second wire form unwritable
-(§5.8), and the library could then not be tested without the declaration.
-
-#### 3.4.1 (b) A rescript-schema builder — and why it is not available
-
-```
-S.object(s => { id: s.field("Id", S.float), tags: s.fieldOr("Tags", …, []) })
-```
-
-In beni this is `Schema.record (\s -> { id = s.field "Id" Schema.float, … })`, and the question the
-brief asks is whether beni's type system can type `s.field` so the result is `Schema Film`. **It
-can** — `field : Fields, String, Schema x -> x` types fine. The trouble is entirely at run time,
-and there are three separate blocks:
-
-1. **`s.field "Id" Schema.float` has to return a `Float` that is not a float.** rescript-schema
-   returns a sentinel and later finds it by identity. In beni that value is typed `Float` and the
-   author may compute on it — `s.field "a" Schema.float + 1.0` type-checks and produces a silent
-   wrong answer, which is the exact class CLAUDE.md rule 7 says must not exist. Tracing the
-   construction is otherwise legal under purity: running the lambda once is a pure call.
-2. **The library would have to inspect the record it got back**, to learn which program field each
-   sentinel landed in. beni has no reflection: `Debug.toString` is the only thing close and
-   `--release` refuses a build that reaches `Debug` at all (`backend.md` §9); records are emitted
-   as plain objects with sorted keys (`backend.md` §4) and nothing in the language reads a key set.
-3. **Only core may write `foreign`** (rule 6), so a library needing either capability cannot be an
-   ordinary package — and putting sentinel-and-reflect machinery into core to serve one API is not
-   a capability gap, it is a design choice with a safe alternative.
-
-So: **not available**, and the reason is a guarantee rather than a limit of the type system.
-
-#### 3.4.2 (c) The left-nested accumulator — recommended
+### 3.3 Running a schema
 
 ```elm
-pub object : Schema ()
-pub field : Schema r, String, Schema x -> Schema ( r, x )
-pub optionalField : Schema r, String, Schema x -> Schema ( r, Maybe x )
-pub defaulted : Schema r, String, Schema x, x -> Schema ( r, x )
-pub rest : Schema r, String -> Schema ( r, List ( String, Value ) )
-pub build : Schema r, (r -> a), (a -> r) -> Schema a
+pub describe : Schema e a -> Node
+pub decode : Schema e a, e -> Result (List Issue) a       -- typed wire  -> program
+pub encode : Schema e a, a -> e                           -- program     -> typed wire
+pub readEncoded : Schema e a, Value -> Result (List Issue) e   -- Value  -> typed wire
+pub writeEncoded : Schema e a, e -> Value                 -- typed wire -> Value
+pub read : Schema e a, Value -> Result (List Issue) a     -- both steps
+pub write : Schema e a, a -> Value                        -- both steps
+pub parse : Schema e a, String -> Result (List Issue) a   -- JSON text
+pub print : Schema e a, a -> String
+pub is : Schema e a, Value -> Bool
+pub explain : List Issue -> String
 ```
 
-Each `field` grows the accumulator by one, so a record of *n* fields has accumulator
-`(…(( (), x₁ ), x₂ )…, xₙ)`, and `build` closes it with two functions. There is **no arity family
-and no cap** — a cap would be a rule-7 restriction bought for nothing, and Elm's `mapN` stopping at
-8 is the prior art everyone has hit. The §0.2 chain is verbatim from the scratchpad, `beni check
---no-cache` exit 0; `( ( (), n ), a )` is an ordinary nested tuple pattern in a lambda parameter,
-which `language.md` §3's `LetPattern` admits because `()` and tuples of qualifying patterns both
-qualify.
-
-**Where this can still go wrong, stated plainly.** If two adjacent fields have the same type and
-the author swaps them in *one* of the two lambdas, nothing complains. That is elm-codec's bug,
-reduced from "every field, every time" to "one seam, written twice", and the two halves of this
-design answer it: the `schema` declaration writes both lambdas from one list of fields, so they
-cannot disagree, and `Schema.roundTrips` (§7.2) is a one-line test that catches it when they are
-hand-written.
-
-**The alternative considered and rejected**: carry a setter per field
-(`field : …, (a -> x), (a, x -> a) -> …`) and start from a blank `a`, which removes the seam
-entirely because each field knows how to put itself back. It needs a blank value of the record type
-— and a validated field like `Email` has no blank, by construction. Rejected for that reason.
-
-#### 3.4.3 Adjusting a record schema afterwards, and checked field references (H5)
-
-`Schema.rename : Schema a, String, String -> Schema a` (old wire key → new) is writable and looks
-useful for a second wire form, but it takes two bare `String`s and a key that is not there is a
-no-op — a silent wrong answer. **Recommendation: do not ship it in the first slice.** The
-declaration covers renaming, the second wire form is written out (§5.8), and an unchecked stringly
-adjustment is the kind of API that looks convenient and reports nothing.
-
-`Schema.rename .name "user_name"` would be checkable if `.name` carried its field's *name* into
-the type — a field-name literal kind, which is a type computed from a value. **Recommend not doing
-it (H5):** it buys a check for an API this section recommends not shipping, and it opens the door
-the owner closed.
-
-### 3.5 Tagged unions, and where erasure is forced
-
-```elm
-pub opaque type Variant a
-    = Variant
-        { tag : String
-        , node : Node
-        , read : Reader a
-        , write : a -> Maybe Value
-        }
-
-
-pub variant : String, Schema x, (x -> a), (a -> Maybe x) -> Variant a
-pub choice : String, List (Variant a) -> Schema a
-pub oneOf : List (Attempt a) -> Schema a
-pub exactlyOneOf : List (Attempt a) -> Schema a
-```
-
-`variant` takes the wire tag, the payload's schema, the constructor, and a *matcher* that says
-whether a given `a` is this variant — which is one `case` arm the author (or the compiler) writes.
-Reading: find the tag, run that variant's reader, apply the constructor. Writing: try each
-matcher in order and write the first that answers; the compiler-generated version is total by
-construction because it covers every constructor.
-
-**The payload type `x` is erased.** It cannot appear in `Variant a`, because
-`type Variant a = Variant String (Schema x) …` leaves `x` unbound, which is `unbound_type_variable`
-(`language.md` §7) — existential quantification, which beni does not have and should not get. The
-erasure is free, because `variant` closes over the payload schema when it builds the two functions,
-and the *description* survives in `node`. This is the second reason K1 goes the way it does: a wire
-type parameter would have to be erased here too, and then it would be a type parameter that is
-absent exactly where unions are.
-
-### 3.6 Transformations, checks, recursion, and running
-
-```elm
-pub mapped : Schema b, (b -> a), (a -> b) -> Schema a
-pub tried : Schema b, (b -> Result String a), (a -> b) -> Schema a
-pub checked : Schema a, String, (a -> Bool) -> Schema a
-pub abortingCheck : Schema a, String, (a -> Bool) -> Schema a
-pub judged : Schema a, (a -> List Issue) -> Schema a
-pub expecting : Schema a, String -> Schema a
-pub named : Schema a, String -> Schema a
-pub example : Schema a, a -> Schema a
-pub recovered : Schema a, (List Issue -> Maybe a) -> Schema a
-pub around : Schema a, (Reader a -> Reader a) -> Schema a
-pub deferred : (() -> Schema a) -> Schema a
-```
-
-**Ordering rule, taken from Effect (row 82) and stated because it is observable.** A check on a
-composite runs only after every part of that composite read successfully. With
-`Options.report = AllOf`, an inner failure is reported and the outer check does not run; with
-`FirstOnly`, reading stops at the first `Issue`. The reason is that a whole-record check is written
-against a whole record, and there is no whole record to hand it.
-
-**Running:**
+`read` is `readEncoded` then `decode`; `write` is `encode` then `writeEncoded`. Both pairs are
+public because the halves are separately useful, and §5.10 is the example that needs the halves.
 
 ```elm
 pub type Unknown
@@ -857,62 +829,193 @@ pub type alias Options =
 
 
 pub defaults : Options
-pub readWith : Schema a, Options, Value -> Result (List Issue) a
-pub parse : Schema a, String -> Result (List Issue) a
-pub parseWith : Schema a, Options, String -> Result (List Issue) a
-pub print : Schema a, a -> String
-pub roundTrips : Schema a, a -> Bool
+pub readWith : Schema e a, Options, Value -> Result (List Issue) a
+pub parseWith : Schema e a, Options, String -> Result (List Issue) a
+```
+
+`maxDepth` is [`boundary.md`](../boundary.md) §3.1's depth bound promoted to a field, doing the same
+job for the same reason: *"a decoder that recurses past the bound fails as a value rather than as a
+stack overflow."* Default 512.
+
+`Schema.readForeign : Schema e a, Options, Foreign -> Result (List Issue) a` reads an
+already-parsed JavaScript value without building a `Value` tree; it is the fast path K8 needs and
+is the one place the library asks core for help.
+
+### 3.4 Primitives, composites, and the crux
+
+```elm
+pub string : Schema String String
+pub int : Schema Int Int
+pub float : Schema Float Float
+pub bool : Schema Bool Bool
+pub value : Schema Value Value
+pub literal : String -> Schema String ()
+pub enumerated : List ( String, a ) -> Schema String a
+    where a.eq : a, a -> Bool
+
+pub list : Schema e a -> Schema (List e) (List a)
+pub nullable : Schema e a -> Schema (Maybe e) (Maybe a)
+pub dict : Schema e a -> Schema (List ( String, e )) (List ( String, a ))
+pub pair : Schema e1 a1, Schema e2 a2 -> Schema ( e1, e2 ) ( a1, a2 )
+
+pub object : Schema () ()
+pub field : Schema er ar, String, Schema ex ax -> Schema ( er, ex ) ( ar, ax )
+pub optionalField : Schema er ar, String, Schema ex ax -> Schema ( er, Maybe ex ) ( ar, Maybe ax )
+pub defaulted : Schema er ar, String, Schema ex ax, ax -> Schema ( er, Maybe ex ) ( ar, ax )
+pub rest : Schema er ar, String -> Schema ( er, List ( String, Value ) ) ( ar, List ( String, Value ) )
+pub build : Schema er ar, (ar -> a), (a -> ar), (er -> e), (e -> er) -> Schema e a
+```
+
+**The crux — building a record schema by name — is unchanged and still needs no language feature.**
+A left-nested accumulator: `object` is the empty record, each `field` grows it by one, and `build`
+closes it. Under two parameters the accumulator carries *both* sides — `( er, ex )` and
+`( ar, ax )` — and `build` takes **four** functions instead of two: a pair between the accumulator
+and the program record, and a pair between the accumulator and the encoded record. Checked, exit 0:
+
+```elm
+pub schema : () -> Schema Encoded Type
+schema () =
+    Schema.object
+        |> Schema.field "user_name" Schema.string
+        |> Schema.defaulted "age" Schema.int 0
+        |> Schema.build
+            (\( ( (), n ), a ) -> { name = n, age = a })
+            (\u -> ( ( (), u.name ), u.age ))
+            (\( ( (), n ), a ) -> { user_name = n, age = a })
+            (\w -> ( ( (), w.user_name ), w.age ))
+```
+
+No arity family and no cap — a cap would be a rule-7 restriction bought for nothing, and Elm's
+`mapN` stopping at 8 is the prior art everyone has hit. `( ( (), n ), a )` is an ordinary nested
+tuple pattern in a lambda parameter, which `language.md` §3's `LetPattern` admits.
+
+**The three candidates, and why this one.** *(a) Only the compiler may make record schemas* —
+rejected: it breaks report 28 §0's rule that the sugar must desugar into a form that stays
+available, it makes a second wire form unwritable (§5.9), and the library could not be tested
+without the declaration. *(b) A rescript-schema builder*,
+`Schema.record (\s -> { id = s.field "Id" Schema.float, … })` — the type system **can** type
+`s.field`; what stops it is the run time, in three places, and the first is a guarantee:
+`s.field "Id" Schema.float` must return a `Float` that is not a float, so
+`s.field "a" Schema.float + 1.0` type-checks and gives a silent wrong answer (rule 7's forbidden
+class — tracing the construction is otherwise fine, since running the lambda once is a pure call);
+the library would then have to *inspect* the record it got back to learn which field each sentinel
+landed in, and beni has no reflection (`Debug.toString` is the nearest thing and `--release`
+refuses a build that reaches `Debug` at all, `backend.md` §9; records are plain objects with sorted
+keys, `backend.md` §4); and only core may write `foreign` (rule 6), so a library needing either
+capability cannot be an ordinary package. *(c) The accumulator* — recommended, above.
+
+**Where a hand-written call can still go wrong.** Two adjacent fields of the same type, swapped in
+one of the four lambdas, and nothing complains. That is elm-codec's bug reduced from "every field,
+every time" to "one seam". Two things answer it: a declaration is **one** field list, and all four
+lambdas are read off that one list, so there is nothing for them to disagree about; and
+`Schema.roundTrips` (§7.2) is a one-line test that catches it when they are hand-written. The four-function seam is *wider* than revision 1's two-function
+seam, which is an honest cost of K1 and another reason the declaration is the recommended surface.
+
+**Adjustment after the fact (H5).** `Schema.rename : Schema e a, String, String -> Schema e a`
+would take two bare strings, and a key that is not there would be a silent no-op. **Recommend not
+shipping it**: the declaration covers renaming, and the second wire form is written out (§5.9).
+`Schema.rename .name "user_name"` would be checkable only with a field-name literal kind — a type
+computed from a value. **Recommend not doing that either.**
+
+### 3.5 Tagged unions, and where erasure is forced
+
+```elm
+pub opaque type Variant e a
+    = Variant
+        { tag : String
+        , node : Node
+        , decode : e -> Result (List Issue) a
+        , encode : a -> Maybe e
+        }
+
+
+pub variant : String, Schema ex ax, (ax -> a), (a -> Maybe ax), (ex -> e), (e -> Maybe ex) -> Variant e a
+pub choice : String, List (Variant e a) -> Schema e a
+pub attempt : Schema ex ax, (ax -> a), (a -> Maybe ax), (ex -> e), (e -> Maybe ex) -> Attempt e a
+pub oneOf : List (Attempt e a) -> Schema e a
+pub exactlyOneOf : List (Attempt e a) -> Schema e a
+```
+
+`variant` takes the wire tag, the payload's schema, a constructor and a matcher on the program
+side, and a pair that lifts the payload's encoded record into and out of the union's flattened
+encoded record. Reading: find the tag, run that variant's reader, apply the constructor. Writing:
+try each matcher in order and write the first that answers; the declaration's version is total by
+construction, because it covers every constructor.
+
+**The payload types stay erased.** `type Variant e a = Variant String (Schema ex ax) …` leaves `ex`
+and `ax` unbound, which is `unbound_type_variable` (`language.md` §7) — existential quantification,
+which beni does not have and should not get. `variant` closes over the payload schema when it
+builds the four functions, and the *description* survives in `node`. Note what the second parameter
+did **not** cost here: `e` is the union's flattened record (K15), one type for every member, so the
+list is homogeneous. Revision 1's second objection to two parameters was precisely this, and K15 is
+what dissolves it.
+
+### 3.6 Conversions, checks, recursion
+
+```elm
+pub converted : Schema ei e, Conversion e a -> Schema ei a
+pub mapped : Schema ei e, (e -> a), (a -> e) -> Schema ei a
+pub tried : Schema ei e, (e -> Result String a), (a -> e) -> Schema ei a
+pub composed : Conversion e b, Conversion b a -> Conversion e a
+pub checked : Schema e a, String, (a -> Bool) -> Schema e a
+pub abortingCheck : Schema e a, String, (a -> Bool) -> Schema e a
+pub judged : Schema e a, (a -> List Issue) -> Schema e a
+pub between : Schema e a, a, a -> Schema e a
+    where a.compare : a, a -> Order
+pub expecting : Schema e a, String -> Schema e a
+pub named : Schema e a, String -> Schema e a
+pub example : Schema e a, a -> Schema e a
+pub recovered : Schema e a, (List Issue -> Maybe a) -> Schema e a
+pub around : Schema e a, (Reader e a -> Reader e a) -> Schema e a
+pub deferred : (() -> Schema e a) -> Schema e a
+pub flipped : Schema e a -> Schema a e
+pub encodedOnly : Schema e a -> Schema e e
+pub typeOnly : Schema e a -> Schema a a
+pub roundTrips : Schema e a, a -> Bool
     where a.eq : a, a -> Bool
 ```
 
-`maxDepth` is [`boundary.md`](../boundary.md) §3.1's depth bound, promoted from a port-generator
-constant to a field, and it does the same job for the same reason: *"a decoder that recurses past
-the bound fails as a value rather than as a stack overflow."* Default 512, matching the checker's
-own type-reading limit (`language.md` §10).
+Note the three at the end, which revision 1 could not write. `flipped` is Effect's `Schema.flip`
+(parity row 105, moved from *not needed* to *same*): with both sides typed, swapping them is
+meaningful and is what an encoding-direction validator wants. `encodedOnly` and `typeOnly` are
+Effect's `toEncoded` and `toType` (new rows 163, 164): the schema with its transformations
+stripped, on one side or the other — what you want when you need to validate a wire payload without
+running any conversion, which is exactly §5.10's first step done strictly.
 
-**Three ways in, one schema.** `parse` takes JSON text. `readWith` takes a `Value` — which is what a
-port payload, a form and a query string all become through their adapters. And
-`Schema.readForeign : Schema a, Options, Foreign -> Result (List Issue) a` reads an
-already-parsed JavaScript value without building a `Value` tree first; it is the fast path §8.5
-wants for ports, and it is the one place the library needs help from core.
+`converted` is where a `Conversion` meets a schema, and it is what `via` desugars to. **The
+`Conversion` carries both sides, which is the whole reason a `via` field's `Encoded` type is
+knowable**: from `Date.millis : Conversion Int Date` the compiler reads `Int` on the left.
+
+**Ordering rule, taken from Effect (row 82) and stated because it is observable.** A check on a
+composite runs only after every part of that composite read successfully. With `report = AllOf` an
+inner failure is reported and the outer check does not run; with `FirstOnly`, reading stops at the
+first `Issue`.
 
 ### 3.7 Effectful transformations (K10, H4)
 
-The brief asks: can a transformation simply call a service, and what does that do to `decode`'s own
-bits? The answer is a question the effects spec has not answered.
+Can a transformation call a service, and what would that do to reading's own effect bits? The
+answer is a question the effects spec has not answered.
+[`transparent-effects-proposal.md`](../transparent-effects-proposal.md) §1 derives that `suspends`
+must be part of a function's *type*, because separate compilation carries nothing else across a
+module boundary; §2 then promises bit-polymorphism for higher-order functions. A `Schema e a`
+stores its reader in a **field**, not a parameter. If the bit is polymorphic for a function in a
+field, `Schema e a` is one type and an effectful conversion costs nothing in the surface — the best
+outcome, and what Effect needs its `RD`/`RE` type parameters for (row 160). If it is not,
+`Schema e a` splits into a sync and a suspending flavour and every combinator is written twice,
+which is unacceptable; the design would then keep reading pure.
 
-`transparent-effects-proposal.md` §1 derives that `suspends` must be part of a function's *type*,
-because separate compilation carries nothing else across a module boundary. §2 then promises
-bit-polymorphism for higher-order functions: `List.map : List a, (a -> b) -> List b` serves a pure
-callback and an effectful one, "one definition, no signature change".
-
-A `Schema a` stores its reader in a **field**, not a parameter. So:
-
-- if the bit is polymorphic for a function in a field too, `Schema a` is one type and an effectful
-  transformation costs nothing in the surface — which is the best outcome and is what Effect needs
-  `RD`/`RE` type parameters for (row 160);
-- if it is not, `Schema a` splits into a sync and a suspending flavour, and every combinator is
-  written twice. That is unacceptable, and the design would instead keep reading pure and make
-  enrichment a pass over the decoded value.
-
-**Until that has a position, layer 1 is pure.** What is lost is one Effect capability (rows 83, 92,
-99-async, 156) and one worked example (§5.7). What is gained is that nothing in this design has to
-be unbuilt when the effects spec answers. The question belongs in
-[`plans/effects-plan.md`](../../../plans/effects-plan.md)'s list of owner decisions, and §5.7 argues
-that even *with* the answer, reading should not perform: a schema is run on data from the network,
-and a reader that itself reaches the network turns one round trip into *n*.
+**Until that has a position, layer 1 is pure**, and §5.7 argues that even with the answer, reading
+should not perform.
 
 ### 3.8 Ergonomics: dot-calls and pipes, checked
 
-Both forms work today, `beni check --no-cache` exit 0:
-
 ```elm
-pub nonEmpty : Schema String
+pub nonEmpty : Schema String String
 nonEmpty =
     Schema.string.checked "must not be empty" (\s -> s /= "")
 
 
-pub emails : Schema (List String)
+pub emails : Schema (List String) (List String)
 emails =
     nonEmpty
         |> Schema.list
@@ -920,26 +1023,27 @@ emails =
 ```
 
 The first line is spike §1.1's `M.v.m a` row — a method call whose receiver is a qualified value —
-and it reads exactly as Effect's `Schema.String.check(...)` does. This is worth noting because it
-is free: static dispatch already bought the library its fluent surface.
+and it reads exactly as Effect's `Schema.String.check(...)` does. Static dispatch already bought
+the library its fluent surface.
 
 ### 3.9 Two facts established against the live compiler
 
-**(i) Evidence flows, and the emitted code is right.** Building the §5 examples as a library
-(`beni build --library --platform=node`) emits:
+**(i) The whole two-parameter model checks, end to end.** `beni check --no-cache` exit 0 on a
+scratchpad project holding the library above, a `User` with a renamed and a defaulted field, a
+generic `Page`, a validated `Email`, a flattened `Shape.Encoded`, and an application that writes
 
-```js
-const App$prices = ($p$1) => Page$schema(Money$schema, null);
-const App$load = (text$1) => Schema$parse(App$prices(null), text$1);
+```elm
+pub emails : () -> Schema (Page.Encoded Email.Encoded) (Page.Type Email.Type)
+emails () =
+    Page.schema ()
 ```
 
-`Page$schema(Money$schema, null)` is the evidence parameter first and the `()` second, exactly as
-spike §8.1 specifies. **The generic-schema design works end to end on today's compiler with no
-language change.**
+So `Page.Type Email.Type`, `Page.Encoded Email.Encoded`, `User.Type`, `User.Encoded` and an opaque
+type *named* `Type` inside module `Email` all resolve with today's grammar and today's resolver.
 
 **(ii) A `master` defect, found while probing K2 (H3).** An *annotated* top-level declaration with
-no parameters and a `where` clause is emitted as a JavaScript function, while every consumer reads
-it as a value. Minimal reproduction, exit 0, three files:
+no parameters and a `where` clause is emitted as a JavaScript function while every consumer reads
+it as a value. Minimal reproduction, exit 0:
 
 ```elm
 pub blank : List a
@@ -954,18 +1058,15 @@ blankInts =
 ```
 
 ```js
-// Blank.mjs
 const Blank$blank = ($m$0) => ({ $: 0, a: null, b: null });
 const Blank$blankInts = () => Blank$blank(Blank$eq$prim);
-// Sees.mjs — reads it as a value
+// another module, reading it as a value:
 const Sees$n = List$length(Blank$blankInts);
 ```
 
-`List$length` receives a function. Spike §8.1 says *"the checker refuses it first
-(`constrained_constant`, §6.4), so the backend never meets one"* — and §10.10 says
-`constrained_constant` is about an *inferred* scheme, so the annotated case falls between the two.
-This is not caused by anything in this report; it is why K2 recommends the thunk, and it deserves
-a fixture under `tests/corpus/check/bad/` whatever the owner decides about schemas.
+Spike §8.1 says *"the checker refuses it first (`constrained_constant`, §6.4), so the backend never
+meets one"*, and §10.10 scopes `constrained_constant` to *inferred* schemes, so the annotated case
+falls between the two. It is `plans/queue.md` row 57, and it is why K2 keeps the `()`.
 
 ---
 
@@ -980,120 +1081,341 @@ Decl        := DocComment? Visibility? (TypeAlias | TypeDecl | TopAnnotation
                                        | Definition | Foreign | SchemaDecl)
 
 SchemaDecl  := 'schema' upper_ident lower_ident* SchemaBody
-SchemaBody  := '=' '{' SchemaField (',' SchemaField)* '}'          -- a record
-             | 'tagged' string 'of' Variant ('|' Variant)*         -- a custom type
-             | ε                                                   -- derive for an existing type
+SchemaBody  := '=' '{' SchemaField (',' SchemaField)* '}'      -- a record schema
+             | '=' FieldSchema FieldOpt*                       -- a schema over one value
+             | 'tagged' string 'of' Variant ('|' Variant)*     -- a tagged union
+             | ε                                               -- structural, for a type you have
 
-SchemaField := DocComment? lower_ident ':' Type FieldOpt*
-FieldOpt    := 'as' string                    -- the wire key
-             | 'via' Atom                     -- a two-way conversion, `Via b a`
-             | 'default' Atom                 -- used when the key is absent or null
+SchemaField := DocComment? lower_ident ':' FieldSchema FieldOpt*
+FieldSchema := (upper_ident | qualified_upper) FieldAtom*      -- a SCHEMA, not a type (K14)
+             | lower_ident                                     -- a schema parameter
+             | '{' SchemaField (',' SchemaField)* '}'          -- an inline record schema
+FieldAtom   := (upper_ident | qualified_upper) | lower_ident | '(' FieldSchema ')'
 
-Variant     := upper_ident TypeAtom* ('as' string)?
+FieldOpt    := 'as' string          -- the wire key
+             | 'via' Atom           -- a Conversion; its left side is this field's Encoded
+             | 'default' Atom       -- used when the key is absent or null
+             | 'optional'           -- the key may be absent or null
+
+Variant     := upper_ident FieldSchema? ('as' string)?
 ```
 
-**`schema` is a contextual word, not a keyword**, recognised exactly as `where` and `equatable` are
+`Visibility` gains `pub opaque schema` for the validated form (§4.5).
+
+**`schema` is a contextual word, not a keyword**, recognised as `where` and `equatable` are
 (`language.md` §3, spike §2.2): a `lower_ident` spelled `schema`, at the start of a declaration,
 followed by an `upper_ident`. `schema = 1` at column 1 stays an ordinary declaration of a value
-called `schema`, which matters because `schema` is the name of the method every module will define.
-`tagged`, `of`, `as`, `via` and `default` are likewise contextual and only inside a `SchemaBody`;
-`as` is already a keyword and is reused.
+named `schema` — which matters, because `schema` is the name of the value every namespace holds.
+`tagged`, `of`, `as`, `via`, `default` and `optional` are likewise contextual and only inside a
+`SchemaBody`; `as` is already a keyword and is reused.
 
-**Layout** is `language.md` §4 rule 2 and nothing more. **Formatting**: one field per line, the
-`,` leading each continuation as records already do, modifiers separated by single spaces and
-**never aligned** — `language.md` §9 aligns nothing, and the owner's sketch shows columns that the
-formatter would collapse. Say that explicitly, because the sketch is what people will copy.
+**Layout** is `language.md` §4 rule 2 and nothing more. **Formatting:** one field per line, the `,`
+leading each continuation as records already do, modifiers separated by single spaces and **never
+aligned** — `language.md` §9 aligns nothing, and the owner's sketch shows columns the formatter
+would collapse. Say so explicitly, because the sketch is what people will copy.
 
-### 4.2 What it declares
+### 4.2 What a declaration defines (the owner's decision, worked through)
 
-`pub schema User = { … }` declares **two** names:
+`pub schema User = { … }` defines **one thing: a schema called `User`.** It does not declare a
+type. What you can then refer to is §0.2's table: `User.Type`, `User.Encoded`, `User.schema`, and —
+under K16 — `User.parse`, `User.read`, `User.write`, `User.decode`, `User.encode`.
 
-- the type `User`, exactly as `pub type alias User = { … }` would, with every modifier stripped;
-- the value `pub schema : () -> Schema User` in this module.
+Nothing appears under a name the developer did not write. `Type` and `Encoded` are fixed words
+inside the schema's own namespace, the way `eq` is a fixed word inside a type's module; there is no
+`UserWire`, no `UserEncoded`, and no file of emitted beni anywhere.
 
-`pub schema Shape tagged "kind" of …` declares `pub type Shape = …` and the same value. A bodyless
-`schema Point` declares only the value, structurally, for an existing `Point`.
+**Where the two record types come from.** The compiler reads the declaration once and knows both.
+That is the same act as reading `type Colour = Red | Green` and knowing how `==` compares two
+colours (spike §9). It is not the thing the owner's constraints forbid — that is *type-level
+programming*, a user writing `Partial<T>` in the type language — and the difference is who writes
+the program: there, the user; here, nobody, because there is no program, only a declaration being
+read.
 
-Because the value is called `schema` and lives in the type's declaring module, **the module rule
-gives it to `x.schema` and to `where a.schema` for free** — no new resolution path, no new table
-except §4.5's.
-
-### 4.3 The field rules, and the optionality matrix
-
-Effect spends L496–L991 on optionality because TypeScript distinguishes absent, `undefined` and
-`null`, on both the type side and the encoded side. beni has `Maybe` and no `undefined`, so the
-matrix collapses:
-
-| Declared | Wire, reading | Wire, writing |
-|---|---|---|
-| `age : Int` | the key must be present and non-`null` | always written |
-| `age : Int default 0` | absent or `null` → `0` | always written |
-| `email : Maybe Email` | absent or `null` → `Nothing` | written only when `Just` |
-| `extra : List ( String, Value )` with `rest` | everything no other field claimed | written back out |
-
-**`Maybe` accepting absent *or* `null` is a decision, not an accident.** Real payloads use both for
-the same idea and often inconsistently in one API; a rule that distinguishes them makes the author
-guess, and guessing wrong is a read failure on live data. The strict variants
-(`Schema.absentField`, `Schema.nullField`) stay in layer 1 for the author who knows their API and
-wants the tighter check. That is rule 7's shape: the forgiving default, and the strict one is
-available.
-
-**No inline checks in the declaration.** `age : Int where age >= 0` is deliberately not offered.
-The rule-7 argument is a guarantee: a checked value that is typed `Int` can be *constructed* without
-the check anywhere else in the program, so the check is a property of one decoding path and not of
-the value — which is precisely the forgery hole report 31 §4.2 documents. A constrained value is a
-validated type (`Age`, `Email`, `Username`), its module owns the only constructor, and its schema
-runs the check. Nothing is withheld: the escape hatch is a three-line module and layer 1's
-`Schema.checked` is always available for the cases where the value really is unconstrained.
-
-### 4.4 `via`
-
-```elm
-pub type alias Via b a =
-    { from : b -> Result String a
-    , to : a -> b
-    }
-```
-
-`createdAt : Date via Date.millis` says: the wire side is whatever `Via`'s first parameter is
-(`Int` here, from `Date.millis : Via Int Date`), its schema is `Int`'s own, and the two directions
-are the record's fields. A total conversion writes `from = \n -> Ok (…)`. `via` beats the field
-type's own `schema` — Effect's row 131 rule, and the right one.
-
-`via` is an ordinary value, so a platform ships `Date.millis`, `Date.iso8601`, `Date.seconds` side
-by side and the author picks. That is the whole of Effect's `DateFromMillis`/`DateFromString`
-family with no schema-library involvement.
-
-### 4.5 Type parameters, and where `a`'s schema comes from
+### 4.3 A field position holds a schema (K14)
 
 ```elm
 -- [proposed]
-pub schema Page a =
-    { items : List a
-    , next : Maybe String
+pub schema Order =
+    { id : String            -- the built-in schema for strings
+    , buyer : User           -- the `User` schema declared elsewhere
+    , lines : List Line      -- the list-of-`Line`-schema
+    , note : String optional
     }
 ```
 
-desugars to the §0.1 example (4), whose annotation is
-`pub schema : () -> Schema (Page a) where a.schema : () -> Schema a` — **the `where` clause is
-generated, one constraint per type parameter that is actually reachable from a field**. Return-type
-dispatch then supplies `a.schema ()` at each use. This is spike §4 doing exactly the job it was
-built for, and §3.9(i) shows the emitted code.
+`String`, `Int`, `Float`, `Bool`, `List`, `Maybe`, `Dict` and every declared schema are **names of
+schemas** in this position. `Order.Type` is therefore `{ id : String, buyer : User.Type, lines :
+List Line.Type, note : Maybe String }` and `Order.Encoded` is the same record with each field's
+`Encoded` in place of its `Type`.
 
-**The well-known method table (H2).** `Int`, `Float`, `Bool`, `String`, `Char`, `Order`, `Never`,
-`()` and tuples resolve `schema` from a table inside the compiler, **before** the module rule —
-which is spike §3.2's arrangement for `eq`/`compare`, and for the same reason: those types are
-declared in `core/Basics` and `core/String`, and `core/Schema` imports them, so a `pub schema` in
-`Basics` would be an `import_cycle` (spike §5, the core-cycle constraint). The table's entries point
-at `core/Schema`'s own combinators. `List a`, `Maybe a`, `Result e a`, `Dict k v` and `Set a` join
-it for the same reason, each carrying its parameters' evidence.
+Three things fall out, and all three are simplifications:
 
-Everything else resolves by the module rule, and a type whose module has no `schema` is
-`unknown_method` — **which is already a good diagnostic and already names the fix.** Verbatim,
-today:
+1. **No lookup.** `name : String` means the string schema; nothing has to find "the schema for
+   `String`". The well-known method table (§4.9) is then needed only for *hand-written* generic
+   schemas, not for declarations.
+2. **`as`, `via` and `default` stop being three unrelated keywords** and become operations on the
+   field's schema (§4.4).
+3. **A type with two schemas stays reachable.** §5.9's v1 and v2 schemas for the same program type
+   are both nameable in a field position, which is the case "derive the schema from the type"
+   cannot express at all.
+
+The cost is one thing to learn: in a `schema` body, `String` is a schema. The report's view is that
+this is *easier* to learn than the alternative, because it is what the declaration says it is — you
+are defining a schema out of schemas.
+
+### 4.4 The field modifiers, and how `Encoded` is read off each
+
+This is the table the whole design rests on. For a field `f : S` with schema `S`:
+
+| Written | `Type` field | `Encoded` field | Wire key | Reading | Writing |
+|---|---|---|---|---|---|
+| `f : S` | `S.Type` | `S.Encoded`, key `f` | `f` | the key must be present and not `null` | always written |
+| `f : S as "k"` | `S.Type` | `S.Encoded`, key `k` | `k` | as above | as above |
+| `f : S optional` | `Maybe S.Type` | `Maybe S.Encoded` | `f` | absent or `null` → `Nothing` | written only when `Just` |
+| `f : S default v` | `S.Type` | `Maybe S.Encoded` | `f` | absent or `null` → `v` | always written |
+| `f : Maybe S` | `Maybe S.Type` | `Maybe S.Encoded` | `f` | the key must be present; `null` → `Nothing` | always written |
+| `f : S via c` where `c : Conversion S.Type x` | `x` | `S.Encoded` | `f` | `S` reads, then `c.from` | `c.to`, then `S` writes |
+| `f : S rest` | `List ( String, Value )` | the same | — | every key no other field claimed | written back out |
+
+**`via` is flipped relative to the owner's sketch, and this is the one place revision 2 disagrees
+with the sketch's text.** The sketch wrote `createdAt : Date via Date.millis`. Under K14 the field
+position holds a schema, so `Date` there would name *the `Date` schema* — which is not what the
+field is on the wire. The field names the **wire** schema and the conversion says what it becomes:
+
+```elm
+createdAt : Int via Date.millis        -- Date.millis : Conversion Int Date
+```
+
+`Int` is what arrives; `Date.millis` turns it into a `Date`. Here `S` is `Int`, so `S.Type` is
+`Int` and the conversion is `Conversion Int Date` — its **left** side is what the field's schema
+decodes to, its **right** side is what the field becomes. So the row above reads: the field's
+`Type` is the conversion's right side, its `Encoded` is the field schema's own `Encoded`, and the
+two directions are the conversion's two functions. **A `Conversion` carrying both sides is what
+makes a `via` field's `Encoded` readable straight off the text, with no inference at all** — which
+is why revision 2 renames revision 1's `Via` to `Conversion` and keeps both parameters on it.
+
+**Absent versus `null`.** `optional` accepts either, which is the forgiving rule, because real
+payloads use both for the same idea and often inconsistently in one API. `Maybe S` is the stricter
+reading — the key must be there and may be `null` — and the two strict-absent variants
+(`Schema.absentField`, `Schema.nullField`) stay in layer 1 for an author who knows their API.
+
+**No inline checks.** `age : Int where age >= 0` is deliberately not offered. The rule-7 argument is
+a guarantee: a checked value typed `Int` can be *constructed* without the check anywhere else in the
+program, so the check is a property of one decoding path and not of the value — the forgery hole of
+report 31 §4.2. A constrained value is a validated schema (§4.5), whose module owns the only
+constructor. Nothing is withheld: the hatch is a three-line module, and `Schema.checked` is always
+available for values that really are unconstrained.
+
+### 4.5 Validated schemas, and where the private constructor lives (`Email`)
+
+A validated type is one that cannot be built except through a check. In beni that means an opaque
+type whose constructor is private to its module. The schema declaration has to reach that
+constructor without exposing it, so the body form is:
+
+```elm
+-- [proposed], in Email.beni
+pub opaque schema Email = String via conversion
+```
+
+which reads: *`Email` is a schema; on the wire it is a `String`; `conversion` turns one into an
+`Email.Type` and back.* What it defines:
+
+- `Email.Type` — an **opaque** type. Its constructor is private to `Email.beni`, exactly as
+  `pub opaque type` makes one today, and `opaque` on the schema declaration is what says so.
+- `Email.Encoded` — `String`, read off `conversion`'s left side.
+- `Email.schema`, `Email.parse`, … as usual.
+
+The module writes the conversion and nothing else:
+
+```elm
+pub fromString : String -> Result String Email.Type
+pub toString : Email.Type -> String
+
+
+conversion : Schema.Conversion String Email.Type
+conversion =
+    { from = fromString, to = toString }
+```
+
+**Is `Email.Type` the same type as "the module's opaque `Email` type"? Yes — there is only one.**
+Revision 1 had a module declaring `pub opaque type Email` *and* a schema beside it, and the two
+names collided under the owner's model. Here the schema declaration is the only declaration, and
+the opaque type it defines is reached as `Email.Type` like every other schema's. A module that
+prefers the short name writes `type alias Addr = Email.Type` — the owner's no-shorthand rule,
+applied by the author rather than by the compiler.
+
+**Checked today, with the hand-written stand-in** (`pub opaque type Type = Email String` plus
+`pub type alias Encoded = String` plus the conversion): exit 0, and the constructor `Email` stays
+private while `Email.Type` is public. So the declaration above is sugar for text that already
+compiles — which is what report 28 §0 asks of any new syntax.
+
+**What this buys, and it is the guarantee K3 protects.** `Email.Type` has no structural route in.
+There is no expression in the language that produces an invalid `Email.Type`, whether or not it
+came through a schema. Effect's `brand` is erased at run time and a cast produces an unvalidated
+one; this cannot.
+
+### 4.6 A tagged union's `Encoded` (K15)
+
+```elm
+-- [proposed]
+pub schema Shape tagged "kind" of
+      Circle { radius : Float } as "circle"
+    | Rect { w : Float, h : Float } as "rect"
+```
+
+`Shape.Type` is a nominal type with the constructors the declaration writes:
+
+```elm
+Circle { radius : Float } | Rect { w : Float, h : Float }
+```
+
+`Shape.Encoded` is the **flattened wire record**: the tag key as a `String`, then every field of
+every variant with its own `Encoded` type wrapped in `Maybe`, because only one variant's fields are
+present at a time.
+
+```elm
+{ kind : String
+, radius : Maybe Float
+, w : Maybe Float
+, h : Maybe Float
+}
+```
+
+Checked, exit 0, together with the `encode` function the declaration stands for:
+
+```elm
+pub encode : Type -> Encoded
+encode s =
+    case s of
+        Circle c ->
+            { kind = "circle", radius = Just c.radius, w = Nothing, h = Nothing }
+
+        Rect r ->
+            { kind = "rect", radius = Nothing, w = Just r.w, h = Just r.h }
+```
+
+**Why not the alternatives.** A second *nominal* type mirroring the variants would need constructor
+names, and the only names available are the ones `Shape.Type` already uses — two types cannot share
+constructor names in one file, and inventing `CircleEncoded` is the invented name the owner ruled
+out. A nested namespace (`Shape.Encoded.Circle`) lexes as a three-segment `qualified_upper` and
+would work, but it is a naming scheme nobody asked for and it costs a second dot-splitting rule in
+the resolver. `Value` types nothing.
+
+**The rule the declaration enforces.** Two variants that share a field name must agree on its
+encoded type, or the declaration is refused with a diagnostic naming both variants and both types.
+The hatch is one `as` on one of them.
+
+**What is lost relative to Effect, plainly.** The correlation between the tag and which fields are
+present is not in the type: `{ kind = "circle", w = Just 3.0, radius = Nothing, h = Nothing }`
+type-checks and the *reader* refuses it. TypeScript keeps that correlation because it has
+discriminated unions of object types; beni has no structural sum type, and that is a fact of the
+language the owner chose rather than of this design. What is **not** lost is any run-time
+guarantee: reading and writing are as exact as Effect's.
+
+### 4.7 Why `X.schema` takes a `()` (K2)
+
+Not style — a verified consequence of two rules that already exist.
+
+A generic schema's element schema arrives by **return-type dispatch** (spike §4), and the form is
+`a.schema`. But `language.md` §6.3 and spike §1.1 say *"`x.m` with no arguments is never a method
+call"* — an application with no arguments is not an application. Writing `Schema.list a.schema` is
+therefore a naming error, verbatim from the checker:
 
 ```
--- UNKNOWN METHOD --------------------------------------------- src/Use.beni:7:5
+-- NAMING ERROR -------------------------------------------------- Page.beni:16:46
+
+I cannot find a `a` variable.
+
+16|        |> Schema.field "items" (Schema.list a.schema)
+                                                ^
+```
+
+With the `()` it resolves, and the whole generic schema checks:
+
+```elm
+pub schema : () -> Schema (Encoded e) (Type a)
+    where a.schema : () -> Schema e a
+schema () =
+    Schema.object
+        |> Schema.field "items" (Schema.list (a.schema ()))
+        |> Schema.optionalField "next" Schema.string
+        |> Schema.build
+            (\( ( (), i ), n ) -> { items = i, next = n })
+            (\p -> ( ( (), p.items ), p.next ))
+            (\( ( (), i ), n ) -> { items = i, next = n })
+            (\w -> ( ( (), w.items ), w.next ))
+```
+
+Note the clause: **`where a.schema : () -> Schema e a` ties two annotation variables together.**
+`e` occurs in the annotated type (`Encoded e`), so spike §2.4's closure rule is satisfied, and
+unifying the constraint at a use pins `e` from `a`'s own schema. That is how a two-parameter schema
+stays generic, and it checks today.
+
+Two more reasons the `()` is the right call rather than a wart. A recursive schema names itself, and
+a top-level *value* reachable from its own initialiser is `cyclic_value` (`language.md` §7) — a
+function may recurse freely. And a generic schema needs evidence, which spike §8.1 makes a *leading
+parameter*, so a zero-parameter declaration with evidence is exactly the `master` defect of §3.9(ii).
+
+**And K16 keeps it out of the way.** `User.parse text`, `User.encode u`, `User.write u` have no
+`()`. It appears only where one schema is passed to another.
+
+### 4.8 What kind of name `User` is (K13), checked against the real grammar
+
+`User.Type` lexes today as a single `qualified_upper` token (`language.md` §2.4: `Upper(.Upper)+`),
+and `Lower.resolveQualified` (`src/bir/Lower.zig:1268-1294`) splits it at the **last** dot and
+matches the module part against the file's import aliases and then the prelude's. So a schema name
+has to sit where an import alias sits. Four things were verified:
+
+| Probe | Result |
+|---|---|
+| `User.Type` and `User.Encoded` as types, with `import Models.User as User` | resolves, exit 0 |
+| `Models.User.Type` with no alias, `Models/User.beni` a real module | resolves, exit 0 |
+| `Page.Type Int` — a qualified type applied to an argument | resolves, exit 0 |
+| `String.length User` — a Capitalised name in expression position | `UNKNOWN CONSTRUCTOR`; an upper name in an expression is a constructor, always |
+
+The last row settles one thing immediately: **`Schema.parse User text` cannot work.** A schema is
+passed as `User.schema ()` — a `qualified_lower`, which is an ordinary value — or, better, not
+passed at all, because `User.parse text` is a function in the namespace (K16).
+
+The three options for what `User` *is*, with their cost:
+
+| | What | Compiler cost |
+|---|---|---|
+| **(a) recommended** | a nested namespace in the declaring module, visible unqualified there, reachable from outside through `exposing (User)` | one more table consulted in `resolveQualified`'s module lookup; a namespace section in `Bir` and in `Interface`; `exposing` admitting a namespace name (upper names already cover two kinds, so the *syntax* does not change); `duplicate_import_alias` extended to a schema name that collides with an import alias |
+| **(b)** | (a) plus `Models.User.Type` from outside | (a) plus a second dot-splitting rule: on failure, split at the next dot left and look the middle segment up as a namespace in that module's interface |
+| **(c)** | the module **is** the namespace — one schema per file, the declaration carries no name | **zero**: `User.Type` is then an ordinary module-qualified type and everything in the table above already works |
+
+**Recommendation (a)**, with **(c) named as the fallback**. (c) is remarkable for costing nothing —
+the §3.9(i) project is exactly (c) and compiles today — and its price is one schema per file, which
+is a real constraint on a module that naturally holds `Hit` and `HitPage` together. (b) is additive
+and should wait for someone to want it.
+
+**Collisions and visibility under (a).** `schema User` in a file that also has `import User` is
+refused (`duplicate_import_alias`); two `schema User` declarations in one file are
+`duplicate_declaration`; a private `schema User` is file-local, and `pub schema User` puts the
+namespace and everything in it into the interface. A schema name and a *type* of the same name can
+coexist, because they are in different namespaces — but the report recommends a warning, because
+`User` and `User.Type` being different things in one file is exactly the confusion the no-shorthand
+rule exists to prevent.
+
+### 4.9 Where a field's schema comes from, and what is refused
+
+Inside a declaration, a field's schema is the name written there (K14). Outside one — in a
+hand-written generic schema — it arrives through `where a.schema`, and that constraint resolves by
+spike §1.2's module rule against `a`'s declaring module, with one table in front of it.
+
+**The well-known table (H2).** `Int`, `Float`, `Bool`, `String`, `Char`, `Order`, `Never`, `()`,
+tuples, `List a`, `Maybe a`, `Result e a`, `Dict k v` and `Set a` resolve `schema` from a table
+inside the compiler, **before** the module rule — spike §3.2's arrangement for `eq`/`compare`, and
+for the same reason: those types are declared in `core/Basics` and `core/String`, and `core/Schema`
+imports them, so a `pub schema` in `Basics` would be an `import_cycle` (spike §5's core-cycle
+constraint). The table's entries point at `core/Schema`'s own combinators.
+
+Everything else resolves by the module rule, and a type whose module has no `schema` is
+`unknown_method` — **a good diagnostic that already exists.** Verbatim, today:
+
+```
+-- UNKNOWN METHOD --------------------------------------------------- Use.beni:7:5
 
 `Int` has no method called `schema`.
 
@@ -1104,62 +1426,50 @@ I resolve `x.schema` in the module that declares `x`'s type. That module is
 ```
 
 That is report 31's *"'no schema for this type' must be a compile-time diagnostic, never a run-time
-crash"*, satisfied with **no new diagnostic code** — the message only needs its hint changed to
-name `schema T`.
+crash"*, satisfied with **no new diagnostic code**; the hint only needs to name `schema T`.
 
-### 4.6 Desugaring, field by field
+**What a declaration refuses**, and it is [`boundary.md`](../boundary.md) §3.1's admitted set
+arrived at by a different route: a field whose schema is a function type, an extended record, a
+schema parameter with no generated constraint, or a name that is a *type* rather than a schema and
+whose type has no `schema`. **Where the refusal lands:** at the **declaration** when the offending
+name is written there; at the **use** when it is a schema parameter instantiated badly. Both are
+compile-time, which answers report 31 §7 question 4.
 
-| Written | Becomes |
-|---|---|
-| `schema T = { … }` | `pub type alias T = { … }` + `pub schema : () -> Schema T` |
-| `f : X` | `\|> Schema.field "f" <X's schema>` |
-| `f : X as "k"` | `\|> Schema.field "k" <X's schema>` |
-| `f : Maybe X` | `\|> Schema.optionalField "f" <X's schema>` |
-| `f : X default e` | `\|> Schema.defaulted "f" <X's schema> e` |
-| `f : X via v` | `\|> Schema.field "f" (Schema.tried <b's schema> v.from v.to)` |
-| `f : List X` | `\|> Schema.field "f" (Schema.list <X's schema>)` |
-| the whole record | `Schema.object` … `\|> Schema.build <assemble> <disassemble>` |
-| `schema T tagged "k" of` | `Schema.choice "k" [ … ]` |
-| a variant `C P as "c"` | `Schema.variant "c" <P's schema> C (\v -> case v of C p -> Just p; _ -> Nothing)` |
-| a variant with no `as` | wire tag is the constructor name verbatim |
-| `schema T` (bodyless) | the structural schema for `T`'s declared shape |
-| `<X's schema>` | `X.schema ()` for a nominal `X`, the table's entry for a well-known one, a type parameter's evidence for a variable |
-
-`<assemble>` is `\( ( … ( (), x₁ ) …, xₙ ) -> { f₁ = x₁, …, fₙ = xₙ }` and `<disassemble>` its
-inverse, both generated from the same field list in the same order. §5.1 shows all of it for a real
-type.
-
-### 4.7 Interactions
+### 4.10 Interactions
 
 | With | What happens |
 |---|---|
-| `eq` / `compare` derivation | nothing changes. They derive from the **type**, and a `schema` declaration declares an ordinary type. A module that declares both a `schema` and a `pub eq` keeps its `pub eq` (spike §3.3 step 1) |
-| `pub` and modules | `pub schema T` makes both names `pub`; a private `schema T` gives a private type and a private method, and `private_method` fires for an outside caller exactly as it does today |
-| opaque types | a `pub opaque type` may **not** get a bodyless `schema T` from outside its module, and should not get one from inside either unless the author means it (K3). The validated pattern writes the schema by hand, in the module, through the checked constructor |
+| `eq` / `compare` | unchanged. They derive from a *type*, and `User.Type` is an ordinary type; `Shape.Type` derives both structurally |
+| `pub` | `pub schema User` exports the namespace and everything in it; `pub opaque schema Email` exports the namespace with `Email.Type`'s constructor private |
+| imports | `exposing (User)` brings the namespace in (§4.8) |
 | the formatter | one new printer case; no alignment; the `\|` of a tagged body leads its line as a `type` declaration's does |
-| `dump --stage=bir` | the declaration is gone by BIR — it lowers to an ordinary `type alias` skeleton plus an ordinary declaration — so `bir` goldens show only calls, which is report 28 §10's "one semantics" proof and is what an `emit/` golden should assert |
-| type parameters with no schema | `where_variable_unbound` cannot fire (the clause is generated); a *use* at a type with no `schema` is §4.5's `unknown_method` |
-| what is refused | a field whose type is a function, an extended record, a type variable with no generated constraint, or a `foreign type` with no `schema` — which is [`boundary.md`](../boundary.md) §3.1's admitted set exactly, arrived at by a different route |
-| **where the refusal lands** | at the **declaration** when the offending type is written there (a function-typed field); at the **use** when it is a type parameter instantiated badly. Both are compile-time; neither is a run-time crash. This answers report 31 §7 question 4 |
+| `dump --stage=bir` | the declaration is gone by BIR — it lowers to ordinary type aliases plus ordinary declarations — so `bir` goldens show only calls, which is report 28 §10's "one semantics" made mechanical, and what an `emit/` golden should assert |
+| recursion | a schema whose field schemas reach itself is fine: `X.schema` is a function (§4.7), and the compiler inserts `Schema.deferred` at the back edge. `X.Type` must then be a `type` with a constructor rather than a `type alias`, because a self-referential alias is `recursive_alias` — §5.5 |
+| `--release` | a namespace's five convenience values are ordinary declarations, so reachability elimination drops the ones nobody calls (§8.2) |
 
-### 4.8 What is deliberately not in the declaration
+### 4.11 What is deliberately not in the declaration
 
-- **No inline checks** (§4.3).
-- **No `schema B from A`** — the sugar that would answer nine of §2.15's eleven "cannot" rows by
-  copying another declaration's field annotations. It is syntax over syntax, so it is *available*,
-  but it is a second feature and should be commissioned only if the duplication is measured to
-  hurt.
-- **No wire type** (K9).
-- **No JSON-specific knobs.** `as`, `via` and `default` are format-neutral: they mean "this key",
-  "this conversion", "this fallback" in a form and a query string too. §9 treats this as the answer
-  to the drift objection, and it is the line to hold.
+- **No inline checks** (§4.3). A constrained value is a validated schema (§4.5).
+- **No `schema B from A`** — the sugar that would answer ten of §2.15's fourteen "cannot" rows by
+  copying another declaration's field list and modifiers. It is syntax over syntax, so it is
+  *available*, but it is a second feature and should be commissioned only if the duplication is
+  measured to hurt.
+- **No shorthand for `X.Type`**, by the owner's decision. A developer who wants one writes
+  `type alias Person = User.Type`.
+- **No JSON-specific knobs, and this is the line to hold.** `as`, `via`, `default` and `optional`
+  are format-neutral: each means something in a form submission and a query string as well as in
+  JSON. A modifier that does not pass that test — `nullAs`, a date format string, `caseInsensitive`
+  — belongs in layer 1, where it is one function call. §9 treats this as the answer to the drift
+  objection, and the test is what makes it hold rather than a promise.
 
 ---
 
 ## 5. Worked examples
 
-Each is shown as (i) Effect, from `SCHEMA.md`; (ii) beni declaration syntax, `[proposed]`;
-(iii) the desugared layer-1 form. Every (iii) was checked.
+Each shows (i) Effect, from `SCHEMA.md`; (ii) the beni declaration, `[proposed]`; (iii) what you
+can then refer to, with its type. Every (iii) was checked against the installed binary as a
+hand-written stand-in for the declaration — which is also the proof that the declaration is sugar
+over text somebody could have written.
 
 ### 5.1 A user with renamed, defaulted and date fields
 
@@ -1181,38 +1491,36 @@ pub schema User =
     { userId : Int as "user_id"
     , accountName : String as "account_name"
     , age : Int default 0
-    , createdAt : Date via Date.millis
+    , createdAt : Int via Date.millis
     }
 ```
 
-**(iii) desugared:**
+**(iii) what you can refer to:**
 
 ```elm
-pub type alias User =
-    { userId : Int
-    , accountName : String
-    , age : Int
-    , createdAt : Date
-    }
-
-
-pub schema : () -> Schema User
-schema () =
-    Schema.object
-        |> Schema.field "user_id" Schema.int
-        |> Schema.field "account_name" Schema.string
-        |> Schema.defaulted "age" Schema.int 0
-        |> Schema.field "createdAt" (Schema.tried Schema.int Date.millis.from Date.millis.to)
-        |> Schema.build
-            (\( ( ( ( (), u ), n ), a ), c ) ->
-                { userId = u, accountName = n, age = a, createdAt = c }
-            )
-            (\r -> ( ( ( ( (), r.userId ), r.accountName ), r.age ), r.createdAt ))
+User.Type      -- { userId : Int, accountName : String, age : Int, createdAt : Date }
+User.Encoded   -- { user_id : Int, account_name : String, age : Maybe Int, createdAt : Int }
+User.schema    -- () -> Schema User.Encoded User.Type
+User.parse     -- String -> Result (List Schema.Issue) User.Type
+User.encode    -- User.Type -> User.Encoded
+User.decode    -- User.Encoded -> Result (List Schema.Issue) User.Type
 ```
 
-Note what Effect needs and beni does not: `FiniteFromString` exists because JSON ids often arrive as
-strings *and* because TypeScript has one `number`; beni writes `Int` and, when the id really is a
-string on the wire, `userId : Int via Int.text`.
+and the layer-1 text the declaration stands for, checked, exit 0 — note the four functions at
+`build`, two per side:
+
+```elm
+pub schema : () -> Schema Encoded Type
+schema () =
+    Schema.object
+        |> Schema.field "user_name" Schema.string
+        |> Schema.defaulted "age" Schema.int 0
+        |> Schema.build
+            (\( ( (), n ), a ) -> { name = n, age = a })
+            (\u -> ( ( (), u.name ), u.age ))
+            (\( ( (), n ), a ) -> { user_name = n, age = a })
+            (\w -> ( ( (), w.user_name ), w.age ))
+```
 
 ### 5.2 A tagged union with a discriminator and per-variant wire names
 
@@ -1233,71 +1541,92 @@ pub schema Shape tagged "kind" of
     | Rect { w : Float, h : Float } as "rect"
 ```
 
-**(iii) desugared** (checked, exit 0):
+**(iii) what you can refer to** — `Shape.Encoded` is K15's flattened record; both checked, exit 0:
 
 ```elm
-pub type Shape
+pub type Type
     = Circle { radius : Float }
     | Rect { w : Float, h : Float }
 
 
-circlePayload : () -> Schema { radius : Float }
-circlePayload () =
-    Schema.object
-        |> Schema.field "radius" Schema.float
-        |> Schema.build
-            (\( (), r ) -> { radius = r })
-            (\c -> ( (), c.radius ))
+pub type alias Encoded =
+    { kind : String
+    , radius : Maybe Float
+    , w : Maybe Float
+    , h : Maybe Float
+    }
 
 
-rectPayload : () -> Schema { w : Float, h : Float }
-rectPayload () =
-    Schema.object
-        |> Schema.field "w" Schema.float
-        |> Schema.field "h" Schema.float
-        |> Schema.build
-            (\( ( (), w ), h ) -> { w = w, h = h })
-            (\r -> ( ( (), r.w ), r.h ))
+pub encode : Type -> Encoded
+encode s =
+    case s of
+        Circle c ->
+            { kind = "circle", radius = Just c.radius, w = Nothing, h = Nothing }
 
-
-pub schema : () -> Schema Shape
-schema () =
-    Schema.choice "kind"
-        [ Schema.variant "circle"
-            (circlePayload ())
-            Circle
-            (\s ->
-                case s of
-                    Circle c ->
-                        Just c
-
-                    _ ->
-                        Nothing
-            )
-        -- the "rect" variant is the same three lines over `rectPayload` and `Rect`
-        ]
+        Rect r ->
+            { kind = "rect", radius = Nothing, w = Just r.w, h = Just r.h }
 ```
 
-The generated matchers are what makes writing total: every constructor has one, so `choice`'s
-"first matcher that answers" always answers.
+`Shape.Type`'s constructors are the names the declaration writes, and they are the module's own
+constructors, so `case s of Circle c -> …` works everywhere with no qualification.
 
 ### 5.3 A validated `Email`
 
-**(i) Effect** (L2810, L2794) uses a brand plus a check, and the brand is erased at run time:
+**(i) Effect** (L2810) uses a brand plus a check, and the brand is erased at run time:
 
 ```ts
 const Email = Schema.String.check(Schema.isIncludes("@")).pipe(Schema.brand("Email"))
 ```
 
-**(ii) and (iii) beni — the same thing, because the declaration has nothing to add.** §0.1 example
-(3), unchanged. The difference from Effect is worth naming: Effect's `Email` *is* a `string` at run
-time and a cast produces an unvalidated one; beni's is a nominal type whose only constructor is
-private, so **there is no expression in the language that produces an invalid `Email`**, whether or
-not it came through a schema. That is the guarantee K3 protects.
+**(ii) beni** `[proposed]`, in `Email.beni`:
+
+```elm
+pub opaque schema Email = String via conversion
+```
+
+**(iii) what you can refer to**, checked, exit 0 — and note the constructor `Email` never leaves
+the file:
+
+```elm
+pub opaque type Type
+    = Email String
+
+
+pub type alias Encoded =
+    String
+
+
+pub fromString : String -> Result String Type
+fromString raw =
+    if String.contains raw "@" then
+        Ok (Email raw)
+
+    else
+        Err "not an email address"
+
+
+pub toString : Type -> String
+toString (Email raw) =
+    raw
+
+
+conversion : Schema.Conversion Encoded Type
+conversion =
+    { from = fromString, to = toString }
+
+
+pub schema : () -> Schema Encoded Type
+schema () =
+    Schema.converted Schema.string conversion
+```
+
+**There is no expression in the language that produces an invalid `Email.Type`**, whether or not it
+came through a schema. Effect's brand is a type-level marker over a `string` and a cast produces an
+unvalidated one; this is a nominal type with a private constructor.
 
 ### 5.4 A paginated generic response
 
-**(i) Effect** (L2440) needs `declareConstructor`'s two-step call, or a plain generic function:
+**(i) Effect** (L2440):
 
 ```ts
 const Page = <A extends Schema.Top>(item: A) =>
@@ -1309,14 +1638,29 @@ const Page = <A extends Schema.Top>(item: A) =>
 ```elm
 pub schema Page a =
     { items : List a
-    , next : Maybe String
+    , next : String optional
     }
 ```
 
-**(iii) desugared** — §0.1 example (4), checked, and built: §3.9(i) has the JavaScript. The
-difference from Effect is that the element schema is not an *argument*: `Page.schema ()` at type
-`Page Money` finds `Money.schema` by the `where` clause, so a caller writes
-`Schema.parse (Page.schema ()) text` with no mention of `Money`.
+**(iii) what you can refer to** — two ordinary 1-ary types, and a schema whose `where` clause ties
+them together (checked, exit 0; §4.7 has the body):
+
+```elm
+Page.Type a      -- { items : List a, next : Maybe String }
+Page.Encoded e   -- { items : List e, next : Maybe String }
+Page.schema      -- () -> Schema (Page.Encoded e) (Page.Type a) where a.schema : () -> Schema e a
+```
+
+and at a use, both parameters follow from one name:
+
+```elm
+pub emails : () -> Schema (Page.Encoded Email.Encoded) (Page.Type Email.Type)
+emails () =
+    Page.schema ()
+```
+
+Unlike Effect, the element schema is not an argument: `Page.schema ()` at type
+`Page.Type Email.Type` finds `Email.schema` through the `where` clause.
 
 ### 5.5 A recursive comment tree
 
@@ -1329,8 +1673,7 @@ const Comment: Schema.Codec<Comment> = Schema.Struct({
 })
 ```
 
-**(ii) beni** `[proposed]` — nothing special is written; the compiler inserts the deferral when a
-field's schema reaches the type being declared:
+**(ii) beni** `[proposed]` — nothing special is written:
 
 ```elm
 pub schema Comment =
@@ -1339,16 +1682,21 @@ pub schema Comment =
     }
 ```
 
-**(iii) desugared** (checked, exit 0) — note the type must be a `type`, not a `type alias`, because
-a self-referential alias is `recursive_alias`, and the schema must be a **function**, because a
-self-referential top-level *value* is `cyclic_value`:
+**(iii) what you can refer to**, checked, exit 0. Two consequences the declaration handles: a
+recursive `Type` is a `type` with one constructor, not a `type alias`, because a self-referential
+alias is `recursive_alias`; and the schema is a **function**, because a self-referential top-level
+*value* is `cyclic_value` (`language.md` §7):
 
 ```elm
-pub type Comment
-    = Comment { body : String, replies : List Comment }
+pub type Type
+    = Comment { body : String, replies : List Type }
 
 
-pub schema : () -> Schema Comment
+pub type alias Encoded =
+    Type
+
+
+pub schema : () -> Schema Encoded Type
 schema () =
     Schema.object
         |> Schema.field "body" Schema.string
@@ -1356,34 +1704,36 @@ schema () =
         |> Schema.build
             (\( ( (), b ), r ) -> Comment { body = b, replies = r })
             (\(Comment c) -> ( ( (), c.body ), c.replies ))
+            (\( ( (), b ), r ) -> Comment { body = b, replies = r })
+            (\(Comment c) -> ( ( (), c.body ), c.replies ))
 ```
 
-Two consequences the declaration must handle and that are worth stating in the spec: **a recursive
-`schema T = { … }` declares a `type` with one constructor, not a `type alias`**, and the
-`build` functions wrap and unwrap that constructor. The compiler knows which case it is in, because
-it knows whether any field's type reaches `T`. A reader hits `Options.maxDepth` before the
-JavaScript stack does.
+`Comment.Encoded` is `Comment.Type` here because no field transforms — which is a fact about this
+schema and not a rule, and it is exactly what `Schema.encodedOnly` (row 163) reports. A reader hits
+`Options.maxDepth` before the JavaScript stack does.
 
 ### 5.6 A fallible custom transformation: `"12.50 USD"` ↔ `Money`
 
-**(i) Effect** (L3349):
+**(i) Effect** (L3349) uses `transformEffect` with an `Issue` on the failing side.
 
-```ts
-const Money = Schema.String.pipe(Schema.decodeTo(MoneySchema,
-  SchemaTransformation.transformEffect({
-    decode: (s, o) => …Effect.fail(new SchemaIssue.InvalidValue({message: "…"}, s, o)),
-    encode: (m) => Effect.succeed(`${m.cents / 100} ${m.currency}`)
-  })))
-```
-
-**(ii) and (iii) beni** — a validated type again, and `tried` is the whole of it (checked, exit 0):
+**(ii) beni** `[proposed]`, in `Money.beni`:
 
 ```elm
-pub opaque type Money
+pub opaque schema Money = String via conversion
+```
+
+**(iii) what you can refer to**, checked, exit 0:
+
+```elm
+pub opaque type Type
     = Money { cents : Int, currency : String }
 
 
-pub fromText : String -> Result String Money
+pub type alias Encoded =
+    String
+
+
+pub fromText : String -> Result String Type
 fromText text =
     case String.split text " " of
         [ amount, currency ] ->
@@ -1398,104 +1748,180 @@ fromText text =
             Err "expected \"<amount> <currency>\", got ${text}"
 
 
-pub toText : Money -> String
+pub toText : Type -> String
 toText (Money m) =
     "${toFloat m.cents / 100} ${m.currency}"
 
 
-pub schema : () -> Schema Money
-schema () =
-    Schema.tried Schema.string fromText toText
+pub conversion : Schema.Conversion Encoded Type
+conversion =
+    { from = fromText, to = toText }
 ```
 
-`fromText` returns `Result String Money` and `toText` is total — K5 in one file. And because
-`fromText` is a `pub` value of `Money`'s own module, it is also `Money`'s public constructor and its
-`Via` record is `{ from = fromText, to = toText }`, usable as `via Money.text` from any other
-schema. One function, three jobs.
+`fromText` returns `Result String Money.Type` and `toText` is total — K5 in one file. And because
+`conversion` is `pub`, any other schema can name it: `total : String via Money.conversion` (§5.8).
+One function, three jobs.
 
 ### 5.7 An effectful transformation — and the argument for refusing it
 
-**(i) Effect** (L7004, row 160) — decoding an id into a full user through a `UserDatabase` service:
-
-```ts
-declare const User: Schema.Codec<{id: string, name: string}, string, UserDatabase, never>
-const decoding = Schema.decodeEffect(User)("user-123")
-```
+**(i) Effect** (L7004) decodes an id into a full user through a `UserDatabase` service, with the
+requirement in the schema's type: `Schema.Codec<User, string, UserDatabase, never>`.
 
 **(ii) beni: do not do this, and the reason is not the type system.** Under transparent effects the
-code would be unremarkable — `Schema.tried Schema.string Users.lookup Users.idOf`, with `lookup`
-inferred `suspends` and nothing written anywhere. Two things argue against allowing it:
+code would be unremarkable — a `Conversion` whose `from` performs, inferred `suspends`, nothing
+written anywhere. Two things argue against it:
 
-1. **It turns one round trip into *n*.** A schema is run on a payload that already arrived. A reader
-   that itself performs runs once per occurrence — a list of 200 ids is 200 lookups, serialised,
-   inside a function whose type says "read this value". Effect's answer is the `concurrency` parse
-   option (row 150), which is a knob to manage a problem the shape created.
-2. **It makes reading non-repeatable.** `Schema.roundTrips` (§7.2), `Schema.sample` (row 148) and
-   `--release`'s specialised reader (§8.3) all assume reading a value twice gives the same answer.
+1. **It turns one round trip into *n*.** A schema runs on a payload that already arrived; a reader
+   that performs runs once per occurrence, and a list of 200 ids is 200 lookups inside a function
+   whose type says "read this value". Effect's answer is the `concurrency` parse option (row 150),
+   a knob for a problem the shape created.
+2. **It makes reading non-repeatable**, and `roundTrips` (§7.2), `Sample.of` (row 148) and
+   `--release`'s specialised reader (§8.3) all assume reading twice gives the same answer.
 
 **The recommended shape** is the ordinary beni one — read, then enrich:
 
 ```elm
-pub load : String -> Result (List Schema.Issue) (List User)
+pub load : String -> Result (List Schema.Issue) (List Person)
 load text =
     let
         ids =
             Schema.parse (Schema.list Schema.string) text?
     in
-    Ok (List.map ids Users.lookup)
+    Ok (List.map ids lookup)
 ```
 
-`?` unwraps the read, `List.map` performs, and the two concerns stay apart. This is K10's
-option (b), and it is recommended **on design grounds** rather than because the effects question
-(H4) is open — which means the answer to H4 does not change the recommendation, only whether the
-capability exists for the person who insists.
+Checked, exit 0. `?` unwraps the read, `List.map` performs, and the two concerns stay apart. This
+is K10's option (b), recommended **on design grounds** — so the answer to H4 changes whether the
+capability exists for someone who insists, not the recommendation.
 
-### 5.8 One type, two wire forms — v1 and v2 of an API
+### 5.8 Composition: a schema whose field is another schema
 
-This is the case K4 keeps layer 1 available for, and it is the shape report 31 §4.1 says every real
-API eventually has. `User` is declared once with its v2 schema; v1 is an ordinary value in whatever
-module cares:
+This is K14 doing its job, and it is the example that shows why a field position holds a schema.
+
+**(ii) beni** `[proposed]`:
 
 ```elm
--- [proposed] in User.beni — v2 is the type's own schema
-pub schema User =
-    { name : String as "user_name"
-    , age : Int default 0
+pub schema Order =
+    { id : String
+    , buyer : User
+    , total : String via Money.conversion
+    }
+```
+
+**(iii) what you can refer to**, checked, exit 0 — `Encoded` composes the same way `Type` does:
+
+```elm
+pub type alias Type =
+    { id : String, buyer : User.Type, total : Money.Type }
+
+
+pub type alias Encoded =
+    { id : String, buyer : User.Encoded, total : Money.Encoded }
+
+
+pub schema : () -> Schema Encoded Type
+schema () =
+    Schema.object
+        |> Schema.field "id" Schema.string
+        |> Schema.field "buyer" (User.schema ())
+        |> Schema.field "total" (Money.schema ())
+        |> Schema.build
+            (\( ( ( (), i ), b ), t ) -> { id = i, buyer = b, total = t })
+            (\o -> ( ( ( (), o.id ), o.buyer ), o.total ))
+            (\( ( ( (), i ), b ), t ) -> { id = i, buyer = b, total = t })
+            (\w -> ( ( ( (), w.id ), w.buyer ), w.total ))
+```
+
+`buyer : User` names the **schema**. Under the alternative (`buyer : User.Type`, K14 option (b))
+the compiler would have to look up "the schema for `User.Type`" — and §5.9's second wire form for
+that same type would then be unreachable from any declaration.
+
+### 5.9 One type, two wire forms — v1 and v2 of an API
+
+The shape report 31 §4.1 says every real API eventually has, and the case "derive the schema from
+the type" cannot do at all. Two schemas, two `Encoded` types, **one** program type — which the
+author states by declaring the second schema's `Type` to be the first's:
+
+```elm
+-- [proposed], in UserV1.beni
+pub schema UserV1 =
+    { name : String as "userName"
+    , age : Int as "userAge"
     }
 ```
 
 ```elm
--- in ApiV1.beni — a second wire form, ordinary beni, no new language
-import User exposing (User)
-
-
-pub userV1 : () -> Schema User
-userV1 () =
-    Schema.object
-        |> Schema.field "userName" Schema.string
-        |> Schema.field "userAge" Schema.int
-        |> Schema.build
-            (\( ( (), n ), a ) -> { name = n, age = a })
-            (\u -> ( ( (), u.name ), u.age ))
+UserV1.Type      -- { name : String, age : Int }
+UserV1.Encoded   -- { userName : String, userAge : Int }
+User.Type        -- { name : String, age : Int } — the same record type, structurally
+User.Encoded     -- { user_name : String, age : Maybe Int }
 ```
 
-Both are `Schema User`, so `Schema.parse (ApiV1.userV1 ()) old` and
-`Schema.parse (User.schema ()) new` produce the same type and a migration is
-`User.schema () |> Schema.print |> …`. **The wire form is a value, not a property of the type**,
-which is the single most important thing K1 buys and the thing "derive the schema from the type"
-cannot do.
-
-### 5.9 The typeahead program's HTTP, rewritten
-
-`plans/browser-platform.md` §1.1's `Api` record has `search : String -> Result HttpError (List Hit)`
-and `Hit` declared as a bare `type alias` with no wire story at all — the payload is assumed. With
-schemas the assumption becomes a declaration, and the only line of the program that changes is
-inside the real API implementation:
+beni records are structural, so `UserV1.Type` and `User.Type` *are* the same type and a value read
+by one is writable by the other with no conversion:
 
 ```elm
--- [proposed] replaces `type alias Hit = { id : HitId, title : String }`
+pub upgrade : String -> Result (List Schema.Issue) String
+upgrade old =
+    let
+        u =
+            Schema.parse (UserV1.schema ()) old?
+    in
+    Ok (Schema.print (User.schema ()) u)
+```
+
+When the program types genuinely differ, the author writes the mapping — and §5.10 shows the better
+route, which is not to build a program value at all.
+
+### 5.10 What `Encoded` is for: a v1 → v2 migration over the wire shapes
+
+New in revision 2, and it is the example that pays for the second type parameter. A stored payload
+has to move from v1's spelling to v2's. Doing it through the program type means reading a v1 row
+into a `UserV1.Type` and writing it out as v2 — which fails for any row that v2's *checks* would
+reject, even though the migration itself is only a rename. Doing it on the **encoded** side does
+not:
+
+```elm
+--| A migration over the WIRE shapes. No program value is built, so a v1 row
+--| that v2's checks would reject still migrates, and the rule is one record
+--| expression the type checker reads.
+pub toV2 : UserV1.Encoded -> User.Encoded
+toV2 old =
+    { user_name = old.userName, age = Just old.userAge }
+
+
+pub migrate : Value -> Result (List Schema.Issue) Value
+migrate raw =
+    let
+        old =
+            Schema.readEncoded (UserV1.schema ()) raw?
+    in
+    Ok (Schema.writeEncoded (User.schema ()) (toV2 old))
+```
+
+Checked, exit 0. Three things to notice. `toV2` is an ordinary record expression and the **type
+checker proves the migration total** — a forgotten field is `missing_field`, a renamed one is
+`unknown_field`, and neither is a test anybody has to remember to write. `readEncoded` /
+`writeEncoded` are §3.3's halves, so no conversion runs in either direction. And under revision 1's
+one-parameter `Schema` **none of this could be written**, because `UserV1.Encoded` and
+`User.Encoded` would not have been types — which is the concrete answer to "what is `Encoded` for",
+and the reason K1 is reversed.
+
+The same shape covers the other three uses: a **form** whose state is `User.Encoded` and whose
+submit is `User.decode`; a **fixture** written as a `User.Encoded` literal, which the compiler
+checks against the wire shape; and a **database row** typed `User.Encoded` rather than a bag of
+strings.
+
+### 5.11 The typeahead program's HTTP, rewritten
+
+`plans/browser-platform.md` §1.1 declares `Hit` as a bare `type alias` with no wire story — the
+payload is assumed. With schemas the assumption becomes a declaration, and only the real API
+implementation changes:
+
+```elm
+-- [proposed]
 pub schema Hit =
-    { id : HitId as "hit_id"
+    { id : String as "hit_id"
     , title : String
     }
 
@@ -1507,21 +1933,14 @@ pub schema HitPage =
 ```
 
 ```elm
--- the platform side, `[proposed]` for Http and Send only
-realApi : Api
-realApi =
-    { search = searchReal
-    , setFavourite = setFavouriteReal
-    }
-
-
-searchReal : String -> Result HttpError (List Hit)
+-- the platform side; `[proposed]` for Http and Send only
+searchReal : String -> Result HttpError (List Hit.Type)
 searchReal q =
     let
         body =
             Http.getText "/search?q=${q}"?
     in
-    case Schema.parse (HitPage.schema ()) body of
+    case HitPage.parse body of
         Ok page ->
             Ok page.hits
 
@@ -1529,16 +1948,26 @@ searchReal q =
             Err (BadPayload (Schema.explain issues))
 ```
 
-Three things to notice. `HttpError` gains a `BadPayload String` constructor, which is the payload
-failure becoming a **constructor in the result type** — [`boundary.md`](../boundary.md) §4.1's recipe
-applied one level up. `update` and `view` are untouched, because the schema lives at the boundary
-where it belongs. And the test double in the same file passes `Hit` values directly and never
-touches a schema, so the schema costs the tests nothing — which is the property that makes
-`Schema.roundTrips` (§7.2) worth adding as the *one* schema test a program writes.
+Three things. `HttpError` gains a `BadPayload String` constructor — the payload failure becoming a
+**constructor in the result type**, which is [`boundary.md`](../boundary.md) §4.1's recipe one level
+up. `update` and `view` are untouched, because the schema lives at the boundary. And the test
+double passes `Hit.Type` values directly and never touches a schema, so the schema costs the tests
+nothing — which is what makes `Schema.roundTrips` worth adding as the *one* schema test a program
+writes.
+
+Note `HitPage.parse body` rather than `Schema.parse (HitPage.schema ()) body`: K16's namespace
+functions are what make the call site read like the thing it does.
 
 ---
 
-## 6. What is derived from a schema, and why the description must be data
+## 6. What comes out of a schema, and why the description is data as well as a type
+
+Under the owner's model a schema now says the wire shape **twice**, and the two are for different
+readers. `X.Encoded` is a *type*, so the **type checker** can hold a form's state, a fixture or a
+database row to it, and §5.10's migration is checked rather than tested. `Schema.describe` returns
+a `Node`, which is *data*, so a **program** can walk it — and a JSON Schema document, a generated
+form and a fixture generator are all programs walking a description, not type-checking against one.
+Neither replaces the other: a type cannot be iterated and a description cannot be unified.
 
 Five artefacts, each a pure function of `Node` (plus `write` for two of them), each in its own
 package so that a program that wants none of them ships none of them (§8.4):
@@ -1549,7 +1978,7 @@ package so that a program that wants none of them ships none of them (§8.4):
 | **Test data** | `Sample.of : Node, Seed -> ( Value, Seed )`, then `read` | generating a valid value means walking the description; report 17 §4.9's seeded PRNG is `pure`, so this is an ordinary function |
 | **A form** | `Form.of : Node -> Html msg` | a text input per `TextNode`, a select per `ChoiceNode`, a repeater per `ArrayNode` — this is the browser platform's most obvious first customer |
 | **API documentation** | `Docs.of : Node -> String` | `NamedNode` carries the doc comment from the declaration |
-| **JSON Patch** | `Patch.between : Schema a, a, a -> List Op` | needs `write` as well, per row 142 |
+| **JSON Patch** | `Patch.between : Schema e a, a, a -> List Op` | needs `write` as well, per row 142 |
 
 **Equality is the one Effect derives from a schema that beni does not need**: `eq` and `compare`
 come from the *type*, derived by the compiler (spike §9), so they work for values that never met a
@@ -1580,7 +2009,8 @@ serialising typed program state across a wire, and a full-stack beni project —
 | **The reader and the writer cannot disagree about a field's name, its position, or whether it is optional** | they are built from one list of fields in one expression. This is the guarantee report 31 §5 says is the *only* rule-7-legitimate justification for the feature, and it is the one that survives the shape-mismatch objection, because `as` / `via` / `default` keep it true when the shapes differ |
 | **No run-time crash on bad input** | reading is total: every failure is an `Issue` in a `Result`. The depth bound (`Options.maxDepth`) makes a hostile payload fail as a value rather than as a stack overflow, which is `boundary.md` §3.1's rule promoted to a field |
 | **A validated type cannot be forged through reading** | its constructor is private to its module and its schema is written there, through the checked constructor. K3 refuses the structural default that would peel past it — the Roc defect of report 31 §4.2 |
-| **"No schema for this type" is a build error** | `unknown_method` from the module rule, at the declaration when the type is written there and at the use when it is a type parameter (§4.7). No run-time "missing codec" exists to report |
+| **"No schema for this type" is a build error** | `unknown_method` from the module rule, at the declaration when the name is written there and at the use when it is a schema parameter (§4.9). No run-time "missing codec" exists to report |
+| **The two types cannot disagree with the reader and the writer** | new in revision 2. `X.Type` and `X.Encoded` are read off the same declaration the reader and writer are, so a payload that `X.encode` produces is a `X.Encoded` by construction, and §5.10 is type-checked rather than tested |
 | **Writing never fails** | K5 |
 | **No silent wrong answer past 2⁵³** | K11 |
 | **The declaration adds no semantics** | it desugars into layer-1 calls before BIR, so `dump --stage=bir` and an `emit/` golden can prove the two forms produce identical bytes — report 28 §10's answer to "two ways", made mechanical |
@@ -1596,7 +2026,7 @@ beni can do that Elm cannot is make it **checkable in one line**, because `eq` i
 type (spike §9) and needs no argument:
 
 ```elm
-pub roundTrips : Schema a, a -> Bool
+pub roundTrips : Schema e a, a -> Bool
     where a.eq : a, a -> Bool
 roundTrips s sample =
     case read s (write s sample) of
@@ -1620,13 +2050,20 @@ moneySurvives =
             False
 ```
 
-One line like that catches the `build` seam of §3.4.2, a swapped `as`, and a `via` whose two
+One line like that catches the four-function `build` seam of §3.4, a swapped `as`, and a `via` whose two
 directions disagree.
 With row 148's `Sample.of` it becomes a property test over generated values, which is the form
 `ARBITRARY.md` argues for and the form report 31 §5 says nobody writes because nothing makes it
 cheap.
 
-The second trusted law is weaker and should be stated rather than assumed: **`write` is not
+**A second law arrives with the second type parameter**, and it is the one `Encoded` rests on:
+`decode s (encode s x) == Ok x`, for every `x` the program can hold. It is the same law one level
+in — the structural step is not involved — and `Schema.roundTrips` tests the outer one, so a
+`roundTripsEncoded` over `decode`/`encode` is worth having beside it. Where the two differ is
+informative: if the outer law holds and the inner one fails, the fault is in a `Conversion`; if the
+inner holds and the outer fails, it is in the structural step, which is the compiler's.
+
+The third trusted law is weaker and should be stated rather than assumed: **`write` is not
 canonical.** Two program values that are `eq` may produce different `Value`s if a custom `to`
 chooses differently, and the same program value may produce different bytes across builds if a
 field's order changed. Anyone hashing or signing a payload needs a canonicalising writer, which is
@@ -1634,14 +2071,15 @@ an additional function over `Value` and not a property of the schema.
 
 ### 7.3 What it deliberately does not restrict
 
-- **It does not require the declaration.** Layer 1 is complete on its own; §5.8's second wire form
-  is only writable there, and a program may never use `schema` at all.
+- **It does not require the declaration.** Layer 1 is complete on its own, and a program may never
+  write `schema` at all: it can declare its own `Type` and `Encoded` aliases and a schema between
+  them, which is exactly what §3.9(i) does and what K13(c) makes the ordinary spelling.
 - **It does not require a schema to exist for a type.** K3: nothing is derived until asked.
 - **It does not own the wire format.** `Value` and the adapters are ordinary code, so a format
   nobody thought of is a package.
 - **It does not restrict what a transformation may do.** `from` is any function; the only rule is
   that it returns a `Result` rather than throwing, which it cannot do anyway.
-- **It does not cap the number of fields.** §3.4.2.
+- **It does not cap the number of fields.** §3.4.
 
 ---
 
@@ -1655,34 +2093,42 @@ nearest thing to this work that has been built.
 
 | Phase | File (current size) | Change | Lines of Zig |
 |---|---|---|---|
-| Lexer | `src/lex/Tokenizer.zig` (1 944) | **none** — `schema`, `tagged`, `of`, `via`, `default` are contextual words recognised in the parser, as `where` and `equatable` are (spike §2.2) | **0** |
-| Parser | `src/parse/Parse.zig` (4 468) | `parseSchemaDecl`, the field list, the variant list, the five modifiers, the three-token contextual lookahead, two recovery cases | **300–420** |
+| Lexer | `src/lex/Tokenizer.zig` (1 944) | **none** — `schema`, `tagged`, `of`, `via`, `default`, `optional` are contextual words recognised in the parser, as `where` and `equatable` are (spike §2.2) | **0** |
+| Parser | `src/parse/Parse.zig` (4 468) | `parseSchemaDecl`, the field list (whose positions hold **schemas**, K14), the variant list, the six modifiers, `opaque schema`, the three-token contextual lookahead, two recovery cases | **320–450** |
 | AST | `src/parse/Ast.zig` (1 172) | 3 node tags (`schema_decl`, `schema_field`, `schema_variant`) with `extra` records | **90–140** |
-| BIR lowering | `src/bir/Lower.zig` (4 215) | the whole desugaring of §4.6: synthesise the `type`/`type alias`, the annotation with its generated `where` clause, the pipeline, and both lambdas; decide recursive-or-not | **450–650** |
-| Checker | `src/check/Constrain.zig` (1 642) | the well-known `schema` table of §4.5 beside the `eq`/`compare` one, and its resolution order | **120–200** |
+| BIR lowering | `src/bir/Lower.zig` (4 215) | the desugaring of §4.4: the two record types, the annotation with its `where` clause, the pipeline, and the **four** lambdas per record (two per side, K1); the flattened union `Encoded` (K15); recursive-or-not; the five namespace values (K16) | **550–800** |
+| Checker | `src/check/Constrain.zig` (1 642) | the well-known `schema` table of §4.9 beside the `eq`/`compare` one, and its resolution order | **120–200** |
+| **Resolver — new in revision 2** | `resolveQualified` (`src/bir/Lower.zig:1268`), `src/resolve/Interface.zig` (907), `src/resolve/Graph.zig` (905) | **K13(a)**: a schema-namespace table consulted before the import aliases; a namespace section in the interface; `exposing` admitting a namespace name; the collision diagnostic. **Zero under K13(c)** | **200–320**, or **0** |
 | Formatter | `src/fmt/Format.zig` (3 272) | one declaration printer, the field and variant lists, modifier spacing | **200–280** |
 | Dump | `src/dump/ast.zig` | `ast` gains three tags; `bir` gains nothing | **40** |
-| Diagnostics | `src/*/Diagnostics.zig` | 4–6 new codes (a duplicate wire key, a duplicate field, a modifier that contradicts the field type, a `via` whose type does not line up) plus the hint change in `unknown_method` | **150–220** |
-| **Total, layer 2** | | | **≈ 1 350–1 950** |
-| **Layer 1** | `core/Schema.beni`, `core/Json.beni`, `core/Json.js` | beni, not Zig: the combinators, `Value`, `Node`, `Issue`, the adapters | **≈ 900–1 300 lines of beni**, ≈ 40 of JavaScript |
+| Diagnostics | `src/*/Diagnostics.zig` | 5–8 new codes — a duplicate wire key; a duplicate field; a modifier that contradicts its field; a `via` whose conversion does not line up; two union variants disagreeing on a shared field's encoded type (K15); a schema name colliding with an import alias (K13) — plus the hint change in `unknown_method` | **180–260** |
+| **Total, layer 2** | | | **≈ 1 700–2 490** under K13(a) · **≈ 1 500–2 170** under K13(c) |
+| **Layer 1** | `core/Schema.beni`, `core/Json.beni`, `core/Json.js` | beni, not Zig: the combinators at two parameters, `Value`, `Node`, `Issue`, `Conversion`, the adapters | **≈ 1 000–1 450 lines of beni**, ≈ 40 of JavaScript |
 
-The total is within a few per cent of report 28's JSX estimate (≈ 1 300–1 900), which is the right
-sanity check: both features are one new declaration shape that desugars into ordinary calls, and
-neither touches the checker's core, the cache format or the interface hash.
+**Revision 2 adds roughly 350–550 lines over revision 1, and all of it is the owner's model**: four
+lambdas per record instead of two, the flattened union `Encoded`, the five namespace values, and —
+the largest single item — the schema namespace, which is the only part of this design that touches
+the resolver. Report 28's JSX estimate was ≈ 1 300–1 900 for a feature of comparable surface, so
+layer 2 is now about half again as large as JSX. That is worth saying plainly, and K13(c) is the
+option that takes most of it back.
 
-**Throughput** (`fast-compiler.md` §2's >250k LOC/s): the lexer is untouched, so the risk is zero by
-construction; the parser gains one arm on the declaration switch; lowering does more work per
-`schema` declaration than per ordinary one, bounded by the field count.
+**Throughput** (`fast-compiler.md` §2's >250k LOC/s): the lexer is untouched, so the risk there is
+zero by construction; the parser gains one arm on the declaration switch; lowering does more work
+per `schema` declaration than per ordinary one, bounded by the field count. The resolver change is
+one extra table consulted on a qualified name that would otherwise have failed, so it costs nothing
+on the common path.
 
-**Determinism** (rule 5): field order is source order, the generated `where` clause's constraint
-order is type-parameter order, and the accumulator is left-nested, so nothing depends on a hash or a
-thread. The one place an implementer could break it is the order of the generated `where` clause's
-constraints; state that it is the order the parameters are *declared* in and not the order fields
-mention them.
+**Determinism** (rule 5): field order is source order, the `where` clause's constraint order is
+type-parameter order, and the accumulator is left-nested, so nothing depends on a hash or a thread.
+Two places an implementer could break it: the order of the `where` clause's constraints, which must
+be the order the parameters are *declared* in and not the order fields mention them; and the field
+order of a union's flattened `Encoded` (K15), which must be variant order, then field order within
+a variant, never a set iteration.
 
 **M4**: a `schema` declaration produces ordinary declarations by BIR, so a module's interface is
-whatever its annotations say and `checker.md` §7's serialised form is unchanged. The interface
-firewall is unaffected.
+whatever its annotations say — with one addition under K13(a), the namespace section, which is a
+pure function of the declaration's text and therefore does not move the firewall
+(`checker.md` §7).
 
 ### 8.2 Output size
 
@@ -1690,36 +2136,41 @@ Reachability elimination (`backend.md` §9) is declaration-granular and always o
 nobody reaches is not written**. Because `schema` is a *method*, the edge that keeps it alive is a
 dispatch site, which §9's leg 3 already walks — so a type whose `schema` is never used costs zero
 bytes, exactly as its derived `eq` does today (`derived_bytes` went to 0 for the null program).
+K16's five namespace values are ordinary declarations, so a program that calls only `User.parse`
+does not ship `User.encode`.
 
-A schema value that *is* reached costs roughly: one `Node` object per node, one closure per
-combinator, and the `build` lambdas. For a ten-field record that is on the order of 30 small objects
-and 25 closures, built once per `schema ()` call — call it 1.5–2.5 kB of emitted source before
-compression, against perhaps 1.2 kB for a hand-written Elm decoder/encoder pair for the same record,
-which is the honest comparison and is a small loss.
+A schema that *is* reached costs roughly one `Node` object per node, one closure per combinator,
+and the four `build` lambdas. For a ten-field record that is on the order of 30 small objects and
+27 closures, built once per `schema ()` call — call it 1.7–2.8 kB of emitted source before
+compression, against perhaps 1.2 kB for a hand-written Elm decoder/encoder pair for the same
+record. That is a small loss, and revision 2 makes it slightly larger than revision 1 because two
+of the four `build` lambdas are the encoded side.
 
 ### 8.3 `--release`, and what it could do later
 
-Three things, in the order they are worth doing, and **none of them is in the first slice**:
+Three things, in the order they are worth doing, and **none is in the first slice**:
 
-1. **Memoise the thunk.** K2 makes every schema a function, so `User.schema ()` rebuilds the tree on
-   every call. A `--release` pass could hoist a nullary `schema` whose body has no evidence
-   parameter into a module-level `const`, which is a dead-binding-elimination-adjacent transform
-   §9's item 1 machinery already has the shape for. Safe because reading is pure (K10/§5.7).
-2. **Specialise the reader.** A schema whose `Node` is fully known at compile time can be compiled
-   to a straight-line reader over the raw JavaScript value — no `Value` tree, no closure per field.
-   This is Effect's JIT/AOT compiler (row 162) arriving as an ordinary compiler pass instead, which
-   is strictly better: no `new Function`, so it works under a Content Security Policy, and no
-   startup cost.
+1. **Memoise the thunk.** K2 makes `X.schema` a function, so `User.schema ()` rebuilds the tree on
+   every call. A `--release` pass could hoist a nullary `schema` whose body takes no evidence into
+   a module-level `const` — a dead-binding-adjacent transform that §9's item 1 machinery already
+   has the shape for, and safe because reading is pure (K10, §5.7).
+2. **Specialise the reader.** A schema whose `Node` is fully known at compile time can compile to a
+   straight-line reader over the raw JavaScript value — no `Value` tree, no closure per field.
+   That is Effect's JIT/AOT compiler (row 162) arriving as an ordinary compiler pass instead,
+   which is strictly better: no `new Function`, so it works under a Content Security Policy, and
+   no startup cost. **Two parameters make this easier rather than harder**: the reader has a
+   *typed* intermediate to specialise against, so the structural step can compile to direct field
+   reads on a known record shape.
 3. **Drop the `Node`** when `describe` is unreachable, which reachability already decides.
 
-Item 2 is the one that matters for the browser-first stance, and it is also what makes K8 (ports on
-schemas) affordable. It should be a separate commission with its own measurement.
+Item 2 is what matters for the browser-first stance and what makes K8 (ports on schemas)
+affordable. It should be a separate commission with its own measurement.
 
 ### 8.4 What lands where
 
 | Package | What | Why |
 |---|---|---|
-| `core/Schema.beni` | `Value`, `Node`, `Issue`, every combinator, `Options`, `readWith`, `roundTrips` | the well-known table has to point somewhere, and only core can be pointed at without an import cycle (§4.5) |
+| `core/Schema.beni` | `Value`, `Node`, `Issue`, `Conversion`, every combinator, `Options`, `readWith`, `roundTrips` | the well-known table has to point somewhere, and only core can be pointed at without an import cycle (§4.9) |
 | `core/Json.beni` + `core/Json.js` | `pub foreign parse : String -> Result String Value` and `pub foreign print : Value -> String` | **yes, JSON text parsing is `foreign` in core** (K7). `JSON.parse` throws, so the sibling wraps it in `try`/`catch` and returns a `Result`, per `boundary.md` §4.1. Rule 6 makes this core's job or nobody's |
 | the browser platform | `Form.toValue`, `Query.toValue`, `Date.millis` / `Date.iso8601` | format and platform adapters belong to the platform, exactly as report 28 §5.1 puts the element table there |
 | `schema-json` (a package) | `JsonSchema.of : Node -> Value` | nobody should pay for OpenAPI who does not ask |
@@ -1727,29 +2178,34 @@ schemas) affordable. It should be a separate commission with its own measurement
 
 ### 8.5 Slice order
 
-**Library first, declaration second**, and the argument is not habit:
+**Library first, declaration second**, and the argument is not habit.
 
-- **S1 — `core/Schema` and `core/Json`.** The whole of layer 1, in beni, with corpus fixtures under
-  `tests/corpus/run/` that read and write real payloads. It ships value on its own: today every beni
-  program that touches JSON has nothing at all.
-- **S2 — the well-known table (H2)** and `where a.schema : () -> Schema a` as a *hand-written*
-  pattern. This is checker work, it is small, and §3.9(i) shows it already works.
-- **S3 — H3**, the `constrained_constant` defect, with its fixture. Independent, and it should not
-  wait for this feature.
-- **S4 — the declaration** (§4), for records only, desugaring to S1.
-- **S5 — `tagged`**, the union half.
-- **S6 — K8**, ports re-specified on schemas, conditional on a measurement of `readForeign` against
-  the existing generator.
-- **S7 — the derived artefacts** (§6), one package at a time, starting with whichever the browser
+- **S1 — `core/Schema` and `core/Json`.** The whole of layer 1 at two parameters, in beni, with
+  corpus fixtures under `tests/corpus/run/` that read and write real payloads. It ships value on
+  its own: today a beni program that touches JSON has nothing at all.
+- **S2 — the well-known table (H2)** and `where a.schema : () -> Schema e a` as a *hand-written*
+  pattern. Checker work, small, and §3.9(i) shows it already works.
+- **S3 — H3**, the annotated-constrained-constant defect (`plans/queue.md` row 57), with its
+  fail-first fixture. Independent of schemas, and it should not wait for them.
+- **S4 — K13**, the namespace: `schema X` with **no body**, over a type that already exists, so
+  `X.Type`, `X.Encoded` and `X.schema` resolve and nothing else is new. This is the slice that
+  proves the owner's model with the least code, and under K13(c) it is nearly free.
+- **S5 — the record body** (§4.3, §4.4), desugaring to S1.
+- **S6 — `opaque schema`** (§4.5), the validated form.
+- **S7 — `tagged`** (§4.6), the union half and its flattened `Encoded`.
+- **S8 — K8**, ports re-specified on schemas, conditional on measuring `readForeign` against the
+  existing generator.
+- **S9 — the derived artefacts** (§6), one package at a time, starting with whichever the browser
   platform needs first.
 
-The reverse order was considered. It fails on the same argument report 28 §10 makes: if the
-declaration lands first, its desugaring target is invented to suit it, and the plain form ends up as
-something nobody would write by choice — which is how a "sugar over a library" design quietly
-becomes a second language.
+**What changed from revision 1's order:** the namespace is now its own slice and comes before any
+body syntax, because it is the part of the owner's model that touches the resolver and the part
+that can be wrong in a way the rest cannot fix. The reverse order — declaration first — was
+considered and fails on report 28 §10's argument: its desugaring target would be invented to suit
+it, and the plain form would end up as something nobody would write by choice, which is how "sugar
+over a library" quietly becomes a second language.
 
 ---
-
 ## 9. The strongest case against
 
 Stated at full strength first.
@@ -1791,21 +2247,23 @@ them. The round-trip law is still trusted, exactly as it is in Elm.
 - **(2) shape mismatch** is answered by conceding it and building for it. `as`, `via`, `default` and
   `tagged "kind"` exist because 1:1 is the rare case; report 31 §3.3 is right that
   derived-versus-hand-written is a false dichotomy, and this design takes the third option
-  throughout. §5.8's two wire forms for one type is the test that a "derive from the type" design
+  throughout. §5.9's two wire forms for one type is the test that a "derive from the type" design
   fails and this one passes.
 - **(3) two ways** is answered by making it literally one program: the declaration desugars in
-  `bir/Lower.zig` and an `emit/` golden proves the two forms produce identical bytes (§4.7). One
-  semantics, one optimiser, one set of diagnostics. And the second way is not redundant — §5.8's
-  second wire form is *only* writable in layer 1, which is why rule 7 requires it to exist.
-- **(4) drift** is answered by a line drawn in §4.8 and worth writing into the spec: **a modifier
+  `bir/Lower.zig` into ordinary type aliases and ordinary calls, and an `emit/` golden proves the
+  two forms produce identical bytes (§4.10). One semantics, one optimiser, one set of diagnostics.
+  Under the owner's model this is *easier* to hold than in revision 1, because the declaration now
+  defines a schema and nothing else, and a schema is a value the library could already build — the
+  §3.9(i) project is the declaration's output written by hand, and it compiles today.
+- **(4) drift** is answered by a line drawn in §4.11 and worth writing into the spec: **a modifier
   must mean something in a form submission and a query string, not only in JSON.** `as`, `via` and
   `default` all pass; `nullAs` and a date format string do not, and both are one-line library calls
   in the desugared form. The line is testable, which is what makes it hold.
 - **(5) cost** is answered by the split. ≈ 1 700 lines is layer **2**, and layer 1 is beni that has
   to exist either way: today a beni program cannot read JSON at all, so S1 is not optional and is
   not part of this argument. What the declaration buys for its own cost is §7.1's first row — the
-  seam of §3.4.2 closed by construction — which is the guarantee, not the keystrokes.
-- **(6) the guarantee is thinner** is conceded and priced. The generated pair is proven; a `via` is
+  seam of §3.4 closed by construction — which is the guarantee, not the keystrokes.
+- **(6) the guarantee is thinner** is conceded and priced. The pair the declaration stands for is proven; a `via` is
   trusted, and §7.2 says so and gives the one-line test that checks it. That is strictly better than
   the status quo, where *both* directions are hand-written and nothing checks either. It is not a
   proof and this report does not claim one.
@@ -1822,7 +2280,7 @@ them. The round-trip law is still trusted, exactly as it is in Elm.
    §5.7 argues the recommendation does not change either way.
 2. **What a schema actually costs in emitted bytes and in read throughput.** §8.2's figures are
    estimates from counting nodes and closures, not measurements; nothing was built. The comparison
-   that matters — a generated reader against a hand-written Elm decoder, both after brotli — needs
+   that matters — a declared schema’s reader against a hand-written Elm decoder, both after brotli — needs
    S1 to exist.
 3. **Whether `readForeign` can beat the existing port generator** (K8, S6). Unmeasured, and the
    whole of K8 turns on it.
@@ -1838,6 +2296,23 @@ them. The round-trip law is still trusted, exactly as it is in Elm.
 7. **Effect's implementation was not read**, by instruction. Every claim about Effect here is from
    its documentation, so where the docs are silent about a semantic — the exact ordering of checks
    against transformations, for instance — this report is too.
+
+Added in revision 2:
+
+8. **Which of K13's three options the owner wants**, and what (a) really costs in the resolver.
+   §8.1's 200–320 lines is an estimate from reading `resolveQualified` and the interface record,
+   not from writing any of it. K13(c) costs zero and was proved to compile; (a) was not built.
+9. **Whether K15's flattened union `Encoded` is what people actually want.** It is a type, it is
+   the real wire shape, and it loses the tag-to-fields correlation. Nobody has written a beni
+   program with a tagged payload, so the loss is reasoned about rather than felt. The nested
+   namespace (`Shape.Encoded.Circle`) is the escape and was not costed beyond "it lexes".
+10. **Whether K14 — a field position holding a schema — is easier or harder to learn** than a field
+    position holding a type. The argument here is that it is easier *because it is what the
+    declaration says it is*; that is a claim about people, and no one has used it.
+11. **Whether the four-function `build` is too much for a hand-written schema to be a real
+    alternative.** Revision 1's two functions were already the widest seam in the design; two
+    parameters doubled it. If hand-written schemas turn out to be unusable in practice, layer 1 is
+    no longer the plain form rule 7 requires, and that would be an argument for revisiting K1.
 
 ### 10.2 The `SCHEMA.md` headings relied on
 
