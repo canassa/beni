@@ -637,7 +637,7 @@ const Lowerer = struct {
             // A type, an alias and a foreign type emit nothing: a
             // constructor is an object literal at its use site and a type
             // has no runtime existence at all.
-            .type, .type_alias, .foreign_type => return,
+            .type, .type_alias, .foreign_type, .schema => return,
             // Bound by the sibling import, not by a declaration here.
             .foreign_value => return,
             // The parser already reported it and there is no body.
@@ -1647,6 +1647,19 @@ const Lowerer = struct {
             .let_def,
             .let_pattern,
             .branch,
+            .schema_ref,
+            .schema_app,
+            .schema_paren,
+            .schema_record,
+            .schema_field,
+            .schema_value,
+            .schema_tagged,
+            .schema_variant,
+            .schema_as,
+            .schema_via,
+            .schema_optional,
+            .schema_nullable,
+            .schema_expr_ref,
             => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         }
     }

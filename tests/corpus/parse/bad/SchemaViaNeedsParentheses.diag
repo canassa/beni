@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/SchemaViaNeedsParentheses.beni","start":{"line":5,"col":34},"end":{"line":5,"col":42}},"title":"UNEXPECTED TOKEN","message":"I was parsing a record and ran into `argument`. I was expecting a field name."}]

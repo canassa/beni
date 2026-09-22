@@ -345,6 +345,7 @@ fn blankDecl(inst_start: u32, inst_end: u32, refs_start: u32, refs_end: u32) Bir
         .where_start = @enumFromInt(0),
         .where_end = @enumFromInt(0),
         .body = @enumFromInt(inst_start),
+        .schema_body = .none,
         .inst_start = @enumFromInt(inst_start),
         .inst_end = @enumFromInt(inst_end),
         .ctors_start = 0,

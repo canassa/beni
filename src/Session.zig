@@ -1265,6 +1265,8 @@ fn resolveSerial(session: *Session) RunError!void {
     const worker = &session.workers[0];
     defer worker.arena.reset(.retain_capacity);
 
+    if (try session.refuseSchemas()) return;
+
     const graph_token = session.profile.begin();
     session.graph.deinit(gpa);
     session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner);
@@ -1287,6 +1289,7 @@ fn resolveSerial(session: *Session) RunError!void {
 /// Bir and the interfaces of its imports.
 fn checkSerial(session: *Session) RunError!void {
     try resolveSerial(session);
+    if (session.hasSchemaDeclarations()) return;
     const gpa = session.gpa;
     const worker = &session.workers[0];
     defer worker.arena.reset(.retain_capacity);
@@ -1382,6 +1385,63 @@ fn checkSerial(session: *Session) RunError!void {
     }
     try session.reportCheckDiagnostics();
     try session.storeEntries(cached);
+}
+
+/// S1's temporary seam (schema.md §8): lowering and its textual dumps are
+/// complete, while every phase that requires name/type resolution refuses
+/// the declaration once, before it can be silently omitted from an interface.
+fn refuseSchemas(session: *Session) Allocator.Error!bool {
+    var found = false;
+    for (0..session.store.count()) |i| {
+        const file: SourceStore.Index = @enumFromInt(i);
+        const bir = session.artifacts.bir(file);
+        var has_schema = false;
+        for (bir.decls) |decl| {
+            if (decl.kind == .schema) {
+                has_schema = true;
+                break;
+            }
+        }
+        if (!has_schema) continue;
+        var already_bad = false;
+        for (session.workers) |*worker| {
+            for (worker.diagnostics.items) |pending| {
+                if (pending.file == file and pending.diagnostic.severity == .@"error") {
+                    already_bad = true;
+                    break;
+                }
+            }
+            if (already_bad) break;
+        }
+        for (bir.decls) |decl| {
+            if (decl.kind != .schema) continue;
+            found = true;
+            if (already_bad) continue;
+            const start_offset = session.artifacts.tokens(file).items(.start)[decl.name_token];
+            const end_offset = Tokenizer.tokenEnd(
+                session.store.bytes(file),
+                session.artifacts.tokens(file).items(.tag)[decl.name_token],
+                start_offset,
+            );
+            try session.workers[0].report(
+                session,
+                file,
+                .not_implemented,
+                diagnostic.position(session.store.lineStarts(file), start_offset),
+                diagnostic.position(session.store.lineStarts(file), end_offset),
+                "This schema is parsed and preserved, but its endpoint types and members are not checked until schema S2.",
+            );
+        }
+    }
+    return found;
+}
+
+pub fn hasSchemaDeclarations(session: *const Session) bool {
+    for (0..session.store.count()) |i| {
+        const bir = session.artifacts.bir(@enumFromInt(i));
+        for (bir.decls) |decl| if (decl.kind == .schema) return true;
+    }
+    return false;
 }
 
 /// Write one cache entry per module whose check produced nothing to hide

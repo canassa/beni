@@ -1,0 +1,3 @@
+-- A missing tagged-variant rename string at EOF diagnoses and never panics
+-- while lowering the partially recovered variant.
+schema T tagged "kind" of A as

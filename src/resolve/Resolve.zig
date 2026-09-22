@@ -740,6 +740,11 @@ fn checkArbitrary(a: [:0]const u8, b: [:0]const u8) !void {
         .{ .path = "B.beni", .source = b },
     });
     defer p.deinit();
+    // Schema S1 deliberately stops before resolution (schema.md §8), so a
+    // pair containing a schema preserves the other file's unresolved forms
+    // as well. Parser/lowering fuzz owns those inputs until S2 removes the
+    // temporary wall.
+    if (p.session.hasSchemaDeclarations()) return;
     for (0..p.session.store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
         const bir = p.session.artifacts.bir(file);

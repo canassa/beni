@@ -1,0 +1,28 @@
+-- BIR: schema.md §2/§10. S1 preserves every source-level choice needed by
+-- S2: visibility, parameters, qualified/nested operands, modifiers, external
+-- names, discriminator/tags and an explicit recursive reference.
+import Conversions
+import Models
+
+
+pub schema User =
+    { --| The external identifier survives frontend lowering.
+      userId : Models.Id via Conversions.userId as "user-id"
+    , nickname : String optional nullable
+    , aliases : List (Maybe String)
+    , settings : { theme : String }
+    , score : Int via (Conversions.between 0 100)
+    , normalized : String via (\value -> Conversions.trim value)
+    }
+
+
+schema Page item =
+    { items : List item }
+
+
+schema Trimmed = String via Conversions.trim nullable
+
+
+pub schema Tree tagged "kind" of
+      Leaf { value : Int } as "leaf"
+    | Branch { children : List Tree } as "branch"

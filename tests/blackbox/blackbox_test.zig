@@ -5079,3 +5079,219 @@ test "a minted type's edge is to core, even when an app module shadows the name"
     // with its own edge for its own literal.
     try testing.expect(std.mem.indexOf(u8, r.stdout, "app:List -> core:Basics\n") != null);
 }
+
+test "schema field recovery keeps the next sibling and top-level declaration" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\schema Broken =
+        \\    { badTail : Int nonsense @
+        \\    , kept : String
+        \\    }
+        \\
+        \\
+        \\after =
+        \\    42
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=ast", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings(
+        \\(module
+        \\  (schema_decl Broken
+        \\    (schema_record
+        \\      (schema_field badTail
+        \\        (schema_operand Int
+        \\          (schema_operand nonsense)))
+        \\      (schema_field kept
+        \\        (schema_operand String))))
+        \\  (definition after
+        \\    (int 42)))
+        \\
+    , r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .invalid_character,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 2, .col = 30 }, .end = .{ .line = 2, .col = 31 } },
+        .title = "INVALID CHARACTER",
+        .message = "I found `@`, which is not part of the language's syntax.\n\nThe symbols are ( ) [ ] { } , : = -> \\ | _ ? and the operators are\n+ - * / // ^ ++ :: == /= < > <= >= && || |> <| << >>.",
+    }}), r.diagnostics);
+}
+
+test "partial schema strings produce BIR error nodes instead of panicking" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Field.beni", "schema X = { a : Int as\n");
+    try w.write("Tag.beni", "schema T tagged \"kind\" of A as\n");
+    try w.write("Discriminator.beni", "schema T tagged of A\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const field = try w.run(&.{ "dump", "--stage=bir", "Field.beni" });
+    const tag = try w.run(&.{ "dump", "--stage=bir", "Tag.beni" });
+    const discriminator = try w.run(&.{ "dump", "--stage=bir", "Discriminator.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ field, tag, discriminator }) |r| try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings(
+        \\decl 0: schema X
+        \\  %0 = schema_ref Int
+        \\  %1 = error unexpected_token
+        \\  %2 = schema_as %1
+        \\  %3 = schema_field a : %0 [%2]
+        \\  %4 = schema_record [%3]
+        \\  schema body %4
+        \\
+        \\interface
+        \\
+        \\imports
+        \\  prelude Basics
+        \\  prelude List
+        \\  prelude Maybe
+        \\  prelude Result
+        \\  prelude String
+        \\  prelude Char
+        \\  prelude Debug
+        \\
+    , field.stdout);
+    try testing.expectEqualStrings(
+        \\decl 0: schema T
+        \\  %0 = string "kind"
+        \\  %1 = error unexpected_token
+        \\  %2 = schema_variant A as %1
+        \\  %3 = schema_tagged %0 [%2]
+        \\  schema body %3
+        \\
+        \\interface
+        \\
+        \\imports
+        \\  prelude Basics
+        \\  prelude List
+        \\  prelude Maybe
+        \\  prelude Result
+        \\  prelude String
+        \\  prelude Char
+        \\  prelude Debug
+        \\
+    , tag.stdout);
+    try testing.expectEqualStrings(
+        \\decl 0: schema T
+        \\  %0 = error unexpected_token
+        \\  type params tagged
+        \\  schema body %0
+        \\
+        \\interface
+        \\
+        \\imports
+        \\  prelude Basics
+        \\  prelude List
+        \\  prelude Maybe
+        \\  prelude Result
+        \\  prelude String
+        \\  prelude Char
+        \\  prelude Debug
+        \\
+    , discriminator.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .unclosed_delimiter,
+            .severity = .@"error",
+            .span = .{ .file = "Field.beni", .start = .{ .line = 1, .col = 12 }, .end = .{ .line = 1, .col = 13 } },
+            .title = "UNCLOSED DELIMITER",
+            .message = "I was parsing a declaration and got to the end of the file without finding the\n`}` that closes this `{`.",
+        },
+        .{
+            .code = .unexpected_token,
+            .severity = .@"error",
+            .span = .{ .file = "Field.beni", .start = .{ .line = 2, .col = 1 }, .end = .{ .line = 2, .col = 1 } },
+            .title = "UNEXPECTED TOKEN",
+            .message = "I got to the end of the file while parsing a declaration. I was expecting an\nexpression.",
+        },
+    }), field.diagnostics);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unexpected_token,
+        .severity = .@"error",
+        .span = .{ .file = "Tag.beni", .start = .{ .line = 2, .col = 1 }, .end = .{ .line = 2, .col = 1 } },
+        .title = "UNEXPECTED TOKEN",
+        .message = "I got to the end of the file while parsing a declaration. I was expecting an\nexpression.",
+    }}), tag.diagnostics);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .expected_token,
+        .severity = .@"error",
+        .span = .{ .file = "Discriminator.beni", .start = .{ .line = 1, .col = 17 }, .end = .{ .line = 1, .col = 19 } },
+        .title = "EXPECTED TOKEN",
+        .message = "I was parsing a declaration and ran into `of`, but I was expecting `=` here.",
+    }}), discriminator.diagnostics);
+}
+
+test "unsupported schemas refuse every checked dump and build without JavaScript" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\schema User =
+        \\    { name : String }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines []
+        \\
+    );
+    const expected = @as([]const diagnostic.Diagnostic, &.{.{
+        .code = .not_implemented,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 8 }, .end = .{ .line = 4, .col = 12 } },
+        .title = "NOT IMPLEMENTED YET",
+        .message = "This schema is parsed and preserved, but its endpoint types and members are not\nchecked until schema S2.",
+    }});
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var results: [9]world.Result = undefined;
+    inline for (.{ "interface", "raw", "types", "graph", "dispatch" }, 0..) |stage, i| {
+        results[i] = try w.run(&.{ "dump", "--stage=" ++ stage, "Main.beni" });
+    }
+    results[5] = try w.run(&.{ "build", "--platform=node", "--out=out1", "--jobs=1", "--no-cache", "Main.beni" });
+    results[6] = try w.run(&.{ "build", "--platform=node", "--out=out2", "--jobs=8", "--no-cache", "--roundtrip-frontend", "Main.beni" });
+    results[7] = try w.run(&.{ "build", "--platform=node", "--out=out3", "--jobs=1", "--cache-dir=cache", "Main.beni" });
+    results[8] = try w.run(&.{ "build", "--platform=node", "--out=out4", "--jobs=8", "--cache-dir=cache", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (results) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqualStrings("", r.stdout);
+        try testing.expectEqualDeep(expected, r.diagnostics);
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(w.exists("cache"));
+    inline for (.{ "out1", "out2", "out3", "out4" }) |path| try testing.expect(!w.exists(path));
+}

@@ -1,0 +1,84 @@
+(module
+  (schema_decl pub User
+    (doc "The public record schema.")
+    (schema_record
+      (schema_field userId
+        (doc "Renamed through a conversion.")
+        (schema_operand Models.Id)
+        (schema_via
+          (ident Conversions.userId))
+        (schema_as
+          (string
+            (chunk "user-id"))))
+      (schema_field nickname
+        (schema_operand String)
+        (schema_nullable)
+        (schema_optional))
+      (schema_field aliases
+        (schema_operand List
+          (schema_paren
+            (schema_operand Maybe
+              (schema_operand String)))))
+      (schema_field settings
+        (schema_record
+          (schema_field theme
+            (schema_operand String))))
+      (schema_field score
+        (schema_operand Int)
+        (schema_via
+          (paren
+            (apply
+              (ident Conversions.between)
+              (int 0)
+              (int 100)))))))
+  (schema_decl Page item
+    (schema_record
+      (schema_field items
+        (schema_operand List
+          (schema_operand item)))))
+  (schema_decl Contextual optional
+    (schema_record
+      (schema_field value
+        (schema_paren
+          (schema_operand optional)))))
+  (schema_decl Trimmed
+    (schema_operand String)
+    (schema_via
+      (ident Conversions.trim))
+    (schema_nullable))
+  (schema_decl Empty
+    (schema_record))
+  (schema_decl pub Message
+    (schema_tagged
+      (string
+        (chunk "kind"))
+      (schema_variant Text
+        (schema_record
+          (schema_field value
+            (schema_operand String))) as
+        (string
+          (chunk "text")))
+      (schema_variant Count
+        (schema_record
+          (schema_field value
+            (schema_operand Int))) as
+        (string
+          (chunk "count")))
+      (schema_variant Empty)))
+  (schema_decl pub Tree
+    (schema_tagged
+      (string
+        (chunk "kind"))
+      (schema_variant Leaf
+        (schema_record
+          (schema_field value
+            (schema_operand Int))) as
+        (string
+          (chunk "leaf")))
+      (schema_variant Branch
+        (schema_record
+          (schema_field children
+            (schema_operand List
+              (schema_operand Tree)))) as
+        (string
+          (chunk "branch"))))))

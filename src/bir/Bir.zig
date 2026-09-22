@@ -218,6 +218,37 @@ pub const Inst = struct {
         /// `SubRange` of `Field` pairs.
         type_record_ext,
 
+        // ---- Unresolved schema plan (schema.md §4, S1) -----------------
+
+        /// A schema operand name. `lhs` is its SymbolIndex.
+        schema_ref,
+        /// A schema operand applied to schema arguments. `lhs` is the head
+        /// instruction and `rhs` is an extra SubRange of argument roots.
+        schema_app,
+        /// Explicit grouping around a schema operand. `lhs` is the child.
+        schema_paren,
+        /// Record schema. Range of schema_field instruction roots.
+        schema_record,
+        /// Field schema. `lhs` is its SymbolIndex; `rhs` extra SchemaField.
+        schema_field,
+        /// Declaration-level operand plus modifiers. `lhs` operand; `rhs`
+        /// extra SubRange of modifier roots.
+        schema_value,
+        /// Tagged union. `lhs` is the decoded discriminator string
+        /// instruction; `rhs` extra SubRange of variants.
+        schema_tagged,
+        /// Tagged variant. `lhs` name SymbolIndex; `rhs` extra SchemaVariant.
+        schema_variant,
+        /// External-name modifier. `lhs` is a decoded string instruction.
+        schema_as,
+        /// Conversion modifier. `lhs` is the retained Atom expression root.
+        schema_via,
+        schema_optional,
+        schema_nullable,
+        /// An unresolved nonlocal leaf inside a `via` Atom. `lhs` is its
+        /// SymbolIndex and the instruction token retains lower/upper/qualified.
+        schema_expr_ref,
+
         // ---- Expressions: literals -------------------------------------
 
         /// An integer literal. `lhs..` is its spelling in `string_bytes`
@@ -570,6 +601,8 @@ pub const Decl = struct {
     where_end: ExtraIndex,
     /// `value`: the body expression. Else none.
     body: Inst.OptionalIndex,
+    /// `schema`: root of the unresolved schema instruction graph. Else none.
+    schema_body: Inst.OptionalIndex,
     /// The declaration's instructions, contiguous.
     inst_start: Inst.Index,
     inst_end: Inst.Index,
@@ -596,12 +629,14 @@ pub const Decl = struct {
         foreign_value,
         /// `foreign type T a` (§5.4): a type with no constructors.
         foreign_type,
+        /// `schema T = ...` (schema.md §2). It occupies its own namespace.
+        schema,
 
         /// True for the kinds that declare a name in the value namespace.
         pub fn isValue(k: Kind) bool {
             return switch (k) {
                 .value, .annotation_only, .foreign_value => true,
-                .type, .type_alias, .foreign_type => false,
+                .type, .type_alias, .foreign_type, .schema => false,
             };
         }
 
@@ -617,6 +652,19 @@ pub const Decl = struct {
     pub fn whereRange(d: Decl) SubRange {
         return .{ .start = d.where_start, .end = d.where_end };
     }
+};
+
+pub const SchemaField = struct {
+    operand: Inst.Index,
+    modifiers_start: ExtraIndex,
+    modifiers_end: ExtraIndex,
+    doc_start: u32,
+    doc_end: u32,
+};
+
+pub const SchemaVariant = struct {
+    payload: Inst.OptionalIndex,
+    rename: Inst.OptionalIndex,
 };
 
 pub const Ctor = struct {
@@ -755,12 +803,12 @@ pub fn applyRemap(bir: *Bir, remap: []const Symbol) void {
 /// assert over the corpus's own fixtures.
 ///
 /// It is a linear pass over the columns with no allocation, the shape
-/// `js/JsIr.zig:529`'s `verify` already has. What it does NOT check is the
-/// per-tag meaning of `lhs` and `rhs`: an `extra` index is only an index once
-/// the tag says so, and enumerating that is the checker's job, not a
-/// container's. What it therefore guarantees is the property every direct
-/// reader needs — no index leaves its array — and not that the program means
-/// what it meant.
+/// `js/JsIr.zig:529`'s `verify` already has. It checks the per-tag payloads
+/// introduced for schema plans because those cached rows contain nested
+/// `extra`, instruction and symbol indices. Historic expression/type payloads
+/// remain the checker's responsibility. The guarantee here is the property
+/// every direct reader needs — no schema plan index leaves its array — and not
+/// that the program means what it meant.
 ///
 /// `token_count` is the file's token count, because `main_token` and the
 /// four `*_token` fields index the token list and not this record.
@@ -791,7 +839,12 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         if (!validSymbol(d.name, symbols_len)) return false;
         if (!validOptionalInst(d.annotation, insts_len)) return false;
         if (!validOptionalInst(d.body, insts_len)) return false;
+        if (!validOptionalInst(d.schema_body, insts_len)) return false;
         if (d.name_token >= token_count) return false;
+        var schema_i = d.inst_start.int();
+        while (schema_i < d.inst_end.int()) : (schema_i += 1) {
+            if (!verifySchemaInst(bir, d, @enumFromInt(schema_i), symbols_len)) return false;
+        }
     }
 
     for (bir.ctors) |c| {
@@ -818,6 +871,48 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
     for (bir.interface) |d| {
         if (d.int() >= bir.decls.len) return false;
     }
+    return true;
+}
+
+fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32) bool {
+    const data = bir.instData(inst);
+    return switch (bir.instTag(inst)) {
+        .schema_ref, .schema_expr_ref => data.lhs < symbols_len,
+        .schema_app => inDecl(d, data.lhs) and verifyInstRangeAt(bir, d, data.rhs),
+        .schema_paren, .schema_as, .schema_via => inDecl(d, data.lhs),
+        .schema_record => verifyInstRange(bir, d, inlineRange(data)),
+        .schema_field => blk: {
+            if (data.lhs >= symbols_len or data.rhs > bir.extra.len or extraLen(SchemaField) > bir.extra.len - data.rhs) break :blk false;
+            const field = bir.extraData(@enumFromInt(data.rhs), SchemaField);
+            break :blk inDecl(d, field.operand.int()) and verifyInstRange(bir, d, .{ .start = field.modifiers_start, .end = field.modifiers_end });
+        },
+        .schema_value, .schema_tagged => inDecl(d, data.lhs) and verifyInstRangeAt(bir, d, data.rhs),
+        .schema_variant => blk: {
+            if (data.lhs >= symbols_len or data.rhs > bir.extra.len or extraLen(SchemaVariant) > bir.extra.len - data.rhs) break :blk false;
+            const variant = bir.extraData(@enumFromInt(data.rhs), SchemaVariant);
+            if (variant.payload.unwrap()) |p| if (!inDecl(d, p.int())) break :blk false;
+            if (variant.rename.unwrap()) |r| if (!inDecl(d, r.int())) break :blk false;
+            break :blk true;
+        },
+        .schema_optional, .schema_nullable => true,
+        else => true,
+    };
+}
+
+fn inDecl(d: Decl, raw: u32) bool {
+    return raw >= d.inst_start.int() and raw < d.inst_end.int();
+}
+
+fn verifyInstRangeAt(bir: *const Bir, d: Decl, raw: u32) bool {
+    if (raw > bir.extra.len or extraLen(SubRange) > bir.extra.len - raw) return false;
+    return verifyInstRange(bir, d, bir.subRange(@enumFromInt(raw)));
+}
+
+fn verifyInstRange(bir: *const Bir, d: Decl, range: SubRange) bool {
+    const start = @intFromEnum(range.start);
+    const end = @intFromEnum(range.end);
+    if (!inRange(start, end, bir.extra.len)) return false;
+    for (bir.extra[start..end]) |raw| if (!inDecl(d, raw)) return false;
     return true;
 }
 

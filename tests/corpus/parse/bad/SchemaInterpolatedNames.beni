@@ -1,0 +1,14 @@
+-- External keys, discriminators and tags require literal, noninterpolated
+-- strings (§2); each interpolation is independently rejected.
+suffix = "suffix"
+discriminator = "kind"
+tag = "tag"
+
+
+schema Record =
+    { field : String as "field-${suffix}" }
+
+
+schema Union tagged "${discriminator}" of
+      One as "one-${tag}"
+    | Two

@@ -2,8 +2,9 @@
 
 ## Open decisions for the owner
 
-**Status:** normative, not implemented. Q3, Q6, Q7, Q9 and Q11 below
-remain open; their recommendations guide the affected later slice, not S1.
+**Status:** normative. S1 frontend support is implemented; endpoint typing,
+library interpretation and specialised execution await S2–S4. Q3, Q6, Q7, Q9
+and Q11 below remain open; their recommendations guide the affected later slice, not S1.
 Q1, Q2, Q4, Q5, Q8 and Q10 were decided in the owner's review (A.2).
 Q12's scheduling is A.3/A.4: S1 and row 67 may run in parallel; both precede S2.
 Question identifiers and section numbers stay stable. Append later decisions
@@ -760,7 +761,8 @@ compiler/runtime work; today's synchronous prototype cannot settle it.
 ## 8. Diagnostics
 
 These new compiler codes are appended to `language.md` §10, in this order.
-They are **specified, not implemented**. Every error protects a unique typed
+`duplicate_schema_modifier` is emitted by S1 lowering; the remaining codes are
+reserved for later slices. Every error protects a unique typed
 or executable interpretation (G1/G5), or correct failure context (G2–G4);
 none refuses an inconvenient but unambiguous valid schema for taste.
 
@@ -834,8 +836,8 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-S1 is next, with row 67 eligible to run in parallel (A.4); later slices retain
-the dependencies below. Each begins with a
+S1 provides the frontend; row 67 remains an independent prerequisite for S2
+(A.4). Later slices retain the dependencies below. Each begins with a
 fixture that fails on the preceding compiler/library; prove red, implement,
 then reverse the fix in an isolated copy to prove the regression is specific.
 A negative fixture must first be shown to diagnose the intended defect, not

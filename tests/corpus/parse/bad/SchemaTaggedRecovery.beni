@@ -1,0 +1,10 @@
+-- A malformed tagged payload recovers at the next variant bar, and a later
+-- malformed variant recovers at the following column-1 declaration (§2).
+schema Broken tagged "kind" of
+      First { missingColon String } as "first"
+    | Second { good : Int } as "second"
+    | Third { missingOperand : } as "third"
+
+
+after =
+    42

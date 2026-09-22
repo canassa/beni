@@ -1,0 +1,12 @@
+-- Schema fields recover at a sibling comma/closing brace and parsing resumes
+-- at the next top-level declaration (schema.md §2). Both malformed fields
+-- must diagnose; `after` must remain visible in the recovered AST/BIR path.
+schema Broken =
+    { missingColon String
+    , good : Int
+    , missingOperand :
+    }
+
+
+after =
+    42

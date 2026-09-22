@@ -1,0 +1,10 @@
+-- A malformed field tail recovers at its comma: `kept` remains a sibling,
+-- and the parser then resumes at the column-1 declaration (schema.md §2).
+schema Broken =
+    { badTail : Int nonsense @
+    , kept : String
+    }
+
+
+after =
+    42

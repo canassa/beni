@@ -753,6 +753,10 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
         },
         .lower_ident => blk: {
             if (opaque_token) |t| _ = try p.report(p.itemAtToken(.opaque_not_on_type, t));
+            if (p.isWord(p.tok_i, "schema") and p.peekAt(1) == .upper_ident) {
+                try p.reportPendingAnnotation(pending);
+                break :blk try p.parseSchemaDecl(header);
+            }
             if (p.peekAt(1) == .colon) {
                 try p.reportPendingAnnotation(pending);
                 pending.* = .{ .name = p.tok_i, .symbol = p.payloads[p.tok_i] };
@@ -795,6 +799,225 @@ fn parseDecl(p: *Parse, docs: Ast.CommentRange, pending: *?PendingAnnotation) Al
         p.recover();
     }
     return node;
+}
+
+fn isWord(p: *const Parse, token: TokenIndex, word: []const u8) bool {
+    return p.tags[token] == .lower_ident and std.mem.eql(u8, p.tokenText(token), word);
+}
+
+/// SchemaDecl := 'schema' upper_ident lower_ident* SchemaBody (schema.md §2).
+fn parseSchemaDecl(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
+    p.context = .declaration;
+    _ = p.next(); // contextual `schema`
+    const name = switch (try p.expectDeclName(.upper_ident)) {
+        .name => |n| n,
+        .placeholder => |node| return node,
+    };
+    const params_mark = p.scratchMark();
+    defer p.shrinkScratch(params_mark);
+    while (p.peek() == .lower_ident and
+        !(p.isWord(p.tok_i, "tagged") and p.peekAt(1) == .str_start))
+    {
+        try p.pushScratch(p.next());
+    }
+    const params = try p.listToRange(p.scratchSince(params_mark));
+    const body = if (p.eat(.equal) != null)
+        if (p.peek() == .l_brace) try p.parseSchemaRecord() else try p.parseSchemaValue()
+    else if (p.peek() == .lower_ident and p.isWord(p.tok_i, "tagged"))
+        try p.parseSchemaTagged()
+    else blk: {
+        _ = try p.expectToken(.equal);
+        break :blk try p.unexpected(.error_type, .type_expr);
+    };
+    const extra = try p.addExtra(Ast.SchemaDecl{
+        .header = header,
+        .params_start = params.start,
+        .params_end = params.end,
+        .body = body,
+    });
+    return p.addNode(.{ .tag = .schema_decl, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+fn parseSchemaValue(p: *Parse) Allocator.Error!Index {
+    const operand = try p.parseSchemaOperand();
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (p.atSchemaValueModifier()) try p.pushScratch(try p.parseSchemaModifier(false));
+    if (p.scratchSince(mark).len == 0) return operand;
+    const modifiers = try p.listToRange(p.scratchSince(mark));
+    const extra = try p.addExtra(Ast.SchemaField{
+        .header = .none,
+        .operand = operand,
+        .modifiers_start = modifiers.start,
+        .modifiers_end = modifiers.end,
+    });
+    return p.addNode(.{ .tag = .schema_value, .main_token = p.treeMainToken(operand), .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+fn treeMainToken(p: *const Parse, node: Index) TokenIndex {
+    return p.nodes.items(.main_token)[node.int()];
+}
+
+fn parseSchemaRecord(p: *Parse) Allocator.Error!Index {
+    const open = p.next();
+    try p.pushBracket(.r_brace);
+    defer p.popBracket();
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    _ = p.eat(.comma);
+    while (p.peek() != .r_brace and p.peek() != .eof) {
+        const before = p.tok_i;
+        const docs = p.attachDocs(p.tok_i);
+        try p.pushScratch(try p.parseSchemaField(docs));
+        if (p.eat(.comma) != null) {
+            p.assertProgress(before);
+            continue;
+        }
+        if (p.peek() == .r_brace or p.peek() == .eof) break;
+        var item = p.itemAt(.unexpected_token);
+        item.context = .record;
+        item.construct = .field_name;
+        _ = try p.report(item);
+        // Schema records promise sibling recovery at comma/brace (§2),
+        // which generic delimiter recovery cannot provide because it skips
+        // to the closing brace. Consume the broken field's tail only.
+        while (p.peek() != .comma and p.peek() != .r_brace and p.peek() != .eof) _ = p.next();
+        if (p.eat(.comma) == null) break;
+        p.assertProgress(before);
+    }
+    try p.expectCloser(.r_brace, open);
+    return p.rangeNode(.schema_record, open, try p.listToRange(p.scratchSince(mark)));
+}
+
+fn parseSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
+    const name = if (p.peek() == .lower_ident) p.next() else {
+        const bad = try p.unexpected(.error_type, .field_name);
+        p.recoverUnlessStructural();
+        return bad;
+    };
+    _ = try p.expectToken(.colon);
+    const operand = try p.parseSchemaOperand();
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (p.atSchemaFieldModifier()) try p.pushScratch(try p.parseSchemaModifier(true));
+    const modifiers = try p.listToRange(p.scratchSince(mark));
+    const extra = try p.addExtra(Ast.SchemaField{
+        .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
+        .operand = operand,
+        .modifiers_start = modifiers.start,
+        .modifiers_end = modifiers.end,
+    });
+    return p.addNode(.{ .tag = .schema_field, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+fn parseSchemaOperand(p: *Parse) Allocator.Error!Index {
+    if (try p.enter()) |err| return err;
+    defer p.leave();
+    if (p.peek() == .l_brace) return p.parseSchemaRecord();
+    if (p.peek() == .l_paren) {
+        const open = p.next();
+        try p.pushBracket(.r_paren);
+        defer p.popBracket();
+        const inner = try p.parseSchemaOperand();
+        try p.expectCloser(.r_paren, open);
+        return p.addNode(.{ .tag = .schema_paren, .main_token = open, .data = .{ .lhs = inner.int(), .rhs = 0 } });
+    }
+    if (!isSchemaName(p.peek())) return p.unexpected(.error_type, .type_expr);
+    const head = p.next();
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (p.canStartSchemaAtom() and !p.atSchemaFieldModifier()) {
+        if (p.peek() == .l_brace) {
+            try p.pushScratch(try p.parseSchemaRecord());
+        } else if (p.peek() == .l_paren) {
+            const open = p.next();
+            try p.pushBracket(.r_paren);
+            const inner = try p.parseSchemaOperand();
+            try p.expectCloser(.r_paren, open);
+            p.popBracket();
+            try p.pushScratch(try p.addNode(.{ .tag = .schema_paren, .main_token = open, .data = .{ .lhs = inner.int(), .rhs = 0 } }));
+        } else {
+            const atom = p.next();
+            try p.pushScratch(try p.rangeNode(.schema_operand, atom, try p.listToRange(&.{})));
+        }
+    }
+    return p.rangeNode(.schema_operand, head, try p.listToRange(p.scratchSince(mark)));
+}
+
+fn isSchemaName(tag: Tag) bool {
+    return tag == .upper_ident or tag == .qualified_upper or tag == .lower_ident;
+}
+
+fn canStartSchemaAtom(p: *const Parse) bool {
+    return isSchemaName(p.peek()) or p.peek() == .l_paren or p.peek() == .l_brace;
+}
+
+fn atSchemaFieldModifier(p: *const Parse) bool {
+    if (p.peek() == .keyword_as) return true;
+    return p.peek() == .lower_ident and
+        (p.isWord(p.tok_i, "via") or p.isWord(p.tok_i, "optional") or p.isWord(p.tok_i, "nullable"));
+}
+
+fn atSchemaValueModifier(p: *const Parse) bool {
+    return p.peek() == .lower_ident and (p.isWord(p.tok_i, "via") or p.isWord(p.tok_i, "nullable"));
+}
+
+fn parseSchemaModifier(p: *Parse, field: bool) Allocator.Error!Index {
+    if (p.peek() == .keyword_as and field) {
+        const token = p.next();
+        const value = try p.parseSchemaString();
+        return p.addNode(.{ .tag = .schema_as, .main_token = token, .data = .{ .lhs = value.int(), .rhs = 0 } });
+    }
+    const token = p.next();
+    if (p.isWord(token, "via")) {
+        const value = try p.parseAtomAccess(true);
+        return p.addNode(.{ .tag = .schema_via, .main_token = token, .data = .{ .lhs = value.int(), .rhs = 0 } });
+    }
+    return p.leaf(if (p.isWord(token, "optional")) .schema_optional else .schema_nullable, token);
+}
+
+fn parseSchemaString(p: *Parse) Allocator.Error!Index {
+    if (p.peek() != .str_start) return p.unexpected(.error_expr, .expression);
+    const string = try p.parseString();
+    const data = p.nodes.items(.data)[string.int()];
+    for (p.extra.items[data.lhs..data.rhs]) |raw_part| {
+        const part: Index = @enumFromInt(raw_part);
+        if (p.nodes.items(.tag)[part.int()] == .interp) {
+            var item = p.itemAtToken(.unexpected_token, p.nodes.items(.main_token)[part.int()]);
+            item.context = .declaration;
+            item.construct = .expression;
+            _ = try p.report(item);
+        }
+    }
+    return string;
+}
+
+fn parseSchemaTagged(p: *Parse) Allocator.Error!Index {
+    const tagged = p.next();
+    const discriminator = try p.parseSchemaString();
+    _ = try p.expectToken(.keyword_of);
+    _ = p.eat(.pipe);
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    while (true) {
+        if (p.peek() != .upper_ident) {
+            try p.pushScratch(try p.unexpected(.error_constructor, .constructor));
+            p.recoverUnlessStructural();
+        } else try p.pushScratch(try p.parseSchemaVariant());
+        if (p.eat(.pipe) == null) break;
+    }
+    const variants = try p.listToRange(p.scratchSince(mark));
+    const extra = try p.addExtra(Ast.SchemaTagged{ .discriminator = discriminator, .variants_start = variants.start, .variants_end = variants.end });
+    return p.addNode(.{ .tag = .schema_tagged, .main_token = tagged, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+fn parseSchemaVariant(p: *Parse) Allocator.Error!Index {
+    const name = p.next();
+    const payload = if (p.peek() == .l_brace) (try p.parseSchemaRecord()).toOptional() else Node.OptionalIndex.none;
+    var rename = Node.OptionalIndex.none;
+    if (p.eat(.keyword_as)) |_| rename = (try p.parseSchemaString()).toOptional();
+    const extra = try p.addExtra(Ast.SchemaVariant{ .payload = payload, .rename = rename });
+    return p.addNode(.{ .tag = .schema_variant, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
 }
 
 /// TopAnnotation := lower_ident ':' Type WhereClause?
@@ -2574,7 +2797,30 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try checkHeader(f.header, token_count, comment_count);
             try checkTokens(f.params, token_count);
         },
-        .constructor, .type_con, .type_tuple, .type_record, .string, .tuple, .list, .record, .apply, .pat_ctor, .pat_tuple, .pat_list => {
+        .schema_decl => {
+            const d = tree.fullSchemaDecl(n);
+            try checkHeader(d.header, token_count, comment_count);
+            try checkTokens(d.params, token_count);
+            try checkIndex(tree, d.body);
+        },
+        .schema_field, .schema_value => {
+            const f = tree.fullSchemaField(n);
+            try checkHeader(f.header, token_count, comment_count);
+            try checkIndex(tree, f.operand);
+            try checkIndices(tree, f.modifiers);
+        },
+        .schema_tagged => {
+            const t = tree.fullSchemaTagged(n);
+            try checkIndex(tree, t.discriminator);
+            try checkIndices(tree, t.variants);
+        },
+        .schema_variant => {
+            const v = tree.fullSchemaVariant(n);
+            if (v.payload) |p| try checkIndex(tree, p);
+            if (v.rename) |r| try checkIndex(tree, r);
+        },
+        .schema_optional, .schema_nullable => {},
+        .constructor, .type_con, .type_tuple, .type_record, .string, .tuple, .list, .record, .apply, .pat_ctor, .pat_tuple, .pat_list, .schema_operand, .schema_record => {
             const items = tree.children(n);
             try checkIndices(tree, items);
             if (tag == .apply) try testing.expect(items.len >= 2);
@@ -2589,7 +2835,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
             try testing.expect(r.base < token_count);
             try checkIndices(tree, r.fields);
         },
-        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren => try checkIndex(tree, tree.operand(n)),
+        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),
         .type_fn => {
             const f = tree.fullTypeFn(n);
             try testing.expect(f.params.len >= 1);
@@ -4386,6 +4632,9 @@ test "fuzz: arbitrary bytes never panic and always yield a well-formed tree" {
         "--| a\n--! b\nimport\n",
         "x = \"a ${ b\n",
         "type T = | | A\n",
+        "schema X = { a : Int as\n",
+        "schema T tagged \"kind\" of A as \n",
+        "schema Page a = { items : List a optional nullable }\n",
         "let in in let\n",
         "x = \\ -> \\x\n",
     } });
@@ -4395,17 +4644,18 @@ test "fuzz: arbitrary bytes never panic and always yield a well-formed tree" {
 /// real grammar fragments; mixing them produces every kind of half-valid
 /// program the parser must survive.
 const soup_pieces = [_][]const u8{
-    "x",       "foo",     "Bar",    "Json.Decode.string", "Maybe.Just", ".field",     ".0",
-    "42",      "1.5",     "\"s\"",  "\"a ${x} b\"",       "'c'",        "\\\\raw",    "if",
-    "then",    "else",    "case",   "of",                 "let",        "in",         "type",
-    "alias",   "pub",     "opaque", "import",             "as",         "exposing",   "foreign",
-    "(",       ")",       "[",      "]",                  "{",          "}",          ",",
-    ":",       "=",       "->",     "\\",                 "|",          "_",          "?",
-    "+",       "-",       "*",      "/",                  "//",         "^",          "++",
-    "::",      "==",      "/=",     "<",                  ">",          "<=",         ">=",
-    "&&",      "||",      "|>",     "<|",                 "<-",         "<--",        " ",
-    " ",       " ",       "\n",     "\n",                 "\n    ",     "\n        ", "-- c\n",
-    "--| d\n", "--! m\n", "@",      "\t",                 "12abc",
+    "x",      "foo",    "Bar",    "Json.Decode.string", "Maybe.Just", ".field",   ".0",
+    "42",     "1.5",    "\"s\"",  "\"a ${x} b\"",       "'c'",        "\\\\raw",  "if",
+    "then",   "else",   "case",   "of",                 "let",        "in",       "type",
+    "alias",  "pub",    "opaque", "import",             "as",         "exposing", "foreign",
+    "schema", "tagged", "via",    "optional",           "nullable",   "(",        ")",
+    "[",      "]",      "{",      "}",                  ",",          ":",        "=",
+    "->",     "\\",     "|",      "_",                  "?",          "+",        "-",
+    "*",      "/",      "//",     "^",                  "++",         "::",       "==",
+    "/=",     "<",      ">",      "<=",                 ">=",         "&&",       "||",
+    "|>",     "<|",     "<-",     "<--",                " ",          " ",        " ",
+    "\n",     "\n",     "\n    ", "\n        ",         "-- c\n",     "--| d\n",  "--! m\n",
+    "@",      "\t",     "12abc",
 };
 
 const fragment_pieces = [_][]const u8{
@@ -4429,6 +4679,9 @@ const fragment_pieces = [_][]const u8{
     "m =\n    \\\\a\n    \\\\b\n",
     "p (Just x) { a } ( b, c ) = -x\n",
     "n xs = List.map (add 1 _) xs\n",
+    "schema User = { id : Int as \"user-id\", name : String optional nullable }\n",
+    "schema Page item = { items : List item via (convert item) }\n",
+    "schema Message tagged \"kind\" of Count Int as \"count\" | Reset\n",
     "o f =\n    let\n        x <- f 1\n        y = 2\n    in\n    x + y\n",
 };
 

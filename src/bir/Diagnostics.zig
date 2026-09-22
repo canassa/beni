@@ -269,6 +269,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\One variable carries one constraint per method name. Merge the two, or constrain
             \\a different method.
         , .{ text, other_line }),
+        .duplicate_schema_modifier => try w.print(
+            \\This field already has the `{s}` modifier on line {d}.
+            \\
+            \\Each field applies `as`, `via`, `optional` and `nullable` at most once.
+            \\Compose conversions explicitly when two transformations are needed.
+        , .{ text, other_line }),
         // Only the codes above are lowering errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),

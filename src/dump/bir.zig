@@ -217,6 +217,7 @@ const Dumper = struct {
             .type_alias => "alias",
             .foreign_value => "foreign value",
             .foreign_type => "foreign type",
+            .schema => "schema",
         };
     }
 
@@ -272,6 +273,12 @@ const Dumper = struct {
                 try d.ctorRows(decl_);
             },
             .foreign_type => try d.typeParams(decl_),
+            .schema => {
+                try d.typeParams(decl_);
+                try d.w.writeAll("  schema body ");
+                try d.refIndex(decl_.schema_body.unwrap().?);
+                try d.w.writeByte('\n');
+            },
         }
 
         if (d.locals.len != 0) {
@@ -355,6 +362,7 @@ const Dumper = struct {
                 try d.w.print("foreign type {s}", .{d.sym(decl_.name)});
                 if (decl_.is_equatable) try d.w.writeAll(" (equatable)");
             },
+            .schema => try d.w.print("schema {s}", .{d.sym(decl_.name)}),
         }
     }
 
@@ -419,6 +427,65 @@ const Dumper = struct {
                 if (info.param != Bir.TypeVarInfo.param_none) try d.w.print(" (param {d})", .{info.param});
                 if (info.equatable) try d.w.writeAll(" (equatable)");
             },
+            .schema_ref, .schema_expr_ref => try d.w.print(" {s}", .{d.symRaw(data.lhs)}),
+            .schema_app => {
+                try d.w.writeByte(' ');
+                try d.ref(data.lhs);
+                try d.w.writeByte(' ');
+                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+            },
+            .schema_paren, .schema_as, .schema_via => {
+                try d.w.writeByte(' ');
+                try d.ref(data.lhs);
+            },
+            .schema_record => {
+                try d.w.writeByte(' ');
+                try d.refList(Bir.inlineRange(data));
+            },
+            .schema_field => {
+                const field = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+                try d.w.print(" {s} : ", .{d.symRaw(data.lhs)});
+                try d.refIndex(field.operand);
+                try d.w.writeByte(' ');
+                try d.refList(.{ .start = field.modifiers_start, .end = field.modifiers_end });
+                const field_docs = if (field.doc_start <= field.doc_end and field.doc_end <= d.comments.len)
+                    d.comments[field.doc_start..field.doc_end]
+                else
+                    &.{};
+                for (field_docs) |comment| {
+                    if (comment.kind != .doc) continue;
+                    const line_end = Tokenizer.tokenEnd(d.source, .multiline_line, comment.start);
+                    var body = d.source[comment.start + 3 .. line_end];
+                    if (body.len > 0 and body[0] == ' ') body = body[1..];
+                    try d.w.writeAll(" doc ");
+                    try d.quoted(body);
+                }
+            },
+            .schema_value => {
+                try d.w.writeByte(' ');
+                try d.ref(data.lhs);
+                try d.w.writeByte(' ');
+                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+            },
+            .schema_tagged => {
+                try d.w.writeByte(' ');
+                try d.ref(data.lhs);
+                try d.w.writeByte(' ');
+                try d.refList(bir.subRange(@enumFromInt(data.rhs)));
+            },
+            .schema_variant => {
+                const variant = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+                try d.w.print(" {s}", .{d.symRaw(data.lhs)});
+                if (variant.payload.unwrap()) |payload| {
+                    try d.w.writeByte(' ');
+                    try d.refIndex(payload);
+                }
+                if (variant.rename.unwrap()) |rename| {
+                    try d.w.writeAll(" as ");
+                    try d.refIndex(rename);
+                }
+            },
+            .schema_optional, .schema_nullable => {},
             .type_app => {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);

@@ -1,0 +1,8 @@
+-- duplicate_schema_modifier once for each modifier family (§8). Recovery
+-- continues across siblings so one mistake cannot hide a later one.
+schema Duplicate =
+    { renamed : String as "first" as "second"
+    , presence : String optional optional
+    , nulls : String nullable nullable
+    , converted : String via one via two
+    }

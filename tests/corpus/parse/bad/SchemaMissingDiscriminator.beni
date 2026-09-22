@@ -1,0 +1,3 @@
+-- A tagged schema requires a literal discriminator; an absent string is a
+-- normal parse failure, including through `dump --stage=bir`.
+schema T tagged of A

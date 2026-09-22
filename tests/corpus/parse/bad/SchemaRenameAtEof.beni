@@ -1,0 +1,3 @@
+-- A missing external-key string at EOF diagnoses and never reaches BIR's
+-- string lowering as an error node (schema.md §2, G1).
+schema X = { a : Int as

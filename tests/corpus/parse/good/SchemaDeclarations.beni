@@ -1,0 +1,38 @@
+-- parse/good: schema.md §2's complete declaration grammar. This pins public
+-- and private declarations, generic and qualified operands, nested operands,
+-- all field/value modifiers, a tagged union, explicit nominal recursion and
+-- docs on both declarations and fields.
+--| The public record schema.
+pub schema User =
+    { --| Renamed through a conversion.
+      userId : Models.Id via Conversions.userId as "user-id"
+    , nickname : String nullable optional
+    , aliases : List (Maybe String)
+    , settings : { theme : String }
+    , score : Int via (Conversions.between 0 100)
+    }
+
+
+schema Page item =
+    { items : List item }
+
+
+schema Contextual optional =
+    { value : (optional) }
+
+
+schema Trimmed = String via Conversions.trim nullable
+
+
+schema Empty = {}
+
+
+pub schema Message tagged "kind" of
+      Text { value : String } as "text"
+    | Count { value : Int } as "count"
+    | Empty
+
+
+pub schema Tree tagged "kind" of
+      Leaf { value : Int } as "leaf"
+    | Branch { children : List Tree } as "branch"

@@ -1,0 +1,16 @@
+-- parse/good: schema words are contextual (§2), so ordinary declarations
+-- keep every spelling when no upper name follows `schema` at declaration
+-- start.
+schema = 1
+tagged = 2
+via = 3
+optional = 4
+nullable = 5
+
+
+sum =
+    schema + tagged + via + optional + nullable
+
+
+identity schema =
+    schema

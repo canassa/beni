@@ -292,13 +292,14 @@ Remaining owner decisions (recommendations and costs at the start of schema.md):
 **Q12 scheduling, clarified by the owner:** S1 and row 67 may run in parallel;
 both must land before S2. S2–S4 follow their remaining decisions; S5 follows P2/H4.
 The recorded M4-first slices 1–3 have landed; remaining M4 work follows this
-schema sequence as dependencies permit. This revision contains no code.
+schema sequence as dependencies permit. The specification revision contained
+no code; S1 was then commissioned and completed as recorded below.
 The native-recursion ceiling is an implementation proof obligation (row 69),
 not an assumed portable 4,096-frame guarantee.
 
 | # | Slice | State | Acceptance |
 |---|---|---|---|
-| Schema-S1 | Frontend, schema.md §2/§8 | next; syntax decisions settled; independent of row 67 | Red parse/fmt/BIR fixtures, contextual words preserved, recovery and exact diagnostics |
+| Schema-S1 | Frontend, schema.md §2/§8 | **done**, 2026-09-22; row 67 remains independent | Parser/AST, formatter, unresolved BIR and artifact v2; explicit pre-resolution refusal; 14 corpus fixtures + 3 black-box scenarios, red baseline verified; 464/464 hermetic, 283/283 black-box, fmt-check green |
 | Schema-S2 | Checker, §3–§4/§8 | after S1, row 67 fix and Q7 | Red interface/resolution/type fixtures; serialized/cache-hit endpoint and namespace identity |
 | Schema-S3 | Library and description, §5 | after S2, Q3/Q6, concrete API and row 69 proof | Red run fixtures for both endpoints, context, flip/projections, presence, recursion closure and host failures; H4 not claimed |
 | Schema-S4 | Specialisation, §6/§10 | after S3, Q9 and row 69 proof | Red run/emit/DCE differential fixtures, all gates; add beni benchmark row and qualified measurements |

@@ -102,6 +102,8 @@ values: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 ctor_names: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 /// Type namespace: this file's types and aliases and exposed upper names.
 types: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
+/// Schema namespace skeleton; S2 resolves members and imports.
+schemas: std.AutoHashMapUnmanaged(Symbol, NameEntry) = .empty,
 /// The lexical scope stack (frontend.md §3.6).
 scope: std.ArrayList(ScopeEntry) = .empty,
 /// Enclosing definitions and lambdas, for `?` (§6.6).
@@ -142,6 +144,9 @@ forward: []const Symbol = &.{},
 /// The token every instruction appended right now is stamped with.
 cur_token: TokenIndex = 0,
 cur_decl: u32 = 0,
+/// While lowering a `via` Atom, lexical locals resolve normally and every
+/// nonlocal name stays as an unresolved schema-expression leaf for S2.
+in_schema_expr: bool = false,
 cur_locals_start: u32 = 0,
 cur_refs_start: u32 = 0,
 cur_inst_start: u32 = 0,
@@ -286,6 +291,7 @@ pub fn lower(
         l.values.deinit(scratch);
         l.ctor_names.deinit(scratch);
         l.types.deinit(scratch);
+        l.schemas.deinit(scratch);
         l.scope.deinit(scratch);
         l.frames.deinit(scratch);
         l.list_scratch.deinit(scratch);
@@ -685,6 +691,7 @@ fn collectDeclarations(l: *Lower) Allocator.Error!void {
             .definition => try l.declareValue(node, .none),
             .foreign_value => try l.declareValue(node, .none),
             .type_alias, .type_decl, .foreign_type => try l.declareType(node),
+            .schema_decl => try l.declareSchema(node),
             else => {}, // the parser puts only the kinds above at the root
         }
     }
@@ -714,6 +721,7 @@ fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.D
         .where_start = @enumFromInt(0),
         .where_end = @enumFromInt(0),
         .body = .none,
+        .schema_body = .none,
         .inst_start = @enumFromInt(0),
         .inst_end = @enumFromInt(0),
         .ctors_start = 0,
@@ -725,6 +733,15 @@ fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.D
     });
     if (header.pub_token != .none) try l.interface.append(l.gpa, @enumFromInt(index));
     return index;
+}
+
+fn declareSchema(l: *Lower, node: NodeIndex) Allocator.Error!void {
+    const d = l.tree.fullSchemaDecl(node);
+    const index = try l.newDecl(.schema, d.name, d.header);
+    try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = .none });
+    // A schema is deliberately absent from `values` and `types`: S2 adds
+    // the separate namespace and resolves its members (schema.md §3).
+    try l.declareName(&l.schemas, l.tokenSymbol(d.name), d.name, index, .duplicate_declaration, false);
 }
 
 /// Register `symbol` declared at `token` in `table`, reporting a duplicate
@@ -931,6 +948,11 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
                 const ft = l.tree.fullForeignType(src.node);
                 try l.lowerTypeParams(ft.params);
             },
+            .schema_decl => {
+                const schema = l.tree.fullSchemaDecl(src.node);
+                try l.lowerTypeParams(schema.params);
+                l.decls.items[i].schema_body = (try l.lowerSchema(schema.body)).toOptional();
+            },
             else => unreachable,
         }
         const done = &l.decls.items[i];
@@ -1075,6 +1097,129 @@ fn lowerWhere(l: *Lower, header: Ast.DeclHeader, name_token: TokenIndex) Allocat
     d.where_end = range.end;
 }
 
+// ---------------------------------------------------------------------------
+// Unresolved schema plans (schema.md §4, S1)
+// ---------------------------------------------------------------------------
+
+fn lowerSchema(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    const tag = l.tree.nodeTag(node);
+    const main = l.tree.nodeMainToken(node);
+    l.cur_token = main;
+    switch (tag) {
+        .schema_operand => {
+            const name = try l.addSymbol(l.tokenSymbol(main));
+            const head = try l.addInst(.schema_ref, @intFromEnum(name), 0);
+            const args = l.tree.children(node);
+            if (args.len == 0) return head;
+            const mark = l.scratchMark();
+            defer l.shrinkScratch(mark);
+            for (args) |arg| try l.pushScratch(try l.lowerSchema(arg));
+            const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
+            return l.addInstAt(main, .schema_app, head.int(), @intFromEnum(range));
+        },
+        .schema_paren => {
+            const child = try l.lowerSchema(l.tree.operand(node));
+            return l.addInstAt(main, .schema_paren, child.int(), 0);
+        },
+        .schema_record => {
+            const mark = l.scratchMark();
+            defer l.shrinkScratch(mark);
+            for (l.tree.children(node)) |field| {
+                if (l.tree.nodeTag(field) != .schema_field) continue;
+                try l.pushScratch(try l.lowerSchema(field));
+            }
+            const range = try l.addRange(l.scratchSince(mark));
+            return l.addInstAt(main, .schema_record, @intFromEnum(range.start), @intFromEnum(range.end));
+        },
+        .schema_field, .schema_value => {
+            const field = l.tree.fullSchemaField(node);
+            const operand = try l.lowerSchema(field.operand);
+            const modifiers = try l.lowerSchemaModifiers(field.modifiers);
+            if (tag == .schema_value) {
+                const range = try l.addRangeRecord(modifiers);
+                return l.addInstAt(main, .schema_value, operand.int(), @intFromEnum(range));
+            }
+            const name = try l.addSymbol(l.tokenSymbol(field.name));
+            const extra = try l.addExtra(Bir.SchemaField{
+                .operand = operand,
+                .modifiers_start = modifiers.start,
+                .modifiers_end = modifiers.end,
+                .doc_start = field.header.doc_start,
+                .doc_end = field.header.doc_end,
+            });
+            return l.addInstAt(main, .schema_field, @intFromEnum(name), @intFromEnum(extra));
+        },
+        .schema_tagged => {
+            const tagged = l.tree.fullSchemaTagged(node);
+            const discriminator = try l.lowerSchemaString(tagged.discriminator);
+            const mark = l.scratchMark();
+            defer l.shrinkScratch(mark);
+            for (tagged.variants) |variant| try l.pushScratch(try l.lowerSchema(variant));
+            const range = try l.addRangeRecord(try l.addRange(l.scratchSince(mark)));
+            return l.addInstAt(main, .schema_tagged, discriminator.int(), @intFromEnum(range));
+        },
+        .schema_variant => {
+            const variant = l.tree.fullSchemaVariant(node);
+            const payload = if (variant.payload) |p| (try l.lowerSchema(p)).toOptional() else Inst.OptionalIndex.none;
+            const rename = if (variant.rename) |r| (try l.lowerSchemaString(r)).toOptional() else Inst.OptionalIndex.none;
+            const name = try l.addSymbol(l.tokenSymbol(variant.name));
+            const extra = try l.addExtra(Bir.SchemaVariant{ .payload = payload, .rename = rename });
+            return l.addInstAt(main, .schema_variant, @intFromEnum(name), @intFromEnum(extra));
+        },
+        .schema_as => {
+            const value = try l.lowerSchemaString(l.tree.operand(node));
+            return l.addInstAt(main, .schema_as, value.int(), 0);
+        },
+        .schema_via => {
+            const saved = l.in_schema_expr;
+            l.in_schema_expr = true;
+            defer l.in_schema_expr = saved;
+            const value = try l.lowerExpr(l.tree.operand(node));
+            return l.addInstAt(main, .schema_via, value.int(), 0);
+        },
+        .schema_optional => return l.addInst(.schema_optional, 0, 0),
+        .schema_nullable => return l.addInst(.schema_nullable, 0, 0),
+        else => {
+            std.debug.assert(tag.isError());
+            return l.errorInst(l.tree.fullError(node).code);
+        },
+    }
+}
+
+fn lowerSchemaString(l: *Lower, node: NodeIndex) Allocator.Error!Index {
+    if (l.tree.nodeTag(node) == .string) {
+        const string = l.tree.fullString(node);
+        for (string.parts) |part| {
+            // parseSchemaString already reported interpolation. Do not lower
+            // its expressions as ordinary values and cascade name errors.
+            if (l.tree.nodeTag(part) == .interp) return l.errorInst(.unexpected_token);
+        }
+        return l.lowerString(node);
+    }
+    if (l.tree.nodeTag(node).isError()) return l.errorInst(l.tree.fullError(node).code);
+    return l.errorInst(.expected_token);
+}
+
+fn lowerSchemaModifiers(l: *Lower, modifiers: []const NodeIndex) Allocator.Error!SubRange {
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    var first: [4]?TokenIndex = @splat(null);
+    for (modifiers) |modifier| {
+        const tag = l.tree.nodeTag(modifier);
+        const slot: usize = switch (tag) {
+            .schema_as => 0,
+            .schema_via => 1,
+            .schema_optional => 2,
+            .schema_nullable => 3,
+            else => continue,
+        };
+        const token = l.tree.nodeMainToken(modifier);
+        if (first[slot]) |earlier| try l.reportPair(.duplicate_schema_modifier, token, earlier) else first[slot] = token;
+        try l.pushScratch(try l.lowerSchema(modifier));
+    }
+    return l.addRange(l.scratchSince(mark));
+}
+
 /// Type parameters of a `type`, `type alias` or `foreign type`: recorded
 /// on the declaration, checked for duplicates (§7), and made the scope of
 /// the body's type variables.
@@ -1204,6 +1349,10 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     if (l.lookupLocal(symbol)) |local| return l.addInst(.local, local, Inst.Data.unused);
+    if (l.in_schema_expr) {
+        const name = try l.addSymbol(symbol);
+        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+    }
     for (l.forward) |name| {
         if (name == symbol) {
             @branchHint(.cold);
@@ -1229,6 +1378,10 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const symbol = l.tokenSymbol(token);
+    if (l.in_schema_expr) {
+        const name = try l.addSymbol(symbol);
+        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+    }
     if (l.ctor_names.get(symbol)) |entry| switch (entry.kind) {
         .top => {
             try l.addRef(.top_ctor, entry.index, 0);
@@ -1241,6 +1394,12 @@ fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     }
     try l.reportToken(.unbound_constructor, token);
     return l.errorInst(.unbound_constructor);
+}
+
+fn schemaExprRef(l: *Lower, token: TokenIndex) Allocator.Error!Index {
+    l.cur_token = token;
+    const name = try l.addSymbol(l.tokenSymbol(token));
+    return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
 }
 
 /// An unqualified upper name in type position (§6.2).
@@ -1457,11 +1616,11 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.addInst(.string, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset);
         },
         .ident => return switch (l.tags[main_token]) {
-            .qualified_lower => l.resolveQualified(main_token, .qualified, .import_value, .unbound_variable),
+            .qualified_lower => if (l.in_schema_expr) l.schemaExprRef(main_token) else l.resolveQualified(main_token, .qualified, .import_value, .unbound_variable),
             else => l.resolveValue(main_token),
         },
         .ctor => return switch (l.tags[main_token]) {
-            .qualified_upper => l.resolveQualified(main_token, .qualified_ctor, .import_ctor, .unbound_constructor),
+            .qualified_upper => if (l.in_schema_expr) l.schemaExprRef(main_token) else l.resolveQualified(main_token, .qualified_ctor, .import_ctor, .unbound_constructor),
             else => l.resolveCtor(main_token),
         },
         .accessor => {
@@ -2697,6 +2856,7 @@ fn checkWellFormed(bir: *const Bir) !void {
         try testing.expect(d.refs_start <= d.refs_end and d.refs_end <= bir.refs.len);
         if (d.annotation.unwrap()) |a| try checkInDecl(d, a);
         if (d.body.unwrap()) |b| try checkInDecl(d, b);
+        if (d.schema_body.unwrap()) |b| try checkInDecl(d, b);
         if (d.kind == .value) {
             try checkRange(.{ .start = d.params_start, .end = d.params_end }, n_extra);
             for (bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Index)) |p| try checkInDecl(d, p);
@@ -2774,6 +2934,36 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
             const info = Bir.TypeVarInfo.unpack(data.rhs);
             if (info.param != Bir.TypeVarInfo.param_none) try testing.expect(info.param < d.params);
         },
+        .schema_ref, .schema_expr_ref => try checkSymbol(bir, @enumFromInt(data.lhs)),
+        .schema_app => {
+            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
+        },
+        .schema_paren, .schema_as, .schema_via => try checkInDecl(d, @enumFromInt(data.lhs)),
+        .schema_record => try checkInstList(bir, d, Bir.inlineRange(data)),
+        .schema_field => {
+            try checkSymbol(bir, @enumFromInt(data.lhs));
+            try testing.expect(data.rhs + Bir.extraLen(Bir.SchemaField) <= bir.extra.len);
+            const field = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+            try checkInDecl(d, field.operand);
+            try checkInstList(bir, d, .{ .start = field.modifiers_start, .end = field.modifiers_end });
+        },
+        .schema_value => {
+            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
+        },
+        .schema_tagged => {
+            try checkInDecl(d, @enumFromInt(data.lhs));
+            try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));
+        },
+        .schema_variant => {
+            try checkSymbol(bir, @enumFromInt(data.lhs));
+            try testing.expect(data.rhs + Bir.extraLen(Bir.SchemaVariant) <= bir.extra.len);
+            const variant = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+            if (variant.payload.unwrap()) |p| try checkInDecl(d, p);
+            if (variant.rename.unwrap()) |r| try checkInDecl(d, r);
+        },
+        .schema_optional, .schema_nullable => {},
         .type_app, .call, .pat_ctor => {
             try checkInDecl(d, @enumFromInt(data.lhs));
             try checkInstList(bir, d, try checkRecordAt(bir, data.rhs));

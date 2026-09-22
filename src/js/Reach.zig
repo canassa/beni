@@ -398,7 +398,7 @@ const Builder = struct {
                 // A foreign binding's body is in a sibling file; a type, an
                 // alias and a foreign type emit nothing at all.
                 .value => {},
-                .foreign_value, .type, .type_alias, .foreign_type, .annotation_only => continue,
+                .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .schema => continue,
             }
             b.stream.clearRetainingCapacity();
             try Edges.declEdges(&b.stream, b.scratch, bir, dispatch, @intCast(i));

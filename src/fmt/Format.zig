@@ -226,6 +226,25 @@ fn isAccess(tag: Node.Tag) bool {
     };
 }
 
+fn isSchema(tag: Node.Tag) bool {
+    return switch (tag) {
+        .schema_decl,
+        .schema_operand,
+        .schema_paren,
+        .schema_record,
+        .schema_field,
+        .schema_value,
+        .schema_tagged,
+        .schema_variant,
+        .schema_as,
+        .schema_via,
+        .schema_optional,
+        .schema_nullable,
+        => true,
+        else => false,
+    };
+}
+
 /// The four expression forms that may end an operator chain without
 /// parentheses (language.md §3) and get elm-format's `op` at line end.
 fn isBlockForm(tag: Node.Tag) bool {
@@ -432,6 +451,7 @@ const Measurer = struct {
         if (tag.isError()) return error.SyntaxErrors;
         if (tag.isBinop()) return m.chain(n);
         if (isAccess(tag)) return m.access(n);
+        if (isSchema(tag)) return m.measureSchema(n);
         switch (tag) {
             .root => unreachable, // measured by measureRoot
             .import => {
@@ -505,6 +525,7 @@ const Measurer = struct {
                 const last_tok = if (f.params.len == 0) main else f.params[f.params.len - 1];
                 m.set(n, no_fit, m.headerFirst(f.header, main - 2), last_tok);
             },
+            .schema_decl, .schema_operand, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable => unreachable,
             .type_con => try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
             .type_fn => {
                 // `A, B -> C` (§9, function types): the parameter list is a
@@ -653,6 +674,71 @@ const Measurer = struct {
                 m.set(n, m.w(a.pattern) +| 4 +| m.tokenWidth(a.name), m.first(a.pattern), a.name);
             },
             else => unreachable, // binops, access and errors are dispatched above
+        }
+    }
+
+    /// Kept out of `measure` so adding the schema grammar does not enlarge
+    /// every recursive expression/type formatter frame. The parser permits
+    /// 4,096 nested ordinary nodes and the formatter's depth corpus spends
+    /// that stack budget deliberately.
+    fn measureSchema(m: *Measurer, n: Index) Error!void {
+        const tree = m.tree;
+        const tag = tree.nodeTag(n);
+        const main = tree.nodeMainToken(n);
+        switch (tag) {
+            .schema_decl => {
+                const s = tree.fullSchemaDecl(n);
+                try m.measure(s.body);
+                m.set(n, no_fit, s.header.pub_token.unwrap() orelse main - 1, m.last(s.body));
+            },
+            .schema_operand => try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
+            .schema_paren => try m.wrapped(n, tree.operand(n)),
+            .schema_record => try m.collection(n, tree.children(n)),
+            .schema_field, .schema_value => {
+                const f = tree.fullSchemaField(n);
+                try m.measure(f.operand);
+                var width = m.tokenWidth(f.name) +| 3 +| m.w(f.operand);
+                var last_tok = m.last(f.operand);
+                for (f.modifiers) |modifier| {
+                    try m.measure(modifier);
+                    width +|= 1 +| m.w(modifier);
+                    last_tok = m.last(modifier);
+                }
+                m.set(n, width, f.name, last_tok);
+            },
+            .schema_tagged => {
+                const t = tree.fullSchemaTagged(n);
+                try m.measure(t.discriminator);
+                var last_tok = m.last(t.discriminator) + 1; // `of`
+                for (t.variants) |variant| {
+                    try m.measure(variant);
+                    last_tok = m.last(variant);
+                }
+                m.set(n, no_fit, main, last_tok);
+            },
+            .schema_variant => {
+                const v = tree.fullSchemaVariant(n);
+                var width = m.tokenWidth(v.name);
+                var last_tok = v.name;
+                if (v.payload) |payload| {
+                    try m.measure(payload);
+                    width +|= 1 +| m.w(payload);
+                    last_tok = m.last(payload);
+                }
+                if (v.rename) |rename| {
+                    try m.measure(rename);
+                    width +|= 1 +| m.w(rename);
+                    last_tok = m.last(rename);
+                }
+                m.set(n, width, v.name, last_tok);
+            },
+            .schema_as, .schema_via => {
+                const value = tree.operand(n);
+                try m.measure(value);
+                m.set(n, m.tokenWidth(main) +| 1 +| m.w(value), main, m.last(value));
+            },
+            .schema_optional, .schema_nullable => m.leaf(n),
+            else => unreachable,
         }
     }
 
@@ -1228,7 +1314,179 @@ const Printer = struct {
                     try p.tok(t);
                 }
             },
+            .schema_decl => {
+                const s = tree.fullSchemaDecl(n);
+                try p.header(s.header);
+                try p.tok(s.name - 1); // contextual `schema`
+                try p.space();
+                try p.tok(s.name);
+                var body_marker = s.name + 1;
+                for (s.params) |param| {
+                    try p.space();
+                    try p.tok(param);
+                    body_marker = param + 1;
+                }
+                if (tree.nodeTag(s.body) == .schema_tagged) {
+                    try p.space();
+                    try p.schemaTagged(s.body, 0);
+                } else {
+                    try p.space();
+                    try p.tok(body_marker); // `=`
+                    p.newline(indent_step);
+                    try p.schemaBody(s.body, indent_step);
+                }
+            },
             else => return error.SyntaxErrors,
+        }
+    }
+
+    /// The right-hand side after `schema X =`. A declaration-level
+    /// modifier list uses `schema_value` as a compact AST carrier; it has
+    /// no source field name or colon, so print only its operand and
+    /// modifiers here.
+    fn schemaBody(p: *Printer, n: Index, indent: u32) Error!void {
+        if (p.tree.nodeTag(n) != .schema_value) return p.schemaNode(n, indent);
+        const body = p.tree.fullSchemaField(n);
+        try p.schemaNode(body.operand, indent);
+        try p.schemaModifiers(body.modifiers, indent);
+    }
+
+    fn schemaNode(p: *Printer, n: Index, indent: u32) Error!void {
+        const tree = p.tree;
+        const main = tree.nodeMainToken(n);
+        switch (tree.nodeTag(n)) {
+            .schema_operand => {
+                const operands = tree.children(n);
+                const one_line = p.fits(n);
+                try p.tok(main);
+                try p.schemaArgs(main, operands, one_line, indent);
+            },
+            .schema_paren => {
+                const inner = tree.operand(n);
+                const one_line = p.fits(n);
+                const col = p.curCol();
+                try p.tok(main);
+                if (one_line) {
+                    try p.schemaNode(inner, indent);
+                    try p.tok(p.last(inner) + 1);
+                } else {
+                    try p.schemaNode(inner, col);
+                    p.newline(col);
+                    try p.tok(p.last(inner) + 1);
+                }
+            },
+            .schema_record => try p.schemaRecord(n, indent),
+            else => return error.SyntaxErrors,
+        }
+    }
+
+    fn schemaArgs(p: *Printer, head: TokenIndex, operands: []const Index, one_line: bool, indent: u32) Error!void {
+        var inline_count: usize = 0;
+        if (one_line) {
+            inline_count = operands.len;
+        } else {
+            var prev = head;
+            while (inline_count < operands.len and p.tok_lines[p.first(operands[inline_count])] == p.tok_lines[prev]) : (inline_count += 1) {
+                prev = p.last(operands[inline_count]);
+            }
+            if (inline_count == operands.len) inline_count = 0;
+        }
+        for (operands, 0..) |arg, i| {
+            if (i < inline_count) {
+                try p.space();
+                try p.schemaNode(arg, indent);
+            } else {
+                p.newline(indent + indent_step);
+                try p.schemaNode(arg, indent + indent_step);
+            }
+        }
+    }
+
+    fn schemaRecord(p: *Printer, n: Index, indent: u32) Error!void {
+        const fields = p.tree.children(n);
+        const open = p.tree.nodeMainToken(n);
+        const one_line = p.fits(n);
+        const col = p.curCol();
+        try p.tok(open);
+        if (fields.len == 0) {
+            try p.tok(open + 1);
+            return;
+        }
+        try p.space();
+        for (fields, 0..) |field_node, i| {
+            if (i > 0) {
+                if (!one_line) p.newline(col);
+                try p.tok(p.last(fields[i - 1]) + 1); // `,`
+                try p.space();
+            }
+            try p.schemaField(field_node, if (one_line) indent else col);
+        }
+        if (one_line) try p.space() else p.newline(col);
+        try p.tok(p.last(fields[fields.len - 1]) + 1);
+    }
+
+    fn schemaField(p: *Printer, n: Index, indent: u32) Error!void {
+        const schema_field = p.tree.fullSchemaField(n);
+        try p.tok(schema_field.name);
+        try p.space();
+        try p.tok(schema_field.name + 1); // `:`
+        try p.space();
+        try p.schemaNode(schema_field.operand, indent);
+        try p.schemaModifiers(schema_field.modifiers, indent);
+    }
+
+    fn schemaModifiers(p: *Printer, modifiers: []const Index, indent: u32) Error!void {
+        for (modifiers) |modifier| {
+            try p.space();
+            const main = p.tree.nodeMainToken(modifier);
+            switch (p.tree.nodeTag(modifier)) {
+                .schema_optional, .schema_nullable => try p.tok(main),
+                .schema_as => {
+                    try p.tok(main);
+                    try p.space();
+                    const value = p.tree.operand(modifier);
+                    try p.expr(value, indent);
+                },
+                .schema_via => {
+                    try p.tok(main);
+                    try p.space();
+                    try p.expr(p.tree.operand(modifier), indent);
+                },
+                else => return error.SyntaxErrors,
+            }
+        }
+    }
+
+    fn schemaTagged(p: *Printer, n: Index, indent: u32) Error!void {
+        const tagged = p.tree.fullSchemaTagged(n);
+        const main = p.tree.nodeMainToken(n);
+        try p.tok(main); // contextual `tagged`
+        try p.space();
+        try p.expr(tagged.discriminator, indent);
+        try p.space();
+        try p.tok(p.last(tagged.discriminator) + 1); // `of`
+        for (tagged.variants, 0..) |variant, i| {
+            p.newline(indent + indent_step);
+            if (i != 0) {
+                try p.tok(p.first(variant) - 1); // `|`
+                try p.space();
+            }
+            try p.schemaVariant(variant, indent + indent_step);
+        }
+    }
+
+    fn schemaVariant(p: *Printer, n: Index, indent: u32) Error!void {
+        const variant = p.tree.fullSchemaVariant(n);
+        try p.tok(variant.name);
+        if (variant.payload) |payload| {
+            try p.space();
+            try p.schemaRecord(payload, indent);
+        }
+        if (variant.rename) |rename| {
+            try p.space();
+            try p.tok(p.first(rename) - 1); // `as`
+            try p.space();
+            try p.expr(rename, indent);
         }
     }
 

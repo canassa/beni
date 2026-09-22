@@ -40,6 +40,25 @@ pub const Options = struct {
     positions: bool = false,
 };
 
+fn isSchemaTag(tag: Node.Tag) bool {
+    return switch (tag) {
+        .schema_decl,
+        .schema_operand,
+        .schema_paren,
+        .schema_record,
+        .schema_field,
+        .schema_value,
+        .schema_tagged,
+        .schema_variant,
+        .schema_as,
+        .schema_via,
+        .schema_optional,
+        .schema_nullable,
+        => true,
+        else => false,
+    };
+}
+
 pub fn write(
     w: *std.Io.Writer,
     source: [:0]const u8,
@@ -145,6 +164,11 @@ const Dumper = struct {
             try d.w.print(" {t})", .{e.code});
             return;
         }
+        if (isSchemaTag(tag)) {
+            try d.schemaNode(n, indent);
+            try d.w.writeByte(')');
+            return;
+        }
         switch (tag) {
             .root => {
                 try d.open("module", main);
@@ -224,6 +248,7 @@ const Dumper = struct {
                 try d.tokenList(f.params);
                 try d.docs(f.header, inner);
             },
+            .schema_decl, .schema_operand, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable => unreachable,
             .constructor, .type_con, .pat_ctor => {
                 try d.openTag(tag, main);
                 try d.w.print(" {s}", .{d.text(main)});
@@ -364,5 +389,80 @@ const Dumper = struct {
             },
         }
         try d.w.writeByte(')');
+    }
+
+    /// Kept out of `node` so schema syntax does not enlarge every recursive
+    /// ordinary AST-dump frame. The depth corpus deliberately reaches the
+    /// parser's 4,096-node bound on the dumper's fixed large-stack thread.
+    fn schemaNode(d: *Dumper, n: Index, indent: usize) std.Io.Writer.Error!void {
+        const tree = d.tree;
+        const tag = tree.nodeTag(n);
+        const main = tree.nodeMainToken(n);
+        const inner = indent + 2;
+        switch (tag) {
+            .schema_decl => {
+                const s = tree.fullSchemaDecl(n);
+                try d.openTag(tag, main);
+                try d.visibility(s.header);
+                try d.w.print(" {s}", .{d.text(s.name)});
+                try d.tokenList(s.params);
+                try d.docs(s.header, inner);
+                if (tree.nodeTag(s.body) == .schema_value) {
+                    // A declaration-level modifier list uses the field
+                    // payload as a compact carrier, but it is not a source
+                    // field and therefore has no field name in this dump.
+                    const body = tree.fullSchemaField(s.body);
+                    try d.child(body.operand, inner);
+                    try d.children(body.modifiers, inner);
+                } else {
+                    try d.child(s.body, inner);
+                }
+            },
+            .schema_field => {
+                const f = tree.fullSchemaField(n);
+                try d.openTag(tag, main);
+                try d.w.print(" {s}", .{d.text(f.name)});
+                try d.docs(f.header, inner);
+                try d.child(f.operand, inner);
+                try d.children(f.modifiers, inner);
+            },
+            .schema_value => {
+                const value = tree.fullSchemaField(n);
+                try d.openTag(tag, main);
+                try d.child(value.operand, inner);
+                try d.children(value.modifiers, inner);
+            },
+            .schema_tagged => {
+                const t = tree.fullSchemaTagged(n);
+                try d.openTag(tag, main);
+                try d.child(t.discriminator, inner);
+                try d.children(t.variants, inner);
+            },
+            .schema_variant => {
+                const v = tree.fullSchemaVariant(n);
+                try d.openTag(tag, main);
+                try d.w.print(" {s}", .{d.text(v.name)});
+                if (v.payload) |payload| try d.child(payload, inner);
+                if (v.rename) |rename| {
+                    try d.w.writeAll(" as");
+                    try d.child(rename, inner);
+                }
+            },
+            .schema_operand => {
+                try d.openTag(tag, main);
+                try d.w.print(" {s}", .{d.text(main)});
+                try d.children(tree.children(n), inner);
+            },
+            .schema_record => {
+                try d.openTag(tag, main);
+                try d.children(tree.children(n), inner);
+            },
+            .schema_paren, .schema_as, .schema_via => {
+                try d.openTag(tag, main);
+                try d.child(tree.operand(n), inner);
+            },
+            .schema_optional, .schema_nullable => try d.openTag(tag, main),
+            else => unreachable,
+        }
     }
 };

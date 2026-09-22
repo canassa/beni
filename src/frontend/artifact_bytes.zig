@@ -70,7 +70,7 @@ pub const magic = "BENIFE\x00\x00";
 /// version bump and a cache discard, never a migration into spare bytes
 /// (`plans/m4-plan.md` D4) — and the compiler build id in the file key means
 /// a version bump is belt and braces rather than the only defence.
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -787,7 +787,7 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // 12 and 9, `Import` 24 and 21. The estimate was therefore high for
     // three of the rows it counted, and §11 reports what the bytes actually
     // came to.
-    try testing.expectEqual(@as(u32, 88), rowBytes(Bir.Decl));
+    try testing.expectEqual(@as(u32, 92), rowBytes(Bir.Decl));
     try testing.expectEqual(@as(u32, 20), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Local));
@@ -844,6 +844,7 @@ const Sample = struct {
             .where_start = @enumFromInt(0),
             .where_end = @enumFromInt(0),
             .body = @enumFromInt(2),
+            .schema_body = .none,
             .inst_start = @enumFromInt(0),
             .inst_end = @enumFromInt(3),
             .ctors_start = 0,
@@ -1256,6 +1257,20 @@ test "verify refuses the structural faults a well-typed record can still have" {
         try testing.expect(!sample.bir.verify(token_count));
         slot.* = was;
     }
+    // Schema payloads are part of the cache boundary too: a decoded
+    // instruction must not be able to index a truncated `SchemaField` row.
+    {
+        const tags = sample.bir.insts.items(.tag);
+        const data = sample.bir.insts.items(.data);
+        const was_tag = tags[1];
+        const was_data = data[1];
+        tags[1] = .schema_field;
+        data[1] = .{ .lhs = 0, .rhs = @intCast(sample.bir.extra.len) };
+        try testing.expect(!sample.bir.verify(token_count));
+        tags[1] = was_tag;
+        data[1] = was_data;
+        try testing.expect(sample.bir.verify(token_count));
+    }
     const decls: []Bir.Decl = @constCast(sample.bir.decls);
     const Case = struct { what: []const u8, apply: *const fn (*Bir.Decl) void };
     const cases = [_]Case{
@@ -1303,6 +1318,11 @@ test "verify refuses the structural faults a well-typed record can still have" {
         .{ .what = "a body past `insts`", .apply = struct {
             fn go(d: *Bir.Decl) void {
                 d.body = @enumFromInt(99);
+            }
+        }.go },
+        .{ .what = "a schema body past `insts`", .apply = struct {
+            fn go(d: *Bir.Decl) void {
+                d.schema_body = @enumFromInt(99);
             }
         }.go },
         .{ .what = "a name_token past the token list", .apply = struct {

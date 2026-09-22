@@ -595,6 +595,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
     for (bir.interface) |di| {
         const d = bir.decl(di);
         if (d.kind.isValue()) continue;
+        if (d.kind == .schema) continue; // S1 refusal runs before this; S2 adds its own table.
         try type_decls.append(gpa, di);
         try b.types.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(d.name)),
@@ -603,6 +604,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
                 .type => .adt,
                 .type_alias => .alias,
                 .foreign_type => .foreign,
+                .schema => unreachable,
                 else => unreachable, // isValue() covered the rest
             },
             .is_opaque = d.is_opaque,

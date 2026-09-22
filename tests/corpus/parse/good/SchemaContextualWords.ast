@@ -1,0 +1,24 @@
+(module
+  (definition schema
+    (int 1))
+  (definition tagged
+    (int 2))
+  (definition via
+    (int 3))
+  (definition optional
+    (int 4))
+  (definition nullable
+    (int 5))
+  (definition sum
+    (add
+      (add
+        (add
+          (add
+            (ident schema)
+            (ident tagged))
+          (ident via))
+        (ident optional))
+      (ident nullable)))
+  (definition identity
+    (pat_var schema)
+    (ident schema)))

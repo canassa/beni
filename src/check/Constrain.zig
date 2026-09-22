@@ -1524,6 +1524,30 @@ fn pushChildren(env: *Env, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.
             try stack.append(scratch, @enumFromInt(data.rhs));
         },
         .pat_as => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .schema_app => {
+            try stack.append(scratch, @enumFromInt(data.lhs));
+            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));
+        },
+        .schema_paren, .schema_as, .schema_via => try stack.append(scratch, @enumFromInt(data.lhs)),
+        .schema_record => try stack.appendSlice(scratch, bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)),
+        .schema_field => {
+            const field = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaField);
+            try stack.append(scratch, field.operand);
+            try stack.appendSlice(scratch, bir.extraSlice(.{ .start = field.modifiers_start, .end = field.modifiers_end }, Bir.Inst.Index));
+        },
+        .schema_value => {
+            try stack.append(scratch, @enumFromInt(data.lhs));
+            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));
+        },
+        .schema_tagged => {
+            try stack.append(scratch, @enumFromInt(data.lhs));
+            try stack.appendSlice(scratch, bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index));
+        },
+        .schema_variant => {
+            const variant = bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+            if (variant.payload.unwrap()) |p| try stack.append(scratch, p);
+            if (variant.rename.unwrap()) |r| try stack.append(scratch, r);
+        },
         .local,
         .top,
         .ctor,
@@ -1552,6 +1576,10 @@ fn pushChildren(env: *Env, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.
         .pat_string,
         .pat_unit,
         .pat_record,
+        .schema_ref,
+        .schema_optional,
+        .schema_nullable,
+        .schema_expr_ref,
         .@"error",
         => {},
     }

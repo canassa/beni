@@ -193,6 +193,36 @@ pub const Node = struct {
         /// `ForeignType` (header, then the parameter token range); `rhs`
         /// unused.
         foreign_type,
+        /// `schema Name a = ...` or `schema Name a tagged ...`.
+        /// `lhs` is the `ExtraIndex` of a `SchemaDecl`; `rhs` unused.
+        schema_decl,
+
+        // ---- Schema syntax (schema.md §2) ------------------------------
+
+        /// A schema name or parameter applied to zero or more schema atoms.
+        /// `main_token` is the name; `lhs..rhs` is the argument range.
+        schema_operand,
+        /// A parenthesised schema operand. `lhs` is the inner node.
+        schema_paren,
+        /// `{ field : Schema ... }`. `lhs..rhs` is the field range.
+        schema_record,
+        /// A field. `lhs` is extra `SchemaField`.
+        schema_field,
+        /// A declaration-level operand with value modifiers. `lhs` is extra
+        /// `SchemaField`; its field header/name are unused.
+        schema_value,
+        /// `tagged "key" of ...`. `lhs` is extra `SchemaTagged`.
+        schema_tagged,
+        /// A tagged variant. `lhs` is extra `SchemaVariant`.
+        schema_variant,
+        /// `as "external"`; `lhs` is the string node.
+        schema_as,
+        /// `via conversion`; `lhs` is the expression atom.
+        schema_via,
+        /// `optional`.
+        schema_optional,
+        /// `nullable`.
+        schema_nullable,
 
         // ---- Types -----------------------------------------------------
 
@@ -453,7 +483,7 @@ pub const Node = struct {
 
         pub fn isDecl(tag: Tag) bool {
             return switch (tag) {
-                .annotation, .definition, .type_alias, .type_decl, .foreign_value, .foreign_type => true,
+                .annotation, .definition, .type_alias, .type_decl, .foreign_value, .foreign_type, .schema_decl => true,
                 else => false,
             };
         }
@@ -578,6 +608,31 @@ pub const ForeignType = struct {
     params_end: ExtraIndex,
 };
 
+pub const SchemaDecl = struct {
+    header: DeclHeader,
+    params_start: ExtraIndex,
+    params_end: ExtraIndex,
+    body: Node.Index,
+};
+
+pub const SchemaField = struct {
+    header: DeclHeader,
+    operand: Node.Index,
+    modifiers_start: ExtraIndex,
+    modifiers_end: ExtraIndex,
+};
+
+pub const SchemaTagged = struct {
+    discriminator: Node.Index,
+    variants_start: ExtraIndex,
+    variants_end: ExtraIndex,
+};
+
+pub const SchemaVariant = struct {
+    payload: Node.OptionalIndex,
+    rename: Node.OptionalIndex,
+};
+
 pub const If = struct {
     then_expr: Node.Index,
     else_expr: Node.Index,
@@ -634,6 +689,31 @@ pub const full = struct {
         header: DeclHeader,
         name: TokenIndex,
         params: []const TokenIndex,
+    };
+
+    pub const SchemaDecl = struct {
+        header: DeclHeader,
+        name: TokenIndex,
+        params: []const TokenIndex,
+        body: Node.Index,
+    };
+
+    pub const SchemaField = struct {
+        header: DeclHeader,
+        name: TokenIndex,
+        operand: Node.Index,
+        modifiers: []const Node.Index,
+    };
+
+    pub const SchemaTagged = struct {
+        discriminator: Node.Index,
+        variants: []const Node.Index,
+    };
+
+    pub const SchemaVariant = struct {
+        name: TokenIndex,
+        payload: ?Node.Index,
+        rename: ?Node.Index,
     };
 
     pub const Constructor = struct {
@@ -851,10 +931,10 @@ pub fn rootItems(tree: *const Ast) []const Node.Index {
 /// The element list of any tag whose `lhs..rhs` is a `SubRange` of node
 /// indices: `constructor`, `type_con`, `type_tuple`, `type_record`,
 /// `string`, `tuple`, `list`, `record`, `apply`, `pat_ctor`, `pat_tuple`,
-/// `pat_list`.
+/// `pat_list`, `schema_operand`, `schema_record`.
 pub fn children(tree: *const Ast, node: Node.Index) []const Node.Index {
     switch (tree.nodeTag(node)) {
-        .root, .constructor, .type_con, .type_tuple, .type_record, .string, .tuple, .list, .record, .apply, .pat_ctor, .pat_tuple, .pat_list => {},
+        .root, .constructor, .type_con, .type_tuple, .type_record, .string, .tuple, .list, .record, .apply, .pat_ctor, .pat_tuple, .pat_list, .schema_operand, .schema_record => {},
         else => unreachable, // not a range node; use the tag's view
     }
     return tree.extraSlice(rangeOf(tree.nodeData(node)), Node.Index);
@@ -967,6 +1047,47 @@ pub fn fullForeignType(tree: *const Ast, node: Node.Index) full.ForeignType {
         .header = d.header,
         .name = tree.nodeMainToken(node),
         .params = tree.extraSlice(.{ .start = d.params_start, .end = d.params_end }, TokenIndex),
+    };
+}
+
+pub fn fullSchemaDecl(tree: *const Ast, node: Node.Index) full.SchemaDecl {
+    std.debug.assert(tree.nodeTag(node) == .schema_decl);
+    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaDecl);
+    return .{
+        .header = d.header,
+        .name = tree.nodeMainToken(node),
+        .params = tree.extraSlice(.{ .start = d.params_start, .end = d.params_end }, TokenIndex),
+        .body = d.body,
+    };
+}
+
+pub fn fullSchemaField(tree: *const Ast, node: Node.Index) full.SchemaField {
+    std.debug.assert(tree.nodeTag(node) == .schema_field or tree.nodeTag(node) == .schema_value);
+    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaField);
+    return .{
+        .header = d.header,
+        .name = tree.nodeMainToken(node),
+        .operand = d.operand,
+        .modifiers = tree.extraSlice(.{ .start = d.modifiers_start, .end = d.modifiers_end }, Node.Index),
+    };
+}
+
+pub fn fullSchemaTagged(tree: *const Ast, node: Node.Index) full.SchemaTagged {
+    std.debug.assert(tree.nodeTag(node) == .schema_tagged);
+    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaTagged);
+    return .{
+        .discriminator = d.discriminator,
+        .variants = tree.extraSlice(.{ .start = d.variants_start, .end = d.variants_end }, Node.Index),
+    };
+}
+
+pub fn fullSchemaVariant(tree: *const Ast, node: Node.Index) full.SchemaVariant {
+    std.debug.assert(tree.nodeTag(node) == .schema_variant);
+    const d = tree.extraData(@enumFromInt(tree.nodeData(node).lhs), SchemaVariant);
+    return .{
+        .name = tree.nodeMainToken(node),
+        .payload = d.payload.unwrap(),
+        .rename = d.rename.unwrap(),
     };
 }
 
@@ -1126,10 +1247,10 @@ pub fn fullError(tree: *const Ast, node: Node.Index) full.ErrorNode {
 
 /// The single child of the one-operand tags: `type_paren`, `record_type_field`,
 /// `interp`, `negate`, `paren`, `field`, `field_access`, `tuple_index`,
-/// `question`, `let_annotation`, `pat_paren`.
+/// `question`, `let_annotation`, `pat_paren`, and schema wrappers/modifiers.
 pub fn operand(tree: *const Ast, node: Node.Index) Node.Index {
     switch (tree.nodeTag(node)) {
-        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren => {},
+        .type_paren, .record_type_field, .interp, .negate, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .pat_paren, .schema_paren, .schema_as, .schema_via => {},
         else => unreachable, // not a one-operand node
     }
     return @enumFromInt(tree.nodeData(node).lhs);

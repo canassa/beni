@@ -1,0 +1,92 @@
+decl 0: pub schema User
+  %0 = schema_ref Models.Id
+  %1 = schema_expr_ref Conversions.userId
+  %2 = schema_via %1
+  %3 = string "user-id"
+  %4 = schema_as %3
+  %5 = schema_field userId : %0 [%2, %4] doc "The external identifier survives frontend lowering."
+  %6 = schema_ref String
+  %7 = schema_optional
+  %8 = schema_nullable
+  %9 = schema_field nickname : %6 [%7, %8]
+  %10 = schema_ref List
+  %11 = schema_ref Maybe
+  %12 = schema_ref String
+  %13 = schema_app %11 [%12]
+  %14 = schema_paren %13
+  %15 = schema_app %10 [%14]
+  %16 = schema_field aliases : %15 []
+  %17 = schema_ref String
+  %18 = schema_field theme : %17 []
+  %19 = schema_record [%18]
+  %20 = schema_field settings : %19 []
+  %21 = schema_ref Int
+  %22 = schema_expr_ref Conversions.between
+  %23 = int 0
+  %24 = int 100
+  %25 = call %22 [%23, %24]
+  %26 = schema_via %25
+  %27 = schema_field score : %21 [%26]
+  %28 = schema_ref String
+  %29 = pat_var local 0 (value)
+  %30 = schema_expr_ref Conversions.trim
+  %31 = local 0 (value)
+  %32 = call %30 [%31]
+  %33 = lambda [%29] -> %32
+  %34 = schema_via %33
+  %35 = schema_field normalized : %28 [%34]
+  %36 = schema_record [%5, %9, %16, %20, %27, %35]
+  schema body %36
+  locals
+    0 value param %29
+  interface schema User
+
+decl 1: schema Page
+  %0 = schema_ref List
+  %1 = schema_ref item
+  %2 = schema_app %0 [%1]
+  %3 = schema_field items : %2 []
+  %4 = schema_record [%3]
+  type params item
+  schema body %4
+
+decl 2: schema Trimmed
+  %0 = schema_ref String
+  %1 = schema_expr_ref Conversions.trim
+  %2 = schema_via %1
+  %3 = schema_nullable
+  %4 = schema_value %0 [%2, %3]
+  schema body %4
+
+decl 3: pub schema Tree
+  %0 = string "kind"
+  %1 = schema_ref Int
+  %2 = schema_field value : %1 []
+  %3 = schema_record [%2]
+  %4 = string "leaf"
+  %5 = schema_variant Leaf %3 as %4
+  %6 = schema_ref List
+  %7 = schema_ref Tree
+  %8 = schema_app %6 [%7]
+  %9 = schema_field children : %8 []
+  %10 = schema_record [%9]
+  %11 = string "branch"
+  %12 = schema_variant Branch %10 as %11
+  %13 = schema_tagged %0 [%5, %12]
+  schema body %13
+  interface schema Tree
+
+interface
+  schema User
+  schema Tree
+
+imports
+  import Conversions
+  import Models
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug

@@ -1,0 +1,12 @@
+-- `via` consumes one existing expression Atom (§2): an access chain stays
+-- attached, but an application must be parenthesised. Recovery at the comma
+-- keeps both valid following fields and the next declaration.
+schema Via =
+    { wrong : String via convert argument
+    , grouped : String via (convert argument)
+    , accessed : String via Conversions.convert
+    }
+
+
+after =
+    1

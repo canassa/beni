@@ -16,9 +16,10 @@ rebuilds.
   annotation may carry `where a.compare : a, a -> Order`, and `==` and `<` call
   the receiver type's `eq`/`compare`, derived when it declares none. Contract:
   [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) — the file
-  name is historical, the document is normative. A further departure is specified,
-  not implemented: `schema` declarations define a schema with `Type` and `Encoded`
-  members; [`schema.md`](docs/design/schema.md) owns the contract and open choices.
+  name is historical, the document is normative. A further departure is in progress:
+  `schema` declarations have frontend support; their `Type` and `Encoded`
+  members await checker support. [`schema.md`](docs/design/schema.md) owns the
+  contract and open choices.
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
   Node is today's only platform because it is what the test harness needs, not because it is
@@ -38,14 +39,17 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 ## M3 — in progress
 
-**Schemas are specified, not implemented** (2026-09-22):
+**Schema S1 implements the frontend** (2026-09-22):
 [`schema.md`](docs/design/schema.md) records the fork — an inspectable description
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
 `core/Schema` under the same engine-owned context contract and differential tests.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
-The owner review settled the S1 surface; S1 and the independent queue row 67
-checker fix may run in parallel, with both complete before S2. Remaining decisions lead the document; H4 remains open. The
+S1 parses declarations, formats them and preserves unresolved schema plans in
+AST/BIR dumps and the frontend cache. Check/build and dumps requiring resolution
+explicitly report `not_implemented` until S2; endpoint types and executable
+schemas are not available yet. The independent queue row 67 checker fix must
+land before S2. Remaining decisions lead the document; H4 remains open. The
 recorded M4-first slices 1–3 have landed (schema.md A.2–A.4).
 
 M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,

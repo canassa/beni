@@ -246,6 +246,16 @@ pub const Code = enum {
     /// with `_` would let a platform author reintroduce, in data, the defect
     /// the compiler had just been taught to make impossible.
     invalid_entry_file,
+    // Schemas (docs/design/schema.md §8), appended in contract order.
+    schema_used_as_type,
+    schema_used_as_value,
+    schema_name_collision,
+    unknown_schema_member,
+    expected_schema,
+    duplicate_schema_key,
+    duplicate_schema_tag,
+    duplicate_schema_modifier,
+    schema_conversion_mismatch,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -361,6 +371,15 @@ pub fn title(code: Code) []const u8 {
         .debug_in_release => "DEBUG IN A RELEASE BUILD",
         .output_path_collision => "OUTPUT PATHS COLLIDE",
         .invalid_entry_file => "INVALID ENTRY FILE NAME",
+        .schema_used_as_type => "SCHEMA IS NOT A TYPE",
+        .schema_used_as_value => "SCHEMA IS NOT A VALUE",
+        .schema_name_collision => "AMBIGUOUS SCHEMA NAME",
+        .unknown_schema_member => "UNKNOWN SCHEMA MEMBER",
+        .expected_schema => "EXPECTED A SCHEMA",
+        .duplicate_schema_key => "DUPLICATE EXTERNAL KEY",
+        .duplicate_schema_tag => "DUPLICATE SCHEMA TAG",
+        .duplicate_schema_modifier => "DUPLICATE SCHEMA MODIFIER",
+        .schema_conversion_mismatch => "SCHEMA CONVERSION MISMATCH",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };
