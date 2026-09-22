@@ -119,12 +119,13 @@ stays a value declaration. `tagged`, `via`, `optional`, `nullable` are contextua
 inside this production; `as` and `of` reuse existing keyword tokens. Indentation
 is the existing declaration/continuation layout, not braces overriding layout.
 The formatter keeps field and variant order, doc comments and string contents;
-prints leading commas and variant bars on continuation lines with four-space
-indentation; separates modifiers with one space and does not align columns. As
-with an ordinary top-level definition, `schema X =` ends the declaration's head
-line and its record or operand body starts on the next line indented four
-spaces. A tagged declaration keeps `tagged "key" of` on its head line and puts
-each variant on a continuation line indented four spaces.
+prints each field doc on its own line at the ordinary field column rather than
+after `{` or `,`; prints leading commas and variant bars on continuation lines
+with four-space indentation; separates modifiers with one space and does not
+align columns. As with an ordinary top-level definition, `schema X =` ends the
+declaration's head line and its record or operand body starts on the next line
+indented four spaces. A tagged declaration keeps `tagged "key" of` on its head
+line and puts each variant on a continuation line indented four spaces.
 Malformed fields recover at the next sibling comma, closing brace or next
 top-level declaration. There is no bodyless schema, default modifier or opaque
 schema form adopted here; each would need its own elaboration contract.
@@ -836,10 +837,11 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-S1 provides the frontend; row 67 remains an independent prerequisite for S2
-(A.4). Later slices retain the dependencies below. Each begins with a
-fixture that fails on the preceding compiler/library; prove red, implement,
-then reverse the fix in an isolated copy to prove the regression is specific.
+S1 provides the frontend; the independent row 67 checker fix has also landed
+(A.4). S2 still needs Q7 confirmed. Later slices retain the dependencies below.
+Each begins with a fixture that fails on the preceding compiler/library; prove
+red, implement, then reverse the fix in an isolated copy to prove the regression
+is specific.
 A negative fixture must first be shown to diagnose the intended defect, not
 merely fail because `schema` is still unknown. Runtime behavior belongs under
 `tests/corpus/run/`, and emitted JS is executed. No in-source test substitutes
@@ -848,7 +850,7 @@ for this boundary. Follow the write-tests skill when implementation starts.
 | Slice | Contract | Red fixtures first | Done means |
 |---|---|---|---|
 | S1 — frontend | §2, §8; syntax decisions settled in A.2; independent of row 67 | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
-| S2 — checker | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; no successful build silently omits runners |
+| S2 — checker | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; remove S1’s whole-input schema exclusion from resolver fuzz; no successful build silently omits runners |
 | S3 — library and description | §1, §4–§5, §9; settle Q3/Q6 and concrete Issue/builders; prove row 69; preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
 | S4 — specialisation | §6 and this section; settle Q9; prove row 69 | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
 | S5 — effects after P2 | §7; resolve Q11 in the effects specification first | All seven EFFECTS.md cases: `run/`, cross-module `.iface`, `check/bad` sync/extraction diagnostics, cancellation/finalisers and both directions | Directional bits and context survive abstraction/import/suspension in compiled and library paths, no conversion after cancellation, exact effect order and ordinary failures, unchanged sync behavior |
