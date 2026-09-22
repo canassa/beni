@@ -9,9 +9,8 @@ import Set
 
 
 type alias Model =
-    { items : Dict String Int
-    , selected : Set.Set String
-    }
+    items : Dict String Int
+    selected : Set.Set String
 
 
 pub init : Model

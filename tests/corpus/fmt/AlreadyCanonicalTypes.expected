@@ -17,15 +17,15 @@ pub opaque type Id
 
 
 type alias Point =
-    { x : Float, y : Float }
+    x : Float
+    y : Float
 
 
 type alias Config =
-    { host : String
-    , port : Int
-    , retries : Int
-    , onError : String -> Msg
-    }
+    host : String
+    port : Int
+    retries : Int
+    onError : String -> Msg
 
 
 pub type alias Handler model msg =

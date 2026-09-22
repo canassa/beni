@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/LayoutFieldEof.beni","start":{"line":5,"col":1},"end":{"line":5,"col":1}},"title":"UNEXPECTED TOKEN","message":"I got to the end of the file while parsing a type. I was expecting a type."}]

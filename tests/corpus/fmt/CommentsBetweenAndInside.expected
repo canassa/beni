@@ -9,9 +9,8 @@ import Set
 
 --| doc for an alias
 type alias R =
-    { a : Int -- after a field
-    , b : Int
-    }
+    a : Int -- after a field
+    b : Int
 
 
 f : Int -> Int

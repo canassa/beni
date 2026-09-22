@@ -10,7 +10,8 @@ xs =
 
 
 type alias P =
-    { a : Int, b : Int }
+    a : Int
+    b : Int
 
 
 f a b =

@@ -55,6 +55,144 @@ test "version prints the version and the build id on stdout and nothing else" {
     try testing.expectEqualStrings(r.stdout, again.stdout);
 }
 
+test "layout declaration bodies have byte-identical AST and BIR dumps to braces" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Brace.beni",
+        \\type alias Contact =
+        \\    { --| The display name.
+        \\      name : String
+        \\    , --| The postal address.
+        \\      address : { street : String, city : String }
+        \\    , greet : String, Int -> String
+        \\    , result :
+        \\          Result
+        \\              String
+        \\              (List Int)
+        \\    }
+        \\
+        \\
+        \\schema User =
+        \\    { name : String
+        \\    , fallback : { code : Int } optional
+        \\    }
+        \\
+        \\
+        \\schema Event tagged "kind" of
+        \\      Text { value : String } as "text"
+        \\    | Explicit {} as "explicit"
+        \\    | Payloadless as "payloadless"
+        \\
+    );
+    try w.write("Layout.beni",
+        \\type alias Contact =
+        \\    --| The display name.
+        \\    name : String
+        \\    --| The postal address.
+        \\    address :
+        \\        street : String
+        \\        city : String
+        \\    greet : String, Int -> String
+        \\    result :
+        \\        Result
+        \\            String
+        \\            (List Int)
+        \\
+        \\
+        \\schema User =
+        \\    name : String
+        \\    fallback : { code : Int } optional
+        \\
+        \\
+        \\schema Event tagged "kind" of
+        \\    Text as "text"
+        \\        value : String
+        \\    Explicit as "explicit" {}
+        \\    Payloadless as "payloadless"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "ast", "bir" }) |stage| {
+        const stage_arg = if (std.mem.eql(u8, stage, "ast")) "--stage=ast" else "--stage=bir";
+        const brace = try w.run(&.{ "dump", stage_arg, "Brace.beni" });
+        const layout = try w.run(&.{ "dump", stage_arg, "Layout.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), brace.exit_code);
+        try testing.expectEqual(@as(u8, 0), layout.exit_code);
+        try testing.expectEqualStrings("", brace.stderr);
+        try testing.expectEqualStrings("", layout.stderr);
+        try testing.expectEqualStrings(brace.stdout, layout.stdout);
+    }
+}
+
+test "layout field recovery preserves malformed siblings and the next declaration" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Recovery.beni",
+        \\schema Broken =
+        \\    malformed : ->
+        \\    missingColon Int
+        \\    kept : String
+        \\
+        \\
+        \\after =
+        \\    42
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "dump", "--stage=ast", "Recovery.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .unexpected_token,
+            .severity = .@"error",
+            .span = .{ .file = "Recovery.beni", .start = .{ .line = 2, .col = 17 }, .end = .{ .line = 2, .col = 19 } },
+            .title = "UNEXPECTED TOKEN",
+            .message = "I was parsing a record and ran into `->`. I was expecting a type.",
+        },
+        .{
+            .code = .expected_token,
+            .severity = .@"error",
+            .span = .{ .file = "Recovery.beni", .start = .{ .line = 3, .col = 18 }, .end = .{ .line = 3, .col = 21 } },
+            .title = "EXPECTED TOKEN",
+            .message = "I was parsing a record and ran into `Int`, but I was expecting `:` here.",
+        },
+    }), r.diagnostics);
+    try testing.expectEqualStrings(
+        \\(module
+        \\  (schema_decl Broken
+        \\    (schema_record
+        \\      (schema_field malformed
+        \\        (error unexpected_token))
+        \\      (schema_field missingColon
+        \\        (schema_operand Int))
+        \\      (schema_field kept
+        \\        (schema_operand String))))
+        \\  (definition after
+        \\    (int 42)))
+        \\
+    , r.stdout);
+}
+
 test "help exits 0 and prints usage on stdout" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

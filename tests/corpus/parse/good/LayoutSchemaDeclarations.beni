@@ -1,0 +1,40 @@
+-- Layout spelling of tests/corpus/parse/good/SchemaDeclarations.beni.
+-- The two files must have byte-identical AST and BIR dumps.
+--| The public record schema.
+pub schema User =
+    --| Renamed through a conversion.
+    userId : Models.Id via Conversions.userId as "user-id"
+    nickname : String nullable optional
+    aliases : List (Maybe String)
+    settings :
+        theme : String
+    score : Int via (Conversions.between 0 100)
+
+
+schema Page item =
+    items : List item
+
+
+schema Contextual optional =
+    value : (optional)
+
+
+schema Trimmed = String via Conversions.trim nullable
+
+
+schema Empty = {}
+
+
+pub schema Message tagged "kind" of
+    Text as "text"
+        value : String
+    Count as "count"
+        value : Int
+    Empty
+
+
+pub schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree

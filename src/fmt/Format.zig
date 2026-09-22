@@ -548,7 +548,14 @@ const Measurer = struct {
             .type_unit, .unit, .pat_unit => m.set(n, 2, main, main + 1),
             .placeholder => m.set(n, 1, main, main),
             .type_paren, .paren, .pat_paren => try m.wrapped(n, tree.operand(n)),
-            .type_tuple, .type_record, .tuple, .list, .record, .pat_tuple, .pat_list => try m.collection(n, tree.children(n)),
+            .type_tuple, .tuple, .list, .record, .pat_tuple, .pat_list => try m.collection(n, tree.children(n)),
+            .type_record => {
+                if (m.tags[main] == .l_brace) {
+                    try m.collection(n, tree.children(n));
+                } else {
+                    try m.fieldBlock(n, tree.children(n));
+                }
+            },
             .type_record_ext => {
                 const r = tree.fullTypeRecordExt(n);
                 try m.extension(n, r.base, r.fields);
@@ -693,7 +700,13 @@ const Measurer = struct {
             },
             .schema_operand => try m.headed(n, m.tokenWidth(main), main, main, tree.children(n), true),
             .schema_paren => try m.wrapped(n, tree.operand(n)),
-            .schema_record => try m.collection(n, tree.children(n)),
+            .schema_record => {
+                if (m.tags[main] == .l_brace) {
+                    try m.collection(n, tree.children(n));
+                } else {
+                    try m.fieldBlock(n, tree.children(n));
+                }
+            },
             .schema_field, .schema_value => {
                 const f = tree.fullSchemaField(n);
                 try m.measure(f.operand);
@@ -728,7 +741,7 @@ const Measurer = struct {
                 if (v.rename) |rename| {
                     try m.measure(rename);
                     width +|= 1 +| m.w(rename);
-                    last_tok = m.last(rename);
+                    last_tok = @max(last_tok, m.last(rename));
                 }
                 m.set(n, width, v.name, last_tok);
             },
@@ -740,6 +753,15 @@ const Measurer = struct {
             .schema_optional, .schema_nullable => m.leaf(n),
             else => unreachable,
         }
+    }
+
+    /// A layout field block has the same record node and children as its
+    /// brace spelling, but no delimiter tokens. It is always vertical and
+    /// spans exactly its fields.
+    fn fieldBlock(m: *Measurer, n: Index, fields: []const Index) Error!void {
+        std.debug.assert(fields.len != 0);
+        for (fields) |field| try m.measure(field);
+        m.set(n, no_fit, m.first(fields[0]), m.last(fields[fields.len - 1]));
     }
 
     /// An operator chain of one precedence level, measured without
@@ -1264,7 +1286,11 @@ const Printer = struct {
                 try p.space();
                 try p.tok(eq);
                 p.newline(indent_step);
-                try p.typ(a.body, indent_step);
+                if (tree.nodeTag(a.body) == .type_record and tree.children(a.body).len != 0) {
+                    try p.typeFieldBlock(a.body, indent_step);
+                } else {
+                    try p.typ(a.body, indent_step);
+                }
             },
             .type_decl => {
                 const t = tree.fullTypeDecl(n);
@@ -1345,6 +1371,9 @@ const Printer = struct {
     /// no source field name or colon, so print only its operand and
     /// modifiers here.
     fn schemaBody(p: *Printer, n: Index, indent: u32) Error!void {
+        if (p.tree.nodeTag(n) == .schema_record and p.tree.children(n).len != 0) {
+            return p.schemaFieldBlock(n, indent);
+        }
         if (p.tree.nodeTag(n) != .schema_value) return p.schemaNode(n, indent);
         const body = p.tree.fullSchemaField(n);
         try p.schemaNode(body.operand, indent);
@@ -1425,6 +1454,56 @@ const Printer = struct {
         try p.tok(p.last(fields[fields.len - 1]) + 1);
     }
 
+    /// A declaration schema record, or a nested whole-field record, in its
+    /// canonical delimiter-free layout spelling. Brace input reaches the
+    /// same AST node; drop its delimiters while retaining their comments.
+    fn schemaFieldBlock(p: *Printer, n: Index, indent: u32) Error!void {
+        return p.schemaFieldBlockWith(n, indent, false);
+    }
+
+    fn schemaFieldBlockWith(p: *Printer, n: Index, indent: u32, suppress_close_trailing: bool) Error!void {
+        const fields = p.tree.children(n);
+        std.debug.assert(fields.len != 0);
+        const open = p.tree.nodeMainToken(n);
+        const braced = p.tags[open] == .l_brace;
+        for (fields, 0..) |field_node, i| {
+            if (i != 0) p.newline(indent);
+            if (braced) {
+                const delimiter = if (i == 0) open else p.last(fields[i - 1]) + 1;
+                try p.dropLayoutDelimiter(delimiter, p.first(field_node), indent);
+            }
+            try p.schemaField(field_node, indent);
+        }
+        if (braced) {
+            const close = p.last(fields[fields.len - 1]) + 1;
+            if (suppress_close_trailing) {
+                try p.leading(close, indent);
+                p.trailing_done = close;
+            } else {
+                try p.skipTok(close);
+            }
+        }
+    }
+
+    /// Drop a brace, comma or bar whose layout spelling has no token, and
+    /// move every comment between it and the following item to that item's
+    /// column. This is the delimiter-free counterpart of
+    /// `schemaFieldDelimiter`.
+    fn dropLayoutDelimiter(p: *Printer, delimiter: TokenIndex, item_token: TokenIndex, indent: u32) Io.Writer.Error!void {
+        try p.leading(delimiter, indent);
+        p.trailing_done = delimiter;
+        p.leading_done = item_token;
+
+        var prev_line = p.tok_lines[delimiter];
+        for (commentsBefore(p.comments, item_token)) |c| {
+            const line = p.commentLine(c);
+            p.blankLines(if (line > prev_line + 1) 1 else 0, indent);
+            try p.writeComment(c);
+            p.newline(indent);
+            prev_line = line;
+        }
+    }
+
     /// Print the `{` or leading `,` before a schema field. A field doc written
     /// after that delimiter belongs to the field, so canonicalise it onto its
     /// own line at the column an undocumented field would occupy. Plain
@@ -1468,6 +1547,13 @@ const Printer = struct {
         try p.tok(schema_field.name);
         try p.space();
         try p.tok(schema_field.name + 1); // `:`
+        if (p.tree.nodeTag(schema_field.operand) == .schema_record and
+            p.tree.children(schema_field.operand).len != 0 and
+            schema_field.modifiers.len == 0)
+        {
+            p.newline(indent + indent_step);
+            return p.schemaFieldBlock(schema_field.operand, indent + indent_step);
+        }
         try p.space();
         try p.schemaNode(schema_field.operand, indent);
         try p.schemaModifiers(schema_field.modifiers, indent);
@@ -1505,26 +1591,85 @@ const Printer = struct {
         try p.tok(p.last(tagged.discriminator) + 1); // `of`
         for (tagged.variants, 0..) |variant, i| {
             p.newline(indent + indent_step);
-            if (i != 0) {
-                try p.tok(p.first(variant) - 1); // `|`
-                try p.space();
+            if (p.first(variant) > 0 and p.tags[p.first(variant) - 1] == .pipe) {
+                try p.dropLayoutDelimiter(p.first(variant) - 1, p.first(variant), indent + indent_step);
             }
-            try p.schemaVariant(variant, indent + indent_step);
+            const comment_indent = if (i + 1 < tagged.variants.len) indent + indent_step else indent;
+            try p.schemaLayoutVariant(variant, indent + indent_step, comment_indent);
         }
     }
 
-    fn schemaVariant(p: *Printer, n: Index, indent: u32) Error!void {
+    fn schemaLayoutVariant(p: *Printer, n: Index, indent: u32, deferred_comment_indent: u32) Error!void {
         const variant = p.tree.fullSchemaVariant(n);
+        const reordered = if (variant.payload) |payload|
+            if (variant.rename) |rename| p.first(rename) > p.last(payload) else false
+        else
+            false;
+        // The old brace spelling stores payload before rename. Its comments
+        // must stay after the payload even though the canonical head moves
+        // `as "tag"` in front of it. They are emitted below, at the next
+        // variant/declaration column, which is also their fixed-point home.
         try p.tok(variant.name);
-        if (variant.payload) |payload| {
-            try p.space();
-            try p.schemaRecord(payload, indent);
-        }
         if (variant.rename) |rename| {
             try p.space();
-            try p.tok(p.first(rename) - 1); // `as`
-            try p.space();
-            try p.expr(rename, indent);
+            if (reordered) {
+                // The old brace spelling stores payload before rename. The
+                // canonical layout head reverses those source token ranges,
+                // so copy the literal without revisiting its moved comments.
+                try p.raw(p.text(p.first(rename) - 1)); // `as`
+                try p.space();
+                const last_token = p.last(rename);
+                const end = Tokenizer.tokenEnd(p.source, p.tags[last_token], p.starts[last_token]);
+                try p.raw(p.source[p.starts[p.first(rename)]..end]);
+                p.trailing_done = last_token;
+            } else {
+                try p.tok(p.first(rename) - 1); // `as`
+                try p.space();
+                try p.expr(rename, indent);
+            }
+        }
+        if (variant.payload) |payload| {
+            if (p.tree.children(payload).len == 0) {
+                try p.space();
+                if (reordered) {
+                    const open = p.tree.nodeMainToken(payload);
+                    try p.tok(open);
+                    try p.leading(open + 1, indent);
+                    try p.raw(p.text(open + 1));
+                    p.trailing_done = open + 1;
+                } else {
+                    try p.schemaRecord(payload, indent);
+                }
+            } else {
+                p.newline(indent + indent_step);
+                try p.schemaFieldBlockWith(payload, indent + indent_step, reordered);
+            }
+        }
+        if (reordered) {
+            const payload = variant.payload.?;
+            const rename = variant.rename.?;
+            var prev_line = p.tok_lines[p.last(payload)];
+            try p.writeMovedCommentsBefore(p.first(rename) - 1, deferred_comment_indent, &prev_line);
+            try p.writeMovedCommentsBefore(p.first(rename), deferred_comment_indent, &prev_line);
+            const after_rename = p.last(rename) + 1;
+            for (commentsBefore(p.comments, after_rename)) |c| {
+                const line = p.commentLine(c);
+                if (line != p.tok_lines[p.last(rename)]) break;
+                p.blankLines(if (line > prev_line + 1) 1 else 0, deferred_comment_indent);
+                try p.writeComment(c);
+                p.newline(deferred_comment_indent);
+                prev_line = line;
+            }
+        }
+    }
+
+    fn writeMovedCommentsBefore(p: *Printer, token: TokenIndex, indent: u32, prev_line: *u32) Io.Writer.Error!void {
+        for (commentsBefore(p.comments, token)) |c| {
+            const line = p.commentLine(c);
+            p.blankLines(if (line > prev_line.* + 1) 1 else 0, indent);
+            try p.writeComment(c);
+            p.newline(indent);
+            prev_line.* = line;
         }
     }
 
@@ -2180,6 +2325,43 @@ const Printer = struct {
         }
     }
 
+    /// A declaration record type in its canonical delimiter-free layout
+    /// spelling. Nested nonempty closed records are field blocks too; empty
+    /// and extensible records continue through `typ` and retain braces.
+    fn typeFieldBlock(p: *Printer, n: Index, indent: u32) Error!void {
+        const fields = p.tree.children(n);
+        std.debug.assert(fields.len != 0);
+        const open = p.tree.nodeMainToken(n);
+        const braced = p.tags[open] == .l_brace;
+        for (fields, 0..) |field_node, i| {
+            if (i != 0) p.newline(indent);
+            if (braced) {
+                const delimiter = if (i == 0) open else p.last(fields[i - 1]) + 1;
+                try p.dropLayoutDelimiter(delimiter, p.first(field_node), indent);
+            }
+            try p.layoutTypeField(field_node, indent);
+        }
+        if (braced) try p.skipTok(p.last(fields[fields.len - 1]) + 1);
+    }
+
+    fn layoutTypeField(p: *Printer, n: Index, indent: u32) Error!void {
+        const main = p.tree.nodeMainToken(n);
+        const field_type = p.tree.operand(n);
+        try p.tok(main);
+        try p.space();
+        try p.tok(main + 1); // `:`
+        if (p.tree.nodeTag(field_type) == .type_record and p.tree.children(field_type).len != 0) {
+            p.newline(indent + indent_step);
+            try p.typeFieldBlock(field_type, indent + indent_step);
+        } else if (p.fitsAt(field_type, p.curCol() + 1)) {
+            try p.space();
+            try p.typ(field_type, indent);
+        } else {
+            p.newline(indent + indent_step);
+            try p.typ(field_type, indent + indent_step);
+        }
+    }
+
     // ---- Patterns --------------------------------------------------------
 
     fn pat(p: *Printer, n: Index, indent: u32) Error!void {
@@ -2478,7 +2660,8 @@ test "every declaration kind: alias, type, foreign, with docs, pub and opaque" {
         \\
         \\
         \\type alias Point =
-        \\    { x : Float, y : Float }
+        \\    x : Float
+        \\    y : Float
         \\
         \\
         \\pub type alias Handler model msg =
@@ -3201,14 +3384,13 @@ test "every type form; annotations broken at every arrow when they do not fit; r
         \\
         \\
         \\type alias Config =
-        \\    { host : String
-        \\    , port : Int
-        \\    , user : String
-        \\    , password : String
-        \\    , timeout : Int
-        \\    , verbose : Bool
-        \\    , more : Int
-        \\    }
+        \\    host : String
+        \\    port : Int
+        \\    user : String
+        \\    password : String
+        \\    timeout : Int
+        \\    verbose : Bool
+        \\    more : Int
         \\
         \\
         \\type Event

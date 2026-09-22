@@ -1,0 +1,7 @@
+-- The aligned `age Int` begins a sibling field, then diagnoses its missing
+-- colon and recovers `Int` as that malformed field's body. Only a deeper
+-- `age Int` can continue the preceding type (`String age Int`), as in Elm and
+-- today's brace form.
+type alias MissingColon =
+    name : String
+    age Int

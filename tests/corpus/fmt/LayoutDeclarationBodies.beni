@@ -1,0 +1,32 @@
+-- Layout declaration bodies are a fixed point, including nested fields,
+-- multiline types, field docs and schema modifiers.
+type alias Contact =
+    --| The display name.
+    name : String
+    --| The postal address.
+    address :
+        --| The street.
+        street : String
+        --| The city.
+        city : String
+    greet : String, Int -> String
+    result :
+        Result
+            String
+            (List Int)
+
+
+schema User =
+    --| The external identifier.
+    userId : Models.Id via Conversions.userId as "user-id"
+    address :
+        street : String
+        postalCode : String as "postal-code"
+    fallback : { code : Int } optional
+
+
+schema Message tagged "kind" of
+    Text as "text"
+        value : String
+    Empty as "empty" {}
+    Payloadless

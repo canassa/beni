@@ -133,6 +133,10 @@ brackets: std.ArrayList(Tag) = .empty,
 /// ordinary name. A `let` annotation leaves it false, so a `where` after
 /// one is an ordinary token the enclosing block reports (Appendix A.1).
 in_top_annotation: bool = false,
+/// True while parsing a layout field's type or schema operand. In that one
+/// context a later-line `lower_ident ':'` is a field head, never another
+/// type/schema application argument (language.md §3–§4).
+in_layout_field: bool = false,
 /// True while a `where` constraint's type is being parsed: the comma rule
 /// of §2.3 takes one more token of lookahead there.
 in_where: bool = false,
@@ -296,6 +300,29 @@ fn endBlock(p: *Parse, saved: Saved) void {
     p.indent = saved.indent;
     p.head = saved.head;
     p.context = saved.context;
+}
+
+fn atLayoutFieldHeadAfter(p: *const Parse, after: TokenIndex) bool {
+    return p.atLayoutFieldHeadAfterColumn(after, p.indent);
+}
+
+fn atLayoutFieldHeadAfterColumn(p: *const Parse, after: TokenIndex, min_col: u32) bool {
+    return p.peek() == .lower_ident and p.peekAt(1) == .colon and
+        p.lines[p.tok_i] > p.lines[after] and p.col(p.tok_i) > min_col;
+}
+
+fn atLaterLayoutFieldHead(p: *const Parse) bool {
+    return p.in_layout_field and p.peek() == .lower_ident and p.peekAt(1) == .colon and
+        p.lines[p.tok_i] > p.lines[p.head];
+}
+
+fn reportLayoutAlignment(p: *Parse, required_col: u32, construct: Construct) Allocator.Error!void {
+    if (p.col(p.tok_i) == required_col) return;
+    var item = p.itemAt(.unexpected_token);
+    item.context = .record;
+    item.construct = construct;
+    item.required_col = required_col;
+    _ = try p.report(item);
 }
 
 fn setContext(p: *Parse, context: Context) Context {
@@ -821,8 +848,13 @@ fn parseSchemaDecl(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
         try p.pushScratch(p.next());
     }
     const params = try p.listToRange(p.scratchSince(params_mark));
-    const body = if (p.eat(.equal) != null)
-        if (p.peek() == .l_brace) try p.parseSchemaRecord() else try p.parseSchemaValue()
+    const body = if (p.eat(.equal)) |equal|
+        if (p.peek() == .l_brace)
+            try p.parseSchemaRecord()
+        else if (p.atLayoutFieldHeadAfter(equal))
+            try p.parseLayoutSchemaRecord()
+        else
+            try p.parseSchemaValue()
     else if (p.peek() == .lower_ident and p.isWord(p.tok_i, "tagged"))
         try p.parseSchemaTagged()
     else blk: {
@@ -859,6 +891,9 @@ fn treeMainToken(p: *const Parse, node: Index) TokenIndex {
 }
 
 fn parseSchemaRecord(p: *Parse) Allocator.Error!Index {
+    const saved_layout = p.in_layout_field;
+    p.in_layout_field = false;
+    defer p.in_layout_field = saved_layout;
     const open = p.next();
     try p.pushBracket(.r_brace);
     defer p.popBracket();
@@ -889,6 +924,15 @@ fn parseSchemaRecord(p: *Parse) Allocator.Error!Index {
     return p.rangeNode(.schema_record, open, try p.listToRange(p.scratchSince(mark)));
 }
 
+/// SchemaFieldBlock := LayoutSchemaField+ (schema.md §2). The returned node
+/// is deliberately the brace form's `schema_record`: layout is only sugar.
+fn parseLayoutSchemaRecord(p: *Parse) Allocator.Error!Index {
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
+    const first = p.tok_i;
+    return p.rangeNode(.schema_record, first, try p.parseLayoutFields(.schema));
+}
+
 fn parseSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
     const name = if (p.peek() == .lower_ident) p.next() else {
         const bad = try p.unexpected(.error_type, .field_name);
@@ -900,6 +944,40 @@ fn parseSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
     while (p.atSchemaFieldModifier()) try p.pushScratch(try p.parseSchemaModifier(true));
+    const modifiers = try p.listToRange(p.scratchSince(mark));
+    const extra = try p.addExtra(Ast.SchemaField{
+        .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
+        .operand = operand,
+        .modifiers_start = modifiers.start,
+        .modifiers_end = modifiers.end,
+    });
+    return p.addNode(.{ .tag = .schema_field, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+fn parseLayoutSchemaField(p: *Parse, docs: Ast.CommentRange) Allocator.Error!Index {
+    const saved = p.startBlock(.record);
+    defer p.endBlock(saved);
+    const saved_layout = p.in_layout_field;
+    p.in_layout_field = true;
+    defer p.in_layout_field = saved_layout;
+
+    if (p.peek() != .lower_ident) {
+        const bad = try p.unexpected(.error_type, .field_name);
+        p.recover();
+        return bad;
+    }
+    const name = p.next();
+    const colon = try p.expectToken(.colon);
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    const operand = if (colon != null and p.atLayoutFieldHeadAfter(colon.?))
+        try p.parseLayoutSchemaRecord()
+    else blk: {
+        const value = try p.parseSchemaOperand();
+        while (p.atSchemaFieldModifier()) try p.pushScratch(try p.parseSchemaModifier(true));
+        break :blk value;
+    };
+    try p.finishLayoutField();
     const modifiers = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaField{
         .header = .{ .doc_start = docs.start, .doc_end = docs.end, .pub_token = .none, .opaque_token = .none, .equatable_token = .none, .where_start = @enumFromInt(0), .where_end = @enumFromInt(0) },
@@ -926,7 +1004,7 @@ fn parseSchemaOperand(p: *Parse) Allocator.Error!Index {
     const head = p.next();
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
-    while (p.canStartSchemaAtom() and !p.atSchemaFieldModifier()) {
+    while (p.canStartSchemaAtom() and !p.atSchemaFieldModifier() and !p.atLaterLayoutFieldHead()) {
         if (p.peek() == .l_brace) {
             try p.pushScratch(try p.parseSchemaRecord());
         } else if (p.peek() == .l_paren) {
@@ -995,27 +1073,55 @@ fn parseSchemaString(p: *Parse) Allocator.Error!Index {
 fn parseSchemaTagged(p: *Parse) Allocator.Error!Index {
     const tagged = p.next();
     const discriminator = try p.parseSchemaString();
-    _ = try p.expectToken(.keyword_of);
-    _ = p.eat(.pipe);
+    const of_token = (try p.expectToken(.keyword_of)) orelse tagged;
     const mark = p.scratchMark();
     defer p.shrinkScratch(mark);
-    while (true) {
-        if (p.peek() != .upper_ident) {
-            try p.pushScratch(try p.unexpected(.error_constructor, .constructor));
-            p.recoverUnlessStructural();
-        } else try p.pushScratch(try p.parseSchemaVariant());
-        if (p.eat(.pipe) == null) break;
+    const leading_pipe = p.eat(.pipe) != null;
+    if (p.peek() != .upper_ident) {
+        try p.pushScratch(try p.unexpected(.error_constructor, .constructor));
+        p.recoverUnlessStructural();
+    } else {
+        const column = p.col(p.tok_i);
+        const layout = !leading_pipe and p.lines[p.tok_i] > p.lines[of_token];
+        try p.pushScratch(try p.parseSchemaVariant(layout));
+        if (p.eat(.pipe) != null) {
+            while (true) {
+                if (p.peek() != .upper_ident) {
+                    try p.pushScratch(try p.unexpected(.error_constructor, .constructor));
+                    p.recoverUnlessStructural();
+                } else try p.pushScratch(try p.parseSchemaVariant(false));
+                if (p.eat(.pipe) == null) break;
+            }
+        } else if (layout) while (p.peek() == .upper_ident) {
+            if (p.col(p.tok_i) < column) break;
+            try p.reportLayoutAlignment(column, .constructor);
+            try p.pushScratch(try p.parseSchemaVariant(true));
+        };
     }
     const variants = try p.listToRange(p.scratchSince(mark));
     const extra = try p.addExtra(Ast.SchemaTagged{ .discriminator = discriminator, .variants_start = variants.start, .variants_end = variants.end });
     return p.addNode(.{ .tag = .schema_tagged, .main_token = tagged, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
 }
 
-fn parseSchemaVariant(p: *Parse) Allocator.Error!Index {
+fn parseSchemaVariant(p: *Parse, layout: bool) Allocator.Error!Index {
     const name = p.next();
-    const payload = if (p.peek() == .l_brace) (try p.parseSchemaRecord()).toOptional() else Node.OptionalIndex.none;
+    var payload = Node.OptionalIndex.none;
     var rename = Node.OptionalIndex.none;
-    if (p.eat(.keyword_as)) |_| rename = (try p.parseSchemaString()).toOptional();
+    if (p.peek() == .l_brace) {
+        // The brace spelling keeps its historical payload-before-rename
+        // order and remains accepted as input.
+        payload = (try p.parseSchemaRecord()).toOptional();
+        if (p.eat(.keyword_as)) |_| rename = (try p.parseSchemaString()).toOptional();
+    } else {
+        if (p.eat(.keyword_as)) |_| rename = (try p.parseSchemaString()).toOptional();
+        if (layout and p.atLayoutFieldHeadAfterColumn(name, p.col(name))) {
+            payload = (try p.parseLayoutSchemaRecord()).toOptional();
+        } else if (layout and p.peek() == .l_brace and p.peekAt(1) == .r_brace) {
+            // An explicit empty payload has no layout spelling. Canonical
+            // layout therefore keeps exactly `{}` after the optional rename.
+            payload = (try p.parseSchemaRecord()).toOptional();
+        }
+    }
     const extra = try p.addExtra(Ast.SchemaVariant{ .payload = payload, .rename = rename });
     return p.addNode(.{ .tag = .schema_variant, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
 }
@@ -1146,7 +1252,7 @@ fn expectDeclName(p: *Parse, tag: Tag) Allocator.Error!union(enum) { name: Token
     return .{ .placeholder = node };
 }
 
-/// TypeAlias := 'type' 'alias' upper_ident lower_ident* '=' Type
+/// TypeAlias := 'type' 'alias' upper_ident lower_ident* '=' (Type | FieldBlock)
 fn parseTypeAlias(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     p.context = .type_alias;
     _ = p.next(); // type
@@ -1156,10 +1262,20 @@ fn parseTypeAlias(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
         .placeholder => |node| return node,
     };
     const params = try p.parseTypeParams();
-    _ = try p.expectToken(.equal);
-    const body = try p.parseType();
+    const equal = (try p.expectToken(.equal)) orelse name;
+    const body = if (p.atLayoutFieldHeadAfter(equal))
+        try p.parseLayoutTypeRecord()
+    else
+        try p.parseType();
     const extra = try p.addExtra(Ast.TypeAlias{ .header = header, .params_start = params.start, .params_end = params.end });
     return p.addNode(.{ .tag = .type_alias, .main_token = name, .data = .{ .lhs = @intFromEnum(extra), .rhs = body.int() } });
+}
+
+fn parseLayoutTypeRecord(p: *Parse) Allocator.Error!Index {
+    if (try p.enter()) |placeholder| return placeholder;
+    defer p.leave();
+    const first = p.tok_i;
+    return p.rangeNode(.type_record, first, try p.parseLayoutFields(.type));
 }
 
 /// TypeDecl := 'type' upper_ident lower_ident* '=' '|'? Ctor ('|' Ctor)*
@@ -1485,7 +1601,9 @@ fn parseTypeApp(p: *Parse) Allocator.Error!Index {
             // `TypeApp` is greedy, so without the `where` guard
             // `Dict k v where k.compare : …` would read `where` as a third
             // type argument (static-dispatch-spike.md §2.2).
-            while (canStartTypeAtom(p.peek()) and !(p.in_top_annotation and p.atWhereClause())) {
+            while (canStartTypeAtom(p.peek()) and !(p.in_top_annotation and p.atWhereClause()) and
+                !p.atLaterLayoutFieldHead())
+            {
                 const before = p.tok_i;
                 defer p.assertProgress(before);
                 try p.pushScratch(try p.parseTypeAtom());
@@ -1579,6 +1697,9 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             const saved_where = p.in_where;
             p.in_where = false;
             defer p.in_where = saved_where;
+            const saved_layout = p.in_layout_field;
+            p.in_layout_field = false;
+            defer p.in_layout_field = saved_layout;
             const open = p.next();
             try p.pushBracket(.r_brace);
             defer p.popBracket();
@@ -1610,6 +1731,65 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
     }
 }
 
+const LayoutFieldKind = enum { type, schema };
+
+fn parseLayoutFields(p: *Parse, kind: LayoutFieldKind) Allocator.Error!SubRange {
+    const mark = p.scratchMark();
+    defer p.shrinkScratch(mark);
+    const column = p.col(p.tok_i);
+    while (true) {
+        const before = p.tok_i;
+        const docs = p.attachDocs(p.tok_i);
+        switch (kind) {
+            .type => try p.pushScratch(try p.parseLayoutTypeField()),
+            .schema => try p.pushScratch(try p.parseLayoutSchemaField(docs)),
+        }
+        p.assertProgress(before);
+
+        if (p.peek() == .eof or p.lines[p.tok_i] <= p.lines[before]) break;
+        const next_col = p.col(p.tok_i);
+        if (next_col == column) continue;
+        if (p.peek() != .lower_ident or p.peekAt(1) != .colon) break;
+        if (next_col < column) break;
+        try p.reportLayoutAlignment(column, .field_name);
+    }
+    return p.listToRange(p.scratchSince(mark));
+}
+
+fn parseLayoutTypeField(p: *Parse) Allocator.Error!Index {
+    const saved = p.startBlock(.record);
+    defer p.endBlock(saved);
+    const saved_layout = p.in_layout_field;
+    p.in_layout_field = true;
+    defer p.in_layout_field = saved_layout;
+
+    if (p.peek() != .lower_ident) {
+        const bad = try p.unexpected(.error_field, .field_name);
+        p.recover();
+        return bad;
+    }
+    const name = p.next();
+    const colon = try p.expectToken(.colon);
+    const type_expr = if (colon != null and p.atLayoutFieldHeadAfter(colon.?))
+        try p.parseLayoutTypeRecord()
+    else
+        try p.parseType();
+    try p.finishLayoutField();
+    return p.unary(.record_type_field, name, type_expr);
+}
+
+/// Anything left to the right of a field after its body is malformed field
+/// tail. Preserve a later-line field head for the block loop so it can issue
+/// the alignment diagnostic; otherwise recover at the aligned sibling.
+fn finishLayoutField(p: *Parse) Allocator.Error!void {
+    if (p.peek() == .eof or p.atLaterLayoutFieldHead()) return;
+    var item = p.itemAt(.unexpected_token);
+    item.context = .record;
+    item.construct = .field_name;
+    _ = try p.report(item);
+    p.recover();
+}
+
 /// RecordTypeFields := lower_ident ':' Type (',' lower_ident ':' Type)*
 fn parseRecordTypeFields(p: *Parse) Allocator.Error!SubRange {
     const mark = p.scratchMark();
@@ -1619,6 +1799,7 @@ fn parseRecordTypeFields(p: *Parse) Allocator.Error!SubRange {
     while (true) {
         switch (p.peek()) {
             .lower_ident => {
+                _ = p.attachDocs(p.tok_i);
                 const name = p.next();
                 _ = try p.expectToken(.colon);
                 const type_expr = try p.parseType();
@@ -4633,7 +4814,10 @@ test "fuzz: arbitrary bytes never panic and always yield a well-formed tree" {
         "x = \"a ${ b\n",
         "type T = | | A\n",
         "schema X = { a : Int as\n",
+        "type alias X =\n    a :\n        b : Int\n",
+        "schema X =\n    a :\n        b : Int optional\n",
         "schema T tagged \"kind\" of A as \n",
+        "schema T tagged \"kind\" of\n    A as \"a\"\n        x : Int\n    B\n",
         "schema Page a = { items : List a optional nullable }\n",
         "let in in let\n",
         "x = \\ -> \\x\n",
@@ -4664,6 +4848,7 @@ const fragment_pieces = [_][]const u8{
     "import Json.Decode as D exposing (Decoder, string)\n",
     "type T a = A | B a (List a)\n",
     "type alias P = { x : Int, y : Int }\n",
+    "type alias Layout =\n    x : Int\n    nested :\n        y : String\n",
     "g : Int -> Int\n",
     "pub opaque type Q = Q Int\n",
     "foreign h : Int\n",
@@ -4680,8 +4865,10 @@ const fragment_pieces = [_][]const u8{
     "p (Just x) { a } ( b, c ) = -x\n",
     "n xs = List.map (add 1 _) xs\n",
     "schema User = { id : Int as \"user-id\", name : String optional nullable }\n",
+    "schema LayoutUser =\n    id : Int as \"user-id\"\n    nested :\n        name : String optional nullable\n",
     "schema Page item = { items : List item via (convert item) }\n",
     "schema Message tagged \"kind\" of Count Int as \"count\" | Reset\n",
+    "schema LayoutMessage tagged \"kind\" of\n    Count as \"count\"\n        value : Int\n    Reset\n",
     "o f =\n    let\n        x <- f 1\n        y = 2\n    in\n    x + y\n",
 };
 

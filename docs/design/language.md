@@ -128,7 +128,7 @@ Attachment rules, taken from Zig:
 
 | Rule | Detail |
 |---|---|
-| doc blocks | consecutive `--\|` lines form one block, and two runs separated only by blank lines are one block too (blank lines are invisible to attachment, as in Zig). The block must be followed on the next non-blank line by a declaration (§5.3) or by the `pub` that starts one; blank lines between are allowed. |
+| doc blocks | consecutive `--\|` lines form one block, and two runs separated only by blank lines are one block too (blank lines are invisible to attachment, as in Zig). The block must be followed on the next non-blank line by a declaration (§5.3), by the `pub` that starts one, or by a record-type/schema field (§3 and `schema.md` §2); blank lines between are allowed. Field docs attach in both brace and layout spellings. Ordinary record-type field docs remain comments rather than adding semantic AST/BIR payload. |
 | `doc_comment_unattached` | anything else — an import, an ordinary comment, another construct, end of file — and so is an ordinary `--` comment between a doc block and its declaration, which splits the block from its target |
 | `module_doc_not_at_top` | `--!` lines must appear before the first import or declaration; anywhere else is this. Consecutive lines form one block, and a second block after a blank line merges with the first. Ordinary `--` comments and blank lines may appear before, between and after `--!` lines freely — they are trivia and attach to nothing. |
 | spelling | `--\|x` and `--!x` with no space are still doc comments; the formatter inserts the space. `---` (three or more dashes) is an ordinary comment; `--\|` cannot be produced accidentally, so no carve-out exists. |
@@ -252,7 +252,7 @@ TypeAtom    := lower_ident                                       -- type variabl
              | '{' '}'                                           -- empty record
              | '{' RecordTypeFields '}'
              | '{' lower_ident '|' RecordTypeFields '}'          -- extensible record
-RecordTypeFields := lower_ident ':' Type (',' lower_ident ':' Type)*
+RecordTypeFields := DocComment? lower_ident ':' Type (',' DocComment? lower_ident ':' Type)*
                                                                  -- the comma rule, §3 Types
 
 Expr        := 'let' LetBinding+ 'in' Expr

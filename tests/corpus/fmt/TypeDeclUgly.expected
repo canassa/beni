@@ -3,7 +3,12 @@
 -- in a constructor; expected: canonical vertical record type and `= A` /
 -- `| B` layout.
 type alias Config =
-    { host : String, port : Int, user : String, password : String, timeout : Int, verbose : Bool }
+    host : String
+    port : Int
+    user : String
+    password : String
+    timeout : Int
+    verbose : Bool
 
 
 type alias Pair a b =

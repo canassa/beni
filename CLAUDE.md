@@ -47,7 +47,8 @@ plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
 `core/Schema` under the same engine-owned context contract and differential tests.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
-S1 parses declarations, formats them and preserves unresolved schema plans in
+S1 and the layout surface slice parse both brace and aligned declaration bodies,
+format nonempty record bodies and tagged variants as layout, and preserve unresolved schema plans in
 AST/BIR dumps and the frontend cache. Check/build and dumps requiring resolution
 explicitly report `not_implemented` until S2; endpoint types and executable
 schemas are not available yet. The independent queue row 67 checker fix must

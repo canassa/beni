@@ -1,0 +1,9 @@
+schema Event tagged "kind" of
+    Text as "text"
+        -- after open
+        --| payload doc
+        value : String -- after field
+    -- after close
+    -- before as
+    -- after rename
+    Empty

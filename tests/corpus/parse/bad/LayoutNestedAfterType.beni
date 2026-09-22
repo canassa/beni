@@ -1,0 +1,6 @@
+-- A nested block cannot follow an already-started `Maybe` operand. `street`
+-- is geometrically a continuation, but a field head cannot continue a type.
+type alias NestedAfterType =
+    address : Maybe
+        street : String
+    kept : Int

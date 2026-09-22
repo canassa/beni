@@ -18,7 +18,9 @@ pairOver p =
 
 
 pub type alias Handlers msg =
-    { onClick : msg -> msg, onKey : Int, Int -> msg, label : String }
+    onClick : msg -> msg
+    onKey : Int, Int -> msg
+    label : String
 
 
 pub reduce :

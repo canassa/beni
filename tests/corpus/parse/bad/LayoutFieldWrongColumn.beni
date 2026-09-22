@@ -1,0 +1,5 @@
+-- `age` is one column right of the sibling column, so it is diagnosed rather
+-- than silently becoming a sibling or a nested record.
+type alias WrongColumn =
+    name : String
+     age : Int

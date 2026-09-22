@@ -1,0 +1,19 @@
+-- Brace-form oracle for the equivalent layout record body.
+type alias Contact =
+    { --| The display name.
+      name : String
+    , --| The postal address.
+      address :
+          { --| The street.
+            street : String
+          , --| The city.
+            city : String
+          }
+    , --| A saturated greeting function.
+      greet : String, Int -> String
+    , --| A type application split over several lines.
+      result :
+          Result
+              String
+              (List Int)
+    }

@@ -1,0 +1,1 @@
+[{"code":"expected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/LayoutFieldMissingColon.beni","start":{"line":7,"col":9},"end":{"line":7,"col":12}},"title":"EXPECTED TOKEN","message":"I was parsing a record and ran into `Int`, but I was expecting `:` here."}]

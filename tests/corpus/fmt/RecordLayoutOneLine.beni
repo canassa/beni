@@ -1,0 +1,6 @@
+-- One-line declaration records become layout; ordinary constructor payloads
+-- and record values keep their braces.
+type alias Point = { x : Float, y : Float }
+schema User = { name : String }
+type Wrapped = Wrapped { item : Int }
+point = { x = 1, y = 2 }

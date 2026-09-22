@@ -3,23 +3,23 @@
 -- modifiers (schema.md §2).
 --| user docs
 pub schema User =
-    {
-      --| id docs
-      userId : Models.Id via Conversions.userId as "user-id"
-    , -- nickname field
-      --| nickname docs
-      --| second nickname doc
-      nickname : String optional nullable
-    , -- keep alias order
-        aliases : List (Maybe String)
-    } -- after User
+    --| id docs
+    userId : Models.Id via Conversions.userId as "user-id"
+    -- nickname field
+    --| nickname docs
+    --| second nickname doc
+    nickname : String optional nullable
+    -- keep alias order
+    aliases : List (Maybe String) -- after User
 
 
 schema Page item =
-    { items : List item }
+    items : List item
 
 
 pub schema Message tagged "Kind-\${stays literal}" of
-    Text { value : String } as "text"
-    | Count { value : Int } as "count"
-    | Empty
+    Text as "text"
+        value : String
+    Count as "count"
+        value : Int
+    Empty

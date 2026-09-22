@@ -1,0 +1,8 @@
+-- Braces remain when an empty record or outer modifiers cannot be a block.
+schema Fallback =
+    nested : { code : Int } optional
+
+
+schema Tagged tagged "kind" of
+    Explicit as "explicit" {}
+    Payloadless as "payloadless"

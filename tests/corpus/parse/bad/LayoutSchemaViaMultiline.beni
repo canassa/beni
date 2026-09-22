@@ -1,0 +1,13 @@
+-- Brackets set no layout column: the parenthesised `via` atom spans lines.
+-- The malformed tail diagnoses, then recovery retains `kept` and `after`.
+schema Via =
+    broken : String via
+        (Conversions.between
+            0
+            100)
+        nonsense
+    kept : Int
+
+
+after =
+    1

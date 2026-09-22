@@ -1,0 +1,19 @@
+(module
+  (schema_decl Fallback
+    (schema_record
+      (schema_field nested
+        (schema_record
+          (schema_field code
+            (schema_operand Int)))
+        (schema_optional))))
+  (schema_decl Tagged
+    (schema_tagged
+      (string
+        (chunk "kind"))
+      (schema_variant Explicit
+        (schema_record) as
+        (string
+          (chunk "explicit")))
+      (schema_variant Payloadless as
+        (string
+          (chunk "payloadless"))))))

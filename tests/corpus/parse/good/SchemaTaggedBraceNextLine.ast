@@ -1,0 +1,10 @@
+(module
+  (schema_decl X
+    (schema_tagged
+      (string
+        (chunk "x"))
+      (schema_variant First
+        (schema_record
+          (schema_field a
+            (schema_operand Int))))
+      (schema_variant Second))))

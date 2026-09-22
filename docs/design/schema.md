@@ -2,8 +2,8 @@
 
 ## Open decisions for the owner
 
-**Status:** normative. S1 frontend support is implemented; the layout spelling
-is specified in §2/A.5 as the next surface slice before S2. Endpoint typing,
+**Status:** normative. S1 frontend support and the layout declaration spelling
+(§2/A.5) are implemented. Endpoint typing,
 library interpretation and specialised execution await S2–S4. Q3, Q6, Q7, Q9
 and Q11 below remain open; their recommendations guide the affected later slice, not S1.
 Q1, Q2, Q4, Q5, Q8 and Q10 were decided in the owner's review (A.2).
@@ -860,7 +860,8 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-S1 provides the frontend; the independent row 67 checker fix has also landed
+S1 provides the frontend, including §2/A.5’s brace-equivalent layout spelling;
+the independent row 67 checker fix has also landed
 (A.4). S2 still needs Q7 confirmed. Later slices retain the dependencies below.
 Each begins with a fixture that fails on the preceding compiler/library; prove
 red, implement, then reverse the fix in an isolated copy to prove the regression

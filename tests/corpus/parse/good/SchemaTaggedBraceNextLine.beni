@@ -1,0 +1,3 @@
+schema X tagged "x" of First
+    { a : Int }
+    | Second

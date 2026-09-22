@@ -1,0 +1,22 @@
+(module
+  (type_alias Contact
+    (type_record
+      (record_type_field name
+        (type_con String))
+      (record_type_field address
+        (type_record
+          (record_type_field street
+            (type_con String))
+          (record_type_field city
+            (type_con String))))
+      (record_type_field greet
+        (type_fn
+          (type_con String)
+          (type_con Int)
+          (type_con String)))
+      (record_type_field result
+        (type_con Result
+          (type_con String)
+          (type_paren
+            (type_con List
+              (type_con Int))))))))

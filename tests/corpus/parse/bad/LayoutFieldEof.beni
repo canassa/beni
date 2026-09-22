@@ -1,0 +1,4 @@
+-- EOF inside a layout field diagnoses the missing type without swallowing or
+-- panicking. This file intentionally has no token after the colon.
+type alias AtEof =
+    value :

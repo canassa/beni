@@ -1,0 +1,1 @@
+[{"code":"unexpected_token","severity":"error","span":{"file":"tests/corpus/parse/bad/LayoutFieldWrongColumn.beni","start":{"line":5,"col":6},"end":{"line":5,"col":9}},"title":"UNEXPECTED TOKEN","message":"I was parsing a record and ran into `age`. I was expecting a field name."}]
