@@ -1,0 +1,110 @@
+{
+  "resolvedAt": "2026-09-22T12:05:01+02:00",
+  "environment": {
+    "node": "24.19.0",
+    "npm": "11.17.0",
+    "platform": "darwin-arm64"
+  },
+  "tooling": {
+    "typescript": "7.0.2",
+    "ttsc": "0.28.1",
+    "ts-patch": "4.0.1",
+    "esbuild": "0.28.2",
+    "nub": "0.8.3",
+    "deno": "2.6.3"
+  },
+  "subjects": {
+    "ajv": {
+      "version": "8.20.0",
+      "tag": "v8.20.0",
+      "commit": "0fba0b8e649909613cfce0999b149cd08f4a4987",
+      "releasePublishedAt": "2026-04-24T13:24:27Z",
+      "repository": "https://github.com/ajv-validator/ajv.git",
+      "registryMetadata": "npm:ajv@8.20.0",
+      "runtimeEntry": "references/ajv/dist/ajv.js",
+      "runtimeEntrySha256": "edaed56fc546f5551b0d6dc2ff2a9cc25c2d6c83318a086eaa8c3ad0b2479297",
+      "sourceBuild": "pass"
+    },
+    "typia": {
+      "version": "15.0.0",
+      "tag": "v15.0.0",
+      "commit": "78124b0523b4e989aedb64fe4cd4e1fd59c44a2d",
+      "releasePublishedAt": "2026-09-22T08:18:17Z",
+      "repository": "https://github.com/samchon/typia.git",
+      "registryMetadata": "npm:typia@15.0.0",
+      "runtimeEntry": "bench/schema-libraries/.source-build/packages/typia/lib/index.mjs",
+      "runtimeEntrySha256": "ec537ecc2b6fc437902a8572acbe8e523e441c2fe4124355b06df176b4acbe13",
+      "sourceBuild": "pass with the release-native TypeScript 7 / ttsc toolchain"
+    },
+    "typebox": {
+      "version": "1.3.34",
+      "tag": "1.3.34",
+      "commit": "5177875a4854e5cf2c49d0b8f938704ca79205ae",
+      "tagCommitAt": "2026-09-18T09:37:17Z",
+      "repository": "https://github.com/sinclairzx81/typebox.git",
+      "registryMetadata": "npm:typebox@1.3.34",
+      "runtimeEntry": "references/typebox/target/build/build/index.mjs",
+      "runtimeEntrySha256": "26af1f941dfdb2c65928f2a11862bb4a1210652bcc6764135f5a425d7e4aeb72",
+      "sourceBuild": "pass"
+    },
+    "arktype": {
+      "version": "2.2.3",
+      "tag": "arktype@2.2.3",
+      "commit": "03b1f015d9b7c5af5dac2caed1aeedefaf705ab3",
+      "tagCommitAt": "2026-07-07T20:05:59Z",
+      "repository": "https://github.com/arktypeio/arktype.git",
+      "registryMetadata": "npm:arktype@2.2.3",
+      "runtimeEntry": "references/arktype/ark/type/out/index.js",
+      "runtimeEntrySha256": "c111d607deb253f17c29777f01da3e6d0a300f184e3014f95125c0b5caed47d6",
+      "sourceBuild": "pass after the complete topological workspace build"
+    },
+    "fast-json-stringify": {
+      "version": "7.0.1",
+      "tag": "v7.0.1",
+      "commit": "6aa2ed4cc403cf68d7c31ee4dd14724372fea664",
+      "releasePublishedAt": "2026-07-09T20:17:46Z",
+      "repository": "https://github.com/fastify/fast-json-stringify.git",
+      "registryMetadata": "npm:fast-json-stringify@7.0.1",
+      "runtimeEntry": "references/fast-json-stringify/index.js",
+      "runtimeEntrySha256": "eeffb6ded50484f5c375005cec72322c7e560d22b4afdb34346e683512503ec2",
+      "sourceBuild": "no build script; checked-in JavaScript passed the direct-source smoke test"
+    },
+    "zod": {
+      "version": "4.6.5",
+      "tag": "v4.6.5",
+      "commit": "59bbc03e10c636b9eb3c393dfeb552819774ec21",
+      "releasePublishedAt": "2026-09-13T23:25:34Z",
+      "repository": "https://github.com/colinhacks/zod.git",
+      "registryMetadata": "npm:zod@4.6.5",
+      "runtimeEntry": "references/zod/packages/zod/index.js",
+      "runtimeEntrySha256": "32e7efd49a94a765f6d10a1a0a3c02c50c246def17c80c6f0225f85525d98505",
+      "sourceBuild": "pass"
+    },
+    "valibot": {
+      "version": "1.5.0",
+      "tag": "v1.5.0",
+      "commit": "5016198907beb383f5a6d8bbcb4c7f1586d7c6a3",
+      "releasePublishedAt": "2026-09-09T05:44:29Z",
+      "repository": "https://github.com/open-circle/valibot.git",
+      "registryMetadata": "npm:valibot@1.5.0",
+      "runtimeEntry": "references/valibot/library/dist/index.mjs",
+      "runtimeEntrySha256": "cc7a8f7551082a19178f8e553e34fd23bea774113e3bcc4b914abc91f19a5cd0",
+      "sourceBuild": "pass"
+    },
+    "effect": {
+      "version": "4.0.0-rc.116",
+      "tag": null,
+      "commit": "3d59ae6d5f9ff3e52cb6ed4a9f325320580218d5",
+      "commitAt": "2026-09-19T11:14:03Z",
+      "repository": "https://github.com/Effect-TS/effect.git",
+      "registryMetadata": "npm:effect@4.0.0-rc.116",
+      "runtimeEntry": "bench/schema-libraries/.source-build/packages/effect/dist/index.js",
+      "runtimeEntrySha256": "4829ecf5d351de9fff1a87d71d4a333d9f42489164098a114377b65ac91520a9",
+      "sourceBuild": "pass; pre-existing repository pointer retained unchanged"
+    }
+  },
+  "toolingCompatibility": {
+    "typia15": "The supported transform is ttsc 0.28.1 with TypeScript 7.0.2.",
+    "tsPatch": "ts-patch 4.0.1 was queried and retained for provenance, but is the legacy typia 12 path: TS 7 failed inside ts-patch, TS 5.9.3 was rejected by its version guard, and TS 6.0.3 reached typia 15 then failed because the typia 15 transform descriptor is ttsc-only."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "declaration": false,
+    "exactOptionalPropertyTypes": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "generated",
+    "plugins": [
+      {
+        "transform": "typia/lib/transform",
+        "finite": true,
+        "undefined": false
+      }
+    ],
+    "strict": true,
+    "target": "ES2022"
+  },
+  "include": ["input.ts", "flat.ts"]
+}

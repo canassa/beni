@@ -1,0 +1,812 @@
+{
+  "node": "v24.19.0",
+  "source_verification": [
+    {
+      "name": "ajv",
+      "entry": "references/ajv/dist/ajv.js",
+      "sha256": "edaed56fc546f5551b0d6dc2ff2a9cc25c2d6c83318a086eaa8c3ad0b2479297",
+      "passed": true
+    },
+    {
+      "name": "typia",
+      "entry": "bench/schema-libraries/.source-build/packages/typia/lib/index.mjs",
+      "sha256": "ec537ecc2b6fc437902a8572acbe8e523e441c2fe4124355b06df176b4acbe13",
+      "passed": true
+    },
+    {
+      "name": "typebox",
+      "entry": "references/typebox/target/build/build/index.mjs",
+      "sha256": "26af1f941dfdb2c65928f2a11862bb4a1210652bcc6764135f5a425d7e4aeb72",
+      "passed": true
+    },
+    {
+      "name": "arktype",
+      "entry": "references/arktype/ark/type/out/index.js",
+      "sha256": "c111d607deb253f17c29777f01da3e6d0a300f184e3014f95125c0b5caed47d6",
+      "passed": true
+    },
+    {
+      "name": "fast-json-stringify",
+      "entry": "references/fast-json-stringify/index.js",
+      "sha256": "eeffb6ded50484f5c375005cec72322c7e560d22b4afdb34346e683512503ec2",
+      "passed": true
+    },
+    {
+      "name": "zod",
+      "entry": "references/zod/packages/zod/index.js",
+      "sha256": "32e7efd49a94a765f6d10a1a0a3c02c50c246def17c80c6f0225f85525d98505",
+      "passed": true
+    },
+    {
+      "name": "valibot",
+      "entry": "references/valibot/library/dist/index.mjs",
+      "sha256": "cc7a8f7551082a19178f8e553e34fd23bea774113e3bcc4b914abc91f19a5cd0",
+      "passed": true
+    },
+    {
+      "name": "effect",
+      "entry": "bench/schema-libraries/.source-build/packages/effect/dist/index.js",
+      "sha256": "4829ecf5d351de9fff1a87d71d4a333d9f42489164098a114377b65ac91520a9",
+      "passed": true
+    }
+  ],
+  "observations": [
+    {
+      "row": "handwritten",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "string"
+          }
+        ]
+      }
+    },
+    {
+      "row": "handwritten",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "unknown_key"
+          }
+        ]
+      }
+    },
+    {
+      "row": "handwritten",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "unknown_key"
+          }
+        ]
+      }
+    },
+    {
+      "row": "ajv",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": true,
+        "value": "{\"user-id\":2,\"display-name\":\"Person 1 — \\\"quoted\\\"\",\"email\":\"person1@example.test\",\"age\":19,\"active\":false,\"score\":0.125,\"role\":\"editor\"}"
+      }
+    },
+    {
+      "row": "ajv",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "additionalProperties"
+          }
+        ]
+      }
+    },
+    {
+      "row": "ajv",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "additionalProperties"
+          }
+        ]
+      }
+    },
+    {
+      "row": "ajv-standalone",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": true,
+        "value": "{\"user-id\":2,\"display-name\":\"Person 1 — \\\"quoted\\\"\",\"email\":\"person1@example.test\",\"age\":19,\"active\":false,\"score\":0.125,\"role\":\"editor\"}"
+      }
+    },
+    {
+      "row": "ajv-standalone",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "additionalProperties"
+          }
+        ]
+      }
+    },
+    {
+      "row": "ajv-standalone",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "additionalProperties"
+          }
+        ]
+      }
+    },
+    {
+      "row": "typia",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "type"
+          }
+        ]
+      }
+    },
+    {
+      "row": "typia",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "type"
+          }
+        ]
+      }
+    },
+    {
+      "row": "typia",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": true,
+        "value": "{\"user-id\":2,\"display-name\":\"Person 1 — \\\"quoted\\\"\",\"email\":\"person1@example.test\",\"age\":19,\"active\":false,\"score\":0.125,\"role\":\"editor\",\"nickname\":\"nick\\\\1\"}"
+      }
+    },
+    {
+      "row": "typebox-value",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": true,
+        "value": "{\"user-id\":2,\"display-name\":\"Person 1 — \\\"quoted\\\"\",\"email\":\"person1@example.test\",\"age\":19,\"active\":false,\"score\":0.125,\"role\":\"editor\"}"
+      }
+    },
+    {
+      "row": "typebox-value",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "boolean"
+          }
+        ]
+      }
+    },
+    {
+      "row": "typebox-value",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "boolean"
+          }
+        ]
+      }
+    },
+    {
+      "row": "typebox-compiled",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": true,
+        "value": "{\"user-id\":2,\"display-name\":\"Person 1 — \\\"quoted\\\"\",\"email\":\"person1@example.test\",\"age\":19,\"active\":false,\"score\":0.125,\"role\":\"editor\"}"
+      }
+    },
+    {
+      "row": "typebox-compiled",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "boolean"
+          }
+        ]
+      }
+    },
+    {
+      "row": "typebox-compiled",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "boolean"
+          }
+        ]
+      }
+    },
+    {
+      "row": "arktype",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "domain"
+          }
+        ]
+      }
+    },
+    {
+      "row": "arktype",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "predicate"
+          }
+        ]
+      }
+    },
+    {
+      "row": "arktype",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "predicate"
+          }
+        ]
+      }
+    },
+    {
+      "row": "fast-json-stringify+handwritten-guard",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "string"
+          }
+        ]
+      }
+    },
+    {
+      "row": "fast-json-stringify+handwritten-guard",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "unknown_key"
+          }
+        ]
+      }
+    },
+    {
+      "row": "fast-json-stringify+handwritten-guard",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "unknown_key"
+          }
+        ]
+      }
+    },
+    {
+      "row": "zod",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "invalid_type"
+          }
+        ]
+      }
+    },
+    {
+      "row": "zod",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "unrecognized_keys"
+          }
+        ]
+      }
+    },
+    {
+      "row": "zod",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "unrecognized_keys"
+          }
+        ]
+      }
+    },
+    {
+      "row": "zod-jitless",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "invalid_type"
+          }
+        ]
+      }
+    },
+    {
+      "row": "zod-jitless",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "unrecognized_keys"
+          }
+        ]
+      }
+    },
+    {
+      "row": "zod-jitless",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "unrecognized_keys"
+          }
+        ]
+      }
+    },
+    {
+      "row": "valibot",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "string"
+          }
+        ]
+      }
+    },
+    {
+      "row": "valibot",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "strict_object"
+          }
+        ]
+      }
+    },
+    {
+      "row": "valibot",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "strict_object"
+          }
+        ]
+      }
+    },
+    {
+      "row": "effect",
+      "key": "nickname",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "nickname"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "nickname"
+            ],
+            "code": "InvalidType"
+          }
+        ]
+      }
+    },
+    {
+      "row": "effect",
+      "key": "unexpected",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "unexpected"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "unexpected"
+            ],
+            "code": "UnexpectedKey"
+          }
+        ]
+      }
+    },
+    {
+      "row": "effect",
+      "key": "__beni_schema_never__probe",
+      "value": "JavaScript undefined (not a JSON value)",
+      "expected": {
+        "ok": false,
+        "path": [
+          "__beni_schema_never__probe"
+        ]
+      },
+      "actual": {
+        "ok": false,
+        "issues": [
+          {
+            "path": [
+              "__beni_schema_never__probe"
+            ],
+            "code": "UnexpectedKey"
+          }
+        ]
+      }
+    }
+  ]
+}
