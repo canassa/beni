@@ -1892,3 +1892,95 @@ Spec first, red tests second, code third — and the order paid, because writing
   until the owner said to proceed. Worth knowing the diary and the queue are the
   two files where that can bite.
 - **Still not run on Linux**, both rows included.
+
+## 2026-09-22 01:05 CEST — Effect as the default for delegated schema decisions
+
+**What I did**
+
+- Recorded the owner's instruction to decide routine schema semantics autonomously
+  using Effect as the standard. Checked the pinned numeric implementation and
+  recorded safe-integer validation as the baseline in the queue.
+- Distinguished the earlier lossless unquoted-JSON-number recommendation from
+  Effect's actual default: its JSON getter uses JSON.parse. No implementation changed.
+
+**What I learned**
+
+- Effect's isInt uses Number.isSafeInteger. Its exact large-integer support includes
+  BigIntFromString; this does not establish automatic lossless JSON-number parsing.
+- The owner wants decisions on routine behavior made from the reference, with
+  questions reserved for material departures or unresolved language tradeoffs.
+
+## 2026-09-22 01:19 CEST — Schema prototype with Sol implementation agents
+
+**What I did**
+
+- Wrote the bounded prototype plan before implementation and launched three Sol
+  agents for the library, scenarios/effects analysis, and portable boundary/runner.
+  Kept production compiler, core and grammar untouched.
+- Managed integration and independently reviewed the source. Found and had the
+  agents correct nested refinement bypasses, first-error aggregation, unknown-key
+  handling and missing depth checks, with executable regression cases.
+- Independently ran 50 exact assertions through development/release at jobs 1/8
+  under Node 24 and Chrome 153, two whole-diagnostic negative fixtures, output
+  determinism and Beni formatting. All passed. The full project test, blackbox
+  and formatting gates also passed under the pinned dev shell.
+- Captured full results and wrote report 33: release test application 59,394 raw
+  bytes / 14,207 concatenated Brotli; the small decode/encode browser batch had
+  a 1.2 ms median in both modes. No Effect performance parity claim. No commits.
+
+**What I learned**
+
+- Two explicit endpoints make fallible flip and projections implementable without
+  guessing program structure from the wire description. Explicit list schema
+  arguments preserve two wire forms for one program type; recursive payload
+  conversion and separate presence/nullability work in ordinary Beni.
+- A whole-record transformation cannot run after failed structural parsing—also
+  true in Effect. Independent field transforms therefore need field-level schema
+  composition if their errors must be collected together. The prototype records
+  that limit rather than claiming a false parity result.
+- Stored synchronous functions in transparent aliases do not settle directional
+  effects through an opaque nominal schema. Eager first-error evaluation and
+  repeated validation also need a production design, not merely more signatures.
+- The actual mixed-union representation boxes Wire.Null in both output modes;
+  checking emitted behavior resolved a misleading simplified representation rule.
+
+## 2026-09-22 11:28 CEST — Close the schema prototype as dated research
+
+**What I did**
+
+- Pulled first: the default rebase pull refused the existing uncommitted work;
+  `git pull --no-rebase --ff-only` preserved it and reported already up to date.
+  Read the plan, report, complete prototype tree and CLAUDE rules 1–5. Reproduced
+  the original 50/50 and its exact sizes before changing a file.
+- Added three limitation assertions for the tagged reader: fractional payload
+  loses its field path, `maxDepth = 0` is ignored, reordered keys are rejected.
+  Recorded the unenforced context-ownership gap as report 33 §4's fifth bullet;
+  did not change the representation or start its next slice.
+- Added a nested recursive-definition probe. It found omission, not duplication:
+  only the outer definition survives. Pinned the whole two-sided description
+  and recorded this separate defect as queue row 61, without fixing it.
+- Changed the malformed-JSON fixture to assert boundary-owned `invalid JSON`.
+  Proved it red first (only that assertion failed, other 53 passed), then made
+  `Wire.parse` normalize host `SyntaxError` to that message.
+- Ran the full Node 24 / Chrome 153 runner: 54/54, both negative fixtures exact,
+  deterministic dev/release outputs at jobs 1/8. Committed `results.json` exactly
+  as captured. Development 113,935 raw / 17,970 concatenated Brotli; release
+  61,696 / 14,541. All three project gates, Beni formatting and staged whitespace
+  checks passed. No production `src/`, `core/`, `platforms/` or build file changed;
+  even the prototype's `src/Schema.beni` was left untouched during close-out.
+- Committed the evidence as `9a8f903`, separately from this report/plan/queue/diary
+  close-out commit. The artifact is dated research, not a feature or build gate.
+  Left the untracked `.agents` and `AGENTS.md` symlinks out of both commits.
+
+**What I learned**
+
+- A transparent record of arbitrary endpoint functions cannot guarantee context
+  threading. Correct library combinators do not make hand-written endpoints
+  safe: the interpreter or closed construction must own paths and traversal
+  limits. This is a guarantee-shaped reason for the next AST representation.
+- The dedupe premise needed checking: `List.append` is in `object2Endpoint`,
+  whereas `recursiveEndpoint` publishes a singleton and loses nested definitions.
+  No duplicates in this probe does not mean definitions are correct or deduped.
+- Pinning complete, deliberately wrong results documents an experiment's limits;
+  it is not production conformance. A host engine's syntax-error prose is not a
+  stable fixture contract, even when Node and Chrome happen to agree.

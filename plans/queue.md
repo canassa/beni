@@ -282,6 +282,42 @@ K1–K12. **Awaiting the owner.**
 These decisions supersede the conflicting recommendations in report 32 revision 2.
 They settle direction; the revised representation and normative specification are still owed.
 
+**Prototype, 2026-09-22:** the owner commissioned Sol implementation agents with
+the manager planning and validating. The isolated ordinary-Beni prototype is
+complete under `bench/schema-prototype/`: originally 50 exact assertions,
+expanded to 54 at close-out in Node/Chrome, development/release and deterministic
+jobs 1/8 output, plus two whole-diagnostic negative fixtures. It is a dated
+research artifact, not a supported feature or `zig build` gate; `results.json`
+is committed as captured. Evidence commit: **9a8f903**; report/plan/queue/
+diary: **this close-out commit**, titled `📝 close out the schema prototype review`
+(resolve with `git log -1 --format=%h -- plans/schema-prototype.md`; a commit
+cannot embed its own hash). [Report 33](../docs/design/research/33-schema-prototype.md)
+§4's added fifth bullet records the guarantee-shaped finding: custom endpoints
+can bypass caller options, paths and depth with exit 0. Closed construction or
+an interpreter owning context—not only field-schema composition—is needed before
+fixing the representation. The gap is pinned, NOT fixed. Next: a specification
+pass for that representation, H4, and namespaces/elaboration; none starts in this
+close-out. No production compiler/core changes or schema syntax have landed.
+The close-out reran all three project gates successfully; Beni fixture formatting
+and staged whitespace checks also passed.
+
+**Delegation, owner 2026-09-22:** "This is the kind of decision that you can take.
+The guideline is to follow Effect standard." Use the pinned Effect implementation
+as the default for routine schema semantics; resolve those autonomously. Bring the
+owner material departures or unresolved language tradeoffs, not a question for
+each library behavior. Existing explicit owner decisions take precedence.
+
+**Numeric baseline, selected under that guidance:** `Schema.int` validates safe
+integers on both decoding and encoding, matching Effect's `isInt` implementation
+(`Schema.ts:7548`, `Number.isSafeInteger`). Exact large integers need an explicit
+representation/conversion; Effect provides BigInt and BigIntFromString, while the
+Beni counterpart still needs design inside the foreign boundary. Do not describe
+lossless parsing of unquoted JSON numbers as Effect's default: its JSON getter
+uses `JSON.parse` (`SchemaGetter.ts:1225`). Preserving original number text is a
+separate investigation, not an owner-approved requirement from the preceding
+recommendation. General floating-point values and finite/JSON-representable values
+must remain distinct, as Effect's Number and Finite are.
+
 - **Encoding may fail**, returning an ordinary `Result`, including custom transformations.
   This reverses K5's total-writing requirement. Neither direction throws; flipping must
   preserve failures in either direction.
@@ -345,3 +381,9 @@ They settle direction; the revised representation and normative specification ar
 |---|---|---|
 | 59 | **`abuse_test`'s "5 000 empty modules" is flaky on Apple Silicon at `--jobs=1`, against the harness's 60 s `CompilerTimeout`.** Measured on darwin with a warm cache, five runs of `check --jobs=1 src` over 5 000 empty modules: **12.05 s, 26.11 s, 59.16 s, 61.16 s (the failure), 24.29 s**. The default-jobs run beside it is **6.00, 6.00, 6.08 s** — three runs inside 80 ms. The work is identical and deterministic, so the variance is not the compiler: USER cpu time for the same run varies **6.77 s to 16.22 s**, which is the signature of a single-threaded process being scheduled onto an efficiency core rather than a performance core. The timeout was **not** raised — the owner's instruction was to measure before touching it, and the honest reading is that a wall-clock deadline cannot separate "hung" from "on an E-core" on this hardware. Options, none taken: pin the bound to cpu time rather than wall clock; raise it; or drop `--jobs=1` from this particular abuse case and keep the determinism claim in the determinism test, which already runs the corpus at `--jobs=1` and `--jobs=8`. Unrelated to row 58: `check` writes no output, so neither new check runs on this path, and it failed the same way before that work started. Frequency measured: **`test-blackbox` was green on 3 of 4 consecutive full runs** of the finished branch, red on the fourth, always this one case. **Done** `9171e08` (2026-09-22): the bound is now per-run — `world.default_timeout_ms` 60 s everywhere, `world.bulk_timeout_ms` 300 s (five times the worst measurement) for this one case. **A cpu-time bound was the first choice and was withdrawn**: reading a LIVE child's cpu time needs per-pid rusage (`proc_pid_rusage` on macOS, `/proc/<pid>/stat` on Linux), neither is in std, and `getrusage(RUSAGE_CHILDREN)` counts only children already reaped — so it says nothing about the run being bounded. Two non-portable syscalls in a test harness was the worse trade. The numbers and that reasoning live in the harness doc comment |
 | 60 | **The `--release` size figures quoted in `CLAUDE.md` are stale by about 1.9 kB.** It says `bench/corpus` fell *126 436 → 55 593* raw and *21 840 → 15 017* brotli. Measured today on darwin with the binary at `9ce4f65` (row 58 reversed out), the same corpus is **128 369 → 57 486** raw and **22 476 → 15 647** brotli. The −31% claim still holds and nothing about the release optimiser is in question; the absolute numbers were recorded at an earlier commit and core has grown since. Row 58 moved them by a further +46 raw, which is how the gap was noticed. Not corrected in place, because the right fix is one re-measurement of every figure in that paragraph against one binary rather than patching the two that happened to be checked | todo |
+
+### Schema prototype close-out, 2026-09-22 — recorded, NOT fixed
+
+| # | Item | State |
+|---|---|---|
+| 61 | **Nested recursive descriptions omit child definitions.** The close-out's dedupe probe nests recursive `WireNode` as `inner` inside recursive `NestedNode` (whose `children` recurse to `NestedNode`). `Schema.describe` returns only the outer `NestedNode` definition on both sides, leaving `ReferenceShape "WireNode"` unresolved. No duplication occurs in this case: `recursiveEndpoint` replaces the description with a singleton, while the undeduplicated `List.append` belongs to `object2Endpoint`. The full observed result is pinned by `nested recursive description omits child definitions (limitation)`. This is a different defect from custom endpoints dropping context. No fix: definition collection/reference closure belongs to the next representation specification, not this dated artifact. | recorded; future representation slice |

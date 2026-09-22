@@ -25,6 +25,18 @@ external key (supersedes wire-named encoded record fields). See
 The revision-2 signatures, representation and examples below have **not yet been revised**
 to implement those decisions; conflicting recommendations are superseded.
 
+**Owner guidance, 2026-09-22:** routine schema decisions are delegated, with Effect
+as the standard. Verify the pinned implementation and make those decisions without
+repeated owner questions; escalate material departures and unresolved language
+tradeoffs. The queue records the numeric baseline selected under this guidance
+and distinguishes it from the still-unproven lossless JSON-number proposal.
+
+**Executable follow-up, 2026-09-22:** [report 33](33-schema-prototype.md) records
+the isolated two-endpoint prototype, initially 50 assertions (54 after its dated
+close-out), two negative type fixtures, Node/Chrome validation, and the remaining
+representation gaps, including unenforced context ownership in custom endpoints.
+It does not implement schema syntax or make this revision-2 document normative.
+
 **Status:** research. It designs and it argues; it does **not** decide, except where the owner
 already has. §0.4 lists the decisions: four are the owner's and are marked **DECIDED**, the rest
 are open and numbered **K1**–**K16**.
