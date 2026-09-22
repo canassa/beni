@@ -850,7 +850,7 @@ fn parseSchemaDecl(p: *Parse, header: Ast.DeclHeader) Allocator.Error!Index {
     const params = try p.listToRange(p.scratchSince(params_mark));
     const body = if (p.eat(.equal)) |equal|
         if (p.peek() == .l_brace)
-            try p.parseSchemaRecord()
+            try p.parseSchemaValue()
         else if (p.atLayoutFieldHeadAfter(equal))
             try p.parseLayoutSchemaRecord()
         else

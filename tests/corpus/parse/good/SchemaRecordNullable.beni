@@ -1,0 +1,2 @@
+-- A brace schema body accepts a value modifier after its closing brace.
+schema X = { a : Int } nullable

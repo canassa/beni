@@ -1,0 +1,6 @@
+(module
+  (schema_decl X
+    (schema_record
+      (schema_field a
+        (schema_operand Int)))
+    (schema_nullable)))
