@@ -1407,22 +1407,60 @@ const Printer = struct {
         const open = p.tree.nodeMainToken(n);
         const one_line = p.fits(n);
         const col = p.curCol();
-        try p.tok(open);
         if (fields.len == 0) {
+            try p.tok(open);
             try p.tok(open + 1);
             return;
         }
-        try p.space();
         for (fields, 0..) |field_node, i| {
+            const delimiter = if (i == 0) open else p.last(fields[i - 1]) + 1;
             if (i > 0) {
                 if (!one_line) p.newline(col);
-                try p.tok(p.last(fields[i - 1]) + 1); // `,`
-                try p.space();
             }
+            const doc_moved = try p.schemaFieldDelimiter(delimiter, p.first(field_node), col + 2);
+            if (!doc_moved) try p.space();
             try p.schemaField(field_node, if (one_line) indent else col);
         }
         if (one_line) try p.space() else p.newline(col);
         try p.tok(p.last(fields[fields.len - 1]) + 1);
+    }
+
+    /// Print the `{` or leading `,` before a schema field. A field doc written
+    /// after that delimiter belongs to the field, so canonicalise it onto its
+    /// own line at the column an undocumented field would occupy. Plain
+    /// trailing comments retain the generic token layout.
+    fn schemaFieldDelimiter(p: *Printer, delimiter: TokenIndex, field_token: TokenIndex, indent: u32) Io.Writer.Error!bool {
+        const cs = commentsBefore(p.comments, field_token);
+        var has_doc = false;
+        for (cs) |c| {
+            if (c.kind == .doc) {
+                has_doc = true;
+                break;
+            }
+        }
+        if (!has_doc) {
+            try p.tok(delimiter);
+            return false;
+        }
+
+        try p.leading(delimiter, null);
+        try p.raw(p.text(delimiter));
+        p.trailing_done = delimiter;
+        p.leading_done = field_token;
+
+        var prev_line = p.tok_lines[delimiter];
+        for (cs) |c| {
+            const line = p.commentLine(c);
+            if (line == p.tok_lines[delimiter] and c.kind == .plain) {
+                try p.space();
+            } else {
+                p.blankLines(if (line > prev_line + 1) 1 else 0, indent);
+            }
+            try p.writeComment(c);
+            p.newline(indent);
+            prev_line = line;
+        }
+        return true;
     }
 
     fn schemaField(p: *Printer, n: Index, indent: u32) Error!void {

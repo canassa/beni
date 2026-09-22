@@ -3,7 +3,9 @@
 -- modifiers (schema.md §2).
 --| user docs
 pub schema User={--| id docs
- userId:Models.Id   via   Conversions.userId as "user-id",--| nickname docs
+ userId:Models.Id   via   Conversions.userId as "user-id",-- nickname field
+          --| nickname docs
+ --| second nickname doc
  nickname:String optional nullable,-- keep alias order
  aliases:List(Maybe String)}-- after User
 schema Page item={items:List item}
