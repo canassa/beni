@@ -26,11 +26,10 @@ pub type Code
 
 
 pub type alias Issue =
-    { path : List PathSegment
-    , direction : Direction
-    , code : Code
-    , message : String
-    }
+    path : List PathSegment
+    direction : Direction
+    code : Code
+    message : String
 
 
 pub type ErrorMode
@@ -44,18 +43,16 @@ pub type UnknownFields
 
 
 pub type alias Options =
-    { errors : ErrorMode
-    , unknownFields : UnknownFields
-    , maxDepth : Int
-    }
+    errors : ErrorMode
+    unknownFields : UnknownFields
+    maxDepth : Int
 
 
 pub type alias Context =
-    { options : Options
-    , path : List PathSegment
-    , depth : Int
-    , direction : Direction
-    }
+    options : Options
+    path : List PathSegment
+    depth : Int
+    direction : Direction
 
 
 pub type Shape
@@ -73,25 +70,22 @@ pub type Shape
 
 
 pub type alias Description =
-    { root : Shape
-    , definitions : List ( String, Shape )
-    }
+    root : Shape
+    definitions : List ( String, Shape )
 
 
 pub type alias Endpoint a =
-    { description : Description
-    , readValue : Context, Value -> Result (List Issue) a
-    , writeValue : Context, a -> Result (List Issue) Value
-    , validate : Context, a -> Result (List Issue) ()
-    }
+    description : Description
+    readValue : Context, Value -> Result (List Issue) a
+    writeValue : Context, a -> Result (List Issue) Value
+    validate : Context, a -> Result (List Issue) ()
 
 
 pub type alias Schema e a =
-    { encoded : Endpoint e
-    , decoded : Endpoint a
-    , decodeValue : Context, e -> Result (List Issue) a
-    , encodeValue : Context, a -> Result (List Issue) e
-    }
+    encoded : Endpoint e
+    decoded : Endpoint a
+    decodeValue : Context, e -> Result (List Issue) a
+    encodeValue : Context, a -> Result (List Issue) e
 
 
 pub type Presence a
@@ -105,13 +99,12 @@ pub type Nullable a
 
 
 pub type alias Field a =
-    { key : String
-    , shape : Shape
-    , definitions : List ( String, Shape )
-    , readField : Context, List ( String, Value ) -> Result (List Issue) a
-    , writeField : Context, a -> Result (List Issue) (List ( String, Value ))
-    , validateField : Context, a -> Result (List Issue) ()
-    }
+    key : String
+    shape : Shape
+    definitions : List ( String, Shape )
+    readField : Context, List ( String, Value ) -> Result (List Issue) a
+    writeField : Context, a -> Result (List Issue) (List ( String, Value ))
+    validateField : Context, a -> Result (List Issue) ()
 
 
 pub defaultOptions : Options

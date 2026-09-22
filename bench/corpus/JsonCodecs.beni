@@ -8,12 +8,11 @@ import Json.Encode as Encode
 
 
 pub type alias Customer =
-    { id : Int
-    , name : String
-    , email : String
-    , tier : Tier
-    , address : Maybe Address
-    }
+    id : Int
+    name : String
+    email : String
+    tier : Tier
+    address : Maybe Address
 
 
 pub type Tier
@@ -23,28 +22,25 @@ pub type Tier
 
 
 pub type alias Address =
-    { street : String
-    , city : String
-    , postcode : String
-    , country : String
-    }
+    street : String
+    city : String
+    postcode : String
+    country : String
 
 
 pub type alias LineItem =
-    { sku : String
-    , quantity : Int
-    , unitPrice : Float
-    }
+    sku : String
+    quantity : Int
+    unitPrice : Float
 
 
 pub type alias Order =
-    { id : Int
-    , customer : Customer
-    , items : List LineItem
-    , status : Status
-    , notes : Dict String String
-    , placedAt : Int
-    }
+    id : Int
+    customer : Customer
+    items : List LineItem
+    status : Status
+    notes : Dict String String
+    placedAt : Int
 
 
 pub type Status

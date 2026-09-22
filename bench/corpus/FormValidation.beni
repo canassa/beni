@@ -164,25 +164,23 @@ firstOf validators =
 
 
 pub type alias SignUpForm =
-    { username : String
-    , email : String
-    , password : String
-    , passwordConfirm : String
-    , age : String
-    , country : String
-    , newsletter : Bool
-    , terms : Bool
-    }
+    username : String
+    email : String
+    password : String
+    passwordConfirm : String
+    age : String
+    country : String
+    newsletter : Bool
+    terms : Bool
 
 
 pub type alias SignUp =
-    { username : String
-    , email : String
-    , password : String
-    , age : Int
-    , country : String
-    , newsletter : Bool
-    }
+    username : String
+    email : String
+    password : String
+    age : Int
+    country : String
+    newsletter : Bool
 
 
 pub emptyForm : SignUpForm

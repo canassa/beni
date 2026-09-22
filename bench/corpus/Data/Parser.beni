@@ -5,7 +5,7 @@ import Data.Token as T
 
 
 pub type alias Parser a =
-    { run : String -> Result String ( a, String ) }
+    run : String -> Result String ( a, String )
 
 
 pub type Json

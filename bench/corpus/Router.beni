@@ -17,11 +17,10 @@ pub type Route
 
 
 pub type alias UsersQuery =
-    { page : Int
-    , perPage : Int
-    , sort : Sort
-    , filter : Maybe String
-    }
+    page : Int
+    perPage : Int
+    sort : Sort
+    filter : Maybe String
 
 
 pub type Sort
@@ -37,9 +36,8 @@ pub type SettingsTab
 
 
 pub type alias Url =
-    { path : String
-    , query : String
-    }
+    path : String
+    query : String
 
 
 pub fromUrl : Url -> Route

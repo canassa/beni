@@ -7,9 +7,8 @@ import Ui.View exposing (Element, button, column, text)
 
 --| What the counter remembers.
 pub type alias Model =
-    { count : Int
-    , history : List Int
-    }
+    count : Int
+    history : List Int
 
 
 pub type Msg

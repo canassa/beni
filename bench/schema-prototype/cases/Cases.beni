@@ -10,23 +10,25 @@ import Wire exposing (Value, Flag, Number, Text, Array, Object)
 
 
 type alias Pair =
-    { name : String, active : Bool }
+    name : String
+    active : Bool
 
 
 type alias OptionalText =
-    { middle : Presence (Nullable String) }
+    middle : Presence (Nullable String)
 
 
 type alias UserId =
-    { userId : String }
+    userId : String
 
 
 type alias PositiveBox =
-    { count : Int }
+    count : Int
 
 
 type alias StageWire =
-    { name : String, active : String }
+    name : String
+    active : String
 
 
 type WireNode

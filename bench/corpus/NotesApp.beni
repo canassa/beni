@@ -9,26 +9,24 @@ import Set exposing (Set)
 
 
 pub type alias Note =
-    { id : Int
-    , title : String
-    , body : String
-    , tags : Set String
-    , pinned : Bool
-    , updatedAt : Int
-    }
+    id : Int
+    title : String
+    body : String
+    tags : Set String
+    pinned : Bool
+    updatedAt : Int
 
 
 pub type alias Model =
-    { notes : Dict Int Note
-    , nextId : Int
-    , selected : Maybe Int
-    , query : String
-    , activeTag : Maybe String
-    , history : List (Dict Int Note)
-    , future : List (Dict Int Note)
-    , now : Int
-    , status : Status
-    }
+    notes : Dict Int Note
+    nextId : Int
+    selected : Maybe Int
+    query : String
+    activeTag : Maybe String
+    history : List (Dict Int Note)
+    future : List (Dict Int Note)
+    now : Int
+    status : Status
 
 
 pub type Status

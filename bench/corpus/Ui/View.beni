@@ -8,9 +8,8 @@ pub opaque type Element msg
 
 
 pub type alias Style =
-    { padding : Int
-    , bold : Bool
-    }
+    padding : Int
+    bold : Bool
 
 
 defaultStyle : Style

@@ -86,10 +86,9 @@ type Mode
 
 
 type alias Item =
-    { indent : Int
-    , mode : Mode
-    , doc : Doc
-    }
+    indent : Int
+    mode : Mode
+    doc : Doc
 
 
 pub render : Int, Doc -> String
