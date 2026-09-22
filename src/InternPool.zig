@@ -160,6 +160,7 @@ pub const WellKnown = enum(u32) {
     String,
     Char,
     Debug,
+    Schema,
     // Operator functions, in the order of the language.md §6.5 table.
     add,
     sub,
@@ -187,6 +188,12 @@ pub const WellKnown = enum(u32) {
     Bool,
     Order,
     Never,
+    Presence,
+    Nullable,
+    Issue,
+    Options,
+    Conversion,
+    Value,
     // Prelude constructors.
     True,
     False,

@@ -1,0 +1,1 @@
+[{"code":"schema_used_as_value","severity":"error","span":{"file":"tests/corpus/check/bad/SchemaUsedAsValue.beni","start":{"line":6,"col":5},"end":{"line":6,"col":9}},"title":"SCHEMA IS NOT A VALUE","message":"`User` names a schema namespace, not a value.\n\nPass its description with `User.schema ()`."}]

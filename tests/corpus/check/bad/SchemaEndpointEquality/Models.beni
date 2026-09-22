@@ -1,0 +1,21 @@
+import Schema exposing (Conversion)
+
+
+toFunction : Conversion Int (Int -> Int)
+toFunction =
+    Debug.todo "checker-only conversion"
+
+
+pub schema Box tagged "kind" of
+    Wrapped as "wrapped"
+        value : Int via toFunction
+
+
+pub schema A tagged "kind" of
+    HoldsB as "holds-b"
+        nested : B
+
+
+pub schema B tagged "kind" of
+    Function as "function"
+        value : Int via toFunction

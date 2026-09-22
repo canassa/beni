@@ -1,0 +1,2 @@
+schema Loop =
+    next : Loop

@@ -1,0 +1,2 @@
+pub type alias Type =
+    { name : String }

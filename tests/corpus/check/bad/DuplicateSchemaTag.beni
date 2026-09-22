@@ -1,0 +1,5 @@
+schema Duplicate tagged "kind" of
+    First as "same"
+        first : Int
+    Second as "same"
+        second : String

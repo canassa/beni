@@ -3,7 +3,7 @@
 ## Open decisions for the owner
 
 **Status:** normative. S1 frontend support and the layout declaration spelling
-(§2/A.5) are implemented. S2 is specified and in progress; library
+(§2/A.5) and S2 checking (§3–§4/A.6) are implemented; library
 interpretation and specialised execution await S3–S4. Q3, Q6, Q9 and Q11
 below remain open; their recommendations guide the affected later slice, not S1.
 Q1, Q2, Q4, Q5, Q7, Q8 and Q10 are decided (A.2/A.6).
@@ -286,6 +286,11 @@ For an operand with endpoints E and A, the modifiers elaborate as follows:
 | `f : S optional nullable` | Presence (Nullable A) | Presence (Nullable E) | Missing, present null, present value remain distinct |
 | `f : S via c` | a, from c : Conversion b a | e, from S : Schema e b | Decode S then c.from; encode c.to then S; b must unify with c's source |
 
+The source operand `Null` maps both endpoints to `Schema.Nullable Never`; its
+sole inhabited successful value is `Schema.Null`, so `Never` alone is not an
+endpoint. `FiniteFloat` maps both endpoints to `Float`; finite-value validation
+remains an explicit primitive identity in the resolved plan.
+
 Required/non-nullable is the default for primitives which do not themselves
 admit null. Modifiers do not introduce JavaScript undefined or a general Beni
 null. Optionality tests key presence, never truthiness: false, zero and empty
@@ -355,7 +360,7 @@ Generic runners take explicit schema arguments first, then options for With,
 then input. Parse takes JSON String; print returns JSON String. Parse returns `Result (List Issue) User.Type` (with generic parameters where
 applicable); print returns `Result (List Issue) String`. Err payloads are nonempty. Issue records carry path,
 direction, endpoint, structured code, message and optional reported input;
-S2/S3 specify their concrete public field and code declarations before use.
+A.6 specifies their concrete public field and code declarations.
 
 The interface required by `checker.md` §4/§7 contains:
 
@@ -373,8 +378,8 @@ producer's source. Importing codegen may call the producer's specialised
 function without importing its description. A public signature change moves
 the interface hash; a private conversion body edit invalidates its emitted
 body, and any code that specialised it, without fabricating a public type
-change. S2 must specify the added serialized columns/version and sidecar
-layout before writing them; current formats must discard on a version change.
+change. A.6 specifies the added serialized columns, versions and sidecar
+layout; readers discard on a version change.
 Round-trip/cold/cache-hit results must agree, including schema member names.
 
 Types, variants and plan node ids are assigned in source-derived order before
@@ -816,14 +821,12 @@ exit 1 and no build output. Runtime validation failures are **Issue values in
 Result**, not compiler diagnostics, stderr output or process exit codes; their
 fixtures assert complete values.
 
-During S1 only, `check`, `build` and dumps that require resolution (`interface`,
-`raw`, `types`, `graph`, `dispatch`) stop after frontend lowering when a schema
-declaration is present and report existing code `not_implemented` on the schema
-name: “This schema is parsed and preserved, but its endpoint types and members
-are not checked until schema S2.” A file with an existing frontend error keeps
-that diagnostic without adding this refusal. Token/AST/BIR dumps and formatting
-remain available; the temporary wall is removed by S2 rather than becoming a schema
-diagnostic.
+S2 accepts schema programs in `check` and in resolution-requiring dumps.
+`build` still reports `not_implemented` on the schema name from `Emit.run`,
+before entry discovery or any output: “This schema is checked, but its parse
+and print are not generated until schema S4.” This replaces S1's frontend
+refusal; a successful check does not claim executable runners. A frontend or
+checker error keeps its own diagnostic without adding this refusal.
 
 ## 9. What v1 leaves out
 
@@ -873,7 +876,7 @@ for this boundary. Follow the write-tests skill when implementation starts.
 | Slice | Contract | Red fixtures first | Done means |
 |---|---|---|---|
 | S1 — frontend | §2, §8; syntax decisions settled in A.2; independent of row 67 | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
-| S2 — checker | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; remove S1’s whole-input schema exclusion from resolver fuzz; no successful build silently omits runners |
+| S2 — checker (**implemented**, 2026-09-22) | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; remove S1’s whole-input schema exclusion from resolver fuzz; no successful build silently omits runners |
 | S3 — library and description | §1, §4–§5, §9; settle Q3/Q6 and concrete Issue/builders; prove row 69; preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
 | S4 — specialisation | §6 and this section; settle Q9; prove row 69 | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
 | S5 — effects after P2 | §7; resolve Q11 in the effects specification first | All seven EFFECTS.md cases: `run/`, cross-module `.iface`, `check/bad` sync/extraction diagnostics, cancellation/finalisers and both directions | Directional bits and context survive abstraction/import/suspension in compiled and library paths, no conversion after cancellation, exact effect order and ordinary failures, unchanged sync behavior |
@@ -1002,15 +1005,17 @@ The hashed interface grows three columns. `schemas` is sorted by schema-name
 text; `schema_members` is grouped by schema in the fixed order `Type`,
 `Encoded`, `schema`, `parse`, `print`, `parseWith`, `printWith`; and
 `schema_ctors` is grouped by schema, program family before encoded family,
-then variant source order. Schema parameter names occupy a range of
-`SymbolIndex` words in the existing `extra` column, in declaration order.
+then variant source order. `Schema.params_len` is the parameter arity; source
+parameter spellings remain in the unhashed plan's Definition range. Interface
+dumps generate ordinal names as they do for ordinary type rows, so
+alpha-renaming a parameter does not move the interface hash.
 Only public schemas occur in an interface; member and constructor rows retain
 an explicit visibility bit and readers require it to be public.
 
 ```text
-Schema (36 bytes)
+Schema (32 bytes)
   name: SymbolIndex
-  params_start, params_len: u32
+  params_len: u32
   members_start, members_end: u32
   program_ctors_start, program_ctors_end: u32
   encoded_ctors_start, encoded_ctors_end: u32
@@ -1020,7 +1025,7 @@ SchemaMember (16 bytes)
   schema: SchemaIndex
   scheme: SchemeIndex
   kind: u8       Type | Encoded | schema | parse | print | parseWith | printWith
-  arity: u8
+  arity: u8      255 means derive the larger arity from params_len and scheme
   flags: u8      bit 0 visible
   pad: u8        zero
 
@@ -1049,15 +1054,25 @@ it never opens the producer's BIR. Generated full endpoint identities such as
 the fixed member names are pre-interned serially before workers or cache loads
 begin.
 
+The member `arity` byte is a lookup hint for the ordinary case, not a language
+limit. Values through 254 are exact; 255 means the complete arity is derived
+from the schema's `params_len` and the member's scheme. No schema declaration
+is refused merely because its explicit parameter count does not fit in a byte.
+
 The interface byte format becomes version 2 with fourteen columns, in order:
 `values`, `types`, `ctors`, `schemes`, `term_tags`, `term_lhs`, `term_rhs`,
 `extra`, `type_refs`, `schemas`, `schema_members`, `schema_ctors`, `symbols`,
 `strings`. Existing scalar, alignment, symbol-text and little-endian rules are
 unchanged. Readers validate schema/member/constructor ranges, kinds, schemes,
-arity, visibility and parameter-symbol indices. Any failure, including a
+arity and visibility. Any failure, including a
 version mismatch, is a cache miss. The front-end artifact becomes version 3;
 this is the explicit S2 boundary after S1's version 2 unresolved schema graph,
-and its existing `verifySchemaInst` validation remains mandatory.
+and its existing `verifySchemaInst` validation remains mandatory. In S2, `via`
+leaves use ordinary value-reference instructions and declaration references:
+these are real value dependencies for mixed schema/value SCCs and cache keys.
+The BIR dump therefore shows `qualified` and `import_value` for imported
+conversion leaves where S1 showed inert `schema_expr_ref` placeholders. This
+is a permanent dependency representation, not a temporary execution surface.
 
 The unhashed cache sidecar gains one resolved-plan section. The cache entry
 becomes version 2 and its sections are `interface`, `dispatch`, `schema_plan`,
@@ -1072,9 +1087,16 @@ term_tags, term_lhs, term_rhs, type_extra, type_refs,
 literals, literal_bytes, symbols, schema_targets, ctor_targets, strings
 ```
 
-`definitions` is source order. One 32-byte row contains the schema-name
+`definitions` is source order. One 44-byte row contains the schema-name
 `SymbolIndex`, own `Bir.DeclIndex`, parameter `extra` range, root node,
-program and encoded endpoint `TypeRefIndex` values, and the schema-name token.
+program and encoded endpoint `TypeRefIndex` values, canonical generic program
+and encoded endpoint `TermIndex` roots, the schema-name token, one settled
+property byte per endpoint, and two zero pad bytes. Property bits are
+equatable, comparable and has-function in bits 0–2; all other bits are zero.
+The two canonical terms carry the resolved declaration-generic endpoint expansions;
+the dependency digest reads those terms for a private endpoint reachable from
+a public scheme, never an incidental specialized use and never executable
+plan or `via` data.
 Nodes are SoA rows `(tag, lhs, rhs, token)` with this finite meaning:
 
 | Tag | `lhs` | `rhs` |
@@ -1098,7 +1120,10 @@ external: LiteralIndex, payload: NodeIndex.Optional, program_ctor:
 CtorTargetIndex, encoded_ctor: CtorTargetIndex, token: u32 }`. A 16-byte
 conversion row is `{ expr: Bir.Inst.Index, target_term: TermIndex,
 token: u32, flags: u8, pad: [3]u8 }`; flags distinguish an opaque target and
-the presence of opaque checks. A 20-byte check row is `{ endpoint: u8,
+the presence of opaque checks. In S2 an arbitrary `via` expression sets both:
+its target type is known, while its description and any engine-owned target
+checks are opaque, so the plan must not claim their known absence. A 20-byte
+check row is `{ endpoint: u8,
 kind: u8, flags: u8, pad: u8, order: u32, call: Bir.Inst.OptionalIndex,
 metadata: LiteralIndex.Optional, token: u32 }`; its kind distinguishes an
 executable check from the explicit opaque-check marker, and its endpoint and
@@ -1144,6 +1169,10 @@ named types includes public endpoints and any private endpoint reachable from
 a public scheme. Those named-type rows carry the settled equatable, comparable
 and has-function bits and alias expansion exactly as for other types. The
 whole plan and a private conversion body do not enter the digest.
+The property bytes themselves are unhashed sidecar data, restored for every
+definition including private schemas on a cache hit. The existing named-type
+digest rows then hash those restored settled properties exactly as on a cold
+check; the sidecar does not become an additional digest input.
 
 S2 moves the temporary wall rather than removing it. `check` accepts a valid
 schema program and all resolution-requiring dumps see these interface members.

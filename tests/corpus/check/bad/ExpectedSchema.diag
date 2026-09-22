@@ -1,0 +1,1 @@
+[{"code":"expected_schema","severity":"error","span":{"file":"tests/corpus/check/bad/ExpectedSchema.beni","start":{"line":6,"col":13},"end":{"line":6,"col":18}},"title":"EXPECTED A SCHEMA","message":"This field needs a schema, but `Thing` names a type.\n\nName a declared schema, a schema parameter, or one of the built-in schema\noperands."}]

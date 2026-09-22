@@ -1,0 +1,15 @@
+schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
+
+
+badProgram : Tree.Type
+badProgram =
+    Tree.Branch { children = [ 1 ] }
+
+
+badEncoded : Tree.Encoded
+badEncoded =
+    Tree.Encoded.Branch { children = [ 1 ] }

@@ -1,0 +1,1 @@
+[{"code":"unknown_schema_member","severity":"error","span":{"file":"tests/corpus/check/bad/UnknownSchemaValueMember.beni","start":{"line":6,"col":5},"end":{"line":6,"col":17}},"title":"UNKNOWN SCHEMA MEMBER","message":"`User` has no value member called `unknown`.\n\nIts value members are `schema`, `parse`, `print`, `parseWith`, and\n`printWith`."}]

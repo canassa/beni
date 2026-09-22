@@ -1,0 +1,2 @@
+pub schema Models =
+    id : Int

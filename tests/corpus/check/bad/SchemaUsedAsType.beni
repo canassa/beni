@@ -1,0 +1,7 @@
+schema User =
+    id : Int
+
+
+bad : User
+bad =
+    { id = 1 }

@@ -1,0 +1,3 @@
+schema Duplicate tagged "kind" of
+    Count as "count"
+        kind : Int

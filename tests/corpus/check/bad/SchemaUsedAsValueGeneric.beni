@@ -1,0 +1,6 @@
+schema Page item =
+    item : item
+
+
+bad =
+    Page

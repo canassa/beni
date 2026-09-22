@@ -1,0 +1,6 @@
+pub type Thing
+    = Thing
+
+
+schema Wrapper =
+    value : Thing

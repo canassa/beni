@@ -49,6 +49,7 @@ const Tokenizer = @import("lex/Tokenizer.zig");
 const LexDiagnostics = @import("lex/Diagnostics.zig");
 const Parse = @import("parse/Parse.zig");
 const ParseDiagnostics = @import("parse/Diagnostics.zig");
+const Bir = @import("bir/Bir.zig");
 const Lower = @import("bir/Lower.zig");
 const Format = @import("fmt/Format.zig");
 const LowerDiagnostics = @import("bir/Diagnostics.zig");
@@ -68,6 +69,7 @@ const Digest = @import("cache/Digest.zig");
 const entry_bytes = @import("cache/entry_bytes.zig");
 const CacheEntry = @import("cache/Entry.zig");
 const dispatch_bytes = @import("cache/dispatch_bytes.zig");
+const schema_plan_bytes = @import("cache/schema_plan_bytes.zig");
 const iface_bytes = @import("resolve/iface_bytes.zig");
 const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
@@ -894,6 +896,8 @@ fn lowerPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     var message: Io.Writer.Allocating = .init(gpa);
     defer message.deinit();
     for (bir.diagnostics) |item| {
+        if (isLowerNameDiagnostic(item.code) and
+            session.isMalformedSchemaOffset(file, &bir, item.start)) continue;
         message.clearRetainingCapacity();
         try LowerDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1265,8 +1269,6 @@ fn resolveSerial(session: *Session) RunError!void {
     const worker = &session.workers[0];
     defer worker.arena.reset(.retain_capacity);
 
-    if (try session.refuseSchemas()) return;
-
     const graph_token = session.profile.begin();
     session.graph.deinit(gpa);
     session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner);
@@ -1279,7 +1281,7 @@ fn resolveSerial(session: *Session) RunError!void {
     // One `resolve` event per module (checker.md §9), emitted inside, not
     // one for the whole step: the per-module rows are what M4's
     // incrementality tests read.
-    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.artifacts, &session.interner, &session.profile);
+    session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile);
     session.profile.addCounter(.interfaces, session.resolution.interfaces.len);
     try session.reportResolveDiagnostics();
 }
@@ -1289,7 +1291,6 @@ fn resolveSerial(session: *Session) RunError!void {
 /// Bir and the interfaces of its imports.
 fn checkSerial(session: *Session) RunError!void {
     try resolveSerial(session);
-    if (session.hasSchemaDeclarations()) return;
     const gpa = session.gpa;
     const worker = &session.workers[0];
     defer worker.arena.reset(.retain_capacity);
@@ -1387,63 +1388,6 @@ fn checkSerial(session: *Session) RunError!void {
     try session.storeEntries(cached);
 }
 
-/// S1's temporary seam (schema.md §8): lowering and its textual dumps are
-/// complete, while every phase that requires name/type resolution refuses
-/// the declaration once, before it can be silently omitted from an interface.
-fn refuseSchemas(session: *Session) Allocator.Error!bool {
-    var found = false;
-    for (0..session.store.count()) |i| {
-        const file: SourceStore.Index = @enumFromInt(i);
-        const bir = session.artifacts.bir(file);
-        var has_schema = false;
-        for (bir.decls) |decl| {
-            if (decl.kind == .schema) {
-                has_schema = true;
-                break;
-            }
-        }
-        if (!has_schema) continue;
-        var already_bad = false;
-        for (session.workers) |*worker| {
-            for (worker.diagnostics.items) |pending| {
-                if (pending.file == file and pending.diagnostic.severity == .@"error") {
-                    already_bad = true;
-                    break;
-                }
-            }
-            if (already_bad) break;
-        }
-        for (bir.decls) |decl| {
-            if (decl.kind != .schema) continue;
-            found = true;
-            if (already_bad) continue;
-            const start_offset = session.artifacts.tokens(file).items(.start)[decl.name_token];
-            const end_offset = Tokenizer.tokenEnd(
-                session.store.bytes(file),
-                session.artifacts.tokens(file).items(.tag)[decl.name_token],
-                start_offset,
-            );
-            try session.workers[0].report(
-                session,
-                file,
-                .not_implemented,
-                diagnostic.position(session.store.lineStarts(file), start_offset),
-                diagnostic.position(session.store.lineStarts(file), end_offset),
-                "This schema is parsed and preserved, but its endpoint types and members are not checked until schema S2.",
-            );
-        }
-    }
-    return found;
-}
-
-pub fn hasSchemaDeclarations(session: *const Session) bool {
-    for (0..session.store.count()) |i| {
-        const bir = session.artifacts.bir(@enumFromInt(i));
-        for (bir.decls) |decl| if (decl.kind == .schema) return true;
-    }
-    return false;
-}
-
 /// Write one cache entry per module whose check produced nothing to hide
 /// (`fast-compiler.md` §8), serially, after the check.
 ///
@@ -1519,6 +1463,8 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
         &session.interner,
     );
     defer gpa.free(sidecar);
+    const plan = try schema_plan_bytes.write(gpa, &session.checked.plans[m.int()], &session.interner);
+    defer gpa.free(plan);
 
     var rows: std.ArrayList(entry_bytes.Diagnostic) = .empty;
     defer rows.deinit(gpa);
@@ -1540,6 +1486,7 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
         .key = session.keys.of(m),
         .interface = record,
         .dispatch = sidecar,
+        .schema_plan = plan,
         .diagnostics = diagnostics,
     });
 }
@@ -1788,8 +1735,14 @@ fn reportResolveDiagnostics(session: *Session) RunError!void {
     var message: Io.Writer.Allocating = .init(gpa);
     defer message.deinit();
     for (session.resolution.diagnostics) |item| {
-        message.clearRetainingCapacity();
         const file = session.graph.moduleFile(item.module);
+        // A malformed schema body can retain valid-looking references while
+        // the parser recovers to its next field. The syntax diagnostic owns
+        // that declaration: resolving another reference from the same
+        // recovered body would be a cascade. Ordinary declarations keep the
+        // established recovery contract and report all later name errors.
+        if (session.isMalformedSchemaReference(file, item.token)) continue;
+        message.clearRetainingCapacity();
         var cx: ResolveDiagnostics.Context = .{
             .name = session.symbolText(item.name),
             .module = session.symbolText(item.module_name),
@@ -1797,6 +1750,23 @@ fn reportResolveDiagnostics(session: *Session) RunError!void {
             .expected = item.expected,
             .found = item.found,
         };
+        const schema_location = if (item.schema_origin_module) |origin|
+            try session.resolveOriginLocation(gpa, origin, item.schema_origin_token)
+        else
+            null;
+        defer if (schema_location) |location| gpa.free(location);
+        const alias_location = if (item.alias_origin_module) |origin|
+            try session.resolveOriginLocation(gpa, origin, item.alias_origin_token)
+        else
+            null;
+        defer if (alias_location) |location| gpa.free(location);
+        cx.schema_location = schema_location orelse "";
+        cx.alias_location = alias_location orelse "";
+        const available_symbols = session.resolution.available_names[item.available_start..item.available_end];
+        const available = try gpa.alloc([]const u8, available_symbols.len);
+        defer gpa.free(available);
+        for (available_symbols, available) |symbol, *name| name.* = session.interner.slice(symbol);
+        cx.available = available;
         // The qualified uses that follow a failed import get the same hint:
         // the fix is the same flag (frontend.md §1).
         if (item.code == .unknown_module_alias) cx.platform = session.platformOffering(cx.module);
@@ -1804,6 +1774,62 @@ fn reportResolveDiagnostics(session: *Session) RunError!void {
         const start, const end = session.tokenSpan(file, item.token);
         try session.workers[0].report(session, file, item.code, start, end, message.written());
     }
+}
+
+fn isMalformedSchemaReference(session: *const Session, file: SourceStore.Index, token: u32) bool {
+    const bir = session.artifacts.bir(file);
+    const starts = session.artifacts.tokens(file).items(.start);
+    if (token >= starts.len) return false;
+    return session.isMalformedSchemaOffset(file, bir, starts[token]);
+}
+
+fn isMalformedSchemaOffset(session: *const Session, file: SourceStore.Index, bir: *const Bir, offset: u32) bool {
+    const starts = session.artifacts.tokens(file).items(.start);
+
+    for (bir.decls, 0..) |decl, i| {
+        if (decl.kind != .schema or decl.name_token >= starts.len) continue;
+        const start = starts[decl.name_token];
+        const end = if (i + 1 < bir.decls.len and bir.decls[i + 1].name_token < starts.len)
+            starts[bir.decls[i + 1].name_token]
+        else
+            std.math.maxInt(u32);
+        if (offset < start or offset >= end) continue;
+
+        for (session.artifacts.lexDiagnostics(file)) |item| {
+            if (item.start >= start and item.start < end) return true;
+        }
+        for (session.artifacts.ast(file).errors) |item| {
+            if (item.start >= start and item.start < end) return true;
+        }
+        // Modifier duplication is diagnosed while lowering because the AST
+        // deliberately preserves every modifier for formatting and dumps.
+        // It is still a malformed schema declaration for recovery purposes;
+        // only this syntax diagnostic marks the declaration, never one of
+        // the name errors that the marker suppresses.
+        for (bir.diagnostics) |item| {
+            if (item.code == .duplicate_schema_modifier and item.start >= start and item.start < end) return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+fn isLowerNameDiagnostic(code: diagnostic.Code) bool {
+    return switch (code) {
+        .unbound_variable,
+        .unbound_constructor,
+        .unbound_type,
+        .unbound_type_variable,
+        .unknown_module_alias,
+        => true,
+        else => false,
+    };
+}
+
+fn resolveOriginLocation(session: *const Session, gpa: Allocator, module: Graph.Index, token: u32) Allocator.Error![]u8 {
+    const file = session.graph.moduleFile(module);
+    const start, _ = session.tokenSpan(file, token);
+    return std.fmt.allocPrint(gpa, "{s}:{d}:{d}", .{ session.store.path(file), start.line, start.col });
 }
 
 fn symbolText(session: *const Session, s: InternPool.Symbol.Optional) []const u8 {

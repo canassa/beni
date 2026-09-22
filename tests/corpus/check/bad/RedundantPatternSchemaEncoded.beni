@@ -1,0 +1,18 @@
+schema Message tagged "kind" of
+    Text as "text"
+        value : String
+    Count as "count"
+        value : Int
+
+
+bad : Message.Encoded -> Bool
+bad message =
+    case message of
+        Message.Encoded.Text row ->
+            True
+
+        Message.Encoded.Text row ->
+            False
+
+        Message.Encoded.Count row ->
+            True

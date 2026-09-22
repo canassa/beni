@@ -45,9 +45,11 @@ const Artifacts = @import("../Artifacts.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
+const Tokenizer = @import("../lex/Tokenizer.zig");
 const Graph = @import("Graph.zig");
 const Profile = @import("../Profile.zig");
 const Interface = @import("Interface.zig");
+const prelude = @import("../bir/prelude.zig");
 
 const Resolve = @This();
 
@@ -64,6 +66,8 @@ provenance: []Interface.Provenance,
 /// Owned. In the order the modules were resolved, which is topological and
 /// therefore stable; the session sorts them with everything else.
 diagnostics: []const Item,
+/// Constructor names named by `unknown_schema_member` items, back to back.
+available_names: []const Symbol,
 
 /// A resolution diagnostic before it is rendered: which module, which
 /// token, and the names the prose needs (`Diagnostics.Context`).
@@ -77,9 +81,15 @@ pub const Item = struct {
     owner: Symbol.Optional = .none,
     expected: u32 = 0,
     found: u32 = 0,
+    available_start: u32 = 0,
+    available_end: u32 = 0,
+    schema_origin_module: ?Graph.Index = null,
+    schema_origin_token: u32 = 0,
+    alias_origin_module: ?Graph.Index = null,
+    alias_origin_token: u32 = 0,
 };
 
-pub const empty: Resolve = .{ .interfaces = &.{}, .provenance = &.{}, .diagnostics = &.{} };
+pub const empty: Resolve = .{ .interfaces = &.{}, .provenance = &.{}, .diagnostics = &.{}, .available_names = &.{} };
 
 pub fn deinit(r: *Resolve, gpa: Allocator) void {
     for (r.interfaces) |*iface| iface.deinit(gpa);
@@ -87,6 +97,7 @@ pub fn deinit(r: *Resolve, gpa: Allocator) void {
     for (r.provenance) |*p| p.deinit(gpa);
     gpa.free(r.provenance);
     gpa.free(r.diagnostics);
+    gpa.free(r.available_names);
     r.* = undefined;
 }
 
@@ -101,6 +112,7 @@ pub fn run(
     gpa: Allocator,
     scratch: Allocator,
     graph: *const Graph,
+    store: *const SourceStore,
     artifacts: *Artifacts,
     interner: *const InternPool.Global,
     profile: ?*Profile,
@@ -114,16 +126,20 @@ pub fn run(
 
     var diagnostics: std.ArrayList(Item) = .empty;
     errdefer diagnostics.deinit(gpa);
+    var available_names: std.ArrayList(Symbol) = .empty;
+    errdefer available_names.deinit(gpa);
 
     var pass: Pass = .{
         .gpa = gpa,
         .scratch = scratch,
         .graph = graph,
+        .store = store,
         .artifacts = artifacts,
         .interner = interner,
         .interfaces = r.interfaces,
         .provenance = r.provenance,
         .diagnostics = &diagnostics,
+        .available_names = &available_names,
     };
     for (graph.order) |m| {
         const token = if (profile) |p| p.begin() else null;
@@ -131,6 +147,7 @@ pub fn run(
         if (profile) |p| p.end(0, token.?, .resolve, graph.moduleFile(m).int(), 0);
     }
     r.diagnostics = try diagnostics.toOwnedSlice(gpa);
+    r.available_names = try available_names.toOwnedSlice(gpa);
     return r;
 }
 
@@ -138,11 +155,13 @@ const Pass = struct {
     gpa: Allocator,
     scratch: Allocator,
     graph: *const Graph,
+    store: *const SourceStore,
     artifacts: *Artifacts,
     interner: *const InternPool.Global,
     interfaces: []Interface,
     provenance: []Interface.Provenance,
     diagnostics: *std.ArrayList(Item),
+    available_names: *std.ArrayList(Symbol),
 
     /// The module being resolved, and the things every helper needs.
     current: Graph.Index = @enumFromInt(0),
@@ -191,6 +210,7 @@ const Pass = struct {
                 if (iface.findValue(p.interner, name) != null) continue;
                 if (iface.findType(p.interner, name) != null) continue;
                 if (iface.findCtor(p.interner, name) != null) continue;
+                if (iface.findSchema(p.interner, name) != null) continue;
                 // Which namespace the name belongs to is not knowable from
                 // the list, so the "why" is asked of each in turn and the
                 // most specific answer wins.
@@ -209,7 +229,7 @@ const Pass = struct {
     }
 
     fn whyExposedMissing(p: *Pass, target: Graph.Index, name: Symbol) diagnostic.Code {
-        for ([_]Namespace{ .value, .type, .ctor }) |namespace| {
+        for ([_]Namespace{ .value, .type, .ctor, .schema }) |namespace| {
             const code = p.whyMissing(target, name, namespace);
             if (code != .unknown_import_name) return code;
         }
@@ -222,23 +242,35 @@ const Pass = struct {
         const tags = bir.insts.items(.tag);
         const data = bir.insts.items(.data);
         const tokens = bir.insts.items(.main_token);
-        for (tags, data, tokens) |*tag, *d, token| {
-            if (!tag.isUnresolved()) continue;
-            const module_symbol = bir.symbol(@enumFromInt(d.lhs));
-            const name = bir.symbol(@enumFromInt(d.rhs));
-            const namespace: Namespace = switch (tag.*) {
-                .import_value, .qualified => .value,
-                .import_ctor, .qualified_ctor => .ctor,
-                .type_import, .type_qualified => .type,
-                else => unreachable, // isUnresolved covered the rest
-            };
-            const resolved = try p.resolveOne(m, module_symbol, name, namespace, token);
-            tag.* = resolved.tag;
-            d.* = .{ .lhs = resolved.lhs, .rhs = resolved.rhs };
+        for (bir.decls, 0..) |decl, decl_i| {
+            for (tags[decl.inst_start.int()..decl.inst_end.int()], data[decl.inst_start.int()..decl.inst_end.int()], tokens[decl.inst_start.int()..decl.inst_end.int()]) |*tag, *d, token| {
+                if (!tag.isUnresolved()) continue;
+                const resolved = switch (tag.*) {
+                    .import_value, .qualified, .import_ctor, .qualified_ctor, .type_import, .type_qualified => blk: {
+                        const module_symbol = bir.symbol(@enumFromInt(d.lhs));
+                        const name = bir.symbol(@enumFromInt(d.rhs));
+                        const namespace: Namespace = switch (tag.*) {
+                            .import_value, .qualified => .value,
+                            .import_ctor, .qualified_ctor => .ctor,
+                            .type_import, .type_qualified => .type,
+                            else => unreachable,
+                        };
+                        break :blk try p.resolveOrdinaryReference(m, bir, module_symbol, name, namespace, token);
+                    },
+                    .schema_type_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), .type, token),
+                    .schema_value_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), .value, token),
+                    .schema_ctor_ref => try p.resolveSchemaUse(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), .ctor, token),
+                    .schema_ref => try p.resolveSchemaOperand(m, bir, @intCast(decl_i), bir.symbol(@enumFromInt(d.lhs)), token),
+                    .schema_expr_ref => try p.resolveSchemaExpr(m, bir, bir.symbol(@enumFromInt(d.lhs)), token),
+                    else => unreachable,
+                };
+                tag.* = resolved.tag;
+                d.* = .{ .lhs = resolved.lhs, .rhs = resolved.rhs };
+            }
         }
     }
 
-    const Namespace = enum { value, ctor, type };
+    const Namespace = enum { value, ctor, type, schema };
 
     const Resolved = struct {
         tag: Bir.Inst.Tag,
@@ -271,6 +303,81 @@ const Pass = struct {
         return p.resolveImported(m, target, name, namespace, token, module_symbol);
     }
 
+    fn resolveOrdinaryReference(p: *Pass, m: Graph.Index, bir: *const Bir, module_symbol: Symbol, name: Symbol, namespace: Namespace, token: u32) Allocator.Error!Resolved {
+        const target = p.graph.lookup(p.graph.module(m).package, module_symbol);
+        const ordinary_exists = target != null and p.ordinaryExists(target.?, name, namespace);
+        if (p.qualifiedRoot(m, token)) |root| {
+            if (p.schemaFromRoot(m, bir, root)) |schema| if (p.schemaAccessExists(schema, name, namespace)) {
+                var alias_import: ?Bir.Import = null;
+                for (bir.imports) |imp| {
+                    if (bir.symbol(imp.alias) == root and bir.symbol(imp.module) == module_symbol) {
+                        alias_import = imp;
+                        break;
+                    }
+                }
+                if (ordinary_exists and alias_import != null) {
+                    const imp = alias_import.?;
+                    const origin = p.schemaSourceOrigin(m, schema);
+                    try p.report(.{
+                        .code = .schema_name_collision,
+                        .module = m,
+                        .token = token,
+                        .name = root.toOptional(),
+                        .module_name = module_symbol.toOptional(),
+                        .owner = p.schemaOrigin(m, schema).toOptional(),
+                        .schema_origin_module = origin.module,
+                        .schema_origin_token = origin.token,
+                        .alias_origin_module = m,
+                        .alias_origin_token = imp.name_token,
+                    });
+                    return .poison(.schema_name_collision);
+                }
+                if (!ordinary_exists) {
+                    const path: SchemaPath = .{ .source = schema, .schema_name = root, .rest = p.interner.slice(name) };
+                    return switch (namespace) {
+                        .type => p.resolveSchemaTypeMember(m, path, token),
+                        .value => p.resolveSchemaValueMember(m, path, token),
+                        .ctor => p.resolveSchemaConstructor(m, bir, path, token),
+                        .schema => unreachable,
+                    };
+                }
+            };
+        }
+        return p.resolveOne(m, module_symbol, name, namespace, token);
+    }
+
+    fn qualifiedRoot(p: *Pass, m: Graph.Index, token: u32) ?Symbol {
+        const file = p.graph.moduleFile(m);
+        const tokens = p.artifacts.tokens(file);
+        if (token >= tokens.len) return null;
+        const text = Tokenizer.slice(p.store.bytes(file), tokens.items(.tag)[token], tokens.items(.start)[token]);
+        const dot = std.mem.indexOfScalar(u8, text, '.') orelse return null;
+        return p.interner.find(text[0..dot]);
+    }
+
+    fn ordinaryExists(p: *Pass, target: Graph.Index, name: Symbol, namespace: Namespace) bool {
+        const iface = &p.interfaces[target.int()];
+        return switch (namespace) {
+            .value => iface.findValue(p.interner, name) != null,
+            .type => iface.findType(p.interner, name) != null,
+            .ctor => iface.findCtor(p.interner, name) != null,
+            .schema => false,
+        };
+    }
+
+    fn schemaAccessExists(p: *Pass, source: SchemaSource, name: Symbol, namespace: Namespace) bool {
+        const text = p.interner.slice(name);
+        return switch (namespace) {
+            .type => schemaMemberKind(text) == .type or schemaMemberKind(text) == .encoded,
+            .value => if (schemaMemberKind(text)) |kind| kind != .type and kind != .encoded else false,
+            .ctor => switch (source) {
+                .local => |di| localSchemaVariant(p.artifacts.bir(p.graph.moduleFile(p.current)), @enumFromInt(di), name) != null,
+                .external => |ext| p.interfaces[ext.module.int()].findSchemaCtor(ext.schema, .type, p.interner, name) != null,
+            },
+            .schema => false,
+        };
+    }
+
     fn resolveSelf(p: *Pass, m: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
         const bir = p.artifacts.bir(p.graph.moduleFile(m));
         switch (namespace) {
@@ -289,6 +396,18 @@ const Pass = struct {
                     return .{ .tag = .ctor, .lhs = @intCast(i), .rhs = 0 };
                 }
             },
+            .schema => for (bir.decls, 0..) |d, i| {
+                if (d.kind == .schema and bir.symbol(d.name) == name) {
+                    return .{ .tag = .schema_target_top, .lhs = @intCast(i), .rhs = 0 };
+                }
+            },
+        }
+        if (namespace == .type or namespace == .value or namespace == .ctor) {
+            if (p.localSchema(bir, name)) |di| {
+                const code: diagnostic.Code = if (namespace == .type) .schema_used_as_type else .schema_used_as_value;
+                try p.report(.{ .code = code, .module = m, .token = token, .name = name.toOptional(), .expected = bir.decls[di].params });
+                return .poison(code);
+            }
         }
         try p.report(.{
             .code = .unknown_import_name,
@@ -312,6 +431,16 @@ const Pass = struct {
             .ctor => if (iface.findCtor(p.interner, name)) |c| {
                 return .{ .tag = .ext_ctor, .lhs = target.int(), .rhs = @intFromEnum(c) };
             },
+            .schema => if (iface.findSchema(p.interner, name)) |s| {
+                return .{ .tag = .ext_schema_target, .lhs = target.int(), .rhs = @intFromEnum(s) };
+            },
+        }
+        if (namespace == .type or namespace == .value or namespace == .ctor) {
+            if (iface.findSchema(p.interner, name)) |si| {
+                const code: diagnostic.Code = if (namespace == .type) .schema_used_as_type else .schema_used_as_value;
+                try p.report(.{ .code = code, .module = m, .token = token, .name = name.toOptional(), .expected = iface.schemas[@intFromEnum(si)].params_len });
+                return .poison(code);
+            }
         }
         const code = p.whyMissing(target, name, namespace);
         var item: Item = .{
@@ -347,6 +476,9 @@ const Pass = struct {
                 // and `B` (language.md §5.1).
                 return if (owner.is_opaque) .opaque_constructor else .private_name;
             },
+            .schema => for (bir.decls) |d| {
+                if (d.kind == .schema and bir.symbol(d.name) == name) return .private_name;
+            },
         }
         return .unknown_import_name;
     }
@@ -357,6 +489,384 @@ const Pass = struct {
             if (bir.symbol(c.name) == ctor) return bir.symbol(bir.decl(c.decl).name);
         }
         return ctor;
+    }
+
+    const SchemaSource = union(enum) {
+        local: u32,
+        external: struct { module: Graph.Index, schema: Interface.SchemaIndex },
+    };
+
+    const SchemaPath = struct {
+        source: SchemaSource,
+        schema_name: Symbol,
+        rest: []const u8,
+    };
+
+    fn resolveSchemaUse(
+        p: *Pass,
+        m: Graph.Index,
+        bir: *const Bir,
+        _: u32,
+        whole: Symbol,
+        namespace: Namespace,
+        token: u32,
+    ) Allocator.Error!Resolved {
+        const text = p.interner.slice(whole);
+        const first_dot = std.mem.indexOfScalar(u8, text, '.');
+        const root_text = text[0 .. first_dot orelse text.len];
+        const root = p.interner.find(root_text) orelse whole;
+        const root_schema = p.schemaFromRoot(m, bir, root);
+        const alias = p.importForQualified(bir, text);
+
+        const root_valid = if (root_schema) |source|
+            if (first_dot) |dot| p.schemaPathAccessExists(source, text[dot + 1 ..], namespace) else false
+        else
+            false;
+        const alias_valid = if (alias) |imp| p.qualifiedImportAccessExists(m, imp, text, namespace) else false;
+
+        if (root_valid and alias_valid) {
+            const origin = p.schemaSourceOrigin(m, root_schema.?);
+            try p.report(.{
+                .code = .schema_name_collision,
+                .module = m,
+                .token = token,
+                .name = root.toOptional(),
+                .module_name = alias.?.module.toOptional(),
+                .owner = p.schemaOrigin(m, root_schema.?).toOptional(),
+                .schema_origin_module = origin.module,
+                .schema_origin_token = origin.token,
+                .alias_origin_module = m,
+                .alias_origin_token = alias.?.token,
+            });
+            return .poison(.schema_name_collision);
+        }
+
+        var path: ?SchemaPath = null;
+        if (root_schema) |source| {
+            if (root_valid or alias == null or !alias_valid) path = .{
+                .source = source,
+                .schema_name = root,
+                .rest = if (first_dot) |dot| text[dot + 1 ..] else "",
+            };
+        }
+        if (path == null) {
+            if (alias) |imp| {
+                const tail = text[imp.alias_len + 1 ..];
+                const dot = std.mem.indexOfScalar(u8, tail, '.') orelse
+                    return p.resolveOrdinarySchemaFallback(m, bir, text, namespace, token);
+                const schema_text = tail[0..dot];
+                const schema_name = p.interner.find(schema_text) orelse
+                    return p.resolveOrdinarySchemaFallback(m, bir, text, namespace, token);
+                const target = p.graph.lookup(p.graph.module(m).package, imp.module) orelse
+                    return p.resolveOne(m, imp.module, schema_name, .schema, token);
+                if (target == m) {
+                    if (p.localSchema(bir, schema_name)) |di| {
+                        path = .{ .source = .{ .local = di }, .schema_name = schema_name, .rest = tail[dot + 1 ..] };
+                    }
+                } else if (p.interfaces[target.int()].findSchema(p.interner, schema_name)) |si| {
+                    path = .{ .source = .{ .external = .{ .module = target, .schema = si } }, .schema_name = schema_name, .rest = tail[dot + 1 ..] };
+                } else {
+                    const code = p.whyMissing(target, schema_name, .schema);
+                    try p.report(.{ .code = code, .module = m, .token = token, .name = schema_name.toOptional(), .module_name = imp.module.toOptional() });
+                    return .poison(code);
+                }
+            }
+        }
+
+        const found = path orelse return p.resolveOrdinarySchemaFallback(m, bir, text, namespace, token);
+        if (found.rest.len == 0) {
+            const code: diagnostic.Code = if (namespace == .type) .schema_used_as_type else .schema_used_as_value;
+            const arity: u32 = switch (found.source) {
+                .local => |di| bir.decls[di].params,
+                .external => |ext| p.interfaces[ext.module.int()].schemas[@intFromEnum(ext.schema)].params_len,
+            };
+            try p.report(.{ .code = code, .module = m, .token = token, .name = found.schema_name.toOptional(), .expected = arity });
+            return .poison(code);
+        }
+        return switch (namespace) {
+            .type => p.resolveSchemaTypeMember(m, found, token),
+            .value => p.resolveSchemaValueMember(m, found, token),
+            .ctor => p.resolveSchemaConstructor(m, bir, found, token),
+            .schema => unreachable,
+        };
+    }
+
+    const QualifiedImport = struct { module: Symbol, alias_len: usize, token: u32 };
+
+    fn importForQualified(p: *const Pass, bir: *const Bir, text: []const u8) ?QualifiedImport {
+        var best: ?QualifiedImport = null;
+        for (bir.imports) |imp| {
+            const alias = p.interner.slice(bir.symbol(imp.alias));
+            if (alias.len >= text.len or text[alias.len] != '.' or !std.mem.startsWith(u8, text, alias)) continue;
+            if (best == null or alias.len > best.?.alias_len) best = .{ .module = bir.symbol(imp.module), .alias_len = alias.len, .token = imp.name_token };
+        }
+        return best;
+    }
+
+    fn qualifiedImportAccessExists(p: *Pass, m: Graph.Index, imp: QualifiedImport, text: []const u8, namespace: Namespace) bool {
+        const target = p.graph.lookup(p.graph.module(m).package, imp.module) orelse return false;
+        const tail = text[imp.alias_len + 1 ..];
+        const dot = std.mem.indexOfScalar(u8, tail, '.');
+        if (dot == null) {
+            const name = p.interner.find(tail) orelse return false;
+            return p.ordinaryExists(target, name, namespace);
+        }
+        const schema_name = p.interner.find(tail[0..dot.?]) orelse return false;
+        const schema = p.interfaces[target.int()].findSchema(p.interner, schema_name) orelse return false;
+        return p.schemaPathAccessExists(.{ .external = .{ .module = target, .schema = schema } }, tail[dot.? + 1 ..], namespace);
+    }
+
+    fn schemaPathAccessExists(p: *Pass, source: SchemaSource, rest: []const u8, namespace: Namespace) bool {
+        return switch (namespace) {
+            .type => std.mem.eql(u8, rest, "Type") or std.mem.eql(u8, rest, "Encoded"),
+            .value => if (schemaMemberKind(rest)) |kind| kind != .type and kind != .encoded else false,
+            .ctor => blk: {
+                var endpoint: Interface.SchemaCtor.Endpoint = .type;
+                var variant = rest;
+                if (std.mem.startsWith(u8, variant, "Encoded.")) {
+                    endpoint = .encoded;
+                    variant = variant["Encoded.".len..];
+                }
+                if (variant.len == 0 or std.mem.indexOfScalar(u8, variant, '.') != null) break :blk false;
+                const name = p.interner.find(variant) orelse break :blk false;
+                break :blk switch (source) {
+                    .local => |di| localSchemaVariant(p.artifacts.bir(p.graph.moduleFile(p.current)), @enumFromInt(di), name) != null,
+                    .external => |ext| p.interfaces[ext.module.int()].findSchemaCtor(ext.schema, endpoint, p.interner, name) != null,
+                };
+            },
+            .schema => false,
+        };
+    }
+
+    fn schemaFromRoot(p: *Pass, m: Graph.Index, bir: *const Bir, name: Symbol) ?SchemaSource {
+        if (p.localSchema(bir, name)) |di| return .{ .local = di };
+        for (bir.imports) |imp| {
+            for (bir.importExposed(imp)) |e| {
+                if (bir.symbol(e.name) != name) continue;
+                const target = p.graph.lookup(p.graph.module(m).package, bir.symbol(imp.module)) orelse continue;
+                if (p.interfaces[target.int()].findSchema(p.interner, name)) |si| return .{ .external = .{ .module = target, .schema = si } };
+            }
+        }
+        return null;
+    }
+
+    fn schemaOrigin(p: *const Pass, m: Graph.Index, source: SchemaSource) Symbol {
+        return switch (source) {
+            .local => p.graph.moduleName(m),
+            .external => |ext| p.graph.moduleName(ext.module),
+        };
+    }
+
+    const SourceOrigin = struct { module: Graph.Index, token: u32 };
+
+    fn schemaSourceOrigin(p: *const Pass, m: Graph.Index, source: SchemaSource) SourceOrigin {
+        return switch (source) {
+            .local => |di| .{ .module = m, .token = p.artifacts.bir(p.graph.moduleFile(m)).decl(@enumFromInt(di)).name_token },
+            .external => |ext| blk: {
+                const bir = p.artifacts.bir(p.graph.moduleFile(ext.module));
+                const schema_name = p.interfaces[ext.module.int()].schemas[@intFromEnum(ext.schema)].name;
+                const name = p.interfaces[ext.module.int()].symbol(schema_name);
+                for (bir.decls) |decl| if (decl.kind == .schema and bir.symbol(decl.name) == name)
+                    break :blk .{ .module = ext.module, .token = decl.name_token };
+                break :blk .{ .module = ext.module, .token = 0 };
+            },
+        };
+    }
+
+    fn localSchema(_: *Pass, bir: *const Bir, name: Symbol) ?u32 {
+        for (bir.decls, 0..) |d, i| if (d.kind == .schema and bir.symbol(d.name) == name) return @intCast(i);
+        return null;
+    }
+
+    fn resolveOrdinarySchemaFallback(p: *Pass, m: Graph.Index, bir: *const Bir, text: []const u8, namespace: Namespace, token: u32) Allocator.Error!Resolved {
+        if (std.mem.lastIndexOfScalar(u8, text, '.')) |dot| {
+            const module_text = text[0..dot];
+            const name = p.interner.find(text[dot + 1 ..]) orelse unreachable;
+            for (bir.imports) |imp| {
+                if (std.mem.eql(u8, p.interner.slice(bir.symbol(imp.alias)), module_text))
+                    return p.resolveOne(m, bir.symbol(imp.module), name, namespace, token);
+            }
+            for (prelude.modules) |well_known| {
+                if (std.mem.eql(u8, @tagName(well_known), module_text))
+                    return p.resolveOne(m, well_known.symbol(), name, namespace, token);
+            }
+            const module_name = p.interner.find(module_text);
+            try p.report(.{ .code = .unknown_module_alias, .module = m, .token = token, .name = name.toOptional(), .module_name = if (module_name) |n| n.toOptional() else .none });
+            return .poison(.unknown_module_alias);
+        }
+        const name = p.interner.find(text) orelse unreachable;
+        for (bir.imports) |imp| for (bir.importExposed(imp)) |e| {
+            if (bir.symbol(e.name) == name) return p.resolveOne(m, bir.symbol(imp.module), name, namespace, token);
+        };
+        return p.resolveSelf(m, name, namespace, token, name);
+    }
+
+    fn schemaMemberKind(text: []const u8) ?Interface.SchemaMember.Kind {
+        const names = [_][]const u8{ "Type", "Encoded", "schema", "parse", "print", "parseWith", "printWith" };
+        inline for (names, 0..) |name, i| if (std.mem.eql(u8, text, name)) return @enumFromInt(i);
+        return null;
+    }
+
+    fn reportUnknownSchemaMember(p: *Pass, m: Graph.Index, path: SchemaPath, member: []const u8, token: u32, expected_kind: u32) Allocator.Error!Resolved {
+        const available_start: u32 = @intCast(p.available_names.items.len);
+        if (expected_kind == 3) switch (path.source) {
+            .local => |di| {
+                const root = p.artifacts.bir(p.graph.moduleFile(m)).decl(@enumFromInt(di)).schema_body.unwrap();
+                if (root) |r| if (schemaTaggedInst(p.artifacts.bir(p.graph.moduleFile(m)), r)) |tagged| {
+                    const local_bir = p.artifacts.bir(p.graph.moduleFile(m));
+                    const variants = local_bir.extraSlice(local_bir.subRange(@enumFromInt(local_bir.instData(tagged).rhs)), Bir.Inst.Index);
+                    for (variants) |vi| if (local_bir.instTag(vi) == .schema_variant)
+                        try p.available_names.append(p.gpa, local_bir.symbol(@enumFromInt(local_bir.instData(vi).lhs)));
+                };
+            },
+            .external => |ext| {
+                const iface = &p.interfaces[ext.module.int()];
+                const schema = iface.schemas[@intFromEnum(ext.schema)];
+                for (iface.schema_ctors[schema.program_ctors_start..schema.program_ctors_end]) |ctor|
+                    try p.available_names.append(p.gpa, iface.symbol(ctor.name));
+            },
+        };
+        try p.report(.{
+            .code = .unknown_schema_member,
+            .module = m,
+            .token = token,
+            .name = (p.interner.find(member) orelse path.schema_name).toOptional(),
+            .owner = path.schema_name.toOptional(),
+            .expected = expected_kind,
+            .available_start = available_start,
+            .available_end = @intCast(p.available_names.items.len),
+        });
+        return .poison(.unknown_schema_member);
+    }
+
+    fn resolveSchemaTypeMember(p: *Pass, m: Graph.Index, path: SchemaPath, token: u32) Allocator.Error!Resolved {
+        const kind = schemaMemberKind(path.rest) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 1);
+        if (kind != .type and kind != .encoded) return p.reportUnknownSchemaMember(m, path, path.rest, token, 1);
+        return switch (path.source) {
+            .local => |di| .{ .tag = .schema_type_top, .lhs = di, .rhs = @intFromEnum(kind) },
+            .external => |ext| blk: {
+                const name = p.interner.find(path.rest) orelse unreachable;
+                const member = p.interfaces[ext.module.int()].findSchemaMember(ext.schema, p.interner, name, kind) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 1);
+                break :blk .{ .tag = .ext_schema_type, .lhs = ext.module.int(), .rhs = @intFromEnum(member) };
+            },
+        };
+    }
+
+    fn resolveSchemaValueMember(p: *Pass, m: Graph.Index, path: SchemaPath, token: u32) Allocator.Error!Resolved {
+        const kind = schemaMemberKind(path.rest) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 2);
+        if (kind == .type or kind == .encoded) return p.reportUnknownSchemaMember(m, path, path.rest, token, 2);
+        return switch (path.source) {
+            .local => |di| .{ .tag = .schema_member_top, .lhs = di, .rhs = @intFromEnum(kind) },
+            .external => |ext| blk: {
+                const name = p.interner.find(path.rest) orelse unreachable;
+                const member = p.interfaces[ext.module.int()].findSchemaMember(ext.schema, p.interner, name, kind) orelse return p.reportUnknownSchemaMember(m, path, path.rest, token, 2);
+                break :blk .{ .tag = .ext_schema_member, .lhs = ext.module.int(), .rhs = @intFromEnum(member) };
+            },
+        };
+    }
+
+    fn resolveSchemaConstructor(p: *Pass, m: Graph.Index, bir: *const Bir, path: SchemaPath, token: u32) Allocator.Error!Resolved {
+        var endpoint: Interface.SchemaCtor.Endpoint = .type;
+        var variant_text = path.rest;
+        if (std.mem.startsWith(u8, variant_text, "Encoded.")) {
+            endpoint = .encoded;
+            variant_text = variant_text["Encoded.".len..];
+        }
+        if (variant_text.len == 0 or std.mem.indexOfScalar(u8, variant_text, '.') != null)
+            return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
+        const variant_name = p.interner.find(variant_text) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
+        return switch (path.source) {
+            .local => |di| blk: {
+                const variant = localSchemaVariant(bir, @enumFromInt(di), variant_name) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
+                break :blk .{ .tag = .schema_ctor_top, .lhs = di, .rhs = Bir.SchemaCtorRef.pack(.{ .variant = @intCast(variant), .encoded = endpoint == .encoded }) };
+            },
+            .external => |ext| blk: {
+                const ctor = p.interfaces[ext.module.int()].findSchemaCtor(ext.schema, endpoint, p.interner, variant_name) orelse return p.reportUnknownSchemaMember(m, path, variant_text, token, 3);
+                break :blk .{ .tag = .ext_schema_ctor, .lhs = ext.module.int(), .rhs = @intFromEnum(ctor) };
+            },
+        };
+    }
+
+    fn localSchemaVariant(bir: *const Bir, decl_index: Bir.DeclIndex, name: Symbol) ?u32 {
+        const root = bir.decl(decl_index).schema_body.unwrap() orelse return null;
+        var at = root;
+        var budget = bir.insts.len + 1;
+        while (budget > 0) : (budget -= 1) switch (bir.instTag(at)) {
+            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            .schema_tagged => {
+                const variants = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(at).rhs)), Bir.Inst.Index);
+                for (variants, 0..) |vi, i| if (bir.symbol(@enumFromInt(bir.instData(vi).lhs)) == name) return @intCast(i);
+                return null;
+            },
+            else => return null,
+        };
+        return null;
+    }
+
+    fn schemaTaggedInst(bir: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
+        var at = root;
+        var budget = bir.insts.len + 1;
+        while (budget > 0) : (budget -= 1) switch (bir.instTag(at)) {
+            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            .schema_tagged => return at,
+            else => return null,
+        };
+        return null;
+    }
+
+    fn resolveSchemaOperand(p: *Pass, m: Graph.Index, bir: *const Bir, decl_i: u32, name: Symbol, token: u32) Allocator.Error!Resolved {
+        for (bir.declTypeParams(bir.decls[decl_i]), 0..) |param, i| {
+            if (param == name) return .{ .tag = .schema_parameter, .lhs = @intCast(i), .rhs = 0 };
+        }
+        const text = p.interner.slice(name);
+        const primitive: ?Bir.SchemaPrimitive = if (std.mem.eql(u8, text, "String")) .string else if (std.mem.eql(u8, text, "Bool")) .bool else if (std.mem.eql(u8, text, "Int")) .int else if (std.mem.eql(u8, text, "Float")) .float else if (std.mem.eql(u8, text, "FiniteFloat")) .finite_float else if (std.mem.eql(u8, text, "Null")) .null else if (std.mem.eql(u8, text, "Value")) .value else if (std.mem.eql(u8, text, "List")) .list else null;
+        if (primitive) |kind| return .{ .tag = .schema_primitive, .lhs = @intFromEnum(kind), .rhs = 0 };
+        if (p.schemaFromRoot(m, bir, name)) |source| return switch (source) {
+            .local => |di| .{ .tag = .schema_target_top, .lhs = di, .rhs = 0 },
+            .external => |ext| .{ .tag = .ext_schema_target, .lhs = ext.module.int(), .rhs = @intFromEnum(ext.schema) },
+        };
+        if (std.mem.lastIndexOfScalar(u8, text, '.')) |dot| {
+            const module_text = text[0..dot];
+            const schema_name = p.interner.find(text[dot + 1 ..]) orelse name;
+            for (bir.imports) |imp| if (std.mem.eql(u8, p.interner.slice(bir.symbol(imp.alias)), module_text)) {
+                const module_symbol = bir.symbol(imp.module);
+                if (p.graph.lookup(p.graph.module(m).package, module_symbol)) |target| {
+                    if (target != m) {
+                        const iface = &p.interfaces[target.int()];
+                        if (iface.findSchema(p.interner, schema_name) == null and
+                            (iface.findType(p.interner, schema_name) != null or iface.findValue(p.interner, schema_name) != null))
+                        {
+                            try p.report(.{ .code = .expected_schema, .module = m, .token = token, .name = schema_name.toOptional(), .module_name = module_symbol.toOptional(), .found = if (iface.findType(p.interner, schema_name) != null) 1 else 2 });
+                            return .poison(.expected_schema);
+                        }
+                    }
+                }
+                return p.resolveOne(m, module_symbol, schema_name, .schema, token);
+            };
+        }
+        try p.report(.{ .code = .expected_schema, .module = m, .token = token, .name = name.toOptional(), .found = p.ordinaryNameKind(m, bir, name) });
+        return .poison(.expected_schema);
+    }
+
+    fn ordinaryNameKind(p: *Pass, m: Graph.Index, bir: *const Bir, name: Symbol) u32 {
+        for (bir.decls) |d| {
+            if (bir.symbol(d.name) != name or d.kind == .schema) continue;
+            return if (d.kind.isValue()) 2 else 1;
+        }
+        for (bir.imports) |imp| for (bir.importExposed(imp)) |e| {
+            if (bir.symbol(e.name) != name) continue;
+            const target = p.graph.lookup(p.graph.module(m).package, bir.symbol(imp.module)) orelse continue;
+            const iface = &p.interfaces[target.int()];
+            if (iface.findType(p.interner, name) != null) return 1;
+            if (iface.findValue(p.interner, name) != null) return 2;
+        };
+        return 0;
+    }
+
+    fn resolveSchemaExpr(p: *Pass, m: Graph.Index, _: *const Bir, name: Symbol, token: u32) Allocator.Error!Resolved {
+        const text = p.interner.slice(name);
+        const namespace: Namespace = if (text.len > 0 and std.ascii.isUpper(text[0])) .ctor else .value;
+        return p.resolveSelf(m, name, namespace, token, name);
     }
 
     // ---- Type arity ------------------------------------------------------
@@ -384,6 +894,12 @@ const Pass = struct {
                     const iface = &p.interfaces[d.lhs];
                     const t = iface.types[d.rhs];
                     break :blk .{ t.arity, iface.symbol(t.name) };
+                },
+                .schema_type_top => .{ bir.decl(@enumFromInt(d.lhs)).params, bir.symbol(bir.decl(@enumFromInt(d.lhs)).name) },
+                .ext_schema_type => blk: {
+                    const iface = &p.interfaces[d.lhs];
+                    const member = iface.schema_members[d.rhs];
+                    break :blk .{ member.arity, iface.symbol(member.name) };
                 },
                 else => continue,
             };
@@ -740,11 +1256,6 @@ fn checkArbitrary(a: [:0]const u8, b: [:0]const u8) !void {
         .{ .path = "B.beni", .source = b },
     });
     defer p.deinit();
-    // Schema S1 deliberately stops before resolution (schema.md §8), so a
-    // pair containing a schema preserves the other file's unresolved forms
-    // as well. Parser/lowering fuzz owns those inputs until S2 removes the
-    // temporary wall.
-    if (p.session.hasSchemaDeclarations()) return;
     for (0..p.session.store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
         const bir = p.session.artifacts.bir(file);
@@ -763,7 +1274,19 @@ fn checkArbitrary(a: [:0]const u8, b: [:0]const u8) !void {
                     try testing.expect(d.lhs < p.session.resolution.interfaces.len);
                     try testing.expect(d.rhs < p.session.resolution.interfaces[d.lhs].ctors.len);
                 },
-                .top, .type_top => try testing.expect(d.lhs < bir.decls.len),
+                .ext_schema_member, .ext_schema_type => {
+                    try testing.expect(d.lhs < p.session.resolution.interfaces.len);
+                    try testing.expect(d.rhs < p.session.resolution.interfaces[d.lhs].schema_members.len);
+                },
+                .ext_schema_ctor => {
+                    try testing.expect(d.lhs < p.session.resolution.interfaces.len);
+                    try testing.expect(d.rhs < p.session.resolution.interfaces[d.lhs].schema_ctors.len);
+                },
+                .ext_schema_target => {
+                    try testing.expect(d.lhs < p.session.resolution.interfaces.len);
+                    try testing.expect(d.rhs < p.session.resolution.interfaces[d.lhs].schemas.len);
+                },
+                .top, .type_top, .schema_member_top, .schema_type_top, .schema_ctor_top, .schema_target_top => try testing.expect(d.lhs < bir.decls.len),
                 .ctor => try testing.expect(d.lhs < bir.ctors.len),
                 else => {},
             }

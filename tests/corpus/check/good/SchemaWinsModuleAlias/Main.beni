@@ -1,0 +1,9 @@
+-- `User.Type` has one complete meaning: the exposed schema. The real module
+-- alias `User` does not export an ordinary Type member.
+import Models exposing (User)
+import User
+
+
+pub value : User.Type
+value =
+    { id = 1 }

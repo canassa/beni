@@ -1,0 +1,32 @@
+-- Exposing a schema introduces only its namespace root.
+import Models exposing (Message, User)
+import Schema exposing (Missing)
+
+
+pub user : User.Type
+user =
+    { id = 1, email = Missing, nickname = Missing }
+
+
+pub printed =
+    User.print user
+
+
+pub programCase : Message.Type -> Bool
+programCase message =
+    case message of
+        Message.Text row ->
+            True
+
+        Message.Count row ->
+            True
+
+
+pub encodedCase : Message.Encoded -> Bool
+encodedCase message =
+    case message of
+        Message.Encoded.Text row ->
+            True
+
+        Message.Encoded.Count row ->
+            True

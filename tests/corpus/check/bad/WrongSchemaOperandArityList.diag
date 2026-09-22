@@ -1,0 +1,1 @@
+[{"code":"wrong_type_arity","severity":"error","span":{"file":"tests/corpus/check/bad/WrongSchemaOperandArityList.beni","start":{"line":1,"col":14},"end":{"line":1,"col":18}},"title":"WRONG TYPE ARITY","message":"The schema `List` expects 1 argument, but it was given 0.\n"}]

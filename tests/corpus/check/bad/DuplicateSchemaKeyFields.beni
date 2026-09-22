@@ -1,0 +1,3 @@
+schema Duplicate =
+    first : Int as "same"
+    second : String as "same"

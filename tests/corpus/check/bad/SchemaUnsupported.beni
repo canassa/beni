@@ -1,5 +1,0 @@
--- S1 parses and lowers schemas, but checking/building cannot silently omit
--- the namespace, endpoint types or runners that S2--S4 own. Until S2 lands,
--- both commands refuse the declaration with one explicit diagnostic.
-schema User =
-    { name : String }

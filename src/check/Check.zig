@@ -62,8 +62,12 @@ const Solve = @import("Solve.zig");
 const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const SchemaPlan = @import("SchemaPlan.zig");
+const Schema = @import("Schema.zig");
+const SchemaPlanBuild = @import("SchemaPlanBuild.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
+const schema_plan_bytes = @import("../cache/schema_plan_bytes.zig");
 const CacheEntry = @import("../cache/Entry.zig");
 const CacheDir = @import("../cache/Dir.zig");
 const Key = @import("../cache/Key.zig");
@@ -129,9 +133,11 @@ modules: []Module,
 /// on every build, and it holds no `Var` — everything in it is an index or a
 /// name that outlives the store.
 dispatch: []Dispatch,
+/// Resolved immutable schema plan per module.
+plans: []SchemaPlan,
 counters: Solve.Counters,
 
-pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .counters = .{} };
+pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .plans = &.{}, .counters = .{} };
 
 pub fn deinit(check: *Check, gpa: Allocator) void {
     check.types.deinit(gpa);
@@ -146,6 +152,8 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
     gpa.free(check.modules);
     for (check.dispatch) |*d| d.deinit(gpa);
     gpa.free(check.dispatch);
+    for (check.plans) |*plan| plan.deinit(gpa);
+    gpa.free(check.plans);
     check.* = empty;
 }
 
@@ -322,6 +330,9 @@ pub fn run(
     const dispatch = try gpa.alloc(Dispatch, modules);
     @memset(dispatch, .empty);
     check.dispatch = dispatch;
+    const plans = try gpa.alloc(SchemaPlan, modules);
+    @memset(plans, .empty);
+    check.plans = plans;
 
     var kept: std.ArrayList(Module) = .empty;
     // Each kept `Module` owns an arena and three tables. On the OOM path
@@ -366,6 +377,7 @@ pub fn run(
         .counters = counters,
         .kept = if (options.keep_stores) kept.items else &.{},
         .dispatch = dispatch,
+        .plans = plans,
         .coverage = coverage,
     };
     try driver.go(scratch);
@@ -437,13 +449,14 @@ const Driver = struct {
     interfaces: []Interface,
     provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
-    types: *const Types,
+    types: *Types,
     options: Options,
     per_module: []std.ArrayList(Diagnostics.Item),
     counters: []Solve.Counters,
     kept: []Module,
     /// One per module, written by the worker that checked it.
     dispatch: []Dispatch,
+    plans: []SchemaPlan,
     /// What each module's cache key can see move (`reads.zig`). Empty outside
     /// a safe build and on a cyclic project, and then the self-check is off.
     coverage: reads.Coverage = .empty,
@@ -880,6 +893,7 @@ const Driver = struct {
             .types = d.types,
             .interfaces = d.interfaces,
             .dispatch = d.dispatch,
+            .plans = d.plans,
             .interner = d.interner,
         }, m, imports.items);
     }
@@ -918,7 +932,22 @@ const Driver = struct {
 
     fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32) Error!void {
         if (m.int() < d.options.cached.len) {
-            if (d.options.cached[m.int()]) |*loaded| return d.install(m, loaded);
+            if (d.options.cached[m.int()]) |*loaded| {
+                const file = d.graph.moduleFile(m);
+                const bir = d.artifacts.bir(file);
+                const token_count: u32 = @intCast(d.artifacts.tokens(file).len);
+                if (loaded.plan.verifyAgainstBir(bir, token_count) and
+                    loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types))
+                    return d.install(m, loaded);
+                // A malformed or stale sidecar is a cache miss. Release the
+                // entry here because the normal check below replaces it. The
+                // slot and hit bit must agree with that path: `storeEntries`
+                // uses the slot to decide whether the newly checked entry
+                // needs writing, and the cache profile reports the hit bit.
+                loaded.deinit(d.gpa);
+                d.options.cached[m.int()] = null;
+                if (d.options.cutoff) |cutoff| cutoff.hit[m.int()] = false;
+            }
         }
         var one: ModuleCheck = .{
             .gpa = d.gpa,
@@ -938,6 +967,7 @@ const Driver = struct {
             .pattern_budget = d.options.pattern_budget,
             .informational = d.options.informational,
             .dispatch = &d.dispatch[m.int()],
+            .plan = &d.plans[m.int()],
             .roundtrip_interfaces = d.options.roundtrip_interfaces,
             .roundtrip_dispatch = d.options.roundtrip_dispatch,
         };
@@ -974,6 +1004,26 @@ const Driver = struct {
         d.dispatch[m.int()].deinit(gpa);
         d.dispatch[m.int()] = loaded.sidecar.table;
         loaded.sidecar.table = .empty;
+        d.plans[m.int()].deinit(gpa);
+        d.plans[m.int()] = loaded.plan;
+        loaded.plan = .empty;
+
+        for (d.plans[m.int()].definitions) |definition| {
+            d.types.restoreSchemaPropertyBits(
+                d.types.ofSchemaDecl(m, definition.decl, .type),
+                definition.program_properties,
+            );
+            d.types.restoreSchemaPropertyBits(
+                d.types.ofSchemaDecl(m, definition.decl, .encoded),
+                definition.encoded_properties,
+            );
+        }
+
+        // Translate type references before rebuilding the schema endpoint
+        // properties below; every imported term reader indexes this table.
+        const ref_ids = &d.types.ref_ids[m.int()];
+        gpa.free(ref_ids.*);
+        ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
 
         // 3. The diagnostics, replayed. The message is the prose the
         //    checker rendered when it wrote the entry; the SPAN is not
@@ -999,9 +1049,7 @@ const Driver = struct {
         //    recomputed once per module per build — here for the same
         //    reason `fillInterface` does it for a miss, and against
         //    whichever record ended up in the slot.
-        const ref_ids = &d.types.ref_ids[m.int()];
-        gpa.free(ref_ids.*);
-        ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
+        // `ref_ids` was filled above before schema endpoint restoration.
     }
 };
 
@@ -1016,7 +1064,7 @@ const ModuleCheck = struct {
     interfaces: []Interface,
     provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
-    types: *const Types,
+    types: *Types,
     module: Graph.Index,
     diagnostics: *std.ArrayList(Diagnostics.Item),
     quiet: bool,
@@ -1035,6 +1083,7 @@ const ModuleCheck = struct {
     /// This module's slot of the run's dispatch tables (§7.1), filled at
     /// the end of `run`.
     dispatch: *Dispatch = undefined,
+    plan: *SchemaPlan = undefined,
     /// `(rigid variable, method) → evidence index` for this module's
     /// annotated declarations; owned by `run`.
     rigid_evidence: *std.ArrayList(Dispatch.RigidEvidence) = undefined,
@@ -1073,6 +1122,10 @@ const ModuleCheck = struct {
         defer gpa.free(inst_result);
         @memset(inst_result, .none);
 
+        var schemas = try Schema.State.init(mc.scratch.allocator(), store, mc.types, mc.graph, mc.artifacts, mc.interfaces, mc.interner, mc.module, bir);
+        defer schemas.deinit();
+        try schemas.buildAll();
+
         // Empty on every input a person writes; see `Env.too_deep`.
         var too_deep: std.ArrayList(Bir.Inst.Index) = .empty;
         defer too_deep.deinit(mc.scratch.allocator());
@@ -1107,6 +1160,7 @@ const ModuleCheck = struct {
             .local_var = &.{},
             .inst_result = &.{},
             .inst_base = 0,
+            .schemas = &schemas,
         };
         var reporter: Diagnostics.Reporter = .{
             .gpa = gpa,
@@ -1116,6 +1170,16 @@ const ModuleCheck = struct {
             // nothing further (checker.md §4.3); so does one an earlier
             // phase already reported on (see `Options.quiet`).
             .quiet = mc.quiet or mc.graph.isPoisoned(mc.module),
+        };
+        if (!reporter.quiet) for (schemas.recursive_aliases.items) |region| {
+            const message = try gpa.dupe(u8, "This schema endpoint is a structural alias that refers to itself.\n\nUse a tagged schema for recursive data so the endpoint has a nominal constructor.\n");
+            errdefer gpa.free(message);
+            try mc.diagnostics.append(gpa, .{ .code = .recursive_alias, .module = mc.module, .region = region, .message = message });
+        };
+        if (!reporter.quiet) for (schemas.errors.items) |schema_error| {
+            const message = try gpa.dupe(u8, schema_error.message);
+            errdefer gpa.free(message);
+            try mc.diagnostics.append(gpa, .{ .code = schema_error.code, .module = mc.module, .region = schema_error.region, .message = message });
         };
 
         // 1. Every annotated value's scheme, before any body is checked.
@@ -1142,12 +1206,23 @@ const ModuleCheck = struct {
             }
         }
 
-        // 2. Every nominal type this module declares gets `eq` and
-        //    `compare` derived, used or not (A.23) — BEFORE any body is
-        //    checked, so a use site can ask whether a type derives at all
-        //    by looking the entry up rather than re-deciding it. The two
-        //    answers have to agree: a `compare` that derived at a use but
-        //    was excluded here would name a function nobody emits.
+        // 2. Binding groups over the values that still need inferring.
+        const groups = try ModuleCheck.bindingGroups(bir, &env);
+        var counters: Solve.Counters = .{};
+        try schemas.settleProperties(mc.types, gpa);
+        for (0..groups.starts.len - 1) |g| {
+            const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
+            counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
+            for (members) |member| if (bir.decls[member].kind == .schema) {
+                try schemas.settleProperties(mc.types, gpa);
+                break;
+            };
+        }
+
+        // Every nominal type this module declares gets `eq` and `compare`
+        // derived, used or not (A.23). Schema endpoint payloads can depend
+        // on inferred conversions, so their property fixed point must be
+        // settled before the eager rows are finalized.
         {
             var empty_tree: Constrain.Tree = .{};
             var deriver: Solve.Solver = .init(gpa, &env, &empty_tree, &reporter);
@@ -1156,15 +1231,7 @@ const ModuleCheck = struct {
             try deriver.deriveDeclaredTypes();
         }
 
-        // 3. Binding groups over the values that still need inferring.
-        const groups = try ModuleCheck.bindingGroups(bir, &env);
-        var counters: Solve.Counters = .{};
-        for (0..groups.starts.len - 1) |g| {
-            const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
-            counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
-        }
-
-        // 4. Pattern usefulness, over the declarations that solved clean
+        // 3. Pattern usefulness, over the declarations that solved clean
         //    (checker.md §6.6). It runs here rather than inside the group
         //    loop because "did THIS declaration produce a diagnostic?" is
         //    only settled once every group is done.
@@ -1178,10 +1245,20 @@ const ModuleCheck = struct {
 
         // 5. The interface gains its schemes (checker.md §7).
         try mc.fillInterface(&env, &reporter, bir, store, decl_scheme);
-
         // 7. Whatever was too deeply nested to read. Last, so a declaration
         //    that tripped the guard in more than one place is one message.
         try ModuleCheck.reportTooDeep(&env, &reporter);
+
+        mc.plan.deinit(gpa);
+        var schema_plan_ok = !reporter.quiet;
+        for (mc.diagnostics.items) |item| if (item.severity == .@"error") {
+            schema_plan_ok = false;
+            break;
+        };
+        mc.plan.* = if (schema_plan_ok)
+            try SchemaPlanBuild.build(gpa, mc.module, bir, mc.graph, mc.interfaces, mc.interner, mc.types, store, &schemas)
+        else
+            .empty;
 
         // 6. The dispatch table, sorted once (§7.1, §7.3). Built while the
         //    store was alive; nothing in it needs the store afterwards.
@@ -1342,13 +1419,13 @@ const ModuleCheck = struct {
         const edge_start = try scratch.alloc(u32, n + 1);
         for (bir.decls, 0..) |d, i| {
             edge_start[i] = @intCast(edges.items.len);
-            if (!d.kind.isValue()) continue;
+            if (!d.kind.isValue() and d.kind != .schema) continue;
             for (bir.declRefs(d)) |ref| {
-                if (ref.kind != .top_value) continue;
+                if (ref.kind != .top_value and ref.kind != .top_schema) continue;
                 const target = ref.a;
                 if (target >= n or target == i) continue;
                 const t = bir.decls[target];
-                if (!t.kind.isValue() or t.annotation != .none) continue;
+                if ((!t.kind.isValue() and t.kind != .schema) or (t.kind.isValue() and t.annotation != .none)) continue;
                 if (std.mem.indexOfScalar(u32, edges.items[edge_start[i]..], target) != null) continue;
                 try edges.append(scratch, target);
             }
@@ -1401,6 +1478,12 @@ const ModuleCheck = struct {
         for (members, check_vars, member_rigids) |index, *cv, *rigids| {
             const d = bir.decls[index];
             cv.* = .none;
+            if (d.kind == .schema) {
+                const factory = env.schemas.?.member(@intCast(index), .schema) orelse continue;
+                cv.* = factory.toOptional();
+                env.decl_scheme[index] = factory.toOptional();
+                continue;
+            }
             if (!d.kind.isValue() or d.body == .none) continue;
             if (d.annotation != .none) {
                 const mark = generator.storeMark();
@@ -1434,7 +1517,10 @@ const ModuleCheck = struct {
             env.decl_result = .none;
             env.decl = @intCast(index);
             env.decl_rigids = rigids;
-            try parts.append(env.scratch, try generator.decl(@enumFromInt(index), cv));
+            try parts.append(env.scratch, if (d.kind == .schema)
+                try generator.schemaDecl(@enumFromInt(index))
+            else
+                try generator.decl(@enumFromInt(index), cv));
         }
         env.decl_rigids = &.{};
         // After the declare loop, so the list has stopped growing: an
@@ -1524,6 +1610,7 @@ const ModuleCheck = struct {
             &Interface.Provenance.empty;
         var writer: Schemes.Writer = .init(gpa, store, mc.interner, mc.types, @intCast(iface.symbols.len));
         defer writer.deinit();
+        try writer.seedExtra(iface.extra);
         // One frontier for the whole module; `hasError` clears it per call.
         var scan: std.ArrayList(Var) = .empty;
         defer scan.deinit(gpa);
@@ -1572,6 +1659,43 @@ const ModuleCheck = struct {
         }
         gpa.free(@constCast(iface.values));
         iface.values = values;
+
+        const schema_members = try gpa.dupe(Interface.SchemaMember, iface.schema_members);
+        errdefer gpa.free(schema_members);
+        for (schema_members) |*member| {
+            const si = @intFromEnum(member.schema);
+            const decl = prov.schemaDecl(si) orelse {
+                member.scheme = try writer.addError();
+                continue;
+            };
+            const root = env.schemas.?.member(decl.int(), member.kind) orelse {
+                member.scheme = try writer.addError();
+                continue;
+            };
+            member.scheme = try writer.add(root);
+        }
+        gpa.free(@constCast(iface.schema_members));
+        iface.schema_members = schema_members;
+
+        const schema_ctors = try gpa.dupe(Interface.SchemaCtor, iface.schema_ctors);
+        errdefer gpa.free(schema_ctors);
+        for (schema_ctors, 0..) |*ctor, ci| {
+            const si = @intFromEnum(ctor.schema);
+            const decl = prov.schemaDecl(si) orelse {
+                ctor.scheme = try writer.addError();
+                continue;
+            };
+            const schema = iface.schemas[si];
+            const start = if (ctor.endpoint == .type) schema.program_ctors_start else schema.encoded_ctors_start;
+            const ordinal: u32 = @intCast(ci - start);
+            const root = try env.schemas.?.constructor(decl, ctor.endpoint, ordinal) orelse {
+                ctor.scheme = try writer.addError();
+                continue;
+            };
+            ctor.scheme = try writer.add(root);
+        }
+        gpa.free(@constCast(iface.schema_ctors));
+        iface.schema_ctors = schema_ctors;
 
         try mc.fillCtorTerms(env, bir, store, prov, iface, &writer);
         try writer.attach(iface);
@@ -1663,6 +1787,22 @@ const ModuleCheck = struct {
         mc.dispatch.* = loaded.table;
         loaded.table = .empty;
         loaded.deinit(gpa);
+
+        const plan_bytes = try schema_plan_bytes.write(gpa, mc.plan, mc.interner);
+        defer gpa.free(plan_bytes);
+        var loaded_plan = schema_plan_bytes.read(gpa, plan_bytes, mc.interner) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return reporter.internalAlways(@enumFromInt(0), "this module's schema plan did not load back from its own bytes"),
+        };
+        errdefer loaded_plan.deinit(gpa);
+        const canonical = try schema_plan_bytes.write(gpa, &loaded_plan, mc.interner);
+        defer gpa.free(canonical);
+        if (!std.mem.eql(u8, plan_bytes, canonical)) {
+            loaded_plan.deinit(gpa);
+            return reporter.internalAlways(@enumFromInt(0), "this module's schema plan changed across its canonical round trip");
+        }
+        mc.plan.deinit(gpa);
+        mc.plan.* = loaded_plan;
     }
 
     /// Every visible constructor's argument types, as terms (checker.md §7's

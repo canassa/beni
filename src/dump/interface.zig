@@ -15,11 +15,12 @@
 //!   foreign value length
 //! ```
 //!
-//! Types first, then values, each already in name order in the record
-//! itself — the dump prints the tables as they are, which is what makes a
-//! golden here a statement about the record and not about the printer. A
-//! constructor's arity follows its name as `/n` and is omitted for a
-//! nullary one.
+//! Types first, then schema namespaces and values, each already in name
+//! order in the record itself — the dump prints the tables as they are,
+//! which is what makes a golden here a statement about the record and not
+//! about the printer. Schema rows include their complete member and endpoint
+//! constructor tables. A constructor's arity follows its name as `/n` and is
+//! omitted for a nullary one.
 //!
 //! M2b fills in ` : scheme` after each value, rendered by `check/Render.zig`
 //! — the same renderer every diagnostic uses, so these goldens test the
@@ -97,6 +98,36 @@ pub fn write(
             try w.writeByte('\n');
         }
     }
+    for (iface.schemas, 0..) |schema, schema_i| {
+        try w.print("  schema {s}", .{interner.slice(iface.symbol(schema.name))});
+        for (0..schema.params_len) |i| {
+            const param = try Render.generatedName(gpa, @intCast(i));
+            defer gpa.free(param);
+            try w.print(" {s}", .{param});
+        }
+        try w.writeByte('\n');
+        for (iface.schema_members[schema.members_start..schema.members_end]) |member| {
+            try w.print("    {s} {s}", .{
+                if (member.kind == .type or member.kind == .encoded) "type" else "value",
+                interner.slice(iface.symbol(member.name)),
+            });
+            if (member.scheme != .none) {
+                try w.writeAll(" : ");
+                try writeSchemeIndexMaybeExpanded(w, gpa, iface, type_ids, member.scheme, types, interner, member.kind == .type or member.kind == .encoded);
+            }
+            try w.writeByte('\n');
+        }
+        for (iface.schema_ctors) |ctor| {
+            if (@intFromEnum(ctor.schema) != schema_i) continue;
+            try w.print("    ctor {t}.{s}", .{ ctor.endpoint, interner.slice(iface.symbol(ctor.name)) });
+            if (ctor.arity != 0) try w.print("/{d}", .{ctor.arity});
+            if (ctor.scheme != .none) {
+                try w.writeAll(" : ");
+                try writeSchemeIndex(w, gpa, iface, type_ids, ctor.scheme, types, interner);
+            }
+            try w.writeByte('\n');
+        }
+    }
     for (iface.values, 0..) |v, i| {
         try w.writeAll("  ");
         if (v.is_foreign) try w.writeAll("foreign ");
@@ -162,6 +193,42 @@ pub fn writeRaw(
             const info = iface.ctorQuantified(c, @intCast(q));
             try w.print("  param {d} kind={d} equatable={} name={s}\n", .{ q, info.kind, info.equatable, quantifiedName(iface, interner, info) });
         }
+    }
+    for (iface.schemas, 0..) |schema, i| {
+        try w.print("schema {d} {s} params={d}..{d} members={d}..{d} type_ctors={d}..{d} encoded_ctors={d}..{d}\n", .{
+            i,
+            interner.slice(iface.symbol(schema.name)),
+            0,
+            schema.params_len,
+            schema.members_start,
+            schema.members_end,
+            schema.program_ctors_start,
+            schema.program_ctors_end,
+            schema.encoded_ctors_start,
+            schema.encoded_ctors_end,
+        });
+    }
+    for (iface.schema_members, 0..) |member, i| {
+        try w.print("schema_member {d} {s} schema={d} kind={t} arity={d} visible={} scheme={d}\n", .{
+            i,
+            interner.slice(iface.symbol(member.name)),
+            @intFromEnum(member.schema),
+            member.kind,
+            member.arity,
+            member.visible,
+            @intFromEnum(member.scheme),
+        });
+    }
+    for (iface.schema_ctors, 0..) |ctor, i| {
+        try w.print("schema_ctor {d} {s} schema={d} endpoint={t} arity={d} visible={} scheme={d}\n", .{
+            i,
+            interner.slice(iface.symbol(ctor.name)),
+            @intFromEnum(ctor.schema),
+            ctor.endpoint,
+            ctor.arity,
+            ctor.visible,
+            @intFromEnum(ctor.scheme),
+        });
     }
     for (iface.schemes, 0..) |sch, i| {
         try w.print("scheme {d} body={d} quantified={d}\n", .{ i, @intFromEnum(sch.body), sch.quantified_count });
@@ -230,21 +297,56 @@ fn writeScheme(
     types: *const Types,
     interner: *const InternPool.Global,
 ) Error!void {
-    const scheme = iface.valueScheme(value) orelse return w.writeAll("<error>");
+    const index = iface.values[@intFromEnum(value)].scheme;
+    if (index == .none) return w.writeAll("<error>");
+    return writeSchemeIndexMaybeExpanded(w, gpa, iface, type_ids, index, types, interner, false);
+}
+
+fn writeSchemeIndex(
+    w: *std.Io.Writer,
+    gpa: Allocator,
+    iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
+    index: Interface.SchemeIndex,
+    types: *const Types,
+    interner: *const InternPool.Global,
+) Error!void {
+    return writeSchemeIndexMaybeExpanded(w, gpa, iface, type_ids, index, types, interner, false);
+}
+
+fn writeSchemeIndexMaybeExpanded(
+    w: *std.Io.Writer,
+    gpa: Allocator,
+    iface: *const Interface,
+    type_ids: []const TypeStore.TypeId,
+    index: Interface.SchemeIndex,
+    types: *const Types,
+    interner: *const InternPool.Global,
+    expand_outer_alias: bool,
+) Error!void {
+    if (@intFromEnum(index) >= iface.schemes.len) return w.writeAll("<error>");
+    const scheme = iface.schemes[@intFromEnum(index)];
     if (iface.term(scheme.body).tag == .err) return w.writeAll("<error>");
     var store: TypeStore = .init(gpa);
     defer store.deinit();
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
-    const v = try Schemes.instantiate(
+    var v = try Schemes.instantiate(
         iface,
         type_ids,
         &store,
-        @intFromEnum(iface.values[@intFromEnum(value)].scheme),
+        @intFromEnum(index),
         TypeStore.generalized,
         arena.allocator(),
         null,
     );
+    if (expand_outer_alias) {
+        const root = store.find(v);
+        switch (store.content(root)) {
+            .alias => |a| v = a.actual,
+            else => {},
+        }
+    }
     var namer: Render.Namer = .init(gpa);
     defer namer.deinit();
     try Render.writeScheme(w, .{ .store = &store, .types = types, .interner = interner }, &namer, v);

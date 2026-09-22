@@ -1,0 +1,3 @@
+module MixedRecursive
+  value encoded : Tree.Encoded
+  value good : Tree.Type

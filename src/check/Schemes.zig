@@ -141,6 +141,15 @@ pub const Writer = struct {
         w.* = undefined;
     }
 
+    /// Seed the shared `extra` column with the interface skeleton's rows.
+    /// Schema parameter-name ranges are known at resolution time, before
+    /// solved schemes exist; every term range written afterwards therefore
+    /// starts beyond this prefix and both sets of offsets remain valid.
+    pub fn seedExtra(w: *Writer, words: []const u32) Error!void {
+        std.debug.assert(w.extra.items.len == 0);
+        try w.extra.appendSlice(w.gpa, words);
+    }
+
     /// Write `v` as a scheme and return its index. Every variable still at
     /// `TypeStore.generalized` becomes a quantifier; anything else is
     /// concrete by the time a module is done.
@@ -163,6 +172,38 @@ pub const Writer = struct {
             .body = body,
         });
         return @enumFromInt(index);
+    }
+
+    /// Write one solved root for an unhashed schema plan. Unlike `add`, this
+    /// emits no Scheme row or constraint block: the plan retains the canonical
+    /// endpoint/conversion term itself and owns the moved flat tables.
+    pub fn addPlanRoot(w: *Writer, v: Var) Error!Interface.TermIndex {
+        try w.resetMemo();
+        w.too_deep = false;
+        return w.writeVar(v);
+    }
+
+    pub const PlanTerms = struct {
+        terms: std.MultiArrayList(Interface.Term).Slice,
+        extra: []const u32,
+        type_refs: []const Interface.TypeRef,
+        symbols: []const Symbol,
+    };
+
+    /// Move the position-free term tables into a resolved schema plan.
+    pub fn takePlanTerms(w: *Writer) Error!PlanTerms {
+        const extra = try w.extra.toOwnedSlice(w.gpa);
+        errdefer w.gpa.free(extra);
+        const type_refs = try w.type_refs.toOwnedSlice(w.gpa);
+        errdefer w.gpa.free(type_refs);
+        const symbols = try w.symbols.toOwnedSlice(w.gpa);
+        errdefer w.gpa.free(symbols);
+        return .{
+            .terms = w.terms.toOwnedSlice(),
+            .extra = extra,
+            .type_refs = type_refs,
+            .symbols = symbols,
+        };
     }
 
     /// Where a constructor's argument types landed: the `extra` range of
@@ -478,6 +519,7 @@ pub const Writer = struct {
         iface.symbols = combined;
         iface.schemes = try w.schemes.toOwnedSlice(w.gpa);
         iface.terms = w.terms.toOwnedSlice();
+        w.gpa.free(@constCast(iface.extra));
         iface.extra = try w.extra.toOwnedSlice(w.gpa);
         iface.type_refs = try w.type_refs.toOwnedSlice(w.gpa);
     }

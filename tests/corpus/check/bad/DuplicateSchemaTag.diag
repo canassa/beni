@@ -1,0 +1,1 @@
+[{"code":"duplicate_schema_tag","severity":"error","span":{"file":"tests/corpus/check/bad/DuplicateSchemaTag.beni","start":{"line":4,"col":5},"end":{"line":4,"col":11}},"title":"DUPLICATE SCHEMA TAG","message":"Both `First` and `Second` use the tag `same` under discriminator `kind`.\n"}]

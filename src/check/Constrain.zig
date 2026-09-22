@@ -49,6 +49,7 @@ const Interface = @import("../resolve/Interface.zig");
 const reads = @import("reads.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Schema = @import("Schema.zig");
 const Dispatch = @import("Dispatch.zig");
 const Parse = @import("../parse/Parse.zig");
 
@@ -113,6 +114,7 @@ pub const Category = struct {
         ctor_arg,
         /// The value side of a `let pattern = value`.
         destructure,
+        schema_conversion,
     };
 };
 
@@ -313,6 +315,7 @@ pub const Env = struct {
     interfaces: []const Interface,
     module: Graph.Index,
     bir: *const Bir,
+    schemas: ?*Schema.State = null,
     /// Scheme variable per top-level declaration; `.none` for a type or for
     /// a value whose scheme is not built yet.
     decl_scheme: []Var.Optional,
@@ -389,7 +392,13 @@ pub const Env = struct {
     }
 
     pub fn builder(env: *const Env, mode: Types.VarMode, rank: u32) Types.Builder {
-        return .init(env.store, env.types, env.graph, env.artifacts, env.module, env.bir, mode, rank, env.scratch, env.interner);
+        var b: Types.Builder = .init(env.store, env.types, env.graph, env.artifacts, env.module, env.bir, mode, rank, env.scratch, env.interner);
+        if (env.schemas) |schemas| {
+            b.schema_context = schemas;
+            b.schema_lookup = Schema.State.lookupOpaque;
+        }
+        b.interfaces = env.interfaces;
+        return b;
     }
 
     /// Read `annotation` with `b` and note it when the reader ran out of
@@ -564,7 +573,7 @@ pub const Generator = struct {
                 return g.conj(parts.items);
             },
 
-            .local, .top, .ctor, .ext_value, .ext_ctor => {
+            .local, .top, .ctor, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => {
                 // `b` is the instruction the evidence arguments of this
                 // instantiation belong to (static-dispatch-spike.md §7.2):
                 // the enclosing CALL when this reference is its callee —
@@ -1286,6 +1295,17 @@ pub const Generator = struct {
         return g.conj(parts.items);
     }
 
+    pub fn schemaDecl(g: *Generator, index: Bir.DeclIndex) Error!Constraint {
+        const schemas = g.env.schemas orelse return g.true_();
+        var parts: std.ArrayList(Constraint) = .empty;
+        defer parts.deinit(g.env.scratch);
+        for (schemas.vias.items) |via| {
+            if (via.owner != index) continue;
+            try parts.append(g.env.scratch, try g.expr(via.expr, via.expected, .{ .tag = .schema_conversion, .index = @intFromEnum(via.field) }));
+        }
+        return g.conj(parts.items);
+    }
+
     /// Everything the generator allocated at the current rank, for the
     /// caller's `let`.
     pub fn poolItems(g: *const Generator) []const Var {
@@ -1580,6 +1600,19 @@ fn pushChildren(env: *Env, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.
         .schema_optional,
         .schema_nullable,
         .schema_expr_ref,
+        .schema_type_ref,
+        .schema_value_ref,
+        .schema_ctor_ref,
+        .schema_member_top,
+        .ext_schema_member,
+        .schema_ctor_top,
+        .ext_schema_ctor,
+        .schema_type_top,
+        .ext_schema_type,
+        .schema_parameter,
+        .schema_primitive,
+        .schema_target_top,
+        .ext_schema_target,
         .@"error",
         => {},
     }

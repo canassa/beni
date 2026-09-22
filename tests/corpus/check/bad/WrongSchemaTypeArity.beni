@@ -1,0 +1,7 @@
+schema Page item =
+    item : item
+
+
+bad : Page.Type
+bad =
+    { item = 1 }

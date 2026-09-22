@@ -5379,7 +5379,7 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
     }}), discriminator.diagnostics);
 }
 
-test "unsupported schemas refuse every checked dump and build without JavaScript" {
+test "schemas check and dump, while emit refuses before entry discovery and writes nothing" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -5389,7 +5389,7 @@ test "unsupported schemas refuse every checked dump and build without JavaScript
         \\import Node exposing (Program)
         \\
         \\
-        \\schema User =
+        \\pub schema User =
         \\    { name : String }
         \\
         \\
@@ -5398,38 +5398,65 @@ test "unsupported schemas refuse every checked dump and build without JavaScript
         \\    Node.printLines []
         \\
     );
-    const expected = @as([]const diagnostic.Diagnostic, &.{.{
+    try w.write("NoMain.beni",
+        \\schema Spare =
+        \\    value : Int
+        \\
+    );
+    const main_expected = @as([]const diagnostic.Diagnostic, &.{.{
         .code = .not_implemented,
         .severity = .@"error",
-        .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 8 }, .end = .{ .line = 4, .col = 12 } },
+        .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 12 }, .end = .{ .line = 4, .col = 16 } },
         .title = "NOT IMPLEMENTED YET",
-        .message = "This schema is parsed and preserved, but its endpoint types and members are not\nchecked until schema S2.",
+        .message = "This schema is checked, but its parse and print are not generated until schema\nS4.",
+    }});
+    const no_main_expected = @as([]const diagnostic.Diagnostic, &.{.{
+        .code = .not_implemented,
+        .severity = .@"error",
+        .span = .{ .file = "NoMain.beni", .start = .{ .line = 1, .col = 8 }, .end = .{ .line = 1, .col = 13 } },
+        .title = "NOT IMPLEMENTED YET",
+        .message = "This schema is checked, but its parse and print are not generated until schema\nS4.",
     }});
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    var results: [9]world.Result = undefined;
-    inline for (.{ "interface", "raw", "types", "graph", "dispatch" }, 0..) |stage, i| {
-        results[i] = try w.run(&.{ "dump", "--stage=" ++ stage, "Main.beni" });
+    var checked: [7]world.Result = undefined;
+    checked[0] = try w.run(&.{ "check", "--platform=node", "--jobs=1", "--no-cache", "Main.beni" });
+    checked[1] = try w.run(&.{ "check", "--platform=node", "--jobs=8", "--no-cache", "--roundtrip-interfaces", "Main.beni" });
+    inline for (.{ "interface", "raw", "types", "graph", "dispatch" }, 2..) |stage, i| {
+        checked[i] = try w.run(&.{ "dump", "--stage=" ++ stage, "--platform=node", "Main.beni" });
     }
-    results[5] = try w.run(&.{ "build", "--platform=node", "--out=out1", "--jobs=1", "--no-cache", "Main.beni" });
-    results[6] = try w.run(&.{ "build", "--platform=node", "--out=out2", "--jobs=8", "--no-cache", "--roundtrip-frontend", "Main.beni" });
-    results[7] = try w.run(&.{ "build", "--platform=node", "--out=out3", "--jobs=1", "--cache-dir=cache", "Main.beni" });
-    results[8] = try w.run(&.{ "build", "--platform=node", "--out=out4", "--jobs=8", "--cache-dir=cache", "Main.beni" });
+    var builds: [5]world.Result = undefined;
+    builds[0] = try w.run(&.{ "build", "--platform=node", "--out=out1", "--jobs=1", "--no-cache", "Main.beni" });
+    builds[1] = try w.run(&.{ "build", "--platform=node", "--out=out2", "--jobs=8", "--no-cache", "--roundtrip-frontend", "--roundtrip-interfaces", "Main.beni" });
+    builds[2] = try w.run(&.{ "build", "--platform=node", "--out=out3", "--jobs=1", "--cache-dir=cache", "Main.beni" });
+    builds[3] = try w.run(&.{ "build", "--platform=node", "--out=out4", "--jobs=8", "--cache-dir=cache", "Main.beni" });
+    builds[4] = try w.run(&.{ "build", "--platform=node", "--out=out5", "--jobs=1", "--no-cache", "NoMain.beni" });
+    const library = try w.run(&.{ "build", "--platform=node", "--library", "--out=out6", "--jobs=8", "--no-cache", "NoMain.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    for (results) |r| {
+    for (checked) |r| {
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+        try testing.expectEqualStrings("", r.stderr);
+    }
+    try testing.expect(std.mem.indexOf(u8, checked[2].stdout, "schema User") != null);
+    for (builds[0..4]) |r| {
         try testing.expectEqual(@as(u8, 1), r.exit_code);
         try testing.expectEqualStrings("", r.stdout);
-        try testing.expectEqualDeep(expected, r.diagnostics);
+        try testing.expectEqualDeep(main_expected, r.diagnostics);
     }
+    try testing.expectEqual(@as(u8, 1), builds[4].exit_code);
+    try testing.expectEqualDeep(no_main_expected, builds[4].diagnostics);
+    try testing.expectEqual(@as(u8, 1), library.exit_code);
+    try testing.expectEqualDeep(no_main_expected, library.diagnostics);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expect(w.exists("cache"));
-    inline for (.{ "out1", "out2", "out3", "out4" }) |path| try testing.expect(!w.exists(path));
+    inline for (.{ "out1", "out2", "out3", "out4", "out5", "out6" }) |path| try testing.expect(!w.exists(path));
 }

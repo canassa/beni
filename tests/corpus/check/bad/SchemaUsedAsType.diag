@@ -1,0 +1,1 @@
+[{"code":"schema_used_as_type","severity":"error","span":{"file":"tests/corpus/check/bad/SchemaUsedAsType.beni","start":{"line":5,"col":7},"end":{"line":5,"col":11}},"title":"SCHEMA IS NOT A TYPE","message":"`User` names a schema. Its program type is `User.Type`; its encoded type is\n`User.Encoded`."}]

@@ -1,0 +1,1 @@
+[{"code":"recursive_alias","severity":"error","span":{"file":"tests/corpus/check/bad/RecursiveRecordSchema.beni","start":{"line":2,"col":12},"end":{"line":2,"col":16}},"title":"RECURSIVE ALIAS","message":"This schema endpoint is a structural alias that refers to itself.\n\nUse a tagged schema for recursive data so the endpoint has a nominal\nconstructor.\n"}]

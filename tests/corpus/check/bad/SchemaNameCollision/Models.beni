@@ -1,0 +1,2 @@
+pub schema User =
+    id : Int

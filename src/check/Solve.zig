@@ -1347,6 +1347,40 @@ pub const Solver = struct {
             .ctor => return try s.ctorType(data.lhs),
             .ext_value => return try s.importedValue(@enumFromInt(data.lhs), data.rhs, site),
             .ext_ctor => return try s.importedCtor(@enumFromInt(data.lhs), data.rhs),
+            .schema_member_top => {
+                const schemas = s.env.schemas orelse return null;
+                const kind = std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse return null;
+                return schemas.member(data.lhs, kind);
+            },
+            .ext_schema_member => {
+                const module: Graph.Index = @enumFromInt(data.lhs);
+                if (module.int() >= s.env.interfaces.len) return null;
+                const iface = s.env.iface(module);
+                if (data.rhs >= iface.schema_members.len) return null;
+                const scheme = iface.schema_members[data.rhs].scheme;
+                if (scheme == .none) return null;
+                const mark = s.store().count();
+                const v = try Schemes.instantiate(iface, s.env.types.refIds(module), s.store(), @intFromEnum(scheme), s.rank, s.env.scratch, site);
+                try s.adoptSince(mark);
+                return v;
+            },
+            .schema_ctor_top => {
+                const schemas = s.env.schemas orelse return null;
+                const ref = Bir.SchemaCtorRef.unpack(data.rhs);
+                return try schemas.constructor(@enumFromInt(data.lhs), if (ref.encoded) .encoded else .type, ref.variant);
+            },
+            .ext_schema_ctor => {
+                const module: Graph.Index = @enumFromInt(data.lhs);
+                if (module.int() >= s.env.interfaces.len) return null;
+                const iface = s.env.iface(module);
+                if (data.rhs >= iface.schema_ctors.len) return null;
+                const scheme = iface.schema_ctors[data.rhs].scheme;
+                if (scheme == .none) return null;
+                const mark = s.store().count();
+                const v = try Schemes.instantiate(iface, s.env.types.refIds(module), s.store(), @intFromEnum(scheme), s.rank, s.env.scratch, site);
+                try s.adoptSince(mark);
+                return v;
+            },
             else => return null,
         }
     }
@@ -3692,6 +3726,29 @@ pub const Solver = struct {
             if (id == .none) continue;
             try s.deriveOne(d, id);
         }
+        const schemas = s.env.schemas orelse return;
+        for (bir.decls, 0..) |d, i| {
+            if (d.kind != .schema) continue;
+            const decl: Bir.DeclIndex = @enumFromInt(i);
+            const root = d.schema_body.unwrap() orelse continue;
+            const tagged = schemaTagged(bir, root) orelse continue;
+            const variants = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(tagged).rhs)), Bir.Inst.Index);
+            inline for ([_]Interface.SchemaCtor.Endpoint{ .type, .encoded }) |endpoint| {
+                const params = schemas.params[schemas.params_start[i]..][0..schemas.params_len[i]];
+                const markers = try s.env.scratch.alloc(Var, params.len);
+                defer s.env.scratch.free(markers);
+                for (params, markers) |param, *marker| marker.* = if (endpoint == .type) param.program else param.encoded;
+                var args: std.ArrayList(Var) = .empty;
+                defer args.deinit(s.env.scratch);
+                for (variants) |variant_i| {
+                    const variant = bir.extraData(@enumFromInt(bir.instData(variant_i).rhs), Bir.SchemaVariant);
+                    if (variant.payload == .none or !schemas.variant_built[variant_i.int()]) continue;
+                    const pair = schemas.variant_payloads[variant_i.int()];
+                    try args.append(s.env.scratch, if (endpoint == .type) pair.program else pair.encoded);
+                }
+                try s.deriveOneParts(d, s.env.types.ofSchemaDecl(s.env.module, decl, endpoint), markers, args.items, true);
+            }
+        }
     }
 
     fn deriveOne(s: *Solver, d: Bir.Decl, id: Types.TypeId) Error!void {
@@ -3720,6 +3777,10 @@ pub const Solver = struct {
         }
         if (b.too_deep) return; // already reported by `reportTooDeep`
 
+        try s.deriveOneParts(d, id, markers, args.items, false);
+    }
+
+    fn deriveOneParts(s: *Solver, d: Bir.Decl, id: Types.TypeId, markers: []const Var, args: []const Var, schema_endpoint: bool) Error!void {
         const outer = s.type_params;
         defer s.type_params = outer;
         s.type_params = markers;
@@ -3762,7 +3823,7 @@ pub const Solver = struct {
                 // module. Suppressing the row on a private declaration made
                 // that name an import of an export that was never written:
                 // exit 0, and `SyntaxError` at load.
-                if (s.ownPubDeclNamed(name) != null) continue;
+                if (if (schema_endpoint) s.ownPubMethodNamed(name, id) else s.ownPubDeclNamed(name) != null) continue;
             }
             // **The exclusions of §6.3.1 step 4, and they have to be the
             // SAME test a use makes** (A.23, A.54): the two transitive
@@ -3780,13 +3841,36 @@ pub const Solver = struct {
             if (!gated) continue;
             // The entry FIRST, then its parts: a recursive type's derived
             // function is a position of itself.
-            const index = try s.env.dispatch.derive(kind, .{ .nominal = id }, @intCast(params.len));
-            const range = try s.env.dispatch.reserveParts(args.items.len);
-            for (args.items, 0..) |arg, j| {
+            const index = try s.env.dispatch.derive(kind, .{ .nominal = id }, @intCast(markers.len));
+            const range = try s.env.dispatch.reserveParts(args.len);
+            for (args, 0..) |arg, j| {
                 s.env.dispatch.setPart(range, j, try s.targetFor(c, arg, d.inst_start, 0));
             }
             s.env.dispatch.setDerivedParts(index, range);
         }
+    }
+
+    fn ownPubMethodNamed(s: *const Solver, name: Symbol, id: Types.TypeId) bool {
+        const bir = s.env.bir;
+        for (bir.decls) |d| {
+            if (!d.kind.isValue() or !d.is_pub or bir.symbol(d.name) != name) continue;
+            const annotation = d.annotation.unwrap() orelse continue;
+            if (bir.instTag(annotation) != .type_fn) continue;
+            const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
+            if (params.len != 0 and s.env.types.writtenHead(s.env.module, bir, params[0]) == id) return true;
+        }
+        return false;
+    }
+
+    fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
+        var at = root;
+        var remaining = bir.insts.len + 1;
+        while (remaining > 0 and at.int() < bir.insts.len) : (remaining -= 1) switch (bir.instTag(at)) {
+            .schema_tagged => return at,
+            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            else => return null,
+        };
+        return null;
     }
 
     /// Seed the outermost pool with what the generator allocated. The

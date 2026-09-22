@@ -56,6 +56,12 @@ types: []const Type,
 /// Owned. Every visible constructor, grouped by owning type
 /// (`Type.ctors_start..ctors_end`) and in declaration order within a type.
 ctors: []const Ctor,
+/// Owned. Public schema namespaces, sorted by name text.
+schemas: []const Schema,
+/// Owned. Fixed members grouped by schema in `SchemaMember.Kind` order.
+schema_members: []const SchemaMember,
+/// Owned. Tagged endpoint constructors, program then encoded per schema.
+schema_ctors: []const SchemaCtor,
 /// Owned. Generalised types, one per value that has one (checker.md §7).
 schemes: []const Scheme,
 /// Owned. The flat type term language every scheme's body is written in.
@@ -78,6 +84,9 @@ pub const ValueIndex = enum(u32) { _ };
 pub const TypeIndex = enum(u32) { _ };
 /// Index into `ctors`.
 pub const CtorIndex = enum(u32) { _ };
+pub const SchemaIndex = enum(u32) { _ };
+pub const SchemaMemberIndex = enum(u32) { _ };
+pub const SchemaCtorIndex = enum(u32) { _ };
 
 /// Index into `schemes`, which M2b adds. Every value carries one now so
 /// the record's layout does not change when it arrives.
@@ -330,6 +339,39 @@ pub const Ctor = struct {
     quantified_start: u32 = 0,
 };
 
+pub const Schema = struct {
+    name: SymbolIndex,
+    params_len: u32,
+    members_start: u32,
+    members_end: u32,
+    program_ctors_start: u32,
+    program_ctors_end: u32,
+    encoded_ctors_start: u32,
+    encoded_ctors_end: u32,
+};
+
+pub const SchemaMember = struct {
+    name: SymbolIndex,
+    schema: SchemaIndex,
+    scheme: SchemeIndex = .none,
+    kind: Kind,
+    arity: u8,
+    visible: bool = true,
+
+    pub const Kind = enum(u8) { type, encoded, schema, parse, print, parse_with, print_with };
+};
+
+pub const SchemaCtor = struct {
+    name: SymbolIndex,
+    schema: SchemaIndex,
+    scheme: SchemeIndex = .none,
+    endpoint: Endpoint,
+    arity: u8,
+    visible: bool = true,
+
+    pub const Endpoint = enum(u8) { type, encoded };
+};
+
 /// A `Ctor.arg_terms` that has not been written: the module was never
 /// checked, or never lowered.
 pub const no_terms: u32 = std.math.maxInt(u32);
@@ -353,13 +395,16 @@ pub const Provenance = struct {
     type_decl: []const Bir.DeclIndex,
     /// Owned. `ctors[i]` is `bir.ctors[ctor_index[i]]`.
     ctor_index: []const u32,
+    /// `schemas[i]` was declared by `schema_decl[i]`.
+    schema_decl: []const Bir.DeclIndex,
 
-    pub const empty: Provenance = .{ .value_decl = &.{}, .type_decl = &.{}, .ctor_index = &.{} };
+    pub const empty: Provenance = .{ .value_decl = &.{}, .type_decl = &.{}, .ctor_index = &.{}, .schema_decl = &.{} };
 
     pub fn deinit(p: *Provenance, gpa: Allocator) void {
         gpa.free(p.value_decl);
         gpa.free(p.type_decl);
         gpa.free(p.ctor_index);
+        gpa.free(p.schema_decl);
         p.* = Provenance.empty;
     }
 
@@ -377,6 +422,10 @@ pub const Provenance = struct {
     pub fn ctorIndex(p: *const Provenance, i: usize) ?u32 {
         return if (i < p.ctor_index.len) p.ctor_index[i] else null;
     }
+
+    pub fn schemaDecl(p: *const Provenance, i: usize) ?Bir.DeclIndex {
+        return if (i < p.schema_decl.len) p.schema_decl[i] else null;
+    }
 };
 
 /// A module with nothing public, and what a module that failed to lower
@@ -385,6 +434,9 @@ pub const empty: Interface = .{
     .values = &.{},
     .types = &.{},
     .ctors = &.{},
+    .schemas = &.{},
+    .schema_members = &.{},
+    .schema_ctors = &.{},
     .schemes = &.{},
     .terms = .empty,
     .extra = &.{},
@@ -396,6 +448,9 @@ pub fn deinit(iface: *Interface, gpa: Allocator) void {
     gpa.free(iface.values);
     gpa.free(iface.types);
     gpa.free(iface.ctors);
+    gpa.free(iface.schemas);
+    gpa.free(iface.schema_members);
+    gpa.free(iface.schema_ctors);
     gpa.free(iface.schemes);
     iface.terms.deinit(gpa);
     gpa.free(iface.extra);
@@ -537,6 +592,50 @@ pub fn findCtor(iface: *const Interface, _: *const InternPool.Global, name: Symb
     return null;
 }
 
+pub fn findSchema(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?SchemaIndex {
+    const i = find(iface, interner, Schema, iface.schemas, name) orelse return null;
+    return @enumFromInt(i);
+}
+
+pub fn findSchemaMember(
+    iface: *const Interface,
+    schema_index: SchemaIndex,
+    interner: *const InternPool.Global,
+    name: Symbol,
+    kind: ?SchemaMember.Kind,
+) ?SchemaMemberIndex {
+    if (@intFromEnum(schema_index) >= iface.schemas.len) return null;
+    const schema = iface.schemas[@intFromEnum(schema_index)];
+    if (schema.members_start > schema.members_end or schema.members_end > iface.schema_members.len) return null;
+    for (iface.schema_members[schema.members_start..schema.members_end], schema.members_start..) |member, i| {
+        if (kind != null and member.kind != kind.?) continue;
+        if (iface.symbol(member.name) == name) return @enumFromInt(i);
+    }
+    _ = interner;
+    return null;
+}
+
+pub fn findSchemaCtor(
+    iface: *const Interface,
+    schema_index: SchemaIndex,
+    endpoint: SchemaCtor.Endpoint,
+    interner: *const InternPool.Global,
+    name: Symbol,
+) ?SchemaCtorIndex {
+    if (@intFromEnum(schema_index) >= iface.schemas.len) return null;
+    const schema = iface.schemas[@intFromEnum(schema_index)];
+    const start, const end = switch (endpoint) {
+        .type => .{ schema.program_ctors_start, schema.program_ctors_end },
+        .encoded => .{ schema.encoded_ctors_start, schema.encoded_ctors_end },
+    };
+    if (start > end or end > iface.schema_ctors.len) return null;
+    for (iface.schema_ctors[start..end], start..) |ctor, i| {
+        if (iface.symbol(ctor.name) == name) return @enumFromInt(i);
+    }
+    _ = interner;
+    return null;
+}
+
 fn find(iface: *const Interface, interner: *const InternPool.Global, comptime T: type, entries: []const T, name: Symbol) ?u32 {
     const target = interner.slice(name);
     var lo: usize = 0;
@@ -639,6 +738,7 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         .value_decl = try value_decls.toOwnedSlice(gpa),
         .type_decl = try type_decls.toOwnedSlice(gpa),
         .ctor_index = try ctor_indices.toOwnedSlice(gpa),
+        .schema_decl = try b.schema_decls.toOwnedSlice(gpa),
     } };
 }
 
@@ -649,12 +749,22 @@ const Builder = struct {
     values: std.ArrayList(Value) = .empty,
     types: std.ArrayList(Type) = .empty,
     ctors: std.ArrayList(Ctor) = .empty,
+    schemas: std.ArrayList(Schema) = .empty,
+    schema_members: std.ArrayList(SchemaMember) = .empty,
+    schema_ctors: std.ArrayList(SchemaCtor) = .empty,
+    schema_decls: std.ArrayList(Bir.DeclIndex) = .empty,
+    extra: std.ArrayList(u32) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
 
     fn deinit(b: *Builder) void {
         b.values.deinit(b.gpa);
         b.types.deinit(b.gpa);
         b.ctors.deinit(b.gpa);
+        b.schemas.deinit(b.gpa);
+        b.schema_members.deinit(b.gpa);
+        b.schema_ctors.deinit(b.gpa);
+        b.schema_decls.deinit(b.gpa);
+        b.extra.deinit(b.gpa);
         b.symbols.deinit(b.gpa);
     }
 
@@ -718,15 +828,108 @@ const Builder = struct {
     }
 
     fn finish(b: *Builder) Allocator.Error!Interface {
+        try b.buildSchemas();
         var iface: Interface = .empty;
         errdefer iface.deinit(b.gpa);
         iface.values = try b.values.toOwnedSlice(b.gpa);
         iface.types = try b.types.toOwnedSlice(b.gpa);
         iface.ctors = try b.ctors.toOwnedSlice(b.gpa);
+        iface.schemas = try b.schemas.toOwnedSlice(b.gpa);
+        iface.schema_members = try b.schema_members.toOwnedSlice(b.gpa);
+        iface.schema_ctors = try b.schema_ctors.toOwnedSlice(b.gpa);
+        iface.extra = try b.extra.toOwnedSlice(b.gpa);
         iface.symbols = try b.symbols.toOwnedSlice(b.gpa);
         return iface;
     }
+
+    fn buildSchemas(b: *Builder) Allocator.Error!void {
+        for (b.bir.interface) |di| {
+            const d = b.bir.decl(di);
+            if (d.kind != .schema) continue;
+            try b.schema_decls.append(b.gpa, di);
+            try b.schemas.append(b.gpa, .{
+                .name = try b.symbolIndex(b.bir.symbol(d.name)),
+                .params_len = d.params,
+                .members_start = 0,
+                .members_end = 0,
+                .program_ctors_start = 0,
+                .program_ctors_end = 0,
+                .encoded_ctors_start = 0,
+                .encoded_ctors_end = 0,
+            });
+        }
+        try b.sortByName(Schema, b.schemas.items, b.schema_decls.items);
+
+        const member_names = [_][]const u8{ "Type", "Encoded", "schema", "parse", "print", "parseWith", "printWith" };
+        for (b.schemas.items, b.schema_decls.items, 0..) |*schema, di, schema_i| {
+            const d = b.bir.decl(di);
+            schema.members_start = @intCast(b.schema_members.items.len);
+            for (member_names, 0..) |text, kind_i| {
+                const member_symbol = b.interner.find(text) orelse unreachable; // Lower pre-interns every fixed member.
+                const kind: SchemaMember.Kind = @enumFromInt(kind_i);
+                const n = d.params;
+                const arity: u8 = std.math.cast(u8, switch (kind) {
+                    .type, .encoded => n,
+                    .schema => if (n == 0) 1 else n,
+                    .parse, .print => n + 1,
+                    .parse_with, .print_with => n + 2,
+                }) orelse std.math.maxInt(u8);
+                try b.schema_members.append(b.gpa, .{
+                    .name = try b.symbolIndex(member_symbol),
+                    .schema = @enumFromInt(schema_i),
+                    .kind = kind,
+                    .arity = arity,
+                });
+            }
+            schema.members_end = @intCast(b.schema_members.items.len);
+
+            // Empty constructor families still own their position in the
+            // grouped column. Leaving the skeleton's zeroes here makes a
+            // record schema following a tagged schema overlap the first
+            // schema's ranges after a byte round-trip.
+            schema.program_ctors_start = @intCast(b.schema_ctors.items.len);
+            schema.program_ctors_end = @intCast(b.schema_ctors.items.len);
+            schema.encoded_ctors_start = @intCast(b.schema_ctors.items.len);
+            schema.encoded_ctors_end = @intCast(b.schema_ctors.items.len);
+            const root = d.schema_body.unwrap() orelse continue;
+            const tagged = schemaTagged(b.bir, root) orelse continue;
+            const variants = b.bir.extraSlice(b.bir.subRange(@enumFromInt(b.bir.instData(tagged).rhs)), Bir.Inst.Index);
+            schema.program_ctors_start = @intCast(b.schema_ctors.items.len);
+            try b.appendSchemaCtors(@enumFromInt(schema_i), .type, variants);
+            schema.program_ctors_end = @intCast(b.schema_ctors.items.len);
+            schema.encoded_ctors_start = @intCast(b.schema_ctors.items.len);
+            try b.appendSchemaCtors(@enumFromInt(schema_i), .encoded, variants);
+            schema.encoded_ctors_end = @intCast(b.schema_ctors.items.len);
+        }
+    }
+
+    fn appendSchemaCtors(b: *Builder, schema: SchemaIndex, endpoint: SchemaCtor.Endpoint, variants: []const Bir.Inst.Index) Allocator.Error!void {
+        for (variants) |variant_inst| {
+            if (b.bir.instTag(variant_inst) != .schema_variant) continue;
+            const data = b.bir.instData(variant_inst);
+            const variant = b.bir.extraData(@enumFromInt(data.rhs), Bir.SchemaVariant);
+            try b.schema_ctors.append(b.gpa, .{
+                .name = try b.symbolIndex(b.bir.symbol(@enumFromInt(data.lhs))),
+                .schema = schema,
+                .endpoint = endpoint,
+                .arity = if (variant.payload == .none) 0 else 1,
+            });
+        }
+    }
 };
+
+fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) ?Bir.Inst.Index {
+    var at = root;
+    var budget: usize = bir.insts.len + 1;
+    while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) {
+        switch (bir.instTag(at)) {
+            .schema_tagged => return at,
+            .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+            else => return null,
+        }
+    }
+    return null;
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -878,6 +1081,9 @@ test "a record whose indices leave their columns still answers" {
         .values = &.{.{ .name = @enumFromInt(4), .is_foreign = false, .scheme = @enumFromInt(3) }},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{.{ .quantified_start = 100, .quantified_count = 2, .body = @enumFromInt(50) }},
         .terms = terms.slice(),
         .extra = &.{},

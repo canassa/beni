@@ -1,0 +1,48 @@
+-- A module alias remains the first segment of a schema path.
+import Models as M
+import Schema exposing (Missing, Null, Present)
+
+
+pub user : M.User.Type
+user =
+    { id = 1, email = Missing, nickname = Present Null }
+
+
+pub count : M.Message.Type
+count =
+    M.Message.Count { value = 1 }
+
+
+pub encodedCount : M.Message.Encoded
+encodedCount =
+    M.Message.Encoded.Count { value = 1 }
+
+
+pub counted : Int
+counted =
+    count.addCount 1
+
+
+pub compared : Order
+compared =
+    count.compare count
+
+
+pub programCase : M.Message.Type -> Bool
+programCase message =
+    case message of
+        M.Message.Text row ->
+            True
+
+        M.Message.Count row ->
+            True
+
+
+pub encodedCase : M.Message.Encoded -> Bool
+encodedCase message =
+    case message of
+        M.Message.Encoded.Text row ->
+            True
+
+        M.Message.Encoded.Count row ->
+            True

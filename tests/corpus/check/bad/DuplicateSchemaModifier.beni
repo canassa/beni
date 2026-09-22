@@ -1,0 +1,20 @@
+-- S1 already diagnoses all four duplicate modifier families before checking.
+import Schema exposing (Conversion)
+
+
+one : Conversion String String
+one =
+    Debug.todo "first conversion"
+
+
+two : Conversion String String
+two =
+    Debug.todo "second conversion"
+
+
+schema Duplicate =
+    { renamed : String as "first" as "second"
+    , presence : String optional optional
+    , nulls : String nullable nullable
+    , converted : String via one via two
+    }

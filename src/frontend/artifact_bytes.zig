@@ -70,7 +70,7 @@ pub const magic = "BENIFE\x00\x00";
 /// version bump and a cache discard, never a migration into spare bytes
 /// (`plans/m4-plan.md` D4) — and the compiler build id in the file key means
 /// a version bump is belt and braces rather than the only defence.
-pub const format_version: u32 = 2;
+pub const format_version: u32 = 3;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -1385,7 +1385,7 @@ test "an enum value no version defines is refused, and a non-exhaustive one is n
     try testing.expect(validEnum(Bir.Decl.Kind, 0));
     try testing.expect(!validEnum(Bir.Decl.Kind, 99));
     try testing.expect(!validEnum(Bir.Local.Kind, 4));
-    try testing.expect(!validEnum(Bir.Ref.Kind, 6));
+    try testing.expect(!validEnum(Bir.Ref.Kind, 8));
     // `SymbolIndex` is non-exhaustive: `none` is `maxInt(u32)` and every
     // other value is a slot.
     try testing.expect(validEnum(Bir.SymbolIndex, 12345));

@@ -170,10 +170,6 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // a missing package: the same exit 2 and the same line `check` and
     // `build` print (platform.zig).
     if (session.platform_error) return beni.platform.reportUnknown(stderr, dump.platform.?);
-    // Schema S1's temporary pre-resolution wall has already emitted its
-    // one diagnostic. The graph/check products intentionally do not exist,
-    // so do not turn that error into a secondary "not a module" usage error.
-    if (Cli.stageResolvesImports(dump.stage) and session.hasSchemaDeclarations()) return dumpExit(summary, 0);
     // `--stage=graph` is about the PROJECT and not about one file: it
     // takes whatever path the other stages take and prints the whole
     // module graph, so it never looks a dump target up.

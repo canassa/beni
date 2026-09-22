@@ -1,0 +1,31 @@
+-- The same Page.Type is reached through two schema arguments whose Encoded types differ.
+import Models
+import Schema exposing (Schema)
+
+
+pub textPage : Schema (Models.Page.Encoded String) (Models.Page.Type String)
+textPage =
+    Models.Page.schema (Models.TextId.schema ())
+
+
+pub numberPage : Schema (Models.Page.Encoded Int) (Models.Page.Type String)
+numberPage =
+    Models.Page.schema (Models.NumberId.schema ())
+
+
+pub parsed =
+    Models.Page.parse (Models.TextId.schema ()) "{}"
+
+
+pub printed =
+    Models.Page.print (Models.NumberId.schema ()) { item = "1" }
+
+
+pub parsedWith : Schema.Options, String -> Result (List Schema.Issue) (Models.Page.Type String)
+parsedWith options text =
+    Models.Page.parseWith (Models.TextId.schema ()) options text
+
+
+pub printedWith : Schema.Options, Models.Page.Type String -> Result (List Schema.Issue) String
+printedWith options page =
+    Models.Page.printWith (Models.NumberId.schema ()) options page

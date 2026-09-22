@@ -1271,6 +1271,158 @@ test "a body edit re-lowers ONLY the leaf while its importers re-check" {
     try testing.expectEqual(@as(u64, 0), settled.counters.checked);
 }
 
+test "a private schema conversion body stops at the interface firewall, while a public field crosses it" {
+    // ┌───────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └───────────────────────────────────────┘
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Models.beni",
+        \\import Schema exposing (Conversion)
+        \\
+        \\
+        \\conversion : Conversion Int String
+        \\conversion =
+        \\    Debug.todo "first private body"
+        \\
+        \\
+        \\pub schema User =
+        \\    id : Int via conversion
+        \\
+        \\
+        \\pub schema Page item =
+        \\    value : item
+        \\
+    );
+    try w.write("src/Consumer.beni",
+        \\import Models
+        \\
+        \\
+        \\pub keep : Models.User.Type -> Models.User.Type
+        \\keep value =
+        \\    value
+        \\
+    );
+
+    // ┌───────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └───────────────────────────────────────┘
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-cold.json");
+    const warm = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-warm.json");
+    const hashes_before = try ifaceHashes(&w, arena);
+    const iface_before = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
+
+    try w.write("src/Models.beni",
+        \\import Schema exposing (Conversion)
+        \\
+        \\
+        \\conversion : Conversion Int String
+        \\conversion =
+        \\    Debug.todo "second private body"
+        \\
+        \\
+        \\pub schema User =
+        \\    id : Int via conversion
+        \\
+        \\
+        \\pub schema Page item =
+        \\    value : item
+        \\
+    );
+    const private_edit = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-private.json");
+    const private_plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-private-plain.json");
+    const hashes_after_private = try ifaceHashes(&w, arena);
+    const iface_after_private = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
+
+    try w.write("src/Models.beni",
+        \\import Schema exposing (Conversion)
+        \\
+        \\
+        \\conversion : Conversion Int String
+        \\conversion =
+        \\    Debug.todo "second private body"
+        \\
+        \\
+        \\pub schema User =
+        \\    id : Int via conversion
+        \\
+        \\
+        \\pub schema Page element =
+        \\    value : element
+        \\
+    );
+    const alpha_edit = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-alpha.json");
+    const alpha_plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-alpha-plain.json");
+    const hashes_after_alpha = try ifaceHashes(&w, arena);
+    const iface_after_alpha = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
+
+    try w.write("src/Models.beni",
+        \\import Schema exposing (Conversion)
+        \\
+        \\
+        \\conversion : Conversion Int String
+        \\conversion =
+        \\    Debug.todo "second private body"
+        \\
+        \\
+        \\pub schema User =
+        \\    name : Int via conversion
+        \\
+        \\
+        \\pub schema Page element =
+        \\    value : element
+        \\
+    );
+    const public_edit = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-public.json");
+    const public_plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-public-plain.json");
+    const hashes_after_public = try ifaceHashes(&w, arena);
+
+    // ┌────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └───────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+
+    try testing.expectEqual(@as(u8, 0), private_edit.result.exit_code);
+    try testing.expectEqual(private_plain.result.exit_code, private_edit.result.exit_code);
+    try testing.expectEqualStrings(private_plain.result.stdout, private_edit.result.stdout);
+    try testing.expectEqualStrings(private_plain.result.stderr, private_edit.result.stderr);
+    try testing.expectEqual(@as(u64, 1), private_edit.counters.checked);
+    try expectMoved("a private schema conversion body", hashes_before, hashes_after_private, &.{});
+    try testing.expectEqual(@as(u8, 0), iface_before.exit_code);
+    try testing.expectEqual(@as(usize, 0), iface_before.diagnostics.len);
+    try testing.expectEqual(@as(u8, 0), iface_after_private.exit_code);
+    try testing.expectEqual(@as(usize, 0), iface_after_private.diagnostics.len);
+    try testing.expectEqualStrings(iface_before.stdout, iface_after_private.stdout);
+
+    try testing.expectEqual(@as(u8, 0), alpha_edit.result.exit_code);
+    try testing.expectEqual(alpha_plain.result.exit_code, alpha_edit.result.exit_code);
+    try testing.expectEqualStrings(alpha_plain.result.stdout, alpha_edit.result.stdout);
+    try testing.expectEqualStrings(alpha_plain.result.stderr, alpha_edit.result.stderr);
+    try testing.expectEqual(@as(u64, 1), alpha_edit.counters.checked);
+    try expectMoved("a public schema parameter alpha rename", hashes_after_private, hashes_after_alpha, &.{});
+    try testing.expectEqual(@as(u8, 0), iface_after_alpha.exit_code);
+    try testing.expectEqual(@as(usize, 0), iface_after_alpha.diagnostics.len);
+    try testing.expectEqualStrings(iface_after_private.stdout, iface_after_alpha.stdout);
+
+    try testing.expectEqual(@as(u8, 0), public_edit.result.exit_code);
+    try testing.expectEqual(public_plain.result.exit_code, public_edit.result.exit_code);
+    try testing.expectEqualStrings(public_plain.result.stdout, public_edit.result.stdout);
+    try testing.expectEqualStrings(public_plain.result.stderr, public_edit.result.stderr);
+    try testing.expectEqual(@as(u64, 2), public_edit.counters.checked);
+    try testing.expect(!std.mem.eql(
+        u8,
+        lookup(hashes_after_alpha, "app:Models").?,
+        lookup(hashes_after_public, "app:Models").?,
+    ));
+}
+
 test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -2058,6 +2210,83 @@ test "a truncated, corrupt or foreign entry is a miss and is then overwritten" {
     const restored = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "restored.json");
     try testing.expectEqual(@as(u64, 0), restored.counters.checked);
     try testing.expectEqual(cold.counters.misses, restored.counters.hits);
+}
+
+test "a schema plan whose endpoint terms disagree with its declaration is a miss" {
+    // The schema-plan reader can accept a byte stream that is internally
+    // well-formed while its meaning disagrees with the BIR and Types tables
+    // rebuilt from this source. In particular, `app` and `alias` carry the
+    // same in-bounds operands. A cache hit must validate that a record
+    // schema's two endpoint terms are aliases, rather than trusting the tag
+    // merely because the plan can decode it.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Models.beni",
+        \\pub schema User =
+        \\    id : Int
+        \\
+        \\
+        \\pub near a b =
+        \\    a.close b 1
+        \\
+    );
+
+    const plain = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "src" }, "schema-plan-plain.json");
+    const cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "src" }, "schema-plan-cold.json");
+    try testing.expectEqual(plain.result.exit_code, cold.result.exit_code);
+    try testing.expectEqualStrings(plain.result.stdout, cold.result.stdout);
+    try testing.expectEqualStrings(plain.result.stderr, cold.result.stderr);
+    try testing.expect(std.mem.indexOf(u8, cold.result.stderr, "CONSTRAINT IN AN INFERRED INTERFACE") != null);
+
+    const iface_before = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
+    try testing.expectEqual(@as(u8, 0), iface_before.exit_code);
+    try testing.expect(std.mem.indexOf(u8, iface_before.stdout, "schema User") != null);
+
+    const keys = try keysOf(&w, arena, &.{ "--jobs=1", "src" });
+    const models_key = lookup(keys, "app:Models") orelse return error.MissingKey;
+    const relative = entryPathFor(models_key);
+    const victim = try std.fs.path.join(arena, &.{ "cache", &relative });
+    const good = try w.read(victim);
+    const mangled = try arena.dupe(u8, good);
+
+    // `entry_bytes`: header(32), then four { offset, len } rows. The schema
+    // plan is section 2. `schema_plan_bytes`: header(16), then 22 column
+    // rows. Definitions are column 0 and term tags are column 11. Change
+    // both endpoint tags from alias(7) to app(2), leaving every operand and
+    // every index in bounds so a shallow structural check still accepts it.
+    try testing.expect(mangled.len >= 56);
+    const plan_base: usize = std.mem.readInt(u32, mangled[48..52], .little);
+    try testing.expect(plan_base + 16 + 12 * 8 <= mangled.len);
+    const definition_base = plan_base + std.mem.readInt(u32, mangled[plan_base + 16 ..][0..4], .little);
+    try testing.expect(definition_base + 44 <= mangled.len);
+    const program_term: usize = std.mem.readInt(u32, mangled[definition_base + 28 ..][0..4], .little);
+    const encoded_term: usize = std.mem.readInt(u32, mangled[definition_base + 32 ..][0..4], .little);
+    const tags_base = plan_base + std.mem.readInt(u32, mangled[plan_base + 16 + 11 * 8 ..][0..4], .little);
+    try testing.expect(tags_base + program_term < mangled.len);
+    try testing.expect(tags_base + encoded_term < mangled.len);
+    try testing.expectEqual(@as(u8, 7), mangled[tags_base + program_term]);
+    try testing.expectEqual(@as(u8, 7), mangled[tags_base + encoded_term]);
+    mangled[tags_base + program_term] = 2;
+    mangled[tags_base + encoded_term] = 2;
+    try w.write(victim, mangled);
+
+    const repaired = try runCounted(&w, arena, &.{ "check", "--jobs=8", "--cache-dir=cache", "src" }, "schema-plan-repaired.json");
+    try testing.expectEqual(cold.result.exit_code, repaired.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stdout, repaired.result.stdout);
+    try testing.expectEqualStrings(cold.result.stderr, repaired.result.stderr);
+    try testing.expectEqual(@as(u64, 1), repaired.counters.misses);
+    try testing.expectEqual(@as(u64, 1), repaired.counters.checked);
+    try testing.expect(repaired.counters.bytes > 0);
+    try testing.expectEqualStrings(good, try w.read(victim));
+
+    const iface_after = try w.run(&.{ "dump", "--stage=interface", "src/Models.beni" });
+    try testing.expectEqual(iface_before.exit_code, iface_after.exit_code);
+    try testing.expectEqualDeep(iface_before.diagnostics, iface_after.diagnostics);
+    try testing.expectEqualStrings(iface_before.stdout, iface_after.stdout);
+    try testing.expectEqualStrings(iface_before.stderr, iface_after.stderr);
 }
 
 test "a pre-warmed cache directory made read-only still hits everything" {

@@ -1,0 +1,1 @@
+[{"code":"unknown_schema_member","severity":"error","span":{"file":"tests/corpus/check/bad/UnknownSchemaMember.beni","start":{"line":5,"col":7},"end":{"line":5,"col":19}},"title":"UNKNOWN SCHEMA MEMBER","message":"`User` has no type member called `Unknown`.\n\nIts type members are `Type` and `Encoded`."}]

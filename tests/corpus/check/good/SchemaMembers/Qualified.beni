@@ -1,0 +1,42 @@
+-- `import Models` introduces the module root only.
+import Models
+import Schema exposing (Missing, Schema)
+
+
+pub user : Models.User.Type
+user =
+    { id = 1, email = Missing, nickname = Missing }
+
+
+pub description : Schema Models.User.Encoded Models.User.Type
+description =
+    Models.User.schema ()
+
+
+pub parsed =
+    Models.User.parse "{}"
+
+
+pub escapedPrivateEndpoint : { value : Int }
+escapedPrivateEndpoint =
+    Models.hiddenInt
+
+
+pub programCase : Models.Message.Type -> Bool
+programCase message =
+    case message of
+        Models.Message.Text row ->
+            True
+
+        Models.Message.Count row ->
+            True
+
+
+pub encodedCase : Models.Message.Encoded -> Bool
+encodedCase message =
+    case message of
+        Models.Message.Encoded.Text row ->
+            True
+
+        Models.Message.Encoded.Count row ->
+            True

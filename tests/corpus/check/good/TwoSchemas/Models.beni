@@ -1,0 +1,10 @@
+-- Compact interface golden: exactly two public schema member tables.
+pub schema User =
+    id : Int
+
+
+pub schema Event tagged "kind" of
+    Text as "text"
+        value : String
+    Count as "count"
+        value : Int

@@ -224,6 +224,11 @@ pub fn run(
     try e.checkEntryFileName();
     try e.checkForeignShapes();
     try e.checkSiblings();
+    // Schema S2 checks endpoint types and records the resolved plan, but S4
+    // is the first slice which emits its required parse and print runners.
+    // Refuse here, before entry discovery and before a pending output tree
+    // exists, so a schema can never build while silently omitting them.
+    if (try e.refuseSchemas()) return e.nothingWritten(gpa);
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -367,6 +372,26 @@ const Emitter = struct {
 
     fn bir(e: *Emitter, m: Graph.Index) *const Bir {
         return e.session.artifacts.bir(e.graph().moduleFile(m));
+    }
+
+    fn refuseSchemas(e: *Emitter) !bool {
+        var found = false;
+        for (0..e.graph().count()) |i| {
+            const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            const file = e.graph().moduleFile(module);
+            for (e.bir(module).decls) |decl| {
+                if (decl.kind != .schema) continue;
+                found = true;
+                try e.report(
+                    .not_implemented,
+                    file,
+                    decl.name_token,
+                    "This schema is checked, but its parse and print are not generated until schema S4.",
+                    .{},
+                );
+            }
+        }
+        return found;
     }
 
     /// The 1-based line and column of `token` in `file`.

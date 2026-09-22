@@ -1,1 +1,0 @@
-[{"code":"not_implemented","severity":"error","span":{"file":"tests/corpus/check/bad/SchemaUnsupported.beni","start":{"line":4,"col":8},"end":{"line":4,"col":12}},"title":"NOT IMPLEMENTED YET","message":"This schema is parsed and preserved, but its endpoint types and members are not\nchecked until schema S2."}]

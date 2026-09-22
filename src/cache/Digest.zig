@@ -82,6 +82,7 @@ const Interface = @import("../resolve/Interface.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const Types = @import("../check/Types.zig");
 const Dispatch = @import("../check/Dispatch.zig");
+const SchemaPlan = @import("../check/SchemaPlan.zig");
 const type_body = @import("type_body.zig");
 
 pub const magic = "BENIDEP\x00";
@@ -240,6 +241,7 @@ pub const Session = struct {
     types: *const Types,
     interfaces: []const Interface,
     dispatch: []const Dispatch,
+    plans: []const SchemaPlan,
     interner: *const InternPool.Global,
 };
 
@@ -280,6 +282,16 @@ pub fn collect(
         const id = ids.items[at];
         const e = s.types.entry(id);
         if (e.kind != .alias) continue;
+        if (e.schema_endpoint) {
+            if (m.int() >= s.plans.len) continue;
+            const plan = &s.plans[m.int()];
+            const body = schemaEndpointExpansion(plan, e) orelse continue;
+            var term_iface = planTermInterface(plan);
+            local.clearRetainingCapacity();
+            try type_body.collectLocalInterface(scratch, &local, interfaceBodyContext(s, m, &term_iface), body);
+            for (local.items) |found| try push(scratch, &ids, found);
+            continue;
+        }
         const bir = s.artifacts.bir(s.graph.moduleFile(e.module));
         const d = bir.decl(e.decl);
         const body = d.annotation.unwrap() orelse continue;
@@ -295,12 +307,23 @@ pub fn collect(
         const name = s.interner.slice(e.name);
         var body: []const u8 = &.{};
         if (e.kind == .alias) {
-            const bir = s.artifacts.bir(s.graph.moduleFile(e.module));
-            const d = bir.decl(e.decl);
-            if (d.annotation.unwrap()) |at_inst| {
-                var bytes: std.ArrayList(u8) = .empty;
-                try type_body.write(scratch, &bytes, bodyContext(s, e, bir, d), at_inst);
-                body = bytes.items;
+            if (e.schema_endpoint) {
+                const plan = if (m.int() < s.plans.len) &s.plans[m.int()] else null;
+                if (plan != null and schemaEndpointExpansion(plan.?, e) != null) {
+                    const term = schemaEndpointExpansion(plan.?, e).?;
+                    var term_iface = planTermInterface(plan.?);
+                    var bytes: std.ArrayList(u8) = .empty;
+                    try type_body.writeInterface(scratch, &bytes, interfaceBodyContext(s, m, &term_iface), term);
+                    body = bytes.items;
+                }
+            } else {
+                const bir = s.artifacts.bir(s.graph.moduleFile(e.module));
+                const d = bir.decl(e.decl);
+                if (d.annotation.unwrap()) |at_inst| {
+                    var bytes: std.ArrayList(u8) = .empty;
+                    try type_body.write(scratch, &bytes, bodyContext(s, e, bir, d), at_inst);
+                    body = bytes.items;
+                }
             }
         }
         row.* = .{
@@ -358,6 +381,55 @@ pub fn collect(
         .derived = derived.items,
         .imports = imports,
     });
+}
+
+fn interfaceBodyContext(s: Session, module: Graph.Index, iface: *const Interface) type_body.InterfaceContext {
+    return .{
+        .graph = s.graph,
+        .types = s.types,
+        .interner = s.interner,
+        .module = module,
+        .iface = iface,
+    };
+}
+
+/// Find the structural expansion carried by the schema endpoint alias term.
+/// The interface writer interns one TypeRef identity per named endpoint; a
+/// private endpoint reachable from a public signature is present for the same
+/// reason an ordinary reachable private type is present in `type_refs`.
+fn schemaEndpointExpansion(plan: *const SchemaPlan, entry: Types.Entry) ?Interface.TermIndex {
+    for (plan.definitions) |definition| {
+        const program_ref = plan.type_refs[@intFromEnum(definition.type_ref)];
+        const encoded_ref = plan.type_refs[@intFromEnum(definition.encoded_ref)];
+        const endpoint = if (plan.symbols[@intFromEnum(program_ref.name)] == entry.name)
+            definition.program_term
+        else if (plan.symbols[@intFromEnum(encoded_ref.name)] == entry.name)
+            definition.encoded_term
+        else
+            continue;
+        const term = plan.terms.get(endpoint.int());
+        if (term.tag != .alias) return null;
+        const words = planRange(plan.type_extra, term.rhs) orelse return null;
+        if (words.len == 0) return null;
+        return @enumFromInt(words[words.len - 1]);
+    }
+    return null;
+}
+
+fn planTermInterface(plan: *const SchemaPlan) Interface {
+    var iface = Interface.empty;
+    iface.terms = plan.terms;
+    iface.extra = plan.type_extra;
+    iface.type_refs = plan.type_refs;
+    iface.symbols = plan.symbols;
+    return iface;
+}
+
+fn planRange(extra: []const u32, start: u32) ?[]const u32 {
+    if (start >= extra.len) return null;
+    const len = extra[start];
+    if (@as(u64, start) + 1 + len > extra.len) return null;
+    return extra[start + 1 ..][0..len];
 }
 
 fn bodyContext(s: Session, e: Types.Entry, bir: *const Bir, d: Bir.Decl) type_body.Context {

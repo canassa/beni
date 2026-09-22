@@ -1,0 +1,2 @@
+pub type Other
+    = Other

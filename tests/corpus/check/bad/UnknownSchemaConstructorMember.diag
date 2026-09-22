@@ -1,0 +1,1 @@
+[{"code":"unknown_schema_member","severity":"error","span":{"file":"tests/corpus/check/bad/UnknownSchemaConstructorMember.beni","start":{"line":9,"col":9},"end":{"line":9,"col":24}},"title":"UNKNOWN SCHEMA MEMBER","message":"`Message` has no constructor member called `Unknown`.\n\nIts constructor members are `Count`."}]

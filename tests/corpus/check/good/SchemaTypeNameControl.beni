@@ -1,0 +1,17 @@
+-- Ordinary types and schemas occupy distinct namespaces.
+pub type User
+    = User Int
+
+
+pub schema User =
+    id : Int
+
+
+pub ordinary : User
+ordinary =
+    User 1
+
+
+pub endpoint : User.Type
+endpoint =
+    { id = 1 }

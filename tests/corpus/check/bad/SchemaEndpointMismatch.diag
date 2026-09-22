@@ -1,0 +1,1 @@
+[{"code":"type_mismatch","severity":"error","span":{"file":"tests/corpus/check/bad/SchemaEndpointMismatch.beni","start":{"line":12,"col":13},"end":{"line":12,"col":34}},"title":"TYPE MISMATCH","message":"The 1st argument to `accept` is not what I expect:\n\nThis argument is:\n\n    Message.Encoded\n\nBut `accept` needs the 1st argument to be:\n\n    Message.Type\n"}]

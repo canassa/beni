@@ -1,0 +1,1 @@
+[{"code":"duplicate_schema_key","severity":"error","span":{"file":"tests/corpus/check/bad/DuplicateSchemaKeyFields.beni","start":{"line":3,"col":5},"end":{"line":3,"col":11}},"title":"DUPLICATE EXTERNAL KEY","message":"Both `first` and `second` read and write the external key `same`.\n"}]

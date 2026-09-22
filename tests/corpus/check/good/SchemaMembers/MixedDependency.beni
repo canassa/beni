@@ -1,0 +1,17 @@
+-- The conversion function depends on the schema member whose declaration in
+-- turn uses the function. A valid ordinary/schema SCC must terminate.
+import Schema exposing (Conversion)
+
+
+seed : Conversion Int String
+seed =
+    Debug.todo "checker-only conversion"
+
+
+conversion () =
+    case Cyclic.schema () of
+        _ ->
+            seed
+
+
+pub schema Cyclic = Int via (conversion ())

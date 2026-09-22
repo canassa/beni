@@ -1181,8 +1181,65 @@ const Analysis = struct {
                 const un = try an.internUnion(.adt, id, alts);
                 return .{ .un = un, .alt = an.pats.unionAt(un).alts_start + (data.rhs - t.ctors_start) };
             },
+            .schema_ctor_top => {
+                const decl: Bir.DeclIndex = @enumFromInt(data.lhs);
+                if (decl.int() >= bir.decls.len) return error.Malformed;
+                const d = bir.decl(decl);
+                const root = d.schema_body.unwrap() orelse return error.Malformed;
+                var at = root;
+                var budget = bir.insts.len + 1;
+                while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
+                    .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+                    else => break,
+                };
+                if (bir.instTag(at) != .schema_tagged) return error.Malformed;
+                const variants = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(at).rhs)), Bir.Inst.Index);
+                const ref = Bir.SchemaCtorRef.unpack(data.rhs);
+                if (ref.variant >= variants.len) return error.Malformed;
+                const alts = try an.arena.alloc(Alt, variants.len);
+                for (variants, alts) |vi, *a| {
+                    const vd = bir.instData(vi);
+                    const v = bir.extraData(@enumFromInt(vd.rhs), Bir.SchemaVariant);
+                    const variant_name = bir.symbol(@enumFromInt(vd.lhs));
+                    a.* = .{ .name = an.schemaCtorDisplay(bir.symbol(d.name), ref.encoded, variant_name).toOptional(), .arity = if (v.payload == .none) 0 else 1 };
+                }
+                const endpoint: Interface.SchemaCtor.Endpoint = if (ref.encoded) .encoded else .type;
+                const id = an.cx.types.ofSchemaDecl(an.cx.module, decl, endpoint);
+                const un = try an.internUnion(.adt, id, alts);
+                return .{ .un = un, .alt = an.pats.unionAt(un).alts_start + ref.variant };
+            },
+            .ext_schema_ctor => {
+                if (data.lhs >= an.cx.interfaces.len) return error.Malformed;
+                const module: Graph.Index = @enumFromInt(data.lhs);
+                const iface = &an.cx.interfaces[data.lhs];
+                if (data.rhs >= iface.schema_ctors.len) return error.Malformed;
+                const ctor = iface.schema_ctors[data.rhs];
+                const si = @intFromEnum(ctor.schema);
+                if (si >= iface.schemas.len) return error.Malformed;
+                const schema = iface.schemas[si];
+                const from = if (ctor.endpoint == .type) schema.program_ctors_start else schema.encoded_ctors_start;
+                const to = if (ctor.endpoint == .type) schema.program_ctors_end else schema.encoded_ctors_end;
+                if (data.rhs < from or data.rhs >= to) return error.Malformed;
+                const alts = try an.arena.alloc(Alt, to - from);
+                for (iface.schema_ctors[from..to], alts) |sibling, *a| a.* = .{
+                    .name = an.schemaCtorDisplay(iface.symbol(schema.name), ctor.endpoint == .encoded, iface.symbol(sibling.name)).toOptional(),
+                    .arity = sibling.arity,
+                };
+                const id = an.cx.types.ofSchema(module, ctor.schema, ctor.endpoint);
+                const un = try an.internUnion(.adt, id, alts);
+                return .{ .un = un, .alt = an.pats.unionAt(un).alts_start + (data.rhs - from) };
+            },
             else => return error.Malformed,
         }
+    }
+
+    fn schemaCtorDisplay(an: *Analysis, schema: Symbol, encoded: bool, variant: Symbol) Symbol {
+        const text = std.fmt.allocPrint(an.arena, "{s}{s}.{s}", .{
+            an.cx.interner.slice(schema),
+            if (encoded) ".Encoded" else "",
+            an.cx.interner.slice(variant),
+        }) catch return variant;
+        return an.cx.interner.find(text) orelse variant;
     }
 
     // ---- The two relations ----------------------------------------------

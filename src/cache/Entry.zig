@@ -38,6 +38,8 @@ const Dir = @import("Dir.zig");
 const Key = @import("Key.zig");
 const entry_bytes = @import("entry_bytes.zig");
 const dispatch_bytes = @import("dispatch_bytes.zig");
+const SchemaPlan = @import("../check/SchemaPlan.zig");
+const schema_plan_bytes = @import("schema_plan_bytes.zig");
 
 /// One entry, decoded and validated, waiting to be installed.
 ///
@@ -52,6 +54,9 @@ pub const Loaded = struct {
     /// Owned, and still holding reference INDICES: `dispatch_bytes.resolve`
     /// turns them into this session's ids on the DAG.
     sidecar: dispatch_bytes.Loaded,
+    /// Owned resolved schema plan; stable references are resolved by the
+    /// checker after graph/interface installation.
+    plan: SchemaPlan,
     /// Borrowed from `bytes`.
     diagnostics: []const entry_bytes.Diagnostic,
 
@@ -59,6 +64,7 @@ pub const Loaded = struct {
         .bytes = &.{},
         .record = .empty,
         .sidecar = .empty,
+        .plan = .empty,
         .diagnostics = &.{},
     };
 
@@ -66,6 +72,7 @@ pub const Loaded = struct {
         gpa.free(l.bytes);
         l.record.deinit(gpa);
         l.sidecar.deinit(gpa);
+        l.plan.deinit(gpa);
         gpa.free(@constCast(l.diagnostics));
         l.* = empty;
     }
@@ -128,7 +135,7 @@ fn loadWith(
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
     const bytes = dir.load(gpa, key) orelse return null;
-    var out: Loaded = .{ .bytes = bytes, .record = .empty, .sidecar = .empty, .diagnostics = &.{} };
+    var out: Loaded = .{ .bytes = bytes, .record = .empty, .sidecar = .empty, .plan = .empty, .diagnostics = &.{} };
     errdefer out.deinit(gpa);
 
     const entry = entry_bytes.readFor(bytes, key) catch |err| switch (err) {
@@ -161,6 +168,16 @@ fn loadWith(
             return null;
         },
     };
+    out.plan = (switch (interning) {
+        .grow => |pool| schema_plan_bytes.readGrowing(gpa, entry.schema_plan, pool),
+        .find => |pool| schema_plan_bytes.read(gpa, entry.schema_plan, pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadPlan, error.UnknownSymbol => {
+            out.deinit(gpa);
+            return null;
+        },
+    };
     out.diagnostics = entry_bytes.readDiagnostics(gpa, entry.diagnostics) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.BadEntry => {
@@ -176,8 +193,8 @@ fn loadWith(
 }
 
 /// Whether a loaded record describes the module the shell describes: the
-/// same number of values, types and constructors, each with the same name in
-/// the same slot.
+/// same number of values, types, constructors and schema namespace rows, each
+/// with the same lexical shape in the same slot.
 ///
 /// This is what stands between a key collision — or a file somebody moved —
 /// and a silent miscompile. `Provenance` is indexed by slot and is never
@@ -190,6 +207,9 @@ fn matchesShell(loaded: *const Interface, shell: *const Interface) bool {
     if (loaded.values.len != shell.values.len) return false;
     if (loaded.types.len != shell.types.len) return false;
     if (loaded.ctors.len != shell.ctors.len) return false;
+    if (loaded.schemas.len != shell.schemas.len) return false;
+    if (loaded.schema_members.len != shell.schema_members.len) return false;
+    if (loaded.schema_ctors.len != shell.schema_ctors.len) return false;
     for (loaded.values, shell.values) |a, b| {
         if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;
         // Foreignness is one bit derived from the source; a record that
@@ -204,6 +224,20 @@ fn matchesShell(loaded: *const Interface, shell: *const Interface) bool {
     for (loaded.ctors, shell.ctors) |a, b| {
         if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;
         if (a.type != b.type) return false;
+    }
+    for (loaded.schemas, shell.schemas) |a, b| {
+        if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;
+        if (a.params_len != b.params_len or a.members_start != b.members_start or a.members_end != b.members_end) return false;
+        if (a.program_ctors_start != b.program_ctors_start or a.program_ctors_end != b.program_ctors_end) return false;
+        if (a.encoded_ctors_start != b.encoded_ctors_start or a.encoded_ctors_end != b.encoded_ctors_end) return false;
+    }
+    for (loaded.schema_members, shell.schema_members) |a, b| {
+        if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;
+        if (a.schema != b.schema or a.kind != b.kind or a.arity != b.arity or a.visible != b.visible) return false;
+    }
+    for (loaded.schema_ctors, shell.schema_ctors) |a, b| {
+        if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;
+        if (a.schema != b.schema or a.endpoint != b.endpoint or a.arity != b.arity or a.visible != b.visible) return false;
     }
     return true;
 }
@@ -229,6 +263,9 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
         .values = &.{.{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = false }},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -245,6 +282,9 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
         },
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -258,6 +298,9 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
         .values = &.{.{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = false }},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -271,6 +314,9 @@ test "a record whose shape disagrees with the shell is a miss, not a miscompile"
         .values = &.{.{ .name = @enumFromInt(0), .scheme = .none, .is_foreign = true }},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},

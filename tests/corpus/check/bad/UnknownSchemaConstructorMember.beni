@@ -1,0 +1,10 @@
+schema Message tagged "kind" of
+    Count as "count"
+        value : Int
+
+
+bad : Message.Type -> Bool
+bad message =
+    case message of
+        Message.Unknown row ->
+            True

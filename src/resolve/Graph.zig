@@ -343,8 +343,8 @@ fn referencedModules(scratch: Allocator, bir: *const Bir) Allocator.Error![]cons
     var out: std.ArrayList(Symbol) = .empty;
     for (bir.refs) |ref| {
         switch (ref.kind) {
-            .import_value, .import_ctor, .import_type => {},
-            .top_value, .top_ctor, .top_type => continue,
+            .import_value, .import_ctor, .import_type, .import_schema => {},
+            .top_value, .top_ctor, .top_type, .top_schema => continue,
         }
         const module_name = bir.symbol(@enumFromInt(ref.a));
         if (std.mem.indexOfScalar(Symbol, out.items, module_name) != null) continue;
@@ -405,7 +405,7 @@ fn mintedModules(bir: *const Bir) u8 {
 
 /// The modules that declare a well-known type, one bit each in the order
 /// `minted_bits` uses. `check/Types.findWellKnown` names the same six.
-const minted_modules = [_]InternPool.WellKnown{ .Basics, .List, .String, .Char, .Maybe, .Result };
+const minted_modules = [_]InternPool.WellKnown{ .Basics, .List, .String, .Char, .Maybe, .Result, .Schema };
 
 /// Which of `minted_modules` an instruction of each tag makes a dependency.
 /// `Int`, `Float` and `Bool` all live in `Basics`: a comparison is a
@@ -421,6 +421,7 @@ const minted_bits: [256]u8 = blk: {
     // checker's decision on this instruction — so both modules are a
     // dependency of a file that writes one.
     const maybe_result: u8 = (1 << 4) | (1 << 5);
+    const schema: u8 = 1 << 6;
     var table: [256]u8 = @splat(0);
     for ([_]struct { Bir.Inst.Tag, u8 }{
         .{ .int, basics },
@@ -438,6 +439,26 @@ const minted_bits: [256]u8 = blk: {
         .{ .char, char },
         .{ .pat_char, char },
         .{ .@"try", maybe_result },
+        .{ .schema_ref, schema },
+        .{ .schema_app, schema },
+        .{ .schema_record, schema },
+        .{ .schema_field, schema },
+        .{ .schema_value, schema },
+        .{ .schema_tagged, schema },
+        .{ .schema_variant, schema },
+        .{ .schema_type_ref, schema },
+        .{ .schema_value_ref, schema },
+        .{ .schema_ctor_ref, schema },
+        .{ .schema_type_top, schema },
+        .{ .ext_schema_type, schema },
+        .{ .schema_member_top, schema },
+        .{ .ext_schema_member, schema },
+        .{ .schema_ctor_top, schema },
+        .{ .ext_schema_ctor, schema },
+        .{ .schema_parameter, schema },
+        .{ .schema_primitive, schema },
+        .{ .schema_target_top, schema },
+        .{ .ext_schema_target, schema },
     }) |entry| table[@intFromEnum(entry[0])] = entry[1];
     break :blk table;
 };

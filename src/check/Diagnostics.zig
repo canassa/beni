@@ -183,6 +183,10 @@ pub const Reporter = struct {
             try r.emit(.rigid_mismatch, region, &out);
             return;
         }
+        if (category.tag == .schema_conversion) {
+            try r.emit(.schema_conversion_mismatch, region, &out);
+            return;
+        }
         // **A.30's boundary, said out loud.** A `let` binding whose type
         // carries a method constraint is not generalised over it (§6.4 rule
         // (a)), so a second use at another type arrives here as an ordinary
@@ -415,6 +419,11 @@ pub const Reporter = struct {
                 .intro = std.fmt.allocPrint(scratch, "The {s} element of this tuple is not what I expect:", .{ordinal(scratch, category.index)}) catch "This tuple element is not what I expect:",
                 .found = "It is:",
                 .wanted = "But I need:",
+            },
+            .schema_conversion => return .{
+                .intro = std.fmt.allocPrint(scratch, "The conversion for the `{s}` schema field does not connect its program endpoint:", .{r.fieldText(category.index)}) catch "This schema conversion does not connect its program endpoint:",
+                .found = "The conversion has type:",
+                .wanted = "But this field needs:",
             },
             .try_value, .pattern, .ctor_arg, .destructure, .general => return .{
                 .intro = "Something is off here:",

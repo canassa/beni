@@ -1,0 +1,2 @@
+schema Hidden =
+    value : Int

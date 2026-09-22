@@ -1,0 +1,146 @@
+-- S2: one module exports independent record, generic and tagged schema namespaces.
+import Schema exposing (Conversion)
+import Conversions
+
+
+pub schema User =
+    id : Int
+    email : String optional
+    nickname : String optional nullable
+
+
+pub schema Audit =
+    at : Int nullable
+
+
+pub schema OnlyNull = Null
+
+
+pub nullProgram : OnlyNull.Type
+nullProgram =
+    Schema.Null
+
+
+pub nullEncoded : OnlyNull.Encoded
+nullEncoded =
+    Schema.Null
+
+
+pub schema Finite = FiniteFloat
+
+
+pub finiteProgram : Finite.Type
+finiteProgram =
+    1.0
+
+
+pub finiteEncoded : Finite.Encoded
+finiteEncoded =
+    1.0
+
+
+pub schema TextId = String
+
+
+declaredConversion : Conversion Int String
+declaredConversion =
+    Debug.todo "checker-only conversion"
+
+
+-- The schema sees this unannotated alias before its declaration. Its inferred
+-- Conversion type must join the same dependency/SCC work as ordinary values.
+pub schema NumberId = Int via inferredConversion
+
+
+inferredConversion =
+    declaredConversion
+
+
+pub schema AnnotatedId = Int via declaredConversion
+
+
+pub schema ImportedId = Int via Conversions.convert
+
+
+pub schema Page item =
+    item : item
+
+
+pub schema Message tagged "kind" of
+    Text as "text"
+        value : String
+    Count as "count"
+        value : Int
+
+
+-- Nominal endpoint methods remain ordinary module values. They do not enter
+-- the schema namespace member table.
+pub addCount : Message.Type, Int -> Int
+addCount message extra =
+    case message of
+        Message.Text row ->
+            extra
+
+        Message.Count row ->
+            row.value + extra
+
+
+-- This custom well-known method is selected by Message.Type. Tree.Type is a
+-- second nominal endpoint in the same module and still has derived evidence;
+-- spelling `left < right` for Tree would hit the module-rule name clash.
+pub compare : Message.Type, Message.Type -> Order
+compare left right =
+    EQ
+
+
+pub schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
+
+
+-- This use precedes the private schema declaration and must resolve through
+-- the source-order schema skeleton rather than a checker pass boundary.
+privateDescription =
+    Private.schema ()
+
+
+schema Private =
+    token : String optional
+
+
+schema Hidden item =
+    value : item
+
+
+pub hiddenInt : Hidden.Type Int
+hiddenInt =
+    { value = 1 }
+
+
+schema PrivateEvent tagged "kind" of
+    Open as "open"
+        id : Int
+    Closed as "closed"
+        reason : String
+
+
+privateEvent : PrivateEvent.Type
+privateEvent =
+    PrivateEvent.Open { id = 1 }
+
+
+privateEncodedEvent : PrivateEvent.Encoded
+privateEncodedEvent =
+    PrivateEvent.Encoded.Closed { reason = "done" }
+
+
+privateCase : PrivateEvent.Type -> Bool
+privateCase event =
+    case event of
+        PrivateEvent.Open row ->
+            True
+
+        PrivateEvent.Closed row ->
+            False

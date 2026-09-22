@@ -36,6 +36,10 @@ pub const Context = struct {
     /// a platform given as a directory is unknown until it is named, so a
     /// missing `Html` gets the plain message and no guess.
     platform: []const u8 = "",
+    /// Visible constructor members for `unknown_schema_member`.
+    available: []const []const u8 = &.{},
+    schema_location: []const u8 = "",
+    alias_location: []const u8 = "",
 };
 
 pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -107,6 +111,59 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             , .{ cx.module, cx.module, cx.name });
             try platformHint(cx, w);
         },
+        .schema_used_as_type => try w.print(
+            \\`{s}` names a schema. Its program type is `{s}.Type`; its encoded type is
+            \\`{s}.Encoded`.
+        , .{ cx.name, cx.name, cx.name }),
+        .schema_used_as_value => if (cx.expected == 0) try w.print(
+            \\`{s}` names a schema namespace, not a value.
+            \\
+            \\Pass its description with `{s}.schema ()`.
+        , .{ cx.name, cx.name }) else try w.print(
+            \\`{s}` names a generic schema namespace, not a value.
+            \\
+            \\Pass its description with `{s}.schema` and its {d} required schema {s}.
+        , .{ cx.name, cx.name, cx.expected, if (cx.expected == 1) "argument" else "arguments" }),
+        .schema_name_collision => try w.print(
+            \\`{s}` can mean the schema `{s}.{s}` or the module alias for `{s}`.
+            \\
+            \\The schema binding is at `{s}`. The module alias is imported at `{s}`.
+            \\
+            \\Rename the import, for example with `import {s} as Imported{s}`, so the
+            \\qualified access has only one meaning.
+        , .{ cx.name, cx.owner, cx.name, cx.module, cx.schema_location, cx.alias_location, cx.module, cx.name }),
+        .unknown_schema_member => switch (cx.expected) {
+            1 => try w.print(
+                \\`{s}` has no type member called `{s}`.
+                \\
+                \\Its type members are `Type` and `Encoded`.
+            , .{ cx.owner, cx.name }),
+            2 => try w.print(
+                \\`{s}` has no value member called `{s}`.
+                \\
+                \\Its value members are `schema`, `parse`, `print`, `parseWith`, and
+                \\`printWith`.
+            , .{ cx.owner, cx.name }),
+            else => {
+                try w.print("`{s}` has no constructor member called `{s}`.\n\n", .{ cx.owner, cx.name });
+                if (cx.available.len == 0) {
+                    try w.writeAll("This schema has no tagged constructors.");
+                } else {
+                    try w.writeAll("Its constructor members are ");
+                    for (cx.available, 0..) |name, i| {
+                        if (i > 0) try w.writeAll(if (i + 1 == cx.available.len) " and " else ", ");
+                        try w.print("`{s}`", .{name});
+                    }
+                    try w.writeByte('.');
+                }
+            },
+        },
+        .expected_schema => try w.print(
+            \\This field needs a schema, but `{s}` names {s}.
+            \\
+            \\Name a declared schema, a schema parameter, or one of the built-in schema
+            \\operands.
+        , .{ cx.name, if (cx.found == 1) "a type" else if (cx.found == 2) "a value" else "something else" }),
         // A code this pass does not produce; the title is still true.
         else => try w.writeAll(diagnostic.title(code)),
     }

@@ -14,14 +14,14 @@
 //! sections  in table order, each 4-byte aligned
 //! ```
 //!
-//! Three sections, in this order and no other: `interface`, `dispatch`,
-//! `diagnostics`.
+//! Four sections, in this order and no other: `interface`, `dispatch`,
+//! `schema_plan`, `diagnostics`.
 //!
 //! **`interface` is the bytes `iface_bytes.write` produced, verbatim**, so
 //! `iface_bytes.hash` over that section IS the interface hash the firewall
 //! compares and M4-3 re-derives nothing. This file therefore does not know
-//! what is inside it — it is a container over three opaque byte strings, and
-//! `dispatch` is opaque to it in the same way.
+//! what is inside it — it is a container over four opaque byte strings, and
+//! `dispatch` and `schema_plan` are opaque to it in the same way.
 //!
 //! **The entry repeats its key in the header because the file NAME is the
 //! key.** A mismatch is the "wrong build id" case — a directory entry moved,
@@ -51,12 +51,13 @@ pub const magic = "BENICAC\x00";
 /// version bump and a cache discard, never a migration into spare bytes
 /// (`plans/m4-plan.md` D4) — and the compiler build id in the key means a
 /// version bump is belt and braces rather than the only defence.
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
 
-/// The three sections, in this order and no other.
+/// The four sections, in this order and no other.
 pub const Section = enum(u32) {
     interface,
     dispatch,
+    schema_plan,
     diagnostics,
 
     pub const count: u32 = @typeInfo(Section).@"enum".fields.len;
@@ -72,7 +73,7 @@ pub const ReadError = error{
     BadEntry,
 } || Allocator.Error;
 
-/// What an entry holds, as three opaque byte strings plus the key it was
+/// What an entry holds, as four opaque byte strings plus the key it was
 /// written for. Borrowed from the file's bytes on the way in and out.
 pub const Entry = struct {
     key: [16]u8,
@@ -80,6 +81,8 @@ pub const Entry = struct {
     interface: []const u8,
     /// `dispatch_bytes.write`'s output.
     dispatch: []const u8,
+    /// `schema_plan_bytes.write`'s output.
+    schema_plan: []const u8,
     /// `writeDiagnostics`' output.
     diagnostics: []const u8,
 
@@ -87,6 +90,7 @@ pub const Entry = struct {
         return switch (s) {
             .interface => e.interface,
             .dispatch => e.dispatch,
+            .schema_plan => e.schema_plan,
             .diagnostics => e.diagnostics,
         };
     }
@@ -147,6 +151,7 @@ pub fn read(bytes: []const u8) ReadError!Entry {
         .key = bytes[16..32].*,
         .interface = &.{},
         .dispatch = &.{},
+        .schema_plan = &.{},
         .diagnostics = &.{},
     };
     for (0..Section.count) |i| {
@@ -162,6 +167,7 @@ pub fn read(bytes: []const u8) ReadError!Entry {
         switch (@as(Section, @enumFromInt(i))) {
             .interface => entry.interface = slice,
             .dispatch => entry.dispatch = slice,
+            .schema_plan => entry.schema_plan = slice,
             .diagnostics => entry.diagnostics = slice,
         }
     }
@@ -287,6 +293,7 @@ fn sampleEntry() Entry {
         // padding between sections is exercised rather than assumed.
         .interface = "record bytes, verbatim",
         .dispatch = "sidecar",
+        .schema_plan = "plan",
         .diagnostics = "rows and a blob!!",
     };
 }
@@ -301,6 +308,7 @@ test "an entry round-trips, sections and key alike" {
     try testing.expectEqualSlices(u8, &entry.key, &back.key);
     try testing.expectEqualStrings(entry.interface, back.interface);
     try testing.expectEqualStrings(entry.dispatch, back.dispatch);
+    try testing.expectEqualStrings(entry.schema_plan, back.schema_plan);
     try testing.expectEqualStrings(entry.diagnostics, back.diagnostics);
 
     // Writing the loaded entry again gives the same bytes, which is what
@@ -310,7 +318,7 @@ test "an entry round-trips, sections and key alike" {
     try testing.expectEqualSlices(u8, bytes, again);
 }
 
-test "an entry with three empty sections round-trips" {
+test "an entry with four empty sections round-trips" {
     // The floor: a module with no `pub` declaration, no dispatch and no
     // diagnostic. Nothing here may need a section to be non-empty.
     const gpa = testing.allocator;
@@ -318,12 +326,14 @@ test "an entry with three empty sections round-trips" {
         .key = sample_key,
         .interface = "",
         .dispatch = "",
+        .schema_plan = "",
         .diagnostics = "",
     });
     defer gpa.free(bytes);
     const back = try readFor(bytes, sample_key);
     try testing.expectEqual(@as(usize, 0), back.interface.len);
     try testing.expectEqual(@as(usize, 0), back.dispatch.len);
+    try testing.expectEqual(@as(usize, 0), back.schema_plan.len);
     try testing.expectEqual(@as(usize, 0), back.diagnostics.len);
 }
 
@@ -486,6 +496,7 @@ test "fuzz: a mutated entry never reads back as one that leaves the file" {
         .key = sample_key,
         .interface = "a" ** 130,
         .dispatch = "b" ** 71,
+        .schema_plan = "p" ** 69,
         .diagnostics = diagnostics,
     });
     defer gpa.free(bytes);

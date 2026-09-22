@@ -1,0 +1,21 @@
+module Models
+  schema Event
+    type Type : Event.Type
+    type Encoded : Event.Encoded
+    value schema : () -> Schema Event.Encoded Event.Type
+    value parse : String -> Result (List Issue) Event.Type
+    value print : Event.Type -> Result (List Issue) String
+    value parseWith : Options, String -> Result (List Issue) Event.Type
+    value printWith : Options, Event.Type -> Result (List Issue) String
+    ctor type.Text/1 : { value : String } -> Event.Type
+    ctor type.Count/1 : { value : Int } -> Event.Type
+    ctor encoded.Text/1 : { value : String } -> Event.Encoded
+    ctor encoded.Count/1 : { value : Int } -> Event.Encoded
+  schema User
+    type Type : { id : Int }
+    type Encoded : { id : Int }
+    value schema : () -> Schema User.Encoded User.Type
+    value parse : String -> Result (List Issue) User.Type
+    value print : User.Type -> Result (List Issue) String
+    value parseWith : Options, String -> Result (List Issue) User.Type
+    value printWith : Options, User.Type -> Result (List Issue) String

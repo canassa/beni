@@ -1,0 +1,7 @@
+import Models exposing (User)
+import User
+
+
+bad : User.Type
+bad =
+    { id = 1 }

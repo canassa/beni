@@ -71,9 +71,9 @@ pub const magic = "BENIIFC\x00";
 /// a version bump and a cache discard, never a migration into spare bytes:
 /// the alignment padding below is padding and NOT a reserved field
 /// (`plans/m4-plan.md` D4).
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
 
-/// The eleven columns, in this order and no other. `terms` is split into
+/// The fourteen columns, in this order and no other. `terms` is split into
 /// its three SoA columns rather than written as a row of 12 bytes, because
 /// that is what the record already is and what §8.3 wants to map.
 pub const Column = enum(u32) {
@@ -86,6 +86,9 @@ pub const Column = enum(u32) {
     term_rhs,
     extra,
     type_refs,
+    schemas,
+    schema_members,
+    schema_ctors,
     symbols,
     strings,
 
@@ -102,6 +105,8 @@ pub const Column = enum(u32) {
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 12,
+            .schemas => 32,
+            .schema_members, .schema_ctors => 16,
             .strings => 1,
         };
     }
@@ -203,6 +208,9 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     lengths[@intFromEnum(Column.term_rhs)] = @intCast(iface.terms.len);
     lengths[@intFromEnum(Column.extra)] = @intCast(iface.extra.len);
     lengths[@intFromEnum(Column.type_refs)] = @intCast(iface.type_refs.len);
+    lengths[@intFromEnum(Column.schemas)] = @intCast(iface.schemas.len);
+    lengths[@intFromEnum(Column.schema_members)] = @intCast(iface.schema_members.len);
+    lengths[@intFromEnum(Column.schema_ctors)] = @intCast(iface.schema_ctors.len);
     lengths[@intFromEnum(Column.symbols)] = @intCast(iface.symbols.len);
     lengths[@intFromEnum(Column.strings)] = @intCast(blob.items.len);
 
@@ -286,6 +294,44 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[0..4], @intFromEnum(r.module), .little);
             std.mem.writeInt(u32, row[4..8], @intFromEnum(r.name), .little);
             row[8] = @intFromEnum(r.package);
+        }
+    }
+    {
+        const out = bytes[offsets_of[@intFromEnum(Column.schemas)]..];
+        for (iface.schemas, 0..) |s, i| {
+            const row = out[i * 32 ..][0..32];
+            std.mem.writeInt(u32, row[0..4], @intFromEnum(s.name), .little);
+            std.mem.writeInt(u32, row[4..8], s.params_len, .little);
+            std.mem.writeInt(u32, row[8..12], s.members_start, .little);
+            std.mem.writeInt(u32, row[12..16], s.members_end, .little);
+            std.mem.writeInt(u32, row[16..20], s.program_ctors_start, .little);
+            std.mem.writeInt(u32, row[20..24], s.program_ctors_end, .little);
+            std.mem.writeInt(u32, row[24..28], s.encoded_ctors_start, .little);
+            std.mem.writeInt(u32, row[28..32], s.encoded_ctors_end, .little);
+        }
+    }
+    {
+        const out = bytes[offsets_of[@intFromEnum(Column.schema_members)]..];
+        for (iface.schema_members, 0..) |m, i| {
+            const row = out[i * 16 ..][0..16];
+            std.mem.writeInt(u32, row[0..4], @intFromEnum(m.name), .little);
+            std.mem.writeInt(u32, row[4..8], @intFromEnum(m.schema), .little);
+            std.mem.writeInt(u32, row[8..12], @intFromEnum(m.scheme), .little);
+            row[12] = @intFromEnum(m.kind);
+            row[13] = m.arity;
+            row[14] = @intFromBool(m.visible);
+        }
+    }
+    {
+        const out = bytes[offsets_of[@intFromEnum(Column.schema_ctors)]..];
+        for (iface.schema_ctors, 0..) |c, i| {
+            const row = out[i * 16 ..][0..16];
+            std.mem.writeInt(u32, row[0..4], @intFromEnum(c.name), .little);
+            std.mem.writeInt(u32, row[4..8], @intFromEnum(c.schema), .little);
+            std.mem.writeInt(u32, row[8..12], @intFromEnum(c.scheme), .little);
+            row[12] = @intFromEnum(c.endpoint);
+            row[13] = c.arity;
+            row[14] = @intFromBool(c.visible);
         }
     }
     writeWords(bytes[offsets_of[@intFromEnum(Column.symbols)]..], offsets);
@@ -485,6 +531,58 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
             };
         }
     }
+    {
+        const in = bytes[offsets_of[@intFromEnum(Column.schemas)]..];
+        const schemas = try gpa.alloc(Interface.Schema, lengths[@intFromEnum(Column.schemas)]);
+        iface.schemas = schemas;
+        for (schemas, 0..) |*s, i| {
+            const row = in[i * 32 ..][0..32];
+            s.* = .{
+                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .params_len = std.mem.readInt(u32, row[4..8], .little),
+                .members_start = std.mem.readInt(u32, row[8..12], .little),
+                .members_end = std.mem.readInt(u32, row[12..16], .little),
+                .program_ctors_start = std.mem.readInt(u32, row[16..20], .little),
+                .program_ctors_end = std.mem.readInt(u32, row[20..24], .little),
+                .encoded_ctors_start = std.mem.readInt(u32, row[24..28], .little),
+                .encoded_ctors_end = std.mem.readInt(u32, row[28..32], .little),
+            };
+        }
+    }
+    {
+        const in = bytes[offsets_of[@intFromEnum(Column.schema_members)]..];
+        const members = try gpa.alloc(Interface.SchemaMember, lengths[@intFromEnum(Column.schema_members)]);
+        iface.schema_members = members;
+        for (members, 0..) |*m, i| {
+            const row = in[i * 16 ..][0..16];
+            if (row[15] != 0 or row[14] & ~@as(u8, 1) != 0) return error.BadRecord;
+            m.* = .{
+                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .schema = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
+                .scheme = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .kind = std.enums.fromInt(Interface.SchemaMember.Kind, row[12]) orelse return error.BadRecord,
+                .arity = row[13],
+                .visible = row[14] & 1 == 1,
+            };
+        }
+    }
+    {
+        const in = bytes[offsets_of[@intFromEnum(Column.schema_ctors)]..];
+        const ctors = try gpa.alloc(Interface.SchemaCtor, lengths[@intFromEnum(Column.schema_ctors)]);
+        iface.schema_ctors = ctors;
+        for (ctors, 0..) |*c, i| {
+            const row = in[i * 16 ..][0..16];
+            if (row[15] != 0 or row[14] & ~@as(u8, 1) != 0) return error.BadRecord;
+            c.* = .{
+                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .schema = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
+                .scheme = @enumFromInt(std.mem.readInt(u32, row[8..12], .little)),
+                .endpoint = std.enums.fromInt(Interface.SchemaCtor.Endpoint, row[12]) orelse return error.BadRecord,
+                .arity = row[13],
+                .visible = row[14] & 1 == 1,
+            };
+        }
+    }
 
     if (!verify(&iface)) return error.BadRecord;
     return iface;
@@ -612,6 +710,54 @@ pub fn verify(iface: *const Interface) bool {
     for (iface.type_refs) |r| {
         if (@intFromEnum(r.module) >= symbols) return false;
         if (@intFromEnum(r.name) >= symbols) return false;
+    }
+    var members_end: u32 = 0;
+    var ctors_end: u32 = 0;
+    for (iface.schemas, 0..) |s, schema_i| {
+        if (@intFromEnum(s.name) >= symbols) return false;
+        if (s.members_start > s.members_end or s.members_end > iface.schema_members.len) return false;
+        if (s.members_start != members_end or s.members_end - s.members_start != 7) return false;
+        if (s.program_ctors_start > s.program_ctors_end or s.program_ctors_end > iface.schema_ctors.len) return false;
+        if (s.encoded_ctors_start > s.encoded_ctors_end or s.encoded_ctors_end > iface.schema_ctors.len) return false;
+        if (s.program_ctors_start != ctors_end or s.program_ctors_end != s.encoded_ctors_start) return false;
+        if (s.program_ctors_end - s.program_ctors_start != s.encoded_ctors_end - s.encoded_ctors_start) return false;
+        for (iface.schema_members[s.members_start..s.members_end], 0..) |m, kind_i| {
+            if (@intFromEnum(m.schema) != schema_i or @intFromEnum(m.kind) != kind_i) return false;
+            const extra_arity: u32 = switch (kind_i) {
+                0, 1 => 0,
+                2 => @intFromBool(s.params_len == 0),
+                3, 4 => 1,
+                5, 6 => 2,
+                else => unreachable,
+            };
+            const full_arity = @as(u64, s.params_len) + @as(u64, extra_arity);
+            const expected: u8 = if (full_arity >= std.math.maxInt(u8)) std.math.maxInt(u8) else @intCast(full_arity);
+            if (m.arity != expected) return false;
+        }
+        for (iface.schema_ctors[s.program_ctors_start..s.program_ctors_end]) |c| {
+            if (@intFromEnum(c.schema) != schema_i or c.endpoint != .type) return false;
+        }
+        for (iface.schema_ctors[s.encoded_ctors_start..s.encoded_ctors_end]) |c| {
+            if (@intFromEnum(c.schema) != schema_i or c.endpoint != .encoded) return false;
+        }
+        const program = iface.schema_ctors[s.program_ctors_start..s.program_ctors_end];
+        const encoded = iface.schema_ctors[s.encoded_ctors_start..s.encoded_ctors_end];
+        for (program, encoded) |p, e| {
+            if (iface.symbol(p.name) != iface.symbol(e.name) or p.arity != e.arity) return false;
+        }
+        members_end = s.members_end;
+        ctors_end = s.encoded_ctors_end;
+    }
+    if (members_end != iface.schema_members.len or ctors_end != iface.schema_ctors.len) return false;
+    for (iface.schema_members) |m| {
+        if (@intFromEnum(m.name) >= symbols or @intFromEnum(m.schema) >= iface.schemas.len) return false;
+        if (m.scheme == .none or @intFromEnum(m.scheme) >= iface.schemes.len) return false;
+        if (!m.visible) return false;
+    }
+    for (iface.schema_ctors) |c| {
+        if (@intFromEnum(c.name) >= symbols or @intFromEnum(c.schema) >= iface.schemas.len) return false;
+        if (c.scheme == .none or @intFromEnum(c.scheme) >= iface.schemes.len) return false;
+        if (!c.visible or c.arity > 1) return false;
     }
     return true;
 }
@@ -816,6 +962,9 @@ test "the symbols column shares one strings record between equal names" {
         .values = &.{},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -840,6 +989,9 @@ test "a string the session never interned is UnknownSymbol, not a miss" {
         .values = &.{},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -873,6 +1025,9 @@ test "the symbol column is text, so a different interner numbering reads back th
         .values = &.{},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -891,6 +1046,9 @@ test "the symbol column is text, so a different interner numbering reads back th
         .values = &.{},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},
@@ -932,6 +1090,9 @@ test "a column offset past the end, and a strings record that overruns the blob"
         .values = &.{.{ .name = @enumFromInt(0), .is_foreign = false, .scheme = .none }},
         .types = &.{},
         .ctors = &.{},
+        .schemas = &.{},
+        .schema_members = &.{},
+        .schema_ctors = &.{},
         .schemes = &.{},
         .terms = .empty,
         .extra = &.{},

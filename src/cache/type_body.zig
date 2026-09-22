@@ -54,6 +54,7 @@ const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Types = @import("../check/Types.zig");
+const Interface = @import("../resolve/Interface.zig");
 
 pub const Symbol = InternPool.Symbol;
 
@@ -102,6 +103,137 @@ pub const Context = struct {
 /// Append the encoding of `root` to `out`.
 pub fn write(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, root: Bir.Inst.Index) Allocator.Error!void {
     return writeAt(gpa, out, cx, root, 0);
+}
+
+/// The same position-free encoding, starting from a checked interface term.
+/// Schema record endpoints have no BIR type annotation of their own: their
+/// structural expansion is the last child of the endpoint's `alias` term.
+/// Reading that term keeps the dependency digest sensitive to the endpoint
+/// shape without admitting the resolved schema plan (and private `via`
+/// expressions) into the hash.
+pub const InterfaceContext = struct {
+    graph: *const Graph,
+    types: *const Types,
+    interner: *const InternPool.Global,
+    module: Graph.Index,
+    iface: *const Interface,
+};
+
+pub fn writeInterface(
+    gpa: Allocator,
+    out: *std.ArrayList(u8),
+    cx: InterfaceContext,
+    root: Interface.TermIndex,
+) Allocator.Error!void {
+    return writeInterfaceAt(gpa, out, cx, root, 0);
+}
+
+fn writeInterfaceAt(
+    gpa: Allocator,
+    out: *std.ArrayList(u8),
+    cx: InterfaceContext,
+    index: Interface.TermIndex,
+    depth: u32,
+) Allocator.Error!void {
+    if (depth > max_depth) return tag(gpa, out, .too_deep);
+    const term = cx.iface.term(index);
+    switch (term.tag) {
+        .@"var" => {
+            try tag(gpa, out, .@"var");
+            return appendInt(gpa, out, u32, term.lhs);
+        },
+        .func => {
+            const params = cx.iface.range(term.lhs);
+            try tag(gpa, out, .func);
+            try appendInt(gpa, out, u32, @intCast(params.len));
+            for (params) |p| try writeInterfaceAt(gpa, out, cx, @enumFromInt(p), depth + 1);
+            return writeInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+        },
+        .app => return writeInterfaceNamed(gpa, out, cx, term.lhs, cx.iface.range(term.rhs), depth),
+        .alias => {
+            const words = cx.iface.range(term.rhs);
+            if (words.len == 0) return tag(gpa, out, .err);
+            // The final word is the alias expansion. As with BIR bodies,
+            // nested aliases stay named; closure adds their own digest row.
+            return writeInterfaceNamed(gpa, out, cx, term.lhs, words[0 .. words.len - 1], depth);
+        },
+        .tuple => {
+            const elements = cx.iface.range(term.lhs);
+            try tag(gpa, out, .tuple);
+            try appendInt(gpa, out, u32, @intCast(elements.len));
+            for (elements) |e| try writeInterfaceAt(gpa, out, cx, @enumFromInt(e), depth + 1);
+        },
+        .record => return writeInterfaceRecord(gpa, out, cx, term, depth),
+        .unit => return tag(gpa, out, .unit),
+        .empty_record => {
+            try tag(gpa, out, .record);
+            try appendInt(gpa, out, u32, 0);
+            return out.append(gpa, 0);
+        },
+        .err => return tag(gpa, out, .err),
+    }
+}
+
+fn writeInterfaceNamed(
+    gpa: Allocator,
+    out: *std.ArrayList(u8),
+    cx: InterfaceContext,
+    ref_word: u32,
+    args: []const u32,
+    depth: u32,
+) Allocator.Error!void {
+    const ref = cx.iface.typeRef(@enumFromInt(ref_word)) orelse return tag(gpa, out, .err);
+    try tag(gpa, out, .named);
+    try out.append(gpa, @intFromEnum(ref.package));
+    try appendText(gpa, out, cx.interner.slice(cx.iface.symbol(ref.module)));
+    try appendText(gpa, out, cx.interner.slice(cx.iface.symbol(ref.name)));
+    try appendInt(gpa, out, u32, @intCast(args.len));
+    for (args) |a| try writeInterfaceAt(gpa, out, cx, @enumFromInt(a), depth + 1);
+}
+
+const InterfaceField = struct {
+    name: Interface.SymbolIndex,
+    value: Interface.TermIndex,
+};
+
+fn writeInterfaceRecord(
+    gpa: Allocator,
+    out: *std.ArrayList(u8),
+    cx: InterfaceContext,
+    term: Interface.Term,
+    depth: u32,
+) Allocator.Error!void {
+    const words = cx.iface.range(term.lhs);
+    if (words.len % 2 != 0) return tag(gpa, out, .err);
+    const fields = try gpa.alloc(InterfaceField, words.len / 2);
+    defer gpa.free(fields);
+    for (fields, 0..) |*field, i| field.* = .{
+        .name = @enumFromInt(words[i * 2]),
+        .value = @enumFromInt(words[i * 2 + 1]),
+    };
+    const Sorter = struct {
+        cx: InterfaceContext,
+        fn lessThan(s: @This(), a: InterfaceField, b: InterfaceField) bool {
+            return std.mem.lessThan(
+                u8,
+                s.cx.interner.slice(s.cx.iface.symbol(a.name)),
+                s.cx.interner.slice(s.cx.iface.symbol(b.name)),
+            );
+        }
+    };
+    std.mem.sort(InterfaceField, fields, Sorter{ .cx = cx }, Sorter.lessThan);
+
+    try tag(gpa, out, .record);
+    try appendInt(gpa, out, u32, @intCast(fields.len));
+    for (fields) |field| {
+        try appendText(gpa, out, cx.interner.slice(cx.iface.symbol(field.name)));
+        try writeInterfaceAt(gpa, out, cx, field.value, depth + 1);
+    }
+    if (term.rhs != Interface.TermIndex.none.int()) {
+        try out.append(gpa, 1);
+        return writeInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+    }
+    return out.append(gpa, 0);
 }
 
 fn writeAt(gpa: Allocator, out: *std.ArrayList(u8), cx: Context, inst: Bir.Inst.Index, depth: u32) Allocator.Error!void {
@@ -232,6 +364,55 @@ pub fn collectLocal(
     root: Bir.Inst.Index,
 ) Allocator.Error!void {
     return collectAt(gpa, out, cx, root, 0);
+}
+
+/// Every type of `cx.module` named by an interface term. Alias terms carry an
+/// expansion for consumers, but closure follows the named alias and its
+/// arguments only; the alias receives its own digest row on the worklist.
+pub fn collectLocalInterface(
+    gpa: Allocator,
+    out: *std.ArrayList(Types.TypeId),
+    cx: InterfaceContext,
+    root: Interface.TermIndex,
+) Allocator.Error!void {
+    return collectInterfaceAt(gpa, out, cx, root, 0);
+}
+
+fn collectInterfaceAt(
+    gpa: Allocator,
+    out: *std.ArrayList(Types.TypeId),
+    cx: InterfaceContext,
+    index: Interface.TermIndex,
+    depth: u32,
+) Allocator.Error!void {
+    if (depth > max_depth) return;
+    const term = cx.iface.term(index);
+    switch (term.tag) {
+        .app, .alias => {
+            if (cx.iface.typeRef(@enumFromInt(term.lhs))) |ref| {
+                const module_name = cx.iface.symbol(ref.module);
+                if (ref.package == cx.graph.module(cx.module).package and module_name == cx.graph.moduleName(cx.module)) {
+                    const id = cx.types.find(cx.graph, ref.package, module_name, cx.iface.symbol(ref.name));
+                    if (id != .none) try out.append(gpa, id);
+                }
+            }
+            const words = cx.iface.range(term.rhs);
+            const args = if (term.tag == .alias and words.len != 0) words[0 .. words.len - 1] else words;
+            for (args) |arg| try collectInterfaceAt(gpa, out, cx, @enumFromInt(arg), depth + 1);
+        },
+        .func => {
+            for (cx.iface.range(term.lhs)) |p| try collectInterfaceAt(gpa, out, cx, @enumFromInt(p), depth + 1);
+            try collectInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+        },
+        .tuple => for (cx.iface.range(term.lhs)) |e| try collectInterfaceAt(gpa, out, cx, @enumFromInt(e), depth + 1),
+        .record => {
+            const words = cx.iface.range(term.lhs);
+            var i: usize = 1;
+            while (i < words.len) : (i += 2) try collectInterfaceAt(gpa, out, cx, @enumFromInt(words[i]), depth + 1);
+            if (term.rhs != Interface.TermIndex.none.int()) try collectInterfaceAt(gpa, out, cx, @enumFromInt(term.rhs), depth + 1);
+        },
+        .@"var", .unit, .empty_record, .err => {},
+    }
 }
 
 fn collectAt(

@@ -510,7 +510,7 @@ fn reportForward(
 fn addRef(l: *Lower, kind: Bir.Ref.Kind, a: u32, b: u32) Allocator.Error!void {
     const stamp = l.cur_decl + 1;
     switch (kind) {
-        .top_value, .top_type => {
+        .top_value, .top_type, .top_schema => {
             if (l.decl_stamp[a] == stamp) return;
             l.decl_stamp[a] = stamp;
         },
@@ -518,7 +518,7 @@ fn addRef(l: *Lower, kind: Bir.Ref.Kind, a: u32, b: u32) Allocator.Error!void {
             if (l.ctor_stamp[a] == stamp) return;
             l.ctor_stamp[a] = stamp;
         },
-        .import_value, .import_ctor, .import_type => {
+        .import_value, .import_ctor, .import_type, .import_schema => {
             // The module and name are compared as symbols, not as symbol
             // indices: each occurrence has its own slot in `symbols`.
             const ma = l.symbols.items[a];
@@ -621,6 +621,7 @@ fn lowerImport(l: *Lower, node: NodeIndex) Allocator.Error!void {
                 // see the same duplicates, so only one reports.
                 try l.expose(&l.ctor_names, symbol, entry);
                 if (!l.types.contains(symbol)) try l.types.put(l.scratch_allocator, symbol, entry);
+                if (!l.schemas.contains(symbol)) try l.schemas.put(l.scratch_allocator, symbol, entry);
             },
             else => {},
         }
@@ -737,11 +738,55 @@ fn newDecl(l: *Lower, kind: Bir.Decl.Kind, name_token: TokenIndex, header: Ast.D
 
 fn declareSchema(l: *Lower, node: NodeIndex) Allocator.Error!void {
     const d = l.tree.fullSchemaDecl(node);
+    // S2's generated interface names must already be in this file's Local
+    // pool so the serial merge places them in Global before checker workers
+    // and in-session interface round trips use the non-mutating `find` path.
+    // `getOrPut` below may grow the interner's byte buffer, so retain an
+    // owned copy rather than a slice which that growth can invalidate.
+    const schema_name = try l.scratch_allocator.dupe(u8, l.interner.slice(l.tokenSymbol(d.name)));
+    defer l.scratch_allocator.free(schema_name);
+    for ([_][]const u8{ "Type", "Encoded", "schema", "parse", "print", "parseWith", "printWith" }) |member| {
+        _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, member));
+    }
+    for ([_][]const u8{ "Type", "Encoded" }) |endpoint| {
+        const full = try std.fmt.allocPrint(l.scratch_allocator, "{s}.{s}", .{ schema_name, endpoint });
+        defer l.scratch_allocator.free(full);
+        _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, full));
+    }
+    if (l.schemaTaggedNode(d.body)) |tagged_node| {
+        for (l.tree.fullSchemaTagged(tagged_node).variants) |variant_node| {
+            if (l.tree.nodeTag(variant_node) != .schema_variant) continue;
+            const variant = l.tokenText(l.tree.fullSchemaVariant(variant_node).name);
+            const program = try std.fmt.allocPrint(l.scratch_allocator, "{s}.{s}", .{ schema_name, variant });
+            defer l.scratch_allocator.free(program);
+            _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, program));
+            const encoded = try std.fmt.allocPrint(l.scratch_allocator, "{s}.Encoded.{s}", .{ schema_name, variant });
+            defer l.scratch_allocator.free(encoded);
+            _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, encoded));
+        }
+    }
+    for (d.params, 0..) |_, i| {
+        var buf: [32]u8 = undefined;
+        const encoded_name = if (i == 0) "e" else std.fmt.bufPrint(&buf, "e{d}", .{i + 1}) catch unreachable;
+        _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, encoded_name));
+    }
     const index = try l.newDecl(.schema, d.name, d.header);
     try l.decl_sources.append(l.scratch_allocator, .{ .node = node, .annotation = .none });
     // A schema is deliberately absent from `values` and `types`: S2 adds
     // the separate namespace and resolves its members (schema.md §3).
     try l.declareName(&l.schemas, l.tokenSymbol(d.name), d.name, index, .duplicate_declaration, false);
+}
+
+fn schemaTaggedNode(l: *const Lower, root: NodeIndex) ?NodeIndex {
+    var at = root;
+    var budget = l.tree.nodes.len + 1;
+    while (budget > 0) : (budget -= 1) switch (l.tree.nodeTag(at)) {
+        .schema_tagged => return at,
+        .schema_value => at = l.tree.fullSchemaField(at).operand,
+        .schema_paren => at = l.tree.operand(at),
+        else => return null,
+    };
+    return null;
 }
 
 /// Register `symbol` declared at `token` in `table`, reporting a duplicate
@@ -1349,10 +1394,6 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const symbol = l.tokenSymbol(token);
     if (l.lookupLocal(symbol)) |local| return l.addInst(.local, local, Inst.Data.unused);
-    if (l.in_schema_expr) {
-        const name = try l.addSymbol(symbol);
-        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
-    }
     for (l.forward) |name| {
         if (name == symbol) {
             @branchHint(.cold);
@@ -1370,6 +1411,10 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     if (prelude.wellKnown(symbol)) |w| {
         if (prelude.valueModule(w)) |m| return l.importRef(.import_value, .import_value, m.symbol(), symbol);
     }
+    if (l.in_schema_expr) {
+        const name = try l.addSymbol(symbol);
+        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+    }
     try l.reportToken(.unbound_variable, token);
     return l.errorInst(.unbound_variable);
 }
@@ -1378,10 +1423,6 @@ fn resolveValue(l: *Lower, token: TokenIndex) Allocator.Error!Index {
 fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const symbol = l.tokenSymbol(token);
-    if (l.in_schema_expr) {
-        const name = try l.addSymbol(symbol);
-        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
-    }
     if (l.ctor_names.get(symbol)) |entry| switch (entry.kind) {
         .top => {
             try l.addRef(.top_ctor, entry.index, 0);
@@ -1392,6 +1433,11 @@ fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     if (prelude.wellKnown(symbol)) |w| {
         if (prelude.ctorModule(w)) |m| return l.importRef(.import_ctor, .import_ctor, m.symbol(), symbol);
     }
+    if (l.schemas.contains(symbol)) return l.schemaNamespaceRef(token, .schema_value_ref);
+    if (l.in_schema_expr) {
+        const name = try l.addSymbol(symbol);
+        return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+    }
     try l.reportToken(.unbound_constructor, token);
     return l.errorInst(.unbound_constructor);
 }
@@ -1400,6 +1446,86 @@ fn schemaExprRef(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     l.cur_token = token;
     const name = try l.addSymbol(l.tokenSymbol(token));
     return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
+}
+
+/// Keep a possibly schema-qualified spelling whole until imported interfaces
+/// exist. Record the dependency edge now, while import aliases and local
+/// declaration indices are still available.
+fn schemaNamespaceRef(l: *Lower, token: TokenIndex, tag: Inst.Tag) Allocator.Error!Index {
+    l.cur_token = token;
+    const text = l.tokenText(token);
+    const first_dot = std.mem.indexOfScalar(u8, text, '.') orelse text.len;
+    const root = try l.interner.getOrPut(l.gpa, text[0..first_dot]);
+    _ = try l.addSymbol(root);
+    if (std.mem.lastIndexOfScalar(u8, text, '.')) |last_dot| {
+        _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, text[0..last_dot]));
+        _ = try l.addSymbol(try l.interner.getOrPut(l.gpa, text[last_dot + 1 ..]));
+    }
+    if (l.schemas.get(root)) |entry| switch (entry.kind) {
+        .top => try l.addRef(.top_schema, entry.index, 0),
+        .exposed => {
+            const module = l.importModule(entry.index);
+            const m = try l.addSymbol(module);
+            const n = try l.addSymbol(root);
+            try l.addRef(.import_schema, @intFromEnum(m), @intFromEnum(n));
+        },
+    };
+    if (first_dot < text.len) {
+        var best_len: usize = 0;
+        var best_module: ?Symbol = null;
+        for (l.imports.items) |imp| {
+            if (imp.prelude) continue;
+            const alias = l.interner.slice(l.symbols.items[@intFromEnum(imp.alias)]);
+            if (alias.len <= best_len or alias.len >= text.len) continue;
+            if (!std.mem.startsWith(u8, text, alias) or text[alias.len] != '.') continue;
+            const tail = text[alias.len + 1 ..];
+            if (std.mem.indexOfScalar(u8, tail, '.') == null) continue;
+            best_len = alias.len;
+            best_module = l.symbols.items[@intFromEnum(imp.module)];
+        }
+        if (best_module) |module| {
+            const tail = text[best_len + 1 ..];
+            const dot = std.mem.indexOfScalar(u8, tail, '.').?;
+            const schema = try l.interner.getOrPut(l.gpa, tail[0..dot]);
+            const m = try l.addSymbol(module);
+            const n = try l.addSymbol(schema);
+            try l.addRef(.import_schema, @intFromEnum(m), @intFromEnum(n));
+        }
+    }
+    const whole = try l.addSymbol(l.tokenSymbol(token));
+    return l.addInst(tag, @intFromEnum(whole), 0);
+}
+
+/// Whether a qualified spelling needs the schema namespace resolver.  An
+/// exact `Alias.member` keeps the ordinary fast path unless the alias also
+/// collides with a schema root.  A longer `Alias.Schema.member` cannot be an
+/// ordinary module access and is deferred once its imported prefix is known.
+fn couldBeSchemaQualified(l: *const Lower, token: TokenIndex) bool {
+    const text = l.tokenText(token);
+    const first_dot = std.mem.indexOfScalar(u8, text, '.') orelse return false;
+    const last_dot = std.mem.lastIndexOfScalar(u8, text, '.').?;
+    var root_schema = false;
+    var schema_it = l.schemas.keyIterator();
+    while (schema_it.next()) |symbol| {
+        if (std.mem.eql(u8, l.interner.slice(symbol.*), text[0..first_dot])) {
+            root_schema = true;
+            break;
+        }
+    }
+    const module_text = text[0..last_dot];
+    var exact_module = false;
+    var prefix_module = false;
+    for (l.imports.items) |imp| {
+        const alias = l.interner.slice(l.symbols.items[@intFromEnum(imp.alias)]);
+        if (std.mem.eql(u8, alias, module_text)) exact_module = true;
+        if (alias.len < text.len and text[alias.len] == '.' and std.mem.startsWith(u8, text, alias) and
+            std.mem.indexOfScalar(u8, text[alias.len + 1 ..], '.') != null) prefix_module = true;
+    }
+    for (prelude.modules) |w| {
+        if (std.mem.eql(u8, @tagName(w), module_text)) exact_module = true;
+    }
+    if (exact_module) return false;
+    return root_schema or prefix_module;
 }
 
 /// An unqualified upper name in type position (§6.2).
@@ -1416,6 +1542,7 @@ fn resolveType(l: *Lower, token: TokenIndex) Allocator.Error!Index {
     if (prelude.wellKnown(symbol)) |w| {
         if (prelude.typeModule(w)) |m| return l.importRef(.type_import, .import_type, m.symbol(), symbol);
     }
+    if (l.schemas.contains(symbol)) return l.schemaNamespaceRef(token, .schema_type_ref);
     try l.reportToken(.unbound_type, token);
     return l.errorInst(.unbound_type);
 }
@@ -1487,7 +1614,10 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         .type_con => {
             const con = l.tree.fullTypeCon(node);
             const ref = switch (l.tags[con.name]) {
-                .qualified_upper => try l.resolveQualified(con.name, .type_qualified, .import_type, .unbound_type),
+                .qualified_upper => if (l.couldBeSchemaQualified(con.name))
+                    try l.schemaNamespaceRef(con.name, .schema_type_ref)
+                else
+                    try l.resolveQualified(con.name, .type_qualified, .import_type, .unbound_type),
                 else => try l.resolveType(con.name),
             };
             if (con.args.len == 0) return ref;
@@ -1616,11 +1746,17 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.addInst(.string, offset, @as(u32, @intCast(l.string_bytes.items.len)) - offset);
         },
         .ident => return switch (l.tags[main_token]) {
-            .qualified_lower => if (l.in_schema_expr) l.schemaExprRef(main_token) else l.resolveQualified(main_token, .qualified, .import_value, .unbound_variable),
+            .qualified_lower => if (l.couldBeSchemaQualified(main_token))
+                l.schemaNamespaceRef(main_token, .schema_value_ref)
+            else
+                l.resolveQualified(main_token, .qualified, .import_value, .unbound_variable),
             else => l.resolveValue(main_token),
         },
         .ctor => return switch (l.tags[main_token]) {
-            .qualified_upper => if (l.in_schema_expr) l.schemaExprRef(main_token) else l.resolveQualified(main_token, .qualified_ctor, .import_ctor, .unbound_constructor),
+            .qualified_upper => if (l.couldBeSchemaQualified(main_token))
+                l.schemaNamespaceRef(main_token, .schema_ctor_ref)
+            else
+                l.resolveQualified(main_token, .qualified_ctor, .import_ctor, .unbound_constructor),
             else => l.resolveCtor(main_token),
         },
         .accessor => {
@@ -2568,7 +2704,10 @@ fn lowerPattern(l: *Lower, node: NodeIndex, set_start: usize, kind: Bir.Local.Ki
         .pat_ctor => {
             const pc = l.tree.fullPatCtor(node);
             const ref = switch (l.tags[pc.name]) {
-                .qualified_upper => try l.resolveQualified(pc.name, .qualified_ctor, .import_ctor, .unbound_constructor),
+                .qualified_upper => if (l.couldBeSchemaQualified(pc.name))
+                    try l.schemaNamespaceRef(pc.name, .schema_ctor_ref)
+                else
+                    try l.resolveQualified(pc.name, .qualified_ctor, .import_ctor, .unbound_constructor),
                 else => try l.resolveCtor(pc.name),
             };
             const mark = l.scratchMark();
@@ -2866,9 +3005,9 @@ fn checkWellFormed(bir: *const Bir) !void {
             try checkInDecl(d, l.inst);
         }
         for (bir.declRefs(d)) |r| switch (r.kind) {
-            .top_value, .top_type => try testing.expect(r.a < bir.decls.len),
+            .top_value, .top_type, .top_schema => try testing.expect(r.a < bir.decls.len),
             .top_ctor => try testing.expect(r.a < bir.ctors.len),
-            .import_value, .import_ctor, .import_type => {
+            .import_value, .import_ctor, .import_type, .import_schema => {
                 try testing.expect(r.a < bir.symbols.len and r.b < bir.symbols.len);
             },
         };
@@ -2926,9 +3065,10 @@ fn checkInst(bir: *const Bir, d: Bir.Decl, inst: Index) !void {
         .import_value, .import_ctor, .qualified, .qualified_ctor, .type_import, .type_qualified => {
             try testing.expect(data.lhs < bir.symbols.len and data.rhs < bir.symbols.len);
         },
+        .schema_type_ref, .schema_value_ref, .schema_ctor_ref => try checkSymbol(bir, @enumFromInt(data.lhs)),
         // Lowering never produces these; `resolve/Resolve.zig` rewrites
         // the forms above into them after the module graph exists.
-        .ext_value, .ext_ctor, .ext_type => return error.TestUnexpectedResult,
+        .ext_value, .ext_ctor, .ext_type, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .schema_type_top, .ext_schema_type, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target => return error.TestUnexpectedResult,
         .type_var => {
             try testing.expect(data.lhs < bir.symbols.len);
             const info = Bir.TypeVarInfo.unpack(data.rhs);

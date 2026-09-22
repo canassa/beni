@@ -165,6 +165,12 @@ pub const Inst = struct {
         /// `Alias.Ctor` in expression or pattern position. `lhs` module,
         /// `rhs` name.
         qualified_ctor,
+        /// A dotted name which may begin with a schema namespace. The
+        /// whole spelling is `lhs: SymbolIndex`; resolution decides the
+        /// module/schema split once imported interfaces exist.
+        schema_type_ref,
+        schema_value_ref,
+        schema_ctor_ref,
 
         // ---- Resolved references (checker.md §4.5) ---------------------
         //
@@ -183,6 +189,16 @@ pub const Inst = struct {
         /// A constructor of another module. `lhs` module index, `rhs`
         /// index into its interface `ctors`.
         ext_ctor,
+        /// A fixed callable member of a local/imported schema namespace.
+        /// Local: `lhs` declaration, `rhs` SchemaMember.Kind. External:
+        /// `lhs` module, `rhs` Interface.SchemaMemberIndex.
+        schema_member_top,
+        ext_schema_member,
+        /// A constructor in one endpoint family of a local/imported tagged
+        /// schema. Local `lhs` is the schema declaration and `rhs` packs
+        /// endpoint/variant; external `rhs` is Interface.SchemaCtorIndex.
+        schema_ctor_top,
+        ext_schema_ctor,
 
         // ---- Types -----------------------------------------------------
 
@@ -202,6 +218,10 @@ pub const Inst = struct {
         /// A type of another module, resolved (see `ext_value`). `lhs`
         /// module index, `rhs` index into its interface `types`.
         ext_type,
+        /// A Type/Encoded endpoint member of a local/imported schema.
+        /// Payloads follow `schema_member_top` / `ext_schema_member`.
+        schema_type_top,
+        ext_schema_type,
         /// A type applied to arguments, `Maybe a`. `lhs` is the type
         /// reference; `rhs` is extra `SubRange` of argument type insts.
         type_app,
@@ -248,6 +268,11 @@ pub const Inst = struct {
         /// An unresolved nonlocal leaf inside a `via` Atom. `lhs` is its
         /// SymbolIndex and the instruction token retains lower/upper/qualified.
         schema_expr_ref,
+        /// Resolved schema operands used only by the S2 elaborator.
+        schema_parameter,
+        schema_primitive,
+        schema_target_top,
+        ext_schema_target,
 
         // ---- Expressions: literals -------------------------------------
 
@@ -381,7 +406,18 @@ pub const Inst = struct {
         /// produces, which `Resolve` rewrites and nothing after it sees.
         pub fn isUnresolved(tag: Tag) bool {
             return switch (tag) {
-                .import_value, .import_ctor, .qualified, .qualified_ctor, .type_import, .type_qualified => true,
+                .import_value,
+                .import_ctor,
+                .qualified,
+                .qualified_ctor,
+                .type_import,
+                .type_qualified,
+                .schema_type_ref,
+                .schema_value_ref,
+                .schema_ctor_ref,
+                .schema_ref,
+                .schema_expr_ref,
+                => true,
                 else => false,
             };
         }
@@ -667,6 +703,30 @@ pub const SchemaVariant = struct {
     rename: Inst.OptionalIndex,
 };
 
+pub const SchemaPrimitive = enum(u8) {
+    string,
+    bool,
+    int,
+    float,
+    finite_float,
+    null,
+    value,
+    list,
+};
+
+pub const SchemaCtorRef = packed struct(u32) {
+    variant: u31,
+    encoded: bool,
+
+    pub fn pack(ref: SchemaCtorRef) u32 {
+        return @bitCast(ref);
+    }
+
+    pub fn unpack(raw: u32) SchemaCtorRef {
+        return @bitCast(raw);
+    }
+};
+
 pub const Ctor = struct {
     name: SymbolIndex,
     /// The constructor name's token.
@@ -718,9 +778,11 @@ pub const Ref = struct {
         top_value,
         top_ctor,
         top_type,
+        top_schema,
         import_value,
         import_ctor,
         import_type,
+        import_schema,
     };
 };
 
@@ -877,7 +939,20 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
 fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32) bool {
     const data = bir.instData(inst);
     return switch (bir.instTag(inst)) {
-        .schema_ref, .schema_expr_ref => data.lhs < symbols_len,
+        .schema_ref, .schema_expr_ref, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => data.lhs < symbols_len,
+        // Interface.SchemaMember.Kind has endpoint types 0...1 and callable
+        // values 2...6. Keep the two resolved namespaces disjoint on load.
+        .schema_member_top => validSchemaDecl(bir, data.lhs) and data.rhs >= 2 and data.rhs <= 6,
+        .schema_type_top => validSchemaDecl(bir, data.lhs) and data.rhs <= 1,
+        .schema_ctor_top => blk: {
+            if (!validSchemaDecl(bir, data.lhs)) break :blk false;
+            const ref = SchemaCtorRef.unpack(data.rhs);
+            break :blk ref.variant < schemaVariantCount(bir, bir.decls[data.lhs]);
+        },
+        .schema_parameter => data.lhs < d.params,
+        .schema_primitive => data.lhs <= @intFromEnum(SchemaPrimitive.list),
+        .schema_target_top => validSchemaDecl(bir, data.lhs),
+        .ext_schema_member, .ext_schema_ctor, .ext_schema_type, .ext_schema_target => true,
         .schema_app => inDecl(d, data.lhs) and verifyInstRangeAt(bir, d, data.rhs),
         .schema_paren, .schema_as, .schema_via => inDecl(d, data.lhs),
         .schema_record => verifyInstRange(bir, d, inlineRange(data)),
@@ -897,6 +972,29 @@ fn verifySchemaInst(bir: *const Bir, d: Decl, inst: Inst.Index, symbols_len: u32
         .schema_optional, .schema_nullable => true,
         else => true,
     };
+}
+
+fn validSchemaDecl(bir: *const Bir, raw: u32) bool {
+    return raw < bir.decls.len and bir.decls[raw].kind == .schema;
+}
+
+fn schemaVariantCount(bir: *const Bir, d: Decl) u32 {
+    var at = d.schema_body.unwrap() orelse return 0;
+    var budget = bir.insts.len + 1;
+    while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
+        .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+        .schema_tagged => {
+            const raw = bir.instData(at).rhs;
+            if (raw > bir.extra.len or extraLen(SubRange) > bir.extra.len - raw) return 0;
+            const range = bir.extraData(@enumFromInt(raw), SubRange);
+            const start = @intFromEnum(range.start);
+            const end = @intFromEnum(range.end);
+            if (!inRange(start, end, bir.extra.len)) return 0;
+            return @intCast(end - start);
+        },
+        else => return 0,
+    };
+    return 0;
 }
 
 fn inDecl(d: Decl, raw: u32) bool {

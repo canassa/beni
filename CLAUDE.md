@@ -41,7 +41,7 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 ## M3 — in progress
 
-**Schema S1 implements the frontend** (2026-09-22):
+**Schema S1–S2 implement the frontend and checker** (2026-09-22):
 [`schema.md`](docs/design/schema.md) records the fork — an inspectable description
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
@@ -49,10 +49,14 @@ compiled, each direction independently eliminated. Runtime composition uses
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
 S1 and the layout surface slice parse both brace and aligned declaration bodies,
 format nonempty record bodies and tagged variants as layout, and preserve unresolved schema plans in
-AST/BIR dumps and the frontend cache. Check/build and dumps requiring resolution
-explicitly report `not_implemented` until S2; endpoint types and executable
-schemas are not available yet. The independent queue row 67 checker fix must
-land before S2. Remaining decisions lead the document; H4 remains open. The
+AST/BIR dumps and the frontend cache. S2 resolves schema namespaces and both
+endpoint types, publishes member/constructor schemes, and caches an immutable
+resolved plan. `core/Schema` supplies the public type surface; executable library
+functions await S3. `check` and interface dumps accept schemas; `build` refuses
+them from emit before any output, with `not_implemented`: their parse and print
+are not generated until S4. A.6 owns interface v2, frontend artifact v3, cache
+entry v2 and the unhashed plan v1. Queue row 67 and the brace-modifier row 70
+are fixed. Remaining decisions lead the document; H4 remains open. The
 recorded M4-first slices 1–3 have landed (schema.md A.2–A.4).
 
 M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,

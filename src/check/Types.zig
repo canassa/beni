@@ -54,6 +54,7 @@ const Interface = @import("../resolve/Interface.zig");
 const SourceStore = @import("../SourceStore.zig");
 const TypeStore = @import("TypeStore.zig");
 const reads = @import("reads.zig");
+const InterfaceTerms = @import("InterfaceTerms.zig");
 
 const Types = @This();
 
@@ -102,18 +103,30 @@ pub const Entry = struct {
     /// happened, and §10.3 has a different sentence for each — so the one
     /// question a message needs is asked separately and kept here.
     has_function: bool,
+    /// Compiler-generated endpoint identity owned by a schema declaration.
+    /// These entries have no ordinary type declaration body for the
+    /// equatability walk to inspect.
+    schema_endpoint: bool = false,
 };
 
 /// Owned. One per declared type, in topological module order.
 entries: []Entry,
+/// Borrowed session interface slots, used to map schema member references
+/// back to their endpoint identity.
+interfaces: []const Interface,
 /// Owned. `by_decl[module][decl] = TypeId`, `.none` for a value
 /// declaration. One flat array with per-module offsets, so nothing is
 /// keyed by a name and nothing is a map.
 by_decl: []TypeId,
+schema_type_by_decl: []TypeId,
+schema_encoded_by_decl: []TypeId,
 decl_offsets: []u32,
 /// Owned. `by_interface[module][interface type index] = TypeId`.
 by_interface: []TypeId,
 interface_offsets: []u32,
+/// Two ids per interface schema, Type then Encoded.
+by_schema: []TypeId,
+schema_offsets: []u32,
 /// Owned. `entries[entry_offsets[m]..entry_offsets[m+1]]` are module `m`'s
 /// declared types, `pub` and private alike — the range `resolveRefs`
 /// searches by name.
@@ -156,14 +169,26 @@ pub const WellKnown = struct {
     /// `Never` is the empty type. Both stay in `core/Basics.beni` (A.6).
     order: TypeId = .none,
     never: TypeId = .none,
+    schema: TypeId = .none,
+    conversion: TypeId = .none,
+    presence: TypeId = .none,
+    nullable: TypeId = .none,
+    issue: TypeId = .none,
+    options: TypeId = .none,
+    value: TypeId = .none,
 };
 
 pub const empty: Types = .{
     .entries = &.{},
+    .interfaces = &.{},
     .by_decl = &.{},
+    .schema_type_by_decl = &.{},
+    .schema_encoded_by_decl = &.{},
     .decl_offsets = &.{},
     .by_interface = &.{},
     .interface_offsets = &.{},
+    .by_schema = &.{},
+    .schema_offsets = &.{},
     .entry_offsets = &.{},
     .ref_ids = &.{},
     .well_known = .{},
@@ -172,9 +197,13 @@ pub const empty: Types = .{
 pub fn deinit(types: *Types, gpa: Allocator) void {
     gpa.free(types.entries);
     gpa.free(types.by_decl);
+    gpa.free(types.schema_type_by_decl);
+    gpa.free(types.schema_encoded_by_decl);
     gpa.free(types.decl_offsets);
     gpa.free(types.by_interface);
     gpa.free(types.interface_offsets);
+    gpa.free(types.by_schema);
+    gpa.free(types.schema_offsets);
     for (types.ref_ids) |ids| gpa.free(ids);
     gpa.free(types.ref_ids);
     gpa.free(types.entry_offsets);
@@ -196,6 +225,7 @@ pub fn entry(types: *const Types, id: TypeId) Entry {
         .equatable = true,
         .comparable = true,
         .has_function = false,
+        .schema_endpoint = false,
     };
     const e = types.entries[id.int()];
     // The funnel every `Types.Entry` field goes through — `name`,
@@ -233,6 +263,98 @@ pub fn hasFunction(types: *const Types, id: TypeId) bool {
     return types.entry(id).has_function;
 }
 
+pub fn settleSchemaEndpoint(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var) Allocator.Error!void {
+    if (id == .none or id.int() >= types.entries.len) return;
+    const p = try types.schemaProperties(gpa, store, id, value);
+    types.entries[id.int()].equatable = p.equatable;
+    types.entries[id.int()].comparable = p.comparable;
+    types.entries[id.int()].has_function = p.has_function;
+}
+
+pub fn includeSchemaEndpoint(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var) Allocator.Error!void {
+    if (id == .none or id.int() >= types.entries.len) return;
+    const p = try types.schemaProperties(gpa, store, id, value);
+    types.entries[id.int()].equatable = types.entries[id.int()].equatable and p.equatable;
+    types.entries[id.int()].comparable = types.entries[id.int()].comparable and p.comparable;
+    types.entries[id.int()].has_function = types.entries[id.int()].has_function or p.has_function;
+}
+
+pub const SchemaProperties = struct { equatable: bool, comparable: bool, has_function: bool };
+
+pub fn count(types: *const Types) usize {
+    return types.entries.len;
+}
+
+pub fn schemaPropertyBits(types: *const Types, id: TypeId) u8 {
+    if (id == .none or id.int() >= types.entries.len) return 0;
+    const e = types.entries[id.int()];
+    return @as(u8, @intFromBool(e.equatable)) |
+        (@as(u8, @intFromBool(e.comparable)) << 1) |
+        (@as(u8, @intFromBool(e.has_function)) << 2);
+}
+
+pub fn restoreSchemaPropertyBits(types: *Types, id: TypeId, bits: u8) void {
+    if (id == .none or id.int() >= types.entries.len) return;
+    types.entries[id.int()].equatable = bits & 1 != 0;
+    types.entries[id.int()].comparable = bits & 2 != 0;
+    types.entries[id.int()].has_function = bits & 4 != 0;
+}
+
+fn schemaProperties(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var) Allocator.Error!SchemaProperties {
+    return types.schemaPropertiesWithDeps(gpa, store, id, value, null);
+}
+
+pub fn schemaPropertiesWithDeps(types: *Types, gpa: Allocator, store: *TypeStore, id: TypeId, value: Var, deps: ?*std.ArrayList(TypeId)) Allocator.Error!SchemaProperties {
+    const seen = try gpa.alloc(bool, store.count());
+    defer gpa.free(seen);
+    @memset(seen, false);
+    var stack: std.ArrayList(Var) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, value);
+    var equatable = true;
+    var comparable = true;
+    var has_function = false;
+    while (stack.pop()) |raw| {
+        const root = store.find(raw);
+        if (root.int() >= seen.len or seen[root.int()]) continue;
+        seen[root.int()] = true;
+        switch (store.content(root)) {
+            .err, .flex, .rigid => {},
+            .structure => |shape| switch (shape) {
+                .unit, .empty_record => {},
+                .func => {
+                    equatable = false;
+                    comparable = false;
+                    has_function = true;
+                },
+                .app => |app| {
+                    if (app.type != id) {
+                        const e = types.entry(app.type);
+                        if (e.schema_endpoint and deps != null) {
+                            try deps.?.append(gpa, app.type);
+                        } else {
+                            equatable = equatable and e.equatable;
+                            comparable = comparable and e.comparable;
+                            has_function = has_function or e.has_function;
+                        }
+                    }
+                    try stack.appendSlice(gpa, store.vars(app.args));
+                },
+                .tuple => |r| try stack.appendSlice(gpa, store.vars(r)),
+                .record => |r| {
+                    for (store.fields(r.fields)) |f| try stack.append(gpa, f.value);
+                    try stack.append(gpa, r.ext);
+                },
+            },
+            .alias => |a| {
+                try stack.appendSlice(gpa, store.vars(a.args));
+                try stack.append(gpa, a.actual);
+            },
+        }
+    }
+    return .{ .equatable = equatable, .comparable = comparable, .has_function = has_function };
+}
+
 /// The type declared by `decl` of `module`, or `.none` when that
 /// declaration is a value.
 pub fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex) TypeId {
@@ -254,6 +376,33 @@ pub fn ofInterface(types: *const Types, module: Graph.Index, index: Interface.Ty
     const limit = types.interface_offsets[module.int() + 1];
     if (@intFromEnum(index) >= limit - base) return .none;
     return types.by_interface[base + @intFromEnum(index)];
+}
+
+pub fn ofSchema(types: *const Types, module: Graph.Index, index: Interface.SchemaIndex, endpoint: Interface.SchemaCtor.Endpoint) TypeId {
+    if (module.int() + 1 >= types.schema_offsets.len) return .none;
+    const base = types.schema_offsets[module.int()];
+    const limit = types.schema_offsets[module.int() + 1];
+    const at = @as(u64, @intFromEnum(index)) * 2 + @intFromEnum(endpoint);
+    if (at >= limit - base) return .none;
+    return types.by_schema[base + @as(u32, @intCast(at))];
+}
+
+pub fn ofSchemaDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint) TypeId {
+    if (module.int() + 1 >= types.decl_offsets.len) return .none;
+    const base = types.decl_offsets[module.int()];
+    const limit = types.decl_offsets[module.int() + 1];
+    if (decl.int() >= limit - base) return .none;
+    return switch (endpoint) {
+        .type => types.schema_type_by_decl[base + decl.int()],
+        .encoded => types.schema_encoded_by_decl[base + decl.int()],
+    };
+}
+
+fn typesFromLists(base: u32, decl: Bir.DeclIndex, endpoint: Interface.SchemaCtor.Endpoint, type_ids: []const TypeId, encoded_ids: []const TypeId) TypeId {
+    const at = @as(u64, base) + decl.int();
+    const ids = if (endpoint == .type) type_ids else encoded_ids;
+    if (at >= ids.len) return .none;
+    return ids[@intCast(at)];
 }
 
 /// How `id` is written into an interface record: the declaring module's
@@ -339,6 +488,7 @@ pub fn build(
     interner: *const InternPool.Global,
 ) Allocator.Error!Types {
     var types: Types = .empty;
+    types.interfaces = interfaces;
     errdefer types.deinit(gpa);
     const modules = graph.count();
 
@@ -346,12 +496,20 @@ pub fn build(
     errdefer entries.deinit(gpa);
     var by_decl: std.ArrayList(TypeId) = .empty;
     errdefer by_decl.deinit(gpa);
+    var schema_type_by_decl: std.ArrayList(TypeId) = .empty;
+    errdefer schema_type_by_decl.deinit(gpa);
+    var schema_encoded_by_decl: std.ArrayList(TypeId) = .empty;
+    errdefer schema_encoded_by_decl.deinit(gpa);
     var by_interface: std.ArrayList(TypeId) = .empty;
     errdefer by_interface.deinit(gpa);
+    var by_schema: std.ArrayList(TypeId) = .empty;
+    errdefer by_schema.deinit(gpa);
     const decl_offsets = try gpa.alloc(u32, modules + 1);
     errdefer gpa.free(decl_offsets);
     const interface_offsets = try gpa.alloc(u32, modules + 1);
     errdefer gpa.free(interface_offsets);
+    const schema_offsets = try gpa.alloc(u32, modules + 1);
+    errdefer gpa.free(schema_offsets);
     const entry_offsets = try gpa.alloc(u32, modules + 1);
     errdefer gpa.free(entry_offsets);
     // One empty slot per module; each is filled by the thread that checks
@@ -374,11 +532,40 @@ pub fn build(
         const m: Graph.Index = @enumFromInt(i);
         decl_offsets[i] = @intCast(by_decl.items.len);
         interface_offsets[i] = @intCast(by_interface.items.len);
+        schema_offsets[i] = @intCast(by_schema.items.len);
         entry_offsets[i] = @intCast(entries.items.len);
         const bir = artifacts.bir(graph.moduleFile(m));
         const package = graph.modules.items(.package)[i];
         const module_name = graph.moduleName(m);
         for (bir.decls, 0..) |d, di| {
+            if (d.kind == .schema) {
+                try by_decl.append(gpa, .none);
+                const tagged = if (d.schema_body.unwrap()) |root| schemaTagged(bir, root) else false;
+                inline for ([_]Interface.SchemaCtor.Endpoint{ .type, .encoded }) |endpoint| {
+                    const suffix = if (endpoint == .type) "Type" else "Encoded";
+                    const full = try std.fmt.allocPrint(gpa, "{s}.{s}", .{ interner.slice(bir.symbol(d.name)), suffix });
+                    defer gpa.free(full);
+                    const endpoint_name = interner.find(full) orelse unreachable;
+                    const id: TypeId = @enumFromInt(entries.items.len);
+                    try entries.append(gpa, .{
+                        .module = m,
+                        .decl = @enumFromInt(di),
+                        .name = endpoint_name,
+                        .package = package,
+                        .module_name = module_name,
+                        .arity = std.math.cast(u8, d.params) orelse std.math.maxInt(u8),
+                        .kind = if (tagged) .adt else .alias,
+                        .equatable = true,
+                        .comparable = true,
+                        .has_function = false,
+                        .schema_endpoint = true,
+                    });
+                    if (endpoint == .type) try schema_type_by_decl.append(gpa, id) else try schema_encoded_by_decl.append(gpa, id);
+                }
+                continue;
+            }
+            try schema_type_by_decl.append(gpa, .none);
+            try schema_encoded_by_decl.append(gpa, .none);
             if (d.kind.isValue()) {
                 try by_decl.append(gpa, .none);
                 continue;
@@ -399,6 +586,7 @@ pub fn build(
                 .equatable = true, // settled below
                 .comparable = true, // settled below
                 .has_function = false, // settled below
+                .schema_endpoint = false,
             });
             try by_decl.append(gpa, id);
         }
@@ -417,16 +605,30 @@ pub fn build(
             const at = decl_offsets[i] + decl.int();
             try by_interface.append(gpa, if (at < by_decl.items.len) by_decl.items[at] else .none);
         }
+        for (iface.schemas, 0..) |_, si| {
+            const decl = prov.schemaDecl(si) orelse {
+                try by_schema.appendSlice(gpa, &.{ .none, .none });
+                continue;
+            };
+            inline for ([_]Interface.SchemaCtor.Endpoint{ .type, .encoded }) |endpoint| {
+                try by_schema.append(gpa, typesFromLists(decl_offsets[i], decl, endpoint, schema_type_by_decl.items, schema_encoded_by_decl.items));
+            }
+        }
     }
     decl_offsets[modules] = @intCast(by_decl.items.len);
     interface_offsets[modules] = @intCast(by_interface.items.len);
+    schema_offsets[modules] = @intCast(by_schema.items.len);
     entry_offsets[modules] = @intCast(entries.items.len);
 
     types.entries = try entries.toOwnedSlice(gpa);
     types.by_decl = try by_decl.toOwnedSlice(gpa);
+    types.schema_type_by_decl = try schema_type_by_decl.toOwnedSlice(gpa);
+    types.schema_encoded_by_decl = try schema_encoded_by_decl.toOwnedSlice(gpa);
     types.by_interface = try by_interface.toOwnedSlice(gpa);
+    types.by_schema = try by_schema.toOwnedSlice(gpa);
     types.decl_offsets = decl_offsets;
     types.interface_offsets = interface_offsets;
+    types.schema_offsets = schema_offsets;
     types.entry_offsets = entry_offsets;
     types.ref_ids = ref_ids;
 
@@ -436,6 +638,17 @@ pub fn build(
     types.findWellKnown(graph, interfaces, interner);
     try types.settleEquatable(gpa, graph, artifacts);
     return types;
+}
+
+fn schemaTagged(bir: *const Bir, root: Bir.Inst.Index) bool {
+    var at = root;
+    var budget: usize = bir.insts.len + 1;
+    while (budget > 0 and at.int() < bir.insts.len) : (budget -= 1) switch (bir.instTag(at)) {
+        .schema_tagged => return true,
+        .schema_value, .schema_paren => at = @enumFromInt(bir.instData(at).lhs),
+        else => return false,
+    };
+    return false;
 }
 
 /// Shrink the optimistic "everything is equatable" assumption to a fixpoint
@@ -488,6 +701,7 @@ fn settleEquatable(
     defer walk.deinit();
 
     for (types.entries, 0..) |*e, i| {
+        if (e.schema_endpoint) continue;
         const bir = artifacts.bir(graph.moduleFile(e.module));
         const d = bir.decl(e.decl);
         if (e.kind == .foreign) {
@@ -603,9 +817,13 @@ fn inWellKnownTable(types: *const Types, id: TypeId) bool {
 /// `Handle`'s, and taking it for `Handle`'s emitted a call to it with a
 /// `Handle` in hand.
 fn declaresPubCompare(types: *const Types, module: Graph.Index, bir: *const Bir, id: TypeId) bool {
+    return types.declaresPubMethod(module, bir, id, InternPool.WellKnown.compare.symbol());
+}
+
+pub fn declaresPubMethod(types: *const Types, module: Graph.Index, bir: *const Bir, id: TypeId, method_name: Symbol) bool {
     for (bir.decls) |d| {
         if (!d.kind.isValue() or !d.is_pub) continue;
-        if (bir.symbol(d.name) != InternPool.WellKnown.compare.symbol()) continue;
+        if (bir.symbol(d.name) != method_name) continue;
         const annotation = d.annotation.unwrap() orelse continue;
         if (bir.instTag(annotation) != .type_fn) continue;
         const params = bir.extraSlice(bir.subRange(@enumFromInt(bir.instData(annotation).lhs)), Bir.Inst.Index);
@@ -618,7 +836,7 @@ fn declaresPubCompare(types: *const Types, module: Graph.Index, bir: *const Bir,
 /// The `TypeId` a written type's HEAD names: `Handle`, `List a` and a bare
 /// `Handle` alike. `.none` for anything else — a variable, a tuple, a
 /// record, a function.
-fn writtenHead(types: *const Types, module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index) TypeId {
+pub fn writtenHead(types: *const Types, module: Graph.Index, bir: *const Bir, inst: Bir.Inst.Index) TypeId {
     const tag = bir.instTag(inst);
     if (tag == .type_app) {
         const head: Bir.Inst.Index = @enumFromInt(bir.instData(inst).lhs);
@@ -682,7 +900,7 @@ const BodyWalk = struct {
             switch (tag) {
                 .type_fn => return true,
                 .type_var, .type_unit, .@"error" => {},
-                .type_top, .ext_type => try out.append(w.gpa, types.headId(frame.module, tag, data)),
+                .type_top, .ext_type, .schema_type_top, .ext_schema_type => try out.append(w.gpa, types.headId(frame.module, tag, data)),
                 .type_app => {
                     const head_tag = b.instTag(@enumFromInt(data.lhs));
                     const head_data = b.instData(@enumFromInt(data.lhs));
@@ -712,6 +930,22 @@ fn headId(types: *const Types, module: Graph.Index, tag: Bir.Inst.Tag, data: Bir
     return switch (tag) {
         .type_top => types.ofDecl(module, @enumFromInt(data.lhs)),
         .ext_type => types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
+        .schema_type_top => types.ofSchemaDecl(module, @enumFromInt(data.lhs), if (data.rhs == 0) .type else .encoded),
+        .ext_schema_type => blk: {
+            const owner: Graph.Index = @enumFromInt(data.lhs);
+            if (owner.int() >= types.interfaces.len) break :blk .none;
+            const iface = &types.interfaces[owner.int()];
+            for (iface.schemas, 0..) |schema, i| {
+                if (data.rhs < schema.members_start or data.rhs >= schema.members_end) continue;
+                const endpoint: Interface.SchemaCtor.Endpoint = switch (iface.schema_members[data.rhs].kind) {
+                    .type => .type,
+                    .encoded => .encoded,
+                    else => break :blk .none,
+                };
+                break :blk types.ofSchema(owner, @enumFromInt(i), endpoint);
+            }
+            break :blk .none;
+        },
         else => .none,
     };
 }
@@ -732,6 +966,13 @@ fn findWellKnown(types: *Types, graph: *const Graph, interfaces: []const Interfa
         .{ .module = .Result, .type_name = .Result, .slot = &types.well_known.result },
         .{ .module = .Basics, .type_name = .Order, .slot = &types.well_known.order },
         .{ .module = .Basics, .type_name = .Never, .slot = &types.well_known.never },
+        .{ .module = .Schema, .type_name = .Schema, .slot = &types.well_known.schema },
+        .{ .module = .Schema, .type_name = .Conversion, .slot = &types.well_known.conversion },
+        .{ .module = .Schema, .type_name = .Presence, .slot = &types.well_known.presence },
+        .{ .module = .Schema, .type_name = .Nullable, .slot = &types.well_known.nullable },
+        .{ .module = .Schema, .type_name = .Issue, .slot = &types.well_known.issue },
+        .{ .module = .Schema, .type_name = .Options, .slot = &types.well_known.options },
+        .{ .module = .Schema, .type_name = .Value, .slot = &types.well_known.value },
     };
     for (pairs) |p| {
         // The prelude always targets package `core` (checker.md §4.3), so a
@@ -782,6 +1023,9 @@ pub const Builder = struct {
     /// The pool every `Symbol` above comes from; needed to read a type
     /// variable's NAME, which is what decides its kind (see the header).
     interner: *const InternPool.Global,
+    schema_context: ?*anyopaque = null,
+    schema_lookup: ?*const fn (*anyopaque, u32, bool, []const Var) Allocator.Error!?Var = null,
+    interfaces: []const Interface = &.{},
     /// The annotation's type variables, in first-appearance order. A
     /// handful per annotation; a linear scan beats a map and keeps the
     /// order stable.
@@ -882,7 +1126,7 @@ pub const Builder = struct {
                 bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Field),
                 @as(Bir.Inst.Index, @enumFromInt(data.lhs)),
             ),
-            .type_top, .ext_type => return b.named(tag, data, &.{}),
+            .type_top, .ext_type, .schema_type_top, .ext_schema_type => return b.named(tag, data, &.{}),
             .type_app => {
                 const args = bir.extraSlice(bir.subRange(@enumFromInt(data.rhs)), Bir.Inst.Index);
                 const vars = try b.scratch.alloc(Var, args.len);
@@ -933,9 +1177,24 @@ pub const Builder = struct {
     /// type, an interned `alias` for an alias (checker.md §5 — never
     /// expanded away, only looked THROUGH).
     fn named(b: *Builder, tag: Bir.Inst.Tag, data: Bir.Inst.Data, args: []const Var) Error!Var {
+        if (tag == .ext_schema_type) {
+            const module: Graph.Index = @enumFromInt(data.lhs);
+            if (module.int() >= b.interfaces.len) return b.store.freshErr(b.varRank());
+            const iface = &b.interfaces[module.int()];
+            if (data.rhs >= iface.schema_members.len) return b.store.freshErr(b.varRank());
+            const scheme_i = iface.schema_members[data.rhs].scheme;
+            if (scheme_i == .none) return b.store.freshErr(b.varRank());
+            const scheme = iface.scheme(scheme_i);
+            return InterfaceTerms.instantiateRoot(iface, b.types.refIds(module), b.store, scheme.body, args, b.rank, b.scratch);
+        }
         const id: TypeId = switch (tag) {
             .type_top => b.types.ofDecl(b.module, @enumFromInt(data.lhs)),
             .ext_type => b.types.ofInterface(@enumFromInt(data.lhs), @enumFromInt(data.rhs)),
+            .schema_type_top => blk: {
+                if (b.schema_context) |ctx| if (b.schema_lookup) |lookup| if (try lookup(ctx, data.lhs, data.rhs != 0, args)) |root| return root;
+                break :blk .none;
+            },
+            .ext_schema_type => unreachable,
             else => .none,
         };
         if (id == .none) return b.store.freshErr(b.varRank());

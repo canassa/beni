@@ -1,0 +1,9 @@
+-- `Models.User.Type` has one complete meaning: module Models, schema User.
+-- The exposed schema root `Models` has no nested `User` member.
+import A exposing (Models)
+import Models
+
+
+pub value : Models.User.Type
+value =
+    { id = 1 }

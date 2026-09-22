@@ -298,9 +298,11 @@ const Dumper = struct {
                     .top_value => try d.w.print("top {d} ({s})", .{ r.a, d.declName(r.a) }),
                     .top_ctor => try d.w.print("ctor {d} ({s})", .{ r.a, d.ctorName(r.a) }),
                     .top_type => try d.w.print("type_top {d} ({s})", .{ r.a, d.declName(r.a) }),
+                    .top_schema => try d.w.print("schema_top {d} ({s})", .{ r.a, d.declName(r.a) }),
                     .import_value => try d.w.print("import_value {s}.{s}", .{ d.symRaw(r.a), d.symRaw(r.b) }),
                     .import_ctor => try d.w.print("import_ctor {s}.{s}", .{ d.symRaw(r.a), d.symRaw(r.b) }),
                     .import_type => try d.w.print("import_type {s}.{s}", .{ d.symRaw(r.a), d.symRaw(r.b) }),
+                    .import_schema => try d.w.print("import_schema {s}.{s}", .{ d.symRaw(r.a), d.symRaw(r.b) }),
                 }
                 try d.w.writeByte('\n');
             }
@@ -417,6 +419,8 @@ const Dumper = struct {
             // appear in its output; printed as the pair of indices they
             // are so a future dump of a resolved module is still legible.
             .ext_value, .ext_ctor, .ext_type => try d.w.print(" module {d} #{d}", .{ data.lhs, data.rhs }),
+            .schema_member_top, .schema_ctor_top, .schema_type_top, .schema_target_top => try d.w.print(" decl {d} #{d}", .{ data.lhs, data.rhs }),
+            .ext_schema_member, .ext_schema_ctor, .ext_schema_type, .ext_schema_target => try d.w.print(" module {d} #{d}", .{ data.lhs, data.rhs }),
             .qualified, .qualified_ctor, .type_qualified => {
                 try d.w.writeByte(' ');
                 try d.moduleName(data.lhs, data.rhs, true);
@@ -427,7 +431,9 @@ const Dumper = struct {
                 if (info.param != Bir.TypeVarInfo.param_none) try d.w.print(" (param {d})", .{info.param});
                 if (info.equatable) try d.w.writeAll(" (equatable)");
             },
-            .schema_ref, .schema_expr_ref => try d.w.print(" {s}", .{d.symRaw(data.lhs)}),
+            .schema_ref, .schema_expr_ref, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => try d.w.print(" {s}", .{d.symRaw(data.lhs)}),
+            .schema_parameter => try d.w.print(" param {d}", .{data.lhs}),
+            .schema_primitive => try d.w.print(" {t}", .{@as(Bir.SchemaPrimitive, @enumFromInt(data.lhs))}),
             .schema_app => {
                 try d.w.writeByte(' ');
                 try d.ref(data.lhs);
