@@ -32,3 +32,31 @@
 	url = https://github.com/ryansolid/dom-expressions
 	branch = next
 	shallow = true
+[submodule "references/ajv"]
+	path = references/ajv
+	url = https://github.com/ajv-validator/ajv.git
+	shallow = true
+[submodule "references/typia"]
+	path = references/typia
+	url = https://github.com/samchon/typia.git
+	shallow = true
+[submodule "references/typebox"]
+	path = references/typebox
+	url = https://github.com/sinclairzx81/typebox.git
+	shallow = true
+[submodule "references/arktype"]
+	path = references/arktype
+	url = https://github.com/arktypeio/arktype.git
+	shallow = true
+[submodule "references/fast-json-stringify"]
+	path = references/fast-json-stringify
+	url = https://github.com/fastify/fast-json-stringify.git
+	shallow = true
+[submodule "references/zod"]
+	path = references/zod
+	url = https://github.com/colinhacks/zod.git
+	shallow = true
+[submodule "references/valibot"]
+	path = references/valibot
+	url = https://github.com/fabian-hiller/valibot.git
+	shallow = true
