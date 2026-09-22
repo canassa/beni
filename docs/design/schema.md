@@ -3,10 +3,10 @@
 ## Open decisions for the owner
 
 **Status:** normative. S1 frontend support and the layout declaration spelling
-(§2/A.5) are implemented. Endpoint typing,
-library interpretation and specialised execution await S2–S4. Q3, Q6, Q7, Q9
-and Q11 below remain open; their recommendations guide the affected later slice, not S1.
-Q1, Q2, Q4, Q5, Q8 and Q10 were decided in the owner's review (A.2).
+(§2/A.5) are implemented. S2 is specified and in progress; library
+interpretation and specialised execution await S3–S4. Q3, Q6, Q9 and Q11
+below remain open; their recommendations guide the affected later slice, not S1.
+Q1, Q2, Q4, Q5, Q7, Q8 and Q10 are decided (A.2/A.6).
 Q12's scheduling is A.3/A.4: S1 and row 67 may run in parallel; both precede S2.
 Question identifiers and section numbers stay stable. Append later decisions
 to Appendix A.
@@ -15,7 +15,6 @@ to Appendix A.
 |---|---|---|---|
 | Q3 | Does v1 have defaults? | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
 | Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
-| Q7 | How are encoded constructors spelled in patterns? | Exactly as in expressions: `Message.Encoded.Count row`, and `Models.Message.Encoded.Count row` from a qualified module; program patterns use `Message.Count row`. | Resolver and exhaustive-pattern diagnostics must understand the extra namespace segment. The accepted constructor names and matchability are settled; only the pattern spelling/resolution rule is being confirmed. No bare `Count` exposure is recommended. |
 | Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost in S4. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
 | Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | S3 is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
 
@@ -862,7 +861,7 @@ an author can construct an unchecked value of the same structural type.
 
 S1 provides the frontend, including §2/A.5’s brace-equivalent layout spelling;
 the independent row 67 checker fix has also landed
-(A.4). S2 still needs Q7 confirmed. Later slices retain the dependencies below.
+(A.4). Q7 is confirmed in A.6. Later slices retain the dependencies below.
 Each begins with a fixture that fails on the preceding compiler/library; prove
 red, implement, then reverse the fix in an isolated copy to prove the regression
 is specific.
@@ -974,3 +973,181 @@ ordinary `type` constructor payloads, empty records and all record values.
 A schema record with outer modifiers remains a brace operand because the
 layout field-block production has no outer modifiers. Ordinary `type`, `case`
 and `let` are unchanged. This surface slice follows S1 and precedes S2.
+
+
+### A.6 — S2 type surface, interface and resolved plan (2026-09-22)
+
+The owner confirmed Q7: constructor patterns use exactly the expression name.
+The program family is `Message.Count row`; the encoded family is
+`Message.Encoded.Count row`; a module prefix may precede either. Exposing a
+schema exposes neither family as bare constructors.
+
+`core/Schema.beni` establishes the public type surface which S3 and S4
+implement against. `Presence` and `Nullable` are distinct custom types.
+`Issue` is a record carrying `path : List PathSegment`, `direction : Direction`,
+`endpoint : Endpoint`, a structured `IssueCode`, `message : String`, and
+`input : Maybe Value`; `Value` is an opaque host handle rather than a Beni
+value tree. `Options` is a record with `errors : ErrorMode`,
+`unknownKeys : UnknownKeys`, `maxDepth : Int`, and `reportInput : Bool`.
+Defaults are `FirstError`, `Ignore`, and `reportInput = False`; S3's stack
+proof still decides the default and maximum depth numbers. `InvalidSchema`
+covers a malformed or dangling description and nonproductive recursion;
+`ConversionFailed` includes a callback which violates the nonempty `Err`
+invariant. `Schema e a`, `Conversion b a`, and `Value` are `pub foreign type`s
+whose JavaScript representations belong to the engine. This is a type
+contract, not a frozen representation: Q11 remains open and S2 adds no
+directional callback ABI or library functions.
+
+The hashed interface grows three columns. `schemas` is sorted by schema-name
+text; `schema_members` is grouped by schema in the fixed order `Type`,
+`Encoded`, `schema`, `parse`, `print`, `parseWith`, `printWith`; and
+`schema_ctors` is grouped by schema, program family before encoded family,
+then variant source order. Schema parameter names occupy a range of
+`SymbolIndex` words in the existing `extra` column, in declaration order.
+Only public schemas occur in an interface; member and constructor rows retain
+an explicit visibility bit and readers require it to be public.
+
+```text
+Schema (36 bytes)
+  name: SymbolIndex
+  params_start, params_len: u32
+  members_start, members_end: u32
+  program_ctors_start, program_ctors_end: u32
+  encoded_ctors_start, encoded_ctors_end: u32
+
+SchemaMember (16 bytes)
+  name: SymbolIndex
+  schema: SchemaIndex
+  scheme: SchemeIndex
+  kind: u8       Type | Encoded | schema | parse | print | parseWith | printWith
+  arity: u8
+  flags: u8      bit 0 visible
+  pad: u8        zero
+
+SchemaCtor (16 bytes)
+  name: SymbolIndex
+  schema: SchemaIndex
+  scheme: SchemeIndex
+  endpoint: u8   Type | Encoded
+  arity: u8      zero or one
+  flags: u8      bit 0 visible
+  pad: u8        zero
+```
+
+Every member and constructor has a complete scheme. `Page.Type` quantifies
+the declared program parameter `a`; `Page.Encoded` independently quantifies
+its encoded parameter `e`; the factory quantifies each `(e, a)` pair and takes
+the corresponding explicit `Schema e a` arguments. A structural endpoint is
+an `alias` term carrying both its stable `(package, module, "User.Type")`
+identity and expansion; a tagged endpoint is an `app` term naming that stable
+nominal identity. `Encoded` uses the parallel identity. Constructor schemes
+include their payload and nominal result. Factory and runner schemes include
+all explicit schema parameters and their ordinary saturated arity. Thus an
+importer reconstructs every endpoint and callable from the interface alone;
+it never opens the producer's BIR. Generated full endpoint identities such as
+`Page.Type` and `Page.Encoded`, generated encoded-side quantifier names, and
+the fixed member names are pre-interned serially before workers or cache loads
+begin.
+
+The interface byte format becomes version 2 with fourteen columns, in order:
+`values`, `types`, `ctors`, `schemes`, `term_tags`, `term_lhs`, `term_rhs`,
+`extra`, `type_refs`, `schemas`, `schema_members`, `schema_ctors`, `symbols`,
+`strings`. Existing scalar, alignment, symbol-text and little-endian rules are
+unchanged. Readers validate schema/member/constructor ranges, kinds, schemes,
+arity, visibility and parameter-symbol indices. Any failure, including a
+version mismatch, is a cache miss. The front-end artifact becomes version 3;
+this is the explicit S2 boundary after S1's version 2 unresolved schema graph,
+and its existing `verifySchemaInst` validation remains mandatory.
+
+The unhashed cache sidecar gains one resolved-plan section. The cache entry
+becomes version 2 and its sections are `interface`, `dispatch`, `schema_plan`,
+`diagnostics`. `schema_plan` uses magic `BENISPL\0`, format version 1, the
+standard column table, little-endian scalars, four-byte alignment and
+zero-filled gaps. It has these columns in order:
+
+```text
+definitions, node_tags, node_lhs, node_rhs, node_tokens,
+fields, variants, conversions, checks, annotations, extra,
+term_tags, term_lhs, term_rhs, type_extra, type_refs,
+literals, literal_bytes, symbols, schema_targets, ctor_targets, strings
+```
+
+`definitions` is source order. One 32-byte row contains the schema-name
+`SymbolIndex`, own `Bir.DeclIndex`, parameter `extra` range, root node,
+program and encoded endpoint `TypeRefIndex` values, and the schema-name token.
+Nodes are SoA rows `(tag, lhs, rhs, token)` with this finite meaning:
+
+| Tag | `lhs` | `rhs` |
+|---|---|---|
+| `parameter` | declaration parameter ordinal | zero |
+| `primitive` | `String`, `Bool`, safe `Int`, `Float`, finite `Float`, null or `Value` | zero |
+| `reference` | `SchemaTargetIndex` | `extra` range of child node arguments |
+| `record` | first `FieldIndex` | past-last `FieldIndex` |
+| `list` | child `NodeIndex` | zero |
+| `tagged` | discriminator `LiteralIndex` | `extra` range of `VariantIndex` values |
+| `conversion` | source `NodeIndex` | `ConversionIndex` |
+| `check` | checked child `NodeIndex` | `CheckIndex` |
+| `annotation` | annotated child `NodeIndex` | `AnnotationIndex` |
+| `nullable` | child `NodeIndex` | zero |
+
+Optionality is a field flag because it is meaningful only at a record field.
+A 20-byte field row is `{ name: SymbolIndex, external: LiteralIndex,
+child: NodeIndex, flags: u8, pad: [3]u8, token: u32 }`, with bit 0 meaning
+optional. A 24-byte variant row is `{ name: SymbolIndex,
+external: LiteralIndex, payload: NodeIndex.Optional, program_ctor:
+CtorTargetIndex, encoded_ctor: CtorTargetIndex, token: u32 }`. A 16-byte
+conversion row is `{ expr: Bir.Inst.Index, target_term: TermIndex,
+token: u32, flags: u8, pad: [3]u8 }`; flags distinguish an opaque target and
+the presence of opaque checks. A 20-byte check row is `{ endpoint: u8,
+kind: u8, flags: u8, pad: u8, order: u32, call: Bir.Inst.OptionalIndex,
+metadata: LiteralIndex.Optional, token: u32 }`; its kind distinguishes an
+executable check from the explicit opaque-check marker, and its endpoint and
+order preserve the §5 vocabulary. A 20-byte annotation row is `{ side: u8,
+target_kind: u8, pad: [2]u8, target: u32, key: LiteralIndex.Optional,
+value: LiteralIndex.Optional, token: u32 }`; `target_kind` says whether the
+target is a node or field and `side` says program, encoded or both. The
+expression root is retained because `via` accepts
+an arbitrary Atom, including a parenthesised lambda or let, rather than only a
+bare function. Its resolved BIR subtree and ordinary reference edges carry all
+local and external call dependencies. S2 does not split it into directional
+engine callbacks.
+
+The plan's `term_*`, `type_extra` and `type_refs` columns use the interface's
+flat type-term encoding for conversion target identities, including structural
+targets; they never contain a session `TypeId`. Literals are two-word
+`(start, len)` rows into `literal_bytes`. A `type_refs` row is 12 bytes in the
+interface order `{ module: SymbolIndex, name: SymbolIndex, package: u8,
+pad: [3]u8 }`. A `schema_targets` row is 12 bytes:
+`{ package: u8, pad: [3]u8, module: SymbolIndex, schema: SymbolIndex }`.
+A `ctor_targets` row is 12 bytes: `{ schema: SchemaTargetIndex,
+variant: SymbolIndex, endpoint: u8, pad: [3]u8 }`. Every pad byte is zero.
+On disk each `symbols` word is a byte offset into `strings`, exactly as in the
+interface format; loading re-interns that length-prefixed string and keeps the
+column's order. Live dense module/schema/constructor indices are reconstructed
+only after graph and interface installation.
+
+Every node, definition, field, variant, conversion, term, range, literal,
+symbol and target index is bounds-checked on load; every tag, enum and zero pad
+is validated. Definition, node and variant order is source-derived before
+parallel checking. A bad plan or unknown version discards the whole cache
+entry without a diagnostic. Source tokens and conversion roots are meaningful
+because the cache key pins the module's source and front-end artifact. The
+plan, positions, private schemas and conversion expression targets remain
+outside the interface hash. A private `via` body edit therefore invalidates
+the module and any specialisation which reads it without moving its public
+interface hash; a public endpoint/member/constructor scheme edit does move the
+hash and crosses the firewall.
+
+The dependency-digest recipe and version remain unchanged. Schema endpoint
+identities are ordinary stable `type_refs`, so its existing closed set of
+named types includes public endpoints and any private endpoint reachable from
+a public scheme. Those named-type rows carry the settled equatable, comparable
+and has-function bits and alias expansion exactly as for other types. The
+whole plan and a private conversion body do not enter the digest.
+
+S2 moves the temporary wall rather than removing it. `check` accepts a valid
+schema program and all resolution-requiring dumps see these interface members.
+`build` stops in `Emit.run`, before `findEntry` and before writing any path,
+with `not_implemented` on the schema name: “This schema is checked, but its
+parse and print are not generated until schema S4.” A schema program cannot
+build successfully without its runners.

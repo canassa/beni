@@ -1,0 +1,95 @@
+--! The public types shared by schema declarations, schema runners and the
+--! schema library. The engine owns their JavaScript representation; the
+--! ordinary builders and operations arrive with schema S3.
+
+--| A field which may be absent from an external value.
+pub type Presence a
+    = Missing
+    | Present a
+
+
+--| A value which may be explicitly null at the external boundary.
+pub type Nullable a
+    = Null
+    | NonNull a
+
+
+--| One step from the root to a failed value.
+pub type PathSegment
+    = Field String
+    | Index Int
+
+
+--| The direction in which a schema operation was running.
+pub type Direction
+    = Decoding
+    | Encoding
+
+
+--| The typed endpoint at which a schema operation failed.
+pub type Endpoint
+    = Encoded
+    | Type
+
+
+--| A stable, structured category for a schema failure. `Issue.message`
+--| carries the specific prose and `Issue.path` identifies the value.
+pub type IssueCode
+    = WrongShape
+    | MissingKey
+    | UnknownKey
+    | UnknownTag
+    | InvalidValue
+    | DepthExceeded
+    | InvalidOptions
+    | ConversionFailed
+    | CheckFailed
+    | ParseFailed
+    | PrintFailed
+    | InvalidSchema
+
+
+--| An opaque handle to an untyped host value. The schema engine reads it
+--| directly; it is not a recursively marshalled Beni data structure.
+pub foreign type Value
+
+
+--| A schema failure with its complete location and operation context.
+pub type alias Issue =
+    path : List PathSegment
+    direction : Direction
+    endpoint : Endpoint
+    code : IssueCode
+    message : String
+    input : Maybe Value
+
+
+--| Whether traversal stops at the first failure or collects independent
+--| sibling failures in traversal order.
+pub type ErrorMode
+    = FirstError
+    | AllErrors
+
+
+--| What to do with external keys which the schema does not claim.
+pub type UnknownKeys
+    = Ignore
+    | Reject
+
+
+--| Root options shared by compiled runners and library interpretation.
+pub type alias Options =
+    errors : ErrorMode
+    unknownKeys : UnknownKeys
+    maxDepth : Int
+    reportInput : Bool
+
+
+--| A schema with encoded endpoint `e` and program endpoint `a`.
+--| Its representation remains owned by the engine and is not frozen here.
+pub foreign type Schema e a
+
+
+--| A fallible two-way conversion from schema endpoint `b` to program
+--| endpoint `a`. Its representation remains owned by the engine.
+pub foreign type Conversion b a
