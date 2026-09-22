@@ -259,6 +259,56 @@ K1–K12. **Awaiting the owner.**
 |---|---|---|
 | 57 | **A well-typed program that builds with exit 0 and THROWS at run time.** An annotated top-level value with no parameters and a `where` clause (`pub blank : List a where a.eq : a, a -> Bool` / `blank = []`) is emitted as a function of its evidence, and a monomorphic value defined from it (`blankInts : List Int = blank`) is emitted as a thunk `() => Blank$blank(Blank$eq$prim)` — but consumers read `Blank$blankInts` as a plain value: `List$length(Blank$blankInts)` → `TypeError: Cannot read properties of undefined (reading '$')`. Reproduced by the manager (two modules, `build --platform=node`, `node out/main.mjs`, exit 1). Spec gap: spike §8.1 says the checker refuses a constrained constant first, §10.10 scopes `constrained_constant` to INFERRED schemes, so the ANNOTATED case falls between them. This breaks the no-runtime-exception guarantee, so it outranks everything parked. Owes a fail-first `run/` or `check/bad/` fixture; the fix is either to refuse the annotated case too or to make the emitter and its consumers agree | **done** `aba6c04` (2026-09-22, on darwin): reproduced exactly — build exit 0, `TypeError` at load. **Two spec statements were wrong, not one**: spike §8.1 asserted the checker refuses a zero-parameter constrained declaration "so the backend never meets one", while §10.10 scopes `constrained_constant` to INFERRED schemes, so an annotated one walks past both. **Accepted rather than refused**, under CLAUDE.md rule 7: both fixes close the same exit-0 hole, so a refusal buys no guarantee and costs `Dict.empty`, which is the shape of the value anyone wants. A.25's reason — a function-typed value in flight must be a closure of known arity — is about FUNCTION-typed values, and a constant is not one, so the closure was never an arity fix but a type error the emitter wrote itself. One branch in `Lower.etaExpand`: at arity 0 the expansion is the CALL. §8.1, §8.2/A.25 and §10.10 corrected, A.85 appended; `tests/corpus/run/ConstrainedConstant` is the fixture, and with the branch reversed it is the ONLY test that fails. No `emit/` golden moved — every eta-expansion that already existed had arity above zero |
 
+### Schema specification commission, 2026-09-22
+
+**Normative contract:** [`schema.md`](../docs/design/schema.md), a new document;
+report 32 remains research. The owner has now selected the fork: inspectable
+description plus specialised top-level parse/print, success and failure paths
+compiled, independent DCE, and one engine-owned context contract with differential
+fixtures against the library path. This supersedes “fork remains open” in the
+historical investigation entries below, not their measurement caveats.
+No compiler/core/platform implementation is commissioned here.
+
+Open decisions (the questions, recommendations and costs live at the start of
+schema.md; these are not implicitly accepted by its normative status):
+
+- Q1: `via` typing/orientation — recommend input schema plus fallible conversion
+  with an explicit target endpoint; Encoded comes from the input schema.
+- Q2: v1 primitives — recommend basic scalars, finite/general float distinction,
+  lists/records/tagged unions, presence/nullability, literal checks/enums;
+  defer Dict, tuples and BigInt.
+- Q3: defaults — recommend no v1 declaration defaults; explicit transformations remain.
+- Q4: Issue/Result — recommend `Result (List Issue)` with nonempty failures,
+  structured path/direction/endpoint/code/message and optional input.
+- Q5: options — recommend Effect's first/ignore/sequential/no-input defaults;
+  propose finite depth 512 with explicit-stack traversal (not an Effect default).
+- Q6: description metadata/tooling — retain both endpoints and machine-readable
+  metadata now; JSON Schema output and fallible generators later.
+- Q7: patterns — recommend the accepted constructor spelling in patterns too,
+  `Message.Encoded.Count`, including module qualification.
+- Q8: namespace runners — recommend parse/print/schema and typed/Value runners
+  with With variants; generic schema arguments precede inputs.
+- Q9: differential gate — recommend every schema semantic fixture through both
+  paths inside test-blackbox, with independent expected answers.
+- Q10: operands/presence/recursion — recommend schema operands, separate Presence
+  and Nullable wrappers, explicit nominal tagged recursion in v1; implicit
+  recursive record wrapping waits for constructor/naming rules.
+- Q11: stored-function ABI — preserve independent directional effects, settle H4
+  with P2 before freezing the opaque representation.
+- Q12 **for the owner to confirm:** where do schemas enter the recorded M4-first
+  sequence, and may they precede remaining M4 work? Recommend leaving them
+  unscheduled until confirmed. The 2026-09-19 order was M4 slices 1–3, then
+  effects, then M3d; those three M4 slices are now done. This spec supplies no
+  new implementation slot and does not require all remaining M4 work first.
+
+| # | Slice | State | Acceptance |
+|---|---|---|---|
+| Schema-S1 | Frontend, schema.md §2/§8 | waiting on dependent open decisions and scheduling | Red parse/fmt/BIR fixtures, contextual words preserved, recovery and exact diagnostics |
+| Schema-S2 | Checker, §3–§4/§8 | after S1 and Q1/Q7/Q8/Q10 | Red interface/resolution/type fixtures; serialized/cache-hit endpoint and namespace identity |
+| Schema-S3 | Library and description, §5 | after S2 and synchronous API decisions | Red run fixtures for both endpoints, context, flip/projections, presence, recursion closure and host failures; H4 not claimed |
+| Schema-S4 | Specialisation, §6/§10 | after S3 and Q8/Q9 | Red run/emit/DCE differential fixtures, all gates; add beni benchmark row and qualified measurements |
+| Schema-S5 | Effects, §7 | after P2 and Q11 | All seven EFFECTS.md cases, both paths, directional interface bits and cancellation |
+
 ### Owner decisions on schemas, 2026-09-21 (report 32 to be revised around them)
 
 - **New syntax**: the owner leans to a `schema` declaration, at feature parity with Effect's Schema
@@ -428,3 +478,11 @@ must remain distinct, as Effect's Number and Finite are.
 | 63 | **The existing Effect rc.116 source already has an opt-in compiled-schema registry.** `internal/schema/compilerRegistry.ts` defaults to interpreted entries but can install compiled fast paths and diagnostic/effect fallback through the same public parser APIs; `unstable/schema/SchemaCompiler.ts` documents that contract. Report 34 measures only the requested default baseline. Measuring the optional compiler is a separate follow-up, not silently added to the matrix or used as an unmeasured performance claim. | investigate only if commissioned; no production change |
 | 64 | **JSON-shaped parity does not establish arbitrary JavaScript encode parity.** Ajv and TypeBox accept an explicitly present optional `undefined` where the artifact's absent-or-string rule rejects it. Separate untimed probes preserve those outcomes; measured inputs are JSON-shaped. Beni does not inherit JavaScript undefined from this comparison, and no hand-written repair was added to those rows. | recorded; boundary-spec consideration |
 | 65 | **Typia 15 emits an accepting `undefined` branch for a `never`-valued template index signature.** The generated predicate is `null !== value && undefined === value`; a surplus key matching `__beni_schema_never__*` whose value is undefined passes and is then stripped by the research adapter's mapping. The index signature introduced to obtain exact native fault paths therefore preserves the timed JSON-shaped domain, not arbitrary JavaScript closed-object semantics. Report 34 records the generated evidence and a separate executable counterexample; no upstream patch or Beni implementation. | recorded, NOT fixed |
+
+### Found during the schema specification, 2026-09-22 — recorded, NOT fixed
+
+| # | Item | State |
+|---|---|---|
+| 66 | **The requested effects-plan §H4 anchor does not exist.** `plans/effects-plan.md` has no H4 heading or schema obligation. H4 is report 32's name; `bench/schema-prototype/EFFECTS.md` supplies the actual seven acceptance cases. `schema.md` §7 links those and leaves the nominal stored-function/interface ABI unresolved. The effects plan needs an explicit obligation before P2 can be treated as discharging it. | planning follow-up; no effects decision taken |
+| 67 | **An imported alias to Int rejects a numeric literal in the grammar probe.** With `Models/User.beni`: `pub type alias Type = Int`, and `Use.beni`: `import Models.User as User` / `pub val : User.Type` / `val = 1`, installed `beni 0.1.0-m1 aa57fab71568ff4271a7090db1db11d6`, `check --no-cache --diagnostics=json` exits 1 with `kind_mismatch` (TYPE MISMATCH). Changing the alias/body to `{ userId : Int }` / `{ userId = 1 }` passes, including the same qualification. This is a distinct suspected primitive-alias/kind defect, not evidence against schema namespaces. Minimal source retained here; no compiler diagnosis or fix attempted. | investigate separately; owes a fail-first check/good fixture if confirmed |
+| 68 | **Synchronous closed schema builders and the future opaque effects ABI still need executable proof.** Report 33 proves two endpoints in transparent aliases, not closed heterogeneous builders preserving context plus directional effect information. `schema.md` §5 specifies semantic vocabulary, not an existential ADT or a cast; Q1/Q10 require a concrete builder API before S3, and Q11/S5 require the seven effects cases before freezing the ABI. Recursive-record constructor ownership and JSON Schema/generator metadata likewise remain explicit owner choices, not solved by implicit elaboration. | S3/S5 design and implementation acceptance; not decided by fiat |

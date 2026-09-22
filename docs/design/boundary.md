@@ -232,6 +232,12 @@ exactly this when declining to make its promise type generic over its error.
 comes back.** A capability without that scenario is not finished. This is the discipline whose
 absence produced the bug above, in the codebase that invented the wall.
 
+**Schema format adapters** obey this privilege wall and the failure recipe
+above. [`schema.md`](schema.md) §5 owns bounded JSON adaptation, fallible encode
+as well as decode, and engine-owned context; §7 records the still-open H4
+obligation at synchronous host boundaries. Schemas neither grant user packages
+`foreign` nor replace this section's platform/main contract or ports automatically.
+
 ## 5. `main`, and what a platform provides
 
 **`main` is a platform-owned opaque `Program`.** Its type is a platform fact, so M3 resolves it per

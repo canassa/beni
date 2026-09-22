@@ -16,7 +16,9 @@ rebuilds.
   annotation may carry `where a.compare : a, a -> Order`, and `==` and `<` call
   the receiver type's `eq`/`compare`, derived when it declares none. Contract:
   [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md) — the file
-  name is historical, the document is normative.
+  name is historical, the document is normative. A further departure is specified,
+  not implemented: `schema` declarations define a schema with `Type` and `Encoded`
+  members; [`schema.md`](docs/design/schema.md) owns the contract and open choices.
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
   Node is today's only platform because it is what the test harness needs, not because it is
@@ -35,6 +37,14 @@ parallel per file; then packages, the module graph, interfaces, the type store,
 constrain/solve, exhaustiveness and DAG-parallel module checking.
 
 ## M3 — in progress
+
+**Schemas are specified, not implemented** (2026-09-22):
+[`schema.md`](docs/design/schema.md) records the fork — an inspectable description
+plus specialised top-level parse/print functions, both success and failure paths
+compiled, each direction independently eliminated. Runtime composition uses
+`core/Schema` under the same engine-owned context contract and differential tests.
+The open decisions lead the document; H4 remains open and the commission does not
+change the recorded M4-first implementation order.
 
 M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,
 its decision trees for pattern matching and its `?` have landed
@@ -206,6 +216,10 @@ Read the contract for a phase before its code:
 and has its own:
 [`static-dispatch-spike.md`](docs/design/static-dispatch-spike.md). The four
 point into it at each section it extends; the detail lives there, once.
+Schemas have the same cross-cutting contract in
+[`schema.md`](docs/design/schema.md), with pointers from the language, checker,
+backend and boundary contracts; its open decisions must be settled before the
+dependent implementation slices.
 
 ### 2. Never renumber a section in `docs/design/`
 

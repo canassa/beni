@@ -189,6 +189,12 @@ until M4 caches it. `--core-root` reads the directory instead.
    target is `(module index, decl index)` or `(module index, ctor index)` — dense ids into the
    interface tables, so the checker never looks a name up again.
 
+**Schema namespaces and endpoint elaboration** extend resolution here and the
+interface of §7. [`schema.md`](schema.md) §3–§4 owns K13(b) exposure, the two
+endpoint types, constructor/member lookup, explicit schema parameters and the
+resolved schema plan; §8 owns its diagnostics. The backend receives resolved
+plan data, not a TypeStore. Open questions there precede dependent implementation.
+
 ## 5. The type store
 
 Elm's `Type.Variable` + Roc's `types/store.zig`, in the design's data rules:

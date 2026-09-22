@@ -430,6 +430,13 @@ Two consequences worth stating, because they are what the emitted shape looks li
   operand of a `?` never is — so it is evaluated with the other arguments, before any parameter is
   rebound, and its failure returns out of the loop rather than continuing it.
 
+**Schema declarations** additionally produce an inspectable description and
+ordinary specialised top-level parse/print functions, with both success and
+failure paths compiled. [`schema.md`](schema.md) §6 owns their emitted shapes,
+static/dynamic boundary, resolved-plan input and independent §9 reachability;
+§5 owns the context contract shared with the library interpreter. This is a
+specified fork, not implemented code or an effects-runtime decision.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
