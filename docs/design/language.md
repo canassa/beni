@@ -27,6 +27,14 @@ file name is historical, the document is normative — and the sections below po
 extends them. It reverses two decisions of [`fast-compiler.md`](fast-compiler.md) §3.1, which
 records the reversal in place.
 
+**Layout record declarations.** Adopted 2026-09-22: a record `type alias` body
+and a `schema` body accept aligned fields without braces or commas, and tagged
+schema variants accept aligned heads with indented payload fields. Both spellings
+parse to the same nodes; the formatter always emits layout for nonempty closed
+declaration record bodies. Inline types, extensible and empty records, ordinary
+`type` declarations and record values keep their existing forms (§3–§4, §9;
+[`schema.md`](schema.md) §2/A.5).
+
 | Elm | Beni | Where |
 |---|---|---|
 | `module Foo exposing (..)` header | none; module name from path; `pub` per declaration | §5.1 |
@@ -222,7 +230,9 @@ Decl        := DocComment? Visibility? (TypeAlias | TypeDecl | Annotation | Defi
 Foreign     := 'foreign' lower_ident ':' Type                 -- core root only, §5.4
              | 'equatable'? 'foreign' 'type' upper_ident lower_ident*   -- 'equatable' core only
 Visibility  := 'pub' | 'pub' 'opaque'            -- 'opaque' only before 'type'
-TypeAlias   := 'type' 'alias' upper_ident lower_ident* '=' Type
+TypeAlias   := 'type' 'alias' upper_ident lower_ident* '=' (Type | FieldBlock)
+FieldBlock  := LayoutField+                                  -- aligned, §4 rule 3
+LayoutField := DocComment? lower_ident ':' (Type | FieldBlock)
 TypeDecl    := 'type' upper_ident lower_ident* '=' Ctor ('|' Ctor)*
 Ctor        := upper_ident TypeAtom*
 Annotation  := lower_ident ':' Type
@@ -353,6 +363,20 @@ marker on the same variable, or one on a later occurrence of it, is
 | `pub equatable foreign type List a` | "equatable when every parameter is" |
 | `List equatable` | a list of a variable *named* `equatable`: the word is recognised only where a whole `Type` starts, so an *argument* keeps its old reading |
 
+**Declaration field blocks.** A `FieldBlock` desugars to the brace-form record
+with the same ordered fields and nested record types, producing the same
+`type_record` AST nodes and byte-identical AST/BIR dumps. It is available only
+as a `type alias` body and recursively as a whole field body there; inline
+annotations, extensible records `{ r | name : String }`, ordinary `type`
+constructor payloads, the empty record `{}` and every record value retain
+braces. Schema field blocks use the parallel grammar in `schema.md` §2.
+After a field's `:`, a next token on a later line at a greater column opens a
+nested field block exactly when the next two tokens are `lower_ident ':'`;
+otherwise the field body is a type. This test is exact because `:` never
+follows a type item. A field head encountered after a type has already begun
+is a sibling only at the field column; an indented `street : String` after
+`address : Maybe` is an error, not an implicit record argument to `Maybe`.
+
 **Expressions**
 
 | Construct | Rule |
@@ -375,6 +399,9 @@ than the indent**. Blocks are:
 | a `let` binding's body | the binding's first token | — | a token at column ≤ that, or one the expression cannot continue with |
 | `case` branch list | the first branch's pattern | exactly that column | any token not at that column that the current branch could not consume |
 | a branch's body | the branch's pattern | — | a token at column ≤ that, or one the expression cannot continue with |
+| declaration field block (`FieldBlock` or `SchemaFieldBlock`) | the first field's name | exactly that column, on a later line | a smaller column, or EOF |
+| a layout field's type/operand and modifiers | the field's name | — | a token at column ≤ that, or one the type/operand cannot continue with |
+| layout schema variants | the first variant's name | exactly that column, on a later line | a smaller column, or EOF |
 
 Rules:
 
@@ -387,6 +414,29 @@ Rules:
 | 5 | **`then`, `else`, `of`, `->`, `in`, operators, arguments, `\|` in a type declaration** follow rule 2 and nothing more: any of them may start a line as long as it is right of the enclosing block's indent. |
 | 6 | **Brackets do not suspend layout.** Inside `( [ {` rule 2 applies against the enclosing block's indent, which is what makes an unclosed bracket unable to swallow the file: a token at column 1 ends every open construct and reports `unclosed_delimiter` at the opening bracket. |
 | 7 | **Interpolation follows the string.** Tokens inside `${…}` are on the string's line by construction, so rule 2 holds automatically. |
+
+**Declaration field blocks reuse rule 3's `let` mechanism.** The first field
+sets the block column; exactly that column begins a sibling, a smaller column
+ends the block, and a field's type/operand and modifiers continue only to its
+right. The first field follows `=` on a later line right of the declaration;
+nested blocks follow `:` on a later line right of their field. A lower
+identifier at a column that is neither a sibling column nor right of the field
+is a diagnostic, never silently consumed as a continuation. A dedent to an
+outer field column is valid; a dedent to no enclosing sibling column is not.
+A field head to the right after a type has started is likewise an error (§3).
+Tagged schema variants use the same aligned-list rule, with payload fields
+right of the variant. Brackets set no column: rule 6 still checks against the
+field's enclosing block, never the opening bracket's column.
+
+**Recovery:** a malformed layout field resumes at the next token at exactly
+its field column, or ends the block at a smaller column; column 1 ends all
+open constructs. Reuse `unexpected_token` for a malformed/misaligned field
+and `expected_token` for a missing required token, with field context; no new
+code is introduced. An aligned `age Int` is a field missing `:`. When written
+to the right of a preceding field it can instead be consumed as that type's
+application continuation, as in the brace form; a missing colon supplies no
+field-head lookahead. EOF ends a complete block normally; an incomplete field
+still diagnoses its missing type or token.
 
 **A `where` clause (§3) needs no rule of its own**: it is rule 2 and nothing more. `where` and every
 token of the clause belong to the declaration's block, so each must be at column ≥ 2; a `where` at
@@ -818,7 +868,9 @@ lists, records, record updates, tuples, record types, applications, constructor 
 annotation arrow chains, operator chains — the construct is printed on one line when it fits in 100
 columns *and* the source has no line break between its elements; a source break between elements
 keeps it vertical even when it would fit; a construct that does not fit is broken. `if`, `case` and
-`let` are always vertical.
+`let` are always vertical. Nonempty closed record bodies of `type alias` and
+`schema` declarations, and tagged schema variants, are also always vertical
+layout: this overrides the one-line/source-break choice for these bodies.
 
 | Construct | Rule |
 |---|---|
@@ -829,7 +881,8 @@ keeps it vertical even when it would fit; a construct that does not fit is broke
 | literals | strings, numbers and chars are printed as written, with no escape normalisation; the formatter never changes bytes inside a literal |
 | **Declarations and types** | |
 | annotation, `=` | the annotation goes on its own line directly above its definition, with `pub` on the annotation line. `=` goes at the end of the head line and the body on the next line indented 4 — always, for top-level definitions and `let` bindings alike, as elm-format does. |
-| annotations, `type alias`, `type` | an annotation or `type alias` prints `name :` … on one line if the type fits in 100 columns, otherwise broken at `->` with the arrows leading continuation lines. A `type` declaration puts `=` and each `\|` at the start of their own lines, indented 4. |
+| declaration record bodies | Always print `type alias Name =` or `schema Name =` with fields on following lines, no braces or commas, even when the input fits on one line. Use four spaces per level, recursively for a whole nonempty closed record field body; put its doc comment directly above it at its column. Preserve field order; schema modifiers have one space between them. Tagged schemas print aligned variant heads and indented payload fields (`schema.md` §2). Empty/extensible records and inline record types retain braces and their existing formatting; ordinary `type` declarations and all record values are unchanged. |
+| annotations, non-record `type alias`, `type` | an annotation or `type alias` prints `name :` … on one line if the type fits in 100 columns, otherwise broken at `->` with the arrows leading continuation lines. A `type` declaration puts `=` and each `\|` at the start of their own lines, indented 4. |
 | **`where` clauses** (§3) | **never joined to the annotation's line**, however short. One constraint shares the `where` line, indented 4; two or more put `where` alone on a continuation line indented 4 and one constraint per line indented 8, each after the first led by its comma — elm-format's vertical form. **Source order is kept, never sorted**, and a constraint's own type is printed flat, so a clause the author broke is joined; a constraint that does not fit overflows the guide rather than breaking, as a pattern does. The renderer that prints a *type* for a diagnostic or a `.iface` golden is a different thing and prints the suffix on one line, sorted — the two legitimately differ. → `static-dispatch-spike.md` §2.5, §6.6. |
 | **function types** | print as `A, B -> C`: one space after each comma, one space either side of `->`. The parameter list is a multi-element construct like any other, so it goes on one line when it fits *and* the author wrote no break between parameters. When a type breaks, the parameters move to the line below `name :` indented 4, one per line with the comma leading each continuation as lists do, and the `->` leads the result's line. |
 | **patterns** | **never broken across lines.** A `case` pattern, a definition's parameter list or a `let` pattern that does not fit overflows the 100-column guide rather than wrapping: there is no wrapped form a reader could tell from the `->` that follows. The same holds for the head line of a definition. |

@@ -432,6 +432,10 @@ never-join-lines rule: it is **always** on continuation lines, however short, be
 one-line form. `language.md` §9 states the shape and
 [`static-dispatch-spike.md`](static-dispatch-spike.md) §2.5 the reasoning.
 
+Declaration record bodies and tagged schema variants use the layout sugar in
+`language.md` §3–§4/§9 and `schema.md` §2/A.5: both input spellings must have
+byte-identical AST/BIR dumps; formatting always selects layout where available.
+
 ## 4. Session and parallelism
 
 `Session` is the one object everything hangs off. In M1 it owns: `gpa`, `options`, the

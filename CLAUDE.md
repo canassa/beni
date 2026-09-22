@@ -19,7 +19,9 @@ rebuilds.
   name is historical, the document is normative. A further departure is in progress:
   `schema` declarations have frontend support; their `Type` and `Encoded`
   members await checker support. [`schema.md`](docs/design/schema.md) owns the
-  contract and open choices.
+  contract and open choices. Record alias and schema declaration bodies accept
+  layout sugar for braces; their formatter always emits vertical layout
+  (`language.md` §3–§4/§9, `schema.md` §2/A.5).
 - **Target**: modern JavaScript, ES modules. `Int` is a double. **Beni is primarily a
   browser language, and the browser platform comes before Node** (the owner, 2026-09-19).
   Node is today's only platform because it is what the test harness needs, not because it is

@@ -300,6 +300,7 @@ not an assumed portable 4,096-frame guarantee.
 | # | Slice | State | Acceptance |
 |---|---|---|---|
 | Schema-S1 | Frontend, schema.md §2/§8 | **done**, 2026-09-22; row 67 fixed independently | Parser/AST, formatter, unresolved BIR and artifact v2; explicit pre-resolution refusal; 14 corpus fixtures + 3 black-box scenarios, red baseline verified; 464/464 hermetic, 283/283 black-box, fmt-check green |
+| Schema-layout | Declaration record bodies, language.md §3–§4/§9 and schema.md §2/A.5 | **specified**, 2026-09-22; after S1, before S2 | Option A: brace-equivalent AST/BIR, aligned field and variant blocks, always-layout declaration formatting; red fixtures, recovery, fixed points and the three gates |
 | Schema-S2 | Checker, §3–§4/§8 | after S1, row 67 fix and Q7 | Red interface/resolution/type fixtures; serialized/cache-hit endpoint and namespace identity; remove the temporary whole-input schema exclusion from resolver fuzz |
 | Schema-S3 | Library and description, §5 | after S2, Q3/Q6, concrete API and row 69 proof | Red run fixtures for both endpoints, context, flip/projections, presence, recursion closure and host failures; H4 not claimed |
 | Schema-S4 | Specialisation, §6/§10 | after S3, Q9 and row 69 proof | Red run/emit/DCE differential fixtures, all gates; add beni benchmark row and qualified measurements |

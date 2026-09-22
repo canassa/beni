@@ -2,7 +2,8 @@
 
 ## Open decisions for the owner
 
-**Status:** normative. S1 frontend support is implemented; endpoint typing,
+**Status:** normative. S1 frontend support is implemented; the layout spelling
+is specified in §2/A.5 as the next surface slice before S2. Endpoint typing,
 library interpretation and specialised execution await S2–S4. Q3, Q6, Q7, Q9
 and Q11 below remain open; their recommendations guide the affected later slice, not S1.
 Q1, Q2, Q4, Q5, Q8 and Q10 were decided in the owner's review (A.2).
@@ -88,9 +89,11 @@ fields, renames, tagged variants and explicit parameters.
 ```text
 Decl          := DocComment? Visibility? (… | SchemaDecl)
 SchemaDecl    := 'schema' upper_ident lower_ident* SchemaBody
-SchemaBody    := '=' SchemaRecord
-               | '=' SchemaOperand ValueModifier*
-               | 'tagged' string 'of' SchemaVariant ('|' SchemaVariant)*
+SchemaBody    := '=' (SchemaRecord | SchemaFieldBlock | SchemaOperand ValueModifier*)
+               | 'tagged' string 'of' (SchemaVariant ('|' SchemaVariant)* | LayoutVariant+)
+SchemaFieldBlock := LayoutSchemaField+
+LayoutSchemaField := DocComment? lower_ident ':' (SchemaOperand FieldModifier* | SchemaFieldBlock)
+LayoutVariant := upper_ident ('as' string)? (SchemaFieldBlock | '{' '}')?
 SchemaRecord  := '{' (SchemaField (',' SchemaField)*)? '}'
 SchemaField   := DocComment? lower_ident ':' SchemaOperand FieldModifier*
 SchemaOperand := SchemaHead SchemaAtom* | SchemaRecord
@@ -118,35 +121,55 @@ silently change this. Explicit library composition expresses other orders.
 stays a value declaration. `tagged`, `via`, `optional`, `nullable` are contextual
 inside this production; `as` and `of` reuse existing keyword tokens. Indentation
 is the existing declaration/continuation layout, not braces overriding layout.
-The formatter keeps field and variant order, doc comments and string contents;
-prints each field doc on its own line at the ordinary field column rather than
-after `{` or `,`; prints leading commas and variant bars on continuation lines
-with four-space indentation; separates modifiers with one space and does not
-align columns. As with an ordinary top-level definition, `schema X =` ends the
-declaration's head line and its record or operand body starts on the next line
-indented four spaces. A tagged declaration keeps `tagged "key" of` on its head
-line and puts each variant on a continuation line indented four spaces.
-Malformed fields recover at the next sibling comma, closing brace or next
-top-level declaration. There is no bodyless schema, default modifier or opaque
-schema form adopted here; each would need its own elaboration contract.
+Layout is sugar: field blocks and variant lists desugar to the brace/bar
+spelling, producing the same `schema_record`, `schema_tagged` and other AST
+nodes, and byte-identical AST/BIR dumps. `language.md` §4's field/variant
+columns bound each body: siblings align, smaller columns end a block, and
+operand/modifier continuations stay right of their field. After `name :`, a
+later-line, deeper `lower_ident ':'` opens a nested field block; otherwise
+parse a schema operand. A field head following an already-started operand at
+another column is diagnosed, never interpreted as implicit nesting. Brackets
+set no column, including a parenthesised `via` atom spanning lines. Braces
+remain available as input and where a block cannot go (an inline operand,
+an empty record, or a record carrying outer field/value modifiers).
+
+The formatter always emits layout for nonempty declaration record bodies and
+tagged variants, with four spaces per level, one field per line, a field's doc
+comment directly above it at its column, and modifiers separated by one space.
+It keeps field and variant order and string contents. `schema X =` ends the
+head line; the record or operand body begins on the next line indented four
+spaces. A tagged declaration keeps `tagged "key" of` on its head line, puts
+`Variant as "tag"` at +4, and its payload fields at +8; a payloadless variant
+has no field block. An explicitly empty payload prints `Variant as "tag" {}`
+to preserve its AST: the empty-brace alternative is the empty-record exception,
+not a payloadless variant. Inline brace forms retain their existing formatting.
+Malformed layout fields recover at exactly the sibling column, or end the
+block at a smaller column; column 1 still ends everything. Malformed brace
+fields recover at the next sibling comma, closing brace or next top-level
+declaration. `unexpected_token` and `expected_token` carry field context; no
+new diagnostic code is needed. There is no bodyless schema, default modifier
+or opaque schema form adopted here.
 
 ```elm
 -- NEW SYNTAX; schema operands and distinct presence/null wrappers.
 pub schema User =
-    { userId : Int as "user-id"
-    , nickname : String optional nullable
-    }
+    userId : Int as "user-id"
+    nickname : String optional nullable
 
 pub schema Page a =
-    { items : List a }
+    items : List a
 
 pub schema Message tagged "kind" of
-      Text { value : String } as "text"
-    | Count { value : Int } as "count"
+    Text as "text"
+        value : String
+    Count as "count"
+        value : Int
 
 pub schema Tree tagged "kind" of
-      Leaf { value : Int } as "leaf"
-    | Branch { children : List Tree } as "branch"
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
 ```
 
 A field without `as` uses its declared field name as the external key; a
@@ -930,3 +953,23 @@ structural description (§5). Q6's metadata and JSON Schema/generator scope
 remain open. Row 67 is an independent checker fix with check/good fixtures:
 it may run in parallel with S1, and must land before S2. This updates A.3's
 ordering without making the fix a dependency of S1.
+
+
+### A.5 — Layout record declarations (2026-09-22)
+
+The owner adopted option A of [research 35](research/35-record-syntax-in-ml-languages.md)
+§5.1–§5.2/§5.5, with Lean's field-ending column rule (§3.1) and Koka's
+explicit desugaring model as evidence. Bare aligned fields after `=` in record
+`type alias` and `schema` declarations, nested whole-field blocks, and aligned
+tagged schema variants are sugar for the existing brace/bar forms. Both inputs
+produce identical AST/BIR dumps; no checker, resolver, BIR or backend semantics
+change. Two-token `lower_ident ':'` lookahead and the enclosing field column
+decide nesting and continuation (`language.md` §3–§4).
+
+The formatter always chooses vertical layout for nonempty closed declaration
+record bodies and tagged variants, even for one-line input. Braces remain
+where a block cannot go: inline record types/operands, extensible records,
+ordinary `type` constructor payloads, empty records and all record values.
+A schema record with outer modifiers remains a brace operand because the
+layout field-block production has no outer modifiers. Ordinary `type`, `case`
+and `let` are unchanged. This surface slice follows S1 and precedes S2.
