@@ -119,7 +119,11 @@ inside this production; `as` and `of` reuse existing keyword tokens. Indentation
 is the existing declaration/continuation layout, not braces overriding layout.
 The formatter keeps field and variant order, doc comments and string contents;
 prints leading commas and variant bars on continuation lines with four-space
-indentation; separates modifiers with one space and does not align columns.
+indentation; separates modifiers with one space and does not align columns. As
+with an ordinary top-level definition, `schema X =` ends the declaration's head
+line and its record or operand body starts on the next line indented four
+spaces. A tagged declaration keeps `tagged "key" of` on its head line and puts
+each variant on a continuation line indented four spaces.
 Malformed fields recover at the next sibling comma, closing brace or next
 top-level declaration. There is no bodyless schema, default modifier or opaque
 schema form adopted here; each would need its own elaboration contract.
@@ -281,6 +285,21 @@ targets and provenance, never a live TypeStore. Do not pretend the declaration
 can disappear into ordinary calls before imported types are known. Ordinary
 library construction remains the semantic elaboration; the plan retains the
 static shape needed to specialise it.
+
+S1 stores that unresolved plan as a schema declaration plus a contiguous BIR
+instruction graph. The declaration has a dedicated `schema_body` root and is
+in neither the value nor type namespace. Plan instructions retain operand
+name tokens, ordered argument edges, record fields, ordered modifiers, decoded
+external keys/tags, tagged variants and explicit grouping. A `via` retains the
+ordinary Atom tree, but unresolved nonlocal leaves use schema-expression
+reference instructions carrying their symbol and source token; lexical locals
+inside a parenthesised lambda or let remain ordinary local references. S2 can
+therefore resolve the tree without reparsing source, and S1 does not report an
+ordinary unbound-value error for a name whose schema meaning is not available
+yet. All edges are indices or ranges in the flat BIR and every instruction
+keeps its source token. Changing these tags or the declaration row bumps the
+frontend artifact version; its reader validates every enum, root and range
+before use.
 
 `via` takes an input schema and a fallible conversion:
 
@@ -771,6 +790,15 @@ wrap prose after interpolation under `checker.md` §8.4. Compiler errors cause
 exit 1 and no build output. Runtime validation failures are **Issue values in
 Result**, not compiler diagnostics, stderr output or process exit codes; their
 fixtures assert complete values.
+
+During S1 only, `check`, `build` and dumps that require resolution (`interface`,
+`raw`, `types`, `graph`, `dispatch`) stop after frontend lowering when a schema
+declaration is present and report existing code `not_implemented` on the schema
+name: “This schema is parsed and preserved, but its endpoint types and members
+are not checked until schema S2.” A file with an existing frontend error keeps
+that diagnostic without adding this refusal. Token/AST/BIR dumps and formatting
+remain available; the temporary wall is removed by S2 rather than becoming a schema
+diagnostic.
 
 ## 9. What v1 leaves out
 
