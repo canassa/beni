@@ -307,6 +307,38 @@ as the default for routine schema semantics; resolve those autonomously. Bring t
 owner material departures or unresolved language tradeoffs, not a question for
 each library behavior. Existing explicit owner decisions take precedence.
 
+**Compiled-library investigation, 2026-09-22:** the owner commissioned an
+independent comparison with Zod before specifying whether `schema` declarations
+compile or elaborate to an interpreted library. [Report 34](../docs/design/research/34-compiled-schemas-in-javascript.md)
+and `bench/schema-libraries/` record source-built JavaScript subjects, shared
+strict JSON payloads, fault paths, both directions, JSON and hand-written
+references, startup, browser bundles and CSP behavior. This does not commission
+the representation slice or change report 33's context guarantee finding.
+Latest Typia 15 requires its native `ttsc` transformer: the owner approved
+**latest Typia + supported `ttsc`** on 2026-09-22, superseding the original
+`ts-patch` requirement rather than silently pinning an older version. The fork
+remains open; a specialized static path and a dynamic interpreter can share
+one inspectable representation and one context contract.
+
+**Compiled-library result, 2026-09-22:** the final qualified capture is
+`bench/schema-libraries/results.json` (SHA-256
+`d33501cdab1f5253b29a6f947cc312c6655eefacc908d153b0351438bc673f1c`),
+with nine fresh processes, 4,500 supported timed process-cells and 157,500
+retained samples. It has no single-library verdict: per-operation ratios to Zod
+cross in several rows, failure machinery is often a different path, and 91
+pairwise orderings flip even between the three selected groups. Ahead-of-time
+Ajv standalone and Typia show that small shipped specialized validators can be
+competitive on this contract; dynamic composition, context ownership and
+Effect-class semantics remain separate requirements. The source pointers are
+committed at `c5ba612`; all eight implementations were built from those source
+trees with no published implementation substituted. The complete predecessor
+capture is retained compressed only as diagnostic evidence because an audit
+found four generic flat-entry builders overstated browser size/cold import; the
+whole matrix was recaptured after specializing those entries, rather than
+splicing results. No production compiler, core, platform or build file changed,
+and no schema implementation is commissioned by this close-out. Benchmark and
+capture evidence is commit `6954730`.
+
 **Numeric baseline, selected under that guidance:** `Schema.int` validates safe
 integers on both decoding and encoding, matching Effect's `isInt` implementation
 (`Schema.ts:7548`, `Number.isSafeInteger`). Exact large integers need an explicit
@@ -387,3 +419,12 @@ must remain distinct, as Effect's Number and Finite are.
 | # | Item | State |
 |---|---|---|
 | 61 | **Nested recursive descriptions omit child definitions.** The close-out's dedupe probe nests recursive `WireNode` as `inner` inside recursive `NestedNode` (whose `children` recurse to `NestedNode`). `Schema.describe` returns only the outer `NestedNode` definition on both sides, leaving `ReferenceShape "WireNode"` unresolved. No duplication occurs in this case: `recursiveEndpoint` replaces the description with a singleton, while the undeduplicated `List.append` belongs to `object2Endpoint`. The full observed result is pinned by `nested recursive description omits child definitions (limitation)`. This is a different defect from custom endpoints dropping context. No fix: definition collection/reference closure belongs to the next representation specification, not this dated artifact. | recorded; future representation slice |
+
+### Found during the compiled-schema investigation, 2026-09-22 — recorded, NOT fixed
+
+| # | Item | State |
+|---|---|---|
+| 62 | **Typia 15's default strict-object diagnostic shortcut can lose the surplus key's path.** With every optional property present plus an extra key, the generated key-count check reports the containing object, not the key. The research fixture requests native per-key diagnostics with a never-valued template index signature; that extra traversal remains timed. No upstream or Beni production fix. Also, this latest release replaced the requested `ts-patch` route with native `ttsc`; the artifact is not evidence for Typia 12/ts-patch. | recorded in report 34 and its generated proof |
+| 63 | **The existing Effect rc.116 source already has an opt-in compiled-schema registry.** `internal/schema/compilerRegistry.ts` defaults to interpreted entries but can install compiled fast paths and diagnostic/effect fallback through the same public parser APIs; `unstable/schema/SchemaCompiler.ts` documents that contract. Report 34 measures only the requested default baseline. Measuring the optional compiler is a separate follow-up, not silently added to the matrix or used as an unmeasured performance claim. | investigate only if commissioned; no production change |
+| 64 | **JSON-shaped parity does not establish arbitrary JavaScript encode parity.** Ajv and TypeBox accept an explicitly present optional `undefined` where the artifact's absent-or-string rule rejects it. Separate untimed probes preserve those outcomes; measured inputs are JSON-shaped. Beni does not inherit JavaScript undefined from this comparison, and no hand-written repair was added to those rows. | recorded; boundary-spec consideration |
+| 65 | **Typia 15 emits an accepting `undefined` branch for a `never`-valued template index signature.** The generated predicate is `null !== value && undefined === value`; a surplus key matching `__beni_schema_never__*` whose value is undefined passes and is then stripped by the research adapter's mapping. The index signature introduced to obtain exact native fault paths therefore preserves the timed JSON-shaped domain, not arbitrary JavaScript closed-object semantics. Report 34 records the generated evidence and a separate executable counterexample; no upstream patch or Beni implementation. | recorded, NOT fixed |

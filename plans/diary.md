@@ -1984,3 +1984,185 @@ Spec first, red tests second, code third — and the order paid, because writing
 - Pinning complete, deliberately wrong results documents an experiment's limits;
   it is not production conformance. A host engine's syntax-error prose is not a
   stable fixture contract, even when Node and Chrome happen to agree.
+
+## 2026-09-22 12:02 CEST — Compiled schema benchmark subjects
+
+**What I did**
+
+- Implemented strict decode/encode adapters for Ajv, generated Ajv standalone,
+  Typia, TypeBox value and compiled modes, ArkType, and the explicitly labelled
+  `fast-json-stringify+handwritten-guard` encode-only row. All validate before
+  the shared rename mapping; only Typia and FJS use native generated serializers.
+- Added committed Ajv standalone output, transformed Typia sources/output, and
+  direction-specific flat browser entries that do not root the workload matrix.
+  The Typia source uses `validateEquals`, safe-integer tags, and a native custom
+  finite-number tag; the emitted proof contains the generated checks.
+- Normalized native union diagnostics to the discriminant-selected branch,
+  increased TypeBox's native diagnostic cap so that branch is available, and set
+  Ajv to first-error work before regenerating its standalone validators.
+- Ran the official correctness-only preflight under pinned Node 24: all 13 rows
+  loaded and passed. Independently checked every compiled flat entry and built
+  each as minified browser ESM; none imported a matrix adapter or Typia's matrix
+  proof. I did not run the timed matrix or change production code.
+
+**What I learned**
+
+- Typia 15 deliberately replaced its legacy TypeScript transformer with a native
+  `ttsc` plugin. `ts-patch` 4 fails with TypeScript 7 before transformation, and
+  invoking Typia 15's plugin through `ts-patch` on TypeScript 6 also fails because
+  the expected plugin context is absent. The latest supported candidate therefore
+  uses Typia 15 + TypeScript 7 + `ttsc`; whether to substitute the older
+  ts-patch-compatible Typia line remains an explicit owner decision.
+- A plain Typia `number` and ArkType `number` do not establish the benchmark's
+  finite-number contract. Both needed native refinements, and generated output
+  had to be inspected to prove `Number.isFinite` was really emitted.
+- TypeBox caps native errors at eight by default. A four-branch union can exhaust
+  that cap before reporting the branch named by the discriminant, so exact native
+  fault paths require raising the cap before filtering the library's own details.
+
+## 2026-09-22 12:09 CEST — Tighten compiled-subject edge contracts
+
+**What I did**
+
+- Corrected the Typia candidate after reviewing its generated strict-object code.
+  Enabled the native transform's `finite: true` and `undefined: false` options
+  together with TypeScript exact optional properties, then removed the redundant
+  custom finite tag and regenerated both matrix and flat proof.
+- Typia's key-count fast path only reported the parent when an object contained
+  every optional field plus a surplus key. Added a never-valued template index
+  signature to the proof types; it accepts no extra value but keeps generated
+  `validateEquals` on its native per-key diagnostic path. Verified exact paths
+  for ordinary and undefined-valued surplus keys, present optional `undefined`,
+  non-finite numbers and the never-prefix itself.
+- Corrected CSP metadata after both source inspection and a code-generation-
+  disabled process: ArkType selects its jitless evaluator and TypeBox Compile
+  selects its interpreted fallback. Recorded the separate Ajv/TypeBox native
+  mismatch that a present optional property valued `undefined` is accepted.
+
+**What I learned**
+
+- Typia 15's supported options can meet finite-number and exact optional-presence
+  requirements without a hand-written guard. Its generated key-count shortcut is
+  nevertheless too lossy for the benchmark's exact fault-path contract; a
+  semantically empty dynamic signature is needed to request per-key diagnostics.
+- JSON Schema validators commonly treat a known optional property whose value is
+  JavaScript `undefined` as absent. That is outside JSON wire data but reachable
+  on the encode side, so it is a native contract mismatch to report, not silently
+  repair or omit from the evidence.
+
+## 2026-09-22 12:13 CEST — Pin and build schema benchmark sources
+
+**What I did**
+
+- Added shallow source submodules at the resolved release tags for Ajv 8.20.0,
+  Typia 15.0.0, TypeBox 1.3.34, ArkType 2.2.3,
+  fast-json-stringify 7.0.1, Zod 4.6.5 and Valibot 1.5.0; retained Effect's
+  existing 4.0.0-rc.116 pointer unchanged. Recorded tags, commits, dates and
+  permanent source links without committing or staging vendored contents.
+- Built every subject from its pinned source. Ajv, Typia's native `ttsc` path,
+  TypeBox, the topologically ordered ArkType workspace, Zod, Valibot and Effect
+  passed; fast-json-stringify has no build step and passed a direct-source smoke
+  test. Captured the exact commands and the failed partial attempts that exposed
+  package-manager and workspace ordering requirements.
+- Added the exact runtime/tooling lock, source-build and wiring scripts,
+  provenance JSON and mechanism/CSP notes. The wiring replaces all eight npm
+  subjects with source-built submodule artifacts; an audit resolved every public
+  entry to those paths, compiled generation passed, and each measured entry has
+  a recorded SHA-256.
+
+**What I learned**
+
+- TypeBox 1 is the `typebox` package and exposes `Compile`, not the old
+  `@sinclair/typebox` `TypeCompiler`. Its evaluator and ArkType both have CSP
+  interpreter fallbacks, while their normal paths generate functions.
+- Typia 15 deliberately moved from the legacy Typia 12 / TypeScript 6 /
+  `ts-patch` path to TypeScript 7 and `ttsc`. The current source build is slow
+  because the native transform can force a full-project recompile, but its
+  emitted result needs no runtime code generation.
+- Zod 4.6.5 is hybrid: object validation JITs a specialized fast path when
+  allowed and otherwise interprets it. Per-parse jitless selects the interpreter
+  but does not suppress the earlier capability probe; only global jitless does.
+
+## 2026-09-22 13:00 CEST — Close the compiled-schema evidence
+
+**What I did**
+
+- Completed report 34 from the qualified final capture: four full steady-state
+  tables with medians, p10/p90 and net JSON comparisons; flat browser bundle and
+  both startup surfaces; blocked-eval outcomes; all raw/group ordering-flip and
+  equivalent-work audits; and conditional per-operation ratios to Zod without a
+  geometric mean or single-library verdict.
+- Registered the result and its limits in the queue. The final capture contains
+  nine fresh processes, 4,500 supported timed process-cells and 157,500 retained
+  samples. All eight subjects resolve to source-built artifacts; source pointers
+  are commit `c5ba612`. No production compiler, core, platform or build file
+  changed.
+- Preserved the first complete capture as compressed diagnostic evidence, then
+  excluded it from conclusions. Review found that four flat-only baseline
+  entries retained unrelated branches through generic schema builders, which
+  overstated browser bundles and aligned cold imports. After specializing only
+  those entry schemas, the entire matrix was captured again rather than splicing
+  supplemental size/startup observations into the earlier timings.
+
+**What I learned**
+
+- The 12:09 entry's statement that all 13 rows had loaded and passed was
+  premature: it described an intermediate adapter state before final source
+  wiring, and later source-wiring checks initially exposed missing Typia native
+  plugin content and Effect subpath resolution. Those were repaired before the
+  official preflight and final captures; the earlier diary text remains
+  append-only and this entry corrects its scope.
+- A fast success path says little about failure cost. TypeBox Compile re-enters
+  interpreted error production, while early-rejecting generated validators can
+  finish before a successful JSON baseline would serialize. Net failure values
+  are therefore counterfactual, not validation-only time.
+- The hand-written row is an auditable reference, not a physical ceiling. All 65
+  contexts that preceded it retained equivalent required work, but native key
+  traversal, union dispatch, first-fault order and serializer strategy differ.
+  The final run still has 91 pairwise flips between selected groups, so the
+  useful result is a set of conditional operation ranges and architectural
+  tradeoffs, not a winner.
+
+## 2026-09-22 13:06 CEST — Validate the compiled-schema close-out
+
+**What I did**
+
+- Independently rechecked the final report against the selected capture: the
+  four generated timing blocks match byte for byte; every bundle, startup,
+  time-to-first-validation, CSP, flip-endpoint, partial-order and Zod-ratio cell
+  matches the retained raw observations at the documented rounding.
+- Recorded the manager's final validation result: the second complete run of
+  `zig build test`, `zig build test-blackbox` and `zig build fmt-check` exited
+  zero after the final capture and documentation work.
+
+**What I learned**
+
+- Keeping generated descriptive tables mechanically reproducible and checking
+  derived prose claims separately caught the important distinction between an
+  unbundled flat-entry import and execution of its tree-shaken browser bundle.
+  Both are useful measurements, but they are not the same startup surface.
+
+## 2026-09-22 12:44 CEST — Specialize schema benchmark flat bundles
+
+**What I did**
+
+- Audited the flat-only browser bundle evidence and found that the Zod,
+  Valibot and Effect entries executed a generic JSON-Schema-to-native converter,
+  retaining unrelated union, array and recursive-schema capabilities.
+- Replaced only those flat entry paths, including the Zod jitless control, with
+  literal native flat-schema constructors while preserving each subject's
+  strictness, numeric checks, optional-field semantics and native error options.
+- Left the matrix adapters and generic builders unchanged. The focused Node 24
+  preflight passed all 13 rows, source verification passed all eight corrected
+  entries, and all 25 browser bundles passed their flat-only and execution
+  audits without a generic builder input.
+
+**What I learned**
+
+- Tree shaking cannot remove branches in a schema converter that executes over
+  runtime schema data, even when the entry supplies a constant flat schema.
+  Its own retained bytes understate the effect because its references also root
+  unrelated native-library APIs.
+- The correction affects only flat-entry cold startup and browser bundle size;
+  steady-state matrix measurements, full-adapter startup and CSP evidence use
+  different entry surfaces and are unchanged.
