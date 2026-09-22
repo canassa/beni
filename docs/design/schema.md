@@ -5,14 +5,14 @@
 **Status:** normative, not implemented. Q3, Q6, Q7, Q9 and Q11 below
 remain open; their recommendations guide the affected later slice, not S1.
 Q1, Q2, Q4, Q5, Q8 and Q10 were decided in the owner's review (A.2).
-Q12's delegated scheduling decision is A.3: S1 next, row 67 fixed before S2.
+Q12's scheduling is A.3/A.4: S1 and row 67 may run in parallel; both precede S2.
 Question identifiers and section numbers stay stable. Append later decisions
 to Appendix A.
 
 | ID | Question | Recommendation | Cost and alternative |
 |---|---|---|---|
 | Q3 | Does v1 have defaults? | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
-| Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Specify external reading/writing of a conversion target with no structural description before S3; optional typed checks alone cannot supply that representation. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
+| Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
 | Q7 | How are encoded constructors spelled in patterns? | Exactly as in expressions: `Message.Encoded.Count row`, and `Models.Message.Encoded.Count row` from a qualified module; program patterns use `Message.Count row`. | Resolver and exhaustive-pattern diagnostics must understand the extra namespace segment. The accepted constructor names and matchability are settled; only the pattern spelling/resolution rule is being confirmed. No bare `Count` exposure is recommended. |
 | Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost in S4. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
 | Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | S3 is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
@@ -409,9 +409,10 @@ restores their values, failures and checks. `typeOnly` and `encodedOnly` select
 an actual endpoint and its checks, remove the cross-endpoint transformation,
 and validate that endpoint in both directions. For an opaque conversion target,
 typed projections run its optional checks, or are identity when none exist.
-They do not rerun the conversion or invent structural checks. External
-read/write for such a target needs the representation rule still open in Q6;
-there is no unchecked host-value cast implied by typed identity. For structurally
+They do not rerun the conversion or invent structural checks. An opaque target
+is reachable only through its conversion; constructing read/write operations
+for any schema whose Type endpoint contains an opaque target without a
+structural description fails at construction, not at runtime. For structurally
 described endpoints, Encoded's external record shape
 uses `as` keys; Type's endpoint uses declared Beni keys. Both tagged endpoint
 representations retain the declared discriminator and literal tags, but map to
@@ -805,7 +806,8 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-S1 is next (A.3); later slices retain the dependencies below. Each begins with a
+S1 is next, with row 67 eligible to run in parallel (A.4); later slices retain
+the dependencies below. Each begins with a
 fixture that fails on the preceding compiler/library; prove red, implement,
 then reverse the fix in an isolated copy to prove the regression is specific.
 A negative fixture must first be shown to diagnose the intended defect, not
@@ -815,7 +817,7 @@ for this boundary. Follow the write-tests skill when implementation starts.
 
 | Slice | Contract | Red fixtures first | Done means |
 |---|---|---|---|
-| S1 — frontend | §2, §8; syntax decisions settled in A.2 | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
+| S1 — frontend | §2, §8; syntax decisions settled in A.2; independent of row 67 | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
 | S2 — checker | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; no successful build silently omits runners |
 | S3 — library and description | §1, §4–§5, §9; settle Q3/Q6 and concrete Issue/builders; prove row 69; preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
 | S4 — specialisation | §6 and this section; settle Q9; prove row 69 | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
@@ -885,3 +887,14 @@ The owner delegated Q12. Schedule S1 next; fix confirmed numeric-alias defect
 S5 follows P2 and H4. The recorded M4-first slices 1–3 have landed, so this
 places schemas ahead of remaining M4 work without rewriting that history.
 This revision changes documents only; it does not claim any slice landed.
+
+
+### A.4 — Opaque boundary construction and parallel scheduling (2026-09-22)
+
+The owner settled Q6's representation clause: an opaque target is reachable
+only through its conversion; typeOnly retains optional checks (identity if none),
+and read/write construction fails if Type contains an opaque target without a
+structural description (§5). Q6's metadata and JSON Schema/generator scope
+remain open. Row 67 is an independent checker fix with check/good fixtures:
+it may run in parallel with S1, and must land before S2. This updates A.3's
+ordering without making the fix a dependency of S1.

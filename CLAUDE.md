@@ -44,9 +44,9 @@ plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
 `core/Schema` under the same engine-owned context contract and differential tests.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
-The owner review settled the S1 surface; S1 is next, and queue row 67 must be
-fixed before S2. Remaining decisions lead the document; H4 remains open. The
-recorded M4-first slices 1–3 have landed (schema.md A.2–A.3).
+The owner review settled the S1 surface; S1 and the independent queue row 67
+checker fix may run in parallel, with both complete before S2. Remaining decisions lead the document; H4 remains open. The
+recorded M4-first slices 1–3 have landed (schema.md A.2–A.4).
 
 M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,
 its decision trees for pattern matching and its `?` have landed
@@ -165,8 +165,10 @@ A.83 — and dead-code elimination has landed.
    feeding the next link, so a chain costs ⌈n/65⌉ diagnostics in linear time
    and memory instead of n(n+1)/2 constraints (spec §10.11).
 
-M4 is the daemon and incrementality; M5 is source maps, code splitting and LSP.
-Neither has started.
+M4 is the daemon and incrementality: slices 0–3 have landed, including the
+on-disk cache and interface firewall; remaining incrementality work and the
+daemon are still ahead ([`queue.md`](plans/queue.md), M4 rows). M5 is source
+maps, code splitting and LSP, and has not started.
 
 ## Effects, and what blocked them
 

@@ -280,16 +280,17 @@ Remaining owner decisions (recommendations and costs at the start of schema.md):
 
 - Q3: defaults — recommend no v1 declaration defaults; explicit transformations remain.
 - Q6: descriptions/tooling — retain endpoint and check metadata now; JSON Schema
-  output and generators later. Specify external representation for opaque
-  conversion targets without requiring every conversion to supply an endpoint.
+  output and generators later. The representation clause is settled: read/write
+  construction fails when Type contains an opaque target without a structural
+  description; typed typeOnly retains optional checks, identity if none.
 - Q7: patterns — recommend `Message.Encoded.Count`, including module qualification.
 - Q9: differential gate — every schema fixture through both paths inside
   test-blackbox, with independent expected answers.
 - Q11: stored-function ABI — preserve directional effects, settle H4 with P2
   before freezing the opaque representation.
 
-**Q12 scheduling, delegated by the owner in the review:** S1 next, then fix
-row 67 before S2. S2–S4 follow their remaining decisions; S5 follows P2/H4.
+**Q12 scheduling, clarified by the owner:** S1 and row 67 may run in parallel;
+both must land before S2. S2–S4 follow their remaining decisions; S5 follows P2/H4.
 The recorded M4-first slices 1–3 have landed; remaining M4 work follows this
 schema sequence as dependencies permit. This revision contains no code.
 The native-recursion ceiling is an implementation proof obligation (row 69),
@@ -297,7 +298,7 @@ not an assumed portable 4,096-frame guarantee.
 
 | # | Slice | State | Acceptance |
 |---|---|---|---|
-| Schema-S1 | Frontend, schema.md §2/§8 | next; syntax decisions settled | Red parse/fmt/BIR fixtures, contextual words preserved, recovery and exact diagnostics |
+| Schema-S1 | Frontend, schema.md §2/§8 | next; syntax decisions settled; independent of row 67 | Red parse/fmt/BIR fixtures, contextual words preserved, recovery and exact diagnostics |
 | Schema-S2 | Checker, §3–§4/§8 | after S1, row 67 fix and Q7 | Red interface/resolution/type fixtures; serialized/cache-hit endpoint and namespace identity |
 | Schema-S3 | Library and description, §5 | after S2, Q3/Q6, concrete API and row 69 proof | Red run fixtures for both endpoints, context, flip/projections, presence, recursion closure and host failures; H4 not claimed |
 | Schema-S4 | Specialisation, §6/§10 | after S3, Q9 and row 69 proof | Red run/emit/DCE differential fixtures, all gates; add beni benchmark row and qualified measurements |
@@ -478,6 +479,6 @@ must remain distinct, as Effect's Number and Finite are.
 | # | Item | State |
 |---|---|---|
 | 66 | **The requested effects-plan §H4 anchor does not exist.** `plans/effects-plan.md` has no H4 heading or schema obligation. H4 is report 32's name; `bench/schema-prototype/EFFECTS.md` supplies the actual seven acceptance cases. `schema.md` §7 links those and leaves the nominal stored-function/interface ABI unresolved. The effects plan needs an explicit obligation before P2 can be treated as discharging it. | planning follow-up; no effects decision taken |
-| 67 | **Numeric literals do not unify through primitive type aliases.** Owner confirmation, 2026-09-22: `type alias T = Int` / `val : T` / `val = 1` reports `kind_mismatch` locally and through imports; Float aliases fail too. Record aliases pass. The original imported `Models.User.Type = Int` probe used `beni 0.1.0-m1 aa57fab71568ff4271a7090db1db11d6`, `check --no-cache --diagnostics=json`, exit 1. This is a confirmed checker defect in well-typed programs, broader than the original imported-only observation. Schema primitive aliases depend on it. | **fix before Schema-S2**; fail-first `check/good` fixture matrix for local/imported Int and Float aliases, with record-alias control; no fix in this docs revision |
-| 68 | **Synchronous closed schema builders and the future opaque effects ABI still need executable proof.** Report 33 proves two endpoints in transparent aliases, not closed heterogeneous builders preserving context plus directional effect information. `schema.md` §5 specifies semantic vocabulary, not an existential ADT or a cast; the accepted Q1/Q10 semantics still need a concrete builder API before S3, and Q11/S5 require the seven effects cases before freezing the ABI. V1 uses explicit nominal recursion. Q6 still owns JSON Schema/generator metadata and external representation of opaque conversion targets; optional typed checks do not supply that representation. | S3/S5 design and implementation acceptance; not decided by fiat |
+| 67 | **Numeric literals do not unify through primitive type aliases.** Owner confirmation, 2026-09-22: `type alias T = Int` / `val : T` / `val = 1` reports `kind_mismatch` locally and through imports; Float aliases fail too. Record aliases pass. The original imported `Models.User.Type = Int` probe used `beni 0.1.0-m1 aa57fab71568ff4271a7090db1db11d6`, `check --no-cache --diagnostics=json`, exit 1. This is a confirmed checker defect in well-typed programs, broader than the original imported-only observation. Schema primitive aliases depend on it. | **may run in parallel with Schema-S1; fix before Schema-S2**; fail-first `check/good` fixture matrix for local/imported Int and Float aliases, with record-alias control; no fix in this docs revision |
+| 68 | **Synchronous closed schema builders and the future opaque effects ABI still need executable proof.** Report 33 proves two endpoints in transparent aliases, not closed heterogeneous builders preserving context plus directional effect information. `schema.md` §5 specifies semantic vocabulary, not an existential ADT or a cast; the accepted Q1/Q10 semantics still need a concrete builder API before S3, and Q11/S5 require the seven effects cases before freezing the ABI. V1 uses explicit nominal recursion. Q6 still owns JSON Schema/generator metadata. The opaque-target rule is settled in schema.md §5/A.4: read/write construction fails when Type contains an opaque target without a structural description; typed projections keep optional checks. | S3/S5 design and implementation acceptance; not decided by fiat |
 | 69 | **A portable native-recursion ceiling needs generated-code evidence.** Bounded native recursion is decided; default 512 and ceiling 4,096 are numeric candidates. Queue row 39 already records a different core function overflowing around 3,700 calls, so 4,096 is not automatically safe. S3/S4 must account for interpreter/worker helper frames, conversion nesting, JSON output and pre-existing caller stack in supported browsers and Node, establishing the ceiling and boundary behavior required by G1/G3. No measurement run or fallback architecture chosen in this revision. | S3/S4 acceptance before shipping; does not block S1 |
