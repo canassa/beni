@@ -2,26 +2,20 @@
 
 ## Open decisions for the owner
 
-**Status:** normative for the decided guarantees and fork; not implemented.
-The questions below are deliberately unresolved. Recommendations and examples
-labelled **conditional** are not permission to implement their answer. Settle a
-question before its dependent slice; append the answer to Appendix A without
-renumbering anything. This specification does not un-park implementation.
+**Status:** normative, not implemented. Q3, Q6, Q7, Q9 and Q11 below
+remain open; their recommendations guide the affected later slice, not S1.
+Q1, Q2, Q4, Q5, Q8 and Q10 were decided in the owner's review (A.2).
+Q12's delegated scheduling decision is A.3: S1 next, row 67 fixed before S2.
+Question identifiers and section numbers stay stable. Append later decisions
+to Appendix A.
 
 | ID | Question | Recommendation | Cost and alternative |
 |---|---|---|---|
-| Q1 | What exactly does `via` take, and where does its `Encoded` come from? | A field names an input schema `S : Schema e b`; `via c` takes a fallible `Conversion b a` plus an explicit program endpoint for `a`. The result is `Schema e a`: `Encoded` is **e**, not necessarily the conversion's b. Require both endpoints to be describable. | More explicit construction than a pair of functions, but `flip` and `typeOnly` cannot recover a program description from that pair. The alternative is target-first syntax (`Date via …`) with the full source schema carried by the conversion. Decide this orientation before S2; report 32's choice is not adopted by implication. |
-| Q2 | Which primitives and containers ship in v1? | String, Bool, safe Int, general Float, finite Float, null, untyped Value, lists, records, tagged unions, optionality and nullability; include literal checks and enums as library combinators. Defer Dict, tuple combinators and BigInt. | A small complete first boundary, but dictionary/tuple payloads need explicit conversions; BigInt needs a real core representation. Alternatively include Dict and tuples in S3, with key-collision semantics and tuple arities specified first. No literal types are proposed. |
 | Q3 | Does v1 have defaults? | No declaration modifier and no implicit defaults in v1; explicit fallible transformations may deliberately recover missing data. | More application code. Alternatively add Effect-style directional defaults with separate missing/null/failure triggers and encode omission rules. Report 34's no-defaults protocol is evidence scope, not an owner decision about the language. |
-| Q4 | What is `Issue`, and how does it relate to `Result`? | `Result (List Issue) a`, with `Err` always nonempty; each Issue is a record of path, direction, failing endpoint, structured code, message and optional reported input. Path steps distinguish key and index; codes distinguish missing, wrong shape, check/conversion refusal, unknown key, tag, depth, invalid JSON and invalid options. | Nonemptiness is a library invariant rather than a type proof. A nonempty custom collection proves it but makes ordinary Result handling less convenient. A tree of causes preserves more union/check detail but needs a defined flattening order. |
-| Q5 | What options and defaults are public? | One Options value at each root; FirstError, Ignore unknown keys, sequential traversal, reportInput false, following pinned Effect. Add a finite maxDepth, provisionally 512, with explicit-stack traversal. Provide `…With` entry points. | Ignore deliberately strips extras; use Reject for report 34's strict profile. Effect has no matching depth default: 512 is a Beni proposal, not parity evidence. An explicit stack costs bookkeeping; native recursion cannot guarantee an arbitrary caller-selected bound. Preserve extras only through an explicitly typed rest field, proposed later. |
-| Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints, external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
+| Q6 | What metadata must descriptions carry, and do JSON Schema output and generators ship in v1? | Carry both endpoints (including opaque conversion targets), external keys, presence/nullability, tag literals, named recursive definitions, check identifiers/parameters, annotations and an explicit opaque-check marker now. Ship inspection in v1; ship JSON Schema and generators later as libraries with fallible results. | Larger descriptions when retained. Specify external reading/writing of a conversion target with no structural description before S3; optional typed checks alone cannot supply that representation. Omitting metadata now makes later tooling incomplete. Arbitrary functions cannot be translated to JSON Schema or guaranteed to yield a sample; never silently weaken a check. |
 | Q7 | How are encoded constructors spelled in patterns? | Exactly as in expressions: `Message.Encoded.Count row`, and `Models.Message.Encoded.Count row` from a qualified module; program patterns use `Message.Count row`. | Resolver and exhaustive-pattern diagnostics must understand the extra namespace segment. The accepted constructor names and matchability are settled; only the pattern spelling/resolution rule is being confirmed. No bare `Count` exposure is recommended. |
-| Q8 | Where do parse/print live, and what are the other namespace members? | `User.parse`, `User.print`, `User.schema`, plus typed `decode`/`encode`, Value `read`/`write`, and `…With` runners. `schema ()` for nongeneric declarations; one explicit schema argument per generic parameter, with no trailing unit. Generic runners take these arguments first; With takes options next, then input. | A wider namespace, independently eliminated. Alternative: only parse/print/schema conveniences and the rest through core/Schema. Parse means JSON String → Result of Type; print means Type → Result of JSON String; neither is the typed conversion alone. |
 | Q9 | Where does differential testing enter the gates? | Every schema semantic fixture runs compiled and forced-library paths inside `zig build test-blackbox`, in development/release, with exact values and Issue lists; jobs 1/8 determinism remains mandatory. | Additional runtime; measure the gate cost in S4. A separate optional job is cheaper locally but can let the two semantics drift. Differential agreement alone is insufficient: both also assert an independent expected answer. |
-| Q10 | How do schema operands, presence types and recursive records fit Beni's type language? | Field positions name schemas (primitive aliases map to core/Schema), not arbitrary program types; use separate `Presence a = Missing \| Present a` and `Nullable a = Null \| NonNull a`. Use explicit tagged unions for recursive v1 declarations; defer implicit nominal wrapping of recursive records. | Two wrappers for optional nullable fields, and recursive trees need a constructor. Alternatively define the wrapper constructor and unwrapping syntax for recursive records now. A recursive type alias is already illegal; silently inventing a constructor is not an answer. |
 | Q11 | What is the stored-function abstraction after P2? | Keep two explicit endpoint semantics and separate directional callbacks, but do not freeze an opaque `Schema e a` ABI until H4's seven cases pass. Investigate inferred directional bits across the abstraction/interface boundary. | S3 is synchronous and an internal representation may change. Making every schema call suspending is an alternative only with measured cost and owner acceptance; this spec chooses neither an effects runtime nor that alternative. |
-| Q12 | Where do schemas enter the recorded M4-first sequence, and may they precede remaining M4 work? | Keep schemas unscheduled until the owner confirms their slot; this spec can land now. The recorded sequence was M4 slices 1–3, then effects, then M3d; those three M4 slices are now marked done. | Delays the feature. Starting S1–S4 next needs an explicit scheduling decision; neither approval of the fork nor the old sequence establishes their position. This does not reinterpret M4 first as requiring every remaining M4 slice before effects. |
 
 The source of settled decisions is [the queue](../../plans/queue.md), *Owner
 decisions on schemas*, 2026-09-21 and 2026-09-22, and the commissioned fork
@@ -36,7 +30,7 @@ This is a delta on the existing contracts. §2 extends `language.md` §3/§5 and
 `frontend.md` §1/§7; §3–§4 extend `checker.md` §4–§8; §6 extends `backend.md`
 §2/§4–§6/§9; §5 and §7 extend `boundary.md` §4–§5. Each wired contract points
 here; the detail lives here once. Settled schema rules here prevail over the
-older research. Conditional rules do not override any existing contract.
+older research.
 
 ## 1. What a schema is, and the guarantees
 
@@ -56,7 +50,7 @@ an explicit escape hatch or deferred capability, not a new error. Existing
 language typing, scope and exhaustiveness rules continue to hold: their
 purpose is to keep those guarantees true of a well-typed caller. G4 permits
 an explicit, documented Ignore default; it does not require a warning for
-every stripped key. Q5 still decides that default.
+every stripped key. Ignore is the default.
 
 Totality covers schema traversal and defined boundary failures on finite
 inputs. As elsewhere in Beni it is not a termination proof for arbitrary
@@ -69,8 +63,13 @@ an arbitrary callback terminating or prove its round-trip law.
 `userId : Int as "user-id"`, both typed records have `userId`; only external
 reading/writing uses `"user-id"`. This applies even when the external name is
 a valid Beni identifier. `Encoded` is neither raw JSON nor a record with
-quoted field names. The three levels are external Value, typed Encoded, typed
-Type. JSON text is a format adapter around Value.
+quoted field names. The three semantic levels are an external host value,
+typed Encoded and typed Type. `Value` is an opaque boundary handle over the
+host value, not a recursively marshalled Beni ADT. JSON.parse supplies the
+host value directly. Compiled validation reads it in one pass, constructing
+the typed result without first constructing a Value tree or a whole Encoded
+intermediate. The library uses privileged core primitives over the same host
+representation; neither path pays an eager marshalling pass.
 
 A declaration produces an inspectable description value **and** specialised
 ordinary top-level parse/print functions. Both success and failure paths are
@@ -83,9 +82,7 @@ schema language and is not reserved for `--release`.
 
 The following is **new syntax**, in `language.md` §3's `:=`, `?`, `*`, `+`
 notation used by the frontend contract. The fixed skeleton admits schemas,
-fields, renames, tagged variants and explicit parameters. Operand vocabulary,
-`via` interpretation and recursive-record eligibility remain conditional on
-Q1/Q2/Q10; no implementation may turn the examples into their decision.
+fields, renames, tagged variants and explicit parameters.
 
 ```text
 Decl          := DocComment? Visibility? (… | SchemaDecl)
@@ -105,9 +102,9 @@ SchemaVariant := upper_ident SchemaRecord? ('as' string)?
 ```
 
 `Atom` is the existing expression atom including its abutting access chain;
-a multi-argument conversion expression must be parenthesised. Q1 may require
-an explicit target endpoint in that atom; it does not alter ordinary call
-arity. `optional` belongs to a field position, where absence has meaning;
+a multi-argument conversion expression must be parenthesised. The atom has
+type `Conversion b a`; ordinary call arity is unchanged. `optional` belongs to
+a field position, where absence has meaning;
 `nullable` composes at a value position. Modifier words terminate schema
 application at the current delimiter depth. Schema parameters with those
 spellings can be parenthesised as operands; they are not globally reserved.
@@ -128,7 +125,7 @@ top-level declaration. There is no bodyless schema, default modifier or opaque
 schema form adopted here; each would need its own elaboration contract.
 
 ```elm
--- NEW SYNTAX; operand names and wrappers conditional on Q2/Q10.
+-- NEW SYNTAX; schema operands and distinct presence/null wrappers.
 pub schema User =
     { userId : Int as "user-id"
     , nickname : String optional nullable
@@ -161,8 +158,9 @@ from a program type. `Page.schema (UserV1.schema ())` and
 representations. Multiple parameters are supplied in declaration order in one
 saturated call. A schema can refer to itself or another schema in its module;
 recursive descriptions use references, not eager expansion. Cross-module cycles
-remain ordinary `import_cycle`. Q10 leaves recursive record wrapping open;
-the tagged `Tree` already supplies the necessary nominal constructors.
+remain ordinary `import_cycle`. V1 recursion uses explicit nominal tagged
+unions; implicit recursive record wrapping is deferred. The tagged `Tree`
+supplies the necessary nominal constructors.
 
 **Grammar checks, 2026-09-22.** Against `./zig-out/bin/beni`, version
 `0.1.0-m1 aa57fab71568ff4271a7090db1db11d6`, temporary projects were run with
@@ -192,14 +190,14 @@ primitive-alias probe and missing H4 plan heading are queued, not repaired here.
 
 K13(b) is decided. A schema name is a **schema namespace binding**, distinct
 from a value, type, constructor and module. It contains fixed type members,
-its constructor families and callable members (Q8). It does not introduce
+its constructor families and callable members (§4). It does not introduce
 user-defined general-purpose namespaces or a runtime namespace object.
 
 Inside Models, `User.Type` selects the local schema's Type. Outside:
 
 | Import | Type access | Value access | Names introduced unqualified |
 |---|---|---|---|
-| `import Models` | `Models.User.Type`, `Models.User.Encoded` | `Models.User.schema ()`; runner spelling subject to Q8 | Models only |
+| `import Models` | `Models.User.Type`, `Models.User.Encoded` | `Models.User.schema ()`; `Models.User.parse text` | Models only |
 | `import Models as M` | `M.User.Type` | `M.User.schema ()` | M only |
 | `import Models exposing (User)` | `User.Type`, and `Models.User.Type` | `User.schema ()` | Models and User, **not** Type, Encoded, parse or Count |
 
@@ -249,9 +247,7 @@ agreement between variants. Constructors `Message.Count` and
 Their codec writes/reads the declared tag under the discriminator. The literal
 tag is description data, not a literal type or an extra editable record field.
 
-For an operand with endpoints E and A, the table below is conditional only in
-the Q10 wrapper **names** and Q1 `via` row. Preservation of all three states,
-field names and tagged endpoints is settled:
+For an operand with endpoints E and A, the modifiers elaborate as follows:
 
 | Field form | Type field | Encoded field | External operation |
 |---|---|---|---|
@@ -260,7 +256,7 @@ field names and tagged endpoints is settled:
 | `f : S nullable` | Nullable A | Nullable E | Required key; null distinct from non-null |
 | `f : S optional` | Presence A | Presence E | Missing key distinct from a present value; null still fails unless S accepts it |
 | `f : S optional nullable` | Presence (Nullable A) | Presence (Nullable E) | Missing, present null, present value remain distinct |
-| `f : S via c` (Q1 recommendation) | a, from c's target endpoint | e, from S : Schema e b | Decode S then c.from; encode c.to then S; b must unify with c's source |
+| `f : S via c` | a, from c : Conversion b a | e, from S : Schema e b | Decode S then c.from; encode c.to then S; b must unify with c's source |
 
 Required/non-nullable is the default for primitives which do not themselves
 admit null. Modifiers do not introduce JavaScript undefined or a general Beni
@@ -270,7 +266,7 @@ changed endpoints must be typed. `as` is applied once at external traversal,
 not again during typed encode/decode or a projection.
 
 Generic `Page a` yields `Page.Type a` and `Page.Encoded e`, with independent
-endpoint variables related only by the supplied `Schema e a`. Under Q8 its
+endpoint variables related only by the supplied `Schema e a`. Its
 factory is `Schema e a -> Schema (Page.Encoded e) (Page.Type a)`; a nongeneric
 factory is `() -> Schema User.Encoded User.Type`. No annotation-level
 computation of a type from an arbitrary runtime value is introduced.
@@ -286,23 +282,37 @@ can disappear into ordinary calls before imported types are known. Ordinary
 library construction remains the semantic elaboration; the plan retains the
 static shape needed to specialise it.
 
-For Q1 to be reviewable, the recommended library form is **conditional**:
+`via` takes an input schema and a fallible conversion:
 
 ```text
-conversion : Schema a a,
-             (b -> Result RelativeIssues a),
-             (a -> Result RelativeIssues b) -> Conversion b a
+conversion : (b -> Result (List Issue) a),
+             (a -> Result (List Issue) b) -> Conversion b a
 converted  : Schema e b, Conversion b a -> Schema e a
 ```
 
-Here the first argument to conversion is a context-safe target endpoint built
-with the ordinary combinators, not a user-written raw endpoint reader.
-`RelativeIssues` is notation pending Q4, not a second settled error type.
-The converted schema keeps S's encoded endpoint, uses the explicit target for
-its program endpoint, and validates callback results at their destination.
-This is why `String via decimalInt` can have Encoded String and Type Int while
-`via` after an already transformed S still has S.Encoded rather than b.
-Accepting this signature/orientation is Q1's decision, not a body-level default.
+`Conversion b a` carries optional target checks, defaulting to none. Adding a
+check uses a library combinator; it does not require a `Schema a a` endpoint.
+Callback issues carry relative paths; the engine prefixes them and enforces
+nonempty Err lists. Successful conversion into a runs its target checks;
+conversion back validates b against the source endpoint before continuing.
+The result keeps S.Encoded = e, including when S already transforms e to b.
+Thus `String via decimalInt` has Encoded String and Type Int.
+
+`Presence a = Missing | Present a` and `Nullable a = Null | NonNull a` are
+separate library types. Field operands name schemas; primitive operand names
+map to core/Schema. V1 includes String, Bool, safe Int, general and finite
+Float, null, Value, lists, records, tagged unions, optionality and nullability,
+with literal checks and enums as library combinators. Dict, tuples and BigInt
+wait (§9); there are no literal types.
+
+The schema namespace has `schema`, `parse`, `print`, `parseWith`, `printWith`,
+Type/Encoded and their constructor families. Typed decode/encode, read/write,
+flip and projections live only in core/Schema over `User.schema ()`.
+Generic runners take explicit schema arguments first, then options for With,
+then input. Parse takes JSON String; print returns JSON String. Parse returns `Result (List Issue) User.Type` (with generic parameters where
+applicable); print returns `Result (List Issue) String`. Err payloads are nonempty. Issue records carry path,
+direction, endpoint, structured code, message and optional reported input;
+S2/S3 specify their concrete public field and code declarations before use.
 
 The interface required by `checker.md` §4/§7 contains:
 
@@ -326,8 +336,8 @@ Round-trip/cold/cache-hit results must agree, including schema member names.
 
 Types, variants and plan node ids are assigned in source-derived order before
 parallel work. Recursive SCCs use finite references; recursive instantiation
-must not expand the type or description forever. Q10's explicit nominal
-recursion recommendation avoids inventing an implicit recursive alias fix.
+must not expand the type or description forever. Explicit nominal
+recursion avoids inventing an implicit recursive alias fix.
 Nonproductive cycles (a reference cycle with no input descent) must fail at
 construction/execution under §5 rather than overflow or hang.
 
@@ -348,7 +358,8 @@ a child consumed no depth, or supply their own key walker. A callback may
 start an independent public parse, but that is a new root operation, not a
 child traversal or a means to satisfy the parent's structural obligations.
 
-Two explicit endpoint descriptions are necessary. Logical vocabulary:
+Each endpoint retains its identity and checks; conversion targets may be
+opaque rather than structurally described. Logical vocabulary:
 
 | Node/data | Must retain |
 |---|---|
@@ -356,7 +367,7 @@ Two explicit endpoint descriptions are necessary. Logical vocabulary:
 | record/product | ordered fields; declared and external names separately; child schema references; presence/null flags |
 | list | child schema reference; element index during traversal |
 | tagged union | discriminator key, ordered literal tags, separate program/encoded constructor identities and payload references |
-| conversion | source and target endpoints, separate fallible directional call targets; never only a wire shape |
+| conversion | source schema, target type identity and optional checks (none by default), separate fallible directional call targets; mark undescribed targets opaque |
 | check | endpoint on which it runs; order; executable predicate/conversion reference; Q6's machine-readable metadata or explicit opaque marker |
 | recursive reference | stable definition identity; a closed definition table, not an anonymous Deferred node |
 | annotation | side and node/field it describes; Q6 decides the export/generation metadata surface |
@@ -377,9 +388,8 @@ schema within another recursive schema. This closes queue row 61's missing
 child definitions and avoids expanding recursion. Describing never runs a
 conversion or validator; a function body is not inspectable data.
 
-The following semantic operations are required; names of namespace wrappers,
-Options and Issue representation remain Q4/Q5/Q8. `Failure` below is notation
-for the chosen error payload, **not** a proposed built-in type.
+The following core/Schema operations are required. `Failure` below abbreviates
+`List Issue`, with nonempty Err as an invariant, not a built-in type.
 
 ```text
 decode      : Schema e a, e -> Result Failure a
@@ -397,7 +407,12 @@ print       : Schema e a, a -> Result Failure String
 `flip` swaps endpoints **and** the two fallible directions. A double flip
 restores their values, failures and checks. `typeOnly` and `encodedOnly` select
 an actual endpoint and its checks, remove the cross-endpoint transformation,
-and validate that endpoint in both directions. Encoded's external record shape
+and validate that endpoint in both directions. For an opaque conversion target,
+typed projections run its optional checks, or are identity when none exist.
+They do not rerun the conversion or invent structural checks. External
+read/write for such a target needs the representation rule still open in Q6;
+there is no unchecked host-value cast implied by typed identity. For structurally
+described endpoints, Encoded's external record shape
 uses `as` keys; Type's endpoint uses declared Beni keys. Both tagged endpoint
 representations retain the declared discriminator and literal tags, but map to
 their own nominal constructor family. Thus flipping also selects the other
@@ -417,8 +432,8 @@ already traversed typed products into records and back. They do not own paths
 or key policy. An incorrect same-typed field swap is still a user conversion
 bug; the declaration reads both directions from one field list. A dynamic
 builder given duplicate keys/tags or a dangling reference returns a construction
-failure, not a corrupt executable schema. Exact builder API follows Q1/Q10 and
-must be specified before S3, not improvised inside the compiler.
+failure, not a corrupt executable schema. The concrete builder API must be
+specified before S3.
 
 ### Traversal and failure rules
 
@@ -428,14 +443,26 @@ list element or variant payload increments structural depth; a limit is tested
 **before** descent. A rename, check, conversion or reference resolution does
 not reset depth. A nonproductive recursive-reference cycle is detected by the
 active reference chain at the same input position and fails there. Lists use
-iteration and recursive structures an explicit work stack, so raising a finite
-limit does not buy a host-stack overflow. Negative/nonintegral/unsafe option
-bounds fail as invalid options at the root. Q5 decides the public bound/default.
+iteration; recursive structures use bounded native recursion. Options default
+to FirstError, Ignore unknown keys, sequential traversal and reportInput false,
+following Effect. A root may override these through With. `maxDepth` has a
+finite implementation ceiling: negative, nonintegral or above-ceiling requests
+fail as invalid options at the root. The proposed default is 512 and candidate
+ceiling 4,096; these numeric choices require the S3/S4 proof below, not an
+assumption that JavaScript guarantees that many frames.
+
+The ceiling must cover both interpreters and emitted workers, including helper
+frames, conversion nesting and JSON output, across supported browser engines
+and Node. Queue row 39 already records overflow near 3,700 calls for a different
+function. S3/S4 must establish a conservative ceiling and the boundary handling
+needed to preserve G1/G3 when callers have already consumed stack; record the
+result here before shipping. No explicit traversal-frame stack is required.
+Queue row 69 tracks this implementation proof.
 
 Decode/read paths use external keys; encode paths use declared Beni keys for
 program input, and an external-output failure uses its external key. Direction
 and failing endpoint must remain distinguishable in the final Issue design
-(Q4). List indices are zero-based. A failed discriminator points at its key;
+(§4). List indices are zero-based. A failed discriminator points at its key;
 a variant payload adds no fictitious JSON field. Engine-attached relative
 conversion paths are appended to the current path. Empty relative paths mean
 this value, never the root. Missing-key and unknown-key failures include the
@@ -478,7 +505,8 @@ JSON printing of negative zero follows JSON.stringify semantics. Parsing or
 printing malformed/unrepresentable data returns Result with a root or precise
 child path. The format adapter catches defined host failures under
 `boundary.md` §4.1. It must not recursively marshal unbounded host data before
-the engine can apply its bound; marshalling is bounded/iterative too.
+the engine can apply its bound. There is no host-to-Value marshalling step;
+JSON output must also respect the bound and translate defined host failures.
 
 ### Pinned Effect semantics
 
@@ -488,7 +516,7 @@ Routine behavior follows **Effect 4.0.0-rc.116**, commit
 - [SchemaAST.ts](../../references/effect/packages/effect/src/SchemaAST.ts),
   `ParseOptions` (around line 451) and object parser (around 2910): first errors,
   ignored excess properties, sequential products by default; excess-key
-  pointers and checks before fields. These support Q5, not an adopted default.
+  pointers and checks before fields. These are the adopted defaults.
 - [Schema.ts](../../references/effect/packages/effect/src/Schema.ts),
   `optionalKey`, `NullOr`, `toType`, `toEncoded` and `isInt` (around 7548): exact
   presence separate from null, endpoint projection, Number.isSafeInteger.
@@ -515,10 +543,12 @@ constant skeleton with parameter slots; its factory fills those slots from
 explicit schema arguments. Recursive edges are ids/references, not an eager
 factory call to itself during module initialisation.
 
-Q8 proposes source members `User.parse`/`User.print`; this section uses those
-names conditionally. Their existence as two independently reachable compiled
-directions is the decided fork. They use normal saturated arities, ordinary
-cross-module calls, and normal Result constructors. Internally, a root wrapper
+`User.parse`/`User.print` are independently reachable compiled directions.
+The resolved schema plan lowers directly into JsIr: raw host inputs are not
+well-typed Beni values, so routing validation through typed BIR would require
+a marshaller or an unsound cast. Library interpretation uses privileged
+core foreign primitives over the same host value. Emitted runners use normal
+saturated arities, ordinary cross-module calls, and normal Result constructors. Internally, a root wrapper
 creates context once and invokes a specialised worker accepting the engine's
 context. Child calls use workers, never root wrappers that reset it.
 
@@ -534,7 +564,7 @@ object, source generator, user macro or emitted Beni file is involved.
 | record | Test object shape; implement excess-key policy; direct own-key presence/read checks per field; bind each validated/transformed child once; construct the typed record with canonical key order after evaluation in declaration order. Reverse uses typed field reads and safe external-key writes. |
 | list | A loop over input positions/cons cells as appropriate, with index and depth carried by the engine; output in original order. No JavaScript recursive call per list cell. |
 | tagged union | Read/test the discriminator once; switch over literal tags; compile each payload's checks and failures. Reverse switches over the input endpoint's nominal constructor; no flattened record of Maybe payloads. |
-| recursive schema | Specialised workers plus an explicit stack of traversal frames; references call/push the known worker with the existing path/depth. Never infinitely expand a recursive schema at compile time or recurse on the host stack without a bound. |
+| recursive schema | Specialised native-recursive workers; references call the known worker with the existing path/depth and check the bounded depth before descent. Never infinitely expand a recursive schema at compile time or recurse on the host stack without a bound. |
 | renamed key | Read/write `raw["user-id"]`, construct/read Beni `userId`; the other external spelling is an unknown key, not an alias accepted opportunistically. |
 | transformation | Direct ordinary call of the chosen directional function after its input endpoint succeeds; test Result and attach engine context to relative failures; validate the output endpoint. |
 | failure | The same specialised branch that detects failure constructs its Issue at that path and continues/stops per options. No retry through a generic interpreter to discover why the fast predicate failed. |
@@ -724,22 +754,22 @@ none refuses an inconvenient but unambiguous valid schema for taste.
 | `duplicate_schema_key` | DUPLICATE EXTERNAL KEY | The second field/tag discriminator collision: “Both `a` and `b` read and write `k`.” Show both field regions and the external key. |
 | `duplicate_schema_tag` | DUPLICATE SCHEMA TAG | The second variant: “`A` and `B` both use tag `t` under `kind`.” Show both declarations; do not report shared payload field names across different variants. |
 | `duplicate_schema_modifier` | DUPLICATE SCHEMA MODIFIER | The second modifier: “This field already has [modifier] here.” Show the first region; two `via` conversions should be explicitly composed. |
-| `schema_conversion_mismatch` | SCHEMA CONVERSION MISMATCH | The via expression: show expected source/target endpoint types and actual types separately, plus the originating field. Final wording/type equation depends on Q1 and must be settled before S2. |
+| `schema_conversion_mismatch` | SCHEMA CONVERSION MISMATCH | The via expression: show expected source/target endpoint types and actual types separately, plus the originating field. For S : Schema e b and c : Conversion b a, require matching b and produce Schema e a. |
 
 Reuse ordinary parse codes for malformed syntax, `duplicate_field` for Beni
 field names, `duplicate_type_parameter`/`unbound_type_variable` for parameters,
 `wrong_type_arity` for Type/Encoded application, ordinary call-arity diagnostics
 for factories/runners, and `type_mismatch` for mixing nominal endpoints.
 `missing_patterns`/`redundant_pattern` continue to decide both constructor
-families. Until Q10 is decided, do not invent a diagnostic banning recursive
-records on top of the existing recursive-alias rule.
+families. Recursive records obey the existing recursive-alias rule; v1 recursive
+schemas use explicit nominal tagged unions.
 
 Each new code gets a full diagnostic golden: stable code, title, severity,
 span, full prose and ordering. Render qualified member types in source spelling;
 wrap prose after interpolation under `checker.md` §8.4. Compiler errors cause
 exit 1 and no build output. Runtime validation failures are **Issue values in
-Result**, not compiler diagnostics, stderr output or process exit codes; Q4
-settles their public constructors, and their fixtures assert complete values.
+Result**, not compiler diagnostics, stderr output or process exit codes; their
+fixtures assert complete values.
 
 ## 9. What v1 leaves out
 
@@ -751,17 +781,17 @@ would need a separate type-system design; ports need a boundary contract and
 measurement before replacement. Schema parse/print do not change main or grant
 ordinary packages foreign privilege.
 
-The following are **recommended exclusions awaiting the stated questions**,
-not settled restrictions:
+The following exclusions are settled except defaults (Q3) and tooling (Q6),
+which remain recommendations:
 
 | Capability | Why wait | Where it would go |
 |---|---|---|
-| Dict/dynamic key schemas, tuples | Key conversion collisions and tuple representation/arity need a precise contract | Q2, §2/§4/§5 library combinators |
-| exact BigInt / lossless numeric lexemes | Beni has no exact large-integer representation; JSON.parse already rounds | Q2, core numeric/boundary design, then §5 adapters |
+| Dict/dynamic key schemas, tuples | Key conversion collisions and tuple representation/arity need a precise contract | §2/§4/§5 library combinators |
+| exact BigInt / lossless numeric lexemes | Beni has no exact large-integer representation; JSON.parse already rounds | core numeric/boundary design, then §5 adapters |
 | declaration defaults | Missing/null/failure recovery and encode omission must not be conflated | Q3, §2/§4 and directional library nodes |
 | JSON Schema output and generators | Arbitrary checks/conversions cannot be inferred from functions; unsatisfiable checks cannot promise a sample | Q6, description interpreters returning Result; explicit unsupported/check metadata |
-| implicit recursive record wrapping and opaque-schema sugar | Need constructor ownership, names and construction rules; report 32 left a circular constructor/conversion story | Q10, §2–§4; ordinary explicit nominal types and typed conversion endpoints remain available |
-| rest-field preservation | Closed Type needs an explicit place for extras and collision rules | Q5, record vocabulary in §5 |
+| implicit recursive record wrapping and opaque-schema sugar | Need constructor ownership, names and construction rules; report 32 left a circular constructor/conversion story | §2–§4; ordinary explicit nominal types and typed conversion endpoints remain available |
+| rest-field preservation | Closed Type needs an explicit place for extras and collision rules | record vocabulary in §5 |
 
 Mapped-type operations (pick/omit/partial), JSON Schema import creating new
 static types at runtime, optics and patch interpreters are not smuggled into
@@ -775,7 +805,7 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-No schema code is commissioned by this document. Each slice begins with a
+S1 is next (A.3); later slices retain the dependencies below. Each begins with a
 fixture that fails on the preceding compiler/library; prove red, implement,
 then reverse the fix in an isolated copy to prove the regression is specific.
 A negative fixture must first be shown to diagnose the intended defect, not
@@ -785,10 +815,10 @@ for this boundary. Follow the write-tests skill when implementation starts.
 
 | Slice | Contract | Red fixtures first | Done means |
 |---|---|---|---|
-| S1 — frontend | §2, §8; resolve dependent Q1/Q2/Q10 syntax first | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
-| S2 — checker | §3–§4, §8; settle Q1/Q7/Q8/Q10 | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; no successful build silently omits runners |
-| S3 — library and description | §1, §4–§5, §9; settle Q1–Q6/Q10 synchronous surface, preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
-| S4 — specialisation | §6 and this section; settle Q8/Q9 | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
+| S1 — frontend | §2, §8; syntax decisions settled in A.2 | `parse/good`, `parse/bad`, `fmt`, `bir`: records, modifier boundaries, contextual-word values, generic operands, tagged recursion, recovery and comment retention | AST/BIR dumps expose source intent, formatter is idempotent and parse-preserving, every new parse diagnostic exact; later phases explicitly refuse unsupported schema builds instead of succeeding without them |
+| S2 — checker | §3–§4, §8; settle Q7; fix queue row 67 first | `check/good` interfaces for two schemas/module, alias/exposing/qualified access, explicit generic arguments, distinct union endpoints; `check/bad` for every new code, wrong endpoints, private members and constructor exhaustiveness | Types and names work through imported/serialized interfaces; cache miss/hit and jobs 1/8 agree; schema plan and sidecar format specified and tested; no successful build silently omits runners |
+| S3 — library and description | §1, §4–§5, §9; settle Q3/Q6 and concrete Issue/builders; prove row 69; preserve Q11 | `run/`: both fallible directions, flip twice, projections with different endpoint shapes, renamed keys, every missing/null/present combination, ordered sibling structural+conversion failures, FirstError laziness, depth 0/bound/bound+1, prototype keys, nested recursive definition closure, runtime construction errors | Plain builders express each accepted declaration and obey closed context; exact values/Issues/description graphs in development/release; JSON host failures return Result; no H4 claim or fixed effects ABI |
+| S4 — specialisation | §6 and this section; settle Q9; prove row 69 | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
 | S5 — effects after P2 | §7; resolve Q11 in the effects specification first | All seven EFFECTS.md cases: `run/`, cross-module `.iface`, `check/bad` sync/extraction diagnostics, cancellation/finalisers and both directions | Directional bits and context survive abstraction/import/suspension in compiled and library paths, no conversion after cancellation, exact effect order and ordinary failures, unchanged sync behavior |
 
 The differential corpus runs **every schema semantic fixture** via the emitted
@@ -829,5 +859,29 @@ Evidence: report 33's two endpoints work, but arbitrary user endpoints lose
 paths/options/depth with exit 0; report 34's AOT size/startup cells and separate
 failure timings support specialisation without abandoning inspection or runtime
 composition. §6 records the numbers and their limits. This replaces report 32's
-“specialise later under release” recommendation. It neither settles Q1–Q12 nor
-claims H4 solved, and it does not change the M4-first implementation order.
+“specialise later under release” recommendation; it does not claim H4 solved.
+
+The compiled path validates the raw host value in one pass and never constructs
+a Value ADT. Generated validation is JsIr, because its input is untyped host
+data, not typed BIR. The library path uses core foreign primitives over the
+same host value. `Value` is an opaque handle, not a marshalling requirement.
+This keeps S3 from imposing report 34's unfused cost on S4.
+
+### A.2 — Surface and traversal decisions (2026-09-22)
+
+Owner review accepted Q1: input schema plus fallible `Conversion b a`, optional
+target checks defaulting to none; Q2: the recommended v1 primitives with
+Dict/tuples/BigInt deferred; Q4: ordinary `Result (List Issue)` and nonempty Err
+invariant; Q5: Effect defaults and a bounded maxDepth with native recursion;
+Q8: schema/parse/print plus parseWith/printWith only, typed operations in the
+library; Q10: schema operands, separate Presence/Nullable, explicit nominal
+recursion. §§2–6 record these decisions. Exact safe depth numbers still need
+implementation evidence (queue row 69). Q3/Q6/Q7/Q9/Q11 remain open.
+
+### A.3 — Implementation order (2026-09-22)
+
+The owner delegated Q12. Schedule S1 next; fix confirmed numeric-alias defect
+67 before S2. Continue S2–S4 in dependency order after their remaining decisions;
+S5 follows P2 and H4. The recorded M4-first slices 1–3 have landed, so this
+places schemas ahead of remaining M4 work without rewriting that history.
+This revision changes documents only; it does not claim any slice landed.

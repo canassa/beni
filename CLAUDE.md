@@ -43,8 +43,10 @@ constrain/solve, exhaustiveness and DAG-parallel module checking.
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
 `core/Schema` under the same engine-owned context contract and differential tests.
-The open decisions lead the document; H4 remains open and the commission does not
-change the recorded M4-first implementation order.
+Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
+The owner review settled the S1 surface; S1 is next, and queue row 67 must be
+fixed before S2. Remaining decisions lead the document; H4 remains open. The
+recorded M4-first slices 1–3 have landed (schema.md A.2–A.3).
 
 M3a emits JavaScript that runs, against the Node platform; M3b's tail-call loop,
 its decision trees for pattern matching and its `?` have landed
