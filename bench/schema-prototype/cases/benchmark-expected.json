@@ -1,0 +1,5 @@
+{
+  "iterations": 10000,
+  "checksum": 440000,
+  "operation": "decode decimal text to Int and encode it back on every iteration"
+}

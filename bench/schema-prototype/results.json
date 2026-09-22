@@ -1,0 +1,832 @@
+{
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "scenarios": {
+    "labels": [
+      "decode conversion failure is complete",
+      "encode conversion failure is complete",
+      "flip preserves encoding failure on decode",
+      "flip preserves decoding failure on encode",
+      "double flip restores exact success",
+      "typeOnly uses program endpoint identity",
+      "encodedOnly uses wire endpoint identity",
+      "projections read and write selected endpoints",
+      "same program type accepts explicit string wire",
+      "same program type accepts explicit numeric wire",
+      "same program type emits two exact wire shapes",
+      "explicit list schema composes string wire",
+      "explicit list schema composes numeric wire",
+      "list conversion failure keeps index path",
+      "missing remains distinct",
+      "null remains distinct",
+      "value remains distinct",
+      "presence variants write exact wire values",
+      "hyphenated wire key reads into Beni field",
+      "hyphenated wire key writes exactly",
+      "nominal text variant roundtrips shared key",
+      "nominal count variant roundtrips shared key",
+      "hand-written endpoint drops caller path (limitation)",
+      "hand-written endpoint ignores depth bound (limitation)",
+      "hand-written endpoint rejects reordered keys (limitation)",
+      "nominal variants write differently typed shared key",
+      "recursive description has named definitions",
+      "nested recursive description omits child definitions (limitation)",
+      "recursive transformed types roundtrip",
+      "recursive decode depth reports full path",
+      "recursive encode depth reports full path",
+      "first error stops at first field",
+      "default mode is first error",
+      "all errors collects both fields",
+      "unknown field can be ignored",
+      "unknown field can be rejected exactly",
+      "first error reports only first unknown key",
+      "object1 all errors combines unknown and invalid field",
+      "object1 enforces depth before fields",
+      "all errors crosses primitive and conversion siblings",
+      "cross-stage all-errors limitation is explicit",
+      "program endpoint validates before encode conversion",
+      "nested refinement validates read and write",
+      "schema JSON bridge succeeds both ways",
+      "schema JSON bridge returns structural failure",
+      "safe integer maximum is accepted",
+      "unsafe integer is rejected",
+      "nonfinite JSON printing is a value failure",
+      "invalid JSON parsing is a value failure",
+      "prototype key roundtrips as data",
+      "huge JSON exponent is rejected on print",
+      "duplicate object key printing is rejected",
+      "JSON boundary depth is a value failure",
+      "benchmark remains reachable"
+    ],
+    "result": {
+      "kind": "schema-prototype",
+      "passed": true,
+      "count": 54,
+      "results": [
+        {
+          "label": "decode conversion failure is complete",
+          "passed": true
+        },
+        {
+          "label": "encode conversion failure is complete",
+          "passed": true
+        },
+        {
+          "label": "flip preserves encoding failure on decode",
+          "passed": true
+        },
+        {
+          "label": "flip preserves decoding failure on encode",
+          "passed": true
+        },
+        {
+          "label": "double flip restores exact success",
+          "passed": true
+        },
+        {
+          "label": "typeOnly uses program endpoint identity",
+          "passed": true
+        },
+        {
+          "label": "encodedOnly uses wire endpoint identity",
+          "passed": true
+        },
+        {
+          "label": "projections read and write selected endpoints",
+          "passed": true
+        },
+        {
+          "label": "same program type accepts explicit string wire",
+          "passed": true
+        },
+        {
+          "label": "same program type accepts explicit numeric wire",
+          "passed": true
+        },
+        {
+          "label": "same program type emits two exact wire shapes",
+          "passed": true
+        },
+        {
+          "label": "explicit list schema composes string wire",
+          "passed": true
+        },
+        {
+          "label": "explicit list schema composes numeric wire",
+          "passed": true
+        },
+        {
+          "label": "list conversion failure keeps index path",
+          "passed": true
+        },
+        {
+          "label": "missing remains distinct",
+          "passed": true
+        },
+        {
+          "label": "null remains distinct",
+          "passed": true
+        },
+        {
+          "label": "value remains distinct",
+          "passed": true
+        },
+        {
+          "label": "presence variants write exact wire values",
+          "passed": true
+        },
+        {
+          "label": "hyphenated wire key reads into Beni field",
+          "passed": true
+        },
+        {
+          "label": "hyphenated wire key writes exactly",
+          "passed": true
+        },
+        {
+          "label": "nominal text variant roundtrips shared key",
+          "passed": true
+        },
+        {
+          "label": "nominal count variant roundtrips shared key",
+          "passed": true
+        },
+        {
+          "label": "hand-written endpoint drops caller path (limitation)",
+          "passed": true
+        },
+        {
+          "label": "hand-written endpoint ignores depth bound (limitation)",
+          "passed": true
+        },
+        {
+          "label": "hand-written endpoint rejects reordered keys (limitation)",
+          "passed": true
+        },
+        {
+          "label": "nominal variants write differently typed shared key",
+          "passed": true
+        },
+        {
+          "label": "recursive description has named definitions",
+          "passed": true
+        },
+        {
+          "label": "nested recursive description omits child definitions (limitation)",
+          "passed": true
+        },
+        {
+          "label": "recursive transformed types roundtrip",
+          "passed": true
+        },
+        {
+          "label": "recursive decode depth reports full path",
+          "passed": true
+        },
+        {
+          "label": "recursive encode depth reports full path",
+          "passed": true
+        },
+        {
+          "label": "first error stops at first field",
+          "passed": true
+        },
+        {
+          "label": "default mode is first error",
+          "passed": true
+        },
+        {
+          "label": "all errors collects both fields",
+          "passed": true
+        },
+        {
+          "label": "unknown field can be ignored",
+          "passed": true
+        },
+        {
+          "label": "unknown field can be rejected exactly",
+          "passed": true
+        },
+        {
+          "label": "first error reports only first unknown key",
+          "passed": true
+        },
+        {
+          "label": "object1 all errors combines unknown and invalid field",
+          "passed": true
+        },
+        {
+          "label": "object1 enforces depth before fields",
+          "passed": true
+        },
+        {
+          "label": "all errors crosses primitive and conversion siblings",
+          "passed": true
+        },
+        {
+          "label": "cross-stage all-errors limitation is explicit",
+          "passed": true
+        },
+        {
+          "label": "program endpoint validates before encode conversion",
+          "passed": true
+        },
+        {
+          "label": "nested refinement validates read and write",
+          "passed": true
+        },
+        {
+          "label": "schema JSON bridge succeeds both ways",
+          "passed": true
+        },
+        {
+          "label": "schema JSON bridge returns structural failure",
+          "passed": true
+        },
+        {
+          "label": "safe integer maximum is accepted",
+          "passed": true
+        },
+        {
+          "label": "unsafe integer is rejected",
+          "passed": true
+        },
+        {
+          "label": "nonfinite JSON printing is a value failure",
+          "passed": true
+        },
+        {
+          "label": "invalid JSON parsing is a value failure",
+          "passed": true
+        },
+        {
+          "label": "prototype key roundtrips as data",
+          "passed": true
+        },
+        {
+          "label": "huge JSON exponent is rejected on print",
+          "passed": true
+        },
+        {
+          "label": "duplicate object key printing is rejected",
+          "passed": true
+        },
+        {
+          "label": "JSON boundary depth is a value failure",
+          "passed": true
+        },
+        {
+          "label": "benchmark remains reachable",
+          "passed": true
+        }
+      ],
+      "fatal": null
+    },
+    "variants": [
+      {
+        "name": "dev-jobs1",
+        "files": 18,
+        "raw_bytes": 113935,
+        "brotli_bytes": 17970
+      },
+      {
+        "name": "dev-jobs8",
+        "files": 18,
+        "raw_bytes": 113935,
+        "brotli_bytes": 17970
+      },
+      {
+        "name": "release-jobs1",
+        "files": 18,
+        "raw_bytes": 61696,
+        "brotli_bytes": 14541
+      },
+      {
+        "name": "release-jobs8",
+        "files": 18,
+        "raw_bytes": 61696,
+        "brotli_bytes": 14541
+      }
+    ],
+    "negative": [
+      {
+        "name": "encoded-count-string",
+        "diagnostics": 1
+      },
+      {
+        "name": "nominal-sides-do-not-mix",
+        "diagnostics": 1
+      }
+    ]
+  },
+  "measurement": {
+    "note": "Browser timings measure Benchmark.run's explicit mixed workload; they are not Effect parity or JSON parsing throughput. Separate per-schema-operation medians remain deferred.",
+    "browser": [
+      {
+        "mode": "development",
+        "engine": "Chrome/153.0.8010.53",
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+        "platform": "darwin",
+        "architecture": "arm64",
+        "parity": {
+          "kind": "schema-prototype",
+          "passed": true,
+          "count": 54,
+          "results": [
+            {
+              "label": "decode conversion failure is complete",
+              "passed": true
+            },
+            {
+              "label": "encode conversion failure is complete",
+              "passed": true
+            },
+            {
+              "label": "flip preserves encoding failure on decode",
+              "passed": true
+            },
+            {
+              "label": "flip preserves decoding failure on encode",
+              "passed": true
+            },
+            {
+              "label": "double flip restores exact success",
+              "passed": true
+            },
+            {
+              "label": "typeOnly uses program endpoint identity",
+              "passed": true
+            },
+            {
+              "label": "encodedOnly uses wire endpoint identity",
+              "passed": true
+            },
+            {
+              "label": "projections read and write selected endpoints",
+              "passed": true
+            },
+            {
+              "label": "same program type accepts explicit string wire",
+              "passed": true
+            },
+            {
+              "label": "same program type accepts explicit numeric wire",
+              "passed": true
+            },
+            {
+              "label": "same program type emits two exact wire shapes",
+              "passed": true
+            },
+            {
+              "label": "explicit list schema composes string wire",
+              "passed": true
+            },
+            {
+              "label": "explicit list schema composes numeric wire",
+              "passed": true
+            },
+            {
+              "label": "list conversion failure keeps index path",
+              "passed": true
+            },
+            {
+              "label": "missing remains distinct",
+              "passed": true
+            },
+            {
+              "label": "null remains distinct",
+              "passed": true
+            },
+            {
+              "label": "value remains distinct",
+              "passed": true
+            },
+            {
+              "label": "presence variants write exact wire values",
+              "passed": true
+            },
+            {
+              "label": "hyphenated wire key reads into Beni field",
+              "passed": true
+            },
+            {
+              "label": "hyphenated wire key writes exactly",
+              "passed": true
+            },
+            {
+              "label": "nominal text variant roundtrips shared key",
+              "passed": true
+            },
+            {
+              "label": "nominal count variant roundtrips shared key",
+              "passed": true
+            },
+            {
+              "label": "hand-written endpoint drops caller path (limitation)",
+              "passed": true
+            },
+            {
+              "label": "hand-written endpoint ignores depth bound (limitation)",
+              "passed": true
+            },
+            {
+              "label": "hand-written endpoint rejects reordered keys (limitation)",
+              "passed": true
+            },
+            {
+              "label": "nominal variants write differently typed shared key",
+              "passed": true
+            },
+            {
+              "label": "recursive description has named definitions",
+              "passed": true
+            },
+            {
+              "label": "nested recursive description omits child definitions (limitation)",
+              "passed": true
+            },
+            {
+              "label": "recursive transformed types roundtrip",
+              "passed": true
+            },
+            {
+              "label": "recursive decode depth reports full path",
+              "passed": true
+            },
+            {
+              "label": "recursive encode depth reports full path",
+              "passed": true
+            },
+            {
+              "label": "first error stops at first field",
+              "passed": true
+            },
+            {
+              "label": "default mode is first error",
+              "passed": true
+            },
+            {
+              "label": "all errors collects both fields",
+              "passed": true
+            },
+            {
+              "label": "unknown field can be ignored",
+              "passed": true
+            },
+            {
+              "label": "unknown field can be rejected exactly",
+              "passed": true
+            },
+            {
+              "label": "first error reports only first unknown key",
+              "passed": true
+            },
+            {
+              "label": "object1 all errors combines unknown and invalid field",
+              "passed": true
+            },
+            {
+              "label": "object1 enforces depth before fields",
+              "passed": true
+            },
+            {
+              "label": "all errors crosses primitive and conversion siblings",
+              "passed": true
+            },
+            {
+              "label": "cross-stage all-errors limitation is explicit",
+              "passed": true
+            },
+            {
+              "label": "program endpoint validates before encode conversion",
+              "passed": true
+            },
+            {
+              "label": "nested refinement validates read and write",
+              "passed": true
+            },
+            {
+              "label": "schema JSON bridge succeeds both ways",
+              "passed": true
+            },
+            {
+              "label": "schema JSON bridge returns structural failure",
+              "passed": true
+            },
+            {
+              "label": "safe integer maximum is accepted",
+              "passed": true
+            },
+            {
+              "label": "unsafe integer is rejected",
+              "passed": true
+            },
+            {
+              "label": "nonfinite JSON printing is a value failure",
+              "passed": true
+            },
+            {
+              "label": "invalid JSON parsing is a value failure",
+              "passed": true
+            },
+            {
+              "label": "prototype key roundtrips as data",
+              "passed": true
+            },
+            {
+              "label": "huge JSON exponent is rejected on print",
+              "passed": true
+            },
+            {
+              "label": "duplicate object key printing is rejected",
+              "passed": true
+            },
+            {
+              "label": "JSON boundary depth is a value failure",
+              "passed": true
+            },
+            {
+              "label": "benchmark remains reachable",
+              "passed": true
+            }
+          ],
+          "fatal": null
+        },
+        "timing": {
+          "iterations": 10000,
+          "samples_ms": [
+            6.100000001490116,
+            2.899999998509884,
+            2.2999999970197678,
+            1.2000000029802322,
+            1.1000000014901161,
+            1,
+            1,
+            1.0999999940395355,
+            1.1000000014901161,
+            1.1000000014901161,
+            1.1000000014901161
+          ],
+          "checksum": 440000,
+          "operation": "decode decimal text to Int and encode it back on every iteration",
+          "median_ms": 1.1000000014901161,
+          "median_ms_per_iteration": 0.00011000000014901161
+        }
+      },
+      {
+        "mode": "release",
+        "engine": "Chrome/153.0.8010.53",
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+        "platform": "darwin",
+        "architecture": "arm64",
+        "parity": {
+          "kind": "schema-prototype",
+          "passed": true,
+          "count": 54,
+          "results": [
+            {
+              "label": "decode conversion failure is complete",
+              "passed": true
+            },
+            {
+              "label": "encode conversion failure is complete",
+              "passed": true
+            },
+            {
+              "label": "flip preserves encoding failure on decode",
+              "passed": true
+            },
+            {
+              "label": "flip preserves decoding failure on encode",
+              "passed": true
+            },
+            {
+              "label": "double flip restores exact success",
+              "passed": true
+            },
+            {
+              "label": "typeOnly uses program endpoint identity",
+              "passed": true
+            },
+            {
+              "label": "encodedOnly uses wire endpoint identity",
+              "passed": true
+            },
+            {
+              "label": "projections read and write selected endpoints",
+              "passed": true
+            },
+            {
+              "label": "same program type accepts explicit string wire",
+              "passed": true
+            },
+            {
+              "label": "same program type accepts explicit numeric wire",
+              "passed": true
+            },
+            {
+              "label": "same program type emits two exact wire shapes",
+              "passed": true
+            },
+            {
+              "label": "explicit list schema composes string wire",
+              "passed": true
+            },
+            {
+              "label": "explicit list schema composes numeric wire",
+              "passed": true
+            },
+            {
+              "label": "list conversion failure keeps index path",
+              "passed": true
+            },
+            {
+              "label": "missing remains distinct",
+              "passed": true
+            },
+            {
+              "label": "null remains distinct",
+              "passed": true
+            },
+            {
+              "label": "value remains distinct",
+              "passed": true
+            },
+            {
+              "label": "presence variants write exact wire values",
+              "passed": true
+            },
+            {
+              "label": "hyphenated wire key reads into Beni field",
+              "passed": true
+            },
+            {
+              "label": "hyphenated wire key writes exactly",
+              "passed": true
+            },
+            {
+              "label": "nominal text variant roundtrips shared key",
+              "passed": true
+            },
+            {
+              "label": "nominal count variant roundtrips shared key",
+              "passed": true
+            },
+            {
+              "label": "hand-written endpoint drops caller path (limitation)",
+              "passed": true
+            },
+            {
+              "label": "hand-written endpoint ignores depth bound (limitation)",
+              "passed": true
+            },
+            {
+              "label": "hand-written endpoint rejects reordered keys (limitation)",
+              "passed": true
+            },
+            {
+              "label": "nominal variants write differently typed shared key",
+              "passed": true
+            },
+            {
+              "label": "recursive description has named definitions",
+              "passed": true
+            },
+            {
+              "label": "nested recursive description omits child definitions (limitation)",
+              "passed": true
+            },
+            {
+              "label": "recursive transformed types roundtrip",
+              "passed": true
+            },
+            {
+              "label": "recursive decode depth reports full path",
+              "passed": true
+            },
+            {
+              "label": "recursive encode depth reports full path",
+              "passed": true
+            },
+            {
+              "label": "first error stops at first field",
+              "passed": true
+            },
+            {
+              "label": "default mode is first error",
+              "passed": true
+            },
+            {
+              "label": "all errors collects both fields",
+              "passed": true
+            },
+            {
+              "label": "unknown field can be ignored",
+              "passed": true
+            },
+            {
+              "label": "unknown field can be rejected exactly",
+              "passed": true
+            },
+            {
+              "label": "first error reports only first unknown key",
+              "passed": true
+            },
+            {
+              "label": "object1 all errors combines unknown and invalid field",
+              "passed": true
+            },
+            {
+              "label": "object1 enforces depth before fields",
+              "passed": true
+            },
+            {
+              "label": "all errors crosses primitive and conversion siblings",
+              "passed": true
+            },
+            {
+              "label": "cross-stage all-errors limitation is explicit",
+              "passed": true
+            },
+            {
+              "label": "program endpoint validates before encode conversion",
+              "passed": true
+            },
+            {
+              "label": "nested refinement validates read and write",
+              "passed": true
+            },
+            {
+              "label": "schema JSON bridge succeeds both ways",
+              "passed": true
+            },
+            {
+              "label": "schema JSON bridge returns structural failure",
+              "passed": true
+            },
+            {
+              "label": "safe integer maximum is accepted",
+              "passed": true
+            },
+            {
+              "label": "unsafe integer is rejected",
+              "passed": true
+            },
+            {
+              "label": "nonfinite JSON printing is a value failure",
+              "passed": true
+            },
+            {
+              "label": "invalid JSON parsing is a value failure",
+              "passed": true
+            },
+            {
+              "label": "prototype key roundtrips as data",
+              "passed": true
+            },
+            {
+              "label": "huge JSON exponent is rejected on print",
+              "passed": true
+            },
+            {
+              "label": "duplicate object key printing is rejected",
+              "passed": true
+            },
+            {
+              "label": "JSON boundary depth is a value failure",
+              "passed": true
+            },
+            {
+              "label": "benchmark remains reachable",
+              "passed": true
+            }
+          ],
+          "fatal": null
+        },
+        "timing": {
+          "iterations": 10000,
+          "samples_ms": [
+            3.899999998509884,
+            2.4000000059604645,
+            1.5999999940395355,
+            1.4000000059604645,
+            1.1999999955296516,
+            1.1000000014901161,
+            1,
+            1.1000000014901161,
+            1.1000000014901161,
+            1.0999999940395355,
+            1.1000000014901161
+          ],
+          "checksum": 440000,
+          "operation": "decode decimal text to Int and encode it back on every iteration",
+          "median_ms": 1.1000000014901161,
+          "median_ms_per_iteration": 0.00011000000014901161
+        }
+      }
+    ]
+  }
+}

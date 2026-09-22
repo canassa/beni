@@ -1,0 +1,3 @@
+-- A module is the executable prototype's stand-in for Message.Encoded.
+pub type Message
+    = Count { value : Int }

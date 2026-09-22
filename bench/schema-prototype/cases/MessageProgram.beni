@@ -1,0 +1,4 @@
+-- This nominal program-side union is intentionally distinct from MessageEncoded.
+pub type Message
+    = Text { value : String }
+    | Count { value : Int }

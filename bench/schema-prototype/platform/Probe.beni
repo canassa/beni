@@ -1,0 +1,10 @@
+--! A portable, opaque prototype program. The sibling validates and copies
+--! all results to plain host data before the runtime observes them.
+
+import List
+
+
+pub foreign type Program
+
+
+pub foreign finish : List ( String, Bool ) -> Program

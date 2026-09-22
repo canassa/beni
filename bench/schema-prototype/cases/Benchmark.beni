@@ -1,0 +1,45 @@
+-- The runner calls this emitted export directly in a browser. Each iteration
+-- performs both directions of a real transformed schema operation.
+import Maybe exposing (Maybe, Nothing, Just)
+import Result exposing (Result, Ok, Err)
+import Schema
+import String
+
+
+conversionIssue : Schema.Context, String -> List Schema.Issue
+conversionIssue context message =
+    [ Schema.issue context (Schema.Invalid "decimal_text") message ]
+
+
+numericText : Schema.Schema String Int
+numericText =
+    Schema.transform Schema.string Schema.int.decoded
+        (\context text ->
+            case String.toInt text of
+                Nothing ->
+                    Err (conversionIssue context "expected decimal integer text")
+                Just value ->
+                    Ok value
+        )
+        (\_ value -> Ok (String.fromInt value))
+
+
+pub run : Int -> Int
+run iterations =
+    loop iterations 0
+
+
+loop : Int, Int -> Int
+loop left checksum =
+    if left <= 0 then
+        checksum
+    else
+        case Schema.decode numericText "42" of
+            Err _ ->
+                -1
+            Ok value ->
+                case Schema.encode numericText value of
+                    Err _ ->
+                        -2
+                    Ok text ->
+                        loop (left - 1) (checksum + value + String.length text)

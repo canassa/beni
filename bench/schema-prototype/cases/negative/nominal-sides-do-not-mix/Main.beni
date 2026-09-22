@@ -1,0 +1,13 @@
+-- Equal-looking program and encoded unions remain distinct nominal types.
+import MessageEncoded
+import MessageProgram
+
+
+encoded : MessageEncoded.Message
+encoded =
+    MessageEncoded.Count { value = 42 }
+
+
+bad : MessageProgram.Message
+bad =
+    encoded

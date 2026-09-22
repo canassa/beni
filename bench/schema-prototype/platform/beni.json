@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "schema-prototype",
+  "program": "Probe.Program",
+  "runtime": "runtime.js"
+}

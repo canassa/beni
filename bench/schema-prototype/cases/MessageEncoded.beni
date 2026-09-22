@@ -1,0 +1,4 @@
+-- Ordinary modules stand in for the proposed nested Message.Encoded namespace.
+pub type Message
+    = Text { value : String }
+    | Count { value : Int }

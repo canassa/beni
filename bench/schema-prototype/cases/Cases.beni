@@ -1,0 +1,759 @@
+import Benchmark
+import List
+import Maybe exposing (Maybe, Nothing, Just)
+import MessageEncoded
+import MessageProgram
+import Result exposing (Result, Ok, Err)
+import Schema exposing (Code, Expected, MissingField, UnknownField, Invalid, DepthExceeded, Direction, Decoding, Encoding, ErrorMode, FirstError, AllErrors, Nullable, Null, NonNull, PathSegment, Key, Index, Presence, Missing, Present, UnknownFields, IgnoreUnknown, RejectUnknown)
+import String
+import Wire exposing (Value, Flag, Number, Text, Array, Object)
+
+
+type alias Pair =
+    { name : String, active : Bool }
+
+
+type alias OptionalText =
+    { middle : Presence (Nullable String) }
+
+
+type alias UserId =
+    { userId : String }
+
+
+type alias PositiveBox =
+    { count : Int }
+
+
+type alias StageWire =
+    { name : String, active : String }
+
+
+type WireNode
+    = WireNode { value : String, children : List WireNode }
+
+
+type ProgramNode
+    = ProgramNode { value : Int, children : List ProgramNode }
+
+
+type NestedNode
+    = NestedNode { inner : WireNode, children : List NestedNode }
+
+
+conversionIssue : Schema.Context, String -> List Schema.Issue
+conversionIssue context message =
+    [ Schema.issue context (Invalid "decimal_text") message ]
+
+
+numericText : Schema.Schema String Int
+numericText =
+    Schema.transform Schema.string Schema.int.decoded
+        (\context text ->
+            case String.toInt text of
+                Nothing ->
+                    Err (conversionIssue context "expected decimal integer text")
+                Just value ->
+                    Ok value
+        )
+        (\context value ->
+            if value < 0 then
+                Err (conversionIssue context "negative integers cannot be encoded")
+            else
+                Ok (String.fromInt value)
+        )
+
+
+pairEndpoint : Schema.Endpoint Pair
+pairEndpoint =
+    Schema.object2Endpoint "pair"
+        (Schema.requiredField "name" Schema.stringEndpoint)
+        (Schema.requiredField "active" Schema.boolEndpoint)
+        (\name active -> { name = name, active = active })
+        .name
+        .active
+
+
+pairSchema : Schema.Schema Pair Pair
+pairSchema =
+    Schema.fromEndpoint pairEndpoint
+
+
+optionalTextEndpoint : Schema.Endpoint OptionalText
+optionalTextEndpoint =
+    Schema.object1Endpoint "optional text"
+        (Schema.optionalField "middle" (Schema.nullableEndpoint Schema.stringEndpoint))
+        (\middle -> { middle = middle })
+        .middle
+
+
+optionalTextSchema : Schema.Schema OptionalText OptionalText
+optionalTextSchema =
+    Schema.fromEndpoint optionalTextEndpoint
+
+
+userIdEndpoint : Schema.Endpoint UserId
+userIdEndpoint =
+    Schema.object1Endpoint "user id"
+        (Schema.requiredField "user-id" Schema.stringEndpoint)
+        (\userId -> { userId = userId })
+        .userId
+
+
+userIdSchema : Schema.Schema UserId UserId
+userIdSchema =
+    Schema.fromEndpoint userIdEndpoint
+
+
+messageEncodedEndpoint : Schema.Endpoint MessageEncoded.Message
+messageEncodedEndpoint =
+    Schema.endpoint
+        { root =
+            Schema.UnionShape
+                [ Schema.ObjectShape
+                    [ ( "kind", Schema.StringShape ), ( "value", Schema.StringShape ) ]
+                , Schema.ObjectShape
+                    [ ( "kind", Schema.StringShape ), ( "value", Schema.NumberShape ) ]
+                ]
+        , definitions = []
+        }
+        readEncodedMessage
+        writeEncodedMessage
+        (\_ _ -> Ok ())
+
+
+messageProgramEndpoint : Schema.Endpoint MessageProgram.Message
+messageProgramEndpoint =
+    Schema.endpoint
+        { root =
+            Schema.UnionShape
+                [ Schema.ObjectShape
+                    [ ( "kind", Schema.StringShape ), ( "value", Schema.StringShape ) ]
+                , Schema.ObjectShape
+                    [ ( "kind", Schema.StringShape ), ( "value", Schema.NumberShape ) ]
+                ]
+        , definitions = []
+        }
+        readProgramMessage
+        writeProgramMessage
+        (\_ _ -> Ok ())
+
+
+messageSchema : Schema.Schema MessageEncoded.Message MessageProgram.Message
+messageSchema =
+    Schema.make messageEncodedEndpoint messageProgramEndpoint
+        (\_ encoded -> Ok (encodedToProgram encoded))
+        (\_ program ->
+            case program of
+                MessageProgram.Text payload ->
+                    Ok (MessageEncoded.Text payload)
+                MessageProgram.Count payload ->
+                    Ok (MessageEncoded.Count payload)
+        )
+
+
+readEncodedMessage : Schema.Context, Value -> Result (List Schema.Issue) MessageEncoded.Message
+readEncodedMessage context value =
+    case value of
+        Object [ ( "kind", Text "text" ), ( "value", Text text ) ] ->
+            Ok (MessageEncoded.Text { value = text })
+        Object [ ( "kind", Text "count" ), ( "value", Number number ) ] ->
+            Result.map
+                (Schema.decode Schema.int number)
+                (\count -> MessageEncoded.Count { value = count })
+        _ ->
+            Err [ Schema.issue context (Expected "tagged message") "expected tagged message" ]
+
+
+writeEncodedMessage : Schema.Context, MessageEncoded.Message -> Result (List Schema.Issue) Value
+writeEncodedMessage _ message =
+    case message of
+        MessageEncoded.Text payload ->
+            Ok (Object [ ( "kind", Text "text" ), ( "value", Text payload.value ) ])
+        MessageEncoded.Count payload ->
+            Ok (Object [ ( "kind", Text "count" ), ( "value", Number (toFloat payload.value) ) ])
+
+
+readProgramMessage : Schema.Context, Value -> Result (List Schema.Issue) MessageProgram.Message
+readProgramMessage context value =
+    case readEncodedMessage context value of
+        Err issues ->
+            Err issues
+        Ok encoded ->
+            Ok (encodedToProgram encoded)
+
+
+encodedToProgram : MessageEncoded.Message -> MessageProgram.Message
+encodedToProgram encoded =
+    case encoded of
+        MessageEncoded.Text payload ->
+            MessageProgram.Text payload
+        MessageEncoded.Count payload ->
+            MessageProgram.Count payload
+
+
+writeProgramMessage : Schema.Context, MessageProgram.Message -> Result (List Schema.Issue) Value
+writeProgramMessage _ message =
+    case message of
+        MessageProgram.Text payload ->
+            Ok (Object [ ( "kind", Text "text" ), ( "value", Text payload.value ) ])
+        MessageProgram.Count payload ->
+            Ok (Object [ ( "kind", Text "count" ), ( "value", Number (toFloat payload.value) ) ])
+
+
+wireNodeEndpoint : () -> Schema.Endpoint WireNode
+wireNodeEndpoint () =
+    Schema.recursiveEndpoint "WireNode"
+        (Schema.ObjectShape
+            [ ( "value", Schema.StringShape )
+            , ( "children", Schema.ListShape (Schema.ReferenceShape "WireNode") )
+            ]
+        )
+        (\() ->
+            Schema.object2Endpoint "wire node"
+                (Schema.requiredField "value" Schema.stringEndpoint)
+                (Schema.requiredField
+                    "children"
+                    (Schema.listEndpoint (Schema.deferEndpoint "WireNode" wireNodeEndpoint))
+                )
+                (\value children -> WireNode { value = value, children = children })
+                (\(WireNode node) -> node.value)
+                (\(WireNode node) -> node.children)
+        )
+
+
+programNodeEndpoint : () -> Schema.Endpoint ProgramNode
+programNodeEndpoint () =
+    Schema.recursiveEndpoint "ProgramNode"
+        (Schema.ObjectShape
+            [ ( "value", Schema.NumberShape )
+            , ( "children", Schema.ListShape (Schema.ReferenceShape "ProgramNode") )
+            ]
+        )
+        (\() ->
+            Schema.object2Endpoint "program node"
+                (Schema.requiredField "value" Schema.int.decoded)
+                (Schema.requiredField
+                    "children"
+                    (Schema.listEndpoint (Schema.deferEndpoint "ProgramNode" programNodeEndpoint))
+                )
+                (\value children -> ProgramNode { value = value, children = children })
+                (\(ProgramNode node) -> node.value)
+                (\(ProgramNode node) -> node.children)
+        )
+
+
+nodeSchema : Schema.Schema WireNode ProgramNode
+nodeSchema =
+    Schema.make (wireNodeEndpoint ()) (programNodeEndpoint ()) decodeNode encodeNode
+
+
+-- A recursive endpoint nested inside another recursive endpoint. The outer
+-- wrapper currently publishes only its own definition, not the inner one's.
+nestedNodeEndpoint : () -> Schema.Endpoint NestedNode
+nestedNodeEndpoint () =
+    Schema.recursiveEndpoint "NestedNode"
+        (Schema.ObjectShape
+            [ ( "inner", Schema.ReferenceShape "WireNode" )
+            , ( "children", Schema.ListShape (Schema.ReferenceShape "NestedNode") )
+            ]
+        )
+        (\() ->
+            Schema.object2Endpoint "nested node"
+                (Schema.requiredField "inner" (wireNodeEndpoint ()))
+                (Schema.requiredField
+                    "children"
+                    (Schema.listEndpoint (Schema.deferEndpoint "NestedNode" nestedNodeEndpoint))
+                )
+                (\inner children -> NestedNode { inner = inner, children = children })
+                (\(NestedNode node) -> node.inner)
+                (\(NestedNode node) -> node.children)
+        )
+
+
+decodeNode : Schema.Context, WireNode -> Result (List Schema.Issue) ProgramNode
+decodeNode context (WireNode node) =
+    let
+        value <- Result.andThen (numericText.decodeValue context node.value)
+        children <- Result.andThen (decodeNodes context node.children)
+    in
+    Ok (ProgramNode { value = value, children = children })
+
+
+decodeNodes : Schema.Context, List WireNode -> Result (List Schema.Issue) (List ProgramNode)
+decodeNodes context nodes =
+    case nodes of
+        [] ->
+            Ok []
+        first :: rest ->
+            let
+                decoded <- Result.andThen (decodeNode context first)
+                decodedRest <- Result.andThen (decodeNodes context rest)
+            in
+            Ok (decoded :: decodedRest)
+
+
+encodeNode : Schema.Context, ProgramNode -> Result (List Schema.Issue) WireNode
+encodeNode context (ProgramNode node) =
+    let
+        value <- Result.andThen (numericText.encodeValue context node.value)
+        children <- Result.andThen (encodeNodes context node.children)
+    in
+    Ok (WireNode { value = value, children = children })
+
+
+encodeNodes : Schema.Context, List ProgramNode -> Result (List Schema.Issue) (List WireNode)
+encodeNodes context nodes =
+    case nodes of
+        [] ->
+            Ok []
+        first :: rest ->
+            let
+                encoded <- Result.andThen (encodeNode context first)
+                encodedRest <- Result.andThen (encodeNodes context rest)
+            in
+            Ok (encoded :: encodedRest)
+
+
+badConversionEndpoint : Schema.Endpoint String
+badConversionEndpoint =
+    Schema.endpoint
+        { root = Schema.StringShape, definitions = [] }
+        (\context value ->
+            case value of
+                Text _ ->
+                    Err [ Schema.issue context (Invalid "conversion") "conversion rejected value" ]
+                _ ->
+                    Err [ Schema.issue context (Expected "string") "expected string" ]
+        )
+        (\_ text -> Ok (Text text))
+        (\_ _ -> Ok ())
+
+
+adverseEndpoint : Schema.Endpoint Pair
+adverseEndpoint =
+    Schema.object2Endpoint "adverse"
+        (Schema.requiredField "name" Schema.stringEndpoint)
+        (Schema.requiredField "active" badConversionEndpoint)
+        (\name active -> { name = name, active = active == "yes" })
+        .name
+        (\pair ->
+            if pair.active then
+                "yes"
+            else
+                "no"
+        )
+
+
+positiveEndpoint : Schema.Endpoint Int
+positiveEndpoint =
+    Schema.refine Schema.int.decoded "must be positive" (\value -> value > 0)
+
+
+prevalidatedSchema : Schema.Schema String Int
+prevalidatedSchema =
+    Schema.transform Schema.string positiveEndpoint
+        (\context _ -> Err [ Schema.issue context (Invalid "decode") "unused decode" ])
+        (\context _ ->
+            Err
+                [ Schema.issue
+                    context
+                    (Invalid "conversion_called")
+                    "encoding conversion was called"
+                ]
+        )
+
+
+positiveBoxSchema : Schema.Schema PositiveBox PositiveBox
+positiveBoxSchema =
+    Schema.fromEndpoint
+        (Schema.object1Endpoint "positive box"
+            (Schema.requiredField "count" positiveEndpoint)
+            (\count -> { count = count })
+            .count
+        )
+
+
+stageWireEndpoint : Schema.Endpoint StageWire
+stageWireEndpoint =
+    Schema.object2Endpoint "staged"
+        (Schema.requiredField "name" Schema.stringEndpoint)
+        (Schema.requiredField "active" Schema.stringEndpoint)
+        (\name active -> { name = name, active = active })
+        .name
+        .active
+
+
+stagedSchema : Schema.Schema StageWire Pair
+stagedSchema =
+    Schema.make stageWireEndpoint pairEndpoint
+        (\context wire ->
+            if wire.active == "yes" then
+                Ok { name = wire.name, active = True }
+            else
+                Err
+                    [ Schema.issue context (Invalid "conversion") "active conversion rejected value"
+                    ]
+        )
+        (\_ pair ->
+            Ok
+                { name = pair.name
+                , active =
+                    if pair.active then
+                        "yes"
+                    else
+                        "no"
+                }
+        )
+
+
+allOptions : Schema.Options
+allOptions =
+    { errors = AllErrors, unknownFields = RejectUnknown, maxDepth = 64 }
+
+
+firstOptions : Schema.Options
+firstOptions =
+    { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 64 }
+
+
+firstRejectOptions : Schema.Options
+firstRejectOptions =
+    { errors = FirstError, unknownFields = RejectUnknown, maxDepth = 64 }
+
+
+zeroDepthOptions : Schema.Options
+zeroDepthOptions =
+    { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 0 }
+
+
+depthOptions : Schema.Options
+depthOptions =
+    { errors = FirstError, unknownFields = IgnoreUnknown, maxDepth = 4 }
+
+
+issueAt : List PathSegment, Direction, Code, String -> Schema.Issue
+issueAt path direction code message =
+    { path = path, direction = direction, code = code, message = message }
+
+
+deepWire : WireNode
+deepWire =
+    WireNode
+        { value = "1"
+        , children =
+            [ WireNode { value = "2", children = [ WireNode { value = "3", children = [] } ] } ]
+        }
+
+
+deepProgram : ProgramNode
+deepProgram =
+    ProgramNode
+        { value = 1
+        , children =
+            [ ProgramNode { value = 2, children = [ ProgramNode { value = 3, children = [] } ] } ]
+        }
+
+
+pub results : List ( String, Bool )
+results =
+    [ ( "decode conversion failure is complete"
+      , Schema.decode numericText "x"
+          == Err [ issueAt [] Decoding (Invalid "decimal_text") "expected decimal integer text" ]
+      )
+    , ( "encode conversion failure is complete"
+      , Schema.encode numericText (-1)
+          == Err
+              [ issueAt [] Encoding (Invalid "decimal_text") "negative integers cannot be encoded" ]
+      )
+    , ( "flip preserves encoding failure on decode"
+      , Schema.decode (Schema.flip numericText) (-1)
+          == Err
+              [ issueAt [] Decoding (Invalid "decimal_text") "negative integers cannot be encoded" ]
+      )
+    , ( "flip preserves decoding failure on encode"
+      , Schema.encode (Schema.flip numericText) "x"
+          == Err [ issueAt [] Encoding (Invalid "decimal_text") "expected decimal integer text" ]
+      )
+    , ( "double flip restores exact success"
+      , Schema.decode (Schema.flip (Schema.flip numericText)) "42" == Ok 42
+      )
+    , ( "typeOnly uses program endpoint identity"
+      , Schema.decode (Schema.typeOnly numericText) 42 == Ok 42
+      )
+    , ( "encodedOnly uses wire endpoint identity"
+      , Schema.decode (Schema.encodedOnly numericText) "42" == Ok "42"
+      )
+    , ( "projections read and write selected endpoints"
+      , ( Schema.read (Schema.typeOnly numericText) (Number 42.0)
+        , Schema.write (Schema.typeOnly numericText) 42
+        , Schema.read (Schema.encodedOnly numericText) (Text "42")
+        , Schema.write (Schema.encodedOnly numericText) "42"
+        )
+          == ( Ok 42, Ok (Number 42.0), Ok "42", Ok (Text "42") )
+      )
+    , ( "same program type accepts explicit string wire", Schema.decode numericText "7" == Ok 7 )
+    , ( "same program type accepts explicit numeric wire", Schema.decode Schema.int 7.0 == Ok 7 )
+    , ( "same program type emits two exact wire shapes"
+      , ( Schema.encode numericText 7, Schema.encode Schema.int 7 ) == ( Ok "7", Ok 7.0 )
+      )
+    , ( "explicit list schema composes string wire"
+      , Schema.decode (Schema.list numericText) [ "1", "2" ] == Ok [ 1, 2 ]
+          && Schema.encode (Schema.list numericText) [ 1, 2 ] == Ok [ "1", "2" ]
+      )
+    , ( "explicit list schema composes numeric wire"
+      , Schema.decode (Schema.list Schema.int) [ 1.0, 2.0 ] == Ok [ 1, 2 ]
+          && Schema.encode (Schema.list Schema.int) [ 1, 2 ] == Ok [ 1.0, 2.0 ]
+      )
+    , ( "list conversion failure keeps index path"
+      , Schema.decodeWith allOptions (Schema.list numericText) [ "1", "bad" ]
+          == Err
+              [ issueAt
+                  [ Index 1 ]
+                  Decoding
+                  (Invalid "decimal_text")
+                  "expected decimal integer text"
+              ]
+      )
+    , ( "missing remains distinct"
+      , Schema.read optionalTextSchema (Object []) == Ok { middle = Missing }
+      )
+    , ( "null remains distinct"
+      , Schema.read optionalTextSchema (Object [ ( "middle", Wire.Null ) ])
+          == Ok { middle = Present Null }
+      )
+    , ( "value remains distinct"
+      , Schema.read optionalTextSchema (Object [ ( "middle", Text "Ada" ) ])
+          == Ok { middle = Present (NonNull "Ada") }
+      )
+    , ( "presence variants write exact wire values"
+      , ( Schema.write optionalTextSchema { middle = Missing }
+        , Schema.write optionalTextSchema { middle = Present Null }
+        , Schema.write optionalTextSchema { middle = Present (NonNull "Ada") }
+        )
+          == ( Ok (Object [])
+             , Ok (Object [ ( "middle", Wire.Null ) ])
+             , Ok (Object [ ( "middle", Text "Ada" ) ])
+             )
+      )
+    , ( "hyphenated wire key reads into Beni field"
+      , Schema.read userIdSchema (Object [ ( "user-id", Text "u-1" ) ]) == Ok { userId = "u-1" }
+      )
+    , ( "hyphenated wire key writes exactly"
+      , Schema.write userIdSchema { userId = "u-1" } == Ok (Object [ ( "user-id", Text "u-1" ) ])
+      )
+    , ( "nominal text variant roundtrips shared key"
+      , Schema.read messageSchema (Object [ ( "kind", Text "text" ), ( "value", Text "hello" ) ])
+          == Ok (MessageProgram.Text { value = "hello" })
+      )
+    , ( "nominal count variant roundtrips shared key"
+      , Schema.read messageSchema (Object [ ( "kind", Text "count" ), ( "value", Number 3.0 ) ])
+          == Ok (MessageProgram.Count { value = 3 })
+      )
+    -- These pin observed WRONG behavior, not the desired production contract.
+    , ( "hand-written endpoint drops caller path (limitation)"
+      , Schema.read messageSchema (Object [ ( "kind", Text "count" ), ( "value", Number 1.5 ) ])
+          == Err [ issueAt [] Decoding (Invalid "safe_integer") "expected a safe integer" ]
+      )
+    , ( "hand-written endpoint ignores depth bound (limitation)"
+      , Schema.readWith
+          zeroDepthOptions
+          messageSchema
+          (Object [ ( "kind", Text "count" ), ( "value", Number 3.0 ) ])
+          == Ok (MessageProgram.Count { value = 3 })
+      )
+    , ( "hand-written endpoint rejects reordered keys (limitation)"
+      , Schema.read messageSchema (Object [ ( "value", Number 3.0 ), ( "kind", Text "count" ) ])
+          == Err [ issueAt [] Decoding (Expected "tagged message") "expected tagged message" ]
+      )
+    , ( "nominal variants write differently typed shared key"
+      , ( Schema.write messageSchema (MessageProgram.Text { value = "hello" })
+        , Schema.write messageSchema (MessageProgram.Count { value = 3 })
+        )
+          == ( Ok (Object [ ( "kind", Text "text" ), ( "value", Text "hello" ) ])
+             , Ok (Object [ ( "kind", Text "count" ), ( "value", Number 3.0 ) ])
+             )
+      )
+    , ( "recursive description has named definitions"
+      , (Schema.describe nodeSchema).encoded
+          == { root = Schema.ReferenceShape "WireNode"
+             , definitions =
+                 [ ( "WireNode"
+                   , Schema.ObjectShape
+                       [ ( "value", Schema.StringShape )
+                       , ( "children", Schema.ListShape (Schema.ReferenceShape "WireNode") )
+                       ]
+                   )
+                 ]
+             }
+      )
+    , ( "nested recursive description omits child definitions (limitation)"
+      , let
+          observedDescription =
+              { root = Schema.ReferenceShape "NestedNode"
+              , definitions =
+                  [ ( "NestedNode"
+                    , Schema.ObjectShape
+                        [ ( "inner", Schema.ReferenceShape "WireNode" )
+                        , ( "children", Schema.ListShape (Schema.ReferenceShape "NestedNode") )
+                        ]
+                    )
+                  ]
+              }
+        in
+        Schema.describe (Schema.fromEndpoint (nestedNodeEndpoint ()))
+            == { encoded = observedDescription, decoded = observedDescription }
+      )
+    , ( "recursive transformed types roundtrip"
+      , Schema.decode nodeSchema deepWire == Ok deepProgram
+          && Schema.encode nodeSchema deepProgram == Ok deepWire
+      )
+    , ( "recursive decode depth reports full path"
+      , Schema.decodeWith depthOptions nodeSchema deepWire
+          == Err
+              [ issueAt
+                  [ Key "children", Index 0, Key "children", Index 0 ]
+                  Decoding
+                  DepthExceeded
+                  "maximum schema depth exceeded"
+              ]
+      )
+    , ( "recursive encode depth reports full path"
+      , Schema.encodeWith depthOptions nodeSchema deepProgram
+          == Err
+              [ issueAt
+                  [ Key "children", Index 0, Key "children", Index 0 ]
+                  Encoding
+                  DepthExceeded
+                  "maximum schema depth exceeded"
+              ]
+      )
+    , ( "first error stops at first field"
+      , Schema.readWith
+          firstOptions
+          pairSchema
+          (Object [ ( "name", Number 1.0 ), ( "active", Text "yes" ) ])
+          == Err [ issueAt [ Key "name" ] Decoding (Expected "string") "expected string" ]
+      )
+    , ( "default mode is first error"
+      , Schema.read pairSchema (Object [ ( "name", Number 1.0 ), ( "active", Text "yes" ) ])
+          == Err [ issueAt [ Key "name" ] Decoding (Expected "string") "expected string" ]
+      )
+    , ( "all errors collects both fields"
+      , Schema.readWith
+          allOptions
+          pairSchema
+          (Object [ ( "name", Number 1.0 ), ( "active", Text "yes" ) ])
+          == Err
+              [ issueAt [ Key "name" ] Decoding (Expected "string") "expected string"
+              , issueAt [ Key "active" ] Decoding (Expected "boolean") "expected boolean"
+              ]
+      )
+    , ( "unknown field can be ignored"
+      , Schema.read
+          pairSchema
+          (Object [ ( "name", Text "Ada" ), ( "active", Flag True ), ( "extra", Number 1.0 ) ])
+          == Ok { name = "Ada", active = True }
+      )
+    , ( "unknown field can be rejected exactly"
+      , Schema.readWith
+          allOptions
+          pairSchema
+          (Object [ ( "name", Text "Ada" ), ( "active", Flag True ), ( "extra", Number 1.0 ) ])
+          == Err [ issueAt [ Key "extra" ] Decoding UnknownField "unknown field" ]
+      )
+    , ( "first error reports only first unknown key"
+      , Schema.readWith
+          firstRejectOptions
+          pairSchema
+          (Object
+              [ ( "name", Text "Ada" )
+              , ( "active", Flag True )
+              , ( "first", Number 1.0 )
+              , ( "second", Number 2.0 )
+              ]
+          )
+          == Err [ issueAt [ Key "first" ] Decoding UnknownField "unknown field" ]
+      )
+    , ( "object1 all errors combines unknown and invalid field"
+      , Schema.readWith
+          allOptions
+          userIdSchema
+          (Object [ ( "user-id", Number 1.0 ), ( "extra", Number 2.0 ) ])
+          == Err
+              [ issueAt [ Key "extra" ] Decoding UnknownField "unknown field"
+              , issueAt [ Key "user-id" ] Decoding (Expected "string") "expected string"
+              ]
+      )
+    , ( "object1 enforces depth before fields"
+      , Schema.readWith zeroDepthOptions userIdSchema (Object [ ( "user-id", Text "u-1" ) ])
+          == Err [ issueAt [] Decoding DepthExceeded "maximum schema depth exceeded" ]
+      )
+    , ( "all errors crosses primitive and conversion siblings"
+      , Schema.readWith
+          allOptions
+          (Schema.fromEndpoint adverseEndpoint)
+          (Object [ ( "name", Number 1.0 ), ( "active", Text "yes" ) ])
+          == Err
+              [ issueAt [ Key "name" ] Decoding (Expected "string") "expected string"
+              , issueAt [ Key "active" ] Decoding (Invalid "conversion") "conversion rejected value"
+              ]
+      )
+    , ( "cross-stage all-errors limitation is explicit"
+      , Schema.readWith
+          allOptions
+          stagedSchema
+          (Object [ ( "name", Number 1.0 ), ( "active", Text "no" ) ])
+          == Err [ issueAt [ Key "name" ] Decoding (Expected "string") "expected string" ]
+      )
+    , ( "program endpoint validates before encode conversion"
+      , Schema.encode prevalidatedSchema 0
+          == Err [ issueAt [] Encoding (Invalid "refinement") "must be positive" ]
+      )
+    , ( "nested refinement validates read and write"
+      , ( Schema.read positiveBoxSchema (Object [ ( "count", Number 0.0 ) ])
+        , Schema.write positiveBoxSchema { count = 0 }
+        )
+          == ( Err [ issueAt [ Key "count" ] Decoding (Invalid "refinement") "must be positive" ]
+             , Err [ issueAt [ Key "count" ] Encoding (Invalid "refinement") "must be positive" ]
+             )
+      )
+    , ( "schema JSON bridge succeeds both ways"
+      , Schema.parse numericText "\"42\"" == Ok 42 && Schema.print numericText 42 == Ok "\"42\""
+      )
+    , ( "schema JSON bridge returns structural failure"
+      , Schema.parse numericText "1"
+          == Err [ issueAt [] Decoding (Expected "string") "expected string" ]
+      )
+    , ( "safe integer maximum is accepted"
+      , Schema.decode Schema.int 9007199254740991.0 == Ok 9007199254740991
+      )
+    , ( "unsafe integer is rejected"
+      , Schema.decode Schema.int 9007199254740992.0
+          == Err [ issueAt [] Decoding (Invalid "safe_integer") "expected a safe integer" ]
+      )
+    , ( "nonfinite JSON printing is a value failure"
+      , Wire.print (Number (1.0 / 0.0)) == Err "JSON cannot print a non-finite number"
+      )
+    , ( "invalid JSON parsing is a value failure"
+      , Wire.parse "{"
+          == Err "invalid JSON"
+      )
+    , ( "prototype key roundtrips as data"
+      , Wire.parse "{\"__proto__\":1}" == Ok (Object [ ( "__proto__", Number 1.0 ) ])
+          && Wire.print (Object [ ( "__proto__", Number 1.0 ) ]) == Ok "{\"__proto__\":1}"
+      )
+    , ( "huge JSON exponent is rejected on print"
+      , Wire.parse "1e999" == Ok (Number (1.0 / 0.0))
+          && Wire.print (Number (1.0 / 0.0)) == Err "JSON cannot print a non-finite number"
+      )
+    , ( "duplicate object key printing is rejected"
+      , Wire.print (Object [ ( "x", Number 1.0 ), ( "x", Number 2.0 ) ])
+          == Err "Wire.Object contains duplicate key \"x\""
+      )
+    , ( "JSON boundary depth is a value failure"
+      , Wire.parse (String.repeat "[" 130 ++ "0" ++ String.repeat "]" 130)
+          == Err "JSON nesting exceeds 128"
+      )
+    , ( "benchmark remains reachable", Benchmark.run 1 == 44 )
+    ]

@@ -1,0 +1,7 @@
+-- The encoded Count payload is nominal and its shared `value` key is Int.
+import MessageEncoded
+
+
+bad : MessageEncoded.Message
+bad =
+    MessageEncoded.Count { value = "not an int" }

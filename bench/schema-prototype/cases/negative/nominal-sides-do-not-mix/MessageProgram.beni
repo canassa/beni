@@ -1,0 +1,3 @@
+-- Stand-in for constructors below the future Message schema namespace.
+pub type Message
+    = Count { value : Int }

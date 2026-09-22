@@ -1,0 +1,987 @@
+--! A bounded, ordinary-Beni probe of a two-sided schema representation.
+--! This is deliberately local to bench/schema-prototype; it is not core API.
+
+import List
+import Maybe exposing (Maybe)
+import Result exposing (Result)
+import Wire exposing (Value)
+
+
+pub type PathSegment
+    = Key String
+    | Index Int
+
+
+pub type Direction
+    = Decoding
+    | Encoding
+
+
+pub type Code
+    = Expected String
+    | MissingField
+    | UnknownField
+    | Invalid String
+    | DepthExceeded
+
+
+pub type alias Issue =
+    { path : List PathSegment
+    , direction : Direction
+    , code : Code
+    , message : String
+    }
+
+
+pub type ErrorMode
+    = FirstError
+    | AllErrors
+
+
+pub type UnknownFields
+    = IgnoreUnknown
+    | RejectUnknown
+
+
+pub type alias Options =
+    { errors : ErrorMode
+    , unknownFields : UnknownFields
+    , maxDepth : Int
+    }
+
+
+pub type alias Context =
+    { options : Options
+    , path : List PathSegment
+    , depth : Int
+    , direction : Direction
+    }
+
+
+pub type Shape
+    = AnyShape
+    | NullShape
+    | BoolShape
+    | NumberShape
+    | StringShape
+    | ListShape Shape
+    | OptionalShape Shape
+    | RefinedShape String Shape
+    | ObjectShape (List ( String, Shape ))
+    | UnionShape (List Shape)
+    | ReferenceShape String
+
+
+pub type alias Description =
+    { root : Shape
+    , definitions : List ( String, Shape )
+    }
+
+
+pub type alias Endpoint a =
+    { description : Description
+    , readValue : Context, Value -> Result (List Issue) a
+    , writeValue : Context, a -> Result (List Issue) Value
+    , validate : Context, a -> Result (List Issue) ()
+    }
+
+
+pub type alias Schema e a =
+    { encoded : Endpoint e
+    , decoded : Endpoint a
+    , decodeValue : Context, e -> Result (List Issue) a
+    , encodeValue : Context, a -> Result (List Issue) e
+    }
+
+
+pub type Presence a
+    = Missing
+    | Present a
+
+
+pub type Nullable a
+    = Null
+    | NonNull a
+
+
+pub type alias Field a =
+    { key : String
+    , shape : Shape
+    , definitions : List ( String, Shape )
+    , readField : Context, List ( String, Value ) -> Result (List Issue) a
+    , writeField : Context, a -> Result (List Issue) (List ( String, Value ))
+    , validateField : Context, a -> Result (List Issue) ()
+    }
+
+
+pub defaultOptions : Options
+defaultOptions =
+    { errors = FirstError
+    , unknownFields = IgnoreUnknown
+    , maxDepth = 64
+    }
+
+
+rootContext : Options, Direction -> Context
+rootContext options direction =
+    { options = options, path = [], depth = 0, direction = direction }
+
+
+pub endpoint :
+    Description
+    , (Context, Value -> Result (List Issue) a)
+    , (Context, a -> Result (List Issue) Value)
+    , (Context, a -> Result (List Issue) ())
+    -> Endpoint a
+endpoint description readValue writeValue validate =
+    { description = description
+    , readValue = readValue
+    , writeValue = writeValue
+    , validate = validate
+    }
+
+
+pub make :
+    Endpoint e
+    , Endpoint a
+    , (Context, e -> Result (List Issue) a)
+    , (Context, a -> Result (List Issue) e)
+    -> Schema e a
+make encoded decoded decodeValue encodeValue =
+    { encoded = encoded
+    , decoded = decoded
+    , decodeValue = decodeValue
+    , encodeValue = encodeValue
+    }
+
+
+pub fromEndpoint : Endpoint a -> Schema a a
+fromEndpoint item =
+    make item item
+        (\_ value -> Ok value)
+        (\_ value -> Ok value)
+
+
+pub decodeWith : Options, Schema e a, e -> Result (List Issue) a
+decodeWith options schema value =
+    let
+        context =
+            rootContext options Decoding
+
+        _ <- Result.andThen (schema.encoded.validate context value)
+        decodedValue <- Result.andThen (schema.decodeValue context value)
+        _ <- Result.andThen (schema.decoded.validate context decodedValue)
+    in
+    Ok decodedValue
+
+
+pub decode : Schema e a, e -> Result (List Issue) a
+decode schema value =
+    decodeWith defaultOptions schema value
+
+
+pub encodeWith : Options, Schema e a, a -> Result (List Issue) e
+encodeWith options schema value =
+    let
+        context =
+            rootContext options Encoding
+
+        _ <- Result.andThen (schema.decoded.validate context value)
+        encodedValue <- Result.andThen (schema.encodeValue context value)
+        _ <- Result.andThen (schema.encoded.validate context encodedValue)
+    in
+    Ok encodedValue
+
+
+pub encode : Schema e a, a -> Result (List Issue) e
+encode schema value =
+    encodeWith defaultOptions schema value
+
+
+pub readWith : Options, Schema e a, Value -> Result (List Issue) a
+readWith options schema value =
+    let
+        context =
+            rootContext options Decoding
+
+        encodedValue <- Result.andThen (schema.encoded.readValue context value)
+    in
+    decodeWith options schema encodedValue
+
+
+pub read : Schema e a, Value -> Result (List Issue) a
+read schema value =
+    readWith defaultOptions schema value
+
+
+pub writeWith : Options, Schema e a, a -> Result (List Issue) Value
+writeWith options schema value =
+    let
+        context =
+            rootContext options Encoding
+
+        encodedValue <- Result.andThen (encodeWith options schema value)
+    in
+    schema.encoded.writeValue context encodedValue
+
+
+pub write : Schema e a, a -> Result (List Issue) Value
+write schema value =
+    writeWith defaultOptions schema value
+
+
+pub parseWith : Options, Schema e a, String -> Result (List Issue) a
+parseWith options schema source =
+    case Wire.parse source of
+        Err message ->
+            Err [ issue (rootContext options Decoding) (Invalid "json") message ]
+
+        Ok value ->
+            readWith options schema value
+
+
+pub parse : Schema e a, String -> Result (List Issue) a
+parse schema source =
+    parseWith defaultOptions schema source
+
+
+pub printWith : Options, Schema e a, a -> Result (List Issue) String
+printWith options schema value =
+    case writeWith options schema value of
+        Err issues ->
+            Err issues
+
+        Ok wire ->
+            case Wire.print wire of
+                Err message ->
+                    Err [ issue (rootContext options Encoding) (Invalid "json") message ]
+
+                Ok source ->
+                    Ok source
+
+
+pub print : Schema e a, a -> Result (List Issue) String
+print schema value =
+    printWith defaultOptions schema value
+
+
+pub flip : Schema e a -> Schema a e
+flip schema =
+    make schema.decoded schema.encoded schema.encodeValue schema.decodeValue
+
+
+pub typeOnly : Schema e a -> Schema a a
+typeOnly schema =
+    fromEndpoint schema.decoded
+
+
+pub encodedOnly : Schema e a -> Schema e e
+encodedOnly schema =
+    fromEndpoint schema.encoded
+
+
+pub transform :
+    Schema e a
+    , Endpoint b
+    , (Context, a -> Result (List Issue) b)
+    , (Context, b -> Result (List Issue) a)
+    -> Schema e b
+transform schema target decodeTransform encodeTransform =
+    make schema.encoded target
+        (\context encoded ->
+            let
+                value <- Result.andThen (schema.decodeValue context encoded)
+                _ <- Result.andThen (schema.decoded.validate context value)
+            in
+            decodeTransform context value
+        )
+        (\context value ->
+            let
+                original <- Result.andThen (encodeTransform context value)
+                _ <- Result.andThen (schema.decoded.validate context original)
+            in
+            schema.encodeValue context original
+        )
+
+
+pub refine : Endpoint a, String, (a -> Bool) -> Endpoint a
+refine base message predicate =
+    endpoint
+        { root = RefinedShape message base.description.root
+        , definitions = base.description.definitions
+        }
+        base.readValue
+        base.writeValue
+        (\context value ->
+            let
+                _ <- Result.andThen (base.validate context value)
+            in
+            if predicate value then
+                Ok ()
+            else
+                Err [ issue context (Invalid "refinement") message ]
+        )
+
+
+pub describe : Schema e a -> { encoded : Description, decoded : Description }
+describe schema =
+    { encoded = schema.encoded.description, decoded = schema.decoded.description }
+
+
+pub stringEndpoint : Endpoint String
+stringEndpoint =
+    endpoint (plain StringShape)
+        (\context value ->
+            case value of
+                Wire.Text text ->
+                    Ok text
+                _ ->
+                    expected context "string"
+        )
+        (\_ text -> Ok (Wire.Text text))
+        (\_ _ -> Ok ())
+
+
+pub string : Schema String String
+string =
+    fromEndpoint stringEndpoint
+
+
+pub boolEndpoint : Endpoint Bool
+boolEndpoint =
+    endpoint (plain BoolShape)
+        (\context value ->
+            case value of
+                Wire.Flag flag ->
+                    Ok flag
+                _ ->
+                    expected context "boolean"
+        )
+        (\_ flag -> Ok (Wire.Flag flag))
+        (\_ _ -> Ok ())
+
+
+pub bool : Schema Bool Bool
+bool =
+    fromEndpoint boolEndpoint
+
+
+pub nullEndpoint : Endpoint ()
+nullEndpoint =
+    endpoint (plain NullShape)
+        (\context value ->
+            case value of
+                Wire.Null ->
+                    Ok ()
+                _ ->
+                    expected context "null"
+        )
+        (\_ _ -> Ok Wire.Null)
+        (\_ _ -> Ok ())
+
+
+pub null : Schema () ()
+null =
+    fromEndpoint nullEndpoint
+
+
+pub int : Schema Float Int
+int =
+    make numberEndpoint intEndpoint
+        (\context value ->
+            if isSafeWhole value then
+                Ok (round value)
+            else
+                Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
+        )
+        (\context value ->
+            let
+                asFloat =
+                    toFloat value
+            in
+            if isSafeWhole asFloat then
+                Ok asFloat
+            else
+                Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
+        )
+
+
+numberEndpoint : Endpoint Float
+numberEndpoint =
+    endpoint (plain NumberShape)
+        (\context value ->
+            case value of
+                Wire.Number number ->
+                    Ok number
+                _ ->
+                    expected context "number"
+        )
+        (\context number ->
+            if isNaN number || isInfinite number then
+                Err [ issue context (Invalid "finite_number") "JSON numbers must be finite" ]
+            else
+                Ok (Wire.Number number)
+        )
+        (\_ _ -> Ok ())
+
+
+intEndpoint : Endpoint Int
+intEndpoint =
+    endpoint (plain NumberShape)
+        (\context value ->
+            case value of
+                Wire.Number number ->
+                    if isSafeWhole number then
+                        Ok (round number)
+                    else
+                        Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
+                _ ->
+                    expected context "integer"
+        )
+        (\context value ->
+            let
+                number =
+                    toFloat value
+            in
+            if isSafeWhole number then
+                Ok (Wire.Number number)
+            else
+                Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
+        )
+        (\context value ->
+            if isSafeWhole (toFloat value) then
+                Ok ()
+            else
+                Err [ issue context (Invalid "safe_integer") "expected a safe integer" ]
+        )
+
+
+isSafeWhole : Float -> Bool
+isSafeWhole value =
+    not (isNaN value)
+        && not (isInfinite value)
+        && value >= -9007199254740991.0
+        && value <= 9007199254740991.0
+        && toFloat (round value) == value
+
+
+pub list : Schema e a -> Schema (List e) (List a)
+list item =
+    make (listEndpoint item.encoded) (listEndpoint item.decoded)
+        (\context values -> traverse context values item.decodeValue)
+        (\context values -> traverse context values item.encodeValue)
+
+
+pub listEndpoint : Endpoint a -> Endpoint (List a)
+listEndpoint item =
+    endpoint
+        { root = ListShape item.description.root, definitions = item.description.definitions }
+        (\context value ->
+            case value of
+                Wire.Array values ->
+                    let
+                        nested <- Result.andThen (enter context)
+                    in
+                    traverse nested values item.readValue
+                _ ->
+                    expected context "array"
+        )
+        (\context values ->
+            let
+                nested <- Result.andThen (enter context)
+            in
+            Result.map (traverse nested values item.writeValue) Wire.Array
+        )
+        (\context values ->
+            let
+                nested <- Result.andThen (enter context)
+            in
+            Result.map (traverse nested values item.validate) (\_ -> ())
+        )
+
+
+pub nullable : Schema e a -> Schema (Nullable e) (Nullable a)
+nullable schema =
+    make (nullableEndpoint schema.encoded) (nullableEndpoint schema.decoded)
+        (\context value ->
+            case value of
+                Null ->
+                    Ok Null
+                NonNull inner ->
+                    Result.map (schema.decodeValue context inner) NonNull
+        )
+        (\context value ->
+            case value of
+                Null ->
+                    Ok Null
+                NonNull inner ->
+                    Result.map (schema.encodeValue context inner) NonNull
+        )
+
+
+pub nullableEndpoint : Endpoint a -> Endpoint (Nullable a)
+nullableEndpoint item =
+    endpoint
+        { root = UnionShape [ NullShape, item.description.root ]
+        , definitions = item.description.definitions
+        }
+        (\context value ->
+            case value of
+                Wire.Null ->
+                    Ok Null
+                _ ->
+                    Result.map (item.readValue context value) NonNull
+        )
+        (\context value ->
+            case value of
+                Null ->
+                    Ok Wire.Null
+                NonNull inner ->
+                    item.writeValue context inner
+        )
+        (\context value ->
+            case value of
+                Null ->
+                    Ok ()
+                NonNull inner ->
+                    item.validate context inner
+        )
+
+
+pub requiredField : String, Endpoint a -> Field a
+requiredField key item =
+    { key = key
+    , shape = item.description.root
+    , definitions = item.description.definitions
+    , readField =
+        \context fields ->
+            case lookup key fields of
+                Nothing ->
+                    Err [ issue (atKey context key) MissingField "required field is missing" ]
+                Just value ->
+                    let
+                        decodedValue <- Result.andThen (item.readValue (atKey context key) value)
+                        _ <- Result.andThen (item.validate (atKey context key) decodedValue)
+                    in
+                    Ok decodedValue
+    , writeField =
+        \context value ->
+            let
+                _ <- Result.andThen (item.validate (atKey context key) value)
+            in
+            Result.map (item.writeValue (atKey context key) value) (\wire -> [ ( key, wire ) ])
+    , validateField = \context value -> item.validate (atKey context key) value
+    }
+
+
+pub optionalField : String, Endpoint a -> Field (Presence a)
+optionalField key item =
+    { key = key
+    , shape = OptionalShape item.description.root
+    , definitions = item.description.definitions
+    , readField =
+        \context fields ->
+            case lookup key fields of
+                Nothing ->
+                    Ok Missing
+                Just value ->
+                    let
+                        decodedValue <- Result.andThen (item.readValue (atKey context key) value)
+                        _ <- Result.andThen (item.validate (atKey context key) decodedValue)
+                    in
+                    Ok (Present decodedValue)
+    , writeField =
+        \context value ->
+            case value of
+                Missing ->
+                    Ok []
+                Present inner ->
+                    let
+                        _ <- Result.andThen (item.validate (atKey context key) inner)
+                    in
+                    Result.map
+                        (item.writeValue (atKey context key) inner)
+                        (\wire -> [ ( key, wire ) ])
+    , validateField =
+        \context value ->
+            case value of
+                Missing ->
+                    Ok ()
+                Present inner ->
+                    item.validate (atKey context key) inner
+    }
+
+
+pub object1Endpoint :
+    String
+    , Field a
+    , (a -> record)
+    , (record -> a)
+    -> Endpoint record
+object1Endpoint name field build get =
+    endpoint
+        { root = ObjectShape [ ( field.key, field.shape ) ], definitions = field.definitions }
+        (\context value ->
+            case value of
+                Wire.Object fields ->
+                    let
+                        nested <- Result.andThen (enter context)
+                        unknownResult =
+                            unknown nested [ field.key ] fields
+                        fieldResult =
+                            field.readField nested fields
+                    in
+                    combineObject1 nested.options.errors unknownResult fieldResult build
+                _ ->
+                    expected context name
+        )
+        (\context value ->
+            let
+                nested <- Result.andThen (enter context)
+            in
+            Result.map (field.writeField nested (get value)) Wire.Object
+        )
+        (\context value ->
+            let
+                nested <- Result.andThen (enter context)
+            in
+            field.validateField nested (get value)
+        )
+
+
+pub object2Endpoint :
+    String
+    , Field a
+    , Field b
+    , (a, b -> record)
+    , (record -> a)
+    , (record -> b)
+    -> Endpoint record
+object2Endpoint name first second build getFirst getSecond =
+    endpoint
+        { root = ObjectShape [ ( first.key, first.shape ), ( second.key, second.shape ) ]
+        , definitions = List.append first.definitions second.definitions
+        }
+        (\context value ->
+            case value of
+                Wire.Object fields ->
+                    let
+                        nested <- Result.andThen (enter context)
+                        unknownResult =
+                            unknown nested [ first.key, second.key ] fields
+                        firstResult =
+                            first.readField nested fields
+                        secondResult =
+                            second.readField nested fields
+                    in
+                    combineObject2
+                        nested.options.errors
+                        unknownResult
+                        firstResult
+                        secondResult
+                        build
+                _ ->
+                    expected context name
+        )
+        (\context value ->
+            let
+                nested <- Result.andThen (enter context)
+                firstResult =
+                    first.writeField nested (getFirst value)
+                secondResult =
+                    second.writeField nested (getSecond value)
+            in
+            combineFields nested.options.errors firstResult secondResult
+        )
+        (\context value ->
+            let
+                nested <- Result.andThen (enter context)
+                firstResult =
+                    first.validateField nested (getFirst value)
+                secondResult =
+                    second.validateField nested (getSecond value)
+            in
+            combineValidations nested.options.errors firstResult secondResult
+        )
+
+
+pub deferEndpoint : String, (() -> Endpoint a) -> Endpoint a
+deferEndpoint name get =
+    endpoint (plain (ReferenceShape name))
+        (\context value ->
+            let
+                target =
+                    get ()
+            in
+            target.readValue context value
+        )
+        (\context value ->
+            let
+                target =
+                    get ()
+            in
+            target.writeValue context value
+        )
+        (\context value ->
+            let
+                target =
+                    get ()
+            in
+            target.validate context value
+        )
+
+
+pub recursiveEndpoint : String, Shape, (() -> Endpoint a) -> Endpoint a
+recursiveEndpoint name definition getBody =
+    let
+        deferred =
+            deferEndpoint name getBody
+    in
+    { deferred
+        | description = { root = ReferenceShape name, definitions = [ ( name, definition ) ] }
+    }
+
+
+pub issue : Context, Code, String -> Issue
+issue context code message =
+    { path = context.path
+    , direction = context.direction
+    , code = code
+    , message = message
+    }
+
+
+plain : Shape -> Description
+plain root =
+    { root = root, definitions = [] }
+
+
+expected : Context, String -> Result (List Issue) a
+expected context name =
+    Err [ issue context (Expected name) ("expected " ++ name) ]
+
+
+atKey : Context, String -> Context
+atKey context key =
+    { context | path = List.append context.path [ Key key ] }
+
+
+atIndex : Context, Int -> Context
+atIndex context index =
+    { context | path = List.append context.path [ Index index ] }
+
+
+deeper : Context -> Context
+deeper context =
+    { context | depth = context.depth + 1 }
+
+
+enter : Context -> Result (List Issue) Context
+enter context =
+    if context.depth >= context.options.maxDepth then
+        Err [ issue context DepthExceeded "maximum schema depth exceeded" ]
+    else
+        Ok (deeper context)
+
+
+lookup : String, List ( String, Value ) -> Maybe Value
+lookup target fields =
+    case fields of
+        [] ->
+            Nothing
+        ( key, value ) :: rest ->
+            if key == target then
+                Just value
+            else
+                lookup target rest
+
+
+unknown : Context, List String, List ( String, Value ) -> Result (List Issue) ()
+unknown context known fields =
+    case context.options.unknownFields of
+        IgnoreUnknown ->
+            Ok ()
+        RejectUnknown ->
+            let
+                issues =
+                    List.foldl
+                        fields
+                        []
+                        (\( key, _ ) found ->
+                            if List.member known key then
+                                found
+                            else
+                                case context.options.errors of
+                                    FirstError ->
+                                        if found == [] then
+                                            [ issue (atKey context key) UnknownField "unknown field"
+                                            ]
+                                        else
+                                            found
+
+                                    AllErrors ->
+                                        issue (atKey context key) UnknownField "unknown field"
+                                            :: found
+                        )
+            in
+            if issues == [] then
+                Ok ()
+            else
+                Err (List.reverse issues)
+
+
+traverse : Context, List a, (Context, a -> Result (List Issue) b) -> Result (List Issue) (List b)
+traverse context values func =
+    traverseHelp context values func 0 [] []
+
+
+traverseHelp :
+    Context
+    , List a
+    , (Context, a -> Result (List Issue) b)
+    , Int
+    , List b
+    , List Issue
+    -> Result (List Issue) (List b)
+traverseHelp context values func index results issues =
+    case values of
+        [] ->
+            if issues == [] then
+                Ok (List.reverse results)
+            else
+                Err (List.reverse issues)
+        value :: rest ->
+            case func (atIndex context index) value of
+                Ok result ->
+                    traverseHelp context rest func (index + 1) (result :: results) issues
+                Err found ->
+                    case context.options.errors of
+                        FirstError ->
+                            Err found
+                        AllErrors ->
+                            traverseHelp
+                                context
+                                rest
+                                func
+                                (index + 1)
+                                results
+                                (List.append (List.reverse found) issues)
+
+
+combineObject2 :
+    ErrorMode
+    , Result (List Issue) ()
+    , Result (List Issue) a
+    , Result (List Issue) b
+    , (a, b -> record)
+    -> Result (List Issue) record
+combineObject2 mode unknownResult first second build =
+    case unknownResult of
+        Err issues ->
+            case mode of
+                FirstError ->
+                    Err issues
+                AllErrors ->
+                    combineAfterUnknown AllErrors issues first second build
+        Ok _ ->
+            combineAfterUnknown mode [] first second build
+
+
+combineObject1 :
+    ErrorMode
+    , Result (List Issue) ()
+    , Result (List Issue) a
+    , (a -> record)
+    -> Result (List Issue) record
+combineObject1 mode unknownResult fieldResult build =
+    case unknownResult of
+        Err unknownIssues ->
+            case mode of
+                FirstError ->
+                    Err unknownIssues
+
+                AllErrors ->
+                    case fieldResult of
+                        Err fieldIssues ->
+                            Err (List.append unknownIssues fieldIssues)
+                        Ok _ ->
+                            Err unknownIssues
+
+        Ok _ ->
+            Result.map fieldResult build
+
+
+combineAfterUnknown :
+    ErrorMode
+    , List Issue
+    , Result (List Issue) a
+    , Result (List Issue) b
+    , (a, b -> record)
+    -> Result (List Issue) record
+combineAfterUnknown mode prior first second build =
+    case first of
+        Err firstIssues ->
+            case mode of
+                FirstError ->
+                    Err firstIssues
+                AllErrors ->
+                    case second of
+                        Err secondIssues ->
+                            Err (List.append prior (List.append firstIssues secondIssues))
+                        Ok _ ->
+                            Err (List.append prior firstIssues)
+        Ok a ->
+            case second of
+                Err secondIssues ->
+                    Err (List.append prior secondIssues)
+                Ok b ->
+                    if prior == [] then
+                        Ok (build a b)
+                    else
+                        Err prior
+
+
+combineFields :
+    ErrorMode
+    , Result (List Issue) (List ( String, Value ))
+    , Result (List Issue) (List ( String, Value ))
+    -> Result (List Issue) Value
+combineFields mode first second =
+    case first of
+        Err firstIssues ->
+            case mode of
+                FirstError ->
+                    Err firstIssues
+                AllErrors ->
+                    case second of
+                        Err secondIssues ->
+                            Err (List.append firstIssues secondIssues)
+                        Ok _ ->
+                            Err firstIssues
+        Ok firstFields ->
+            case second of
+                Err secondIssues ->
+                    Err secondIssues
+                Ok secondFields ->
+                    Ok (Wire.Object (List.append firstFields secondFields))
+
+
+combineValidations :
+    ErrorMode
+    , Result (List Issue) ()
+    , Result (List Issue) ()
+    -> Result (List Issue) ()
+combineValidations mode first second =
+    case first of
+        Err firstIssues ->
+            case mode of
+                FirstError ->
+                    Err firstIssues
+                AllErrors ->
+                    case second of
+                        Err secondIssues ->
+                            Err (List.append firstIssues secondIssues)
+                        Ok _ ->
+                            Err firstIssues
+        Ok _ ->
+            second
