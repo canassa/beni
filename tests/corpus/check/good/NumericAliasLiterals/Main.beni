@@ -1,0 +1,19 @@
+-- check/good (project): numeric literals satisfy annotations through imported,
+-- qualified aliases of Int and Float. The imported record alias is the
+-- structural control for the same cross-module expansion path.
+import Models
+
+
+pub id : Models.Id
+id =
+    42
+
+
+pub score : Models.Score
+score =
+    2
+
+
+pub box : Models.Box
+box =
+    { value = 42 }

@@ -1,0 +1,58 @@
+-- check/good (project): numeric literals satisfy annotations through local
+-- aliases of both primitive number types. The record alias is the control:
+-- aliases were already transparent for structural values before row 67.
+pub type alias Count =
+    Int
+
+
+pub type alias Ratio =
+    Float
+
+
+pub type alias CountAgain =
+    Count
+
+
+pub type alias Text =
+    String
+
+
+pub type alias Point =
+    { x : Int }
+
+
+pub count : Count
+count =
+    1
+
+
+pub ratio : Ratio
+ratio =
+    1
+
+
+pub countAgain : CountAgain
+countAgain =
+    2
+
+
+pub asCount : Int -> Count
+asCount n =
+    n
+
+
+pub chooseCount flag =
+    if flag then
+        3
+    else
+        asCount 4
+
+
+pub text : Text
+text =
+    "left" ++ "right"
+
+
+pub point : Point
+point =
+    { x = 1 }

@@ -1,0 +1,26 @@
+module Local
+  alias Count
+  alias CountAgain
+  alias Point
+    Point/1
+  alias Ratio
+  alias Text
+  value asCount : Int -> Count
+  value chooseCount : Bool -> Count
+  value count : Count
+  value countAgain : CountAgain
+  value point : Point
+  value ratio : Ratio
+  value text : Text
+module Main
+  value box : Box
+  value id : Id
+  value score : Score
+module Models
+  alias Box
+    Box/1
+  alias Id
+  alias Score
+  value defaultBox : Box
+  value defaultId : Id
+  value defaultScore : Score

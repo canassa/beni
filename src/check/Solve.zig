@@ -822,7 +822,10 @@ pub const Solver = struct {
             // The flex side absorbs the alias, name and all, so a later
             // diagnostic still says `Model` and not the record behind it.
             .flex => |fb| {
-                if (fb.kind != .any and !s.kindAccepts(fb.kind, rb)) {
+                // Test the constrained variable against the alias root: the
+                // flex root is the `number`/`appendable` being tested, not
+                // the type it must be allowed to become.
+                if (fb.kind != .any and !s.kindAccepts(fb.kind, ra)) {
                     return s.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
                 }
                 if (fb.equatable) try s.register(.{ .kind = .equatable, .v = ra, .region = s.region });

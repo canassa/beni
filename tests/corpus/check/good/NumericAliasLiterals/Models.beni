@@ -1,0 +1,28 @@
+-- check/good (project): the declaring side of the imported primitive-alias
+-- cases. Keeping both aliases public makes their nominal names observable in
+-- Main's interface golden.
+pub type alias Id =
+    Int
+
+
+pub type alias Score =
+    Float
+
+
+pub type alias Box =
+    { value : Int }
+
+
+pub defaultId : Id
+defaultId =
+    0
+
+
+pub defaultScore : Score
+defaultScore =
+    0
+
+
+pub defaultBox : Box
+defaultBox =
+    { value = 0 }
