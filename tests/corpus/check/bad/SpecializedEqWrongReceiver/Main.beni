@@ -1,0 +1,53 @@
+import Holder
+
+
+-- Declared before Wrapper, this is the forward-reference shape that must not
+-- retain a stale derived part when Wrapper later proves unsupported.
+pub type Before
+    = Before Wrapper
+
+
+pub type Wrapper
+    = Wrapper (Holder.Holder String)
+
+
+pub type After
+    = After Wrapper
+
+
+pub type Generic a
+    = Generic (Holder.Holder a)
+
+
+identity value =
+    value
+
+
+badWrapper =
+    Wrapper (Holder.Holder "left" identity)
+        == Wrapper (Holder.Holder "right" identity)
+
+
+badBefore =
+    Before (Wrapper (Holder.Holder "left" identity))
+        == Before (Wrapper (Holder.Holder "right" identity))
+
+
+badAfter =
+    After (Wrapper (Holder.Holder "left" identity))
+        == After (Wrapper (Holder.Holder "right" identity))
+
+
+badGeneric : Generic String, Generic String -> Bool
+badGeneric left right =
+    left == right
+
+
+badRecord : { value : Holder.Holder String }, { value : Holder.Holder String } -> Bool
+badRecord left right =
+    left == right
+
+
+badTuple : ( Holder.Holder String, Int ), ( Holder.Holder String, Int ) -> Bool
+badTuple left right =
+    left == right

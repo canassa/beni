@@ -17,19 +17,17 @@
 -- emits `Basics$eq` at that position. That is only safe while `err` means
 -- one thing, so this golden is where the one thing is written down.
 --
--- It is a position the comparison NEVER REACHES, and there are two ways to
--- write one. The first is a type variable nothing constrains: `[] == []`
--- compares two empty lists, so the element type is free, and `Nothing ==
--- Nothing` carries no payload. The second is subtler and `crossed` is it —
--- `Ok 1 == Err "a"` is a `Result String Int`, so the `x` position is
--- `String` and not a free variable at all, but the RECEIVER (`Ok 1`) is
--- what pins the type at the moment the constraint is discharged, and it
--- pins only `a`; `x` arrives from the argument afterwards and the part is
--- already written. That is a real imprecision in the table rather than a
--- fact about the program, and it is harmless for the same reason the first
--- case is: the receiver always pins the position its OWN constructor
--- carries, so the position left `err` is the one the tag test rejects
--- before either side is read.
+-- It is a position the comparison NEVER REACHES: a type variable nothing
+-- constrains. `[] == []` compares two empty lists, so the element type is
+-- free, and `Nothing == Nothing` carries no payload.
+--
+-- `crossed` used to be a second way, and is not any more (queue row 75,
+-- static-dispatch-spike.md A.86): `Ok 1 == Err "a"` is a `Result String
+-- Int`, but the RECEIVER (`Ok 1`) pins only `a` when the constraint is
+-- discharged, and `x` arrives from the argument afterwards. The part is
+-- now a PART SITE, answered when `x` is: `strict_eq`, not `err`. The same
+-- lateness in a `let` wrote `err` for a position that did become a user's
+-- type with its own `eq`, and the backend's structural answer was wrong.
 --
 -- What `err` is NOT, and the reason the last three declarations are here:
 -- an unresolved `number`. A.59 makes `targetFor` ask the builtin bridge

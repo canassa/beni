@@ -471,12 +471,16 @@ name by the same three rules, so a record of `Maybe (List Point)` derives down t
 
 ### 3.4 `equatable` after this change
 
-The `equatable` marker (`language.md` §3, `checker.md` Appendix A and B) stays exactly as it is, is
-still core-only, and still means what it meant. It becomes **redundant** with the `eq` constraint:
-a type that has an `eq` is equatable, and a function type has neither. The spike does not remove it
-and does not try to unify the two mechanisms — that redundancy is a finding for report 19, not work
-(`plans/static-dispatch-spike.md` §9). `not_equatable` therefore survives as the diagnostic for
-`eq` on a function type, because it is the better message.
+The `equatable` marker (`language.md` §3, `checker.md` Appendix A and B) stays core-only
+and retains its structural guarantee: the value contains no function to compare.
+It is distinct from an `eq` method constraint when a nominal type supplies custom
+equality over a function-containing representation (row 72 clarification,
+2026-09-22). Explicit `Basics.eq` and `Basics.neq` still use structural equality;
+the marker must reject such a representation even though `==` can call its public
+custom `eq`. The dispatch capability may therefore be true while `has_function`
+is also true. The marker retains its independent structural walk and type-argument
+checks. The two mechanisms are not unified by this correction. `not_equatable` survives
+for an actual function and for a function-containing value passed to the marker.
 
 ---
 
@@ -966,14 +970,58 @@ caller never named. Appendix A.28 records the decision; this row records which `
 
    > **Every nominal type declared in a module gets `eq` and `compare` derived in that module,
    > used or not**, with two exclusions. A type whose declaring module supplies a `pub` value of
-   > that name gets that instead (step 2). A type **any** of whose constructor payloads contains a
-   > function type, directly or through another type, gets **neither**; a use then reports
-   > `not_equatable` (for `eq`) or `no_methods_on_shape` (for `compare`) at the use, exactly as the
-   > `func` row of §6.3 says.
+   > that name gets that instead (step 2). For each method independently, a type whose
+   > constructor payloads reach a function **without an intervening method implementation**
+   > cannot derive that method; a use then reports `not_equatable` (for `eq`) or
+   > `no_methods_on_shape` (for `compare`), exactly as the `func` row of §6.3 says.
 
-   The exclusion is computed by the same walk `equatable` already does (`checker.md` §6.4, "a
-   structure: walk it once with a mark as the cycle guard"), so it costs one traversal per declared
-   type and reuses the answer `Types.build` settles for `equatable` anyway. Appendix A.23.
+   The recursive resolution rule in §3.3 applies at every nominal payload boundary.
+   A payload type's public `eq` answers equality even when its representation holds
+   a function; the wrapper derives by calling that method. It does not also gain
+   `compare` unless the payload answers `compare`. Instantiation still checks the
+   selected method's signature and `where` obligations. `has_function` remains a
+   structural diagnostic fact, not an unconditional veto on either capability.
+
+   The selected method's scheme is checked on a speculative copy first, and then
+   committed by repeating only the unification, so a specialised receiver
+   (`pub eq : Holder Int, Holder Int -> Bool`) narrows the caller's inferred type
+   (`same : Int, Int -> Bool`). The committed copy's own constraints raise **no
+   second obligation**: their evidence is the one part tree the derived body
+   already carries (§7.1's amendment, A.64), and a second obligation would invent
+   hidden arguments the call does not take. A **plain** scheme — `T a1 … an, T a1 … an -> Bool`
+   (or `Order`) over distinct variables whose only constraints are the method's own name, as
+   `List.eq`'s and `List.compare`'s are — can neither narrow the receiver nor refuse an application
+   except by an argument that does not answer the method, which its parts already show; it skips the
+   copy, the probe and the commit, and `derivable` skips its probe for a shape that reaches no other
+   kind of method. That is a cost rule only: no answer or diagnostic changes. The rule is by
+   provenance, not by
+   phase: a constraint the copy itself created, or a rebuild joined from such
+   constraints only, is skipped; a constraint the caller's variables carried, and
+   any rebuilt set a caller's constraint was joined into, keeps its obligation —
+   the unification can merge two callers' folded constraints and meet a concrete
+   type in the same step.
+
+   **A part answered late** (A.86). A derived target's part whose position is still a flex
+   variable when the comparison is solved — `{ v = left } == { v = right }` in a `let`, before
+   `left` is pinned — is not `err` for good: the method constraint the flex takes carries a
+   **part site** naming that part, and whatever answers the constraint answers the part — the
+   method of the type the flex becomes, re-resolved in part form so it carries its own evidence,
+   or the evidence a promotion gives the enclosing declaration. A flex nothing ever pins keeps
+   `err`, the structural answer, as before.
+
+   Every group that can ask for a capability reads the scheme-checked answer.
+   A module's unannotated `pub eq`/`pub compare` groups (and what they use) are
+   checked before its other groups, so the capabilities are settled against the
+   method schemes already known before those groups run, and again once their
+   schemes are published; no group reads a syntactic first cut that the selected
+   scheme could overturn in either direction.
+
+   Compute the two capabilities per module after its imported method schemes are
+   available, summarising each declaration body once and propagating exclusions
+   through a dependency worklist. Recursive nominal types retain the optimistic
+   fixed point. The structural `equatable` answer remains separate; custom method
+   boundaries require the selected scheme to accept the actual payload application,
+   including its constraints. Appendix A.23.
 5. **Fail.** `unknown_method`, listing the module's `pub` value names within edit distance 2 of the
    name (`checker.md` §8, "record field typos by edit distance").
 
@@ -1811,7 +1859,7 @@ emitting module as `module` and an interned base, so the printer spells it `Modu
 
 | What | Emitted in | When | Base | Printed |
 |---|---|---|---|---|
-| well-known method of a nominal type `T` in module `M` | `M`, always — even when the only use is elsewhere, and even when `T` is `pub opaque`, which is what makes derivation legal for an opaque type | **eagerly**: one `eq` and one `compare` per declared nominal type, used or not, unless a payload contains a function type (§6.3.1 step 4) | `<T>$$eq`, `<T>$$compare` | `Shapes$Shape$$eq` |
+| well-known method of a nominal type `T` in module `M` | `M`, always — even when the only use is elsewhere, and even when `T` is `pub opaque`, which is what makes derivation legal for an opaque type | **eagerly**: one `eq` and one `compare` per declared nominal type, used or not, subject to the method-specific capability rule (§6.3.1 step 4) | `<T>$$eq`, `<T>$$compare` | `Shapes$Shape$$eq` |
 | the tag-order table of a type with two or more constructors | `M` | with its `compare` | `<T>$$order` | `Shapes$Colour$$order` |
 | a record shape | the **consuming** module, deduplicated per file | on demand: a shape is not declared anywhere, so there is no module to derive it in ahead of time | `eq$r$<f1>$<f2>$…` | `Main$eq$r$x$y` |
 | a tuple shape | the consuming module | on demand | `eq$t<n>` | `Main$compare$t2` |
@@ -2056,7 +2104,7 @@ Rules the two functions follow, and the reasons:
 | `compare` orders constructors by **declaration order** | the language's rule everywhere else; the `$order` table is what makes it so |
 | a recursive type's derived function calls itself by name | a top-level `const` arrow may reference itself from inside its body |
 | the function is emitted in the **declaring** module, exported, and **eagerly** — once per declared nominal type whether anything uses it or not (§6.3.1 step 4, §8.5) | the declaring module is the only one that may read a `pub opaque type`'s constructors, and it is also the only one that can emit without its output depending on which *other* module asked first. Eager derivation is what makes the second half true |
-| a type any of whose constructor payloads contains a function type gets **neither** derived function | there is nothing to emit; a use is `not_equatable` / `no_methods_on_shape` at the use (§6.3) |
+| each method is excluded only when a payload cannot answer that method, after honoring public custom methods | a function reached without a method boundary has no implementation; the use reports `not_equatable` / `no_methods_on_shape` (§6.3) |
 
 **Parametric types** take one evidence parameter per type parameter, in declaration order, whether
 or not the parameter is used — the uniform rule, which keeps the canonical order of §7.2 a function
@@ -2308,6 +2356,13 @@ this section as §10.11, and at the end of both catalogues, so nothing above it 
 
 ```
 too_many_inferred_constraints
+```
+
+A **twelfth** was appended on 2026-09-23 (queue row 75), as §10.12, after the schema codes in both
+catalogues (A.86):
+
+```
+method_needs_annotation
 ```
 
 Four existing codes are reused rather than duplicated: `not_equatable` for `eq` on a function type
@@ -2738,6 +2793,35 @@ unannotated declaration), `tests/corpus/check/good/SixtyFourConstraints.beni` (6
 `tests/corpus/check/good/AnnotatedManyConstraints.beni` (the annotated 65-constraint twin, clean),
 plus the bounded-recovery scenario in `tests/blackbox/abuse_test.zig`.
 
+### 10.12 `method_needs_annotation`
+
+Appended 2026-09-23, after §10.11, so no number above it moves (A.86).
+
+**Severity** error. **Region** the use: the operator, or the call. A method of the receiver's own
+module (§1.2's module rule) answers the use, the method has **no annotation**, and its binding group
+is checked **after** the group holding the use, so it has no scheme there. §6.3.1 step 4's early
+groups make this reachable: an unannotated `pub compare` is checked before the module's other
+groups, and a `==` inside it on a type whose unannotated `pub eq` comes later has nothing to call.
+Reached through a derived comparison's part it is the same message, at the comparison.
+
+> **METHOD NEEDS AN ANNOTATION** — This needs `<T>`'s `<m>`, which its module defines without a
+> type annotation. I check that `<m>` after this declaration, so I do not know its type here yet.
+>
+> Hint: annotate `<m>`, for example:
+>
+>     pub <m> : <T>, <T> -> Bool
+
+The example is printed for `eq` (`Bool`) and `compare` (`Order`) only, with `pub` when the method
+is `pub` — the annotation line carries it (`language.md` §9). Before this code the site
+was `err` with no message — `undefined` at run time — and the part a structural `Basics.eq` that
+ignored `<m>`; `js/Lower.zig` now refuses an unreported `err` site as `internal` rather than emit
+it. Refusing is rule 7's kind of rule: annotating the method is always possible, and it protects
+no-silent-wrong-answer. *Alternative*, and the proper fix: order such a method's group before every
+group that uses it, or defer the use until the method is solved. Uses are only known once types
+are, so neither is a syntactic edge, and a method and its user can be mutually recursive.
+
+Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and the record-part form).
+
 ---
 
 ## 11. Known limits, and where the design may change
@@ -3128,8 +3212,9 @@ the form would delete a documented part of `language.md` §6.5. *Alternative:* r
 comparison operators in parenthesised form (`operator_not_a_function`), which is a language change.
 
 **A.23 — derivation for a nominal type is eager** (§6.3.1 step 4, §8.5, §9.4) [B2]. Every declared
-nominal type gets `eq` and `compare` derived in its declaring module, used or not, unless a
-constructor payload contains a function type. *Why:* `Dispatch` is per module and built at the end
+nominal type gets `eq` and `compare` derived in its declaring module, used or not, subject to
+§6.3.1's method-specific exclusion: a public payload method stops structural descent
+for that method (row 72 clarification, 2026-09-22). *Why:* `Dispatch` is per module and built at the end
 of that module's own check, and the declaring module is checked and lowered first, so a use site
 cannot request anything from it; deriving on demand would make the declaring module's bytes depend
 on which other module asked first, which varies with `--jobs` (CLAUDE.md rule 5). *Alternative:*
@@ -3437,6 +3522,9 @@ read from everywhere, and a per-module answer is a different data structure. *Kn
 change:* a same-module `<` that reached a private `compare` on a `foreign type` is now refused, and
 `type W = W Fn` whose `Fn` holds a function but whose module supplies a `pub compare` is refused
 too (HEAD accepted it with `part 0 ext Fns compare`) — consistent with `equatable`, and a change.
+The latter refusal is superseded by the row 72 correction (2026-09-22): §3.3's
+recursive method lookup honors the payload's public method independently for
+`eq` and `compare`; structural `has_function` remains diagnostic information.
 Fixtures: `check/bad/core/CompareOnWrappedForeign`, `check/bad/core/CompareOnForeignWithUnrelatedCompare`,
 `check/bad/PrivateForeignCompare/`, and the positive `dispatch/core/ForeignPubCompare`.
 
@@ -3485,7 +3573,9 @@ along the edges from any type whose own body holds a function. `equatable` and `
 fold several causes into one bit and cannot say which fired; this one can, so §10.3 keeps its
 sentence about the function ("there is a function inside it, and functions have no ordering") for
 the types that have one and says "something it holds has no ordering of its own" only for the rest.
-*Why:* the exclusion of A.23 is transitive — `type Indirect = Indirect HasFn` holds a function as
+This bit does not override a public custom method: §6.3.1 checks capability before
+choosing a diagnostic, independently for `eq` and `compare`.
+*Why:* structural function containment is transitive — `type Indirect = Indirect HasFn` holds a function as
 surely as `HasFn` does, through another nominal type that a walk over one body's `app` arguments
 would miss — and until the bit existed the `contains_function` arm was unreachable for any `app`
 receiver, so a type that directly held a function got the vaguer sentence and a type wrapping a
@@ -3967,3 +4057,31 @@ what the annotated case does.
 | 1 | the annotated zero-parameter constrained constant is **accepted**, not refused | CLAUDE.md rule 7: the guarantee at stake is no-runtime-exception, and BOTH fixes restore it, so a refusal would encode taste rather than buy a guarantee. What it would cost is real — `pub empty : Dict k v where k.compare : …` is the shape of `Dict.empty`, and forcing every polymorphic constant to grow a dummy parameter is exactly the "you should not need that" rule 7 rejects | extend `constrained_constant` to annotated declarations, which is the smaller diff and the worse language |
 | 2 | at beni arity 0 `etaExpand` emits the **call**, not a closure over it | A.25's reason — `backend.md` §6 wants a function-typed value in flight to be a closure of known arity — is a statement about FUNCTION-typed values. A constant is not one, so the closure is not an arity fix, it is a type error the emitter writes itself | special-case the consumer instead, which would mean every reader of a name knowing whether its producer was constrained |
 | 3 | the evidence is applied **where the reference stands**, so a top-level constant evaluates once at load like any other | it is the same expression in the same position; §7's initialisation rule and `cyclic_value` already order top-level constants and refuse circles, and `boundary.md` §4 confines a `foreign` to a total pure function, so re-evaluation in a lambda body cannot be observed | hoist it to a module-level cache, which buys nothing a `const` does not already buy |
+
+**A.86 — a derived part whose type is decided later is a part site; an untyped own method is
+refused** (§6.3.1 step 4, §10.12, queue row 75, 2026-09-23). `targetFor` writes `err` for a part
+whose position is a flex variable, and `Lower` answers an `err` part structurally (`Basics.eq`,
+`num_compare`); that is right for a position nothing inhabits and wrong for one that later becomes a
+type with its own `eq`. Row 72 made the wrong case reachable for types holding functions, which
+875f623 refused. The fix: the constraint the flex arm attaches carries a `TypeStore.ConstraintSite`
+whose `parent` is `Solver.part_site_parent` and whose `evidence_index` indexes `Solver.part_slots`,
+the absolute dispatch part it fills. `emitSites` writes a part site's answer into that part
+(`answerPartSite`) instead of adding an instruction site, re-resolving a named method with
+`targetFor` so it carries its own evidence (§7.1's amendment, A.64); `siteOrigins` skips part sites,
+so no instantiation numbers the instruction's slots for them; site de-duplication compares `parent`
+too. A use that reaches the module's own untyped method is `method_needs_annotation` (§10.12), and
+an `err` site that reaches the emitter is `internal`. *Why not the alternative* — deferring the whole
+comparison until every part is pinned — a part can stay a flex through generalisation, and then its
+answer is evidence the comparison could not name before the promotion. Fixtures:
+`tests/corpus/run/DerivedPartTypedLater/`, `tests/corpus/check/bad/MethodNeedsAnnotation/`, and the
+changed `crossed` line of `tests/corpus/dispatch/ErrParts.dispatch`.
+
+A part site made one old non-termination visible as a hang (queue row 76): a monomorphic constrained
+`let` helper used at `a` and at `List a` makes the cyclic receiver `a ~ List a`, which the deferred
+occurs check has not rejected yet, and `List.eq`'s `where a.eq` raised the element's obligation
+without end. Obligations now carry the depth of the discharge chain that raised them, and every
+`Solver.cycle_check_depth` (64) generations the drain runs the occurs check on the receiver: a
+cyclic one is `infinite_type` at the use and poisoned. Only a type nested 64 levels deep builds a
+finite chain that long, and then the check is one occurs walk that answers no. Fixtures:
+`tests/corpus/check/bad/LetHelperCyclicReceiver` and the time-bounded scenario in
+`tests/blackbox/abuse_test.zig`.

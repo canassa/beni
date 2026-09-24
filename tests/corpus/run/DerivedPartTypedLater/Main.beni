@@ -1,0 +1,43 @@
+-- Queue row 75: a derived comparison's part whose type is still a variable
+-- when the comparison is solved gets its answer when the variable does —
+-- the method of the type it becomes (`Fn`, `Plain`), or the evidence the
+-- enclosing function is generalised over (`pair` below). Every equal pair
+-- differs in a field `eq` ignores, so a structural answer prints the
+-- opposite.
+import Custom
+import Fn
+import Node exposing (Program)
+import Plain
+
+
+inc : Int -> Int
+inc v =
+    v + 1
+
+
+pair left right =
+    let
+        same =
+            ( left, 0 ) == ( right, 0 )
+    in
+    same
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Fn.T 2 inc < Fn.T 2 identity)
+        , show (Plain.T 2 1 < Plain.T 2 3)
+        , show (pair (Custom.Custom 1 1) (Custom.Custom 1 2))
+        , show (pair (Custom.Custom 1 1) (Custom.Custom 2 1))
+        , show (pair 4 4)
+        , show (pair "a" "b")
+        ]

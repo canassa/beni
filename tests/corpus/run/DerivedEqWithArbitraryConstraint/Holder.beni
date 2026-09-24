@@ -1,0 +1,11 @@
+-- The custom equality is conditional on an arbitrary method. Once callers
+-- supply `a.key`, Holder is a valid equality boundary even though the
+-- constraint is neither `eq` nor `compare`.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq (Holder left) (Holder right) =
+    left.key () == right.key ()

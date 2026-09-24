@@ -1,0 +1,10 @@
+import Guarded
+
+
+pub type Wrapper
+    = Wrapper (Guarded.Guarded (Int -> Int))
+
+
+bad =
+    Wrapper (Guarded.Guarded (\value -> value + 1))
+        == Wrapper (Guarded.Guarded (\value -> value - 1))

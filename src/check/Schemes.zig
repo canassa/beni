@@ -913,7 +913,11 @@ fn testTypes(entries: []Types.Entry, module: Symbol, names: []const Symbol) Type
         .arity = 0,
         .kind = .adt,
         .equatable = true,
+        .answers_eq = true,
+        .public_eq = false,
         .comparable = true,
+        .answers_compare = true,
+        .public_compare = false,
         .has_function = false,
     };
     var types: Types = .empty;

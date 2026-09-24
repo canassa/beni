@@ -1,0 +1,5 @@
+import Lib
+
+
+bad =
+    Lib.same "left" "right"

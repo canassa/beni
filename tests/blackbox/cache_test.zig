@@ -1423,6 +1423,148 @@ test "a private schema conversion body stops at the interface firewall, while a 
     ));
 }
 
+test "custom equality capabilities survive cache hits and cross the firewall only with their public method" {
+    // Row 72: Inner contains a function, but its inferred public `eq` is the
+    // equality boundary Outer derives through. The cache has to restore that
+    // capability on a hit; a private body edit must stop at Inner's unchanged
+    // interface, while removing `pub` must invalidate and reject Outer.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    const inner =
+        \\pub type Inner
+        \\    = Inner String (Int -> Int)
+        \\
+        \\
+        \\pub eq left right =
+        \\    case left of
+        \\        Inner labelLeft _ ->
+        \\            case right of
+        \\                Inner labelRight _ ->
+        \\                    labelLeft == labelRight
+        \\
+    ;
+    const outer =
+        \\import Inner
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\pub type Outer
+        \\    = Outer Inner.Inner
+        \\
+        \\
+        \\plusOne value =
+        \\    value + 1
+        \\
+        \\
+        \\minusOne value =
+        \\    value - 1
+        \\
+        \\
+        \\show value =
+        \\    if value then
+        \\        "True"
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show
+        \\            (Outer (Inner.Inner "same" plusOne)
+        \\                == Outer (Inner.Inner "same" minusOne)
+        \\            )
+        \\        , show
+        \\            (Outer (Inner.Inner "same" plusOne)
+        \\                == Outer (Inner.Inner "different" plusOne)
+        \\            )
+        \\        ]
+        \\
+    ;
+    try w.write("src/Inner.beni", inner);
+    try w.write("src/Outer.beni", outer);
+
+    const cold = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=cold", "--jobs=1", "--cache-dir=cache", "src" },
+        "method-cold.json",
+    );
+    const warm = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=warm", "--jobs=8", "--cache-dir=cache", "src" },
+        "method-warm.json",
+    );
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try expectSameTree(&w, arena, "cold", "warm");
+    const cold_run = try w.node("cold/_main.mjs");
+    const warm_run = try w.node("warm/_main.mjs");
+    try testing.expectEqual(@as(u8, 0), cold_run.exit_code);
+    try testing.expectEqual(@as(u8, 0), warm_run.exit_code);
+    try testing.expectEqualStrings("True\nFalse\n", cold_run.stdout);
+    try testing.expectEqualStrings(cold_run.stdout, warm_run.stdout);
+
+    const edited_inner = try std.mem.replaceOwned(u8, arena, inner, "labelLeft == labelRight", "labelLeft /= labelRight");
+    try w.write("src/Inner.beni", edited_inner);
+    const body = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=body", "--jobs=1", "--cache-dir=cache", "src" },
+        "method-body.json",
+    );
+    const body_oracle = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=body-oracle", "--jobs=8", "--no-cache", "src" },
+        "method-body-oracle.json",
+    );
+    try testing.expectEqual(@as(u8, 0), body.result.exit_code);
+    try testing.expectEqual(body_oracle.result.exit_code, body.result.exit_code);
+    try testing.expectEqualStrings(body_oracle.result.stdout, body.result.stdout);
+    try testing.expectEqualStrings(body_oracle.result.stderr, body.result.stderr);
+    try testing.expectEqual(@as(u64, 1), body.counters.checked);
+    try expectSameTree(&w, arena, "body-oracle", "body");
+    const body_run = try w.node("body/_main.mjs");
+    try testing.expectEqual(@as(u8, 0), body_run.exit_code);
+    try testing.expectEqualStrings("False\nTrue\n", body_run.stdout);
+
+    const private_inner = try std.mem.replaceOwned(u8, arena, edited_inner, "pub eq", "eq");
+    try w.write("src/Inner.beni", private_inner);
+    const hidden = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=hidden", "--jobs=8", "--cache-dir=cache", "src" },
+        "method-hidden.json",
+    );
+    const hidden_oracle = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=hidden-oracle", "--jobs=1", "--no-cache", "src" },
+        "method-hidden-oracle.json",
+    );
+    try testing.expectEqual(@as(u8, 1), hidden.result.exit_code);
+    try testing.expectEqual(hidden_oracle.result.exit_code, hidden.result.exit_code);
+    try testing.expectEqualStrings(hidden_oracle.result.stdout, hidden.result.stdout);
+    try testing.expectEqualStrings(hidden_oracle.result.stderr, hidden.result.stderr);
+    try testing.expectEqual(@as(u64, 2), hidden.counters.checked);
+    const expected_hidden =
+        \\[{"code":"not_equatable","severity":"error","span":{"file":"src/Outer.beni","start":{"line":29,"col":17},"end":{"line":29,"col":19}},"title":"NOT EQUATABLE","message":"I cannot compare these values with `==`:\n\n    Outer\n\nThat type does not support `==`.\n\nHint: a `type` is comparable exactly when everything it can hold is, so a\nfunction anywhere inside it rules the whole type out. A `foreign type` is\ncomparable only when it is declared `equatable`.\n"},{"code":"not_equatable","severity":"error","span":{"file":"src/Outer.beni","start":{"line":33,"col":17},"end":{"line":33,"col":19}},"title":"NOT EQUATABLE","message":"I cannot compare these values with `==`:\n\n    Outer\n\nThat type does not support `==`.\n\nHint: a `type` is comparable exactly when everything it can hold is, so a\nfunction anywhere inside it rules the whole type out. A `foreign type` is\ncomparable only when it is declared `equatable`.\n"}]
+        \\
+    ;
+    try testing.expectEqualStrings(expected_hidden, hidden.result.stderr);
+    try testing.expect(!w.exists("hidden"));
+    try testing.expect(!w.exists("hidden-oracle"));
+}
+
 test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -1,0 +1,14 @@
+-- `Basics.eq` is the explicit structural function. A public `eq` lets `==`
+-- dispatch on `Inner`, but it must not satisfy Basics.eq's `equatable`
+-- marker when Inner's representation contains a function.
+pub type Inner
+    = Inner (Int -> Int)
+
+
+pub eq : Inner, Inner -> Bool
+eq _ _ =
+    True
+
+
+bad =
+    Basics.eq (Inner (\value -> value + 1)) (Inner (\value -> value - 1))

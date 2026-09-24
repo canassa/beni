@@ -3056,8 +3056,8 @@ const Lowerer = struct {
                     if (l.in.interfaces[entry.module.int()].findValue(l.interner, spelling.symbol()) != null) return false;
                 }
                 return switch (use.kind) {
-                    .eq => entry.equatable,
-                    .compare => entry.comparable,
+                    .eq => entry.answers_eq,
+                    .compare => entry.answers_compare,
                 };
             },
             else => return false,
@@ -3318,6 +3318,12 @@ const Lowerer = struct {
     ;
 
     /// §8.4 has no receiver, so §8.3's record-field row cannot appear.
+    const err_site_unreported =
+        \\The table has an `err` site here, which the checker writes only after reporting
+        \\why — but this build checked clean, so nothing was reported. Emitting it would
+        \\evaluate to `undefined` in silence.
+    ;
+
     const field_without_receiver =
         \\The table dispatches this to a record field, but `docs/design/static-dispatch-spike.md`
         \\§8.4 has no receiver to read a field from: only a method call can answer `field`.
@@ -3458,12 +3464,16 @@ const Lowerer = struct {
                 const callee = try l.member(values[0], l.bir.symbol(m.name), p);
                 return l.call(callee, values[1..], p);
             },
-            // The ONE silent `undefined` §8.3 documents: `err` is a site
-            // the checker could not resolve, and it only makes one after
-            // reporting why. A second diagnostic here would name the same
-            // program twice, so this arm emits what the `error` instruction
-            // emits and says nothing.
-            .err => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // `err` is a site the checker could not resolve, and it only
+            // makes one after reporting why — and nothing is lowered until
+            // the whole build checks clean (§2). So an `err` site HERE had
+            // no diagnostic, and emitting `undefined` for it is a silent
+            // wrong answer: refuse it as the compiler bug it is (queue row
+            // 75, static-dispatch-spike.md §8.3).
+            .err => {
+                try l.reportDispatchBug(inst, err_site_unreported);
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
             // §9's derived function, applied to the evidence THIS use
             // passes and then to the two values (§8.3). A derived target
             // carries its evidence in its own `parts` (A.46), so the
@@ -3582,13 +3592,16 @@ const Lowerer = struct {
                 return l.call(callee, all, p);
             },
             // There is no receiver, so `field` cannot appear at all and is
-            // a malformed table. `err` is the one silent case again: the
-            // site the checker could not resolve, already reported.
+            // a malformed table. `err` is the unreported site again: see
+            // the method-call arm above.
             .field => {
                 try l.reportDispatchBug(inst, field_without_receiver);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            .err => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            .err => {
+                try l.reportDispatchBug(inst, err_site_unreported);
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
         }
         if (try l.refuseEvidence(inst, sites[1..], l.targetEvidence(target))) {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);

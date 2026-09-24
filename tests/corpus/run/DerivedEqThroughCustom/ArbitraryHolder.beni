@@ -1,0 +1,10 @@
+-- Equality is defined by an arbitrary method requirement. Once `a.key` is
+-- supplied, the method is a boundary even when `a` itself holds a function.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq (Holder left) (Holder right) =
+    left.key () == right.key ()

@@ -1,0 +1,172 @@
+-- Row 72: a derived wrapper equality calls its payload type's public custom
+-- `eq`, even when that payload ultimately contains a function. The equal
+-- pairs contain DISTINCT function values, so JavaScript identity or a
+-- structural walk would print False. The unequal pairs prove the custom
+-- method is called rather than equality being accepted unconditionally.
+--
+-- `List Outer` and generic `Box Outer` carry the same method through a
+-- container and an evidence-taking derived function. `RankedOuter` is the
+-- symmetric compare case: Ranked.compare deliberately reverses numeric order
+-- and ignores a distinct function payload.
+import ArbitraryHolder
+import Inner
+import KeyedFunction
+import Node exposing (Program)
+import Opaque
+import Ranked
+import Specialized
+
+
+pub type Outer
+    = Outer Inner.Inner
+
+
+pub type Box a
+    = Box a
+
+
+pub type RankedOuter
+    = RankedOuter Ranked.Ranked
+
+
+pub type OpaqueOuter
+    = OpaqueOuter (Opaque.Opaque (Int -> Int))
+
+
+-- Declared before SpecializedOuter to exercise forward capability
+-- propagation through a valid specialized receiver.
+pub type SpecializedOuterChain
+    = SpecializedOuterChain SpecializedOuter
+
+
+pub type SpecializedOuter
+    = SpecializedOuter (Specialized.Holder Int)
+
+
+pub type ArbitraryOuter
+    = ArbitraryOuter (ArbitraryHolder.Holder KeyedFunction.Keyed)
+
+
+plusOne : Int -> Int
+plusOne value =
+    value + 1
+
+
+minusOne : Int -> Int
+minusOne value =
+    value - 1
+
+
+sameLeft : Outer
+sameLeft =
+    Outer (Inner.Inner "same" (Inner.Callback plusOne))
+
+
+sameRight : Outer
+sameRight =
+    Outer (Inner.Inner "same" (Inner.Callback minusOne))
+
+
+different : Outer
+different =
+    Outer (Inner.Inner "different" (Inner.Callback plusOne))
+
+
+highRank : RankedOuter
+highRank =
+    RankedOuter (Ranked.Ranked 9 plusOne)
+
+
+lowRank : RankedOuter
+lowRank =
+    RankedOuter (Ranked.Ranked 1 minusOne)
+
+
+sameOpaqueLeft : OpaqueOuter
+sameOpaqueLeft =
+    OpaqueOuter (Opaque.Opaque "same" plusOne)
+
+
+sameOpaqueRight : OpaqueOuter
+sameOpaqueRight =
+    OpaqueOuter (Opaque.Opaque "same" minusOne)
+
+
+differentOpaque : OpaqueOuter
+differentOpaque =
+    OpaqueOuter (Opaque.Opaque "different" plusOne)
+
+
+sameSpecializedLeft : SpecializedOuter
+sameSpecializedLeft =
+    SpecializedOuter (Specialized.Holder 1 "same" plusOne)
+
+
+sameSpecializedRight : SpecializedOuter
+sameSpecializedRight =
+    SpecializedOuter (Specialized.Holder 2 "same" minusOne)
+
+
+differentSpecialized : SpecializedOuter
+differentSpecialized =
+    SpecializedOuter (Specialized.Holder 1 "different" plusOne)
+
+
+sameSpecializedChainLeft : SpecializedOuterChain
+sameSpecializedChainLeft =
+    SpecializedOuterChain sameSpecializedLeft
+
+
+sameSpecializedChainRight : SpecializedOuterChain
+sameSpecializedChainRight =
+    SpecializedOuterChain sameSpecializedRight
+
+
+differentSpecializedChain : SpecializedOuterChain
+differentSpecializedChain =
+    SpecializedOuterChain differentSpecialized
+
+
+sameArbitraryLeft : ArbitraryOuter
+sameArbitraryLeft =
+    ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
+
+
+sameArbitraryRight : ArbitraryOuter
+sameArbitraryRight =
+    ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 minusOne))
+
+
+differentArbitrary : ArbitraryOuter
+differentArbitrary =
+    ArbitraryOuter (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 plusOne))
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (sameLeft == sameRight)
+        , show (sameLeft == different)
+        , show ([ sameLeft ] == [ sameRight ])
+        , show ([ sameLeft ] == [ different ])
+        , show (Box sameLeft == Box sameRight)
+        , show (Box sameLeft == Box different)
+        , show (highRank < lowRank)
+        , show (lowRank < highRank)
+        , show (sameOpaqueLeft == sameOpaqueRight)
+        , show (sameOpaqueLeft == differentOpaque)
+        , show (sameSpecializedLeft == sameSpecializedRight)
+        , show (sameSpecializedLeft == differentSpecialized)
+        , show (sameSpecializedChainLeft == sameSpecializedChainRight)
+        , show (sameSpecializedChainLeft == differentSpecializedChain)
+        , show (sameArbitraryLeft == sameArbitraryRight)
+        , show (sameArbitraryLeft == differentArbitrary)
+        ]

@@ -301,6 +301,10 @@ comptime {
 // The shared per-module context
 // ---------------------------------------------------------------------------
 
+/// A plain `eq`/`compare` scheme (`Solve.Solver.plainMethodMask`): its
+/// receiver type, and which of the receiver's arguments carry the method.
+pub const PlainMethod = struct { receiver: Types.TypeId, mask: u64 };
+
 /// Everything one module's check needs. Built once by `Check`, handed to the
 /// generator and then to the solver; a module's check reads only its own Bir,
 /// the interfaces of its imports and the store it owns, which is the
@@ -316,6 +320,10 @@ pub const Env = struct {
     module: Graph.Index,
     bir: *const Bir,
     schemas: ?*Schema.State = null,
+    /// Per module: whether an imported `eq`/`compare` value has a PLAIN
+    /// scheme (`Solve.Solver.plainMethodMask`), keyed by module and value.
+    /// Null for a scheme that is not plain. Lives in `scratch`.
+    plain_methods: std.AutoHashMapUnmanaged(u64, ?PlainMethod) = .empty,
     /// Scheme variable per top-level declaration; `.none` for a type or for
     /// a value whose scheme is not built yet.
     decl_scheme: []Var.Optional,

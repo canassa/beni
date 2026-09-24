@@ -125,6 +125,11 @@ pub const Obligation = struct {
     index: u32 = 0,
     /// `tuple_index`: the variable the element must equal.
     result: Var.Optional = .none,
+    /// How many discharges led here: 0 for an obligation the walk
+    /// registered, one more than the obligation being discharged when it
+    /// registered this one. A chain that keeps growing is a cyclic receiver
+    /// (`Solver.cycle_check_depth`).
+    depth: u16 = 0,
 
     pub const Kind = enum { equatable, interpolatable, tuple_index, method };
 };
@@ -295,6 +300,34 @@ pub const Solver = struct {
     /// not the enclosing declaration's (§9's parts contract). Empty every
     /// other moment.
     type_params: []const Var = &.{},
+    type_param_method: Symbol.Optional = .none,
+    incompatible_method_application: bool = false,
+    /// Set when a target walk reached a method of this module's own that
+    /// has no scheme yet (an unannotated one whose group is checked later,
+    /// §10.12): the type it was asked for. Such a position is refused with
+    /// `method_needs_annotation`, never answered by derivation.
+    pending_method: ?PendingMethod = null,
+    /// The absolute dispatch part the NEXT `targetFor` call fills, set by
+    /// `fillPart` and taken at `targetFor`'s entry. A part whose position is
+    /// still a flex variable is answered later, when the method constraint
+    /// the flex arm attaches is (`answerPartSite`).
+    filling_part: ?u32 = null,
+    /// Absolute dispatch part indices, one per part site; a part site's
+    /// `evidence_index` indexes this list (`part_site_parent`).
+    part_slots: std.ArrayList(u32) = .empty,
+    target_probe_depth: u16 = 0,
+    /// While a selected custom method is committed (see
+    /// `commitLocalMethodApplication`), the constraint range its copy
+    /// created. Rule U3 registers no second obligation for a constraint of
+    /// the copy's own (`isCommittedCopyConstraint`). `null` otherwise.
+    committed_copy: ?CommittedCopy = null,
+    /// Constraints a rebuild minted during the commit from copy-owned
+    /// inputs ONLY (`adopt`). A rebuild that joined a caller's constraint
+    /// is not in here: the caller's obligation lives on in it.
+    committed_copy_rebuilds: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// The `depth` an obligation registered now gets: one more than the
+    /// obligation being discharged, and 0 outside a discharge.
+    discharge_depth: u16 = 0,
 
     /// Deep enough for anything the parser accepts, and shallow enough not
     /// to overflow a worker's 64 MiB stack (`Check.stack_size`).
@@ -352,6 +385,62 @@ pub const Solver = struct {
         s.superseded.deinit(s.gpa);
         s.deferred.deinit(s.gpa);
         s.evidence_next.deinit(s.gpa);
+        s.committed_copy_rebuilds.deinit(s.gpa);
+        s.part_slots.deinit(s.gpa);
+    }
+
+    /// The `parent` a PART site carries (A.86): a constraint site that names
+    /// a dispatch part, not an instruction's evidence slot. Its
+    /// `evidence_index` indexes `part_slots`. No instruction numbers a slot
+    /// this high, so it cannot be mistaken for a real parent.
+    pub const part_site_parent: u16 = std.math.maxInt(u16) - 1;
+
+    fn isPartSite(site: TypeStore.ConstraintSite) bool {
+        return site.parent == part_site_parent;
+    }
+
+    /// `targetFor` for one part of a derived target, telling a flex position
+    /// which part it is so its eventual answer can be written there.
+    fn fillPart(s: *Solver, range: Dispatch.Range, i: usize, c: TypeStore.MethodConstraint, v: Var, origin: Bir.Inst.Index, depth: u32) Error!void {
+        s.filling_part = range.start + @as(u32, @intCast(i));
+        const target = try s.targetFor(c, v, origin, depth);
+        s.filling_part = null;
+        s.env.dispatch.setPart(range, i, target);
+    }
+
+    /// Write a constraint's answer into the part a part site names. A
+    /// method of the receiver's own module is re-resolved in PART form, so
+    /// it carries its own evidence (§7.1's amendment, A.64); a site-form
+    /// answer hands that evidence to the instruction instead. Evidence of
+    /// the enclosing declaration, a primitive, or a receiver that never
+    /// became concrete is written as it is.
+    fn answerPartSite(s: *Solver, c: TypeStore.MethodConstraint, site: TypeStore.ConstraintSite, target: Dispatch.Target) Error!void {
+        if (site.evidence_index >= s.part_slots.items.len) return;
+        const abs = s.part_slots.items[site.evidence_index];
+        const part: Dispatch.Target = switch (target) {
+            .evidence, .err, .primitive => target,
+            else => blk: {
+                const st = s.store();
+                const f = switch (st.resolvedContent(c.fn_var)) {
+                    .structure => |shape| switch (shape) {
+                        .func => |method_type| method_type,
+                        else => break :blk target,
+                    },
+                    else => break :blk target,
+                };
+                const params = st.vars(f.params);
+                if (params.len == 0) break :blk target;
+                const receiver = params[0];
+                switch (st.resolvedContent(receiver)) {
+                    .structure, .alias => {},
+                    else => break :blk target,
+                }
+                var plain = c;
+                plain.sites = .empty;
+                break :blk try s.targetFor(plain, receiver, site.inst, 0);
+            },
+        };
+        s.env.dispatch.setPart(.{ .start = abs, .len = 1 }, 0, part);
     }
 
     /// The instruction's evidence cursor, created at 0 the first time it is
@@ -553,6 +642,8 @@ pub const Solver = struct {
         return s.superseded.follow(at);
     }
 
+    const CommittedCopy = struct { start: u32, end: u32 };
+
     /// Where a constraint of a rebuilt set came from: the indices it takes
     /// over, and whether one of its inputs was minted by the caller and is
     /// not in the table at all — which makes it unanswered by
@@ -571,6 +662,12 @@ pub const Solver = struct {
     /// input and an unanswered one is answered for the second alone, and
     /// `joinConstraint` has already dropped the first's sites.
     fn adopt(s: *Solver, at: u32, from: Sources) Error!void {
+        if (s.committed_copy != null and !from.fresh and from.a != Sources.none and
+            s.isCommittedCopyConstraint(from.a) and
+            (from.b == Sources.none or s.isCommittedCopyConstraint(from.b)))
+        {
+            try s.committed_copy_rebuilds.put(s.gpa, at, {});
+        }
         var answered = !from.fresh and from.a != Sources.none;
         for ([_]u32{ from.a, from.b }) |old| {
             if (old == Sources.none) continue;
@@ -592,9 +689,29 @@ pub const Solver = struct {
         return null;
     }
 
-    fn register(s: *Solver, o: Obligation) Error!void {
-        try (try s.obligationsAt(s.rank)).append(s.gpa, o);
+    const PendingMethod = struct { type: Types.TypeId, decl: u32 };
+
+    /// Report §10.12 for `decl`, this module's untyped method, at a use of
+    /// `type_id`. The suggested annotation carries `pub` when the method does.
+    fn reportPendingMethod(s: *Solver, origin: Bir.Inst.Index, c: TypeStore.MethodConstraint, pending: PendingMethod) Error!void {
+        const is_pub = pending.decl < s.env.bir.decls.len and s.env.bir.decls[pending.decl].is_pub;
+        try s.reporter.methodNeedsAnnotation(origin, c.name, pending.type, is_pub);
     }
+
+    fn register(s: *Solver, o: Obligation) Error!void {
+        var stamped = o;
+        stamped.depth = s.discharge_depth;
+        try (try s.obligationsAt(s.rank)).append(s.gpa, stamped);
+    }
+
+    /// Every this many generations of obligations raising obligations, the
+    /// drain asks whether the receiver is CYCLIC. The occurs check is
+    /// deferred to generalisation (design §7 #3), so until then `a ~ List a`
+    /// is a real graph: a monomorphic constrained `let` helper used at `a`
+    /// and at `List a` makes one, and `List.eq`'s `where a.eq` then asks for
+    /// the element's `eq` forever (queue row 76). A finite type stops long
+    /// before this; a cyclic one is reported and poisoned.
+    pub const cycle_check_depth: u16 = 64;
 
     /// `CLet`: a new rank for the header, generalisation on the way out,
     /// then the body at the original rank.
@@ -1873,6 +1990,15 @@ pub const Solver = struct {
             };
             i += 1;
             s.counters.obligations += 1;
+            if (o.depth != 0 and o.depth % cycle_check_depth == 0 and
+                try occurs(&s.occurs_frames, s.gpa, s.store(), o.v))
+            {
+                try s.reporter.infiniteType(o.origin, .none);
+                s.poison(o.v);
+                continue;
+            }
+            s.discharge_depth = o.depth +| 1;
+            defer s.discharge_depth = 0;
             switch (o.kind) {
                 .equatable => try s.dischargeEquatable(o),
                 .interpolatable => try s.dischargeInterpolatable(o),
@@ -1943,7 +2069,7 @@ pub const Solver = struct {
     /// (checker.md §6.4, Appendix B). The walk happens here, at discharge,
     /// and never inside unification — which is the whole point of §3.1.
     fn walkEquatable(s: *Solver, root_var: Var) EquatableResult {
-        return walkDerivable(s, root_var, .eq);
+        return walkDerivableMode(s, root_var, .eq, true);
     }
 
     /// The same walk asking whether `<` can be answered at every named type
@@ -1956,6 +2082,10 @@ pub const Solver = struct {
     }
 
     fn walkDerivable(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind) EquatableResult {
+        return walkDerivableMode(s, root_var, kind, false);
+    }
+
+    fn walkDerivableMode(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind, structural_eq: bool) EquatableResult {
         const st = s.store();
         const mark = st.nextMark();
         var stack: [256]Var = undefined;
@@ -1991,16 +2121,34 @@ pub const Solver = struct {
                     .func => return .function,
                     .app => |a| {
                         const ok = switch (kind) {
-                            .eq => s.env.types.isEquatable(a.type),
-                            .compare => s.env.types.isComparable(a.type),
+                            .eq => if (structural_eq) s.env.types.isEquatable(a.type) else s.env.types.answersEq(a.type),
+                            .compare => s.env.types.answersCompare(a.type),
                         };
                         // Which of the two gates said no is not a question
                         // the gate can answer — both fold several causes
                         // into one bit — so the ONE cause §10.3 has a
                         // better sentence for is kept beside them (A.58).
                         if (!ok) return if (s.env.types.hasFunction(a.type)) .contains_function else .opaque_type;
-                        for (st.vars(a.args)) |arg| {
-                            if (!push(&stack, &len, arg)) return .unknown;
+                        const args = st.vars(a.args);
+                        const boundary = !structural_eq and s.env.types.hasPublicDispatchMethod(a.type, switch (kind) {
+                            .eq => .eq,
+                            .compare => .compare,
+                        });
+                        for (args, 0..) |arg, i| {
+                            if (!boundary) {
+                                if (!push(&stack, &len, arg)) return .unknown;
+                                continue;
+                            }
+                            const req = s.env.types.methodParamRequirement(a.type, i, switch (kind) {
+                                .eq => .eq,
+                                .compare => .compare,
+                            });
+                            if (req & 4 != 0) {
+                                const nested = walkDerivable(s, arg, kind);
+                                if (nested != .ok) return nested;
+                            }
+                            if (req & 1 != 0 and walkDerivable(s, arg, .eq) != .ok) return .contains_function;
+                            if (req & 2 != 0 and walkDerivable(s, arg, .compare) != .ok) return .opaque_type;
                         }
                     },
                     .tuple => |t| for (st.vars(t)) |el| {
@@ -2337,7 +2485,7 @@ pub const Solver = struct {
         for ([_][]const TypeStore.ConstraintSite{ old_sites, new_sites }) |run| {
             outer: for (run) |site| {
                 for (buffer[0..len]) |seen| {
-                    if (seen.inst == site.inst and seen.evidence_index == site.evidence_index) continue :outer;
+                    if (seen.inst == site.inst and seen.evidence_index == site.evidence_index and seen.parent == site.parent) continue :outer;
                 }
                 buffer[len] = site;
                 len += 1;
@@ -2486,6 +2634,17 @@ pub const Solver = struct {
         var i: u32 = 0;
         while (i < n) : (i += 1) {
             const index = st.constraint_sets.items[set.unwrap().?.int()].start + i;
+            // A custom method selected inside a derived target was already
+            // checked, with its complete scheme, by the speculative
+            // applicability probe; the commit repeats only the unification,
+            // so a specialised receiver (`Holder Int`) narrows the caller.
+            // The copy's own constraints get their evidence once, from
+            // `ownValueParts`/`importedValueParts`: a second obligation for
+            // one would make `siteOrigins` invent free child slots for the
+            // site-less copy. Every other constraint — the caller's, or a
+            // join the caller's took part in, whose obligation was
+            // redirected to it — is registered as always.
+            if (s.isCommittedCopyConstraint(index)) continue;
             // **§6.2, A.37**: `origin` is the instruction in THIS module
             // whose instantiation created the obligation — the call the
             // author wrote — and not wherever the unification that
@@ -2694,18 +2853,49 @@ pub const Solver = struct {
 
     /// Whether the shape under `root` can be derived for, reporting if not.
     ///
-    /// Derivation is structural and recursive (§3.3), so a function ANYWHERE
-    /// inside the type stops it — which is the walk `equatable` already does
-    /// (`checker.md` §6.4), reused here so `==` keeps exactly the messages it
-    /// had and `compare` gets the one §6.3's `func` row gives it.
+    /// Derivation is structural and recursive (§3.3). A public method for
+    /// this operation stops descent; a function reached before such a
+    /// boundary refuses the derived answer. The legacy `equatable` marker
+    /// keeps its separate structural walk (§3.4).
     fn derivable(s: *Solver, c: TypeStore.MethodConstraint, root: Var, origin: Bir.Inst.Index) Error!bool {
         const is_eq = c.name == InternPool.WellKnown.eq.symbol();
+        const probe = try s.beginTargetProbe();
+        var probe_open = true;
+        errdefer {
+            if (probe_open) _ = s.rollbackTargetProbe(probe);
+        }
+        s.incompatible_method_application = false;
+        s.pending_method = null;
+        // The probe only decides something when the shape reaches a method
+        // whose scheme must be checked against the application; without
+        // one it would rebuild the very target `finishDerived` builds next.
+        if (try s.targetNeedsProbe(c, root, 0)) {
+            const target = try s.targetFor(c, root, origin, 0);
+            _ = target;
+        }
+        const target_ok = !s.incompatible_method_application;
+        const exact = s.rollbackTargetProbe(probe);
+        probe_open = false;
+        // A position that needs a method this module has not typed yet
+        // (§10.12) is refused for that reason, whatever the walk says: the
+        // walk reads a capability that method may still change.
+        if (s.pending_method) |pending| {
+            s.pending_method = null;
+            try s.reportPendingMethod(origin, c, pending);
+            try s.emitSites(c, .err);
+            s.poison(c.fn_var);
+            return false;
+        }
         // `compare` asks the SAME walk with the other gate (A.54), so a
         // record of a tuple of a `Wraps` is refused for the same reason a
         // bare `Wraps` is — and refused HERE, which is what keeps the use
         // and the eager pass saying the same thing.
-        switch (if (is_eq) walkEquatable(s, root) else walkComparable(s, root)) {
-            .ok => return true,
+        switch (if (is_eq) walkDerivable(s, root, .eq) else walkComparable(s, root)) {
+            .ok => if (target_ok and exact) return true else if (is_eq) {
+                try s.reporter.notEquatable(origin, root, .opaque_type);
+            } else {
+                try s.reporter.noMethodsOnShape(origin, c.name, root, .not_orderable);
+            },
             // A type too wide for the walk's worklist. `dischargeEquatable`
             // ACCEPTS it — refusing a program for being large helps nobody
             // when the answer is one structural walk at runtime — but
@@ -2747,6 +2937,151 @@ pub const Solver = struct {
         try s.emitSites(c, .err);
         s.poison(c.fn_var);
         return false;
+    }
+
+    /// Whether `derivable`'s probe can learn anything about `v`: whether
+    /// resolving it could reach a method application `appTarget` checks —
+    /// a scheme that is not plain (`plainMethodMask`), this module's
+    /// untyped method (§10.12), or a nominal type that cannot derive. A
+    /// primitive, a plain `List.eq`, a derived nominal type's arguments, a
+    /// record, a tuple and every variable need no probe. Conservative: an
+    /// unknown shape, or a type too deep to walk here, says yes.
+    fn targetNeedsProbe(s: *Solver, c: TypeStore.MethodConstraint, v: Var, depth: u32) Error!bool {
+        if (depth > 64) return true;
+        const st = s.store();
+        switch (st.resolvedContent(v)) {
+            .err, .flex, .rigid => return false,
+            .alias => return true,
+            .structure => |flat| switch (flat) {
+                .func, .unit, .empty_record => return false,
+                .tuple => |t| {
+                    // Re-sliced every step: an imported scheme's plainness is
+                    // decided by instantiating it, which grows `extra`.
+                    var i: u32 = 0;
+                    while (i < t.len) : (i += 1) {
+                        if (try s.targetNeedsProbe(c, st.vars(t)[i], depth + 1)) return true;
+                    }
+                    return false;
+                },
+                .record => |r| {
+                    var i: u32 = 0;
+                    while (i < r.fields.len) : (i += 1) {
+                        if (try s.targetNeedsProbe(c, st.fields(r.fields)[i].value, depth + 1)) return true;
+                    }
+                    return try s.targetNeedsProbe(c, r.ext, depth + 1);
+                },
+                .app => |a| {
+                    if (s.wellKnownTarget(c, a)) |wk| switch (wk) {
+                        .primitive => return false,
+                        .derived_nominal => {},
+                    } else {
+                        const entry = s.env.types.entry(a.type);
+                        if (entry.module == s.env.module) {
+                            if (s.ownDeclNamed(c.name)) |decl| {
+                                const scheme = s.env.decl_scheme[decl].unwrap() orelse return true;
+                                const plain = (try s.plainMethodMask(scheme, c.name)) orelse return true;
+                                if (plain.receiver != a.type) return true;
+                            } else if (!s.derivesForNominal(c, a.type)) return true;
+                        } else if (entry.module.int() < s.env.interfaces.len) {
+                            const iface = s.env.iface(entry.module);
+                            if (iface.findValue(s.env.interner, c.name)) |value| {
+                                const plain = (try s.plainImportedMethodMask(entry.module, value, c.name)) orelse return true;
+                                if (plain.receiver != a.type) return true;
+                            } else if (!s.derivesForNominal(c, a.type)) return true;
+                        } else return true;
+                    }
+                    var i: u32 = 0;
+                    while (i < a.args.len) : (i += 1) {
+                        if (try s.targetNeedsProbe(c, st.vars(a.args)[i], depth + 1)) return true;
+                    }
+                    return false;
+                },
+            },
+        }
+    }
+
+    const TargetProbe = struct {
+        pool_len: usize,
+        obligation_len: usize,
+        resolved_len: usize,
+        superseded_len: usize,
+        deferred_len: usize,
+        dispatch_len: Dispatch.Builder.Lengths,
+        report_mark: Diagnostics.Reporter.Mark,
+        store: TypeStore.Snapshot,
+        counters: Counters,
+        incompatible_method_application: bool,
+        target_probe_depth: u16,
+    };
+
+    fn beginTargetProbe(s: *Solver) Error!TargetProbe {
+        const probe: TargetProbe = .{
+            .pool_len = (try s.pool(s.rank)).items.len,
+            .obligation_len = (try s.obligationsAt(s.rank)).items.len,
+            .resolved_len = s.resolved_journal.items.len,
+            .superseded_len = s.superseded.mark(),
+            .deferred_len = s.deferred.items.len,
+            .dispatch_len = s.env.dispatch.lengths(),
+            .report_mark = s.reporter.mark(),
+            .store = s.store().beginSpeculation(),
+            .counters = s.counters,
+            .incompatible_method_application = s.incompatible_method_application,
+            .target_probe_depth = s.target_probe_depth,
+        };
+        s.target_probe_depth += 1;
+        return probe;
+    }
+
+    fn rollbackTargetProbe(s: *Solver, probe: TargetProbe) bool {
+        const exact = s.store().rollback(probe.store);
+        s.pools.items[s.rank].shrinkRetainingCapacity(probe.pool_len);
+        s.obligations.items[s.rank].shrinkRetainingCapacity(probe.obligation_len);
+        s.forgetResolvedSince(probe.resolved_len);
+        s.forgetSupersededSince(probe.superseded_len);
+        s.deferred.shrinkRetainingCapacity(probe.deferred_len);
+        s.env.dispatch.shrink(probe.dispatch_len);
+        s.reporter.rollbackTo(probe.report_mark);
+        s.counters = probe.counters;
+        s.incompatible_method_application = probe.incompatible_method_application;
+        s.target_probe_depth = probe.target_probe_depth;
+        return exact;
+    }
+
+    fn targetIsComplete(s: *const Solver, root: Dispatch.Target) bool {
+        return (s.targetErrorCount(root) orelse return false) == 0;
+    }
+
+    /// Count unresolved target leaves. During a use-site speculation each
+    /// flex leaf creates one matching method constraint and returns `.err`
+    /// until ordinary obligation solving settles it. Those pending leaves
+    /// are valid; a concrete specialized-method mismatch creates no such
+    /// constraint and is therefore an unaccounted error. `null` means a
+    /// malformed/cyclic target tree rather than a pending answer.
+    fn targetErrorCount(s: *const Solver, root: Dispatch.Target) ?u32 {
+        var stack: [256]Dispatch.Target = undefined;
+        var len: usize = 1;
+        stack[0] = root;
+        var budget: usize = 1 << 16;
+        var errors: u32 = 0;
+        while (len > 0) {
+            if (budget == 0) return null;
+            budget -= 1;
+            len -= 1;
+            const target = stack[len];
+            if (target == .err) {
+                errors += 1;
+                continue;
+            }
+            const parts = target.partsOf();
+            const end = @as(usize, parts.start) + parts.len;
+            if (end > s.env.dispatch.parts.items.len) return null;
+            for (s.env.dispatch.parts.items[parts.start..end]) |part| {
+                if (len >= stack.len) return null;
+                stack[len] = part;
+                len += 1;
+            }
+        }
+        return errors;
     }
 
     fn noMethodsOnShape(s: *Solver, c: TypeStore.MethodConstraint, root: Var, origin: Bir.Inst.Index) Error!void {
@@ -2896,7 +3231,9 @@ pub const Solver = struct {
         if (entry.module == s.env.module) {
             if (s.ownDeclNamed(c.name)) |decl| {
                 const scheme = s.env.decl_scheme[decl].unwrap() orelse {
+                    try s.reportPendingMethod(origin, c, .{ .type = a.type, .decl = decl });
                     try s.emitSites(c, .err);
+                    s.poison(c.fn_var);
                     return;
                 };
                 // ONE instantiation per instruction this constraint
@@ -3163,6 +3500,8 @@ pub const Solver = struct {
         // Derivation is structural and recursive (§3.3), so it needs a
         // guard of its own: a poisoned store can hand it a cycle that the
         // type reader's own `max_depth` never saw.
+        const part = s.filling_part;
+        s.filling_part = null;
         if (depth > max_depth) return .err;
         const st = s.store();
         const root, const content = st.resolved(v);
@@ -3174,7 +3513,9 @@ pub const Solver = struct {
                 // one evidence parameter per type parameter, used or not
                 // (§9.4, A.20).
                 for (s.type_params, 0..) |marker, i| {
-                    if (st.find(marker) == root) return .{ .evidence = @intCast(i) };
+                    if (s.type_param_method.unwrap()) |method_name| {
+                        if (method_name == c.name and st.find(marker) == root) return .{ .evidence = @intCast(i) };
+                    }
                 }
                 // The A.53 bridge first (A.59): a `number` position is
                 // `Int` or `Float` and §3.2 gives both the same answer, so
@@ -3183,11 +3524,28 @@ pub const Solver = struct {
                 // position of a derived shape was a hole.
                 const flags = st.flagsOf(root);
                 if (s.builtinRigidTarget(flags, c)) |t| return t;
-                const inner = try s.freshMethodConstraint(c, root);
+                var inner = try s.freshMethodConstraint(c, root);
+                // The part is answered when this constraint is: at the
+                // concrete type the flex becomes, or as the evidence a
+                // promotion gives it (A.86). Until then it is `err`.
+                if (part) |abs| {
+                    if (s.part_slots.items.len >= part_site_parent) {
+                        try s.reporter.internal(origin, "too many derived parts wait for a type");
+                    } else {
+                        const index: u16 = @intCast(s.part_slots.items.len);
+                        try s.part_slots.append(s.gpa, abs);
+                        inner.sites = try st.addConstraintSites(&.{.{ .inst = origin, .evidence_index = index, .parent = part_site_parent }});
+                    }
+                }
                 _ = try s.attachConstraint(root, inner, origin, null);
                 return .err;
             },
             .rigid => |flags| {
+                for (s.type_params, 0..) |marker, i| {
+                    if (s.type_param_method.unwrap()) |method_name| {
+                        if (method_name == c.name and st.find(marker) == root) return .{ .evidence = @intCast(i) };
+                    }
+                }
                 if (st.findConstraint(flags.constraints, c.name) != null) {
                     return .{ .evidence = s.evidenceIndexOf(root, c.name) orelse return .err };
                 }
@@ -3238,21 +3596,313 @@ pub const Solver = struct {
         if (entry.module == s.env.module) {
             if (s.ownDeclNamed(c.name)) |decl| {
                 const scheme = s.env.decl_scheme[decl].unwrap();
-                const parts = if (scheme) |v|
-                    try s.ownValueParts(c, v, a, origin, depth)
-                else
-                    Dispatch.Range.empty;
+                const v = scheme orelse {
+                    s.pending_method = .{ .type = a.type, .decl = decl };
+                    try s.reportPendingMethod(origin, c, s.pending_method.?);
+                    return .err;
+                };
+                if (try s.plainMethodMask(v, c.name)) |plain| {
+                    if (plain.receiver == a.type) {
+                        const parts = try s.ownValueParts(c, v, a, origin, depth);
+                        s.flagUnansweredParts(parts, a, plain.mask);
+                        return .{ .top = .{ .decl = @enumFromInt(decl), .parts = parts } };
+                    }
+                }
+                if (!try s.localMethodAcceptsApplication(v, c, a, origin)) {
+                    s.incompatible_method_application = true;
+                    return .err;
+                }
+                const parts = try s.ownValueParts(c, v, a, origin, depth);
                 return .{ .top = .{ .decl = @enumFromInt(decl), .parts = parts } };
             }
         } else if (entry.module.int() < s.env.interfaces.len) {
             const iface = s.env.iface(entry.module);
             if (iface.findValue(s.env.interner, c.name)) |value| {
+                if (try s.plainImportedMethodMask(entry.module, value, c.name)) |plain| {
+                    if (plain.receiver == a.type) {
+                        const parts = try s.importedValueParts(c, entry.module, value, a, origin, depth);
+                        s.flagUnansweredParts(parts, a, plain.mask);
+                        return .{ .ext = .{ .module = entry.module, .value = value, .parts = parts } };
+                    }
+                }
+                if (!try s.importedMethodAcceptsApplication(entry.module, value, c, a, origin)) {
+                    s.incompatible_method_application = true;
+                    return .err;
+                }
                 const parts = try s.importedValueParts(c, entry.module, value, a, origin, depth);
                 return .{ .ext = .{ .module = entry.module, .value = value, .parts = parts } };
             }
         }
         if (!s.derivesForNominal(c, a.type)) return .err;
         return s.nominalTarget(c, a, origin, depth);
+    }
+
+    /// **The fast path past the applicability probe.** A PLAIN method
+    /// scheme is `T a1 … an, T a1 … an -> Bool | Order` over distinct
+    /// quantified variables whose only constraints are the method's own name
+    /// at the standard type (`List.compare … where a.compare`). It cannot
+    /// narrow the receiver, so the commit has nothing to keep, and it accepts
+    /// the application exactly when every constrained argument answers the
+    /// method — which the parts already resolve. The probe, its rollback
+    /// and the commit are skipped; `flagUnansweredParts` stands in for its
+    /// completeness test. Returns the receiver type the scheme is plain at —
+    /// the caller must check it is the one being compared — and the bitmask
+    /// of constrained argument positions, or null for any other scheme
+    /// (including arity above 64).
+    fn plainMethodMask(s: *Solver, scheme: Var, name: Symbol) Error!?Constrain.PlainMethod {
+        const is_eq = name == InternPool.WellKnown.eq.symbol();
+        const is_compare = name == InternPool.WellKnown.compare.symbol();
+        if (!is_eq and !is_compare) return null;
+        const st = s.store();
+        const want = if (is_eq) s.env.types.well_known.bool else s.env.types.well_known.order;
+        const f = switch (st.resolvedContent(scheme)) {
+            .structure => |shape| switch (shape) {
+                .func => |method_type| method_type,
+                else => return null,
+            },
+            else => return null,
+        };
+        const params = st.vars(f.params);
+        if (params.len != 2) return null;
+        if (!isNullaryApp(st, f.result, want)) return null;
+        const a0 = appOf(st, params[0]) orelse return null;
+        const a1 = appOf(st, params[1]) orelse return null;
+        if (a0.type != a1.type or a0.args.len != a1.args.len or a0.args.len > 64) return null;
+        var mask: u64 = 0;
+        var i: u32 = 0;
+        while (i < a0.args.len) : (i += 1) {
+            const r = st.find(st.vars(a0.args)[i]);
+            if (st.find(st.vars(a1.args)[i]) != r) return null;
+            var j: u32 = 0;
+            while (j < i) : (j += 1) if (st.find(st.vars(a0.args)[j]) == r) return null;
+            const flags = switch (st.content(r)) {
+                .flex, .rigid => |fl| fl,
+                else => return null,
+            };
+            if (flags.kind != .any or flags.equatable) return null;
+            const n = st.constraintCount(flags.constraints);
+            var k: u32 = 0;
+            while (k < n) : (k += 1) {
+                const rc = st.constraintAt(flags.constraints, k);
+                if (rc.name != name or !isStandardMethodType(st, rc.fn_var, r, want)) return null;
+            }
+            if (n != 0) mask |= @as(u64, 1) << @intCast(i);
+        }
+        // No constraint anywhere else in the scheme.
+        var order: std.ArrayList(Var) = .empty;
+        defer order.deinit(s.env.scratch);
+        try Schemes.quantifierOrder(st, s.env.interner, scheme, &order, s.env.scratch);
+        for (order.items) |root| {
+            if (st.constraintCount(st.flagsOf(root).constraints) == 0) continue;
+            var found = false;
+            for (st.vars(a0.args)) |arg| {
+                if (st.find(arg) == st.find(root)) found = true;
+            }
+            if (!found) return null;
+        }
+        return .{ .receiver = a0.type, .mask = mask };
+    }
+
+    /// `plainMethodMask` for an imported value, cached per module: the
+    /// question needs an instantiation, made inside a rolled-back probe.
+    fn plainImportedMethodMask(s: *Solver, module: Graph.Index, value: Interface.ValueIndex, name: Symbol) Error!?Constrain.PlainMethod {
+        if (name != InternPool.WellKnown.eq.symbol() and name != InternPool.WellKnown.compare.symbol()) return null;
+        const key = (@as(u64, module.int()) << 33) | (@as(u64, @intFromEnum(value)) << 1) |
+            @intFromBool(name == InternPool.WellKnown.compare.symbol());
+        if (s.env.plain_methods.get(key)) |cached| return cached;
+        const probe = try s.beginTargetProbe();
+        var open = true;
+        errdefer if (open) {
+            _ = s.rollbackTargetProbe(probe);
+        };
+        const mask: ?Constrain.PlainMethod = if (try s.importedValue(module, @intFromEnum(value), null)) |copy|
+            try s.plainMethodMask(copy, name)
+        else
+            null;
+        _ = s.rollbackTargetProbe(probe);
+        open = false;
+        try s.env.plain_methods.put(s.env.scratch, key, mask);
+        return mask;
+    }
+
+    /// The probe's completeness test, for a plain method: a constrained
+    /// argument whose part is `err` although its type is already known —
+    /// not a flex variable still waiting (a part site, A.86) — does not
+    /// answer the method, so the application is refused as the probe would
+    /// have refused it.
+    fn flagUnansweredParts(s: *Solver, parts: Dispatch.Range, a: TypeStore.Structure.App, mask: u64) void {
+        const st = s.store();
+        var k: u32 = 0;
+        var i: u32 = 0;
+        while (i < a.args.len and i < 64) : (i += 1) {
+            if (mask & (@as(u64, 1) << @intCast(i)) == 0) continue;
+            if (k >= parts.len) return;
+            const part = s.env.dispatch.parts.items[parts.start + k];
+            k += 1;
+            if (part != .err) continue;
+            switch (st.resolvedContent(st.vars(a.args)[i])) {
+                .flex, .err => {},
+                else => s.incompatible_method_application = true,
+            }
+        }
+    }
+
+    fn isNullaryApp(st: *TypeStore, v: Var, want: Types.TypeId) bool {
+        const a = appOf(st, v) orelse return false;
+        return a.type == want and a.args.len == 0;
+    }
+
+    fn appOf(st: *TypeStore, v: Var) ?TypeStore.Structure.App {
+        return switch (st.resolvedContent(v)) {
+            .structure => |shape| switch (shape) {
+                .app => |a| a,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// `r, r -> want`, the type every derived `eq`/`compare` part answers.
+    fn isStandardMethodType(st: *TypeStore, fn_var: Var, r: Var, want: Types.TypeId) bool {
+        const f = switch (st.resolvedContent(fn_var)) {
+            .structure => |shape| switch (shape) {
+                .func => |method_type| method_type,
+                else => return false,
+            },
+            else => return false,
+        };
+        const params = st.vars(f.params);
+        if (params.len != 2) return false;
+        return st.find(params[0]) == r and st.find(params[1]) == r and isNullaryApp(st, f.result, want);
+    }
+
+    fn localMethodAcceptsApplication(s: *Solver, scheme: Var, c: TypeStore.MethodConstraint, a: TypeStore.Structure.App, origin: Bir.Inst.Index) Error!bool {
+        if (c.name != InternPool.WellKnown.eq.symbol() and c.name != InternPool.WellKnown.compare.symbol()) return true;
+        const dispatch_mark = s.env.dispatch.lengths();
+        const report_mark = s.reporter.mark();
+        const snapshot = s.store().beginSpeculation();
+        var cleaned = false;
+        errdefer if (!cleaned) {
+            _ = s.store().rollback(snapshot);
+            s.env.dispatch.shrink(dispatch_mark);
+            s.reporter.rollbackTo(report_mark);
+        };
+        var empty_tree: Constrain.Tree = .{};
+        var probe: Solver = .init(s.gpa, s.env, &empty_tree, s.reporter);
+        defer probe.deinit();
+        probe.rank = s.rank;
+        probe.region = origin;
+        probe.type_params = s.type_params;
+        probe.type_param_method = s.type_param_method;
+        probe.target_probe_depth = s.target_probe_depth + 1;
+        const receiver = try probe.fresh(.{ .structure = .{ .app = a } });
+        const expected = try probe.renamedConstraint(c, c.name, receiver);
+        const mark: u32 = @intCast(probe.store().constraints.items.len);
+        const copy = try probe.makeCopy(scheme);
+        var cursor: u16 = 0;
+        try probe.tagInstantiated(copy, origin, &cursor, mark, false, Dispatch.Site.no_parent);
+        const unified = try probe.unifyQuiet(copy, expected.fn_var);
+        if (unified) try probe.dischargeObligations(probe.rank);
+        const complete = unified and probe.newSitesComplete(dispatch_mark.sites);
+        const quiet = s.reporter.mark().items == report_mark.items;
+        const exact = s.store().rollback(snapshot);
+        s.env.dispatch.shrink(dispatch_mark);
+        s.reporter.rollbackTo(report_mark);
+        cleaned = true;
+        if (!(complete and quiet and exact)) return false;
+        if (s.target_probe_depth == 0) return s.commitLocalMethodApplication(scheme, c, a);
+        return true;
+    }
+
+    fn importedMethodAcceptsApplication(s: *Solver, module: Graph.Index, value: Interface.ValueIndex, c: TypeStore.MethodConstraint, a: TypeStore.Structure.App, origin: Bir.Inst.Index) Error!bool {
+        if (c.name != InternPool.WellKnown.eq.symbol() and c.name != InternPool.WellKnown.compare.symbol()) return true;
+        const dispatch_mark = s.env.dispatch.lengths();
+        const report_mark = s.reporter.mark();
+        const snapshot = s.store().beginSpeculation();
+        var cleaned = false;
+        errdefer if (!cleaned) {
+            _ = s.store().rollback(snapshot);
+            s.env.dispatch.shrink(dispatch_mark);
+            s.reporter.rollbackTo(report_mark);
+        };
+        var empty_tree: Constrain.Tree = .{};
+        var probe: Solver = .init(s.gpa, s.env, &empty_tree, s.reporter);
+        defer probe.deinit();
+        probe.rank = s.rank;
+        probe.region = origin;
+        probe.type_params = s.type_params;
+        probe.type_param_method = s.type_param_method;
+        probe.target_probe_depth = s.target_probe_depth + 1;
+        const receiver = try probe.fresh(.{ .structure = .{ .app = a } });
+        const expected = try probe.renamedConstraint(c, c.name, receiver);
+        var cursor: u16 = 0;
+        const copy = (try probe.importedValue(module, @intFromEnum(value), .{ .inst = origin, .next = &cursor, .parent = Dispatch.Site.no_parent })) orelse {
+            const exact = s.store().rollback(snapshot);
+            s.env.dispatch.shrink(dispatch_mark);
+            s.reporter.rollbackTo(report_mark);
+            _ = exact;
+            cleaned = true;
+            return false;
+        };
+        const unified = try probe.unifyQuiet(copy, expected.fn_var);
+        if (unified) try probe.dischargeObligations(probe.rank);
+        const complete = unified and probe.newSitesComplete(dispatch_mark.sites);
+        const quiet = s.reporter.mark().items == report_mark.items;
+        const exact = s.store().rollback(snapshot);
+        s.env.dispatch.shrink(dispatch_mark);
+        s.reporter.rollbackTo(report_mark);
+        cleaned = true;
+        if (!(complete and quiet and exact)) return false;
+        if (s.target_probe_depth == 0) return s.commitImportedMethodApplication(module, value, c, a);
+        return true;
+    }
+
+    /// Retain the receiver restrictions proved by a selected custom method.
+    /// The speculative check above decides whether the application is valid;
+    /// this second instantiation commits the same unification to the real
+    /// inference store. The copy's constraints are not registered as a
+    /// second set of obligations: `ownValueParts`/`importedValueParts` walk
+    /// that same scheme and own the one evidence tree for the enclosing
+    /// derived body. Unification here exists only to retain receiver shape
+    /// restrictions such as `Holder Int`.
+    fn commitLocalMethodApplication(s: *Solver, scheme: Var, c: TypeStore.MethodConstraint, a: TypeStore.Structure.App) Error!bool {
+        const receiver = try s.fresh(.{ .structure = .{ .app = a } });
+        const expected = try s.renamedConstraint(c, c.name, receiver);
+        const start: u32 = @intCast(s.store().constraints.items.len);
+        const copy = try s.makeCopy(scheme);
+        return s.unifyCommittedCopy(copy, start, expected.fn_var);
+    }
+
+    fn commitImportedMethodApplication(s: *Solver, module: Graph.Index, value: Interface.ValueIndex, c: TypeStore.MethodConstraint, a: TypeStore.Structure.App) Error!bool {
+        const receiver = try s.fresh(.{ .structure = .{ .app = a } });
+        const expected = try s.renamedConstraint(c, c.name, receiver);
+        const start: u32 = @intCast(s.store().constraints.items.len);
+        const copy = (try s.importedValue(module, @intFromEnum(value), null)) orelse return false;
+        return s.unifyCommittedCopy(copy, start, expected.fn_var);
+    }
+
+    /// Unify a committed method copy whose constraints occupy
+    /// `start..` of the table, recording which constraints are the copy's
+    /// own for the length of the unification (`deferConstraints`).
+    fn unifyCommittedCopy(s: *Solver, copy: Var, start: u32, expected: Var) Error!bool {
+        std.debug.assert(s.committed_copy == null);
+        s.committed_copy = .{ .start = start, .end = @intCast(s.store().constraints.items.len) };
+        defer {
+            s.committed_copy = null;
+            s.committed_copy_rebuilds.clearRetainingCapacity();
+        }
+        return s.unifyQuiet(copy, expected);
+    }
+
+    fn isCommittedCopyConstraint(s: *const Solver, at: u32) bool {
+        const range = s.committed_copy orelse return false;
+        return (at >= range.start and at < range.end) or s.committed_copy_rebuilds.contains(at);
+    }
+
+    fn newSitesComplete(s: *const Solver, start: usize) bool {
+        if (start > s.env.dispatch.sites.items.len) return false;
+        for (s.env.dispatch.sites.items[start..]) |site| if (!s.targetIsComplete(site.target)) return false;
+        return true;
     }
 
     /// **§7.1's amendment: a `top`/`ext` in a PART position carries its own
@@ -3290,7 +3940,7 @@ pub const Solver = struct {
             var j: u32 = 0;
             while (j < n) : (j += 1) {
                 const inner = try s.renamedConstraint(c, names[slot], args[i]);
-                s.env.dispatch.setPart(range, slot, try s.targetFor(inner, args[i], origin, depth + 1));
+                try s.fillPart(range, slot, inner, args[i], origin, depth + 1);
                 slot += 1;
             }
         }
@@ -3414,7 +4064,7 @@ pub const Solver = struct {
         defer s.env.scratch.free(args);
         const range = try s.env.dispatch.reserveParts(args.len);
         for (args, 0..) |arg, i| {
-            s.env.dispatch.setPart(range, i, try s.targetFor(c, arg, origin, depth + 1));
+            try s.fillPart(range, i, c, arg, origin, depth + 1);
         }
         if (entry.module == s.env.module) {
             const index = try s.env.dispatch.derive(kind, .{ .nominal = a.type }, @intCast(args.len));
@@ -3475,7 +4125,7 @@ pub const Solver = struct {
         const index = try s.env.dispatch.derive(kind, shape, @intCast(positions.len));
         const range = try s.env.dispatch.reserveParts(positions.len);
         for (positions, 0..) |v, i| {
-            s.env.dispatch.setPart(range, i, try s.targetFor(c, v, origin, depth + 1));
+            try s.fillPart(range, i, c, v, origin, depth + 1);
         }
         return .{ .derived = .{ .index = index, .parts = range } };
     }
@@ -3497,7 +4147,7 @@ pub const Solver = struct {
             // exactly "has an `eq`" — the bridge core leans on until §5.2
             // (A.50). Anything else is answered by the transitive walk in
             // `derivable`.
-            if (entry.kind == .foreign) return s.env.types.isEquatable(id);
+            if (entry.kind == .foreign) return s.env.types.answersEq(id);
             return true;
         }
         // `compare` has no marker, so it has a gate of its own (A.54): a
@@ -3505,7 +4155,7 @@ pub const Solver = struct {
         // `<` too. Without it, `type Wraps = Wraps Handle` over a plain
         // `foreign type Handle` derived a `compare` whose one part was
         // `err`, and `a < b` on it compiled.
-        return s.env.types.isComparable(id);
+        return s.env.types.answersCompare(id);
     }
 
     /// A constraint of the same name and origin as `c`, at a fresh method
@@ -3554,6 +4204,10 @@ pub const Solver = struct {
         const copied = try s.env.scratch.dupe(TypeStore.ConstraintSite, view);
         defer s.env.scratch.free(copied);
         for (copied) |site| {
+            if (isPartSite(site)) {
+                try s.answerPartSite(c, site, target);
+                continue;
+            }
             try s.env.dispatch.addSite(.{
                 .inst = site.inst,
                 .evidence_index = site.evidence_index,
@@ -3590,7 +4244,14 @@ pub const Solver = struct {
         fallback: Bir.Inst.Index,
         out: *std.ArrayList(SiteOrigin),
     ) Error!void {
+        var part_sites = false;
         for (s.store().constraintSites(c)) |site| {
+            // A part site is answered through its part, never by an
+            // instantiation numbering the instruction's slots (A.86).
+            if (isPartSite(site)) {
+                part_sites = true;
+                continue;
+            }
             var seen = false;
             for (out.items) |already| {
                 if (already.inst == site.inst) {
@@ -3601,7 +4262,7 @@ pub const Solver = struct {
             if (seen) continue;
             try out.append(s.env.scratch, .{ .inst = site.inst, .parent = site.evidence_index });
         }
-        if (out.items.len == 0) {
+        if (out.items.len == 0 and !part_sites) {
             try out.append(s.env.scratch, .{ .inst = fallback, .parent = Dispatch.Site.no_parent });
         }
     }
@@ -3614,6 +4275,11 @@ pub const Solver = struct {
     /// argument at a call the author cannot see.
     fn evidenceIndexOf(s: *const Solver, rigid_root: Var, name: Symbol) ?u16 {
         const st = s.store();
+        if (s.type_param_method.unwrap()) |method_name| {
+            if (method_name == name) for (s.type_params, 0..) |marker, i| {
+                if (@constCast(st).find(marker) == rigid_root) return @intCast(i);
+            };
+        }
         for (s.env.rigid_evidence) |e| {
             if (e.method != name) continue;
             if (@constCast(st).find(e.v) == rigid_root) return e.index;
@@ -3681,7 +4347,7 @@ pub const Solver = struct {
         const st = s.store();
         const existing = st.constraintSites(st.constraints.items[at]);
         for (existing) |seen| {
-            if (seen.inst == site.inst and seen.evidence_index == site.evidence_index) return;
+            if (seen.inst == site.inst and seen.evidence_index == site.evidence_index and seen.parent == site.parent) return;
         }
         const joined = try s.env.scratch.alloc(TypeStore.ConstraintSite, existing.len + 1);
         defer s.env.scratch.free(joined);
@@ -3714,18 +4380,16 @@ pub const Solver = struct {
     /// first, which varies with `--jobs` and CLAUDE.md rule 5 forbids
     /// outright.
     ///
-    /// Two exclusions (§6.3.1 step 4): a type whose module supplies a `pub`
-    /// value of that name gets that instead, and a type ANY of whose
-    /// constructor payloads contains a function type gets neither — a use
-    /// is then `not_equatable` or `no_methods_on_shape` at the use.
+    /// A public method wins for its own operation. Otherwise the settled
+    /// body dependency graph decides whether every payload reaches an
+    /// answer before it reaches a function.
     pub fn deriveDeclaredTypes(s: *Solver) Error!void {
+        try s.deriveOrdinaryDeclaredTypes();
+        try s.deriveSchemaDeclaredTypes();
+    }
+
+    pub fn deriveSchemaDeclaredTypes(s: *Solver) Error!void {
         const bir = s.env.bir;
-        for (bir.decls, 0..) |d, i| {
-            if (d.kind != .type) continue;
-            const id = s.env.types.ofDecl(s.env.module, @enumFromInt(i));
-            if (id == .none) continue;
-            try s.deriveOne(d, id);
-        }
         const schemas = s.env.schemas orelse return;
         for (bir.decls, 0..) |d, i| {
             if (d.kind != .schema) continue;
@@ -3749,6 +4413,181 @@ pub const Solver = struct {
                 try s.deriveOneParts(d, s.env.types.ofSchemaDecl(s.env.module, decl, endpoint), markers, args.items, true);
             }
         }
+    }
+
+    pub fn deriveOrdinaryDeclaredTypes(s: *Solver) Error!void {
+        const bir = s.env.bir;
+        for (bir.decls, 0..) |d, i| {
+            if (d.kind != .type) continue;
+            const id = s.env.types.ofDecl(s.env.module, @enumFromInt(i));
+            if (id == .none) continue;
+            try s.deriveOne(d, id);
+        }
+    }
+
+    /// Settle ordinary nominal dispatch without publishing rows. Each body
+    /// is read once into exact targets; local nominal targets become graph
+    /// edges, and false answers propagate over the reverse edges. Public
+    /// custom methods are checked by `appTarget`'s real scheme probe.
+    pub fn settleOrdinaryCapabilities(s: *Solver) Error!void {
+        const bir = s.env.bir;
+        const nodes = bir.decls.len * 2;
+        const valid = try s.env.scratch.alloc(bool, nodes);
+        @memset(valid, false);
+        const present = try s.env.scratch.alloc(bool, nodes);
+        @memset(present, false);
+        var edge_from: std.ArrayList(u32) = .empty;
+        defer edge_from.deinit(s.env.scratch);
+        var edge_to: std.ArrayList(u32) = .empty;
+        defer edge_to.deinit(s.env.scratch);
+        const CapabilityDependency = struct { id: Types.TypeId, kind: Dispatch.Derived.Kind };
+        var deps: std.ArrayList(CapabilityDependency) = .empty;
+        defer deps.deinit(s.env.scratch);
+
+        for (bir.decls, 0..) |d, i| {
+            if (d.kind != .type) continue;
+            const id = s.env.types.ofDecl(s.env.module, @enumFromInt(i));
+            if (id == .none) continue;
+            const params = bir.declTypeParams(d);
+            for ([_]Dispatch.Derived.Kind{ .eq, .compare }) |kind| {
+                const node = i * 2 + @intFromEnum(kind);
+                present[node] = true;
+                const method_kind: Types.MethodKind = if (kind == .eq) .eq else .compare;
+                if (s.env.types.hasPublicDispatchMethod(id, method_kind)) {
+                    valid[node] = true;
+                    continue;
+                }
+                const markers = try s.env.scratch.alloc(Var, params.len);
+                defer s.env.scratch.free(markers);
+                var b = s.env.builder(.rigid, TypeStore.generalized);
+                defer b.deinit();
+                for (params, markers) |name, *v| {
+                    v.* = try s.store().fresh(.{ .rigid = .{ .name = name.toOptional() } }, TypeStore.generalized);
+                    const result = try s.applied(if (kind == .eq) s.env.types.well_known.bool else s.env.types.well_known.order, &.{});
+                    const fn_var = try s.func(&.{ v.*, v.* }, result);
+                    const set = try s.store().addConstraints(&.{.{
+                        .name = if (kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol(),
+                        .fn_var = fn_var,
+                        .region = d.inst_start,
+                        .origin = .well_known,
+                    }});
+                    s.store().setContent(v.*, .{ .rigid = .{ .name = name.toOptional(), .constraints = set.toOptional() } });
+                    try b.bind(name, v.*);
+                }
+                const outer_params = s.type_params;
+                const outer_method = s.type_param_method;
+                s.type_params = markers;
+                s.type_param_method = (if (kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol()).toOptional();
+                defer s.type_params = outer_params;
+                defer s.type_param_method = outer_method;
+                var args: std.ArrayList(Var) = .empty;
+                defer args.deinit(s.env.scratch);
+                for (bir.ctors[d.ctors_start..d.ctors_end]) |ctor| {
+                    for (bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index)) |arg| {
+                        try args.append(s.env.scratch, try b.read(arg));
+                    }
+                }
+                if (b.too_deep) continue;
+                deps.clearRetainingCapacity();
+                const c: TypeStore.MethodConstraint = .{
+                    .name = if (kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol(),
+                    .fn_var = try s.store().freshErr(TypeStore.generalized),
+                    .region = d.inst_start,
+                    .origin = .well_known,
+                    .sites = .empty,
+                };
+                const target_probe = try s.beginTargetProbe();
+                var target_probe_open = true;
+                errdefer {
+                    if (target_probe_open) _ = s.rollbackTargetProbe(target_probe);
+                }
+                var ok = true;
+                s.pending_method = null;
+                for (args.items) |arg| {
+                    const target = try s.targetFor(c, arg, d.inst_start, 0);
+                    if (!try s.summarizeCapabilityTarget(target, &deps)) ok = false;
+                }
+                const exact = s.rollbackTargetProbe(target_probe);
+                target_probe_open = false;
+                // Undecided until this module's untyped method is checked
+                // (§10.12). Not refused here: every use that reaches it is
+                // refused with `method_needs_annotation`, and the pass after
+                // the method's group decides it for good.
+                const pending = s.pending_method != null;
+                s.pending_method = null;
+                ok = (ok and exact) or pending;
+                valid[node] = ok;
+                for (deps.items) |dep| {
+                    const entry = s.env.types.entry(dep.id);
+                    if (entry.module == s.env.module and !entry.schema_endpoint and entry.decl.int() < bir.decls.len) {
+                        try edge_from.append(s.env.scratch, entry.decl.int() * 2 + @intFromEnum(dep.kind));
+                        try edge_to.append(s.env.scratch, @intCast(node));
+                    } else if (!(if (dep.kind == .eq) s.env.types.answersEq(dep.id) else s.env.types.answersCompare(dep.id))) {
+                        valid[node] = false;
+                    }
+                }
+            }
+        }
+
+        const offsets = try s.env.scratch.alloc(u32, nodes + 1);
+        @memset(offsets, 0);
+        for (edge_from.items) |from| if (from < nodes) {
+            offsets[from + 1] += 1;
+        };
+        for (1..offsets.len) |i| offsets[i] += offsets[i - 1];
+        const dependents = try s.env.scratch.alloc(u32, edge_to.items.len);
+        const cursor = try s.env.scratch.dupe(u32, offsets[0..nodes]);
+        for (edge_from.items, edge_to.items) |from, to| if (from < nodes) {
+            dependents[cursor[from]] = to;
+            cursor[from] += 1;
+        };
+        var queue: std.ArrayList(u32) = .empty;
+        defer queue.deinit(s.env.scratch);
+        for (valid, 0..) |ok, node| if (present[node] and !ok) try queue.append(s.env.scratch, @intCast(node));
+        while (queue.pop()) |node| {
+            for (dependents[offsets[node]..offsets[node + 1]]) |dependent| {
+                if (!valid[dependent]) continue;
+                valid[dependent] = false;
+                try queue.append(s.env.scratch, dependent);
+            }
+        }
+        for (bir.decls, 0..) |d, i| {
+            if (d.kind != .type) continue;
+            const id = s.env.types.ofDecl(s.env.module, @enumFromInt(i));
+            if (id == .none) continue;
+            inline for ([_]Types.MethodKind{ .eq, .compare }, 0..) |kind, k| {
+                if (!s.env.types.hasPublicDispatchMethod(id, kind)) {
+                    @constCast(s.env.types).setDispatchCapability(id, kind, valid[i * 2 + k]);
+                }
+            }
+        }
+    }
+
+    fn summarizeCapabilityTarget(s: *Solver, root: Dispatch.Target, deps: anytype) Error!bool {
+        var stack: std.ArrayList(Dispatch.Target) = .empty;
+        defer stack.deinit(s.env.scratch);
+        try stack.append(s.env.scratch, root);
+        var budget: usize = 1 << 16;
+        while (stack.pop()) |target| {
+            if (budget == 0 or target == .err) return false;
+            budget -= 1;
+            switch (target) {
+                .derived => |d| {
+                    if (d.index >= s.env.dispatch.derived.items.len) return false;
+                    const row = s.env.dispatch.derived.items[d.index];
+                    if (row.shape == .nominal) try deps.append(s.env.scratch, .{ .id = row.shape.nominal, .kind = row.kind });
+                },
+                .ext_derived => |d| {
+                    if (!(if (d.kind == .eq) s.env.types.answersEq(d.type) else s.env.types.answersCompare(d.type))) return false;
+                },
+                else => {},
+            }
+            const range = target.partsOf();
+            const end = @as(usize, range.start) + range.len;
+            if (end > s.env.dispatch.parts.items.len) return false;
+            try stack.appendSlice(s.env.scratch, s.env.dispatch.parts.items[range.start..end]);
+        }
+        return true;
     }
 
     fn deriveOne(s: *Solver, d: Bir.Decl, id: Types.TypeId) Error!void {
@@ -3788,6 +4627,9 @@ pub const Solver = struct {
         for ([_]InternPool.WellKnown{ .eq, .compare }) |well_known| {
             const name = well_known.symbol();
             const kind: Dispatch.Derived.Kind = if (well_known == .eq) .eq else .compare;
+            const outer_method = s.type_param_method;
+            s.type_param_method = name.toOptional();
+            defer s.type_param_method = outer_method;
             // **§3.2's table FIRST, before §3.3's module rule**, which is
             // the order resolution itself uses. `core/Basics.beni` declares
             // `Bool`, `Order` and `Never` over a `pub foreign eq` and a
@@ -3835,8 +4677,8 @@ pub const Solver = struct {
             // refuses is a function nobody calls; a row a use names that is
             // not written here is a call to nothing.
             const gated = switch (kind) {
-                .eq => s.env.types.isEquatable(id),
-                .compare => s.env.types.isComparable(id),
+                .eq => s.env.types.answersEq(id),
+                .compare => s.env.types.answersCompare(id),
             };
             if (!gated) continue;
             // The entry FIRST, then its parts: a recursive type's derived

@@ -1,0 +1,58 @@
+-- Row 72: committing a selected custom method (`Trip.eq` at `Trip a a a`)
+-- unifies `x` and `y` with each other and then with `Int`. Both already
+-- carry a folded `compare` from the `let`, so the unification merges the
+-- two callers' constraints into a fresh set before it meets `Int`. That set
+-- is the callers', not the method copy's: it must still get its obligation,
+-- or `x < x` and `y < y` have nothing to dispatch to. The tuple and the
+-- record reach `Trip.eq` through two different derived shapes.
+import Node exposing (Program)
+import Trip
+
+
+one : Int
+one =
+    1
+
+
+viaTuple x y =
+    let
+        cx =
+            x < x
+
+        cy =
+            y < y
+    in
+    ( cx && cy, ( Trip.Trip x y one 5, 0 ) == ( Trip.Trip x y one 5, 0 ) )
+
+
+viaRecord x y =
+    let
+        cx =
+            x < x
+
+        cy =
+            y < y
+    in
+    ( cx || cy, { t = Trip.Trip x y one 5 } == { t = Trip.Trip x y one 6 } )
+
+
+show : ( Bool, Bool ) -> String
+show pair =
+    case pair of
+        ( a, b ) ->
+            (if a then
+                "True"
+             else
+                "False"
+            )
+                ++ " "
+                ++ (if b then
+                       "True"
+                    else
+                       "False"
+                   )
+
+
+main : Program
+main =
+    Node.printLines [ show (viaTuple 1 2), show (viaRecord 1 2) ]

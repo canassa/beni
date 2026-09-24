@@ -1,0 +1,47 @@
+-- Row 72: an unannotated `pub compare` is checked before the module's other
+-- groups, so the `==` inside it must already see W's scheme-checked
+-- capability. `ArbitraryHolder.eq` needs `a.key`, which Keyed supplies,
+-- so W derives equality through it even though Keyed holds a function.
+-- The same `==` in `same` below, checked later, was always accepted.
+import ArbitraryHolder
+import KeyedFunction
+
+
+pub type W
+    = W (ArbitraryHolder.Holder KeyedFunction.Keyed)
+
+
+pub type K
+    = K Int
+
+
+plusOne : Int -> Int
+plusOne v =
+    v + 1
+
+
+minusOne : Int -> Int
+minusOne v =
+    v - 1
+
+
+pub same : Bool
+same =
+    W (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
+        == W (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 minusOne))
+
+
+pub compare left right =
+    let
+        s =
+            W (ArbitraryHolder.Holder (KeyedFunction.Keyed 7 plusOne))
+                == W (ArbitraryHolder.Holder (KeyedFunction.Keyed 8 minusOne))
+    in
+    case left of
+        K a ->
+            case right of
+                K b ->
+                    if s then
+                        EQ
+                    else
+                        Basics.compare a b

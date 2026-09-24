@@ -1,0 +1,10 @@
+import Holder
+
+
+identity value =
+    value
+
+
+pub same left right =
+    { value = Holder.Holder left identity }
+        == { value = Holder.Holder right identity }

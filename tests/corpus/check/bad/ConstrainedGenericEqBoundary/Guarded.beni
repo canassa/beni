@@ -1,0 +1,11 @@
+-- Unlike an unconstrained custom equality, this method needs equality for
+-- its payload. Instantiating `a` with a function therefore cannot create an
+-- equality boundary for a type that wraps Guarded.
+pub type Guarded a
+    = Guarded a
+
+
+pub eq : Guarded a, Guarded a -> Bool
+    where a.eq : a, a -> Bool
+eq (Guarded left) (Guarded right) =
+    left == right

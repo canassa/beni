@@ -1,0 +1,20 @@
+-- A public `compare` is the ordering boundary just as `eq` is the equality
+-- boundary: callers order Ranked values by this method and never inspect the
+-- function payload. The reversed rank is deliberate so a structural order
+-- would print the opposite answers.
+pub type Ranked
+    = Ranked Int (Int -> Int)
+
+
+pub compare : Ranked, Ranked -> Order
+compare left right =
+    case left of
+        Ranked rankLeft _ ->
+            case right of
+                Ranked rankRight _ ->
+                    if rankLeft > rankRight then
+                        LT
+                    else if rankLeft == rankRight then
+                        EQ
+                    else
+                        GT

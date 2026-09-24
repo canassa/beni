@@ -1074,6 +1074,7 @@ method_constraint_mismatch  type_dispatch_needs_annotation  ambiguous_method_rec
 constrained_constant                            (static dispatch; two more are lowering's)
 too_many_inferred_constraints                   (the cap of static-dispatch-spike.md §6.4)
 cyclic_value                                    (§6.7, language.md §7)
+method_needs_annotation                         (static-dispatch-spike.md §10.12)
 ```
 
 The last nine arrived with static dispatch on 2026-09-18, appended to `language.md` §10's
@@ -1096,6 +1097,8 @@ set and after `foreign_arity_mismatch`, so again no line above it moved. It is t
 §6.6's set and the only one that is about the CHECKER rather than about the program: the analysis
 could not decide this `case` inside `--pattern-budget`, so it refuses it rather than passing an
 unproven `case` to a decision tree that carries no default arm (`backend.md` §7).
+
+`method_needs_annotation` was appended on 2026-09-23 (queue row 75), after `cyclic_value` here and after the schema codes in `language.md` §10, so no line moved: a use of a module's own type reached that module's unannotated method before its group was checked (`static-dispatch-spike.md` §10.12).
 
 `cyclic_value` was appended on 2026-09-18 (queue slice 23), last, so again no line above it moved.
 It is §6.7's one code and the only one of this list that is about **when a value is computed**

@@ -96,7 +96,7 @@ const Kind = enum {
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
         return kind == .check_good or kind == .check_bad or kind == .dispatch or
-            kind == .build_bad or kind == .build_bad_release;
+            kind == .build_bad or kind == .build_bad_release or kind == .run;
     }
 
     /// Whether the build this kind runs carries `--release` (and, for the
@@ -676,18 +676,45 @@ const Case = struct {
     /// no grep over its own text would know. That the refusal itself works
     /// is `build/bad-release/`'s, where no flag is passed.
     fn runProgram(c: Case) !void {
-        const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
-        try c.w.write(c.fixture.name, source);
+        var sources: std.ArrayList([]const u8) = .empty;
+        if (c.fixture.project) {
+            const dir_path = try c.fixturePath();
+            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+            defer dir.close(testing.io);
+            var it = dir.iterate();
+            while (try it.next(testing.io)) |entry| {
+                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                const name = try c.arena.dupe(u8, entry.name);
+                const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+                try sources.append(c.arena, name);
+            }
+            std.mem.sort([]const u8, sources.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.lessThan(u8, a, b);
+                }
+            }.lessThan);
+        } else {
+            const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
+            try c.w.write(c.fixture.name, source);
+            try sources.append(c.arena, c.fixture.name);
+        }
 
-        try c.runOnce("out", &.{ "build", "--platform=node", "--out=out", c.fixture.name }, "expected", c.bless);
+        var dev: std.ArrayList([]const u8) = .empty;
+        try dev.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
+        try dev.appendSlice(c.arena, sources.items);
+        try c.runOnce("out", dev.items, "expected", c.bless);
         // The release pass never blesses `expected`: it is the DEV pass's
         // golden and a release build that disagrees with it is the finding
         // this pass exists to make. A fixture that is allowed to differ says
         // so by carrying its own `.release-expected`, which does bless.
         const separate = c.goldenExists("release-expected");
+        var release: std.ArrayList([]const u8) = .empty;
+        try release.appendSlice(c.arena, &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release" });
+        try release.appendSlice(c.arena, sources.items);
         try c.runOnce(
             "release",
-            &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release", c.fixture.name },
+            release.items,
             if (separate) "release-expected" else "expected",
             c.bless and separate,
         );

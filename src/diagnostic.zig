@@ -256,6 +256,13 @@ pub const Code = enum {
     duplicate_schema_tag,
     duplicate_schema_modifier,
     schema_conversion_mismatch,
+    /// Static dispatch (`static-dispatch-spike.md` §10.12), appended on
+    /// 2026-09-23 (queue row 75): a use of a module's own type needs that
+    /// module's method, which has no annotation and whose binding group is
+    /// checked after the use, so it has no type there yet. It used to be a
+    /// silent `err` site or part — `undefined`, or a structural
+    /// `Basics.eq` that ignored the method.
+    method_needs_annotation,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -380,6 +387,7 @@ pub fn title(code: Code) []const u8 {
         .duplicate_schema_tag => "DUPLICATE SCHEMA TAG",
         .duplicate_schema_modifier => "DUPLICATE SCHEMA MODIFIER",
         .schema_conversion_mismatch => "SCHEMA CONVERSION MISMATCH",
+        .method_needs_annotation => "METHOD NEEDS AN ANNOTATION",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

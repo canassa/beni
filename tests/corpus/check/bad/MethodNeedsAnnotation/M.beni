@@ -1,0 +1,38 @@
+-- Queue row 75: an unannotated `pub compare` is checked before this
+-- module's unannotated `pub eq`, so `T`'s `eq` has no type at either `==`
+-- below. Both are refused with `method_needs_annotation`, the direct one
+-- and the one reached through the record's part. 875f623 compiled both in
+-- silence: the first to `undefined`, the second to a structural comparison
+-- that ignored `eq`.
+pub type T
+    = T Int
+
+
+pub type K
+    = K Int
+
+
+pub compare left right =
+    let
+        direct =
+            T 1 == T 2
+
+        nested =
+            { v = T 1 } == { v = T 2 }
+    in
+    case left of
+        K a ->
+            case right of
+                K b ->
+                    if direct || nested then
+                        EQ
+                    else
+                        Basics.compare a b
+
+
+pub eq a b =
+    case a of
+        T m ->
+            case b of
+                T n ->
+                    m + 1 == n

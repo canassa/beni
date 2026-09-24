@@ -1281,6 +1281,53 @@ pub const Reporter = struct {
         try r.emit(.type_dispatch_needs_annotation, region, &out);
     }
 
+    /// §10.12. A use of `type_id` needs its module's own `method`, which has
+    /// no annotation and has not been checked yet. One message per use:
+    /// every position of one comparison that reaches the method says the
+    /// same thing.
+    pub fn methodNeedsAnnotation(
+        r: *Reporter,
+        region: Bir.Inst.Index,
+        method: Symbol,
+        type_id: Types.TypeId,
+        is_pub: bool,
+    ) Error!void {
+        if (r.quiet) return;
+        for (r.items.items) |item| {
+            if (item.code == .method_needs_annotation and item.module == r.env.module and item.region == region) return;
+        }
+        var out = r.writer();
+        defer out.deinit();
+        const w = &out.writer;
+        const entry = r.env.types.entry(type_id);
+        const type_text = r.env.interner.slice(entry.name);
+        const method_text = r.env.interner.slice(method);
+        w.print(
+            \\This needs `{s}`'s `{s}`, which its module defines without a type annotation.
+            \\I check that `{s}` after this declaration, so I do not know its type here yet.
+            \\
+            \\Hint: annotate `{s}`
+        , .{ type_text, method_text, method_text, method_text }) catch return error.OutOfMemory;
+        const result: ?[]const u8 = if (method == InternPool.WellKnown.eq.symbol())
+            "Bool"
+        else if (method == InternPool.WellKnown.compare.symbol())
+            "Order"
+        else
+            null;
+        if (result) |res| {
+            w.writeAll(", for example:\n\n    ") catch return error.OutOfMemory;
+            var args: std.Io.Writer.Allocating = .init(r.gpa);
+            defer args.deinit();
+            args.writer.writeAll(type_text) catch return error.OutOfMemory;
+            for (0..entry.arity) |i| args.writer.print(" {c}", .{@as(u8, @intCast('a' + i % 26))}) catch return error.OutOfMemory;
+            const t = args.written();
+            w.print("{s}{s} : {s}, {s} -> {s}\n", .{ if (is_pub) "pub " else "", method_text, t, t, res }) catch return error.OutOfMemory;
+        } else {
+            w.writeAll(".\n") catch return error.OutOfMemory;
+        }
+        try r.emit(.method_needs_annotation, region, &out);
+    }
+
     /// §10.11. The cap of §6.4: an unannotated declaration whose inferred
     /// scheme would carry more than `Solver.max_inferred_constraints` of
     /// them. `names` is the first few, in the canonical order of §7.2, and

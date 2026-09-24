@@ -10,8 +10,9 @@
 //! that makes it safe is the interface firewall — a module's check reads
 //! only its own Bir, the interfaces of its imports, and the store it owns,
 //! and the one thing it shares with another module's check is the
-//! session-wide `Types` table, which is built before any thread starts and
-//! read-only afterwards. Nothing is keyed by completion order; see
+//! session-wide `Types` table, which is built before any thread starts.
+//! Each worker only publishes dispatch capabilities in its module's dense
+//! range before releasing dependents. Nothing is keyed by completion order; see
 //! `Driver`'s header for what makes the output identical at every
 //! `--jobs`.
 //!
@@ -423,7 +424,8 @@ pub const stack_size = 64 * 1024 * 1024;
 ///
 /// **What makes this safe** is the interface firewall: a module's check
 /// reads its own Bir, the session-wide `Types` table (built before any
-/// thread starts and read-only afterwards), and the INTERFACES of its
+/// thread starts, with module-owned capability ranges published on this
+/// same DAG), and the INTERFACES of its
 /// dependencies — and every reference to another module was rewritten by
 /// `Resolve` into `(module index, interface index)`, so a module can only
 /// ever read an interface it has an edge to. It writes its own interface,
@@ -983,10 +985,9 @@ const Driver = struct {
     /// does run is exactly four things, and this function is all four.
     ///
     /// It runs on the DAG, on whichever worker claimed the module, for one
-    /// reason: `Types` is built and read-only by then, and translating the
-    /// sidecar's two reference tables needs it. Every write it makes is to
-    /// this module's own slot, which is what makes it as safe here as a
-    /// check is.
+    /// reason: `Types` is built by then, and every capability write is to
+    /// this module's own dense range before dependents are released. That
+    /// is what makes installation as safe here as a check is.
     fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!void {
         const gpa = d.gpa;
 
@@ -1024,6 +1025,40 @@ const Driver = struct {
         const ref_ids = &d.types.ref_ids[m.int()];
         gpa.free(ref_ids.*);
         ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
+
+        // A cache entry stores the public schemes that define this
+        // module's dispatch boundaries, while the two answer bits are
+        // deliberately session-local TypeStore facts. Rebuild them before
+        // `finish` releases dependents, using exactly the same completed
+        // schemes as a cold check. This temporary store dies here; only the
+        // module-owned dense type range is published.
+        {
+            const bir = d.artifacts.bir(d.graph.moduleFile(m));
+            const iface = &d.interfaces[m.int()];
+            const provenance = &d.provenance[m.int()];
+            var store: TypeStore = .init(std.heap.page_allocator);
+            defer store.deinit();
+            try store.reserve(iface.terms.len + iface.schemes.len * 2 + 16, iface.extra.len + 16);
+            const schemes = try gpa.alloc(Var.Optional, bir.decls.len);
+            defer gpa.free(schemes);
+            @memset(schemes, .none);
+            for (iface.values, 0..) |value, i| {
+                const decl = provenance.valueDecl(i) orelse continue;
+                if (decl.int() >= schemes.len or value.scheme == .none) continue;
+                const root = try Schemes.instantiate(
+                    iface,
+                    ref_ids.*,
+                    &store,
+                    @intFromEnum(value.scheme),
+                    TypeStore.generalized,
+                    gpa,
+                    null,
+                );
+                schemes[decl.int()] = root.toOptional();
+            }
+            try d.types.settleDispatchCapabilities(gpa, m, d.graph, d.artifacts, &store, schemes);
+            d.types.restoreDerivedCapabilities(m, &d.dispatch[m.int()]);
+        }
 
         // 3. The diagnostics, replayed. The message is the prose the
         //    checker rendered when it wrote the entry; the SPAN is not
@@ -1207,10 +1242,77 @@ const ModuleCheck = struct {
         }
 
         // 2. Binding groups over the values that still need inferring.
+        // Imported public methods are final before this DAG node runs. Fold
+        // them into this module's derivation capabilities before any value
+        // group can ask whether one of its nominal types supports `==` or
+        // ordering (static-dispatch-spike.md §6.3.1, queue row 72).
+        try mc.types.settleDispatchCapabilities(gpa, mc.module, mc.graph, mc.artifacts, store, decl_scheme);
         const groups = try ModuleCheck.bindingGroups(bir, &env);
         var counters: Solve.Counters = .{};
         try schemas.settleProperties(mc.types, gpa);
+
+        // An inferred public `eq` or `compare` is a dispatch boundary for
+        // every later group in this module. Check its existing explicit
+        // dependency closure first, preserving the SCC dependency order,
+        // then publish the completed method scheme into the capability
+        // table. This is deliberately a priority over already-independent
+        // groups, not a new implicit edge: helpers retain their ordinary
+        // generalisation and only the two module-rule names move earlier.
+        const group_count = groups.starts.len - 1;
+        const priority = try env.scratch.alloc(bool, group_count);
+        @memset(priority, false);
+        const group_of = try env.scratch.alloc(u32, bir.decls.len);
+        for (0..group_count) |g| {
+            for (groups.order[groups.starts[g]..groups.starts[g + 1]]) |member| group_of[member] = @intCast(g);
+        }
+        var pending: std.ArrayList(u32) = .empty;
+        defer pending.deinit(env.scratch);
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue() or !d.is_pub or d.annotation != .none) continue;
+            const name = bir.symbol(d.name);
+            if (name != InternPool.WellKnown.eq.symbol() and name != InternPool.WellKnown.compare.symbol()) continue;
+            const g = group_of[i];
+            if (!priority[g]) {
+                priority[g] = true;
+                try pending.append(env.scratch, g);
+            }
+        }
+        while (pending.pop()) |g| {
+            for (groups.order[groups.starts[g]..groups.starts[g + 1]]) |member| {
+                for (bir.declRefs(bir.decls[member])) |ref| {
+                    if (ref.kind != .top_value and ref.kind != .top_schema) continue;
+                    if (ref.a >= bir.decls.len) continue;
+                    const target = bir.decls[ref.a];
+                    if ((!target.kind.isValue() and target.kind != .schema) or (target.kind.isValue() and target.annotation != .none)) continue;
+                    const dependency = group_of[ref.a];
+                    if (priority[dependency]) continue;
+                    priority[dependency] = true;
+                    try pending.append(env.scratch, dependency);
+                }
+            }
+        }
+        // The priority groups read capabilities too, so they get the
+        // scheme-checked answer and never `settleDispatchCapabilities`'
+        // syntactic first cut: a payload method with an arbitrary `where`
+        // requirement, or one specialised to another receiver, is only
+        // decided by the selected scheme (row 72).
+        if (pending.capacity != 0) try mc.settleOrdinaryCapabilities(&env, &reporter);
+        for (0..group_count) |g| {
+            if (!priority[g]) continue;
+            const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
+            counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
+            for (members) |member| if (bir.decls[member].kind == .schema) {
+                try schemas.settleProperties(mc.types, gpa);
+                break;
+            };
+        }
+        // Settle ordinary nominal bodies before later groups ask for
+        // derivation: again once the priority groups have published their
+        // method schemes, or for the first time when there were none.
+        if (pending.capacity != 0) try mc.types.settleDispatchCapabilities(gpa, mc.module, mc.graph, mc.artifacts, store, decl_scheme);
+        try mc.settleOrdinaryCapabilities(&env, &reporter);
         for (0..groups.starts.len - 1) |g| {
+            if (priority[g]) continue;
             const members = groups.order[groups.starts[g]..groups.starts[g + 1]];
             counters = add(counters, try mc.checkGroup(bir, &env, &reporter, members, decl_display, local_type, inst_result));
             for (members) |member| if (bir.decls[member].kind == .schema) {
@@ -1228,7 +1330,9 @@ const ModuleCheck = struct {
             var deriver: Solve.Solver = .init(gpa, &env, &empty_tree, &reporter);
             defer deriver.deinit();
             deriver.rank = TypeStore.generalized;
-            try deriver.deriveDeclaredTypes();
+            try deriver.settleOrdinaryCapabilities();
+            try deriver.deriveOrdinaryDeclaredTypes();
+            try deriver.deriveSchemaDeclaredTypes();
         }
 
         // 3. Pattern usefulness, over the declarations that solved clean
@@ -1432,6 +1536,17 @@ const ModuleCheck = struct {
         }
         edge_start[n] = @intCast(edges.items.len);
         return Constrain.sccGroups(scratch, n, edges.items, edge_start);
+    }
+
+    /// Settle this module's ordinary nominal capabilities against the
+    /// method schemes known so far (Solve's `settleOrdinaryCapabilities`).
+    /// Non-committing: final rows are emitted once every group is done.
+    fn settleOrdinaryCapabilities(mc: *ModuleCheck, env: *Constrain.Env, reporter: *Diagnostics.Reporter) Error!void {
+        var empty_tree: Constrain.Tree = .{};
+        var deriver: Solve.Solver = .init(mc.gpa, env, &empty_tree, reporter);
+        defer deriver.deinit();
+        deriver.rank = TypeStore.generalized;
+        try deriver.settleOrdinaryCapabilities();
     }
 
     /// One binding group: constrain every member, then solve the whole

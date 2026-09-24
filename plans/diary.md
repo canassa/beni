@@ -2484,3 +2484,221 @@ removing that exclusion is now explicit in S2's contract and queue acceptance.
 - Found two separate schema-free baseline defects and recorded, rather than
   fixed, queue rows 71–72: imported ordinary arities above 255 and derived
   wrapper equality ignoring a payload type's custom public `eq`.
+
+## 2026-09-23 21:01 CEST — row 72 finished: no second obligation for a committed custom method
+
+**What I did**
+
+- Picked up the half-landed row 72 fix (derived wrapper equality honours a
+  payload type's public `eq`/`compare`). The one regression left was
+  `TwoSlotsNested` (dispatch dump and run build): two extra evidence arguments
+  and an INTERNAL ERROR "The hidden arguments of this call do not add up".
+- Root cause: after the speculative applicability probe accepts a custom method
+  inside a derived target, `commit{Local,Imported}MethodApplication` repeats the
+  unification on the real store so a specialised receiver (`Holder Int`) narrows
+  the caller. That commit registered the copy's constraints as obligations a
+  second time (first via `registerInstantiated`, then through Rule U3's
+  `deferConstraints`), and `siteOrigins` invented free child slots for the
+  site-less copy — evidence the part tree from `ownValueParts`/
+  `importedValueParts` already supplies.
+- The previous agent's unbuilt fix returned early from `deferConstraints` for the
+  whole commit. That also dropped the CALLER's constraints whenever a caller flex
+  met the copy's structure. Narrowed it: `Solver.committed_method_from` holds the
+  constraint table length before the copy, and only indices at or above it are
+  skipped. Probed with a caller flex carrying `left.label ()` beside a
+  `Holder Key`-specialised `==`, in both orders, plus `left.bogus ()`: interface
+  `Key, Key -> ( String, Bool )`, correct JS, and `unknown_method` still reported.
+- Documented the rule in static-dispatch §6.3.1 step 4 and marked queue row 72
+  done. Rows 73/74 left unfixed as recorded.
+- Gates: 468/468 unit, 288/288 black-box (33/33 steps), fmt-check green. Red
+  proof: reversed `git diff -- src`, rebuilt; `DerivedEqThroughCustom` (16
+  diagnostics) and `DerivedEqLocalCustom` (2) red, both inference fixtures fail
+  with `not_equatable` at the definition's `==`; the negative fixtures and
+  `DerivedEqWithArbitraryConstraint` are controls that pass either way.
+  Reapplied; the src diff hash matches byte for byte.
+
+**What I learned**
+
+- A speculative check followed by a committing re-unification must not
+  re-register what the check already accounted for, but the filter has to be by
+  PROVENANCE (constraint index minted by the copy), not by phase: caller
+  constraints can meet the copy's structure in the same unification.
+- A caller flex's own method constraint already has a live obligation from its
+  call site, so the probe above could not tell the broad suppression from the
+  narrow one; the narrowing is justified by the invariant, not by a red test.
+
+## 2026-09-23 21:39 CEST — row 72 review: exact commit provenance, capabilities final for early groups
+
+**What I did**
+
+- A read-only review found three defects in the row 72 fix, each reproduced
+  with the installed binary. Fixed all three, one fixture each, every one red
+  on the previous-round binary and green now.
+- HIGH, a regression: the `committed_method_from` watermark skipped every
+  constraint at or above it, and a commit can merge two callers' FOLDED
+  constraints (`x < x`, `y < y` in a `let`) into a fresh set before that set
+  meets `Int` (`Trip.eq : Trip a a a, …` at `Trip x y Int`). Rule U3 skipped
+  the callers' set and nothing answered it: INTERNAL ERROR "I cannot tell what
+  this call dispatches to". Replaced the watermark with exact provenance:
+  `committed_copy` is the range the copy's instantiation created, and `adopt`
+  records a rebuild as copy-owned only when every source is. A join with a
+  caller constraint keeps its obligation. Fixture
+  `run/DerivedEqCommitKeepsCallerConstraints/` (tuple and record shapes).
+- MEDIUM and LOW, one cause: groups checked early for an unannotated
+  `pub eq`/`pub compare` read `Types.settleDispatchCapabilities`' syntactic
+  first cut. It descends into a parameter with an arbitrary requirement
+  (valid `W (Holder Keyed)` refused) and ignores a specialised receiver
+  (`L (Holder String)` accepted, then an INTERNAL ERROR about too few derived
+  parts). `Check.zig` now runs Solve's `settleOrdinaryCapabilities` before the
+  early groups too, and again after they publish their schemes. Fixtures
+  `run/DerivedEqInPriorityGroup/` and
+  `check/bad/PriorityGroupSpecializedPayloadEq/`.
+- Corrected queue row 73: after row 72 its reproducer, and the `R.eq` where
+  `a.compare` variant, are refused as `not_equatable`. They used to crash or
+  print a wrong `False`. What is left is a capability gap. Recorded row 75: an
+  `==` on a module's own type, inside another early group, runs before that
+  type's unannotated `pub eq` has a scheme. Its site is `err` with no
+  diagnostic and it emits `undefined`. Pre-existing on 875f623 and not fixed.
+- Extended static-dispatch §6.3.1 step 4 with both rules. Gates: 468/468 unit,
+  288/288 black-box (33/33 steps), fmt-check green. Nothing committed.
+
+**What I learned**
+
+- "Skip what the commit created" has to be computed per constraint through
+  every rebuild (`adopt` is the one choke point all rebuilds share). An index
+  watermark conflates the copy's constraints with callers' constraints that a
+  rebuild merely moved.
+- A per-module fact that an early phase reads must already be final by then,
+  or visibly undecided. A cheap first approximation that a later pass refines
+  is wrong in both directions for whoever reads it in between.
+- `p1_tuple` (`Pair.eq` where `a.compare` under a tuple shape) is now
+  `not_implemented`, the §7.1 gap for an evidence-taking `ext` in a part
+  position, where 875f623 said `not_equatable`. Both refuse the program, and
+  the INTERNAL ERROR it also produced is gone.
+
+## 2026-09-23 22:35 CEST — row 75: late derived parts become part sites; untyped own methods refused
+
+**What I did**
+
+- The review found a program 875f623 refused that row 72 compiled to a wrong
+  answer. `M.T` holds a function, and there is an unannotated `pub eq`. Inside
+  an unannotated `pub compare`, the `let` holds `{ v = left } == { v = right }`.
+  It printed `not lt`, where `lt` is right. The review read it as row 75's
+  ordering defect. Its real cause is different. When the comparison is solved,
+  `left` is still a flex, so `targetFor` wrote `part 0 err` and `Lower` answers
+  an `err` part with a structural `Basics$eq`. The `T = T Int Int` twin was
+  already wrong on 875f623. So was `pair l r = let s = ( l, 0 ) == ( r, 0 ) in s`
+  at a type with a custom `eq`, whose promoted evidence parameter the part
+  never used.
+- Fixed that class properly (A.86). The constraint the flex arm attaches now
+  carries a PART SITE: `parent = part_site_parent`, `evidence_index` into
+  `Solver.part_slots`, which holds the absolute part index. `fillPart` tells
+  `targetFor` which part it fills. `emitSites` writes a part site's answer
+  into its part. A named method is re-resolved in part form, so it carries its
+  own evidence. `siteOrigins` skips part sites, and site de-duplication
+  compares `parent`. `dispatch/ErrParts`'s `crossed` part moved from `err` to
+  `strict_eq`; its intent comment was rewritten and the golden re-blessed.
+- The own-method ordering form (an early group's `==` on a type whose
+  unannotated `pub eq` comes later) is option (b): refused with the new
+  `method_needs_annotation` (§10.12). It is catalogued in `language.md`,
+  `checker.md` and static-dispatch. `js/Lower.zig` now refuses an `err`
+  site as `internal` instead of emitting `undefined`: Lower only runs after a
+  clean check, so such a site had no diagnostic.
+- Fixtures `run/DerivedPartTypedLater/` (function-holding, plain and promoted
+  forms; round-2 binary prints `False False False …`) and
+  `check/bad/MethodNeedsAnnotation/` (round-2 binary: `check` exit 0). Gates:
+  468/468 unit, 288/288 black-box (33/33 steps), fmt-check green. Queue row 75
+  narrowed to "part form fixed; own-method form refused". Nothing committed.
+
+**What I learned**
+
+- `err` in a part had two meanings: a position nothing inhabits, and a
+  position not yet known. `dispatch/ErrParts` pinned the first meaning and
+  itself documented the second (`crossed`) as "harmless". It was harmless
+  only while no type in the comparison had its own `eq`.
+- A site-level answer and a part-level answer differ in where the callee's
+  evidence goes: child sites of the instruction versus the part's own
+  `parts`. Re-resolving through `targetFor` at answer time is simpler and
+  safer than translating one form into the other.
+
+## 2026-09-23 23:28 CEST — row 76: cyclic receivers end the drain; `pub` in the §10.12 hint
+
+**What I did**
+
+- A review found a regression: `pairEq x y = let inner a b = a == b in inner x y
+  && inner [ x ] [ y ]` panicked on 875f623 after 2^20 drain rounds (about
+  10 s). On the round 3 tree it never finished. Cause: a constrained `let`
+  helper is monomorphic (§11), so the two calls make `x ~ List x`. The occurs
+  check waits for generalisation, and `List.eq`'s `where a.eq` re-asks for
+  the element's `eq` forever. Instrumenting showed the round 3 tree's drain
+  ending after about 100k rounds, not the 2^20 that panicked. A `sample`
+  of the hung process showed it inside `Dispatch.Builder.finish`, sorting a
+  huge number of sites for one instruction. So each pass wasn't slower; the
+  endless chain now leaves its output in the dispatch table, and `finish` is
+  superlinear in it.
+- Fix: `Obligation.depth` records how long the discharge chain that raised an
+  obligation is (`Solver.discharge_depth`, stamped in `register`). Every
+  `cycle_check_depth` (64) generations the drain runs `occurs` on the
+  receiver. A cyclic one is reported `infinite_type` and poisoned. All four
+  reported bodies now fail with `infinite_type` in under a second. It is a
+  real error: the program is not valid under §11's rule.
+- `method_needs_annotation`'s hint now carries `pub` when the method is
+  `pub` (`pub eq : T, T -> Bool`); the fixture's `.diag` was re-blessed.
+- Recorded queue row 77, the Tree/record hidden-argument miscount (same on
+  875f623; not fixed). Row 75 now notes that eq-before-compare is the common
+  case, so the method-group ordering is the next step.
+- New fixtures: `check/bad/LetHelperCyclicReceiver`, plus an `abuse_test.zig`
+  scenario over all four bodies with an 8 s limit. The round 3 binary times
+  out on the fixture at 15 s. Gates: 468/468 unit, 289/289 black-box (33/33
+  steps), fmt-check green. Nothing committed.
+
+**What I learned**
+
+- "It hangs" and "it loops" are different claims: sample the process before
+  guessing. The loop had become finite. The cost had moved into a later
+  phase that is superlinear in what the loop leaves behind.
+- A deferred occurs check means every consumer that walks a type between
+  unification and generalisation must survive a cyclic graph. Charging the
+  check to obligation generations keeps it off the hot path.
+
+## 2026-09-24 00:17 CEST — row 72: fast path past the applicability probe
+
+**What I did**
+
+- The review measured row 72's cost on programs with no custom method at all.
+  `s_tup6000` (`( a, [ b ] ) < ( b, [ a ] )` ×6000) was 1.63x master, and
+  mixed `gen` 1.14x. A `sample` over a 400k-function version showed two
+  sources, and neither was the cycle check:
+  - `List.eq`/`List.compare` are public methods, so every `List` part went
+    through `importedMethodAcceptsApplication`'s probe and commit.
+  - `derivable`'s probe rebuilt the whole target that `finishDerived`
+    builds right after.
+- Added `plainMethodMask`: a scheme `T a1 … an, T a1 … an -> Bool|Order`
+  over distinct variables whose only constraints are the method's own name
+  at the standard type. It is cached per module for imported values
+  (`Env.plain_methods`) and skips the copy, the probe and the commit. The
+  receiver must match (`UnrelatedEqDoesNotGrantCapability` caught the first
+  version). `flagUnansweredParts` stands in for the probe's completeness
+  test. `targetNeedsProbe` lets `derivable` skip its probe when the shape
+  reaches no non-plain method, no untyped own method, and no nominal type
+  that cannot derive.
+- ReleaseFast, `--self-profile` check-phase medians of 7, master /
+  round-4 tree / now:
+  - s_tup6000: 20.1 / 37.5 / 21.7 ms (+8% over master)
+  - s_int6000: 15.3 / — / 15.7 ms
+  - gen: 73.8 / 94.4 / 76.0 ms (+3%)
+  - `zig build bench -- --generate=100000` check phase: master 52.6 ms,
+    now 55.2 ms. The `resolve` phase is untouched by row 72 (no file under
+    `src/resolve` changed) and read 6.20 ms on master against 4.68 ms now;
+    the reported 0.00 → 6.40 was not a real regression.
+- No golden changed. Gates: 468/468 unit, 289/289 black-box (33/33 steps),
+  fmt-check green. Nothing committed.
+
+**What I learned**
+
+- A speculative check pays for itself only where it can decide something.
+  Say when that is (a scheme that can narrow or refuse) and test for it
+  before speculating.
+- `zig build bench`'s `resolve` line is graph-plus-resolution only. A
+  capability or checker change cannot move it, so look for noise before
+  looking for code.

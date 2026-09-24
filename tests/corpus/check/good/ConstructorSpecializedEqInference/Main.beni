@@ -1,0 +1,12 @@
+import Holder
+
+
+identity value =
+    value
+
+
+-- The specialized method constrains both constructor payloads to Int. The
+-- inferred public scheme must retain that restriction in the interface.
+pub same left right =
+    { value = Holder.Holder left identity }
+        == { value = Holder.Holder right identity }

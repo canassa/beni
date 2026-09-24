@@ -1,0 +1,10 @@
+import Payload
+
+
+pub type Wrapper
+    = Wrapper Payload.HasFn
+
+
+bad =
+    Wrapper (Payload.HasFn (\value -> value + 1))
+        == Wrapper (Payload.HasFn (\value -> value - 1))

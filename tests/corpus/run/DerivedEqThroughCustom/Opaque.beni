@@ -1,0 +1,14 @@
+-- An unconstrained custom equality may deliberately ignore its generic
+-- payload. At `Opaque (Int -> Int)` this is a real capability boundary:
+-- callers use the label and never structurally inspect the function.
+pub type Opaque a
+    = Opaque String a
+
+
+pub eq : Opaque a, Opaque a -> Bool
+eq left right =
+    case left of
+        Opaque labelLeft _ ->
+            case right of
+                Opaque labelRight _ ->
+                    labelLeft == labelRight

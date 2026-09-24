@@ -89,7 +89,7 @@ const Kind = enum {
 
     fn hasProjects(kind: Kind) bool {
         return kind == .check_good or kind == .check_bad or kind == .dispatch or
-            kind == .build_bad or kind == .build_bad_release;
+            kind == .build_bad or kind == .build_bad_release or kind == .run;
     }
 
     /// Whether a fixture of this kind is COMPILED (its assertion is the

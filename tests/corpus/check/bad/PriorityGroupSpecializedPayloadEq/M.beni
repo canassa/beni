@@ -1,0 +1,34 @@
+-- Row 72: `Holder.eq` is specialised to `Holder Int`, so `L`, which holds a
+-- `Holder String`, has no equality. The `==` sits in an unannotated
+-- `pub compare`, which is checked before the module's other groups; it must
+-- see that final answer and report `not_equatable` here, not accept the
+-- comparison on a first cut and leave `L`'s derivation without its parts.
+import Holder
+
+
+pub type L
+    = L (Holder.Holder String)
+
+
+pub type K
+    = K Int
+
+
+pub compare left right =
+    let
+        same =
+            L (Holder.Holder "a" identity) == L (Holder.Holder "b" identity)
+    in
+    case left of
+        K a ->
+            case right of
+                K b ->
+                    if same then
+                        EQ
+                    else
+                        Basics.compare a b
+
+
+identity : Int -> Int
+identity v =
+    v

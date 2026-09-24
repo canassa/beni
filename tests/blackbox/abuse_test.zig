@@ -1587,3 +1587,56 @@ test "a chain past the inferred-constraint cap reports a bounded number of error
     }
     try testing.expectEqualStrings("", r.stdout);
 }
+
+test "a monomorphic let helper used at `a` and `List a` is an infinite type within seconds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Queue row 76. A constrained `let` helper is monomorphic
+    // (static-dispatch-spike.md §11), so `inner x y` and then
+    // `inner [ x ] [ y ]` make `x ~ List x`. The occurs check waits for
+    // generalisation (design §7 #3), and until then the method obligation on
+    // that cyclic receiver asked for the element's method forever: 875f623
+    // panicked after 2^20 rounds (about 10 s), and the row 72 tree grew a
+    // million dispatch sites and never finished. The drain now asks whether
+    // the receiver is cyclic every `Solver.cycle_check_depth` generations.
+    // The limit is the assertion: the old panic took 10 s, a hang forever.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const bodies = [_][]const u8{
+        "a == b",
+        "[ a ] == [ b ]",
+        "{ v = a } == { v = b }",
+        "( a, 1 ) < ( b, 1 )",
+    };
+    for (bodies) |body| {
+        var source: std.Io.Writer.Allocating = .init(testing.allocator);
+        defer source.deinit();
+        try source.writer.print(
+            \\pairEq x y =
+            \\    let
+            \\        inner a b =
+            \\            {s}
+            \\    in
+            \\    inner x y && inner [ x ] [ y ]
+            \\
+        , .{body});
+        try w.write("Main.beni", source.written());
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const r = try w.runWith(&.{ "check", "Main.beni" }, .{ .timeout_ms = 8_000 });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        if (r.term != .exited) {
+            std.debug.print("[{s}] did not exit normally: {any}\n", .{ body, r.term });
+            return error.CompilerDiedFromSignal;
+        }
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.infinite_type, r.diagnostics[0].code);
+    }
+}

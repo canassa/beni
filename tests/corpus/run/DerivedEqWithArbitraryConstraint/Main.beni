@@ -1,0 +1,45 @@
+-- Existing arbitrary method constraints remain valid equality boundaries.
+-- Wrapper derives equality through Holder.eq and supplies Keyed.key. The
+-- labels deliberately differ, so structurally comparing Keyed would make
+-- the first result False instead of True.
+import Holder
+import Keyed
+import Node exposing (Program)
+
+
+pub type Wrapper
+    = Wrapper (Holder.Holder Keyed.Keyed)
+
+
+pub type Box a
+    = Box a
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show
+            (Wrapper (Holder.Holder (Keyed.Keyed 7 "left"))
+                == Wrapper (Holder.Holder (Keyed.Keyed 7 "right"))
+            )
+        , show
+            (Wrapper (Holder.Holder (Keyed.Keyed 7 "same"))
+                == Wrapper (Holder.Holder (Keyed.Keyed 8 "same"))
+            )
+        , show
+            (Box (Holder.Holder (Keyed.Keyed 7 "left"))
+                == Box (Holder.Holder (Keyed.Keyed 7 "right"))
+            )
+        , show
+            (Box (Holder.Holder (Keyed.Keyed 7 "same"))
+                == Box (Holder.Holder (Keyed.Keyed 8 "same"))
+            )
+        ]

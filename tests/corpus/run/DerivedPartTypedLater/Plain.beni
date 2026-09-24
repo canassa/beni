@@ -1,0 +1,27 @@
+-- The same shape without a function: 875f623 compared `v` structurally
+-- and printed `not lt`, because the second fields differ.
+pub type T
+    = T Int Int
+
+
+pub eq left right =
+    case left of
+        T n _ ->
+            case right of
+                T m _ ->
+                    n == m
+
+
+pub compare left right =
+    let
+        same =
+            { v = left } == { v = right }
+    in
+    case left of
+        T n _ ->
+            case right of
+                T m _ ->
+                    if same then
+                        LT
+                    else
+                        GT

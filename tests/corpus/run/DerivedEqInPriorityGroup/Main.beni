@@ -1,0 +1,16 @@
+import M
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.printLines
+        [ if M.K 1 < M.K 2 then
+            "lt"
+          else
+            "not lt"
+        , if M.same then
+            "same"
+          else
+            "different"
+        ]

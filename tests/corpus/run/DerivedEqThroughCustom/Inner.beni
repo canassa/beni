@@ -1,0 +1,18 @@
+-- A custom equality method may deliberately make a nominal type equatable
+-- even when its representation contains a function. `Inner` wraps the
+-- function-holding `Callback` so capability propagation must stop at
+-- `Inner.eq` instead of walking through to the function.
+pub type Callback
+    = Callback (Int -> Int)
+
+
+pub type Inner
+    = Inner String Callback
+
+
+pub eq left right =
+    case left of
+        Inner labelLeft _ ->
+            case right of
+                Inner labelRight _ ->
+                    labelLeft == labelRight

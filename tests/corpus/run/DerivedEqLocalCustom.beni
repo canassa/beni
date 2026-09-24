@@ -1,0 +1,52 @@
+-- A structural record derives equality through a same-module nominal type's
+-- unannotated custom `eq`. The comparisons precede that declaration so local
+-- capability discovery cannot depend on source order. Equal values contain
+-- DISTINCT callbacks, and the unequal pair differs only by the label.
+import Node exposing (Program)
+
+
+pub type Inner
+    = Inner String (Int -> Int)
+
+
+plusOne : Int -> Int
+plusOne value =
+    value + 1
+
+
+minusOne : Int -> Int
+minusOne value =
+    value - 1
+
+
+same : Bool
+same =
+    { value = Inner "same" plusOne }
+        == { value = Inner "same" minusOne }
+
+
+different : Bool
+different =
+    { value = Inner "same" plusOne }
+        == { value = Inner "different" plusOne }
+
+
+pub eq left right =
+    case left of
+        Inner labelLeft _ ->
+            case right of
+                Inner labelRight _ ->
+                    labelLeft == labelRight
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines [ show same, show different ]
