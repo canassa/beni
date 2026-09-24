@@ -112,6 +112,7 @@ pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
 
     var o: Opt = .{
         .ir = ir,
+        .arena = arena,
         .uses = try arena.alloc(u32, ir.names.len),
         .decls = try arena.alloc(u32, ir.names.len),
         .assigned = try arena.alloc(bool, ir.names.len),
@@ -125,14 +126,19 @@ pub fn run(arena: Allocator, ir: *const JsIr) Allocator.Error!Plan {
 
     for (ir.extraSlice(ir.body, Index)) |top| {
         o.current += 1;
-        o.countStmt(top);
-        o.planStmt(top);
+        try o.countStmt(top);
+        try o.planStmt(top);
     }
     return .{ .dropped = o.dropped, .inlined = o.inlined };
 }
 
 const Opt = struct {
     ir: *const JsIr,
+    /// Where `stack` grows. The plan's own arena: nothing here is freed early.
+    arena: Allocator,
+    /// The explicit stack every expression walk shares (CK-81): each walk
+    /// owns the entries above the length it found, so the walks nest.
+    stack: std.ArrayList(Index) = .empty,
     /// Which top-level declaration `uses`, `decls` and `assigned` describe.
     /// Starts at 1 so that a zeroed `stamp` means "not yet touched".
     current: u32 = 0,
@@ -198,7 +204,7 @@ const Opt = struct {
     /// counted as a use too, which is exactly right: it is what keeps §7's
     /// `let $t$n;` above an `if`/`else` chain from being dropped out from
     /// under the assignments that fill it.
-    fn countStmt(o: *Opt, stmt: Index) void {
+    fn countStmt(o: *Opt, stmt: Index) Allocator.Error!void {
         const d = o.ir.data(stmt);
         switch (o.ir.tag(stmt)) {
             .import_stmt => {
@@ -208,50 +214,50 @@ const Opt = struct {
             .export_stmt => for (o.ir.extraSlice(JsIr.inlineRange(d), NameIndex)) |n| o.use(n),
             .const_decl => {
                 o.declare(@enumFromInt(d.lhs));
-                o.countExpr(@enumFromInt(d.rhs));
+                try o.countExpr(@enumFromInt(d.rhs));
             },
             .let_decl => {
                 o.declare(@enumFromInt(d.lhs));
-                if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| o.countExpr(v);
+                if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try o.countExpr(v);
             },
             .func_decl => {
                 o.declare(@enumFromInt(d.lhs));
-                o.countFunc(@enumFromInt(d.rhs));
+                try o.countFunc(@enumFromInt(d.rhs));
             },
             .assign_stmt => {
                 o.markAssigned(@enumFromInt(d.lhs));
-                o.countExpr(@enumFromInt(d.lhs));
-                o.countExpr(@enumFromInt(d.rhs));
+                try o.countExpr(@enumFromInt(d.lhs));
+                try o.countExpr(@enumFromInt(d.rhs));
             },
-            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| o.countExpr(v),
+            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try o.countExpr(v),
             .if_stmt => {
-                o.countExpr(@enumFromInt(d.lhs));
+                try o.countExpr(@enumFromInt(d.lhs));
                 const branches = o.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                o.countStmts(branches.thenBody());
-                o.countStmts(branches.elseBody());
+                try o.countStmts(branches.thenBody());
+                try o.countStmts(branches.elseBody());
             },
             // A label shares the binding namespace (§9 item 2), so a name a
             // label holds is not a name a binding may be dropped under.
             .while_true, .block_stmt => {
                 o.use(@enumFromInt(d.lhs));
-                o.countStmts(o.ir.subRange(@enumFromInt(d.rhs)));
+                try o.countStmts(o.ir.subRange(@enumFromInt(d.rhs)));
             },
             .break_stmt, .continue_stmt => o.use(@enumFromInt(d.lhs)),
             .switch_stmt => {
-                o.countExpr(@enumFromInt(d.lhs));
-                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| o.countStmt(c);
+                try o.countExpr(@enumFromInt(d.lhs));
+                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try o.countStmt(c);
             },
             .switch_case => {
-                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| o.countExpr(t);
-                o.countStmts(o.ir.subRange(@enumFromInt(d.rhs)));
+                if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |t| try o.countExpr(t);
+                try o.countStmts(o.ir.subRange(@enumFromInt(d.rhs)));
             },
-            .expr_stmt, .throw_stmt => o.countExpr(@enumFromInt(d.lhs)),
+            .expr_stmt, .throw_stmt => try o.countExpr(@enumFromInt(d.lhs)),
             else => {},
         }
     }
 
-    fn countStmts(o: *Opt, range: JsIr.SubRange) void {
-        for (o.ir.extraSlice(range, Index)) |s| o.countStmt(s);
+    fn countStmts(o: *Opt, range: JsIr.SubRange) Allocator.Error!void {
+        for (o.ir.extraSlice(range, Index)) |s| try o.countStmt(s);
     }
 
     /// Mark the root of an assignment target. `a.b = c` mutates `a`'s object
@@ -276,43 +282,28 @@ const Opt = struct {
         }
     }
 
-    fn countFunc(o: *Opt, record: JsIr.ExtraIndex) void {
+    fn countFunc(o: *Opt, record: JsIr.ExtraIndex) Allocator.Error!void {
         const f = o.ir.extraData(record, JsIr.Func);
         // A parameter is counted as a READ, not as a declaration. It shadows
         // rather than binds anything this pass may touch, and counting it as
         // a read is the conservative half of the two.
         for (o.ir.extraSlice(f.params(), NameIndex)) |n| o.use(n);
-        o.countStmts(f.body());
+        try o.countStmts(f.body());
     }
 
-    fn countExpr(o: *Opt, node: Index) void {
-        const d = o.ir.data(node);
-        switch (o.ir.tag(node)) {
-            .ident => o.use(@enumFromInt(d.lhs)),
-            .member, .unary, .spread_property => o.countExpr(@enumFromInt(d.lhs)),
-            .index_get => {
-                o.countExpr(@enumFromInt(d.lhs));
-                o.countExpr(@enumFromInt(d.rhs));
-            },
-            .property => o.countExpr(@enumFromInt(d.rhs)),
-            .call => {
-                o.countExpr(@enumFromInt(d.lhs));
-                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |arg| o.countExpr(arg);
-            },
-            .object, .array, .template => for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |c| o.countExpr(c),
-            .cond => {
-                o.countExpr(@enumFromInt(d.lhs));
-                const c = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                o.countExpr(c.consequent);
-                o.countExpr(c.alternate);
-            },
-            .binary => {
-                const b = o.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                o.countExpr(b.left);
-                o.countExpr(b.right);
-            },
-            .arrow => o.countFunc(@enumFromInt(d.lhs)),
-            else => {},
+    /// Iterative, over `stack` (CK-81, `JsIr.pushOperands`): an expression
+    /// is as deep as the longest chain the compiler built.
+    fn countExpr(o: *Opt, root: Index) Allocator.Error!void {
+        const base = o.stack.items.len;
+        defer o.stack.shrinkRetainingCapacity(base);
+        try o.stack.append(o.arena, root);
+        while (o.stack.items.len > base) {
+            const node = o.stack.pop().?;
+            switch (o.ir.tag(node)) {
+                .ident => o.use(@enumFromInt(o.ir.data(node).lhs)),
+                .arrow => try o.countFunc(@enumFromInt(o.ir.data(node).lhs)),
+                else => try o.ir.pushOperands(o.arena, &o.stack, node),
+            }
         }
     }
 
@@ -322,76 +313,59 @@ const Opt = struct {
     /// file reads them through an `import`, and "per function body" is what
     /// §9 item 1 says. A name that carries a module qualifier is refused a
     /// second time in `list`, so the exclusion holds either way.
-    fn planStmt(o: *Opt, stmt: Index) void {
+    fn planStmt(o: *Opt, stmt: Index) Allocator.Error!void {
         const d = o.ir.data(stmt);
         switch (o.ir.tag(stmt)) {
-            .const_decl => o.planExpr(@enumFromInt(d.rhs)),
-            .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| o.planExpr(v),
-            .func_decl => o.planFunc(@enumFromInt(d.rhs)),
+            .const_decl => try o.planExpr(@enumFromInt(d.rhs)),
+            .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| try o.planExpr(v),
+            .func_decl => try o.planFunc(@enumFromInt(d.rhs)),
             .assign_stmt => {
-                o.planExpr(@enumFromInt(d.lhs));
-                o.planExpr(@enumFromInt(d.rhs));
+                try o.planExpr(@enumFromInt(d.lhs));
+                try o.planExpr(@enumFromInt(d.rhs));
             },
-            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| o.planExpr(v),
+            .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| try o.planExpr(v),
             .if_stmt => {
-                o.planExpr(@enumFromInt(d.lhs));
+                try o.planExpr(@enumFromInt(d.lhs));
                 const branches = o.ir.extraData(@enumFromInt(d.rhs), JsIr.If);
-                o.planList(branches.thenBody());
-                o.planList(branches.elseBody());
+                try o.planList(branches.thenBody());
+                try o.planList(branches.elseBody());
             },
-            .while_true, .block_stmt => o.planList(o.ir.subRange(@enumFromInt(d.rhs))),
+            .while_true, .block_stmt => try o.planList(o.ir.subRange(@enumFromInt(d.rhs))),
             .switch_stmt => {
-                o.planExpr(@enumFromInt(d.lhs));
-                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| o.planStmt(c);
+                try o.planExpr(@enumFromInt(d.lhs));
+                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |c| try o.planStmt(c);
             },
-            .switch_case => o.planList(o.ir.subRange(@enumFromInt(d.rhs))),
-            .expr_stmt, .throw_stmt => o.planExpr(@enumFromInt(d.lhs)),
+            .switch_case => try o.planList(o.ir.subRange(@enumFromInt(d.rhs))),
+            .expr_stmt, .throw_stmt => try o.planExpr(@enumFromInt(d.lhs)),
             else => {},
         }
     }
 
-    fn planList(o: *Opt, range: JsIr.SubRange) void {
-        o.list(range);
-        for (o.ir.extraSlice(range, Index)) |s| o.planStmt(s);
+    fn planList(o: *Opt, range: JsIr.SubRange) Allocator.Error!void {
+        try o.list(range);
+        for (o.ir.extraSlice(range, Index)) |s| try o.planStmt(s);
     }
 
-    fn planFunc(o: *Opt, record: JsIr.ExtraIndex) void {
-        o.planList(o.ir.extraData(record, JsIr.Func).body());
+    fn planFunc(o: *Opt, record: JsIr.ExtraIndex) Allocator.Error!void {
+        try o.planList(o.ir.extraData(record, JsIr.Func).body());
     }
 
     /// Find the `arrow`s an expression holds; their bodies are statement
-    /// lists like any other.
-    fn planExpr(o: *Opt, node: Index) void {
-        const d = o.ir.data(node);
-        switch (o.ir.tag(node)) {
-            .arrow => o.planFunc(@enumFromInt(d.lhs)),
-            .member, .unary, .spread_property => o.planExpr(@enumFromInt(d.lhs)),
-            .index_get => {
-                o.planExpr(@enumFromInt(d.lhs));
-                o.planExpr(@enumFromInt(d.rhs));
-            },
-            .property => o.planExpr(@enumFromInt(d.rhs)),
-            .call => {
-                o.planExpr(@enumFromInt(d.lhs));
-                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |arg| o.planExpr(arg);
-            },
-            .object, .array, .template => for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |c| o.planExpr(c),
-            .cond => {
-                o.planExpr(@enumFromInt(d.lhs));
-                const c = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                o.planExpr(c.consequent);
-                o.planExpr(c.alternate);
-            },
-            .binary => {
-                const b = o.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                o.planExpr(b.left);
-                o.planExpr(b.right);
-            },
-            else => {},
+    /// lists like any other. Iterative, like `countExpr`.
+    fn planExpr(o: *Opt, root: Index) Allocator.Error!void {
+        const base = o.stack.items.len;
+        defer o.stack.shrinkRetainingCapacity(base);
+        try o.stack.append(o.arena, root);
+        while (o.stack.items.len > base) {
+            const node = o.stack.pop().?;
+            switch (o.ir.tag(node)) {
+                .arrow => try o.planFunc(@enumFromInt(o.ir.data(node).lhs)),
+                else => try o.ir.pushOperands(o.arena, &o.stack, node),
+            }
         }
     }
 
-    fn list(o: *Opt, range: JsIr.SubRange) void {
+    fn list(o: *Opt, range: JsIr.SubRange) Allocator.Error!void {
         const stmts = o.ir.extraSlice(range, Index);
         for (stmts, 0..) |stmt, i| {
             const t = o.ir.tag(stmt);
@@ -415,7 +389,7 @@ const Opt = struct {
             if (base.unwrap()) |b| {
                 if (b < o.assigned.len and o.stamp[b] == o.current and o.assigned[b]) continue;
             }
-            const at = o.findUse(stmts[i + 1 ..], n) orelse continue;
+            const at = try o.findUse(stmts[i + 1 ..], n) orelse continue;
             o.drop(stmt);
             o.inlined[at.int()] = value.toOptional();
         }
@@ -468,11 +442,11 @@ const Opt = struct {
     /// there is no other — which is why no subtree count is needed and the
     /// scan is cheap. Returns the `ident` node the substitution is recorded
     /// against.
-    fn findUse(o: *Opt, rest: []const Index, n: NameIndex) ?Index {
+    fn findUse(o: *Opt, rest: []const Index, n: NameIndex) Allocator.Error!?Index {
         for (rest, 0..) |stmt, seen| {
             if (seen >= scan_limit) return null;
             o.found = .none;
-            const own = o.ownUses(stmt, n);
+            const own = try o.ownUses(stmt, n);
             if (own == 1) return o.found.unwrap();
             if (own != 0) return null;
             if (!o.isPureReadConst(stmt)) return null;
@@ -493,13 +467,13 @@ const Opt = struct {
     /// owns a nested statement RANGE — `if`, `while_true`, `switch`, a block —
     /// contributes only the expression it evaluates before entering one, and a
     /// `func_decl` contributes nothing at all.
-    fn ownUses(o: *Opt, stmt: Index, n: NameIndex) u32 {
+    fn ownUses(o: *Opt, stmt: Index, n: NameIndex) Allocator.Error!u32 {
         const d = o.ir.data(stmt);
         return switch (o.ir.tag(stmt)) {
             .const_decl => o.exprUses(@enumFromInt(d.rhs), n),
             .let_decl => if (@as(Node.OptionalIndex, @enumFromInt(d.rhs)).unwrap()) |v| o.exprUses(v, n) else 0,
             .return_stmt => if (@as(Node.OptionalIndex, @enumFromInt(d.lhs)).unwrap()) |v| o.exprUses(v, n) else 0,
-            .assign_stmt => o.exprUses(@enumFromInt(d.lhs), n) + o.exprUses(@enumFromInt(d.rhs), n),
+            .assign_stmt => (try o.exprUses(@enumFromInt(d.lhs), n)) + (try o.exprUses(@enumFromInt(d.rhs), n)),
             .if_stmt, .switch_stmt => o.exprUses(@enumFromInt(d.lhs), n),
             .expr_stmt, .throw_stmt => o.exprUses(@enumFromInt(d.lhs), n),
             else => 0,
@@ -509,44 +483,32 @@ const Opt = struct {
     /// Reads of `n` inside one expression, stopping at an `arrow`: a closure
     /// body is evaluated a different number of times than the table in
     /// `language.md` §6 gives, so a use in one is not a use the inliner may
-    /// move to.
-    fn exprUses(o: *Opt, node: Index, n: NameIndex) u32 {
-        const d = o.ir.data(node);
-        return switch (o.ir.tag(node)) {
-            .ident => blk: {
-                if (@as(NameIndex, @enumFromInt(d.lhs)) != n) break :blk 0;
-                o.found = node.toOptional();
-                break :blk 1;
-            },
-            .member, .unary, .spread_property => o.exprUses(@enumFromInt(d.lhs), n),
-            .index_get => o.exprUses(@enumFromInt(d.lhs), n) + o.exprUses(@enumFromInt(d.rhs), n),
-            .property => o.exprUses(@enumFromInt(d.rhs), n),
-            .call => blk: {
-                var total = o.exprUses(@enumFromInt(d.lhs), n);
-                for (o.ir.extraSlice(o.ir.subRange(@enumFromInt(d.rhs)), Index)) |arg| total += o.exprUses(arg, n);
-                break :blk total;
-            },
-            .object, .array, .template => blk: {
-                var total: u32 = 0;
-                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |child| total += o.exprUses(child, n);
-                break :blk total;
-            },
-            .cond => blk: {
-                const c = o.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                break :blk o.exprUses(@enumFromInt(d.lhs), n) + o.exprUses(c.consequent, n) + o.exprUses(c.alternate, n);
-            },
-            .binary => blk: {
-                const b = o.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                break :blk o.exprUses(b.left, n) + o.exprUses(b.right, n);
-            },
-            // An `arrow`'s body is a statement list of its own, so a use
-            // inside it is a use inside a closure and this walk stops here.
-            // It does not need to report one: `uses[n] == 1` is the caller's
-            // precondition, so a zero from a statement that is not a pure-read
-            // `const` stops the scan anyway — and a pure-read `const` is an
-            // atom or a member chain and can hold no `arrow` to hide it in.
-            else => 0,
-        };
+    /// move to. Iterative, like `countExpr`.
+    ///
+    /// An `arrow`'s body is a statement list of its own, so a use inside it
+    /// is a use inside a closure and this walk stops there. It does not need
+    /// to report one: `uses[n] == 1` is the caller's precondition, so a zero
+    /// from a statement that is not a pure-read `const` stops the scan anyway
+    /// — and a pure-read `const` is an atom or a member chain and can hold no
+    /// `arrow` to hide it in.
+    fn exprUses(o: *Opt, root: Index, n: NameIndex) Allocator.Error!u32 {
+        const base = o.stack.items.len;
+        defer o.stack.shrinkRetainingCapacity(base);
+        try o.stack.append(o.arena, root);
+        var total: u32 = 0;
+        while (o.stack.items.len > base) {
+            const node = o.stack.pop().?;
+            switch (o.ir.tag(node)) {
+                .ident => {
+                    if (@as(NameIndex, @enumFromInt(o.ir.data(node).lhs)) != n) continue;
+                    o.found = node.toOptional();
+                    total += 1;
+                },
+                .arrow => {},
+                else => try o.ir.pushOperands(o.arena, &o.stack, node),
+            }
+        }
+        return total;
     }
 };
 

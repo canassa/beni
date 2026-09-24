@@ -331,6 +331,11 @@ const Lowerer = struct {
     /// reached, not a span the reader chose, which is why only `internal`
     /// uses it.
     region: Inst.Index = @enumFromInt(0),
+    /// Set while the body of a derived function wider than
+    /// `max_positional_evidence` is lowered: its one evidence parameter, the
+    /// array `$m`, which `$m$k` then reads as `$m[k]` (static-dispatch
+    /// §9.2, CK-81).
+    evidence_array: ?JsIr.NameIndex = null,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -2045,7 +2050,7 @@ const Lowerer = struct {
             // A declaration's `$m$k` and a derived function's are spelled
             // alike: each is the parameter list of the function the term
             // sits in (§8.1, §9).
-            .param => |param| try l.ident(try l.evidenceName(param.k), p),
+            .param => |param| try l.ownEvidence(param.k, p),
             .primitive => |prim| try l.primitiveValue(prim, p),
             // Unreachable: `field` cannot be evidence (§8.2), `undetermined`
             // is answered by `termValue`, and a derived term goes through
@@ -2394,8 +2399,22 @@ const Lowerer = struct {
         const p = Node.no_pos;
         const x, const y = try l.operandNames();
         var params: std.ArrayList(JsIr.NameIndex) = .empty;
-        var k: u16 = 0;
-        while (k < row.context.len) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
+        // Past `max_positional_evidence` the evidence is ONE parameter, an
+        // array (§9.2's wide form): a JavaScript call with a parameter per
+        // field overflows the engine's stack, and past 65 535 parameters V8
+        // refuses the function outright. The caller packs it the same way,
+        // by the same count (`packEvidence`).
+        const outer_array = l.evidence_array;
+        defer l.evidence_array = outer_array;
+        l.evidence_array = null;
+        if (row.context.len > max_positional_evidence) {
+            const array = try l.evidenceArrayName();
+            try params.append(l.scratch, array);
+            l.evidence_array = array;
+        } else {
+            var k: u16 = 0;
+            while (k < row.context.len) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
+        }
         switch (row.shape) {
             // §9.3: `(x, y) => true` / `(x, y) => "EQ"`. `()` is `null` at
             // runtime, so the two operands hold the same value and there is
@@ -2524,7 +2543,37 @@ const Lowerer = struct {
     /// `$m$k(left, right)` — the derived function's own k-th evidence
     /// parameter applied to one position.
     fn evidenceCall(l: *Lowerer, k: u16, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
-        return l.call(try l.ident(try l.evidenceName(k), p), &.{ left, right }, p);
+        return l.call(try l.ownEvidence(k, p), &.{ left, right }, p);
+    }
+
+    /// The derived function's own k-th evidence parameter as a value:
+    /// `$m$k`, or `$m[k]` inside a wide one (§9.2).
+    fn ownEvidence(l: *Lowerer, k: u16, p: u32) !Node.Index {
+        const array = l.evidence_array orelse return l.ident(try l.evidenceName(k), p);
+        var buf: [8]u8 = undefined;
+        const index = try l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{k}) catch unreachable, p);
+        return l.add(.index_get, p, (try l.ident(array, p)).int(), index.int());
+    }
+
+    /// `$m`: the one evidence parameter of a wide derived function (§9.2).
+    fn evidenceArrayName(l: *Lowerer) !JsIr.NameIndex {
+        const base = try l.interner.getOrPut(l.gpa, "$m");
+        return l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag });
+    }
+
+    /// The arguments a call of a derived function passes for its evidence:
+    /// `values` as they are, or — past `max_positional_evidence`, where
+    /// `derivedArrow` wrote the function to take one array — `[values…]`.
+    /// Decided by the COUNT, which the caller and the declaring module
+    /// agree on (it is the row's context length either way), so a
+    /// cross-module nominal needs no flag in any table.
+    fn packEvidence(l: *Lowerer, values: []const Node.Index, p: u32) ![]const Node.Index {
+        if (values.len <= max_positional_evidence) return values;
+        const range = try l.b.addRange(values);
+        const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+        const one = try l.scratch.alloc(Node.Index, 1);
+        one[0] = array;
+        return one;
     }
 
     /// `a && b`, or `b` when there is no `a` yet.
@@ -2823,7 +2872,8 @@ const Lowerer = struct {
     ) !Node.Index {
         const t = l.in.dispatch.term(part);
         const callee = try l.derivedName(t, p);
-        return l.applyEvidence(callee, try l.termValues(l.in.dispatch.argsAt(t.argsOf()), kind, p), left, right, p);
+        const evidence = try l.termValues(l.in.dispatch.argsAt(t.argsOf()), kind, p);
+        return l.applyEvidence(callee, try l.packEvidence(evidence, p), left, right, p);
     }
 
     /// `M$m(<its evidence…>, l, r)` — a `top` or `ext` value at one body
@@ -2899,7 +2949,7 @@ const Lowerer = struct {
         }
         const callee = try l.derivedName(t, p);
         if (args.len == 0) return callee;
-        return l.etaExpand(callee, try l.termValues(args, kind, p), 2, p);
+        return l.etaExpand(callee, try l.packEvidence(try l.termValues(args, kind, p), p), 2, p);
     }
 
     /// Which of §9's two methods a derived term is.
@@ -3228,6 +3278,17 @@ const Lowerer = struct {
     /// a limit on a program.
     const max_part_depth: u8 = 32;
 
+    /// The widest derived function that takes its evidence one parameter per
+    /// position; a wider one, of any shape, takes one array (static-dispatch
+    /// §9 *The wide form*, A.87). An ABI number of the BACKEND's, deliberately
+    /// not tied to the checker: it equals CK-79's cap on a record `==` today,
+    /// which is why no golden moved, and R8a lifting that cap must not change
+    /// the calling convention with it. Measured under Node 24 only: a
+    /// 60 002-argument call from inside another function overflows the
+    /// default stack, and a function of more than 65 535 parameters is a
+    /// `SyntaxError` in V8 (CK-81). Browser engines are unmeasured (R2c).
+    const max_positional_evidence: usize = 4096;
+
     const parts_too_deep =
         \\The evidence of this call nests deeper than
         \\`docs/design/static-dispatch-spike.md` §7.1's `parts` can describe, which
@@ -3349,7 +3410,7 @@ const Lowerer = struct {
         // arguments — and `derived_body_missing` when no module writes it.
         if (try l.refuseEvidence(inst, &.{callee}, 1)) return null;
         const t = l.in.dispatch.term(callee);
-        return try l.termValues(l.in.dispatch.argsAt(t.argsOf()), l.derivedTermKind(t), p);
+        return try l.packEvidence(try l.termValues(l.in.dispatch.argsAt(t.argsOf()), l.derivedTermKind(t), p), p);
     }
 
     /// A `top`/`ext`/`param` callee: its evidence is the site's roots, as

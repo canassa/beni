@@ -506,6 +506,52 @@ pub fn inlineRange(d: Node.Data) SubRange {
     return .{ .start = @enumFromInt(d.lhs), .end = @enumFromInt(d.rhs) };
 }
 
+/// Push the operand expressions of expression `node` onto `stack` in
+/// REVERSE print order, so that popping them visits them in print order.
+///
+/// This is how a pass walks an expression without one stack frame per link
+/// (CK-81): the tree is as deep as the longest chain the compiler built — a
+/// derived `eq` over a 60 000-field record is one `&&` 60 000 deep, a list
+/// literal one nested object per element — so every walker keeps its own
+/// explicit stack and asks this for the children. A leaf pushes nothing, and
+/// so does an `arrow`: its body is a statement list, which each caller walks
+/// in its own way (or, for `Opt.exprUses`, deliberately not at all).
+pub fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), node: Node.Index) Allocator.Error!void {
+    const d = ir.data(node);
+    switch (ir.tag(node)) {
+        .member, .unary, .spread_property => try stack.append(gpa, @enumFromInt(d.lhs)),
+        .index_get => try stack.appendSlice(gpa, &.{ @enumFromInt(d.rhs), @enumFromInt(d.lhs) }),
+        .property => try stack.append(gpa, @enumFromInt(d.rhs)),
+        .call => {
+            try pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@enumFromInt(d.rhs)), Node.Index));
+            try stack.append(gpa, @enumFromInt(d.lhs));
+        },
+        .object, .array, .template => try pushReversed(gpa, stack, ir.extraSlice(inlineRange(d), Node.Index)),
+        .cond => {
+            const c = ir.extraData(@enumFromInt(d.rhs), Cond);
+            try stack.appendSlice(gpa, &.{ c.alternate, c.consequent, @enumFromInt(d.lhs) });
+        },
+        .binary => {
+            const b = ir.extraData(@enumFromInt(d.lhs), Binary);
+            try stack.appendSlice(gpa, &.{ b.right, b.left });
+        },
+        // Leaves; an `arrow`, whose body each caller walks itself; and the
+        // statements, which are no expression's operand. Listed, not `else`,
+        // so a new tag is a compile error here and in both printers (CK-81).
+        .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
+        .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt => {},
+    }
+}
+
+fn pushReversed(gpa: Allocator, stack: *std.ArrayList(Node.Index), items: []const Node.Index) Allocator.Error!void {
+    try stack.ensureUnusedCapacity(gpa, items.len);
+    var i = items.len;
+    while (i > 0) {
+        i -= 1;
+        stack.appendAssumeCapacity(items[i]);
+    }
+}
+
 // ---- Invariants -------------------------------------------------------------
 
 pub const VerifyError = error{

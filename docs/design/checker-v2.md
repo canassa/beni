@@ -1389,8 +1389,12 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
   - Types whose every parameter is compared with the method being derived, which is nearly all of
     them (`Maybe a`, `Result x a`, `List`), get exactly today's parameter list. So their emitted
     JavaScript does not change (§20.3).
+  - **The calling convention past 4 096 entries** is one array `$m`, for every shape (spike §9.2
+    *The wide form*, A.87, CK-81): the context is the same, only its JavaScript spelling changes,
+    decided by the entry count in `Convention` (R2b).
 - **Structural shapes** (record, tuple, unit) keep "one parameter per field or element, same
-  method" (spike §9.2 and §9.3). Their context is positional and trivially known.
+  method" (spike §9.2 and §9.3). Their context is positional and trivially known. Past 4 096
+  positions they take one array, as every shape does (the D4 bullet above).
 
 ### 11.3 Private methods (D1, CK-22)
 

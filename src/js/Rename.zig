@@ -210,6 +210,8 @@ pub const Module = struct {
     current: u32 = 0,
     /// The locals of the declaration being assigned, in emission order.
     order: std.ArrayList(NameIndex) = .empty,
+    /// `collectExpr`'s explicit stack (CK-81), shared by the walks it nests.
+    stack: std.ArrayList(Index) = .empty,
     /// The ordinals the globals this declaration mentions were given, as a
     /// bitset over the range a local could possibly be assigned from. A global
     /// above that range cannot collide with a local, so it is not recorded.
@@ -280,14 +282,15 @@ pub const Module = struct {
         // Distinctness among the locals themselves. `enter` hands out a
         // strictly increasing ordinal so this cannot fire; it is here because
         // "cannot fire" is the claim, and a check is how a claim survives an
-        // edit.
-        for (m.order.items, 0..) |a, ai| {
-            for (m.order.items[ai + 1 ..]) |b| {
-                if (a == b) continue; // the same name twice is one binding
-                if (m.local[a.unwrap().?] != m.local[b.unwrap().?]) continue;
-                m.failure = .{ .kind = .collision, .name = a };
-                return;
-            }
+        // edit. It checks the stronger claim, that the ordinals INCREASE
+        // along `order` (which `see` keeps free of repeats), because that is
+        // linear: the all-pairs form was quadratic in a declaration's locals,
+        // 46 s of a safety build's `--release` on a derived `compare` with
+        // 65 535 `$o$<i>` (CK-81).
+        for (m.order.items[0..m.order.items.len -| 1], m.order.items[@min(1, m.order.items.len)..]) |a, b| {
+            if (m.local[a.unwrap().?] < m.local[b.unwrap().?]) continue;
+            m.failure = .{ .kind = .collision, .name = a };
+            return;
         }
     }
 
@@ -380,36 +383,21 @@ pub const Module = struct {
         try m.collectList(f.body(), mentioned);
     }
 
-    fn collectExpr(m: *Module, node: Index, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
-        const d = m.ir.data(node);
-        switch (m.ir.tag(node)) {
-            .ident => try m.see(@enumFromInt(d.lhs), mentioned),
-            // A `member`'s key and a `property`'s key are PROPERTY names and
-            // are item 4's, not this pass's.
-            .member, .unary, .spread_property => try m.collectExpr(@enumFromInt(d.lhs), mentioned),
-            .index_get => {
-                try m.collectExpr(@enumFromInt(d.lhs), mentioned);
-                try m.collectExpr(@enumFromInt(d.rhs), mentioned);
-            },
-            .property => try m.collectExpr(@enumFromInt(d.rhs), mentioned),
-            .call => {
-                try m.collectExpr(@enumFromInt(d.lhs), mentioned);
-                for (m.ir.extraSlice(m.ir.subRange(@enumFromInt(d.rhs)), Index)) |a| try m.collectExpr(a, mentioned);
-            },
-            .object, .array, .template => for (m.ir.extraSlice(JsIr.inlineRange(d), Index)) |c| try m.collectExpr(c, mentioned),
-            .cond => {
-                try m.collectExpr(@enumFromInt(d.lhs), mentioned);
-                const c = m.ir.extraData(@enumFromInt(d.rhs), JsIr.Cond);
-                try m.collectExpr(c.consequent, mentioned);
-                try m.collectExpr(c.alternate, mentioned);
-            },
-            .binary => {
-                const b = m.ir.extraData(@enumFromInt(d.lhs), JsIr.Binary);
-                try m.collectExpr(b.left, mentioned);
-                try m.collectExpr(b.right, mentioned);
-            },
-            .arrow => try m.collectFunc(@enumFromInt(d.lhs), mentioned),
-            else => {},
+    /// Iterative, over `stack` (CK-81, `JsIr.pushOperands`), in print order:
+    /// an expression is as deep as the longest chain the compiler built. A
+    /// `member`'s key and a `property`'s key are PROPERTY names and are item
+    /// 4's, not this pass's, so no operand walk yields them.
+    fn collectExpr(m: *Module, root: Index, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
+        const base = m.stack.items.len;
+        defer m.stack.shrinkRetainingCapacity(base);
+        try m.stack.append(m.gpa, root);
+        while (m.stack.items.len > base) {
+            const node = m.stack.pop().?;
+            switch (m.ir.tag(node)) {
+                .ident => try m.see(@enumFromInt(m.ir.data(node).lhs), mentioned),
+                .arrow => try m.collectFunc(@enumFromInt(m.ir.data(node).lhs), mentioned),
+                else => try m.ir.pushOperands(m.gpa, &m.stack, node),
+            }
         }
     }
 };

@@ -2036,6 +2036,34 @@ one function whatever the two fields hold, and the two arguments it is handed co
 `Derived` row carries `evidence_count` and, for a nominal shape, the body's positions — never a
 use's arguments.
 
+**The wide form** (CK-81, 2026-09-24, A.87). **Every** derived function — of any shape, record,
+tuple or nominal — with **more than 4 096** evidence parameters takes them as ONE parameter, the
+array `$m`, and reads position *k* as `$m[k]`; every call of it passes the same evidence as an array
+literal, and an eta-expansion wraps that call:
+
+```js
+const Main$eq$r$f1$f10$f100$… = ($m, $x, $y) => $m[0]($x.f1, $y.f1) && $m[1]($x.f10, $y.f10) && …;
+const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$prim, …], $x.a, $y.a);
+```
+
+- **4 096 is an ABI number of the backend's** (`Lower.max_positional_evidence`), not a checker
+  limit. It equals CK-79's cap on a record `==` today, which is why no emitted output 4 096 wide or
+  narrower changed; lifting that cap (R8a) must not move it.
+- **Why.** The positional form is legal JavaScript but not loadable at that width: under Node 24 a
+  call of 60 002 arguments from inside another function overflows the default stack (`RangeError`
+  at run time), and V8 refuses a function of more than 65 535 parameters (`SyntaxError` at load). An
+  array has neither limit. **Only Node was measured.** That 4 096 positional arguments are safe in
+  JavaScriptCore and SpiderMonkey on a browser-sized stack is unmeasured; R2c measures it.
+- **Who reaches it.** A record payload of a nominal type past 4 096 fields (a use's record `==` is
+  refused by CK-79 first), and a nominal type whose own context passes 4 096 entries (a type of
+  5 000 parameters, in one module).
+- **Agreement.** The function and every caller decide by the same **count** — the row's context
+  length, which is also the number of arguments each use passes — so no table, dump or interface
+  carries a flag. A cross-module nominal row (`ext_derived`) would agree with its importers by
+  construction, but that path is **unexercised**: an imported nominal of 256 or more type
+  parameters is refused by the I7 assert today (CK-38, the `u8` arity), so no import reaches 4 097
+  until R3. R2b moves the decision into `Convention` (checker-v2.md §12.5).
+
 ### 9.3 Tuples and unit
 
 Shape key is the arity; positions are the slot names `a`, `b`, `c`, … of `backend.md` §4.
@@ -2061,6 +2089,8 @@ const Main$compare$unit = (x, y) => "EQ";
 ### 9.4 Nominal types
 
 > **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
+> **The wide form** (§9.2, A.87) applies here too: a nominal derived function with more than 4 096 evidence parameters takes them as one array `$m`, and its callers pass one array literal.
 
 **All-nullary types** are bare tag strings, so `eq` is `===` and the checker gives the site
 `primitive strict_eq` directly rather than a derived function (§6.3.1 step 4) — there is nothing to
@@ -4115,3 +4145,17 @@ cyclic one is `infinite_type` at the use and poisoned. Only a type nested 64 lev
 finite chain that long, and then the check is one occurs walk that answers no. Fixtures:
 `tests/corpus/check/bad/LetHelperCyclicReceiver` and the time-bounded scenario in
 `tests/blackbox/abuse_test.zig`.
+
+**A.87 — past 4 096 evidence parameters a derived function takes one array** (§9.2 *The wide
+form*, §9.4, CK-81, R2a stage 2, 2026-09-24). A derived function of any shape whose context has more
+than 4 096 entries is written `($m, $x, $y) => …$m[k]…`, and every call and eta-expansion of it
+passes `[e0, e1, …]` in place of the positional evidence; at 4 096 or fewer nothing changes. The
+reason is the engine, not the language: a 60 000-field nominal payload built, then threw
+`RangeError` in Node 24 at the 60 002-argument call, and V8 refuses more than 65 535 parameters.
+The number is the backend's own (`Lower.max_positional_evidence`) and not the checker's CK-79 cap it
+equals today, so lifting the cap cannot silently restore the positional form. Only Node was
+measured (browser engines: R2c). *Why not the alternative* — a named refusal of the wide payload —
+rule 7: the program is valid and an array runs it; *or inlining the comparison into the nominal's
+body* — the row is shared by shape (A.11), and a caller of the eta-expanded row as evidence would
+still need its parameters. Fixture: `tests/blackbox/abuse_test.zig`, "derived eq and compare over a
+60 000- and a 65 535-field nominal payload build and run, in both builds".

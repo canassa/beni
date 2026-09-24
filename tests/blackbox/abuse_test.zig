@@ -1758,3 +1758,180 @@ test "== on a record runs up to the derived-field cap and is refused past it, ne
         try testing.expect(!w.exists("wide"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Chains as long as their input is wide (CK-81)
+// ---------------------------------------------------------------------------
+
+/// `type T = T { f1 : Int, …, f<n> : Int }`, `r` a record of that shape, `s`
+/// the same with field `f<n>` set to 0, and a `main` printing `T r == T r`,
+/// `T r == T s`, `T s < T r`, `T r < T s` and `[ T r ] == [ T r ]`.
+fn wideNominalProgram(gpa: Allocator, n: usize) ![]u8 {
+    var source: std.Io.Writer.Allocating = .init(gpa);
+    errdefer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\ntype T =\n    T { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
+    try out.writeAll(" }\n\n\nr : { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
+    try out.writeAll(" }\nr =\n    { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
+    try out.writeAll(" }\n\n\ns : { ");
+    for (1..n + 1) |i| try out.print("{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
+    try out.print(" }}\ns =\n    {{ r | f{d} = 0 }}\n\n\n", .{n});
+    try out.writeAll(
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (T r == T r), show (T r == T s), show (T s < T r), show (T r < T s), show ([ T r ] == [ T r ]) ]
+        \\
+    );
+    return source.toOwnedSlice();
+}
+
+test "derived eq and compare over a 60 000- and a 65 535-field nominal payload build and run, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // CK-81. The eager pass derives `T`'s `eq` and `compare` through its
+    // payload's record, whose derived body compares every field inline: one
+    // left-nested `&&` 60 000 deep, and 60 000 statements for `compare`. The
+    // printer recursed once per `&&` and segfaulted the compiler; so would
+    // `--release`'s two walks. It iterates now (`JsIr.pushOperands`, the
+    // printer's work stack). And the function took one evidence parameter
+    // per field, so the build that no longer crashed threw `RangeError` in
+    // Node at 60 000 — a 60 002-argument call from inside `T`'s `eq`
+    // overflows the default stack — and at 65 535 V8 refuses the function
+    // (65 537 parameters). Past 4 096 the evidence is one array now
+    // (static-dispatch §9.2's wide form), so both run. 65 535 is the widest
+    // the checker takes today (CK-82). The record `==` of CK-79's cap is not
+    // involved: `T r == T r` compares a nominal type.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const expected = "True\nFalse\nTrue\nFalse\nTrue\n";
+
+    for ([_]usize{ 60_000, 65_535 }) |n| {
+        const source = try wideNominalProgram(testing.allocator, n);
+        defer testing.allocator.free(source);
+        try w.write("Main.beni", source);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const dev = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(dev.build, 0);
+        try testing.expectEqualStrings("", dev.build.stderr);
+        try testing.expectEqualStrings(expected, dev.program.?.stdout);
+        try testing.expectEqual(@as(u8, 0), dev.program.?.exit_code);
+    }
+
+    // The widest once more under `--release`: `Opt`'s and `Rename`'s walks
+    // over the same chain, and `Rename`'s safety check, which was quadratic
+    // in a declaration's locals (46 s here on a Debug build).
+    const release = try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" });
+    try expectExited(release.build, 0);
+    try testing.expectEqualStrings(expected, release.program.?.stdout);
+    try testing.expectEqual(@as(u8, 0), release.program.?.exit_code);
+}
+
+test "a 200 000-element list literal is EMITTED without a stack overflow, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A list literal lowers to one `{ $: 1, a: x, b: … }` per element, each
+    // inside the last, and the parser does not charge its depth for the
+    // elements. The printer recursed per level and segfaulted the build
+    // (CK-81). What Node then makes of an object literal nested 200 000 deep
+    // is CK-83's — it throws `RangeError` at load from about 1 700 — so this
+    // asserts the compiler's half: the build finishes and writes the module.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var source: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer source.deinit();
+    try source.writer.writeAll("import Node exposing (Program)\n\n\nxs : List Int\nxs =\n    [ 1");
+    for (1..200_000) |_| try source.writer.writeAll(", 1");
+    try source.writer.writeAll(" ]\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (List.length xs) ]\n");
+    try w.write("Main.beni", source.written());
+
+    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.runWith(&.{ "build", "--no-cache", flag, "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(r, 0);
+        try testing.expectEqualStrings("", r.stderr);
+        try testing.expect(w.exists("out/Main.mjs"));
+    }
+}
+
+test "a written operator chain runs at the widest Node loads, and 100 000 terms are one nesting_too_deep" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The user's half of CK-81: an operator chain a person writes. The
+    // parser charges every operator to `Parse.max_depth`, so a chain is
+    // bounded before the backend sees it: `&&` over `x == 3` reaches the
+    // budget at 1 366 terms (three charges each), and 100 000 terms of any
+    // operator is exactly one `nesting_too_deep`. Under it the chain goes
+    // through check, both walks and the printer and runs. `+` and `++` are
+    // run at 1 500, not at the parser's 4 095: Node refuses the nesting they
+    // lower to from about 1 700 (`Basics$add(Basics$add(…))`, `a && (b &&
+    // …)`), which is CK-83 and not asserted here.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const Case = struct { head: []const u8, term: []const u8, op: []const u8, width: usize, tail: []const u8, expected: []const u8 };
+    const cases = [_]Case{
+        .{ .head = "x : Int\nx =\n    3\n\n\nb : Bool\nb =\n    ", .term = "x == 3", .op = " && ", .width = 1_365, .tail = "Node.printLines [ if b then \"yes\" else \"no\" ]", .expected = "yes\n" },
+        .{ .head = "x : Int\nx =\n    1\n\n\nb : Int\nb =\n    ", .term = "x", .op = " + ", .width = 1_500, .tail = "Node.printLines [ String.fromInt b ]", .expected = "1500\n" },
+        .{ .head = "x : String\nx =\n    \"a\"\n\n\nb : String\nb =\n    ", .term = "x", .op = " ++ ", .width = 1_500, .tail = "Node.printLines [ String.fromInt (String.length b) ]", .expected = "1500\n" },
+    };
+    for (cases) |case| {
+        for ([_]usize{ case.width, 100_000 }) |n| {
+            var source: std.Io.Writer.Allocating = .init(testing.allocator);
+            defer source.deinit();
+            try source.writer.print("import Node exposing (Program)\n\n\n{s}", .{case.head});
+            for (0..n) |i| try source.writer.print("{s}{s}", .{ if (i == 0) "" else case.op, case.term });
+            try source.writer.print("\n\n\nmain : Program\nmain =\n    {s}\n", .{case.tail});
+            try w.write("Main.beni", source.written());
+
+            // ┌─────────────────────────────────┐
+            // │ EXECUTE                         │
+            // └─────────────────────────────────┘
+            if (n == case.width) {
+                const ran = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+                const released = try w.buildAndRun(&.{ "--no-cache", "--release", "Main.beni" });
+
+                // ┌─────────────────────────────┐
+                // │ VERIFY OUTPUT               │
+                // └─────────────────────────────┘
+                for ([_]World.BuildAndRun{ ran, released }) |r| {
+                    try expectExited(r.build, 0);
+                    try testing.expectEqualStrings(case.expected, r.program.?.stdout);
+                    try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+                }
+                continue;
+            }
+            const refused = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=wide", "Main.beni" });
+            try expectExited(refused, 1);
+            try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.nesting_too_deep, refused.diagnostics[0].code);
+            try testing.expect(!w.exists("wide"));
+        }
+    }
+}

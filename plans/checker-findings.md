@@ -1323,6 +1323,13 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   (256 arguments) in `Main.beni`.
 - **Command** `B check --no-cache Main.beni Wide.beni`.
 - **Observed** WRONG TYPE ARITY: "`Wide` takes 255 type arguments, but here it has 256."
+- **Also observed** (R2a stage 2's review, 2026-09-24, on 7fd409e and after): `==` or `<` on an
+  imported nominal of 256 or more type parameters is four `internal` diagnostics (the I7 assert,
+  `checker-v2.md` §13.1) at every use, where 255 imported, or 256 in one module, is fine: the
+  `ext_derived` requirement count comes from `types.entry(id).arity`, the same `u8`. So a valid
+  program gets an INTERNAL ERROR, not only `wrong_type_arity`; and the cross-module half of
+  `static-dispatch-spike.md` §9.2's wide form (past 4 096 entries) is unreachable until this is
+  fixed.
 - **Expected** Checks. Spec: `language.md` §4 (no arity limit stated).
 - **Root cause** `Types.Entry.arity: u8` (`Types.zig:81`), the interface type rows
   (`Interface.zig:293`, `358`, `369`), and the saturating cast at `Interface.zig:871`.
@@ -2300,7 +2307,12 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   parameter per field. That is a `backend.md` §9 / `static-dispatch-spike.md` §9 representation
   change, with `Dispatch.Derived.evidence_count: u16` widened or removed.
 - **Fixture** the abuse scenario above. Its expectation changes with the fix.
-- **Slice** R2a (manager, 2026-09-24): lifting the cap means the derived record comparison must not recurse per field, and R2a rewrites how `Lower` builds derived bodies; with CK-81 (the printer's recursion on the same chain).
+- **Slice** R8a (manager, 2026-09-24, moved from R2a): the cap exists because a derived record function takes one evidence parameter per field. D4 (R8a) already changes the derived-function signature to one parameter per context entry; packing the evidence belongs to that change, so it is done once, not twice.
+- **Note** (R2a stage 2, 2026-09-24, for the manager): the one-value representation the Expected line
+  asks for now exists past 4 096 positions — `static-dispatch-spike.md` §9.2's wide form, landed for
+  CK-81 and reached today only through a nominal payload. What lifting the cap still needs is the
+  checker half and the `u16` (CK-82). `checker-v2.md` §11.2 keeps structural shapes "one parameter
+  per field" under D4, so D4 by itself does not remove the per-field list.
 
 ### CK-80 — `==` on a value whose type is a doubling DAG takes time exponential in its depth
 
@@ -2332,8 +2344,93 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   is derived by the eager pass, not by the record walk at the use.
 - **Expected** It builds and runs, or a named refusal. A flat `&&` chain printed iteratively, or a
   loop over the fields, would do; so would the same 4 096 cap on a derived nominal body's width.
-- **Fixture** none yet: a generated abuse scenario when a slice takes it.
+- **Fixture** `abuse_test.zig`: "derived eq and compare over a 60 000- and a 65 535-field nominal
+  payload build and run, in both builds" and "a 200 000-element list literal is EMITTED without a
+  stack overflow, in both builds" (both segfault on 7fd409e); "a written operator chain runs at the
+  widest Node loads, and 100 000 terms are one nesting_too_deep" guards the user's path. In-source:
+  `Print.zig`'s 200 000-link chain test.
 - **Slice** R2a (manager, 2026-09-24): R2a already rewrites how `Lower` builds derived bodies, and the printer's per-`&&` recursion is the same shape; R2a makes `js/Print.zig` iterate over operator chains.
+- **Status** fixed by R2a stage 2 (2026-09-24). Five walkers recursed once per link of a chain the
+  compiler builds as long as its input is wide: a derived record `eq`'s `&&` (one per field; a
+  derived `compare` is a flat statement list and never recursed), and a list literal's nested
+  `{ $: 1, a, b }` (one per element, not charged by the parser, so a 200 000-element literal also
+  segfaulted `build`). They were `Print.expression`/`raw`, and under `--release`
+  `Opt.countExpr`, `planExpr`, `exprUses` and `Rename.collectExpr`. Past 256 levels the printer now
+  switches from recursion to an explicit work stack (bytes identical: two in-source tests, one
+  generated over every expression kind, print both ways and compare, and the printers' and
+  `JsIr.pushOperands`'s switches list every tag, so a new one does not compile until all three
+  handle it), and the four release walks pop operands from an explicit stack (`JsIr.pushOperands`); the only recursion
+  left past the limit is an `arrow`'s block body. The stack for every expression cost the emit
+  phase 3–8 %, hence the hybrid; as landed, emit is 52.23 ms against 52.21 on 7fd409e. `Lower` built the chain
+  in a loop already, and `Reach` and `Edges` walk dispatch terms, not `JsIr`. Two more things stood
+  between the fixed printer and a program that RUNS at 60 000 fields:
+  - Node threw `RangeError` at the 60 002-argument call of the derived record function from inside
+    `T$$eq` (it runs with `--stack-size=3000`), and V8 refuses a function of more than 65 535
+    parameters outright. Past 4 096 evidence parameters a derived function now takes ONE array,
+    `$m`, and every caller packs the same count into an array literal (`static-dispatch-spike.md`
+    §9.2, *The wide form*, A.87; `Lower.packEvidence`), for every shape. 4 096 is the backend's own
+    ABI constant; it equals CK-79's cap today, so no golden moved.
+  - `Rename.verify`'s distinctness check was all-pairs over a declaration's locals: 46 s of a Debug
+    `--release` build on the 65 535-field `compare` (65 535 `$o$<i>`). It checks that the ordinals
+    increase along `order` instead, linear, 9 s.
+  End to end on a Debug build: 60 000 and 65 535 fields build (about 9 s each, dev and `--release`)
+  and print the five answers of `T r == T r`, `T r == T s`, `T s < T r`, `T r < T s` and
+  `[ T r ] == [ T r ]` correctly. 65 536 and up panic the CHECKER before the backend runs (CK-82).
+  Found on the way, outside the backend's recursion: CK-83 (Node rejects the nesting several
+  accepted programs lower to). Red proof on the Debug harness binary (a ReleaseSafe 7fd409e builds
+  the 60 000-field program without crashing).
+
+### CK-82 — A nominal payload record wider than 65 535 fields panics the checker, compared or not
+
+- **Severity** compiler-crash-or-hang. **Area** derivation's evidence count (`check/Solve.zig`).
+  **Class** K10 (a representation width). **Sources** R2a stage 2, probing CK-81 at 200 000 fields.
+  Present on 7fd409e.
+- **Program** `type T = T { f1 : Int, …, f65536 : Int }` and nothing else (a `module … exposing
+  (T(..))` header, no `==`, no `main`).
+- **Command** check.
+- **Observed** `panic: integer does not fit in destination type` at `Solve.derivedUse`'s
+  `@intCast(positions.len)` into the `u16` evidence count, reached from
+  `settleOrdinaryCapabilities` → `targetFor` → `recordTarget`: the eager pass probes every type's
+  derived `eq`/`compare` whether or not anything compares it. A ReleaseFast build (measured by
+  R2a stage 2's review at 65 536, 65 540 and 70 000 fields) does not crash: `check` alone exits 0
+  at 65 536, and `build` exits 1 with a false NOT EQUATABLE on `T` plus NO METHODS HERE, so a
+  shipping compiler rejects a valid program with a wrong message. CK-79's cap stops a record `==` at 4 096 before derivation, but a nominal
+  payload is derived by the eager pass and never meets the cap (CK-81's route). At 65 535 fields the
+  program checks, builds and runs (`abuse_test.zig`, CK-81).
+- **Expected** It checks; and built, it runs, which the wide form of `static-dispatch-spike.md` §9.2
+  already makes possible past 65 535 positions once the count fits. Or a named refusal at the use,
+  never at a declaration nothing compares (rule 7).
+- **Fixture** `pending_test.zig` scenario `CK-82` (65 536 fields, `T r == T r` built and run).
+- **Slice** R8a (manager, 2026-09-24), with CK-79. R8a owns CK-79 and `Dispatch.Derived`'s context, where the `u16`
+  lives.
+
+### CK-83 — Programs the compiler accepts lower to JavaScript nested deeper than Node will load
+
+- **Severity** unsound-runtime (a build that exits 0 and throws at load). **Area** JS lowering and
+  the parser's depth budget. **Class** K14. **Sources** R2a stage 2, measuring CK-81's user path.
+  Present on 7fd409e.
+- **Program** any of: a list literal of 1 700 elements; `x + x + …` or `x ++ x ++ …` of 1 700
+  terms; 2 000 nested calls `f (f (… 1))`.
+- **Command** build+run.
+- **Observed** `beni build` exits 0 and `node out/_main.mjs` throws `RangeError: Maximum call stack
+  size exceeded` while V8 PARSES the module. The emitted JavaScript nests as deep as the source
+  chain: a list literal is one `{ $: 1, a: x, b: { … } }` per element, `+` is
+  `Basics$add(Basics$add(…))`, `++` is `Basics$append(x, Basics$append(…))`, and `&&` prints as
+  `a && (b && (…))`. Node 24's parser gives out between 1 500 and 1 700 levels (measured: 1 500
+  runs, 1 700 throws, for all three). The parser's budget (`Parse.max_depth`, 4 096 charges per
+  declaration) sits above that for `+`/`++` and does not charge a list's elements at all, so a
+  list literal of any length past about 1 700 builds and throws. `&&` over `x == 3` is refused by
+  the budget at 1 366 terms first, and runs up to it. Deeper still, a 200 000-element list used to
+  segfault the printer (CK-81); it now builds and throws the same `RangeError`.
+- **Expected** Every program the compiler accepts loads (rule 7: the guarantee is no runtime
+  exception). A list literal long enough to matter needs a flat form — built from an array, or in
+  chunks — and a long operator chain a flat one (`&&`, `||` and `++`'s strings are associative;
+  `Basics$add` chains could be bound to temporaries). Or a budget the engines can meet, which a
+  list's elements would then have to count against.
+- **Fixture** `pending_test.zig` scenario `CK-83` (a 2 000-element list literal and 2 000-term `+`
+  and `++` chains, each built and run).
+- **Slice** R2c (manager, 2026-09-24): a small backend slice after R2b, spec first in `backend.md` §4. It is a `backend.md` §4 representation question (the list
+  literal's shape), not the checker's.
 
 ## Summary table
 
@@ -2423,15 +2520,17 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-78 | decision (supported) | K14 | guard `tests/corpus/run/RecordAliasConstructorPattern.beni` | R1 |
 | CK-79 | valid-program-rejected | K10 | — (`abuse_test.zig` pins the 4 096 cap) | unassigned — manager |
 | CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a |
-| CK-81 | compiler-crash-or-hang | K11 | — (none yet) | unassigned — manager |
+| CK-81 | compiler-crash-or-hang | K11 | promoted: `abuse_test.zig` (two scenarios) | R2a (fixed) |
+| CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (with CK-79) |
+| CK-83 | unsound-runtime | K14 | `scenario/CK-83` | R2c |
 
 Totals:
-- 81 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 17. Two of them (CK-13, CK-24) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 8.
+- 83 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 18 (CK-83 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 9.
 - valid-program-rejected: 17.
 - nondeterminism: 2.
 - performance: 5.
 - diagnostic-quality: 22.
 - latent: 9.
-- Outside the checker (K14): 6 (CK-78 among them).
+- Outside the checker (K14): 7 (CK-78 and CK-83 among them).

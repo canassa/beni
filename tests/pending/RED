@@ -108,3 +108,5 @@ scenario/CK-80 v1 slow
 scenario/PERM v1 exit=1 codes=method_needs_annotation×1
 scenario/NEST-UNDER v1 exit=1 codes=method_needs_annotation×200
 scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×20000
+scenario/CK-82 v1 crash=ABRT
+scenario/CK-83 v1 exit=0 program-exit=1

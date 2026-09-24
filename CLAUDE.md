@@ -56,7 +56,7 @@ functions await S3. `check` and interface dumps accept schemas; `build` refuses
 them from emit before any output, with `not_implemented`: their parse and print
 are not generated until S4. A.6 owns interface v2, frontend artifact v3 (v4 since
 the checker rewrite's R1: a new token and a wider exposed row), cache
-entry v2 and the unhashed plan v1. Queue row 67 and the brace-modifier row 70
+entry v2 (v3 since R2a) and the unhashed plan v1. Queue row 67 and the brace-modifier row 70
 are fixed. Remaining decisions lead the document; H4 remains open. The
 recorded M4-first slices 1–3 have landed (schema.md A.2–A.4).
 

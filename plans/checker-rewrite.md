@@ -332,12 +332,51 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     kept on purpose (S1, `tests/pending/run/DeadMiscount.beni`, CK-30). Derived callees' own
     arguments print as `arg` lines. Pending perf scenarios measure CPU time.
   - Stage 2 (CK-79, CK-81) is a separate brief.
+- **As built (stage 2, 2026-09-24): CK-81.** CK-79 moved to R8a before the brief.
+  - What recursed once per link of a chain the compiler builds as long as its input is wide (a
+    derived record body's `&&`, one per field; a list literal's nested `{ $: 1, a, b }`, one per
+    element): `Print.expression`/`raw` in every build, and `Opt.countExpr`, `planExpr`, `exprUses`
+    and `Rename.collectExpr` under `--release`. `Lower` builds both chains in loops, `JsIr.verify`
+    is flat, and `Reach`/`Edges` walk dispatch terms, not `JsIr`.
+  - The printer recurses as before for 256 levels and past them expands through an explicit
+    work stack (the stack for everything cost emit 3–8 %). Two in-source tests print both ways and
+    compare bytes, one a generated module over every expression kind at switch-over limits 0, 3, 7
+    and 256; and `rawRecursive`, `expand` and `JsIr.pushOperands` list every tag with no `else`,
+    so a new node kind does not compile until all three handle it. The four release walks pop
+    operands from one stack (`JsIr.pushOperands`). Past the limit the only recursion left is an
+    `arrow`'s block body. Bench (ReleaseFast, `--generate=100000`, medians of 7 interleaved): emit
+    52.23 ms against 52.21 on 7fd409e. Every `run/`, `emit/` and `emit/release/` golden is
+    byte-identical without re-blessing.
+  - Running, not only building, at 60 000 fields took two more changes. First,
+    `static-dispatch-spike.md` §9.2's **wide form** (spec amended first; A.87): past 4 096
+    evidence parameters a derived function of any shape takes one array `$m`, and every caller
+    packs the same count. 4 096 is the backend's own ABI constant, equal to CK-79's cap today, so
+    no narrower output moves. It was needed because Node threw `RangeError` at the 60 002-argument
+    call and V8 refuses more than 65 535 parameters. Second, a linear `Rename.verify` (the
+    all-pairs check took 46 s of a Debug `--release` build at 65 535 fields).
+  - End to end, Debug binary: 60 000 and 65 535 fields build in about 9 s (dev and `--release`)
+    and print all five answers correctly; 65 536 and up panic the checker (**CK-82**, new). A
+    200 000-element list literal builds; it and several other accepted programs then throw
+    `RangeError` while Node parses them, from about 1 700 levels (**CK-83**, new). Both are pending
+    scenarios; the manager assigned CK-82 to R8a and CK-83 to R2c. A written operator chain is
+    bounded by the parser first: 100 000 terms is one `nesting_too_deep`.
+  - Red proof, on the Debug binary the harness runs (a ReleaseSafe 7fd409e builds the 60 000-field
+    program without crashing): the two new `abuse_test.zig` CK-81 scenarios die of `SIGSEGV` on
+    7fd409e; with the walkers fixed and no wide form, the 60 000-field program builds and prints
+    nothing.
 
 ### R2b — One calling convention
 
 - **Goal.** `check/Convention.zig` (§12.5) decides a constrained value's definition, call and
   load-time behaviour for `Lower`, `Cycles`, `Edges` and `Reach`, reading `DeclInfo.convention` and
   `value_arity`.
+  - It also owns the fourth reading R2a stage 2 added: whether a DERIVED function takes its evidence
+    positionally or as one array (`static-dispatch-spike.md` §9.2 *The wide form*, A.87), decided
+    today by the entry count against `Lower.max_positional_evidence` in two places, `derivedArrow`
+    and `packEvidence` (three call sites).
+  - Nit, recorded by R2a stage 2's review, not required: a wide call's evidence array whose every
+    element is a module-level name is rebuilt on every call; it could be hoisted to one
+    module-level `const`.
 - **Files.** New: `check/Convention.zig`. Also `js/Lower.zig` (the three zero-parameter readings
   replaced), `check/Cycles.zig`, `check/Edges.zig`, `js/Reach.zig`, and `cache/dispatch_bytes.zig`
   (v3, for the convention column).
@@ -347,7 +386,26 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - Every other `run/` and `emit/` golden is unchanged.
   - `test-pending` is green.
 - **Reviewer focus.** `Convention` is the **only** place the three readings are decided: grep for
-  `params == 0` in `Lower`, `Cycles` and `Reach`.
+  `params == 0` in `Lower`, `Cycles` and `Reach`. And the wide form: grep for
+  `max_positional_evidence`, `evidence_array` and `packEvidence` outside `Convention`.
+
+### R2c — Emitted JavaScript nests only as deep as the source (added by the manager, 2026-09-24)
+
+- **Goal.** Close CK-83: a program the compiler accepts must not lower to JavaScript that Node (or
+  a browser engine) refuses to parse. List literals, `+`/`++` chains and nested calls that the
+  parser admits today reach about 1 700–2 000 levels of emitted nesting, past V8's parser.
+- **Approach.** Spec first in `backend.md` §4: decide the emitted shape for each long form (e.g.
+  a list literal as a flat array handed to one constructor call, a long operator chain split into
+  bounded helpers), or a named refusal where no shape exists, with the engine measurements
+  (V8 and at least one of JavaScriptCore/SpiderMonkey, browser first). Small programs' output
+  should stay byte-identical where the representation allows.
+- **Also measure** the wide form's threshold (`static-dispatch-spike.md` §9.2, A.87): that a
+  4 096-argument call is safe in JavaScriptCore and SpiderMonkey on a browser-sized stack. Only
+  Node was measured; lower `Lower.max_positional_evidence` if a browser engine needs it.
+- **Closes.** CK-83, promoted from `scenario/CK-83`; the existing abuse test that builds 4 000
+  nested calls must then also RUN.
+- **Exit criteria.** The gates are green; `test-pending` green; every `run/`/`emit/` golden that
+  moves is listed and justified; emit phase within ±3 %.
 
 ### R3 — Interface v3
 
@@ -777,7 +835,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 |---|---|---|---|
 | R0 | — | — | records everything |
 | R1 | CK-11, 17, 19, 43, 44, 45, 46, 47, 71 | — | CK-12 (unit test); CK-78 (a decision, with a guard) |
-| R2a | CK-79, CK-81 (v1 `Lower`/`Print`, manager 2026-09-24) | — | CK-61 |
+| R2a | CK-81 (v1 `Print`, manager 2026-09-24) | — | CK-61 |
 | R2b | CK-33, 34 | — | — |
 | R3 | CK-38, 39, 41 | — | — |
 | R4a | — | — | CK-15 (the cutoff protocol leaves `Check.zig`) |
@@ -786,15 +844,16 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 80 | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32 | — |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
-| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77 | CK-26 |
+| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26 |
 | R8b | — | CK-22, 24 | — |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60 | — | — |
 | R14 | CK-37 (rest) | — | — |
-| (assigned 2026-09-24) | — | — | CK-79 and CK-81, found by R1 and its review, are R2a's (manager) |
+| (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
+| (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 
-Every one of the 81 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 83 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

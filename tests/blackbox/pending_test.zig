@@ -1,7 +1,9 @@
 //! The pending scenarios (`plans/checker-rewrite.md` §2.5): one
 //! test per finding of `plans/checker-findings.md` that a corpus
-//! fixture cannot state, because its claim is about TIME. (CK-71's claim
-//! about runs agreeing was promoted into `blackbox_test.zig` by R1.) Run
+//! fixture cannot state, because its claim is about TIME, or about a program
+//! too wide or deep to check in (CK-82, CK-83: generated, as `abuse_test.zig`
+//! generates its inputs). (CK-71's claim about runs agreeing was promoted
+//! into `blackbox_test.zig` by R1.) Run
 //! only by `zig build test-pending`, never by the gates: every scenario here is
 //! expected to be RED on the checker the gates run.
 //!
@@ -50,7 +52,7 @@ const pending_root = "tests/pending";
 
 /// Every scenario of this file, by the `scenario/<id>` name `CLAIMED` and `RED`
 /// use for it.
-const scenarios = [_][]const u8{ "scenario/CK-03", "scenario/CK-40", "scenario/CK-41", "scenario/CK-42", "scenario/CK-75", "scenario/CK-80", "scenario/PERM", "scenario/NEST-UNDER", "scenario/NEST-OVER" };
+const scenarios = [_][]const u8{ "scenario/CK-03", "scenario/CK-40", "scenario/CK-41", "scenario/CK-42", "scenario/CK-75", "scenario/CK-80", "scenario/PERM", "scenario/NEST-UNDER", "scenario/NEST-OVER", "scenario/CK-82", "scenario/CK-83" };
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │ SCENARIOS                                                               │
@@ -261,6 +263,66 @@ test "NEST-OVER: a chain past the nesting budget is one nesting_too_deep" {
     defer s.deinit();
     try s.w.write("C.beni", try chain(s.arena(), 20_000));
     const verdict = try s.exactlyOne(&.{ "check", "--no-cache", "--diagnostics=json", "C.beni" }, .nesting_too_deep);
+    try s.finish(verdict);
+}
+
+// CK-82: a nominal payload record of 65 536 fields. The eager pass probes
+// `T`'s derived `eq`, and `Solve.derivedUse` casts the field count into the
+// `u16` evidence count: a panic in Debug (`crash=ABRT`), whether or not
+// anything compares `T`. 65 535 builds and runs (`abuse_test.zig`, CK-81).
+// GREEN is the program built and run, printing its two answers, or a named
+// refusal: exit 1 with diagnostics and not one of them `internal`.
+test "CK-82: a nominal payload of 65 536 fields checks, and builds and runs or is refused by name" {
+    var s = try Scenario.init("CK-82");
+    defer s.deinit();
+    const n = 65_536;
+    const a = s.arena();
+    var text: std.ArrayList(u8) = .empty;
+    try text.appendSlice(a, "import Node exposing (Program)\n\n\ntype T =\n    T { ");
+    for (1..n + 1) |i| try text.print(a, "{s}f{d} : Int", .{ if (i == 1) "" else ", ", i });
+    try text.appendSlice(a, " }\n\n\nr =\n    { ");
+    for (1..n + 1) |i| try text.print(a, "{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
+    try text.print(a, " }}\n\n\nmain : Program\nmain =\n    Node.printLines [ if T r == T r then \"eq\" else \"ne\", if T r == T {{ r | f{d} = 0 }} then \"eq\" else \"ne\" ]\n", .{n});
+    try s.w.write("Main.beni", text.items);
+    const verdict = try s.runsOrRefuses("Main.beni", "eq\nne\n");
+    try s.finish(verdict);
+}
+
+// CK-83: programs the compiler accepts, lowered to JavaScript nested deeper
+// than Node 24's parser loads: it throws `RangeError` from about 1 700
+// levels (1 500 runs). A 2 000-element list literal (uncharged by the
+// parser's budget), and 2 000-term `+` and `++` chains (under it). GREEN is
+// every one built and run, printing its length.
+// The three cases are three files of ONE project, built in turn to the same
+// `--out=out`: `build` compiles only the named entry's import graph, and each
+// build rewrites `out/_main.mjs` for its own entry before it is run, so no
+// case reads another's output.
+test "CK-83: a 2 000-element list and 2 000-term + and ++ chains build and run" {
+    var s = try Scenario.init("CK-83");
+    defer s.deinit();
+    const a = s.arena();
+    const n = 2_000;
+    const Case = struct { head: []const u8, term: []const u8, op: []const u8, tail: []const u8, close: []const u8 };
+    const cases = [_]Case{
+        .{ .head = "xs : List Int\nxs =\n    [ ", .term = "1", .op = ", ", .tail = " ]", .close = "String.fromInt (List.length xs)" },
+        .{ .head = "xs : Int\nxs =\n    ", .term = "one", .op = " + ", .tail = "", .close = "String.fromInt xs" },
+        .{ .head = "xs : String\nxs =\n    ", .term = "a", .op = " ++ ", .tail = "", .close = "String.fromInt (String.length xs)" },
+    };
+    var verdict: Verdict = .{ .green = true, .signature = "", .detail = "" };
+    for (cases, 0..) |case, k| {
+        var text: std.ArrayList(u8) = .empty;
+        try text.appendSlice(a, "import Node exposing (Program)\n\n\none : Int\none =\n    1\n\n\na : String\na =\n    \"a\"\n\n\n");
+        try text.appendSlice(a, case.head);
+        for (0..n) |i| try text.print(a, "{s}{s}", .{ if (i == 0) "" else case.op, case.term });
+        try text.print(a, "{s}\n\n\nmain : Program\nmain =\n    Node.printLines [ {s} ]\n", .{ case.tail, case.close });
+        const file = try std.fmt.allocPrint(a, "Case{d}.beni", .{k});
+        try s.w.write(file, text.items);
+        const v = try s.runsOrRefuses(file, "2000\n");
+        // A refusal is not what this finding wants: every one must run.
+        const ran = v.green and std.mem.startsWith(u8, v.detail, "ran");
+        if (!ran and verdict.green) verdict = .{ .green = false, .signature = if (v.green) "refused" else v.signature, .detail = try std.fmt.allocPrint(a, "{s}: {s}", .{ file, v.detail }) };
+    }
+    if (verdict.green) verdict.detail = "all three ran";
     try s.finish(verdict);
 }
 
@@ -532,6 +594,34 @@ const Scenario = struct {
             return .{ .green = false, .signature = v.signature, .detail = try std.fmt.allocPrint(s.arena(), "{d} of {d} orders fail; first, {s}", .{ failing, tried, v.detail }) };
         }
         return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{d} orders", .{tried}) };
+    }
+
+    /// `file` built for Node and run: GREEN when it runs and prints
+    /// `expected` (detail `ran …`), or when the build is REFUSED by name —
+    /// exit 1, diagnostics, none of them `internal` (detail `refused …`). Red
+    /// is `crash=<signal>`, `exit=<n> codes=…`, `exit=0 program-exit=<n>` or
+    /// `exit=0 stdout-differs`.
+    fn runsOrRefuses(s: *Scenario, file: []const u8, expected: []const u8) !Verdict {
+        const a = s.arena();
+        const run = try s.timed(&.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out", file }, world.bulk_timeout_ms) orelse
+            return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(a, "{s} did not finish within {d} ms", .{ file, world.bulk_timeout_ms }) };
+        const built = run.result;
+        switch (built.term) {
+            .exited => {},
+            .signal => |sig| return .{ .green = false, .signature = try std.fmt.allocPrint(a, "crash={t}", .{sig}), .detail = std.mem.trim(u8, built.stderr[0..@min(built.stderr.len, 160)], " \r\n") },
+            else => return .{ .green = false, .signature = "crash=unknown", .detail = "" },
+        }
+        if (built.exit_code != 0) {
+            const trimmed = std.mem.trim(u8, built.stderr, " \r\n");
+            const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return s.failed(built);
+            if (built.exit_code != 1 or diags.len == 0) return s.failed(built);
+            for (diags) |d| if (d.code == .internal) return s.failed(built);
+            return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(a, "refused: {t} in {d} ms", .{ diags[0].code, run.ms }) };
+        }
+        const program = try s.w.nodeWith(world.entry_file, world.bulk_timeout_ms);
+        if (program.exit_code != 0) return .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=0 program-exit={d}", .{program.exit_code}), .detail = std.mem.trim(u8, program.stderr[0..@min(program.stderr.len, 160)], " \r\n") };
+        if (!std.mem.eql(u8, program.stdout, expected)) return .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" };
+        return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(a, "ran in {d} ms", .{run.ms}) };
     }
 
     /// Exactly one diagnostic, with `code`, exit 1, within the harness's

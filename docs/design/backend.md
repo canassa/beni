@@ -2071,7 +2071,8 @@ places read a record's fields sorted by name and all three keep sorting on the s
   evaluation order — the thing §4's rule exists to prevent. Hidden-class stability wants *a*
   consistent order, not a particular one, so nothing is lost.
 - the derived `eq`/`compare` of a record shape: one evidence parameter per field, fields in name-text
-  order, positional (`static-dispatch-spike.md` §9.2; `src/js/Lower.zig:2351-2360`). `compare` is
+  order, positional (`static-dispatch-spike.md` §9.2; `src/js/Lower.zig:2351-2360`) — past 4 096
+  of them one array `$m`, still indexed in that order (§9.2 *The wide form*, A.87). `compare` is
   lexicographic in that order, so re-sorting on short names would make `<` answer differently in
   release than in dev.
 - `Debug.toString` prints in `Object.keys` order, which is insertion order, which is the literal's.
