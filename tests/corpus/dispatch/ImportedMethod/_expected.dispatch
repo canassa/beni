@@ -1,11 +1,11 @@
 module Main
-  decl step evidence=0
-  decl same evidence=0
-  site 6 0 ext Token bump
-  site 15 0 ext_derived Token.Token eq
+  decl step evidence=0 arity=1
+  decl same evidence=0 arity=2
+  site 6 callee ext Token bump
+  site 15 callee ext_derived Token.Token eq
 module Token
-  decl bump evidence=0
-  derived 0 compare Token.Token evidence=0
-    part 0 primitive num_compare
-  derived 1 eq Token.Token evidence=0
-    part 0 primitive strict_eq
+  decl bump evidence=0 arity=2
+  derived 0 compare Token.Token context=0
+    body 0 primitive num_compare
+  derived 1 eq Token.Token context=0
+    body 0 primitive strict_eq

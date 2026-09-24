@@ -1,26 +1,31 @@
 module ErrParts
-  decl empties evidence=0
-  decl nothings evidence=0
-  decl crossed evidence=0
-  decl insideAShape evidence=0
-  decl literalPair evidence=0
-  decl literalOrder evidence=0
-  derived 0 compare t2 evidence=2
-  derived 1 eq r$a evidence=1
-  derived 2 eq t2 evidence=2
-  site 3 0 ext List eq
-  site 3 1 ext Basics eq
-  site 7 0 ext_derived Maybe.Maybe eq
-    part 0 err
-  site 15 0 ext_derived Result.Result eq
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 21 0 derived 1
-    part 0 ext List eq
-      part 0 err
-  site 29 0 derived 2
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 37 0 derived 0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
+  decl empties evidence=0 arity=0
+  decl nothings evidence=0 arity=0
+  decl crossed evidence=0 arity=0
+  decl insideAShape evidence=0 arity=0
+  decl literalPair evidence=0 arity=0
+  decl literalOrder evidence=0 arity=0
+  derived 0 compare t2 context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  derived 1 eq r$a context=1
+    context 0 param=0 method=eq
+  derived 2 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 3 callee ext List eq
+    evidence ext Basics eq
+  site 7 callee ext_derived Maybe.Maybe eq
+    arg undetermined
+  site 15 callee ext_derived Result.Result eq
+    arg primitive strict_eq
+    arg primitive strict_eq
+  site 21 callee derived 1
+    arg ext List eq
+      undetermined
+  site 29 callee derived 2
+    arg primitive strict_eq
+    arg primitive strict_eq
+  site 37 callee derived 0
+    arg primitive num_compare
+    arg primitive num_compare

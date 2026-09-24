@@ -1366,14 +1366,27 @@ const ModuleCheck = struct {
 
         // 6. The dispatch table, sorted once (§7.1, §7.3). Built while the
         //    store was alive; nothing in it needs the store afterwards.
+        //    `finish` also converts v1's flat sites into checker-v2.md
+        //    §13.1's evidence trees, which is the table the backend reads.
         var namer: DerivedNamer = .{ .mc = mc, .types = mc.types, .builder = &dispatch };
-        mc.dispatch.* = try dispatch.finish(
-            gpa,
-            bir.decls.len,
-            mc.scratch.allocator(),
-            DerivedNamer.write,
-            @ptrCast(&namer),
-        );
+        const value_arity = try mc.scratch.allocator().alloc(u16, bir.decls.len);
+        for (value_arity, decl_scheme) |*arity, scheme| {
+            const v = scheme.unwrap() orelse {
+                arity.* = 0;
+                continue;
+            };
+            arity.* = std.math.cast(u16, store.paramCount(v)) orelse std.math.maxInt(u16);
+        }
+        var dropped: std.ArrayList(Bir.Inst.Index) = .empty;
+        mc.dispatch.* = try dispatch.finish(gpa, mc.scratch.allocator(), .{
+            .decl_count = bir.decls.len,
+            .bir = bir,
+            .interfaces = mc.interfaces,
+            .value_arity = value_arity,
+            .types = mc.types,
+            .name_of = DerivedNamer.write,
+            .name_ctx = @ptrCast(&namer),
+        }, &dropped);
         // `--roundtrip-dispatch` goes HERE and nowhere else: the table is
         // finished and nobody has read it yet. BEFORE `Cycles.run` on
         // purpose — the cycle pass walks this table, so putting the round
@@ -1386,6 +1399,16 @@ const ModuleCheck = struct {
         //    and the table is where that edge lives — the same reason
         //    `backend.md` §5's emission order reads it.
         try Cycles.run(mc.scratch.allocator(), bir, mc.dispatch, mc.interner, &reporter);
+
+        // 9. I7 (checker-v2.md §2, §13.1): every term's argument count is
+        //    its callee's requirement count. `internal` and never a panic
+        //    during R2–R10 (S10), and only on a module that reported no
+        //    error — so it runs LAST, after every pass that can report one
+        //    (`fillInterface`, `reportTooDeep`, `Cycles`): a module whose
+        //    one error is a value cycle never reaches the backend and must
+        //    not gain a second, spurious message. After the round trip, so
+        //    the table asserted is the one the backend will read.
+        try mc.assertEvidenceShape(&reporter, bir, dropped.items);
 
         // A declaration with no body — a `foreign` value, an annotation the
         // parser found no definition for — has no check variable, so its
@@ -1486,7 +1509,7 @@ const ModuleCheck = struct {
         var order: std.ArrayList(Var) = .empty;
         defer order.deinit(scratch);
         try Schemes.quantifierOrder(env.store, env.interner, rigid, &order, scratch);
-        var entries: std.ArrayList(Dispatch.Evidence) = .empty;
+        var entries: std.ArrayList(Dispatch.Requirement) = .empty;
         defer entries.deinit(scratch);
         var index: u16 = 0;
         for (order.items, 0..) |root, q| {
@@ -1888,6 +1911,50 @@ const ModuleCheck = struct {
     /// read back inside ONE session, so `BadSidecar` can only mean the
     /// writer and the reader disagree and `UnknownSymbol` can only mean a
     /// name the session itself interned is missing from its own pool.
+    /// I7's assert in `Dispatch.finish`'s caller (checker-v2.md §13.1): one
+    /// `internal` per instruction whose evidence tree does not add up, and
+    /// per legacy `err` site the converter dropped. A diagnostic and never a
+    /// panic during R2–R10 (S10) — v1 has known miscounts `check` used to
+    /// accept (CK-30), and a panic would turn their red reasons into exit
+    /// 134.
+    ///
+    /// **Only on a module that reported no error.** Such a module never
+    /// reaches the backend, and v1 leaves `err` sites in it whose reason was
+    /// already reported; asserting there would add a second, wrong, message
+    /// to every error that touched a method call.
+    fn assertEvidenceShape(
+        mc: *ModuleCheck,
+        reporter: *Diagnostics.Reporter,
+        bir: *const Bir,
+        dropped: []const Bir.Inst.Index,
+    ) Error!void {
+        if (reporter.quiet) return;
+        for (mc.diagnostics.items) |item| {
+            if (item.module == mc.module and item.severity == .@"error") return;
+        }
+        const scratch = mc.scratch.allocator();
+        var bad: std.ArrayList(Bir.Inst.Index) = .empty;
+        try bad.appendSlice(scratch, dropped);
+        try mc.dispatch.checkI7(bir, mc.interfaces, mc.types, scratch, &bad);
+        if (bad.items.len == 0) return;
+        std.mem.sort(Bir.Inst.Index, bad.items, {}, instLessThan);
+        var previous: ?Bir.Inst.Index = null;
+        for (bad.items) |inst| {
+            if (previous == inst) continue;
+            previous = inst;
+            try reporter.internal(
+                inst,
+                "the hidden arguments here do not add up — the evidence tree the checker " ++
+                    "recorded here gives a function a different number of arguments than it has " ++
+                    "requirements (`docs/design/checker-v2.md` §13.1, invariant I7)",
+            );
+        }
+    }
+
+    fn instLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
+        return a.int() < b.int();
+    }
+
     fn roundtripDispatch(mc: *ModuleCheck, reporter: *Diagnostics.Reporter) Error!void {
         const gpa = mc.gpa;
         const bytes = try dispatch_bytes.write(gpa, mc.dispatch, mc.graph, mc.types, mc.interner);
@@ -2042,7 +2109,7 @@ const DerivedNamer = struct {
     types: *const Types,
     builder: *const Dispatch.Builder,
 
-    fn write(ctx: *anyopaque, d: Dispatch.Derived, out: *std.ArrayList(u8), a: Allocator) Allocator.Error!void {
+    fn write(ctx: *anyopaque, d: Dispatch.FlatDerived, out: *std.ArrayList(u8), a: Allocator) Allocator.Error!void {
         const self: *DerivedNamer = @ptrCast(@alignCast(ctx));
         const interner = self.mc.interner;
         const kind = switch (d.kind) {

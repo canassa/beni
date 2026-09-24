@@ -1640,6 +1640,44 @@ asserts I7:
 
 A violation is `internal` at the site.
 
+*Amended 2026-09-24 by R2a, which found these points the text above leaves open:*
+
+- **`DeclInfo` in R2a is `{ requirements, value_arity }`.** `convention` joins it in R2b with
+  `Convention.zig` (§12.5), which is also when `dispatch_bytes` goes 2 → 3 (§14.3). `value_arity` is
+  the parameter count of the declaration's solved type (`TypeStore.paramCount`), 0 for a
+  non-function, filled by v1 and read by nobody until R2b.
+- **`Binder` is `decl | let(inst) | derived(i)`.** `decl` carries no index: a site belongs to exactly
+  one declaration, the one whose instruction range holds it, and a `param` term inside it names that
+  declaration's `k`th requirement. `derived(i)` indexes the SORTED `derived` table.
+- **The tree is acyclic by construction.** Terms are allocated in pre-order, so every argument's
+  `TermIndex` is greater than its owner's. `dispatch_bytes` verifies exactly that on load, which is
+  what lets every walker recurse without a depth guard against a corrupt table.
+- **I7 also covers the roots.** A site on a `method_call` or `type_dispatch` has a callee; a
+  `derived`/`ext_derived` callee carries its evidence as its own `args` and the site's `evidence` is
+  empty, a `top`/`ext` callee has no `args` and `evidence.len` is its requirement count, and
+  `primitive`, `field` and `param` take none. A site on a `call` has `evidence.len` equal to the
+  requirement count of the Bir callee (a `top` or `ext_value` reference; 0 otherwise), and a site on
+  a bare reference likewise for the value it names. A `method_call` or `type_dispatch` site with no
+  callee, a v1 `err` site that the converter dropped, and a MISSING site where the Bir needs one
+  (a `method_call` or `type_dispatch` with none, a `call` of a constrained callee with none) are
+  violations too — the answer `Lower` gives, one phase earlier. **It is not "what `build` would
+  say" everywhere:** `Lower` only meets the code DCE (`backend.md` §9) keeps, and the assert walks
+  every declaration. So a v1 miscount (CK-30, CK-72, CK-76) in a declaration nothing reaches, which
+  built and ran before R2a, is refused by `check` since R2a — `tests/pending/run/DeadMiscount.beni`
+  is that program. The manager kept this on purpose (review of R2a, S1): the table is wrong whether
+  or not it is emitted, and v2 removes the miscount itself.
+- **The assert runs only on a module that reported no error.** A module with errors never reaches
+  the backend, and v1 still leaves `err` sites in one; asserting there would add an `internal` to
+  every `check/bad` golden that has a dispatch-bearing error. It therefore runs LAST in the
+  module's check — after `fillInterface`, `reportTooDeep`, `Cycles` and the dispatch round trip —
+  so an error any of those reports gates it too (review of R2a, S2; `check/bad/CycleNoEvidenceNoise`).
+- **Which method an `undetermined` leaf answers** is the kind of the nearest enclosing `derived` or
+  `ext_derived` term (or row, for a body position) — exactly the `kind` `Lower` threaded through
+  `partValues` before R2a. An `undetermined` with no such ancestor is `internal` in `Lower`: v1's
+  converter never writes one, because an `err` SITE becomes no term.
+- **`Lower` asserts I7 again**, cheaply, with the same counting function (`Dispatch.requirementCount`),
+  and its message is the old "hidden arguments do not add up".
+
 - **During R2–R10 it is `internal` in every build, never a panic.** v1 has known miscounts that
   `check` accepts today: CK-30 is caught only by `build`. A Debug panic in `Dispatch.finish` would
   turn `check` of such a fixture into exit 134 and change the red reasons R0 recorded. R2 greps the
@@ -1674,6 +1712,15 @@ Terms print as:
 A tree is printed as a tree, so the pre-order-versus-index discussion of A.68 is gone. The existing
 `tests/corpus/dispatch/` goldens are re-blessed **once**, in R2, when the format changes, and
 reviewed against the old goldens one by one.
+
+*Amended 2026-09-24 by R2a.* In R2a the `decl` line is `decl <name> evidence=<n> arity=<a>`, where
+`arity` is `DeclInfo.value_arity`; R2b appends ` convention=<…>` when `Convention` exists, and
+re-blesses the `decl` lines then. Every value declaration prints a `decl` line, in source order, as
+in format v1, and a module whose table is entirely empty prints its `module` line alone. A term's
+arguments print one per line, two spaces deeper than the line holding the term. A callee's OWN
+arguments (a derived callee's evidence) print under the `site` line as `arg <term>` lines, before
+the first `evidence <term>` line, so the two keywords keep them apart (review of R2a, N6); below
+them, arguments are bare terms.
 
 ### 13.3 What `Lower` changes
 
@@ -1725,7 +1772,9 @@ derived method". That is exactly its ABI, so the format is shared by both checke
 
 ### 14.3 Cache and table versions
 
-- `dispatch_bytes` 1 → 2 (R2a, the tree record), then 2 → 3 (R2b, `Convention` and `value_arity`).
+- `dispatch_bytes` 1 → 2 (R2a, the tree record with `DeclInfo.value_arity`), then 2 → 3 (R2b,
+  `Convention`). *Amended by R2a: `value_arity` rides with the tree record, as §12.5 and the R2a brief
+  say; only `convention` is left for R2b.*
 - `entry_bytes` 2 → 3 (R2a).
 - The schema plan stays 1.
 - A version mismatch is a miss, as today (`fast-compiler.md` §8.3).

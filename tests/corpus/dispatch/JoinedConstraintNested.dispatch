@@ -1,39 +1,51 @@
 module JoinedConstraintNested
-  decl put evidence=1
-    evidence 0 quantified=0 var=k method=compare
-  decl tag evidence=1
-    evidence 0 quantified=0 var=k method=eq
-  decl compare evidence=1
-    evidence 0 quantified=0 var=a method=compare
-  decl size evidence=0
-  decl nestedList evidence=0
-  decl nestedDict evidence=0
-  decl annotatedDict evidence=0
-  decl nestedOwn evidence=0
-  decl nestedEq evidence=0
-  derived 0 eq JoinedConstraintNested.Box evidence=1
-    part 0 evidence 0
-  derived 1 eq JoinedConstraintNested.Pair evidence=1
-    part 0 evidence 0
-    part 1 evidence 0
-  site 55 0 evidence 0
-  site 73 0 ext List compare
-  site 73 1 primitive num_compare
-  site 76 0 ext List compare
-  site 76 1 primitive num_compare
-  site 90 0 ext List compare
-  site 90 1 primitive num_compare
-  site 94 0 ext List compare
-  site 94 1 primitive num_compare
-  site 112 0 ext List compare
-  site 112 1 primitive num_compare
-  site 116 0 ext List compare
-  site 116 1 primitive num_compare
-  site 129 0 top compare
-  site 129 1 primitive num_compare
-  site 134 0 top compare
-  site 134 1 primitive num_compare
-  site 147 0 ext List eq
-  site 147 1 primitive strict_eq
-  site 150 0 ext List eq
-  site 150 1 primitive strict_eq
+  decl put evidence=1 arity=2
+    requirement 0 quantified=0 var=k method=compare
+  decl tag evidence=1 arity=2
+    requirement 0 quantified=0 var=k method=eq
+  decl compare evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=compare
+  decl size evidence=0 arity=1
+  decl nestedList evidence=0 arity=0
+  decl nestedDict evidence=0 arity=0
+  decl annotatedDict evidence=0 arity=0
+  decl nestedOwn evidence=0 arity=0
+  decl nestedEq evidence=0 arity=0
+  derived 0 eq JoinedConstraintNested.Box context=1
+    context 0 param=0 method=eq
+    body 0 param derived 0 0
+  derived 1 eq JoinedConstraintNested.Pair context=1
+    context 0 param=0 method=eq
+    body 0 param derived 1 0
+    body 1 param derived 1 0
+  site 55 callee param 0
+  site 73
+    evidence ext List compare
+      primitive num_compare
+  site 76
+    evidence ext List compare
+      primitive num_compare
+  site 90
+    evidence ext List compare
+      primitive num_compare
+  site 94
+    evidence ext List compare
+      primitive num_compare
+  site 112
+    evidence ext List compare
+      primitive num_compare
+  site 116
+    evidence ext List compare
+      primitive num_compare
+  site 129
+    evidence top compare
+      primitive num_compare
+  site 134
+    evidence top compare
+      primitive num_compare
+  site 147
+    evidence ext List eq
+      primitive strict_eq
+  site 150
+    evidence ext List eq
+      primitive strict_eq

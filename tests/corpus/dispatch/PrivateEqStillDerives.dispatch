@@ -1,11 +1,11 @@
 module PrivateEqStillDerives
-  decl eq evidence=0
-  decl sameMajor evidence=0
-  derived 0 compare PrivateEqStillDerives.Id evidence=0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-  derived 1 eq PrivateEqStillDerives.Id evidence=0
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 20 0 primitive strict_eq
-  site 33 0 top eq
+  decl eq evidence=0 arity=2
+  decl sameMajor evidence=0 arity=2
+  derived 0 compare PrivateEqStillDerives.Id context=0
+    body 0 primitive num_compare
+    body 1 primitive num_compare
+  derived 1 eq PrivateEqStillDerives.Id context=0
+    body 0 primitive strict_eq
+    body 1 primitive strict_eq
+  site 20 callee primitive strict_eq
+  site 33 callee top eq

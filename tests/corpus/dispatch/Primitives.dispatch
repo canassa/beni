@@ -1,13 +1,13 @@
 module Primitives
-  decl ints evidence=0
-  decl floats evidence=0
-  decl bools evidence=0
-  decl chars evidence=0
-  decl strings evidence=0
-  decl orders evidence=0
-  site 8 0 primitive num_compare
-  site 17 0 primitive strict_eq
-  site 26 0 primitive num_compare
-  site 35 0 primitive char_compare
-  site 44 0 primitive string_compare
-  site 53 0 ext_derived Basics.Order compare
+  decl ints evidence=0 arity=2
+  decl floats evidence=0 arity=2
+  decl bools evidence=0 arity=2
+  decl chars evidence=0 arity=2
+  decl strings evidence=0 arity=2
+  decl orders evidence=0 arity=2
+  site 8 callee primitive num_compare
+  site 17 callee primitive strict_eq
+  site 26 callee primitive num_compare
+  site 35 callee primitive char_compare
+  site 44 callee primitive string_compare
+  site 53 callee ext_derived Basics.Order compare

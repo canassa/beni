@@ -28,8 +28,8 @@
 //!      to carry `(Graph.Index, ValueIndex)`, where the `refs` table's
 //!      `import_value` rows stay symbolic and re-deriving that lookup here
 //!      would be a second copy of resolution;
-//!   3. every dispatch site of `d`, and recursively every target nested in
-//!      one through `Dispatch.partsAt`. These are the edges `Bir`
+//!   3. every dispatch site of `d` — its callee and evidence roots — and
+//!      recursively every term's `args` (checker-v2.md §13.3). These are the edges `Bir`
 //!      deliberately does not have (`frontend.md` §3.6): a method call's
 //!      callee is not known until the checker runs, and an evidence argument
 //!      is a reference no source line spells.
@@ -57,8 +57,8 @@
 //! hand-written `String.compare` (`Lower.stringCompare` →
 //! `Lower.coreValue`, §3.2/A.26: `<` on JavaScript strings is UTF-16
 //! code-unit order and `String.compare` is Unicode scalar order, and the
-//! two must agree), and `err` lowers to a call of `Basics.eq`
-//! (`Lower.partEq`'s `err` arm). Both are references to another module's
+//! two must agree), and `undetermined` lowers to a call of `Basics.eq`
+//! (`Lower.partEq`'s `undetermined` arm). Both are references to another module's
 //! declaration that no `refs` row and no `top`/`ext` target records, so
 //! without them a program that orders `String`s inside a derived function
 //! ships a call to a name its build never wrote — a `ReferenceError` at
@@ -444,7 +444,7 @@ const Builder = struct {
             .primitive => |prim| if (prim == .string_compare) {
                 if (b.string_compare) |node| try out.append(b.scratch, node);
             },
-            .err => if (b.basics_eq) |node| try out.append(b.scratch, node),
+            .undetermined => if (b.basics_eq) |node| try out.append(b.scratch, node),
         }
     }
 

@@ -1,24 +1,30 @@
 module DecodeInto
-  decl fromList evidence=0
-  decl label evidence=0
-  decl decodeInto evidence=1
-    evidence 0 quantified=0 var=a method=fromList
-  decl decodeTwo evidence=1
-    evidence 0 quantified=0 var=a method=fromList
-  decl asTag evidence=0
-  decl asString evidence=0
-  decl pair evidence=0
-  decl later evidence=0
-  decl sameNum evidence=0
-  derived 0 compare DecodeInto.Tag evidence=0
-    part 0 primitive string_compare
-  derived 1 eq DecodeInto.Tag evidence=0
-    part 0 primitive strict_eq
-  site 35 0 evidence 0
-  site 51 0 evidence 0
-  site 54 0 evidence 0
-  site 59 0 top fromList
-  site 63 0 ext String fromList
-  site 70 0 top fromList
-  site 75 0 top fromList
-  site 88 0 primitive strict_eq
+  decl fromList evidence=0 arity=1
+  decl label evidence=0 arity=1
+  decl decodeInto evidence=1 arity=1
+    requirement 0 quantified=0 var=a method=fromList
+  decl decodeTwo evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=fromList
+  decl asTag evidence=0 arity=0
+  decl asString evidence=0 arity=0
+  decl pair evidence=0 arity=0
+  decl later evidence=0 arity=0
+  decl sameNum evidence=0 arity=2
+  derived 0 compare DecodeInto.Tag context=0
+    body 0 primitive string_compare
+  derived 1 eq DecodeInto.Tag context=0
+    body 0 primitive strict_eq
+  site 35 callee param 0
+  site 51
+    evidence param 0
+  site 54
+    evidence param 0
+  site 59
+    evidence top fromList
+  site 63
+    evidence ext String fromList
+  site 70
+    evidence top fromList
+  site 75
+    evidence top fromList
+  site 88 callee primitive strict_eq

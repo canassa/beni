@@ -157,6 +157,10 @@ R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER
   - **Each point is the best of 3 runs** (S13), so load on a CI machine cannot flake a ratio into a
     rule (c) failure.
   - CK-03's absolute bound, 5 s, uses the best of 3 too.
+  - **Time is the child compiler's CPU time** (user + system, from `wait4`'s rusage), not the wall
+    clock, and every run is `--jobs=1`. *Amended 2026-09-24 by the review of R2a:* a concurrent
+    build stretched CK-40's two wall-clock points unequally (87 s / 162 s, ratio 1.85) into a
+    false GREEN. The wall clock only kills a run, at twice the bound.
 - **Calibration (R0).** Choose `n` so that a *fixed* build takes at least 0.5 s at `n`. orch's
   scratch fixes (per-group settling removed; `resetMemo` with amortised growth) are the reference.
 - **The permutation scenario (R7)** asserts, for each program and each permutation of its
@@ -311,6 +315,23 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - `test-pending` is green, with `RED` signatures updated where needed.
 - **Reviewer focus.** The converter is the one place v1's flat pre-order is interpreted
   (`TwoSlotsNested`, `NestedEvidenceIndices`). The I7 assert reports on a hand-corrupted table.
+- **As built (stage 1, 2026-09-24).** The points the brief left open are settled in
+  `checker-v2.md` §13.1–§13.2 and §14.3, amended before the code:
+  - `DeclInfo` is `{ requirements, value_arity }`; `convention` is R2b's, with `dispatch_bytes` 3.
+    The dump's `decl` line is `evidence=<n> arity=<a>` until R2b appends `convention=`.
+  - The converter counts exactly as `Lower` did (a target's consumed slots from `decl_evidence` or
+    the interface), so the emitted JavaScript cannot move; terms are allocated in pre-order and
+    `dispatch_bytes` refuses a table whose argument does not follow its owner.
+  - I7 also covers roots and MISSING sites (a `method_call`/`type_dispatch` with no callee, a
+    `call` of a constrained callee with no site), and runs only on a module that reported no
+    error. It moved six pending red reasons from `build` to `check`; `tests/pending/RED` records
+    each (CK-28, CK-30 unchanged in count, CK-32, CK-72 ×2, CK-76 ×2).
+  - Review fixes: no converter depth cap that writes a term (B1, pinned by the blackbox scenario
+    "evidence nested past a thousand levels…"); the assert runs last, after `Cycles` and the round
+    trip (S2, `check/bad/CycleNoEvidenceNoise`); `check` now refuses a v1 miscount in dead code,
+    kept on purpose (S1, `tests/pending/run/DeadMiscount.beni`, CK-30). Derived callees' own
+    arguments print as `arg` lines. Pending perf scenarios measure CPU time.
+  - Stage 2 (CK-79, CK-81) is a separate brief.
 
 ### R2b — One calling convention
 

@@ -1,11 +1,11 @@
 module QuestionShapes
-  decl parse evidence=0
-  decl firstPlus evidence=0
-  decl bigger evidence=1
-    evidence 0 quantified=0 var=a method=compare
+  decl parse evidence=0 arity=2
+  decl firstPlus evidence=0 arity=1
+  decl bigger evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=compare
   try 17 result
   try 19 result
   try 33 maybe
   try 56 result
-  site 58 0 evidence 0
-  site 60 0 primitive strict_eq
+  site 58 callee param 0
+  site 60 callee primitive strict_eq

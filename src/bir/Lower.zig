@@ -954,7 +954,7 @@ fn lowerDeclarations(l: *Lower) Allocator.Error!void {
                 // from, so its `params` is what its ANNOTATION declares —
                 // the same number `boundary.md` §4's check 4 measures the
                 // sibling export against. Without it every reader of
-                // `params` sees a nullary value, and `js/Lower.targetArity`
+                // `params` sees a nullary value, and `js/Lower.termArity`
                 // eta-expanded `List.eq` used from inside `core/List.beni`
                 // to `() => List$eq(m0)`.
                 l.decls.items[i].params = l.typeFnArity(annotation);

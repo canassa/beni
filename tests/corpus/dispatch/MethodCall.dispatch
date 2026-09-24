@@ -1,12 +1,12 @@
 module MethodCall
-  decl wider evidence=0
-  decl bigger evidence=0
-  derived 0 compare MethodCall.Shape evidence=0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-    part 2 primitive num_compare
-  derived 1 eq MethodCall.Shape evidence=0
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-    part 2 primitive strict_eq
-  site 18 0 top wider
+  decl wider evidence=0 arity=2
+  decl bigger evidence=0 arity=2
+  derived 0 compare MethodCall.Shape context=0
+    body 0 primitive num_compare
+    body 1 primitive num_compare
+    body 2 primitive num_compare
+  derived 1 eq MethodCall.Shape context=0
+    body 0 primitive strict_eq
+    body 1 primitive strict_eq
+    body 2 primitive strict_eq
+  site 18 callee top wider

@@ -1,7 +1,7 @@
 module AllNullaryEq
-  decl sameColour evidence=0
-  decl before evidence=0
-  derived 0 compare AllNullaryEq.Colour evidence=0
-  derived 1 eq AllNullaryEq.Colour evidence=0
-  site 8 0 primitive strict_eq
-  site 17 0 derived 0
+  decl sameColour evidence=0 arity=2
+  decl before evidence=0 arity=2
+  derived 0 compare AllNullaryEq.Colour context=0
+  derived 1 eq AllNullaryEq.Colour context=0
+  site 8 callee primitive strict_eq
+  site 17 callee derived 0

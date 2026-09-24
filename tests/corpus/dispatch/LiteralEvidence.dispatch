@@ -1,23 +1,30 @@
 module LiteralEvidence
-  decl gen evidence=1
-    evidence 0 quantified=0 var=a method=compare
-  decl eqGen evidence=1
-    evidence 0 quantified=0 var=a method=eq
-  decl ints evidence=0
-  decl floats evidence=0
-  decl strings evidence=0
-  decl sameInts evidence=0
-  decl pairOfLiterals evidence=0
-  decl cmp evidence=1
-    evidence 0 quantified=0 var=a method=compare
-  derived 0 compare t2 evidence=2
-  site 12 0 evidence 0
-  site 25 0 evidence 0
-  site 30 0 primitive num_compare
-  site 35 0 primitive num_compare
-  site 40 0 primitive string_compare
-  site 45 0 primitive strict_eq
-  site 54 0 derived 0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-  site 67 0 evidence 0
+  decl gen evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=compare
+  decl eqGen evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=eq
+  decl ints evidence=0 arity=0
+  decl floats evidence=0 arity=0
+  decl strings evidence=0 arity=0
+  decl sameInts evidence=0 arity=0
+  decl pairOfLiterals evidence=0 arity=0
+  decl cmp evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=compare
+  derived 0 compare t2 context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  site 12 callee param 0
+  site 25 callee param 0
+  site 30
+    evidence primitive num_compare
+  site 35
+    evidence primitive num_compare
+  site 40
+    evidence primitive string_compare
+  site 45
+    evidence primitive strict_eq
+  site 54
+    evidence derived 0
+      primitive num_compare
+      primitive num_compare
+  site 67 callee param 0

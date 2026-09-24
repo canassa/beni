@@ -86,6 +86,12 @@ pub const Result = struct {
     /// stderr parsed as the JSON diagnostics array; empty when stderr is
     /// empty. Only populated for JSON runs (see `RunOptions`).
     diagnostics: []const diagnostic.Diagnostic,
+    /// The child's CPU time, user + system, in milliseconds, from the
+    /// `rusage` `wait4` reports; null where the platform gives none. A
+    /// timing assertion reads THIS and not the wall clock: a concurrent build
+    /// on the same machine stretches wall time without adding a microsecond
+    /// of the child's own work (`plans/checker-rewrite.md` §2.5).
+    cpu_ms: ?i64 = null,
 };
 
 pub const RunOptions = struct {
@@ -526,6 +532,7 @@ pub fn spawnAndCapture(
         .stdin = .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
+        .request_resource_usage_statistics = true,
     });
     // Whatever happens below, no process outlives this call.
     defer child.kill(io);
@@ -535,7 +542,13 @@ pub fn spawnAndCapture(
     try drain(arena, io, &child, &stdout, &stderr, timeout_ms);
 
     const term = try child.wait(io);
+    const cpu_ms: ?i64 = if (comptime @TypeOf(child.resource_usage_statistics.rusage) == ?std.posix.rusage) cpu: {
+        const ru = child.resource_usage_statistics.rusage orelse break :cpu null;
+        const us = (@as(i64, ru.utime.sec) + @as(i64, ru.stime.sec)) * 1_000_000 + @as(i64, ru.utime.usec) + @as(i64, ru.stime.usec);
+        break :cpu @divTrunc(us, 1000);
+    } else null;
     return .{
+        .cpu_ms = cpu_ms,
         .exit_code = switch (term) {
             .exited => |code| code,
             else => 255,

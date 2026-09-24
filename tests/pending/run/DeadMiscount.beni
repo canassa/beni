@@ -1,0 +1,26 @@
+-- CK-30: v1's evidence miscount in a declaration nothing reaches. `f` is an
+-- unannotated recursive function with an `eq` constraint, and v1 passes the
+-- recursive call `f x y (n - 1)` a different number of hidden arguments than
+-- `f` takes (CK-30's miscount). `main` never uses `f`.
+--
+-- On 9a931d7 this built and ran, printing `x`: `Lower` met the miscount only
+-- on code dead-code elimination kept, and `f` was not kept. Since R2a the I7
+-- assert (checker-v2.md §13.1) walks every declaration at `check` time and
+-- refuses the program with INTERNAL ERROR at the recursive call — a decision
+-- the manager took on purpose (review of R2a, S1): the table is wrong whether
+-- or not it is emitted, and v2 removes the miscount. Expected, once v2 counts
+-- correctly: it builds and prints `x`, exactly what 9a931d7 printed.
+import Node exposing (Program)
+
+
+f x y n =
+    if n == 0 then
+        x == y
+
+    else
+        f x y (n - 1)
+
+
+main : Program
+main =
+    Node.printLines [ "x" ]

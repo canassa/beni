@@ -21,9 +21,17 @@
 //! head-room (quadratic is about 4, cubic about 8), because a ratio holds
 //! across machines where an absolute bound does not. **Each point is the best
 //! of 3 runs** (S13): time only ever gets ADDED by a loaded machine, so the
-//! minimum is the measurement. A run of 2n is killed at the bound, so a red
-//! scenario costs three bounds and not three quadratic builds; GREEN needs one
-//! run under the bound, RED needs all three over it.
+//! minimum is the measurement. A run of 2n is killed at twice the bound, so a
+//! red scenario costs three kills and not three quadratic builds; GREEN needs
+//! one run under the bound, RED needs all three over it.
+//!
+//! **Time is the child's CPU time** (user + system, from `wait4`'s rusage;
+//! `world.Result.cpu_ms`), not the wall clock (review of R2a, 2026-09-24). A
+//! concurrent build stretched the two points' wall clocks unequally and gave
+//! CK-40 a ratio of 1.85 — 87 s against 162 s — and a false GREEN; a loaded
+//! machine cannot add CPU time the compiler did not spend, and every run is
+//! `--jobs=1`. The wall clock only bounds how long a run may take before it
+//! is killed.
 //!
 //! **Calibration (R0, 2026-09-24).** `n` is chosen so that a build with the
 //! FIX takes at least 0.5 s at `n`, measured with a Debug build of `7427828`
@@ -404,15 +412,24 @@ const Scenario = struct {
         return list.items;
     }
 
-    /// One compiler run, timed; null when it was killed at `bound_ms`.
-    fn timed(s: *Scenario, args: []const []const u8, bound_ms: i64) !?struct { ms: i64, result: world.Result } {
+    /// One compiler run, timed; null when it was killed at `kill_ms` of WALL
+    /// time.
+    ///
+    /// `ms` is the child's own CPU time, user + system (`world.Result.cpu_ms`,
+    /// from `wait4`'s rusage), and the wall clock only where the platform
+    /// reports none. Every verdict below compares `ms`: a concurrent build on
+    /// the same machine stretches the wall clock of the two points by
+    /// different amounts, and once turned CK-40's cubic 87 s / 162 s into a
+    /// ratio of 1.85 and a false GREEN. It cannot add CPU time the child did
+    /// not spend, and `--jobs=1` everywhere keeps CPU time equal to work.
+    fn timed(s: *Scenario, args: []const []const u8, kill_ms: i64) !?struct { ms: i64, wall_ms: i64, result: world.Result } {
         const start = Io.Timestamp.now(testing.io, .awake);
-        const result = s.w.runWith(try s.argv(args), .{ .raw_diagnostics = true, .timeout_ms = bound_ms }) catch |err| switch (err) {
+        const result = s.w.runWith(try s.argv(args), .{ .raw_diagnostics = true, .timeout_ms = kill_ms }) catch |err| switch (err) {
             error.CompilerTimeout => return null,
             else => return err,
         };
-        const ms = start.durationTo(Io.Timestamp.now(testing.io, .awake)).toMilliseconds();
-        return .{ .ms = ms, .result = result };
+        const wall_ms = start.durationTo(Io.Timestamp.now(testing.io, .awake)).toMilliseconds();
+        return .{ .ms = result.cpu_ms orelse wall_ms, .wall_ms = wall_ms, .result = result };
     }
 
     /// The walker's `exit=<n> codes=<code>×<k>,…` for a run that did not end
@@ -463,7 +480,9 @@ const Scenario = struct {
     /// within `bound_ms`, exits 1 and reports `code`.
     fn bounded(s: *Scenario, args: []const []const u8, bound_ms: i64, code: @import("diagnostic").Code) !Verdict {
         for (0..3) |_| {
-            const run = try s.timed(args, bound_ms) orelse continue;
+            // Killed at twice the bound of WALL time, judged on CPU time.
+            const run = try s.timed(args, bound_ms * 2) orelse continue;
+            if (run.ms > bound_ms) continue;
             const trimmed = std.mem.trim(u8, run.result.stderr, " \r\n");
             const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, s.arena(), trimmed, .{}) catch return s.failed(run.result);
             const reported = for (diags) |d| {
@@ -472,7 +491,7 @@ const Scenario = struct {
             if (run.result.exit_code != 1 or !reported) return s.failed(run.result);
             return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{t} in {d} ms", .{ code, run.ms }) };
         }
-        return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms", .{bound_ms}) };
+        return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms of CPU time", .{bound_ms}) };
     }
 
     /// Every order of `decls` (up to `cap` orders, lexicographic from the
@@ -555,7 +574,7 @@ const Scenario = struct {
         const large = ms[2] - ms[3];
         const hundredths: u64 = @intCast(@max(@divTrunc(large * 100, small), 0));
         const green = large * 2 <= small * 5;
-        const detail = try std.fmt.allocPrint(s.arena(), "extra at n={d}: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms; ratio {d}.{d:0>2}", .{ n, ms[0], ms[1], small, ms[2], ms[3], large, hundredths / 100, hundredths % 100 });
+        const detail = try std.fmt.allocPrint(s.arena(), "extra at n={d}: {d} − {d} = {d} ms; at 2n: {d} − {d} = {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, ms[0], ms[1], small, ms[2], ms[3], large, hundredths / 100, hundredths % 100 });
         return .{ .green = green, .signature = if (green) "" else "slow", .detail = detail };
     }
 
@@ -574,20 +593,22 @@ const Scenario = struct {
             best_small = @min(best_small, run.ms);
         }
 
-        // time(2n): killed at the bound, so a super-linear build costs three
-        // bounds. One run under it makes the best of 3 GREEN.
+        // time(2n): judged on CPU time against 2.5 × time(n), and killed at
+        // twice that of WALL time — so a super-linear build still costs three
+        // kills, and a loaded machine cannot kill a linear one early. One run
+        // under the bound makes the best of 3 GREEN.
         const bound: i64 = @divTrunc(best_small * 5, 2);
         var best_large: ?i64 = null;
         for (0..3) |_| {
-            const run = try s.timed(&args_large, bound) orelse continue;
+            const run = try s.timed(&args_large, @max(bound * 2, 1_000)) orelse continue;
             if (run.result.exit_code != 0) return s.failed(run.result);
             best_large = @min(best_large orelse run.ms, run.ms);
             if (run.ms <= bound) break;
         }
         const large_ms = best_large orelse
-            return .{ .green = false, .signature = "slow", .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n > {d} ms (2.5×) on 3 of 3 runs", .{ n, best_small, bound }) };
+            return .{ .green = false, .signature = "slow", .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n > {d} ms (2.5×) on 3 of 3 runs, CPU time", .{ n, best_small, bound }) };
         const hundredths: u64 = @intCast(@divTrunc(large_ms * 100, @max(best_small, 1)));
-        const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
+        const text = try std.fmt.allocPrint(s.arena(), "n={d}: {d} ms; 2n: {d} ms; ratio {d}.{d:0>2}, CPU time", .{ n, best_small, large_ms, hundredths / 100, hundredths % 100 });
         return .{ .green = large_ms <= bound, .signature = if (large_ms <= bound) "" else "slow", .detail = text };
     }
 

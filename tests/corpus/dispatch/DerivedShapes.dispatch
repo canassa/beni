@@ -1,18 +1,22 @@
 module DerivedShapes
-  decl sameUnit evidence=0
-  decl samePair evidence=0
-  decl sameInts evidence=0
-  decl sameMixed evidence=0
-  derived 0 eq r$x$y evidence=2
-  derived 1 eq t2 evidence=2
-  derived 2 eq unit evidence=0
-  site 8 0 derived 2
-  site 21 0 derived 1
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 34 0 derived 0
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 47 0 derived 0
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
+  decl sameUnit evidence=0 arity=2
+  decl samePair evidence=0 arity=2
+  decl sameInts evidence=0 arity=2
+  decl sameMixed evidence=0 arity=2
+  derived 0 eq r$x$y context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  derived 1 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  derived 2 eq unit context=0
+  site 8 callee derived 2
+  site 21 callee derived 1
+    arg primitive strict_eq
+    arg primitive strict_eq
+  site 34 callee derived 0
+    arg primitive strict_eq
+    arg primitive strict_eq
+  site 47 callee derived 0
+    arg primitive strict_eq
+    arg primitive strict_eq

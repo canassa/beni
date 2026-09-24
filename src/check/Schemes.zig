@@ -717,14 +717,14 @@ pub fn instantiate(
 /// instantiation is done; `+|=` saturates rather than wrapping, because a
 /// wrapped index would collide with slot 0.
 /// `parent` is the slot of the same instruction whose resolution reached
-/// this instantiation, or `Dispatch.Site.no_parent` at a slot the
+/// this instantiation, or `Dispatch.FlatSite.no_parent` at a slot the
 /// instruction owns outright. The cursor is breadth-first and the emitter
 /// reads the list depth-first, so the parent is what puts the two back in
-/// agreement (`Dispatch.Site.parent`, A.68).
+/// agreement (`Dispatch.FlatSite.parent`, A.68).
 pub const Site = struct {
     inst: @import("../bir/Bir.zig").Inst.Index,
     next: *u16,
-    parent: u16 = @import("Dispatch.zig").Site.no_parent,
+    parent: u16 = @import("Dispatch.zig").FlatSite.no_parent,
 };
 
 /// Copy an imported constructor's type into `store` at `rank`:

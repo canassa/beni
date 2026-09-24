@@ -1240,18 +1240,18 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    `(Graph.Index, Interface.ValueIndex)` (`src/resolve/Resolve.zig:303-309`), and
    `Interface.Provenance.valueDecl` (`src/resolve/Interface.zig:309-313`) turns the second half into
    a `Bir.DeclIndex`. A declaration's instructions are contiguous (`Bir.Decl.inst_start`/`inst_end`,
-   the same fact `declSiteRange` rests on at `:1612-1617`), so this is a slice walk.
+   the same fact `Dispatch.sitesIn` rests on), so this is a slice walk.
    *Alternative rejected: reading `refs`' `import_value` rows, which are symbolic `(module symbol,
    name symbol)` pairs that `Resolve` never rewrites — re-deriving that lookup in the backend is a
    second copy of resolution, and a copy that drifts drops an edge, and a dropped edge is a
    `ReferenceError`.*
-3. every **dispatch site** of `d` — `declSiteRange(d)` (`:1614`) — and, recursively through
-   `Dispatch.partsAt`, every target nested in one. **These are the edges `Bir` deliberately does not
+3. every **dispatch site** of `d` — `Dispatch.sitesIn` over `d`'s instructions — its callee term and evidence roots, and, recursively through
+   each term's `args` (`checker-v2.md` §13.3, since R2a), every term nested in one. **These are the edges `Bir` deliberately does not
    have** (`frontend.md` §3.6, `static-dispatch-spike.md` §1.4): a method call's callee is not known
    until the checker runs, and evidence arguments are references that no source line spells. Target
    by target: `top {decl}` → `(m, decl)`; `ext {module, value}` → that module's declaration, through
    the same provenance as leg 2; `derived {index}` → `(m, index)`; `ext_derived {module, type,
-   kind}` → that module's `Derived` row for the pair; `evidence k` and `field`
+   kind}` → that module's `Derived` row for the pair; `param k` (v1's `evidence k`) and `field`
    add no edge, because each is a parameter or a property read.
 
    **`primitive` and `err` DO add one, and that is a correction to this list.** Both were written
@@ -1262,11 +1262,12 @@ runs over survivors only, so they are emitted iff a surviving body wanted one.
    is UTF-16 code-unit order and `String.compare` is Unicode scalar order and the two must agree),
    and `err` lowers to a call of `Basics.eq` (`Lower.partEq`'s `err` arm, the position A.66 names).
    Each is a reference to another module's declaration that no `refs` row and no `top`/`ext` target
-   records. So: `primitive string_compare` → core `String`'s `compare`; `err` → core `Basics`' `eq`.
+   records. So: `primitive string_compare` → core `String`'s `compare`; `err` → core `Basics`' `eq`
+   (since R2a the `err` part is the `undetermined` term, `checker-v2.md` §13.1, with the same edge).
    Twelve `run/` fixtures fail without the first — every program that puts a `String` in a `Dict` —
    with a `ReferenceError` at load, after a build that exited 0. *(Found in implementation.)*
 
-Out of a **derived function** row `r` of `m`: every target in `partsAt(r.parts)`, recursively, by the
+Out of a **derived function** row `r` of `m`: every term of `r.body` (`argsAt(r.body)`), recursively, by the
 same mapping — that is how a derived `eq` for `type T = T (Maybe U)` reaches `Maybe`'s row and `U`'s.
 Out of a **foreign binding**: nothing; its body is in a sibling file this pass does not read.
 

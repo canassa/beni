@@ -1,19 +1,27 @@
 module JoinedConstraintSites
-  decl put evidence=1
-    evidence 0 quantified=0 var=k method=compare
-  decl tag evidence=1
-    evidence 0 quantified=0 var=k method=eq
-  decl size evidence=0
-  decl nested evidence=0
-  decl annotated evidence=0
-  decl twoNames evidence=0
-  derived 0 compare JoinedConstraintSites.Box evidence=1
-    part 0 evidence 0
-  derived 1 eq JoinedConstraintSites.Box evidence=1
-    part 0 evidence 0
-  site 46 0 primitive string_compare
-  site 48 0 primitive string_compare
-  site 59 0 primitive string_compare
-  site 61 0 primitive string_compare
-  site 70 0 primitive string_compare
-  site 72 0 primitive strict_eq
+  decl put evidence=1 arity=2
+    requirement 0 quantified=0 var=k method=compare
+  decl tag evidence=1 arity=2
+    requirement 0 quantified=0 var=k method=eq
+  decl size evidence=0 arity=1
+  decl nested evidence=0 arity=0
+  decl annotated evidence=0 arity=0
+  decl twoNames evidence=0 arity=0
+  derived 0 compare JoinedConstraintSites.Box context=1
+    context 0 param=0 method=compare
+    body 0 param derived 0 0
+  derived 1 eq JoinedConstraintSites.Box context=1
+    context 0 param=0 method=eq
+    body 0 param derived 1 0
+  site 46
+    evidence primitive string_compare
+  site 48
+    evidence primitive string_compare
+  site 59
+    evidence primitive string_compare
+  site 61
+    evidence primitive string_compare
+  site 70
+    evidence primitive string_compare
+  site 72
+    evidence primitive strict_eq

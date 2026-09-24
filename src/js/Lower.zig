@@ -319,11 +319,11 @@ const Lowerer = struct {
     /// set — which is what keeps the names structural rather than a counter
     /// (CLAUDE.md rule 5).
     case_depth: u32 = 0,
-    /// How deep the evidence walk of §8.2 is. The `parts` of a target nest
-    /// (A.46) and the walk that reads them is recursive, so a poisoned
-    /// table whose range pointed back at itself would recurse until the
-    /// stack ran out. `dump/dispatch.zig` caps its own walk for the same
-    /// reason; this one reports and stops.
+    /// How many DERIVED terms deep the evidence walk of §8.2 is. The tree
+    /// cannot point back at itself (checker-v2.md §13.1: every argument
+    /// follows its owner, and `refuseEvidence` checks it), so this is the
+    /// pre-R2a cap kept for byte-identical behaviour, not a cycle guard: it
+    /// reports and stops past `max_part_depth`.
     part_depth: u8 = 0,
     /// The instruction being lowered, for a diagnostic raised by something
     /// that has no instruction of its own — the synthesised references of
@@ -623,21 +623,27 @@ const Lowerer = struct {
     /// they hand over. Flat, in site order, so `emissionOrder` walks it
     /// with one index like the `refs` run beside it.
     fn siteTops(l: *Lowerer, decl: u32) ![]const u32 {
-        const range = l.declSiteRange(decl);
+        const d = l.bir.decls[decl];
         var out: std.ArrayList(u32) = .empty;
-        for (l.in.dispatch.sites[range.start..][0..range.len]) |site| {
-            try l.collectTops(site.target, &out, 0);
+        for (l.in.dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
+            if (site.callee.unwrap()) |callee| try l.collectTops(callee, &out);
+            for (l.in.dispatch.argsAt(site.evidence)) |root| try l.collectTops(root, &out);
         }
         return out.items;
     }
 
-    fn collectTops(l: *Lowerer, target: Dispatch.Target, out: *std.ArrayList(u32), depth: u8) Allocator.Error!void {
-        if (depth > 32) return; // a poisoned table cannot spin here
-        switch (target) {
+    /// Pre-order over one evidence tree. No depth guard: every argument's
+    /// index is greater than its owner's (`Dispatch`'s construction rule,
+    /// verified on every load from bytes), and one that is not is skipped.
+    fn collectTops(l: *Lowerer, i: Dispatch.TermIndex, out: *std.ArrayList(u32)) Allocator.Error!void {
+        const t = l.in.dispatch.term(i);
+        switch (t) {
             .top => |use| try out.append(l.scratch, use.decl.int()),
             else => {},
         }
-        for (l.in.dispatch.partsAt(target.partsOf())) |part| try l.collectTops(part, out, depth + 1);
+        for (l.in.dispatch.argsAt(t.argsOf())) |arg| {
+            if (arg.int() > i.int()) try l.collectTops(arg, out);
+        }
     }
 
     fn declaration(l: *Lowerer, out: *StmtList, index: u32) !void {
@@ -665,12 +671,12 @@ const Lowerer = struct {
         });
         const p = l.pos(body);
         // §8.1: the hidden leading parameters, one per entry of this
-        // declaration's `decl_evidence` run, in the canonical order of
+        // declaration's `DeclInfo.requirements` (checker-v2.md §13.1), in the canonical order of
         // §7.2. A declaration of zero beni parameters that has evidence
         // would become a function and change its type across the module
         // boundary; the checker refuses it first (`constrained_constant`,
         // §6.4), so the constant path below is reached only with none.
-        const evidence: u16 = @intCast(l.in.dispatch.declEvidence(index).len);
+        const evidence: u16 = @intCast(l.in.dispatch.declRequirements(index).len);
         if (d.params == 0 and evidence == 0) {
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
             // parameterless declaration inherits its name, because `f x = e`
@@ -1153,32 +1159,7 @@ const Lowerer = struct {
         };
         if (!named) return false;
         if (l.bir.subRange(@enumFromInt(d.rhs)).len() != loop.slots.len - loop.evidence) return false;
-        return l.topLevelSites(l.sitesOf(inst)) == loop.evidence;
-    }
-
-    /// How many top-level evidence ARGUMENTS a site list holds: the same
-    /// pre-order walk `evidenceArguments` makes, counting its roots.
-    fn topLevelSites(l: *Lowerer, sites: []const Dispatch.Site) usize {
-        var cursor: usize = 0;
-        var count: usize = 0;
-        while (cursor < sites.len) : (count += 1) l.skipEvidence(sites, &cursor);
-        return count;
-    }
-
-    /// One top-level evidence argument and the sites its own evidence
-    /// consumes underneath it — `evidenceValue`'s walk with nothing built.
-    /// The cursor only ever advances, so the recursion is bounded by the
-    /// length of the list.
-    fn skipEvidence(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize) void {
-        const target = sites[cursor.*].target;
-        cursor.* += 1;
-        switch (target) {
-            .derived, .ext_derived => return,
-            else => if (target.partsOf().len != 0) return,
-        }
-        const wanted = l.targetEvidence(target);
-        var k: u16 = 0;
-        while (k < wanted and cursor.* < sites.len) : (k += 1) l.skipEvidence(sites, cursor);
+        return l.rootsOf(inst).len == loop.evidence;
     }
 
     /// Mark the slots this tail self-call passes something other than
@@ -1190,14 +1171,10 @@ const Lowerer = struct {
     /// expression at the site rather than `$m$k` — so the same syntactic
     /// test carries the evidence parameter like any other.
     fn markCarried(l: *Lowerer, inst: Inst.Index, loop: *Loop) void {
-        const sites = l.sitesOf(inst);
-        var cursor: usize = 0;
-        var k: u16 = 0;
-        while (cursor < sites.len and k < loop.evidence) : (k += 1) {
-            const target = sites[cursor].target;
-            l.skipEvidence(sites, &cursor);
-            const forwarded = switch (target) {
-                .evidence => |index| index == k,
+        const roots = l.rootsOf(inst);
+        for (roots[0..@min(roots.len, loop.evidence)], 0..) |root, k| {
+            const forwarded = switch (l.in.dispatch.term(root)) {
+                .param => |p| p.binder == .decl and p.k == k,
                 else => false,
             };
             if (!forwarded) loop.slots[k].carried = true;
@@ -1249,7 +1226,7 @@ const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         l.region = inst;
-        const evidence = try l.evidenceArguments(l.sitesOf(inst), p);
+        const evidence = try l.evidenceArguments(l.rootsOf(inst), p);
         const written = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
         for (loop.slots, 0..) |slot, i| {
             if (!slot.carried) continue;
@@ -1977,33 +1954,15 @@ const Lowerer = struct {
             },
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        const sites = l.sitesOf(inst);
-        if (sites.len == 0) return value;
+        const site = l.in.dispatch.siteOf(inst) orelse return value;
+        const roots = l.in.dispatch.argsAt(site.evidence);
+        const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, inst);
+        if (roots.len == 0 and expected == 0) return value;
         l.region = inst;
-        if (try l.refuseEvidence(inst, sites, l.valueEvidence(inst))) {
+        if (try l.refuseEvidence(inst, roots, expected)) {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        return l.etaExpand(value, try l.evidenceArguments(sites, p), l.referenceArity(inst), p);
-    }
-
-    /// How many evidence parameters the value an instruction NAMES takes:
-    /// from `decl_evidence` for a value of this module and from the
-    /// interface scheme for an imported one — the same two records
-    /// `targetEvidence` reads, keyed by instruction instead of by target.
-    ///
-    /// That count is exactly how many top-level evidence slots §7.2 puts on
-    /// a bare reference to the value, and on a `call` of it, so it is what
-    /// the wall of `evidenceShapeOk` measures those lists against. Anything
-    /// else — a local, a lambda, a constructor — takes none: §6.4 rule (a)
-    /// keeps a nested binding from being generalised over a constrained
-    /// variable, so nothing but a top-level declaration has evidence.
-    fn valueEvidence(l: *Lowerer, inst: Inst.Index) u16 {
-        const d = l.bir.instData(inst);
-        return switch (l.bir.instTag(inst)) {
-            .top => @intCast(l.in.dispatch.declEvidence(d.lhs).len),
-            .ext_value => l.externalEvidence(@enumFromInt(d.lhs), d.rhs),
-            else => 0,
-        };
+        return l.etaExpand(value, try l.evidenceArguments(roots, p), l.referenceArity(inst), p);
     }
 
     /// The beni arity of the value a reference names: how many parameters
@@ -2027,69 +1986,34 @@ const Lowerer = struct {
     // call (§8.2), and the operator itself when the target is a primitive
     // (§8.3).
 
-    /// The dispatch sites of one instruction, in the pre-order of §7.2's
-    /// evidence tree. `dispatch.sites` is grouped by `inst` (§7.1), so
-    /// this is one binary search and a slice — never a scan. It runs once
-    /// for each instruction that can carry sites: every `call`,
+    /// The evidence ROOTS of one instruction (checker-v2.md §13.1): one term
+    /// per requirement of the scheme it instantiates, each carrying its own
+    /// arguments. `dispatch.sites` has at most one row per instruction and is
+    /// ascending, so this is one binary search — never a scan. It runs once
+    /// for each instruction that can carry evidence: every `call`,
     /// `method_call` and `type_dispatch`, and every REFERENCE too, because
     /// §7.2 gives a bare mention of a constrained value evidence of its own
-    /// (§8.2's last row). A module has as many such instructions as it has
-    /// calls and references, so a scan here would be quadratic in the size
-    /// of a declaration and a search is not.
-    fn sitesOf(l: *Lowerer, inst: Inst.Index) []const Dispatch.Site {
-        return l.siteRange(inst.int(), inst.int() + 1);
+    /// (§8.2's last row).
+    fn rootsOf(l: *Lowerer, inst: Inst.Index) []const Dispatch.TermIndex {
+        const site = l.in.dispatch.siteOf(inst) orelse return &.{};
+        return l.in.dispatch.argsAt(site.evidence);
     }
 
-    /// The dispatch sites of one declaration: its instructions are
-    /// contiguous (`Bir.Decl.inst_start`), so they are one slice too.
-    fn declSiteRange(l: *Lowerer, decl: u32) Dispatch.Range {
-        const d = l.bir.decls[decl];
-        return l.siteRangeOf(d.inst_start.int(), d.inst_end.int());
+    /// How many evidence arguments the function a term names takes — the
+    /// one counting function, `Dispatch.requirementCount`. `Lower` only
+    /// ASSERTS with it (I7, checker-v2.md §13.3): the arguments themselves
+    /// are the term's own `args`.
+    fn requirementCount(l: *Lowerer, t: Dispatch.Term) u32 {
+        return l.in.dispatch.requirementCount(t, l.in.interfaces, l.in.types);
     }
 
-    fn siteRange(l: *Lowerer, start: u32, end: u32) []const Dispatch.Site {
-        const r = l.siteRangeOf(start, end);
-        return l.in.dispatch.sites[r.start..][0..r.len];
-    }
-
-    fn siteRangeOf(l: *Lowerer, start: u32, end: u32) Dispatch.Range {
-        const sites = l.in.dispatch.sites;
-        const lo = std.sort.lowerBound(Dispatch.Site, sites, start, siteBefore);
-        var hi = lo;
-        while (hi < sites.len and sites[hi].inst.int() < end) hi += 1;
-        return .{ .start = @intCast(lo), .len = @intCast(hi - lo) };
-    }
-
-    fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
-        return std.math.order(inst, s.inst.int());
-    }
-
-    /// How many further SITES a target consumes: the evidence of a value
-    /// with a scheme of its own, which §7.2 numbers into the same flat list
-    /// (§8.2, A.25). It is not `ownEvidence` — a derived function takes
-    /// evidence too, and carries it on the target instead — and the
-    /// difference is what `evidenceShapeOk` measures the site list against.
-    fn targetEvidence(l: *Lowerer, target: Dispatch.Target) u16 {
-        return switch (target) {
-            .top => |use| @intCast(l.in.dispatch.declEvidence(use.decl.int()).len),
-            .ext => |e| l.externalEvidence(e.module, @intFromEnum(e.value)),
-            // A primitive comparator and an evidence parameter are already
-            // closures of the right arity; a `derived` or `ext_derived`
-            // target takes its evidence from its own `parts` range and
-            // consumes no site at all (A.46).
-            else => 0,
-        };
-    }
-
-    /// The beni arity of a target: how many parameters its eta-expansion
+    /// The beni arity of a term: how many parameters its eta-expansion
     /// takes, which is the arity the evidence slot promised.
-    fn targetArity(l: *Lowerer, target: Dispatch.Target) u32 {
-        return switch (target) {
-            // No bounds test: a `top` target names a declaration of the
-            // module being lowered, and `targetValue` asserts exactly that
-            // before `topName` indexes the same table unguarded. One rule
-            // for one invariant, rather than a guard here that invents a
-            // zero and a panic there.
+    fn termArity(l: *Lowerer, t: Dispatch.Term) u32 {
+        return switch (t) {
+            // No bounds test: a `top` term names a declaration of the
+            // module being lowered, and `termName` asserts exactly that
+            // before `topName` indexes the same table unguarded.
             .top => |use| l.bir.decls[use.decl.int()].params,
             .ext => |e| l.externalArity(e.module, @intFromEnum(e.value)),
             // A derived `eq` or `compare` is binary: the two values being
@@ -2099,16 +2023,15 @@ const Lowerer = struct {
         };
     }
 
-    /// The JavaScript value a target names (§8.2's table), with the import
-    /// recorded for an `ext` exactly as for any other cross-module
-    /// reference.
-    fn targetValue(l: *Lowerer, target: Dispatch.Target, p: u32) !Node.Index {
-        return switch (target) {
+    /// The JavaScript value a term NAMES (§8.2's table), before any of its
+    /// own arguments are applied, with the import recorded for an `ext`
+    /// exactly as for any other cross-module reference.
+    fn termName(l: *Lowerer, t: Dispatch.Term, p: u32) !Node.Index {
+        return switch (t) {
             // `topName` and `externalName` index `bir.decls` and the
             // interface's value table without a bounds test, and so does
-            // `targetArity`. A target naming neither is a malformed table
-            // and not a program, so it is an assert: a guard here would
-            // emit a name for a declaration that is not there.
+            // `termArity`. A term naming neither is a malformed table and
+            // not a program, so it is an assert.
             .top => |use| blk: {
                 std.debug.assert(use.decl.int() < l.bir.decls.len);
                 break :blk try l.ident(try l.topName(use.decl.int()), p);
@@ -2119,10 +2042,14 @@ const Lowerer = struct {
                 try l.need(e.module, @intFromEnum(e.value));
                 break :blk try l.ident(try l.externalName(e.module, @intFromEnum(e.value)), p);
             },
-            .evidence => |k| try l.ident(try l.evidenceName(k), p),
+            // A declaration's `$m$k` and a derived function's are spelled
+            // alike: each is the parameter list of the function the term
+            // sits in (§8.1, §9).
+            .param => |param| try l.ident(try l.evidenceName(param.k), p),
             .primitive => |prim| try l.primitiveValue(prim, p),
-            // Unreachable: `field` and `err` cannot be evidence (§8.2), and
-            // a `derived` target was refused before this was called.
+            // Unreachable: `field` cannot be evidence (§8.2), `undetermined`
+            // is answered by `termValue`, and a derived term goes through
+            // `derivedName`.
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
     }
@@ -2136,20 +2063,6 @@ const Lowerer = struct {
         return iface.scheme(index);
     }
 
-    /// The evidence count of an imported value, computed from its
-    /// interface scheme the way §7.2's canonical order is: one slot per
-    /// constraint of each quantifier, quantifiers in the order the scheme
-    /// records them. Caller and callee derive it from the same record, so
-    /// they agree.
-    fn externalEvidence(l: *Lowerer, module: Graph.Index, value: u32) u16 {
-        const s = l.externalScheme(module, value) orelse return 0;
-        const iface = &l.in.interfaces[module.int()];
-        var n: u32 = 0;
-        var i: u32 = 0;
-        while (i < s.quantified_count) : (i += 1) n += iface.quantified(s, i).constraints_len;
-        return std.math.cast(u16, n) orelse 0;
-    }
-
     /// The beni arity of an imported value: the parameter count of its
     /// scheme body when that body is a function type, and zero otherwise.
     fn externalArity(l: *Lowerer, module: Graph.Index, value: u32) u32 {
@@ -2161,72 +2074,69 @@ const Lowerer = struct {
         return @intCast(iface.range(t.lhs).len);
     }
 
-    /// The hidden leading arguments of one instruction (§8.2), in the
-    /// order the site list is in.
-    ///
-    /// The list is FLAT and the structure is a tree: a target that takes
-    /// evidence of its own consumes the slots that follow it, which is the
-    /// eta-expansion of A.25. So the walk is a pre-order over a cursor and
-    /// not an index lookup — the ORDER shapes the slots and the counts
-    /// measure them, and no index but the callee's own 0 is ever read.
-    /// `Dispatch.finish` is what puts the list in that order, which the
-    /// numbering alone does not give (A.68).
-    fn evidenceArguments(l: *Lowerer, sites: []const Dispatch.Site, p: u32) ![]const Node.Index {
-        var out: std.ArrayList(Node.Index) = .empty;
-        var cursor: usize = 0;
-        while (cursor < sites.len) {
-            try out.append(l.scratch, try l.evidenceValue(sites, &cursor, p));
-        }
-        return out.items;
+    /// The hidden leading arguments of one instruction (§8.2): one value
+    /// per root, in the order the site lists them. Nothing is counted
+    /// here — each root carries its own arguments (checker-v2.md §13.3) —
+    /// and `refuseEvidence` has already asserted that the counts agree.
+    fn evidenceArguments(l: *Lowerer, roots: []const Dispatch.TermIndex, p: u32) ![]const Node.Index {
+        return l.termValues(roots, null, p);
     }
 
-    fn evidenceValue(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize, p: u32) Allocator.Error!Node.Index {
-        const target = sites[cursor.*].target;
-        cursor.* += 1;
-        // A target that carries its own `parts` is a leaf HERE and a tree
-        // of its own underneath: a derived function always (A.46), and a
-        // constrained `top`/`ext` in a part position since §7.1's
-        // amendment (A.64). Either way it consumes no further site.
-        switch (target) {
-            .derived, .ext_derived => return l.derivedValue(target, p),
-            else => if (target.partsOf().len != 0) {
-                // **A `top`/`ext` target with parts, on a SITE.** The
-                // checker fills those parts in `targetFor`, and `targetFor`
-                // is reached two ways, not one: from inside a parts tree
-                // (`constrainedParts`, depth > 0), and from `finishDerived`
-                // at depth 0 (`Solve.zig`'s "receiver's own derived
-                // target"), whose answer goes straight onto a site. The
-                // depth-0 route cannot produce this shape today —
-                // `methodOnApp` answers a nominal type's own module rule
-                // and the imported-value rule BEFORE it derives, so by the
-                // time `finishDerived` runs, `appTarget`'s `top` and `ext`
-                // arms cannot match — but that is a fact about the ORDER of
-                // two tables, not an invariant of the parts range, so this
-                // stays handled.
-                //
-                // Handled by REFUSING, and that is the change: the kind of
-                // the method a slot answers is what an `err` part inside it
-                // has to be answered by (A.67), and a site carries no kind
-                // — `derivedTargetKind` says `.eq` for a `top` or an `ext`
-                // because it has nothing else to say. Guessing `.eq` here
-                // would put `Basics.eq` into an `Order` slot exactly as
-                // `derivedValue` used to. The slot's own method name is
-                // recoverable — it is the callee's `where` clause, in
-                // §7.2's order — and threading it through this walk is what
-                // this arm needs the day it becomes reachable.
-                try l.reportDispatchBug(l.region, parts_on_site_target);
+    /// One value per term. `kind` is the method of the nearest enclosing
+    /// derived term — the one thing a term alone cannot say, and what an
+    /// `undetermined` leaf has to be answered by: `Basics.eq` in a
+    /// `compare` slot is a `Bool` where an `Order` was promised. `null`
+    /// outside any derived term.
+    fn termValues(
+        l: *Lowerer,
+        terms: []const Dispatch.TermIndex,
+        kind: ?Dispatch.Derived.Kind,
+        p: u32,
+    ) Allocator.Error![]const Node.Index {
+        const out = try l.scratch.alloc(Node.Index, terms.len);
+        for (terms, out) |t, *slot| slot.* = try l.termValue(t, kind, p);
+        return out;
+    }
+
+    /// One term in VALUE position (§8.2's table).
+    ///
+    /// A `top`/`ext` with arguments of its own is eta-expanded around them
+    /// (A.25) — in a site's tree and inside a derived function's alike, the
+    /// two places §7.1's amendment (A.64) used to tell apart. A derived
+    /// term is its function, eta-expanded around its own arguments.
+    fn termValue(l: *Lowerer, i: Dispatch.TermIndex, kind: ?Dispatch.Derived.Kind, p: u32) Allocator.Error!Node.Index {
+        const t = l.in.dispatch.term(i);
+        switch (t) {
+            .derived, .ext_derived => return l.derivedValue(i, p),
+            .primitive => |prim| return l.primitiveValue(prim, p),
+            // The proven-undetermined default (checker-v2.md §13.1): the
+            // structural answer, as a function of the enclosing method.
+            .undetermined => {
+                const k = kind orelse {
+                    try l.reportDispatchBug(l.region, undetermined_without_method);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                };
+                return switch (k) {
+                    .eq => l.coreValue(.Basics, .eq, p),
+                    .compare => l.primitiveValue(.num_compare, p),
+                };
+            },
+            .top, .ext => {
+                const args = l.in.dispatch.argsAt(t.argsOf());
+                if (args.len != l.requirementCount(t)) {
+                    try l.reportEvidenceShape(l.region);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const value = try l.termName(t, p);
+                if (args.len == 0) return value;
+                return l.etaExpand(value, try l.termValues(args, kind, p), l.termArity(t), p);
+            },
+            .param => return l.termName(t, p),
+            .field => {
+                try l.reportDispatchBug(l.region, field_inside_derived);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
         }
-        const wanted = l.targetEvidence(target);
-        var bound: std.ArrayList(Node.Index) = .empty;
-        var k: u16 = 0;
-        while (k < wanted and cursor.* < sites.len) : (k += 1) {
-            try bound.append(l.scratch, try l.evidenceValue(sites, cursor, p));
-        }
-        const value = try l.targetValue(target, p);
-        if (wanted == 0) return value;
-        return l.etaExpand(value, bound.items, l.targetArity(target), p);
     }
 
     /// `(a, b) => <name>(<bound…>, a, b)` — a constrained value in VALUE
@@ -2269,7 +2179,7 @@ const Lowerer = struct {
     /// `<` on JavaScript strings is UTF-16 code-unit order and
     /// `String.compare` is Unicode scalar order, and the two must agree
     /// (§3.2, A.26).
-    fn primitiveValue(l: *Lowerer, prim: Dispatch.Target.Primitive, p: u32) !Node.Index {
+    fn primitiveValue(l: *Lowerer, prim: Dispatch.Primitive, p: u32) !Node.Index {
         switch (prim) {
             .strict_eq => {
                 l.needs.eq_prim = true;
@@ -2485,7 +2395,7 @@ const Lowerer = struct {
         const x, const y = try l.operandNames();
         var params: std.ArrayList(JsIr.NameIndex) = .empty;
         var k: u16 = 0;
-        while (k < row.evidence_count) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
+        while (k < row.context.len) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
         switch (row.shape) {
             // §9.3: `(x, y) => true` / `(x, y) => "EQ"`. `()` is `null` at
             // runtime, so the two operands hold the same value and there is
@@ -2657,7 +2567,7 @@ const Lowerer = struct {
         const region = d.inst_start;
         l.region = region;
         const ctors = l.bir.declCtors(d);
-        const parts = l.in.dispatch.partsAt(row.parts);
+        const parts = l.in.dispatch.argsAt(row.body);
 
         var widest: u32 = 0;
         for (ctors) |c| widest = @max(widest, Bir.SubRange.len(.{ .start = c.args_start, .end = c.args_end }));
@@ -2793,19 +2703,20 @@ const Lowerer = struct {
     }
 
     /// `EQ(l, r)` for one BODY position (§9's parts table): a comparison of
-    /// two concrete expressions, so a `primitive` part is the JavaScript
+    /// two concrete expressions, so a `primitive` term is the JavaScript
     /// operator itself and not the comparator of §9.1 — that is the
-    /// difference from §8.2, where the same target is in value position and
+    /// difference from §8.2, where the same term is in value position and
     /// must be a function.
     fn partEq(
         l: *Lowerer,
-        part: Dispatch.Target,
+        part: Dispatch.TermIndex,
         left: Node.Index,
         right: Node.Index,
         region: Inst.Index,
         p: u32,
     ) !?Node.Index {
-        switch (part) {
+        const t = l.in.dispatch.term(part);
+        switch (t) {
             .primitive => |prim| {
                 // `eq` has one primitive answer and the three ordering ones
                 // belong to `compare`; meeting one here is a table that
@@ -2816,24 +2727,20 @@ const Lowerer = struct {
                 }
                 return try l.binary(.strict_eq, left, right, p);
             },
-            .evidence => |k| return try l.evidenceCall(k, left, right, p),
+            .param => |param| return try l.evidenceCall(param.k, left, right, p),
             .top, .ext => return l.namedPartCall(part, .eq, left, right, region, p),
-            // The checker could not name a function for this position: a
-            // slot nothing ever inhabits, or a `number` still unresolved at
+            // The proven-undetermined default (checker-v2.md §13.1): a slot
+            // nothing ever inhabits, or a `number` still unresolved at
             // generalisation whose `eq` is `===` whichever of `Int` and
-            // `Float` it settles on. `Basics.eq` IS that answer, and the
-            // one the S4 shim gave the whole comparison.
+            // `Float` it settles on. `Basics.eq` IS that answer.
             //
-            // INVARIANT, and it is the CHECKER's to hold: `err` means
-            // exactly that and nothing else. The moment the checker writes
-            // `err` for a position it could not resolve for some OTHER
-            // reason — a user's own method it failed to find, say — this
-            // line silently answers the wrong `Bool`. What pins it is
-            // `tests/corpus/dispatch/ErrParts`, which shows every `err` a
-            // clean program makes.
-            .err => return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p),
+            // INVARIANT, and it is the CHECKER's to hold: `undetermined`
+            // means exactly that and nothing else. v1's converter writes it
+            // for a legacy `err` part, and what pins which programs make one
+            // is `tests/corpus/dispatch/ErrParts`.
+            .undetermined => return try l.call(try l.coreValue(.Basics, .eq, p), &.{ left, right }, p),
             .derived, .ext_derived => {
-                if (!l.derivedBodyExists(part)) {
+                if (!l.derivedBodyExists(t)) {
                     try l.reportDispatchBug(region, derived_body_missing);
                     return null;
                 }
@@ -2852,19 +2759,17 @@ const Lowerer = struct {
     /// It takes a statement list and `partEq` does not, because one row
     /// needs it: `primitive char_compare` is a comparison of CODE POINTS,
     /// and reading each operand's once means binding it (§8.3's `CP(e)`).
-    /// The two consts land in whatever block this position is in — the
-    /// function's own, or one `switch` arm's — ahead of the `const` the
-    /// lexicographic sequence then binds the `Order` to.
     fn partCompare(
         l: *Lowerer,
         out: *StmtList,
-        part: Dispatch.Target,
+        part: Dispatch.TermIndex,
         left: Node.Index,
         right: Node.Index,
         region: Inst.Index,
         p: u32,
     ) !?Node.Index {
-        switch (part) {
+        const t = l.in.dispatch.term(part);
+        switch (t) {
             .primitive => |prim| switch (prim) {
                 // `strict_eq` is `eq`'s one answer and has no ordering
                 // meaning at all; meeting it here is a table that crossed
@@ -2876,10 +2781,7 @@ const Lowerer = struct {
                 .num_compare => return try l.orderOf(left, right, p),
                 .char_compare => {
                     // The CODE POINTS are bound, not the operands: an
-                    // `Order` reads each of them twice (§9.1's own
-                    // `compare$char` is this function inlined), so binding
-                    // the operand alone would still call `codePointAt`
-                    // four times.
+                    // `Order` reads each of them twice.
                     const a = try l.bindSubject(out, try l.codePointCall(left, p), p);
                     const b = try l.bindSubject(out, try l.codePointCall(right, p), p);
                     return try l.orderOf(a, b, p);
@@ -2888,17 +2790,15 @@ const Lowerer = struct {
                 // order and `<` is UTF-16 code-unit order (§3.2, A.26).
                 .string_compare => return try l.call(try l.stringCompare(p), &.{ left, right }, p),
             },
-            .evidence => |k| return try l.evidenceCall(k, left, right, p),
+            .param => |param| return try l.evidenceCall(param.k, left, right, p),
             .top, .ext => return l.namedPartCall(part, .compare, left, right, region, p),
             // A position nothing ever inhabits — `Nothing < Nothing` at an
             // element type no use constrains. There is no ordering to get
             // wrong, and `"EQ"` is the one answer that leaves a
             // lexicographic sequence reading the position after it.
-            // (A `number` is NOT this case: A.59 answers it with
-            // `num_compare` before the checker gives up.)
-            .err => return try l.stringNode("EQ", p),
+            .undetermined => return try l.stringNode("EQ", p),
             .derived, .ext_derived => {
-                if (!l.derivedBodyExists(part)) {
+                if (!l.derivedBodyExists(t)) {
                     try l.reportDispatchBug(region, derived_body_missing);
                     return null;
                 }
@@ -2915,45 +2815,40 @@ const Lowerer = struct {
     /// body position.
     fn derivedPartCall(
         l: *Lowerer,
-        part: Dispatch.Target,
+        part: Dispatch.TermIndex,
         kind: Dispatch.Derived.Kind,
         left: Node.Index,
         right: Node.Index,
         p: u32,
     ) !Node.Index {
-        const callee = try l.derivedName(part, p);
-        return l.applyEvidence(callee, try l.partValues(part.partsOf(), kind, p), left, right, p);
+        const t = l.in.dispatch.term(part);
+        const callee = try l.derivedName(t, p);
+        return l.applyEvidence(callee, try l.termValues(l.in.dispatch.argsAt(t.argsOf()), kind, p), left, right, p);
     }
 
     /// `M$m(<its evidence…>, l, r)` — a `top` or `ext` value at one body
-    /// position.
+    /// position, applied to its own arguments (§7.1's amendment, A.64).
     ///
-    /// **A constrained one is answered by its own `parts`** (§7.1's
-    /// amendment, A.64): `List.eq` takes one hidden argument, and before
-    /// the range existed the emitted call was one argument short. A target
-    /// whose evidence count and part count disagree has no honest call at
-    /// all, so it is refused rather than guessed at.
+    /// A term whose argument count and requirement count disagree has no
+    /// honest call at all, so it is refused rather than guessed at — the
+    /// I7 assert, again, where it is cheap (checker-v2.md §13.3).
     fn namedPartCall(
         l: *Lowerer,
-        part: Dispatch.Target,
+        part: Dispatch.TermIndex,
         kind: Dispatch.Derived.Kind,
         left: Node.Index,
         right: Node.Index,
         region: Inst.Index,
         p: u32,
     ) !?Node.Index {
-        const wanted = l.targetEvidence(part);
-        const parts = part.partsOf();
-        // Equal, or there is no honest call: one range says how many hidden
-        // arguments the callee takes and the other says which values they
-        // are, and a disagreement is a call of the wrong arity — which
-        // JavaScript runs.
-        if (wanted != parts.len) {
+        const t = l.in.dispatch.term(part);
+        const args = l.in.dispatch.argsAt(t.argsOf());
+        if (l.requirementCount(t) != args.len) {
             try l.refuseConstrainedPart(region);
             return null;
         }
-        const evidence = try l.partValues(parts, kind, p);
-        return try l.applyEvidence(try l.targetValue(part, p), evidence, left, right, p);
+        const evidence = try l.termValues(args, kind, p);
+        return try l.applyEvidence(try l.termName(t, p), evidence, left, right, p);
     }
 
     fn applyEvidence(
@@ -2971,108 +2866,50 @@ const Lowerer = struct {
         return l.call(callee, args, p);
     }
 
-    /// The evidence a USE hands a derived function, one value per position
-    /// (§7.1, A.46). Ranges nest: a position that is itself a derived
-    /// function carries its own.
-    ///
-    /// `kind` is the method the OWNING target is, and the one thing a
-    /// `Target` alone cannot say: an `err` position has to be answered by a
-    /// function of the right return type, and `Basics.eq` in a `compare`
-    /// slot is a `Bool` where an `Order` was promised.
-    fn partValues(
-        l: *Lowerer,
-        range: Dispatch.Range,
-        kind: Dispatch.Derived.Kind,
-        p: u32,
-    ) Allocator.Error![]const Node.Index {
-        const parts = l.in.dispatch.partsAt(range);
-        const out = try l.scratch.alloc(Node.Index, parts.len);
-        for (parts, out) |part, *slot| slot.* = try l.partValue(part, kind, p);
-        return out;
-    }
-
-    /// One position's evidence, in VALUE position.
-    ///
-    /// The `top`/`ext` arm passes the target's OWN parts as evidence and
-    /// eta-expands, exactly as `namedPartCall` does in body position —
-    /// §7.1's amendment (A.64). Before the range existed this arm could
-    /// only refuse, and before THAT it emitted `Main$eq$r$k(Lib$eq, …)`
-    /// against a `Lib$eq` of arity three: a `TypeError` at run time, which
-    /// is the one outcome `backend.md` §1 forbids.
-    fn partValue(
-        l: *Lowerer,
-        part: Dispatch.Target,
-        kind: Dispatch.Derived.Kind,
-        p: u32,
-    ) Allocator.Error!Node.Index {
-        return switch (part) {
-            .derived, .ext_derived => l.derivedValue(part, p),
-            .primitive => |prim| l.primitiveValue(prim, p),
-            // A position nothing inhabits, in value position: the same
-            // answer `partEq`/`partCompare` give it, as a function.
-            .err => switch (kind) {
-                .eq => l.coreValue(.Basics, .eq, p),
-                .compare => l.primitiveValue(.num_compare, p),
-            },
-            .top, .ext => blk: {
-                const wanted = l.targetEvidence(part);
-                const parts = part.partsOf();
-                if (wanted != parts.len) {
-                    try l.refuseConstrainedPart(l.region);
-                    break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                }
-                const value = try l.targetValue(part, p);
-                if (wanted == 0) break :blk value;
-                break :blk l.etaExpand(value, try l.partValues(parts, kind, p), l.targetArity(part), p);
-            },
-            else => l.targetValue(part, p),
-        };
-    }
-
     /// A derived function in VALUE position: the bare name when it takes no
-    /// evidence, its eta-expansion when it does (§8.2, A.25).
+    /// evidence, its eta-expansion around its own arguments when it does
+    /// (§8.2, A.25).
     ///
-    /// **A target with no body is a table the checker did not write.** Every
-    /// shape §9 describes has a body for both methods, `List a` has its own
-    /// `pub foreign eq` and `pub foreign compare` (§5.2), and `equatable` is
-    /// core's alone — so the A.51 bridge that used to answer a missing `eq`
-    /// with `core/Basics.js`'s structural walk has no customer left and is
-    /// gone with S6b. Nothing is MISSING here any more; something would be
-    /// WRONG, so it reports `internal` rather than `not_implemented`.
-    ///
-    /// **Not reachable by any program**: the checker refuses `eq` and
-    /// `compare` on a type whose method has no body before the backend is
-    /// asked (§3.3, A.54 — `check/bad/CompareOnTypeHoldingFunction`,
-    /// `check/bad/core/CompareOnWrappedForeign`), so only a hand-built table
-    /// gets here, and the in-source test below is what holds it.
-    fn derivedValue(l: *Lowerer, target: Dispatch.Target, p: u32) Allocator.Error!Node.Index {
+    /// **A term with no body is a table the checker did not write.** Every
+    /// shape §9 describes has a body for both methods and `List a` has its
+    /// own `pub foreign eq` and `pub foreign compare` (§5.2), so nothing is
+    /// MISSING here any more; something would be WRONG, so it reports
+    /// `internal` rather than `not_implemented`. Not reachable by any
+    /// program: the checker refuses `eq` and `compare` on a type whose
+    /// method has no body before the backend is asked (§3.3, A.54), so only
+    /// a hand-built table gets here, and the in-source test below is what
+    /// holds it.
+    fn derivedValue(l: *Lowerer, i: Dispatch.TermIndex, p: u32) Allocator.Error!Node.Index {
         if (l.part_depth > max_part_depth) {
             try l.reportDispatchBug(l.region, parts_too_deep);
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         l.part_depth += 1;
         defer l.part_depth -= 1;
-        const kind = l.derivedTargetKind(target);
-        if (!l.derivedBodyExists(target)) {
+        const t = l.in.dispatch.term(i);
+        const kind = l.derivedTermKind(t);
+        if (!l.derivedBodyExists(t)) {
             try l.reportDispatchBug(l.region, derived_body_missing);
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        const callee = try l.derivedName(target, p);
-        if (l.ownEvidence(target) == 0) return callee;
-        return l.etaExpand(callee, try l.partValues(target.partsOf(), kind, p), 2, p);
+        const args = l.in.dispatch.argsAt(t.argsOf());
+        if (args.len != l.requirementCount(t)) {
+            try l.reportEvidenceShape(l.region);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const callee = try l.derivedName(t, p);
+        if (args.len == 0) return callee;
+        return l.etaExpand(callee, try l.termValues(args, kind, p), 2, p);
     }
 
-    /// Which of §9's two methods a derived target is.
+    /// Which of §9's two methods a derived term is.
     ///
     /// **Ask it only about a `derived` or an `ext_derived`.** Every other
-    /// target gets `.eq`, and that is a default and not an answer: a `top`
-    /// or an `ext` names a value whose kind lives in its signature, which
-    /// this file does not read (§8.0). The one caller that used to ask
-    /// about a `top`/`ext` — the site whose target carries `parts` — now
-    /// refuses instead, because `.eq` there is a `Bool` in an `Order` slot
-    /// (A.67).
-    fn derivedTargetKind(l: *Lowerer, target: Dispatch.Target) Dispatch.Derived.Kind {
-        return switch (target) {
+    /// term gets `.eq`, and that is a default and not an answer: a `top` or
+    /// an `ext` names a value whose kind lives in its signature, which this
+    /// file does not read (§8.0).
+    fn derivedTermKind(l: *Lowerer, t: Dispatch.Term) Dispatch.Derived.Kind {
+        return switch (t) {
             .derived => |use| if (use.index < l.in.dispatch.derived.len)
                 l.in.dispatch.derived[use.index].kind
             else
@@ -3086,8 +2923,8 @@ const Lowerer = struct {
     /// module that declares the type for a nominal one, the shape key in
     /// this module for a structural one. A nominal method of another module
     /// is imported through the same path as any other cross-module value.
-    fn derivedName(l: *Lowerer, target: Dispatch.Target, p: u32) !Node.Index {
-        switch (target) {
+    fn derivedName(l: *Lowerer, t: Dispatch.Term, p: u32) !Node.Index {
+        switch (t) {
             .derived => |use| {
                 const row = l.in.dispatch.derived[use.index];
                 const base = try l.derivedBase(row.kind, row.shape);
@@ -3115,11 +2952,8 @@ const Lowerer = struct {
                     .tag = JsIr.Name.no_tag,
                 }), p);
             },
-            // Unreachable by the contract: every caller tests the target
-            // is one of the two derived variants first. A silent
-            // `undefined` here would be a name that is not a function in
-            // call position, exit 0 and a `TypeError` at runtime, which is
-            // the failure `reportDispatchBug` exists to replace.
+            // Unreachable by the contract: every caller tests the term is
+            // one of the two derived variants first.
             else => {
                 try l.reportDispatchBug(l.region, derived_name_of_non_derived);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -3127,26 +2961,22 @@ const Lowerer = struct {
         }
     }
 
-    /// Whether the module that owns this target EMITS the function §8.5
-    /// names it. Three ways it does not, and each is a wall S5 leaves
-    /// standing rather than a call to a name that is not there:
+    /// Whether the module that owns this term EMITS the function §8.5
+    /// names it. Three ways it does not, and each is a wall rather than a
+    /// call to a name that is not there:
     ///
-    ///   - a derived `compare`, which is S6's half of §9;
+    ///   - a derived row index past this module's table;
     ///   - a `foreign type`'s method: there are no constructors to walk, so
-    ///     no module derives one (A.55, A.60). `List a` is the live case,
-    ///     and §5.2 gives it a `pub foreign compare` of its own in S6b;
+    ///     no module derives one (A.55, A.60);
     ///   - a nominal type whose own module supplies a `pub` value of that
     ///     name: the module rule won there and the eager pass wrote
     ///     nothing (§3.3 step 1, §6.3.1 step 4).
     ///
-    /// **It has to be the same three questions `Solve.deriveOne` asks, in
-    /// the same order**, or the emitter names a row the declaring module
-    /// did not write — and §3.2's table comes FIRST (A.63). `core/Basics`
-    /// declares a `pub compare` of its own, so asking the module rule first
-    /// would say that `Basics$Order$$compare` is not there while the eager
-    /// pass writes it.
-    fn derivedBodyExists(l: *Lowerer, target: Dispatch.Target) bool {
-        switch (target) {
+    /// **It has to be the same questions `Solve.deriveOne` asks, in the
+    /// same order**, or the emitter names a row the declaring module did not
+    /// write — and §3.2's table comes FIRST (A.63).
+    fn derivedBodyExists(l: *Lowerer, t: Dispatch.Term) bool {
+        switch (t) {
             .derived => |use| return use.index < l.in.dispatch.derived.len,
             .ext_derived => |use| {
                 const entry = l.in.types.entry(use.type);
@@ -3171,31 +3001,11 @@ const Lowerer = struct {
     /// Whether §3.2's table answers `(T, kind)` with a DERIVED function
     /// rather than a primitive — the two rows that do: `Order`'s `compare`,
     /// which cannot be alphabetic on its own tags, and both of `Never`'s.
-    /// The declaring module writes these whatever else it declares, which
-    /// is the whole point of the table being consulted first (§3.2, A.63).
     fn wellKnownDerivedRow(l: *Lowerer, id: Dispatch.TypeId, kind: Dispatch.Derived.Kind) bool {
         const wk = l.in.types.well_known;
         if (id == .none) return false;
         if (id == wk.order) return kind == .compare;
         return id == wk.never;
-    }
-
-    /// How many evidence parameters the function a target NAMES takes —
-    /// which is not `targetEvidence`, whose answer is how many SITES the
-    /// target consumes. A derived function's evidence rides on the target's
-    /// own `parts` (A.46) and never on the site list.
-    fn ownEvidence(l: *Lowerer, target: Dispatch.Target) u16 {
-        return switch (target) {
-            .derived => |use| if (use.index < l.in.dispatch.derived.len)
-                l.in.dispatch.derived[use.index].evidence_count
-            else
-                0,
-            // One per type parameter, used or not: the uniform rule of
-            // §9.4 and A.20, which is what keeps the order a function of
-            // the type's own declaration.
-            .ext_derived => |use| l.in.types.entry(use.type).arity,
-            else => l.targetEvidence(target),
-        };
     }
 
     fn operandNames(l: *Lowerer) ![2]JsIr.NameIndex {
@@ -3271,84 +3081,70 @@ const Lowerer = struct {
         return l.codePointCall(try l.bindSubject(out, value, p), p);
     }
 
-    /// **The wall is down.** Every row of §8 is lowered and every shape of
-    /// §9 has a body for both methods, so what this checks is no longer a
-    /// slice that has not landed: a target with no body, or a site list
-    /// that is not the tree §8.2 describes, is a table the checker did not
-    /// write. Both say `internal`.
-    fn refuseEvidence(l: *Lowerer, inst: Inst.Index, sites: []const Dispatch.Site, expected: u16) !bool {
-        for (sites) |site| {
-            switch (site.target) {
-                .derived, .ext_derived => {
-                    if (l.derivedBodyExists(site.target)) continue;
-                    try l.reportDispatchBug(inst, derived_body_missing);
-                    return true;
-                },
-                else => {},
-            }
+    /// **The I7 assert, again, where it is cheap** (checker-v2.md §2, §13.3).
+    /// `Dispatch.finish`'s caller already refused a table that does not add
+    /// up — on every module that reported no error — so this is the second
+    /// line: a table that reached the backend some other way (a cache entry,
+    /// a hand-built test table) is refused here rather than emitted as a call
+    /// JavaScript would run with the wrong number of arguments.
+    ///
+    /// Two checks, in the order they were always made: every derived term
+    /// in the trees names a function some module writes, and the trees are
+    /// what I7 says — `expected` roots, each term's `args` as long as its
+    /// callee's requirement count, no `field` among them.
+    fn refuseEvidence(l: *Lowerer, inst: Inst.Index, roots: []const Dispatch.TermIndex, expected: u32) !bool {
+        for (roots) |root| {
+            if (l.derivedBodiesExist(root)) continue;
+            try l.reportDispatchBug(inst, derived_body_missing);
+            return true;
         }
-        if (!l.evidenceShapeOk(sites, expected)) {
+        if (!l.evidenceShapeOk(roots, expected)) {
             try l.reportEvidenceShape(inst);
             return true;
         }
         return false;
     }
 
-    /// Whether `sites` is the tree §8.2 describes, `expected` slots wide —
-    /// and the one place §7.2's promise is kept.
-    ///
-    /// The evidence list is FLAT, and the structure is implied by counts
-    /// the backend works out for itself: from `decl_evidence` for a value
-    /// of this module, from the interface scheme for an imported one. So
-    /// two records have to agree about how many hidden arguments a callee
-    /// takes, and §7.2 says the table exists so that a caller/callee
-    /// disagreement is "a caught bug rather than a silent miscompile". If
-    /// the counts did not consume the list exactly, the emitted call has
-    /// the wrong number of arguments — and JavaScript RUNS a call with the
-    /// wrong number of arguments, binding `undefined` and returning `NaN`.
-    ///
-    /// `field` and `err` are the other half: §8.2 says neither can stand in
-    /// evidence position, so meeting one is a checker bug, not a program.
-    ///
-    /// **`expected` is the third half, and the one the nesting cannot give.**
-    /// The nested counts say how the list is SHAPED; only the callee's own
-    /// evidence count says how WIDE it is. A list that nests correctly and
-    /// has one slot too many, or one too few, consumes itself just as
-    /// happily — and both emit a call of the wrong arity that JavaScript
-    /// runs: two slots for a one-evidence callee printed `NaN` and then
-    /// recursed forever, none for a two-evidence callee threw
-    /// `TypeError: $m$0 is not a function`, and the build exited 0 either
-    /// way. So the walk counts the TOP-LEVEL slots it consumed and demands
-    /// exactly `expected`.
-    fn evidenceShapeOk(l: *Lowerer, sites: []const Dispatch.Site, expected: u16) bool {
-        var cursor: usize = 0;
-        var slots: u32 = 0;
-        while (cursor < sites.len) : (slots += 1) {
-            // Too long: a further top-level slot the callee has no
-            // parameter for. Caught here rather than after the loop so a
-            // long list cannot walk off into a nested one's counts.
-            if (slots >= expected) return false;
-            if (!l.evidenceShapeOne(sites, &cursor)) return false;
-        }
-        // Too short: the list ran out before the callee's parameters did.
-        return slots == expected;
-    }
-
-    fn evidenceShapeOne(l: *Lowerer, sites: []const Dispatch.Site, cursor: *usize) bool {
-        const target = sites[cursor.*].target;
-        cursor.* += 1;
-        switch (target) {
-            .field, .err => return false,
+    fn derivedBodiesExist(l: *Lowerer, i: Dispatch.TermIndex) bool {
+        const t = l.in.dispatch.term(i);
+        switch (t) {
+            .derived, .ext_derived => if (!l.derivedBodyExists(t)) return false,
             else => {},
         }
-        // A target holding its own `parts` is answered by them and takes
-        // nothing from the site list (§7.1's amendment, A.64).
-        if (target.partsOf().len != 0) return true;
-        const wanted = l.targetEvidence(target);
-        var k: u16 = 0;
-        while (k < wanted) : (k += 1) {
-            if (cursor.* >= sites.len) return false;
-            if (!l.evidenceShapeOne(sites, cursor)) return false;
+        for (l.in.dispatch.argsAt(t.argsOf())) |arg| {
+            if (arg.int() > i.int() and !l.derivedBodiesExist(arg)) return false;
+        }
+        return true;
+    }
+
+    /// Whether `roots` is the tree §8.2 describes, `expected` roots wide.
+    ///
+    /// **`expected` is the half the tree cannot give.** The nested counts
+    /// say how each root is SHAPED; only the callee's own requirement count
+    /// says how many roots there are. Two roots for a one-evidence callee
+    /// printed `NaN` and then recursed forever, none for a two-evidence
+    /// callee threw `TypeError: $m$0 is not a function`, and the build
+    /// exited 0 either way — which is why the count is demanded exactly.
+    fn evidenceShapeOk(l: *Lowerer, roots: []const Dispatch.TermIndex, expected: u32) bool {
+        if (roots.len != expected) return false;
+        for (roots) |root| {
+            if (!l.termShapeOk(root)) return false;
+        }
+        return true;
+    }
+
+    fn termShapeOk(l: *Lowerer, i: Dispatch.TermIndex) bool {
+        const d = l.in.dispatch;
+        if (i.int() >= d.terms.len) return false;
+        const t = d.term(i);
+        if (t == .field) return false;
+        const args = d.argsAt(t.argsOf());
+        if (args.len != l.requirementCount(t)) return false;
+        for (args) |arg| {
+            // The pre-order rule: an argument that does not follow its
+            // owner is a table that points back at itself.
+            if (arg.int() <= i.int()) return false;
+            if (!l.termShapeOk(arg)) return false;
         }
         return true;
     }
@@ -3363,11 +3159,11 @@ const Lowerer = struct {
             inst,
             \\The hidden arguments of this call do not add up.
             \\
-            \\`docs/design/static-dispatch-spike.md` §8.2 passes one hidden argument per
-            \\evidence site, and each site that is itself constrained consumes the sites
-            \\after it. The list the checker recorded does not fit that shape — either a
-            \\site names something §8.2 cannot pass, or a callee's evidence count here
-            \\disagrees with the one in its own module.
+            \\`docs/design/checker-v2.md` §13.1 gives every call one evidence root per
+            \\requirement of the function it calls, and every term as many arguments as
+            \\the function it names has requirements (invariant I7). The tree the checker
+            \\recorded here does not — either a term names something §8.2 cannot pass,
+            \\or a callee's evidence count here disagrees with the one in its own module.
             \\
             \\That is a compiler bug. Please report it with this program; `beni dump
             \\--stage=dispatch` prints the table this reads.
@@ -3398,36 +3194,29 @@ const Lowerer = struct {
         );
     }
 
-    /// §7.2 gives every `method_call` and every `type_dispatch` a site at
-    /// `evidence_index` 0 naming the function it runs. None means the
-    /// checker did not record one, which no program can ask for.
+    /// checker-v2.md §13.1 gives every `method_call` and every
+    /// `type_dispatch` a site with a callee term naming the function it
+    /// runs. None means the checker did not record one — or recorded an
+    /// `err` there, which the converter turns into no term — and no program
+    /// that checked clean can ask for either.
     const no_callee_site =
-        \\`docs/design/static-dispatch-spike.md` §7.2 gives every method call and every
-        \\return-type dispatch a site at `evidence_index` 0 naming the function it runs,
-        \\and the table has none here — so there is no function to call.
+        \\`docs/design/checker-v2.md` §13.1 gives every method call and every return-type
+        \\dispatch a callee naming the function it runs, and the table has none here — so
+        \\there is no function to call.
     ;
 
-    /// A SITE whose target carries its own `parts` (§7.1's amendment,
-    /// A.64). The amendment is about a part POSITION, where there is no
-    /// instruction to number a site against; a site has one, so its
-    /// target's evidence is the sites that follow it and its `parts` range
-    /// is empty. A non-empty one means the two ways of carrying evidence
-    /// were both used for one slot, and the walk cannot tell which method
-    /// the slot answers — which is what an `err` inside it would need
-    /// (A.67).
-    const parts_on_site_target =
-        \\This call's evidence is carried twice over: `docs/design/static-dispatch-spike.md`
-        \\§7.1's `parts` range belongs to a target in a PART position, and this one is on
-        \\a site, whose evidence is the sites that follow it instead (§7.2, A.64).
+    /// An `undetermined` leaf with no enclosing derived function: nothing
+    /// says which method it answers, so there is no honest structural
+    /// answer to give (checker-v2.md §13.1, as amended by R2a). v1's
+    /// converter never writes one, because a legacy `err` SITE becomes no
+    /// term at all.
+    const undetermined_without_method =
+        \\The table answers a hidden argument with the `undetermined` default outside any
+        \\derived method, so nothing says whether it stands for an `eq` or a `compare`
+        \\(`docs/design/checker-v2.md` §13.1).
     ;
 
     /// §8.4 has no receiver, so §8.3's record-field row cannot appear.
-    const err_site_unreported =
-        \\The table has an `err` site here, which the checker writes only after reporting
-        \\why — but this build checked clean, so nothing was reported. Emitting it would
-        \\evaluate to `undefined` in silence.
-    ;
-
     const field_without_receiver =
         \\The table dispatches this to a record field, but `docs/design/static-dispatch-spike.md`
         \\§8.4 has no receiver to read a field from: only a method call can answer `field`.
@@ -3531,78 +3320,106 @@ const Lowerer = struct {
         );
     }
 
-    /// A method call (§8.3). The callee is site 0 of the instruction and
-    /// every further site is one hidden argument in front of the receiver.
+    /// The callee term of a `method_call` or `type_dispatch`, or null with
+    /// `no_callee_site` reported.
+    fn calleeOf(l: *Lowerer, inst: Inst.Index) !?struct { Dispatch.TermIndex, []const Dispatch.TermIndex } {
+        const site = l.in.dispatch.siteOf(inst) orelse {
+            try l.reportDispatchBug(inst, no_callee_site);
+            return null;
+        };
+        const callee = site.callee.unwrap() orelse {
+            try l.reportDispatchBug(inst, no_callee_site);
+            return null;
+        };
+        return .{ callee, l.in.dispatch.argsAt(site.evidence) };
+    }
+
+    /// The evidence a derived CALLEE passes: its own arguments, after the
+    /// I7 assert over them, with the site's roots required empty (a derived
+    /// function's evidence rides on the term, A.46). Null when refused.
+    fn derivedCalleeEvidence(
+        l: *Lowerer,
+        inst: Inst.Index,
+        callee: Dispatch.TermIndex,
+        roots: []const Dispatch.TermIndex,
+        p: u32,
+    ) !?[]const Node.Index {
+        if (try l.refuseEvidence(inst, roots, 0)) return null;
+        // One root, the callee itself: the same assert, over its own
+        // arguments — and `derived_body_missing` when no module writes it.
+        if (try l.refuseEvidence(inst, &.{callee}, 1)) return null;
+        const t = l.in.dispatch.term(callee);
+        return try l.termValues(l.in.dispatch.argsAt(t.argsOf()), l.derivedTermKind(t), p);
+    }
+
+    /// A `top`/`ext`/`param` callee: its evidence is the site's roots, as
+    /// many as its requirement count, and it carries no arguments of its
+    /// own. Null when refused.
+    fn namedCalleeEvidence(
+        l: *Lowerer,
+        inst: Inst.Index,
+        callee: Dispatch.TermIndex,
+        roots: []const Dispatch.TermIndex,
+        p: u32,
+    ) !?[]const Node.Index {
+        const t = l.in.dispatch.term(callee);
+        if (t.argsOf().len != 0) {
+            try l.reportEvidenceShape(inst);
+            return null;
+        }
+        if (try l.refuseEvidence(inst, roots, l.requirementCount(t))) return null;
+        return try l.evidenceArguments(roots, p);
+    }
+
+    /// A method call (§8.3). The callee is the site's callee term and every
+    /// root is one hidden argument in front of the receiver.
     fn methodCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const m = l.bir.extraData(@enumFromInt(d.rhs), Bir.MethodCall);
         const args: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
-        const sites = l.sitesOf(inst);
         l.region = inst;
-        // §7.2 gives every `method_call` a site 0 naming the callee. None
-        // means the checker forgot one — a program that failed to check
-        // never reaches here, because `beni build` refuses to emit a
-        // project that has an error diagnostic — so it is a compiler bug
-        // and says so rather than emitting `undefined(…)` and exiting 0.
-        if (sites.len == 0 or sites[0].evidence_index != 0) {
-            try l.reportDispatchBug(inst, no_callee_site);
+        // checker-v2.md §13.1 gives every `method_call` a callee. None
+        // means the checker forgot one — or wrote an `err` site, which the
+        // converter turns into no term — and a program that failed to check
+        // never reaches here, because `beni build` refuses to emit a project
+        // that has an error diagnostic; so it is a compiler bug and says so
+        // rather than emitting `undefined(…)` and exiting 0 (queue row 75).
+        const callee, const roots = (try l.calleeOf(inst)) orelse
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        }
-        const target = sites[0].target;
-        const evidence_sites = sites[1..];
+        const target = l.in.dispatch.term(callee);
         switch (target) {
             // A record receiver: `language.md` §6.3's field call, unchanged.
             .field => {
                 // A field call passes no evidence — the closure in the
                 // field is already of the arity the call site wrote — so
                 // this list is empty, and a non-empty one is the same
-                // caught bug as any other wrong-length list. Checked rather
-                // than dropped: a list here means the checker instantiated
-                // a scheme it then dispatched to a field, and dropping it
-                // silently emits a call short of its arguments.
-                if (try l.refuseEvidence(inst, evidence_sites, 0)) {
+                // caught bug as any other wrong-length list.
+                if (try l.refuseEvidence(inst, roots, 0)) {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
                 const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
-                const callee = try l.member(values[0], l.bir.symbol(m.name), p);
-                return l.call(callee, values[1..], p);
+                const field_fn = try l.member(values[0], l.bir.symbol(m.name), p);
+                return l.call(field_fn, values[1..], p);
             },
-            // `err` is a site the checker could not resolve, and it only
-            // makes one after reporting why — and nothing is lowered until
-            // the whole build checks clean (§2). So an `err` site HERE had
-            // no diagnostic, and emitting `undefined` for it is a silent
-            // wrong answer: refuse it as the compiler bug it is (queue row
-            // 75, static-dispatch-spike.md §8.3).
-            .err => {
-                try l.reportDispatchBug(inst, err_site_unreported);
+            // Never a callee: an `err` site becomes no term at all.
+            .undetermined => {
+                try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
             // §9's derived function, applied to the evidence THIS use
-            // passes and then to the two values (§8.3). A derived target
-            // carries its evidence in its own `parts` (A.46), so the
-            // instruction's further sites must be empty.
+            // passes and then to the two values (§8.3).
             .derived, .ext_derived => {
-                if (try l.refuseEvidence(inst, evidence_sites, 0)) {
+                const evidence = (try l.derivedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                }
-                if (!l.derivedBodyExists(target)) {
-                    // A.51's door, closed with S6b: every shape of §9 has a
-                    // body for both methods and `List a` has its own
-                    // `pub foreign eq`/`compare` (§5.2), so there is no
-                    // method left that no module writes a function for.
-                    try l.reportDispatchBug(inst, derived_body_missing);
-                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                }
-                const evidence = try l.partValues(target.partsOf(), l.derivedTargetKind(target), p);
-                const callee = try l.derivedName(target, p);
-                const value = try l.receiverCall(out, callee, evidence, @enumFromInt(d.lhs), args, p);
+                const callee_name = try l.derivedName(target, p);
+                const value = try l.receiverCall(out, callee_name, evidence, @enumFromInt(d.lhs), args, p);
                 // `a /= b` is `!eq(a, b)`; an ordering operator wraps the
                 // `Order` the method answers in §8.3's test.
                 return l.orderTest(value, m.origin, p);
             },
             .primitive => |prim| {
-                if (try l.refuseEvidence(inst, evidence_sites, l.targetEvidence(target))) {
+                if (try l.refuseEvidence(inst, roots, 0)) {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 }
                 const values = try l.exprListWithHead(out, @enumFromInt(d.lhs), args);
@@ -3618,13 +3435,11 @@ const Lowerer = struct {
                 l.region = inst;
                 return l.primitiveOperator(out, prim, m.origin, receiver, rest[0], p);
             },
-            .top, .ext, .evidence => {
-                if (try l.refuseEvidence(inst, evidence_sites, l.targetEvidence(target))) {
+            .top, .ext, .param => {
+                const evidence = (try l.namedCalleeEvidence(inst, callee, roots, p)) orelse
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                }
-                const evidence = try l.evidenceArguments(evidence_sites, p);
-                const callee = try l.targetValue(target, p);
-                const value = try l.receiverCall(out, callee, evidence, @enumFromInt(d.lhs), args, p);
+                const callee_name = try l.termName(target, p);
+                const value = try l.receiverCall(out, callee_name, evidence, @enumFromInt(d.lhs), args, p);
                 // An ordering operator against a non-primitive target is
                 // the `Order` test of §8.3: the method answers `Order` and
                 // the operator answers `Bool`.
@@ -3657,66 +3472,46 @@ const Lowerer = struct {
     }
 
     /// Return-type dispatch (§8.4): §8.3 with no receiver. Inside a
-    /// constrained declaration the target is always `evidence k` (§6.7), so
+    /// constrained declaration the callee is always `param k` (§6.7), so
     /// in practice this is `$m$k(args…)`.
     fn typeDispatchExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const t = l.bir.extraData(@enumFromInt(d.rhs), Bir.TypeDispatch);
         const args: Bir.SubRange = .{ .start = t.args_start, .end = t.args_end };
-        const sites = l.sitesOf(inst);
         l.region = inst;
-        if (sites.len == 0 or sites[0].evidence_index != 0) {
-            try l.reportDispatchBug(inst, no_callee_site);
+        const callee, const roots = (try l.calleeOf(inst)) orelse
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        }
-        const target = sites[0].target;
-        switch (target) {
-            .top, .ext, .evidence, .primitive => {},
-            .derived, .ext_derived => {
-                // §6.7 makes a return-type dispatch's target `evidence k`
-                // inside a constrained declaration, so in practice this is
-                // a concrete receiver-less call of a shape's own method.
-                // It is the same call §8.3 makes, minus the receiver: the
-                // evidence the USE passes rides on the target's parts
-                // (A.46) and the written arguments follow.
-                if (!l.derivedBodyExists(target)) {
-                    try l.reportDispatchBug(inst, derived_body_missing);
-                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                }
-                if (try l.refuseEvidence(inst, sites[1..], 0)) {
-                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-                }
-                const evidence = try l.partValues(target.partsOf(), l.derivedTargetKind(target), p);
-                const callee = try l.derivedName(target, p);
-                const rest = try l.exprList(out, args);
-                const all = try l.scratch.alloc(Node.Index, evidence.len + rest.len);
-                @memcpy(all[0..evidence.len], evidence);
-                @memcpy(all[evidence.len..], rest);
-                return l.call(callee, all, p);
-            },
+        const target = l.in.dispatch.term(callee);
+        const evidence = switch (target) {
+            .top, .ext, .param, .primitive => (try l.namedCalleeEvidence(inst, callee, roots, p)) orelse
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // §6.7 makes a return-type dispatch's callee `param k` inside a
+            // constrained declaration, so in practice this is a concrete
+            // receiver-less call of a shape's own method: the same call
+            // §8.3 makes, minus the receiver.
+            .derived, .ext_derived => (try l.derivedCalleeEvidence(inst, callee, roots, p)) orelse
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             // There is no receiver, so `field` cannot appear at all and is
-            // a malformed table. `err` is the unreported site again: see
-            // the method-call arm above.
+            // a malformed table.
             .field => {
                 try l.reportDispatchBug(inst, field_without_receiver);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            .err => {
-                try l.reportDispatchBug(inst, err_site_unreported);
+            .undetermined => {
+                try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-        }
-        if (try l.refuseEvidence(inst, sites[1..], l.targetEvidence(target))) {
-            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        }
-        const evidence = try l.evidenceArguments(sites[1..], p);
-        const callee = try l.targetValue(target, p);
+        };
+        const callee_name = switch (target) {
+            .derived, .ext_derived => try l.derivedName(target, p),
+            else => try l.termName(target, p),
+        };
         const rest = try l.exprList(out, args);
         const all = try l.scratch.alloc(Node.Index, evidence.len + rest.len);
         @memcpy(all[0..evidence.len], evidence);
         @memcpy(all[evidence.len..], rest);
-        return l.call(callee, all, p);
+        return l.call(callee_name, all, p);
     }
 
     /// §8.3's operator table: a `primitive` target plus the surface origin
@@ -3725,7 +3520,7 @@ const Lowerer = struct {
     fn primitiveOperator(
         l: *Lowerer,
         out: *StmtList,
-        prim: Dispatch.Target.Primitive,
+        prim: Dispatch.Primitive,
         origin: Bir.WellKnown,
         left: Node.Index,
         right: Node.Index,
@@ -3844,14 +3639,14 @@ const Lowerer = struct {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
         // this instruction is an evidence ARGUMENT and they are numbered
         // from 0.
-        const sites = l.sitesOf(inst);
+        const roots = l.rootsOf(inst);
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const callee_inst: Inst.Index = @enumFromInt(d.lhs);
         // The list has to be as wide as the CALLEE's own evidence, which is
         // the callee's record and not this call's; the two disagreeing is
         // the miscompile §7.2 says the table exists to catch.
-        if (try l.refuseEvidence(inst, sites, l.valueEvidence(callee_inst))) {
+        if (try l.refuseEvidence(inst, roots, l.in.dispatch.referenceCount(l.bir, l.in.interfaces, callee_inst))) {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
@@ -3898,7 +3693,7 @@ const Lowerer = struct {
         const callee = values[0];
         const written = values[1..];
         l.region = inst;
-        const evidence = try l.evidenceArguments(sites, p);
+        const evidence = try l.evidenceArguments(roots, p);
         if (evidence.len == 0) return l.call(callee, written, p);
         const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
         @memcpy(args[0..evidence.len], evidence);
@@ -5318,65 +5113,81 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
     try testing.expectEqual(diagnostic.Code.internal, result.diagnostics[0].code);
 }
 
-test "the evidence wall counts the top-level slots, in both directions" {
+test "the I7 assert counts the roots and every term's arguments, in both directions" {
     // A SYNTHETIC `Dispatch` table, and that is the whole reason this test
     // is in-source rather than in `tests/corpus/` (CLAUDE.md rule 3 makes
     // the corpus the coverage and this the supplement it cannot reach):
     // once the checker is right, NO beni program can produce a malformed
     // table, so the only way to prove the wall stops one is to build one by
-    // hand.
+    // hand (checker-v2.md §13.3: `evidenceShapeOk` became the I7 assert).
     //
     // What it pins is §7.2's promise that a caller/callee disagreement is
-    // "a caught bug rather than a silent miscompile". Before the count, a
-    // list that merely NESTED correctly passed: two slots for a
-    // one-evidence callee emitted a three-argument call of a two-parameter
-    // function — JavaScript RUNS that — which printed `NaN` and then
-    // recursed forever, and zero slots for a two-evidence callee threw
-    // `TypeError: $m$0 is not a function`. The build exited 0 both times.
-    const evidence = [_]Dispatch.Evidence{
+    // "a caught bug rather than a silent miscompile". Two roots for a
+    // one-evidence callee once emitted a three-argument call of a
+    // two-parameter function — JavaScript RUNS that — which printed `NaN`
+    // and then recursed forever, and zero roots for a two-evidence callee
+    // threw `TypeError: $m$0 is not a function`. The build exited 0 both
+    // times.
+    const requirements = [_]Dispatch.Requirement{
         .{ .quantified = 0, .var_name = .none, .method = @enumFromInt(0) },
     };
     // Declaration 0 takes one evidence parameter of its own; declaration 1
     // takes none. Nothing else about either is read.
-    const decl_evidence = [_]Dispatch.Range{ .{ .start = 0, .len = 1 }, .empty };
-    const table: Dispatch = .{ .decl_evidence = &decl_evidence, .evidence = &evidence };
+    const decls = [_]Dispatch.DeclInfo{ .{ .requirements = .{ .start = 0, .len = 1 } }, .{} };
+    // Term 0: `top 1`, no arguments — right. Term 1: `top 0` applied to
+    // term 2 — right. Term 2: `top 1`. Term 3: `top 0` with NO argument —
+    // one short. Term 4: `field`, which is never evidence. Term 5:
+    // `undetermined`. Term 6: `top 0` whose argument points BACK at itself.
+    const terms = [_]Dispatch.Term{
+        .{ .top = .{ .decl = @enumFromInt(1) } },
+        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 0, .len = 1 } } },
+        .{ .top = .{ .decl = @enumFromInt(1) } },
+        .{ .top = .{ .decl = @enumFromInt(0) } },
+        .field,
+        .undetermined,
+        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 1, .len = 1 } } },
+    };
+    const args = [_]Dispatch.TermIndex{ @enumFromInt(2), @enumFromInt(6) };
+    const table: Dispatch = .{ .terms = &terms, .args = &args, .decls = &decls, .requirements = &requirements };
+    const types: Types = .empty;
 
     // `evidenceShapeOk` is a predicate over the table and reads
-    // `in.dispatch` and nothing else, which is what makes a synthetic table
-    // enough and the rest of the `Lowerer` unnecessary.
+    // `in.dispatch`, `in.interfaces` and `in.types` and nothing else, which
+    // is what makes a synthetic table enough and the rest of the `Lowerer`
+    // unnecessary.
     var l: Lowerer = undefined;
     l.in.dispatch = &table;
+    l.in.interfaces = &.{};
+    l.in.types = &types;
 
-    const constrained: Dispatch.Target = .{ .top = .{ .decl = @enumFromInt(0) } };
-    const plain: Dispatch.Target = .{ .top = .{ .decl = @enumFromInt(1) } };
-    const site = struct {
-        fn at(index: u16, target: Dispatch.Target) Dispatch.Site {
-            return .{ .inst = @enumFromInt(0), .evidence_index = index, .target = target };
+    const t = struct {
+        fn at(i: u32) Dispatch.TermIndex {
+            return @enumFromInt(i);
         }
     }.at;
 
-    // One slot for a one-evidence callee, and none for a callee with none:
-    // the two shapes §8.2 describes.
-    try testing.expect(l.evidenceShapeOk(&.{site(0, plain)}, 1));
+    // One root for a one-evidence callee, and none for a callee with none.
+    try testing.expect(l.evidenceShapeOk(&.{t(0)}, 1));
     try testing.expect(l.evidenceShapeOk(&.{}, 0));
-    // TOO LONG: nests perfectly, one top-level slot more than the callee
-    // has parameters for.
-    try testing.expect(!l.evidenceShapeOk(&.{ site(0, plain), site(1, plain) }, 1));
-    try testing.expect(!l.evidenceShapeOk(&.{site(0, plain)}, 0));
-    // TOO SHORT: the list runs out before the callee's parameters do.
-    try testing.expect(!l.evidenceShapeOk(&.{site(0, plain)}, 2));
+    // TOO MANY roots: each is well formed, one more than the callee has
+    // parameters for.
+    try testing.expect(!l.evidenceShapeOk(&.{ t(0), t(0) }, 1));
+    try testing.expect(!l.evidenceShapeOk(&.{t(0)}, 0));
+    // TOO FEW.
+    try testing.expect(!l.evidenceShapeOk(&.{t(0)}, 2));
     try testing.expect(!l.evidenceShapeOk(&.{}, 1));
-    // NESTING is what the count cannot be inferred from: a constrained
-    // target consumes the slot after it (A.25), so these two sites are ONE
-    // top-level slot — accepted as one, refused as two.
-    try testing.expect(l.evidenceShapeOk(&.{ site(0, constrained), site(1, plain) }, 1));
-    try testing.expect(!l.evidenceShapeOk(&.{ site(0, constrained), site(1, plain) }, 2));
-    // A nested slot that is not there at all.
-    try testing.expect(!l.evidenceShapeOk(&.{site(0, constrained)}, 1));
-    // §8.2's other half, unchanged: neither `field` nor `err` can stand in
-    // evidence position, whatever the count says.
-    try testing.expect(!l.evidenceShapeOk(&.{site(0, .field)}, 1));
-    try testing.expect(!l.evidenceShapeOk(&.{site(0, .err)}, 1));
+    // NESTING: a constrained term carries its own argument (A.25), and the
+    // count is the callee's — accepted with its one argument, refused
+    // without it.
+    try testing.expect(l.evidenceShapeOk(&.{t(1)}, 1));
+    try testing.expect(!l.evidenceShapeOk(&.{t(3)}, 1));
+    // `field` cannot stand in evidence position, whatever the count says;
+    // `undetermined` can (checker-v2.md §13.1).
+    try testing.expect(!l.evidenceShapeOk(&.{t(4)}, 1));
+    try testing.expect(l.evidenceShapeOk(&.{t(5)}, 1));
+    // An argument that does not follow its owner is a cycle, refused
+    // before any walk could spin on it.
+    try testing.expect(!l.evidenceShapeOk(&.{t(6)}, 1));
 }
 
 test "a derived function with no body is a table bug in value position, either kind" {
@@ -5386,21 +5197,25 @@ test "a derived function with no body is a table bug in value position, either k
     // backend is ever asked (§3.3, A.54 —
     // `tests/corpus/check/bad/CompareOnTypeHoldingFunction` and
     // `check/bad/core/CompareOnWrappedForeign` are the fixtures), so a
-    // target with no body can only come from a table the checker did not
+    // term with no body can only come from a table the checker did not
     // write, and only a hand-built one can show what the emitter does with
     // it. That is why there is no corpus fixture beside this test.
     //
     // **What changed with S6b.** This used to assert A.51's door: a missing
     // `eq` whose parts were all structural was answered with
-    // `core/Basics.js`'s walk instead of refused, because `List a` had no
-    // `pub foreign eq` and that walk was the only thing that could answer
-    // `xs == ys`. §5.2 gives `List` both methods, `equatable` is core's
-    // alone so no other module can declare a `foreign type` that derives
-    // without a body, and the door has no customer left. Both kinds are now
-    // `internal` — nothing is MISSING, the table is WRONG — and the test
-    // asserts that symmetry.
+    // `core/Basics.js`'s walk instead of refused. §5.2 gives `List` both
+    // methods, `equatable` is core's alone, and the door has no customer
+    // left. Both kinds are now `internal` — nothing is MISSING, the table
+    // is WRONG — and the test asserts that symmetry.
     const gpa = testing.allocator;
-    const table: Dispatch = .{};
+    const terms = [_]Dispatch.Term{
+        .{ .ext_derived = .{ .module = @enumFromInt(0), .type = .none, .kind = .compare } },
+        // A `derived` row that is not in the table at all.
+        .{ .derived = .{ .index = 0 } },
+        // The `eq` that used to go through A.51's door.
+        .{ .ext_derived = .{ .module = @enumFromInt(0), .type = .none, .kind = .eq } },
+    };
+    const table: Dispatch = .{ .terms = &terms };
     const types: Types = .empty;
     var b: JsIr.Builder = .init(gpa);
     defer b.deinit();
@@ -5413,6 +5228,7 @@ test "a derived function with no body is a table bug in value position, either k
     l.b = &b;
     l.in.dispatch = &table;
     l.in.types = &types;
+    l.in.interfaces = &.{};
     l.in.module = @enumFromInt(0);
     l.diagnostics = .empty;
     l.part_depth = 0;
@@ -5422,12 +5238,7 @@ test "a derived function with no body is a table bug in value position, either k
         l.diagnostics.deinit(gpa);
     }
 
-    const compare: Dispatch.Target = .{ .ext_derived = .{
-        .module = @enumFromInt(0),
-        .type = .none,
-        .kind = .compare,
-    } };
-    _ = try l.derivedValue(compare, Node.no_pos);
+    _ = try l.derivedValue(@enumFromInt(0), Node.no_pos);
     try testing.expectEqual(@as(usize, 1), l.diagnostics.items.len);
     try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[0].code);
     try testing.expect(std.mem.indexOf(
@@ -5436,21 +5247,11 @@ test "a derived function with no body is a table bug in value position, either k
         "a derived method of a type whose module emits no",
     ) != null);
 
-    // A `derived` row that is not in the table at all: the same answer.
-    const missing_eq: Dispatch.Target = .{ .derived = .{ .index = 0 } };
-    _ = try l.derivedValue(missing_eq, Node.no_pos);
+    _ = try l.derivedValue(@enumFromInt(1), Node.no_pos);
     try testing.expectEqual(@as(usize, 2), l.diagnostics.items.len);
     try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[1].code);
 
-    // And the `eq` that used to go through A.51's door — an `ext_derived`
-    // with no parts, exactly what `core/Basics.js`'s walk answered — is
-    // refused now like any other, which is the whole of the change.
-    const was_bridged: Dispatch.Target = .{ .ext_derived = .{
-        .module = @enumFromInt(0),
-        .type = .none,
-        .kind = .eq,
-    } };
-    _ = try l.derivedValue(was_bridged, Node.no_pos);
+    _ = try l.derivedValue(@enumFromInt(2), Node.no_pos);
     try testing.expectEqual(@as(usize, 3), l.diagnostics.items.len);
     try testing.expectEqual(diagnostic.Code.internal, l.diagnostics.items[2].code);
 }

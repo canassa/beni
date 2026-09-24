@@ -36,8 +36,8 @@
 //! **The edges are `Edges.zig`'s**, shared with `js/Reach.zig` — the three
 //! legs out of a value declaration `d` (`refs` rows of kind `top_value`; the
 //! `.top` and `.ext_value` instructions of `d`'s contiguous instruction
-//! range; every dispatch site of `d` and, recursively through
-//! `Dispatch.partsAt`, every target nested in one). Leg 3 is the one no
+//! range; every dispatch site of `d` and, recursively through each term's
+//! `args`, every term nested in one). Leg 3 is the one no
 //! `refs` walk can see: a `method_call` adds no `refs` row at all
 //! (`static-dispatch-spike.md` §1.4), so `x = (T 1).bump 2` with a `bump`
 //! that reads `x` is a cycle only the dispatch table records.
@@ -105,7 +105,7 @@ fn anyRuns(bir: *const Bir, dispatch: *const Dispatch) bool {
         if (d.kind != .value) continue;
         const body = d.body.unwrap() orelse continue;
         if (d.params != 0) continue;
-        if (dispatch.declEvidence(@intCast(i)).len != 0) continue;
+        if (dispatch.declRequirements(@intCast(i)).len != 0) continue;
         if (bir.instTag(body) == .lambda) continue;
         return true;
     }
@@ -150,7 +150,7 @@ const Graph = struct {
             // arrow, and so is a parameterless one whose entire body is a
             // `lambda`. All three run nothing where they are bound.
             g.defers[i] = d.params != 0 or
-                g.dispatch.declEvidence(@intCast(i)).len != 0 or
+                g.dispatch.declRequirements(@intCast(i)).len != 0 or
                 g.bir.instTag(body) == .lambda;
 
             stream.clearRetainingCapacity();
@@ -161,7 +161,7 @@ const Graph = struct {
                 .top => |target| if (target < count) try g.targets.append(g.scratch, target),
                 // Cross-module or synthesised; neither can close a cycle
                 // between two declarations of this module.
-                .ext, .derived, .ext_derived, .primitive, .err => {},
+                .ext, .derived, .ext_derived, .primitive, .undetermined => {},
             };
         }
         g.at[count] = @intCast(g.targets.items.len);

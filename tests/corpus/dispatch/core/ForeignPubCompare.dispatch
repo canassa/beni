@@ -1,7 +1,9 @@
 module ForeignPubCompare
-  decl compare evidence=0
-  decl before evidence=0
-  derived 0 compare t2 evidence=2
-  site 19 0 derived 0
-    part 0 top compare
-    part 1 primitive num_compare
+  decl compare evidence=0 arity=2
+  decl before evidence=0 arity=2
+  derived 0 compare t2 context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  site 19 callee derived 0
+    arg top compare
+    arg primitive num_compare

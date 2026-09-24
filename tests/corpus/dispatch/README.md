@@ -15,11 +15,14 @@ slices lower against.
 The format carries **no symbol ids, no positions and no module indices** —
 every name is text — so reformatting a fixture leaves its golden untouched
 and `--jobs` cannot move a byte. `derived` lines are sorted by the emitted
-name text before anything indexes them (§7.1, A.29). `site` lines are
-grouped by `inst` and then in the **pre-order** of §7.2's evidence tree,
-which is the order the emitter reads them in and NOT ascending by index:
-read down the rows, where a target takes the slots that follow it, rather
-than across the index column (§7.3, A.68).
+name text before anything indexes them (§7.1, A.29). Since slice R2a the
+format is `docs/design/checker-v2.md` §13.2's **v2**: one `site` line per
+instruction, its callee on the line and the callee's own arguments as `arg`
+lines under it, then one `evidence` line per root,
+and a term's own arguments printed under it, two spaces deeper — a tree
+printed as a tree, so there is no pre-order to reconstruct and no index
+column to misread (A.68's discussion is retired). Every golden was
+re-blessed once, in R2a, and reviewed against its v1 form.
 
 Both halves of a fixture matter. The `check` must be clean because a table
 describing a program the compiler rejected describes nothing; the golden is
@@ -35,9 +38,9 @@ a wrong golden here pins a wrong call.
 §3.2's table, one row per core type. `DerivedShapes` pins the shape key and
 the emission-order sort; `DerivedShapesDistinctElements` pins that the
 evidence is per USE and not per function (A.46) — with shape-keyed evidence
-its second `t2` site loses its own `part` lines and orders strings with
-JavaScript `<`. `ErrParts` is the `err` target — what a clean program makes
-one for, and what `Lower.structuralEq` may assume when it reads one.
+its second `t2` site loses its own argument lines and orders strings with
+JavaScript `<`. `ErrParts` is the `undetermined` leaf (v1's `err` part) — what a clean program makes
+one for, and what `Lower.partEq` may assume when it reads one.
 `AllNullaryEq` is A.18, `UserMethodWins` §3.3 step 1 and
 `PrivateEqStillDerives` the half of that step a `pub` makes the difference to — a private `eq`
 wins inside its own module and still leaves the derived row every dependent names (A.63),
@@ -57,6 +60,10 @@ half of the same appendix: two slots of one instruction that EACH nest, where
 the breadth-first numbering and the depth-first reading part company and the
 emitted JavaScript is not the same either way — `run/TwoSlotsNested` is what
 it did to the answers.
+Both are now read in ONE place, `Dispatch.finish`'s converter (checker-v2.md
+§13.1, R2a), and their goldens show the trees it builds: a repeated or
+misordered index would print as a different tree, not as a different
+number.
 
 `TypeDispatch` is §4 — the only fixture in the corpus that reads a
 RECEIVER-LESS site out of the table. `run/TypeDispatch` proves the program

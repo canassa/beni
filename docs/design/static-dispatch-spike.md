@@ -1388,7 +1388,7 @@ of the sources alone.
 
 ## 7. The dispatch table
 
-> **Checker v2 (2026-09-24).** The table becomes evidence TREES with no `err` term and an argument-count assert (I7): [`checker-v2.md`](checker-v2.md) §13, effective at slice R2 for both checkers. `Site.parent`, the pre-order of A.68 and `evidence_index` go.
+> **Checker v2 (2026-09-24). EFFECTIVE since slice R2a.** The table the backend reads is evidence TREES with no `err` term and an argument-count assert (I7): [`checker-v2.md`](checker-v2.md) §13 is the contract, and §7.1–§7.3 below describe only what the v1 checker still ACCUMULATES. `Dispatch.finish` converts it — each site's flat pre-order into one tree per root, reading a target's evidence count exactly as `Lower` used to; an `err` part becomes the `undetermined` leaf, an `err` site no term — and asserts I7, reporting `internal` and never panicking. `Site.parent`, the pre-order of A.68 and `evidence_index` survive only inside the builder; the dump is §13.2's format v2, the sidecar `dispatch_bytes` v2.
 
 The backend sees no types (`backend.md` §3; `Lower.Input` carries interfaces and a graph, never a
 store). Everything the checker decided about a method call therefore has to cross as data. The
@@ -1403,6 +1403,8 @@ this table exists for, and giving it a second channel would have meant a second 
 sorted, roll back and dump.
 
 ### 7.1 The record
+
+> **R2a (effective).** This record is now the v1 checker's BUILDER vocabulary (`Dispatch.Target`, `Dispatch.FlatSite`, `Dispatch.FlatDerived`). What crosses to the backend is [`checker-v2.md`](checker-v2.md) §13.1's tree record, built from it by `Dispatch.finish`.
 
 ```zig
 pub const Dispatch = struct {
@@ -1507,6 +1509,8 @@ store is still alive, kept regardless of `keep_stores`, and handed to `Lower.Inp
 
 ### 7.2 What a site is, and canonical order
 
+> **R2a (effective).** The flat numbering below is interpreted in exactly one place, `Dispatch.finish`'s converter; the backend reads one `Site` per instruction with a callee term and one evidence root per requirement ([`checker-v2.md`](checker-v2.md) §13.1). The canonical order itself is unchanged and is now `DeclInfo.requirements`.
+
 | Instruction | Sites |
 |---|---|
 | `method_call` or `type_dispatch` | one site at `evidence_index = 0`: **which function to call** |
@@ -1566,6 +1570,8 @@ the programs that need two. If A.21 is ever relaxed, this rule needs Roc's queue
 name it and so a mismatch is a caught bug rather than a silent miscompile.
 
 ### 7.3 `dump --stage=dispatch`
+
+> **R2a (effective).** The format below is v1's. The dump prints [`checker-v2.md`](checker-v2.md) §13.2's format v2 — trees printed as trees — and every `tests/corpus/dispatch/` golden was re-blessed once in it.
 
 `Cli.Stage` gains `dispatch`, and §6.8 adds `graph`, so the CLI reads
 `tokens, ast, bir, interface, raw, types, graph, dispatch` (`src/Cli.zig:66`). Like
@@ -1692,7 +1698,7 @@ module Shapes
 
 ## 8. The backend
 
-> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence (§8.1–§8.2's counts come from the table) and one `Convention` decides a constrained value's definition and calls ([`checker-v2.md`](checker-v2.md) §12.5, §13.3; slices R1–R2).
+> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence — EFFECTIVE since slice R2a: §8.1–§8.2's hidden arguments are the terms of the site's evidence tree, a declaration's count is `DeclInfo.requirements`, and a callee's count is only asserted (I7, [`checker-v2.md`](checker-v2.md) §13.3). One `Convention` deciding a constrained value's definition and calls is slice R2b (§12.5); until it lands the zero-parameter branch and the eta-expansion below are unchanged.
 
 Extends `backend.md` §4 (codegen), §5 (module output) and §6 (the calling convention). §6's
 "there isn't one" still holds for beni-level arity: what follows adds **hidden leading parameters**,
@@ -1704,6 +1710,8 @@ which are invisible in beni and fixed at every site by the checker.
 backend's ignorance of types changes: it reads targets, never types.
 
 ### 8.1 Evidence parameters
+
+> **R2a (effective).** The count is `DeclInfo.requirements` of [`checker-v2.md`](checker-v2.md) §13.1, which replaced `decl_evidence`; the naming is unchanged.
 
 `Lower.functionOf` — the one place parameter lists are built — prepends one parameter per entry of
 `dispatch.decl_evidence[decl]`, **before** the declaration's own parameters, in canonical order
@@ -1760,6 +1768,8 @@ Two consequences worth stating, because they are what M4 and M5 measure:
   item 3 and not the spike.
 
 ### 8.2 Call sites
+
+> **R2a (effective).** `Lower` reads the site's evidence ROOTS, each a term with its own arguments; nothing is recounted and there is no cursor. The table below still says what each term lowers to (`top`/`ext` for `top d`/`ext`, `param` for `evidence k`, `undetermined` for a legacy `err` part) ([`checker-v2.md`](checker-v2.md) §13.3).
 
 `Lower.callExpr` — the one call-site lowering — looks the instruction up in `dispatch.sites` and
 prepends one argument per site with `evidence_index > 0` for a `method_call`, or per site at all

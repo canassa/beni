@@ -3,7 +3,7 @@
 //!
 //! **Why the sidecar exists at all.** The dispatch table is the one product
 //! of the solver the backend needs and nothing can reconstruct without
-//! solving: every method call's target, every `?`'s shape, every evidence
+//! solving: every method call's callee, every `?`'s shape, every evidence
 //! parameter and every derived function the module emits. A cache that held
 //! only the record could give `beni check` its skip and would give `beni
 //! build` nothing, and `run/` and `emit/` are exactly where a serialization
@@ -16,6 +16,13 @@
 //! whole corpus is one of the two things standing between that and a wrong
 //! program, and the acceptance matrix's warm axis is the other.
 //!
+//! **Format v2** carries checker-v2.md §13.1's tree record (slice R2a): the
+//! `terms` and `args` of every evidence tree, one `site` per instruction,
+//! `decls` with their arity, the (empty until R14) `lets`, `requirements`,
+//! each derived function's `contexts` and `body`. Version 1 held the flat
+//! sites and `parts` of static-dispatch-spike.md §7.1; a v1 sidecar is a
+//! miss.
+//!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
 //! table     column_count × { offset: u32, len: u32 }        offsets from byte 0
@@ -23,9 +30,9 @@
 //! ```
 //!
 //! **Two in-memory fields are session-relative and neither may reach the
-//! bytes**, for the purity rule `checker.md` §7 gives. `Target.Ext.module`
-//! and `Target.ExtDerivedUse.module` are a `Graph.Index` and become an index
-//! into `module_refs`, each row `(package, module name)`; `Shape.nominal` and
+//! bytes**, for the purity rule `checker.md` §7 gives. `Term.Ext.module` and
+//! `Term.ExtDerivedUse.module` are a `Graph.Index` and become an index into
+//! `module_refs`, each row `(package, module name)`; `Shape.nominal` and
 //! `ExtDerivedUse.type` are a `TypeId` and become an index into `type_refs`,
 //! with the record's own row shape `(package, declaring module's name, type's
 //! name)`. Every NAME is an offset into `strings`, exactly as the record's
@@ -45,7 +52,9 @@
 //! and not session ids, and nothing may read the table in that state.
 //!
 //! **Loading validates, and a bad sidecar is a MISS**, the posture
-//! `resolve/iface_bytes.zig` established.
+//! `resolve/iface_bytes.zig` established — including the tree's one
+//! structural rule, that every argument's term index is greater than its
+//! owner's, so a file cannot hand the backend a cycle.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -60,15 +69,18 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
 
 pub const Column = enum(u32) {
+    terms,
+    args,
     sites,
-    tries,
-    decl_evidence,
-    evidence,
+    decls,
+    lets,
+    requirements,
+    contexts,
     derived,
-    parts,
+    tries,
     symbols,
     module_refs,
     type_refs,
@@ -80,12 +92,15 @@ pub const Column = enum(u32) {
     /// count rather than an element count, so its width is 1 by definition.
     pub fn width(c: Column) u32 {
         return switch (c) {
-            .sites => 28,
+            .terms => term_bytes,
+            .args => 4,
+            .sites => 16,
+            .decls => 12,
+            .lets => 12,
+            .requirements => 12,
+            .contexts => 8,
+            .derived => 32,
             .tries => 8,
-            .decl_evidence => 8,
-            .evidence => 12,
-            .derived => 24,
-            .parts => target_bytes,
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
@@ -94,12 +109,11 @@ pub const Column = enum(u32) {
     }
 };
 
-/// A `Target` is a tagged union of five different payloads, so it is written
-/// as one fixed-width row rather than five: `tag`, a second tag byte for the
-/// one payload that needs it, and four operand words. A variable-width
-/// encoding would buy a few bytes per module and cost every reader a length
-/// to trust.
-const target_bytes: u32 = 20;
+/// A `Term` is a tagged union of several payloads, so it is written as one
+/// fixed-width row: `tag`, a second tag byte (the binder of a `param`, the
+/// kind of an `ext_derived`), a `u16` (a `param`'s `k`), two operand words
+/// and the `args` range.
+const term_bytes: u32 = 20;
 
 const header_bytes: u32 = 16;
 const table_bytes: u32 = Column.count * 8;
@@ -158,40 +172,68 @@ pub fn write(
     var w: Writer = .{ .gpa = gpa, .graph = graph, .types = types, .interner = interner };
     defer w.deinit();
 
-    // The reference tables and the string blob first: every other column
-    // indexes them, and their lengths decide the layout.
+    const terms = try gpa.alloc(u8, d.terms.len * term_bytes);
+    defer gpa.free(terms);
+    for (d.terms, 0..) |t, i| try w.writeTerm(terms[i * term_bytes ..][0..term_bytes], t);
+
+    const args = try gpa.alloc(u8, d.args.len * 4);
+    defer gpa.free(args);
+    for (d.args, 0..) |a, i| std.mem.writeInt(u32, args[i * 4 ..][0..4], a.int(), .little);
+
     const sites = try gpa.alloc(u8, d.sites.len * Column.sites.width());
     defer gpa.free(sites);
     for (d.sites, 0..) |s, i| {
-        const row = sites[i * 28 ..][0..28];
+        const row = sites[i * 16 ..][0..16];
         std.mem.writeInt(u32, row[0..4], @intFromEnum(s.inst), .little);
-        std.mem.writeInt(u16, row[4..6], s.evidence_index, .little);
-        std.mem.writeInt(u16, row[6..8], s.parent, .little);
-        try w.writeTarget(row[8..28], s.target);
+        std.mem.writeInt(u32, row[4..8], @intFromEnum(s.callee), .little);
+        writeRange(row[8..16], s.evidence);
     }
 
-    const parts = try gpa.alloc(u8, d.parts.len * target_bytes);
-    defer gpa.free(parts);
-    for (d.parts, 0..) |t, i| try w.writeTarget(parts[i * target_bytes ..][0..target_bytes], t);
-
-    const derived = try gpa.alloc(u8, d.derived.len * Column.derived.width());
-    defer gpa.free(derived);
-    for (d.derived, 0..) |row_in, i| {
-        const row = derived[i * 24 ..][0..24];
-        row[0] = @intFromEnum(row_in.kind);
-        std.mem.writeInt(u16, row[2..4], row_in.evidence_count, .little);
-        try w.writeShape(row[4..16], row_in.shape);
-        std.mem.writeInt(u32, row[16..20], row_in.parts.start, .little);
-        std.mem.writeInt(u32, row[20..24], row_in.parts.len, .little);
+    const decls = try gpa.alloc(u8, d.decls.len * Column.decls.width());
+    defer gpa.free(decls);
+    @memset(decls, 0);
+    for (d.decls, 0..) |info, i| {
+        const row = decls[i * 12 ..][0..12];
+        writeRange(row[0..8], info.requirements);
+        std.mem.writeInt(u16, row[8..10], info.value_arity, .little);
     }
 
-    const evidence = try gpa.alloc(u8, d.evidence.len * Column.evidence.width());
-    defer gpa.free(evidence);
-    for (d.evidence, 0..) |e, i| {
-        const row = evidence[i * 12 ..][0..12];
+    const lets = try gpa.alloc(u8, d.lets.len * Column.lets.width());
+    defer gpa.free(lets);
+    for (d.lets, 0..) |let, i| {
+        const row = lets[i * 12 ..][0..12];
+        std.mem.writeInt(u32, row[0..4], @intFromEnum(let.inst), .little);
+        writeRange(row[4..12], let.requirements);
+    }
+
+    const requirements = try gpa.alloc(u8, d.requirements.len * Column.requirements.width());
+    defer gpa.free(requirements);
+    @memset(requirements, 0);
+    for (d.requirements, 0..) |e, i| {
+        const row = requirements[i * 12 ..][0..12];
         std.mem.writeInt(u16, row[0..2], e.quantified, .little);
         std.mem.writeInt(u32, row[4..8], if (e.var_name.unwrap()) |s| try w.string(s) else no_string, .little);
         std.mem.writeInt(u32, row[8..12], try w.string(e.method), .little);
+    }
+
+    const contexts = try gpa.alloc(u8, d.contexts.len * Column.contexts.width());
+    defer gpa.free(contexts);
+    @memset(contexts, 0);
+    for (d.contexts, 0..) |c, i| {
+        const row = contexts[i * 8 ..][0..8];
+        std.mem.writeInt(u16, row[0..2], c.param, .little);
+        std.mem.writeInt(u32, row[4..8], try w.string(c.method), .little);
+    }
+
+    const derived = try gpa.alloc(u8, d.derived.len * Column.derived.width());
+    defer gpa.free(derived);
+    @memset(derived, 0);
+    for (d.derived, 0..) |row_in, i| {
+        const row = derived[i * 32 ..][0..32];
+        row[0] = @intFromEnum(row_in.kind);
+        try w.writeShape(row[4..16], row_in.shape);
+        writeRange(row[16..24], row_in.context);
+        writeRange(row[24..32], row_in.body);
     }
 
     const symbols = try gpa.alloc(u8, d.symbols.len * 4);
@@ -200,24 +242,18 @@ pub fn write(
 
     const tries = try gpa.alloc(u8, d.tries.len * Column.tries.width());
     defer gpa.free(tries);
+    @memset(tries, 0);
     for (d.tries, 0..) |t, i| {
         const row = tries[i * 8 ..][0..8];
         std.mem.writeInt(u32, row[0..4], @intFromEnum(t.inst), .little);
         row[4] = @intFromEnum(t.shape);
     }
 
-    const decl_evidence = try gpa.alloc(u8, d.decl_evidence.len * Column.decl_evidence.width());
-    defer gpa.free(decl_evidence);
-    for (d.decl_evidence, 0..) |r, i| {
-        const row = decl_evidence[i * 8 ..][0..8];
-        std.mem.writeInt(u32, row[0..4], r.start, .little);
-        std.mem.writeInt(u32, row[4..8], r.len, .little);
-    }
-
     // The two reference tables are complete only now, because writing a
-    // target is what appends to them.
+    // term or a shape is what appends to them.
     const module_refs = try gpa.alloc(u8, w.module_refs.items.len * Column.module_refs.width());
     defer gpa.free(module_refs);
+    @memset(module_refs, 0);
     for (w.module_refs.items, 0..) |r, i| {
         const row = module_refs[i * 8 ..][0..8];
         row[0] = @intFromEnum(r.package);
@@ -225,6 +261,7 @@ pub fn write(
     }
     const type_refs = try gpa.alloc(u8, w.type_refs.items.len * Column.type_refs.width());
     defer gpa.free(type_refs);
+    @memset(type_refs, 0);
     for (w.type_refs.items, 0..) |r, i| {
         const row = type_refs[i * 12 ..][0..12];
         row[0] = @intFromEnum(r.package);
@@ -233,24 +270,30 @@ pub fn write(
     }
 
     const columns = [Column.count][]const u8{
+        terms,
+        args,
         sites,
-        tries,
-        decl_evidence,
-        evidence,
+        decls,
+        lets,
+        requirements,
+        contexts,
         derived,
-        parts,
+        tries,
         symbols,
         module_refs,
         type_refs,
         w.strings.items,
     };
     const lengths = [Column.count]u32{
+        @intCast(d.terms.len),
+        @intCast(d.args.len),
         @intCast(d.sites.len),
-        @intCast(d.tries.len),
-        @intCast(d.decl_evidence.len),
-        @intCast(d.evidence.len),
+        @intCast(d.decls.len),
+        @intCast(d.lets.len),
+        @intCast(d.requirements.len),
+        @intCast(d.contexts.len),
         @intCast(d.derived.len),
-        @intCast(d.parts.len),
+        @intCast(d.tries.len),
         @intCast(d.symbols.len),
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
@@ -351,33 +394,34 @@ const Writer = struct {
         return @intCast(w.type_refs.items.len - 1);
     }
 
-    fn writeTarget(w: *Writer, row: *[target_bytes]u8, t: Dispatch.Target) Allocator.Error!void {
+    fn writeTerm(w: *Writer, row: *[term_bytes]u8, t: Dispatch.Term) Allocator.Error!void {
         @memset(row, 0);
         row[0] = @intFromEnum(std.meta.activeTag(t));
         switch (t) {
-            .top => |u| {
-                std.mem.writeInt(u32, row[4..8], @intFromEnum(u.decl), .little);
-                writeRange(row[12..20], u.parts);
+            .param => |p| {
+                row[1] = @intFromEnum(std.meta.activeTag(p.binder));
+                std.mem.writeInt(u16, row[2..4], p.k, .little);
+                switch (p.binder) {
+                    .decl => {},
+                    .let => |inst| std.mem.writeInt(u32, row[4..8], @intFromEnum(inst), .little),
+                    .derived => |index| std.mem.writeInt(u32, row[4..8], index, .little),
+                }
             },
+            .top => |u| std.mem.writeInt(u32, row[4..8], @intFromEnum(u.decl), .little),
             .ext => |e| {
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(e.module), .little);
                 std.mem.writeInt(u32, row[8..12], @intFromEnum(e.value), .little);
-                writeRange(row[12..20], e.parts);
             },
-            .evidence => |k| std.mem.writeInt(u32, row[4..8], k, .little),
             .primitive => |p| std.mem.writeInt(u32, row[4..8], @intFromEnum(p), .little),
-            .derived => |u| {
-                std.mem.writeInt(u32, row[4..8], u.index, .little);
-                writeRange(row[12..20], u.parts);
-            },
+            .derived => |u| std.mem.writeInt(u32, row[4..8], u.index, .little),
             .ext_derived => |u| {
                 row[1] = @intFromEnum(u.kind);
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(u.module), .little);
                 std.mem.writeInt(u32, row[8..12], try w.typeRef(u.type), .little);
-                writeRange(row[12..20], u.parts);
             },
-            .field, .err => {},
+            .undetermined, .field => {},
         }
+        writeRange(row[12..20], t.argsOf());
     }
 
     fn writeShape(w: *Writer, row: *[12]u8, shape: Dispatch.Shape) Allocator.Error!void {
@@ -458,14 +502,19 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         lengths[i] = len;
     }
     const blob = bytes[offsets[@intFromEnum(Column.strings)]..][0..lengths[@intFromEnum(Column.strings)]];
+    const col = struct {
+        fn at(b: []const u8, o: [Column.count]u32, c: Column) []const u8 {
+            return b[o[@intFromEnum(c)]..];
+        }
+    }.at;
 
     var out: Loaded = .empty;
     errdefer out.deinit(gpa);
 
-    // The reference tables first: every target indexes them, and `resolve`
+    // The reference tables first: every term indexes them, and `resolve`
     // needs them whole.
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.module_refs)]..];
+        const in_bytes = col(bytes, offsets, .module_refs);
         const refs = try gpa.alloc(ModuleRef, lengths[@intFromEnum(Column.module_refs)]);
         out.module_refs = refs;
         for (refs, 0..) |*r, i| {
@@ -477,7 +526,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.type_refs)]..];
+        const in_bytes = col(bytes, offsets, .type_refs);
         const refs = try gpa.alloc(TypeRef, lengths[@intFromEnum(Column.type_refs)]);
         out.type_refs = refs;
         for (refs, 0..) |*r, i| {
@@ -494,7 +543,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
     const type_ref_count: u32 = @intCast(out.type_refs.len);
 
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.symbols)]..];
+        const in_bytes = col(bytes, offsets, .symbols);
         const symbols = try gpa.alloc(Symbol, lengths[@intFromEnum(Column.symbols)]);
         out.table.symbols = symbols;
         for (symbols, 0..) |*s, i| {
@@ -503,50 +552,61 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.parts)]..];
-        const parts = try gpa.alloc(Dispatch.Target, lengths[@intFromEnum(Column.parts)]);
-        out.table.parts = parts;
-        for (parts, 0..) |*t, i| {
-            t.* = try readTarget(in_bytes[i * target_bytes ..][0..target_bytes], module_ref_count, type_ref_count);
+        const in_bytes = col(bytes, offsets, .terms);
+        const terms = try gpa.alloc(Dispatch.Term, lengths[@intFromEnum(Column.terms)]);
+        out.table.terms = terms;
+        for (terms, 0..) |*t, i| {
+            t.* = try readTerm(in_bytes[i * term_bytes ..][0..term_bytes], module_ref_count, type_ref_count);
         }
     }
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.sites)]..];
+        const in_bytes = col(bytes, offsets, .args);
+        const args = try gpa.alloc(Dispatch.TermIndex, lengths[@intFromEnum(Column.args)]);
+        out.table.args = args;
+        for (args, 0..) |*a, i| a.* = @enumFromInt(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little));
+    }
+    {
+        const in_bytes = col(bytes, offsets, .sites);
         const sites = try gpa.alloc(Dispatch.Site, lengths[@intFromEnum(Column.sites)]);
         out.table.sites = sites;
         for (sites, 0..) |*s, i| {
-            const row = in_bytes[i * 28 ..][0..28];
+            const row = in_bytes[i * 16 ..][0..16];
             s.* = .{
                 .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .evidence_index = std.mem.readInt(u16, row[4..6], .little),
-                .parent = std.mem.readInt(u16, row[6..8], .little),
-                .target = try readTarget(row[8..28], module_ref_count, type_ref_count),
+                .callee = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
+                .evidence = readRange(row[8..16]),
             };
         }
     }
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.tries)]..];
-        const tries = try gpa.alloc(Dispatch.Try, lengths[@intFromEnum(Column.tries)]);
-        out.table.tries = tries;
-        for (tries, 0..) |*t, i| {
-            const row = in_bytes[i * 8 ..][0..8];
-            t.* = .{
+        const in_bytes = col(bytes, offsets, .decls);
+        const decls = try gpa.alloc(Dispatch.DeclInfo, lengths[@intFromEnum(Column.decls)]);
+        out.table.decls = decls;
+        for (decls, 0..) |*info, i| {
+            const row = in_bytes[i * 12 ..][0..12];
+            info.* = .{
+                .requirements = readRange(row[0..8]),
+                .value_arity = std.mem.readInt(u16, row[8..10], .little),
+            };
+        }
+    }
+    {
+        const in_bytes = col(bytes, offsets, .lets);
+        const lets = try gpa.alloc(Dispatch.LetInfo, lengths[@intFromEnum(Column.lets)]);
+        out.table.lets = lets;
+        for (lets, 0..) |*let, i| {
+            const row = in_bytes[i * 12 ..][0..12];
+            let.* = .{
                 .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
-                .shape = std.enums.fromInt(Dispatch.Try.Kind, row[4]) orelse return error.BadSidecar,
+                .requirements = readRange(row[4..12]),
             };
         }
     }
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.decl_evidence)]..];
-        const ranges = try gpa.alloc(Dispatch.Range, lengths[@intFromEnum(Column.decl_evidence)]);
-        out.table.decl_evidence = ranges;
-        for (ranges, 0..) |*r, i| r.* = readRange(in_bytes[i * 8 ..][0..8]);
-    }
-    {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.evidence)]..];
-        const evidence = try gpa.alloc(Dispatch.Evidence, lengths[@intFromEnum(Column.evidence)]);
-        out.table.evidence = evidence;
-        for (evidence, 0..) |*e, i| {
+        const in_bytes = col(bytes, offsets, .requirements);
+        const requirements = try gpa.alloc(Dispatch.Requirement, lengths[@intFromEnum(Column.requirements)]);
+        out.table.requirements = requirements;
+        for (requirements, 0..) |*e, i| {
             const row = in_bytes[i * 12 ..][0..12];
             const var_offset = std.mem.readInt(u32, row[4..8], .little);
             e.* = .{
@@ -561,16 +621,41 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
     {
-        const in_bytes = bytes[offsets[@intFromEnum(Column.derived)]..];
+        const in_bytes = col(bytes, offsets, .contexts);
+        const contexts = try gpa.alloc(Dispatch.ContextEntry, lengths[@intFromEnum(Column.contexts)]);
+        out.table.contexts = contexts;
+        for (contexts, 0..) |*c, i| {
+            const row = in_bytes[i * 8 ..][0..8];
+            c.* = .{
+                .param = std.mem.readInt(u16, row[0..2], .little),
+                .method = try symbolAt(blob, std.mem.readInt(u32, row[4..8], .little), in) orelse
+                    return error.BadSidecar,
+            };
+        }
+    }
+    {
+        const in_bytes = col(bytes, offsets, .derived);
         const derived = try gpa.alloc(Dispatch.Derived, lengths[@intFromEnum(Column.derived)]);
         out.table.derived = derived;
         for (derived, 0..) |*row_out, i| {
-            const row = in_bytes[i * 24 ..][0..24];
+            const row = in_bytes[i * 32 ..][0..32];
             row_out.* = .{
                 .kind = std.enums.fromInt(Dispatch.Derived.Kind, row[0]) orelse return error.BadSidecar,
-                .evidence_count = std.mem.readInt(u16, row[2..4], .little),
                 .shape = try readShape(row[4..16], type_ref_count),
-                .parts = readRange(row[16..24]),
+                .context = readRange(row[16..24]),
+                .body = readRange(row[24..32]),
+            };
+        }
+    }
+    {
+        const in_bytes = col(bytes, offsets, .tries);
+        const tries = try gpa.alloc(Dispatch.Try, lengths[@intFromEnum(Column.tries)]);
+        out.table.tries = tries;
+        for (tries, 0..) |*t, i| {
+            const row = in_bytes[i * 8 ..][0..8];
+            t.* = .{
+                .inst = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .shape = std.enums.fromInt(Dispatch.Try.Kind, row[4]) orelse return error.BadSidecar,
             };
         }
     }
@@ -595,26 +680,41 @@ fn readRange(row: *const [8]u8) Dispatch.Range {
     };
 }
 
-/// A `Target` row. The two reference fields come back as INDICES wearing a
+/// A `Term` row. The two reference fields come back as INDICES wearing a
 /// `Graph.Index`/`TypeId` hat; `resolve` is what turns them into session ids,
 /// and nothing between here and there may read them.
-fn readTarget(row: *const [target_bytes]u8, module_refs: u32, type_refs: u32) ReadError!Dispatch.Target {
-    const tag = std.enums.fromInt(std.meta.Tag(Dispatch.Target), row[0]) orelse return error.BadSidecar;
+fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadError!Dispatch.Term {
+    const tag = std.enums.fromInt(std.meta.Tag(Dispatch.Term), row[0]) orelse return error.BadSidecar;
+    const k = std.mem.readInt(u16, row[2..4], .little);
     const a = std.mem.readInt(u32, row[4..8], .little);
     const b = std.mem.readInt(u32, row[8..12], .little);
-    const parts = readRange(row[12..20]);
+    const args = readRange(row[12..20]);
+    // Only the four terms that name a function take arguments; any other
+    // row with a non-empty range is not one this writer produced.
+    switch (tag) {
+        .top, .ext, .derived, .ext_derived => {},
+        else => if (args.len != 0) return error.BadSidecar,
+    }
     return switch (tag) {
-        .top => .{ .top = .{ .decl = @enumFromInt(a), .parts = parts } },
+        .param => blk: {
+            const binder_tag = std.enums.fromInt(std.meta.Tag(Dispatch.Binder), row[1]) orelse return error.BadSidecar;
+            const binder: Dispatch.Binder = switch (binder_tag) {
+                .decl => .decl,
+                .let => .{ .let = @enumFromInt(a) },
+                .derived => .{ .derived = a },
+            };
+            break :blk .{ .param = .{ .binder = binder, .k = k } };
+        },
+        .top => .{ .top = .{ .decl = @enumFromInt(a), .args = args } },
         .ext => blk: {
             if (a != no_ref and a >= module_refs) return error.BadSidecar;
-            break :blk .{ .ext = .{ .module = @enumFromInt(a), .value = @enumFromInt(b), .parts = parts } };
+            break :blk .{ .ext = .{ .module = @enumFromInt(a), .value = @enumFromInt(b), .args = args } };
         },
-        .evidence => .{ .evidence = std.math.cast(u16, a) orelse return error.BadSidecar },
         .primitive => .{
-            .primitive = std.enums.fromInt(Dispatch.Target.Primitive, std.math.cast(u8, a) orelse
+            .primitive = std.enums.fromInt(Dispatch.Primitive, std.math.cast(u8, a) orelse
                 return error.BadSidecar) orelse return error.BadSidecar,
         },
-        .derived => .{ .derived = .{ .index = a, .parts = parts } },
+        .derived => .{ .derived = .{ .index = a, .args = args } },
         .ext_derived => blk: {
             if (a != no_ref and a >= module_refs) return error.BadSidecar;
             if (b != no_ref and b >= type_refs) return error.BadSidecar;
@@ -622,11 +722,11 @@ fn readTarget(row: *const [target_bytes]u8, module_refs: u32, type_refs: u32) Re
                 .module = @enumFromInt(a),
                 .type = @enumFromInt(b),
                 .kind = std.enums.fromInt(Dispatch.Derived.Kind, row[1]) orelse return error.BadSidecar,
-                .parts = parts,
+                .args = args,
             } };
         },
+        .undetermined => .undetermined,
         .field => .field,
-        .err => .err,
     };
 }
 
@@ -644,43 +744,73 @@ fn readShape(row: *const [12]u8, type_refs: u32) ReadError!Dispatch.Shape {
     };
 }
 
-/// Whether every index and range in `l` stays inside the column it points at.
-/// `decode` runs this before handing a sidecar back, so a caller never has to
-/// trust one — which is what makes a corrupt file a miss rather than a wrong
-/// answer, or an out-of-bounds read.
+/// Whether every index and range in `l` stays inside the column it points
+/// at, and the trees are trees. `decode` runs this before handing a sidecar
+/// back, so a caller never has to trust one — which is what makes a corrupt
+/// file a miss rather than a wrong answer, an out-of-bounds read or a walk
+/// that never ends.
 ///
-/// What it checks: every `derived` index of a target is a `derived` row;
-/// every `parts` range fits `parts`; every `record` shape's range fits
-/// `symbols`; every `derived` row's `parts` range fits `parts`; every
-/// `decl_evidence` range fits `evidence`. The two reference indices were
-/// bounded as they were read.
+/// What it checks: every term's `args` range fits `args`, and every argument
+/// it names is a LATER term (the pre-order rule that makes the table
+/// acyclic); every `top` term names a declaration (`decls` has one row per
+/// `Bir.Decl`); every `derived` term and `Binder.derived` names a `derived`
+/// row; every site's callee is a term or none, and its roots fit `args` and
+/// name terms; every `derived` row's `context` fits `contexts`, its `body`
+/// fits `args` and names terms, and a record shape fits `symbols`; every
+/// `decls` and `lets` range fits `requirements`. The two reference indices
+/// were bounded as they were read. NOT checked, because the reader has
+/// neither table: an `ext` term's value index against the imported
+/// interface, and a site's instruction against the Bir — the entry's key
+/// pins both (it contains the source hash and every import's key).
 pub fn verify(l: *const Loaded) bool {
     const d = &l.table;
-    for (d.sites) |s| {
-        if (!targetOk(d, s.target)) return false;
+    const terms = d.terms.len;
+    for (d.terms, 0..) |t, i| {
+        const r = t.argsOf();
+        if (!rangeOk(r, d.args.len)) return false;
+        for (d.argsAt(r)) |arg| {
+            if (arg.int() >= terms or arg.int() <= i) return false;
+        }
+        switch (t) {
+            .derived => |u| if (u.index >= d.derived.len) return false,
+            // `decls` has one row per `Bir.Decl` of the module (`finish`),
+            // so it bounds a `top` without the Bir: `Lower.termName` indexes
+            // `bir.decls` with only a debug assert (review of R2a, N5).
+            .top => |u| if (u.decl.int() >= d.decls.len) return false,
+            .param => |p| switch (p.binder) {
+                .derived => |index| if (index >= d.derived.len) return false,
+                else => {},
+            },
+            else => {},
+        }
     }
-    for (d.parts) |t| {
-        if (!targetOk(d, t)) return false;
+    for (d.sites) |s| {
+        if (s.callee.unwrap()) |c| if (c.int() >= terms) return false;
+        if (!rootsOk(d, s.evidence)) return false;
     }
     for (d.derived) |row| {
-        if (!rangeOk(row.parts, d.parts.len)) return false;
+        if (!rangeOk(row.context, d.contexts.len)) return false;
+        if (!rootsOk(d, row.body)) return false;
         switch (row.shape) {
             .record => |r| if (!rangeOk(r, d.symbols.len)) return false,
             else => {},
         }
     }
-    for (d.decl_evidence) |r| {
-        if (!rangeOk(r, d.evidence.len)) return false;
+    for (d.decls) |info| {
+        if (!rangeOk(info.requirements, d.requirements.len)) return false;
+    }
+    for (d.lets) |let| {
+        if (!rangeOk(let.requirements, d.requirements.len)) return false;
     }
     return true;
 }
 
-fn targetOk(d: *const Dispatch, t: Dispatch.Target) bool {
-    if (!rangeOk(t.partsOf(), d.parts.len)) return false;
-    return switch (t) {
-        .derived => |u| u.index < d.derived.len,
-        else => true,
-    };
+fn rootsOk(d: *const Dispatch, r: Dispatch.Range) bool {
+    if (!rangeOk(r, d.args.len)) return false;
+    for (d.argsAt(r)) |root| {
+        if (root.int() >= d.terms.len) return false;
+    }
+    return true;
 }
 
 fn rangeOk(r: Dispatch.Range, limit: usize) bool {
@@ -698,14 +828,10 @@ fn rangeOk(r: Dispatch.Range, limit: usize) bool {
 /// A reference that names no module or no type of it yields the poisoned id
 /// the term would have carried anyway — `.none` for a type, and a module
 /// index of `graph.count()`, which every accessor already treats as absent.
-/// A sidecar mapped from disk that does not describe this project cannot
-/// trap; whether it is WRONG is the cache key's problem and not the
-/// reader's, which is the same split `checker.md` §7 draws for the record.
 pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
     const modules = @as(u32, @intCast(l.module_refs.len));
     const type_count = @as(u32, @intCast(l.type_refs.len));
-    for (@constCast(l.table.sites)) |*s| resolveTarget(&s.target, l, graph, types, modules, type_count);
-    for (@constCast(l.table.parts)) |*t| resolveTarget(t, l, graph, types, modules, type_count);
+    for (@constCast(l.table.terms)) |*t| resolveTerm(t, l, graph, types, modules, type_count);
     for (@constCast(l.table.derived)) |*row| {
         switch (row.shape) {
             .nominal => |at| row.shape = .{ .nominal = resolveType(l, graph, types, @intFromEnum(at), type_count) },
@@ -714,8 +840,8 @@ pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
     }
 }
 
-fn resolveTarget(
-    t: *Dispatch.Target,
+fn resolveTerm(
+    t: *Dispatch.Term,
     l: *const Loaded,
     graph: *const Graph,
     types: *const Types,
@@ -726,13 +852,13 @@ fn resolveTarget(
         .ext => |e| t.* = .{ .ext = .{
             .module = resolveModule(l, graph, @intFromEnum(e.module), modules),
             .value = e.value,
-            .parts = e.parts,
+            .args = e.args,
         } },
         .ext_derived => |u| t.* = .{ .ext_derived = .{
             .module = resolveModule(l, graph, @intFromEnum(u.module), modules),
             .type = resolveType(l, graph, types, @intFromEnum(u.type), type_count),
             .kind = u.kind,
-            .parts = u.parts,
+            .args = u.args,
         } },
         else => {},
     }
@@ -765,15 +891,22 @@ const Session = @import("../Session.zig");
 /// compared as TEXT, because the point of the `strings` column is that two
 /// sessions may number the same name differently.
 fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const InternPool.Global) !void {
+    try testing.expectEqualSlices(Dispatch.Term, a.terms, b.terms);
+    try testing.expectEqualSlices(Dispatch.TermIndex, a.args, b.args);
     try testing.expectEqualSlices(Dispatch.Site, a.sites, b.sites);
     try testing.expectEqualSlices(Dispatch.Try, a.tries, b.tries);
-    try testing.expectEqualSlices(Dispatch.Range, a.decl_evidence, b.decl_evidence);
+    try testing.expectEqualSlices(Dispatch.DeclInfo, a.decls, b.decls);
+    try testing.expectEqualSlices(Dispatch.LetInfo, a.lets, b.lets);
     try testing.expectEqualSlices(Dispatch.Derived, a.derived, b.derived);
-    try testing.expectEqualSlices(Dispatch.Target, a.parts, b.parts);
-    try testing.expectEqual(a.evidence.len, b.evidence.len);
-    for (a.evidence, b.evidence) |x, y| {
+    try testing.expectEqual(a.requirements.len, b.requirements.len);
+    for (a.requirements, b.requirements) |x, y| {
         try testing.expectEqual(x.quantified, y.quantified);
         try testing.expectEqualStrings(optionalText(interner, x.var_name), optionalText(interner, y.var_name));
+        try testing.expectEqualStrings(interner.slice(x.method), interner.slice(y.method));
+    }
+    try testing.expectEqual(a.contexts.len, b.contexts.len);
+    for (a.contexts, b.contexts) |x, y| {
+        try testing.expectEqual(x.param, y.param);
         try testing.expectEqualStrings(interner.slice(x.method), interner.slice(y.method));
     }
     try testing.expectEqual(a.symbols.len, b.symbols.len);
@@ -893,7 +1026,7 @@ test "every table of a project round-trips: sites, evidence, derived, tries and 
         const table = &p.session.checked.dispatch[i];
         if (table.sites.len != 0) any_sites = true;
         if (table.derived.len != 0) any_derived = true;
-        if (table.evidence.len != 0) any_evidence = true;
+        if (table.requirements.len != 0) any_evidence = true;
     }
     // A round trip of nothing proves nothing.
     try testing.expect(any_sites);
@@ -1064,4 +1197,62 @@ test "fuzz: a mutated sidecar never reads back as an unverified one" {
 
     try testing.expect(loaded_count > 100);
     try testing.expect(attempts > 30_000);
+}
+
+test "an argument that does not follow its owner is BadSidecar, not a cycle handed to the backend" {
+    // checker-v2.md §13.1 as amended by R2a: terms are allocated in
+    // pre-order, so every argument's index is greater than its owner's, and
+    // that is what lets every walker recurse without a guard. A file is not
+    // trusted to keep the rule: `verify` checks it, so a sidecar whose term
+    // names ITSELF as an argument is a miss.
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+
+    const good_terms = [_]Dispatch.Term{
+        .{ .top = .{ .decl = @enumFromInt(0), .args = .{ .start = 0, .len = 1 } } },
+        .{ .primitive = .strict_eq },
+    };
+    const good_args = [_]Dispatch.TermIndex{@enumFromInt(1)};
+    const decls = [_]Dispatch.DeclInfo{.{}};
+    const good: Dispatch = .{ .terms = &good_terms, .args = &good_args, .decls = &decls };
+    const bytes = try write(gpa, &good, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    loaded.deinit(gpa);
+
+    const cyclic_args = [_]Dispatch.TermIndex{@enumFromInt(0)};
+    const cyclic: Dispatch = .{ .terms = &good_terms, .args = &cyclic_args, .decls = &decls };
+    const bad = try write(gpa, &cyclic, &graph, &types, &global);
+    defer gpa.free(bad);
+    try testing.expectError(error.BadSidecar, read(gpa, bad, &global));
+}
+
+test "a top term naming a declaration past the module's is BadSidecar" {
+    // Review of R2a, N5: `Lower.termName` indexes `bir.decls` by a `top`
+    // term's declaration with only a debug assert, so an index past the
+    // module's declarations must not survive the load. `decls` has one row
+    // per `Bir.Decl` (`Dispatch.Builder.finish`), which bounds it without
+    // the Bir.
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const decls = [_]Dispatch.DeclInfo{ .{}, .{} };
+
+    const inside = [_]Dispatch.Term{.{ .top = .{ .decl = @enumFromInt(1) } }};
+    const ok: Dispatch = .{ .terms = &inside, .decls = &decls };
+    const bytes = try write(gpa, &ok, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    loaded.deinit(gpa);
+
+    const past = [_]Dispatch.Term{.{ .top = .{ .decl = @enumFromInt(2) } }};
+    const bad_table: Dispatch = .{ .terms = &past, .decls = &decls };
+    const bad = try write(gpa, &bad_table, &graph, &types, &global);
+    defer gpa.free(bad);
+    try testing.expectError(error.BadSidecar, read(gpa, bad, &global));
 }

@@ -1,36 +1,45 @@
 module WhereClauseDerives
-  decl eqGen evidence=1
-    evidence 0 quantified=0 var=a method=eq
-  decl cmpGen evidence=1
-    evidence 0 quantified=0 var=a method=compare
-  decl c1 evidence=0
-  decl c2 evidence=0
-  decl c3 evidence=0
-  decl c4 evidence=0
-  decl c5 evidence=0
-  decl c6 evidence=0
-  derived 0 compare WhereClauseDerives.Colour evidence=0
-  derived 1 eq WhereClauseDerives.Colour evidence=0
-  derived 2 compare WhereClauseDerives.Shape evidence=0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-    part 2 primitive num_compare
-  derived 3 eq WhereClauseDerives.Shape evidence=0
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-    part 2 primitive strict_eq
-  derived 4 compare r$x$y evidence=2
-  derived 5 eq t2 evidence=2
-  site 15 0 evidence 0
-  site 28 0 evidence 0
-  site 33 0 primitive strict_eq
-  site 43 0 derived 2
-  site 52 0 derived 5
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 61 0 derived 4
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-  site 69 0 ext List eq
-  site 69 1 primitive strict_eq
-  site 73 0 primitive strict_eq
+  decl eqGen evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=eq
+  decl cmpGen evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=compare
+  decl c1 evidence=0 arity=0
+  decl c2 evidence=0 arity=0
+  decl c3 evidence=0 arity=0
+  decl c4 evidence=0 arity=0
+  decl c5 evidence=0 arity=0
+  decl c6 evidence=0 arity=0
+  derived 0 compare WhereClauseDerives.Colour context=0
+  derived 1 eq WhereClauseDerives.Colour context=0
+  derived 2 compare WhereClauseDerives.Shape context=0
+    body 0 primitive num_compare
+    body 1 primitive num_compare
+    body 2 primitive num_compare
+  derived 3 eq WhereClauseDerives.Shape context=0
+    body 0 primitive strict_eq
+    body 1 primitive strict_eq
+    body 2 primitive strict_eq
+  derived 4 compare r$x$y context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  derived 5 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 15 callee param 0
+  site 28 callee param 0
+  site 33
+    evidence primitive strict_eq
+  site 43
+    evidence derived 2
+  site 52
+    evidence derived 5
+      primitive strict_eq
+      primitive strict_eq
+  site 61
+    evidence derived 4
+      primitive num_compare
+      primitive num_compare
+  site 69
+    evidence ext List eq
+      primitive strict_eq
+  site 73 callee primitive strict_eq

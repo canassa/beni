@@ -13,21 +13,25 @@
 -- for `a` and a bare `strict_eq` for `b`, exit 0, and `run/TwoSlotsNested`
 -- is what that does to the answers.
 --
--- So the ORDER of these rows is the tree and the `evidence_index` column is
--- only the identity the checker's two deduplicating tables key on
--- (`Solve.joinConstraint`, `Solve.appendSite`). Reading a golden here means
--- reading down the rows: a target takes the slots that follow it, one per
--- evidence parameter of its own.
+-- In the checker's flat BUILDER list (v1, `Dispatch.FlatSite`) the ORDER
+-- of the slots is the tree and the `evidence_index` column is only the
+-- identity the checker's two deduplicating tables key on
+-- (`Solve.joinConstraint`, `Solve.appendSite`). Since R2a that order is read
+-- once, by `Dispatch.finish`'s converter, and the golden prints the TREE it
+-- builds (checker-v2.md §13.2): each `evidence` root with its arguments under
+-- it.
 --
 -- `two` is the repro. `middle` is three slots where the MIDDLE one nests
--- three deep, so the walk has to come back out of a subtree to a sibling
--- rather than only descend — its rows run 0, 3, 1, 4, 6, 7, 2, 5, which is
--- the breadth-first numbering read depth-first. `tupled` is the other
--- half: slot 1 is a tuple of two nested lists, whose evidence rides on the
--- TARGET's `part` tree (§7.1) and not on the site list at all, so slot 0's
--- child must still land between the two — before the fix it landed after,
--- and the tuple's `eq` was handed to `List$eq` as the element comparison of
--- `[ 1 ]`.
+-- three deep, so the converter has to come back out of a subtree to a
+-- sibling rather than only descend: the builder numbers its slots 0 … 7
+-- breadth-first and the pre-order it reads them in is 0, 3, 1, 4, 6, 7, 2,
+-- 5; the golden shows the resulting three roots. `tupled` is the other
+-- half: slot 1 is a tuple of two nested lists, whose evidence the builder
+-- carries in the derived target's own `parts` (§7.1) and not in the slot
+-- list at all, so slot 0's child must still land before it — before the
+-- A.68 fix it landed after, and the tuple's `eq` was handed to `List$eq` as
+-- the element comparison of `[ 1 ]`. In the golden it is the root `derived
+-- 0` with its two list arguments.
 pub pair : a, b -> Bool
     where
         a.eq : a, a -> Bool

@@ -3263,7 +3263,7 @@ test "a derived eq calls the user's own eq, across a module boundary" {
     // command exits 1 — the table is still printed, and it is the table
     // this scenario is about.
     const table = try w.runWith(&.{ "dump", "--stage=dispatch", "src" }, .{ .raw_diagnostics = true });
-    try testing.expect(std.mem.indexOf(u8, table.stdout, "part 0 ext Id eq") != null);
+    try testing.expect(std.mem.indexOf(u8, table.stdout, "callee derived 0\n    arg ext Id eq\n") != null);
 
     const built = try w.buildAndRun(&.{"src"});
     try testing.expectEqual(@as(u8, 0), built.build.exit_code);
@@ -3401,6 +3401,69 @@ test "a list whose elements have an eq of their own calls it, across a module bo
     try testing.expectEqualStrings("True\n", ok.program.?.stdout);
 }
 
+test "evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess" {
+    // Review of R2a, B1 (checker-v2.md §13.1). `w10` wraps its argument in
+    // 1 024 lists, so `{ a = w10 (T 1) } == …` compares a record whose one
+    // field's evidence is `List.eq` nested 1 024 deep with `T`'s own `eq` —
+    // which answers `True` whatever the payload — at the bottom.
+    //
+    // R2a's first converter capped `parts` nesting at 1 024 and answered
+    // anything deeper with the `undetermined` leaf: `Basics.eq` at the
+    // bottom, exit 0, and the program would print `structural` (this very
+    // library build emitted `List$eq(Basics$eq, …)` at the bottom). On
+    // `9a931d7` this library build was already right, and the reviewer's app
+    // build of the same program (`main` printing the answer) stopped with
+    // `internal` (the old walks' 32-level cap in `Reach`/`Edges`). The fix
+    // has no cap that writes a term, so the table and the emitted chain end
+    // in `T`'s `eq`.
+    //
+    // Not a `run/` fixture, because it cannot run: an evidence expression
+    // 1 024 calls deep is past what node's parser accepts
+    // (`RangeError: Maximum call stack size exceeded` while compiling the
+    // module), and a chain shallow enough to parse never reached the cap.
+    // So this asserts the emitted JavaScript instead — the whole chain, and
+    // no structural answer anywhere in it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    var source: std.ArrayList(u8) = .empty;
+    try source.appendSlice(arena,
+        \\type T
+        \\    = T Int
+        \\
+        \\
+        \\pub eq : T, T -> Bool
+        \\eq a b =
+        \\    True
+        \\
+        \\
+        \\w0 x =
+        \\    [ x ]
+        \\
+        \\
+    );
+    for (1..11) |k| {
+        try source.print(arena, "w{d} x =\n    w{d} (w{d} x)\n\n\n", .{ k, k - 1, k - 1 });
+    }
+    try source.appendSlice(arena,
+        \\pub same : Bool
+        \\same =
+        \\    { a = w10 (T 1) } == { a = w10 (T 2) }
+        \\
+    );
+    try w.write("src/Deep.beni", source.items);
+
+    const built = try w.runWith(&.{ "build", "--library", "--platform=node", "--out=out", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqualStrings("", built.stderr);
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    const js = try w.read("out/Deep.mjs");
+    // The chain, whole: one `List$eq` per level, `T`'s `eq` at the bottom,
+    // and no `Basics.eq` — the structural answer — anywhere.
+    try testing.expectEqual(@as(usize, 1024), std.mem.count(u8, js, "List$eq("));
+    try testing.expect(std.mem.indexOf(u8, js, "List$eq(Deep$eq,") != null);
+    try testing.expect(std.mem.indexOf(u8, js, "Basics$eq") == null);
+}
+
 test "a constrained value in a part position is handed its own evidence" {
     // §7.1's amendment, and the run that proves it (A.64).
     //
@@ -3459,9 +3522,9 @@ test "a constrained value in a part position is handed its own evidence" {
     // The table names it: the record's one field is `ext Lib eq`, and that
     // `ext` is a value with evidence of its own — printed underneath it.
     const table = try w.runWith(&.{ "dump", "--stage=dispatch", "src" }, .{ .raw_diagnostics = true });
-    const at = std.mem.indexOf(u8, table.stdout, "part 0 ext Lib eq");
+    const at = std.mem.indexOf(u8, table.stdout, "callee derived 0\n    arg ext Lib eq\n");
     try testing.expect(at != null);
-    try testing.expect(std.mem.startsWith(u8, table.stdout[at.? + "part 0 ext Lib eq\n".len ..], "      part 0 primitive strict_eq"));
+    try testing.expect(std.mem.startsWith(u8, table.stdout[at.? + "callee derived 0\n    arg ext Lib eq\n".len ..], "      primitive strict_eq\n"));
 
     const built = try w.buildAndRun(&.{"src"});
     try testing.expectEqual(@as(u8, 0), built.build.exit_code);
@@ -3879,7 +3942,7 @@ test "a pub foreign with a where clause takes its evidence in front of its own a
 test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
     // static-dispatch-spike.md §7.3: no symbol ids, no positions and no
     // module indices, and `derived` sorted by emitted name text and `sites`
-    // by `(inst, evidence_index)` BEFORE anything indexes them (§7.1,
+    // by instruction BEFORE anything indexes them (§7.1, checker-v2.md §13.1,
     // A.29). The table is what S4 and S5 lower from, so a byte that moves
     // with `--jobs` is a program that changes with `--jobs`.
     var w = try World.init(testing.allocator, testing.io);
@@ -3898,7 +3961,7 @@ test "the dispatch table is byte-identical at --jobs=1 and --jobs=8" {
     // The table really does hold what the assertion is about.
     try testing.expect(std.mem.indexOf(u8, out[0], "  site ") != null);
     try testing.expect(std.mem.indexOf(u8, out[0], "  derived ") != null);
-    try testing.expect(std.mem.indexOf(u8, out[0], "    evidence 0 ") != null);
+    try testing.expect(std.mem.indexOf(u8, out[0], "    requirement 0 ") != null);
 }
 
 test "a constraint that rode out on an inferred interface is reported without --explain, and does not fail the build" {

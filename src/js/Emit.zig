@@ -533,7 +533,7 @@ const Emitter = struct {
                 try declared.append(e.scratch, .{
                     .name = e.session.interner.slice(b.symbol(d.name)),
                     .token = d.name_token,
-                    .evidence = @intCast(dispatch.declEvidence(@intCast(index)).len),
+                    .evidence = @intCast(dispatch.declRequirements(@intCast(index)).len),
                     .params = annotationArity(d),
                     .is_function = isFunctionAnnotation(b, d),
                 });
@@ -1726,7 +1726,7 @@ fn plural(n: u32) []const u8 {
 ///
 /// **It is `params`, read back.** `bir/Lower` counts a `foreign`'s
 /// parameters off exactly this annotation and records them there
-/// (`frontend.md` §3.6), so check 4 and `js/Lower.targetArity` measure the
+/// (`frontend.md` §3.6), so check 4 and `js/Lower.termArity` measure the
 /// sibling against ONE number. Computing it a second time here is how the
 /// two came to disagree: the backend eta-expanded `List.eq` at arity 0
 /// while this check happily accepted its binary sibling.

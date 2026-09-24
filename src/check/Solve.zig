@@ -270,7 +270,7 @@ pub const Solver = struct {
     /// not the pre-order §8.2 reads the site list in: one instantiation
     /// numbers every slot of its own `where` clause before any of them is
     /// discharged, so a nested instantiation's slots land after the next
-    /// top-level one's. `Dispatch.Site.parent` is what puts the list back in
+    /// top-level one's. `Dispatch.FlatSite.parent` is what puts the list back in
     /// order, and this cursor stays what it is — the identity of a slot, not
     /// its position (A.68).
     evidence_next: std.AutoHashMapUnmanaged(u32, u16) = .empty,
@@ -1411,7 +1411,7 @@ pub const Solver = struct {
         // A slot this instruction owns outright: nothing of its own
         // resolution asked for it, so it is a ROOT of the pre-order forest
         // `Dispatch.finish` walks (A.68).
-        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .next = &read_cursor, .parent = Dispatch.Site.no_parent })) orelse {
+        const scheme = (try s.schemeOf(node.region, .{ .inst = site, .next = &read_cursor, .parent = Dispatch.FlatSite.no_parent })) orelse {
             s.commitEvidence(site, read_cursor);
             s.poison(target);
             return;
@@ -1433,7 +1433,7 @@ pub const Solver = struct {
         // numbering off the back of code that dispatches on nothing — it is
         // one instantiation's second full traversal of its own type.
         if (s.copy_constrained) {
-            try s.tagInstantiated(copy, site, &tag_cursor, mark, shared, Dispatch.Site.no_parent);
+            try s.tagInstantiated(copy, site, &tag_cursor, mark, shared, Dispatch.FlatSite.no_parent);
         }
         // Nothing numbered a slot, so the cursor goes back exactly as it
         // came out and the write is a lookup that stores what it read.
@@ -3410,7 +3410,7 @@ pub const Solver = struct {
         return true;
     }
 
-    const WellKnownTarget = union(enum) { primitive: Dispatch.Target.Primitive, derived_nominal };
+    const WellKnownTarget = union(enum) { primitive: Dispatch.Primitive, derived_nominal };
 
     fn wellKnownTarget(s: *const Solver, c: TypeStore.MethodConstraint, a: TypeStore.Structure.App) ?WellKnownTarget {
         if (a.args.len != 0) return null;
@@ -3825,7 +3825,7 @@ pub const Solver = struct {
         const mark: u32 = @intCast(probe.store().constraints.items.len);
         const copy = try probe.makeCopy(scheme);
         var cursor: u16 = 0;
-        try probe.tagInstantiated(copy, origin, &cursor, mark, false, Dispatch.Site.no_parent);
+        try probe.tagInstantiated(copy, origin, &cursor, mark, false, Dispatch.FlatSite.no_parent);
         const unified = try probe.unifyQuiet(copy, expected.fn_var);
         if (unified) try probe.dischargeObligations(probe.rank);
         const complete = unified and probe.newSitesComplete(dispatch_mark.sites);
@@ -3861,7 +3861,7 @@ pub const Solver = struct {
         const receiver = try probe.fresh(.{ .structure = .{ .app = a } });
         const expected = try probe.renamedConstraint(c, c.name, receiver);
         var cursor: u16 = 0;
-        const copy = (try probe.importedValue(module, @intFromEnum(value), .{ .inst = origin, .next = &cursor, .parent = Dispatch.Site.no_parent })) orelse {
+        const copy = (try probe.importedValue(module, @intFromEnum(value), .{ .inst = origin, .next = &cursor, .parent = Dispatch.FlatSite.no_parent })) orelse {
             const exact = s.store().rollback(snapshot);
             s.env.dispatch.shrink(dispatch_mark);
             s.reporter.rollbackTo(report_mark);
@@ -4244,7 +4244,7 @@ pub const Solver = struct {
 
     /// An instruction whose evidence a resolution has to number, and the
     /// slot of it that `c` itself answers — the PARENT of every slot the
-    /// resolution of `c` goes on to ask for (`Dispatch.Site.parent`,
+    /// resolution of `c` goes on to ask for (`Dispatch.FlatSite.parent`,
     /// A.68).
     const SiteOrigin = struct { inst: Bir.Inst.Index, parent: u16 };
 
@@ -4288,7 +4288,7 @@ pub const Solver = struct {
             try out.append(s.env.scratch, .{ .inst = site.inst, .parent = site.evidence_index });
         }
         if (out.items.len == 0 and !part_sites) {
-            try out.append(s.env.scratch, .{ .inst = fallback, .parent = Dispatch.Site.no_parent });
+            try out.append(s.env.scratch, .{ .inst = fallback, .parent = Dispatch.FlatSite.no_parent });
         }
     }
 
@@ -4875,7 +4875,7 @@ pub const Solver = struct {
         for (order.items) |root| total += st.constraintCount(st.flagsOf(root).constraints);
         if (total > max_inferred_constraints) return s.capPromotion(h, d, order.items, total);
 
-        var entries: std.ArrayList(Dispatch.Evidence) = .empty;
+        var entries: std.ArrayList(Dispatch.Requirement) = .empty;
         defer entries.deinit(s.env.scratch);
         var index: u16 = 0;
         for (order.items, 0..) |root, q| {

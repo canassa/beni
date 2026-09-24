@@ -1,22 +1,28 @@
 module DerivedShapesDistinctElements
-  decl orderInts evidence=0
-  decl orderStrings evidence=0
-  decl sameInts evidence=0
-  decl nested evidence=0
-  derived 0 compare t2 evidence=2
-  derived 1 eq r$x$y evidence=2
-  derived 2 eq t2 evidence=2
-  site 12 0 derived 0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-  site 25 0 derived 0
-    part 0 primitive string_compare
-    part 1 primitive string_compare
-  site 38 0 derived 1
-    part 0 primitive strict_eq
-    part 1 primitive strict_eq
-  site 55 0 derived 1
-    part 0 primitive strict_eq
-    part 1 derived 2
-      part 0 primitive strict_eq
-      part 1 primitive strict_eq
+  decl orderInts evidence=0 arity=2
+  decl orderStrings evidence=0 arity=2
+  decl sameInts evidence=0 arity=2
+  decl nested evidence=0 arity=2
+  derived 0 compare t2 context=2
+    context 0 param=0 method=compare
+    context 1 param=1 method=compare
+  derived 1 eq r$x$y context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  derived 2 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 12 callee derived 0
+    arg primitive num_compare
+    arg primitive num_compare
+  site 25 callee derived 0
+    arg primitive string_compare
+    arg primitive string_compare
+  site 38 callee derived 1
+    arg primitive strict_eq
+    arg primitive strict_eq
+  site 55 callee derived 1
+    arg primitive strict_eq
+    arg derived 2
+      primitive strict_eq
+      primitive strict_eq

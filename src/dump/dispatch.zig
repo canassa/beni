@@ -1,10 +1,10 @@
-//! `beni dump --stage=dispatch` (docs/design/static-dispatch-spike.md §7.3):
+//! `beni dump --stage=dispatch`, format v2 (docs/design/checker-v2.md §13.2):
 //! what the checker decided about every method call of one module, as text.
 //!
 //! ```
 //! module Tally
-//!   decl tally evidence=0
-//!   site 12 0 primitive string_compare
+//!   decl tally evidence=0 arity=1
+//!   site 12 callee primitive string_compare
 //! ```
 //!
 //! Line-oriented, one fact per line, with **no symbol ids, no positions and
@@ -12,6 +12,14 @@
 //! leaves a golden untouched and `--jobs` cannot move a byte. That is the
 //! rule `dump/types.zig` already states, and the reason the table is sorted
 //! before anything indexes it (§7.1).
+//!
+//! **A tree is printed as a tree.** A term's arguments are printed one per
+//! line, two spaces deeper than the line that holds the term, so a golden
+//! reads as the hidden arguments the emitter passes and there is no
+//! pre-order to reconstruct (§13.2, which retired A.68's discussion). A
+//! callee's own arguments sit under its `site` line as `arg` lines, before the
+//! first `evidence` line, so neither can be mistaken for the other; below
+//! those two keywords, arguments are bare terms (checker-v2.md §13.2).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -44,55 +52,66 @@ pub fn write(
     };
     try w.print("module {s}\n", .{module_name});
     // A module with no dispatch at all prints its `module` line and nothing
-    // else (§7.3); one with any prints every value declaration in SOURCE
-    // order, so the evidence lists read as the parameter lists they are.
-    if (dispatch.sites.len == 0 and dispatch.derived.len == 0 and
-        dispatch.evidence.len == 0 and dispatch.tries.len == 0) return;
+    // else; one with any prints every value declaration in SOURCE order, so
+    // the requirement lists read as the parameter lists they are.
+    if (dispatch.isEmpty()) return;
     for (bir.decls, 0..) |d, i| {
         if (!d.kind.isValue()) continue;
-        const evidence = dispatch.declEvidence(@intCast(i));
-        try w.print("  decl {s} evidence={d}\n", .{ interner.slice(bir.symbol(d.name)), evidence.len });
-        for (evidence, 0..) |e, k| {
-            try w.print("    evidence {d} quantified={d} var={s} method={s}\n", .{
-                k,
-                e.quantified,
-                if (e.var_name.unwrap()) |n| interner.slice(n) else "_",
-                interner.slice(e.method),
-            });
-        }
+        const requirements = dispatch.declRequirements(@intCast(i));
+        const arity: u16 = if (i < dispatch.decls.len) dispatch.decls[i].value_arity else 0;
+        try w.print("  decl {s} evidence={d} arity={d}\n", .{ interner.slice(bir.symbol(d.name)), requirements.len, arity });
+        for (requirements, 0..) |e, k| try cx.writeRequirement(w, k, e);
     }
-    // Which shape each `?` solved as (§7.1, `checker.md` §6.5), ascending
-    // by instruction. The emitter's failure test comes from here and from
-    // nowhere else, so it is printed for the same reason a site is.
+    // D5's constrained `let`s (§13.1). Empty until R14; printed so the day
+    // the column fills, the dump already says so.
+    for (dispatch.lets) |let| {
+        const r = let.requirements;
+        try w.print("  let {d} evidence={d}\n", .{ let.inst.int(), r.len });
+        for (dispatch.requirements[r.start..][0..r.len], 0..) |e, k| try cx.writeRequirement(w, k, e);
+    }
+    // Which shape each `?` solved as (`checker.md` §6.5), ascending by
+    // instruction.
     for (dispatch.tries) |t| {
         try w.print("  try {d} {s}\n", .{ t.inst.int(), @tagName(t.shape) });
     }
     // Derived functions in the emission order of §8.5 (by printed name
-    // text). `part` lines under a `derived` row are the BODY's positions —
-    // every constructor argument of a nominal type, in declaration order
-    // (§9's parts contract). A record, a tuple and `()` have none: such a
-    // body applies `$m$0 … $m$n-1` position by position by construction
-    // (§9.2, §9.3), so `evidence=<n>` is the whole of it.
+    // text): the context — its evidence parameters — then, for a nominal
+    // type, one `body` term per constructor argument position.
     for (dispatch.derived, 0..) |d, i| {
         try w.print("  derived {d} {s} ", .{ i, @tagName(d.kind) });
         try cx.writeShape(w, d.shape);
-        try w.print(" evidence={d}\n", .{d.evidence_count});
-        try cx.writeParts(w, d.parts, 2);
+        try w.print(" context={d}\n", .{d.context.len});
+        for (dispatch.contextOf(@intCast(i)), 0..) |entry, k| {
+            try w.print("    context {d} param={d} method={s}\n", .{ k, entry.param, interner.slice(entry.method) });
+        }
+        for (dispatch.argsAt(d.body), 0..) |t, j| {
+            try w.print("    body {d} ", .{j});
+            try cx.writeTermLine(w, t, 2);
+        }
     }
-    // Sites grouped by `inst`, and within an instruction in the PRE-ORDER
-    // of §7.2's evidence tree — the order §8.2 reads them in, which is NOT
-    // ascending by index once two slots of one instruction each nest
-    // (§7.3, A.68). Read down the rows, not across the index column.
-    // A site whose target is a
-    // derived function carries its OWN evidence arguments, one per
-    // position, because the function is keyed on its shape alone and
-    // parameterised by them (A.11, A.46) — these are what tell
-    // `( Int, Int )` from `( String, String )`.
+    // One `site` per instruction, ascending: the callee on the line itself
+    // and its own arguments under it, then one `evidence` line per root.
     for (dispatch.sites) |site| {
-        try w.print("  site {d} {d} ", .{ site.inst.int(), site.evidence_index });
-        try cx.writeTarget(w, site.target);
-        try w.writeByte('\n');
-        try cx.writeParts(w, site.target.partsOf(), 2);
+        try w.print("  site {d}", .{site.inst.int()});
+        if (site.callee.unwrap()) |callee| {
+            // The callee on the line itself; its OWN arguments (a derived
+            // callee's evidence) one per `arg` line under it, so they read
+            // apart from the site's `evidence` roots at the same depth.
+            try w.writeAll(" callee ");
+            try cx.writeTerm(w, callee);
+            try w.writeByte('\n');
+            if (callee.int() < dispatch.terms.len) for (dispatch.argsOfTerm(callee)) |arg| {
+                if (arg.int() <= callee.int()) continue;
+                try w.writeAll("    arg ");
+                try cx.writeTermLine(w, arg, 2);
+            };
+        } else {
+            try w.writeByte('\n');
+        }
+        for (dispatch.argsAt(site.evidence)) |root| {
+            try w.writeAll("    evidence ");
+            try cx.writeTermLine(w, root, 2);
+        }
     }
 }
 
@@ -104,18 +123,29 @@ const Context = struct {
     types: *const Types,
     interner: *const InternPool.Global,
 
-    /// `part` lines, nested: a position that is itself a derived function
-    /// has its own evidence under it. Indented two spaces per level, so a
-    /// record of a record reads as the tree it is.
-    fn writeParts(cx: Context, w: *std.Io.Writer, r: Dispatch.Range, indent: usize) Error!void {
-        if (r.len == 0) return;
-        if (indent > 32) return; // a poisoned table cannot fill stderr
-        for (cx.dispatch.partsAt(r), 0..) |target, j| {
-            try w.splatByteAll(' ', indent * 2);
-            try w.print("part {d} ", .{j});
-            try cx.writeTarget(w, target);
-            try w.writeByte('\n');
-            try cx.writeParts(w, target.partsOf(), indent + 1);
+    fn writeRequirement(cx: Context, w: *std.Io.Writer, k: usize, e: Dispatch.Requirement) Error!void {
+        try w.print("    requirement {d} quantified={d} var={s} method={s}\n", .{
+            k,
+            e.quantified,
+            if (e.var_name.unwrap()) |n| cx.interner.slice(n) else "_",
+            cx.interner.slice(e.method),
+        });
+    }
+
+    /// The term at `i`, the rest of its line, and its arguments under it —
+    /// each at `level + 1`, two spaces a level. The table is acyclic by
+    /// construction (every argument follows its owner), so the recursion
+    /// ends; the depth guard only keeps a hand-built table from filling
+    /// stderr.
+    fn writeTermLine(cx: Context, w: *std.Io.Writer, i: Dispatch.TermIndex, level: usize) Error!void {
+        try cx.writeTerm(w, i);
+        try w.writeByte('\n');
+        if (level > 256) return;
+        if (i.int() >= cx.dispatch.terms.len) return;
+        for (cx.dispatch.argsOfTerm(i)) |arg| {
+            if (arg.int() <= i.int()) continue;
+            try w.splatByteAll(' ', (level + 1) * 2);
+            try cx.writeTermLine(w, arg, level + 1);
         }
     }
 
@@ -139,8 +169,14 @@ const Context = struct {
         }
     }
 
-    fn writeTarget(cx: Context, w: *std.Io.Writer, target: Dispatch.Target) Error!void {
-        switch (target) {
+    fn writeTerm(cx: Context, w: *std.Io.Writer, i: Dispatch.TermIndex) Error!void {
+        if (i.int() >= cx.dispatch.terms.len) return w.writeAll("?");
+        switch (cx.dispatch.term(i)) {
+            .param => |p| switch (p.binder) {
+                .decl => try w.print("param {d}", .{p.k}),
+                .let => |inst| try w.print("param let {d} {d}", .{ inst.int(), p.k }),
+                .derived => |index| try w.print("param derived {d} {d}", .{ index, p.k }),
+            },
             .top => |use| {
                 const d = use.decl;
                 const name = if (d.int() < cx.bir.decls.len)
@@ -157,7 +193,6 @@ const Context = struct {
                     "?";
                 try w.print("ext {s} {s}", .{ module, name });
             },
-            .evidence => |k| try w.print("evidence {d}", .{k}),
             .primitive => |p| try w.print("primitive {s}", .{@tagName(p)}),
             .derived => |d| try w.print("derived {d}", .{d.index}),
             .ext_derived => |d| {
@@ -168,8 +203,8 @@ const Context = struct {
                     @tagName(d.kind),
                 });
             },
+            .undetermined => try w.writeAll("undetermined"),
             .field => try w.writeAll("field"),
-            .err => try w.writeAll("err"),
         }
     }
 };

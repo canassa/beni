@@ -430,10 +430,12 @@ bug, and the backend says so (`internal`) rather than guessing.
 
 ### 6.6 Exhaustiveness
 
-> **Checker v2 (2026-09-24).** The per-declaration gate becomes a failure bit set only by **error** diagnostics, shared by every member of a binding group ([`checker-v2.md`](checker-v2.md) §15.2, CK-11). The sentence below about "the *solved* types" is drift (CK-61); `Exhaustive.zig`'s header is right, and slice R2 corrects this text.
+> **Checker v2 (2026-09-24).** The per-declaration gate becomes a failure bit set only by **error** diagnostics, shared by every member of a binding group ([`checker-v2.md`](checker-v2.md) §15.2, CK-11). The sentence below used to say the algorithm runs "over the *solved* types", which was drift (CK-61); slice R2a corrected it to the per-declaration gate `Exhaustive.zig`'s header argues for.
 
 After a module is solved, every `case` (including the ones `if` lowered to) is checked with
-Maranget's usefulness algorithm over the *solved* types: constructors of an ADT come from its
+Maranget's usefulness algorithm over its **patterns alone**, and only in a declaration that
+produced no type error: the solved types are that gate's precondition and are not read by the
+algorithm (the list below says why). Constructors of an ADT come from its
 type declaration (through the interface for imported types), literals are infinite (`_`
 required), lists are `[]`/`::`, tuples and records are products, and `()` is a product of no
 fields — one alternative, matched by naming it, **at every depth**: `Just ()` covers `Just` exactly

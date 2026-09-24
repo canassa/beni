@@ -1,40 +1,45 @@
 module TwoSlotsNested
-  decl pair evidence=2
-    evidence 0 quantified=0 var=a method=eq
-    evidence 1 quantified=1 var=b method=eq
-  decl three evidence=3
-    evidence 0 quantified=0 var=a method=eq
-    evidence 1 quantified=1 var=b method=eq
-    evidence 2 quantified=2 var=c method=eq
-  decl two evidence=0
-  decl middle evidence=0
-  decl tupled evidence=0
-  derived 0 eq t2 evidence=2
-  site 16 0 evidence 0
-  site 19 0 evidence 1
-  site 44 0 evidence 0
-  site 47 0 evidence 1
-  site 50 0 evidence 2
-  site 63 0 ext List eq
-  site 63 2 ext List eq
-  site 63 4 primitive strict_eq
-  site 63 1 ext List eq
-  site 63 3 ext List eq
-  site 63 5 primitive strict_eq
-  site 74 0 ext List eq
-  site 74 3 primitive strict_eq
-  site 74 1 ext List eq
-  site 74 4 ext List eq
-  site 74 6 ext List eq
-  site 74 7 primitive strict_eq
-  site 74 2 ext List eq
-  site 74 5 primitive strict_eq
-  site 86 0 ext List eq
-  site 86 2 primitive strict_eq
-  site 86 1 derived 0
-    part 0 ext List eq
-      part 0 ext List eq
-        part 0 primitive strict_eq
-    part 1 ext List eq
-      part 0 ext List eq
-        part 0 primitive strict_eq
+  decl pair evidence=2 arity=2
+    requirement 0 quantified=0 var=a method=eq
+    requirement 1 quantified=1 var=b method=eq
+  decl three evidence=3 arity=3
+    requirement 0 quantified=0 var=a method=eq
+    requirement 1 quantified=1 var=b method=eq
+    requirement 2 quantified=2 var=c method=eq
+  decl two evidence=0 arity=0
+  decl middle evidence=0 arity=0
+  decl tupled evidence=0 arity=0
+  derived 0 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 16 callee param 0
+  site 19 callee param 1
+  site 44 callee param 0
+  site 47 callee param 1
+  site 50 callee param 2
+  site 63
+    evidence ext List eq
+      ext List eq
+        primitive strict_eq
+    evidence ext List eq
+      ext List eq
+        primitive strict_eq
+  site 74
+    evidence ext List eq
+      primitive strict_eq
+    evidence ext List eq
+      ext List eq
+        ext List eq
+          primitive strict_eq
+    evidence ext List eq
+      primitive strict_eq
+  site 86
+    evidence ext List eq
+      primitive strict_eq
+    evidence derived 0
+      ext List eq
+        ext List eq
+          primitive strict_eq
+      ext List eq
+        ext List eq
+          primitive strict_eq

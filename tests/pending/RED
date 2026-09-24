@@ -13,6 +13,26 @@
 #
 # CK-73: check/good/ScrutineeMethodMergeVariant was first written wrong (N-5, see README)
 # and is now split; check/bad/ScrutineeMethodMergeD14 holds the D14 half.
+#
+# R2a (2026-09-24): the I7 assert (checker-v2.md §13.1) moved six red reasons
+# from `build` to `check`, each the same miscount v1 already had:
+#   CK-72 RecursiveGroupReceiverNeedsAnnotation{,B}, CK-76
+#   RecursiveGroupEvidenceReceiver and RecursiveGroupSubWanted: `check` used to
+#   exit 0 and `build` stop with INTERNAL ERROR ("hidden arguments do not add
+#   up", or for NeedsAnnotation "I cannot tell what this call dispatches to": a
+#   method call with no callee site, which the assert also covers); `check` now
+#   reports that `internal` itself (one each).
+#   CK-28 CustomEqTupleHead: `Lower.namedPartCall`'s `not_implemented` for a
+#   part whose argument count is not its callee's is now the assert's `internal`,
+#   at the type whose derived body holds the part.
+#   CK-32 OperatorSectionApplied: 8 → 16. Each applied section is TWO broken
+#   instructions, the lambda-body `method_call` with no callee and the call that
+#   passes it evidence it takes none of; `Lower` stopped at the outer one, the
+#   assert reports both (same span).
+#   CK-30 RecursionWithComparison is unchanged at internal×9, now from `check`.
+#   CK-30 DeadMiscount (added by the review of R2a, S1): the same miscount in a
+#   declaration nothing reaches. 9a931d7 built and ran it (`x`); `check` now
+#   refuses it — kept on purpose, see checker-v2.md §13.1 as amended.
 tests/pending/check/bad/BasicsEqThroughStructure.beni v1 exit=0 codes=none
 tests/pending/check/bad/CapNamesReceivers.beni v1 exit=1 codes=too_many_inferred_constraints×1 why=message
 tests/pending/check/bad/CurriedAnnotation.beni v1 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
@@ -41,10 +61,10 @@ tests/pending/check/bad/OuterReceiverConstraintLevels.beni v1 exit=0 codes=none
 tests/pending/check/bad/PrivateEqOutsideModule v1 exit=1 codes=private_method×1 why=count
 tests/pending/check/bad/RecursiveDispatchTwoTypesB.beni v1 exit=1 codes=method_needs_annotation×1 why=code
 tests/pending/check/bad/RecursiveDispatchTwoTypes.beni v1 exit=1 codes=method_needs_annotation×1 why=code
-tests/pending/check/bad/RecursiveGroupEvidenceReceiver v1 exit=0 codes=none
-tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni v1 exit=0 codes=none
-tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni v1 exit=0 codes=none
-tests/pending/check/bad/RecursiveGroupSubWanted v1 exit=0 codes=none
+tests/pending/check/bad/RecursiveGroupEvidenceReceiver v1 exit=1 codes=internal×1 why=code
+tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni v1 exit=1 codes=internal×1 why=code
+tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni v1 exit=1 codes=internal×1 why=code
+tests/pending/check/bad/RecursiveGroupSubWanted v1 exit=1 codes=internal×1 why=code
 tests/pending/check/bad/RigidInsideDerivedShape.beni v1 exit=0 codes=none
 tests/pending/check/bad/SchemaMemberTooDeep v1 exit=0 codes=none
 tests/pending/check/bad/SchemaWrapperExclusion.beni v1 exit=1 codes=not_equatable×1 why=count
@@ -60,7 +80,8 @@ tests/pending/check/good/WideTypeArity v1 exit=1 codes=wrong_type_arity×1
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v1 dev: exit=1 codes=no_methods_on_shape×1
 tests/pending/run/ConstrainedFunctionConstant v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqHeadMatching v1 dev: exit=0 stdout-differs
-tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=not_implemented×1
+tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=internal×1
+tests/pending/run/DeadMiscount.beni v1 dev: exit=1 codes=internal×1
 tests/pending/run/DerivedContextClosedOwnMethod v1 dev: exit=1 codes=not_equatable×3
 tests/pending/run/GenericDerivationNestedRequirement v1 dev: exit=1 codes=not_equatable×1
 tests/pending/run/GroupVariableOutsideCaller.beni v1 dev: exit=1 codes=kind_mismatch×2
@@ -68,7 +89,7 @@ tests/pending/run/LetHelperJoinedMethod.beni v1 dev: exit=1 codes=kind_mismatch�
 tests/pending/run/MutualDispatchMethods.beni v1 dev: exit=1 codes=method_needs_annotation×2
 tests/pending/run/MutualGroupEvidenceOrder.beni v1 dev: exit=1 codes=kind_mismatch×4
 tests/pending/run/ObligationEscapesInnerLet.beni v1 dev: exit=1 codes=ambiguous_interpolation×1,ambiguous_tuple×1
-tests/pending/run/OperatorSectionApplied.beni v1 dev: exit=1 codes=internal×8
+tests/pending/run/OperatorSectionApplied.beni v1 dev: exit=1 codes=internal×16
 tests/pending/run/OwnMethodBeforeDefinition v1 dev: exit=1 codes=method_needs_annotation×3
 tests/pending/run/OwnMethodDemandedEarly.beni v1 dev: exit=1 codes=method_needs_annotation×3,unknown_method×1
 tests/pending/run/OwnMethodValuePrefix.beni v1 dev: exit=1 codes=method_needs_annotation×1

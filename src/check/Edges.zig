@@ -31,13 +31,13 @@
 //!      the instruction is rewritten — to a plain `top` inside `core/Basics`
 //!      itself, to an `ext_value` carrying `(Graph.Index, ValueIndex)`
 //!      anywhere else (`backend.md` §9 legs 1 and 2);
-//!   3. every dispatch site of `d`, and recursively every target nested in one
-//!      through `Dispatch.partsAt`. **These are the edges `Bir` deliberately
+//!   3. every dispatch site of `d`: its callee term and its evidence roots,
+//!      and recursively every term's `args` (checker-v2.md §13.3). **These are the edges `Bir` deliberately
 //!      does not have** (`frontend.md` §3.6, `static-dispatch-spike.md` §1.4):
 //!      a method call's callee is not known until the checker has run, and an
 //!      evidence argument is a reference no source line spells.
 //!
-//! Out of a `Derived` row: every target of its `parts`, recursively, by the
+//! Out of a `Derived` row: every term of its `body`, recursively, by the
 //! same mapping (`derivedEdges`). Out of a foreign binding: nothing.
 //!
 //! **A tagged stream, not a callback.** `Edge` is the union of everything the
@@ -53,8 +53,8 @@
 //!
 //! **Determinism.** Nothing here reads anything but the two tables it is
 //! handed, and it appends in table order: leg 1 in `refs` order, leg 2 in
-//! instruction order, leg 3 in site order with a target's own edge before its
-//! `parts`. The order is a function of the input, which is what lets `Cycles`
+//! instruction order, leg 3 in site order, callee before roots, with a term's own edge before its
+//! `args` (pre-order). The order is a function of the input, which is what lets `Cycles`
 //! print a path and `Reach` build one edge list per module in parallel
 //! (CLAUDE.md rule 5).
 
@@ -66,11 +66,6 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 
 pub const Error = Allocator.Error;
-
-/// A poisoned `parts` range could point back at itself; the walk that reads
-/// one is recursive, so it is capped exactly as `Lower.derivedValue` and
-/// `dump/dispatch.zig` cap theirs.
-pub const max_depth: u8 = 32;
 
 /// One thing a declaration refers to, in the numbering of the module it was
 /// read out of. Nothing here is resolved against another module's tables:
@@ -87,20 +82,20 @@ pub const Edge = union(enum) {
     /// A dispatch primitive. Only `string_compare` names a declaration —
     /// core `String.compare` (`backend.md` §9's correction) — but the tag is
     /// yielded whole so the consumer, not the walk, decides that.
-    primitive: Dispatch.Target.Primitive,
-    /// A poisoned comparison, which lowers to a call of core `Basics.eq`
-    /// (`Lower.partEq`'s `err` arm).
-    err,
+    primitive: Dispatch.Primitive,
+    /// The `undetermined` leaf, which lowers to a call of core `Basics.eq`
+    /// in an `eq` position (`Lower.partEq`).
+    undetermined,
 
     /// `Graph.Index` plus the raw `Interface.ValueIndex`, which only a
     /// consumer holding that module's provenance table can turn into a
     /// declaration.
     pub const Ext = struct { module: Graph.Index, value: u32 };
 
-    /// `Dispatch.Target.ExtDerivedUse` **without its `parts`**, which the
-    /// walk has already followed and yielded as edges of their own. Dropping
-    /// them keeps the union at three words, and this stream is hot: it is
-    /// written once and read once per declaration of the build.
+    /// `Dispatch.Term.ExtDerivedUse` **without its `args`**, which the walk
+    /// has already followed and yielded as edges of their own. Dropping them
+    /// keeps the union at three words, and this stream is hot: it is written
+    /// once and read once per declaration of the build.
     pub const ExtDerived = struct {
         module: Graph.Index,
         type: Dispatch.TypeId,
@@ -157,15 +152,16 @@ pub fn declEdges(
         }
     }
 
-    // Leg 3: the dispatch sites, and everything nested in one.
-    const range = siteRange(dispatch.sites, d.inst_start.int(), d.inst_end.int());
-    for (dispatch.sites[range.start..][0..range.len]) |site| {
-        try targetEdges(out, scratch, dispatch, site.target, 0);
+    // Leg 3: the dispatch sites — the callee, then the roots — and every
+    // term nested in one.
+    for (dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
+        if (site.callee.unwrap()) |callee| try termEdges(out, scratch, dispatch, callee);
+        for (dispatch.argsAt(site.evidence)) |root| try termEdges(out, scratch, dispatch, root);
     }
 }
 
-/// Every edge out of `Dispatch.Derived` row `index`: the targets of its
-/// `parts`, recursively. That is how a derived `eq` for
+/// Every edge out of `Dispatch.Derived` row `index`: the terms of its
+/// `body`, recursively. That is how a derived `eq` for
 /// `type T = T (Maybe U)` reaches `Maybe`'s row and `U`'s.
 pub fn derivedEdges(
     out: *std.ArrayList(Edge),
@@ -173,22 +169,26 @@ pub fn derivedEdges(
     dispatch: *const Dispatch,
     index: u32,
 ) Error!void {
-    for (dispatch.partsAt(dispatch.derived[index].parts)) |part| {
-        try targetEdges(out, scratch, dispatch, part, 0);
+    for (dispatch.argsAt(dispatch.derived[index].body)) |t| {
+        try termEdges(out, scratch, dispatch, t);
     }
 }
 
-/// One dispatch target's edge, then recursively its evidence arguments. An
-/// `evidence` target is a parameter and a `field` target is a property read,
-/// so neither names anything that is emitted.
-pub fn targetEdges(
+/// One term's edge, then recursively its arguments. A `param` is a
+/// parameter and a `field` is a property read, so neither names anything
+/// that is emitted.
+///
+/// No depth guard: every argument's index is greater than its owner's
+/// (`Dispatch`'s pre-order rule, verified on every load from bytes), so the
+/// recursion ends.
+pub fn termEdges(
     out: *std.ArrayList(Edge),
     scratch: Allocator,
     dispatch: *const Dispatch,
-    t: Dispatch.Target,
-    depth: u8,
+    i: Dispatch.TermIndex,
 ) Error!void {
-    if (depth > max_depth) return;
+    if (i.int() >= dispatch.terms.len) return;
+    const t = dispatch.term(i);
     switch (t) {
         .top => |use| try out.append(scratch, .{ .top = use.decl.int() }),
         .ext => |e| try out.append(scratch, .{ .ext = .{
@@ -202,27 +202,13 @@ pub fn targetEdges(
             .kind = use.kind,
         } }),
         .primitive => |prim| try out.append(scratch, .{ .primitive = prim }),
-        .err => try out.append(scratch, .err),
-        .evidence, .field => {},
+        .undetermined => try out.append(scratch, .undetermined),
+        .param, .field => {},
     }
-    for (dispatch.partsAt(t.partsOf())) |part| {
-        try targetEdges(out, scratch, dispatch, part, depth + 1);
+    for (dispatch.argsAt(t.argsOf())) |arg| {
+        if (arg.int() <= i.int()) continue;
+        try termEdges(out, scratch, dispatch, arg);
     }
-}
-
-/// The dispatch sites of one instruction range. `Dispatch.sites` is grouped
-/// by `inst` and a declaration's instructions are contiguous, so this is a
-/// lower bound plus a scan — `Lower.siteRangeOf` reads the same table the
-/// same way.
-pub fn siteRange(sites: []const Dispatch.Site, start: u32, end: u32) Dispatch.Range {
-    const lo = std.sort.lowerBound(Dispatch.Site, sites, start, siteBefore);
-    var hi = lo;
-    while (hi < sites.len and sites[hi].inst.int() < end) hi += 1;
-    return .{ .start = @intCast(lo), .len = @intCast(hi - lo) };
-}
-
-fn siteBefore(inst: u32, s: Dispatch.Site) std.math.Order {
-    return std.math.order(inst, s.inst.int());
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +233,9 @@ test "one declaration, three legs, in table order" {
     //
     //   leg 1  `refs`   → `top 1` (and a `top_type` row that is not an edge)
     //   leg 2  insts    → `top 1`, and an `ext_value` of module 3 value 4
-    //   leg 3  a site   → `derived 0`, whose one part is `ext` module 5
-    //                     value 6, and a second site on `primitive
-    //                     string_compare`
+    //   leg 3  a site   → callee `derived 0`, whose one argument is `ext`
+    //                     module 5 value 6, and a second site whose one root
+    //                     is `primitive string_compare`
     //
     // Declaration 1 has an instruction and a site of its own, which is what
     // makes the range arithmetic visible: reading one instruction or one
@@ -279,23 +265,24 @@ test "one declaration, three legs, in table order" {
     bir.decls = &decls;
 
     // The dispatch table: two sites on instructions inside declaration 0, and
-    // one `parts` row hanging off the first target.
-    const parts = [_]Dispatch.Target{
+    // one argument hanging off the first callee.
+    const terms = [_]Dispatch.Term{
+        .{ .derived = .{ .index = 0, .args = .{ .start = 0, .len = 1 } } },
         .{ .ext = .{ .module = @enumFromInt(5), .value = @enumFromInt(6) } },
+        .{ .primitive = .string_compare },
+        .{ .top = .{ .decl = @enumFromInt(0) } },
     };
+    const args = [_]Dispatch.TermIndex{ @enumFromInt(1), @enumFromInt(2), @enumFromInt(3) };
     const sites = [_]Dispatch.Site{
-        .{
-            .inst = @enumFromInt(1),
-            .evidence_index = 0,
-            .target = .{ .derived = .{ .index = 0, .parts = .{ .start = 0, .len = 1 } } },
-        },
-        .{ .inst = @enumFromInt(2), .evidence_index = 1, .target = .{ .primitive = .string_compare } },
-        // Declaration 1's site: past `inst_end`, so `siteRange` must stop.
-        .{ .inst = @enumFromInt(3), .evidence_index = 2, .target = .{ .top = .{ .decl = @enumFromInt(0) } } },
+        .{ .inst = @enumFromInt(1), .callee = @enumFromInt(0) },
+        .{ .inst = @enumFromInt(2), .evidence = .{ .start = 1, .len = 1 } },
+        // Declaration 1's site: past `inst_end`, so `sitesIn` must stop.
+        .{ .inst = @enumFromInt(3), .evidence = .{ .start = 2, .len = 1 } },
     };
     var dispatch: Dispatch = .empty;
+    dispatch.terms = &terms;
+    dispatch.args = &args;
     dispatch.sites = &sites;
-    dispatch.parts = &parts;
 
     var out: std.ArrayList(Edge) = .empty;
     defer out.deinit(gpa);
@@ -308,16 +295,13 @@ test "one declaration, three legs, in table order" {
     try testing.expectEqual(@as(u32, 1), out.items[1].top);
     try testing.expectEqual(@as(u32, 3), out.items[2].ext.module.int());
     try testing.expectEqual(@as(u32, 4), out.items[2].ext.value);
-    // Leg 3: the target, then what it passes, then the next site.
+    // Leg 3: the callee, then what it passes, then the next site's root.
     try testing.expectEqual(@as(u32, 0), out.items[3].derived);
     try testing.expectEqual(@as(u32, 5), out.items[4].ext.module.int());
     try testing.expectEqual(@as(u32, 6), out.items[4].ext.value);
-    try testing.expectEqual(Dispatch.Target.Primitive.string_compare, out.items[5].primitive);
+    try testing.expectEqual(Dispatch.Primitive.string_compare, out.items[5].primitive);
 
-    // The neighbouring declaration's instruction and site are its own, and
-    // both of them show up here and nowhere above: the ranges are what
-    // separates two declarations, and reading one instruction or one site too
-    // far is the way this walk goes wrong.
+    // The neighbouring declaration's instruction and site are its own.
     out.clearRetainingCapacity();
     try declEdges(&out, gpa, &bir, &dispatch, 1);
     try testing.expectEqual(@as(usize, 2), out.items.len);
@@ -357,19 +341,21 @@ fn blankDecl(inst_start: u32, inst_end: u32, refs_start: u32, refs_end: u32) Bir
     };
 }
 
-test "a `parts` range that points back at itself is capped, not followed forever" {
+test "an argument that points back at its owner is not followed" {
     const gpa = testing.allocator;
-    // A poisoned table: the target's evidence argument is itself. The walk
-    // stops at `max_depth`, which is what keeps a corrupt dispatch table from
-    // being a hang rather than a diagnostic.
-    const parts = [_]Dispatch.Target{
-        .{ .derived = .{ .index = 0, .parts = .{ .start = 0, .len = 1 } } },
+    // A hand-corrupted table: the term's argument is itself. `Dispatch`
+    // builds in pre-order and `dispatch_bytes` refuses such a table on load,
+    // so only a hand-built one gets here — and the walk still ends.
+    const terms = [_]Dispatch.Term{
+        .{ .derived = .{ .index = 0, .args = .{ .start = 0, .len = 1 } } },
     };
+    const args = [_]Dispatch.TermIndex{@enumFromInt(0)};
     var dispatch: Dispatch = .empty;
-    dispatch.parts = &parts;
+    dispatch.terms = &terms;
+    dispatch.args = &args;
 
     var out: std.ArrayList(Edge) = .empty;
     defer out.deinit(gpa);
-    try targetEdges(&out, gpa, &dispatch, parts[0], 0);
-    try testing.expectEqual(@as(usize, max_depth + 1), out.items.len);
+    try termEdges(&out, gpa, &dispatch, @enumFromInt(0));
+    try testing.expectEqual(@as(usize, 1), out.items.len);
 }

@@ -1080,6 +1080,10 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - `Lower.refuseEvidence` (`Lower.zig:3750`) catches both.
 - **Fixture** `run/RecursionWithComparison.beni` (all eight forms, one `main`).
 - **Slice** R7.
+- **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
+  in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
+  kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
+  amended); pinned by `tests/pending/run/DeadMiscount.beni`.
 
 ### CK-31 — A mutually recursive group's sites carry the evidence indices of its first member
 
@@ -1790,6 +1794,9 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   for.
 - **Fixture** none.
 - **Slice** R2 (spec edits).
+- **Status** fixed by R2a (2026-09-24): `checker.md` §6.6 now says the algorithm runs over the
+  patterns alone, only in a declaration that produced no type error, and that the solved types are
+  that gate's precondition and are not read — the argument `Exhaustive.zig`'s header makes.
 
 ---
 
@@ -2066,6 +2073,10 @@ and `ck/r3x/` (this catalogue's).
   - *R0 follow-up:* the positions are now `31:*` and `36:*`, the `q "s"` line of each file.
   - The guard holds both orders in one file (`f`/`g` and `g2`/`f2`).
 - **Slice** R7.
+- **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
+  in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
+  kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
+  amended); pinned by `tests/pending/run/DeadMiscount.beni`.
 
 ### CK-73 — An own method used in a `case` scrutinee before its definition is refused
 
@@ -2195,6 +2206,10 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
     ERROR is at `build`; I re-ran it for `evA` and `subA`, and `evB`/`subB` run as the Observed
     line says.
 - **Slice** R7.
+- **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
+  in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
+  kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
+  amended); pinned by `tests/pending/run/DeadMiscount.beni`.
 
 ### CK-77 — A derived context that reaches an in-flight method does not merge the asker
 
@@ -2357,7 +2372,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-27 | unsound-runtime | K4 | `run/CustomEqHeadMatching/` | R6 |
 | CK-28 | valid-program-rejected | K4 | `run/CustomEqTupleHead/` | R6 |
 | CK-29 | compiler-crash-or-hang | K2 | `run/LetHelperJoinedMethod.beni` | R6 |
-| CK-30 | compiler-crash-or-hang | K4 | `run/RecursionWithComparison.beni` | R7 |
+| CK-30 | compiler-crash-or-hang | K4 | `run/RecursionWithComparison.beni`, `run/DeadMiscount.beni` | R7 |
 | CK-31 | compiler-crash-or-hang (latent) | K4 | `run/MutualGroupEvidenceOrder.beni` | R7 |
 | CK-32 | compiler-crash-or-hang | K4 | `run/OperatorSectionApplied.beni` | R6 |
 | CK-33 | unsound-runtime | K4 | `run/ConstrainedFunctionConstant/` | R2 |

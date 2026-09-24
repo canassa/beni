@@ -1,30 +1,33 @@
 module UserEqInsideParametric
-  decl eq evidence=0
-  decl lists evidence=0
-  decl listsOfRecords evidence=0
-  decl maybes evidence=0
-  decl okId evidence=0
-  decl results evidence=0
-  decl tuples evidence=0
-  decl listsOfInts evidence=0
-  derived 0 compare UserEqInsideParametric.Id evidence=0
-    part 0 primitive num_compare
-    part 1 primitive num_compare
-  derived 1 eq r$key evidence=1
-  derived 2 eq t2 evidence=2
-  site 20 0 primitive strict_eq
-  site 36 0 ext List eq
-  site 36 1 top eq
-  site 50 0 ext List eq
-  site 50 1 derived 1
-    part 0 top eq
-  site 64 0 ext_derived Maybe.Maybe eq
-    part 0 top eq
-  site 83 0 ext_derived Result.Result eq
-    part 0 primitive strict_eq
-    part 1 top eq
-  site 97 0 derived 2
-    part 0 top eq
-    part 1 primitive strict_eq
-  site 104 0 ext List eq
-  site 104 1 primitive strict_eq
+  decl eq evidence=0 arity=2
+  decl lists evidence=0 arity=0
+  decl listsOfRecords evidence=0 arity=0
+  decl maybes evidence=0 arity=0
+  decl okId evidence=0 arity=0
+  decl results evidence=0 arity=0
+  decl tuples evidence=0 arity=0
+  decl listsOfInts evidence=0 arity=0
+  derived 0 compare UserEqInsideParametric.Id context=0
+    body 0 primitive num_compare
+    body 1 primitive num_compare
+  derived 1 eq r$key context=1
+    context 0 param=0 method=eq
+  derived 2 eq t2 context=2
+    context 0 param=0 method=eq
+    context 1 param=1 method=eq
+  site 20 callee primitive strict_eq
+  site 36 callee ext List eq
+    evidence top eq
+  site 50 callee ext List eq
+    evidence derived 1
+      top eq
+  site 64 callee ext_derived Maybe.Maybe eq
+    arg top eq
+  site 83 callee ext_derived Result.Result eq
+    arg primitive strict_eq
+    arg top eq
+  site 97 callee derived 2
+    arg top eq
+    arg primitive strict_eq
+  site 104 callee ext List eq
+    evidence primitive strict_eq

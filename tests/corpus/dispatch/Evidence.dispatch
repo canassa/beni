@@ -1,12 +1,13 @@
 module Evidence
-  decl scale evidence=0
-  decl scaleTwice evidence=1
-    evidence 0 quantified=0 var=a method=scale
-  decl grow evidence=0
-  derived 0 compare Evidence.Metre evidence=0
-    part 0 primitive num_compare
-  derived 1 eq Evidence.Metre evidence=0
-    part 0 primitive strict_eq
-  site 31 0 evidence 0
-  site 33 0 evidence 0
-  site 41 0 top scale
+  decl scale evidence=0 arity=2
+  decl scaleTwice evidence=1 arity=2
+    requirement 0 quantified=0 var=a method=scale
+  decl grow evidence=0 arity=1
+  derived 0 compare Evidence.Metre context=0
+    body 0 primitive num_compare
+  derived 1 eq Evidence.Metre context=0
+    body 0 primitive strict_eq
+  site 31 callee param 0
+  site 33 callee param 0
+  site 41
+    evidence top scale

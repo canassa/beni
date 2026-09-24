@@ -1078,7 +1078,8 @@ conversion leaves where S1 showed inert `schema_expr_ref` placeholders. This
 is a permanent dependency representation, not a temporary execution surface.
 
 The unhashed cache sidecar gains one resolved-plan section. The cache entry
-becomes version 2 and its sections are `interface`, `dispatch`, `schema_plan`,
+becomes version 2 (3 since the checker rewrite's R2a, whose `dispatch` section is
+`dispatch_bytes` format 2, `checker-v2.md` §14.3) and its sections are `interface`, `dispatch`, `schema_plan`,
 `diagnostics`. `schema_plan` uses magic `BENISPL\0`, format version 1, the
 standard column table, little-endian scalars, four-byte alignment and
 zero-filled gaps. It has these columns in order:
