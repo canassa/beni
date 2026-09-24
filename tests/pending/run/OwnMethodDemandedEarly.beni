@@ -1,0 +1,80 @@
+-- CK-63: an own untyped method used inside a `let` or a `case` above its
+-- definition checks: the use is deferred to the using group's boundary and
+-- the method's group is checked when it is first demanded (owner decision
+-- D3, checker-v2.md §10.2). Three shapes from the design review, each using
+-- a method written further down: `pair` (round 1's `b6boxU`: `size` through
+-- a `let` helper used at two types), `pairAnnotated` (`b6letann`: the same
+-- helper with `g : a -> Int`) and `boxes` (round 2's `n3box`: `makeBox` in a
+-- `case` scrutinee, then `map2` in a `let` helper used at two types).
+-- Expected `1 1`, `1 1`, `4 3`.
+--
+-- Oracle twin, run on 7427828: this file with `size`, `makeBox` and `map2`
+-- moved above `pair` (round 1's `b6boxU2`, round 2's `n3boxR`) prints exactly
+-- the expected three lines. As written, 7427828 refuses each use with
+-- METHOD NEEDS AN ANNOTATION.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pair u =
+    let
+        g x =
+            (Box x).size ()
+    in
+    ( g 1, g "s" )
+
+
+pairAnnotated u =
+    let
+        g : a -> Int
+        g y =
+            (Box y).size ()
+    in
+    ( g 1, g "s" )
+
+
+boxes u =
+    case (K u).makeBox () of
+        o ->
+            let
+                g h =
+                    o.map2 h
+            in
+            ( g (\x -> x + 1), g String.fromInt )
+
+
+pub size (Box _) u =
+    1
+
+
+pub makeBox (K n) u =
+    Box n
+
+
+pub map2 (Box v) fn =
+    Box (fn v)
+
+
+unbox (Box v) =
+    v
+
+
+both : ( Int, Int ) -> String
+both ( a, b ) =
+    String.fromInt a ++ " " ++ String.fromInt b
+
+
+main : Program
+main =
+    let
+        ( n, s ) =
+            boxes 3
+    in
+    Node.printLines [ both (pair 0), both (pairAnnotated 0), String.fromInt (unbox n) ++ " " ++ unbox s ]

@@ -1,0 +1,36 @@
+-- A regression guard from the checker-v2 design review (round 1, B7; plans/
+-- checker-rewrite.md §5.1): CK-64's program in the order `eq`, `helper`,
+-- `use` (round 1's `b7R`). `T`'s own `eq` compares modulo 10 through
+-- `helper`, so `use 1 11` is `True` and `use 1 2` is `False`. 7427828 gets
+-- this order right; checker-v2 must print the same in every order.
+import Node exposing (Program)
+
+
+type T
+    = T Int
+
+
+eq (T x) (T y) =
+    helper x y
+
+
+helper x y =
+    modBy x 10 == modBy y 10
+
+
+use a b =
+    T a == T b
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines [ show (use 1 11), show (use 1 2) ]

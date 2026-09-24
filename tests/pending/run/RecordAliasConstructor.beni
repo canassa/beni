@@ -1,0 +1,45 @@
+-- CK-43: a record alias's implicit constructor builds the record literal,
+-- keys in canonical order (owner decision D12; language.md §0, Elm's
+-- semantics; backend.md §4's record-alias-constructor row, written in R1).
+-- Three shapes: adv's `rc3` (a field of a constructed `P`), `rc2` (fields,
+-- and a function taking `P`, beside a literal) and `rd5` (a saturated call
+-- and the partial `P 2 _`). Expected `A`, `a`, `1`, `a`, `b`, `a`, `b`.
+--
+-- Oracle twin, run on 7427828: this file with every `P …` call written as
+-- the record literal (`{ x = 1, y = "a" }`, and `\y -> { x = 2, y = y }` for
+-- `P 2 _`) prints exactly the expected seven lines. As written, 7427828
+-- type-checks it, emits `{ $: "P", a: 1, b: "a" }` for `P 1 "a"`, and the
+-- program dies in `String.toUpper` reading `.y` of that object.
+import Node exposing (Program)
+
+
+type alias P =
+    { x : Int, y : String }
+
+
+getY : P -> String
+getY r =
+    r.y
+
+
+main : Program
+main =
+    let
+        p =
+            P 1 "a"
+
+        q =
+            { x = 2, y = "b" }
+
+        partial =
+            P 2 _
+    in
+    Node.printLines
+        [ String.toUpper (P 1 "a").y
+        , p.y
+        , String.fromInt p.x
+        , getY p
+        , getY q
+        , p.y
+        , (partial "b").y
+        ]

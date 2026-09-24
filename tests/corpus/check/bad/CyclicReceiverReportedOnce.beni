@@ -1,0 +1,7 @@
+-- A regression guard for CK-37 (checker-v2.md §9.5; plans/checker-rewrite.md
+-- §5.5): `x == [ x ]` makes `x`'s type contain itself. The resolver walk that
+-- meets the cycle reports it ONCE, at the `==`, and poisons the cycle's root,
+-- so the `<` on the same receiver adds nothing. 7427828 does exactly this
+-- (round 4 probe `cyc1`); R6a keeps it green.
+f x =
+    x == [ x ] && x < [ x ]

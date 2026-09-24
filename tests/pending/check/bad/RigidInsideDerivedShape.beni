@@ -1,0 +1,17 @@
+-- CK-20: a rigid variable inside a derived shape is a sub-wanted on that
+-- rigid, and with no `where` clause for it the comparison is
+-- `missing_where_constraint` at the `==` (static-dispatch-spike.md §6.2 Rule
+-- U2, §6.3; checker-v2.md §9.3's last paragraph). On 7427828 both check
+-- clean: the part is answered `err` with no diagnostic, `Lower` answers the
+-- hole with structural `Basics.eq`, and the built program compares
+-- functions and ignores a custom `eq` (`False False False`).
+
+
+pairEq : a, a -> Bool
+pairEq x y =
+    ( x, 1 ) == ( y, 1 )
+
+
+recEq : a, a -> Bool
+recEq x y =
+    { v = x } == { v = y }

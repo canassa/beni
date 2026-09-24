@@ -1,0 +1,17 @@
+-- CK-69: (the twin) `DerivedContextNeedsAnnotation/` with `key` written
+-- before the types `T` and `W` whose context it is asked for — the only
+-- other order its one value declaration has. The same single
+-- `method_needs_annotation` naming `key` (D3 as amended, checker-v2.md
+-- §11.2). On 7427828 it is NOT EQUATABLE `W a`, as in the other order.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq left right =
+    case left of
+        Holder l ->
+            case right of
+                Holder r ->
+                    l.key () == r.key ()

@@ -1,0 +1,45 @@
+-- CK-66: a binding group may quantify a variable that a caller's type does
+-- not mention: `g`'s element type needs `eq`, and `f`'s call `g []` fixes no
+-- element, so that call passes the `undetermined` leaf for `a.eq`
+-- (checker-v2.md §12.3 case 3). Expected `1`, `True`.
+--
+-- Oracle twin, run on 7427828: this file with `f : Int -> Int` and
+-- `g : List Int -> Bool` annotated prints `1`, `True`. As written, 7427828
+-- refuses it with TYPE MISMATCH `number -> a` against `List b -> Bool` at
+-- `g`: CK-09 reads `f`'s locals from `g`'s slice. With CK-09 fixed, v1's
+-- group-call sites (CK-30) make it an internal error (round 2 N7).
+import Node exposing (Program)
+
+
+f u =
+    if u == 0 then
+        1
+
+    else if g [] then
+        1
+
+    else
+        0
+
+
+g xs =
+    case xs of
+        [] ->
+            f 0 == 1
+
+        a :: _ ->
+            a == a
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (f 1), show (g [ 1 ]) ]

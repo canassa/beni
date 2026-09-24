@@ -1,0 +1,45 @@
+-- A regression guard from the checker-v2 design review (round 3, B-1; plans/
+-- checker-rewrite.md §5.4): a `case` scrutinee calls own methods written
+-- BEFORE it (round 3's `rq2`), and the later `let` helper `q` generalises, so
+-- `q 1` and `q "s"` both check and `f 3` is `( 3, 3 )`. 7427828 gets this
+-- order right; CK-73 is the same program with the methods written after.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub g (Box a) u =
+    0
+
+
+pub h (K m) u =
+    Box m
+
+
+pub combine (Box a) z =
+    a
+
+
+f n =
+    case ( (\y -> y.h ()) (K n), (Box 1).g () ) of
+        ( r, _ ) ->
+            let
+                q z =
+                    r.combine z
+            in
+            ( q 1, q "s" )
+
+
+main : Program
+main =
+    let
+        ( a, b ) =
+            f 3
+    in
+    Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

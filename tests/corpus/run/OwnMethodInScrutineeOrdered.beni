@@ -1,0 +1,45 @@
+-- A regression guard from the checker-v2 design review (round 2, N3; plans/
+-- checker-rewrite.md §5.1): CK-63's `makeBox`/`map2` program with the
+-- methods written FIRST (round 2's `n3boxR`). `makeBox` is called in a
+-- `case` scrutinee and `map2` in a `let` helper used at two types, so the
+-- result is `( Box 4, Box "3" )`. 7427828 gets this order right.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub makeBox (K n) u =
+    Box n
+
+
+pub map2 (Box v) fn =
+    Box (fn v)
+
+
+boxes u =
+    case (K u).makeBox () of
+        o ->
+            let
+                g h =
+                    o.map2 h
+            in
+            ( g (\x -> x + 1), g String.fromInt )
+
+
+unbox (Box v) =
+    v
+
+
+main : Program
+main =
+    let
+        ( n, s ) =
+            boxes 3
+    in
+    Node.printLines [ String.fromInt (unbox n) ++ " " ++ unbox s ]

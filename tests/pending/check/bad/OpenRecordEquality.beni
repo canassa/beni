@@ -1,0 +1,9 @@
+-- CK-54: `==` on an OPEN record says the record is open and that only a
+-- closed record derives `eq` (static-dispatch-spike.md A.28); the hint "write
+-- `(x.eq) a` to call the field `eq`" belongs to a dot-call only. On
+-- 7427828 this `==` is NO METHODS HERE with exactly that field-call hint.
+
+
+same : { r | x : Int }, { r | x : Int } -> Bool
+same p q =
+    p == q

@@ -1,0 +1,61 @@
+-- CK-65: own methods that are mutually recursive THROUGH DISPATCH check in
+-- any order: the dispatch back-edge merges their top-level groups into one
+-- mutually recursive group (owner decision D11 as amended, checker-v2.md
+-- §10.4), and a merged frame does not default. Round 2's `n4ambm`: `am` and
+-- `bm` call each other through `.am ()` and `.bm`, with a `?` inside `bm`;
+-- `am (K 4) ()` is `4`. Round 2's `n5sw`: `size` and `weight` call each
+-- other, and `weight`'s `let` helper `g` is generalised in `y`, so
+-- `weight (K 1) ()` is `( ( 1, "a" ), ( 1, 3 ) )`. Expected `4`, `1 a`, `1 3`.
+--
+-- Oracle twin, run on 7427828: this file with the four methods annotated
+-- (`am : K, () -> Int`, `bm : Box (Maybe a), (a -> Maybe b) -> Maybe b`,
+-- `size : Box a, () -> Int`, `weight : K, () -> ( ( Int, String ), ( Int,
+-- Int ) )`) prints exactly the expected three lines. As written, 7427828
+-- refuses it with METHOD NEEDS AN ANNOTATION, in either declaration order of
+-- each pair (`n4R`, `n5R`).
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub am (K n) u =
+    Maybe.withDefault ((Box (Just n)).bm (\v -> Just v)) 0
+
+
+pub bm (Box m) fn =
+    let
+        _ =
+            \w -> (K 0).am ()
+    in
+    fn (m?)
+
+
+pub size (Box _) u =
+    let
+        _ =
+            \w -> (K 0).weight ()
+    in
+    1
+
+
+pub weight (K n) u =
+    let
+        g x y =
+            ( (Box x).size (), y )
+    in
+    ( g 1 "a", g 2 3 )
+
+
+main : Program
+main =
+    let
+        ( ( one, a ), ( two, three ) ) =
+            weight (K 1) ()
+    in
+    Node.printLines [ String.fromInt (am (K 4) ()), String.fromInt one ++ " " ++ a, String.fromInt two ++ " " ++ String.fromInt three ]

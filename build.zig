@@ -6,6 +6,9 @@
 //!   zig build test-blackbox   spawns the INSTALLED binary; never folded into `test`
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
+//!
+//! And one that is NOT a gate, because its fixtures are red by design:
+//!   zig build test-pending    tests/pending/ (plans/checker-rewrite.md §2)
 const std = @import("std");
 
 /// Where the core package's sources live, relative to the build root. The
@@ -135,7 +138,51 @@ pub fn build(b: *std.Build) void {
         const run = b.addRunArtifact(t);
         run.step.dependOn(b.getInstallStep());
         run.setCwd(b.path("."));
+        // The corpus walker's knobs (`plans/checker-rewrite.md` §2.4), pinned
+        // EMPTY — which the walker reads as unset — so a variable exported in
+        // the developer's shell (`BENI_CHECKER=v2 zig build test-blackbox`)
+        // cannot turn the gate into something else. Every binary gets them,
+        // not only the walker: `run.setEnvironmentVariable` is the one place
+        // the test's environment is decided.
+        pinCorpusEnvironment(run, .{ .root = "tests/corpus" });
         blackbox_step.dependOn(&run.step);
+    }
+
+    // ---- Pending fixtures (plans/checker-rewrite.md §2, checker-v2.md D13). ----
+    // The red fixtures of `plans/checker-findings.md`, run by the corpus
+    // walker in pending mode over `tests/pending/`, and the performance
+    // findings as ratio scenarios. A fixture here is EXPECTED to be red: the
+    // step fails only when one is malformed, green under the default checker
+    // (promote it), claimed and red under v2, or red for another reason than
+    // `tests/pending/RED` records. Never part of `test-blackbox`, so the three
+    // gates never run a red fixture.
+    //
+    // The timing scenarios run AFTER the corpus, never beside it: a ratio
+    // measured while another test binary is compiling fixtures on the next
+    // core is a ratio of the machine's load.
+    const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode");
+    var previous: ?*std.Build.Step = null;
+    for ([_][]const u8{
+        "tests/blackbox/corpus_test.zig",
+        "tests/blackbox/pending_test.zig",
+    }) |root| {
+        const t = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(root),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "diagnostic", .module = diagnostic_mod }},
+            }),
+        });
+        const run = b.addRunArtifact(t);
+        run.step.dependOn(b.getInstallStep());
+        if (previous) |step| run.step.dependOn(step);
+        run.setCwd(b.path("."));
+        // Run 1 of `plans/checker-rewrite.md` §2.4: the default checker. Run 2
+        // (`BENI_CHECKER=v2`) is added by R4, with the flag.
+        pinCorpusEnvironment(run, .{ .root = "tests/pending", .mode = "pending" });
+        pending_step.dependOn(&run.step);
+        previous = &run.step;
     }
 
     // ---- Bench. ----
@@ -474,4 +521,25 @@ fn collectFiles(
             else => {},
         }
     }
+}
+
+/// The four knobs of the corpus walker (`tests/blackbox/corpus_test.zig`'s
+/// `Config`, `plans/checker-rewrite.md` §2.4, S11). An empty value is the walker's
+/// "unset": every field but the root defaults to it.
+const CorpusEnvironment = struct {
+    root: []const u8,
+    mode: []const u8 = "",
+    checker: []const u8 = "",
+    timeout_ms: []const u8 = "",
+};
+
+/// Set all four explicitly on a test run, whatever the developer's shell
+/// exports: the Run step otherwise hands the child the build's whole
+/// environment, and one stray `export BENI_CHECKER=v2` would silently change
+/// what a gate means.
+fn pinCorpusEnvironment(run: *std.Build.Step.Run, env: CorpusEnvironment) void {
+    run.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
+    run.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
+    run.setEnvironmentVariable("BENI_CHECKER", env.checker);
+    run.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
 }

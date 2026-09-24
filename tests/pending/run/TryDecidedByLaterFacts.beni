@@ -1,0 +1,43 @@
+-- CK-62: a `?` is decided by the facts of its whole declaration, not the
+-- first ones the solver meets (owner decision D2 as amended, checker-v2.md
+-- §8.1, §8.6). In `h` the `==` on `m` comes after `m?` and says nothing about
+-- the shape, and the result `Just (…)` says `Maybe`. In `f` the `?` is on
+-- `g`'s parameter and only `k`'s later use `k 5` inside `Maybe.withDefault`
+-- says `Maybe` (the parameter is `h` in round 2's `n2try`, renamed so it does
+-- not shadow the top-level `h`). Expected `Just 2`, `Nothing`, `Just 2`, `6`.
+--
+-- Oracle twin, run on 7427828: this file with `h : Maybe Int -> Maybe Int`,
+-- `f : (Int -> Maybe Int) -> ( Maybe Int, Int )` and `g : Maybe Int -> Maybe
+-- Int` annotated prints exactly the expected four lines. As written,
+-- 7427828 commits both `?` to `Result` and refuses the file with TYPE
+-- MISMATCH `Maybe a` against `Result b c`.
+import Node exposing (Program)
+
+
+h m =
+    let
+        v =
+            m?
+    in
+    if m == m then
+        Just (v + 1)
+
+    else
+        Nothing
+
+
+f k =
+    let
+        g u =
+            k (u?)
+    in
+    ( g (Just 1), Maybe.withDefault (k 5) 0 )
+
+
+main : Program
+main =
+    let
+        ( first, second ) =
+            f (\n -> Just (n + 1))
+    in
+    Node.printLines [ Debug.toString (h (Just 1)), Debug.toString (h Nothing), Debug.toString first, String.fromInt second ]

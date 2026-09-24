@@ -1,0 +1,6 @@
+# One per form. The positions are left open: the parameter `y` if
+# checker-v2.md §6.3's `binders_end` occurs check sees the cycle first, the
+# `==` if §9.5's cycle-safe resolver walk does. The finding is that the
+# checker stops, with this code.
+infinite_type *
+infinite_type *

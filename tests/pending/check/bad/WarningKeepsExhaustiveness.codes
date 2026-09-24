@@ -1,0 +1,4 @@
+ambiguous_method_receiver 23:5
+missing_patterns 25:9 contains "Blue"
+ambiguous_method_receiver 36:5
+refutable_parameter_pattern 36:15 contains "Square"

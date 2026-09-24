@@ -1,0 +1,27 @@
+-- CK-27: see H.beni.
+import H
+import Node exposing (Program)
+import Nocase
+
+
+type W
+    = W (H.Holder (List Nocase.Ci))
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (H.Holder [ Nocase.Ci "a" ] == H.Holder [ Nocase.Ci "A" ])
+        , show (H.Holder [ Nocase.Ci "a" ] == H.Holder [ Nocase.Ci "b" ])
+        , show (W (H.Holder [ Nocase.Ci "a" ]) == W (H.Holder [ Nocase.Ci "A" ]))
+        , show (W (H.Holder [ Nocase.Ci "a" ]) == W (H.Holder [ Nocase.Ci "b" ]))
+        ]

@@ -1,0 +1,20 @@
+-- CK-34: a constant with evidence parameters is CALLED at every read (queue
+-- row 57), so it does not defer its own evaluation and a value defined in
+-- terms of itself is `cyclic_value` whether or not it carries a `where`
+-- (checker.md §6.7; checker-v2.md §12.5). On 7427828 the `where` makes the
+-- cycle check count `zs` as deferring: it checks clean, and the built
+-- program dies with `RangeError: Maximum call stack size exceeded` in
+-- `Main$zs`. The control, this file without the `where` clause (and with
+-- `\x -> True` for the filter, which no longer compares), is VALUE
+-- DEFINED IN TERMS OF ITSELF at the position below.
+
+
+zs : List a
+    where a.eq : a, a -> Bool
+zs =
+    List.filter zs (\x -> x == x)
+
+
+ints : List Int
+ints =
+    zs

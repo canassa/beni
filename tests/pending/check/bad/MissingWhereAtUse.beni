@@ -1,0 +1,16 @@
+-- CK-48: `missing_where_constraint` is reported at the use that needs the
+-- method — here the `==` — never at the annotation or an unrelated
+-- declaration (static-dispatch-spike.md §6.2 Rule U2, "at the flex's
+-- region"; checker-v2.md §15.4, the resolver reports at `w.origin`). The
+-- unrelated `type` above it is where 7427828 points instead (its payload
+-- `Int`; without it, the annotation's `a`), because `checkAgainstRigid`
+-- reports at `s.region`, which `method()` never sets.
+
+
+type Unrelated
+    = Unrelated Int
+
+
+direct : a, a -> Bool
+direct x y =
+    [ x ] == [ y ]

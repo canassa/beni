@@ -1,0 +1,2 @@
+# At the comparison that needs the context.
+method_needs_annotation Main.beni:6:27 contains "`key`"

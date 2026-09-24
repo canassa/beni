@@ -1,0 +1,61 @@
+-- CK-19: the `equatable` marker of an explicit `Basics.eq` is a structural
+-- guarantee, never an `eq` method (static-dispatch-spike.md §3.4,
+-- checker-v2.md §11.4), so `x == y` on a `Ci` calls `Ci`'s own `eq`, which
+-- ignores case, whatever else the declaration says and in whatever order it
+-- says it. Expected `True` three times.
+--
+-- Oracle twin, run on 7427828: the direct `Ci "a" == Ci "A"`, and
+-- `markerAfter` (the same body with the two `let` statements swapped), both
+-- print `True`. On 7427828 `markerFirst` prints `False`: the marker set
+-- first on `x`'s variable answers the later `==` structurally.
+import Node exposing (Program)
+
+
+type Ci
+    = Ci String
+
+
+pub eq : Ci, Ci -> Bool
+eq left right =
+    case left of
+        Ci a ->
+            case right of
+                Ci b ->
+                    String.toLower a == String.toLower b
+
+
+markerFirst x y =
+    let
+        _ =
+            Basics.eq x x
+    in
+    x == y
+
+
+markerAfter x y =
+    let
+        r =
+            x == y
+
+        _ =
+            Basics.eq x x
+    in
+    r
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Ci "a" == Ci "A")
+        , show (markerFirst (Ci "a") (Ci "A"))
+        , show (markerAfter (Ci "a") (Ci "A"))
+        ]

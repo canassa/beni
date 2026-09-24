@@ -1,0 +1,8 @@
+-- CK-57: an INFINITE TYPE message writes the structure down with the cycle
+-- marked — `a = { a | x : a }` — as Elm does (checker-v2.md §8.2: the
+-- occurs walk returns the cycle's path, rendered before poisoning). On
+-- 7427828 its "best effort at writing it down" is the literal `a  =  … a …`.
+
+
+f r =
+    { r | x = r }

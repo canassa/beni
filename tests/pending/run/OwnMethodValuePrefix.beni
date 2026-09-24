@@ -1,0 +1,40 @@
+-- CK-64: an own untyped method whose body calls a helper written AFTER the
+-- method's user checks: the method's group is nested on its first reference
+-- and takes its value prefix with it (owner decision D3, checker-v2.md
+-- §10.2). `T`'s `eq` compares modulo 10 through `helper`, so `use 1 11` is
+-- `True` and `use 1 2` is `False`.
+--
+-- Oracle twin, run on 7427828: this file in the order `eq`, `helper`, `use`
+-- (round 1's `b7R`) prints `True`, `False`. As written, 7427828 refuses
+-- `use` with METHOD NEEDS AN ANNOTATION.
+import Node exposing (Program)
+
+
+type T
+    = T Int
+
+
+use a b =
+    T a == T b
+
+
+eq (T x) (T y) =
+    helper x y
+
+
+helper x y =
+    modBy x 10 == modBy y 10
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines [ show (use 1 11), show (use 1 2) ]

@@ -1,0 +1,95 @@
+-- CK-32: an operator used as a function and applied directly is an
+-- ordinary call of the section's lambda, whose `==` gets its evidence like
+-- any other (language.md §6.5; checker-v2.md §6.4). Five shapes: `op1`
+-- (`allSame`, `allSame2`, `sorted`: `(==) x _` as an argument and `(<=) a b`
+-- in a condition), `op2` (`(==) 1 1` and `(<) "a" "b"` in `main`), `op3`
+-- (`eqVia`, `(==) x y` under `where a.eq`), `op5` (`allOnes`, `(==) 1 _`) and
+-- `op6` (`allOnesLambda`, `\v -> (==) 1 v`, beside `anyEq`). Expected
+-- `f t t f t f t`, `t t`, `t`, `t f`, `t t`, one per line.
+--
+-- Oracle twin, run on 7427828: this file with every applied section written
+-- as the operator (`(==) x _` as `\v -> x == v`, `(<=) a b` as `a <= b`,
+-- `(==) 1 1` as `1 == 1`, and so on) prints exactly the expected fourteen
+-- lines. As written, 7427828 stops with INTERNAL ERROR "The hidden
+-- arguments of this call do not add up" at the sections.
+import Node exposing (Program)
+
+
+allSame : List a -> Bool
+    where a.eq : a, a -> Bool
+allSame xs =
+    case xs of
+        [] ->
+            True
+
+        x :: r ->
+            List.all r ((==) x _)
+
+
+allSame2 xs =
+    case xs of
+        [] ->
+            True
+
+        x :: r ->
+            List.all r ((==) x _)
+
+
+sorted xs =
+    case xs of
+        a :: b :: r ->
+            (<=) a b && sorted (b :: r)
+
+        _ ->
+            True
+
+
+eqVia : a, a -> Bool
+    where a.eq : a, a -> Bool
+eqVia x y =
+    (==) x y
+
+
+allOnes : List Int -> Bool
+allOnes xs =
+    List.all xs ((==) 1 _)
+
+
+allOnesLambda : List Int -> Bool
+allOnesLambda xs =
+    List.all xs (\v -> (==) 1 v)
+
+
+anyEq : List a, a -> Bool
+    where a.eq : a, a -> Bool
+anyEq xs y =
+    List.any xs (\v -> v == y)
+
+
+tf : Bool -> String
+tf b =
+    if b then
+        "t"
+
+    else
+        "f"
+
+
+main : Program
+main =
+    Node.printLines
+        [ tf (allSame [ 1, 1, 2 ])
+        , tf (allSame [ "a", "a" ])
+        , tf (allSame2 [ [ 1 ], [ 1 ] ])
+        , tf (allSame2 [ Just 'x', Just 'y' ])
+        , tf (sorted [ 1, 2, 2, 3 ])
+        , tf (sorted [ "b", "a" ])
+        , tf (sorted [ ( 1, "a" ), ( 1, "b" ) ])
+        , tf ((==) 1 1)
+        , tf ((<) "a" "b")
+        , tf (eqVia 1 1)
+        , tf (allOnes [ 1, 1 ])
+        , tf (allOnes [ 1, 2 ])
+        , tf (allOnesLambda [ 1, 1 ])
+        , tf (anyEq [ "a" ] "a")
+        ]

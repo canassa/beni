@@ -1,0 +1,15 @@
+-- CK-74: (the twin) `DerivedContextReentrant/` with `same` written before
+-- `key` (round 3's `reentS`): the same one `type_mismatch` at `"s"` in
+-- `other`. On 7427828 it is NOT EQUATABLE `W`.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq left right =
+    case left of
+        Holder l ->
+            case right of
+                Holder r ->
+                    l.key () == r.key ()

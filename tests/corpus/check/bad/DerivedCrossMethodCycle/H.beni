@@ -1,0 +1,25 @@
+-- A regression guard from the checker-v2 design review (round 4; plans/
+-- checker-rewrite.md §5.6): derived contexts that depend ACROSS `eq` and
+-- `compare`. `H.eq` needs `a.compare` and `H.compare` needs `a.eq`, and
+-- `T` holds an `H.Holder (Maybe T)` beside a `P.Q`, which wraps a function
+-- and has a `compare` but no `eq`. So `T` answers neither: `==` is
+-- `not_equatable` and `<` is `no_methods_on_shape`, in both orders of the
+-- two comparisons (`EqFirst` is round 4's `xm`, `CompareFirst` is `xm2`).
+-- 7427828 refuses both exactly so; R8a's fixpoint must keep it.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.compare : a, a -> Order
+eq (Holder x) (Holder y) =
+    x.compare y == EQ
+
+
+pub compare : Holder a, Holder a -> Order
+    where a.eq : a, a -> Bool
+compare (Holder x) (Holder y) =
+    if x.eq y then
+        EQ
+    else
+        LT

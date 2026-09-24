@@ -1,0 +1,34 @@
+-- CK-70: a method used at two types inside a dispatch cycle is refused the
+-- same way in every declaration order: `show` compares `Box 1 == Box 2` and
+-- `Box "x" == Box "y"`, and the unannotated `eq` on `Box` calls `show` back,
+-- so the merged group types `eq` once, monomorphically, and the second
+-- comparison is one `type_mismatch` with the recursive-dispatch hint
+-- (checker-v2.md §10.6). On 7427828 it is METHOD NEEDS AN ANNOTATION at
+-- `(K 0).show` — a code whose premise is the declaration order.
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub show (K n) u =
+    if Box 1 == Box 2 then
+        "a"
+
+    else if Box "x" == Box "y" then
+        "b"
+
+    else
+        "c"
+
+
+pub eq (Box a) (Box b) =
+    let
+        _ =
+            \w -> (K 0).show ()
+    in
+    True

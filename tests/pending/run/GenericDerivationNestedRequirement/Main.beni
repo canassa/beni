@@ -1,0 +1,25 @@
+-- CK-25: see Holder.beni.
+import Holder
+import Keyed
+import Node exposing (Program)
+
+
+type Outer a
+    = Outer (Holder.Holder a)
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (Holder.Holder (Keyed.Keyed 1 "a") == Holder.Holder (Keyed.Keyed 1 "b"))
+        , show (Outer (Holder.Holder (Keyed.Keyed 1 "a")) == Outer (Holder.Holder (Keyed.Keyed 1 "b")))
+        ]

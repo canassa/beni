@@ -1,0 +1,6 @@
+# Each names the well-known signature it fails against, as the `n : Int`
+# control does on 7427828 ("But I need: Int, Int -> Bool|Order").
+type_mismatch 37:5 contains "-> Bool"
+type_mismatch 42:5 contains "-> Order"
+type_mismatch 47:5 contains "-> Order"
+type_mismatch 52:5 contains "-> Order"

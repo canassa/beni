@@ -1,0 +1,23 @@
+-- CK-16: the `equatable` walk of explicit `Basics.eq` does not accept a type
+-- variable just because it sits inside a structure (checker-v2.md §11.4):
+-- the rigid `a` inside `[ x ]` has no `equatable` flag, so `same` is
+-- `not_equatable` in its body; the flex `x` inside `( x, 1 )` gets the flag,
+-- so `same2` is inferred `∀(a: equatable)` and its call with two functions
+-- is `not_equatable`. On 7427828 both check clean and, built, compare two
+-- functions at run time and print `different` twice. The controls,
+-- `Basics.eq x y` directly, are refused at these same positions (the first
+-- argument, and the first argument of the call).
+
+
+same : a, a -> Bool
+same x y =
+    Basics.eq [ x ] [ y ]
+
+
+same2 x y =
+    Basics.eq ( x, 1 ) ( y, 1 )
+
+
+use : Bool
+use =
+    same2 (\n -> n + 1) (\n -> n + 1)

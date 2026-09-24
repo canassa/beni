@@ -1,0 +1,15 @@
+-- CK-45: a float literal in a pattern is not in the grammar (language.md
+-- §3, `PatAtom`), and saying so takes ONE diagnostic: `unexpected_token` at
+-- the literal with a message about float patterns that suggests a
+-- comparison (owner decision D8, no new code). On 7427828 it is CASE
+-- WITHOUT BRANCHES ("ran into `1.5`, which is indented to column 9") and
+-- then UNEXPECTED TOKEN: the pattern parser has no `.float` arm.
+
+
+g x =
+    case x of
+        1.5 ->
+            "a"
+
+        _ ->
+            "b"

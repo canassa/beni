@@ -972,6 +972,14 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `output_path_collision`, `invalid_entry_file` | M3a again | `output_path_collision` and `invalid_entry_file`, appended on 2026-09-21 (queue row 58), again never inserted. They are one guarantee, [`backend.md`](backend.md) §2's *The output tree does not depend on the file system's case sensitivity*: **a build's output is the same set of files on every file system**. macOS and Windows fold case, so two output paths differing only by case are one file there — the entry file `main.mjs` and the module `Main`'s `Main.mjs` were exactly that, and every program built on a Mac threw `SyntaxError` at load with the build having exited 0. The compiler's reserved output names now begin with `_` (`_main.mjs`, `_core/`, `_platform/`), which a module path cannot reach because every segment is an upper identifier (§5); `output_path_collision` is the backstop for what that does not cover — two modules named `Json.Decode` and `JSON.Decode`, say — and is checked over the files a build is about to write, folded by simple ASCII lower-casing, before the first byte is written, naming both paths and both source files. `invalid_entry_file` is the other half: a platform may now declare the entry file's name in its manifest ([`boundary.md`](boundary.md) §5.2, `"entry"`), and a declared name that does not obey the `_` rule is refused when the platform is loaded, because a manifest key that could reintroduce the defect is worse than a hardcoded name |
 | `method_needs_annotation` | static dispatch again | `method_needs_annotation`, appended on 2026-09-23 (queue row 75) after the schema codes, again never inserted. A comparison — or any method use — on a module's own type needs that module's method, the method has no annotation, and its binding group is checked after the use, so it has no type there yet. It was a silent wrong answer: the site compiled to `undefined`, or a derived comparison's part to a structural walk that ignored the method. The message says which method to annotate → `static-dispatch-spike.md` §10.12 |
 
+> **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by owner
+> decision D3. A use of a module's own untyped method checks that method's group nested at the moment
+> of the use instead ([`checker-v2.md`](checker-v2.md) §10). The code survives for one non-ordering
+> case: a derived context entry, indexed by a type parameter, that depends on an in-flight inferred
+> method (§11.2, D3 as amended in §21.1).
+> The row above stays normative for the current checker until slice R7 amends it, and the code is
+> never removed from this catalogue.
+
 **The three generic syntax codes**, all carrying Elm-style prose — what the parser was in the middle
 of, what it saw, and what it expected, e.g. *I was parsing the branches of this `case` and ran into
 `else` at column 9, but the branches of this `case` start at column 13.*

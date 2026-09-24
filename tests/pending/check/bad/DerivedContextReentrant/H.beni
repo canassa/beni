@@ -1,0 +1,20 @@
+-- CK-74: a derived-context query made from INSIDE the method it depends on
+-- runs a fresh fixpoint (checker-v2.md §11.2): `W`'s `eq` needs `T`'s `key`
+-- (through `H.eq`'s `where a.key`), and `key`'s own body compares `W`s. The
+-- program's one real error is `other = (T 1).key "s"`: `key : T, () -> Int`,
+-- so it is one `type_mismatch` at `"s"`. The twin
+-- `DerivedContextReentrantSameFirst/` writes `same` first (round 3's
+-- `reentS`) and must say the same. On 7427828 both are NOT EQUATABLE `W`,
+-- the right verdict for the wrong reason.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq left right =
+    case left of
+        Holder l ->
+            case right of
+                Holder r ->
+                    l.key () == r.key ()

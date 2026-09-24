@@ -1,0 +1,17 @@
+-- CK-59: a record literal missing a field of the expected record renders
+-- with its OWN field types — `{ n : number, name : String }` — and says "an
+-- `extra` field" (checker-v2.md §6.5: the literal's fields are constrained
+-- before it meets the expectation; R13 fixes the article). On 7427828 the
+-- message is "This record does not have a `extra` field: `{ n : a, name : b }`",
+-- because the literal is unified with `M.R` before its fields are typed.
+pub type alias R =
+    { name : String, n : Int, extra : Bool }
+
+
+pub describe : R -> String
+describe r =
+    if r.extra then
+        r.name
+
+    else
+        "no"

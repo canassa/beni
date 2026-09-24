@@ -1,0 +1,4 @@
+# One per module, on the `pick "s"` line; the call or its argument is
+# R8a's to bless.
+type_mismatch KeyFirst.beni:16:*
+type_mismatch PickFirst.beni:24:*

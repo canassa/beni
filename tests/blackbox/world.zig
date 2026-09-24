@@ -71,6 +71,11 @@ pub const bulk_timeout_ms: i64 = 300_000;
 /// than silently truncating an assertion's input.
 pub const max_stream_bytes = 64 * 1024 * 1024;
 
+/// Whether a run killed at its bound says so on stderr. The pending walker
+/// turns it off: there a timeout is an expected, recorded red signature, and
+/// the line would be noise beside its own report.
+pub var announce_timeouts: bool = true;
+
 pub const Result = struct {
     /// The exit status, or 255 when the child died from a signal (`term`
     /// says which).
@@ -365,10 +370,16 @@ pub const World = struct {
     /// assertion. A bug that changes emitted SHAPE but not behaviour must
     /// not fail here; a bug that changes behaviour must.
     pub fn node(world: *World, script: []const u8) !Result {
+        return world.nodeWith(script, default_timeout_ms);
+    }
+
+    /// `node` with its own wall-clock bound, for a caller that bounds the
+    /// compiler differently too (the corpus walker's `BENI_CASE_TIMEOUT_MS`).
+    pub fn nodeWith(world: *World, script: []const u8, timeout_ms: i64) !Result {
         const arena = world.arena.allocator();
         const exe = world.node_exe orelse return error.NodeNotOnPath;
         const argv = try arena.dupe([]const u8, &.{ exe, script });
-        return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir }, default_timeout_ms);
+        return spawnAndCapture(arena, world.gpa, world.io, argv, .{ .dir = world.tmp.dir }, timeout_ms);
     }
 
     /// `beni build --platform=node --out=out <paths>`, then `node out/_main.mjs`.
@@ -563,7 +574,7 @@ fn drain(
         const now = Io.Timestamp.now(io, .awake);
         const remaining_ms = now.durationTo(deadline).toMilliseconds();
         if (remaining_ms <= 0) {
-            std.debug.print("compiler did not exit within {d} ms; killing it\n", .{timeout_ms});
+            if (announce_timeouts) std.debug.print("compiler did not exit within {d} ms; killing it\n", .{timeout_ms});
             return error.CompilerTimeout;
         }
         _ = try std.posix.poll(&fds, @intCast(@min(remaining_ms, std.math.maxInt(i32))));
@@ -580,3 +591,73 @@ fn drain(
         }
     }
 }
+
+/// The two lists `tests/pending/` keeps beside its fixtures
+/// (`plans/checker-rewrite.md` §2.4, §2.6), read by the corpus walker in
+/// pending mode and by `pending_test.zig`'s scenarios, so both apply rules
+/// (c) and (d) to the same records.
+pub const pending = struct {
+    /// One line of `tests/pending/RED`: the red signature a fixture (a
+    /// repo-relative path) or a scenario (`scenario/<id>`) has under a checker.
+    pub const RedLine = struct { path: []const u8, checker: []const u8, signature: []const u8 };
+
+    /// `<root>/CLAIMED`: one repo-relative path (or `scenario/<id>`) per line;
+    /// `#` lines and blank lines are ignored. A missing file is empty.
+    pub fn readClaimed(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
+        var out: std.ArrayList([]const u8) = .empty;
+        var it = try lines(arena, io, root, "CLAIMED");
+        while (it.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (line.len == 0 or line[0] == '#') continue;
+            const path = std.mem.trimEnd(u8, line, "/");
+            for (out.items) |seen| if (std.mem.eql(u8, seen, path)) {
+                std.debug.print("{s}/CLAIMED lists {s} twice\n", .{ root, path });
+                return error.DuplicateClaim;
+            };
+            try out.append(arena, path);
+        }
+        return out.items;
+    }
+
+    /// `<root>/RED`: `<path> <checker> <signature…>` per line, the signature
+    /// running to the end of the line; `#` lines and blank lines are
+    /// ignored. A missing file is empty.
+    pub fn readRed(arena: Allocator, io: Io, root: []const u8) ![]const RedLine {
+        var out: std.ArrayList(RedLine) = .empty;
+        var it = try lines(arena, io, root, "RED");
+        while (it.next()) |raw| {
+            var rest = std.mem.trim(u8, raw, " \t\r");
+            if (rest.len == 0 or rest[0] == '#') continue;
+            const path = try word(&rest);
+            const checker = try word(&rest);
+            const signature = std.mem.trim(u8, rest, " \t");
+            if (signature.len == 0) return error.BadRedLine;
+            const entry: RedLine = .{ .path = std.mem.trimEnd(u8, path, "/"), .checker = checker, .signature = signature };
+            // A second line for the same fixture and checker would make one of
+            // the two silently unread: a malformed file, not a choice.
+            for (out.items) |seen| if (std.mem.eql(u8, seen.path, entry.path) and std.mem.eql(u8, seen.checker, entry.checker)) {
+                std.debug.print("{s}/RED has two lines for {s} under {s}\n", .{ root, entry.path, entry.checker });
+                return error.DuplicateRedLine;
+            };
+            try out.append(arena, entry);
+        }
+        return out.items;
+    }
+
+    fn lines(arena: Allocator, io: Io, root: []const u8, name: []const u8) !std.mem.SplitIterator(u8, .scalar) {
+        const path = try std.fs.path.join(arena, &.{ root, name });
+        const text = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_stream_bytes)) catch |err| switch (err) {
+            error.FileNotFound => "",
+            else => return err,
+        };
+        return std.mem.splitScalar(u8, text, '\n');
+    }
+
+    fn word(rest: *[]const u8) ![]const u8 {
+        const s = std.mem.trimStart(u8, rest.*, " \t");
+        if (s.len == 0) return error.BadRedLine;
+        const end = std.mem.indexOfAny(u8, s, " \t") orelse s.len;
+        rest.* = s[end..];
+        return s[0..end];
+    }
+};

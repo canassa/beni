@@ -1,0 +1,77 @@
+-- A regression guard from the checker-v2 design review (round 3, B-3; plans/
+-- checker-rewrite.md §5.4): CK-72's program with the recursive group's
+-- receiver-producing member ANNOTATED, `g : Int -> Box Int`, in both
+-- declaration orders (`f`/`g`, round 3's `sccA`; `g2`/`f2`, `sccB`). The
+-- annotation lets `q` instantiate the method at `1` and at `"s"`, so each
+-- prints `Box 1` twice. 7427828 accepts both orders.
+import Node exposing (Program)
+
+
+type Box a
+    = Box a
+
+
+pub combine (Box a) z =
+    Box a
+
+
+f n =
+    let
+        r =
+            g n
+
+        q z =
+            r.combine z
+    in
+    ( q 1, q "s" )
+
+
+g : Int -> Box Int
+g n =
+    if n > 100 then
+        Box n
+
+    else
+        let
+            _ =
+                f (n + 1)
+        in
+        Box n
+
+
+g2 : Int -> Box Int
+g2 n =
+    if n > 100 then
+        Box n
+
+    else
+        let
+            _ =
+                f2 (n + 1)
+        in
+        Box n
+
+
+f2 n =
+    let
+        r =
+            g2 n
+
+        q z =
+            r.combine z
+    in
+    ( q 1, q "s" )
+
+
+unbox (Box v) =
+    v
+
+
+both : ( Box Int, Box Int ) -> String
+both ( a, b ) =
+    "Box " ++ String.fromInt (unbox a) ++ ", Box " ++ String.fromInt (unbox b)
+
+
+main : Program
+main =
+    Node.printLines [ both (f 1), both (f2 1) ]

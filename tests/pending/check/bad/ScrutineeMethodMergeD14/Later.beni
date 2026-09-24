@@ -1,0 +1,45 @@
+-- CK-73: (the merge variant, as written by R0; split per checker-rewrite.md
+-- §5.5) `h`'s body calls `(K 0).f ()` and `f` is a method, so `f` and `h`
+-- are recursive THROUGH DISPATCH and merge (D11). `r` in `f`'s `case` is
+-- `h`'s in-flight result, a group-level receiver, so D14 (checker-v2.md
+-- §10.7) lowers `r.combine z`: `q` is monomorphic, and `( q 1, q "s" )` is
+-- one `type_mismatch` at `q "s"` with the hint "Annotate `h`". That holds in
+-- both orders — `Later` writes the methods after `f`, `Sooner` before —
+-- because the merge is found at `f`'s scrutinee, before the `let`, in both.
+-- The half that must CHECK is `check/good/ScrutineeMethodMergeVariant/`.
+--
+-- On 7427828: `Later` is METHOD NEEDS AN ANNOTATION at `y.h` and at both `g`
+-- calls, and an UNKNOWN METHOD at `r.combine`; `Sooner` is METHOD NEEDS AN
+-- ANNOTATION at `(K 0).f`, in `h`, above `f`.
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub f (K n) u =
+    case ( (\y -> y.h ()) (K n), (Box 1).g (), (Box "s").g () ) of
+        ( r, _, _ ) ->
+            let
+                q z =
+                    r.combine z
+            in
+            ( q 1, q "s" )
+
+
+pub g (Box a) u =
+    0
+
+
+pub h (K m) u =
+    let
+        _ =
+            \w -> (K 0).f ()
+    in
+    Box m
+
+
+pub combine (Box a) z =
+    a

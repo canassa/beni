@@ -1,0 +1,27 @@
+-- CK-36: see Box.beni.
+pub type T
+    = T Int
+
+
+pub type U
+    = U Int
+
+
+pub compare a b =
+    let
+        s =
+            T 1 == T 2
+    in
+    case ( a, b ) of
+        ( U x, U y ) ->
+            if s then
+                LT
+
+            else
+                EQ
+
+
+pub eq a b =
+    case ( a, b ) of
+        ( T _, T _ ) ->
+            True

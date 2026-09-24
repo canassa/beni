@@ -1,0 +1,4 @@
+# checker-v2.md §8.6: the message names the leg that failed — the enclosing
+# return shape, or the error types.
+try_shape 12:10 lacks "neither" contains "Result String Int" contains "Maybe Int"
+try_shape 17:10 lacks "neither" contains "error types"

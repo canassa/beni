@@ -1,0 +1,50 @@
+-- A regression guard from the checker-v2 design review (round 2, N8; plans/
+-- checker-rewrite.md §5.1): an ANNOTATED function may call itself at another
+-- type — `depth : List a -> Int` uses `depth [ 1 ]` — at the top level and
+-- in a `let`, because each use instantiates the annotation. 7427828 gets
+-- both right; checker-v2's generality check (§8.3) must not call them
+-- escapes.
+import Node exposing (Program)
+
+
+depth : List a -> Int
+depth xs =
+    case xs of
+        [] ->
+            0
+
+        _ :: rest ->
+            1
+                + depth rest
+                + (if False then
+                    depth [ 1 ]
+
+                   else
+                    0
+                  )
+
+
+inner u =
+    let
+        d : List a -> Int
+        d xs =
+            case xs of
+                [] ->
+                    0
+
+                _ :: rest ->
+                    1
+                        + d rest
+                        + (if False then
+                            d [ 1 ]
+
+                           else
+                            0
+                          )
+    in
+    d [ "a", "b" ]
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (depth [ "x", "y" ]), String.fromInt (inner 0) ]

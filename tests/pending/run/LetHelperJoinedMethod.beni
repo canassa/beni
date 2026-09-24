@@ -1,0 +1,56 @@
+-- CK-29: (queue row 77) a `let` helper's method constraint joined with its
+-- enclosing function's is generalised with it (checker-v2.md §8.4, I2), so
+-- every instantiation of `check` gets its own method type. `check "a" "b"`
+-- and `check 1 2` are both fine, and `checkTree`, row 77's program, builds.
+-- Expected `False` ×4 (`u1`, `u2`), then `True`, `True` (`checkTree "a" "a"`).
+--
+-- Oracle twin, run on 7427828: this file with `check` and `checkTree`
+-- annotated `a, a -> List Bool where a.eq : a, a -> Bool` prints exactly the
+-- expected six lines. As written, 7427828 refuses `check 1 2` with TYPE
+-- MISMATCH (`number` against `String`: one method type shared by every
+-- instantiation), and without `u2` it stops with four INTERNAL ERRORs
+-- "The hidden arguments of this call do not add up".
+import Node exposing (Program)
+
+
+type Tree a
+    = Leaf
+    | Node a (Tree a)
+
+
+check x y =
+    let
+        same a b =
+            a == b
+    in
+    [ same x y, x == y ]
+
+
+checkTree x y =
+    let
+        same a b =
+            { v = a } == { v = b }
+    in
+    [ same x y, Node x Leaf == Node y Leaf ]
+
+
+u1 =
+    check "a" "b"
+
+
+u2 =
+    check 1 2
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines (List.map (u1 ++ u2 ++ checkTree "a" "a") show)

@@ -1,0 +1,44 @@
+-- CK-31: each member of a mutually recursive group takes its evidence in
+-- its OWN canonical order (static-dispatch-spike.md §7.2; checker-v2.md
+-- §12.1, §12.3): `f` compares its `x`s with `==` and `g` its `p`s with `<`,
+-- and each recursive call passes the callee's slots, not the caller's.
+-- Expected `True`, `True`, `True`, `False`.
+--
+-- Oracle twin, run on 7427828: this file with `f` annotated
+-- `Int, a, a, b, b -> Bool where a.eq : a, a -> Bool, b.compare : b, b -> Order`
+-- and `g` annotated `Int, b, b, a, a -> Bool` with the same two clauses
+-- prints the expected four lines. As written, 7427828 refuses it with four
+-- TYPE MISMATCHes (CK-09 reads `f`'s locals from `g`'s slice); with CK-09
+-- patched, both recursive calls are INTERNAL ERROR, because `g`'s `p1 < p2`
+-- reads `g`'s `eq` slot (disp F6's patched binary).
+import Node exposing (Program)
+
+
+f n x1 x2 y1 y2 =
+    if n == 0 then
+        x1 == x2
+
+    else
+        g (n - 1) y1 y2 x1 x2
+
+
+g n p1 p2 q1 q2 =
+    if n == 0 then
+        p1 < p2
+
+    else
+        f (n - 1) q1 q2 p1 p2
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines [ show (f 0 1 1 "a" "b"), show (f 1 1 1 "a" "b"), show (g 0 "a" "b" 1 1), show (g 1 "a" "b" 1 2) ]

@@ -1,0 +1,7 @@
+-- A regression guard: see H.beni.
+pub type Q
+    = Q (Int -> Int)
+
+
+pub compare (Q _) (Q _) =
+    EQ

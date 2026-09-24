@@ -1,0 +1,35 @@
+-- CK-76: see FirstF.beni. The same module with `g` written first.
+type K
+    = K Int
+
+
+pub mix (K n) b =
+    K n
+
+
+useMix : a, b -> a
+    where a.mix : a, b -> a
+useMix x y =
+    x.mix y
+
+
+g n =
+    if n > 100 then
+        K n
+    else
+        let
+            _ =
+                f (n + 1)
+        in
+        K n
+
+
+f n =
+    let
+        r =
+            g n
+
+        q z =
+            useMix r z
+    in
+    ( q 1, q "s" )

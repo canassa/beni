@@ -1,0 +1,26 @@
+-- A regression guard for CK-22's inside half (owner decision D1 as amended,
+-- checker-v2.md §11.3; plans/checker-rewrite.md §5.5): a private `eq`
+-- answers dispatch inside its own module, directly (`inside`) and through a
+-- derived shape the module compares (`insideTuple`), so both compare modulo
+-- 10 and print `true` (`Debug.toString`). The outside half, where every such comparison from
+-- another module is `private_method`, is pending (CK-22). 7427828 gets this
+-- right (round 4 probe `priv`); R8b keeps it green.
+pub type T
+    = T Int
+
+
+eq : T, T -> Bool
+eq a b =
+    case ( a, b ) of
+        ( T x, T y ) ->
+            modBy x 10 == modBy y 10
+
+
+pub inside : T, T -> Bool
+inside a b =
+    a == b
+
+
+pub insideTuple : T, T -> Bool
+insideTuple a b =
+    ( a, 0 ) == ( b, 0 )

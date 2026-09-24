@@ -1,0 +1,18 @@
+-- A regression guard for CK-37 (checker-v2.md §9.5; plans/checker-rewrite.md
+-- §5.5): a rejection that is not a cycle does not poison the receiver. `T`'s
+-- module has only `bar`, so `x.foo` and `x.baz` are each `unknown_method`,
+-- and `String.length x` is still a `type_mismatch` — three independent
+-- errors on one receiver, all reported. 7427828 does exactly this (round 4
+-- probe `indep`); R6a keeps it green.
+type T
+    = T Int
+
+
+pub bar : T, Int -> Int
+bar (T n) m =
+    n + m
+
+
+f : T -> Int
+f x =
+    x.foo 1 + x.baz 2 + x.bar 3 + String.length x

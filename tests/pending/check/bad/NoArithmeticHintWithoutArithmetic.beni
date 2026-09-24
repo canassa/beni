@@ -1,0 +1,30 @@
+-- CK-50: the hint "`+`, `-`, `*` and `/` work on numbers only. To join text
+-- use `++`" is for an arithmetic operator's operand, and none of these three
+-- mismatches has one: a list literal, a call and a list argument
+-- (checker-v2.md §15.3, R13). On 7427828 all three print it — and for the
+-- list it displaces the left-to-right hint.
+
+
+add : Int, Int -> Int
+add a b =
+    a + b
+
+
+mixed : List Int
+mixed =
+    [ 1, 2, "three" ]
+
+
+sum : Int
+sum =
+    add 1 "two"
+
+
+shout : List String -> String
+shout words =
+    String.concat words
+
+
+said : String
+said =
+    shout [ 1 ]

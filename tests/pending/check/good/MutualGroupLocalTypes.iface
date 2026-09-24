@@ -1,0 +1,3 @@
+module MutualGroupLocalTypes
+  value u : a, b -> c
+  value v : number, a, b -> c

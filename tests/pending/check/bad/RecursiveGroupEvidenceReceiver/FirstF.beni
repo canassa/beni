@@ -1,0 +1,42 @@
+-- CK-76: evidence for a call on ANOTHER recursive-group member's result.
+-- `r = g n` is group-level inside `f`/`g`, so D14 (checker-v2.md §10.7, as
+-- restated in round 4) lowers the instantiation of `useMix r z`: `q` is
+-- monomorphic, and `( q 1, q "s" )` is one `type_mismatch` at `q "s"` with
+-- the hint "Annotate `g`", in every order. `FirstF` writes `f` first (round
+-- 4's `evA`), `FirstG` writes `g` first (`evB`). On 7427828 `check` accepts
+-- both; `build` of `evA` is INTERNAL ERROR "hidden arguments … do not add
+-- up", and `evB` runs and prints `{ a = K 1, b = K 1 }`.
+type K
+    = K Int
+
+
+pub mix (K n) b =
+    K n
+
+
+useMix : a, b -> a
+    where a.mix : a, b -> a
+useMix x y =
+    x.mix y
+
+
+f n =
+    let
+        r =
+            g n
+
+        q z =
+            useMix r z
+    in
+    ( q 1, q "s" )
+
+
+g n =
+    if n > 100 then
+        K n
+    else
+        let
+            _ =
+                f (n + 1)
+        in
+        K n

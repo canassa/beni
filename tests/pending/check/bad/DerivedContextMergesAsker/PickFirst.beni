@@ -1,0 +1,26 @@
+-- CK-77: see H.beni.
+import H
+
+
+type T
+    = T Int
+
+
+type W
+    = W (H.Holder T)
+
+
+pick x =
+    let
+        _ =
+            W (H.Holder (T 1)) == W (H.Holder (T 2))
+    in
+    x
+
+
+pub key (T n) u =
+    let
+        _ =
+            ( pick 1, pick "s" )
+    in
+    n

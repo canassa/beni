@@ -1,0 +1,46 @@
+-- A regression guard from the checker-v2 design review (round 1, B6; plans/
+-- checker-rewrite.md §5.1): an own method used inside a `let` helper at two
+-- types checks when the method is ANNOTATED (`size`, written after its user,
+-- round 1's `b6box`) or written FIRST (`weight`, unannotated, `b6boxU2`).
+-- 7427828 accepts both; checker-v2 must keep them (CK-63 is the unannotated
+-- method written after).
+import Node exposing (Program)
+
+
+type Box a
+    = Box a
+
+
+pub weight (Box _) u =
+    2
+
+
+viaAnnotated u =
+    let
+        g x =
+            (Box x).size ()
+    in
+    ( g 1, g "s" )
+
+
+viaFirst u =
+    let
+        g x =
+            (Box x).weight ()
+    in
+    ( g 1, g "s" )
+
+
+pub size : Box a, () -> Int
+size b u =
+    1
+
+
+both : ( Int, Int ) -> String
+both ( a, b ) =
+    String.fromInt a ++ " " ++ String.fromInt b
+
+
+main : Program
+main =
+    Node.printLines [ both (viaAnnotated 0), both (viaFirst 0) ]

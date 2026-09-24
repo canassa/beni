@@ -48,14 +48,27 @@
 //! special-cased: while `dump` and `fmt` return 2 (M1 lands them), any
 //! fixture in those kinds fails — which is correct, and why the directories
 //! are empty except for their READMEs until then.
+//!
+//! The same walker runs `tests/pending/` (`plans/checker-rewrite.md` §2):
+//! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending|report`
+//! reports RED/GREEN or PASS/FAIL per fixture instead of failing on it,
+//! `BENI_CHECKER` adds `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds
+//! each run. Unset (or empty), each is today's strict corpus run; see
+//! `Config`, and `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
 
 const std = @import("std");
 const world = @import("world.zig");
+const diagnostic = @import("diagnostic");
 const World = world.World;
 const Io = std.Io;
 const testing = std.testing;
 
-const corpus_root = "tests/corpus";
+/// The root every `Kind` directory is joined onto unless
+/// `BENI_CORPUS_ROOT` says otherwise (see `Config`).
+const default_root = "tests/corpus";
+
+/// The one directory whose fixtures may carry a `.codes` golden.
+const pending_root = "tests/pending";
 
 const Kind = enum {
     parse_good,
@@ -73,23 +86,46 @@ const Kind = enum {
     emit,
     regress,
 
-    fn dir(kind: Kind) []const u8 {
+    /// The kind's directory relative to the corpus root.
+    fn sub(kind: Kind) []const u8 {
         return switch (kind) {
-            .parse_good => corpus_root ++ "/parse/good",
-            .parse_bad => corpus_root ++ "/parse/bad",
-            .fmt => corpus_root ++ "/fmt",
-            .bir => corpus_root ++ "/bir",
-            .dispatch => corpus_root ++ "/dispatch",
-            .check_good => corpus_root ++ "/check/good",
-            .check_bad => corpus_root ++ "/check/bad",
-            .check_args => corpus_root ++ "/check/args",
-            .check_depth => corpus_root ++ "/check/depth",
-            .build_bad => corpus_root ++ "/build/bad",
-            .build_bad_release => corpus_root ++ "/build/bad-release",
-            .run => corpus_root ++ "/run",
-            .emit => corpus_root ++ "/emit",
-            .regress => corpus_root ++ "/regress",
+            .parse_good => "parse/good",
+            .parse_bad => "parse/bad",
+            .fmt => "fmt",
+            .bir => "bir",
+            .dispatch => "dispatch",
+            .check_good => "check/good",
+            .check_bad => "check/bad",
+            .check_args => "check/args",
+            .check_depth => "check/depth",
+            .build_bad => "build/bad",
+            .build_bad_release => "build/bad-release",
+            .run => "run",
+            .emit => "emit",
+            .regress => "regress",
         };
+    }
+
+    /// The golden a fixture of this kind must carry, for pending mode's
+    /// rule (a). A kind whose golden is a diagnostic list may carry a
+    /// `.codes` instead under `tests/pending/` (`takesCodes`).
+    fn golden(kind: Kind) ?[]const u8 {
+        return switch (kind) {
+            .parse_good => "ast",
+            .parse_bad, .check_bad, .check_args, .build_bad, .build_bad_release => "diag",
+            .fmt, .run => "expected",
+            .bir => "bir",
+            .dispatch => "dispatch",
+            .check_good => "iface",
+            .emit => "js",
+            .check_depth, .regress => null,
+        };
+    }
+
+    /// The kinds whose `.diag` may be a `.codes` in pending mode
+    /// (`plans/checker-rewrite.md` §2.3): the ones `Case.bad` runs.
+    fn takesCodes(kind: Kind) bool {
+        return kind == .parse_bad or kind == .check_bad or kind == .check_args;
     }
 
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
@@ -226,9 +262,18 @@ fn walk(kind: Kind) !void {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const core_dir = try std.fs.path.join(arena, &.{ kind.dir(), "core" });
+    const cfg = try Config.read(arena);
+    quiet = cfg.mode != .strict and !cfg.verbose;
+    world.announce_timeouts = !quiet;
+    defer world.announce_timeouts = true;
+    defer quiet = false;
+    const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
+    const core_dir = try std.fs.path.join(arena, &.{ kind_dir, "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
-    try collect(arena, kind.dir(), false, true, &fixtures, kind.hasProjects());
+    // Under a root that is not the default one, a kind that does not exist
+    // there is simply not part of it: `tests/pending/` holds only the kinds
+    // its red fixtures need (`plans/checker-rewrite.md` §2.1).
+    try collect(arena, kind_dir, false, cfg.is_default_root, &fixtures, kind.hasProjects());
     // Projects under `core/` too, and for the same reason they exist above
     // it: a fixture about what one module may say to ANOTHER cannot be one
     // file, and `--core` is what lets a fixture write `foreign` at all
@@ -244,7 +289,7 @@ fn walk(kind: Kind) !void {
     // takes PROJECTS as well as files, because "a module vanishes" needs a
     // second module to vanish.
     if (kind == .emit) {
-        const app_dir = try std.fs.path.join(arena, &.{ kind.dir(), "app" });
+        const app_dir = try std.fs.path.join(arena, &.{ kind_dir, "app" });
         const start = fixtures.items.len;
         try collect(arena, app_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.app = true;
@@ -254,18 +299,21 @@ fn walk(kind: Kind) !void {
         // `--release`, so a golden here is a shape claim about names,
         // whitespace and inlining — the things `run/` cannot observe
         // because they do not change what a program prints.
-        const release_dir = try std.fs.path.join(arena, &.{ kind.dir(), "release" });
+        const release_dir = try std.fs.path.join(arena, &.{ kind_dir, "release" });
         const release_start = fixtures.items.len;
         try collect(arena, release_dir, false, false, &fixtures, true);
         for (fixtures.items[release_start..]) |*fixture| fixture.release = true;
     }
 
     if (fixtures.items.len == 0) {
-        std.debug.print("corpus {s} is empty (M1 fills it)\n", .{kind.dir()});
+        if (cfg.is_default_root) std.debug.print("corpus {s} is empty (M1 fills it)\n", .{kind_dir});
         return;
     }
 
-    const bless = blessing(gpa);
+    // Pending mode never blesses: a golden there is the CORRECT output,
+    // written by hand, and the binary under test is the one known to be
+    // wrong. Blessing happens after promotion, under `tests/corpus/`.
+    const bless = blessing(gpa) and cfg.mode != .pending;
     const bless_only = blessOnly(arena);
     var w = try World.init(gpa, io);
     defer w.deinit();
@@ -274,19 +322,290 @@ fn walk(kind: Kind) !void {
     for (fixtures.items) |fixture| {
         const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
         const bless_this = bless and (bless_only == null or std.mem.indexOf(u8, path, bless_only.?) != null);
-        const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless_this };
-        case.run() catch |err| {
-            std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
-            failures += 1;
-        };
+        const case: Case = .{ .arena = arena, .w = &w, .kind = kind, .fixture = fixture, .bless = bless_this, .cfg = &cfg };
+        switch (cfg.mode) {
+            .strict => case.run() catch |err| {
+                std.debug.print("FAIL {s}/{s}: {t}\n", .{ fixture.dir, fixture.name, err });
+                failures += 1;
+            },
+            .report => {
+                reason_len = 0;
+                if (case.run()) |_| {
+                    std.debug.print("REPORT  PASS  {s}  {s}\n", .{ cfg.checkerName(), path });
+                } else |err| {
+                    std.debug.print("REPORT  FAIL  {s}  {s}  {s}\n", .{ cfg.checkerName(), path, reasonFor(err, &cfg) });
+                }
+            },
+            .pending => if (!try case.pending(path)) {
+                failures += 1;
+            },
+        }
     }
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,
     // which reads as a broken suite to everyone who sees it.
     if (failures != 0) {
-        std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind.dir(), fixtures.items.len, failures });
+        std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind_dir, fixtures.items.len, failures });
         return error.CorpusFailures;
     }
+}
+
+/// How this run of the walker behaves, read once per kind from the
+/// environment (`plans/checker-rewrite.md` §2.4). Every variable defaults to
+/// the corpus's own strict behaviour, and an EMPTY value counts as unset:
+/// `build.zig` pins all four on every run (the defaults for `test-blackbox`), so a
+/// variable exported in a shell cannot change what a gate means (S11).
+const Config = struct {
+    /// `BENI_CORPUS_ROOT`, default `tests/corpus`.
+    root: []const u8,
+    is_default_root: bool,
+    mode: Mode,
+    /// `BENI_CHECKER`: when set, `--checker=<value>` rides on every `check`,
+    /// `build` and `dump` (the flag exists from slice R4).
+    checker: ?[]const u8,
+    /// `BENI_CASE_TIMEOUT_MS`: the bound on one compiler run. Pending mode
+    /// defaults to 20 s so a hang is a fast RED(timeout).
+    timeout_ms: i64,
+    /// `BENI_PENDING_VERBOSE`: keep each failing case's full detail in
+    /// pending and report modes, where by default only its one-line reason
+    /// is printed.
+    verbose: bool,
+    /// `tests/pending/CLAIMED` (§2.6): repo-relative paths, pending mode only.
+    claimed: []const []const u8,
+    /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
+    /// each fixture under each checker, pending mode only.
+    red: []const world.pending.RedLine,
+
+    const Mode = enum {
+        /// Unset: every fixture must pass (today's behaviour).
+        strict,
+        /// `pending`: every fixture is reported RED or GREEN, and the step
+        /// fails only for rules (a)–(d).
+        pending,
+        /// `report`: PASS/FAIL per fixture, and never a failure.
+        report,
+    };
+
+    fn read(arena: std.mem.Allocator) !Config {
+        const root = envOr(arena, "BENI_CORPUS_ROOT") orelse default_root;
+        const mode_text = envOr(arena, "BENI_CORPUS_MODE");
+        const mode: Mode = if (mode_text == null)
+            .strict
+        else if (std.mem.eql(u8, mode_text.?, "pending"))
+            .pending
+        else if (std.mem.eql(u8, mode_text.?, "report"))
+            .report
+        else {
+            std.debug.print("BENI_CORPUS_MODE must be `pending` or `report`, not `{s}`\n", .{mode_text.?});
+            return error.BadCorpusMode;
+        };
+        const timeout_ms: i64 = if (envOr(arena, "BENI_CASE_TIMEOUT_MS")) |text|
+            std.fmt.parseInt(i64, text, 10) catch {
+                std.debug.print("BENI_CASE_TIMEOUT_MS must be a number of milliseconds, not `{s}`\n", .{text});
+                return error.BadCaseTimeout;
+            }
+        else if (mode == .pending) 20_000 else world.default_timeout_ms;
+        var cfg: Config = .{
+            .root = std.mem.trimEnd(u8, root, "/"),
+            .is_default_root = std.mem.eql(u8, std.mem.trimEnd(u8, root, "/"), default_root),
+            .mode = mode,
+            .checker = envOr(arena, "BENI_CHECKER"),
+            .timeout_ms = timeout_ms,
+            .verbose = envOr(arena, "BENI_PENDING_VERBOSE") != null,
+            .claimed = &.{},
+            .red = &.{},
+        };
+        if (mode == .pending) {
+            cfg.claimed = try world.pending.readClaimed(arena, testing.io, cfg.root);
+            cfg.red = try world.pending.readRed(arena, testing.io, cfg.root);
+        }
+        return cfg;
+    }
+
+    /// The signature `RED` records for `repo_path` under the checker under
+    /// test, or null.
+    fn redSignature(cfg: *const Config, repo_path: []const u8) ?[]const u8 {
+        for (cfg.red) |line| {
+            if (std.mem.eql(u8, line.path, repo_path) and std.mem.eql(u8, line.checker, cfg.checkerName())) return line.signature;
+        }
+        return null;
+    }
+
+    /// The label of the checker under test in a report line.
+    fn checkerName(cfg: *const Config) []const u8 {
+        return cfg.checker orelse "v1";
+    }
+
+    /// Whether the checker under test is the DEFAULT one, the checker the
+    /// three gates run. Rule (b) applies to it alone: until the cut-over
+    /// (R11) that is `v1`, reached by leaving `BENI_CHECKER` unset.
+    fn isDefaultChecker(cfg: *const Config) bool {
+        return cfg.checker == null;
+    }
+
+    fn isClaimed(cfg: *const Config, repo_path: []const u8) bool {
+        for (cfg.claimed) |p| if (std.mem.eql(u8, p, repo_path)) return true;
+        return false;
+    }
+};
+
+/// An environment variable, or null when it is unset or empty.
+fn envOr(arena: std.mem.Allocator, name: []const u8) ?[]const u8 {
+    const value = testing.environ.getAlloc(arena, name) catch return null;
+    return if (value.len == 0) null else value;
+}
+
+/// Pending and report modes print one line per fixture and keep the detail
+/// of each failure to themselves, so `Case` writes its detail through
+/// `detail` and records a one-line reason through `because`.
+var quiet: bool = false;
+var reason_buf: [480]u8 = undefined;
+var reason_len: usize = 0;
+/// Owns the text `expectExit` summarises; failures only, never freed.
+var scratch: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+
+fn detail(comptime fmt: []const u8, args: anytype) void {
+    if (quiet) return;
+    std.debug.print(fmt, args);
+}
+
+/// Record why the current case failed, if nothing more specific has.
+fn because(comptime fmt: []const u8, args: anytype) void {
+    if (reason_len != 0) return;
+    const text = std.fmt.bufPrint(&reason_buf, fmt, args) catch blk: {
+        const dots = "…";
+        @memcpy(reason_buf[reason_buf.len - dots.len ..], dots);
+        break :blk reason_buf[0..];
+    };
+    reason_len = text.len;
+}
+
+fn reasonFor(err: anyerror, cfg: *const Config) []const u8 {
+    if (err == error.CompilerTimeout) {
+        return std.fmt.bufPrint(&reason_buf, "timeout after {d} ms", .{cfg.timeout_ms}) catch "timeout";
+    }
+    if (reason_len != 0) return reason_buf[0..reason_len];
+    return @errorName(err);
+}
+
+/// The RED SIGNATURE of a failing case (`plans/checker-rewrite.md` §2.4
+/// rule (d), S13): what the compiler and the program did, in a form
+/// `tests/pending/RED` records per fixture, so pending mode can tell a
+/// fixture that is red for its bug from one that has drifted into being red
+/// for another reason — a typo, a malformed program, a different bug.
+///
+///   timeout                              the compiler did not finish
+///   crash=<signal>                       the compiler died of a signal
+///   exit=<n> codes=<code>×<k>,…          the compiler exited n; every code
+///                                        it reported, sorted, with its count
+///                                        (`codes=none` when there were none)
+///   … why=<code|count|position|message|diag|stdout>
+///                                        a bad fixture whose compiler exited
+///                                        as expected: WHICH part of its
+///                                        `.codes` (or `.diag`) disagreed —
+///                                        the codes, their number, their
+///                                        positions or their text
+///   <pass>: …                            a `run/` fixture: `dev` or
+///                                        `release`, the pass that failed
+///   exit=0 program-exit=<n>              the emitted program exited n
+///   exit=0 stdout-differs                it printed something else
+///   exit=0 <ext>-differs                 a whole golden (`iface`, `ast`, …)
+///
+/// The `why=` suffix refines S13's signature for `.codes` fixtures: without
+/// it a fixture red for its message and the same fixture red for a typo in
+/// a line number would sign the same.
+var class_buf: [256]u8 = undefined;
+var class_len: usize = 0;
+
+/// Record the failure's signature, if nothing has yet: the FIRST failure of
+/// a case is the one it stops on.
+fn classify(comptime fmt: []const u8, args: anytype) void {
+    if (class_len != 0) return;
+    const text = std.fmt.bufPrint(&class_buf, fmt, args) catch return;
+    class_len = text.len;
+}
+
+fn classFor(err: anyerror) []const u8 {
+    if (err == error.CompilerTimeout) return "timeout";
+    if (class_len != 0) return class_buf[0..class_len];
+    return @errorName(err);
+}
+
+/// `exit=<n> codes=<code>×<count>,…` for a finished compiler run (the codes
+/// sorted by name, `none` when there are none, `unparsed` when stderr is
+/// not a JSON diagnostic list), or `crash=<signal>`. The whole multiset and
+/// not only the first code (review of R0, S3): a second bug, or a typo that
+/// adds one more diagnostic behind the first, changes the signature.
+fn failSignature(arena: std.mem.Allocator, r: world.Result) []const u8 {
+    return switch (r.term) {
+        .exited => |n| std.fmt.allocPrint(arena, "exit={d} codes={s}", .{ n, codeCounts(arena, r.stderr) }) catch "exit",
+        .signal => |sig| std.fmt.allocPrint(arena, "crash={t}", .{sig}) catch "crash",
+        else => "crash=unknown",
+    };
+}
+
+fn codeCounts(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, stderr, " \r\n");
+    if (trimmed.len == 0) return "none";
+    const diags = std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, arena, trimmed, .{}) catch return "unparsed";
+    if (diags.len == 0) return "none";
+    var names: std.ArrayList([]const u8) = .empty;
+    for (diags) |d| names.append(arena, @tagName(d.code)) catch return "unparsed";
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < names.items.len) {
+        var j = i;
+        while (j < names.items.len and std.mem.eql(u8, names.items[j], names.items[i])) j += 1;
+        if (i != 0) out.append(arena, ',') catch return "unparsed";
+        out.print(arena, "{s}×{d}", .{ names.items[i], j - i }) catch return "unparsed";
+        i = j;
+    }
+    return out.items;
+}
+
+/// A stderr stream in a few words: the codes and start positions of a JSON
+/// diagnostic list, the titles of a rendered one, or its first line.
+fn summarize(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, stderr, " \r\n");
+    if (trimmed.len == 0) return "(no stderr)";
+    var out: std.ArrayList(u8) = .empty;
+    if (trimmed[0] == '[') {
+        if (std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, arena, trimmed, .{})) |diags| {
+            for (diags, 0..) |d, i| {
+                if (i != 0) out.appendSlice(arena, ", ") catch return trimmed;
+                out.print(arena, "{t} {d}:{d}", .{ d.code, d.span.start.line, d.span.start.col }) catch return trimmed;
+            }
+            return out.items;
+        } else |_| {}
+    }
+    // The rendered form: every `-- TITLE ----- file` header.
+    var lines = std.mem.splitScalar(u8, trimmed, '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "-- ")) continue;
+        const end = std.mem.indexOf(u8, line, " --") orelse line.len;
+        if (out.items.len != 0) out.appendSlice(arena, ", ") catch return trimmed;
+        out.appendSlice(arena, line[3..end]) catch return trimmed;
+    }
+    if (out.items.len != 0) return out.items;
+    // A JavaScript error: its `SomethingError: …` line, else the first line.
+    var js = std.mem.splitScalar(u8, trimmed, '\n');
+    while (js.next()) |line| {
+        if (std.mem.indexOf(u8, line, "Error") != null and std.mem.indexOf(u8, line, "    at ") == null) return line;
+    }
+    return trimmed[0 .. std.mem.indexOfScalar(u8, trimmed, '\n') orelse trimmed.len];
+}
+
+/// A stream on one line: newlines as ` | `, capped.
+fn oneLine(arena: std.mem.Allocator, text: []const u8) []const u8 {
+    const t = std.mem.trimEnd(u8, text, "\n");
+    const capped = t[0..@min(t.len, 160)];
+    const out = std.mem.replaceOwned(u8, arena, capped, "\n", " | ") catch return capped;
+    return out;
 }
 
 /// One fixture under a corpus directory: a `.beni` file, or — for the
@@ -353,6 +672,128 @@ const Case = struct {
     kind: Kind,
     fixture: Fixture,
     bless: bool,
+    cfg: *const Config,
+
+    /// Pending mode's verdict on one fixture (`plans/checker-rewrite.md`
+    /// §2.4): print RED or GREEN, and return false only when the fixture
+    /// breaks one of the three rules — (a) it is malformed, (b) it is GREEN
+    /// under the default checker and so must be promoted, (c) it is claimed
+    /// and RED under `v2`.
+    fn pending(c: Case, path: []const u8) !bool {
+        const rel = if (std.mem.startsWith(u8, path, c.cfg.root) and path.len > c.cfg.root.len)
+            path[c.cfg.root.len + 1 ..]
+        else
+            path;
+        const checker = c.cfg.checkerName();
+
+        // Rule (a): a finding named, and exactly the golden its kind needs.
+        const ck = c.findingId() catch |err| {
+            std.debug.print("PENDING  MALFORMED  {s}  {s}: {t} — the first line of a pending fixture (or of the first `.beni` of a project) is `-- CK-NN: <what it proves>`\n", .{ checker, rel, err });
+            return false;
+        };
+        if (c.malformedGolden()) |what| {
+            std.debug.print("PENDING  MALFORMED  {s}  {s}  {s}  {s}\n", .{ checker, ck, rel, what });
+            return false;
+        }
+        const repo_path = std.mem.trimEnd(u8, path, "/");
+        // Rule (d)'s record: the signature `tests/pending/RED` holds for this
+        // fixture under THIS checker. Every checker is held to it: a fixture
+        // red under v2 needs a `v2` line as much as one red under v1 needs a
+        // `v1` line, so a v2 slice cannot drift a claimed-later fixture from
+        // "red for the bug" to "red for a typo" unseen either.
+        const recorded = c.cfg.redSignature(repo_path);
+
+        reason_len = 0;
+        class_len = 0;
+        const verdict: ?[]const u8 = if (c.run()) |_| null else |err| blk: {
+            const signature = classFor(err);
+            std.debug.print("PENDING  RED    {s}  {s}  {s}  [{s}]  {s}\n", .{ checker, ck, rel, signature, reasonFor(err, c.cfg) });
+            break :blk signature;
+        };
+        const green = verdict == null;
+        if (green) std.debug.print("PENDING  GREEN  {s}  {s}  {s}\n", .{ checker, ck, rel });
+
+        // Rule (c): a claim is a promise that v2 keeps it green.
+        if (!green and c.cfg.checker != null and std.mem.eql(u8, c.cfg.checker.?, "v2") and c.cfg.isClaimed(repo_path)) {
+            std.debug.print("PENDING  RULE (c)  {s}  {s} is listed in CLAIMED and is RED under v2\n", .{ ck, rel });
+            return false;
+        }
+        // Rule (a), the record half: red with no `RED` line at all.
+        if (verdict) |signature| if (recorded == null) {
+            std.debug.print("PENDING  MALFORMED  {s}  {s}  {s}  no line in {s}/RED: add `{s} {s} {s}` once the reason is checked against the finding (tests/pending/README.md)\n", .{ checker, ck, rel, c.cfg.root, repo_path, checker, signature });
+            return false;
+        };
+        // Rule (d): red, but not for the recorded reason — a defect of the
+        // fixture or a change in the bug. Either way `RED` is updated
+        // deliberately, in the same commit, and never silently.
+        if (verdict) |signature| if (!std.mem.eql(u8, signature, recorded.?)) {
+            std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is red as [{s}], and {s}/RED records [{s}]\n", .{ checker, ck, rel, signature, c.cfg.root, recorded.? });
+            return false;
+        };
+        // Green under a checker whose `RED` line still says why it is red:
+        // the line is stale. (Under the default checker rule (b) below says
+        // the same thing more loudly.)
+        if (green and recorded != null and !c.cfg.isDefaultChecker()) {
+            std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is GREEN, and {s}/RED still records [{s}]: delete the `{s}` line\n", .{ checker, ck, rel, c.cfg.root, recorded.?, checker });
+            return false;
+        }
+
+        // Rule (b): fixed on the checker the gates run, so it belongs in the
+        // corpus now, where the gates keep it fixed.
+        if (green and c.cfg.isDefaultChecker()) {
+            std.debug.print(
+                "PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: promote it now — `git mv {s} {s}/{s}` (with its goldens), and bless a `.diag` for any `.codes` (plans/checker-rewrite.md §2.6)\n",
+                .{ ck, rel, path, default_root, rel },
+            );
+            return false;
+        }
+        return true;
+    }
+
+    /// The `CK-NN` a pending fixture names on its first line: the fixture's
+    /// own, or the alphabetically first `.beni` of a project.
+    fn findingId(c: Case) ![]const u8 {
+        var file = try c.fixturePath();
+        if (c.fixture.project) {
+            var dir = try Io.Dir.cwd().openDir(testing.io, file, .{ .iterate = true });
+            defer dir.close(testing.io);
+            var first: ?[]const u8 = null;
+            var it = dir.iterate();
+            while (try it.next(testing.io)) |entry| {
+                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                if (first == null or std.mem.lessThan(u8, entry.name, first.?)) first = try c.arena.dupe(u8, entry.name);
+            }
+            file = try std.fs.path.join(c.arena, &.{ file, first orelse return error.ProjectHasNoModule });
+        }
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, file, c.arena, .limited(world.max_stream_bytes));
+        const line = text[0 .. std.mem.indexOfScalar(u8, text, '\n') orelse text.len];
+        const prefix = "-- CK-";
+        if (!std.mem.startsWith(u8, line, prefix)) return error.NoFindingLine;
+        // Two digits or more: IDs are never renumbered, and CK-100 will come.
+        var end = prefix.len;
+        while (end < line.len and std.ascii.isDigit(line[end])) end += 1;
+        if (end - prefix.len < 2) return error.NoFindingLine;
+        if (!std.mem.startsWith(u8, line[end..], ": ")) return error.NoFindingLine;
+        return line[3..end];
+    }
+
+    /// Why the fixture's goldens are malformed for pending mode, or null.
+    fn malformedGolden(c: Case) ?[]const u8 {
+        const has_codes = c.goldenExists("codes");
+        const ext = c.kind.golden() orelse return if (has_codes) "a `.codes` golden on a kind that runs no `check`" else null;
+        const has_golden = c.goldenExists(ext);
+        if (has_codes and !c.kind.takesCodes()) return "a `.codes` golden on a kind whose golden is not a diagnostic list";
+        if (has_codes and has_golden) return "both a `.diag` and a `.codes`: keep one";
+        if (!has_codes and !has_golden) return "no golden";
+        if (has_codes) {
+            const text = Io.Dir.cwd().readFileAlloc(testing.io, c.goldenPath("codes") catch return "unreadable .codes", c.arena, .limited(world.max_stream_bytes)) catch return "unreadable .codes";
+            _ = parseCodes(c.arena, text) catch |err| return if (err == error.UnknownDiagnosticCode)
+                "a `.codes` line names a code that `diagnostic.Code` does not have"
+            else
+                "a `.codes` line that does not parse: `code [file:]line:col|line:*|* [contains \"…\"|lacks \"…\"]…`";
+        }
+        return null;
+    }
 
     /// The path the compiler is pointed at: the `.beni` file, or the
     /// project directory.
@@ -389,7 +830,7 @@ const Case = struct {
                 if (has_diag) return c.bad();
                 if (has_ast) return c.good();
                 if (c.bless) return c.good(); // blessing a regress fixture pins it as good
-                std.debug.print("{s}: a regress fixture needs a .diag or a .ast golden\n", .{c.fixture.name});
+                detail("{s}: a regress fixture needs a .diag or a .ast golden\n", .{c.fixture.name});
                 return error.MissingGolden;
             },
         }
@@ -404,13 +845,13 @@ const Case = struct {
     /// Run the compiler in the repo root (fixtures are referenced by their
     /// repo-relative path, which is also what appears in diagnostics).
     fn compiler(c: Case, args: []const []const u8) !world.Result {
-        return c.w.runWith(try c.argv(args), .{ .raw_diagnostics = true, .cwd = .inherit });
+        return c.w.runWith(try c.argv(args), .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
     }
 
     /// Same as `compiler`, in the world's project directory (for files the
     /// case wrote itself).
     fn inProject(c: Case, args: []const []const u8) !world.Result {
-        return c.w.runWith(try c.argv(args), .{ .raw_diagnostics = true });
+        return c.w.runWith(try c.argv(args), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
     }
 
     /// `args`, plus `--core` for a fixture under `core/`, plus `--no-cache`
@@ -435,6 +876,15 @@ const Case = struct {
         if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
             try list.append(c.arena, "--no-cache");
         }
+        // `BENI_CHECKER` (`plans/checker-rewrite.md` §2.4): the checker under
+        // test, on the three commands that run one. `fmt` checks nothing.
+        if (c.cfg.checker) |checker| {
+            if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build") or
+                std.mem.eql(u8, args[0], "dump")))
+            {
+                try list.append(c.arena, try std.fmt.allocPrint(c.arena, "--checker={s}", .{checker}));
+            }
+        }
         return list.items;
     }
 
@@ -444,21 +894,107 @@ const Case = struct {
         // `dump` exits 0 even with syntax errors (the tree is its product);
         // "parses clean" means no diagnostic at all.
         if (r.stderr.len != 0) {
-            std.debug.print("{s}: a good fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
+            detail("{s}: a good fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
+            because("diagnostics where none are allowed: {s}", .{summarize(c.arena, r.stderr)});
+            classify("{s}", .{failSignature(c.arena, r)});
             return error.GoodFixtureHasDiagnostics;
         }
         try c.expectGolden("ast", r.stdout);
     }
 
     fn bad(c: Case) !void {
+        if (c.goldenExists("codes")) {
+            // Keyed on WHERE the fixture is, not on the mode: a `.codes` is a
+            // red fixture's stand-in for a `.diag`, and a fixture under the
+            // gated corpus must pin the whole diagnostic, whatever mode a hand
+            // run happens to use.
+            const path = try c.fixturePath();
+            if (!std.mem.startsWith(u8, path, pending_root ++ "/")) {
+                detail("{s}: a `.codes` golden is accepted only under tests/pending/ (plans/checker-rewrite.md §2.3); bless the full `.diag`\n", .{c.fixture.name});
+                because("a `.codes` golden outside tests/pending/", .{});
+                return error.CodesOutsidePending;
+            }
+            return c.badCodes();
+        }
         const golden = try c.goldenPath("diag");
         if (!c.goldenExists("diag") and !c.bless) {
-            std.debug.print("{s}: a bad fixture without {s} is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{ c.fixture.name, golden });
+            detail("{s}: a bad fixture without {s} is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{ c.fixture.name, golden });
             return error.MissingDiagGolden;
         }
         const r = try c.compiler(&.{ "check", "--diagnostics=json", try c.fixturePath() });
         try expectExit(1, r);
-        try c.expectGolden("diag", r.stderr);
+        c.expectGolden("diag", r.stderr) catch |err| {
+            classify("{s} why=diag", .{failSignature(c.arena, r)});
+            return err;
+        };
+    }
+
+    /// The pending form of `bad` (`plans/checker-rewrite.md` §2.3): the
+    /// `.codes` golden names each diagnostic's code and start, and any
+    /// substrings its message must or must not hold. Exit 1, nothing on
+    /// stdout, and exactly as many diagnostics as lines, warnings included.
+    fn badCodes(c: Case) !void {
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("codes"), c.arena, .limited(world.max_stream_bytes));
+        const codes = try parseCodes(c.arena, text);
+        const wanted = codes;
+        const r = try c.compiler(&.{ "check", "--diagnostics=json", try c.fixturePath() });
+        const got = summarize(c.arena, r.stderr);
+        if (r.exit_code != 1) {
+            detail("{s}: expected exit 1, got {d}\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.exit_code, r.stderr });
+            because("exit {d}, expected 1: {s}", .{ r.exit_code, got });
+            classify("{s}", .{failSignature(c.arena, r)});
+            return error.UnexpectedExitCode;
+        }
+        if (r.stdout.len != 0) {
+            because("stdout is not empty: {s}", .{oneLine(c.arena, r.stdout)});
+            classify("{s} why=stdout", .{failSignature(c.arena, r)});
+            return error.UnexpectedStdout;
+        }
+        const trimmed = std.mem.trim(u8, r.stderr, " \r\n");
+        const diags = std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, c.arena, trimmed, .{}) catch {
+            because("stderr is not a diagnostics array: {s}", .{got});
+            classify("{s}", .{failSignature(c.arena, r)});
+            return error.DiagnosticsNotJson;
+        };
+
+        // Whether the codes the run produced are the ones the golden lists:
+        // if not, the fixture is red as `why=code`; if so, the difference is
+        // in the count, the positions or the text.
+        const sig = failSignature(c.arena, r);
+        const same_set = std.mem.eql(u8, try codeSet(c.arena, diags), try wantedSet(c.arena, wanted));
+
+        if (diags.len != wanted.len) {
+            detail("{s}: expected {d} diagnostics, got {d}\n--- stderr ---\n{s}\n", .{ c.fixture.name, wanted.len, diags.len, r.stderr });
+            because("{d} diagnostics, expected {d}: {s}", .{ diags.len, wanted.len, got });
+            classify("{s} why={s}", .{ sig, if (same_set) "count" else "code" });
+            return error.DiagnosticCount;
+        }
+        for (wanted, diags, 1..) |want, d, n| {
+            const code = @tagName(d.code);
+            if (!want.matchesAt(d)) {
+                const expected_at = try want.at(c.arena);
+                detail("{s}: diagnostic {d} is {s} at {s}:{d}:{d}, expected {s} at {s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, n, code, d.span.file, d.span.start.line, d.span.start.col, want.code, expected_at, r.stderr });
+                because("diagnostic {d} is {s} {d}:{d}, expected {s} {s} (all: {s})", .{ n, code, d.span.start.line, d.span.start.col, want.code, expected_at, got });
+                classify("{s} why={s}", .{ sig, if (same_set) "position" else "code" });
+                return error.DiagnosticMismatch;
+            }
+            for (want.contains) |needle| {
+                if (std.mem.indexOf(u8, d.message, needle) == null) {
+                    detail("{s}: diagnostic {d}'s message lacks \"{s}\"\n--- message ---\n{s}\n", .{ c.fixture.name, n, needle, d.message });
+                    because("{s} {d}:{d} message lacks \"{s}\"", .{ code, d.span.start.line, d.span.start.col, needle });
+                    classify("{s} why=message", .{sig});
+                    return error.DiagnosticMismatch;
+                }
+            }
+            for (want.lacks) |needle| {
+                if (std.mem.indexOf(u8, d.message, needle) != null) {
+                    detail("{s}: diagnostic {d}'s message contains \"{s}\"\n--- message ---\n{s}\n", .{ c.fixture.name, n, needle, d.message });
+                    because("{s} {d}:{d} message contains \"{s}\"", .{ code, d.span.start.line, d.span.start.col, needle });
+                    classify("{s} why=message", .{sig});
+                    return error.DiagnosticMismatch;
+                }
+            }
+        }
     }
 
     /// One arm of the depth sweep. The suffix of the NAME says which:
@@ -470,23 +1006,23 @@ const Case = struct {
         const stem = c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
         if (std.mem.endsWith(u8, stem, "Deep")) {
             if (!c.goldenExists("diag") and !c.bless) {
-                std.debug.print("{s}: a check/depth `Deep` fixture needs a .diag golden\n", .{c.fixture.name});
+                detail("{s}: a check/depth `Deep` fixture needs a .diag golden\n", .{c.fixture.name});
                 return error.MissingDiagGolden;
             }
             return c.bad();
         }
         if (!std.mem.endsWith(u8, stem, "Ok")) {
-            std.debug.print("{s}: a check/depth fixture must be named `…Ok.beni` or `…Deep.beni`\n", .{c.fixture.name});
+            detail("{s}: a check/depth fixture must be named `…Ok.beni` or `…Deep.beni`\n", .{c.fixture.name});
             return error.UnpairedDepthFixture;
         }
         if (c.goldenExists("diag")) {
-            std.debug.print("{s}: a check/depth `Ok` fixture must check CLEAN, so it must have no .diag\n", .{c.fixture.name});
+            detail("{s}: a check/depth `Ok` fixture must check CLEAN, so it must have no .diag\n", .{c.fixture.name});
             return error.UnexpectedDiagGolden;
         }
         const r = try c.compiler(&.{ "check", try c.fixturePath() });
         try expectExit(0, r);
         if (r.stderr.len != 0) {
-            std.debug.print("{s}: one level under the guard must produce no diagnostic\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
+            detail("{s}: one level under the guard must produce no diagnostic\n--- stderr ---\n{s}\n", .{ c.fixture.name, r.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
     }
@@ -523,7 +1059,7 @@ const Case = struct {
     /// that a development build does not have.
     fn buildBad(c: Case) !void {
         if (!c.fixture.project) {
-            std.debug.print("{s}: a build/bad fixture is a DIRECTORY holding a whole project\n", .{c.fixture.name});
+            detail("{s}: a build/bad fixture is a DIRECTORY holding a whole project\n", .{c.fixture.name});
             return error.NotAProjectFixture;
         }
         var w = try World.init(testing.allocator, testing.io);
@@ -566,9 +1102,9 @@ const Case = struct {
             try dev.appendSlice(c.arena, args.items[0..3]);
             try dev.append(c.arena, "--out=dev");
             try dev.appendSlice(c.arena, sources.items);
-            const ok = try w.runWith(try c.argv(dev.items), .{ .raw_diagnostics = true });
+            const ok = try w.runWith(try c.argv(dev.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
             if (ok.exit_code != 0 or ok.stderr.len != 0) {
-                std.debug.print(
+                detail(
                     "{s}: a build/bad-release fixture must build CLEAN without --release; it exited {d}\n--- stderr ---\n{s}\n",
                     .{ c.fixture.name, ok.exit_code, ok.stderr },
                 );
@@ -576,20 +1112,20 @@ const Case = struct {
             }
         }
 
-        const built = try w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true });
+        const built = try w.runWith(try c.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
         if (built.exit_code != 1) {
-            std.debug.print(
+            detail(
                 "{s}: a build/bad fixture must FAIL the build; it exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
                 .{ c.fixture.name, built.exit_code, built.stdout, built.stderr },
             );
             return error.BuildDidNotFail;
         }
         if (w.exists("out")) {
-            std.debug.print("{s}: a refused build must write no out/ (boundary.md §4)\n", .{c.fixture.name});
+            detail("{s}: a refused build must write no out/ (boundary.md §4)\n", .{c.fixture.name});
             return error.RefusedBuildWroteOutput;
         }
         if (!c.goldenExists("diag") and !c.bless) {
-            std.debug.print("{s}: a build/bad fixture without its _expected.diag is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{c.fixture.name});
+            detail("{s}: a build/bad fixture without its _expected.diag is a failure, not a pass; set BENI_WRITE_EXPECTED=1 to create it\n", .{c.fixture.name});
             return error.MissingDiagGolden;
         }
         try c.expectGolden("diag", built.stderr);
@@ -606,7 +1142,7 @@ const Case = struct {
         const again = try c.inProject(&.{ "fmt", "--stdout", "Fixed.beni" });
         try expectExit(0, again);
         if (!std.mem.eql(u8, r.stdout, again.stdout)) {
-            std.debug.print("{s}: formatter output is not a fixed point\n--- first ---\n{s}\n--- second ---\n{s}\n", .{ c.fixture.name, r.stdout, again.stdout });
+            detail("{s}: formatter output is not a fixed point\n--- first ---\n{s}\n--- second ---\n{s}\n", .{ c.fixture.name, r.stdout, again.stdout });
             return error.NotAFixedPoint;
         }
 
@@ -618,7 +1154,7 @@ const Case = struct {
         try expectExit(0, before);
         try expectExit(0, after);
         if (!std.mem.eql(u8, try sortImports(c.arena, before.stdout), try sortImports(c.arena, after.stdout))) {
-            std.debug.print("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
+            detail("{s}: formatting changed the AST\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, before.stdout, after.stdout });
             return error.AstChanged;
         }
 
@@ -636,7 +1172,7 @@ const Case = struct {
         const kept = try commentTrailer(c.arena, before_comments.stdout);
         const printed = try commentTrailer(c.arena, after_comments.stdout);
         if (!std.mem.eql(u8, kept, printed)) {
-            std.debug.print("{s}: formatting changed the comments\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, kept, printed });
+            detail("{s}: formatting changed the comments\n--- before ---\n{s}\n--- after ---\n{s}\n", .{ c.fixture.name, kept, printed });
             return error.CommentsChanged;
         }
     }
@@ -702,6 +1238,9 @@ const Case = struct {
 
         var dev: std.ArrayList([]const u8) = .empty;
         try dev.appendSlice(c.arena, &.{ "build", "--platform=node", "--out=out" });
+        // Pending mode reads the codes of a refused build, to classify why a
+        // red fixture is red (`classify`); the corpus keeps the rendered form.
+        if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
         try dev.appendSlice(c.arena, sources.items);
         try c.runOnce("out", dev.items, "expected", c.bless);
         // The release pass never blesses `expected`: it is the DEV pass's
@@ -711,6 +1250,7 @@ const Case = struct {
         const separate = c.goldenExists("release-expected");
         var release: std.ArrayList([]const u8) = .empty;
         try release.appendSlice(c.arena, &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=release" });
+        if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
         try release.appendSlice(c.arena, sources.items);
         try c.runOnce(
             "release",
@@ -724,27 +1264,36 @@ const Case = struct {
     fn runOnce(c: Case, out_dir: []const u8, args: []const []const u8, golden: []const u8, bless: bool) !void {
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
-            std.debug.print("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
+            detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
+            because("[{s}] build exit {d}: {s}", .{ out_dir, built.exit_code, summarize(c.arena, built.stderr) });
+            classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
             return error.BuildFailed;
         }
         if (built.stderr.len != 0) {
-            std.debug.print("{s} [{s}]: a run fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
+            detail("{s} [{s}]: a run fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
+            because("[{s}] diagnostics on a build that must be clean: {s}", .{ out_dir, summarize(c.arena, built.stderr) });
+            classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
             return error.GoodFixtureHasDiagnostics;
         }
 
         const entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out_dir});
-        const program = c.w.node(entry) catch |err| {
-            std.debug.print("{s} [{s}]: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
+        const program = c.w.nodeWith(entry, c.cfg.timeout_ms) catch |err| {
+            detail("{s} [{s}]: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
             return err;
         };
         if (program.exit_code != 0) {
-            std.debug.print(
+            detail(
                 "{s} [{s}]: the emitted program exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n",
                 .{ c.fixture.name, out_dir, program.exit_code, program.stdout, program.stderr },
             );
+            because("[{s}] program exit {d}: {s}", .{ out_dir, program.exit_code, summarize(c.arena, program.stderr) });
+            classify("{s}: exit=0 program-exit={d}", .{ passName(out_dir), program.exit_code });
             return error.ProgramFailed;
         }
-        try c.expectGoldenMaybeBless(golden, program.stdout, bless);
+        c.expectGoldenMaybeBless(golden, program.stdout, bless) catch |err| {
+            classify("{s}: exit=0 stdout-differs", .{passName(out_dir)});
+            return err;
+        };
     }
 
     /// Compile the fixture for the Node platform and golden the module it
@@ -806,11 +1355,11 @@ const Case = struct {
 
         const built = try c.inProject(args.items);
         if (built.exit_code != 0) {
-            std.debug.print("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
+            detail("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
             return error.BuildFailed;
         }
         if (built.stderr.len != 0) {
-            std.debug.print("{s}: an emit fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
+            detail("{s}: an emit fixture must compile with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
 
@@ -820,7 +1369,7 @@ const Case = struct {
             c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
         const emitted_path = try std.fmt.allocPrint(c.arena, "out/{s}.mjs", .{stem});
         const js = c.w.read(emitted_path) catch |err| {
-            std.debug.print("{s}: the build wrote no {s} ({t})\n", .{ c.fixture.name, emitted_path, err });
+            detail("{s}: the build wrote no {s} ({t})\n", .{ c.fixture.name, emitted_path, err });
             return err;
         };
         try c.expectGolden("js", js);
@@ -839,7 +1388,7 @@ const Case = struct {
             const line = std.mem.trim(u8, raw, " \t\r");
             if (line.len == 0 or line[0] == '#') continue;
             if (c.w.read(line)) |_| {
-                std.debug.print("{s}: the build wrote {s}, which elimination should have removed\n", .{ c.fixture.name, line });
+                detail("{s}: the build wrote {s}, which elimination should have removed\n", .{ c.fixture.name, line });
                 return error.UnexpectedOutputFile;
             } else |_| {}
         }
@@ -859,7 +1408,7 @@ const Case = struct {
         const checked = try c.compiler(&.{ "check", path });
         try expectExit(0, checked);
         if (checked.stderr.len != 0) {
-            std.debug.print("{s}: a dispatch fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+            detail("{s}: a dispatch fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
             return error.GoodFixtureHasDiagnostics;
         }
         const r = try c.compiler(&.{ "dump", "--stage=dispatch", path });
@@ -881,13 +1430,14 @@ const Case = struct {
     /// unnoticed.
     fn checkGood(c: Case) !void {
         const path = try c.fixturePath();
-        const checked = try c.compiler(&.{ "check", path });
+        // Pending mode reads the codes of a refusal to sign it (`classify`).
+        const checked = try c.compiler(if (c.cfg.mode == .pending) &.{ "check", "--diagnostics=json", path } else &.{ "check", path });
         try expectExit(0, checked);
         if (checked.stderr.len != 0 or c.goldenExists("diag")) {
             const json = try c.compiler(&.{ "check", "--diagnostics=json", path });
             try expectExit(0, json);
             if (json.stderr.len == 0 and !c.bless) {
-                std.debug.print("{s}: a silent check/good fixture must not have a .diag golden\n", .{c.fixture.name});
+                detail("{s}: a silent check/good fixture must not have a .diag golden\n", .{c.fixture.name});
                 return error.UnexpectedDiagGolden;
             }
             try c.expectGolden("diag", json.stderr);
@@ -907,19 +1457,175 @@ const Case = struct {
         const golden = try c.goldenPath(ext);
         if (bless) {
             try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = golden, .data = actual });
-            std.debug.print("blessed {s}\n", .{golden});
+            detail("blessed {s}\n", .{golden});
             return;
         }
         const expected = Io.Dir.cwd().readFileAlloc(testing.io, golden, c.arena, .limited(world.max_stream_bytes)) catch |err| {
-            std.debug.print("{s}: cannot read golden {s} ({t}); set BENI_WRITE_EXPECTED=1 to create it\n", .{ c.fixture.name, golden, err });
+            detail("{s}: cannot read golden {s} ({t}); set BENI_WRITE_EXPECTED=1 to create it\n", .{ c.fixture.name, golden, err });
             return error.MissingGolden;
         };
         if (!std.mem.eql(u8, expected, actual)) {
-            std.debug.print("{s}: output differs from {s}; set BENI_WRITE_EXPECTED=1 to bless\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, golden, expected, actual });
+            detail("{s}: output differs from {s}; set BENI_WRITE_EXPECTED=1 to bless\n--- expected ---\n{s}\n--- actual ---\n{s}\n", .{ c.fixture.name, golden, expected, actual });
+            because("{s} differs: expected `{s}`, got `{s}`", .{ ext, oneLine(c.arena, expected), if (std.mem.eql(u8, ext, "diag")) summarize(c.arena, actual) else oneLine(c.arena, actual) });
+            // `expected` is a `run/` stdout, which `runOnce` signs with its pass.
+            if (!std.mem.eql(u8, ext, "diag") and !std.mem.eql(u8, ext, "expected") and !std.mem.eql(u8, ext, "release-expected")) classify("exit=0 {s}-differs", .{ext});
             return error.GoldenMismatch;
         }
     }
 };
+
+/// One line of a `.codes` golden (`plans/checker-rewrite.md` §2.3):
+///
+///   code [file:]line:col [contains "…" | lacks "…"]…
+///   code [file:]line:*   [contains "…" | lacks "…"]…
+///   code [file:]*        [contains "…" | lacks "…"]…
+///
+/// `file`, when given, must equal the span's file or be a path suffix of
+/// it, which is how a project fixture names a diagnostic in one module.
+///
+/// `*` leaves the column (`line:*`) or the whole position open. It exists
+/// for the one case a red fixture
+/// cannot avoid: the finding fixes the code but the spec has not yet said
+/// which region carries it. Each use says so in the fixture's intent
+/// comment, and the slice that turns the fixture green blesses the real
+/// `.diag`, which pins the position.
+const CodeLine = struct {
+    code: []const u8,
+    file: ?[]const u8,
+    /// Null: `*`, any position; a line with a null `col`: `line:*`.
+    line: ?u32,
+    col: ?u32,
+    contains: []const []const u8,
+    lacks: []const []const u8,
+
+    /// The code, the file and the position agree (the text is checked
+    /// separately, so a wrong text is reported as such).
+    fn matchesAt(want: CodeLine, d: diagnostic.Diagnostic) bool {
+        if (!std.mem.eql(u8, @tagName(d.code), want.code)) return false;
+        if (want.file) |file| {
+            const exact = std.mem.eql(u8, d.span.file, file);
+            const suffix = std.mem.endsWith(u8, d.span.file, file) and d.span.file.len > file.len and
+                d.span.file[d.span.file.len - file.len - 1] == '/';
+            if (!exact and !suffix) return false;
+        }
+        if (want.line) |line| {
+            if (d.span.start.line != line) return false;
+        }
+        if (want.col) |col| {
+            if (d.span.start.col != col) return false;
+        }
+        return true;
+    }
+
+    fn at(want: CodeLine, arena: std.mem.Allocator) ![]const u8 {
+        const line = want.line orelse return "*";
+        const col = want.col orelse return std.fmt.allocPrint(arena, "{d}:*", .{line});
+        return std.fmt.allocPrint(arena, "{d}:{d}", .{ line, col });
+    }
+};
+
+/// `code:<a>,<b>…` over `diags`: their codes, sorted and unique.
+fn codeSet(arena: std.mem.Allocator, diags: []const diagnostic.Diagnostic) ![]const u8 {
+    var names: std.ArrayList([]const u8) = .empty;
+    for (diags) |d| try names.append(arena, @tagName(d.code));
+    return joinSet(arena, names.items);
+}
+
+fn wantedSet(arena: std.mem.Allocator, wanted: []const CodeLine) ![]const u8 {
+    var names: std.ArrayList([]const u8) = .empty;
+    for (wanted) |w| try names.append(arena, w.code);
+    return joinSet(arena, names.items);
+}
+
+fn joinSet(arena: std.mem.Allocator, names: [][]const u8) ![]const u8 {
+    std.mem.sort([]const u8, names, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    var unique: std.ArrayList([]const u8) = .empty;
+    for (names) |name| {
+        if (unique.items.len != 0 and std.mem.eql(u8, unique.items[unique.items.len - 1], name)) continue;
+        try unique.append(arena, name);
+    }
+    return std.mem.join(arena, ",", unique.items);
+}
+
+fn parseCodes(arena: std.mem.Allocator, text: []const u8) ![]const CodeLine {
+    var out: std.ArrayList(CodeLine) = .empty;
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        var rest = line;
+        const code = try word(&rest);
+        // A misspelt code would keep a fixture red forever, signed as if
+        // the finding were the reason: refuse it as malformed instead.
+        if (std.meta.stringToEnum(diagnostic.Code, code) == null) return error.UnknownDiagnosticCode;
+        const where = try word(&rest);
+        // `[file:]line:col`, `[file:]line:*` (the line is fixed and the
+        // column is open), or `[file:]*` (the position is open).
+        var file: ?[]const u8 = null;
+        var row: ?u32 = null;
+        var col: ?u32 = null;
+        const last = std.mem.lastIndexOfScalar(u8, where, ':');
+        const tail = if (last) |l| where[l + 1 ..] else where;
+        const head = if (last) |l| where[0..l] else "";
+        if (std.mem.eql(u8, tail, "*")) {
+            if (last != null) {
+                // `line:*`, `file:line:*` or `file:*`.
+                const mid = std.mem.lastIndexOfScalar(u8, head, ':');
+                const piece = if (mid) |m| head[m + 1 ..] else head;
+                if (std.fmt.parseInt(u32, piece, 10)) |n| {
+                    row = n;
+                    if (mid) |m| file = head[0..m];
+                } else |_| file = head;
+            }
+        } else {
+            if (last == null) return error.BadCodesLine;
+            col = try std.fmt.parseInt(u32, tail, 10);
+            const mid = std.mem.lastIndexOfScalar(u8, head, ':');
+            row = try std.fmt.parseInt(u32, if (mid) |m| head[m + 1 ..] else head, 10);
+            if (mid) |m| file = head[0..m];
+        }
+        var contains: std.ArrayList([]const u8) = .empty;
+        var lacks: std.ArrayList([]const u8) = .empty;
+        while (true) {
+            rest = std.mem.trimStart(u8, rest, " \t");
+            if (rest.len == 0) break;
+            const verb = try word(&rest);
+            rest = std.mem.trimStart(u8, rest, " \t");
+            if (rest.len < 2 or rest[0] != '"') return error.BadCodesLine;
+            const close = std.mem.indexOfScalarPos(u8, rest, 1, '"') orelse return error.BadCodesLine;
+            const needle = rest[1..close];
+            rest = rest[close + 1 ..];
+            if (std.mem.eql(u8, verb, "contains")) {
+                try contains.append(arena, needle);
+            } else if (std.mem.eql(u8, verb, "lacks")) {
+                try lacks.append(arena, needle);
+            } else return error.BadCodesLine;
+        }
+        try out.append(arena, .{
+            .code = code,
+            .file = file,
+            .line = row,
+            .col = col,
+            .contains = contains.items,
+            .lacks = lacks.items,
+        });
+    }
+    if (out.items.len == 0) return error.EmptyCodes;
+    return out.items;
+}
+
+/// The next space-delimited word of `rest`, advancing past it.
+fn word(rest: *[]const u8) ![]const u8 {
+    const s = std.mem.trimStart(u8, rest.*, " \t");
+    if (s.len == 0) return error.BadCodesLine;
+    const end = std.mem.indexOfAny(u8, s, " \t") orelse s.len;
+    rest.* = s[end..];
+    return s[0..end];
+}
 
 /// The `-- comments` trailer of a tokens dump, one line per comment as
 /// `<kind> <body>`.
@@ -992,7 +1698,15 @@ fn sortImports(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
 
 fn expectExit(expected: u8, r: world.Result) !void {
     if (r.exit_code != expected) {
-        std.debug.print("expected exit {d}, got {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ expected, r.exit_code, r.stdout, r.stderr });
+        detail("expected exit {d}, got {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ expected, r.exit_code, r.stdout, r.stderr });
+        because("exit {d}, expected {d}: {s}", .{ r.exit_code, expected, summarize(scratch.allocator(), r.stderr) });
+        classify("{s}", .{failSignature(scratch.allocator(), r)});
         return error.UnexpectedExitCode;
     }
+}
+
+/// The pass a `run/` fixture's build belongs to, by its `--out`: `dev` or
+/// `release`.
+fn passName(out_dir: []const u8) []const u8 {
+    return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";
 }

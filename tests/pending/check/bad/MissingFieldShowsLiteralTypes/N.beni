@@ -1,0 +1,7 @@
+-- CK-59: see M.beni.
+import M
+
+
+pub go : String
+go =
+    M.describe { name = "z", n = 3 }

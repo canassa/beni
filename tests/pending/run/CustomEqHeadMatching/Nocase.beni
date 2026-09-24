@@ -1,0 +1,13 @@
+-- CK-27: see H.beni. `Ci`'s own `eq` ignores case, so structural equality
+-- and `Ci.eq` disagree on `Ci "a"` against `Ci "A"`.
+pub type Ci
+    = Ci String
+
+
+pub eq : Ci, Ci -> Bool
+eq left right =
+    case left of
+        Ci a ->
+            case right of
+                Ci b ->
+                    String.toLower a == String.toLower b

@@ -1,0 +1,4 @@
+# The literal's own field types, as checker-v2.md §6.5 renders them; the
+# expected record already contains "name : String", so the line pins the
+# whole literal.
+missing_field N.beni:7:16 contains "{ n : number, name : String }" contains "an `extra`"

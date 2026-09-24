@@ -197,6 +197,8 @@ plan data, not a TypeStore. Open questions there precede dependent implementatio
 
 ## 5. The type store
 
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §4.1–§4.2 replaces the method-constraint set on `Flags` with references to *wanteds* whose method types are graph children for level adjustment and copying (`Walk.owned`), but not for the occurs check (`Walk.structural`), and replaces memo clearing with epoch marks. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 Elm's `Type.Variable` + Roc's `types/store.zig`, in the design's data rules:
 
 ```zig
@@ -317,6 +319,8 @@ What each Bir form generates is Elm's, with the beni-specific rules:
 
 ### 6.2 Solving
 
+> **Checker v2 (2026-09-24).** [`checker-v2.md`](checker-v2.md) §7–§8: `unify` merges and queues and never resolves or reports; the occurs check runs at every binder; an annotated binding's rigids are checked for generality (I1). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 Elm's `Type/Solve.hs` on the store above: walk the tree; `equal` calls `unify`; `let`
 introduces a new rank, solves the headers, **generalises** by scanning only the pool of
 variables allocated at the current rank (design §7 #2) and adjusting ranks of variables that
@@ -356,6 +360,8 @@ which is what turns a constraint into a call target and an evidence slot.
 
 ### 6.3 Generalisation and the ad-hoc kinds
 
+> **Checker v2 (2026-09-24).** The rule that a constrained `let` binding is not generalised is retired by owner decision D5 ([`checker-v2.md`](checker-v2.md) §8.4, slice R14). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 A generalised scheme records, per quantified variable, its kind and equatable flag. That is
 the entire mechanism of §3.1: `number` and `appendable` are closed sets tested by a flat
 membership check at unification; `equatable` propagates through generalisation exactly as
@@ -380,6 +386,8 @@ M3 decides how a literal of type `number` is emitted.
 
 ### 6.4 Obligations, discharged post-solve
 
+> **Checker v2 (2026-09-24).** An obligation whose variable escaped is kept for the enclosing boundary, not reported at the inner one ([`checker-v2.md`](checker-v2.md) §8.5, I3). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 Each obligation is `(kind, var, region)` in a per-rank list. At generalisation time, for each
 obligation whose variable's root is:
 
@@ -401,6 +409,8 @@ guard that poisons must report first", applied here. → `static-dispatch-spike.
 
 ### 6.5 `?`
 
+> **Checker v2 (2026-09-24), owner decision D2.** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 `try(e, target)` where the enclosing function's declared or inferred result type is `r`:
 speculatively unify `e` with `Result x a` and `r` with `Result x b` (journal mark); if that
 fails, roll back and try `Maybe a` / `Maybe b`; if both fail, `try_shape` naming what `e` is.
@@ -419,6 +429,8 @@ another `?`'s retracted guess leaves nothing behind — and a `?` that solved as
 bug, and the backend says so (`internal`) rather than guessing.
 
 ### 6.6 Exhaustiveness
+
+> **Checker v2 (2026-09-24).** The per-declaration gate becomes a failure bit set only by **error** diagnostics, shared by every member of a binding group ([`checker-v2.md`](checker-v2.md) §15.2, CK-11). The sentence below about "the *solved* types" is drift (CK-61); `Exhaustive.zig`'s header is right, and slice R2 corrects this text.
 
 After a module is solved, every `case` (including the ones `if` lowered to) is checked with
 Maranget's usefulness algorithm over the *solved* types: constructors of an ADT come from its
@@ -577,6 +589,11 @@ it is written:
 
 ### 6.7 Top-level value cycles
 
+> **Checker v2 (2026-09-24).** The "what defers" paragraph below was corrected on 2026-09-24 (CK-34):
+> a zero-parameter declaration of non-function type with evidence RUNS at each read. One
+> `Convention` function decides it for `Cycles`, `Edges`, `Reach` and `Lower`
+> ([`checker-v2.md`](checker-v2.md) §12.5, slice R2).
+
 `language.md` §7's initialisation rule, top-level half: a top-level **value** may not be reachable
 from its own initialiser. The code is `cyclic_value` (§8.1) and the pass is `check/Cycles.zig`.
 
@@ -604,9 +621,14 @@ between them, so the honest statement is that the pass is **below this machine's
 that it is free.
 
 **What is a node, and what defers.** A declaration is a node when it is a value with a body. It
-**defers** — nothing of it runs at module load — when it has parameters, when it has evidence
-parameters, or when its entire body is a `lambda`; those are the emitter's own three readings
-(`js/Lower.declaration` splits on the same triple). A strongly connected component with at least
+**defers** — nothing of it runs at module load — when it has parameters, or when its entire body is a
+`lambda`. **Evidence parameters alone do not defer** (corrected 2026-09-24, CK-34): since queue row 57
+a zero-parameter declaration with evidence is CALLED at every read, so its body runs then, and a
+self-reference recurses. From R2, a zero-parameter value of **function** type with evidence is
+defined as a function of its evidence and its type's parameters, so it defers too. `js/Lower.declaration` splits on the same readings, and from slice R2 of the
+checker rewrite one `check/Convention.zig` decides them for both (`checker-v2.md` §12.5). Until R2
+lands, `Cycles.zig:152-154` still treats evidence as deferring, which is CK-34's defect, not the
+contract. A strongly connected component with at least
 one node that RUNS is refused; one made only of deferring nodes is mutual recursion between
 functions and is fine. The analysis is conservative in exactly the shape §7 describes: mentioning
 a function counts as running it.

@@ -1,0 +1,29 @@
+-- CK-06: `?` is a deferred obligation, decided when either side becomes
+-- concrete (owner decision D2, checker-v2.md §8.6). In `h` and `k` nothing
+-- says `Result` and the enclosing result `Just (…)` says `Maybe`, so both are
+-- `Maybe Int -> Maybe Int`. Expected `Just 2`, `Just 3`.
+--
+-- Oracle twin, run on 7427828: this file with `h` and `k` annotated
+-- `Maybe Int -> Maybe Int` prints `Just 2`, `Just 3`. As written, 7427828
+-- commits `?` to `Result` greedily and refuses it with four TYPE MISMATCHes
+-- (`Maybe a` against `Result b c`).
+import Node exposing (Program)
+
+
+h m =
+    let
+        v =
+            m?
+    in
+    Just (v + 1)
+
+
+k m =
+    case m? of
+        v ->
+            Just (v + 1)
+
+
+main : Program
+main =
+    Node.printLines [ Debug.toString (h (Just 1)), Debug.toString (k (Just 2)) ]

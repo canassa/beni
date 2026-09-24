@@ -1,0 +1,34 @@
+-- A regression guard from the checker-v2 design review (round 3; plans/
+-- checker-rewrite.md §5.4, D14): a `let` helper whose receiver is the
+-- enclosing single-member group's own parameter — `q z = x.combine z` — is
+-- generalised in `z`, so `q 1` and `q "s"` both check and `f (T 4)` is
+-- `( 4, 4 )`. D14's refusal is for receivers from ANOTHER member of a
+-- recursive group (CK-72); single-member groups are left alone. 7427828 gets
+-- it right.
+import Node exposing (Program)
+
+
+type T
+    = T Int
+
+
+pub combine (T a) z =
+    a
+
+
+f : T -> ( Int, Int )
+f x =
+    let
+        q z =
+            x.combine z
+    in
+    ( q 1, q "s" )
+
+
+main : Program
+main =
+    let
+        ( a, b ) =
+            f (T 4)
+    in
+    Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

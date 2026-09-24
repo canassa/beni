@@ -1,0 +1,29 @@
+-- CK-73: see Later.beni. The same module with the methods first.
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub g (Box a) u =
+    0
+
+
+pub h (K m) u =
+    let
+        _ =
+            \w -> (K 0).f ()
+    in
+    Box m
+
+
+pub combine (Box a) z =
+    a
+
+
+pub f (K n) u =
+    case ( (\y -> y.h ()) (K n), (Box 1).g (), (Box "s").g () ) of
+        ( _, _, _ ) ->
+            ( 1, 2 )

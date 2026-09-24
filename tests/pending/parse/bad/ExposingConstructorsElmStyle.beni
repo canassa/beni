@@ -1,0 +1,20 @@
+-- CK-47: Elm's `exposing (T(..))` is one mistake and gets ONE diagnostic,
+-- at the `(..)`, saying how beni exposes constructors (by name, beside the
+-- type); the uses of `Decoding` and `Encoding` below then stay quiet, per
+-- Elm's stop-at-first-phase rule. On 7427828 it is EXPECTED TOKEN, two
+-- INVALID CHARACTERs on the same line, and one UNKNOWN CONSTRUCTOR per use.
+--
+-- The code and position are D8 as amended (checker-v2.md §21): `expected_token`
+-- at the `(` after the type name, and the message suggests the n-ary form
+-- `exposing (Direction, Decoding, Encoding)` — so it names the constructors.
+import Schema exposing (Direction(..))
+
+
+flip : Direction -> Direction
+flip d =
+    case d of
+        Decoding ->
+            Encoding
+
+        Encoding ->
+            Decoding

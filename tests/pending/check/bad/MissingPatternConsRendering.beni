@@ -1,0 +1,31 @@
+-- CK-60: a missing pattern is rendered with no parentheses that the grammar
+-- does not need: `Group (Circle _ :: _)`, as Elm writes it (checker-v2.md
+-- §15.3, R13). On 7427828 it is `Group ((Circle _) :: _)`. Elm's
+-- `patternToDoc` prints a cons head in the `Head` context, which adds no
+-- parentheses (`references/elm/compiler/src/Reporting/Error/Pattern.hs`,
+-- lines 139-165), so the catalogue's SUSPECTED is confirmed.
+
+
+type Shape
+    = Circle Int
+    | Square Int
+    | Group (List Shape)
+
+
+name : Shape -> String
+name shape =
+    case shape of
+        Circle _ ->
+            "circle"
+
+        Square _ ->
+            "square"
+
+        Group [] ->
+            "empty"
+
+        Group (Square _ :: _) ->
+            "squares"
+
+        Group (Group _ :: _) ->
+            "groups"

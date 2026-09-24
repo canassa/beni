@@ -1,0 +1,33 @@
+-- A regression guard from the checker-v2 design review (S-new-4; plans/
+-- checker-rewrite.md §5.1): a `let` helper whose receiver is its OWN
+-- parameter and whose argument is the outer `x` — `g y = y.combine x` — is
+-- used twice at `T`, so `f 5` is `( 6, 7 )`. 7427828 gets it right, and it
+-- must stay green through R14, when constrained `let` helpers generalise
+-- (D5).
+import Node exposing (Program)
+
+
+type T
+    = T Int
+
+
+pub combine : T, Int -> Int
+combine (T a) b =
+    a + b
+
+
+f x =
+    let
+        g y =
+            y.combine x
+    in
+    ( g (T 1), g (T 2) )
+
+
+main : Program
+main =
+    let
+        ( a, b ) =
+            f 5
+    in
+    Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

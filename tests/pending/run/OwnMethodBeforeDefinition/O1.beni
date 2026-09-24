@@ -1,0 +1,16 @@
+-- CK-36: see Box.beni.
+type T
+    = T Int
+
+
+pub use : Int, Int -> Bool
+use a b =
+    T a == T b
+
+
+eq left right =
+    case left of
+        T x ->
+            case right of
+                T y ->
+                    modBy x 10 == modBy y 10

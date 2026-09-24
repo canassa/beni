@@ -1,0 +1,17 @@
+-- CK-77: a derived-context query that reaches an in-flight method merges
+-- the asker (checker-v2.md §11.2). `W`'s `eq` needs `T`'s `key` through
+-- `H.eq`'s `where a.key`; `pick` compares `W`s, and `key`'s body calls
+-- `pick` at `1` and at `"s"`. So `pick` and `key` merge through the closed
+-- in-flight branch's ordinary wanted, `pick` is monomorphic inside the
+-- merged group, and `pick "s"` after `pick 1` is one `type_mismatch`, in
+-- both orders: `PickFirst` (round 4's `cbA`) and `KeyFirst` (`cbB`).
+-- Annotating `pick` or `key` lifts it. On 7427828 both are NOT EQUATABLE
+-- `W`, a refusal for the wrong reason.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.key : a, () -> Int
+eq (Holder x) (Holder y) =
+    x.key () == y.key ()

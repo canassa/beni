@@ -1,0 +1,49 @@
+-- CK-73: own methods used in a `case` scrutinee BEFORE their definitions
+-- check, and the later `let` helper `q` still generalises: `f 3` is
+-- `( 3, 3 )` (owner decision D3; checker-v2.md §9.1's per-frame `ready`
+-- queues, drained eagerly). Expected `3 3`.
+--
+-- Oracle twin, run on 7427828: the corpus guard
+-- `run/ScrutineeMethodFirst.beni`, this program with `g`, `h` and `combine`
+-- written first (round 3's `rq2`), prints `3 3`. As written (`rq1`),
+-- 7427828 refuses it with METHOD NEEDS AN ANNOTATION at `y.h`.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+f n =
+    case ( (\y -> y.h ()) (K n), (Box 1).g () ) of
+        ( r, _ ) ->
+            let
+                q z =
+                    r.combine z
+            in
+            ( q 1, q "s" )
+
+
+pub g (Box a) u =
+    0
+
+
+pub h (K m) u =
+    Box m
+
+
+pub combine (Box a) z =
+    a
+
+
+main : Program
+main =
+    let
+        ( a, b ) =
+            f 3
+    in
+    Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

@@ -1,0 +1,3 @@
+-- CK-39: see Main.beni.
+pub type alias P =
+    { x : Int, y : String }

@@ -441,6 +441,8 @@ falls through to the module rule and finds `Basics.toString` or fails there.
 
 ### 3.3 Derivation, and who wins
 
+> **Checker v2 (2026-09-24), owner decision D1 (amended the same day).** A private method answers dispatch only for uses inside its module, including structural shapes (records, tuples, lists) derived there. It is still the module's method for every type the module declares, under the module rule: step 1 below is unchanged by privacy; from any other module, reaching it directly or through derivation is `private_method`. A.63's "a private `eq` still lets every other module derive" is superseded ([`checker-v2.md`](checker-v2.md) §11.3). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 For a name that is not in the table, resolution of `(T, name)` is:
 
 1. the declaring module's own value `name`, `pub` (or any, in the same module) — **a user `pub eq`
@@ -721,6 +723,8 @@ There are no `Set.String` / `Set.Int` modules to delete.
 ---
 
 ## 6. The checker
+
+> **Checker v2 (2026-09-24).** §6.1–§6.4 and §6.3.1's capability paragraphs are replaced by [`checker-v2.md`](checker-v2.md) §4 and §7–§11: wanteds with evidence variables instead of constraint sets carrying sites, resolution outside `unify`, instance lookup by matching a method's head, one derived-context fixpoint instead of capability settling, deferral instead of priority groups. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
 
 This section extends `checker.md` §5 (the type store), §6.2 (solving), §6.3 (generalisation), §6.4
 (obligations) and §7 (the interface record). It is written as **rules**: an implementer building
@@ -1049,6 +1053,8 @@ declaration and poisons the variable — never silently, per `checker.md` §5's 
 must report first". `tests/corpus/check/depth/ConstraintChain{Ok,Deep}.beni` is the pair.
 
 ### 6.4 Generalisation and promotion
+
+> **Checker v2 (2026-09-24), owner decision D5.** Rule (a) is retired: a constrained `let` binding generalises when everything its requirements reach is its own, and constraint method types are graph children so an outer-rank receiver keeps its variables outer (HM(X); [`checker-v2.md`](checker-v2.md) §8.4, slice R14). Rule (b)'s assert is subsumed by I2. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
 
 Constraints ride on `Flags`, so `generalize` and `makeCopy` carry them within a module for free,
 with one addition: **`copyHelp` must copy each constraint's `fn_var` through the same memo** as the
@@ -1382,6 +1388,8 @@ of the sources alone.
 
 ## 7. The dispatch table
 
+> **Checker v2 (2026-09-24).** The table becomes evidence TREES with no `err` term and an argument-count assert (I7): [`checker-v2.md`](checker-v2.md) §13, effective at slice R2 for both checkers. `Site.parent`, the pre-order of A.68 and `evidence_index` go.
+
 The backend sees no types (`backend.md` §3; `Lower.Input` carries interfaces and a graph, never a
 store). Everything the checker decided about a method call therefore has to cross as data. The
 dispatch table is that data: one per module, flat, index-based, immutable once built, in the shape
@@ -1683,6 +1691,8 @@ module Shapes
 ---
 
 ## 8. The backend
+
+> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence (§8.1–§8.2's counts come from the table) and one `Convention` decides a constrained value's definition and calls ([`checker-v2.md`](checker-v2.md) §12.5, §13.3; slices R1–R2).
 
 Extends `backend.md` §4 (codegen), §5 (module output) and §6 (the calling convention). §6's
 "there isn't one" still holds for beni-level arity: what follows adds **hidden leading parameters**,
@@ -2039,6 +2049,8 @@ const Main$compare$unit = (x, y) => "EQ";
 ```
 
 ### 9.4 Nominal types
+
+> **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
 
 **All-nullary types** are bare tag strings, so `eq` is `===` and the checker gives the site
 `primitive strict_eq` directly rather than a derived function (§6.3.1 step 4) — there is nothing to
@@ -2795,6 +2807,12 @@ plus the bounded-recovery scenario in `tests/blackbox/abuse_test.zig`.
 
 ### 10.12 `method_needs_annotation`
 
+> **Checker v2 (2026-09-24), owner decision D3 (amended the same day).** Retired as an ordering
+> refusal. A use of a module's own untyped method checks that method's group nested **at the
+> moment of the use** ([`checker-v2.md`](checker-v2.md) §10,
+> slice R7). The code survives for one non-ordering case: a derived context entry indexed by a type
+> parameter that depends on an in-flight inferred method (`checker-v2.md` §11.2). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+
 Appended 2026-09-23, after §10.11, so no number above it moves (A.86).
 
 **Severity** error. **Region** the use: the operator, or the call. A method of the receiver's own
@@ -2825,6 +2843,8 @@ Fixture: `tests/corpus/check/bad/MethodNeedsAnnotation/` (the direct site and th
 ---
 
 ## 11. Known limits, and where the design may change
+
+> **Checker v2 (2026-09-24).** Two limits below are lifted by owner decisions: "a constrained `let` binding is monomorphic" (D5, [`checker-v2.md`](checker-v2.md) §8.4, slice R14) and, in §10.12, the annotation an own untyped method needed (D3, §10, slice R7). Both remain the current checker's behaviour until those slices land.
 
 Everything here is a limit the design **accepts on purpose**. None of it is a bug to be filed; each
 was either measured (§7 of the plan) or recorded in report 19, and the 2026-09-18 adoption took them

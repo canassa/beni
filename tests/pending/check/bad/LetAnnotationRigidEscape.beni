@@ -1,0 +1,20 @@
+-- CK-01: a `let` annotation `g : a -> a` whose body returns the enclosing
+-- `x` is false — `a` is tied to `x`'s type, so it is not "any type". It is
+-- `rigid_mismatch` at `x` (checker-v2.md §8.3, D7), and `g`'s scheme is
+-- poisoned so the caller below is not checked against the false annotation.
+-- On 7427828 it checks clean, `f` is `a -> String`, and `f 5` reaches
+-- `String.toUpper` with an Int.
+
+
+f x =
+    let
+        g : a -> a
+        g y =
+            x
+    in
+    g "hello"
+
+
+shout : String
+shout =
+    String.toUpper (f 5)

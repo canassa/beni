@@ -1,0 +1,9 @@
+-- CK-44: a record TYPE that names one field twice is `duplicate_field` at
+-- the second one, the same code a record literal gets (language.md §4). On
+-- 7427828 it checks clean while unused; used, it cascades into "This record
+-- does not have a `a` field: `{ a : a }` … need `{ a : Int, a : String }`",
+-- and the declaration dumps as `? -> String`.
+
+
+type alias R =
+    { a : Int, a : String }

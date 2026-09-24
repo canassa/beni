@@ -1,0 +1,37 @@
+-- CK-24: (queue row 74) a type wrapping a schema endpoint inherits the
+-- endpoint's settled exclusion (schema.md §3–§4; checker-v2.md §11.5):
+-- `Fn.Type` holds an `Int -> Int`, so it does not compare, and neither does
+-- `Wrap`, which holds a `Fn.Type`. Both `==` are `not_equatable`. On
+-- 7427828 only `sameFn`'s is reported and `same` checks clean: `Wrap`'s
+-- answer is settled before the endpoint's exclusion is known, and never
+-- revisited.
+import Schema exposing (Conversion)
+
+
+mk : Int -> Conversion Int (Int -> Int)
+mk n =
+    Debug.todo "checker-only conversion"
+
+
+conversion : Conversion Int (Int -> Int)
+conversion =
+    mk 0
+
+
+pub schema Fn tagged "kind" of
+    Wrapped as "wrapped"
+        payload : Int via conversion
+
+
+type Wrap
+    = Wrap Fn.Type
+
+
+same : Wrap, Wrap -> Bool
+same left right =
+    left == right
+
+
+sameFn : Fn.Type, Fn.Type -> Bool
+sameFn left right =
+    left == right

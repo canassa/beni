@@ -1,0 +1,26 @@
+-- CK-07: which failing record field is reported must not depend on symbol
+-- id order: `f g` fails on both `alpha` and `omega`, and the one named is
+-- the first by name TEXT, `alpha`, whose inner record lacks `apple`
+-- (checker-v2.md §7.2, I13). On 7427828 the message names `beta`, `omega`'s
+-- inner field, because `omega` is written first in `f`'s annotation and so
+-- interned first; the same file with the annotation's two fields swapped
+-- names `apple`. Field order in a record type means nothing, so the choice
+-- follows interning, not the program.
+--
+-- One file on purpose: across modules the ids also depend on which worker
+-- lexed which file, so the catalogue's two-module form (`Aaa` + `Main`) is
+-- red only most of the time at `--jobs` > 1 — that is CK-71.
+
+
+f : { omega : { beta : Int }, alpha : { apple : Int } } -> Int
+f r =
+    0
+
+
+g : { alpha : { cherry : Int }, omega : { delta : Int } }
+g =
+    { alpha = { cherry = 1 }, omega = { delta = 2 } }
+
+
+main =
+    f g

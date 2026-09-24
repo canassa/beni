@@ -1,0 +1,44 @@
+-- CK-33: see M.beni.
+import M
+import Node exposing (Program)
+
+
+maxOf : a, a -> a
+    where a.compare : a, a -> Order
+maxOf a b =
+    if a < b then
+        b
+
+    else
+        a
+
+
+h =
+    maxOf
+
+
+same =
+    (==)
+
+
+tf : Bool -> String
+tf b =
+    if b then
+        "t"
+
+    else
+        "f"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (h 1 2)
+        , h "a" "b"
+        , tf (same 1 2)
+        , tf (same "a" "a")
+        , String.fromInt (M.h 1 2)
+        , M.h "a" "b"
+        , String.fromInt (List.length (M.blank ++ [ 1 ]))
+        , String.fromInt (List.foldl [ 1, 5, 2 ] 0 M.h)
+        ]

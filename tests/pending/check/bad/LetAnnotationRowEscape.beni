@@ -1,0 +1,20 @@
+-- CK-01: (the `sk7` form) the escape goes through a ROW variable. `g`'s
+-- annotation promises any record `{ r | x : Int }`, and its body returns the
+-- enclosing `o`. It is `rigid_mismatch` at `o` inside `coerce`
+-- (checker-v2.md §8.3, D7), and the poisoned scheme keeps the caller silent.
+-- On 7427828 the error lands at the CALLER instead, as a record that is not
+-- closed.
+
+
+coerce o =
+    let
+        g : { r | x : Int } -> { r | x : Int }
+        g y =
+            o
+    in
+    g { x = 1, name = "n" }
+
+
+shout : String
+shout =
+    String.toUpper (coerce { x = 2 }).name

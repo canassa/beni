@@ -1,0 +1,8 @@
+-- A regression guard for CK-22: see M.beni.
+import M
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Node.printLines [ Debug.toString (M.inside (M.T 1) (M.T 11)), Debug.toString (M.insideTuple (M.T 1) (M.T 11)) ]

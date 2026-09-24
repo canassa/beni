@@ -1,0 +1,16 @@
+-- CK-53: the missing-constraint hint never suggests what the grammar
+-- forbids. A `let` annotation takes no `where` (language.md §3), so for a
+-- rigid of a `let` annotation the hint is to lift the helper to the top
+-- level with the `where`, or to drop the annotation — not "add it to the
+-- annotation: `where a.eq : a, a -> Bool`", which is what 7427828 prints,
+-- and which is UNEXPECTED TOKEN when written.
+
+
+f : List Int -> Bool
+f xs =
+    let
+        g : a, a -> Bool
+        g p q =
+            p == q
+    in
+    g xs xs

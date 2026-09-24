@@ -1,0 +1,9 @@
+-- CK-56: (the swap) core is subject-first (`List.map list f`), and an
+-- Elm-ordered call `List.map String.fromInt [ 1, 2 ]` gets a hint that says
+-- so (checker-v2.md §15.3, R13). On 7427828 the hint is "this is a function,
+-- so it may be missing an argument".
+
+
+strings : List String
+strings =
+    List.map String.fromInt [ 1, 2 ]

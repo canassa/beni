@@ -1,0 +1,32 @@
+-- CK-70: (the twin) `RecursiveDispatchTwoTypes.beni` with `eq` written
+-- before `show`: the same single `type_mismatch` at the second `Box`
+-- comparison, with the recursive-dispatch hint, because the refusal must
+-- not depend on the declaration order (checker-v2.md §10.6). On 7427828 it
+-- is METHOD NEEDS AN ANNOTATION, as in the other order.
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub eq (Box a) (Box b) =
+    let
+        _ =
+            \w -> (K 0).show ()
+    in
+    True
+
+
+pub show (K n) u =
+    if Box 1 == Box 2 then
+        "a"
+
+    else if Box "x" == Box "y" then
+        "b"
+
+    else
+        "c"

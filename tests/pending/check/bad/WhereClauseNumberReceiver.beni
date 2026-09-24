@@ -1,0 +1,52 @@
+-- CK-21: a `where` clause's method type is checked when the receiver is a
+-- `number` literal, exactly as when it is an `Int` (owner decision D9,
+-- checker-v2.md §9.3 step 2): the `number` bridge unifies the declared
+-- method type with the well-known `a, a -> Bool|Order` first. Each of the
+-- four calls declares a wrong result type (`String`, `Int`, `Int` through
+-- the promoted `g`, `Bool`), so each is a `type_mismatch` at the called
+-- name. The control, this file with every literal replaced by an `n : Int`,
+-- reports exactly these four on 7427828. As written all four check clean, and
+-- built, `f1 1 2` dies in `String.toUpper` and the others print `LT1`,
+-- `EQ1` and `t`.
+
+
+f1 : a, a -> String
+    where a.eq : a, a -> String
+f1 x y =
+    String.toUpper (x.eq y)
+
+
+f2 : a, a -> Int
+    where a.compare : a, a -> Int
+f2 x y =
+    x.compare y + 1
+
+
+g x =
+    f2 x x
+
+
+f4 : a, a -> Bool
+    where a.compare : a, a -> Bool
+f4 x y =
+    x.compare y
+
+
+use1 : String
+use1 =
+    f1 1 2
+
+
+use2 : Int
+use2 =
+    f2 1 2
+
+
+use3 : Int
+use3 =
+    g 1 + 1
+
+
+use4 : Bool
+use4 =
+    f4 1 2

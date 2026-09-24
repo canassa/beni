@@ -1,0 +1,19 @@
+-- CK-68: a `tuple_index` on an outer variable is decided at the boundary
+-- that owns the variable (checker-v2.md §4.5, §8.5): once `snd p` makes `p`
+-- a pair of `Int`s, `a = p.0` is an `Int`, and `String.length a` is a
+-- `type_mismatch` at `a`. On 7427828 it is AMBIGUOUS TUPLE at `p.0` — sound,
+-- but the wrong code; the round-1 design would have compiled it and run
+-- `String.length` on a number (design review round 2, N1).
+
+
+snd : ( Int, Int ) -> Int
+snd ( _, b ) =
+    b
+
+
+f p =
+    let
+        a =
+            p.0
+    in
+    ( a + snd p, String.length a )
