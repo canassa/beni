@@ -2035,12 +2035,12 @@ pub const Solver = struct {
             .rigid => |flags| if (!flags.equatable) {
                 try s.reporter.notEquatable(o.region, o.v, .rigid_variable);
             },
-            else => switch (walkEquatable(s, o.v)) {
-                // `unknown` is a type too wide for the walk's worklist. It
-                // is accepted rather than refused: the alternative is
-                // rejecting a program for being large, and there is no
-                // message that would help.
-                .ok, .unknown => {},
+            else => switch (try walkEquatable(s, o.v)) {
+                // The walk always finishes (CK-17), so there is no "too wide
+                // to tell" answer to accept or refuse. `too_wide` is a
+                // DERIVED function's limit, and the structural walk derives
+                // nothing, so it never answers it.
+                .ok, .too_wide => {},
                 .function => try s.reporter.notEquatable(o.region, o.v, .function),
                 // `==` folds the two into one answer, as it always has:
                 // §3.4's `equatable` marker is the whole story it tells and
@@ -2061,14 +2061,16 @@ pub const Solver = struct {
         /// inside it — one level down or ten (A.58). §10.3 has a sentence
         /// of its own for this, and it is the one that helps.
         contains_function,
-        unknown,
+        /// A record wider than `max_derived_record_fields` (CK-79).
+        /// Never the answer of the structural walk, which derives nothing.
+        too_wide,
     };
 
     /// Walk a concrete type ONCE, with a mark as the cycle guard: no
     /// function anywhere, and every named type declared equatable
     /// (checker.md §6.4, Appendix B). The walk happens here, at discharge,
     /// and never inside unification — which is the whole point of §3.1.
-    fn walkEquatable(s: *Solver, root_var: Var) EquatableResult {
+    fn walkEquatable(s: *Solver, root_var: Var) Error!EquatableResult {
         return walkDerivableMode(s, root_var, .eq, true);
     }
 
@@ -2077,40 +2079,30 @@ pub const Solver = struct {
     /// this is the only gate it has — and it has to be the same one the
     /// eager pass of A.23 excludes a type by, or a use would name a function
     /// nobody emitted.
-    fn walkComparable(s: *Solver, root_var: Var) EquatableResult {
+    fn walkComparable(s: *Solver, root_var: Var) Error!EquatableResult {
         return walkDerivable(s, root_var, .compare);
     }
 
-    fn walkDerivable(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind) EquatableResult {
+    fn walkDerivable(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind) Error!EquatableResult {
         return walkDerivableMode(s, root_var, kind, false);
     }
 
-    fn walkDerivableMode(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind, structural_eq: bool) EquatableResult {
+    fn walkDerivableMode(s: *Solver, root_var: Var, kind: Dispatch.Derived.Kind, structural_eq: bool) Error!EquatableResult {
         const st = s.store();
         const mark = st.nextMark();
-        var stack: [256]Var = undefined;
-        var len: usize = 1;
-        stack[0] = root_var;
-        var budget: usize = 1 << 16;
-        while (len > 0) {
-            if (budget == 0) return .unknown;
-            budget -= 1;
-            len -= 1;
-            const v = stack[len];
+        // GROWABLE (CK-17): the walk visits every variable it can reach
+        // once, so it is linear in the type and needs no budget — and a
+        // fixed worklist that gave up on a wide type let a function hide in
+        // field 257 of a record `==` then answered structurally. The first
+        // 256 entries live on the stack, which is every type a program
+        // writes by hand.
+        var stack: WalkStack = .{ .gpa = s.gpa };
+        defer stack.deinit();
+        try stack.push(root_var);
+        while (stack.pop()) |v| {
             const root, const c = st.resolved(v);
             if (st.mark(root) == mark) continue;
             st.setMark(root, mark);
-            // A full worklist means the walk cannot finish, and answering
-            // `ok` there would let a function hide in a wide type. The
-            // caller is told by the `.unknown` result instead.
-            const push = struct {
-                fn f(buf: *[256]Var, l: *usize, x: Var) bool {
-                    if (l.* >= buf.len) return false;
-                    buf[l.*] = x;
-                    l.* += 1;
-                    return true;
-                }
-            }.f;
             switch (c) {
                 // `resolved` already followed every alias, so only these
                 // five can appear; an alias here would mean a poisoned
@@ -2136,7 +2128,7 @@ pub const Solver = struct {
                         });
                         for (args, 0..) |arg, i| {
                             if (!boundary) {
-                                if (!push(&stack, &len, arg)) return .unknown;
+                                try stack.push(arg);
                                 continue;
                             }
                             const req = s.env.types.methodParamRequirement(a.type, i, switch (kind) {
@@ -2144,27 +2136,62 @@ pub const Solver = struct {
                                 .compare => .compare,
                             });
                             if (req & 4 != 0) {
-                                const nested = walkDerivable(s, arg, kind);
+                                const nested = try walkDerivable(s, arg, kind);
                                 if (nested != .ok) return nested;
                             }
-                            if (req & 1 != 0 and walkDerivable(s, arg, .eq) != .ok) return .contains_function;
-                            if (req & 2 != 0 and walkDerivable(s, arg, .compare) != .ok) return .opaque_type;
+                            if (req & 1 != 0 and try walkDerivable(s, arg, .eq) != .ok) return .contains_function;
+                            if (req & 2 != 0 and try walkDerivable(s, arg, .compare) != .ok) return .opaque_type;
                         }
                     },
-                    .tuple => |t| for (st.vars(t)) |el| {
-                        if (!push(&stack, &len, el)) return .unknown;
-                    },
+                    .tuple => |t| for (st.vars(t)) |el| try stack.push(el),
                     .record => |r| {
-                        for (st.fields(r.fields)) |f| {
-                            if (!push(&stack, &len, f.value)) return .unknown;
-                        }
-                        if (!push(&stack, &len, r.ext)) return .unknown;
+                        // A DERIVED `eq`/`compare` takes one evidence
+                        // parameter per field, and a JavaScript call that
+                        // wide can overflow the engine's stack at run time.
+                        // Past the cap the use is refused here (CK-79).
+                        if (!structural_eq and st.fields(r.fields).len > Diagnostics.max_derived_record_fields) return .too_wide;
+                        for (st.fields(r.fields)) |f| try stack.push(f.value);
+                        try stack.push(r.ext);
                     },
                 },
             }
         }
         return .ok;
     }
+
+    /// `walkDerivableMode`'s worklist: 256 entries inline, then the heap.
+    const WalkStack = struct {
+        gpa: Allocator,
+        inline_items: [256]Var = undefined,
+        inline_len: usize = 0,
+        /// Once non-empty it holds EVERY pending entry (the inline ones
+        /// are moved over), so the order stays last-in first-out.
+        spilled: std.ArrayList(Var) = .empty,
+
+        fn deinit(w: *WalkStack) void {
+            w.spilled.deinit(w.gpa);
+        }
+
+        fn push(w: *WalkStack, v: Var) Error!void {
+            if (w.spilled.items.len == 0) {
+                if (w.inline_len < w.inline_items.len) {
+                    w.inline_items[w.inline_len] = v;
+                    w.inline_len += 1;
+                    return;
+                }
+                try w.spilled.appendSlice(w.gpa, w.inline_items[0..w.inline_len]);
+                w.inline_len = 0;
+            }
+            try w.spilled.append(w.gpa, v);
+        }
+
+        fn pop(w: *WalkStack) ?Var {
+            if (w.spilled.items.len != 0) return w.spilled.pop();
+            if (w.inline_len == 0) return null;
+            w.inline_len -= 1;
+            return w.inline_items[w.inline_len];
+        }
+    };
 
     fn dischargeInterpolatable(s: *Solver, o: Obligation) Error!void {
         const st = s.store();
@@ -2808,22 +2835,19 @@ pub const Solver = struct {
     /// Recorded in the report as an addition to §6.3's rigid row: without
     /// it S3 cannot land without S6, and §3.4 already says the two
     /// mechanisms mean the same thing.
-    fn builtinRigidTarget(s: *Solver, flags: TypeStore.Flags, c: TypeStore.MethodConstraint) ?Dispatch.Target {
+    fn builtinRigidTarget(_: *const Solver, flags: TypeStore.Flags, c: TypeStore.MethodConstraint) ?Dispatch.Target {
         const is_eq = c.name == InternPool.WellKnown.eq.symbol();
         const is_compare = c.name == InternPool.WellKnown.compare.symbol();
         if (!is_eq and !is_compare) return null;
         if (flags.kind == .number) {
             return if (is_eq) .{ .primitive = .strict_eq } else .{ .primitive = .num_compare };
         }
-        if (is_eq and flags.equatable) {
-            // `Basics.eq` is the one structural walk (`core/Basics.js`),
-            // which is what `==` on an `equatable a` means today.
-            const module = s.env.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return null;
-            if (module.int() >= s.env.interfaces.len) return null;
-            const iface = s.env.iface(module);
-            const value = iface.findValue(s.env.interner, c.name) orelse return null;
-            return .{ .ext = .{ .module = module, .value = value } };
-        }
+        // No `equatable` arm (CK-19). The marker is a structural GUARANTEE
+        // — no function inside — and never an `eq` method
+        // (static-dispatch-spike.md §3.4): answering `==` on a marked
+        // variable with `Basics.eq` ignored the type's own `pub eq`, and
+        // which answer a declaration got depended on whether an explicit
+        // `Basics.eq x x` had marked `x` before or after its `==`.
         return null;
     }
 
@@ -2890,19 +2914,20 @@ pub const Solver = struct {
         // record of a tuple of a `Wraps` is refused for the same reason a
         // bare `Wraps` is — and refused HERE, which is what keeps the use
         // and the eager pass saying the same thing.
-        switch (if (is_eq) walkDerivable(s, root, .eq) else walkComparable(s, root)) {
+        switch (if (is_eq) try walkDerivable(s, root, .eq) else try walkComparable(s, root)) {
             .ok => if (target_ok and exact) return true else if (is_eq) {
                 try s.reporter.notEquatable(origin, root, .opaque_type);
             } else {
                 try s.reporter.noMethodsOnShape(origin, c.name, root, .not_orderable);
             },
-            // A type too wide for the walk's worklist. `dischargeEquatable`
-            // ACCEPTS it — refusing a program for being large helps nobody
-            // when the answer is one structural walk at runtime — but
-            // derivation has to write a function per position, and a
-            // function hiding in the part it could not reach would be a
-            // wrong answer rather than a slow one.
-            .unknown, .function => {
+            .too_wide => {
+                if (is_eq) {
+                    try s.reporter.notEquatable(origin, root, .too_wide);
+                } else {
+                    try s.reporter.noMethodsOnShape(origin, c.name, root, .too_wide);
+                }
+            },
+            .function => {
                 if (is_eq) {
                     try s.reporter.notEquatable(origin, root, .function);
                 } else {

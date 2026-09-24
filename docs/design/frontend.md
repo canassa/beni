@@ -445,7 +445,10 @@ byte-identical AST/BIR dumps; formatting always selects layout where available.
 1. Enumerate and sort files; assign file indices. (Serial, deterministic.)
 2. Per file, on a worker: read bytes, tokenize, parse, lower (or format). Worker assignment is a
    plain atomic counter; nothing observable depends on which worker took which file.
-3. Sync point: merge interners in **worker index order**; remap.
+3. Sync point: merge interners in **file order** — each file's tokens, then its Bir's symbols,
+   interned into the global pool on first sight, and whatever no file references after them by
+   text — then remap. A symbol's global id is therefore a function of the input alone (CK-71,
+   2026-09-24; it was worker index order, which let the `next_file` race number symbols).
 4. Collect diagnostics, sort, render. Write outputs.
 
 `--jobs=1` runs the same code on the calling thread with one worker. The determinism test

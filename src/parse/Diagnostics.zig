@@ -93,6 +93,13 @@ pub const Construct = enum {
     field_name,
     branch,
     constraint,
+    /// Not a construct that was missing but one that is not allowed: a
+    /// float literal in a pattern (CK-45, D8), which has its own message.
+    float_pattern,
+    /// Elm's `T(..)` in an `exposing` list (CK-47, D8 as amended): the head
+    /// range is `T`. When the program is resolved, the constructors are
+    /// named in its text (`Session.rewriteMessage`).
+    expose_all,
 };
 
 fn contextText(c: Context) []const u8 {
@@ -140,6 +147,8 @@ fn constructText(c: Construct) []const u8 {
         .field_name => "a field name",
         .branch => "a branch",
         .constraint => "a `where` constraint like `k.compare : k, k -> Order`",
+        .float_pattern => "a pattern",
+        .expose_all => "a name to expose",
     };
 }
 
@@ -183,7 +192,17 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             }
         },
         .expected_token => {
-            if (at_eof) {
+            if (item.construct == .expose_all) {
+                // Without the imported module's interface — `fmt` and the
+                // dumps — the constructors cannot be named;
+                // `resolve/Diagnostics.zig` names them when checking.
+                try w.print(
+                    \\`{s}(..)` is how Elm exposes every constructor of `{s}`, and beni has no
+                    \\wildcard: list the constructors you use by name, beside the type.
+                    \\
+                    \\    exposing ({s}, …)
+                , .{ head, head, head });
+            } else if (at_eof) {
                 try w.print("I got to the end of the file while parsing {s}. I was expecting `{s}` next.", .{ contextText(item.context), tokenText(item.expected) });
             } else if (item.layout) {
                 try w.print(
@@ -199,6 +218,16 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         .unexpected_token => {
             if (at_eof) {
                 try w.print("I got to the end of the file while parsing {s}. I was expecting {s}.", .{ contextText(item.context), constructText(item.construct) });
+            } else if (item.construct == .float_pattern) {
+                try w.print(
+                    \\`{s}` is a float, and a pattern cannot match a float.
+                    \\
+                    \\Float arithmetic rounds, so a value you expect to be exactly this one can be
+                    \\off by a tiny amount and miss the branch. Compare instead, with a tolerance if
+                    \\you need one:
+                    \\
+                    \\    if x == {s} then ... else ...
+                , .{ text, text });
             } else if (item.construct == .declaration and item.context == .module) {
                 try w.print(
                     \\I ran into `{s}` on column {d}, which does not belong to the declaration before

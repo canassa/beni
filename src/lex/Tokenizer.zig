@@ -290,6 +290,10 @@ pub fn next(t: *Tokenizer) Allocator.Error!Tag {
         },
 
         .dot => switch (src[t.index + 1]) {
+            // `..` is one token, valid nowhere: it exists so the parser can
+            // name Elm's `exposing (T(..))` in one diagnostic (CK-47, D8 as
+            // amended) instead of the lexer reporting each dot.
+            '.' => break :state t.take(2, .dot_dot),
             'a'...'z' => {
                 t.index += 1;
                 // The field name is interned without its dot, so `.name`
@@ -1066,13 +1070,10 @@ test "numbers: `1.` and `1.e5` stay int; the dot is then a field access" {
             .{ .tag = .float, .start = 9, .text = "1.0" },
             .{ .tag = .dot_index, .start = 12, .text = ".1" },
             .{ .tag = .int, .start = 15, .text = "1" },
-            .{ .tag = .invalid, .start = 16, .text = "." },
-            .{ .tag = .invalid, .start = 17, .text = "." },
+            // `..` is one token (CK-47), reported by the parser wherever it
+            // stands, and never by the lexer.
+            .{ .tag = .dot_dot, .start = 16, .text = ".." },
             .{ .tag = .eof, .start = 18, .text = "" },
-        },
-        .diagnostics = &.{
-            .{ .code = .invalid_character, .start = 16, .end = 17 },
-            .{ .code = .invalid_character, .start = 17, .end = 18 },
         },
     });
 }

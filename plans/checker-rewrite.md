@@ -340,6 +340,12 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - `resolve/Interface.zig`, `resolve/iface_bytes.zig` (v3), `cache/Digest.zig` (v2).
   - `check/Types.zig` (`arity: u16`) and `check/Schemes.zig`.
   - `dump/interface.zig` and the `raw` stage.
+  - `js/Lower.zig` (*added by R1's review, 2026-09-24*): `ctorRepExternal` returns `CtorRep.record`
+    for a `record_alias` row, reading the field names the row now carries, and `argName` reads an
+    imported alias pattern's arguments by them; `refuseAliasCtors`' `.ext_ctor` arm is deleted.
+    `tests/corpus/build/bad/RecordAliasConstructorImported/` then builds, so R3 moves it to
+    `tests/corpus/run/` with its expected output (`P 1 "a"` through `Debug.toString` prints the
+    record), and `run/RecordAliasConstructorImported/` (CK-39) is promoted beside it.
 - **Closes.** Promoted: CK-38, CK-39, CK-41 (perf scenario into `abuse_test.zig`).
 - **Relies on** `checker-v2.md` §14.2.
 - **Exit criteria.**
@@ -749,14 +755,14 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | Slice | Promotes into `tests/corpus/` | Claims (v2, promoted at R11) | Structural / no fixture |
 |---|---|---|---|
 | R0 | — | — | records everything |
-| R1 | CK-11, 17, 19, 43, 44, 45, 46, 47, 71 | — | CK-12 (unit test) |
-| R2a | — | — | CK-61 |
+| R1 | CK-11, 17, 19, 43, 44, 45, 46, 47, 71 | — | CK-12 (unit test); CK-78 (a decision, with a guard) |
+| R2a | CK-79, CK-81 (v1 `Lower`/`Print`, manager 2026-09-24) | — | CK-61 |
 | R2b | CK-33, 34 | — | — |
 | R3 | CK-38, 39, 41 | — | — |
 | R4a | — | — | CK-15 (the cutoff protocol leaves `Check.zig`) |
 | R4b | — | CK-01, 04, 07, 13, 57; CK-09 (`check/good` half) | CK-10, 14, 15 (pipeline part) |
 | R5 | — | CK-05, 06, 16, 51, 62, 68 | CK-18; CK-59 (part) |
-| R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48 | CK-35; CK-37, 55 (part) |
+| R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 80 | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32 | — |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
 | R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77 | CK-26 |
@@ -765,8 +771,9 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R11 | all claims above | — | — |
 | R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60 | — | — |
 | R14 | CK-37 (rest) | — | — |
+| (assigned 2026-09-24) | — | — | CK-79 and CK-81, found by R1 and its review, are R2a's (manager) |
 
-Every one of the 77 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 81 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

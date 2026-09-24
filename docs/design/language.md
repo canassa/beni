@@ -102,7 +102,7 @@ str_start str_chunk interp_start interp_end str_end   (§2.6)
 multiline_line     \\ …to end of line                 (§2.7)
 char               'a'  '\n'  '\u{1F600}'
 keywords           if then else case of let in type alias pub opaque import as exposing foreign
-symbols            ( ) [ ] { } , : = -> <- \ | _ ?
+symbols            ( ) [ ] { } , : = -> <- \ | _ ? ..
 operators          + - * / // ^ ++ :: == /= < > <= >= && || |> <|
 eof
 ```
@@ -113,6 +113,7 @@ eof
 | **longest match among operators** | `\|>` not `\|` `>`; `//` not `/` `/`; `->` not `-` `>`; `<-` not `<` `-`. So `x <-1`, `x <-y`, `x <-(a + b)` and `x <-r.value` all lex as `<-`: a comparison whose right operand is negated needs the space, `x < -1`. |
 | `--` after `<` | `--` always begins a comment **except after `<`**: `x <-- c` lexes as `<-`, `-`, `c`. No operator contains `--`. |
 | `<-` | legal only in a `let` binding (§6.7), and `unexpected_token` anywhere else |
+| `..` | one token that no construct uses: it exists so that Elm's `exposing (T(..))` is one diagnostic (§5.2) rather than one per dot. Anywhere else it is `unexpected_token` |
 
 ### 2.3 Comments
 
@@ -310,6 +311,11 @@ parser enforces the half of it that needs no types, and `checker.md` §6.6 decid
 `Param` is the `PatAtom` spelling of the same set, so `as` reaches it only inside the parenthesised
 form — already the only place a `PatAtom` can carry one.
 
+There is **no float pattern**: a float's `==` is not something a `case` should promise, and
+`0.1 + 0.2` would miss a `0.3` branch. A float literal where a pattern is expected (`-1.5` too) is
+`unexpected_token` at the literal with a message of its own, suggesting a comparison, and the
+`case` goes on with its other branches (owner decision D8, `checker-v2.md` §21; CK-45).
+
 The rest of this section constrains the grammar above. Rules belonging to one construct are stated
 where it is: records §6.3, operators and negation §6.5, `?` §6.6, `_`, `|>` and `<-` §6.7, §7
 scoping.
@@ -494,6 +500,7 @@ import Dict as D exposing (Dict)
 | `exposing` | lists names, each exactly once across the whole file, since an unqualified use would otherwise be ambiguous | a name exposed twice in one list, or by two different imports, `duplicate_exposed_name` at the second occurrence |
 | lower vs upper names | lower names are values; upper names are types **or constructors** — the file cannot tell which and does not need to: in a type position an upper name is a type, in an expression or pattern a constructor. Whether the imported module actually exposes it is checked in M2. | — |
 | ordering, self-import | all imports precede all declarations, and the formatter sorts imports by path. Importing the current module is a cycle of length one, detectable per file; longer cycles are M2. | an import after a declaration, `import_after_declaration`; the self-import, `self_import` |
+| Elm's `T(..)` | not beni: there is no wildcard, and constructors are listed by name beside the type (`exposing (T, A, B)`). Written anyway it is ONE diagnostic at the `(`, and an unknown constructor anywhere in the file stays quiet — lowering cannot tell which are `T`'s, and the file already fails (owner decision D8 as amended, `checker-v2.md` §21.1; CK-47) | `expected_token`, whose message spells the `exposing` list to write with the constructors the imported module exposes (named by resolution, which has its interface; `fmt` and the dumps, which do not, write `…`) |
 
 ### 5.3 What is a declaration
 

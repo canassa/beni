@@ -69,6 +69,15 @@ pub const Callee = struct {
     pub const anonymous: Callee = .{ .kind = .anonymous, .name = "" };
 };
 
+/// The widest record `==` or `compare` may DERIVE a function for (CK-79).
+/// A derived record function takes one evidence parameter per field
+/// (static-dispatch-spike.md §9), and a JavaScript call with tens of
+/// thousands of arguments overflows the engine's stack: V8 threw at 60 000
+/// under Node 24, and JavaScriptCore and SpiderMonkey set their own limits.
+/// 4 096 is far below any of them. Lifting it needs a derived record function
+/// that takes its evidence as ONE value (an array), which is CK-79's fix.
+pub const max_derived_record_fields = 4096;
+
 pub const Reporter = struct {
     gpa: Allocator,
     env: *Constrain.Env,
@@ -911,7 +920,7 @@ pub const Reporter = struct {
     }
 
     /// Which shape a receiver turned out to be, for §10.3's sentence.
-    pub const ShapeKind = enum { record, tuple, unit, function, contains_function, not_orderable, other };
+    pub const ShapeKind = enum { record, tuple, unit, function, contains_function, not_orderable, too_wide, other };
 
     /// §10.1. `<Type>` has no method called `<m>`.
     pub fn unknownMethod(
@@ -1110,12 +1119,27 @@ pub const Reporter = struct {
         defer namer.deinit();
         const w = &out.writer;
         const method_text = r.env.interner.slice(method);
+        if (shape == .too_wide) {
+            w.print(
+                \\I cannot derive `{s}` for this record: it has more than {d} fields.
+                \\
+                \\A derived `{s}` on a record is one generated function with a parameter per
+                \\field, and past {d} of them a JavaScript engine can run out of stack calling
+                \\it, so I stop here rather than build a program that may throw (CK-79).
+                \\
+                \\Hint: compare by the fields that decide the order, or split the record into
+                \\nested records.
+                \\
+            , .{ method_text, max_derived_record_fields, method_text, max_derived_record_fields }) catch return error.OutOfMemory;
+            try r.emit(.no_methods_on_shape, region, &out);
+            return;
+        }
         const what = switch (shape) {
             .record => "record",
             .tuple => "tuple",
             .unit => "`()`",
             .function => "function",
-            .contains_function, .not_orderable, .other => "type",
+            .contains_function, .not_orderable, .too_wide, .other => "type",
         };
         if (shape == .contains_function or shape == .not_orderable) {
             w.print("This type has no `{s}`:\n\n    ", .{method_text}) catch return error.OutOfMemory;
@@ -1504,11 +1528,23 @@ pub const Reporter = struct {
                 \\argument instead of using `==`.
                 \\
             ) catch return error.OutOfMemory,
+            .too_wide => w.print(
+                \\
+                \\
+                \\It has more than {d} fields. `==` on a record calls one generated function
+                \\with a parameter per field, and past {d} of them a JavaScript engine can run
+                \\out of stack calling it, so I stop here rather than build a program that may
+                \\throw (CK-79).
+                \\
+                \\Hint: `Basics.eq a b` compares records structurally, field by field, with no
+                \\limit on width — it does not call a custom `eq` of a type inside them.
+                \\
+            , .{ max_derived_record_fields, max_derived_record_fields }) catch return error.OutOfMemory,
         }
         try r.emit(.not_equatable, region, &out);
     }
 
-    pub const EquatableReason = enum { function, opaque_type, rigid_variable };
+    pub const EquatableReason = enum { function, opaque_type, rigid_variable, too_wide };
 
     pub fn notInterpolatable(r: *Reporter, region: Bir.Inst.Index, v: Var) Error!void {
         if (r.quiet) return;

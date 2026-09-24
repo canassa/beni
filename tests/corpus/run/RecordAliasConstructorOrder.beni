@@ -1,0 +1,49 @@
+-- run: a record alias's constructor builds the record with its keys sorted
+-- (backend.md §4's record-alias row, D12, CK-43), and the sort moves the
+-- KEYS, never the arguments: `Q (log "z") (log "a")` evaluates `zed`'s
+-- argument first, as written (language.md §6, evaluation order), exactly as
+-- the record literal `{ zed = …, alpha = … }` does. Nested, and partially
+-- applied, the same record comes out.
+import Node exposing (Program)
+
+
+type alias Q =
+    zed : Int
+    alpha : Int
+
+
+type alias Outer =
+    q : Q
+    name : String
+
+
+-- Annotated, so the record is closed where `==` meets it: the same
+-- comparison written inline after `q.zed` is CK-08's `no_methods_on_shape`.
+same : Q, Q -> Bool
+same a b =
+    a == b
+
+
+main : Program
+main =
+    let
+        q =
+            Q (Debug.log 1 "zed") (Debug.log 2 "alpha")
+
+        outer =
+            Outer (Q 3 4) "o"
+
+        half =
+            Q 5 _
+    in
+    Node.printLines
+        [ String.fromInt q.zed
+        , String.fromInt q.alpha
+        , String.fromInt outer.q.alpha
+        , outer.name
+        , String.fromInt (half 6).alpha
+        , if same q (Q 1 2) then
+            "same record"
+          else
+            "different"
+        ]

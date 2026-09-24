@@ -1,0 +1,57 @@
+-- run: a record alias's constructor as a PATTERN binds the alias's fields
+-- in DECLARATION order, with no test: the pattern is irrefutable, since the
+-- alias has one constructor (the manager's decision of 2026-09-24 under rule
+-- 7, CK-78). `User` declares `name` before `age`, the reverse of the sorted
+-- key order its record is emitted in, so a positional read would swap them.
+-- A parameter, a `let` pattern, a `case` branch, one nested under `Just`
+-- and one under `as` all read the same fields. A guard: 22daa5f printed the
+-- same lines, through the tagged object R1 replaced (backend.md §4, D12).
+import Node exposing (Program)
+
+
+type alias User =
+    name : String
+    age : Int
+
+
+nameOf : User -> String
+nameOf (User n _) =
+    n
+
+
+describe : User -> String
+describe user =
+    case user of
+        User n a ->
+            n ++ " is " ++ String.fromInt a
+
+
+ageOf : Maybe User -> Int
+ageOf maybe =
+    case maybe of
+        Just (User _ a) ->
+            a
+
+        Nothing ->
+            0
+
+
+main : Program
+main =
+    let
+        (User m years) =
+            User "Ada" 36
+
+        both =
+            case User "Bo" 7 of
+                (User n _) as whole ->
+                    n ++ "/" ++ nameOf whole
+    in
+    Node.printLines
+        [ nameOf (User "Cy" 1)
+        , describe (User "Di" 2)
+        , String.fromInt (ageOf (Just (User "Ed" 3)))
+        , String.fromInt (ageOf Nothing)
+        , m ++ " " ++ String.fromInt years
+        , both
+        ]

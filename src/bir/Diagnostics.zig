@@ -26,10 +26,12 @@ pub const Item = struct {
     other_start: u32 = 0,
     other_end: u32 = 0,
     /// `let_forward_reference` only: how the reference reaches the binding
-    /// that is not ready. The three readings need three messages, and the
+    /// that is not ready. The four readings need four messages, and the
     /// ranges cannot tell them apart: `direct` names the later binding
     /// itself, `self` is a value written in terms of itself, and `through`
-    /// names a `let` function of the same block whose body reads it.
+    /// names a `let` function of the same block whose body reads it —
+    /// `self_through` when what it reads is the binding being defined
+    /// (CK-46), which is not "further down" but here.
     forward: Forward = .direct,
     /// `where_variable_unbound` only: which of the two triggers of
     /// static-dispatch-spike.md §10.6 fired. False is (a), the constraint's
@@ -42,7 +44,7 @@ pub const Item = struct {
         return item.other_end > item.other_start;
     }
 
-    pub const Forward = enum(u8) { direct, self, through };
+    pub const Forward = enum(u8) { direct, self, through, self_through };
 };
 
 /// Write the Elm-style prose for `item`. No trailing newline.
@@ -184,6 +186,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\value yet inside its own right-hand side. Only a FUNCTION can be recursive: give
                 \\`{s}` a parameter, or compute it from a different binding.
             , .{ text, text, text }),
+            .self_through => try w.print(
+                \\`{s}` is defined in terms of itself, through `{s}`: naming `{s}` here may call
+                \\`{s}`, and `{s}` reads `{s}`.
+                \\
+                \\A `let` evaluates its value bindings in the order they are written, so `{s}` has no
+                \\value yet inside its own right-hand side. Only a FUNCTION can be recursive: give
+                \\`{s}` a parameter, or compute it without `{s}`.
+            , .{ other, text, text, text, text, other, other, other, text }),
             .through => try w.print(
                 \\Naming `{s}` here reads `{s}`, which is bound further down this `let`, on line {d}.
                 \\

@@ -119,6 +119,10 @@ pub const Tag = enum(u8) {
     backslash,
     pipe,
     underscore,
+    /// `..`, which no construct uses: it is lexed as one token only so
+    /// that Elm's `exposing (T(..))` gets one diagnostic (language.md §2.2,
+    /// §5.2; CK-47).
+    dot_dot,
     question,
 
     op_plus,
@@ -202,6 +206,7 @@ pub fn lexeme(tag: Tag) ?[]const u8 {
         .pipe => "|",
         .underscore => "_",
         .question => "?",
+        .dot_dot => "..",
 
         .op_plus => "+",
         .op_minus => "-",

@@ -22,14 +22,12 @@ tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst v1 exit=1 codes=no
 tests/pending/check/bad/DerivedContextNeedsAnnotation v1 exit=1 codes=not_equatable×1 why=code
 tests/pending/check/bad/DerivedContextReentrantSameFirst v1 exit=1 codes=not_equatable×2 why=code
 tests/pending/check/bad/DerivedContextReentrant v1 exit=1 codes=not_equatable×2 why=code
-tests/pending/check/bad/DuplicateRecordTypeField.beni v1 exit=0 codes=none
 tests/pending/check/bad/EvidenceConstantCycle.beni v1 exit=0 codes=none
 tests/pending/check/bad/FieldErrorTextOrder.beni v1 exit=1 codes=missing_field×1 why=message
 tests/pending/check/bad/InfiniteTypeAtBinder.beni v1 exit=1 codes=type_mismatch×1 why=code
 tests/pending/check/bad/InfiniteTypeShowsStructure.beni v1 exit=1 codes=infinite_type×1 why=position
 tests/pending/check/bad/LetAnnotationRigidEscape.beni v1 exit=0 codes=none
 tests/pending/check/bad/LetAnnotationRowEscape.beni v1 exit=1 codes=record_not_closed×1 why=code
-tests/pending/check/bad/LetCycleThroughFunction.beni v1 exit=1 codes=let_forward_reference×1 why=message
 tests/pending/check/bad/ListElementFromContext.beni v1 exit=1 codes=kind_mismatch×2 why=message
 tests/pending/check/bad/MethodSignatureNoClash.beni v1 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/MissingFieldShowsLiteralTypes v1 exit=1 codes=missing_field×1 why=message
@@ -54,21 +52,16 @@ tests/pending/check/bad/ScrutineeMethodMergeD14 v1 exit=1 codes=method_needs_ann
 tests/pending/check/bad/SubjectFirstSwap.beni v1 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/TryShapeNamesTheMismatch.beni v1 exit=1 codes=try_shape×2 why=message
 tests/pending/check/bad/TupleIndexOuterResult.beni v1 exit=1 codes=ambiguous_tuple×1 why=code
-tests/pending/check/bad/WarningKeepsExhaustiveness.beni v1 exit=0 codes=ambiguous_method_receiver×2
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v1 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/WhereClauseNumberReceiver.beni v1 exit=0 codes=none
-tests/pending/check/bad/WideRecordEqFunction.beni v1 exit=0 codes=none
 tests/pending/check/good/MutualGroupLocalTypes.beni v1 exit=0 iface-differs
 tests/pending/check/good/ScrutineeMethodMergeVariant v1 exit=1 codes=method_needs_annotation×4
 tests/pending/check/good/WideTypeArity v1 exit=1 codes=wrong_type_arity×1
-tests/pending/parse/bad/ExposingConstructorsElmStyle.beni v1 exit=1 codes=expected_token×1,invalid_character×2,unbound_constructor×4 why=code
-tests/pending/parse/bad/FloatPattern.beni v1 exit=1 codes=case_without_branches×1,unexpected_token×1 why=code
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v1 dev: exit=1 codes=no_methods_on_shape×1
 tests/pending/run/ConstrainedFunctionConstant v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqHeadMatching v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=not_implemented×1
 tests/pending/run/DerivedContextClosedOwnMethod v1 dev: exit=1 codes=not_equatable×3
-tests/pending/run/EquatableMarkerIsNotEq.beni v1 dev: exit=0 stdout-differs
 tests/pending/run/GenericDerivationNestedRequirement v1 dev: exit=1 codes=not_equatable×1
 tests/pending/run/GroupVariableOutsideCaller.beni v1 dev: exit=1 codes=kind_mismatch×2
 tests/pending/run/LetHelperJoinedMethod.beni v1 dev: exit=1 codes=kind_mismatch×1
@@ -80,7 +73,6 @@ tests/pending/run/OwnMethodBeforeDefinition v1 dev: exit=1 codes=method_needs_an
 tests/pending/run/OwnMethodDemandedEarly.beni v1 dev: exit=1 codes=method_needs_annotation×3,unknown_method×1
 tests/pending/run/OwnMethodValuePrefix.beni v1 dev: exit=1 codes=method_needs_annotation×1
 tests/pending/run/PhantomParameterEq.beni v1 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
-tests/pending/run/RecordAliasConstructor.beni v1 dev: exit=0 program-exit=1
 tests/pending/run/RecordAliasConstructorImported v1 dev: exit=1 codes=type_mismatch×1
 tests/pending/run/RecursionWithComparison.beni v1 dev: exit=1 codes=internal×9
 tests/pending/run/ScrutineeMethodLater.beni v1 dev: exit=1 codes=method_needs_annotation×2,unknown_method×1
@@ -90,8 +82,8 @@ scenario/CK-03 v1 timeout
 scenario/CK-40 v1 slow
 scenario/CK-41 v1 slow
 scenario/CK-42 v1 slow
-scenario/CK-71 v1 nondeterministic
 scenario/CK-75 v1 slow
+scenario/CK-80 v1 slow
 scenario/PERM v1 exit=1 codes=method_needs_annotation×1
 scenario/NEST-UNDER v1 exit=1 codes=method_needs_annotation×200
 scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×20000

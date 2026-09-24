@@ -977,6 +977,117 @@ test "an unreadable file is named identically across --jobs=1 and --jobs=8, twic
     }
 }
 
+test "diagnostics do not depend on which worker lexed which file, under load (CK-71)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Promoted by hand from `pending_test.zig`'s `scenario/CK-71`
+    // (plans/checker-rewrite.md R1). Each worker interns into its own pool;
+    // until R1 the pools were merged in WORKER order, so a symbol's id
+    // followed the `next_file` race, and CK-07's `unifyRecord` names the
+    // field with the lower id. `Aaa` interns `qq`, `dd` and `bb`; `Main`'s
+    // `f g` fails on `pp` (inner `aa`) and `qq` (inner `bb`), and which one
+    // the message names followed the race: on 7427828 22 of 100 runs under
+    // load differed from the first. The ids are now input-derived
+    // (`Session.mergeInterners`), so every run names the same field.
+    //
+    // A race needs the scheduler to have a choice to make, and only a
+    // SATURATED machine gives it one. On 22daa5f, on a 32-thread machine:
+    // 0 of 60 runs flipped with 8 spinning threads, 0 of 60 with 16, 15 of
+    // 60 with 32. So there is one spinner per logical CPU, not a capped
+    // number — a cap of 8 made this test unable to go red at all there.
+    //
+    // The arithmetic. Past the fix no run can differ, so this never fails
+    // spuriously. Before it, each run took the minority outcome with p
+    // between 0.18 (9 of 50, R1's reviewer) and 0.25 (15 of 60); R1's own
+    // stash run saw 41 of 49 runs differ from a minority first. The test
+    // misses the race only if all `runs` agree, p^n + (1-p)^n, which for
+    // n = 36 is at most 0.82^36 ≈ 8e-4 at p = 0.18 (and 3e-5 at 0.25).
+    // n = 25 would be 7e-3 at 0.18, too often. The load costs about 0.4 s
+    // a run on the Debug binary, so this test is about 15 s of the gate.
+    //
+    // On a machine whose scheduler never races the two files it cannot go
+    // red, which is why `Session.zig`'s `mergeInterners` test, which hands
+    // the files to the workers backwards on purpose, is the other half.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Aaa.beni",
+        \\pub z =
+        \\    let
+        \\        qq =
+        \\            1
+        \\
+        \\        dd =
+        \\            2
+        \\
+        \\        bb =
+        \\            3
+        \\    in
+        \\    qq + dd + bb
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Aaa
+        \\
+        \\
+        \\f : { pp : { aa : Int }, qq : { bb : Int } } -> Int
+        \\f r =
+        \\    0
+        \\
+        \\
+        \\g : { pp : { cc : Int }, qq : { dd : Int } }
+        \\g =
+        \\    { pp = { cc = 1 }, qq = { dd = 2 } }
+        \\
+        \\
+        \\main =
+        \\    f g + Aaa.z
+        \\
+    );
+    var stop: std.atomic.Value(bool) = .init(false);
+    const cores = std.Thread.getCpuCount() catch 4;
+    const spinners = try testing.allocator.alloc(std.Thread, cores);
+    defer testing.allocator.free(spinners);
+    var spawned: usize = 0;
+    defer {
+        stop.store(true, .release);
+        for (spinners[0..spawned]) |t| t.join();
+    }
+    for (spinners) |*t| {
+        t.* = std.Thread.spawn(.{}, spin, .{&stop}) catch break;
+        spawned += 1;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const args = [_][]const u8{ "check", "--no-cache", "--jobs=8", "--diagnostics=json", "Aaa.beni", "Main.beni" };
+    const first = try w.runWith(&args, .{ .raw_diagnostics = true });
+    var differing: usize = 0;
+    for (0..35) |_| {
+        const r = try w.runWith(&args, .{ .raw_diagnostics = true });
+        if (r.exit_code != first.exit_code or !std.mem.eql(u8, r.stdout, first.stdout) or !std.mem.eql(u8, r.stderr, first.stderr)) differing += 1;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(usize, 0), differing);
+    // And the run is the one CK-07 is about: exit 1, one `missing_field`
+    // at `f g`, nothing on stdout. WHICH field it names is CK-07's (R4b);
+    // this test pins only that the name does not move.
+    try testing.expectEqual(@as(u8, 1), first.exit_code);
+    try testing.expectEqualStrings("", first.stdout);
+    try testing.expect(std.mem.indexOf(u8, first.stderr, "\"code\":\"missing_field\"") != null);
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, first.stderr, "\"code\":"));
+}
+
+fn spin(stop: *std.atomic.Value(bool)) void {
+    var x: u64 = 0;
+    while (!stop.load(.acquire)) x +%= 1;
+    std.mem.doNotOptimizeAway(x);
+}
+
 test "diagnostics are sorted by file path whatever the worker count" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

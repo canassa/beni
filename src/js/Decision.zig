@@ -68,6 +68,12 @@ pub const Occ = struct {
     parent: u32 = no_parent,
     /// The slot index (`a`, `b`, …) this occurrence is of its parent.
     slot: u32 = 0,
+    /// The constructor reference the parent was destructured through, when
+    /// it was one: the emitter reads the argument's REPRESENTATION off it.
+    /// A record alias's constructor builds a record (backend.md §4), so its
+    /// argument `slot` is the alias's field `slot` in declaration order and
+    /// not the positional `a`, `b`, … every other constructor uses.
+    via: Inst.OptionalIndex = .none,
 
     pub const no_parent: u32 = std.math.maxInt(u32);
 };
@@ -264,12 +270,16 @@ const Builder = struct {
     /// The occurrence of slot `slot` of `parent`, interned so that two
     /// columns reaching the same value are one occurrence and the emitter
     /// builds its member chain once.
-    fn subOcc(b: *Builder, parent: u32, slot: u32) !u32 {
+    ///
+    /// `via` is the constructor the parent is destructured through. All the
+    /// constructors of one type share a representation, and a record alias
+    /// has exactly one, so the first `via` recorded answers for the slot.
+    fn subOcc(b: *Builder, parent: u32, slot: u32, via: Inst.OptionalIndex) !u32 {
         for (b.occs.items, 0..) |o, i| {
             if (o.parent == parent and o.slot == slot) return @intCast(i);
         }
         const index: u32 = @intCast(b.occs.items.len);
-        try b.occs.append(b.arena, .{ .root = b.occs.items[parent].root, .parent = parent, .slot = slot });
+        try b.occs.append(b.arena, .{ .root = b.occs.items[parent].root, .parent = parent, .slot = slot, .via = via });
         return index;
     }
 
@@ -518,7 +528,11 @@ const Builder = struct {
         const arity = arityOf(key);
         const cols = try b.arena.alloc(u32, m.cols.len - 1 + arity);
         @memcpy(cols[0..col], m.cols[0..col]);
-        for (0..arity) |i| cols[col + i] = try b.subOcc(m.cols[col], @intCast(i));
+        const via: Inst.OptionalIndex = switch (key) {
+            .ctor => |c| c.ref.toOptional(),
+            else => .none,
+        };
+        for (0..arity) |i| cols[col + i] = try b.subOcc(m.cols[col], @intCast(i), via);
         @memcpy(cols[col + arity ..], m.cols[col + 1 ..]);
 
         var rows: std.ArrayList(MRow) = .empty;

@@ -792,6 +792,12 @@ pub const Exposed = struct {
     /// The name's token. Lower names are values; upper names are a type
     /// OR a constructor and the file cannot tell which.
     token: u32,
+    /// The `(` of Elm's `T(..)` written after this name, or 0, which that
+    /// `(` cannot be: `import M exposing (T` comes before it. The parser
+    /// has reported it; resolution names the constructors in that same
+    /// diagnostic (`Resolve.exposeAllCtors`, CK-47), and lowering keeps the
+    /// uses of unknown constructors in this file quiet.
+    all_ctors_token: u32 = 0,
 };
 
 pub const Import = struct {
@@ -929,6 +935,7 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
     for (bir.exposed) |e| {
         if (!validSymbol(e.name, symbols_len)) return false;
         if (e.token >= token_count) return false;
+        if (e.all_ctors_token >= token_count) return false;
     }
     for (bir.interface) |d| {
         if (d.int() >= bir.decls.len) return false;

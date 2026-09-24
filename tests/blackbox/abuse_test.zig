@@ -1640,3 +1640,121 @@ test "a monomorphic let helper used at `a` and `List a` is an infinite type with
         try testing.expectEqual(diagnostic.Code.infinite_type, r.diagnostics[0].code);
     }
 }
+
+// ---------------------------------------------------------------------------
+// The equatable walk (CK-17, plans/checker-rewrite.md R1)
+// ---------------------------------------------------------------------------
+
+/// `r = { f1 = 1, …, f<n> = 1 }` with field `fn_at` a function (0: none),
+/// then `same = <compare>` — `Basics.eq r r` or `r == r`.
+fn wideRecord(gpa: std.mem.Allocator, n: usize, fn_at: usize, compare: []const u8) ![]u8 {
+    var source: std.Io.Writer.Allocating = .init(gpa);
+    errdefer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("r =\n    { ");
+    for (1..n + 1) |i| {
+        if (i != 1) try out.writeAll(", ");
+        if (i == fn_at) try out.print("f{d} = \\x -> x", .{i}) else try out.print("f{d} = 1", .{i});
+    }
+    try out.print(" }}\n\n\nsame : Bool\nsame =\n    {s}\n", .{compare});
+    return source.toOwnedSlice();
+}
+
+test "Basics.eq on a 100 000-field record walks all of it: all Int is equatable, a function at field 99 999 is not" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The `equatable` walk's worklist was a fixed 256 entries, and a full
+    // worklist answered "unknown", which `Basics.eq` accepted — so a function
+    // in field 257 of a record compared structurally at run time (CK-17).
+    // It is growable now, and never answers on width: the all-`Int` record
+    // is accepted because every field was walked, and the function at field
+    // 99 999 — the far end of the worklist — is found.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const all_int = try wideRecord(testing.allocator, 100_000, 0, "Basics.eq r r");
+    defer testing.allocator.free(all_int);
+    try w.write("AllInt.beni", all_int);
+    const with_fn = try wideRecord(testing.allocator, 100_000, 99_999, "Basics.eq r r");
+    defer testing.allocator.free(with_fn);
+    try w.write("WithFn.beni", with_fn);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const ok = try w.run(&.{ "check", "--no-cache", "AllInt.beni" });
+    const bad = try w.run(&.{ "check", "--no-cache", "WithFn.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(ok, 0);
+    try testing.expectEqualSlices(diagnostic.Diagnostic, &.{}, ok.diagnostics);
+    try expectExited(bad, 1);
+    try testing.expectEqual(@as(usize, 1), bad.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_equatable, bad.diagnostics[0].code);
+    // At the first argument of `Basics.eq`, on the last line.
+    try testing.expectEqual(@as(u32, 7), bad.diagnostics[0].span.start.line);
+    try testing.expectEqual(@as(u32, 15), bad.diagnostics[0].span.start.col);
+}
+
+/// A program printing `eq` or `ne` for `r == r`, where `r` has `n` fields.
+fn wideEqProgram(gpa: std.mem.Allocator, n: usize) ![]u8 {
+    var source: std.Io.Writer.Allocating = .init(gpa);
+    errdefer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("import Node exposing (Program)\n\n\nr =\n    { ");
+    for (1..n + 1) |i| {
+        if (i != 1) try out.writeAll(", ");
+        try out.print("f{d} = {d}", .{ i, i });
+    }
+    try out.writeAll(" }\n\n\nmain : Program\nmain =\n    Node.printLines [ if r == r then \"eq\" else \"ne\" ]\n");
+    return source.toOwnedSlice();
+}
+
+test "== on a record runs up to the derived-field cap and is refused past it, never a runtime exception" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `==` on a record DERIVES one function with a parameter per field, and a
+    // JavaScript call that wide overflows the engine's stack: under Node 24
+    // a 60 000- and a 65 530-field `r == r` built and then threw `RangeError`
+    // (R1's review). So a derived record comparison is refused at check time
+    // past `max_derived_record_fields`, 4 096 (`check/Diagnostics.zig`,
+    // CK-79), and the no-runtime-exception guarantee holds at every width:
+    // at the cap it builds and RUNS, one past it and at the widths that threw
+    // it is `not_equatable` before anything is written.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const at_cap = try wideEqProgram(testing.allocator, 4_096);
+    defer testing.allocator.free(at_cap);
+    try w.write("AtCap.beni", at_cap);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const ran = try w.buildAndRun(&.{"AtCap.beni"});
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(ran.build, 0);
+    try testing.expectEqualStrings("eq\n", ran.program.?.stdout);
+    try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
+
+    for ([_]usize{ 4_097, 40_000, 60_000, 65_530 }) |n| {
+        const source = try wideEqProgram(testing.allocator, n);
+        defer testing.allocator.free(source);
+        try w.write("Wide.beni", source);
+        const r = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=wide", "Wide.beni" });
+        try expectExited(r, 1);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.not_equatable, r.diagnostics[0].code);
+        try testing.expect(std.mem.indexOf(u8, r.diagnostics[0].message, "4096") != null);
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        // A refused build writes nothing.
+        try testing.expect(!w.exists("wide"));
+    }
+}

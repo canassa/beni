@@ -1676,6 +1676,12 @@ const ModuleCheck = struct {
         defer gpa.free(skip);
         @memset(skip, false);
         for (mc.diagnostics.items) |item| {
+            // Only an ERROR voids the precondition (§6.6: "no type errors
+            // in that declaration"). A warning — `ambiguous_method_receiver`
+            // on a `pub` declaration that type-checked — says nothing about
+            // unification, and skipping on one let `case c of Red -> …;
+            // Green -> …` run `Blue` into `Green`'s branch (CK-11).
+            if (item.severity != .@"error") continue;
             const at = item.region.int();
             for (bir.decls, 0..) |d, i| {
                 if (at >= d.inst_start.int() and at < d.inst_end.int()) {

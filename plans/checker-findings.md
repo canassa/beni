@@ -496,6 +496,10 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   `ambiguous_method_receiver` ×2, `missing_patterns`, `refutable_parameter_pattern`.
 - **Slice** R1 on v1 (a severity filter, one line). R4 makes it structural: a per-declaration failure
   bit.
+- **Status** fixed on v1 by R1 (2026-09-24): `ModuleCheck.exhaustive` skips a declaration only for a
+  diagnostic of severity `error`. The fixture is promoted to
+  `tests/corpus/check/bad/WarningKeepsExhaustiveness.beni` with its blessed `.diag` (the four lines
+  of the `.codes`). R4's structural bit is still owed.
 
 ### CK-12 — A module is silenced by an earlier phase's *warning*
 
@@ -511,6 +515,9 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** none possible black-box until a frontend warning exists. R1 adds an in-source unit
   test on the quiet computation (a documented rule-3 exception).
 - **Slice** R1.
+- **Status** fixed by R1 (2026-09-24): `Session.markQuiet` counts errors only, pinned by the in-source
+  test "markQuiet: an earlier phase's ERROR quiets its module, a WARNING does not" (red with the
+  severity filter removed).
 
 ### CK-13 — Schema members and schema constructors bypass the `<error>` and too-deep guards of publication
 
@@ -627,6 +634,15 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   `not_equatable`.
 - **Slice** R1 on v1 (make the walk growable, so width never yields `.unknown`; turning `.unknown` into
   a refusal would reject a valid 300-field all-`Int` record, S9). R5 makes it structural.
+- **Status** fixed on v1 by R1 (2026-09-24): `walkDerivableMode`'s worklist is growable (256 entries
+  inline, then the heap), its 65 536-step budget is gone, and `EquatableResult.unknown` no longer exists. The mark makes one
+  walk linear, but a nested walk at a boundary type takes a fresh mark and overwrites the outer
+  one, so a shared sub-DAG can be walked again (CK-80, which is older than R1). The fixture is promoted to
+  `tests/corpus/check/bad/WideRecordEqFunction.beni`. The same walk gated DERIVED `==`, where
+  `.unknown` was a refusal: a 300-field all-`Int` `r == r` was NOT EQUATABLE on 7427828 and now
+  runs (`tests/corpus/run/WideRecordDerivedEq.beni`). `abuse_test.zig` holds the reviewer's two
+  100 000-field records (all `Int`: checks; a function at field 99 999: `not_equatable`). A DERIVED
+  record `==`/`compare` is capped at 4 096 fields, because wider ones threw at run time — CK-79.
 
 ### CK-18 — `dischargeEquatable`'s flex arm would drop a variable's method constraints
 
@@ -671,6 +687,10 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   (`:3526`, `:3552`).
 - **Fixture** `run/EquatableMarkerIsNotEq.beni`, both statement orders → `True` ×3.
 - **Slice** R1 on v1 (delete the arm). R8 makes it structural: one resolution path.
+- **Status** fixed on v1 by R1 (2026-09-24): `builtinRigidTarget` answers only the `number` kind.
+  No other corpus golden moved, `dispatch/` included, and `check/bad/BasicsEqStillStructural` still
+  passes. The fixture is promoted to `tests/corpus/run/EquatableMarkerIsNotEq.beni`. R8's single
+  resolution path is still owed.
 
 ### CK-20 — A rigid variable inside a derived shape is answered with structural equality
 
@@ -1438,6 +1458,14 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `run/RecordAliasConstructor.beni` → `A`, `a`, `1`, `a`, `b`, `a`, `b`.
 - **Slice** R1. Needs a `backend.md` §4 row ("record-alias constructor → object literal in canonical
   key order"), which R1 writes.
+- **Status** fixed by R1 (2026-09-24): `backend.md` §4 has the record-alias-constructor row (D12),
+  and `js/Lower.zig`'s `CtorRep.record` emits the record literal, keys sorted by text and arguments
+  pinned in written order like a literal's (`tests/corpus/run/RecordAliasConstructorOrder.beni`).
+  The fixture is promoted to `tests/corpus/run/RecordAliasConstructor.beni`. A constructor PATTERN reads the
+  alias's fields in declaration order (CK-78, supported by the manager's decision). An IMPORTED
+  alias's constructor is refused at emit with `not_implemented` rather than emitted wrong
+  (`build/bad/RecordAliasConstructorImported/`), because interface v2 lacks its field names (CK-39,
+  R3, which `checker-v2.md` §14.2 now makes carry them).
 
 ### CK-44 — A duplicate field in a record *type* is not diagnosed
 
@@ -1458,6 +1486,11 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/DuplicateRecordTypeField.beni`. `.codes`: `duplicate_field` at the second
   `a`.
 - **Slice** R1.
+- **Status** fixed by R1 (2026-09-24): `lowerTypeFields` reports `duplicate_field` at every repeat and
+  drops it (so `TypeStore` keeps one field per name, as `Solve.gatherFields` assumes). Both it and
+  `lowerFields` use `FieldNames`, a scan up to 16 names and a hash set past that, so a 100 000-field
+  record is not n² (`tests/corpus/check/bad/DuplicateFieldWideRecord.beni`). The fixture is promoted
+  to `tests/corpus/check/bad/DuplicateRecordTypeField.beni`.
 
 ### CK-45 — A float literal pattern is reported as a layout error
 
@@ -1474,6 +1507,10 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   have no `.float` arm.
 - **Fixture** `parse/bad/FloatPattern.beni`. `.codes`: one diagnostic, contains "float".
 - **Slice** R1.
+- **Status** fixed by R1 (2026-09-24): a float starts a pattern atom, and `parsePatAtom` (and the `-`
+  form) reports `unexpected_token` with a message of its own and consumes the literal, so the `case`
+  keeps its branches. `language.md` §3 states the rule. The fixture is promoted to
+  `tests/corpus/parse/bad/FloatPattern.beni`.
 
 ### CK-46 — The `let`-cycle message names the binding itself as "further down"
 
@@ -1490,6 +1527,10 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/LetCycleThroughFunction.beni`. `.codes`: `let_forward_reference` lacks
   "further down".
 - **Slice** R1.
+- **Status** fixed by R1 (2026-09-24): `checkLetOrder` reports `Forward.self_through` when the binding
+  reached through a `let` function is the one being defined, with the message "`n` is defined in
+  terms of itself, through `get`". The fixture is promoted to
+  `tests/corpus/check/bad/LetCycleThroughFunction.beni`.
 
 ### CK-47 — A malformed `exposing (T(..))` produces a cascade
 
@@ -1516,6 +1557,13 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     beni form, `exposing (Direction, Decoding, Encoding)` (`language.md` §5.2), and the later
     constructor uses stay quiet. The `.codes` stands as written.
 - **Slice** R1.
+- **Status** fixed by R1 (2026-09-24), D8 as amended. `..` is one token (`dot_dot`, `language.md`
+  §2.2), so the lexer reports nothing; the parser reports `expected_token` at the `(` and marks the
+  exposed name (`Bir.Exposed.all_ctors_token`); lowering keeps unknown constructors quiet in that
+  file; and resolution, which has the imported interface, rewrites that one diagnostic's text to
+  `exposing (Direction, Decoding, Encoding)` (`Session.rewriteMessage`). `fmt` and the dumps print
+  the parser's text, which writes `…` for the constructors. `language.md` §5.2 has the row. The
+  fixture is promoted to `tests/corpus/parse/bad/ExposingConstructorsElmStyle.beni`.
 
 ---
 
@@ -1970,6 +2018,15 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
   the per-worker interners in **file (path) order**, after lexing, or to intern per file and merge in
   path order, so a symbol's id is input-derived as `fast-compiler.md` §10 requires. CK-07's
   text-order rule (R4b) is still needed: ids stay unsuitable for any user-visible choice.
+- **Status** fixed by R1 (2026-09-24): `Session.mergeInterners` walks the files in index order (tokens,
+  then the Bir's symbols) and interns each symbol's text into the global pool on first sight; what no
+  file references is merged after, by text. Two gate tests replace `scenario/CK-71`: the in-source
+  "mergeInterners numbers symbols in file order, whichever worker lexed the file", which hands the
+  files to the workers backwards on purpose and is red under the old worker-order merge, and
+  `blackbox_test.zig`'s "diagnostics do not depend on which worker lexed which file, under load
+  (CK-71)", 36 runs at `--jobs=8` with a spinning thread per logical CPU (41 of 49 differed with
+  the fix stashed; the arithmetic is in the test). CK-07's text-order rule (R4b) is
+  still owed: an input-derived id still moves with every edit to an earlier file.
 
 ## K. From design review round 3 (added 2026-09-24)
 
@@ -2165,6 +2222,104 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
     `not_equatable` and `no_methods_on_shape` in each module, at 15:7 and 19:7.
 - **Slice** R8a.
 
+## L. Found by R1 and its review (2026-09-24)
+
+### CK-78 — A record alias's constructor as a pattern: supported, by decision
+
+- **Severity** none today — a decision recorded, not a defect. **Area** JS lowering. **Class** K14.
+  **Sources** R1, while giving the record-alias constructor its record representation (CK-43, D12);
+  R1's review (S3).
+- **Program**:
+
+  ```elm
+  type alias User = { name : String, age : Int }
+
+  nameOf : User -> String
+  nameOf (User n _) = n
+  ```
+
+  Also `let (User m _) = …` and `case u of User n a -> …`.
+- **History**
+  - `check` accepts the pattern: it resolves to the alias's implicit constructor and types as the
+    record. Elm has no such pattern.
+  - On 7427828 it ran, because the constructor built a tagged object with `a`, `b` slots.
+  - R1's first draft gave the constructor its record (D12) and refused the pattern at emit, since
+    the record has no slots. That broke programs that ran.
+- **Decision** (manager, 2026-09-24, rule 7): the pattern is irrefutable — the alias has one
+  constructor — and no guarantee is at stake, so it is SUPPORTED, not refused. The earlier
+  expectation "refused by `check`, as Elm does" is withdrawn.
+- **Status** done by R1. Argument `i` reads the alias's field `i` in declaration order, with no
+  test (`js/Lower.zig` `argName`, `Decision.Occ.via`; `backend.md` §4's row). The guard
+  `tests/corpus/run/RecordAliasConstructorPattern.beni` covers a parameter, a `let` pattern, a
+  `case` branch, one nested under `Just` and one under `as`, with `name` declared before `age` so
+  a positional read would swap them. It prints the same on 22daa5f. An IMPORTED alias's
+  constructor is still `not_implemented` at emit until interface v3 carries its field names
+  (CK-39, R3).
+- **Slice** R1.
+
+### CK-79 — Derived `==` and `compare` on a record are capped at 4 096 fields
+
+- **Severity** valid-program-rejected, with a message that says why. **Area** derivation's calling
+  convention. **Class** K10 (a representation width). **Sources** R1; R1's review (S1).
+- **Program** `r = { f1 = 1, …, f4097 = 1 }`, then `r == r` (or `r < r`).
+- **Command** build+run.
+- **Observed**
+  - On 7427828 every record over 256 fields was refused, as "There is a function in there": the
+    worklist overflowed (CK-17).
+  - R1's growable walk first let every width through, which exposed two failures:
+    - past 65 535 fields, derivation's `@intCast` into the `u16` evidence count (a panic in Debug);
+    - under Node 24, a 60 000- and a 65 530-field `r == r` BUILT, exit 0, and then threw
+      `RangeError: Maximum call stack size exceeded` at the derived call
+      `Main$eq$r$…(ev1, …, ev60000, r, r)`. 40 000 ran.
+  - R1 therefore caps a derived record `eq`/`compare` at `max_derived_record_fields` = 4 096
+    (`check/Diagnostics.zig`). Past it the use is `not_equatable` (`==`) or `no_methods_on_shape`
+    (`compare`), with a message naming the cap and suggesting `Basics.eq`, which is structural and
+    has no width limit. Pinned by `abuse_test.zig` "== on a record runs up to the derived-field cap
+    and is refused past it, never a runtime exception": 4 096 builds and runs; 4 097, 40 000,
+    60 000 and 65 530 are refused before anything is written.
+- **Why 4 096.** The engine's limit is not a constant. It depends on the stack depth at the call and
+  on the engine: V8 threw between 40 000 and 60 000 here, and JavaScriptCore and SpiderMonkey
+  (browser first) have their own limits. 4 096 is an order of magnitude under any of them.
+- **Expected** No cap. Lifting it needs a derived record function that takes its evidence as ONE
+  value (an array, or the record of evidence the checker-v2 evidence trees describe), not one
+  parameter per field. That is a `backend.md` §9 / `static-dispatch-spike.md` §9 representation
+  change, with `Dispatch.Derived.evidence_count: u16` widened or removed.
+- **Fixture** the abuse scenario above. Its expectation changes with the fix.
+- **Slice** R2a (manager, 2026-09-24): lifting the cap means the derived record comparison must not recurse per field, and R2a rewrites how `Lower` builds derived bodies; with CK-81 (the printer's recursion on the same chain).
+
+### CK-80 — `==` on a value whose type is a doubling DAG takes time exponential in its depth
+
+- **Severity** performance. **Area** solve: the derived path. **Class** K11. **Sources** R1's
+  review (N2). Present on 22daa5f and on R1; not an R1 regression.
+- **Program** `f x = ( x, [ x ] )`, then `w = f (f (… (f 1)))` n deep, then `w == w`.
+- **Command** check.
+- **Observed** Debug build of R1: n=8 0.10 s, 10 0.11 s, 12 0.14 s, 14 0.24 s, 16 0.65 s,
+  18 2.31 s. That is ×4 per two levels, and all of it is in `solve`. ReleaseFast (reviewer): 16/18/20
+  take 0.06/0.19/0.65 s. `Basics.eq w w` is 0.01 s.
+- **Expected** Linear in n. The type has n distinct pieces; only its unfolding as a tree is 2^n.
+- **Root cause (suspected)** The derived path treats the DAG as a tree. `fillPart` fills evidence
+  per position recursively, and `walkDerivable`'s nested walks at boundary types take fresh marks,
+  which overwrite the outer walk's, so shared sub-DAGs are walked again.
+- **Fixture** `scenario/CK-80` in `tests/blackbox/pending_test.zig`: time(n=18) / time(n=9) ≤ 2.5.
+  It is red on R1 as `slow` (ratio about 21).
+- **Slice** R6a (the resolver rewrite).
+
+### CK-81 — A derived `eq` over a nominal type with a very wide record payload crashes the printer
+
+- **Severity** compiler-crash-or-hang. **Area** JS printing (`js/Print.zig`). **Class** K11.
+  **Sources** R1, probing CK-79's cap. Present on 22daa5f.
+- **Program** `type T = T { f1 : Int, …, f60000 : Int }`, `r` a 60 000-field record, and `T r == T r`
+  in `main`.
+- **Command** build.
+- **Observed** Segmentation fault: `Print.raw` → `expression` → `raw` recurses once per `&&` of the
+  derived body, which compares every field inline as one left-nested chain 60 000 deep. At 5 000
+  fields it builds and prints `eq`. The CK-79 cap does not cover it, because the nominal type's body
+  is derived by the eager pass, not by the record walk at the use.
+- **Expected** It builds and runs, or a named refusal. A flat `&&` chain printed iteratively, or a
+  loop over the fields, would do; so would the same 4 096 cap on a derived nominal body's width.
+- **Fixture** none yet: a generated abuse scenario when a slice takes it.
+- **Slice** R2a (manager, 2026-09-24): R2a already rewrites how `Lower` builds derived bodies, and the printer's per-`&&` recursion is the same shape; R2a makes `js/Print.zig` iterate over operator chains.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2243,21 +2398,25 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-68 | diagnostic-quality | K2 | `check/bad/TupleIndexOuterResult.beni` | R5 |
 | CK-69 | diagnostic-quality | K7 | `check/bad/DerivedContextNeedsAnnotation/` (+ `…KeyFirst/`) | R8 |
 | CK-70 | diagnostic-quality | K6 | `check/bad/RecursiveDispatchTwoTypes.beni` (+ `…B.beni`) | R7 |
-| CK-71 | nondeterminism | K12 | `scenario/CK-71` (100 loaded runs at `--jobs=8`) | R1 |
+| CK-71 | nondeterminism | K12 | `scenario/CK-71` (100 loaded runs at `--jobs=8`); promoted by R1 into the gates | R1 |
 | CK-72 | compiler-crash-or-hang | K4 | `check/bad/RecursiveGroupReceiverNeedsAnnotation.beni` (+ twin) | R7 |
 | CK-73 | valid-program-rejected | K6 | `run/ScrutineeMethodLater.beni`, `check/good/ScrutineeMethodMergeVariant/`, `check/bad/ScrutineeMethodMergeD14/` | R7 |
 | CK-74 | diagnostic-quality | K7 | `check/bad/DerivedContextReentrant/` (+ twin) | R8a |
 | CK-75 | performance | K11 | `scenario/CK-75` (5 000 declarations, no dispatch) | unassigned — manager |
 | CK-76 | compiler-crash-or-hang | K4 | `check/bad/RecursiveGroupEvidenceReceiver/`, `check/bad/RecursiveGroupSubWanted/` | R7 |
 | CK-77 | diagnostic-quality | K7 | `check/bad/DerivedContextMergesAsker/` | R8a |
+| CK-78 | decision (supported) | K14 | guard `tests/corpus/run/RecordAliasConstructorPattern.beni` | R1 |
+| CK-79 | valid-program-rejected | K10 | — (`abuse_test.zig` pins the 4 096 cap) | unassigned — manager |
+| CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a |
+| CK-81 | compiler-crash-or-hang | K11 | — (none yet) | unassigned — manager |
 
 Totals:
-- 77 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4).
+- 81 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 17. Two of them (CK-13, CK-24) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 7.
-- valid-program-rejected: 16.
+- compiler-crash-or-hang: 8.
+- valid-program-rejected: 17.
 - nondeterminism: 2.
-- performance: 4.
+- performance: 5.
 - diagnostic-quality: 22.
 - latent: 9.
-- Outside the checker (K14): 5.
+- Outside the checker (K14): 6 (CK-78 among them).

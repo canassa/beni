@@ -25,6 +25,8 @@ const show = (value, seen) => {
       const args = keys.filter((k) => k !== "$" && value[k] !== null).map((k) => show(value[k], seen));
       return args.length === 0 ? value.$ : `${value.$} ${args.join(" ")}`;
     }
+    // Elm prints the empty record as `{}`, not `{  }`.
+    if (keys.length === 0) return "{}";
     return `{ ${keys.map((k) => `${k} = ${show(value[k], seen)}`).join(", ")} }`;
   } finally {
     seen.delete(value);

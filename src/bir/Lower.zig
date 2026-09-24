@@ -147,6 +147,11 @@ cur_decl: u32 = 0,
 /// While lowering a `via` Atom, lexical locals resolve normally and every
 /// nonlocal name stays as an unresolved schema-expression leaf for S2.
 in_schema_expr: bool = false,
+/// An import of this file wrote Elm's `T(..)` (CK-47). Its constructors
+/// are unknown here — only the imported module's interface lists them —
+/// so an unknown constructor is left quiet, as an error instruction, and
+/// resolution's one `expected_token` names what to write instead.
+exposes_all_ctors: bool = false,
 cur_locals_start: u32 = 0,
 cur_refs_start: u32 = 0,
 cur_inst_start: u32 = 0,
@@ -611,7 +616,9 @@ fn lowerImport(l: *Lower, node: NodeIndex) Allocator.Error!void {
         if (l.tree.nodeTag(e) != .exposed) continue;
         const token = l.tree.nodeMainToken(e);
         const symbol = l.tokenSymbol(token);
-        try l.exposed.append(l.gpa, .{ .name = try l.addSymbol(symbol), .token = token });
+        const all_ctors_token = l.tree.nodeData(e).lhs;
+        if (all_ctors_token != 0) l.exposes_all_ctors = true;
+        try l.exposed.append(l.gpa, .{ .name = try l.addSymbol(symbol), .token = token, .all_ctors_token = all_ctors_token });
         const entry: NameEntry = .{ .kind = .exposed, .index = import_index, .token = token };
         switch (l.tags[token]) {
             .lower_ident => try l.expose(&l.values, symbol, entry),
@@ -1438,7 +1445,7 @@ fn resolveCtor(l: *Lower, token: TokenIndex) Allocator.Error!Index {
         const name = try l.addSymbol(symbol);
         return l.addInst(.schema_expr_ref, @intFromEnum(name), 0);
     }
-    try l.reportToken(.unbound_constructor, token);
+    if (!l.exposes_all_ctors) try l.reportToken(.unbound_constructor, token);
     return l.errorInst(.unbound_constructor);
 }
 
@@ -1663,12 +1670,60 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
 }
 
 /// `record_type_field` nodes to a range of `Field` pairs.
+/// `duplicate_field` (language.md §4) over the field names of one record,
+/// a literal's or a TYPE's: the second and every later `a` is reported at
+/// its own name. Linear for the short records every program writes, and a
+/// hash set past `linear_limit`, so a generated 100 000-field record costs
+/// n and not n²/2.
+const FieldNames = struct {
+    const linear_limit = 16;
+
+    /// The first `linear_limit` names, with no allocation: every record a
+    /// person writes stays here.
+    few: [linear_limit]Symbol = undefined,
+    len: usize = 0,
+    /// Every name, once there are more than `linear_limit`.
+    set: std.AutoHashMapUnmanaged(Symbol, void) = .empty,
+
+    fn deinit(f: *FieldNames, gpa: Allocator) void {
+        f.set.deinit(gpa);
+    }
+
+    /// Records `symbol`; true when the record already named it.
+    fn seen(f: *FieldNames, gpa: Allocator, symbol: Symbol) Allocator.Error!bool {
+        if (f.len < linear_limit) {
+            if (std.mem.indexOfScalar(Symbol, f.few[0..f.len], symbol) != null) return true;
+            f.few[f.len] = symbol;
+            f.len += 1;
+            return false;
+        }
+        if (f.set.count() == 0) {
+            for (f.few) |n| try f.set.put(gpa, n, {});
+        }
+        const entry = try f.set.getOrPut(gpa, symbol);
+        return entry.found_existing;
+    }
+};
+
 fn lowerTypeFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRange {
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
+    var names: FieldNames = .{};
+    defer names.deinit(l.gpa);
     for (fields) |f| {
         if (l.tree.nodeTag(f) != .record_type_field) continue;
-        const name = try l.addSymbol(l.tokenSymbol(l.tree.nodeMainToken(f)));
+        const name_token = l.tree.nodeMainToken(f);
+        const symbol = l.tokenSymbol(name_token);
+        // CK-44: the check a literal has always had. The field is still
+        // lowered, so its type is resolved and reported like any other,
+        // but it is not kept: `TypeStore`'s records have one field per
+        // name (`Solve.gatherFields`), and the first `a` is the one read.
+        if (try names.seen(l.gpa, symbol)) {
+            try l.reportToken(.duplicate_field, name_token);
+            _ = try l.lowerType(l.tree.operand(f));
+            continue;
+        }
+        const name = try l.addSymbol(symbol);
         const value = try l.lowerType(l.tree.operand(f));
         try l.pushScratch(name);
         try l.pushScratch(value);
@@ -2421,7 +2476,10 @@ fn checkLetOrder(
             if (!bindings[e.to].defers or seen[e.to]) continue;
             seen[e.to] = true;
             if (try l.reachesTooSoon(edges.items, bindings, seen, &work, e.to, k)) |hit| {
-                try l.reportForward(e.token, local_tokens[hit.local - first_local], .through);
+                // CK-46: the binding reached may be `k` itself — `n = get ()`
+                // where `get` reads `n` — and then it is not "further down".
+                const forward: Diagnostics.Item.Forward = if (hit.to == k) .self_through else .through;
+                try l.reportForward(e.token, local_tokens[hit.local - first_local], forward);
                 break;
             }
         }
@@ -2627,19 +2685,13 @@ fn localOfInst(l: *const Lower, inst: Index) u32 {
 fn lowerFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRange {
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
+    var names: FieldNames = .{};
+    defer names.deinit(l.gpa);
     for (fields) |f| {
         if (l.tree.nodeTag(f) != .field) continue;
         const name_token = l.tree.nodeMainToken(f);
         const symbol = l.tokenSymbol(name_token);
-        // Fields written so far: every second scratch word is a name.
-        const written = l.scratchSince(mark);
-        var j: usize = 0;
-        while (j < written.len) : (j += 2) {
-            if (l.symbols.items[written[j]] == symbol) {
-                try l.reportToken(.duplicate_field, name_token);
-                break;
-            }
-        }
+        if (try names.seen(l.gpa, symbol)) try l.reportToken(.duplicate_field, name_token);
         const name = try l.addSymbol(symbol);
         const value = try l.lowerExpr(l.tree.operand(f));
         try l.pushScratch(name);

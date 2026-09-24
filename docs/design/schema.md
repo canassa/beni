@@ -1067,7 +1067,10 @@ unchanged. Readers validate schema/member/constructor ranges, kinds, schemes,
 arity and visibility. Any failure, including a
 version mismatch, is a cache miss. The front-end artifact becomes version 3;
 this is the explicit S2 boundary after S1's version 2 unresolved schema graph,
-and its existing `verifySchemaInst` validation remains mandatory. In S2, `via`
+and its existing `verifySchemaInst` validation remains mandatory. *(2026-09-24: the
+checker rewrite's R1 made it version 4 — `Token.Tag` gained `dot_dot`, which
+shifts later tags, and `Bir.Exposed` gained `all_ctors_token` — with no change
+to the schema sections.)* In S2, `via`
 leaves use ordinary value-reference instructions and declaration references:
 these are real value dependencies for mixed schema/value SCCs and cache keys.
 The BIR dump therefore shows `qualified` and `import_value` for imported

@@ -11,15 +11,14 @@
 //!   2. Workers pull file indices from one atomic counter. Which worker takes
 //!      which file is unobservable: every per-file result lands in a column
 //!      of that file's index, and every per-worker tally is a commutative sum.
-//!   3. Interners are merged in worker index order, never completion order,
-//!      so the merge ORDER does not depend on scheduling. Note what this
-//!      does and does not buy: a worker's local pool holds the identifiers
-//!      of the files it happened to take, so the global index a given
-//!      identifier ends up with still varies with `--jobs`. Nothing
-//!      observable depends on it — no `Symbol` is ever printed; the dumps
-//!      and the diagnostics print text — and the moment one reaches an
-//!      artifact that is compared or cached, this becomes a bug and the
-//!      ids have to be assigned by a pass keyed on file index instead.
+//!   3. Interners are merged in FILE index order (`mergeInterners`): each
+//!      file's tokens, then its Bir's symbols, interned on first sight, and
+//!      what no file references after them by text. So the global index an
+//!      identifier gets is a function of the input, never of which worker
+//!      took which file or of `--jobs` (CK-71; it was worker index order,
+//!      which let `unifyRecord`'s choice by id vary between runs). An id
+//!      still moves with every edit to an earlier file, so nothing a user
+//!      sees may be chosen by one.
 //!   4. Diagnostics are gathered in file index order (each file's are
 //!      produced serially by one worker, in source order) and then stably
 //!      sorted by the schema's comparator.
@@ -574,16 +573,14 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
         return error.InputPath;
     }
 
-    // 3. Merge interners in worker index order, then rewrite every file's
-    //    interned payloads and Bir symbols through its worker's remap table.
+    // 3. Merge interners in FILE order (`mergeInterners`), then rewrite
+    //    every file's interned payloads and Bir symbols through its
+    //    worker's remap table.
     const merge_token = session.profile.begin();
-    const remaps = try gpa.alloc([]InternPool.Symbol, session.workers.len);
-    defer gpa.free(remaps);
-    var merged: usize = 0;
-    defer for (remaps[0..merged]) |remap| gpa.free(remap);
-    for (session.workers, remaps) |*worker, *remap| {
-        remap.* = try session.interner.merge(gpa, &worker.interner);
-        merged += 1;
+    const remaps = try session.mergeInterners();
+    defer {
+        for (remaps) |remap| gpa.free(remap);
+        gpa.free(remaps);
     }
     for (0..session.store.count()) |i| {
         const file: SourceStore.Index = @enumFromInt(i);
@@ -1286,6 +1283,67 @@ fn resolveSerial(session: *Session) RunError!void {
     try session.reportResolveDiagnostics();
 }
 
+/// One remap table per worker, `local symbol → global symbol`, with every
+/// worker's pool merged into `session.interner` in FILE order.
+///
+/// A symbol's global id is the order its text is first met walking the
+/// files by index — sorted path order — and each file's tokens, then its
+/// Bir's symbol column. That is a function of the input alone
+/// (`fast-compiler.md` §10, rule 5). Merging whole pools in WORKER order,
+/// which this did until CK-71, numbered a symbol by which worker the
+/// `next_file` race handed its file to, so any choice made by id —
+/// `unifyRecord`'s was the one found — changed between runs of the same
+/// input at the same `--jobs`.
+fn mergeInterners(session: *Session) Allocator.Error![][]InternPool.Symbol {
+    const gpa = session.gpa;
+    const remaps = try gpa.alloc([]InternPool.Symbol, session.workers.len);
+    var made: usize = 0;
+    errdefer {
+        for (remaps[0..made]) |remap| gpa.free(remap);
+        gpa.free(remaps);
+    }
+    for (session.workers, remaps) |*worker, *remap| {
+        remap.* = try gpa.alloc(InternPool.Symbol, worker.interner.count());
+        @memset(remap.*, InternPool.unmapped);
+        made += 1;
+    }
+    for (0..session.store.count()) |i| {
+        const file: SourceStore.Index = @enumFromInt(i);
+        const w = session.artifacts.worker(file);
+        const local = &session.workers[w].interner;
+        const remap = remaps[w];
+        const list = session.artifacts.tokens(file);
+        for (list.items(.tag), list.items(.payload)) |tag, payload| {
+            if (tag.isInterned()) try session.interner.mergeOne(gpa, local, remap, @enumFromInt(payload));
+        }
+        for (session.artifacts.bir(file).symbols) |s| try session.interner.mergeOne(gpa, local, remap, s);
+    }
+    // Whatever no file references — the well-known prefix, which maps to
+    // itself — is merged last, by text, so even an unreferenced id is
+    // input-derived.
+    const locals = try gpa.alloc(*const InternPool.Local, session.workers.len);
+    defer gpa.free(locals);
+    for (session.workers, locals) |*worker, *local| local.* = &worker.interner;
+    try session.interner.mergeRest(gpa, locals, remaps);
+    return remaps;
+}
+
+/// `quiet[m]` for every module whose file an earlier phase reported an
+/// ERROR on (checker.md §4.3, `Check.Options.quiet`). A WARNING leaves the
+/// module loud: it says nothing is wrong, and silencing a module's type
+/// errors for one would let a program with a type error print only the
+/// warning and exit 0 (CK-12). `graph` is anything with `count` and
+/// `moduleFile`, so the rule can be tested without building one.
+fn markQuiet(quiet: []bool, graph: anytype, pending: []const Worker.Pending) void {
+    for (pending) |p| {
+        if (p.diagnostic.severity != .@"error") continue;
+        for (0..graph.count()) |i| {
+            const m: Graph.Index = @enumFromInt(i);
+            if (graph.moduleFile(m) == p.file) quiet[i] = true;
+        }
+    }
+}
+
 /// The type checker (checker.md §6), after the graph and resolution: one
 /// `TypeStore` per module, in topological order, each reading only its own
 /// Bir and the interfaces of its imports.
@@ -1302,14 +1360,7 @@ fn checkSerial(session: *Session) RunError!void {
     const quiet = try gpa.alloc(bool, session.graph.count());
     defer gpa.free(quiet);
     @memset(quiet, false);
-    for (session.workers) |*w| {
-        for (w.diagnostics.items) |pending| {
-            for (0..session.graph.count()) |i| {
-                const m: Graph.Index = @enumFromInt(i);
-                if (session.graph.moduleFile(m) == pending.file) quiet[i] = true;
-            }
-        }
-    }
+    for (session.workers) |*w| markQuiet(quiet, &session.graph, w.diagnostics.items);
 
     // The keys' OWN terms (`fast-compiler.md` §8), serially, between
     // resolution and the check: `quiet` is what says which modules have no
@@ -1772,8 +1823,29 @@ fn reportResolveDiagnostics(session: *Session) RunError!void {
         if (item.code == .unknown_module_alias) cx.platform = session.platformOffering(cx.module);
         try ResolveDiagnostics.message(item.code, cx, &message.writer);
         const start, const end = session.tokenSpan(file, item.token);
+        if (item.code == .expected_token and try session.rewriteMessage(file, item.code, start, message.written())) continue;
         try session.workers[0].report(session, file, item.code, start, end, message.written());
     }
+}
+
+/// Replace the text of the diagnostic an earlier phase reported for
+/// `file` with `code` at `start`, and say whether there was one. Elm's
+/// `exposing (T(..))` is the one user (CK-47): the parser reports it where
+/// it is written, and only resolution can name `T`'s constructors — one
+/// diagnostic, with the better text, and not two.
+fn rewriteMessage(session: *Session, file: SourceStore.Index, code: diagnostic.Code, start: diagnostic.Position, message: []const u8) Allocator.Error!bool {
+    for (session.workers) |*w| {
+        for (w.diagnostics.items) |*pending| {
+            const d = &pending.diagnostic;
+            if (pending.file != file or d.code != code) continue;
+            if (d.span.start.line != start.line or d.span.start.col != start.col) continue;
+            const owned = try wrap.reflow(session.gpa, message);
+            session.gpa.free(d.message);
+            d.message = owned;
+            return true;
+        }
+    }
+    return false;
 }
 
 fn isMalformedSchemaReference(session: *const Session, file: SourceStore.Index, token: u32) bool {
@@ -2088,4 +2160,89 @@ test "collectDiagnostics orders by file then comparator regardless of worker" {
         .title = "TAB CHARACTER",
         .message = "w1-a",
     }, session.diagnostics.items[0]);
+}
+
+// CK-12, a documented rule-3 exception (plans/checker-findings.md): no
+// frontend phase emits a warning today, so no program can show a module
+// silenced by one, and the rule is pinned here instead.
+test "markQuiet: an earlier phase's ERROR quiets its module, a WARNING does not" {
+    const FakeGraph = struct {
+        files: []const SourceStore.Index,
+        fn count(g: *const @This()) usize {
+            return g.files.len;
+        }
+        fn moduleFile(g: *const @This(), m: Graph.Index) SourceStore.Index {
+            return g.files[m.int()];
+        }
+    };
+    const f0: SourceStore.Index = @enumFromInt(0);
+    const f1: SourceStore.Index = @enumFromInt(1);
+    const f2: SourceStore.Index = @enumFromInt(2);
+    // Module i lives in file 2 - i, so a mix-up of the two numberings shows.
+    const graph: FakeGraph = .{ .files = &.{ f2, f1, f0 } };
+    const span: diagnostic.Span = .{ .file = "x.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 2 } };
+    const pending = [_]Worker.Pending{
+        .{ .file = f0, .diagnostic = .{ .code = .ambiguous_method_receiver, .severity = .warning, .span = span, .title = "", .message = "" } },
+        .{ .file = f1, .diagnostic = .{ .code = .tab_in_source, .severity = .@"error", .span = span, .title = "", .message = "" } },
+    };
+    var quiet = [_]bool{ false, false, false };
+    markQuiet(&quiet, &graph, &pending);
+    try testing.expectEqualSlices(bool, &.{ false, true, false }, &quiet);
+}
+
+// CK-71's reliable half (the black-box half is `blackbox_test.zig`'s loaded
+// determinism test, which only a racing scheduler can turn red): the files
+// are handed to the workers in the one order the race can produce and a
+// fixed run cannot — file 0 to worker 1, file 1 to worker 0 — and the ids
+// must still follow the FILES.
+test "mergeInterners numbers symbols in file order, whichever worker lexed the file" {
+    const gpa = testing.allocator;
+    var session = try Session.init(gpa, testing.io, .{ .jobs = 2, .diagnostics = .json });
+    defer session.deinit();
+    try session.store.addPending(gpa, "A.beni", 2, .app);
+    try session.store.addPending(gpa, "B.beni", 2, .app);
+    try session.store.finish(gpa);
+    try session.artifacts.resize(gpa, 2);
+
+    // Worker 0 lexed B (file 1) and worker 1 lexed A (file 0). Both files
+    // name `shared`; only A names `fromA` and only B names `fromB`.
+    const w0 = &session.workers[0].interner;
+    const w1 = &session.workers[1].interner;
+    const b_only = try w0.getOrPut(gpa, "fromB");
+    const b_shared = try w0.getOrPut(gpa, "shared");
+    const a_shared = try w1.getOrPut(gpa, "shared");
+    const a_only = try w1.getOrPut(gpa, "fromA");
+    const files = [_]struct { worker: u32, symbols: [2]InternPool.Symbol }{
+        .{ .worker = 1, .symbols = .{ a_shared, a_only } },
+        .{ .worker = 0, .symbols = .{ b_only, b_shared } },
+    };
+    for (files, 0..) |f, i| {
+        var list: @import("lex/Token.zig").TokenList = .empty;
+        for (f.symbols) |s| try list.append(gpa, .{ .tag = .lower_ident, .start = 0, .line = 0, .payload = @intFromEnum(s) });
+        try list.append(gpa, .{ .tag = .eof, .start = 0, .line = 0, .payload = 0 });
+        session.artifacts.set(gpa, @enumFromInt(i), .{ .tokens = list, .comments = &.{}, .lex_diagnostics = &.{}, .ast = .empty, .bir = .empty, .formatted = null, .worker = f.worker });
+    }
+
+    const remaps = try session.mergeInterners();
+    defer {
+        for (remaps) |remap| gpa.free(remap);
+        gpa.free(remaps);
+    }
+
+    // File A's names come first, in A's token order, then B's new one —
+    // however the pools were filled and in whatever order they were built.
+    const shared = remaps[1][@intFromEnum(a_shared)];
+    const from_a = remaps[1][@intFromEnum(a_only)];
+    const from_b = remaps[0][@intFromEnum(b_only)];
+    try testing.expectEqual(shared, remaps[0][@intFromEnum(b_shared)]);
+    try testing.expect(@intFromEnum(shared) < @intFromEnum(from_a));
+    try testing.expect(@intFromEnum(from_a) < @intFromEnum(from_b));
+    try testing.expectEqualStrings("fromB", session.interner.slice(from_b));
+    // Every slot is filled, the well-known prefix to itself.
+    for (remaps) |remap| {
+        for (remap, 0..) |g, local| {
+            try testing.expect(g != InternPool.unmapped);
+            if (local < InternPool.WellKnown.count) try testing.expectEqual(@as(u32, @intCast(local)), @intFromEnum(g));
+        }
+    }
 }

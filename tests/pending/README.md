@@ -20,7 +20,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
 | `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line |
 | `v2-green.txt` | corpus fixtures a landed slice made green under v2 (R4's `test-v2` ratchet) |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75) and repeatability (CK-71), plus R7's permutation and nesting stubs — as scenarios `scenario/CK-NN` |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80), plus R7's permutation and nesting stubs — as scenarios `scenario/CK-NN` |
 
 ## A fixture
 
@@ -56,8 +56,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
   line for the checker under test, or a duplicate line in `RED` or `CLAIMED`;
 - **(b)** a fixture GREEN under the default checker: promote it now (`git mv` into
   `tests/corpus/`, `.codes` → blessed `.diag`; a scenario moves verbatim into `abuse_test.zig`) and
-  delete its `RED` line. `scenario/CK-71` is the one exception, report-only on GREEN, because its
-  race cannot be forced from outside the binary (see its comment);
+  delete its `RED` line;
 - **(c)** a `CLAIMED` fixture that is RED under `v2`;
 - **(d)** a RED fixture whose signature differs from its `RED` line — under **every** checker,
   so a fixture red under `v2` needs a `v2` line too — or a fixture GREEN under a non-default
@@ -104,6 +103,8 @@ by `build.zig` on every run, so nothing exported in a shell changes what a step 
   modules as written, with D14's `type_mismatch`. `check/good/ScrutineeMethodMergeVariant/` holds
   them without the helper, testing only that `g` is not merged. Its `.iface` is still written by
   reasoning, for R7 to confirm.
-- **`scenario/CK-71` is report-only on GREEN**: its race cannot be forced from outside the binary.
+- **`scenario/CK-71` was promoted by R1** into the gates: `blackbox_test.zig`'s loaded
+  determinism test and `Session.zig`'s `mergeInterners` test. The report-only rule it needed
+  is gone with it.
 - **`scenario/CK-42` measures the extra cost of nominal `==`** over the same program with
   `x == x`; the control's own super-linearity is `scenario/CK-75`.

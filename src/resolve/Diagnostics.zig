@@ -44,6 +44,25 @@ pub const Context = struct {
 
 pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Writer.Error!void {
     switch (code) {
+        // Elm's `exposing (T(..))` (CK-47, D8 as amended). The parser
+        // reported it at the `(`; this is the same diagnostic with the
+        // constructors the imported module's interface lists — `available`
+        // — spelled into the form beni wants (language.md §5.2).
+        .expected_token => {
+            try w.print(
+                \\`{s}(..)` is how Elm exposes every constructor of `{s}`, and beni has no
+                \\wildcard: list the constructors you use by name, beside the type.
+                \\
+                \\    exposing ({s}
+            , .{ cx.name, cx.name, cx.name });
+            if (cx.available.len == 0) {
+                try w.writeAll(")\n\n");
+                try w.print("`{s}` has no constructors this module can see.", .{cx.name});
+            } else {
+                for (cx.available) |ctor| try w.print(", {s}", .{ctor});
+                try w.writeAll(")");
+            }
+        },
         .unknown_module => {
             try w.print(
                 \\I cannot find a module named `{s}`.

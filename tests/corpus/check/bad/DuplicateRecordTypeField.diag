@@ -1,0 +1,1 @@
+[{"code":"duplicate_field","severity":"error","span":{"file":"tests/corpus/check/bad/DuplicateRecordTypeField.beni","start":{"line":9,"col":16},"end":{"line":9,"col":17}},"title":"DUPLICATE FIELD","message":"The field `a` appears twice in this record.\n\nEach field of a record is set once. Remove one of the two."}]

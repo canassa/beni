@@ -1,2 +1,0 @@
-# D8 as amended: `expected_token` at the `(`, suggesting `exposing (Direction, Decoding, Encoding)`.
-expected_token 10:34 contains "Decoding" contains "Encoding"

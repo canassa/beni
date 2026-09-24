@@ -157,7 +157,8 @@ pub const Node = struct {
         /// `Import`; `rhs` unused.
         import,
         /// One name in an `exposing` list. `main_token` is the identifier
-        /// (lower or upper); data unused.
+        /// (lower or upper); `lhs` is the `(` of Elm's `T(..)` written after
+        /// it (reported as `expected_token`, CK-47), or 0; `rhs` unused.
         exposed,
 
         // ---- Declarations ----------------------------------------------

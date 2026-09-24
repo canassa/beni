@@ -196,6 +196,7 @@ pub fn lower(
     // body has been walked. They are then spliced in front, because an ES
     // module reads top to bottom and a reader wants the imports first.
     var declarations: std.ArrayList(Node.Index) = .empty;
+    try l.refuseAliasCtors();
     try l.declarations(&declarations);
     try l.exports(&declarations);
     // §9's derived functions and §9.1's primitive comparators, one pass
@@ -270,6 +271,15 @@ const CtorRep = union(enum) {
     bare_tag,
     /// `{$: "Tag", a, b, …}`, padded to `fields` slots.
     tagged: struct { fields: u32 },
+    /// A record alias's implicit constructor (backend.md §4's row, owner
+    /// decision D12): the RECORD it builds, keys sorted by name text as
+    /// every record literal's are (`recordNode`), and no tag. `decl` is this
+    /// module's alias declaration, whose body is the `type_record` that
+    /// names the fields in argument order. A pattern over it reads those
+    /// fields by name (`argName`). Only ever LOCAL: an imported alias's
+    /// field names are not in interface v2, so `refuseAliasCtors` refuses
+    /// that use rather than emit a second representation of one type.
+    record: struct { decl: u32 },
 };
 
 const StmtList = std.ArrayList(Node.Index);
@@ -1324,8 +1334,102 @@ const Lowerer = struct {
         {
             return .{ .boolean = l.bir.symbol(c.name) == InternPool.WellKnown.True.symbol() };
         }
+        if (owner.kind == .type_alias) return .{ .record = .{ .decl = c.decl.int() } };
         if (max == 0) return .bare_tag;
         return .{ .tagged = .{ .fields = max } };
+    }
+
+    /// The fields of a local record alias, in argument order: the body of
+    /// the declaration a `.record` representation names.
+    fn aliasFields(l: *Lowerer, decl: u32) []const Bir.Field {
+        const body = l.bir.decls[decl].annotation.unwrap() orelse return &.{};
+        if (l.bir.instTag(body) != .type_record) return &.{};
+        return l.bir.extraSlice(Bir.inlineRange(l.bir.instData(body)), Bir.Field);
+    }
+
+    /// The canonical key order of a record whose fields are `fields`: a
+    /// permutation of their indices, sorted by NAME TEXT (`recordNode`).
+    fn fieldOrder(l: *Lowerer, fields: []const Bir.Field) ![]u32 {
+        const order = try l.scratch.alloc(u32, fields.len);
+        for (order, 0..) |*slot, i| slot.* = @intCast(i);
+        const Sorter = struct {
+            lower: *Lowerer,
+            fields: []const Bir.Field,
+            fn lessThan(s: @This(), a: u32, b: u32) bool {
+                return std.mem.lessThan(u8, s.text(a), s.text(b));
+            }
+            fn text(s: @This(), i: u32) []const u8 {
+                return s.lower.text(s.lower.bir.symbol(s.fields[i].name));
+            }
+        };
+        std.mem.sort(u32, order, Sorter{ .lower = l, .fields = fields }, Sorter.lessThan);
+        return order;
+    }
+
+    fn isPermuted(order: []const u32) bool {
+        for (order, 0..) |field, k| {
+            if (field != k) return true;
+        }
+        return false;
+    }
+
+    /// The property a constructor's argument `i` is read from: the alias's
+    /// field `i` (declaration order) for a record alias's constructor, whose
+    /// value IS the record (backend.md §4), and the positional `a`, `b`, …
+    /// for every other one — `via` null included, which is a tuple's or a
+    /// list cell's occurrence.
+    ///
+    /// A record alias's constructor PATTERN (`nameOf (User n _) = n`) is
+    /// accepted by the front end, and it is irrefutable — one constructor —
+    /// so it compiles to these reads with no test (the manager's decision of
+    /// 2026-09-24 under rule 7, CK-78).
+    fn argName(l: *Lowerer, via: ?Inst.Index, i: u32) !Symbol {
+        if (via) |ref| {
+            if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
+                .record => |r| {
+                    const fields = l.aliasFields(r.decl);
+                    if (i < fields.len) return l.bir.symbol(fields[i].name);
+                },
+                else => {},
+            };
+        }
+        return l.slotName(i);
+    }
+
+    /// `not_implemented` for the one use of a record alias's constructor
+    /// this emitter cannot write as `backend.md` §4's record-alias row says:
+    /// an IMPORTED alias's constructor, whose field names interface v2 does
+    /// not carry (CK-39; interface v3's `record_alias` rows, slice R3). The
+    /// checker types that use as an opaque nominal today, and writing the
+    /// old tagged object would give one type two shapes at run time.
+    ///
+    /// Run over the whole module, reachable or not: elimination decides
+    /// what is written, never what is checked (§5).
+    fn refuseAliasCtors(l: *Lowerer) !void {
+        const tags = l.bir.insts.items(.tag);
+        for (tags, 0..) |tag, i| {
+            const inst: Inst.Index = @enumFromInt(i);
+            switch (tag) {
+                .ext_ctor => {
+                    const d = l.bir.instData(inst);
+                    const module: Graph.Index = @enumFromInt(d.lhs);
+                    if (module.int() >= l.in.interfaces.len) continue;
+                    const iface = &l.in.interfaces[module.int()];
+                    if (d.rhs >= iface.ctors.len) continue;
+                    const c = iface.ctors[d.rhs];
+                    if (iface.types[@intFromEnum(c.type)].kind != .alias) continue;
+                    const spelled = l.text(iface.symbols[@intFromEnum(c.name)]);
+                    try l.report(.not_implemented, inst,
+                        \\I cannot build `{s}` with its constructor outside the module that declares it yet.
+                        \\
+                        \\`{s}` is a record alias, so `{s} …` builds a record (`docs/design/backend.md` §4),
+                        \\and this module's view of `{s}` does not carry its field names. Write the
+                        \\record literal instead, `{{ field = value, … }}`.
+                    , .{ spelled, spelled, spelled, spelled });
+                },
+                else => {},
+            }
+        }
     }
 
     fn ctorRepExternal(l: *Lowerer, module: Graph.Index, ctor_index: u32) CtorRep {
@@ -1375,6 +1479,18 @@ const Lowerer = struct {
                     const slot = try l.slotName(@intCast(i));
                     const value = if (i < args.len) args[i] else try l.nullNode(p);
                     try properties.append(l.scratch, try l.property(slot, value, p));
+                }
+                return l.object(properties.items, p);
+            },
+            .record => |r| {
+                // `args` are already in written order, pinned by the caller
+                // wherever the key order below would move an evaluation.
+                const fields = l.aliasFields(r.decl);
+                const order = try l.fieldOrder(fields);
+                var properties: std.ArrayList(Node.Index) = .empty;
+                for (order) |field| {
+                    const value = if (field < args.len) args[field] else try l.nullNode(p);
+                    try properties.append(l.scratch, try l.property(l.bir.symbol(fields[field].name), value, p));
                 }
                 return l.object(properties.items, p);
             },
@@ -1693,23 +1809,8 @@ const Lowerer = struct {
     /// and ran `{ zed = p, alpha = q }` as `q` then `p`.
     fn recordNode(l: *Lowerer, out: *StmtList, range: Bir.SubRange, p: u32) !Node.Index {
         const fields = l.bir.extraSlice(range, Bir.Field);
-        const order = try l.scratch.alloc(u32, fields.len);
-        for (order, 0..) |*slot, i| slot.* = @intCast(i);
-        const Sorter = struct {
-            lower: *Lowerer,
-            fields: []const Bir.Field,
-            fn lessThan(s: @This(), a: u32, b: u32) bool {
-                return std.mem.lessThan(u8, s.text(a), s.text(b));
-            }
-            fn text(s: @This(), i: u32) []const u8 {
-                return s.lower.text(s.lower.bir.symbol(s.fields[i].name));
-            }
-        };
-        std.mem.sort(u32, order, Sorter{ .lower = l, .fields = fields }, Sorter.lessThan);
-        var reordered = false;
-        for (order, 0..) |field, k| {
-            if (field != k) reordered = true;
-        }
+        const order = try l.fieldOrder(fields);
+        const reordered = isPermuted(order);
         const insts = try l.scratch.alloc(Inst.Index, fields.len);
         for (fields, insts) |f, *slot| slot.* = f.value;
         const values = try l.orderedExprs(out, insts, reordered);
@@ -1778,6 +1879,9 @@ const Lowerer = struct {
                 subject
             else
                 try l.unary(.not, subject, p),
+            // `Nothing` and `Err` are constructors of `type`s in the
+            // embedded core, never of a record alias.
+            .record => unreachable,
         };
         try l.ifStatement(out, failed, &.{try l.returnStmt(subject, p)}, p);
         return l.member(subject, try l.slotName(0), p);
@@ -3771,7 +3875,14 @@ const Lowerer = struct {
         // saturated, so `args` is exactly its field list.
         if (l.ctorRepOf(callee_inst)) |rep_and_tag| {
             const rep, const tag = rep_and_tag;
-            const args = try l.exprList(out, l.bir.subRange(@enumFromInt(d.rhs)));
+            // A record alias's constructor sorts its keys like any record
+            // literal, so its arguments are pinned exactly as `recordNode`
+            // pins a literal's initialisers (`language.md` §6).
+            const reordered = switch (rep) {
+                .record => |r| isPermuted(try l.fieldOrder(l.aliasFields(r.decl))),
+                else => false,
+            };
+            const args = try l.orderedExprs(out, l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), reordered);
             return l.ctorValue(rep, tag, args, p);
         }
 
@@ -4411,7 +4522,9 @@ const Lowerer = struct {
                 const rep = l.fanRep(c, fan) orelse return subject;
                 return switch (rep) {
                     .tagged => try l.member(subject, l.well.tag, c.p),
-                    .boolean, .bare_tag => subject,
+                    // `.record`: a record alias has ONE constructor, so it
+                    // never fans out and nothing reads this for it.
+                    .boolean, .bare_tag, .record => subject,
                 };
             },
             .int, .char, .string => return subject,
@@ -4486,7 +4599,7 @@ const Lowerer = struct {
         const node = if (o.parent == Decision.Occ.no_parent)
             c.roots[o.root]
         else
-            try l.member(try l.occNode(c, o.parent), try l.slotName(o.slot), c.p);
+            try l.member(try l.occNode(c, o.parent), try l.argName(o.via.unwrap(), o.slot), c.p);
         c.occ_nodes[occ] = node.toOptional();
         return node;
     }
@@ -4596,8 +4709,9 @@ const Lowerer = struct {
                 }
             },
             .pat_ctor => {
+                const ref: Inst.Index = @enumFromInt(d.lhs);
                 for (l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), 0..) |arg, i| {
-                    try l.bindings(out, arg, try l.member(subject, try l.slotName(@intCast(i)), p));
+                    try l.bindings(out, arg, try l.member(subject, try l.argName(ref, @intCast(i)), p));
                 }
             },
             .pat_cons => {

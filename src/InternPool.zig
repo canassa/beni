@@ -8,18 +8,19 @@
 //!
 //! Two pools exist because a single shared interner serialises exactly the
 //! phase being parallelised (oxc lost ~30% to that, research/03). Each worker
-//! interns into its own `Local`; after the parallel phase the driver calls
-//! `Global.merge` for each worker IN WORKER INDEX ORDER, which returns the
-//! remap table `local symbol → global symbol` the worker then applies to its
-//! token payloads and Bir references. Merging in a fixed order makes the
-//! merge REPRODUCIBLE for a given set of local pools — but the pools
-//! themselves are not: a worker interns the identifiers of the files it
-//! happened to take, in that order, so the global index an identifier gets
-//! still depends on `--jobs`. That is harmless while no `Symbol` reaches
-//! an output — the dumps and diagnostics print text, never ids — and it
-//! becomes a bug the moment one does (a cached artifact, a serialized
-//! interface), at which point global ids must be assigned by a pass keyed
-//! on file index. `Session.run`'s header says the same thing.
+//! interns into its own `Local`; after the parallel phase the driver walks
+//! the FILES in index order (sorted path order) and calls `Global.mergeOne`
+//! for each symbol a file's tokens and Bir reference, then `mergeRest` for
+//! the ones none does, by text. That fills each worker's remap table
+//! `local symbol → global symbol`, which it then applies to its token
+//! payloads and Bir references. A global id is therefore a function of the
+//! input alone (`fast-compiler.md` §10): it used to be `Global.merge` per
+//! worker in worker index order, which numbered a symbol by which worker
+//! the `next_file` race handed its file to, and the first choice made by id
+//! that reached an output — `unifyRecord`'s — varied between identical runs
+//! (CK-71). Ids are still not a stable ORDER for anything a user sees: they
+//! shift with every edit to an earlier file, so a user-visible choice goes
+//! by text.
 //!
 //! `Global` is thread-confined to that merge step in M1. Sharding it for
 //! concurrent lookups (Zig's `InternPool` encoding with the thread id in the
@@ -53,6 +54,10 @@ pub const Symbol = enum(u32) {
         }
     };
 };
+
+/// A remap slot `Global.mergeOne` has not filled yet. No pool reaches
+/// this many symbols: a `Symbol` is a u32 index into a u32-offset pool.
+pub const unmapped: Symbol = @enumFromInt(std.math.maxInt(u32));
 
 /// Which streaming hash `Hasher` is. Measured in M1a on the generated
 /// 100k-line corpus (`zig build bench -- --generate=100000`: 626 files,
@@ -454,20 +459,47 @@ pub const Global = struct {
         return global.pool.find(bytes);
     }
 
-    /// Fold `local` into the global pool and return the remap table:
-    /// `remap[@intFromEnum(local_symbol)]` is the global symbol. Caller owns
-    /// the returned slice. Call once per worker, in worker index order.
-    pub fn merge(global: *Global, gpa: Allocator, local: *const Local) Allocator.Error![]Symbol {
-        const n = local.pool.entries.len;
-        const remap = try gpa.alloc(Symbol, n);
-        errdefer gpa.free(remap);
-        const offsets = local.pool.entries.items(.offset);
-        const lens = local.pool.entries.items(.len);
-        const hashes = local.pool.entries.items(.hash);
-        for (remap, offsets, lens, hashes) |*out, offset, len, hash| {
-            out.* = try global.pool.getOrPutHashed(gpa, hash, local.pool.bytes.items[offset..][0..len]);
+    /// Map ONE symbol of `local` into this pool, unless `remap` already
+    /// has it: the step `Session.run` takes for each symbol a file
+    /// references, walking the files in index order, so that global ids
+    /// are numbered by the input and not by which worker lexed what
+    /// (CK-71, `fast-compiler.md` §10). `remap` starts all `unmapped`.
+    pub fn mergeOne(global: *Global, gpa: Allocator, local: *const Local, remap: []Symbol, symbol: Symbol) Allocator.Error!void {
+        const i = @intFromEnum(symbol);
+        if (remap[i] != unmapped) return;
+        const e = local.pool.entries.get(i);
+        remap[i] = try global.pool.getOrPutHashed(gpa, e.hash, local.pool.bytes.items[e.offset..][0..e.len]);
+    }
+
+    /// Map every symbol of `locals` that `mergeOne` has not, in the order
+    /// of their TEXT (then by pool, which cannot change the answer: equal
+    /// text is one global symbol). What no file references is the
+    /// well-known prefix, which maps to itself, and whatever a phase
+    /// interned without recording — ordering it by text keeps even its ids
+    /// independent of the worker a file went to.
+    pub fn mergeRest(global: *Global, gpa: Allocator, locals: []const *const Local, remaps: []const []Symbol) Allocator.Error!void {
+        const Left = struct { pool: u32, symbol: u32 };
+        var left: std.ArrayList(Left) = .empty;
+        defer left.deinit(gpa);
+        for (remaps, 0..) |remap, p| {
+            for (remap, 0..) |r, i| {
+                if (r == unmapped) try left.append(gpa, .{ .pool = @intCast(p), .symbol = @intCast(i) });
+            }
         }
-        return remap;
+        const ByText = struct {
+            locals: []const *const Local,
+            fn lessThan(cx: @This(), a: Left, b: Left) bool {
+                const ta = cx.locals[a.pool].slice(@enumFromInt(a.symbol));
+                const tb = cx.locals[b.pool].slice(@enumFromInt(b.symbol));
+                return switch (std.mem.order(u8, ta, tb)) {
+                    .lt => true,
+                    .gt => false,
+                    .eq => a.pool < b.pool,
+                };
+            }
+        };
+        std.mem.sort(Left, left.items, ByText{ .locals = locals }, ByText.lessThan);
+        for (left.items) |l| try global.mergeOne(gpa, locals[l.pool], remaps[l.pool], @enumFromInt(l.symbol));
     }
 };
 
@@ -495,7 +527,7 @@ test "Local.init shares the well-known prefix with Global, so merge is the ident
     try testing.expect(!Local.empty.hasWellKnown());
     try testing.expectEqual(WellKnown.Just.symbol(), try local.getOrPut(testing.allocator, "Just"));
     const view = try local.getOrPut(testing.allocator, "view");
-    const remap = try global.merge(testing.allocator, &local);
+    const remap = try mergeAllForTest(&global, testing.allocator, &local);
     defer testing.allocator.free(remap);
     for (remap[0..WellKnown.count], 0..) |g, i| try testing.expectEqual(@as(u32, @intCast(i)), @intFromEnum(g));
     try testing.expectEqual(@as(Symbol, @enumFromInt(WellKnown.count)), remap[@intFromEnum(view)]);
@@ -557,9 +589,9 @@ test "merge remaps every local symbol and shares across workers" {
     const w1_update = try w1.getOrPut(testing.allocator, "update");
     const w1_view = try w1.getOrPut(testing.allocator, "view");
 
-    const remap0 = try global.merge(testing.allocator, &w0);
+    const remap0 = try mergeAllForTest(&global, testing.allocator, &w0);
     defer testing.allocator.free(remap0);
-    const remap1 = try global.merge(testing.allocator, &w1);
+    const remap1 = try mergeAllForTest(&global, testing.allocator, &w1);
     defer testing.allocator.free(remap1);
 
     try testing.expectEqual(@as(usize, 2), remap0.len);
@@ -662,8 +694,20 @@ test "no leak when allocation fails mid-insert" {
                 var buf: [8]u8 = undefined;
                 _ = try local.getOrPut(gpa, try std.fmt.bufPrint(&buf, "s{d}", .{i}));
             }
-            const remap = try global.merge(gpa, &local);
+            const remap = try mergeAllForTest(&global, gpa, &local);
             gpa.free(remap);
         }
     }.run, .{});
+}
+
+/// Tests only: every symbol of `local`, in LOCAL order, through `mergeOne`.
+/// The compiler never merges a whole pool at once — `Session.mergeInterners`
+/// goes file by file (CK-71) — so this lives beside the tests and not on
+/// `Global`, where it would invite a worker-order merge back.
+fn mergeAllForTest(global: *Global, gpa: Allocator, local: *const Local) Allocator.Error![]Symbol {
+    const remap = try gpa.alloc(Symbol, local.count());
+    errdefer gpa.free(remap);
+    @memset(remap, unmapped);
+    for (0..remap.len) |i| try global.mergeOne(gpa, local, remap, @enumFromInt(i));
+    return remap;
 }

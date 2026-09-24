@@ -702,7 +702,8 @@ fn parseImport(p: *Parse) Allocator.Error!Index {
             // Progress: every iteration that loops again consumed a comma.
             while (true) {
                 switch (p.peek()) {
-                    .lower_ident, .upper_ident => try p.pushScratch(try p.leaf(.exposed, p.next())),
+                    .upper_ident => try p.pushScratch(try p.exposedUpper()),
+                    .lower_ident => try p.pushScratch(try p.leaf(.exposed, p.next())),
                     .invalid => try p.pushScratch(try p.invalidNode(.error_exposed)),
                     else => {
                         try p.pushScratch(try p.unexpected(.error_exposed, .exposed_name));
@@ -719,6 +720,34 @@ fn parseImport(p: *Parse) Allocator.Error!Index {
     }
     const extra = try p.addExtra(record);
     return p.addNode(.{ .tag = .import, .main_token = import_token, .data = .{ .lhs = @intFromEnum(extra), .rhs = 0 } });
+}
+
+/// An upper name in an `exposing` list, and Elm's `T(..)` after it (D8 as
+/// amended, CK-47). beni exposes constructors by name beside the type
+/// (language.md §5.2), so `(..)` is `expected_token` at its `(` — ONE
+/// diagnostic, where the lexer and the parser used to report the `(` and
+/// each dot. The node keeps the `(` as its `lhs` (0 when there is none):
+/// lowering records it, and resolution, which has the imported module's
+/// interface, names the constructors in its message (`Session`
+/// `.reportResolveDiagnostics` rewrites this one diagnostic's text, so
+/// there is still one), and the uses of them stay quiet. `fmt` and the
+/// dumps, which never resolve, print the message as the parser wrote it.
+fn exposedUpper(p: *Parse) Allocator.Error!Index {
+    const name = p.next();
+    if (p.peek() == .l_paren and p.peekAt(1) == .dot_dot and p.peekAt(2) == .r_paren) {
+        const open = p.tok_i;
+        var item = p.itemAtToken(.expected_token, open);
+        item.expected = .r_paren;
+        item.construct = .expose_all;
+        item.head_start = p.starts[name];
+        item.head_end = p.tokenEnd(name);
+        _ = try p.report(item);
+        _ = p.next();
+        _ = p.next();
+        _ = p.next();
+        return p.addNode(.{ .tag = .exposed, .main_token = name, .data = .{ .lhs = open, .rhs = 0 } });
+    }
+    return p.leaf(.exposed, name);
 }
 
 /// Decl := DocComment? Visibility? (TypeAlias | TypeDecl | Annotation | Definition | Foreign)
@@ -2640,7 +2669,10 @@ fn parseParams(p: *Parse) Allocator.Error!SubRange {
 
 fn canStartPatAtom(tag: Tag) bool {
     return switch (tag) {
-        .underscore, .lower_ident, .upper_ident, .qualified_upper, .int, .char, .str_start, .l_paren, .l_bracket, .l_brace, .invalid => true,
+        // `.float` starts no pattern (language.md §3, `PatAtom`), but it is
+        // taken as the start of one so `parsePatAtom` can say so (CK-45, D8)
+        // rather than end the `case` in a layout error.
+        .underscore, .lower_ident, .upper_ident, .qualified_upper, .int, .float, .char, .str_start, .l_paren, .l_bracket, .l_brace, .invalid => true,
         else => false,
     };
 }
@@ -2695,8 +2727,22 @@ fn parsePatCtor(p: *Parse) Allocator.Error!Index {
     }
 }
 
+/// A float literal where a pattern was needed: `unexpected_token` with a
+/// message of its own (owner decision D8, CK-45). The grammar has no float
+/// pattern (language.md §3, `PatAtom`) — matching on `==` of a float is not
+/// something a `case` should promise — so the literal is consumed and
+/// stands as an error pattern, and the `case` goes on with its branches
+/// instead of ending in a layout error at the literal.
+fn floatPattern(p: *Parse) Allocator.Error!Index {
+    @branchHint(.cold);
+    const node = try p.unexpected(.error_pattern, .float_pattern);
+    _ = p.next();
+    return node;
+}
+
 fn parseNegIntPattern(p: *Parse) Allocator.Error!Index {
     const minus = p.next();
+    if (p.peek() == .float) return p.floatPattern();
     if (p.peek() != .int) {
         @branchHint(.cold);
         return p.unexpected(.error_pattern, .pattern);
@@ -2726,6 +2772,7 @@ fn parsePatAtom(p: *Parse) Allocator.Error!Index {
         .lower_ident => return p.leaf(.pat_var, p.next()),
         .upper_ident, .qualified_upper => return p.rangeNode(.pat_ctor, p.next(), try p.listToRange(&.{})),
         .int => return p.leaf(.pat_int, p.next()),
+        .float => return p.floatPattern(),
         .char => return p.leaf(.pat_char, p.next()),
         .str_start => {
             const start = p.next();

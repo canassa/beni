@@ -1,8 +1,8 @@
 //! The pending scenarios (`plans/checker-rewrite.md` §2.5): one
 //! test per finding of `plans/checker-findings.md` that a corpus
-//! fixture cannot state, because its claim is about TIME or about RUNS
-//! agreeing with each other (CK-71). Run only by
-//! `zig build test-pending`, never by the gates: every scenario here is
+//! fixture cannot state, because its claim is about TIME. (CK-71's claim
+//! about runs agreeing was promoted into `blackbox_test.zig` by R1.) Run
+//! only by `zig build test-pending`, never by the gates: every scenario here is
 //! expected to be RED on the checker the gates run.
 //!
 //! Each scenario generates its program into a `World`, times the installed
@@ -42,7 +42,7 @@ const pending_root = "tests/pending";
 
 /// Every scenario of this file, by the `scenario/<id>` name `CLAIMED` and `RED`
 /// use for it.
-const scenarios = [_][]const u8{ "scenario/CK-03", "scenario/CK-40", "scenario/CK-41", "scenario/CK-42", "scenario/CK-71", "scenario/CK-75", "scenario/PERM", "scenario/NEST-UNDER", "scenario/NEST-OVER" };
+const scenarios = [_][]const u8{ "scenario/CK-03", "scenario/CK-40", "scenario/CK-41", "scenario/CK-42", "scenario/CK-75", "scenario/CK-80", "scenario/PERM", "scenario/NEST-UNDER", "scenario/NEST-OVER" };
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │ SCENARIOS                                                               │
@@ -155,62 +155,36 @@ test "CK-75: checking is linear in the number of declarations" {
     try s.finish(verdict);
 }
 
-// CK-71: the same two files checked the same way give the same diagnostics
-// (CLAUDE.md rule 5, `fast-compiler.md` §10). Each worker interns into its
-// own pool and the pools are merged in WORKER order, but which worker lexes
-// which file is the `next_file` race, so a symbol's id depends on thread
-// timing — and CK-07 picks the reported field by id. `Aaa` interns `qq`,
-// `dd` and `bb`; `Main`'s `f g` fails on `pp` (inner `aa`) and `qq` (inner
-// `bb`). On 7427828 at `--jobs=8`, 8 of 30 runs named `aa` and 22 named `bb`
-// (at `--jobs=1`, `bb` every time) — on a LOADED machine: idle, 0 of 40
-// flipped, and with a spinning thread per core 11 of 40 did, so the runs
-// happen under load. The scenario itself measured about 6 in 40 differing, so
-// 100 loaded runs make a false GREEN unlikely here. But the race cannot be
-// FORCED from outside the binary: which worker takes which file is thread
-// scheduling, and on a machine with few cores, or one whose scheduler keeps
-// the spawn order, it may never show. A GREEN is therefore not evidence of a
-// fix, and the scenario is REPORT-ONLY on GREEN: it never fails rule (b).
-// When RED it is held to rule (d) like any other. It is promoted by hand
-// with the `Session` fix (merge interners in file order), not by rule (b).
-test "CK-71: diagnostics do not depend on which worker lexed which file" {
-    var s = try Scenario.init("CK-71");
-    s.report_only = true;
+// CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied
+// n deep, so the type holds n distinct pieces but unfolds into a tree of
+// 2^n leaves — costs time exponential in n, all of it in `solve`: the
+// derived path walks and fills evidence over the unfolded tree
+// (`walkDerivable`'s nested walks overwrite the outer marks; `fillPart`
+// recurses per position). `Basics.eq w w` on the same value is instant.
+// Found by R1's reviewer on both 22daa5f and R1 (not an R1 regression).
+// Measured on a Debug build of R1: n=9 0.11 s, n=18 2.31 s, a ratio of 21
+// where the rule allows 2.5. Not calibrated to 0.5 s at n as §2.5 asks: a
+// linear checker takes process start-up time at both points, so its ratio
+// is about 1 and the scenario goes GREEN.
+test "CK-80: == on a value whose type is a doubling DAG is not exponential in its depth" {
+    var s = try Scenario.init("CK-80");
     defer s.deinit();
-    try s.w.write("Aaa.beni",
-        \\pub z =
-        \\    let
-        \\        qq =
-        \\            1
-        \\
-        \\        dd =
-        \\            2
-        \\
-        \\        bb =
-        \\            3
-        \\    in
-        \\    qq + dd + bb
-        \\
-    );
-    try s.w.write("Main.beni",
-        \\import Aaa
-        \\
-        \\
-        \\f : { pp : { aa : Int }, qq : { bb : Int } } -> Int
-        \\f r =
-        \\    0
-        \\
-        \\
-        \\g : { pp : { cc : Int }, qq : { dd : Int } }
-        \\g =
-        \\    { pp = { cc = 1 }, qq = { dd = 2 } }
-        \\
-        \\
-        \\main =
-        \\    f g + Aaa.z
-        \\
-    );
-    const verdict = try s.repeatable(&.{ "check", "--no-cache", "--jobs=8", "--diagnostics=json", "Aaa.beni", "Main.beni" }, 100);
+    try s.w.write("N9.beni", try nestedPair(s.arena(), 9));
+    try s.w.write("N18.beni", try nestedPair(s.arena(), 18));
+    const verdict = try s.ratio("N9.beni", "N18.beni", 9);
     try s.finish(verdict);
+}
+
+/// `w = f (f (… (f 1)))`, `depth` applications of `f x = ( x, [ x ] )`, and
+/// `w == w`.
+fn nestedPair(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "f x =\n    ( x, [ x ] )\n\n\nv =\n    let\n        w =\n            ");
+    for (0..depth) |_| try out.appendSlice(arena, "f (");
+    try out.append(arena, '1');
+    for (0..depth) |_| try out.append(arena, ')');
+    try out.appendSlice(arena, "\n    in\n    w == w\n");
+    return out.items;
 }
 
 // R7's permutation scenario (plans/checker-rewrite.md §2.5, R7's exit
@@ -387,9 +361,6 @@ const Scenario = struct {
     checker: ?[]const u8,
     claimed: []const []const u8,
     red: []const world.pending.RedLine,
-    /// A scenario whose GREEN can be luck (CK-71): it applies rules (c) and
-    /// (d) when RED, and a GREEN is only reported, never a rule (b) failure.
-    report_only: bool = false,
 
     fn init(comptime id: []const u8) !Scenario {
         var s: Scenario = .{
@@ -502,48 +473,6 @@ const Scenario = struct {
             return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{t} in {d} ms", .{ code, run.ms }) };
         }
         return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms", .{bound_ms}) };
-    }
-
-    /// Determinism: `runs` identical invocations print the same stdout and
-    /// stderr and exit alike. RED is `nondeterministic`.
-    ///
-    /// The runs happen under LOAD: one spinning thread per core for the
-    /// whole loop. A scheduling race only shows when the scheduler has a
-    /// choice to make, and on an idle machine the workers start in the same
-    /// order every time — CK-71 flipped 0 of 40 runs idle and 11 of 40 with
-    /// every core busy.
-    fn repeatable(s: *Scenario, args: []const []const u8, runs: usize) !Verdict {
-        var stop: std.atomic.Value(bool) = .init(false);
-        const cores = std.Thread.getCpuCount() catch 4;
-        const spinners = try s.arena().alloc(std.Thread, cores);
-        var spawned: usize = 0;
-        defer {
-            stop.store(true, .release);
-            for (spinners[0..spawned]) |t| t.join();
-        }
-        for (spinners) |*t| {
-            t.* = std.Thread.spawn(.{}, spin, .{&stop}) catch break;
-            spawned += 1;
-        }
-
-        var first: ?world.Result = null;
-        var differing: usize = 0;
-        for (0..runs) |_| {
-            const run = try s.timed(args, world.default_timeout_ms) orelse
-                return .{ .green = false, .signature = "timeout", .detail = "a run did not finish" };
-            const r = run.result;
-            if (first) |f| {
-                if (f.exit_code != r.exit_code or !std.mem.eql(u8, f.stdout, r.stdout) or !std.mem.eql(u8, f.stderr, r.stderr)) differing += 1;
-            } else first = r;
-        }
-        const detail = try std.fmt.allocPrint(s.arena(), "{d} of {d} runs under load differ from the first", .{ differing, runs });
-        return .{ .green = differing == 0, .signature = if (differing == 0) "" else "nondeterministic", .detail = detail };
-    }
-
-    fn spin(stop: *std.atomic.Value(bool)) void {
-        var x: u64 = 0;
-        while (!stop.load(.acquire)) x +%= 1;
-        std.mem.doNotOptimizeAway(x);
     }
 
     /// Every order of `decls` (up to `cap` orders, lexicographic from the
@@ -672,10 +601,6 @@ const Scenario = struct {
         }
         const default = s.checker == null;
         if (v.green and default) {
-            if (s.report_only) {
-                std.debug.print("PENDING  NOTE  {s}  {s} is GREEN, but it only reports (see its comment): a GREEN here can be luck, so it is not promoted by rule (b)\n", .{ s.id, s.name });
-                return;
-            }
             std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/abuse_test.zig and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
             return error.PendingScenarioIsGreen;
         }
@@ -698,7 +623,7 @@ const Scenario = struct {
                 std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is red as [{s}], and {s}/RED records [{s}]\n", .{ checker, s.id, s.name, v.signature, pending_root, recorded.? });
                 return error.PendingScenarioDrifted;
             }
-        } else if (recorded != null and !default and !s.report_only) {
+        } else if (recorded != null and !default) {
             std.debug.print("PENDING  RULE (d)  {s}  {s}  {s} is GREEN, and {s}/RED still records [{s}]: delete the `{s}` line\n", .{ checker, s.id, s.name, pending_root, recorded.?, checker });
             return error.PendingScenarioStaleRecord;
         }

@@ -568,6 +568,14 @@ sharded global pool and the SSO are not implemented** — `Token.payload` is a p
 may hold one. That is why every record from `Bir` to `Interface` to `JsIr` holds symbols through one
 remappable column; see `plans/m4-plan.md` §2.5.*
 
+*Corrected 2026-09-24 (checker rewrite R1, CK-71): the merge is now in FILE order —
+`Session.mergeInterners` walks the files by index and interns each symbol a file's tokens or Bir
+reference on first sight, then whatever no file references, by text. A global symbol id is
+therefore input-derived and no longer varies with `--jobs` or with which worker took which file.
+The 2026-09-18 note's premise was already a live bug: CK-07's `unifyRecord` chose a field by id, so
+the same input printed different diagnostics under load. What still holds is the rule it drew: an
+id moves with every edit to an earlier file, so no user-visible choice may be made by id.*
+
 ## 6. Pipeline
 
 ```

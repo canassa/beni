@@ -1,0 +1,14 @@
+-- run: `Debug.toString` prints the empty record as `{}`, as Elm does, and
+-- not `{  }`. R1 made it reachable from a record alias's constructor:
+-- `type alias E = {}` makes `E` a constant that IS the empty record
+-- (backend.md §4, D12), where 7427828 built the tag `"E"`.
+import Node exposing (Program)
+
+
+type alias E =
+    {}
+
+
+main : Program
+main =
+    Node.printLines [ Debug.toString {}, Debug.toString E, Debug.toString { a = {} } ]

@@ -70,7 +70,11 @@ pub const magic = "BENIFE\x00\x00";
 /// version bump and a cache discard, never a migration into spare bytes
 /// (`plans/m4-plan.md` D4) — and the compiler build id in the file key means
 /// a version bump is belt and braces rather than the only defence.
-pub const format_version: u32 = 3;
+///
+/// 4 (checker rewrite R1, 2026-09-24): `Token.Tag` gained `dot_dot`, which
+/// shifted every later tag, and a `Bir.Exposed` row grew from 8 to 12 bytes
+/// (`all_ctors_token`, CK-47).
+pub const format_version: u32 = 4;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -792,7 +796,7 @@ test "the row encoder's widths are the structures', with the padding gone" {
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Local));
     try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Import));
-    try testing.expectEqual(@as(u32, 8), rowBytes(Bir.Exposed));
+    try testing.expectEqual(@as(u32, 12), rowBytes(Bir.Exposed));
 }
 
 const sample_key: [16]u8 = .{ 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6 };

@@ -283,6 +283,7 @@ mapping.
 | saturated call at known arity | direct call `f(a, b)` (§6) |
 | record | object literal, keys in a canonical sorted order so one hidden class per record type — the sort moves the **keys** and never an initialiser (below) |
 | constructor | `{$: tag, a, b}` padded to a uniform shape per type; tag is a string in dev, an integer in release |
+| record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; owner decision D12, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (CK-78, the manager's decision of 2026-09-24 under rule 7). An **imported** alias's constructor needs the field names, which interface v2 does not carry, and is `not_implemented` until interface v3's `record_alias` constructor rows carry them (`checker-v2.md` §14.2, CK-39, slice R3) |
 | nullary constructor | the bare tag |
 | tuple | fixed-shape object per arity, no runtime tag |
 | list | cons cells (`{$:1, a, b}` / the empty singleton), pending M3c's benchmark of a vector trie |

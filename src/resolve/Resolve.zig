@@ -207,6 +207,7 @@ const Pass = struct {
             const iface = &p.interfaces[target.int()];
             for (bir.importExposed(imp)) |e| {
                 const name = bir.symbol(e.name);
+                if (e.all_ctors_token != 0) try p.exposeAllCtors(m, iface, e, name);
                 if (iface.findValue(p.interner, name) != null) continue;
                 if (iface.findType(p.interner, name) != null) continue;
                 if (iface.findCtor(p.interner, name) != null) continue;
@@ -226,6 +227,27 @@ const Pass = struct {
                 try p.report(item);
             }
         }
+    }
+
+    /// Elm's `T(..)` (CK-47, D8 as amended): the parser has already
+    /// reported `expected_token` at the `(`, without the constructors,
+    /// because only this interface lists them. This item carries them, as
+    /// `available`, and `Session.reportResolveDiagnostics` rewrites the
+    /// parser's message with it rather than add a second diagnostic.
+    fn exposeAllCtors(p: *Pass, m: Graph.Index, iface: *const Interface, e: Bir.Exposed, name: Symbol) Allocator.Error!void {
+        const available_start: u32 = @intCast(p.available_names.items.len);
+        if (iface.findType(p.interner, name)) |t| {
+            const start, const end = iface.types[@intFromEnum(t)].ctorRange();
+            for (iface.ctors[start..end]) |ctor| try p.available_names.append(p.gpa, iface.symbol(ctor.name));
+        }
+        try p.report(.{
+            .code = .expected_token,
+            .module = m,
+            .token = e.all_ctors_token,
+            .name = name.toOptional(),
+            .available_start = available_start,
+            .available_end = @intCast(p.available_names.items.len),
+        });
     }
 
     fn whyExposedMissing(p: *Pass, target: Graph.Index, name: Symbol) diagnostic.Code {
