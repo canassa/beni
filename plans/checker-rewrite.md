@@ -198,10 +198,10 @@ R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER
 ### 2.5 Performance and permutation scenarios
 
 `pending_test.zig` holds:
-- one Zig test per perf CK (CK-03's time bound, CK-40, CK-41, CK-42, CK-75, CK-80, and R7's
+- one Zig test per perf CK (CK-03's time bound, CK-40, CK-41, CK-42, CK-75, CK-80, CK-88, and R7's
   `NEST-UNDER`), each generating its program into a `World`: **`test-pending-perf`**;
 - the scenarios about what the compiler says rather than how long it takes (R7's permutation
-  scenario `PERM` and `NEST-OVER`, CK-82, CK-83): **`test-pending`**.
+  scenario `PERM` and `NEST-OVER`, CK-82): **`test-pending`** (CK-83 was promoted by R2c).
 
 The file's `scenarios` table assigns each scenario to its step; `Scenario.init` refuses an id the
 table lacks at compile time. The fast ones stay on the Debug binary because its safety checks are
@@ -241,6 +241,7 @@ cost eleven minutes a run. A timing scenario refuses to run on `zig-out/bin/beni
   | CK-75 | 6 000 / 12 000 decls | 201–205 / 714 ms, 3.48–3.55 | none; CK-40/41's fixes leave it at 3.5 |
   | CK-80 | depth 9 / 18 | 6 / 188–191 ms, about 31 | no reference fix |
   | NEST-UNDER | 200 / 400 methods | red by its codes, not by time; R7 sizes it | — |
+  | CK-88 (added by R2c) | 3 000 / 6 000 `case` branches, `build` | on R2c: 204 / 789 ms, 3.86 | none |
 
   The whole step takes about 22 s once its ReleaseFast compiler is built (and about 95 s more when
   `src/` changed since the last build). One finding of the recalibration: with CK-40's reference
@@ -529,6 +530,74 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   nested calls must then also RUN.
 - **Exit criteria.** The gates are green; `test-pending` green; every `run/`/`emit/` golden that
   moves is listed and justified; emit phase within ±3 %.
+- **As built (2026-09-25).** Spec first: `backend.md` §4 gained *Emitted JavaScript nests only as
+  deep as the source* (the measurements, the unit, the shapes, the refusal and its rule-7 case);
+  `language.md` §10's depth limits a row for the emitter; `static-dispatch-spike.md` §9.2 and A.87
+  the browser numbers for the wide form.
+  - **Measured** in headless Chrome 153, Firefox 144 (Playwright) and WebKit (WPE MiniBrowser), in
+    Node 24, the SpiderMonkey 140 shell and Bun 1.3.13 — all from the nix store; no mobile engine.
+    Two limits, not one: every engine's stack (scarcest: Chrome at 644 nested `if` blocks and 1 290
+    calls, Firefox at 1 263 objects and 497 IIFEs) and SpiderMonkey's hard limit of 251 nested
+    scopes, 171 functions with declaring bodies in a module, whatever the stack. JavaScriptCore
+    nests even a flat `&&` (53 620 terms). The wide form's 4 096 is fourteen times under the
+    scarcest browser's argument limit (59 610) and stays.
+  - **Shapes** (`js/Lower.zig`, `js/JsIr.zig`): a list literal past 32 elements is
+    `[…].reduceRight(($l, $h) => ({ $: 1, a: $h, b: $l }), nil)`; `&&`/`||` chains are collected
+    iteratively and built to the left, one run; `Lower.expr` keeps a running `expr_height` and binds
+    anything `nesting.spill` (256 units) tall to a `const $t$<n>` in its `out` — the hoist `?` and
+    `case` use, so `orderedExprs` keeps written order; `else if` chains of 16 `if`s or more
+    (`chain_min`, counted by `leafCaseDepth` down any branch holding a `case`) splice the larger
+    branch after the `if` (negating the test when that is the `then`), in tail position and — via
+    a shared sink, `chainedLeaf` — in expression position as one `$c$<d>` block and one temporary;
+    evidence closures 20 deep (`evidence_spill`) are bound ahead of the call; derived `&&` runs in
+    groups of 1 024.
+  - **Refused**: `refuseTooDeep` measures every declaration of at least 128 nodes exactly
+    (`JsIr.Builder.measure`, one iterative walk) and reports `nesting_too_deep` past 2 048 units or
+    128 scopes. What reaches it (after the review round below): 120 nested functions, a `view` of about 65 `List.map`s, about 150 `if`s nested through call
+    arguments.
+  - **First design, dropped**: a height per node computed in `Builder.addNode` cost the emit phase
+    5.5 %; the cheap accumulator plus the gated exact walk costs 0.4–1.9 %.
+  - **Tests.** Promoted `scenario/CK-83` into `abuse_wide_test.zig`; the 4 000-nested-call abuse test
+    now runs (dev and `--release`), as do the 200 000-element list (length, sum, head), the widest
+    operator chains the parser admits (`+` 4 095, `++` 2 048, `&&` 1 365) and the 1 024-level
+    evidence blackbox test (it gained an app build that prints `same`). New: `abuse_test.zig` "functions
+    nested past what Firefox parses…" (119 run, 120 refused with the whole diagnostic, nothing
+    written); `run/NestingFlatList`, `NestingChains`, `NestingElseIf`, `NestingEvidence` (every
+    operand logged; each matches its oracle twin built by 7ae452f, dev and `--release`);
+    `emit/NestingShapes`; two hermetic `measure` tests. Red on 7ae452f (scratch worktree): the
+    `emit/` golden and the five blackbox/abuse tests fail, the four `run/` fixtures pass as pins.
+  - **Goldens.** None moved: every existing `run/`, `emit/` and `emit/release/` golden is
+    byte-identical. `bench/corpus` changed by 6 bytes raw (a three-term `&&`).
+  - **Numbers.** Emit (ReleaseFast, `--generate=100000`, medians of 7 interleaved, two sets): 52.13
+    ms against 51.17 (+1.9 %), and 51.55 against 51.34 (+0.4 %). Size: `emit/` corpus 41 145 raw / 15 842 brotli before and after; `bench/corpus`
+    brotli 22 478 → 22 483, release 15 651 → 15 643. Every accepted long form of the corpus of
+    probes (lists to 200 000, chains at the parser's widths, `else if` to 2 000 in both positions,
+    nesting at each budget's edge) loads in all six engines.
+  - **Found**: CK-87 (derived `==` on a record type nested past 32 levels is `internal`: the
+    `max_part_depth` cap) and CK-88 (one `case` of n literal branches emits in O(n²), and past 65 046
+    a `switch` SpiderMonkey refuses), both with pending fixtures, unassigned.
+- **As built, review round (2026-09-25).** No blockers; the two should-fixes were refusals of
+  programs 7ae452f builds and every browser loads:
+  - S1: the `.lambda` arm discarded its body's height, so nothing bounded the path across function
+    boundaries and a TEA `view` of 20 nested `List.map`s (30 children a level) was refused. The body's
+    height now flows into the expression holding the lambda, and a body `lambda_spill` (128 units)
+    tall binds its closure to a `const` where it is made; a hoist of nothing but closure `const`s
+    pins nothing before it (`onlyClosures`, which also answers N4 for evidence). Views with a
+    `List.map` at every level now run to 64 (30 children) and 68 (12) levels; nested applied
+    lambdas to 119 (one scope more every dozen levels, for the bound closure's declaring body).
+    `run/ViewMap20x30`, `ViewMap40x12`, `ViewMapEvery3` (80 levels, a lambda every third) build and
+    run dev and `--release` and load in Chrome, Firefox and WebKit; each matches 7ae452f's stdout.
+  - S2: `logicalRest` nested one `if` (a scope) per statement-needing operand. It is now
+    `let $t = a; if ($t) { …; $t = b; } …` — one flat `if` per such operand, `if (!$t)` for `||`.
+    `run/NestingLogicalStatements` (300 operands each way, logged) runs in all three browsers.
+  - N1 the message says 553 (Chrome's `(() => …)()`); N2 §4 now names what moved in the emitted
+    JavaScript; N3 emit re-measured, −0.3 % and +1.7 % in two more sets (the review saw +2.9 %);
+    N5 the recursion caveat for the wide form is in §9.2, A.87 and `Convention.zig`, 4 096 kept; N6
+    `refuseTooDeep` asserts a body.
+  - CK-88 looked at and left recorded: `Decision.compile` is quadratic in three places — the key
+    de-duplication, `chooseColumn`'s distinct count, and Maranget's specialisation of every row per
+    key — so a fix groups rows by literal (a sort or a map) through the matrix code, which is not a
+    one-line scan.
 
 ### R3 — Interface v3
 
@@ -975,8 +1044,9 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R14 | CK-37 (rest) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
+| (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 86 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 88 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

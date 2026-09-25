@@ -286,7 +286,7 @@ mapping.
 | record-alias constructor | the **record literal** it builds, as the record row above: `P 1 "a"` for `type alias P = { x : Int, y : String }` is `{x: 1, y: "a"}`, keys in the canonical sorted order and the arguments evaluated in written order, with no tag — the value IS a `{ x : Int, y : String }` (`language.md` §0, Elm's semantics; owner decision D12, `checker-v2.md` §21). Unapplied or partially applied it is the same wrapper any constructor gets, `(a, b) => ({x: a, y: b})`. As a **pattern** (`nameOf (P n _) = n`) it is irrefutable — one constructor — and reads argument `i` as the alias's field `i` in declaration order, `.x` then `.y`, with no test (CK-78, the manager's decision of 2026-09-24 under rule 7). An **imported** alias's constructor needs the field names, which interface v2 does not carry, and is `not_implemented` until interface v3's `record_alias` constructor rows carry them (`checker-v2.md` §14.2, CK-39, slice R3) |
 | nullary constructor | the bare tag |
 | tuple | fixed-shape object per arity, no runtime tag |
-| list | cons cells (`{$:1, a, b}` / the empty singleton), pending M3c's benchmark of a vector trie |
+| list | cons cells (`{$:1, a, b}` / the empty singleton), pending M3c's benchmark of a vector trie. A literal of more than 32 elements is ONE array whose cells `reduceRight` builds (*Emitted JavaScript nests only as deep as the source*, below) |
 | string | native JavaScript string; core's API exposes codepoints where the UTF-16 mismatch would show |
 | `Int` | a number |
 | `Int32` | **a number too** — an ordinary JavaScript number held in signed 32-bit range by every operation that produces one, with no box and no tag, so `toInt` is the identity and the whole cost of the type is the `\| 0` (ECMA-262's ToInt32) that keeps the invariant true. `mul` is `Math.imul` and `shiftRightZero` is `(x >>> n) \| 0`, because `>>>` answers unsigned. The type exists in beni and not at run time, which is what makes it free; `core/Int32.js` and this row are the contract (`fast-compiler.md` §3.1, `checker.md` Appendix B) |
@@ -430,6 +430,191 @@ Two consequences worth stating, because they are what the emitted shape looks li
 - **In a looping function (§8)**, a `?` in a **tail-call argument** is not in tail position — the
   operand of a `?` never is — so it is evaluated with the other arguments, before any parameter is
   rebound, and its failure returns out of the loop rather than continuing it.
+
+### Emitted JavaScript nests only as deep as the source
+
+*Added by R2c (CK-83), 2026-09-25.* Every JavaScript engine parses — and V8 and JavaScriptCore
+compile — a nested expression or block by recursion, and gives up with `RangeError` or
+`InternalError` past a depth that depends on the construct and the engine. Before this section a
+program the compiler accepted could lower to a module no engine would load: a list literal was one
+object per element each inside the last, `a + b + …` one `Basics$add` call per term, `++` and `::`
+the same, and `&&` printed as `a && (b && …)`. `build` exited 0 and the module threw while it was
+being parsed — from about 1 550 levels in Node, 1 290 in Chrome, 860 in the SpiderMonkey shell. The
+parser's own budget (`language.md` §10, 4 096 charges a declaration) sits above every one of those
+numbers, and does not charge a list's elements at all.
+
+The rule is two halves. **A form the source writes FLAT is emitted flat, however long it is**: its
+nesting in JavaScript may not grow with its length. **Nesting the source writes itself is carried
+into JavaScript up to a budget the engines can load, and refused by name past it** — which, since
+everything flat is flat, is only ever functions and `case`s nested inside one another scores deep.
+
+**What the engines load, measured.** Each figure is the deepest (or widest) the engine loads and
+runs, found by a binary search to 1 % over generated modules: `import()` of a `blob:` URL in the
+three browsers (headless, Linux x86-64), a `data:` URL in Node, `new Function` in the two shells,
+2026-09-25. `≥` is the top of the search. The browser figures are what a page gets; the shells are
+the engines alone, and the SpiderMonkey shell runs on a smaller stack than Firefox does.
+
+| Construct, one level | Chrome 153 | Firefox 144 | WebKit (WPE, Safari 605.1.15) | Node 24.19 | SpiderMonkey 140 shell | Bun 1.3.13 (JSC) |
+|---|---|---|---|---|---|---|
+| call `f(f(…))` | 1 308 | 1 474 | 3 616 | 1 547 | 933 | 2 865 |
+| object `{ $: 1, a: 1, b: {…} }` | 1 610 | 1 263 | 3 158 | 1 547 | 860 | 2 920 |
+| `x && (x && …)` | 1 006 | 1 437 | 3 323 | 1 510 | 897 | 3 121 |
+| alternate `c ? 0 : c ? 0 : …` | ≥ 300 000 | 4 147 | 6 563 | ≥ 300 000 | 2 151 | 6 710 |
+| consequent `c ? (c ? … : 0) : 0` | 1 281 | 4 147 | 6 563 | 1 876 | 2 151 | 6 710 |
+| `if (c) { return 0; } else { … }` | 644 | 1 931 | 3 964 | 1 519 | 759 | 2 297 |
+| `if (c) { … } else if (c) …` | 1 290 | ≥ 300 000 | 35 750 | 3 891 | ≥ 300 000 | 32 234 |
+| `switch (k) { case 0: { … } }` | 595 | 726 | 3 707 | 1 024 | 358 | 1 913 |
+| `{ … }` | 1 308 | 3 525 | 7 626 | 2 480 | 1 235 | 3 488 |
+| `{ let a = 1; … }` | 1 290 | **251** | 7 626 | 2 499 | **251** | — |
+| `(() => …)()` | 553 | 497 | 2 151 | 558 | 438 | 1 986 |
+| `((x) => …)(1)` | 553 | 411 | 2 151 | 558 | 440 | — |
+| `() => { let a = 1; return … }` | 502 | **171** | 2 590 | — | 580 | — |
+| flat `x && x && …`, terms | ≥ 300 000 | ≥ 300 000 | 53 620 | ≥ 300 000 | ≥ 300 000 | 53 620 |
+| flat `x + x + …`, terms | ≥ 300 000 | ≥ 300 000 | 40 144 | ≥ 300 000 | ≥ 300 000 | 29 304 |
+| array literal, elements | ≥ 300 000 | ≥ 300 000 | ≥ 300 000 | ≥ 300 000 | ≥ 300 000 | ≥ 300 000 |
+| arguments of one call = parameters | 59 610 | 65 078 | ≥ 70 000 | 59 610 | 65 078 | ≥ 70 000 |
+| `case`s of one `switch` | ≥ 300 000 | 65 046 | ≥ 300 000 | ≥ 300 000 | 65 046 | ≥ 300 000 |
+
+Three things in that table decide the design. **There are two limits, not one.** Every engine runs
+out of stack, at a depth that depends on the construct; SpiderMonkey also refuses a 252nd nested
+scope — braces that declare something, or a function — with "function nested too deeply", in the
+shell and in Firefox alike, **whatever stack is left**. In a module a function with a declaring body
+reaches it at 171. **The scarcest browser is not one browser**: Chrome for calls, `if` blocks and
+`switch`, Firefox for objects, arrows and scopes. **A flat chain is not free in JavaScriptCore**,
+which nests `a && b && c` where V8 builds one n-ary node and SpiderMonkey loops; it still loads
+53 620 terms. Mobile builds of these engines were not measured, and their stacks may be smaller —
+the margins below are the answer to that, not a measurement of it.
+
+**The unit and the budgets** (`JsIr.nesting`, `JsIr.Builder.measure`). A path from a declaration
+down to a leaf costs the sum of what each construct on it costs; the unit is a quarter of a nested
+call, so that the scarcest browser's call depth, Chrome's 1 290, is 5 160 units, and every weight is
+5 160 over the scarcest browser-or-Node depth of its construct, rounded up:
+
+| Weight | Units | Scarcest depth |
+|---|---|---|
+| call — callee and each argument | 4 | Chrome, 1 290 |
+| object literal — each property's value | 5 | Firefox, 1 263 |
+| array literal | 4 | — |
+| member, index, unary, template hole | 2 | not measured; never deeper than the source |
+| binary operand; a left operand only when it is not the same-precedence chain | 6 | Chrome, 1 006 with parentheses |
+| left operand of a same-precedence chain, printed without parentheses | 0 | V8 and SpiderMonkey: none |
+| conditional test and consequent | 5 | Chrome, 1 281 |
+| conditional alternate | 2 | Firefox, 4 147 |
+| function body (`=>`, `function`) | 7 | Firefox, 497 as `(() => …)()`, with the call's 4 |
+| `if` and its braces | 9 | Chrome, 644 |
+| `{ … }` | 4 | Chrome, 1 290 |
+| `switch`, before its case's braces | 5 | Chrome, 595 with the braces |
+| `while (true) { … }` | 9 | as `if` |
+| any other statement | 1 | — |
+
+Every top-level declaration may cost at most **2 048 units** (`nesting.budget`: 512 nested calls,
+two and a half times under the browsers' edge and one and a half under the SpiderMonkey shell's)
+and nest at most **128 scopes** (`nesting.scope_budget`: half of SpiderMonkey's 251). A function is
+one scope and braces that declare something one more.
+
+**The shapes.** Each long form, and what it is now. Every `run/`, `emit/` and `emit/release/` golden
+of the corpus was byte-identical; the emitted JavaScript itself moved in two ways, stdout
+identical everywhere. `&&`/`||` of three terms or more prints flat at any length (`_core/Char.mjs`'s
+`isHexDigit` and `isAlphaNum`), and a list literal past 32 elements is an array (`run/CharOps`,
+`CoreCharRest`, `CoreMaybeResultRest`, `CoreNumericExtremes`, `CoreStringRest`, `Int32Bits` and
+`ReleaseEverything`); the goldens hold because they are stdout, or the fixture's own module.
+
+| Form | Was | Is |
+|---|---|---|
+| list literal, up to 32 elements | nested cells | unchanged |
+| list literal, 33 or more (`max_cons_elements`) | one nested object per element | `[e1, e2, …].reduceRight(($l, $h) => ({ $: 1, a: $h, b: $l }), { $: 0, a: null, b: null })` |
+| `&&` / `\|\|` chain | `a && (b && (c && d))` | `a && b && c && d`, one run |
+| `&&` / `\|\|` chain whose operands need statements | `let $t; if (a) { …; $t = b && …; } else { $t = false; }`, one more `if` inside for each such operand | `let $t = a; if ($t) { …b's statements; $t = b; } if ($t) { …; $t = c; }` — one flat `if` per such operand (`if (!$t)` for `\|\|`), the operands without statements riding in the assignment before them |
+| a lambda whose body is 128 units tall (`lambda_spill`) | the closure inline, where it is an argument | the closure bound to `const $t$<n>` where it is made, so the call it is an argument of nests none of it |
+| derived `==` over a record or payload | `$m$0(…) && $m$1(…) && …`, one run | the same, in runs of 1 024 terms joined as `… && (…) && (…)` (`derived_group`), so JavaScriptCore nests at most 1 024 and the number of runs |
+| `+ - * / ++ :: \|> <\|`, nested calls, records, tuples, constructors | one call or object per level | the same until the expression is `nesting.spill` tall (256 units, 51 to 64 levels), then that much is bound to `const $t$<n>` in front of it, and the chain goes on from the name |
+| `else if` chain in a function's result, 16 `if`s or more (`chain_min`) | one `if`/`else` inside the last | `if (a) { return …; }` then the next test, one after another |
+| `else if` chain in an expression, 16 `if`s or more | one `let $t$<n>` and `if`/`else` inside the last | one `$c$<d>: { … }` block and one temporary: `if (a) { $t = …; break $c$<d>; }`, one after another |
+| `if`s each in the `then` branch of the one before, 16 or more, either position | the same, nested the other way | the same, flat, each test negated so that the short `else` is inside and the chain follows: `if (x.$ !== "Just") { return 0; }` |
+| evidence for a type nested *n* deep | one closure per level, `(x, y) => List$eq((x, y) => …, x, y)` | a closure 20 levels deep (`evidence_spill`) is bound to a `const` ahead of the call |
+| string interpolation, record literal, `case` of literals | flat already | unchanged |
+
+**Why none of this moves an evaluation** (`language.md` §6 is normative). A spilled `const` goes
+where a `case` or a `?` in the same position would put its statements — `Lower.expr`'s `out`, the
+statement list in front of the expression — so it runs exactly where the value would have been
+evaluated, and every caller that holds a run of written-order values already pins the ones written
+before a hoist (`orderedExprs`, *`?` is a test and a `return`* above). A branch of a short circuit or
+of a `case` has an `out` of its own, so a spill never runs anything the source would not have. A
+flat list's elements are an array literal's, evaluated left to right as the nested cells' were, and
+its cells are the same `{$, a, b}` in the same key order, so they share the cons cell's hidden class
+(§9.4). `&&` and `||` are associative in value and in evaluation — the first falsy (truthy) operand
+decides and nothing after it runs — so `a && (b && c)` and `a && b && c` are one program; an operand
+that needs statements runs them only inside `if ($t)`, which holds exactly when every operand before
+it said so, so nothing runs that the nested form would not have run. A flat `else if` chain works
+because every arm leaves — a `return` in tail position, a `break` out of the chain's block in an
+expression — so what followed the `else` inside it may follow the `if` instead. An evidence closure
+is hoisted only when it is an arrow: making a closure runs nothing, where the evidence applied to a
+constant (A.85) is a call and stays where it is. For the same reason a hoist that is nothing but
+`const`s of closures — evidence, or a lambda bound where it is made — pins nothing written before it
+(`onlyClosures`): the values in front stay inline and still run first. `run/NestingFlatList.beni`, `NestingChains.beni`,
+`NestingElseIf.beni`, `NestingEvidence.beni` and `NestingLogicalStatements.beni` log every operand,
+and `ViewMap20x30`, `ViewMap40x12` and `ViewMapEvery3` are TEA-style `view`s with a `List.map` lambda
+at every level or every third; each was confirmed against its
+oracle twin, the same program built by `7ae452f`. `emit/NestingShapes.beni` holds the shapes.
+
+**How the lowering knows.** Cheaply, where it decides, and exactly where it refuses:
+
+- `Lower.expr` keeps a running maximum, `expr_height`, of the expressions lowered inside the one it
+  is lowering, and adds the instruction's own weight: one addition per expression, no walk. A
+  `let`'s bindings are statements and do not count toward it, and a value that came back an atom
+  counts nothing. A lambda's body DOES count: it nests inside whatever the lambda is an argument of
+  (review of R2c, S1, where a `view` of twenty `List.map`s was refused), and once it is
+  `lambda_spill` tall the closure is bound where it is made. Evidence keeps its own count, in
+  closures.
+- A chain is counted by following, from each `case`, the last branch whose body is another `case`
+  under any `let`s (`leafCaseDepth`), up to `chain_min`. Of the two branches of each test, the one
+  with more nodes follows the `if`.
+- `refuseTooDeep` measures each top-level declaration's statements exactly, by one walk over an
+  explicit stack (`JsIr.Builder.measure`), and only when the declaration built at least
+  `nesting.could_exceed` nodes — 128, fewer than which no statement can be over either budget.
+
+**What is refused, and why a refusal is right there.** A declaration over either budget is
+`nesting_too_deep` (`language.md` §10), naming the declaration, both measures and both limits, and
+nothing is written. After everything above, only nesting the program writes itself can get there:
+120 functions each applied inside the last, a TEA `view` with a `List.map` lambda at every level 65
+to 69 levels deep (at 30 and at 12 children a level), or about 150 `case`s or `if`s each inside an
+ARGUMENT of a call inside the one before — `f (if b then f (if b then … else 0) else 0)` — where no
+branch is left for the next test to follow. Every lambda costs a scope, and one bound where it is
+made makes its enclosing body declare something, a second; 128 scopes is what bounds these. CLAUDE.md rule 7 allows a refusal only where the guarantee at stake — no
+runtime exception — has no correct emission to keep it, and for these there is none short of a
+different compiler: a function scope is how JavaScript closes over its variables, and taking one
+out means closure conversion, every captured variable moved into an environment object; a `case`
+inside an argument has to be finished before the call it is an argument of, and taking its blocks
+out means turning expressions into a jump-threaded statement machine. Either reshapes every
+program's output to rescue source nobody writes, and the parser already refuses nesting past 4 096
+on the same principle. The budgets sit two and a half times under the scarcest browser, so the
+refusal comes well before any engine's edge and not at it. What must never happen, and does not,
+is a flat form refused. `abuse_test.zig` holds the edge: 119 nested functions run, 120 are refused.
+
+**The wide form, measured in browsers** (`static-dispatch-spike.md` §9.2, A.87). A function of *n*
+parameters called with *n* arguments loads and runs up to 59 610 in Chrome and Node, 65 078 in
+Firefox and the SpiderMonkey shell, and past 70 000 in WebKit and Bun. `Convention.max_positional_evidence`
+stays at 4 096, fourteen times under the scarcest for ONE call. Under recursion the frames add up
+(the review of R2c, Node, default stack, a self-recursive arrow with *n* extra parameters): 16
+extra parameters recurse 2 928 deep, 256 recurse 237, 1 024 recurse 59 and 4 096 only 13. So a
+recursive nominal type whose payload has exactly 4 096 fields — the positional form — overflows
+`==` about 13 levels down, where 4 097 fields — the array form — does not. No program the corpus
+knows is near it; the caveat is recorded in `static-dispatch-spike.md` §9.2 and A.87.
+
+**Cost.** Emit, ReleaseFast `zig build bench -- --generate=100000`, medians of seven interleaved
+runs, four sets: +1.9 %, +0.4 %, and after the review's fixes 52.64 against 51.77 (+1.7 %) and 52.70
+against 52.84 (−0.3 %); the review measured +2.9 %. It is noise-bound around +1 %, inside the ±3 %.
+The bench program's JavaScript is 4 bytes shorter. Output size (`bench/size.mjs`): `bench/corpus` 128 437 → 128 431 bytes raw, 22 478 → 22 483
+brotli, release 15 651 → 15 643 brotli; the `emit/` corpus unchanged; across `run/`, a program with a
+long list literal is 500–900 bytes smaller raw and within ±12 bytes brotli, since nested cells
+compress very well.
+
+**Known gaps.** A `case` of more than 65 046 literal branches is one `switch` SpiderMonkey refuses
+(CK-88). Mobile engines are unmeasured. A lambda applied on the spot, `(\x -> …) a`, costs a
+function scope where a `let` would cost none; lowering it as the `let` it means would lift the
+120-function edge. Evidence nested inside a deep expression is counted by the
+exact measure and not by the cheap one, so it can be refused where binding more of it would have
+loaded.
 
 **Schema declarations** additionally produce an inspectable description and
 ordinary specialised top-level parse/print functions, with both success and

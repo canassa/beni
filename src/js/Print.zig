@@ -660,7 +660,8 @@ const Printer = struct {
     // longest chain the compiler built, and several builders make chains as
     // long as their input is wide: a derived `eq` over a 60 000-field record
     // is one left-nested `&&` 60 000 deep (`Lower.structuralArrow`), and a
-    // list literal is one `{ $: 1, a: x, b: … }` per element (`consNode`).
+    // list literal was one `{ $: 1, a: x, b: … }` per element (`consNode`;
+    // past 32 it is one array since R2c, `backend.md` §4).
     // One Zig frame per link overflowed the emit thread's stack. With the
     // stack, what a link costs is one `Work` entry on the heap, and the only
     // recursion left is an `arrow`'s block body — a function inside a

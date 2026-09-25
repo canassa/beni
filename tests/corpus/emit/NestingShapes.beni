@@ -1,0 +1,131 @@
+-- emit: the shapes `backend.md` §4 gives a long form so that its JavaScript
+-- nests only as deep as the source (CK-83), each at the smallest size that
+-- shows it:
+--
+--   `short`  32 elements: nested cells, as every list literal was
+--   `long`   33: one flat array, its cells built by `reduceRight`
+--   `every`  `&&` is one flat run, `a && b && c && d`, never
+--            `a && (b && (c && d))`
+--   `pick`   an `else if` chain of 16 `if`s in expression position
+--            (`chain_min`): one `$c$0` block and one temporary, each arm an
+--            `if` that assigns it and breaks out, one after another
+pub short : List Int
+short =
+    [ 1
+    , 2
+    , 3
+    , 4
+    , 5
+    , 6
+    , 7
+    , 8
+    , 9
+    , 10
+    , 11
+    , 12
+    , 13
+    , 14
+    , 15
+    , 16
+    , 17
+    , 18
+    , 19
+    , 20
+    , 21
+    , 22
+    , 23
+    , 24
+    , 25
+    , 26
+    , 27
+    , 28
+    , 29
+    , 30
+    , 31
+    , 32
+    ]
+
+
+pub long : List Int
+long =
+    [ 1
+    , 2
+    , 3
+    , 4
+    , 5
+    , 6
+    , 7
+    , 8
+    , 9
+    , 10
+    , 11
+    , 12
+    , 13
+    , 14
+    , 15
+    , 16
+    , 17
+    , 18
+    , 19
+    , 20
+    , 21
+    , 22
+    , 23
+    , 24
+    , 25
+    , 26
+    , 27
+    , 28
+    , 29
+    , 30
+    , 31
+    , 32
+    , 33
+    ]
+
+
+pub every : Bool, Bool, Bool, Bool -> Bool
+every a b c d =
+    a && b && c && d
+
+
+pub pick : Int -> String
+pick k =
+    let
+        name =
+            if k == 1 then
+                "1"
+            else if k == 2 then
+                "2"
+            else if k == 3 then
+                "3"
+            else if k == 4 then
+                "4"
+            else if k == 5 then
+                "5"
+            else if k == 6 then
+                "6"
+            else if k == 7 then
+                "7"
+            else if k == 8 then
+                "8"
+            else if k == 9 then
+                "9"
+            else if k == 10 then
+                "10"
+            else if k == 11 then
+                "11"
+            else if k == 12 then
+                "12"
+            else if k == 13 then
+                "13"
+            else if k == 14 then
+                "14"
+            else if k == 15 then
+                "15"
+            else if k == 16 then
+                "16"
+            else
+                "many"
+    in
+    name ++ "!"

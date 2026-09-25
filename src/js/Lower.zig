@@ -186,6 +186,9 @@ pub fn lower(
             .cp_left = try interner.getOrPut(gpa, "$a"),
             .cp_right = try interner.getOrPut(gpa, "$b"),
             .code_point_at = try interner.getOrPut(gpa, "codePointAt"),
+            .reduce_right = try interner.getOrPut(gpa, "reduceRight"),
+            .list_tail = try interner.getOrPut(gpa, "$l"),
+            .list_head = try interner.getOrPut(gpa, "$h"),
         },
     };
     defer l.diagnostics.deinit(gpa);
@@ -240,6 +243,11 @@ const WellKnown = struct {
     /// because `Char` ordering is a code-point comparison and not `<`
     /// (§8.3, §9.1, A.26).
     code_point_at: Symbol,
+    /// `reduceRight`, and the two parameters of its step: how a long list
+    /// literal builds its cells (`flatList`).
+    reduce_right: Symbol,
+    list_tail: Symbol,
+    list_head: Symbol,
 };
 
 /// How a constructor of one type is represented in JavaScript.
@@ -284,6 +292,38 @@ const CtorRep = union(enum) {
 };
 
 const StmtList = std.ArrayList(Node.Index);
+
+/// The longest list literal written as nested cells (`backend.md` §4): one
+/// object per element costs `nesting.object` apiece, and 32 of them are 160
+/// units, under `nesting.spill`, so one literal never needs binding by itself.
+/// Longer ones are `flatList`'s array.
+const max_cons_elements = 32;
+
+/// How many terms of a derived `&&` print as one flat run before the next
+/// run starts inside parentheses (`backend.md` §4): the JavaScriptCore of
+/// WebKit loads 53 620 flat terms and no more, and a derived `eq` has one
+/// term per field — 65 535 at most.
+const derived_group = 1024;
+
+/// How many `case`s — the outermost, and each nested in the LAST branch of the
+/// one before (every `if` of an `else if` chain) — an expression-position
+/// chain needs before it is written as one flat block (`Lowerer.chainedLeaf`,
+/// `backend.md` §4). Each `if` of the nested form is a block that declares a
+/// temporary, which is a scope; 16 of them are an eighth of
+/// `nesting.scope_budget`. Shorter chains keep the nested form they always had.
+const chain_min = 16;
+
+/// How many closures deep an evidence value may nest before it is bound to a
+/// `const` (`Lowerer.hoistEvidence`, `backend.md` §4): each is a call inside
+/// an arrow, `(x, y) => List$eq(<next>, x, y)`, about 11 of `nesting`'s
+/// units, so 20 of them are under `nesting.spill`.
+const evidence_spill = 20;
+
+/// How tall a lambda's body may be before the closure is bound to a `const`
+/// where it is made (`backend.md` §4): half of `nesting.spill`, so a lambda
+/// nested in a lambda never carries more than that into its parent. Making a
+/// closure evaluates nothing, so the binding moves nothing (`onlyClosures`).
+const lambda_spill = 128;
 
 const Lowerer = struct {
     gpa: Allocator,
@@ -337,6 +377,16 @@ const Lowerer = struct {
     /// array `$m`, which `$m$k` then reads as `$m[k]` (static-dispatch
     /// §9.2, CK-81).
     wide_evidence: ?JsIr.NameIndex = null,
+    /// Where a tall evidence closure is bound (`hoistEvidence`): the
+    /// statement list of the expression being lowered, set by `expr` and
+    /// `tailStmts`. Null while a derived function's body is built, whose
+    /// evidence is one level of its own type deep.
+    evidence_out: ?*StmtList = null,
+    /// The tallest expression lowered so far inside the one `expr` is
+    /// lowering, in `nesting`'s units (`expr`).
+    expr_height: u32 = 0,
+    /// The same for an evidence term, in closures (`termValues`).
+    term_depth: u32 = 0,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -546,7 +596,58 @@ const Lowerer = struct {
 
     fn declarations(l: *Lowerer, out: *StmtList) !void {
         const order = try l.emissionOrder();
-        for (order) |index| try l.declaration(out, index);
+        for (order) |index| {
+            const before = out.items.len;
+            const nodes = l.b.nodes.len;
+            try l.declaration(out, index);
+            // Fewer nodes than this cannot be over either budget, and
+            // measuring is a walk of every node: most declarations skip it.
+            if (l.b.nodes.len - nodes < JsIr.nesting.could_exceed) continue;
+            try l.refuseTooDeep(out.items[before..], index);
+        }
+    }
+
+    /// The one nesting `Lower` cannot take out (`backend.md` §4, *Emitted
+    /// JavaScript nests only as deep as the source*): scopes the source
+    /// itself nests — a function in a function, a `case` inside a `case`'s
+    /// branch — several hundred deep. Every chain the source writes flat is
+    /// emitted flat and every tall expression is bound to a `const`, so what
+    /// is left over `nesting.budget` is that, and JavaScript nests it as the
+    /// source does. Refused by name rather than written: a module an engine
+    /// will not parse is a `RangeError` at load, after `build` said yes.
+    fn refuseTooDeep(l: *Lowerer, stmts: []const Node.Index, index: u32) !void {
+        const h = try l.b.measure(l.gpa, stmts);
+        if (h.whole <= JsIr.nesting.budget and h.scopes <= JsIr.nesting.scope_budget) return;
+        const d = l.bir.decls[index];
+        // A declaration with no body lowers to no statements, so it never
+        // reaches the measurement: `declarations` skips anything under
+        // `nesting.could_exceed` nodes.
+        const region = d.body.unwrap() orelse unreachable;
+        try l.report(
+            .nesting_too_deep,
+            region,
+            \\`{s}` nests too deeply to run in a browser.
+            \\
+            \\Its JavaScript would nest about {d} levels and {d} scopes deep. Browser engines
+            \\parse nested code by recursion and give up not far past that — Chrome at 1 290
+            \\nested calls, 644 nested `if` blocks and 553 nested functions, Firefox at 251
+            \\nested scopes — so I write at most {d} levels and {d} scopes
+            \\(`docs/design/backend.md` §4).
+            \\
+            \\Long lists, operator chains, pipelines and `else if` chains come out flat
+            \\however long they are. What cannot is nesting the program writes itself,
+            \\hundreds deep: functions inside functions, or `case`s and `if`s inside one
+            \\another through the arguments of calls. Moving the inner parts into
+            \\top-level declarations of their own fixes it.
+        ,
+            .{
+                l.text(l.bir.symbol(d.name)),
+                h.whole / JsIr.nesting.call,
+                h.scopes,
+                JsIr.nesting.budget / JsIr.nesting.call,
+                JsIr.nesting.scope_budget,
+            },
+        );
     }
 
     /// Declarations in dependency order: a declaration is emitted after
@@ -1239,6 +1340,9 @@ const Lowerer = struct {
     /// triple from every function whose body is a `case`. `a ? b : c`
     /// survives wherever it is still correct, in `tailCase`.
     fn tailStmts(l: *Lowerer, out: *StmtList, inst: Inst.Index, loop: ?*const Loop) Allocator.Error!void {
+        const saved = l.evidence_out;
+        l.evidence_out = out;
+        defer l.evidence_out = saved;
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
             .let => {
@@ -1544,6 +1648,31 @@ const Lowerer = struct {
         }, p);
     }
 
+    /// A list literal longer than `max_cons_elements`, as ONE array whose
+    /// cells are built by a loop (`backend.md` §4, *Emitted JavaScript nests
+    /// only as deep as the source*):
+    ///
+    ///     [e1, e2, …].reduceRight(($l, $h) => ({ $: 1, a: $h, b: $l }), { $: 0, a: null, b: null })
+    ///
+    /// The nested literal is one object per element, so a written list of a
+    /// few thousand elements — which the parser does not charge, being
+    /// width and not depth — was a module no engine would load (CK-83). An
+    /// array literal is flat in every engine at any length measured, its
+    /// elements are evaluated left to right as the nested literal's were,
+    /// and the cells are the same `{$, a, b}` shape in the same key order,
+    /// so they share one hidden class with every other cons cell (§9.4).
+    /// It is also smaller: a few bytes an element against about twenty.
+    fn flatList(l: *Lowerer, elements: []const Node.Index, p: u32) !Node.Index {
+        const range = try l.b.addRange(elements);
+        const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
+        const tail = try l.fresh(l.well.list_tail);
+        const head = try l.fresh(l.well.list_head);
+        const cell = try l.consNode(try l.ident(head, p), try l.ident(tail, p), p);
+        const step = try l.arrowOf(&.{ tail, head }, &.{try l.returnStmt(cell, p)}, p);
+        const method = try l.member(array, l.well.reduce_right, p);
+        return l.call(method, &.{ step, try l.nilNode(p) }, p);
+    }
+
     // ---- Expressions ------------------------------------------------------
 
     /// The elements of one written-order list — a call's arguments, a
@@ -1605,7 +1734,7 @@ const Lowerer = struct {
         }
         var last_hoist: usize = 0;
         for (held, 0..) |stmts, i| {
-            if (stmts.len != 0) last_hoist = i;
+            if (stmts.len != 0 and !l.onlyClosures(stmts)) last_hoist = i;
         }
         const pin_all = reordered and movable >= 2;
         for (insts, 0..) |inst, i| {
@@ -1620,6 +1749,20 @@ const Lowerer = struct {
         return values;
     }
 
+    /// Whether every statement is `const $t = (…) => …`: a closure bound
+    /// ahead of its use (`backend.md` §4). Making a closure evaluates
+    /// nothing, so binding one early moves no evaluation, and the values
+    /// written before it need no pinning.
+    fn onlyClosures(l: *Lowerer, stmts: []const Node.Index) bool {
+        const tags = l.b.nodes.items(.tag);
+        const datas = l.b.nodes.items(.data);
+        for (stmts) |stmt| {
+            if (tags[stmt.int()] != .const_decl) return false;
+            if (tags[datas[stmt.int()].rhs] != .arrow) return false;
+        }
+        return true;
+    }
+
     /// Whether a value can be re-read wherever it lands: no work to repeat,
     /// nothing to observe, and therefore no order to keep. `bindSubject`
     /// and `orderedExprs` ask this of the same node tags for the same
@@ -1631,7 +1774,65 @@ const Lowerer = struct {
         };
     }
 
+    /// Lower one expression, and keep what it emits as shallow as the
+    /// engines need (`backend.md` §4, *Emitted JavaScript nests only as deep
+    /// as the source*): a value that has grown `nesting.spill` tall is bound
+    /// to a `const $t$<n>` in `out` and the name stands in for it.
+    ///
+    /// **Binding it there moves nothing.** `out` is where every statement an
+    /// expression hoists goes — a `case`'s, a `?`'s — so it runs exactly
+    /// where the value would have been evaluated, and every caller that
+    /// holds a run of written-order values already pins what was written
+    /// before a hoist (`orderedExprs`). A spill is one more hoist; the
+    /// machinery that makes `?` evaluate in written order makes this do so
+    /// too. A branch of a short circuit or of a `case` has an `out` of its
+    /// own, so nothing is ever evaluated that the source would not have.
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        const saved = l.evidence_out;
+        l.evidence_out = out;
+        defer l.evidence_out = saved;
+        // `expr_height` is the running maximum of the expressions lowered
+        // inside this one — each nested `expr` raises it on the way out — so
+        // it is this expression's height without one frame per node.
+        const outer = l.expr_height;
+        l.expr_height = 0;
+        const value = try l.exprValue(out, inst);
+        var height = l.expr_height +| l.exprWeight(inst);
+        if (l.isAtom(value)) {
+            height = 0;
+        } else if (height >= JsIr.nesting.spill) {
+            const p = l.pos(inst);
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, value, p);
+            l.expr_height = outer;
+            return l.ident(n, p);
+        }
+        l.expr_height = @max(outer, height);
+        return value;
+    }
+
+    /// What one instruction's own JavaScript adds to the expression it
+    /// stands in, in `nesting`'s units — the construct's weight, the same
+    /// table `JsIr.Builder.measure` reads, looked up by the instruction and
+    /// not by the nodes it became: an estimate made where it is cheap, which
+    /// `refuseTooDeep`'s exact measurement backs.
+    fn exprWeight(l: *Lowerer, inst: Inst.Index) u32 {
+        const w = JsIr.nesting;
+        return switch (l.bir.instTag(inst)) {
+            .call, .method_call, .type_dispatch => w.object,
+            .record, .record_update, .tuple => w.object,
+            .list => blk: {
+                const n = Bir.inlineRange(l.bir.instData(inst)).len();
+                break :blk if (n > max_cons_elements) w.call + w.array else w.object * (n + 1);
+            },
+            .field_access, .tuple_index, .interp => w.member,
+            .case => w.cond,
+            .lambda => w.arrow,
+            else => 0,
+        };
+    }
+
+    fn exprValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         l.region = inst;
@@ -1685,6 +1886,7 @@ const Lowerer = struct {
             },
             .list => {
                 const elements = try l.exprList(out, Bir.inlineRange(d));
+                if (elements.len > max_cons_elements) return l.flatList(elements, p);
                 var node = try l.nilNode(p);
                 var i: usize = elements.len;
                 while (i > 0) {
@@ -1725,11 +1927,36 @@ const Lowerer = struct {
             .method_call => return l.methodCallExpr(out, inst),
             .lambda => {
                 const params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.lhs)), Inst.Index);
+                // The body is bound inside itself, so no expression of it is
+                // taller than `nesting.spill` — but it still nests INSIDE
+                // whatever this lambda is an argument of, so its tallest
+                // expression counts toward this one, and past the spill the
+                // expression holding the lambda is bound to a `const` where
+                // it stands, like any other (`backend.md` §4). Without this
+                // a `view` of `List.map`s twenty deep was refused (review of
+                // R2c, S1).
+                const height = l.expr_height;
+                l.expr_height = 0;
                 const record = try l.functionOf(0, params, @enumFromInt(d.rhs));
-                return l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                const body = l.expr_height;
+                const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
+                if (body < lambda_spill) {
+                    l.expr_height = @max(height, body);
+                    return arrow;
+                }
+                // A tall body: the closure itself is bound where it is
+                // made, so what it is an argument of nests nothing of it.
+                l.expr_height = height;
+                const n = try l.fresh(l.well.temp);
+                try l.constDecl(out, n, arrow, p);
+                return l.ident(n, p);
             },
             .let => {
+                // Each binding is a statement of its own; only the body is
+                // this expression.
+                const height = l.expr_height;
                 try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
+                l.expr_height = height;
                 return l.expr(out, @enumFromInt(d.rhs));
             },
             .case => return l.caseExpr(out, inst),
@@ -2153,8 +2380,38 @@ const Lowerer = struct {
         p: u32,
     ) Allocator.Error![]const Node.Index {
         const out = try l.scratch.alloc(Node.Index, terms.len);
-        for (terms, out) |t, *slot| slot.* = try l.termValue(t, kind, p);
+        for (terms, out) |t, *slot| {
+            // `term_depth`, like `expr_height`, is the deepest term lowered
+            // inside this one, in closures.
+            const outer = l.term_depth;
+            l.term_depth = 0;
+            const value = try l.termValue(t, kind, p);
+            const depth = l.term_depth + 1;
+            slot.* = try l.hoistEvidence(value, depth, p);
+            l.term_depth = if (slot.* == value) @max(outer, depth) else outer;
+        }
         return out;
+    }
+
+    /// An evidence closure `evidence_spill` closures deep, bound to a
+    /// `const` in the statement list of the expression being lowered
+    /// (`evidence_out`) and read by name (`backend.md` §4, *Emitted
+    /// JavaScript nests only as deep as the source*). Evidence nests as deep
+    /// as the TYPE it compares, one closure per level —
+    /// `(x, y) => List$eq((x, y) => List$eq(…, x, y), x, y)` for a list of
+    /// lists — and a type is not bounded by anything the engines know about.
+    ///
+    /// Only an `arrow` moves: making a closure runs nothing, so making it
+    /// once, ahead of the call, rather than inside the closure that uses it
+    /// is unobservable. A CALL — the evidence applied to a constant of no
+    /// parameters (A.85) — stays where it is, because it runs the constant.
+    fn hoistEvidence(l: *Lowerer, value: Node.Index, depth: u32, p: u32) !Node.Index {
+        const into = l.evidence_out orelse return value;
+        if (depth < evidence_spill) return value;
+        if (l.b.nodes.items(.tag)[value.int()] != .arrow) return value;
+        const n = try l.fresh(l.well.temp);
+        try l.constDecl(into, n, value, p);
+        return l.ident(n, p);
     }
 
     /// One term in VALUE position (§8.2's table).
@@ -2535,13 +2792,13 @@ const Lowerer = struct {
         p: u32,
     ) !?Node.Index {
         if (kind == .eq) {
-            var value: ?Node.Index = null;
+            var value: Conjunction = .{};
             for (slots, 0..) |slot, i| {
                 const left = try l.member(try l.ident(x, p), slot, p);
                 const right = try l.member(try l.ident(y, p), slot, p);
-                value = try l.conjoin(value, try l.evidenceCall(@intCast(i), left, right, p), p);
+                try value.add(l, try l.evidenceCall(@intCast(i), left, right, p), p);
             }
-            return try l.returnArrow(params, value.?, p);
+            return try l.returnArrow(params, (try value.finish(l, p)).?, p);
         }
         var stmts: StmtList = .empty;
         var counter: u32 = 0;
@@ -2633,6 +2890,32 @@ const Lowerer = struct {
         one[0] = array;
         return one;
     }
+
+    /// A derived `eq`'s `&&` of one term per position, built left to right
+    /// in runs of `derived_group`: `a && b && … && (c && d && …) && (…)`.
+    /// A run prints flat; the next one sits in parentheses as the right
+    /// operand, so an engine that nests a flat chain (JavaScriptCore) nests
+    /// no more than one run and the number of runs. Up to `derived_group`
+    /// terms this is exactly the one flat chain it always was.
+    const Conjunction = struct {
+        whole: ?Node.Index = null,
+        run: ?Node.Index = null,
+        count: u32 = 0,
+
+        fn add(c: *Conjunction, l: *Lowerer, term: Node.Index, p: u32) !void {
+            c.run = try l.conjoin(c.run, term, p);
+            c.count += 1;
+            if (c.count < derived_group) return;
+            c.whole = try l.conjoin(c.whole, c.run.?, p);
+            c.run = null;
+            c.count = 0;
+        }
+
+        fn finish(c: *Conjunction, l: *Lowerer, p: u32) !?Node.Index {
+            const run = c.run orelse return c.whole;
+            return try l.conjoin(c.whole, run, p);
+        }
+    };
 
     /// `a && b`, or `b` when there is no `a` yet.
     fn conjoin(l: *Lowerer, left: ?Node.Index, right: Node.Index, p: u32) !Node.Index {
@@ -2746,7 +3029,7 @@ const Lowerer = struct {
         for (ctors, 0..) |ctor, i| {
             const arity = Bir.SubRange.len(.{ .start = ctor.args_start, .end = ctor.args_end });
             var body: StmtList = .empty;
-            var value: ?Node.Index = null;
+            var value: Conjunction = .{};
             var arg: u32 = 0;
             while (arg < arity) : (arg += 1) {
                 if (cursor >= parts.len) {
@@ -2761,7 +3044,7 @@ const Lowerer = struct {
                 switch (row.kind) {
                     .eq => {
                         const one = (try l.partEq(part, left, right, region, p)) orelse return null;
-                        value = try l.conjoin(value, one, p);
+                        try value.add(l, one, p);
                     },
                     .compare => {
                         const one = (try l.partCompare(&body, part, left, right, region, p)) orelse return null;
@@ -2776,7 +3059,7 @@ const Lowerer = struct {
             if (arity == 0) {
                 try body.append(l.scratch, try l.returnStmt(try l.emptyValue(row.kind, p), p));
             } else if (row.kind == .eq) {
-                try body.append(l.scratch, try l.returnStmt(value.?, p));
+                try body.append(l.scratch, try l.returnStmt((try value.finish(l, p)).?, p));
             }
             if (ctors.len == 1) return try l.arrowOf(params, body.items, p);
             const body_range = try l.b.addRange(body.items);
@@ -2795,6 +3078,23 @@ const Lowerer = struct {
         const discriminant = try l.member(try l.ident(x, p), l.well.tag, p);
         try stmts.append(l.scratch, try l.add(.switch_stmt, p, discriminant.int(), @intFromEnum(arms_record)));
         return try l.arrowOf(params, stmts.items, p);
+    }
+
+    /// `!test`, written `a !== b` for `a === b` and the other way round.
+    fn negate(l: *Lowerer, test_expr: Node.Index, p: u32) !Node.Index {
+        if (l.b.nodes.items(.tag)[test_expr.int()] == .binary) {
+            const d = l.b.nodes.items(.data)[test_expr.int()];
+            const flipped: ?JsIr.BinaryOp = switch (@as(JsIr.BinaryOp, @enumFromInt(d.rhs))) {
+                .strict_eq => .strict_ne,
+                .strict_ne => .strict_eq,
+                else => null,
+            };
+            if (flipped) |op| {
+                const pair = l.b.extra.items[d.lhs..][0..2];
+                return l.binary(op, @enumFromInt(pair[0]), @enumFromInt(pair[1]), p);
+            }
+        }
+        return l.unary(.not, test_expr, p);
     }
 
     fn ifStatement(l: *Lowerer, out: *StmtList, condition: Node.Index, then: []const Node.Index, p: u32) !void {
@@ -3870,33 +4170,97 @@ const Lowerer = struct {
     /// `a && b` / `a || b`, with the right side evaluated only when the left
     /// one decides it must be. When the right side needs statements of its
     /// own — a `case` inside a guard, say — `&&` cannot hold them, so the
-    /// pair becomes the `if`/`else` a short-circuit really is.
+    /// pair becomes the `if` a short-circuit really is (`logicalRest`).
+    ///
+    /// **A written chain is one flat run** (`backend.md` §4, *Emitted
+    /// JavaScript nests only as deep as the source*). beni's `&&` groups to
+    /// the right, `a && (b && c)`, and printing it that way nested one level
+    /// per term — past Chrome's parser at about a thousand. JavaScript's `&&`
+    /// is associative in both value and evaluation (the first falsy operand,
+    /// or the last; nothing after the first falsy one runs), so the right
+    /// spine of one operator is collected here without recursing and built
+    /// to the LEFT, `a && b && c`, which every engine parses as one run.
     fn logicalExpr(l: *Lowerer, out: *StmtList, op: JsIr.BinaryOp, left_inst: Inst.Index, right_inst: Inst.Index, p: u32) !Node.Index {
-        const left = try l.expr(out, left_inst);
-        var right_stmts: StmtList = .empty;
-        const right = try l.expr(&right_stmts, right_inst);
-        if (right_stmts.items.len == 0) return l.binary(op, left, right, p);
+        var operands: std.ArrayList(Inst.Index) = .empty;
+        var positions: std.ArrayList(u32) = .empty;
+        try operands.append(l.scratch, left_inst);
+        try positions.append(l.scratch, p);
+        var rest = right_inst;
+        while (l.sameLogical(rest, op)) |pair| {
+            try operands.append(l.scratch, pair[0]);
+            try positions.append(l.scratch, l.pos(rest));
+            rest = pair[1];
+        }
+        try operands.append(l.scratch, rest);
+        const first = try l.expr(out, operands.items[0]);
+        return l.logicalRest(out, op, first, operands.items[1..], positions.items);
+    }
 
-        const n = try l.fresh(l.well.temp);
-        try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(Node.OptionalIndex.none)));
-        const shortcut = try l.add(if (op == .logical_and) .false_lit else .true_lit, p, Node.Data.unused, Node.Data.unused);
-        var evaluated: StmtList = .empty;
-        try evaluated.appendSlice(l.scratch, right_stmts.items);
-        try evaluated.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), right.int()));
-        const skipped = [_]Node.Index{try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), shortcut.int())};
+    /// The operands after the first, joined to `acc` left to right. From the
+    /// first one that needs statements on, the chain is a temporary and ONE
+    /// flat `if` per such operand (`backend.md` §4):
+    ///
+    ///     let $t = a && b;
+    ///     if ($t) { …c's statements; $t = c && d; }
+    ///     if ($t) { …e's statements; $t = e; }
+    ///
+    /// (`if (!$t)` for `||`). Each `if` runs its operand's statements only
+    /// when every operand before it said so, and the operands without
+    /// statements that follow it ride in its assignment, still short
+    /// circuited — the evaluation of `a && (b && (c && …))`, without one
+    /// nested block per operand, which SpiderMonkey counts as a scope each.
+    fn logicalRest(l: *Lowerer, out: *StmtList, op: JsIr.BinaryOp, first: Node.Index, operands: []const Inst.Index, positions: []const u32) Allocator.Error!Node.Index {
+        var acc = first;
+        var result: ?JsIr.NameIndex = null;
+        // The statements of the operand that opened the current `if`, or
+        // null while no operand has needed any.
+        var pending: ?[]const Node.Index = null;
+        var pending_p: u32 = 0;
+        for (operands, positions[0..operands.len]) |operand, p| {
+            var right_stmts: StmtList = .empty;
+            const right = try l.expr(&right_stmts, operand);
+            if (right_stmts.items.len == 0) {
+                acc = try l.binary(op, acc, right, p);
+                continue;
+            }
+            // Close what came before: the first time, bind it; after that,
+            // the pending `if` assigns it.
+            if (result) |n| {
+                try l.guardedAssign(out, op, n, pending.?, acc, pending_p);
+            } else {
+                const n = try l.fresh(l.well.temp);
+                try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(n), @intFromEnum(acc.toOptional())));
+                result = n;
+            }
+            pending = right_stmts.items;
+            pending_p = p;
+            acc = right;
+        }
+        const n = result orelse return acc;
+        try l.guardedAssign(out, op, n, pending.?, acc, pending_p);
+        return l.ident(n, pending_p);
+    }
 
-        const then_items = if (op == .logical_and) evaluated.items else @as([]const Node.Index, &skipped);
-        const else_items = if (op == .logical_and) @as([]const Node.Index, &skipped) else evaluated.items;
-        const then_range = try l.b.addRange(then_items);
-        const else_range = try l.b.addRange(else_items);
-        const record = try l.b.addRecord(JsIr.If{
-            .then_start = then_range.start,
-            .then_end = then_range.end,
-            .else_start = else_range.start,
-            .else_end = else_range.end,
-        });
-        try out.append(l.scratch, try l.add(.if_stmt, p, left.int(), @intFromEnum(record)));
-        return l.ident(n, p);
+    /// `if ($t) { stmts; $t = value; }`, or `if (!$t)` for `||`.
+    fn guardedAssign(l: *Lowerer, out: *StmtList, op: JsIr.BinaryOp, n: JsIr.NameIndex, stmts: []const Node.Index, value: Node.Index, p: u32) !void {
+        var body: StmtList = .empty;
+        try body.appendSlice(l.scratch, stmts);
+        try body.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), value.int()));
+        const current = try l.ident(n, p);
+        const test_expr = if (op == .logical_and) current else try l.unary(.not, current, p);
+        try l.ifStatement(out, test_expr, body.items, p);
+    }
+
+    /// The two operands of `inst` when it is a saturated call of the same
+    /// short-circuit operator `op` — the next link of a written chain.
+    fn sameLogical(l: *Lowerer, inst: Inst.Index, op: JsIr.BinaryOp) ?[2]Inst.Index {
+        if (l.bir.instTag(inst) != .call) return null;
+        const d = l.bir.instData(inst);
+        const args = l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index);
+        if (args.len != 2) return null;
+        if (l.logicalOp(@enumFromInt(d.lhs)) != op) return null;
+        if (l.rootsOf(inst).len != 0) return null;
+        return .{ args[0], args[1] };
     }
 
     // ---- `let` ------------------------------------------------------------
@@ -4007,6 +4371,9 @@ const Lowerer = struct {
         /// `.none` for a pure `if`/`else` chain: the arms fall out of it and
         /// there is nothing to break out of (§7's third row).
         wrapper: JsIr.NameIndex = .none,
+        /// A `case` in a leaf's body is lowered into this same sink
+        /// (`chainedLeaf`). Only ever set together with a `wrapper`.
+        chained: bool = false,
     };
 
     /// A branch body already lowered as an expression, for the shapes that
@@ -4046,6 +4413,10 @@ const Lowerer = struct {
         ready: []Ready,
         sink: Sink,
         p: u32,
+        /// Every two-way test writes its `else` AFTER the `if` rather than
+        /// inside it (`emitFan`): set for a long `else if` chain, whose
+        /// leaves all jump.
+        flat_else: bool = false,
     };
 
     /// A `case` in expression position: §7's last three rows.
@@ -4072,11 +4443,18 @@ const Lowerer = struct {
             @intFromEnum(result),
             @intFromEnum(Node.OptionalIndex.none),
         ));
-        const wrapped = c.tree.hasSwitch() or c.tree.hasShared();
+        // A long `else if` chain — `chain_min` `case`s, each in the last
+        // branch of the one before — is written as ONE block of flat tests
+        // that all assign this temporary (`chainedLeaf`), not one nested
+        // `case` per arm with a temporary and a block of its own each.
+        const chained = l.leafCaseDepth(inst) + 1 >= chain_min;
+        const wrapped = c.tree.hasSwitch() or c.tree.hasShared() or chained;
         c.sink = .{ .value = .{
             .result = result,
             .wrapper = if (wrapped) try l.caseLabel(&c) else .none,
+            .chained = chained,
         } };
+        c.flat_else = chained;
 
         if (!wrapped) {
             try l.emitCase(&c, out);
@@ -4105,6 +4483,7 @@ const Lowerer = struct {
         l.case_depth += 1;
         defer l.case_depth = depth;
         c.sink = .{ .tail = loop };
+        c.flat_else = l.leafCaseDepth(inst) + 1 >= chain_min;
 
         // A chain of two-way tests over expression leaves stays the
         // conditional expression it is today: `return a ? b : c` is shorter
@@ -4312,11 +4691,82 @@ const Lowerer = struct {
         }
         switch (c.sink) {
             .tail => |loop| try l.tailStmts(out, body, loop),
-            .value => {
+            .value => |v| {
+                if (v.chained and try l.chainedLeaf(out, body, c.sink)) return;
                 const value = try l.expr(out, body);
                 try l.finishLeaf(c, out, value, p);
             },
         }
+    }
+
+    /// A leaf of a `chained` value `case` whose body — under any `let`s —
+    /// is another `case`: that `case` is lowered into the SAME sink,
+    /// assigning the outer temporary and breaking out of the outer block, so
+    /// the whole chain is one block and one temporary (`backend.md` §4,
+    /// *Emitted JavaScript nests only as deep as the source*). False when
+    /// the body is not a `case`, and the leaf lowers as any other.
+    ///
+    /// Nothing moves: the `let` bindings run where they did, in the leaf,
+    /// and the inner `case`'s scrutinee is bound where its own `caseExpr`
+    /// would have bound it, at the top of the leaf. Every leaf of the inner
+    /// tree breaks out of the outer block, which skips the inner tree's
+    /// shared leaves exactly as its own block would have. The inner `case`
+    /// is chained in turn, so the chain is flat at any length.
+    fn chainedLeaf(l: *Lowerer, out: *StmtList, body: Inst.Index, sink: Sink) Allocator.Error!bool {
+        var inst = body;
+        while (l.bir.instTag(inst) == .let) inst = @enumFromInt(l.bir.instData(inst).rhs);
+        if (l.bir.instTag(inst) != .case) return false;
+        inst = body;
+        while (l.bir.instTag(inst) == .let) {
+            const d = l.bir.instData(inst);
+            try l.letBindings(out, l.bir.subRange(@enumFromInt(d.lhs)));
+            inst = @enumFromInt(d.rhs);
+        }
+        const p = l.pos(inst);
+        var c = try l.planCase(out, inst) orelse {
+            // A `case` with no branches, which the parser reported.
+            const target = try l.ident(sink.value.result, p);
+            const nothing = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), nothing.int()));
+            return true;
+        };
+        const depth = l.case_depth;
+        l.case_depth += 1;
+        defer l.case_depth = depth;
+        c.sink = sink;
+        c.flat_else = true;
+        if (l.condChainPossible(&c)) {
+            try l.lowerReady(&c);
+            if (l.readyIsClean(&c)) {
+                try l.finishLeaf(&c, out, try l.condChain(&c, c.tree.root), c.p);
+                return true;
+            }
+        }
+        try l.emitCase(&c, out);
+        return true;
+    }
+
+    /// How many `case`s deep `inst` nests another in one of its branches —
+    /// the last such branch, under any `let`s — counted up to `chain_min`:
+    /// one less than the number of `if`s in an `else if` chain, or in `if`s
+    /// nested in `then` branches.
+    fn leafCaseDepth(l: *Lowerer, inst: Inst.Index) u32 {
+        var at = inst;
+        var n: u32 = 0;
+        walk: while (n < chain_min) : (n += 1) {
+            const branches = l.bir.extraSlice(l.bir.subRange(@enumFromInt(l.bir.instData(at).rhs)), Inst.Index);
+            var i = branches.len;
+            while (i > 0) {
+                i -= 1;
+                var next: Inst.Index = @enumFromInt(l.bir.instData(branches[i]).rhs);
+                while (l.bir.instTag(next) == .let) next = @enumFromInt(l.bir.instData(next).rhs);
+                if (l.bir.instTag(next) != .case) continue;
+                at = next;
+                continue :walk;
+            }
+            return n;
+        }
+        return n;
     }
 
     fn finishLeaf(l: *Lowerer, c: *Case, out: *StmtList, value: Node.Index, p: u32) !void {
@@ -4350,12 +4800,37 @@ const Lowerer = struct {
         if (labels == 2) {
             const condition = try l.edgeTest(c, fan, edges[0]);
             var then_stmts: StmtList = .empty;
+            const then_start = l.b.nodes.len;
             try l.emitNode(c, &then_stmts, edges[0].child);
             var else_stmts: StmtList = .empty;
+            const else_start = l.b.nodes.len;
             try l.emitNode(c, &else_stmts, if (fan.default != Decision.no_node)
                 fan.default
             else
                 edges[1].child);
+            const p = l.edgePos(c, edges[0]);
+            // **In a long `else if` chain one branch follows the `if`
+            // instead of sitting inside it** (`backend.md` §4, *Emitted
+            // JavaScript nests only as deep as the source*): every path
+            // through either branch leaves — a `return` or a `continue` in
+            // tail position, a `break` out of the chain's one block in a
+            // `chained` value `case`, a `break` to a shared leaf — so
+            // `if (a) { … }` and then the `else` statements is the same
+            // program one level shallower. It is what keeps the chain from
+            // nesting one `if` per arm, which Chrome stops parsing at 644.
+            // The branch that follows is the larger, which is the one the
+            // chain goes on in: the `else` of an `else if`, the `then` of an
+            // `if` nested in a `then` — whose test is then negated. A chain
+            // shorter than `chain_min` nests as it always did.
+            if (c.flat_else) {
+                const nested_then = l.b.nodes.len - else_start < else_start - then_start;
+                const test_expr = if (nested_then) try l.negate(condition, p) else condition;
+                const inside = if (nested_then) else_stmts.items else then_stmts.items;
+                const after = if (nested_then) then_stmts.items else else_stmts.items;
+                try l.ifStatement(out, test_expr, inside, p);
+                try out.appendSlice(l.scratch, after);
+                return;
+            }
             const then_range = try l.b.addRange(then_stmts.items);
             const else_range = try l.b.addRange(else_stmts.items);
             const record = try l.b.addRecord(JsIr.If{
@@ -4364,7 +4839,6 @@ const Lowerer = struct {
                 .else_start = else_range.start,
                 .else_end = else_range.end,
             });
-            const p = l.edgePos(c, edges[0]);
             try out.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @intFromEnum(record)));
             return;
         }

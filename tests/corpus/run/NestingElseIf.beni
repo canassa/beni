@@ -1,0 +1,391 @@
+-- run: long `else if` chains, which `backend.md` §4's *Emitted JavaScript
+-- nests only as deep as the source* writes flat (CK-83):
+--
+--   `tailChain`   40 arms in a function's result: past `nesting.spill` an
+--                 `else` follows its `if` instead of nesting in it, since
+--                 every arm returns
+--   `valueChain`  20 arms in a `let`, past `chain_min` (16): one block, one
+--                 temporary, every arm assigning it and breaking out, with a
+--                 `let` between two arms and a `case` in a leaf
+--   `shortChain`  15 arms, under `chain_min`: the nested form, unchanged
+--   `thenTail`    20 `if`s each in the THEN branch of the one before, in a
+--                 function's result: the `else` is the short branch, so its
+--                 test is negated and the `then` follows instead
+--   `thenValue`   the same in a `let`, one block and one temporary
+--
+-- The conditions are logged: they run in order and stop at the first that
+-- holds, and a leaf's own work runs only when its arm is taken.
+import Node exposing (Program)
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+c : Int, Int -> Bool
+c k i =
+    Debug.log (k == i) ("test " ++ String.fromInt i)
+
+
+tailChain : Int -> String
+tailChain k =
+    if c k 1 then
+        "arm1"
+    else if c k 2 then
+        "arm2"
+    else if c k 3 then
+        "arm3"
+    else if c k 4 then
+        "arm4"
+    else if c k 5 then
+        "arm5"
+    else if c k 6 then
+        "arm6"
+    else if c k 7 then
+        let
+            seven =
+                n "leaf7" 7
+        in
+        "seven " ++ String.fromInt seven
+    else if c k 8 then
+        "arm8"
+    else if c k 9 then
+        "arm9"
+    else if c k 10 then
+        "arm10"
+    else if c k 11 then
+        "arm11"
+    else if c k 12 then
+        case n "leaf12" 12 of
+            12 ->
+                "twelve"
+
+            _ ->
+                "not twelve"
+    else if c k 13 then
+        "arm13"
+    else if c k 14 then
+        "arm14"
+    else if c k 15 then
+        "arm15"
+    else if c k 16 then
+        "arm16"
+    else if c k 17 then
+        "arm17"
+    else if c k 18 then
+        "arm18"
+    else if c k 19 then
+        "arm19"
+    else if c k 20 then
+        "arm20"
+    else if c k 21 then
+        "arm21"
+    else if c k 22 then
+        "arm22"
+    else if c k 23 then
+        "arm23"
+    else if c k 24 then
+        "arm24"
+    else if c k 25 then
+        "arm25"
+    else if c k 26 then
+        "arm26"
+    else if c k 27 then
+        "arm27"
+    else if c k 28 then
+        "arm28"
+    else if c k 29 then
+        "arm29"
+    else if c k 30 then
+        "arm30"
+    else if c k 31 then
+        "arm31"
+    else if c k 32 then
+        "arm32"
+    else if c k 33 then
+        "arm33"
+    else if c k 34 then
+        "arm34"
+    else if c k 35 then
+        "arm35"
+    else if c k 36 then
+        "arm36"
+    else if c k 37 then
+        "arm37"
+    else if c k 38 then
+        "arm38"
+    else if c k 39 then
+        "arm39"
+    else if c k 40 then
+        "arm40"
+    else
+        "none"
+
+
+valueChain : Int -> String
+valueChain k =
+    let
+        r =
+            if c k 1 then
+                "arm1"
+            else if c k 2 then
+                "arm2"
+            else if c k 3 then
+                "arm3"
+            else if c k 4 then
+                "arm4"
+            else if c k 5 then
+                "arm5"
+            else if c k 6 then
+                "arm6"
+            else if c k 7 then
+                let
+                    seven =
+                        n "leaf7" 7
+                in
+                "seven " ++ String.fromInt seven
+            else if c k 8 then
+                "arm8"
+            else if c k 9 then
+                "arm9"
+            else if c k 10 then
+                "arm10"
+            else
+                let
+                    between =
+                        n "between" 0
+                in
+                if c k 11 then
+                    "arm11"
+                else if c k 12 then
+                    case n "leaf12" 12 of
+                        12 ->
+                            "twelve"
+
+                        _ ->
+                            "not twelve"
+                else if c k 13 then
+                    "arm13"
+                else if c k 14 then
+                    "arm14"
+                else if c k 15 then
+                    "arm15"
+                else if c k 16 then
+                    "arm16"
+                else if c k 17 then
+                    "arm17"
+                else if c k 18 then
+                    "arm18"
+                else if c k 19 then
+                    "arm19"
+                else if c k 20 then
+                    "arm20"
+                else
+                    "none " ++ String.fromInt between
+    in
+    r ++ "!"
+
+
+shortChain : Int -> String
+shortChain k =
+    let
+        r =
+            if c k 1 then
+                "arm1"
+            else if c k 2 then
+                "arm2"
+            else if c k 3 then
+                "arm3"
+            else if c k 4 then
+                "arm4"
+            else if c k 5 then
+                "arm5"
+            else if c k 6 then
+                "arm6"
+            else if c k 7 then
+                "arm7"
+            else if c k 8 then
+                "arm8"
+            else if c k 9 then
+                "arm9"
+            else if c k 10 then
+                "arm10"
+            else if c k 11 then
+                "arm11"
+            else if c k 12 then
+                "arm12"
+            else if c k 13 then
+                "arm13"
+            else if c k 14 then
+                "arm14"
+            else if c k 15 then
+                "arm15"
+            else
+                "none"
+    in
+    r ++ "?"
+
+
+above : Int, Int -> Bool
+above k i =
+    Debug.log (k > i) ("above " ++ String.fromInt i)
+
+
+thenTail : Int -> String
+thenTail k =
+    if above k 0 then
+        if above k 1 then
+            if above k 2 then
+                if above k 3 then
+                    if above k 4 then
+                        if above k 5 then
+                            if above k 6 then
+                                if above k 7 then
+                                    if above k 8 then
+                                        if above k 9 then
+                                            if above k 10 then
+                                                if above k 11 then
+                                                    if above k 12 then
+                                                        if above k 13 then
+                                                            if above k 14 then
+                                                                if above k 15 then
+                                                                    if above k 16 then
+                                                                        if above k 17 then
+                                                                            if above k 18 then
+                                                                                if above k 19 then
+                                                                                    "deep"
+                                                                                else
+                                                                                    "19"
+                                                                            else
+                                                                                "18"
+                                                                        else
+                                                                            "17"
+                                                                    else
+                                                                        "16"
+                                                                else
+                                                                    "15"
+                                                            else
+                                                                "14"
+                                                        else
+                                                            "13"
+                                                    else
+                                                        "12"
+                                                else
+                                                    "11"
+                                            else
+                                                "10"
+                                        else
+                                            "9"
+                                    else
+                                        "8"
+                                else
+                                    "7"
+                            else
+                                "6"
+                        else
+                            "5"
+                    else
+                        "4"
+                else
+                    "3"
+            else
+                "2"
+        else
+            "1"
+    else
+        "0"
+
+
+thenValue : Int -> String
+thenValue k =
+    let
+        r =
+            if above k 0 then
+                if above k 1 then
+                    if above k 2 then
+                        if above k 3 then
+                            if above k 4 then
+                                if above k 5 then
+                                    if above k 6 then
+                                        if above k 7 then
+                                            if above k 8 then
+                                                if above k 9 then
+                                                    if above k 10 then
+                                                        if above k 11 then
+                                                            if above k 12 then
+                                                                if above k 13 then
+                                                                    if above k 14 then
+                                                                        if above k 15 then
+                                                                            if above k 16 then
+                                                                                if above k 17 then
+                                                                                    if
+                                                                                        above k 18
+                                                                                    then
+                                                                                        if
+                                                                                            above
+                                                                                                k
+                                                                                                19
+                                                                                        then
+                                                                                            "deep"
+                                                                                        else
+                                                                                            "19"
+                                                                                    else
+                                                                                        "18"
+                                                                                else
+                                                                                    "17"
+                                                                            else
+                                                                                "16"
+                                                                        else
+                                                                            "15"
+                                                                    else
+                                                                        "14"
+                                                                else
+                                                                    "13"
+                                                            else
+                                                                "12"
+                                                        else
+                                                            "11"
+                                                    else
+                                                        "10"
+                                                else
+                                                    "9"
+                                            else
+                                                "8"
+                                        else
+                                            "7"
+                                    else
+                                        "6"
+                                else
+                                    "5"
+                            else
+                                "4"
+                        else
+                            "3"
+                    else
+                        "2"
+                else
+                    "1"
+            else
+                "0"
+    in
+    r ++ "."
+
+
+main : Program
+main =
+    Node.printLines
+        [ tailChain 7
+        , tailChain 12
+        , tailChain 40
+        , tailChain 41
+        , valueChain 7
+        , valueChain 12
+        , valueChain 20
+        , valueChain 21
+        , shortChain 15
+        , thenTail 5
+        , thenTail 25
+        , thenValue 5
+        , thenValue 25
+        ]

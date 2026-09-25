@@ -2057,8 +2057,15 @@ const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$
 - **Why.** The positional form is legal JavaScript but not loadable at that width: under Node 24 a
   call of 60 002 arguments from inside another function overflows the default stack (`RangeError`
   at run time), and V8 refuses a function of more than 65 535 parameters (`SyntaxError` at load). An
-  array has neither limit. **Only Node was measured.** That 4 096 positional arguments are safe in
-  JavaScriptCore and SpiderMonkey on a browser-sized stack is unmeasured; R2c measures it.
+  array has neither limit. **Measured in browsers by R2c** (`backend.md` §4, *Emitted JavaScript nests
+  only as deep as the source*): a function of *n* parameters called with *n* arguments loads and runs
+  up to 59 610 in Chrome 153 and Node 24, 65 078 in Firefox 144 and the SpiderMonkey 140 shell, and
+  past 70 000 in WebKit and Bun; 4 096 is fourteen times under the scarcest and stays. **That is
+  one call.** Under recursion the frames add up (review of R2c, Node, default stack, a
+  self-recursive arrow with *n* extra parameters): 16 recurse 2 928 deep, 256 recurse 237, 1 024
+  recurse 59, 4 096 only 13 — so a recursive nominal type with a 4 096-field payload overflows `==`
+  about 13 levels down, where 4 097 fields (the array form) does not. Nothing known is near it; a
+  lower threshold would cost nothing measurable, and is left for whoever meets it.
 - **Who reaches it.** A record payload of a nominal type past 4 096 fields (a use's record `==` is
   refused by CK-79 first), and a nominal type whose own context passes 4 096 entries (a type of
   5 000 parameters, in one module).
@@ -4182,7 +4189,9 @@ The number is the backend's ABI constant and not the checker's CK-79 cap it equa
 lifting the cap cannot silently restore the positional form; since R2b it is
 `Convention.max_positional_evidence`, and `Convention.derivedEvidence` is the one place the
 definition and every caller decide the form ([`checker-v2.md`](checker-v2.md) §12.5). Only Node was
-measured (browser engines: R2c). *Why not the alternative* — a named refusal of the wide payload —
+measured then; R2c measured the browsers (§9.2: 59 610 in Chrome, 65 078 in Firefox, past 70 000
+in WebKit), and 4 096 stays — for one call; under recursion a 4 096-wide positional call overflows
+about 13 levels deep in Node, which §9.2 records. *Why not the alternative* — a named refusal of the wide payload —
 rule 7: the program is valid and an array runs it; *or inlining the comparison into the nominal's
 body* — the row is shared by shape (A.11), and a caller of the eta-expanded row as evidence would
 still need its parameters. Fixture: `tests/blackbox/abuse_test.zig`, "derived eq and compare over a

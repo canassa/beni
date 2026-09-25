@@ -2453,6 +2453,22 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   and `++` chains, each built and run).
 - **Slice** R2c (manager, 2026-09-24): a small backend slice after R2b, spec first in `backend.md` §4. It is a `backend.md` §4 representation question (the list
   literal's shape), not the checker's.
+- **Status** fixed by R2c (2026-09-25), spec first: `backend.md` §4, *Emitted JavaScript nests only
+  as deep as the source*, with the engines measured — Chrome 153, Firefox 144 and WebKit (WPE)
+  headless, Node 24, the SpiderMonkey 140 shell and Bun 1.3.13 — and a second limit found:
+  SpiderMonkey refuses a 252nd nested scope whatever its stack. A form the source writes flat is
+  emitted flat: a list literal past 32 elements is one array whose cells `reduceRight` builds; `&&`
+  and `||` chains are one run; `+`, `++`, `::`, pipelines and nested calls are bound to a `const`
+  every `nesting.spill` units by `Lower.expr` (the hoist machinery `?` uses, so written order
+  holds); `else if` chains of 16 `if`s or more, and `if`s nested in `then` branches, are flat in
+  tail and expression position; evidence closures 20 deep are bound ahead of the call; a derived
+  `&&` runs in groups of 1 024 for JavaScriptCore. What the source nests itself is measured per
+  declaration and refused past 2 048 units or 128 scopes as `nesting_too_deep`, at least two and a
+  half times under the scarcest browser: 119 nested functions run, 120 are refused (and a `view` of about 65 `List.map`s runs; see the review round in R2c's As built). Promoted: the
+  scenario is `abuse_wide_test.zig` "CK-83: a 2 000-element list and 2 000-term + and ++ chains
+  build and run"; the 4 000-nested-call abuse test runs now in both builds, as do the 200 000-element
+  list and the widest operator chains the parser admits, and the blackbox evidence test of 1 024
+  levels. Every existing `run/` and `emit/` golden is byte-identical. Found on the way: CK-87, CK-88.
 
 ### CK-84 — An imported constrained function whose type is written through an alias is read as a constant
 
@@ -2538,6 +2554,46 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** `tests/pending/check/bad/ExposingSameNameConstructor/` (`.codes`: `expected_token` at
   `Main.beni:2:23`, contains "exposing (Box)", lacks "Box, Box").
 - **Slice** R13.
+
+### CK-87 — `==` on a record type nested more than 32 deep is an INTERNAL ERROR at build
+
+- **Severity** valid-program-rejected. **Area** JS lowering (`Lower.derivedValue`). **Class** K14.
+  **Sources** R2c, measuring deep evidence. Present on 7ae452f.
+- **Program** `a = { x = { x = … { x = 1 } … } }` 40 deep, unannotated, and `a == a` in `main`.
+- **Command** build.
+- **Observed** `check` exits 0; `build` stops with two INTERNAL ERROR "I cannot tell what this
+  call dispatches to". The derived `eq` of each level hands the next level's to it as a part, and
+  `Lower.derivedValue` reports and stops past `max_part_depth` (32) — a cap whose comment says a
+  type that deep is past what an annotation can say, which is true and beside the point: an
+  unannotated record literal infers one. At 20 levels it builds and prints `eq`.
+- **Expected** It builds and runs, printing `eq` and `ne`. The part tree cannot point back at
+  itself (checker-v2.md §13.1), so the cap is no cycle guard; with R2c's evidence hoisting
+  (`backend.md` §4) depth no longer threatens the emitted module either.
+- **Fixture** `tests/pending/run/DerivedEqDeepRecord.beni` (red: `dev: exit=1 codes=internal×2`;
+  oracle twin at 20 levels prints `eq`, `ne` on 7ae452f).
+- **Slice** R8a (manager, 2026-09-25): R8a rewrites derived contexts, and with them the last per-part depth cap.
+
+### CK-88 — One `case` of many literal branches: emit is quadratic, and past 65 046 Firefox refuses the `switch`
+
+- **Severity** performance. **Area** JS lowering (`case`, `backend.md` §7). **Class** K14.
+  **Sources** R2c, measuring long forms. Present on 7ae452f.
+- **Program** `g k = case k of 0 -> 0; 1 -> 1; … ; _ -> -1` with n integer literal branches.
+- **Command** build.
+- **Observed** `check` takes 18 ms at n = 10 000 and `build` 2.2 s, 8.6 s at 20 000 (ReleaseFast;
+  29 s and 113 s on Debug), all of it in the emit phase: quadratic. The one `switch` it writes has
+  n cases, and SpiderMonkey — Firefox 144 and the 140 shell alike — refuses a `switch` of more than
+  65 046 (`backend.md` §4's table), so from there the build would also exit 0 and the module throw
+  at load in Firefox; the quadratic emit makes that about 100 s of ReleaseFast build first.
+- **Expected** Emit linear in n, and a `switch` of at most a bounded number of cases (split into a
+  two-level `switch`, or `if` ranges over sorted keys). The source is flat, so under `backend.md`
+  §4's rule its JavaScript may not grow in anything an engine bounds.
+- **Fixture** `pending_test.zig` scenario `CK-88` (`test-pending-perf`; n = 3 000 / 6 000:
+  204 / 789 ms, ratio 3.86, on R2c's ReleaseFast build).
+- **Cause** (R2c's review round) `Decision.compile` is quadratic three times over for one literal
+  column: the key de-duplication (`sameHead` against every key so far), `chooseColumn`'s distinct
+  count (against every row above), and the specialisation of every row once per key. A fix groups
+  rows by literal through the matrix code.
+- **Slice** R12 (manager, 2026-09-25): a backend cleanup once v1 is deleted — group rows by literal throughout `Decision`'s matrix code; the `switch` size limit is split into bounded `switch`es in the same change.
 
 ## Summary table
 
@@ -2629,18 +2685,20 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a |
 | CK-81 | compiler-crash-or-hang | K11 | promoted: `abuse_test.zig` (two scenarios) | R2a (fixed) |
 | CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (with CK-79) |
-| CK-83 | unsound-runtime | K14 | `scenario/CK-83` | R2c |
+| CK-83 | unsound-runtime | K14 | promoted: `abuse_wide_test.zig` "CK-83: …" | R2c (fixed) |
 | CK-84 | unsound-runtime | K4 | promoted: `run/ConstrainedAliasFunctionImported/` | R2b (fixed) |
 | CK-85 | performance (latent) | K4 | guard `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` | unassigned — manager |
 | CK-86 | diagnostic-quality | K14 | `check/bad/ExposingSameNameConstructor/` | R13 |
+| CK-87 | valid-program-rejected | K14 | `run/DerivedEqDeepRecord.beni` | unassigned — manager |
+| CK-88 | performance | K14 | `scenario/CK-88` | unassigned — manager |
 
 Totals:
-- 86 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 88 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 19 (CK-83 and CK-84 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 9.
-- valid-program-rejected: 17.
+- valid-program-rejected: 18 (CK-87 among them).
 - nondeterminism: 2.
-- performance: 6 (CK-85 among them).
+- performance: 7 (CK-85 and CK-88 among them).
 - diagnostic-quality: 23 (CK-86 among them).
 - latent: 9.
-- Outside the checker (K14): 8 (CK-78, CK-83 and CK-86 among them).
+- Outside the checker (K14): 10 (CK-78, CK-83, CK-86, CK-87 and CK-88 among them).

@@ -3417,12 +3417,13 @@ test "evidence nested past a thousand levels is the user's eq at the bottom, nev
     // has no cap that writes a term, so the table and the emitted chain end
     // in `T`'s `eq`.
     //
-    // Not a `run/` fixture, because it cannot run: an evidence expression
-    // 1 024 calls deep is past what node's parser accepts
-    // (`RangeError: Maximum call stack size exceeded` while compiling the
-    // module), and a chain shallow enough to parse never reached the cap.
-    // So this asserts the emitted JavaScript instead — the whole chain, and
-    // no structural answer anywhere in it.
+    // Not a `run/` fixture, because the claim is about the emitted chain as
+    // much as the answer: the library build asserts the whole chain, and no
+    // structural answer anywhere in it. Until R2c it could not run at all —
+    // 1 024 nested evidence closures were past node's parser (CK-83) — and
+    // now every `nesting.spill`-tall closure is bound to a `const`
+    // (`backend.md` §4), so the app build of the same module runs too and
+    // prints what `T`'s `eq` answers.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
@@ -3462,6 +3463,22 @@ test "evidence nested past a thousand levels is the user's eq at the bottom, nev
     try testing.expectEqual(@as(usize, 1024), std.mem.count(u8, js, "List$eq("));
     try testing.expect(std.mem.indexOf(u8, js, "List$eq(Deep$eq,") != null);
     try testing.expect(std.mem.indexOf(u8, js, "Basics$eq") == null);
+
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\import Deep
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ if Deep.same then "same" else "structural" ]
+        \\
+    );
+    const ran = try w.buildAndRun(&.{"src"});
+    try testing.expectEqualStrings("", ran.build.stderr);
+    try testing.expectEqual(@as(u8, 0), ran.build.exit_code);
+    try testing.expectEqualStrings("same\n", ran.program.?.stdout);
+    try testing.expectEqual(@as(u8, 0), ran.program.?.exit_code);
 }
 
 test "a constrained value in a part position is handed its own evidence" {

@@ -1174,7 +1174,7 @@ test "a deeply nested constructor pattern is bounded in every consumer of the tr
     }
 }
 
-test "a pathologically nested expression is EMITTED without a stack overflow" {
+test "a pathologically nested expression is EMITTED without a stack overflow, and RUNS" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -1184,6 +1184,12 @@ test "a pathologically nested expression is EMITTED without a stack overflow" {
     // thread gets, so `beni build` runs the emit phase on a thread with the
     // stack the checker uses. A segfault here would be the one failure mode
     // the house rules do not permit.
+    //
+    // And the module has to LOAD (CK-83, R2c): 4 000 nested calls printed as
+    // written are past every engine's parser — node throws `RangeError`
+    // from about 1 550 — so `Lower` binds the chain to a `const` every
+    // `nesting.spill` units (`backend.md` §4) and the program runs, in both
+    // builds.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
@@ -1191,24 +1197,94 @@ test "a pathologically nested expression is EMITTED without a stack overflow" {
     var source: std.ArrayList(u8) = .empty;
     defer source.deinit(testing.allocator);
     const gpa = testing.allocator;
-    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\nf : Int -> Int\nf x =\n    x\n\n\nbig : Int\nbig =\n    ");
+    try source.appendSlice(gpa, "import Node exposing (Program)\n\n\nf : Int -> Int\nf x =\n    x + 1\n\n\nbig : Int\nbig =\n    ");
     for (0..depth) |_| try source.appendSlice(gpa, "f (");
     try source.appendSlice(gpa, "1");
     for (0..depth) |_| try source.append(gpa, ')');
-    try source.appendSlice(gpa, "\n\n\nmain : Program\nmain =\n    Node.print \"ok\"\n");
+    try source.appendSlice(gpa, "\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt big ]\n");
     try w.write("Main.beni", source.items);
 
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
-    // └─────────────────────────────────────────┘
-    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
 
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("4001\n", r.program.?.stdout);
+        try testing.expectEqualStrings("", r.program.?.stderr);
+        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+    }
+}
+
+test "functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run" {
     // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
+    // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), r.exit_code);
-    try testing.expectEqualStrings("", r.stderr);
-    try testing.expect(w.exists("out/Main.mjs"));
+    // `(\x0 -> (\x1 -> … 1) 1) 1`: a function per level, which JavaScript
+    // can only nest — there is no flat form short of closure conversion
+    // (`backend.md` §4, *Emitted JavaScript nests only as deep as the
+    // source*). SpiderMonkey refuses a 252nd nested scope whatever the
+    // stack, and 171 functions with declaring bodies in a module (CK-83,
+    // R2c). So the emitter writes at most 128 nested scopes. Every dozen
+    // levels or so a lambda whose body has grown tall is bound to a `const`
+    // (`lambda_spill`), and that body then declares something — one more
+    // scope — so 119 functions build and run, and 120 are refused by name,
+    // with nothing written, where they used to build and throw
+    // `InternalError` at load in Firefox.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    for ([_]usize{ 119, 120 }) |depth| {
+        var source: std.ArrayList(u8) = .empty;
+        try source.appendSlice(a, "import Node exposing (Program)\n\n\nxs : Int\nxs =\n    ");
+        for (0..depth) |i| try source.print(a, "(\\x{d} -> ", .{i});
+        try source.appendSlice(a, "1");
+        for (0..depth) |_| try source.appendSlice(a, ") 1");
+        try source.appendSlice(a, "\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt xs ]\n");
+        try w.write("Main.beni", source.items);
+
+        if (depth == 119) {
+            // ┌─────────────────────────────────┐
+            // │ EXECUTE                         │
+            // └─────────────────────────────────┘
+            const ran = try w.buildAndRun(&.{ "--no-cache", "Main.beni" });
+
+            // ┌─────────────────────────────────┐
+            // │ VERIFY OUTPUT                   │
+            // └─────────────────────────────────┘
+            try testing.expectEqual(@as(u8, 0), ran.build.exit_code);
+            try testing.expectEqualStrings("", ran.build.stderr);
+            try testing.expectEqualStrings("1\n", ran.program.?.stdout);
+            continue;
+        }
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.run(&.{ "build", "--no-cache", "--platform=node", "--out=deep", "Main.beni" });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(r, 1);
+        try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+            .code = .nesting_too_deep,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 6, .col = 5 }, .end = .{ .line = 6, .col = 6 } },
+            .title = "NESTING TOO DEEP",
+            .message = "`xs` nests too deeply to run in a browser.\n\nIts JavaScript would nest about 353 levels and 131 scopes deep. Browser engines\nparse nested code by recursion and give up not far past that — Chrome at 1 290\nnested calls, 644 nested `if` blocks and 553 nested functions, Firefox at 251\nnested scopes — so I write at most 512 levels and 128 scopes\n(`docs/design/backend.md` §4).\n\nLong lists, operator chains, pipelines and `else if` chains come out flat\nhowever long they are. What cannot is nesting the program writes itself,\nhundreds deep: functions inside functions, or `case`s and `if`s inside one\nanother through the arguments of calls. Moving the inner parts into\ntop-level declarations of their own fixes it.",
+        }}, r.diagnostics);
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        try testing.expect(!w.exists("deep"));
+    }
 }
 
 test "600 modules check identically at every worker count, twice each" {

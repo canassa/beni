@@ -1,0 +1,23 @@
+-- CK-87: `==` on a record type nested 40 deep builds and runs. The derived
+-- `eq` of each level hands the next level's as a part, and `Lower.derivedValue`
+-- stops past `max_part_depth` (32) with INTERNAL ERROR "I cannot tell what
+-- this call dispatches to" — a cap its comment calls unreachable, because an
+-- annotation cannot say a type that deep, while an unannotated record literal
+-- infers one. Expected `eq`, `ne`.
+--
+-- Oracle twin, run on 7ae452f: this file with 20 levels in place of 40 prints
+-- `eq`, `ne`.
+import Node exposing (Program)
+
+
+a =
+    { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = 1 } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+
+
+b =
+    { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = { x = 2 } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+
+
+main : Program
+main =
+    Node.printLines [ if a == a then "eq" else "ne", if a == b then "eq" else "ne" ]

@@ -235,11 +235,15 @@ pub fn referenceArity(u: Use) ?u32 {
 /// position; a wider one, of any shape, takes one array. An ABI number of
 /// the BACKEND's, deliberately not tied to the checker: it equals CK-79's
 /// cap on a record `==` today, which is why no golden moved, and R8a lifting
-/// that cap must not change the calling convention with it. Measured under
-/// Node 24 only: a 60 002-argument call from inside another function
+/// that cap must not change the calling convention with it. Under Node 24: a
+/// 60 002-argument call from inside another function
 /// overflows the default stack, and a function of more than 65 535
-/// parameters is a `SyntaxError` in V8 (CK-81). Browser engines are
-/// unmeasured (R2c).
+/// parameters is a `SyntaxError` in V8 (CK-81). In browsers (R2c,
+/// `backend.md` §4): an n-parameter function called with n arguments loads
+/// up to 59 610 in Chrome, 65 078 in Firefox and past 70 000 in WebKit, so
+/// 4 096 is fourteen times under the scarcest for one call; under recursion
+/// a call that wide overflows Node about 13 levels deep
+/// (`static-dispatch-spike.md` §9.2).
 pub const max_positional_evidence: usize = 4096;
 
 /// How a derived function with `count` evidence entries takes them, and so

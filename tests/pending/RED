@@ -33,6 +33,10 @@
 #   CK-30 DeadMiscount (added by the review of R2a, S1): the same miscount in a
 #   declaration nothing reaches. 9a931d7 built and ran it (`x`); `check` now
 #   refuses it — kept on purpose, see checker-v2.md §13.1 as amended.
+#
+# R2c (2026-09-25): scenario/CK-83 turned green and moved into
+# tests/blackbox/abuse_wide_test.zig; CK-87 (run/DerivedEqDeepRecord.beni) and
+# CK-88 (scenario/CK-88, test-pending-perf) were found by it and added.
 tests/pending/check/bad/BasicsEqThroughStructure.beni v1 exit=0 codes=none
 tests/pending/check/bad/CapNamesReceivers.beni v1 exit=1 codes=too_many_inferred_constraints×1 why=message
 tests/pending/check/bad/CurriedAnnotation.beni v1 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
@@ -82,6 +86,7 @@ tests/pending/run/CustomEqHeadMatching v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=internal×1
 tests/pending/run/DeadMiscount.beni v1 dev: exit=1 codes=internal×1
 tests/pending/run/DerivedContextClosedOwnMethod v1 dev: exit=1 codes=not_equatable×3
+tests/pending/run/DerivedEqDeepRecord.beni v1 dev: exit=1 codes=internal×2
 tests/pending/run/GenericDerivationNestedRequirement v1 dev: exit=1 codes=not_equatable×1
 tests/pending/run/GroupVariableOutsideCaller.beni v1 dev: exit=1 codes=kind_mismatch×2
 tests/pending/run/LetHelperJoinedMethod.beni v1 dev: exit=1 codes=kind_mismatch×1
@@ -108,4 +113,4 @@ scenario/PERM v1 exit=1 codes=method_needs_annotation×1
 scenario/NEST-UNDER v1 exit=1 codes=method_needs_annotation×200
 scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×20000
 scenario/CK-82 v1 crash=ABRT
-scenario/CK-83 v1 exit=0 program-exit=1
+scenario/CK-88 v1 slow

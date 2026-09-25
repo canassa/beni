@@ -1,0 +1,82 @@
+-- run: long operator chains, pipelines and nested calls, at lengths where
+-- `backend.md` §4's *Emitted JavaScript nests only as deep as the source*
+-- changes their shape (CK-83), with every operand logged so that what the
+-- program can see is pinned:
+--
+--   `&&` / `||`   one flat run, `a && b && c`, where they printed as
+--                 `a && (b && …)`: the operands run left to right and stop at
+--                 the first that decides (`language.md` §6.5). `hoisting`
+--                 has a `case` among its operands, which needs statements —
+--                 everything after it runs only when the operands before it
+--                 said so
+--   `+` `++` `::`  70 terms: past `nesting.spill` the chain is bound to a
+--                 `const` every 64 or so calls. Operands still run in written
+--                 order, `++` and `::` included, although they group to the
+--                 right
+--   `|>` / nested  70 calls deep, innermost first
+import Node exposing (Program)
+
+
+n : String, Int -> Int
+n label v =
+    Debug.log v label
+
+
+s : String, String -> String
+s label v =
+    Debug.log v label
+
+
+b : String, Bool -> Bool
+b label v =
+    Debug.log v label
+
+
+inc : Int -> Int
+inc x =
+    Debug.log (x + 1) "inc"
+
+
+main : Program
+main =
+    let
+        conj =
+            b "and1" True && b "and2" True && b "and3" True && b "and4" True && b "and5" True && b "and6" True && b "and7" True && b "and8" True && b "and9" True && b "and10" True && b "and11" True && b "and12" True && b "and13" True && b "and14" True && b "and15" True && b "and16" True && b "and17" True && b "and18" True && b "and19" True && b "and20" True && b "and21" True && b "and22" True && b "and23" True && b "and24" True && b "and25" False && b "and26" True && b "and27" True && b "and28" True && b "and29" True && b "and30" True && b "and31" True && b "and32" True && b "and33" True && b "and34" True && b "and35" True && b "and36" True && b "and37" True && b "and38" True && b "and39" True && b "and40" True
+
+        disj =
+            b "or1" False || b "or2" False || b "or3" False || b "or4" False || b "or5" False || b "or6" False || b "or7" False || b "or8" False || b "or9" False || b "or10" False || b "or11" False || b "or12" False || b "or13" False || b "or14" False || b "or15" False || b "or16" False || b "or17" False || b "or18" False || b "or19" False || b "or20" False || b "or21" False || b "or22" False || b "or23" False || b "or24" False || b "or25" False || b "or26" False || b "or27" False || b "or28" False || b "or29" False || b "or30" True || b "or31" False || b "or32" False || b "or33" False || b "or34" False || b "or35" False || b "or36" False || b "or37" False || b "or38" False || b "or39" False || b "or40" False
+
+        hoisting =
+            b "and1" True && b "and2" True && b "and3" True && b "and4" True && b "and5" True && (case Just (b "and6" True) of
+                Just v ->
+                    v
+
+                Nothing ->
+                    False
+            ) && b "and7" True && b "and8" True && b "and9" False && b "and10" True && b "and11" True && b "and12" True
+
+        sum =
+            n "p1" 1 + n "p2" 2 + n "p3" 3 + n "p4" 4 + n "p5" 5 + n "p6" 6 + n "p7" 7 + n "p8" 8 + n "p9" 9 + n "p10" 10 + n "p11" 11 + n "p12" 12 + n "p13" 13 + n "p14" 14 + n "p15" 15 + n "p16" 16 + n "p17" 17 + n "p18" 18 + n "p19" 19 + n "p20" 20 + n "p21" 21 + n "p22" 22 + n "p23" 23 + n "p24" 24 + n "p25" 25 + n "p26" 26 + n "p27" 27 + n "p28" 28 + n "p29" 29 + n "p30" 30 + n "p31" 31 + n "p32" 32 + n "p33" 33 + n "p34" 34 + n "p35" 35 + n "p36" 36 + n "p37" 37 + n "p38" 38 + n "p39" 39 + n "p40" 40 + n "p41" 41 + n "p42" 42 + n "p43" 43 + n "p44" 44 + n "p45" 45 + n "p46" 46 + n "p47" 47 + n "p48" 48 + n "p49" 49 + n "p50" 50 + n "p51" 51 + n "p52" 52 + n "p53" 53 + n "p54" 54 + n "p55" 55 + n "p56" 56 + n "p57" 57 + n "p58" 58 + n "p59" 59 + n "p60" 60 + n "p61" 61 + n "p62" 62 + n "p63" 63 + n "p64" 64 + n "p65" 65 + n "p66" 66 + n "p67" 67 + n "p68" 68 + n "p69" 69 + n "p70" 70
+
+        joined =
+            s "a1" "b" ++ s "a2" "c" ++ s "a3" "d" ++ s "a4" "e" ++ s "a5" "f" ++ s "a6" "g" ++ s "a7" "h" ++ s "a8" "i" ++ s "a9" "j" ++ s "a10" "k" ++ s "a11" "l" ++ s "a12" "m" ++ s "a13" "n" ++ s "a14" "o" ++ s "a15" "p" ++ s "a16" "q" ++ s "a17" "r" ++ s "a18" "s" ++ s "a19" "t" ++ s "a20" "u" ++ s "a21" "v" ++ s "a22" "w" ++ s "a23" "x" ++ s "a24" "y" ++ s "a25" "z" ++ s "a26" "a" ++ s "a27" "b" ++ s "a28" "c" ++ s "a29" "d" ++ s "a30" "e" ++ s "a31" "f" ++ s "a32" "g" ++ s "a33" "h" ++ s "a34" "i" ++ s "a35" "j" ++ s "a36" "k" ++ s "a37" "l" ++ s "a38" "m" ++ s "a39" "n" ++ s "a40" "o" ++ s "a41" "p" ++ s "a42" "q" ++ s "a43" "r" ++ s "a44" "s" ++ s "a45" "t" ++ s "a46" "u" ++ s "a47" "v" ++ s "a48" "w" ++ s "a49" "x" ++ s "a50" "y" ++ s "a51" "z" ++ s "a52" "a" ++ s "a53" "b" ++ s "a54" "c" ++ s "a55" "d" ++ s "a56" "e" ++ s "a57" "f" ++ s "a58" "g" ++ s "a59" "h" ++ s "a60" "i" ++ s "a61" "j" ++ s "a62" "k" ++ s "a63" "l" ++ s "a64" "m" ++ s "a65" "n" ++ s "a66" "o" ++ s "a67" "p" ++ s "a68" "q" ++ s "a69" "r" ++ s "a70" "s"
+
+        consed =
+            n "c1" 1 :: n "c2" 2 :: n "c3" 3 :: n "c4" 4 :: n "c5" 5 :: n "c6" 6 :: n "c7" 7 :: n "c8" 8 :: n "c9" 9 :: n "c10" 10 :: n "c11" 11 :: n "c12" 12 :: n "c13" 13 :: n "c14" 14 :: n "c15" 15 :: n "c16" 16 :: n "c17" 17 :: n "c18" 18 :: n "c19" 19 :: n "c20" 20 :: n "c21" 21 :: n "c22" 22 :: n "c23" 23 :: n "c24" 24 :: n "c25" 25 :: n "c26" 26 :: n "c27" 27 :: n "c28" 28 :: n "c29" 29 :: n "c30" 30 :: n "c31" 31 :: n "c32" 32 :: n "c33" 33 :: n "c34" 34 :: n "c35" 35 :: n "c36" 36 :: n "c37" 37 :: n "c38" 38 :: n "c39" 39 :: n "c40" 40 :: n "c41" 41 :: n "c42" 42 :: n "c43" 43 :: n "c44" 44 :: n "c45" 45 :: n "c46" 46 :: n "c47" 47 :: n "c48" 48 :: n "c49" 49 :: n "c50" 50 :: n "c51" 51 :: n "c52" 52 :: n "c53" 53 :: n "c54" 54 :: n "c55" 55 :: n "c56" 56 :: n "c57" 57 :: n "c58" 58 :: n "c59" 59 :: n "c60" 60 :: n "c61" 61 :: n "c62" 62 :: n "c63" 63 :: n "c64" 64 :: n "c65" 65 :: n "c66" 66 :: n "c67" 67 :: n "c68" 68 :: n "c69" 69 :: n "c70" 70 :: []
+
+        piped =
+            n "seed" 0 |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc
+
+        nested =
+            inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (inc (n "core" 100))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+    in
+    Node.printLines
+        [ if conj then "conj" else "not conj"
+        , if disj then "disj" else "not disj"
+        , if hoisting then "hoisting" else "not hoisting"
+        , String.fromInt sum
+        , joined
+        , String.fromInt (List.length consed) ++ " " ++ String.fromInt (List.sum consed)
+        , String.fromInt piped
+        , String.fromInt nested
+        ]

@@ -1,0 +1,57 @@
+-- run: evidence as deep as the type it compares. `==` on a list of lists of
+-- … 40 deep is `List.eq` handed `List.eq` handed … one closure per level
+-- (`static-dispatch-spike.md` §8.2), `(x, y) => List$eq(<next>, x, y)`, and
+-- 1 024 of them were past every engine's parser (CK-83, and the blackbox
+-- scenario "evidence nested past a thousand levels"). `backend.md` §4 binds a
+-- closure that has grown `nesting.spill` tall to a `const` ahead of the call;
+-- making a closure runs nothing, so only the shape moves. At the bottom is
+-- `T`'s own `eq`, which says every two `T`s are equal, so the first answer
+-- is `same` although the payloads differ — the structural answer would be
+-- `different`. `compare` walks the same depth for `Int`.
+import Node exposing (Program)
+
+
+type T
+    = T Int
+
+
+pub eq : T, T -> Bool
+eq a b =
+    True
+
+
+w0 x =
+    [ x ]
+
+
+w1 x =
+    w0 (w0 x)
+
+
+w2 x =
+    w1 (w1 x)
+
+
+w3 x =
+    w2 (w2 x)
+
+
+w4 x =
+    w3 (w3 x)
+
+
+w5 x =
+    w4 (w4 x)
+
+
+deep x =
+    w5 (w3 x)
+
+
+main : Program
+main =
+    Node.printLines
+        [ if deep (T 1) == deep (T 2) then "same" else "different"
+        , if deep 1 == deep 2 then "same" else "different"
+        , if deep 3 < deep 2 then "less" else "not less"
+        ]

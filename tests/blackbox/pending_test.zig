@@ -1,7 +1,7 @@
 //! The pending scenarios (`plans/checker-rewrite.md` §2.5): one
 //! test per finding of `plans/checker-findings.md` that a corpus
 //! fixture cannot state, because its claim is about TIME, or about a program
-//! too wide or deep to check in (CK-82, CK-83: generated, as `abuse_test.zig`
+//! too wide or deep to check in (CK-82: generated, as `abuse_test.zig`
 //! generates its inputs). (CK-71's claim about runs agreeing was promoted
 //! into `blackbox_test.zig` by R1.) Run only by `zig build test-pending`
 //! and `zig build test-pending-perf`, never by the gates: every scenario here
@@ -85,10 +85,10 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     .{ .name = "scenario/CK-75", .step = .perf },
     .{ .name = "scenario/CK-80", .step = .perf },
     .{ .name = "scenario/NEST-UNDER", .step = .perf },
+    .{ .name = "scenario/CK-88", .step = .perf },
     .{ .name = "scenario/PERM", .step = .fast },
     .{ .name = "scenario/NEST-OVER", .step = .fast },
     .{ .name = "scenario/CK-82", .step = .fast },
-    .{ .name = "scenario/CK-83", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -235,6 +235,23 @@ test "CK-75: checking is linear in the number of declarations" {
     try s.finish(verdict);
 }
 
+// CK-88 (found by R2c, 2026-09-25): one `case` of n integer literal branches
+// is emitted in time quadratic in n — `check` takes 18 ms at 10 000
+// branches and `build` 2.2 s, 8.6 s at 20 000 (ReleaseFast, 7ae452f and R2c
+// alike), all of it in the emit phase. Past 65 046 branches the one `switch`
+// it writes is also refused by SpiderMonkey (`backend.md` §4's table), so a
+// fix that splits the `switch` closes both halves. Calibration (ReleaseFast,
+// CPU, R2c): n = 3 000 / 6 000. No reference fix.
+test "CK-88: a case of n literal branches builds in time linear in n" {
+    var s = try Scenario.init("CK-88");
+    defer s.deinit();
+    try s.w.write("C.beni", try bigCase(s.arena(), 3_000));
+    try s.w.write("C2.beni", try bigCase(s.arena(), 6_000));
+    const build = [_][]const u8{ "build", "--no-cache", "--jobs=1", "--library", "--platform=node", "--out=out", "--diagnostics=json" };
+    const verdict = try s.ratioOf(&(build ++ .{"C.beni"}), &(build ++ .{"C2.beni"}), 3_000);
+    try s.finish(verdict);
+}
+
 // CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied
 // n deep, so the type holds n distinct pieces but unfolds into a tree of
 // 2^n leaves — costs time exponential in n, all of it in `solve`: the
@@ -360,44 +377,6 @@ test "CK-82: a nominal payload of 65 536 fields checks, and builds and runs or i
     try s.finish(verdict);
 }
 
-// CK-83: programs the compiler accepts, lowered to JavaScript nested deeper
-// than Node 24's parser loads: it throws `RangeError` from about 1 700
-// levels (1 500 runs). A 2 000-element list literal (uncharged by the
-// parser's budget), and 2 000-term `+` and `++` chains (under it). GREEN is
-// every one built and run, printing its length.
-// The three cases are three files of ONE project, built in turn to the same
-// `--out=out`: `build` compiles only the named entry's import graph, and each
-// build rewrites `out/_main.mjs` for its own entry before it is run, so no
-// case reads another's output.
-test "CK-83: a 2 000-element list and 2 000-term + and ++ chains build and run" {
-    var s = try Scenario.init("CK-83");
-    defer s.deinit();
-    const a = s.arena();
-    const n = 2_000;
-    const Case = struct { head: []const u8, term: []const u8, op: []const u8, tail: []const u8, close: []const u8 };
-    const cases = [_]Case{
-        .{ .head = "xs : List Int\nxs =\n    [ ", .term = "1", .op = ", ", .tail = " ]", .close = "String.fromInt (List.length xs)" },
-        .{ .head = "xs : Int\nxs =\n    ", .term = "one", .op = " + ", .tail = "", .close = "String.fromInt xs" },
-        .{ .head = "xs : String\nxs =\n    ", .term = "a", .op = " ++ ", .tail = "", .close = "String.fromInt (String.length xs)" },
-    };
-    var verdict: Verdict = .{ .green = true, .signature = "", .detail = "" };
-    for (cases, 0..) |case, k| {
-        var text: std.ArrayList(u8) = .empty;
-        try text.appendSlice(a, "import Node exposing (Program)\n\n\none : Int\none =\n    1\n\n\na : String\na =\n    \"a\"\n\n\n");
-        try text.appendSlice(a, case.head);
-        for (0..n) |i| try text.print(a, "{s}{s}", .{ if (i == 0) "" else case.op, case.term });
-        try text.print(a, "{s}\n\n\nmain : Program\nmain =\n    Node.printLines [ {s} ]\n", .{ case.tail, case.close });
-        const file = try std.fmt.allocPrint(a, "Case{d}.beni", .{k});
-        try s.w.write(file, text.items);
-        const v = try s.runsOrRefuses(file, "2000\n");
-        // A refusal is not what this finding wants: every one must run.
-        const ran = v.green and std.mem.startsWith(u8, v.detail, "ran");
-        if (!ran and verdict.green) verdict = .{ .green = false, .signature = if (v.green) "refused" else v.signature, .detail = try std.fmt.allocPrint(a, "{s}: {s}", .{ file, v.detail }) };
-    }
-    if (verdict.green) verdict.detail = "all three ran";
-    try s.finish(verdict);
-}
-
 // The two lists stay honest: every `CLAIMED` and `RED` entry names a pending
 // fixture that exists or a scenario of this file. A fixture promoted into
 // the corpus takes its lines with it; a stale one would make rule (c) or (d)
@@ -460,6 +439,16 @@ fn bigType(arena: std.mem.Allocator, count: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "pub type Big\n    = C0 Int\n");
     for (1..count) |i| try out.print(arena, "    | C{d} Int\n", .{i});
+    return out.items;
+}
+
+/// `pub g k = case k of 0 -> 0; 1 -> 1; … _ -> -1` with `count` literal
+/// branches.
+fn bigCase(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub g : Int -> Int\ng k =\n    case k of\n");
+    for (0..count) |i| try out.print(arena, "        {d} ->\n            {d}\n\n", .{ i, i });
+    try out.appendSlice(arena, "        _ ->\n            -1\n");
     return out.items;
 }
 
@@ -762,14 +751,21 @@ const Scenario = struct {
 
     /// A ratio: time(2n) / time(n) ≤ 2.5, each the best of 3 `check` runs.
     fn ratio(s: *Scenario, small: []const u8, large: []const u8, n: usize) !Verdict {
-        const args_small = [_][]const u8{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", small };
-        const args_large = [_][]const u8{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", large };
+        return s.ratioOf(
+            &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", small },
+            &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", large },
+            n,
+        );
+    }
+
+    /// `ratio` over any two commands: `args_small` at n, `args_large` at 2n.
+    fn ratioOf(s: *Scenario, args_small: []const []const u8, args_large: []const []const u8, n: usize) !Verdict {
 
         // time(n): the best of 3, each bounded only by the harness's own
         // hang detector.
         var best_small: i64 = std.math.maxInt(i64);
         for (0..3) |_| {
-            const run = try s.timed(&args_small, world.bulk_timeout_ms) orelse
+            const run = try s.timed(args_small, world.bulk_timeout_ms) orelse
                 return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "n={d} did not finish within {d} ms", .{ n, world.bulk_timeout_ms }) };
             if (run.result.exit_code != 0) return s.failed(run.result);
             best_small = @min(best_small, run.ms);
@@ -782,7 +778,7 @@ const Scenario = struct {
         const bound: i64 = @divTrunc(best_small * 5, 2);
         var best_large: ?i64 = null;
         for (0..3) |_| {
-            const run = try s.timed(&args_large, @max(bound * 2, 1_000)) orelse continue;
+            const run = try s.timed(args_large, @max(bound * 2, 1_000)) orelse continue;
             if (run.result.exit_code != 0) return s.failed(run.result);
             best_large = @min(best_large orelse run.ms, run.ms);
             if (run.ms <= bound) break;

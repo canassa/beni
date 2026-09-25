@@ -511,8 +511,8 @@ pub fn inlineRange(d: Node.Data) SubRange {
 ///
 /// This is how a pass walks an expression without one stack frame per link
 /// (CK-81): the tree is as deep as the longest chain the compiler built — a
-/// derived `eq` over a 60 000-field record is one `&&` 60 000 deep, a list
-/// literal one nested object per element — so every walker keeps its own
+/// derived `eq` over a 60 000-field record is one `&&` 60 000 deep, and a list
+/// literal was one nested object per element until R2c — so every walker keeps its own
 /// explicit stack and asks this for the children. A leaf pushes nothing, and
 /// so does an `arrow`: its body is a statement list, which each caller walks
 /// in its own way (or, for `Opt.exprUses`, deliberately not at all).
@@ -760,6 +760,76 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
     }
 }
 
+// ---- Emitted nesting (backend.md §4, *Emitted JavaScript nests only as deep as the source*) ---
+
+/// What one node costs a JavaScript engine's parser in nesting, in units of
+/// a quarter of a nested call, measured (backend.md §4's table): every engine
+/// parses — and V8 and JavaScriptCore compile — a nested expression or
+/// statement by recursion, and gives up with `RangeError` or `InternalError`
+/// past a depth that depends on the construct. The unit is fixed by the
+/// scarcest browser: Chrome 153 loads 1 290 nested calls, so a call costs 4
+/// and 5 160 units is the edge. Every other weight is 5 160 over the lowest
+/// depth any of Chrome 153, Firefox 144, WebKit 605.1.15 and Node 24 loads
+/// for that construct, rounded UP.
+pub const nesting = struct {
+    /// The most a top-level statement may cost (backend.md §4). Two and a
+    /// half times under the browsers' edge, and one and a half times under
+    /// the SpiderMonkey 140 shell's, the scarcest engine measured.
+    pub const budget: u32 = 2048;
+    /// An expression this tall is bound to a `const` where it stands
+    /// (`Lower.expr`), so an expression chain costs at most about this much
+    /// however long the source's chain is.
+    pub const spill: u32 = 256;
+    /// The most scopes a top-level statement may nest (`Height.scopes`).
+    /// SpiderMonkey refuses 252 nested blocks that declare something with
+    /// "function nested too deeply", in the shell and in Firefox alike,
+    /// however much stack is left; half of that.
+    pub const scope_budget: u32 = 128;
+    /// The fewest nodes a statement needs before it could be over either
+    /// budget: no node costs more than `if_stmt`, and no node adds more than
+    /// one scope. `Lower` measures nothing smaller.
+    pub const could_exceed: u32 = @min(budget / if_stmt, scope_budget);
+
+    /// A call, `f(…)`: each argument and the callee one level in.
+    pub const call: u32 = 4;
+    /// `{ k: v }`: Firefox loads 1 263 nested object literals.
+    pub const object: u32 = 5;
+    /// `[a, b]`.
+    pub const array: u32 = 4;
+    /// `a.b`, `a[i]`, `-a`, a template's hole: not measured, and none of
+    /// them nests past the source's own depth.
+    pub const member: u32 = 2;
+    /// The right operand of a binary operator, and a left operand that is
+    /// not itself a binary operator of the same precedence: Chrome loads
+    /// 997 levels of `a && (b && …)`.
+    pub const operand: u32 = 6;
+    /// The left operand of `a && b && c`, printed flat: V8's parser builds
+    /// one n-ary node and SpiderMonkey's loops, so neither nests at all; the
+    /// JavaScriptCore of WebKit loads 53 620 terms of `&&` and 40 144 of `+`,
+    /// which no chain this compiler builds reaches (`Lower` groups a derived
+    /// `&&` by `derived_group`).
+    pub const flat: u32 = 0;
+    /// The test or the consequent of `a ? b : c`: Chrome loads 1 263.
+    pub const cond: u32 = 5;
+    /// The alternate of `a ? b : c`, which is how an `else if` chain of
+    /// expressions prints: Firefox loads 4 147, V8 has no limit.
+    pub const alternate: u32 = 2;
+    /// `(…) => body`: Firefox loads 497 nested `(() => …)()`, which costs a
+    /// call as well.
+    pub const arrow: u32 = 7;
+    /// `if (…) { … } else { … }`: Chrome loads 644 nested.
+    pub const if_stmt: u32 = 9;
+    /// `{ … }`, labelled or not: Chrome loads 1 290.
+    pub const block: u32 = 4;
+    /// `switch (…) { case …: { … } }`, whose case bodies `Lower` braces:
+    /// Chrome loads 595 nested, which costs this and a `block`.
+    pub const switch_stmt: u32 = 5;
+    /// `label: while (true) { … }`, the same as an `if`.
+    pub const loop: u32 = 9;
+    /// Every other statement: `const x = …`, `return …`, `x = …`.
+    pub const statement: u32 = 1;
+};
+
 // ---------------------------------------------------------------------------
 // Builder
 // ---------------------------------------------------------------------------
@@ -864,6 +934,158 @@ pub const Builder = struct {
         }
         return @enumFromInt(index);
     }
+
+    /// How deep `stmts` nest, in `nesting`'s units, and how many scopes deep
+    /// (`Height`): the longest path from any of them down to a leaf, each
+    /// step costing what its construct costs an engine's parser. One walk
+    /// over an explicit stack, so a tree of any depth is measured in constant
+    /// Zig stack (CK-81). `Lower` asks it only of a declaration with enough
+    /// nodes to be over either budget (`nesting.could_exceed`).
+    pub fn measure(b: *const Builder, gpa: Allocator, stmts: []const Node.Index) Allocator.Error!Height {
+        const Entry = struct { node: u32, whole: u32, scopes: u32 };
+        var stack: std.ArrayList(Entry) = .empty;
+        defer stack.deinit(gpa);
+        const tags = b.nodes.items(.tag);
+        const datas = b.nodes.items(.data);
+        const w = nesting;
+        var most: Height = .zero;
+        for (stmts) |stmt| try stack.append(gpa, .{ .node = stmt.int(), .whole = 0, .scopes = 0 });
+        while (stack.pop()) |at| {
+            most.whole = @max(most.whole, at.whole);
+            most.scopes = @max(most.scopes, at.scopes);
+            if (at.node >= tags.len) continue;
+            const d = datas[at.node];
+            // Push `node` one step of `weight` (and `scopes` scopes) below `at`.
+            const Push = struct {
+                fn one(s: *std.ArrayList(Entry), g: Allocator, from: Entry, node: u32, weight: u32, scopes: u32) Allocator.Error!void {
+                    try s.append(g, .{ .node = node, .whole = from.whole +| weight, .scopes = from.scopes +| scopes });
+                }
+                fn optional(s: *std.ArrayList(Entry), g: Allocator, from: Entry, raw: u32, weight: u32) Allocator.Error!void {
+                    const o: Node.OptionalIndex = @enumFromInt(raw);
+                    const child = o.unwrap() orelse return;
+                    try one(s, g, from, child.int(), weight, 0);
+                }
+                fn all(s: *std.ArrayList(Entry), g: Allocator, from: Entry, items: []const u32, weight: u32, scopes: u32) Allocator.Error!void {
+                    for (items) |item| try one(s, g, from, item, weight, scopes);
+                }
+            };
+            switch (tags[at.node]) {
+                .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit => {},
+                .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+                .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
+                .assign_stmt => {
+                    try Push.one(&stack, gpa, at, d.lhs, w.statement, 0);
+                    try Push.one(&stack, gpa, at, d.rhs, w.statement, 0);
+                },
+                .let_decl => try Push.optional(&stack, gpa, at, d.rhs, w.statement),
+                .return_stmt => try Push.optional(&stack, gpa, at, d.lhs, w.statement),
+                .expr_stmt, .throw_stmt => try Push.one(&stack, gpa, at, d.lhs, w.statement, 0),
+                .func_decl => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, Func).body(), w.arrow, 1),
+                .arrow => try b.pushBlock(&stack, gpa, at, b.record(d.lhs, Func).body(), w.arrow, 1),
+                .if_stmt => {
+                    const branches = b.record(d.rhs, If);
+                    try Push.one(&stack, gpa, at, d.lhs, w.if_stmt, 0);
+                    try b.pushBlock(&stack, gpa, at, branches.thenBody(), w.if_stmt, 0);
+                    try b.pushBlock(&stack, gpa, at, branches.elseBody(), w.if_stmt, 0);
+                },
+                .while_true => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), w.loop, 0),
+                .switch_stmt => {
+                    try Push.one(&stack, gpa, at, d.lhs, w.switch_stmt, 0);
+                    try Push.all(&stack, gpa, at, b.rangeWords(b.record(d.rhs, SubRange)), w.switch_stmt, 0);
+                },
+                .switch_case => {
+                    try Push.optional(&stack, gpa, at, d.lhs, 0);
+                    try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), 0, 0);
+                },
+                .block_stmt => try b.pushBlock(&stack, gpa, at, b.record(d.rhs, SubRange), w.block, 0),
+                .template => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.member, 0),
+                .call => {
+                    try Push.one(&stack, gpa, at, d.lhs, w.call, 0);
+                    try Push.all(&stack, gpa, at, b.rangeWords(b.record(d.rhs, SubRange)), w.call, 0);
+                },
+                .member, .unary => try Push.one(&stack, gpa, at, d.lhs, w.member, 0),
+                .index_get => {
+                    try Push.one(&stack, gpa, at, d.lhs, w.member, 0);
+                    try Push.one(&stack, gpa, at, d.rhs, w.member, 0);
+                },
+                .object => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.object, 0),
+                .property => try Push.one(&stack, gpa, at, d.rhs, 0, 0),
+                .spread_property => try Push.one(&stack, gpa, at, d.lhs, 0, 0),
+                .array => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.array, 0),
+                .cond => {
+                    const c = b.record(d.rhs, Cond);
+                    try Push.one(&stack, gpa, at, d.lhs, w.cond, 0);
+                    try Push.one(&stack, gpa, at, c.consequent.int(), w.cond, 0);
+                    try Push.one(&stack, gpa, at, c.alternate.int(), w.alternate, 0);
+                },
+                .binary => {
+                    const pair = b.record(d.lhs, Binary);
+                    const op: BinaryOp = @enumFromInt(d.rhs);
+                    const left = pair.left.int();
+                    const flat = left < tags.len and tags[left] == .binary and
+                        (@as(BinaryOp, @enumFromInt(datas[left].rhs))).precedence() == op.precedence();
+                    try Push.one(&stack, gpa, at, left, if (flat) w.flat else w.operand, 0);
+                    try Push.one(&stack, gpa, at, pair.right.int(), w.operand, 0);
+                },
+            }
+        }
+        return most;
+    }
+
+    /// A braced run of statements below `at`: `weight` further down, and
+    /// `scopes` scopes more — one more again when the run declares something,
+    /// which is what makes braces a scope of their own.
+    fn pushBlock(b: *const Builder, stack: anytype, gpa: Allocator, at: anytype, range: SubRange, weight: u32, scopes: u32) Allocator.Error!void {
+        const items = b.rangeWords(range);
+        const tags = b.nodes.items(.tag);
+        var declares = false;
+        for (items) |item| {
+            if (item < tags.len) switch (tags[item]) {
+                .const_decl, .let_decl, .func_decl => declares = true,
+                else => {},
+            };
+        }
+        const more = scopes + @intFromBool(declares);
+        for (items) |item| try stack.append(gpa, .{ .node = item, .whole = at.whole +| weight, .scopes = at.scopes +| more });
+    }
+
+    /// The words of `range`, or none when it is not inside `extra`.
+    fn rangeWords(b: *const Builder, range: SubRange) []const u32 {
+        const start: usize = @intFromEnum(range.start);
+        const end: usize = @intFromEnum(range.end);
+        if (start > end or end > b.extra.items.len) return &.{};
+        return b.extra.items[start..end];
+    }
+
+    fn record(b: *const Builder, index: u32, comptime T: type) T {
+        var result: T = undefined;
+        var i: usize = index;
+        inline for (std.meta.fields(T)) |field| {
+            const word = if (i < b.extra.items.len) b.extra.items[i] else 0;
+            @field(result, field.name) = switch (@typeInfo(field.type)) {
+                .@"enum" => @enumFromInt(word),
+                .int => word,
+                else => @compileError("unexpected extra field type: " ++ @typeName(field.type)),
+            };
+            i += 1;
+        }
+        return result;
+    }
+};
+
+/// How deep a run of statements nests (`Builder.measure`, `nesting`):
+///
+///   - `whole`: the costliest path from a statement down to a leaf, in
+///     `nesting`'s units — what an engine's parser recurses through, and what
+///     `nesting.budget` bounds;
+///   - `scopes`: the most scopes on one path — functions, and braces around
+///     statements that declare something — which SpiderMonkey bounds on its
+///     own, whatever the stack (`nesting.scope_budget`).
+pub const Height = struct {
+    whole: u32,
+    scopes: u32,
+
+    pub const zero: Height = .{ .whole = 0, .scopes = 0 };
 };
 
 // ---------------------------------------------------------------------------
@@ -1004,4 +1226,57 @@ test "statements and expressions are separated by a range test" {
     try testing.expect(Node.Tag.throw_stmt.isStatement());
     try testing.expect(!Node.Tag.ident.isStatement());
     try testing.expect(!Node.Tag.unary.isStatement());
+}
+
+test "measure: a path costs what its constructs cost, a function and declaring braces are scopes" {
+    const gpa = testing.allocator;
+    var b: Builder = .init(gpa);
+    defer b.deinit();
+    const x = try b.intern(.local(@enumFromInt(1)));
+    const leaf = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = 0 } });
+    try testing.expectEqual(Height.zero, try b.measure(gpa, &.{leaf}));
+
+    // f(f(f(x))): three calls.
+    var inner = leaf;
+    for (0..3) |_| {
+        const args = try b.addRange(&.{inner});
+        const record = try b.addRecord(args);
+        inner = try b.addNode(.{ .tag = .call, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = @intFromEnum(record) } });
+    }
+    try testing.expectEqual(Height{ .whole = 3 * nesting.call, .scopes = 0 }, try b.measure(gpa, &.{inner}));
+
+    // `const y = (x) => { const x = f(f(f(x))); return x; };`: one scope for
+    // the function and one for the braces its `const` declares in.
+    const decl = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = inner.int() } });
+    const ret = try b.addNode(.{ .tag = .return_stmt, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = 0 } });
+    const params = try b.addNames(&.{x});
+    const body = try b.addRange(&.{ decl, ret });
+    const func = try b.addRecord(Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const arrow = try b.addNode(.{ .tag = .arrow, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(func), .rhs = 0 } });
+    const top = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = arrow.int() } });
+    try testing.expectEqual(Height{
+        .whole = nesting.statement + nesting.arrow + nesting.statement + 3 * nesting.call,
+        .scopes = 2,
+    }, try b.measure(gpa, &.{top}));
+}
+
+test "measure: `a && b && c` built to the left is flat, `a && (b && c)` is not" {
+    const gpa = testing.allocator;
+    var b: Builder = .init(gpa);
+    defer b.deinit();
+    const x = try b.intern(.local(@enumFromInt(1)));
+    const leaf = try b.addNode(.{ .tag = .ident, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(x), .rhs = 0 } });
+    const op = @intFromEnum(BinaryOp.logical_and);
+    var left = leaf;
+    var right = leaf;
+    for (0..10) |_| {
+        const l_pair = try b.addRecord(Binary{ .left = left, .right = leaf });
+        left = try b.addNode(.{ .tag = .binary, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(l_pair), .rhs = op } });
+        const r_pair = try b.addRecord(Binary{ .left = leaf, .right = right });
+        right = try b.addNode(.{ .tag = .binary, .pos = Node.no_pos, .data = .{ .lhs = @intFromEnum(r_pair), .rhs = op } });
+    }
+    // The first link's left operand is a name; every later one's is the
+    // chain so far, which prints without parentheses and nests nothing.
+    try testing.expectEqual(nesting.operand, (try b.measure(gpa, &.{left})).whole);
+    try testing.expectEqual(10 * nesting.operand, (try b.measure(gpa, &.{right})).whole);
 }

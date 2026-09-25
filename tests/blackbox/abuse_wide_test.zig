@@ -1,7 +1,8 @@
 //! Abuse scenarios over WIDE inputs — records of 100 000 fields, nominal
-//! payloads of 65 535, operator chains and list literals at the widths Node
-//! stops loading — split out of `abuse_test.zig` on 2026-09-25 only so that
-//! the two run as separate processes in parallel: together they were one
+//! payloads of 65 535, operator chains and list literals as wide as the
+//! parser admits (wider than engines loaded until R2c) — split out of
+//! `abuse_test.zig` on 2026-09-25 only so that the two run as separate
+//! processes in parallel: together they were one
 //! binary of about 80 s, the longest in `test-blackbox`
 //! (`plans/checker-rewrite.md` §2.4, *Parts*). Everything `abuse_test.zig`'s
 //! header says about what an abuse scenario asserts holds here.
@@ -222,60 +223,110 @@ test "derived eq and compare over a 60 000- and a 65 535-field nominal payload b
     try testing.expectEqual(@as(u8, 0), release.program.?.exit_code);
 }
 
-test "a 200 000-element list literal is EMITTED without a stack overflow, in both builds" {
+test "a 200 000-element list literal is EMITTED without a stack overflow and RUNS, in both builds" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // A list literal lowers to one `{ $: 1, a: x, b: … }` per element, each
+    // A list literal lowered to one `{ $: 1, a: x, b: … }` per element, each
     // inside the last, and the parser does not charge its depth for the
     // elements. The printer recursed per level and segfaulted the build
-    // (CK-81). What Node then makes of an object literal nested 200 000 deep
-    // is CK-83's — it throws `RangeError` at load from about 1 700 — so this
-    // asserts the compiler's half: the build finishes and writes the module.
+    // (CK-81); then the module it wrote threw `RangeError` in Node's parser
+    // from about 1 550 elements (CK-83). Past 32 elements a literal is one
+    // flat array now, built into cells by `reduceRight` (`backend.md` §4),
+    // so the build finishes and the program runs.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     var source: std.Io.Writer.Allocating = .init(testing.allocator);
     defer source.deinit();
     try source.writer.writeAll("import Node exposing (Program)\n\n\nxs : List Int\nxs =\n    [ 1");
-    for (1..200_000) |_| try source.writer.writeAll(", 1");
-    try source.writer.writeAll(" ]\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (List.length xs) ]\n");
+    for (1..200_000) |i| try source.writer.print(", {d}", .{i + 1});
+    try source.writer.writeAll(" ]\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt (List.length xs), String.fromInt (List.sum xs), String.join (List.map (List.take xs 3) String.fromInt) \",\" ]\n");
     try w.write("Main.beni", source.written());
 
     for ([_][]const u8{ "--no-cache", "--release" }) |flag| {
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const r = try w.runWith(&.{ "build", "--no-cache", flag, "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+        const r = try w.buildAndRun(&.{ flag, "Main.beni" });
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY OUTPUT                       │
         // └─────────────────────────────────────┘
-        try expectExited(r, 0);
-        try testing.expectEqualStrings("", r.stderr);
-        try testing.expect(w.exists("out/Main.mjs"));
+        try expectExited(r.build, 0);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("200000\n20000100000\n1,2,3\n", r.program.?.stdout);
+        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
     }
 }
 
-test "a written operator chain runs at the widest Node loads, and 100 000 terms are one nesting_too_deep" {
+// CK-83, promoted from `tests/pending` by R2c (`plans/checker-rewrite.md`
+// §2.6): programs the compiler accepted, lowered to JavaScript nested deeper
+// than Node 24's parser loads — it threw `RangeError` from about 1 550
+// levels. A 2 000-element list literal (uncharged by the parser's budget),
+// and 2 000-term `+` and `++` chains (under it). Every one builds and runs,
+// printing its length. The three cases are three files of ONE project, built
+// in turn to the same `--out=out`: `build` compiles only the named entry's
+// import graph, and each build rewrites `out/_main.mjs` for its own entry
+// before it is run, so no case reads another's output.
+test "CK-83: a 2 000-element list and 2 000-term + and ++ chains build and run" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const n = 2_000;
+    const Case = struct { head: []const u8, term: []const u8, op: []const u8, tail: []const u8, close: []const u8 };
+    const cases = [_]Case{
+        .{ .head = "xs : List Int\nxs =\n    [ ", .term = "1", .op = ", ", .tail = " ]", .close = "String.fromInt (List.length xs)" },
+        .{ .head = "xs : Int\nxs =\n    ", .term = "one", .op = " + ", .tail = "", .close = "String.fromInt xs" },
+        .{ .head = "xs : String\nxs =\n    ", .term = "a", .op = " ++ ", .tail = "", .close = "String.fromInt (String.length xs)" },
+    };
+    for (cases, 0..) |case, k| {
+        var text: std.ArrayList(u8) = .empty;
+        try text.appendSlice(a, "import Node exposing (Program)\n\n\none : Int\none =\n    1\n\n\na : String\na =\n    \"a\"\n\n\n");
+        try text.appendSlice(a, case.head);
+        for (0..n) |i| try text.print(a, "{s}{s}", .{ if (i == 0) "" else case.op, case.term });
+        try text.print(a, "{s}\n\n\nmain : Program\nmain =\n    Node.printLines [ {s} ]\n", .{ case.tail, case.close });
+        const file = try std.fmt.allocPrint(a, "Case{d}.beni", .{k});
+        try w.write(file, text.items);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const r = try w.buildAndRun(&.{ "--no-cache", file });
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try expectExited(r.build, 0);
+        try testing.expectEqualStrings("", r.build.stderr);
+        try testing.expectEqualStrings("2000\n", r.program.?.stdout);
+        try testing.expectEqual(@as(u8, 0), r.program.?.exit_code);
+    }
+}
+
+test "a written operator chain runs at the widest the parser admits, and 100 000 terms are one nesting_too_deep" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The user's half of CK-81: an operator chain a person writes. The
     // parser charges every operator to `Parse.max_depth`, so a chain is
     // bounded before the backend sees it: `&&` over `x == 3` reaches the
-    // budget at 1 366 terms (three charges each), and 100 000 terms of any
-    // operator is exactly one `nesting_too_deep`. Under it the chain goes
-    // through check, both walks and the printer and runs. `+` and `++` are
-    // run at 1 500, not at the parser's 4 095: Node refuses the nesting they
-    // lower to from about 1 700 (`Basics$add(Basics$add(…))`, `a && (b &&
-    // …)`), which is CK-83 and not asserted here.
+    // budget at 1 366 terms (three charges each), `++` at 2 049 (two) and
+    // `+` at 4 096 (one), and 100 000 terms of any operator is exactly one
+    // `nesting_too_deep`. Under it the chain goes through check, both walks
+    // and the printer — and, since R2c (CK-83), RUNS at the widest the
+    // parser admits: `&&` prints as one flat run and `+`/`++` are bound to a
+    // `const` every `nesting.spill` units (`backend.md` §4), where they
+    // nested one call per term and Node refused them from about 1 550.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const Case = struct { head: []const u8, term: []const u8, op: []const u8, width: usize, tail: []const u8, expected: []const u8 };
     const cases = [_]Case{
         .{ .head = "x : Int\nx =\n    3\n\n\nb : Bool\nb =\n    ", .term = "x == 3", .op = " && ", .width = 1_365, .tail = "Node.printLines [ if b then \"yes\" else \"no\" ]", .expected = "yes\n" },
-        .{ .head = "x : Int\nx =\n    1\n\n\nb : Int\nb =\n    ", .term = "x", .op = " + ", .width = 1_500, .tail = "Node.printLines [ String.fromInt b ]", .expected = "1500\n" },
-        .{ .head = "x : String\nx =\n    \"a\"\n\n\nb : String\nb =\n    ", .term = "x", .op = " ++ ", .width = 1_500, .tail = "Node.printLines [ String.fromInt (String.length b) ]", .expected = "1500\n" },
+        .{ .head = "x : Int\nx =\n    1\n\n\nb : Int\nb =\n    ", .term = "x", .op = " + ", .width = 4_095, .tail = "Node.printLines [ String.fromInt b ]", .expected = "4095\n" },
+        .{ .head = "x : String\nx =\n    \"a\"\n\n\nb : String\nb =\n    ", .term = "x", .op = " ++ ", .width = 2_048, .tail = "Node.printLines [ String.fromInt (String.length b) ]", .expected = "2048\n" },
     };
     for (cases) |case| {
         for ([_]usize{ case.width, 100_000 }) |n| {

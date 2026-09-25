@@ -29,7 +29,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
 | `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line |
 | `v2-green.txt` | corpus fixtures a landed slice made green under v2 (R4's `test-v2` ratchet) |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80, `NEST-UNDER`: `test-pending-perf`), a generated width or depth (CK-82, CK-83) and R7's `PERM` and `NEST-OVER` (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`), a generated width or depth (CK-82; CK-83 was promoted by R2c) and R7's `PERM` and `NEST-OVER` (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
 
 ## A fixture
 

@@ -998,13 +998,14 @@ of, what it saw, and what it expected, e.g. *I was parsing the branches of this 
 | `unexpected_token` | the start of a construct — an expression, a pattern, a type, an exposing entry — was needed and the token cannot start one. A misaligned `let` binding or `case` branch — a token inside the block, at a column other than the first sibling's, that could start a binding or branch — is reported with this code, quoting both columns, and then parsed as a sibling, so one misalignment yields one message. A token that cannot start a sibling ends the list silently and the enclosing construct decides. |
 | `expected_declaration` | the top-level form of `unexpected_token` |
 
-**Depth limits**, both reporting `nesting_too_deep`:
+**Depth limits**, every one reporting `nesting_too_deep`:
 
 | Limit | Where | Rule |
 |---|---|---|
 | nesting deeper than 4096 levels | the parser, over expressions, types and patterns | reported at the point where the limit is crossed; the file is otherwise parsed. It is the one limit the parser imposes, so hostile input cannot overflow the stack. |
 | 512 levels | the type checker reading a type, reported at the declaration (`checker.md` §5) | lower on purpose — an annotation is one tree among many and reading it also spends a level per alias expansion — so a file the parser accepts can still be refused here. What the checker may not do is refuse it silently: past the limit the type is poisoned, and a poisoned type unifies with anything, so a declaration truncated without a message would be a hole a caller's mistake falls through. |
 | charged per declaration | the iteratively built spines — an operator chain, an access chain, a `?` chain | they hold their charge until the declaration ends, so a declaration whose chains total more than 4096 links is refused even when no single path is that deep. Accounting each spine exactly would mean a depth per node through the AST — four bytes on every node, to buy a case no real program reaches; revisit it if one does. |
+| 2 048 units and 128 scopes of emitted JavaScript | `build`, per top-level declaration, after lowering (`backend.md` §4, *Emitted JavaScript nests only as deep as the source*) | a declaration whose JavaScript would nest past what browser engines parse — about 512 nested calls, or 128 nested scopes, SpiderMonkey's own limit being 251 — is refused at the declaration, naming both measures, and nothing is written. Every form the source writes flat is emitted flat whatever its length (lists, operator chains, pipelines, `else if` chains), so only nesting the program writes itself reaches it: functions inside functions (about 120, or a `view` with a `List.map` at every level about 65 deep), or `case`s and `if`s inside one another through the arguments of calls. `check` does not report it; only `build` lowers. |
 
 ## Appendix A. The prelude
 
