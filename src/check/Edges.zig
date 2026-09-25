@@ -153,11 +153,19 @@ pub fn declEdges(
     }
 
     // Leg 3: the dispatch sites — the callee, then the roots — and every
-    // term nested in one.
+    // term nested in one, each term once.
+    var roots: std.ArrayList(Dispatch.TermIndex) = .empty;
+    defer roots.deinit(scratch);
     for (dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
-        if (site.callee.unwrap()) |callee| try termEdges(out, scratch, dispatch, callee);
-        for (dispatch.argsAt(site.evidence)) |root| try termEdges(out, scratch, dispatch, root);
+        if (site.callee.unwrap()) |callee| try roots.append(scratch, callee);
+        try roots.appendSlice(scratch, dispatch.argsAt(site.evidence));
     }
+    // Through the rows this module derives: a derived function RUNS the
+    // values its body names when it is called, so a constant that calls one
+    // depends on them — for its place in emission order and for the cycle
+    // check (CK-104: `main` calling `Main$W$$eq`, whose body reads a
+    // `Main$key` emitted after `main`, threw at load).
+    try termsEdges(out, scratch, dispatch, roots.items, true);
 }
 
 /// Every edge out of `Dispatch.Derived` row `index`: the terms of its
@@ -169,45 +177,86 @@ pub fn derivedEdges(
     dispatch: *const Dispatch,
     index: u32,
 ) Error!void {
-    for (dispatch.argsAt(dispatch.derived[index].body)) |t| {
-        try termEdges(out, scratch, dispatch, t);
-    }
+    try termsEdges(out, scratch, dispatch, dispatch.argsAt(dispatch.derived[index].body), false);
 }
 
-/// One term's edge, then recursively its arguments. A `param` is a
-/// parameter and a `field` is a property read, so neither names anything
-/// that is emitted.
-///
-/// No depth guard: every argument's index is greater than its owner's
-/// (`Dispatch`'s pre-order rule, verified on every load from bytes), so the
-/// recursion ends.
+/// One term's edge, then its arguments' (`termsEdges`).
 pub fn termEdges(
     out: *std.ArrayList(Edge),
     scratch: Allocator,
     dispatch: *const Dispatch,
     i: Dispatch.TermIndex,
 ) Error!void {
-    if (i.int() >= dispatch.terms.len) return;
-    const t = dispatch.term(i);
-    switch (t) {
-        .top => |use| try out.append(scratch, .{ .top = use.decl.int() }),
-        .ext => |e| try out.append(scratch, .{ .ext = .{
-            .module = e.module,
-            .value = @intFromEnum(e.value),
-        } }),
-        .derived => |use| try out.append(scratch, .{ .derived = use.index }),
-        .ext_derived => |use| try out.append(scratch, .{ .ext_derived = .{
-            .module = use.module,
-            .type = use.type,
-            .kind = use.kind,
-        } }),
-        .primitive => |prim| try out.append(scratch, .{ .primitive = prim }),
-        .undetermined => try out.append(scratch, .undetermined),
-        .param, .field => {},
+    try termsEdges(out, scratch, dispatch, &.{i}, false);
+}
+
+/// The edges of `roots` and of every term below them, in pre-order, EACH
+/// TERM ONCE. A `param` is a parameter and a `field` is a property read, so
+/// neither names anything that is emitted.
+///
+/// A table may share a term between owners (checker-v2.md §13.1 as amended
+/// by R6b: v2 writes one term per distinct answer of a site, so `==` on a
+/// type that is a doubling DAG is linear in its distinct nodes, CK-80), and
+/// a walk that expanded the sharing would be exponential in its depth. A
+/// table without sharing yields exactly the edges the recursive walk did.
+/// An explicit stack, and no depth guard: every argument's index is greater
+/// than its owner's (verified on every load from bytes), so the walk ends.
+pub fn termsEdges(
+    out: *std.ArrayList(Edge),
+    scratch: Allocator,
+    dispatch: *const Dispatch,
+    roots: []const Dispatch.TermIndex,
+    /// Also walk the body of every `derived` row a term names (this
+    /// module's rows; another module's run in that module).
+    through_rows: bool,
+) Error!void {
+    if (roots.len == 0) return;
+    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    defer seen.deinit(scratch);
+    var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
+    defer stack.deinit(scratch);
+    var r = roots.len;
+    while (r > 0) {
+        r -= 1;
+        try stack.append(scratch, roots[r]);
     }
-    for (dispatch.argsAt(t.argsOf())) |arg| {
-        if (arg.int() <= i.int()) continue;
-        try termEdges(out, scratch, dispatch, arg);
+    while (stack.pop()) |i| {
+        if (i.int() >= dispatch.terms.len) continue;
+        if ((try seen.getOrPut(scratch, i.int())).found_existing) continue;
+        const t = dispatch.term(i);
+        switch (t) {
+            .top => |use| try out.append(scratch, .{ .top = use.decl.int() }),
+            .ext => |e| try out.append(scratch, .{ .ext = .{
+                .module = e.module,
+                .value = @intFromEnum(e.value),
+            } }),
+            .derived => |use| {
+                try out.append(scratch, .{ .derived = use.index });
+                if (through_rows and use.index < dispatch.derived.len) {
+                    const body = dispatch.argsAt(dispatch.derived[use.index].body);
+                    var b = body.len;
+                    while (b > 0) {
+                        b -= 1;
+                        try stack.append(scratch, body[b]);
+                    }
+                }
+            },
+            .ext_derived => |use| try out.append(scratch, .{ .ext_derived = .{
+                .module = use.module,
+                .type = use.type,
+                .kind = use.kind,
+            } }),
+            .primitive => |prim| try out.append(scratch, .{ .primitive = prim }),
+            .undetermined => try out.append(scratch, .undetermined),
+            .param, .field => {},
+        }
+        const args = dispatch.argsAt(t.argsOf());
+        var a = args.len;
+        while (a > 0) {
+            a -= 1;
+            if (args[a].int() <= i.int()) continue;
+            try stack.append(scratch, args[a]);
+        }
     }
 }
 
@@ -358,4 +407,31 @@ test "an argument that points back at its owner is not followed" {
     defer out.deinit(gpa);
     try termEdges(&out, gpa, &dispatch, @enumFromInt(0));
     try testing.expectEqual(@as(usize, 1), out.items.len);
+}
+
+test "a term shared by two owners is walked once" {
+    // checker-v2.md §13.1 as amended by R6b: v2 writes one term per distinct
+    // answer of a site, so `( x, [ x ] ) == …` shares `x`'s derived term
+    // between the tuple and the list (CK-80). Term 0 is the tuple's
+    // `derived 0`, whose two arguments are term 1 (`derived 1`, `x`'s) and
+    // term 2 (`ext`, the list's `eq`), and term 2's one argument is term 1
+    // again. The walk yields each term's edge once, in pre-order.
+    const gpa = testing.allocator;
+    const terms = [_]Dispatch.Term{
+        .{ .derived = .{ .index = 0, .args = .{ .start = 0, .len = 2 } } },
+        .{ .derived = .{ .index = 1 } },
+        .{ .ext = .{ .module = @enumFromInt(2), .value = @enumFromInt(3), .args = .{ .start = 2, .len = 1 } } },
+    };
+    const args = [_]Dispatch.TermIndex{ @enumFromInt(1), @enumFromInt(2), @enumFromInt(1) };
+    var dispatch: Dispatch = .empty;
+    dispatch.terms = &terms;
+    dispatch.args = &args;
+
+    var out: std.ArrayList(Edge) = .empty;
+    defer out.deinit(gpa);
+    try termEdges(&out, gpa, &dispatch, @enumFromInt(0));
+    try testing.expectEqual(@as(usize, 3), out.items.len);
+    try testing.expectEqual(@as(u32, 0), out.items[0].derived);
+    try testing.expectEqual(@as(u32, 1), out.items[1].derived);
+    try testing.expectEqual(@as(u32, 2), out.items[2].ext.module.int());
 }

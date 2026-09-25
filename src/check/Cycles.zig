@@ -51,7 +51,9 @@
 //! `import_cycle` with every member poisoned (`resolve/Graph.zig`,
 //! `checker.md` §4.3). `ext`, `ext_derived`, `primitive` and `err` are all
 //! cross-module; a `derived` row is synthesised and cannot close a cycle
-//! between two written declarations. `js/Reach.zig` takes all six, which is
+//! between two written declarations by itself — but the declarations its
+//! body names are this declaration's `.top` edges (`Edges.declEdges` walks
+//! through the rows it names, CK-104). `js/Reach.zig` takes all six, which is
 //! the whole difference between the two consumers of one walk.
 //!
 //! **Determinism.** Tarjan visits declarations in source order and follows

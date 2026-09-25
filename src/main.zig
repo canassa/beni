@@ -254,7 +254,6 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         .dispatch => {
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             if (m.int() >= session.checked.dispatch.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});
-            if (v2Unelaborated(&session, m)) return fail(stderr, "beni: NOT IMPLEMENTED YET: {s}: {s}", .{ dump.file, beni.check2.Subset.reason });
             beni.dump.dispatch.write(
                 stdout,
                 session.store.moduleName(file),
@@ -360,7 +359,6 @@ fn dumpProjectDispatch(session: *Session, stdout: *Io.Writer, stderr: *Io.Writer
         if (session.store.isEmbedded(f) or !underDir(p, dir)) continue;
         const m = moduleOf(session, f) orelse continue;
         if (m.int() >= session.checked.dispatch.len) continue;
-        if (v2Unelaborated(session, m)) return fail(stderr, "beni: NOT IMPLEMENTED YET: {s}: {s}", .{ p, beni.check2.Subset.reason });
         beni.dump.dispatch.write(
             stdout,
             session.store.moduleName(f),
@@ -383,15 +381,4 @@ fn moduleOf(session: *const Session, file: SourceStore.Index) ?beni.resolve.Grap
         if (session.graph.moduleFile(m) == file) return m;
     }
     return null;
-}
-
-/// Whether module `m`'s dispatch table is checker v2's partial one: a
-/// root-package module under `--checker=v2` that needs evidence elaborated,
-/// which v2 writes from slice R6b (`check2/Subset.zig`). Its dump is refused
-/// rather than printed without the evidence.
-fn v2Unelaborated(session: *const Session, m: beni.resolve.Graph.Index) bool {
-    if (session.options.checker != .v2 or session.options.core) return false;
-    if (session.graph.module(m).package != .app) return false;
-    const bir = session.artifacts.bir(session.graph.moduleFile(m));
-    return beni.check2.Subset.needsElaboration(bir, session.resolution.interfaces) != null;
 }

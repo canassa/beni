@@ -218,10 +218,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         .@"error", .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => {
             return g.equal(expected, try g.fresh(.err), inst, category);
         },
-        // A form v2's subset excludes (`Subset.zig`: a method call or a type
-        // dispatch), or no expression at all. Meeting one
-        // means the gate missed it: the compiler says so, never a silent
-        // poison (review S1, I8).
+        // A form the generator has no rule for, or no expression at all:
+        // the compiler says so, never a silent poison (review S1, I8).
         else => return g.add(.internal, inst, @intFromEnum(expected), 0, category),
     }
 }

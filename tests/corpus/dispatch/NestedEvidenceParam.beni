@@ -1,0 +1,45 @@
+-- dispatch: evidence nested three deep with a PARAMETER at the bottom (I5,
+-- I7; checker-v2.md §12.2, §13.1). In `same` the `==` on
+-- `List (List (Box a))` passes `List.eq` the root `ext List eq` over
+-- `derived Box` over `param 0`, `same`'s own `a.eq`; `sameInferred` gets
+-- the same tree from a PROMOTED requirement; `sameNested` passes each of
+-- them a `derived Box` over its own parameter, and the values at the bottom
+-- fill the parameter with primitives. `run/NestedEvidenceParam` runs it.
+pub type Box a
+    = Box a a
+
+
+pub same : List (List (Box a)), List (List (Box a)) -> Bool
+    where a.eq : a, a -> Bool
+same xs ys =
+    xs == ys
+
+
+wrap : a -> List (List (Box a))
+wrap x =
+    [ [ Box x x ] ]
+
+
+sameInferred x y =
+    wrap x == wrap y
+
+
+pub sameNested : Box a, Box a -> Bool
+    where a.eq : a, a -> Bool
+sameNested x y =
+    same (wrap x) (wrap y) && sameInferred x y
+
+
+pub ints : Bool
+ints =
+    same [ [ Box 1 1 ] ] [ [ Box 1 1 ] ]
+
+
+pub chars : Bool
+chars =
+    sameInferred 'x' 'y'
+
+
+pub nested : Bool
+nested =
+    sameNested (Box "a" "b") (Box "a" "c")

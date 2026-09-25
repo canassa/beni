@@ -428,7 +428,15 @@ pub fn checkI7(
     gpa: Allocator,
     out: *std.ArrayList(Bir.Inst.Index),
 ) Allocator.Error!void {
-    const cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types };
+    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types };
+    const below = try gpa.alloc(bool, d.terms.len);
+    defer gpa.free(below);
+    var at = d.terms.len;
+    while (at > 0) {
+        at -= 1;
+        below[at] = cx.localOk(below, @intCast(at));
+    }
+    cx.below = below;
     for (d.derived) |row| {
         var ok = true;
         if (@as(u64, row.body.start) + row.body.len > d.args.len) ok = false;
@@ -475,12 +483,61 @@ pub fn checkI7(
     for (d.sites[next..]) |site| {
         if (!cx.siteOk(bir, site)) try out.append(gpa, site.inst);
     }
+    try cx.placement(bir, gpa, out);
+}
+
+/// The method a requirement slot asks for: argument `k` of `owner`, the
+/// `k`th requirement of the function it names (a derived function's context
+/// entries all ask for its own method under v1's ABI), or null when the
+/// owner names none.
+fn slotMethod(d: *const Dispatch, interfaces: []const Interface, owner: Term, k: usize) ?Symbol {
+    switch (owner) {
+        .top => |u| {
+            const reqs = d.declRequirements(u.decl.int());
+            return if (k < reqs.len) reqs[k].method else null;
+        },
+        .ext => |u| return extRequirementMethod(interfaces, u.module, @intFromEnum(u.value), k),
+        .derived => |u| {
+            const ctx = d.contextOf(u.index);
+            return if (k < ctx.len) ctx[k].method else null;
+        },
+        .ext_derived => |u| return kindMethod(u.kind),
+        else => return null,
+    }
+}
+
+fn kindMethod(kind: Derived.Kind) Symbol {
+    return switch (kind) {
+        .eq => InternPool.WellKnown.eq.symbol(),
+        .compare => InternPool.WellKnown.compare.symbol(),
+    };
+}
+
+/// The method of an imported value's `k`th requirement, in the canonical
+/// order `extRequirementCount` counts.
+fn extRequirementMethod(interfaces: []const Interface, module: Graph.Index, value: u32, k: usize) ?Symbol {
+    if (module.int() >= interfaces.len) return null;
+    const iface = &interfaces[module.int()];
+    if (value >= iface.values.len) return null;
+    const index = iface.values[value].scheme;
+    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return null;
+    const s = iface.scheme(index);
+    var at: usize = 0;
+    var i: u32 = 0;
+    while (i < s.quantified_count) : (i += 1) {
+        const q = iface.quantified(s, i);
+        if (k < at + q.constraints_len) return iface.symbol(iface.quantifiedConstraint(q, @intCast(k - at)).name);
+        at += q.constraints_len;
+    }
+    return null;
 }
 
 const I7 = struct {
     d: *const Dispatch,
     interfaces: []const Interface,
     types: *const Types,
+    /// Per term: it and everything below it add up (`localOk`).
+    below: []const bool = &.{},
 
     fn count(cx: I7, t: Term) u32 {
         return requirementCount(cx.d, t, cx.interfaces, cx.types);
@@ -528,10 +585,19 @@ const I7 = struct {
 
     /// `owner` is the term whose argument this is, for the ordering rule.
     fn termOk(cx: I7, i: TermIndex, owner: ?TermIndex) bool {
-        const d = cx.d;
-        if (i.int() >= d.terms.len) return false;
+        if (i.int() >= cx.d.terms.len) return false;
         if (owner) |o| if (i.int() <= o.int()) return false;
-        const t = d.term(i);
+        return cx.below[i.int()];
+    }
+
+    /// Whether term `i` and everything below it add up, given the answer
+    /// for every term after it: one pass from the last term to the first,
+    /// so a term SHARED by several owners (checker-v2.md §13.1 as amended by
+    /// R6b) is judged once — the recursive walk this replaced was
+    /// exponential on a doubling DAG (CK-80).
+    fn localOk(cx: I7, below: []const bool, i: u32) bool {
+        const d = cx.d;
+        const t = d.terms[i];
         const r = t.argsOf();
         if (@as(u64, r.start) + r.len > d.args.len) return false;
         switch (t) {
@@ -541,7 +607,94 @@ const I7 = struct {
         }
         if (r.len != cx.count(t)) return false;
         for (d.argsAt(r)) |arg| {
-            if (!cx.termOk(arg, i)) return false;
+            if (arg.int() <= i or arg.int() >= d.terms.len) return false;
+            if (!below[arg.int()]) return false;
+        }
+        return true;
+    }
+
+    const Visit = struct { term: u32, ctx: u8, method: Symbol.Optional };
+
+    /// Where an `undetermined` leaf may stand (§13.1 as amended by R6b's
+    /// review, B1 and CK-103): `Lower` takes its method from the nearest
+    /// `derived`/`ext_derived` ancestor (or row, for a body position), so it
+    /// must have one, of the method its slot asks for. Everywhere else the
+    /// table must name the structural function. Each `(term, ancestor kind,
+    /// slot method)` is judged once, so a shared term costs one visit per
+    /// context. Appends the instruction of each site, or the type's first
+    /// instruction for each row, that breaks it.
+    fn placement(cx: I7, bir: *const Bir, gpa: Allocator, out: *std.ArrayList(Bir.Inst.Index)) Allocator.Error!void {
+        const d = cx.d;
+        var seen: std.AutoHashMapUnmanaged(Visit, void) = .empty;
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList(Visit) = .empty;
+        defer stack.deinit(gpa);
+        for (d.derived) |row| {
+            if (@as(u64, row.body.start) + row.body.len > d.args.len) continue;
+            const kind: u8 = @as(u8, @intFromEnum(row.kind)) + 1;
+            const method = kindMethod(row.kind).toOptional();
+            stack.clearRetainingCapacity();
+            for (d.argsAt(row.body)) |t| try stack.append(gpa, .{ .term = t.int(), .ctx = kind, .method = method });
+            if (try cx.placed(&seen, &stack, gpa)) continue;
+            var region: Bir.Inst.Index = @enumFromInt(0);
+            if (row.shape == .nominal) {
+                const entry = cx.types.entry(row.shape.nominal);
+                if (entry.decl.int() < bir.decls.len) region = bir.decls[entry.decl.int()].inst_start;
+            }
+            try out.append(gpa, region);
+        }
+        for (d.sites) |site| {
+            if (@as(u64, site.evidence.start) + site.evidence.len > d.args.len) continue;
+            stack.clearRetainingCapacity();
+            var owner: ?Term = null;
+            if (site.callee.unwrap()) |callee| {
+                if (callee.int() >= d.terms.len) continue;
+                try stack.append(gpa, .{ .term = callee.int(), .ctx = 0, .method = .none });
+                owner = d.term(callee);
+            } else if (site.inst.int() < bir.insts.len) {
+                var ref = site.inst;
+                if (bir.instTag(ref) == .call) ref = @enumFromInt(bir.instData(ref).lhs);
+                if (ref.int() < bir.insts.len) {
+                    const data = bir.instData(ref);
+                    owner = switch (bir.instTag(ref)) {
+                        .top => .{ .top = .{ .decl = @enumFromInt(data.lhs) } },
+                        .ext_value => .{ .ext = .{ .module = @enumFromInt(data.lhs), .value = @enumFromInt(data.rhs) } },
+                        else => null,
+                    };
+                }
+            }
+            for (d.argsAt(site.evidence), 0..) |t, k| {
+                const method: Symbol.Optional = if (owner) |o| (if (slotMethod(d, cx.interfaces, o, k)) |m| m.toOptional() else .none) else .none;
+                try stack.append(gpa, .{ .term = t.int(), .ctx = 0, .method = method });
+            }
+            if (!try cx.placed(&seen, &stack, gpa)) try out.append(gpa, site.inst);
+        }
+    }
+
+    fn placed(cx: I7, seen: *std.AutoHashMapUnmanaged(Visit, void), stack: *std.ArrayList(Visit), gpa: Allocator) Allocator.Error!bool {
+        const d = cx.d;
+        while (stack.pop()) |v| {
+            if (v.term >= d.terms.len) continue;
+            if ((try seen.getOrPut(gpa, v)).found_existing) continue;
+            const t = d.terms[v.term];
+            if (t == .undetermined) {
+                if (v.ctx == 0) return false;
+                const kind: Derived.Kind = @enumFromInt(v.ctx - 1);
+                if (v.method.unwrap()) |m| if (m != kindMethod(kind)) return false;
+                continue;
+            }
+            const ctx: u8 = switch (t) {
+                .derived => |u| if (u.index < d.derived.len) @as(u8, @intFromEnum(d.derived[u.index].kind)) + 1 else v.ctx,
+                .ext_derived => |u| @as(u8, @intFromEnum(u.kind)) + 1,
+                else => v.ctx,
+            };
+            const r = t.argsOf();
+            if (@as(u64, r.start) + r.len > d.args.len) continue;
+            for (d.argsAt(r), 0..) |arg, k| {
+                if (arg.int() <= v.term) continue;
+                const method: Symbol.Optional = if (slotMethod(d, cx.interfaces, t, k)) |m| m.toOptional() else .none;
+                try stack.append(gpa, .{ .term = arg.int(), .ctx = ctx, .method = method });
+            }
         }
         return true;
     }
@@ -1497,4 +1650,48 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
 
     try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 0), bad.items.len);
+}
+
+test "the I7 assert accepts a term shared by two owners and judges it once" {
+    // checker-v2.md §13.1 as amended by R6b: a table may share a term (a DAG
+    // whose every argument still follows every owner). Declaration 0 takes
+    // two requirements; the call passes two roots, each `derived 0` (one
+    // context entry) over the SAME primitive term.
+    var tb: TestBir = .{};
+    defer tb.deinit();
+    try tb.init(3, &.{.{ 1, .top }});
+    tb.insts.items(.data)[2] = .{ .lhs = 1, .rhs = 0 };
+    tb.bir.insts = tb.insts.slice();
+    const requirement: Requirement = .{ .quantified = 0, .var_name = .none, .method = @enumFromInt(1) };
+    const requirements = [_]Requirement{ requirement, requirement };
+    const decls = [_]DeclInfo{.{ .requirements = .{ .start = 0, .len = 2 } }};
+    const contexts = [_]ContextEntry{.{ .param = 0, .method = InternPool.WellKnown.eq.symbol() }};
+    const derived = [_]Derived{.{ .kind = .eq, .shape = .unit, .context = .{ .start = 0, .len = 1 } }};
+    const terms = [_]Term{
+        .{ .derived = .{ .index = 0, .args = .{ .start = 2, .len = 1 } } },
+        .{ .derived = .{ .index = 0, .args = .{ .start = 3, .len = 1 } } },
+        .{ .primitive = .strict_eq },
+    };
+    var args = [_]TermIndex{ @enumFromInt(0), @enumFromInt(1), @enumFromInt(2), @enumFromInt(2) };
+    const sites = [_]Site{.{ .inst = @enumFromInt(2), .evidence = .{ .start = 0, .len = 2 } }};
+    var d: Dispatch = .empty;
+    d.terms = &terms;
+    d.args = &args;
+    d.sites = &sites;
+    d.decls = &decls;
+    d.requirements = &requirements;
+    d.contexts = &contexts;
+    d.derived = &derived;
+
+    var types: Types = .empty;
+    var bad: std.ArrayList(Bir.Inst.Index) = .empty;
+    defer bad.deinit(testing.allocator);
+    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try testing.expectEqual(@as(usize, 0), bad.items.len);
+
+    // The shared term pointing back at an owner is still refused.
+    args[3] = @enumFromInt(1);
+    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try testing.expectEqual(@as(usize, 1), bad.items.len);
+    try testing.expectEqual(@as(u32, 2), bad.items[0].int());
 }

@@ -53,6 +53,7 @@ const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
+const Edges = @import("../check/Edges.zig");
 const Types = @import("../check/Types.zig");
 
 const Inst = Bir.Inst;
@@ -193,6 +194,7 @@ pub fn lower(
     };
     defer l.diagnostics.deinit(gpa);
     errdefer for (l.diagnostics.items) |d| gpa.free(d.message);
+    try l.readTable();
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -400,6 +402,19 @@ const Lowerer = struct {
     expr_height: u32 = 0,
     /// The same for an evidence term, in closures (`termValues`).
     term_depth: u32 = 0,
+    /// Per term of the table, whether more than one owner names it: a table
+    /// may SHARE a term (checker-v2.md §13.1 as amended by R6b). A shared
+    /// evidence closure is bound to a `const` once and read by name
+    /// (`termValues`), so the JavaScript of `==` on a type that is a doubling
+    /// DAG is linear in its distinct nodes (CK-80's `build` half). v1's
+    /// tables share nothing, so nothing of theirs moves.
+    shared: []const bool = &.{},
+    /// Per term, whether it and everything below it add up
+    /// (`termShapeOk`), judged once, bottom-up.
+    shape_ok: []const bool = &.{},
+    /// The shared terms already bound in `bound_out`, by term index.
+    bound: std.AutoHashMapUnmanaged(u32, JsIr.NameIndex) = .empty,
+    bound_out: ?*StmtList = null,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -739,31 +754,30 @@ const Lowerer = struct {
     const Frame = struct { decl: u32, next: usize, tops: []const u32 };
 
     /// Every declaration of this module that one declaration's dispatch
-    /// sites reach: the sites' own targets and, recursively, the evidence
-    /// they hand over. Flat, in site order, so `emissionOrder` walks it
-    /// with one index like the `refs` run beside it.
+    /// sites reach: the sites' own targets, the evidence they hand over and,
+    /// through every derived row they name, what that row's body names (a
+    /// derived function runs its body when it is called: CK-104). Flat, in
+    /// site order, so `emissionOrder` walks it with one index like the `refs`
+    /// run beside it. `Edges.termsEdges` visits each term once, so a table
+    /// that shares terms costs its distinct terms (checker-v2.md §13.1).
     fn siteTops(l: *Lowerer, decl: u32) ![]const u32 {
         const d = l.bir.decls[decl];
-        var out: std.ArrayList(u32) = .empty;
+        var roots: std.ArrayList(Dispatch.TermIndex) = .empty;
+        defer roots.deinit(l.scratch);
         for (l.in.dispatch.sitesIn(d.inst_start.int(), d.inst_end.int())) |site| {
-            if (site.callee.unwrap()) |callee| try l.collectTops(callee, &out);
-            for (l.in.dispatch.argsAt(site.evidence)) |root| try l.collectTops(root, &out);
+            if (site.callee.unwrap()) |callee| try roots.append(l.scratch, callee);
+            try roots.appendSlice(l.scratch, l.in.dispatch.argsAt(site.evidence));
         }
-        return out.items;
-    }
-
-    /// Pre-order over one evidence tree. No depth guard: every argument's
-    /// index is greater than its owner's (`Dispatch`'s construction rule,
-    /// verified on every load from bytes), and one that is not is skipped.
-    fn collectTops(l: *Lowerer, i: Dispatch.TermIndex, out: *std.ArrayList(u32)) Allocator.Error!void {
-        const t = l.in.dispatch.term(i);
-        switch (t) {
-            .top => |use| try out.append(l.scratch, use.decl.int()),
+        if (roots.items.len == 0) return &.{};
+        var edges: std.ArrayList(Edges.Edge) = .empty;
+        defer edges.deinit(l.scratch);
+        try Edges.termsEdges(&edges, l.scratch, l.in.dispatch, roots.items, true);
+        var out: std.ArrayList(u32) = .empty;
+        for (edges.items) |edge| switch (edge) {
+            .top => |t| try out.append(l.scratch, t),
             else => {},
-        }
-        for (l.in.dispatch.argsAt(t.argsOf())) |arg| {
-            if (arg.int() > i.int()) try l.collectTops(arg, out);
-        }
+        };
+        return out.items;
     }
 
     fn declaration(l: *Lowerer, out: *StmtList, index: u32) !void {
@@ -2385,16 +2399,72 @@ const Lowerer = struct {
     ) Allocator.Error![]const Node.Index {
         const out = try l.scratch.alloc(Node.Index, terms.len);
         for (terms, out) |t, *slot| {
+            // A shared term already bound in this statement list is read by
+            // name (`shared`).
+            const shared = if (l.evidence_out) |into| l.sharedIn(t, into) else false;
+            if (shared) if (l.bound.get(t.int())) |n| {
+                slot.* = try l.ident(n, p);
+                continue;
+            };
             // `term_depth`, like `expr_height`, is the deepest term lowered
             // inside this one, in closures.
             const outer = l.term_depth;
             l.term_depth = 0;
             const value = try l.termValue(t, kind, p);
             const depth = l.term_depth + 1;
-            slot.* = try l.hoistEvidence(value, depth, p);
+            slot.* = if (shared) try l.bindShared(t, value, p) else try l.hoistEvidence(value, depth, p);
             l.term_depth = if (slot.* == value) @max(outer, depth) else outer;
         }
         return out;
+    }
+
+    /// Whether term `t` is shared and may be bound in `into`, the statement
+    /// list evidence is bound in now: what was bound in another list is
+    /// forgotten when the list changes, so a name is never read outside the
+    /// scope that declares it.
+    fn sharedIn(l: *Lowerer, t: Dispatch.TermIndex, into: *StmtList) bool {
+        if (t.int() >= l.shared.len or !l.shared[t.int()]) return false;
+        if (l.bound_out != into) {
+            l.bound.clearRetainingCapacity();
+            l.bound_out = into;
+        }
+        return true;
+    }
+
+    /// A shared evidence closure, bound to a `const` the first time it is
+    /// lowered. Only an `arrow` moves (`hoistEvidence`'s rule): a CALL runs a
+    /// constant and stays where it is.
+    fn bindShared(l: *Lowerer, t: Dispatch.TermIndex, value: Node.Index, p: u32) !Node.Index {
+        const into = l.evidence_out orelse return value;
+        if (l.b.nodes.items(.tag)[value.int()] != .arrow) return value;
+        const n = try l.fresh(l.well.temp);
+        try l.constDecl(into, n, value, p);
+        try l.bound.put(l.scratch, t.int(), n);
+        return l.ident(n, p);
+    }
+
+    /// Read the table once: which terms are shared, and which add up.
+    fn readTable(l: *Lowerer) !void {
+        const d = l.in.dispatch;
+        if (d.terms.len == 0) return;
+        const count = try l.scratch.alloc(u8, d.terms.len);
+        @memset(count, 0);
+        for (d.args) |a| if (a.int() < count.len) {
+            count[a.int()] +|= 1;
+        };
+        for (d.sites) |s| if (s.callee.unwrap()) |c| if (c.int() < count.len) {
+            count[c.int()] +|= 1;
+        };
+        const shared = try l.scratch.alloc(bool, d.terms.len);
+        for (shared, count) |*s, c| s.* = c > 1;
+        l.shared = shared;
+        const ok = try l.scratch.alloc(bool, d.terms.len);
+        var i = d.terms.len;
+        while (i > 0) {
+            i -= 1;
+            ok[i] = l.termOkLocal(ok, @intCast(i));
+        }
+        l.shape_ok = ok;
     }
 
     /// An evidence closure `evidence_spill` closures deep, bound to a
@@ -3550,17 +3620,24 @@ const Lowerer = struct {
     }
 
     fn termShapeOk(l: *Lowerer, i: Dispatch.TermIndex) bool {
+        return i.int() < l.shape_ok.len and l.shape_ok[i.int()];
+    }
+
+    /// `termShapeOk` for one term, given the answer for every later one: the
+    /// pre-order rule (an argument that does not follow its owner is a table
+    /// that points back at itself) makes one pass from the last term enough,
+    /// and a shared term is judged once.
+    fn termOkLocal(l: *Lowerer, ok: []const bool, i: u32) bool {
         const d = l.in.dispatch;
-        if (i.int() >= d.terms.len) return false;
-        const t = d.term(i);
+        const t = d.terms[i];
         if (t == .field) return false;
-        const args = d.argsAt(t.argsOf());
+        const r = t.argsOf();
+        if (@as(u64, r.start) + r.len > d.args.len) return false;
+        const args = d.argsAt(r);
         if (args.len != l.requirementCount(t)) return false;
         for (args) |arg| {
-            // The pre-order rule: an argument that does not follow its
-            // owner is a table that points back at itself.
-            if (arg.int() <= i.int()) return false;
-            if (!l.termShapeOk(arg)) return false;
+            if (arg.int() <= i or arg.int() >= d.terms.len) return false;
+            if (!ok[arg.int()]) return false;
         }
         return true;
     }
@@ -5773,6 +5850,11 @@ test "the I7 assert counts the roots and every term's arguments, in both directi
     l.in.dispatch = &table;
     l.in.interfaces = &.{};
     l.in.types = &types;
+    // `termShapeOk` reads what `readTable` judged once, bottom-up.
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    l.scratch = arena.allocator();
+    try l.readTable();
 
     const t = struct {
         fn at(i: u32) Dispatch.TermIndex {
@@ -5842,6 +5924,10 @@ test "a derived function with no body is a table bug in value position, either k
     l.b = &b;
     l.in.dispatch = &table;
     l.in.types = &types;
+    l.shared = &.{};
+    l.shape_ok = &.{};
+    l.bound = .empty;
+    l.bound_out = null;
     l.in.interfaces = &.{};
     l.in.module = @enumFromInt(0);
     l.diagnostics = .empty;

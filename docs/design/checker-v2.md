@@ -641,6 +641,29 @@ What remains outside it is refused where it arises, never by a pre-scan:
   R8a). A cache hit runs the same settle and skips v1's derived-row restore
   (`Incremental.install`): v2 writes no derived row before R8a.
 
+*Widened by R6b (2026-09-25).* P5 and P6 run, so v2 **builds** what it checks; `Subset.zig` and the
+two refusals it fed (`js/Emit.zig`'s build, `main.zig`'s `dump --stage=dispatch`) are gone. What
+remains refused is refused where it arises:
+
+- **P5 is v1's rows under v1's rule until R8a** (`check2/Eager.zig`). Every own nominal type gets
+  an `eq` and a `compare` row unless the module has a `pub` value of that name or the capability bit
+  says the type cannot answer it; the context is one entry per type parameter; the body is ONE
+  wanted per constructor argument, on the argument's type read with the parameters bound to fresh
+  flex markers, resolved in a frame of its own with a quiet report. A position left open on a
+  marker for the row's own method is that marker's context entry (`param derived i k`); anything
+  else — a position the resolver refused, a payload asking the parameter for another method — means
+  the row is not written, nor any row whose body names it. A USE whose answer is such a row is
+  `not_implemented` (R8a) at the use, from P6.
+- **The capability bits a dependent reads are the rows'.** After P9 a module's own ADTs derive
+  exactly when it wrote a row (`Types.restoreDerivedCapabilities`, which `Incremental.install` now
+  runs for v2 too), so a dependent never names a row that was not written, and a cache hit and a
+  cold check agree by construction. Where a type answered the settle but P5 wrote no row, the
+  dependent's comparison is refused (`not_equatable`), as v1's second settle refuses it.
+- **P6** runs after P5, before P7 (`check2/Elaborate.zig`, §12.2 *As built by R6b*). The I7 assert
+  runs last in P9, after `Cycles`, on a module that reported nothing (§13.1).
+- A `--library` build whose root package declares a `type` is still refused (R8a): it exports every
+  row, and R8a's contexts change them.
+
 ---
 
 ## 6. Constraint generation
@@ -2191,6 +2214,31 @@ later, is never promoted. So neither the callee nor the call carries it (CK-30a)
 promoted after the reference was solved is covered too, because nothing is emitted at reference
 time (CK-30b).
 
+*As built by R6b (2026-09-25):*
+
+- **What records a group call.** An in-flight member's reference instantiates nothing, so it has no
+  `inst_evidence` row; P6 finds it as a `top` reference to a declaration with requirements and no
+  row (its site on the applying `call`, §13.1), and an own method answered in flight as the
+  `group_call` answer. Both take the callee's FINAL list (`DeclInfo.requirements`, with the roots
+  `Resolve.close` recorded beside it), never a count taken at the reference.
+- **The caller's list.** Case 1 matches `(root, method)` against the SITE's declaration's list by
+  root identity: an unannotated member's roots are what promotion recorded; an annotated member's
+  are its givens' rigids, the variables its body was checked against (§6.6), not the P2 scheme's.
+  A `promoted` answer is matched the same way, per site. Case 3 answers `undetermined` for `eq` and
+  `compare` — at a site root, the structural function itself (§13.1) — and `internal` for any other
+  method, which no structural answer can stand for. Case 2 is R14's.
+- **Failure (§12.2 as built).** A wanted whose alias chain ends in a `failed` one is failed (R6a's
+  round-2 nit): the site keeps its callee term only, when that is a value (`top`, `ext`), so
+  `Cycles` still sees the edge, and in a module that reported nothing it is `internal`. P6 never
+  writes a partial tree.
+- *Revised by R6b's reviews.* Case 3 is taken only when the site's declaration's type does not reach
+  the requirement's variable (`Walk.reaches` over its scheme); if it does, the lists disagree with
+  the types and it is `internal` (S1). A `promoted` answer is used only inside the group that
+  promoted it, else `internal`. P6's `internal`s are reported with the I7 assert, after the last
+  pass that can report an error (S4); an R8a refusal is said at once.
+- The CK-30 and CK-31 `run/` fixtures, and CK-66's `GroupVariableOutsideCaller` (case 3), pass
+  under v2 with it and are claimed by R6b; R7 keeps the demand-driven half of §10.
+
 ### 12.4 Derived bodies
 
 The body of an own derived function for `(T, m)` is one term per constructor argument position. It
@@ -2420,6 +2468,51 @@ A violation is `internal` at the site.
   exception.
 
 *Revised 2026-09-24 (S10).*
+
+*Amended 2026-09-25 by R6b (spec first, before P6's code):*
+
+- **A term may be SHARED.** The table is a DAG, not only a tree: v2 writes one term per distinct
+  answer of a site (the resolver's memo of §9.5 makes a receiver's derived answer ONE wanted that
+  later wanteds alias), so `==` on a type that is a doubling DAG — `f x = ( x, [ x ] )` applied
+  n deep, CK-80 — is linear in its distinct nodes in `check`. The acyclicity rule is unchanged and
+  is still what `dispatch_bytes` verifies: every argument's index is greater than EVERY owner's.
+  v2 gets it by writing each unit (a site's callee and roots, or a derived row's body) in reverse
+  post-order; a unit without sharing reads in pre-order, as v1's converter writes every table.
+  Sharing is within a unit only.
+- **A walker visits each term once.** `Dispatch.checkI7` judges every term once, from the last to
+  the first (a term is sound when its own count is and every argument is, both already known), and
+  `Edges.termsEdges` walks the terms below a declaration's sites, or a derived row's body, with a
+  seen set: on a tree both answer exactly as the recursive walks did. `Lower` and the dump still
+  EXPAND a shared term at each use: the emitted JavaScript of such a program is as large as v1's
+  (exponential in the DAG's depth), which is `build`'s half of CK-80 and unassigned.
+- **Where a reference's evidence rides.** A site's instruction is the `call` that applies a
+  reference when there is one, else the reference itself (R2a's reading, now stated): P6 moves an
+  instantiation's row, recorded at the reference, to its call.
+
+*Revised by R6b's reviews (2026-09-25), before the code changed:*
+
+- **Where an `undetermined` leaf may stand.** `Lower` reads the leaf's method off its nearest
+  `derived`/`ext_derived` ancestor (or row, for a body position), so the leaf is legal only below
+  such an ancestor, and only in a slot that asks for that ancestor's method. Everywhere else — a
+  site root, an argument of a value's evidence (`List.eq`'s element: `[ [] ] == [ [] ]`, B1), or a
+  `compare` slot under an `eq` ancestor (CK-103) — the table names the structural function for the
+  slot's own method: `ext Basics eq` or `primitive num_compare`. P6 carries each node's nearest
+  derived kind (`Unit.Ctx`) and writes the leaf only where it matches the wanted's method. The I7
+  assert checks the rule (`Dispatch.checkI7`'s placement pass, each `(term, ancestor kind, slot
+  method)` once): a slot's method is its owner's `k`th requirement — a declaration's list, an
+  imported scheme's constraints in canonical order, a derived row's context — so `check` refuses
+  what `Lower` would. v1 never wrote a leaf without a derived ancestor; it did write CK-103's, and
+  its `check` now refuses that program (`internal`), which is harmless at run time (no value of the
+  slot's type exists) but a table wrong by its own contract.
+- **`Lower` binds a shared evidence closure once.** A term named by more than one owner is lowered
+  once per statement list and bound to a `const` (`Lower.termValues`, `hoistEvidence`'s rule: only
+  an `arrow` moves), and `Lower.termShapeOk` judges each term once. So `build` of a doubling DAG is
+  linear too (CK-80's `build` half; `perf_test.zig` "CK-80 build"). v1's tables share nothing and
+  no byte of theirs moves. The dump still prints a shared term at each use.
+- **A declaration's edges go through the rows it names** (CK-104). `Edges.declEdges` walks the
+  body of every derived row of this module a site names, so emission order (`Lower.siteTops`) and
+  the value-cycle check see that a constant calling `Main$W$$eq` depends on the `Main$key` its body
+  reads (`backend.md` §5). Both checkers built such a program and it threw at load.
 
 ### 13.2 `dump --stage=dispatch`, format v2
 
@@ -2898,6 +2991,23 @@ one); `js/Emit.zig` and `main.zig` ask `Subset.needsElaboration`.
 resolver's tables moved out of `Solve` into `Resolve.State` (S7). `Resolve` 608, `Evidence` 425,
 `Solve` 865, `Unify` 816, `Instantiate` 435, `Messages` 219, `rules_test` 173 (its S4 fence):
 10 151 lines in all, every file under its §19.1 figure.
+
+*As built by R6b (2026-09-25):* two new files, **`Elaborate`** 942 lines (P6: §12.2's units, §12.3's
+group calls, the derived table and its sort, and P5's rows' bodies with their propagation) and
+**`Eager`** 185 (P5 under v1's one-entry-per-parameter context: which rows, and each body's
+wanteds, resolved in a frame of their own). Elaboration is its own file rather than a part of
+`Evidence` (~500 above), as the marker walk left `Instances`: `Evidence` stays the tables and the
+canonical order (425). `Subset` is gone (nothing refuses elaboration now). `Module` 544, `Solve` 911
+(P5's frame), `Resolve` 598, `Report` 396, `Instances` 670: 11 303 lines in all. `Elaborate` is past
+the ~500 the table gives elaboration and under the 1 500 cap; R8a's contexts replace most of P5's
+half. Shared: `Dispatch.checkI7` judges each term once, bottom-up, and `Edges.termsEdges` walks each
+term once (§13.1 *Amended by R6b*).
+
+*Revised by R6b's reviews (2026-09-25):* `Elaborate` split (N5): the unit's DAG and its
+topological writer are **`Unit`** (179 lines), P5's rows' bodies, their probe and propagation and
+P5's frame moved beside the row choice in **`Eager`** (329), and `Elaborate` (781) keeps the sites,
+§12.3, the derived table and its sort. `Solve` 893 (its P5 frame helpers left with P5), `Module`
+567: 11 499 lines in all.
 
 ---
 

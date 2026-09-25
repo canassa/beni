@@ -284,11 +284,11 @@ pub fn group(s: *Solve, g: Group) Error!void {
     s.tree = g.tree;
     // The resolution budget is per top-level group (review F1).
     s.resolver.steps = 0;
-    try s.push(TypeStore.outermost);
+    try s.pushFrame(TypeStore.outermost);
     try s.frame().pool.appendSlice(s.cx.gpa, g.pool);
     try s.solve(g.root);
     try s.boundary(g.binders, g.annotated, g.members);
-    s.pop();
+    s.popFrame();
     s.report.failGroup(g.members);
     s.report.at(null);
     // A capture names a variable of this group; none can explain an escape
@@ -296,7 +296,8 @@ pub fn group(s: *Solve, g: Group) Error!void {
     s.captures.clearRetainingCapacity();
 }
 
-fn push(s: *Solve, rank: u32) Error!void {
+/// Also P5's frame (`Eager.zig`), which has no tree and no boundary.
+pub fn pushFrame(s: *Solve, rank: u32) Error!void {
     // `Generalize.quantify` hands an escaped variable to `frames[rank - 1]`:
     // a frame's rank is its depth (review N4).
     std.debug.assert(rank == s.frames.items.len + 1);
@@ -308,7 +309,7 @@ fn push(s: *Solve, rank: u32) Error!void {
     });
 }
 
-fn pop(s: *Solve) void {
+pub fn popFrame(s: *Solve) void {
     // The top-level frame leaves nothing readied behind it: every row is
     // decided by the last drain, or settled by `poison` (review S7).
     if (s.frames.items.len == 1) std.debug.assert(s.ready.items.len == 0 and s.deferred.items.len == 0);
@@ -460,11 +461,11 @@ fn symbolLessThan(_: void, a: TypeStore.Field, b: TypeStore.Field) bool {
 /// body, which the caller solves as its tail at the enclosing rank.
 fn let_(s: *Solve, node: Tree.Node) Error!Constraint {
     const info = s.tree.extraData(node.a, Tree.Let);
-    try s.push(info.rank);
+    try s.pushFrame(info.rank);
     try s.frame().pool.appendSlice(s.cx.gpa, s.tree.vars(info.vars_start, info.vars_len));
     try s.solve(info.header_con);
     try s.boundary(s.tree.words(info.binders_start, info.binders_len), s.tree.words(info.annotated_start, info.annotated_len), null);
-    s.pop();
+    s.popFrame();
     return info.body_con;
 }
 

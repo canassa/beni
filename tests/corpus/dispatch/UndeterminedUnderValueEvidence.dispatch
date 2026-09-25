@@ -1,0 +1,31 @@
+module UndeterminedUnderValueEvidence
+  decl eq evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=a method=eq
+  decl nestedEq evidence=0 arity=0 convention=plain
+  decl nestedLess evidence=0 arity=0 convention=plain
+  decl member evidence=0 arity=0 convention=plain
+  decl custom evidence=0 arity=0 convention=plain
+  decl underDerived evidence=0 arity=0 convention=plain
+  derived 0 compare UndeterminedUnderValueEvidence.Pair context=1
+    context 0 param=0 method=compare
+    body 0 param derived 0 0
+    body 1 primitive num_compare
+  site 24 callee param 0
+  site 27 callee primitive strict_eq
+  site 35 callee ext List eq
+    evidence ext List eq
+      ext Basics eq
+  site 41 callee ext List compare
+    evidence ext List compare
+      primitive num_compare
+  site 47
+    evidence ext List eq
+      ext Basics eq
+  site 63 callee top eq
+    evidence top eq
+      ext List eq
+        ext Basics eq
+  site 70 callee ext_derived Maybe.Maybe eq
+    arg ext List eq
+      ext List eq
+        undetermined

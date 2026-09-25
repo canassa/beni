@@ -676,6 +676,12 @@ of them is a new mechanism:
   edge. So the survivors come out in the same relative order they have today and the temporal dead
   zone stays closed. The derived pass (`synthesisedValues`, `:1886`) keeps its two sorted runs and
   iterates only surviving rows.
+  *Amended 2026-09-25 by R6b's review (CK-104):* "the dispatch sites" includes the bodies of
+  the derived rows of this module they name (`Edges.termsEdges` through rows). A constant that
+  calls a derived function runs its body, so a value that body names is a dependency: without the
+  edge, `main` calling `Main$W$$eq` was emitted above the `Main$key` its body reads, and the
+  program threw `ReferenceError` at load. The value-cycle check (`check/Cycles.zig`) reads the same
+  edges.
 
 **Elimination decides what is written, never what is checked.** `checkForeignShapes` and
 `checkSiblings` run before the entry is even found (`src/js/Emit.zig:145-146`) and keep running over

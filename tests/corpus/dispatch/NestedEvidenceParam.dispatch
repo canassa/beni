@@ -1,0 +1,39 @@
+module NestedEvidenceParam
+  decl same evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=a method=eq
+  decl wrap evidence=0 arity=1 convention=plain
+  decl sameInferred evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=a method=eq
+  decl sameNested evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=a method=eq
+  decl ints evidence=0 arity=0 convention=plain
+  decl chars evidence=0 arity=0 convention=plain
+  decl nested evidence=0 arity=0 convention=plain
+  derived 0 compare NestedEvidenceParam.Box context=1
+    context 0 param=0 method=compare
+    body 0 param derived 0 0
+    body 1 param derived 0 0
+  derived 1 eq NestedEvidenceParam.Box context=1
+    context 0 param=0 method=eq
+    body 0 param derived 1 0
+    body 1 param derived 1 0
+  site 26 callee ext List eq
+    evidence ext List eq
+      derived 1
+        param 0
+  site 51 callee ext List eq
+    evidence ext List eq
+      derived 1
+        param 0
+  site 73
+    evidence derived 1
+      param 0
+  site 77
+    evidence derived 1
+      param 0
+  site 94
+    evidence primitive strict_eq
+  site 99
+    evidence primitive strict_eq
+  site 110
+    evidence primitive strict_eq

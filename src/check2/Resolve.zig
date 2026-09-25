@@ -91,6 +91,9 @@ pub const State = struct {
     /// `requirement_rows`, in canonical order (§12.1), for P9's table.
     decl_requirements: []Dispatch.Range = &.{},
     requirement_rows: std.ArrayList(Dispatch.Requirement) = .empty,
+    /// Each row's quantifier, as a root: what P6 matches a `promoted`
+    /// answer and a group call against (§12.3), never recomputed.
+    requirement_roots: std.ArrayList(Var) = .empty,
 
     pub fn deinit(r: *State, gpa: Allocator) void {
         r.wanters.deinit(gpa);
@@ -98,6 +101,7 @@ pub const State = struct {
         r.derivable.deinit(gpa);
         r.missing.deinit(gpa);
         r.requirement_rows.deinit(gpa);
+        r.requirement_roots.deinit(gpa);
     }
 };
 
@@ -493,7 +497,10 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
         }
         // The declaration's requirement list, for P9's table (§12.1).
         const first: u32 = @intCast(s.resolver.requirement_rows.items.len);
-        for (reqs.items) |r| try s.resolver.requirement_rows.append(s.cx.gpa, .{ .quantified = r.quantified, .var_name = st.flagsOf(r.root).name, .method = r.method });
+        for (reqs.items) |r| {
+            try s.resolver.requirement_rows.append(s.cx.gpa, .{ .quantified = r.quantified, .var_name = st.flagsOf(r.root).name, .method = r.method });
+            try s.resolver.requirement_roots.append(s.cx.gpa, r.root);
+        }
         s.resolver.decl_requirements[m] = .{ .start = first, .len = @intCast(reqs.items.len) };
         for (reqs.items) |r| {
             try promoted.put(scratch, r.root, {});

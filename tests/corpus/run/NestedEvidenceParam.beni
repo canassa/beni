@@ -1,0 +1,56 @@
+-- Evidence nested three deep with a PARAMETER at the bottom (I5, I7;
+-- checker-v2.md §12.2, §13.1): `==` on `List (List (Box a))` passes
+-- `List.eq` the evidence `List.eq (Box$eq a.eq)`, where `a.eq` is the
+-- enclosing function's own hidden argument — in `same`, annotated with a
+-- `where` clause, and in `sameInferred`, whose requirement is promoted.
+-- `sameNested` passes both a `Box` over its own parameter, and `main` fills
+-- the bottom with `Int`, `String` and `Char` primitives.
+-- `dispatch/NestedEvidenceParam` pins the trees. Expected `True`, `False`,
+-- `True`, `False`, `True`, `False`.
+import Node exposing (Program)
+
+
+type Box a
+    = Box a a
+
+
+same : List (List (Box a)), List (List (Box a)) -> Bool
+    where a.eq : a, a -> Bool
+same xs ys =
+    xs == ys
+
+
+wrap : a -> List (List (Box a))
+wrap x =
+    [ [ Box x x ] ]
+
+
+sameInferred x y =
+    wrap x == wrap y
+
+
+sameNested : Box a, Box a -> Bool
+    where a.eq : a, a -> Bool
+sameNested x y =
+    same (wrap x) (wrap y) && sameInferred x y
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (same [ [ Box 1 1 ], [] ] [ [ Box 1 1 ], [] ])
+        , show (same [ [ Box "a" "b" ] ] [ [ Box "a" "c" ] ])
+        , show (sameInferred 'x' 'x')
+        , show (sameInferred 2 3)
+        , show (sameNested (Box 1 2) (Box 1 2))
+        , show (sameNested (Box "a" "b") (Box "a" "c"))
+        ]

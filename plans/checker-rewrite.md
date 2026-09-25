@@ -1356,6 +1356,93 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 - **Owed from R6a's round-2 review (nit 2).** A memo hit whose sub-wanted fails after it was shared
   leaves its `alias` wanteds `answered`. P6 follows an `alias` chain to its end and treats one that
   ends in `failed` as failed (`internal` if the module reported nothing) — it is never elaborated.
+- **As built (2026-09-25).** Spec first: `checker-v2.md` §5 (*Widened by R6b*), §12.3 (*As built by
+  R6b*), §13.1 (*Amended by R6b*: a term may be shared) and §19.1.
+  - **Design.** `check2/Eager.zig` is P5 under v1's rule (which rows; one wanted per constructor
+    argument over flex markers, resolved in a frame of its own with a quiet report).
+    `check2/Elaborate.zig` is P6, the one place trees are built: per site (callee and roots) or
+    row body, a UNIT — a DAG with one node per distinct wanted reached through its aliases —
+    written in reverse post-order, so every argument follows every owner. It reads
+    `inst_callee`, `inst_evidence` (moved from a reference to the `call` applying it), the answers
+    through alias chains, `DeclInfo` requirements with the roots `Resolve.close` records beside
+    them, and the givens' rigids for an annotated caller; `promoted(root, method)` and group calls
+    (a `top` reference with requirements and no row, or a `group_call` answer) take the SITE's
+    declaration's index (§12.3 cases 1 and 3). A root `undetermined` is `ext Basics eq` /
+    `primitive num_compare` (v1's table); `open` is `internal` except on a P5 marker for the row's
+    own method. A failed wanted, or an alias chain ending in one, keeps only a value callee (for
+    `Cycles`), `internal` in a clean module. A row whose body fails is not written, nor any row
+    naming it (one probe pass, one propagation); a use of such a row is `not_implemented` (R8a).
+    After P9 a module's ADT capability bits are its rows (`restoreDerivedCapabilities`, now on a
+    v2 cache hit too). The I7 assert runs last in P9. `Subset.zig` and the build/dump refusals are
+    deleted.
+  - **Shared code, for sharing.** `Dispatch.checkI7` judges each term once, bottom-up, and
+    `Edges.termsEdges` walks each term once (a seen set); on a tree both answer as before. Without
+    them CK-80 and CK-101 went exponential in `check` (test-perf red at 14.6 and 26.8); with them
+    1.00. `Lower` and the dump still expand a shared term (CK-80's `build` half, unassigned).
+  - **Found and fixed: CK-102** (v2's `refuseDerived` read its lineage root's state after failing
+    it, so a derived shape refused at a position was accepted in silence;
+    `check/bad/DerivedPositionMethodMismatch.beni`, which fails on e763e12). Also fixed on the way:
+    P5's per-type scan for a `pub eq` (CK-42's test-perf went 3.3 → 1.97).
+  - **Evidence.** The three gates, `test-v2`, `test-pending`, `test-pending-perf`, `test-perf`
+    green. `test-v2`: `run` 166 pass (3 skipped: R7's `DerivedEqLocalCustom`, now listed, and
+    R8a's two), `dispatch` 26 (3 `core` skipped), `check/*` 236, `emit` 15 pass and 13 R8a
+    `--library` refusals; `v2-green.txt` +134 (run 96, dispatch 26, emit 7, emit/app 2,
+    emit/release 1, check/bad 2); `v2-subset.sh` now every fixture but a `--library` build of a
+    module with a `type`, 579, each passing. Every `dispatch/` golden is v1's byte for byte (no
+    listed difference). v1 and v2 `build` every `run/` (dev and `--release --allow-debug`) and
+    `emit/` fixture to identical output trees, 347 of 347 that both build, at `--jobs=1` and at
+    `--jobs=8 --roundtrip-interfaces --roundtrip-dispatch`; the 19 v2 refuses are R8a's library
+    types, R7's one fixture and v2-expected's R8a rows. `check --checker=v2 --jobs=8` with both
+    round-trip flags over 486 corpus fixtures: no `internal`, so the I7 assert fires nowhere.
+    Claimed (11): CK-08, 27, 28, 29, 32, 62's `TryDecidedByLaterFacts`, and — answered by the same
+    elaborator — CK-30's two, CK-31's, CK-66's and CK-67's `run/` fixtures. CK-11 stays green.
+    New corpus fixtures: `run/NestedEvidenceParam` and `dispatch/NestedEvidenceParam` (I5/I7 on
+    `List (List (Box a))` with a parameter, annotated and promoted), `check/bad/SharedAnswerFailsLater`
+    (an alias chain ending in a failed wanted: one message, no `internal`).
+  - **Bench** (ReleaseFast, `--no-cache --jobs=1 --self-profile`, the root package's events,
+    medians of 7 interleaved, both orders): R6a's 90-module corpus `check` v1 128.0 / v2 137.1 ms
+    (1.07×), reversed 131.5 / 139.1 (1.06×); an app variant whose `main` reaches every dispatch
+    shape (5 940 uses), `build`: check 165.1 / 176.8 (1.07×), lower 45.9 / 47.5, emit 53.0 / 54.0;
+    the three together 1.05× (reversed 1.05×).
+  - **Files** (lines): new `Elaborate` 942, `Eager` 185; `Module` 544, `Solve` 911, `Resolve` 598,
+    `Report` 396, `Instances` 670; `Subset` deleted.
+- **Revised by the reviews (2026-09-25).** A structural and an adversarial review (no wrong answer
+  or wrong hidden argument at run time found anywhere); fixed spec first (`checker-v2.md` §12.3 and
+  §13.1 *Revised by R6b's reviews*, §19.1; `backend.md` §5):
+  - **B1** (v2 regression): an `undetermined` answer below a VALUE's evidence (`[ [] ] == [ [] ]`,
+    `List.sort [ [] ]`, a user `eq where a.eq` over `Pair [] 1`) was the leaf, and `Lower` refused
+    it. P6 now carries each node's nearest derived kind (`Unit.Ctx`) and writes the leaf only below
+    a derived ancestor of the wanted's own method, the structural function everywhere else.
+    Fixtures `run/UndeterminedUnderValueEvidence` and `dispatch/UndeterminedUnderValueEvidence`
+    (v1's bytes). The I7 assert checks the placement (each slot's method from its owner's list).
+  - **CK-103** (B1b, v1): a `compare` slot under an `eq` ancestor got the `eq` leaf
+    (`List$compare(Basics$eq, …)`), harmless at run time only because no value of the slot's type
+    exists. v2 writes `num_compare`; the placement rule makes v1's `check` refuse it
+    (`tests/pending/run/UndeterminedCompareSlot`, claimed). No `run/` fixture can print a wrong
+    answer: by parametricity the slot's function is applied to nothing.
+  - **CK-104** (S5/F2, backend, both checkers): emission order and the value-cycle check now walk
+    the bodies of the derived rows a declaration's sites name (`Edges.termsEdges` through rows,
+    `Lower.siteTops`). `run/DerivedRowBodyEmissionOrder` (promoted; `ReferenceError` at load with
+    the fix off) and the permuted CK-67 twin `run/DerivedContextClosedOwnMethodPermuted` (claimed).
+  - **CK-80's `build` half** (N6/F3): `Lower` binds a shared evidence closure to a `const` once
+    (`termValues`, `hoistEvidence`'s rule) and judges each term's shape once; `perf_test.zig`
+    "CK-80 build" (6 / 10 ms; 8 / 873 ms, ratio 109, with the binding off). The dump still expands.
+  - **S1** case 3 asserts unreachability from the site declaration's scheme, and a `promoted`
+    answer its group; **S2** the givens-count fallback is `expect`; **S4** P6's `internal`s are
+    reported with the I7 assert; **S3** R8a's brief lists every piece of the stopgap and
+    `rules_test` fences it; **S6** R7's brief says what of CK-30/31/66 stays R7's. Nits: N1 (a
+    failed unit takes back its structural rows), N2, N3 (a probe `internal` is said), N4 (P5's frame
+    clears the derived memo), N5 (`Unit.zig`; P5's half moved to `Eager`; `Solve` 893). N6's
+    `reported` bit was not added: `refuseDerived` reads the root's state before its own rejection,
+    and a bit would hold only if every reporter set it, which would change v1-identical texts.
+  - **Evidence.** The seven steps green. `test-v2`: `run` 168 (3 skipped), `dispatch` 27,
+    `check/*` 236, `emit` 15 + 13 R8a refusals; `v2-green.txt` +3; `v2-subset.sh` 582, each
+    passing. JS parity v1/v2: 351 of 351 builds identical at `--jobs=1` and at `--jobs=8` with both
+    round-trip flags (19 refusals as before). `check` of 493 corpus fixtures under both checkers:
+    no `internal`. The adversarial probes and 340 fuzz programs rebuilt: every v2 build prints v1's
+    output; the only v1 program newly refused is CK-103's. `test-pending` 60 GREEN under v2.
+  - **Bench** (as above): `check` v1 134.4 / v2 136.8 ms (1.02×), reversed 132.8 / 137.9 (1.04×);
+    `build` of the app variant, check + lower + emit, 1.05× (reversed 1.06×).
 
 ### R7 — Own methods without a scheme; evidence inside binding groups
 
@@ -1372,6 +1459,14 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   recording).
 - **Closes.**
   - Claimed: CK-30, CK-31, CK-36, CK-63, CK-64, CK-65, CK-66, CK-70, CK-72, CK-73.
+  - *Narrowed by R6b's review (S6).* R6b already claims `run/RecursionWithComparison`,
+    `run/DeadMiscount` (CK-30), `run/MutualGroupEvidenceOrder` (CK-31) and
+    `run/GroupVariableOutsideCaller` (CK-66): P6 answers them by §12.3's cases 1 and 3, because
+    every group there is checked before it is used. What stays R7's in those three findings is
+    the demand-driven half: the same shapes with an own method or member used BEFORE its group
+    (nesting at demand, in-flight links, merged frames), the §12.3 *As built* case-3 assert under
+    nesting, and each fixture's place in the permutation scenario, which must hold in every
+    declaration order. The other CKs of this list are R7's whole.
   - `method_needs_annotation` is emitted by v2 only for §11.2's case, which is R8a's. `language.md`
     §10's catalogue row is amended in this slice to say so. The enum entry is kept.
 - **Relies on** `checker-v2.md` §6.6, §8.1, §9.1, §10 (including §10.7), §12.3, D3, D11 as amended
@@ -1463,6 +1558,23 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   answer the verdict reads. `rules_test.zig`'s S4 test fences the API today with
   `capability_readers` = `Instances.zig`, `Module.zig`, `Incremental.zig`; R8a empties that list,
   and the test then fails on any reader.
+- **Owed from R6b's review (2026-09-25, S3): R6b's stopgap, deleted whole.** R6b added a second path
+  of the same v1 shape — settle, then rows, then restore — and R8a leaves ONE: the fixpoint's
+  answer is what the verdict, P5 and every dependent read, the table's rows are that answer, and
+  nothing restores bits. R8a deletes:
+  1. `check2/Eager.zig`'s row choice: `answersEq`/`answersCompare` and v1's module-wide `ownPub`
+     suppression (a `pub eq` anywhere suppresses every type's `eq` row), and its
+     one-entry-per-parameter context;
+  2. `Types.restoreDerivedCapabilities` in `Module.zig` (after P9) and in `Incremental.install`
+     (which runs it for v2 since R6b);
+  3. P5's probe pass and dead-row propagation (`Eager.elaborate`: `collecting`, `deps`), a
+     capability computation over answers that the S4 fence cannot see because it calls no API;
+  4. `Report.notImplementedR8a` and every `.r8a` failure in `Elaborate.zig`/`Eager.zig`;
+  5. `js/Emit.zig`'s `refuseV2LibraryTypes`.
+
+  `rules_test.zig`'s S3 test fences items 3 and 4 to `Eager.zig`, `Elaborate.zig` and `Report.zig`
+  today; R8a deletes that test with the code, and the S4 fence (with `Eager.zig` now among its
+  readers) with the capability API.
 - **Reviewer focus.**
   - Re-entry: the `same`-first and `key`-first orders of CK-74 must give the same `key` scheme.
   - A context computed while a dependency was in flight must never be memoised past its generation.
@@ -1629,7 +1741,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R4b | — | CK-01, 04, 07, 13, 57; CK-09 (`check/good` half); CK-90, 91 (found and fixed by R4b) | CK-10, 14, 15 (pipeline part); CK-92 (fixed in `Render`, in the gates); CK-93 → manager, CK-94 → R13, CK-95 → R12 (found by R4b's reviews) |
 | R5 | CK-96, 97, 98 (into `perf_test.zig`, `test-perf`); CK-99 (a `run/` guard) — all four found by R5's reviews and fixed in R5 | CK-05, 06, 16, 51, 68; CK-62 (two dispatch-free fixtures; `run/TryDecidedByLaterFacts` waits for R6a); CK-09 (a five-member `check/good` fixture) | CK-18; CK-59 (the generation half); CK-94 gains F8 (the name hint follows member order) |
 | R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 48; CK-100 (found and fixed by R6a); CK-101 (found and fixed by R6a's review); CK-03, 42, 80, 101 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-62's `run/TryDecidedByLaterFacts` moves to R6b (it needs `build`) | CK-35; CK-37, 55 (part) |
-| R6b | — | CK-08, 27, 28, 29, 32; CK-62's `run/TryDecidedByLaterFacts` (from R6a) | — |
+| R6b | — | CK-08, 27, 28, 29, 32; CK-62's `run/TryDecidedByLaterFacts` (from R6a); the `run/` fixtures of CK-30 (`RecursionWithComparison`, `DeadMiscount`), CK-31, CK-66 and CK-67, which P6 answers ahead of R7 and R8a (their slices keep the rest of each finding); CK-102 (found and fixed by R6b); CK-103 (found by R6b's review, claimed); CK-80's `build` half (`perf_test.zig` "CK-80 build") | CK-104 (found by R6b's reviews; a backend fix, promoted: `run/DerivedRowBodyEmissionOrder`, with a claimed permuted CK-67 twin) |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
 | R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24 | — |
@@ -1641,7 +1753,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 101 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 104 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

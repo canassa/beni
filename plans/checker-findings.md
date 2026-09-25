@@ -2386,7 +2386,12 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   which overwrite the outer walk's, so shared sub-DAGs are walked again.
 - **Fixture** `scenario/CK-80` in `tests/blackbox/pending_test.zig`: time(n=18) / time(n=9) ≤ 2.5.
   It is red on R1 as `slow` (ratio about 21).
-- **Slice** R6a (the resolver rewrite).
+- **Slice** R6a (the resolver rewrite: `check`). *The `build` half* (R6b's reviews, structural N6 and
+  adversarial F3: the emitted JavaScript grew ×4 every two levels, 487 KB at depth 12 and 144 MB at
+  20, because `Lower` expanded each evidence term at every use) is fixed by R6b: P6 writes one term
+  per distinct answer of a site (a DAG, `checker-v2.md` §13.1 as amended), and `Lower` binds a
+  shared evidence closure to a `const` once. v2 timing twin `perf_test.zig` "CK-80 build" (depth 9 /
+  18: 6 / 11 ms; 8 / 873 ms with the binding off).
 
 ### CK-81 — A derived `eq` over a nominal type with a very wide record payload crashes the printer
 
@@ -2919,6 +2924,80 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   scenario `perf_test.zig` "CK-101".
 - **Slice** R6a (claimed).
 
+### CK-102 — A derived shape refused at a position is accepted in silence (checker v2)
+
+- **Severity** unsound-runtime. **Area** v2's `Instances.refuseDerived`. **Class** K2. **Sources**
+  R6b (2026-09-25), found when P6's first run met a `failed` wanted in a module that had reported
+  nothing (`check/bad/SpecializedEqWrongReceiver`, which `v2-expected.md` described as refused).
+- **Program**:
+
+  ```elm
+  type Holder a = Holder a
+
+  eq : Holder Int, Holder Int -> Bool
+  eq _ _ = True
+
+  badRecord : { value : Holder String }, { value : Holder String } -> Bool
+  badRecord left right = left == right
+  ```
+
+- **Observed** on e763e12, `check --checker=v2` exits 0: the record's `eq` derives, its position
+  `Holder String` meets `Holder`'s `eq` (the module rule), the match fails, and `refuseDerived`
+  rejects the position — which fails its whole lineage, the use's wanted included — and then asks
+  whether the use's wanted had already failed, to say its message once. It always had, so it never
+  said it. v1 reports `not_equatable` at the `==`.
+- **Expected** one `not_equatable` per comparison, as v1.
+- **Fixed by** R6b: the lineage root's state is read before the rejection.
+- **Fixtures** `tests/corpus/check/bad/DerivedPositionMethodMismatch.beni` (v1 passes; in
+  `v2-green.txt`), and `check/bad/SpecializedEqWrongReceiver`'s record and tuple comparisons.
+- **Slice** R6b (fixed).
+
+### CK-103 — An `undetermined` leaf answers a `compare` slot with `Basics.eq` (checker v1)
+
+- **Severity** latent. **Area** v1's `Dispatch.finish` converter (an `err` part is the
+  `undetermined` leaf) and `Lower.termValue`, which reads the leaf's method off the nearest derived
+  ancestor. **Class** K4. **Sources** R6b's structural review (B1b, probe `r6b/p4`).
+- **Program** (two modules):
+
+  ```elm
+  -- S
+  pub type Sorted a = Sorted (List a)
+  pub eq : Sorted a, Sorted a -> Bool
+      where a.compare : a, a -> Order
+
+  -- Main
+  … { s = S.Sorted [ [] ] } == { s = S.Sorted [ [] ] } …
+  ```
+
+- **Observed** on e763e12: `ext S eq (ext List compare (undetermined))` under the record's derived
+  `eq`, emitted `List$compare(Basics$eq, …)` — a `Bool`-valued function in an `Order` slot. It runs
+  correctly only because no value of the element type exists (the list is empty), so the function
+  is never called: a table that is wrong by its own contract, not a wrong answer.
+- **Expected** the structural `compare` (`primitive num_compare`) in that slot.
+- **Fixed by** R6b's review: P6 writes the leaf only below a derived ancestor of the SAME method,
+  and the structural function for the slot's method everywhere else (`checker-v2.md` §13.1 as
+  amended by R6b's review); the I7 assert now checks each leaf's place against its slot's method,
+  so v1's `check` refuses the program with `internal`.
+- **Fixtures** `tests/pending/run/UndeterminedCompareSlot` (claimed; red on v1 as `internal`).
+- **Slice** R6b (claimed).
+
+### CK-104 — A constant that calls a derived row whose body names a later own value throws at load (backend)
+
+- **Severity** unsound-runtime. **Area** `js/Lower.emissionOrder` and `check/Cycles.zig`, through
+  `Edges.declEdges`. **Class** K14. **Sources** R6b's reviews (structural S5, adversarial F2).
+- **Program**: `run/DerivedRowBodyEmissionOrder` — `main` compares two `W (H.Holder T)`, where
+  `H.eq` asks `T`'s `key`, and `pub key` is declared after `main`.
+- **Observed** on e763e12, under both checkers: exit 0, then `ReferenceError: Cannot access
+  'Main$key' before initialization` at load. Emission order walked `refs` and the sites' own
+  terms, not the bodies of the derived rows they name, so `Main$key` was emitted after `main`.
+- **Expected** `T`.
+- **Fixed by** R6b's review: `Edges.termsEdges` walks through this module's derived rows for a
+  declaration's edges, which both emission order (`Lower.siteTops`) and the value-cycle check read.
+- **Fixtures** `tests/corpus/run/DerivedRowBodyEmissionOrder` (fails on e763e12 under both
+  checkers), and `tests/pending/run/DerivedContextClosedOwnMethodPermuted` (CK-67's program with each
+  `key` last; claimed, red on v1 for CK-67's reason).
+- **Slice** R6b (fixed).
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2934,7 +3013,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-05 | valid-program-rejected | K2 | `run/ObligationEscapesInnerLet.beni` | R5 (claimed) |
 | CK-06 | valid-program-rejected (D2) | K2 | `run/TryDefersShape.beni` | R5 (claimed) |
 | CK-07 | nondeterminism | K12 | `check/bad/FieldErrorTextOrder.beni` (single file, R0) | R4 |
-| CK-08 | valid-program-rejected | K3 | `run/ClosedRecordAfterFieldAccess.beni` | R6 |
+| CK-08 | valid-program-rejected | K3 | `run/ClosedRecordAfterFieldAccess.beni` | R6b (claimed) |
 | CK-09 | unsound-runtime | K8 | `check/bad/MutualGroupLocals.beni`, `check/good/MutualGroupLocalTypes.beni`, `check/good/MutualGroupFiveMembers.beni` | R4b, R5, R6a (claimed) |
 | CK-10 | latent | K3 | — (structural) | R4 |
 | CK-11 | unsound-runtime | K9 | `check/bad/WarningKeepsExhaustiveness.beni` | R1, R4 |
@@ -2953,12 +3032,12 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-24 | unsound-runtime (no runtime path yet) | K7 | `check/bad/SchemaWrapperExclusion.beni` | R8 |
 | CK-25 | valid-program-rejected (D4) | K4 | `run/GenericDerivationNestedRequirement/` | R8 |
 | CK-26 | latent | K7 | — (structural) | R8 |
-| CK-27 | unsound-runtime | K4 | `run/CustomEqHeadMatching/` | R6 |
-| CK-28 | valid-program-rejected | K4 | `run/CustomEqTupleHead/` | R6 |
-| CK-29 | compiler-crash-or-hang | K2 | `run/LetHelperJoinedMethod.beni` | R6 |
-| CK-30 | compiler-crash-or-hang | K4 | `run/RecursionWithComparison.beni`, `run/DeadMiscount.beni` | R7 |
-| CK-31 | compiler-crash-or-hang (latent) | K4 | `run/MutualGroupEvidenceOrder.beni` | R7 |
-| CK-32 | compiler-crash-or-hang | K4 | `run/OperatorSectionApplied.beni` | R6 |
+| CK-27 | unsound-runtime | K4 | `run/CustomEqHeadMatching/` | R6b (claimed) |
+| CK-28 | valid-program-rejected | K4 | `run/CustomEqTupleHead/` | R6b (claimed) |
+| CK-29 | compiler-crash-or-hang | K2 | `run/LetHelperJoinedMethod.beni` | R6b (claimed) |
+| CK-30 | compiler-crash-or-hang | K4 | `run/RecursionWithComparison.beni`, `run/DeadMiscount.beni` | R7 (fixtures claimed by R6b) |
+| CK-31 | compiler-crash-or-hang (latent) | K4 | `run/MutualGroupEvidenceOrder.beni` | R7 (fixture claimed by R6b) |
+| CK-32 | compiler-crash-or-hang | K4 | `run/OperatorSectionApplied.beni` | R6b (claimed) |
 | CK-33 | unsound-runtime | K4 | promoted: `run/ConstrainedFunctionConstant/` | R2b (fixed) |
 | CK-34 | unsound-runtime | K4 | promoted: `check/bad/EvidenceConstantCycle.beni` | R2b (fixed) |
 | CK-35 | latent | K4 | — (structural) | R6 |
@@ -2988,12 +3067,12 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-59 | diagnostic-quality | K13 | `check/bad/MissingFieldShowsLiteralTypes/` | R5, R13 |
 | CK-60 | diagnostic-quality (confirmed in R0) | K13 | `check/bad/MissingPatternConsRendering.beni` | R13 |
 | CK-61 | latent (doc) | K15 | — | R2 |
-| CK-62 | valid-program-rejected | K2 | `run/TryDecidedByLaterFacts.beni` (R6a), `run/TryEscapesToLaterFact.beni`, `run/TryEscapeLowersOnlyItsOwn.beni` | R5 (claimed), R6a |
+| CK-62 | valid-program-rejected | K2 | `run/TryDecidedByLaterFacts.beni` (R6a), `run/TryEscapesToLaterFact.beni`, `run/TryEscapeLowersOnlyItsOwn.beni` | R5 (claimed), R6a → R6b (claimed) |
 | CK-63 | valid-program-rejected | K6 | `run/OwnMethodDemandedEarly.beni` | R7 |
 | CK-64 | valid-program-rejected | K6 | `run/OwnMethodValuePrefix.beni` | R7 |
 | CK-65 | valid-program-rejected | K6 | `run/MutualDispatchMethods.beni` | R7 |
-| CK-66 | valid-program-rejected | K4 | `run/GroupVariableOutsideCaller.beni` | R7 |
-| CK-67 | valid-program-rejected | K7 | `run/DerivedContextClosedOwnMethod/` | R8 |
+| CK-66 | valid-program-rejected | K4 | `run/GroupVariableOutsideCaller.beni` | R7 (fixture claimed by R6b) |
+| CK-67 | valid-program-rejected | K7 | `run/DerivedContextClosedOwnMethod/` | R8 (fixture claimed by R6b) |
 | CK-68 | diagnostic-quality | K2 | `check/bad/TupleIndexOuterResult.beni` | R5 (claimed) |
 | CK-69 | diagnostic-quality | K7 | `check/bad/DerivedContextNeedsAnnotation/` (+ `…KeyFirst/`) | R8 |
 | CK-70 | diagnostic-quality | K6 | `check/bad/RecursiveDispatchTwoTypes.beni` (+ `…B.beni`) | R7 |
@@ -3006,7 +3085,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-77 | diagnostic-quality | K7 | `check/bad/DerivedContextMergesAsker/` | R8a |
 | CK-78 | decision (supported) | K14 | guard `tests/corpus/run/RecordAliasConstructorPattern.beni` | R1 |
 | CK-79 | valid-program-rejected | K10 | — (`abuse_test.zig` pins the 4 096 cap) | unassigned — manager |
-| CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a (v2 timing twin in `perf_test.zig`) |
+| CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a (v2 timing twin in `perf_test.zig`); the `build` half R6b (`perf_test.zig` "CK-80 build") |
 | CK-81 | compiler-crash-or-hang | K11 | promoted: `abuse_test.zig` (two scenarios) | R2a (fixed) |
 | CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (with CK-79) |
 | CK-83 | unsound-runtime | K14 | promoted: `abuse_wide_test.zig` "CK-83: …" | R2c (fixed) |
@@ -3028,14 +3107,17 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-99 | valid-program-rejected | K2 | guard `tests/corpus/run/TryTargetKeepsItsSuccessType.beni` | R5 (fixed) |
 | CK-100 | unsound-runtime | K2 | `check/bad/MethodResultTooGeneral.beni`, `check/good/EagerDrainInnerLet.beni` | R6a (claimed) |
 | CK-101 | compiler-crash-or-hang | K3 | `check/bad/DerivabilityAlternatingCycle` + `perf_test.zig` "CK-101" (v2) | R6a (claimed) |
+| CK-102 | unsound-runtime | K2 | `check/bad/DerivedPositionMethodMismatch.beni` (v2) | R6b (fixed) |
+| CK-103 | latent | K4 | `run/UndeterminedCompareSlot/` | R6b (claimed) |
+| CK-104 | unsound-runtime | K14 | `run/DerivedRowBodyEmissionOrder/`, `run/DerivedContextClosedOwnMethodPermuted/` | R6b (fixed) |
 
 Totals:
-- 101 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 22 (CK-83, CK-84, CK-90, CK-91 and CK-100 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
+- 104 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 24 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102 and CK-104 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 11 (CK-92 and CK-101 among them).
 - valid-program-rejected: 19 (CK-87 and CK-99 among them).
 - nondeterminism: 2.
 - performance: 12 (CK-85, CK-88, CK-93, CK-95 and CK-96 to CK-98 among them).
 - diagnostic-quality: 24 (CK-86 and CK-94 among them).
-- latent: 10 (CK-89 among them).
-- Outside the checker (K14): 11 (CK-78, CK-83, CK-86, CK-87, CK-88 and CK-95 among them).
+- latent: 11 (CK-89 and CK-103 among them).
+- Outside the checker (K14): 12 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95 and CK-104 among them).

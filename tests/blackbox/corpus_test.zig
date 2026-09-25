@@ -376,7 +376,7 @@ fn walk(kind: Kind) !void {
                     // refuses a fixture — `not_implemented`, naming the slice
                     // it needs — or passes it. A fixture v2 checks and gets
                     // wrong is listed in v2-expected.md or is a v2 bug, so
-                    // `Subset.zig` and `tests/pending/v2-subset.sh` cannot
+                    // `js/Emit.zig`'s refusals and `tests/pending/v2-subset.sh` cannot
                     // drift apart unnoticed.
                     const refused = std.mem.indexOf(u8, reason, "not_implemented") != null or
                         std.mem.indexOf(u8, reason, "NOT IMPLEMENTED") != null;

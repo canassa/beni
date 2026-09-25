@@ -29,6 +29,8 @@ const files = [_]File{
     .{ .path = "Context.zig", .text = @embedFile("Context.zig") },
     .{ .path = "Decide.zig", .text = @embedFile("Decide.zig") },
     .{ .path = "Driver.zig", .text = @embedFile("Driver.zig") },
+    .{ .path = "Eager.zig", .text = @embedFile("Eager.zig") },
+    .{ .path = "Elaborate.zig", .text = @embedFile("Elaborate.zig") },
     .{ .path = "Evidence.zig", .text = @embedFile("Evidence.zig") },
     .{ .path = "Generalize.zig", .text = @embedFile("Generalize.zig") },
     .{ .path = "Incremental.zig", .text = @embedFile("Incremental.zig") },
@@ -42,8 +44,8 @@ const files = [_]File{
     .{ .path = "Resolve.zig", .text = @embedFile("Resolve.zig") },
     .{ .path = "Report.zig", .text = @embedFile("Report.zig") },
     .{ .path = "Solve.zig", .text = @embedFile("Solve.zig") },
-    .{ .path = "Subset.zig", .text = @embedFile("Subset.zig") },
     .{ .path = "Unify.zig", .text = @embedFile("Unify.zig") },
+    .{ .path = "Unit.zig", .text = @embedFile("Unit.zig") },
     .{ .path = "Walk.zig", .text = @embedFile("Walk.zig") },
     .{ .path = "rules_test.zig", .text = "" },
     .{ .path = "constrain/Decl.zig", .text = @embedFile("constrain/Decl.zig") },
@@ -148,10 +150,11 @@ test "the rules read every file of src/check2" {
 const capability_api = [_][]const u8{
     "settleDispatchCapabilities(", "answersEq(",              "answersCompare(",
     "hasFunction(",                "methodParamRequirement(", "hasPublicDispatchMethod(",
+    "restoreDerivedCapabilities(",
 };
 
 /// Allowed today, until R8a (`plans/checker-rewrite.md`, R8a's brief).
-const capability_readers = [_][]const u8{ "Instances.zig", "Module.zig", "Incremental.zig" };
+const capability_readers = [_][]const u8{ "Instances.zig", "Eager.zig", "Module.zig", "Incremental.zig" };
 
 test "S4: only the derivability verdict and the settle read v1's capability API" {
     var bad: usize = 0;
@@ -165,6 +168,34 @@ test "S4: only the derivability verdict and the settle read v1's capability API"
             for (capability_api) |pattern| {
                 if (std.mem.indexOf(u8, line, pattern) == null) continue;
                 std.debug.print("{s}:{d} reads v1's capability API: `{s}`\n", .{ f.path, n, pattern });
+                bad += 1;
+            }
+        }
+    }
+    try testing.expectEqual(@as(usize, 0), bad);
+}
+
+/// R6b's stopgap for derived contexts (review S3): P5's rows under v1's
+/// one-entry-per-parameter rule, the probe that decides which are written
+/// and the refusal of a use of one that is not. R8a deletes all of it with
+/// the capability API above (its brief lists every piece), so it may not
+/// spread past the files that hold it today.
+const r8a_stopgap = [_][]const u8{ "notImplementedR8a(", ".r8a", "collecting", "deps.append(" };
+
+const r8a_stopgap_files = [_][]const u8{ "Eager.zig", "Elaborate.zig", "Report.zig" };
+
+test "S3: R6b's derived-context stopgap stays in the files R8a replaces" {
+    var bad: usize = 0;
+    for (files) |f| {
+        if (listed(f.path, &r8a_stopgap_files) or std.mem.eql(u8, f.path, "rules_test.zig")) continue;
+        var it = codeLines(f.text);
+        var n: usize = 0;
+        while (it.next()) |line| {
+            n += 1;
+            if (isComment(line)) continue;
+            for (r8a_stopgap) |pattern| {
+                if (std.mem.indexOf(u8, line, pattern) == null) continue;
+                std.debug.print("{s}:{d} uses R6b's derived-context stopgap: `{s}`\n", .{ f.path, n, pattern });
                 bad += 1;
             }
         }

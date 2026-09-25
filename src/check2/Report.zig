@@ -371,6 +371,14 @@ pub fn notImplementedR7(r: *Report, region: Bir.Inst.Index, method: Symbol) Erro
     try r.emit(.{ .code = .not_implemented, .module = r.module, .region = region, .message = message });
 }
 
+/// A use whose answer is this module's derived function for a type P5 could
+/// not write under v1's one-entry-per-parameter context (`Eager.zig`): the
+/// context R8a infers (§11.2). Said by P6, at the use.
+pub fn notImplementedR8a(r: *Report, region: Bir.Inst.Index) Error!void {
+    const message = try r.gpa.dupe(u8, "checker v2 cannot build this comparison until slice R8a: it needs this module's derived `eq` or `compare` for a type whose context is not one entry per type parameter.\n");
+    try r.emit(.{ .code = .not_implemented, .module = r.module, .region = region, .message = message });
+}
+
 /// A module that used a construct v2 does not check yet says only that:
 /// every other message of the module (from `start`, its first) is dropped,
 /// since a use v2 could not type makes whatever follows from it noise, and

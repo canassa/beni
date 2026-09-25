@@ -59,3 +59,23 @@ tests/pending/check/bad/DerivabilityAlternatingCycle
 tests/pending/check/bad/MethodResultMismatchOnce
 tests/pending/check/bad/RejectedMethodClassWide
 tests/pending/check/bad/RigidInDerivedShapeOncePerSite.beni
+# R6b (2026-09-25): P6 elaboration, so v2 builds dispatching programs — the `run/` fixtures of
+# CK-08, 27, 28, 29, 32 and 62 (the brief's), and those of CK-30, 31, 66 and 67, which the one
+# elaborator also answers: §12.3's per-member indices and case 3 (R7's findings), and a context
+# v1's one-entry-per-parameter rule already covers (R8a's CK-67).
+tests/pending/run/ClosedRecordAfterFieldAccess.beni
+tests/pending/run/CustomEqHeadMatching
+tests/pending/run/CustomEqTupleHead
+tests/pending/run/LetHelperJoinedMethod.beni
+tests/pending/run/OperatorSectionApplied.beni
+tests/pending/run/TryDecidedByLaterFacts.beni
+tests/pending/run/DeadMiscount.beni
+tests/pending/run/RecursionWithComparison.beni
+tests/pending/run/MutualGroupEvidenceOrder.beni
+tests/pending/run/GroupVariableOutsideCaller.beni
+tests/pending/run/DerivedContextClosedOwnMethod
+# R6b's reviews (2026-09-25): CK-103 (an `undetermined` leaf in a `compare` slot; v1's `check` now
+# refuses it through the I7 assert's placement rule) and CK-104's permuted CK-67 twin (emission
+# order through derived-row bodies; its annotated twin is promoted, `run/DerivedRowBodyEmissionOrder`).
+tests/pending/run/UndeterminedCompareSlot
+tests/pending/run/DerivedContextClosedOwnMethodPermuted

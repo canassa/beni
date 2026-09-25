@@ -211,6 +211,25 @@ test "CK-80: == on a value whose type is a doubling DAG is linear in its depth (
     try s.finish("CK-80", verdict);
 }
 
+// CK-80's `build` half (R6b's reviews: structural N6, adversarial F3): the
+// same doubling DAG, BUILT. P6 writes each distinct answer of a site once
+// (checker-v2.md §13.1 as amended by R6b), and `Lower` binds a shared
+// evidence closure to a `const` once and reads it by name, so the emitted
+// JavaScript — and the time to write it — is linear in the depth. Before,
+// `Lower` expanded every shared term at every use: 487 KB of JavaScript at
+// depth 12 and 144 MB at 20 (×4 every two levels). Calibration
+// (ReleaseFast, CPU, R6b's review): depth 9 / 18 build in 6 / 11 ms; with the
+// binding off, 8 / 873 ms (ratio 109).
+test "CK-80: building == on a value whose type is a doubling DAG is linear in its depth (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("N9.beni", try nestedPairApp(s.arena(), 9));
+    try s.w.write("N18.beni", try nestedPairApp(s.arena(), 18));
+    const build: []const []const u8 = &.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out" };
+    const verdict = try s.ratioOf(build, "N9.beni", "N18.beni", 9, &.{"--checker=v2"});
+    try s.finish("CK-80 build", verdict);
+}
+
 // CK-101's timing twin (R6a's review, B2): `==` on a doubling DAG whose every
 // level passes two method boundaries that alternate the method — `A`'s `eq`
 // asks its payload for `compare`, `B`'s `compare` asks for `eq`. v2's
@@ -356,12 +375,18 @@ const Perf = struct {
     /// `ratio` with extra flags on every run (`--checker=v2` for a v2-only
     /// scenario).
     fn ratioWith(s: *Perf, small: []const u8, large: []const u8, n: usize, extra: []const []const u8) !Verdict {
+        return s.ratioOf(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" }, small, large, n, extra);
+    }
+
+    /// `ratioWith` for any command: `prefix` comes first, then `extra`, then
+    /// the file.
+    fn ratioOf(s: *Perf, prefix: []const []const u8, small: []const u8, large: []const u8, n: usize, extra: []const []const u8) !Verdict {
         var small_list: std.ArrayList([]const u8) = .empty;
-        try small_list.appendSlice(s.arena(), &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" });
+        try small_list.appendSlice(s.arena(), prefix);
         try small_list.appendSlice(s.arena(), extra);
         try small_list.append(s.arena(), small);
         var large_list: std.ArrayList([]const u8) = .empty;
-        try large_list.appendSlice(s.arena(), &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" });
+        try large_list.appendSlice(s.arena(), prefix);
         try large_list.appendSlice(s.arena(), extra);
         try large_list.append(s.arena(), large);
         const small_args = small_list.items;
@@ -425,3 +450,12 @@ const Perf = struct {
         if (!v.green) return error.PerfRegression;
     }
 };
+
+/// `nestedPair` as a program: `main` prints whether `v` holds.
+fn nestedPairApp(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "import Node exposing (Program)\n\n\n");
+    try out.appendSlice(arena, try nestedPair(arena, depth));
+    try out.appendSlice(arena, "\n\nmain : Program\nmain =\n    Node.print (if v then \"T\" else \"F\")\n");
+    return out.items;
+}

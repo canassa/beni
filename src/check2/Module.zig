@@ -2,18 +2,20 @@
 //! each, with no re-settling (I12, CK-15). `Driver.checkInner` runs it for
 //! every module `Options.usesV2` selects.
 //!
-//! | Phase | What it does here (R6a)                                                                 |
+//! | Phase | What it does here (R6b)                                                                 |
 //! |-------|-----------------------------------------------------------------------------------------|
 //! | P1    | the store, the tables, `Schema.State`, the report                                       |
 //! | P2    | every annotated value's published scheme, read at rank `generalized`, with its `where` |
 //! | P3    | the own-name index: every value by name, for the module rule (CK-42)                    |
 //! | P4    | per top-level group in SCC order: generate, solve, boundary (`Solve.group`)             |
+//! | P5    | the eager derived rows, v1's rule until R8a (`Eager`)                                  |
+//! | P6    | elaboration: the dispatch table's trees (`Elaborate`)                                  |
 //! | P7    | exhaustiveness over the declarations whose failure bit is clear                         |
 //! | P8    | the interface, through one publication routine (`Publish`); then `nesting_too_deep`s    |
-//! | P9    | the dispatch table, its round trip, `Cycles`, then the schema plan (no error in module) |
+//! | P9    | the table's round trip, `Cycles`, the I7 assert, the schema plan (no error in module) |
 //!
-//! P5 (eager derived rows) is R8a's and P6 (elaboration) R6b's: a module that
-//! needs P6 is checked, and refused by `build` (`Subset.zig`, `js/Emit.zig`).
+//! P5 writes v1's rows under v1's one-entry-per-parameter context until R8a;
+//! a use of a row it could not write is refused (R8a) by P6.
 //! A module that met a construct of R7's keeps only its `not_implemented`s
 //! (`Report.keepOnlyRefusals`).
 //!
@@ -49,6 +51,8 @@ const Report = @import("Report.zig");
 const Solve = @import("Solve.zig");
 const Resolve = @import("Resolve.zig");
 const Evidence = @import("Evidence.zig");
+const Eager = @import("Eager.zig");
+const Elaborate = @import("Elaborate.zig");
 const Tree = @import("constrain/Tree.zig");
 const Decl = @import("constrain/Decl.zig");
 
@@ -227,6 +231,12 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportTooDeep(&report, too_deep.items, &reported_deep, scratch);
     const p4_notes = too_deep.items.len;
 
+    // P5 (v1's rows until R8a) and P6: the table's trees.
+    var eager: Eager = .{};
+    defer eager.deinit(gpa);
+    try eager.build(&solver);
+    const p6_internals = try elaborate(in, bir, store, decl_scheme, groups, &solver, &eager, &report);
+
     // P7.
     const exhaustive_token = if (in.profile) |p| p.begin() else null;
     if (!quiet) {
@@ -265,12 +275,18 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
 
     // P9.
-    try finishTable(in, bir, store, decl_scheme, &solver);
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (!quiet) {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
         try report.flush();
+        // Last, so every error the module has gates it (v1's rule, S2).
+        if (report.errors == 0) try assertEvidence(in, bir, &report, p6_internals);
     }
+    // What this module's rows say its types derive is what a dependent may
+    // name: v1's rows decide it (`Incremental.install` reads the same table
+    // on a hit), so a type P5 could not write a row for is not derived
+    // elsewhere either (§5, *As built by R6b*; R8a's contexts replace it).
+    in.types.restoreDerivedCapabilities(in.module, in.dispatch);
     // Gated on NO error in the module, after the last pass that can report
     // one (CK-15).
     in.plan.deinit(gpa);
@@ -364,27 +380,26 @@ fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
     return a.int() < b.int();
 }
 
-/// P9's table (§13.1), as far as `check` reads it before P6 (R6b):
+/// P6 (§12.2, §13): the whole dispatch table.
 ///
 ///   - one `DeclInfo` per declaration: `value_arity` from the scheme, its
 ///     requirement list in canonical order (§12.1, `Evidence.requirements`
 ///     — an annotation's `where` clause, or what promotion kept), and the
 ///     convention `Convention.of` gives it with that count (§12.5);
-///   - the `tries` rows;
-///   - one site per `method_call`/`type_dispatch` whose callee resolved to a
-///     value of this module or another (`top`, `ext`), with that callee and
-///     no evidence: the edge `Cycles` reads (`Edges.declEdges`' third leg),
-///     which a method call adds and `Bir.refs` cannot.
-///
-/// A module that needs evidence elaborated never reaches `Lower` before
-/// R6b: `js/Emit.zig` refuses to build it (`Subset.needsElaboration`).
-fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, solver: *Solve) Error!void {
+///   - each requirement's quantifier root, which `Elaborate` matches a
+///     `promoted` answer and a group call against (§12.3): an annotation's
+///     givens, on the rigid reading its body was checked against, or what
+///     promotion recorded;
+///   - the trees, sites and derived rows (`Elaborate.run`), and the `tries`.
+fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, groups: Scc.IndexGroups, solver: *Solve, eager: *const Eager, report: *Report) Error![]const Elaborate.Internal {
     const gpa = in.gpa;
     const scratch = in.scratch.allocator();
     const decls = try gpa.alloc(Dispatch.DeclInfo, bir.decls.len);
     errdefer gpa.free(decls);
     var requirements: std.ArrayList(Dispatch.Requirement) = .empty;
     errdefer requirements.deinit(gpa);
+    var roots: std.ArrayList(Var) = .empty;
+    defer roots.deinit(scratch);
     var reqs: std.ArrayList(Evidence.Requirement) = .empty;
     defer reqs.deinit(scratch);
     for (decls, decl_scheme, 0..) |*info, scheme, i| {
@@ -397,10 +412,22 @@ fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []con
         if (d.kind.isValue() and d.annotation != .none and d.where_start != d.where_end) {
             reqs.clearRetainingCapacity();
             if (scheme.unwrap()) |v| try Evidence.requirements(store, in.interner, v, scratch, &reqs);
-            for (reqs.items) |r| try requirements.append(gpa, .{ .quantified = r.quantified, .var_name = store.flagsOf(r.root).name, .method = r.method });
+            const givens = solver.evidence.givensOf(@intCast(i));
+            for (reqs.items, 0..) |r, k| {
+                try requirements.append(gpa, .{ .quantified = r.quantified, .var_name = store.flagsOf(r.root).name, .method = r.method });
+                // The body met the rigid reading's variables, not the
+                // scheme's: its givens are what a group call matches.
+                const given = givens.len == reqs.items.len;
+                if (!try solver.expect(given, d.inst_start, "an annotated declaration's `where` clause registered a different number of givens (checker-v2.md §4.2, review S2)")) {
+                    try roots.append(scratch, r.root);
+                    continue;
+                }
+                try roots.append(scratch, givens[k].rigid);
+            }
         } else {
             const kept = solver.resolver.decl_requirements[i];
             try requirements.appendSlice(gpa, solver.resolver.requirement_rows.items[kept.start..][0..kept.len]);
+            try roots.appendSlice(scratch, solver.resolver.requirement_roots.items[kept.start..][0..kept.len]);
         }
         const count: u32 = @intCast(requirements.items.len - start);
         info.* = .{
@@ -409,26 +436,18 @@ fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []con
             .convention = Convention.of(bir.decls[i].params, Convention.bodyIsLambda(bir, @intCast(i)), arity, count),
         };
     }
-    var terms: std.ArrayList(Dispatch.Term) = .empty;
-    errdefer terms.deinit(gpa);
-    var sites: std.ArrayList(Dispatch.Site) = .empty;
-    errdefer sites.deinit(gpa);
-    const callees = try scratch.dupe(Evidence.Callee, solver.evidence.callees.items);
-    defer scratch.free(callees);
-    std.mem.sort(Evidence.Callee, callees, {}, calleeLessThan);
-    for (callees) |c| {
-        var id = c.wanted;
-        while (solver.evidence.answer(id) == .alias) id = solver.evidence.answer(id).alias;
-        const term: Dispatch.Term = switch (solver.evidence.answer(id)) {
-            .top => |t| .{ .top = .{ .decl = @enumFromInt(t.decl) } },
-            .group_call => |d| .{ .top = .{ .decl = @enumFromInt(d) } },
-            .ext => |e| .{ .ext = .{ .module = e.module, .value = e.value } },
-            else => continue,
-        };
-        const at: Dispatch.TermIndex = @enumFromInt(@as(u32, @intCast(terms.items.len)));
-        try terms.append(gpa, term);
-        try sites.append(gpa, .{ .inst = c.inst, .callee = at.toOptional() });
-    }
+    const out = try Elaborate.run(.{
+        .cx = solver.cx,
+        .evidence = &solver.evidence,
+        .eager = eager,
+        .decls = decls,
+        .requirements = requirements.items,
+        .roots = roots.items,
+        .decl_scheme = decl_scheme,
+        .group_of = try groupOf(scratch, bir, groups),
+        .report = report,
+        .clean = !report.quiet and report.errors == 0,
+    });
     in.dispatch.deinit(gpa);
     // Every `?` the solver decided, by instruction (`checker.md` §6.5): the
     // shape is the one thing about a `?` the backend cannot work out.
@@ -438,13 +457,51 @@ fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []con
         .decls = decls,
         .tries = sorted,
         .requirements = try requirements.toOwnedSlice(gpa),
-        .terms = try terms.toOwnedSlice(gpa),
-        .sites = try sites.toOwnedSlice(gpa),
+        .terms = out.terms,
+        .args = out.args,
+        .sites = out.sites,
+        .derived = out.derived,
+        .contexts = out.contexts,
+        .symbols = out.symbols,
     };
+    return out.internals;
 }
 
-fn calleeLessThan(_: void, a: Evidence.Callee, b: Evidence.Callee) bool {
-    return a.inst.int() < b.inst.int();
+/// Each declaration's top-level binding group (`bindingGroups`' index).
+fn groupOf(scratch: Allocator, bir: *const Bir, groups: Scc.IndexGroups) Error![]const u32 {
+    const out = try scratch.alloc(u32, bir.decls.len);
+    @memset(out, std.math.maxInt(u32));
+    for (0..groups.starts.len - 1) |g| {
+        for (groups.order[groups.starts[g]..groups.starts[g + 1]]) |d| out[d] = @intCast(g);
+    }
+    return out;
+}
+
+/// I7 (§2, §13.1) over the finished table, the one the backend will read:
+/// `internal` at each instruction whose tree does not add up, and only in a
+/// module that reported nothing — so it runs after the last pass that can
+/// report (v1's `assertEvidenceShape`, the same predicate and text). P6's own
+/// failures are said here too, under the same gate (review S4): one whose
+/// message a later pass says is not the compiler's.
+fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: []const Elaborate.Internal) Error!void {
+    for (p6) |x| try report.internal(x.region, x.what);
+    const scratch = in.scratch.allocator();
+    var bad: std.ArrayList(Bir.Inst.Index) = .empty;
+    defer bad.deinit(scratch);
+    try in.dispatch.checkI7(bir, in.interfaces, in.types, scratch, &bad);
+    if (bad.items.len == 0) return;
+    std.mem.sort(Bir.Inst.Index, bad.items, {}, regionLessThan);
+    var previous: ?Bir.Inst.Index = null;
+    for (bad.items) |inst| {
+        if (previous == inst) continue;
+        previous = inst;
+        try report.internal(
+            inst,
+            "the hidden arguments here do not add up — the evidence tree the checker " ++
+                "recorded here gives a function a different number of arguments than it has " ++
+                "requirements (`docs/design/checker-v2.md` §13.1, invariant I7)",
+        );
+    }
 }
 
 /// `--roundtrip-dispatch` on the table (v1's, verbatim for the table): right

@@ -1,0 +1,22 @@
+-- CK-102: a derived shape whose position's own method is specialised to
+-- another receiver is refused, once, at the comparison (static-dispatch-
+-- spike.md §6.3.1; checker-v2.md §9.3 step 4, a mismatch at a derived
+-- shape's position). `Holder`'s `eq` answers only `Holder Int`, so a record
+-- and a tuple holding a `Holder String` cannot derive `eq`.
+type Holder a
+    = Holder a
+
+
+eq : Holder Int, Holder Int -> Bool
+eq _ _ =
+    True
+
+
+badRecord : { value : Holder String }, { value : Holder String } -> Bool
+badRecord left right =
+    left == right
+
+
+badTuple : ( Holder String, Int ), ( Holder String, Int ) -> Bool
+badTuple left right =
+    left == right

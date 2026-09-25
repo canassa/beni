@@ -133,6 +133,8 @@ tests/pending/run/TryDecidedByLaterFacts.beni v1 dev: exit=1 codes=type_mismatch
 tests/pending/run/TryDefersShape.beni v1 dev: exit=1 codes=type_mismatch×4
 tests/pending/run/TryEscapeLowersOnlyItsOwn.beni v1 dev: exit=1 codes=type_mismatch×2
 tests/pending/run/TryEscapesToLaterFact.beni v1 dev: exit=1 codes=type_mismatch×5
+tests/pending/run/DerivedContextClosedOwnMethodPermuted v1 dev: exit=1 codes=not_equatable×3
+tests/pending/run/UndeterminedCompareSlot v1 dev: exit=1 codes=internal×2
 scenario/CK-03 v1 timeout
 scenario/CK-40 v1 slow
 scenario/CK-42 v1 slow
@@ -159,6 +161,14 @@ scenario/CK-88 v1 slow
 # `exit=0` lines), or the text R13 owns. A `run/` fixture that dispatches is refused by `build`
 # until R6b (`not_implemented` from `js/Emit.zig`). The six fixtures R6a turned green (CK-02,
 # 03, 09, 20, 21, 48) are in CLAIMED and lost their line.
+# R6b (2026-09-25): v2 elaborates evidence (P6) and builds dispatching programs. The eleven
+# `run/` fixtures it turned green are in CLAIMED and lost their line. `DerivedEqDeepRecord`
+# (CK-87) is now red as v1 is, at `Lower`'s part-depth cap (`internal`×2), which R8a owns;
+# `GenericDerivationNestedRequirement` (CK-25) is P6's R8a refusal at the one comparison of an
+# own type whose context is not one entry per parameter.
+# R6b's reviews: two new v1 lines, both claimed under v2 — CK-103's `UndeterminedCompareSlot`
+# (`internal`×2: the I7 assert's placement rule refuses v1's `eq` leaf in a `compare` slot) and
+# CK-104's `DerivedContextClosedOwnMethodPermuted` (CK-67's NOT EQUATABLE, ×3).
 tests/pending/check/bad/CapNamesReceivers.beni v2 exit=1 codes=too_many_inferred_constraints×1 why=message
 tests/pending/check/bad/CurriedAnnotation.beni v2 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
 tests/pending/check/bad/DerivedContextMergesAsker v2 exit=0 codes=none
@@ -186,22 +196,11 @@ tests/pending/check/bad/ScrutineeMethodMergeD14 v2 exit=1 codes=not_implemented�
 tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/good/ScrutineeMethodMergeVariant v2 exit=1 codes=not_implemented×4
-tests/pending/run/ClosedRecordAfterFieldAccess.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/CustomEqHeadMatching v2 dev: exit=1 codes=not_implemented×3
-tests/pending/run/CustomEqTupleHead v2 dev: exit=1 codes=not_implemented×3
-tests/pending/run/DeadMiscount.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/DerivedContextClosedOwnMethod v2 dev: exit=1 codes=not_implemented×3
-tests/pending/run/DerivedEqDeepRecord.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×2
-tests/pending/run/GroupVariableOutsideCaller.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/LetHelperJoinedMethod.beni v2 dev: exit=1 codes=not_implemented×1
+tests/pending/run/DerivedEqDeepRecord.beni v2 dev: exit=1 codes=internal×2
+tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/MutualDispatchMethods.beni v2 dev: exit=1 codes=not_implemented×2
-tests/pending/run/MutualGroupEvidenceOrder.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/OperatorSectionApplied.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/OwnMethodBeforeDefinition v2 dev: exit=1 codes=not_implemented×3
 tests/pending/run/OwnMethodDemandedEarly.beni v2 dev: exit=1 codes=not_implemented×3
 tests/pending/run/OwnMethodValuePrefix.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/PhantomParameterEq.beni v2 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
-tests/pending/run/RecursionWithComparison.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/ScrutineeMethodLater.beni v2 dev: exit=1 codes=not_implemented×2
-tests/pending/run/TryDecidedByLaterFacts.beni v2 dev: exit=1 codes=not_implemented×1

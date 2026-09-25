@@ -253,8 +253,12 @@ fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry) Erro
 /// the type the author compared), and the lineage root rejected.
 fn refuseDerived(s: *Solve, id: WantedId, root: Var, reason: Diagnostics.Reporter.EquatableReason) Error!void {
     const top = Resolve.lineageRoot(s, id);
+    // Read BEFORE the rejection, which fails the whole lineage: a root that
+    // failed earlier has its message; one this rejection fails does not
+    // (CK-102: the check after it returned in silence every time).
+    const reported = top != id and s.evidence.get(top).state == .failed;
     try Resolve.reject(s, id, id != top);
-    if (s.evidence.get(top).state == .failed and top != id) return;
+    if (reported) return;
     const t = s.evidence.get(top);
     const shown = if (top == id) root else t.receiver;
     if (t.method == InternPool.WellKnown.eq.symbol()) {

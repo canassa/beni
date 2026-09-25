@@ -96,7 +96,6 @@ pub const check2 = struct {
     pub const Incremental = @import("check2/Incremental.zig");
     pub const Module = @import("check2/Module.zig");
     pub const Context = @import("check2/Context.zig");
-    pub const Subset = @import("check2/Subset.zig");
     pub const Walk = @import("check2/Walk.zig");
     pub const Unify = @import("check2/Unify.zig");
     pub const Generalize = @import("check2/Generalize.zig");

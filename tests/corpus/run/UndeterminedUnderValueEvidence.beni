@@ -1,0 +1,57 @@
+-- An `==` or `<` whose evidence holds a proven-undetermined answer UNDER a
+-- value's evidence rather than under a derived function (checker-v2.md
+-- §12.2, §13.1): `[ [] ] == [ [] ]` passes `List.eq` the evidence
+-- `List.eq (a.eq)` with `a` a type nothing determines, and `Lower` can read
+-- the method of an `undetermined` leaf only off a derived ancestor, so there
+-- the answer must be the structural function itself — `Basics.eq`, or
+-- `num_compare` for `compare` — as v1 writes it. R6b's first P6 wrote the
+-- leaf and `build --checker=v2` stopped with INTERNAL ERROR (review B1).
+-- Expected `yes`, `no`, `yes`, `yes`, `False`, `1`, `False`, `True`, `True`,
+-- `False`: v1's output, whose table these sites share (dispatch/UndeterminedUnderValueEvidence).
+import Dict
+import Node exposing (Program)
+import Set
+
+
+type Pair a
+    = Pair a Int
+
+
+pub eq : Pair a, Pair a -> Bool
+    where a.eq : a, a -> Bool
+eq (Pair x i) (Pair y j) =
+    x == y && i == j
+
+
+yesNo : Bool -> String
+yesNo b =
+    if b then
+        "yes"
+
+    else
+        "no"
+
+
+show : Bool -> String
+show b =
+    if b then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ yesNo ([ [] ] == [ [] ])
+        , yesNo ([ [] ] < [ [] ])
+        , yesNo ([] < [ [] ])
+        , yesNo (List.member [ [] ] [])
+        , show (List.isEmpty (List.sort [ [] ]))
+        , String.fromInt (List.length (List.sort [ [ [] ] ]))
+        , show (Dict.isEmpty (Dict.fromList [ ( [], 1 ) ]))
+        , show (Set.isEmpty (Set.fromList []) && not (Set.isEmpty (Set.fromList [ [] ])))
+        , show (Pair [] 1 == Pair [] 1)
+        , show (Pair (Pair [] 1) 1 == Pair (Pair [] 2) 1)
+        ]
