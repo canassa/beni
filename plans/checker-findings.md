@@ -1358,6 +1358,16 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/good/WideTypeArity/` + `_expected.iface`, generated. On 7427828 it is
   `wrong_type_arity` at `Main.beni:10:9`.
 - **Slice** R3 (interface v3).
+- **Status** fixed by R3 (2026-09-25): `Interface.Type.arity` and `Types.Entry.arity` are `u16`,
+  `iface_bytes` 3 and `digest_version` 2; lowering refuses a 65 536th type parameter with the new
+  code `too_many_type_parameters` (`language.md` §10), so nothing saturates. Promoted
+  `check/good/WideTypeArity/` (its hand-written golden had 255 parameter names — the saturated
+  width — and is blessed at 256). The "also observed" half was worse by 3487c12 than the R2a note
+  says: `==` on an imported 256-parameter type BUILT, exit 0, and threw `TypeError` at run time —
+  pinned by the new `run/WideTypeArityEq/` (dev and `--release`), and past 4 096 parameters by
+  `cache_test.zig`'s cross-module wide-form scenario (cold, warm, partly warm). Red on 3487c12:
+  all three, and `abuse_wide_test.zig`'s 65 536-parameter refusal (a Debug panic in
+  `deriveOneParts` after 35 s of pairwise duplicate checking in lowering, which is a sort now).
 
 ### CK-39 — An imported record-alias constructor is typed as an opaque nominal
 
@@ -1373,6 +1383,13 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   "only a `type` declares constructors".
 - **Fixture** `run/RecordAliasConstructorImported/` → `a`.
 - **Slice** R3.
+- **Status** fixed by R3 (2026-09-25): a constructor row carries `result: record_alias` and the
+  alias's field names in declaration order; `Schemes.instantiateCtor` builds the alias of the
+  record, and `js/Lower.zig` emits and reads an imported alias's constructor by those names
+  (`CtorRep.record` is `local` or `imported`; `refuseAliasCtors` is deleted). Promoted
+  `run/RecordAliasConstructorImported/`, and R1's `build/bad/RecordAliasConstructorImported/`
+  moved to `run/RecordAliasConstructorImportedToString/` (`Debug.toString (P 1 "a")` prints the
+  record). Both red on 3487c12 (build refused).
 
 ---
 
@@ -1428,6 +1445,11 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     375 / 665 / 1 227 ms. On 7427828 they take 2 950 / 10 636 / about 42 000 ms.
   - Swapping the fixed binary in turned the scenario GREEN (ratio 1.88), and rule (b) fired.
 - **Slice** R3 (shared `Schemes.zig`: epoch marks).
+- **Status** fixed by R3 (2026-09-25): `Schemes.Writer`'s memo is live per slot while its stamp is
+  the current epoch, a new scheme is one increment, and the arrays grow at least ×2. The scenario
+  is the first timing scenario PROMOTED, into `tests/blackbox/perf_test.zig` (`zig build
+  test-perf`, the manager's decision; `checker-rewrite.md` §2.5): 12 / 18 ms at 4 000 / 8 000
+  constructors (ratio 1.50) on R3, and red through `test-perf` on 3487c12, 400 / 1 476 ms (3.69).
 
 ### CK-42 — Linear scans and quadratic de-duplication in dispatch resolution
 
@@ -2595,6 +2617,28 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   rows by literal through the matrix code.
 - **Slice** R12 (manager, 2026-09-25): a backend cleanup once v1 is deleted — group rows by literal throughout `Decision`'s matrix code; the `switch` size limit is split into bounded `switch`es in the same change.
 
+### CK-89 — A private type's derived context is published nowhere, though an importer can compare it
+
+- **Severity** latent (a spec gap v2 would turn into a refused valid program or a miscount; v1 is
+  right today). **Area** interface record, D4. **Class** K10.
+  **Sources** R3, while writing interface v3's derived rows.
+- **Program** `A.beni`: `type Hidden a = H a` (private) and `pub make : a -> Hidden a`.
+  `Main.beni`: `A.make 1 == A.make 1`.
+- **Observed** on R3 (and 3487c12): builds and prints `same` — v1 resolves the `==` as
+  `ext_derived` to `A`'s derived `Hidden` function and counts its evidence from the type's arity
+  in the session table. `A`'s interface has NO row for `Hidden`: `checker-v2.md` §14.2 publishes
+  derived contexts and `payload_params` "per exported nominal type", and `Hidden` is in no `types`
+  table, only in a `type_refs` row.
+- **Expected** v2's importer "resolves `ext_derived` against the published context" (§14.2, D4,
+  I10) and so needs a context for every type it can reach, which is every type a `type_refs` row of
+  a record it reads names — the set the dependency digest already closes over (`checker.md` §7).
+  Under D4 the context is inferred, not the arity, so v1's fallback does not carry over.
+- **Fixture** none yet: v1 is correct, and the program above is the guard to write in the slice
+  that reads the rows (it should build and print `same` under both checkers).
+- **Slice** R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type
+  reachable from a published scheme, before R8a reads them. The spec amendment comes first, in its
+  own commit (rule 1); the text to amend is §14.2's "per exported nominal type", for both rows.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2640,10 +2684,10 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-35 | latent | K4 | — (structural) | R6 |
 | CK-36 | valid-program-rejected (D3) | K6 | `run/OwnMethodBeforeDefinition/` | R7 |
 | CK-37 | latent | K3 | guards `tests/corpus/check/bad/CyclicReceiverReportedOnce.beni`, `…/RejectedReceiverDoesNotSilence.beni` | R6, R14 |
-| CK-38 | valid-program-rejected | K10 | `check/good/WideTypeArity/` | R3 |
-| CK-39 | valid-program-rejected | K10 | `run/RecordAliasConstructorImported/` | R3 |
+| CK-38 | valid-program-rejected | K10 | promoted: `check/good/WideTypeArity/`; new `run/WideTypeArityEq/` | R3 (fixed) |
+| CK-39 | valid-program-rejected | K10 | promoted: `run/RecordAliasConstructorImported/` | R3 (fixed) |
 | CK-40 | performance | K11 | `scenario/CK-40` (400 schemas) | R8 |
-| CK-41 | performance | K11 | `scenario/CK-41` (one type, 14 000 constructors) | R3 |
+| CK-41 | performance | K11 | promoted: `perf_test.zig` "CK-41: …" (`test-perf`) | R3 (fixed) |
 | CK-42 | performance (reproduced in R0) | K11 | `scenario/CK-42` (extra cost of own `==` over `x == x`, × 5 000) | R6 |
 | CK-43 | unsound-runtime | K14 | `run/RecordAliasConstructor.beni` | R1 |
 | CK-44 | diagnostic-quality | K14 | `check/bad/DuplicateRecordTypeField.beni` | R1 |
@@ -2691,14 +2735,15 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-86 | diagnostic-quality | K14 | `check/bad/ExposingSameNameConstructor/` | R13 |
 | CK-87 | valid-program-rejected | K14 | `run/DerivedEqDeepRecord.beni` | unassigned — manager |
 | CK-88 | performance | K14 | `scenario/CK-88` | unassigned — manager |
+| CK-89 | latent | K10 | — (v1 is right; the guard program is in the entry) | R8a (spec amendment first) |
 
 Totals:
-- 88 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 89 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 19 (CK-83 and CK-84 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 9.
 - valid-program-rejected: 18 (CK-87 among them).
 - nondeterminism: 2.
 - performance: 7 (CK-85 and CK-88 among them).
 - diagnostic-quality: 23 (CK-86 among them).
-- latent: 9.
+- latent: 10 (CK-89 among them).
 - Outside the checker (K14): 10 (CK-78, CK-83, CK-86, CK-87 and CK-88 among them).

@@ -28,6 +28,11 @@ below assumes them.
   - **the manager's pre-commit check**, for every slice from R3 on, whatever it touches: about 22 s
     when `src/` is unchanged since the last ReleaseFast build, about two minutes when the
     ReleaseFast compiler has to be rebuilt first.
+- **The fixed-perf step (§2.5, the manager's decision of 2026-09-25).** `zig build test-perf` times
+  the timing scenarios a slice FIXED and promoted (`tests/blackbox/perf_test.zig`, CK-41 the first),
+  on the same ReleaseFast compiler by the same method, and a red one fails it. It is not a gate
+  (rule 4 names three). It runs wherever `test-pending-perf` runs, beside it: every slice above
+  that must run the perf step runs both, and the manager runs both before every commit.
 - **Fail-first (rule 3).** Every CK the slice closes already has a red fixture in
   `tests/pending/`, written by R0. The slice's evidence is that fixture turning green, and then
   either being **promoted** into `tests/corpus/` or being **claimed** (§2.6).
@@ -257,11 +262,14 @@ cost eleven minutes a run. A timing scenario refuses to run on `zig-out/bin/beni
   instead asserts that every permutation gives the same single diagnostic code.
 - **Reporting.** Each scenario prints RED/GREEN like §2.4, and fails the step only under rules
   (b)–(d).
-- **Promotion** moves the scenario verbatim into `abuse_test.zig`. *Open (2026-09-25):*
-  `abuse_test.zig` runs the Debug binary, and a timing scenario's sizes are now ReleaseFast
-  sizes. The promoting slice confirms the scenario is GREEN with margin there, or the manager
-  decides where promoted timing scenarios live (a ReleaseFast gate of their own is the obvious
-  candidate).
+- **Promotion** moves a TIMING scenario verbatim into `tests/blackbox/perf_test.zig`, run by
+  **`zig build test-perf`** on the same ReleaseFast compiler (`zig-out/perf/bin/beni`, `BENI_EXE`)
+  with the same method — best of 3, CPU time, `--jobs=1`, time(2n) / time(n) ≤ 2.5 — where a red
+  verdict fails the step; any other scenario moves into `abuse_test.zig`. *Decided by the manager on
+  2026-09-25*, when CK-41 (R3) became the first timing scenario to be promoted, closing the item
+  left open here: `abuse_test.zig` runs the Debug binary and a timing scenario's sizes are
+  ReleaseFast sizes, and a Debug gate would measure another compiler. `test-perf` is not one of
+  the three gates; it runs beside `test-pending-perf` wherever that runs (§1).
 
 ### 2.6 Promotion and claims
 
@@ -617,7 +625,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     `tests/corpus/build/bad/RecordAliasConstructorImported/` then builds, so R3 moves it to
     `tests/corpus/run/` with its expected output (`P 1 "a"` through `Debug.toString` prints the
     record), and `run/RecordAliasConstructorImported/` (CK-39) is promoted beside it.
-- **Closes.** Promoted: CK-38, CK-39, CK-41 (perf scenario into `abuse_test.zig`).
+- **Closes.** Promoted: CK-38, CK-39, CK-41 (perf scenario into `perf_test.zig`, `test-perf`; into `abuse_test.zig` as first planned, until the manager's decision of 2026-09-25, §2.5).
 - **Relies on** `checker-v2.md` §14.2.
 - **Exit criteria.**
   - The gates are green.
@@ -629,6 +637,73 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - A v2 interface read by a v2 importer, with the cache warm, cold, and partially hit (the matrix
     test).
   - The context rows are sorted by `(param, method text)`, never by symbol.
+- **As built (2026-09-25).** `checker-v2.md` §14.2 gained an *As built by R3* paragraph first (row
+  layout, the status vocabulary, `payload_params` through alias expansions, the new code, CK-89);
+  `checker.md` §7 the v3 layout and the digest's `u16`; `language.md` §10 the code;
+  `backend.md` §4's record-alias row and `static-dispatch-spike.md` §9.2 the imported cases.
+  - **Arity.** `Interface.Type.arity` and `Types.Entry.arity` are `u16`. Lowering refuses a
+    65 536th type parameter with a NEW code, `too_many_type_parameters`, at that parameter, and keeps
+    the first 65 535 — §14.2's "becomes an error" named no code, and every existing one means
+    something else. Lowering's duplicate-parameter check was pairwise (35 s of a Debug build at
+    65 536); it sorts a copy now, reporting each repeat against its first occurrence as before.
+  - **Record-alias constructors.** The skeleton (`Interface.build`) writes `result` and the field
+    names, which are lexical; `Entry.matchesShell` compares them on a cache install.
+    `Schemes.instantiateCtor` builds `alias(T, params, { fields = args })`. In `js/Lower.zig`,
+    `CtorRep.record` is `local` (a declaration) or `imported` (an interface row) and
+    `recordNames` gives either's names; `ctorRepExternal` answers `record` for a `record_alias` row,
+    so `argName` reads an imported alias pattern's arguments by name, and `refuseAliasCtors` is
+    deleted.
+  - **Derived rows and `payload_params`** are filled by `Check.fillTypeFacts` at `fillInterface`,
+    after v1's eager derivation: `present` exactly when the dispatch builder has the nominal row,
+    with its evidence count as the context (one `(i, m)` per parameter, v1's ABI); otherwise
+    `own_method`, `foreign`, `function` or `unanswerable` by the facts v1 already has. The bitset
+    reads every constructor through the annotation reader — an opaque type's hidden ones too — and
+    names a parameter by `root − first`, the parameters being fresh in one run, so there is no map
+    and no store-sized array per type. Nothing in v1 reads either row; they exist for R8a.
+  - **Versions.** `iface_bytes` 3 (`types` rows 16 → 32 bytes, `ctors` 20 → 28; `verify` refuses a
+    bitset of the wrong length or with a bit past the arity, a context entry past the arity, a
+    context on an absent row, a `record_alias` row whose names do not number its arguments, and
+    nonzero padding), `digest_version` 2. With the build id pinned (`--cache-build-id`) R3 reads
+    none of 3487c12's entries (14 of 14 re-checked) and hits all 14 on its own second run.
+  - **CK-41.** `Schemes.Writer` on epoch marks (`stamp`/`epoch`, growth at least ×2, `touched`
+    gone). Promoted into `perf_test.zig` / `zig build test-perf` (§2.5's promotion rule, the
+    manager's decision): 12 / 18 ms at 4 000 / 8 000 constructors, ratio 1.50; red through
+    `test-perf` on 3487c12 at 400 / 1 476 ms, 3.69.
+  - **Fixtures.** Promoted `check/good/WideTypeArity/` (its hand-written golden held 255 parameter
+    names, the saturated width; re-blessed at 256 — the only `.iface` golden that moved) and
+    `run/RecordAliasConstructorImported/`; `build/bad/RecordAliasConstructorImported/` became
+    `run/RecordAliasConstructorImportedToString/`. New: `run/WideTypeArityEq/` (256 parameters,
+    `==` and `<` across modules; on 3487c12 exit 0 then `TypeError`), `cache_test.zig`'s wide-form
+    scenario (4 097 parameters: cold, warm, `--release` warm, `Main` edited, `--release` again —
+    each run, each pass's checked/hit counts asserted; on 3487c12 `TypeError: $m[0] is not a
+    function`), `abuse_wide_test.zig`'s 65 535 / 65 536 scenario, `blackbox_test.zig`'s raw-rows
+    test, two hermetic tests (`iface_bytes`, `bir/Lower`). `digest_test.zig`'s row 13 moved to a
+    TUPLE alias: a record alias's field names are now in the record, so its premise ("an alias body
+    in no record") no longer holds for a record alias. All red on 3487c12 in a scratch worktree
+    with this slice's tests, except the digest row (a re-scoped premise, green on both).
+  - **Numbers.** No raw golden files exist to re-bless (`--stage=raw` is compared, not goldened);
+    `--jobs=1` and `--jobs=8` raw dumps are byte-identical over core and all 41 multi-module
+    corpus projects. Bench (ReleaseFast, `--generate=100000`, medians of 7 interleaved against
+    3487c12): check 90.81 ms against 91.37 (−0.6 %), emit 52.75 against 52.48.
+  - **Found:** CK-89 — the rows are per EXPORTED type, but an importer can compare a PRIVATE type
+    reached through a `pub` scheme; v1 is right, v2's "resolve against the published context" has
+    nothing to resolve against. Assigned to R8a by the manager, spec amendment first.
+- **As built, review round (2026-09-25).** No blockers.
+  - S1: `payload_params` read its payloads with a bare `Types.Builder`, with no schema lookup, so a
+    parameter under `Page.Type a` or `Models.Page.Type a` read as `err` and was left out
+    (`payload={}`, the unsafe side for D10). It uses `env.builder` now, whose schema expansion
+    substitutes and never unifies, and an `err` payload sets every bit. Both declarations are in
+    `blackbox_test.zig`'s raw-rows test, red with the old reader (`payload={}`) and green now.
+  - N1: one status vocabulary, spec first (§14.2 *As built*, `checker.md` §7, the
+    `Derived.Status` comments): `primitive` is new (§3.2's operator answers, where `own_method` had
+    covered them and `Char` read `foreign`); the order is v1's own — primitive, own method,
+    foreign (any arity), function, unanswerable. Pinned by the raw-rows test, on the program and
+    on core's `Bool`, `Order`, `Char`, `List` and `Schema.Conversion`.
+  - N2: `verify` takes the interner and checks the full `(param, method text)` order, refusing a
+    pair twice, and ties `record_alias` to an alias row; the hermetic test covers each.
+  - N3: `recordNames` caches the last alias's names. N4: the code's text names `schema` too.
+    N6: the wide-form cache test edits `Wide` with `Main` cached — a private value (cut off,
+    one module checked) and a new `pub` value (both checked), each run and its counts asserted.
 
 ### R4a — The v2 harness: moved driver, flag, cache key, `test-v2`, a stub checker
 
@@ -1029,14 +1104,14 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R1 | CK-11, 17, 19, 43, 44, 45, 46, 47, 71 | — | CK-12 (unit test); CK-78 (a decision, with a guard) |
 | R2a | CK-81 (v1 `Print`, manager 2026-09-24) | — | CK-61 |
 | R2b | CK-33, 34, 84 (found and fixed by R2b) | — | CK-85 (guard only; fixed in R8a, owner 2026-09-25), CK-86 → R13 (pending fixture) |
-| R3 | CK-38, 39, 41 | — | — |
+| R3 | CK-38, 39; CK-41 (into `perf_test.zig`, `test-perf`) | — | CK-89 found (a private type's derived context is published nowhere) → R8a |
 | R4a | — | — | CK-15 (the cutoff protocol leaves `Check.zig`) |
 | R4b | — | CK-01, 04, 07, 13, 57; CK-09 (`check/good` half) | CK-10, 14, 15 (pipeline part) |
 | R5 | — | CK-05, 06, 16, 51, 62, 68 | CK-18; CK-59 (part) |
 | R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 80 | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32 | — |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
-| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25) |
+| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24 | — |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
@@ -1046,7 +1121,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 88 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 89 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

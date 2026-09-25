@@ -80,7 +80,6 @@ tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v1 exit=1 codes=type
 tests/pending/check/bad/WhereClauseNumberReceiver.beni v1 exit=0 codes=none
 tests/pending/check/good/MutualGroupLocalTypes.beni v1 exit=0 iface-differs
 tests/pending/check/good/ScrutineeMethodMergeVariant v1 exit=1 codes=method_needs_annotation×4
-tests/pending/check/good/WideTypeArity v1 exit=1 codes=wrong_type_arity×1
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v1 dev: exit=1 codes=no_methods_on_shape×1
 tests/pending/run/CustomEqHeadMatching v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=internal×1
@@ -98,14 +97,12 @@ tests/pending/run/OwnMethodBeforeDefinition v1 dev: exit=1 codes=method_needs_an
 tests/pending/run/OwnMethodDemandedEarly.beni v1 dev: exit=1 codes=method_needs_annotation×3,unknown_method×1
 tests/pending/run/OwnMethodValuePrefix.beni v1 dev: exit=1 codes=method_needs_annotation×1
 tests/pending/run/PhantomParameterEq.beni v1 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
-tests/pending/run/RecordAliasConstructorImported v1 dev: exit=1 codes=type_mismatch×1
 tests/pending/run/RecursionWithComparison.beni v1 dev: exit=1 codes=internal×9
 tests/pending/run/ScrutineeMethodLater.beni v1 dev: exit=1 codes=method_needs_annotation×2,unknown_method×1
 tests/pending/run/TryDecidedByLaterFacts.beni v1 dev: exit=1 codes=type_mismatch×5
 tests/pending/run/TryDefersShape.beni v1 dev: exit=1 codes=type_mismatch×4
 scenario/CK-03 v1 timeout
 scenario/CK-40 v1 slow
-scenario/CK-41 v1 slow
 scenario/CK-42 v1 slow
 scenario/CK-75 v1 slow
 scenario/CK-80 v1 slow

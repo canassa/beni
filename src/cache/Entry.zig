@@ -224,6 +224,16 @@ fn matchesShell(loaded: *const Interface, shell: *const Interface) bool {
     for (loaded.ctors, shell.ctors) |a, b| {
         if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;
         if (a.type != b.type) return false;
+        // A record alias's field names are lexical, so the shell has them
+        // (interface v3): a record whose names disagreed would build the
+        // record with the wrong keys, which is a miscompile and not a miss.
+        if (a.result != b.result or a.arity != b.arity) return false;
+        const names_a = loaded.range(a.fields);
+        const names_b = shell.range(b.fields);
+        if (names_a.len != names_b.len) return false;
+        for (names_a, names_b) |x, y| {
+            if (loaded.symbol(@enumFromInt(x)) != shell.symbol(@enumFromInt(y))) return false;
+        }
     }
     for (loaded.schemas, shell.schemas) |a, b| {
         if (loaded.symbol(a.name) != shell.symbol(b.name)) return false;

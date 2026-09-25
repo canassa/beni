@@ -2929,3 +2929,31 @@ removing that exclusion is now explicit in S2's contract and queue acceptance.
 - For a browser-first language the refusal thresholds are a product decision, not a detail: the
   first version refused ordinary UI code. Test a new limit against the code users will actually
   write (a generated `view`), not only against the synthetic extreme.
+
+## 2026-09-25 — R3: interface v3
+
+**What I did**
+
+- `checker-v2.md` §14.2 is live on v1. Type arity is `u16` (CK-38; a new `too_many_type_parameters`
+  at the 65 536th); record-alias constructor rows carry their field names, so an imported alias
+  constructor builds a record in expressions and patterns (CK-39, and R1's refusal is gone); each
+  exported nominal type publishes `payload_params` and a derived `eq`/`compare` row with a status
+  vocabulary settled in the spec first; `Schemes.Writer` uses epoch marks (CK-41, ratio 3.69 →
+  1.50). Interface bytes v3 and digest v2; an old cache is rejected.
+- The cross-module wide-evidence path (A.87) is exercised for the first time: a 4 097-parameter
+  type compared across modules threw on 3487c12 and now works cold, warm, `--release` and after
+  edits.
+- CK-41 is the first timing scenario to turn green. My decision: fixed timing scenarios live in a
+  new `test-perf` step on the ReleaseFast compiler, which I run with `test-pending-perf` before
+  every commit, not in the Debug gates.
+- The review caught a missing `payload_params` bit for a parameter reached through a schema type,
+  the unsafe direction for D10 and already written into the cached record; fixed with a red test.
+  CK-89 (derived rows only exist for exported types, yet importers compare private types reached
+  through `pub` schemes) → R8a, spec amendment first.
+- Gates green; `test-pending` 67 + `test-pending-perf` 7 RED, 0 GREEN; `test-perf` 1 GREEN.
+  Check phase −0.6 %.
+
+**What I learned**
+
+- Data published for a future reader is still published: a wrong bit nothing reads yet sits in
+  every cache entry. Review it as if the reader already existed.

@@ -7,10 +7,13 @@
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!
-//! And two that are NOT gates, because their fixtures are red by design:
+//! And three that are NOT gates — the first two because their fixtures are red
+//! by design, the third because a timing claim is not a gate (rule 4):
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
 //!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
 //!                                 (plans/checker-rewrite.md §2)
+//!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
+//!                                 beni (promoted from test-pending-perf; §2.5)
 const std = @import("std");
 /// The parts the corpus walker is split into (one process each).
 const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
@@ -221,6 +224,17 @@ pub fn build(b: *std.Build) void {
     const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });
     perf_run.step.dependOn(&perf_install.step);
     perf_step.dependOn(&perf_run.step);
+
+    // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`):
+    // promoted out of `test-pending-perf` when a slice turns one green, and
+    // run on the same ReleaseFast compiler by the same ratio method — the
+    // manager's decision of 2026-09-25 (`plans/checker-rewrite.md` §2.5),
+    // when CK-41 was the first. NOT a gate (rule 4 names three); the manager
+    // runs it beside `test-pending-perf` before every commit.
+    const fixed_perf_step = b.step("test-perf", "Time the fixed performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
+    const fixed_perf_run = bb.run(bb.artifact("tests/blackbox/perf_test.zig"), .{ .root = "tests/corpus", .exe = perf_bin_dir ++ "/beni" });
+    fixed_perf_run.step.dependOn(&perf_install.step);
+    fixed_perf_step.dependOn(&fixed_perf_run.step);
 
     // ---- Bench. ----
     const bench_exe = b.addExecutable(.{

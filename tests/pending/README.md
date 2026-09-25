@@ -11,13 +11,18 @@ zig build test-pending        # NOT a gate: the fixtures here and the non-timing
                               # Debug binary; passes when every one is red for its recorded reason
 zig build test-pending-perf   # NOT a gate: the timing scenarios, on a ReleaseFast beni
                               # (zig-out/perf/bin/beni); same rules
+zig build test-perf           # NOT a gate: the timing scenarios that were FIXED and promoted
+                              # (tests/blackbox/perf_test.zig), same compiler, same method;
+                              # a red one fails the step
 ```
 
 `test-pending` runs at every commit. `test-pending-perf` (about 22 s, plus about 95 s when `src/`
 changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
 scenario covers — R3 (CK-41), R6a (CK-42, CK-80, CK-03), R8a (CK-40, CK-75), R7 (`NEST-UNDER`),
 any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on
-([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1).
+([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1). Wherever `test-pending-perf` runs,
+`test-perf` runs beside it (the manager's decision of 2026-09-25): a fixed timing scenario that
+turns red again is a regression, not a pending finding.
 
 ## Layout
 
@@ -29,7 +34,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
 | `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line |
 | `v2-green.txt` | corpus fixtures a landed slice made green under v2 (R4's `test-v2` ratchet) |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`), a generated width or depth (CK-82; CK-83 was promoted by R2c) and R7's `PERM` and `NEST-OVER` (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`; CK-41 was promoted into `perf_test.zig` by R3), a generated width or depth (CK-82; CK-83 was promoted by R2c) and R7's `PERM` and `NEST-OVER` (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
 
 ## A fixture
 
@@ -64,8 +69,9 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
   `.codes`, a `.codes` that does not parse or names an unknown code, a red fixture with no `RED`
   line for the checker under test, or a duplicate line in `RED` or `CLAIMED`;
 - **(b)** a fixture GREEN under the default checker: promote it now (`git mv` into
-  `tests/corpus/`, `.codes` → blessed `.diag`; a scenario moves verbatim into `abuse_test.zig`) and
-  delete its `RED` line;
+  `tests/corpus/`, `.codes` → blessed `.diag`; a TIMING scenario moves verbatim into
+  `perf_test.zig`, run by `zig build test-perf` on the same ReleaseFast compiler, and any other
+  scenario into `abuse_test.zig`) and delete its `RED` line;
 - **(c)** a `CLAIMED` fixture that is RED under `v2`;
 - **(d)** a RED fixture whose signature differs from its `RED` line — under **every** checker,
   so a fixture red under `v2` needs a `v2` line too — or a fixture GREEN under a non-default
@@ -110,8 +116,8 @@ means.
 Measured on the ReleaseFast compiler, CPU time, each point the best of 3, `time(2n) / time(n) ≤
 2.5` (CK-42: the same on the extra cost over a control). Sizes were recalibrated for ReleaseFast
 on 2026-09-25: each is the smallest at which `050cd2d` is RED with a clear margin on three
-consecutive runs and, where a reference fix exists (CK-40, CK-41), `050cd2d` with the fix reads
-GREEN through the same harness. The numbers are in each scenario's comment and in
+consecutive runs and, where a reference fix exists (CK-40, and CK-41 before R3 fixed and
+promoted it), `050cd2d` with the fix reads GREEN through the same harness. The numbers are in each scenario's comment and in
 `checker-rewrite.md` §2.5. Resize a scenario only with both measurements in hand.
 
 ## Notes on particular fixtures

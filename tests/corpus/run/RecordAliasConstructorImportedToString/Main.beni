@@ -1,0 +1,16 @@
+-- run: an IMPORTED record alias's constructor builds the RECORD (backend.md
+-- §4's record-alias row, D12), with the same keys as its local twin: interface
+-- v3 carries the alias's field names (checker-v2.md §14.2, CK-39), so
+-- `Debug.toString (P 1 "a")` prints the record. Until R3 this was
+-- `build/bad/RecordAliasConstructorImported`: refused at emit with
+-- `not_implemented` at `P`, because interface v2 had no field names and writing
+-- 7427828's tagged object would have given one type two shapes at run time.
+-- Oracle twin: the local alias (`run/RecordAliasConstructor.beni`) prints the
+-- record the same way.
+import Node exposing (Program)
+import Pt exposing (P)
+
+
+main : Program
+main =
+    Node.printLines [ Debug.toString (P 1 "a") ]

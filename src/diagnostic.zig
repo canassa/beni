@@ -263,6 +263,12 @@ pub const Code = enum {
     /// silent `err` site or part — `undefined`, or a structural
     /// `Basics.eq` that ignored the method.
     method_needs_annotation,
+    /// Appended on 2026-09-25 (slice R3, `checker-v2.md` §14.2, CK-38): a
+    /// `type`, `type alias`, `foreign type` or `schema` of more than 65 535 parameters.
+    /// A type's arity is a `u16` in the interface record, and a saturated
+    /// arity would import the type at the wrong width — the defect CK-38
+    /// was at 255, and the reason this is an error and not a clamp.
+    too_many_type_parameters,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -388,6 +394,7 @@ pub fn title(code: Code) []const u8 {
         .duplicate_schema_modifier => "DUPLICATE SCHEMA MODIFIER",
         .schema_conversion_mismatch => "SCHEMA CONVERSION MISMATCH",
         .method_needs_annotation => "METHOD NEEDS AN ANNOTATION",
+        .too_many_type_parameters => "TOO MANY TYPE PARAMETERS",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
     };

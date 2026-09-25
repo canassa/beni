@@ -14,7 +14,9 @@
 //!
 //! and fails the step only under the walker's rules:
 //!   (b) GREEN under the default checker: it is fixed on the gated checker,
-//!       so it moves VERBATIM into `abuse_test.zig` now;
+//!       so it moves VERBATIM now — a timing scenario into `perf_test.zig`
+//!       (`zig build test-perf`, the manager's decision of 2026-09-25, CK-41
+//!       the first), any other into `abuse_test.zig`;
 //!   (c) listed as `scenario/CK-NN` in `tests/pending/CLAIMED` and RED under v2;
 //!   (d) RED with another signature than `tests/pending/RED` records
 //!       (`scenario/CK-NN v1 <signature>`), or with no record at all.
@@ -36,7 +38,7 @@
 //! is killed.
 //!
 //! **Two steps** (2026-09-25). The scenarios whose claim is about TIME
-//! (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80, NEST-UNDER) run in `zig build
+//! (CK-03, CK-40, CK-42, CK-75, CK-80, CK-88, NEST-UNDER) run in `zig build
 //! test-pending-perf`, on a ReleaseFast compiler (`BENI_EXE`), because the
 //! budgets they guard (`fast-compiler.md` §2) are ReleaseFast budgets; the
 //! rest run in `zig build test-pending`, on the Debug binary the gates run.
@@ -80,7 +82,6 @@ const pending_root = "tests/pending";
 const scenarios = [_]struct { name: []const u8, step: Step }{
     .{ .name = "scenario/CK-03", .step = .perf },
     .{ .name = "scenario/CK-40", .step = .perf },
-    .{ .name = "scenario/CK-41", .step = .perf },
     .{ .name = "scenario/CK-42", .step = .perf },
     .{ .name = "scenario/CK-75", .step = .perf },
     .{ .name = "scenario/CK-80", .step = .perf },
@@ -161,25 +162,6 @@ test "CK-40: schema property settling is linear in the number of schemas" {
     try s.w.write("S.beni", try generate(s.arena(), 300, "pub schema S{d} = Int\n\n\n", 1));
     try s.w.write("S2.beni", try generate(s.arena(), 600, "pub schema S{d} = Int\n\n\n", 1));
     const verdict = try s.ratio("S.beni", "S2.beni", 300);
-    try s.finish(verdict);
-}
-
-// CK-41: `Schemes.Writer.resetMemo` reallocates and memsets its memo to the
-// store's size whenever the store grew, and `fillCtorTerms` grows the store
-// before every constructor: O(constructors × store). ONE `pub` type with n
-// constructors isolates it — a chain of n types (the catalogue's program)
-// also carries a per-type super-linear residue that the fix leaves behind
-// (CK-75), so its ratio stays over 2.5 with the fix in. Calibration
-// (ReleaseFast, CPU): on 050cd2d 2 000 / 3 000 / 4 000 / 6 000 / 8 000
-// constructors take 115 / 234 / 390 / 820 / 1 416 ms, a ratio of 3.4 to 3.6
-// from 2 000 on; with amortised growth 2 000 / 4 000 / 8 000 / 16 000 / 32 000
-// take 9 / 13 / 18 / 30 / 54 ms, 1.4 to 1.8. n = 4 000.
-test "CK-41: interface writing is linear in the number of constructors" {
-    var s = try Scenario.init("CK-41");
-    defer s.deinit();
-    try s.w.write("C.beni", try bigType(s.arena(), 4_000));
-    try s.w.write("C2.beni", try bigType(s.arena(), 8_000));
-    const verdict = try s.ratio("C.beni", "C2.beni", 4_000);
     try s.finish(verdict);
 }
 
@@ -431,14 +413,6 @@ fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u
         }
         try out.appendSlice(arena, rest);
     }
-    return out.items;
-}
-
-/// `pub type Big = C0 Int | C1 Int | … ` with `count` constructors.
-fn bigType(arena: std.mem.Allocator, count: usize) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "pub type Big\n    = C0 Int\n");
-    for (1..count) |i| try out.print(arena, "    | C{d} Int\n", .{i});
     return out.items;
 }
 
@@ -800,7 +774,7 @@ const Scenario = struct {
         }
         const default = s.checker == null;
         if (v.green and default) {
-            std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/abuse_test.zig and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
+            std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/perf_test.zig (a timing scenario) or tests/blackbox/abuse_test.zig (any other) and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
             return error.PendingScenarioIsGreen;
         }
         if (!v.green and s.checker != null and std.mem.eql(u8, s.checker.?, "v2")) {

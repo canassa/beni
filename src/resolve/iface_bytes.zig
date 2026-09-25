@@ -71,7 +71,7 @@ pub const magic = "BENIIFC\x00";
 /// a version bump and a cache discard, never a migration into spare bytes:
 /// the alignment padding below is padding and NOT a reserved field
 /// (`plans/m4-plan.md` D4).
-pub const format_version: u32 = 2;
+pub const format_version: u32 = 3;
 
 /// The fourteen columns, in this order and no other. `terms` is split into
 /// its three SoA columns rather than written as a row of 12 bytes, because
@@ -99,8 +99,8 @@ pub const Column = enum(u32) {
     pub fn width(c: Column) u32 {
         return switch (c) {
             .values => 12,
-            .types => 16,
-            .ctors => 20,
+            .types => 32,
+            .ctors => 28,
             .schemes => 12,
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
@@ -248,24 +248,31 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@intFromEnum(Column.types)]..];
         for (iface.types, 0..) |t, i| {
-            const row = out[i * 16 ..][0..16];
+            const row = out[i * 32 ..][0..32];
             std.mem.writeInt(u32, row[0..4], @intFromEnum(t.name), .little);
             std.mem.writeInt(u32, row[4..8], t.ctors_start, .little);
             std.mem.writeInt(u32, row[8..12], t.ctors_end, .little);
-            row[12] = t.arity;
-            row[13] = @intFromEnum(t.kind);
-            row[14] = @as(u8, @intFromBool(t.is_opaque)) | (@as(u8, @intFromBool(t.is_equatable)) << 1);
+            std.mem.writeInt(u16, row[12..14], t.arity, .little);
+            row[14] = @intFromEnum(t.kind);
+            row[15] = @as(u8, @intFromBool(t.is_opaque)) | (@as(u8, @intFromBool(t.is_equatable)) << 1);
+            std.mem.writeInt(u32, row[16..20], t.payload_params, .little);
+            std.mem.writeInt(u32, row[20..24], t.eq.context, .little);
+            std.mem.writeInt(u32, row[24..28], t.compare.context, .little);
+            row[28] = @intFromEnum(t.eq.status);
+            row[29] = @intFromEnum(t.compare.status);
         }
     }
     {
         const out = bytes[offsets_of[@intFromEnum(Column.ctors)]..];
         for (iface.ctors, 0..) |c, i| {
-            const row = out[i * 20 ..][0..20];
+            const row = out[i * 28 ..][0..28];
             std.mem.writeInt(u32, row[0..4], @intFromEnum(c.name), .little);
             std.mem.writeInt(u32, row[4..8], @intFromEnum(c.type), .little);
             std.mem.writeInt(u32, row[8..12], c.arity, .little);
             std.mem.writeInt(u32, row[12..16], c.arg_terms, .little);
             std.mem.writeInt(u32, row[16..20], c.quantified_start, .little);
+            std.mem.writeInt(u32, row[20..24], c.fields, .little);
+            row[24] = @intFromEnum(c.result);
         }
     }
     {
@@ -384,8 +391,16 @@ const Interning = union(enum) {
 
     fn symbol(i: *Interning, text: []const u8) ReadError!Symbol {
         return switch (i.*) {
-            .find => |pool| pool.find(text) orelse error.UnknownSymbol,
+            .find => |p| p.find(text) orelse error.UnknownSymbol,
             .get_or_put => |g| g.pool.getOrPut(g.gpa, text),
+        };
+    }
+
+    /// The pool the record's symbols now live in, for `verify`'s text order.
+    fn pool(i: *const Interning) *const InternPool.Global {
+        return switch (i.*) {
+            .find => |p| p,
+            .get_or_put => |g| g.pool,
         };
     }
 };
@@ -456,15 +471,27 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const types = try gpa.alloc(Interface.Type, lengths[@intFromEnum(Column.types)]);
         iface.types = types;
         for (types, 0..) |*t, i| {
-            const row = in[i * 16 ..][0..16];
+            const row = in[i * 32 ..][0..32];
+            // Flags past bit 1 and the padding are zero in every record a
+            // writer produced (`checker.md` §7: padding is not a field).
+            if (row[15] & ~@as(u8, 3) != 0 or row[30] != 0 or row[31] != 0) return error.BadRecord;
             t.* = .{
                 .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .ctors_start = std.mem.readInt(u32, row[4..8], .little),
                 .ctors_end = std.mem.readInt(u32, row[8..12], .little),
-                .arity = row[12],
-                .kind = std.enums.fromInt(Interface.TypeKind, row[13]) orelse return error.BadRecord,
-                .is_opaque = row[14] & 1 == 1,
-                .is_equatable = (row[14] >> 1) & 1 == 1,
+                .arity = std.mem.readInt(u16, row[12..14], .little),
+                .kind = std.enums.fromInt(Interface.TypeKind, row[14]) orelse return error.BadRecord,
+                .is_opaque = row[15] & 1 == 1,
+                .is_equatable = (row[15] >> 1) & 1 == 1,
+                .payload_params = std.mem.readInt(u32, row[16..20], .little),
+                .eq = .{
+                    .context = std.mem.readInt(u32, row[20..24], .little),
+                    .status = std.enums.fromInt(Interface.Derived.Status, row[28]) orelse return error.BadRecord,
+                },
+                .compare = .{
+                    .context = std.mem.readInt(u32, row[24..28], .little),
+                    .status = std.enums.fromInt(Interface.Derived.Status, row[29]) orelse return error.BadRecord,
+                },
             };
         }
     }
@@ -473,13 +500,16 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const ctors = try gpa.alloc(Interface.Ctor, lengths[@intFromEnum(Column.ctors)]);
         iface.ctors = ctors;
         for (ctors, 0..) |*c, i| {
-            const row = in[i * 20 ..][0..20];
+            const row = in[i * 28 ..][0..28];
+            if (row[25] != 0 or row[26] != 0 or row[27] != 0) return error.BadRecord;
             c.* = .{
                 .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
                 .type = @enumFromInt(std.mem.readInt(u32, row[4..8], .little)),
                 .arity = std.mem.readInt(u32, row[8..12], .little),
                 .arg_terms = std.mem.readInt(u32, row[12..16], .little),
                 .quantified_start = std.mem.readInt(u32, row[16..20], .little),
+                .fields = std.mem.readInt(u32, row[20..24], .little),
+                .result = std.enums.fromInt(Interface.CtorResult, row[24]) orelse return error.BadRecord,
             };
         }
     }
@@ -584,7 +614,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
 
-    if (!verify(&iface)) return error.BadRecord;
+    if (!verify(&iface, interning.pool())) return error.BadRecord;
     return iface;
 }
 
@@ -598,7 +628,16 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
 ///
 ///   * `values[i].name` is a symbol slot; `.scheme` is `none` or a scheme.
 ///   * `types[i].name` is a symbol slot; `ctors_start <= ctors_end <=
-///     ctors.len`.
+///     ctors.len`; `.payload_params` is `no_terms` or a range of exactly
+///     ⌈arity / 32⌉ words with no bit past the last parameter; each derived
+///     row is `present` with an even range of `(param, symbol slot)` pairs,
+///     parameters below the arity, strictly increasing by `(param, method
+///     text)` — so no pair twice — or absent with `no_terms` (interface v3,
+///     `checker-v2.md` §14.2). The text order is why `verify` takes the
+///     interner the record's symbols live in.
+///   * `ctors[i].result` is `record_alias` exactly when its type row is an
+///     alias; a `nominal` one has `fields == no_terms`, a `record_alias` one
+///     a range of one symbol slot per argument.
 ///   * `ctors[i].name` is a symbol slot; `.type` is a type slot;
 ///     `.arg_terms` is `no_terms` or an `extra` range whose length word and
 ///     words all fit, and each word is `none` or a term; `.quantified_start`
@@ -618,7 +657,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
 ///     `Schemes.Reader` already bounds against the instantiation's own
 ///     variables.
 ///   * `type_refs[i].module` and `.name` are symbol slots.
-pub fn verify(iface: *const Interface) bool {
+pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool {
     const symbols = iface.symbols.len;
     const terms = iface.terms.len;
 
@@ -629,11 +668,53 @@ pub fn verify(iface: *const Interface) bool {
     for (iface.types) |t| {
         if (@intFromEnum(t.name) >= symbols) return false;
         if (t.ctors_start > t.ctors_end or t.ctors_end > iface.ctors.len) return false;
+        if (t.payload_params != Interface.no_terms) {
+            const bits = rangeOf(iface, t.payload_params) orelse return false;
+            if (bits.len != (@as(usize, t.arity) + 31) / 32) return false;
+            // No bit past the last parameter.
+            if (t.arity % 32 != 0 and bits[bits.len - 1] >> @intCast(t.arity % 32) != 0) return false;
+        }
+        for ([_]Interface.Derived{ t.eq, t.compare }) |d| {
+            if (d.status != .present) {
+                if (d.context != Interface.no_terms) return false;
+                continue;
+            }
+            const words = rangeOf(iface, d.context) orelse return false;
+            if (words.len % 2 != 0) return false;
+            var i: usize = 0;
+            while (i < words.len) : (i += 2) {
+                // Every parameter one the type has, every method a slot.
+                if (words[i] >= t.arity or words[i + 1] >= symbols) return false;
+                // Strictly sorted by `(param, method text)` (§14.2): a
+                // pair out of order, or the same pair twice, is refused.
+                if (i == 0) continue;
+                if (words[i] < words[i - 2]) return false;
+                if (words[i] == words[i - 2]) {
+                    const this = interner.slice(iface.symbols[words[i + 1]]);
+                    const before = interner.slice(iface.symbols[words[i - 1]]);
+                    if (std.mem.order(u8, before, this) != .lt) return false;
+                }
+            }
+        }
     }
     for (iface.ctors) |c| {
         if (@intFromEnum(c.name) >= symbols) return false;
         if (@intFromEnum(c.type) >= iface.types.len) return false;
         if (c.quantified_start > iface.extra.len) return false;
+        // A record-alias constructor is exactly the constructor of an alias
+        // row, and only an alias row's constructor is one.
+        if ((c.result == .record_alias) != (iface.types[@intFromEnum(c.type)].kind == .alias)) return false;
+        switch (c.result) {
+            .nominal => if (c.fields != Interface.no_terms) return false,
+            .record_alias => {
+                // One name per argument: argument `i` is field `i`.
+                const names = rangeOf(iface, c.fields) orelse return false;
+                if (names.len != c.arity) return false;
+                for (names) |name| {
+                    if (name >= symbols) return false;
+                }
+            },
+        }
         if (c.arg_terms != Interface.no_terms) {
             const words = rangeOf(iface, c.arg_terms) orelse return false;
             for (words) |word| {
@@ -849,6 +930,10 @@ test "every record of a project round-trips, with schemes, ctors and where claus
         \\
         \\pub type alias Pair a =
         \\    ( a, a )
+        \\
+        \\
+        \\pub type alias Point =
+        \\    { y : Int, x : Int }
         \\
         \\
         \\pub twice : a -> a
@@ -1082,6 +1167,116 @@ test "a wrong magic, an unknown version and a short file are all BadRecord" {
     try testing.expectError(error.BadRecord, read(testing.allocator, copy, &global));
 }
 
+test "interface v3's rows round-trip, and verify refuses each one that does not describe itself" {
+    // `checker-v2.md` §14.2: a `u16` arity, a record-alias constructor's
+    // field names, the payload bitset and a derived context. The good record
+    // first, then one mutation per rule `verify` states for them.
+    var global = try InternPool.Global.init(testing.allocator);
+    defer global.deinit(testing.allocator);
+    const name = try global.getOrPut(testing.allocator, "P");
+    const x = try global.getOrPut(testing.allocator, "x");
+    const eq = try global.getOrPut(testing.allocator, "eq");
+    const compare = try global.getOrPut(testing.allocator, "compare");
+    // extra: [0] fields range (x, x); [3] bitset, 300 parameters = 10 words;
+    // [14] context, (299, compare) then (299, eq) — `compare` sorts first.
+    var extra: [19]u32 = @splat(0);
+    extra[0] = 2;
+    extra[1] = 1;
+    extra[2] = 1;
+    extra[3] = 10;
+    extra[4 + 9] = @as(u32, 1) << 11; // parameter 299 = word 9, bit 11
+    extra[14] = 4;
+    extra[15] = 299;
+    extra[16] = 3;
+    extra[17] = 299;
+    extra[18] = 2;
+    // Type 0 is a nominal type of 300 parameters; type 1 the alias `P`,
+    // whose one constructor is its record's.
+    const good_types = [_]Interface.Type{ .{
+        .name = @enumFromInt(0),
+        .arity = 300,
+        .kind = .adt,
+        .is_opaque = false,
+        .is_equatable = false,
+        .ctors_start = 0,
+        .ctors_end = 0,
+        .payload_params = 3,
+        .eq = .{ .status = .present, .context = 14 },
+        .compare = .{ .status = .function },
+    }, .{
+        .name = @enumFromInt(0),
+        .arity = 0,
+        .kind = .alias,
+        .is_opaque = false,
+        .is_equatable = false,
+        .ctors_start = 0,
+        .ctors_end = 1,
+        .eq = .{ .status = .alias },
+        .compare = .{ .status = .alias },
+    } };
+    const good_ctors = [_]Interface.Ctor{.{ .name = @enumFromInt(0), .type = @enumFromInt(1), .arity = 2, .result = .record_alias, .fields = 0 }};
+    const record = struct {
+        fn of(types: []const Interface.Type, ctors: []const Interface.Ctor, words: []const u32, symbols: []const Symbol) Interface {
+            return .{
+                .values = &.{},
+                .types = types,
+                .ctors = ctors,
+                .schemas = &.{},
+                .schema_members = &.{},
+                .schema_ctors = &.{},
+                .schemes = &.{},
+                .terms = .empty,
+                .extra = words,
+                .type_refs = &.{},
+                .symbols = symbols,
+            };
+        }
+    }.of;
+    const symbols = [_]Symbol{ name, x, eq, compare };
+    const good = record(&good_types, &good_ctors, &extra, &symbols);
+    try testing.expect(verify(&good, &global));
+    try expectRoundTrip(&good, &global);
+
+    // A bit past the last parameter.
+    var bad_bits = extra;
+    bad_bits[4 + 9] |= @as(u32, 1) << 12;
+    try testing.expect(!verify(&record(&good_types, &good_ctors, &bad_bits, &symbols), &global));
+    // A bitset one word short.
+    var short_bits = good_types;
+    short_bits[0].arity = 330;
+    try testing.expect(!verify(&record(&short_bits, &good_ctors, &extra, &symbols), &global));
+    // A context naming a parameter the type does not have.
+    var narrow = good_types;
+    narrow[0].arity = 299;
+    narrow[0].payload_params = Interface.no_terms;
+    try testing.expect(!verify(&record(&narrow, &good_ctors, &extra, &symbols), &global));
+    // A context on an absent row.
+    var absent = good_types;
+    absent[0].compare = .{ .status = .function, .context = 14 };
+    try testing.expect(!verify(&record(&absent, &good_ctors, &extra, &symbols), &global));
+    // A record-alias row whose names do not number its arguments, and a
+    // nominal row with names.
+    var three = good_ctors;
+    three[0].arity = 3;
+    try testing.expect(!verify(&record(&good_types, &three, &extra, &symbols), &global));
+    var nominal = good_ctors;
+    nominal[0].result = .nominal;
+    nominal[0].fields = Interface.no_terms;
+    try testing.expect(!verify(&record(&good_types, &nominal, &extra, &symbols), &global));
+    // A record-alias constructor of a nominal type.
+    var on_adt = good_ctors;
+    on_adt[0].type = @enumFromInt(0);
+    try testing.expect(!verify(&record(&good_types, &on_adt, &extra, &symbols), &global));
+    // One parameter's methods out of text order, and the same pair twice.
+    var swapped = extra;
+    swapped[16] = 2;
+    swapped[18] = 3;
+    try testing.expect(!verify(&record(&good_types, &good_ctors, &swapped, &symbols), &global));
+    var twice = extra;
+    twice[16] = 2;
+    try testing.expect(!verify(&record(&good_types, &good_ctors, &twice, &symbols), &global));
+}
+
 test "a column offset past the end, and a strings record that overruns the blob" {
     var global = try InternPool.Global.init(testing.allocator);
     defer global.deinit(testing.allocator);
@@ -1223,7 +1418,7 @@ test "fuzz: a mutated record never reads back as an unverified one" {
             defer back.deinit(testing.allocator);
             // A record that loaded must describe itself, and must survive
             // being written again.
-            try testing.expect(verify(&back));
+            try testing.expect(verify(&back, interner));
             const again = try write(testing.allocator, &back, interner);
             testing.allocator.free(again);
             ok.* += 1;

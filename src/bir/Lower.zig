@@ -1272,24 +1272,59 @@ fn lowerSchemaModifiers(l: *Lower, modifiers: []const NodeIndex) Allocator.Error
     return l.addRange(l.scratchSince(mark));
 }
 
-/// Type parameters of a `type`, `type alias` or `foreign type`: recorded
+/// Type parameters of a `type`, `type alias`, `foreign type` or `schema`: recorded
 /// on the declaration, checked for duplicates (§7), and made the scope of
 /// the body's type variables.
-fn lowerTypeParams(l: *Lower, params: []const TokenIndex) Allocator.Error!void {
+///
+/// **More than `Interface.max_type_params` is refused** at the first one
+/// past it (`too_many_type_parameters`, `checker-v2.md` §14.2): an arity is
+/// a `u16` in the interface record. The declaration keeps its first 65 535,
+/// so nothing downstream sees a width it cannot record; a body naming a
+/// dropped one is then an `unbound_type_variable` too, after the error that
+/// explains it.
+///
+/// Duplicates are found by sorting a copy, not by comparing every pair: the
+/// pairwise scan was O(n²) in the parameter count, 35 s of a Debug build for
+/// 65 536 of them. Each duplicate is still reported against the FIRST
+/// earlier occurrence of its name, in parameter order.
+fn lowerTypeParams(l: *Lower, all_params: []const TokenIndex) Allocator.Error!void {
+    const limit = Bir.max_type_params;
+    if (all_params.len > limit) try l.reportToken(.too_many_type_parameters, all_params[limit]);
+    const params = all_params[0..@min(all_params.len, limit)];
     const d = &l.decls.items[l.cur_decl];
     d.type_params_start = @intCast(l.symbols.items.len);
-    for (params, 0..) |p, i| {
-        _ = try l.addSymbol(l.tokenSymbol(p));
-        for (params[0..i]) |earlier| {
-            if (l.tokenSymbol(earlier) == l.tokenSymbol(p)) {
-                try l.reportPair(.duplicate_type_parameter, p, earlier);
-                break;
-            }
-        }
-    }
+    for (params) |p| _ = try l.addSymbol(l.tokenSymbol(p));
     d.type_params_end = @intCast(l.symbols.items.len);
     d.params = @intCast(params.len);
     l.type_params = params;
+    if (params.len < 2) return;
+
+    // `order` sorted by (symbol, position): each run of one name starts at
+    // its first occurrence.
+    const order = try l.scratch_allocator.alloc(u32, params.len);
+    defer l.scratch_allocator.free(order);
+    for (order, 0..) |*o, i| o.* = @intCast(i);
+    const Cx = struct {
+        l: *const Lower,
+        params: []const TokenIndex,
+        fn lessThan(cx: @This(), a: u32, b: u32) bool {
+            const sa = @intFromEnum(cx.l.tokenSymbol(cx.params[a]));
+            const sb = @intFromEnum(cx.l.tokenSymbol(cx.params[b]));
+            return sa < sb or (sa == sb and a < b);
+        }
+    };
+    std.mem.sort(u32, order, Cx{ .l = l, .params = params }, Cx.lessThan);
+    // `first[i]` is the first occurrence of parameter `i`'s name.
+    const first = try l.scratch_allocator.alloc(u32, params.len);
+    defer l.scratch_allocator.free(first);
+    var run_start: usize = 0;
+    for (order, 0..) |at, k| {
+        if (k != 0 and l.tokenSymbol(params[at]) != l.tokenSymbol(params[order[run_start]])) run_start = k;
+        first[at] = order[run_start];
+    }
+    for (params, first, 0..) |p, earlier, i| {
+        if (earlier != i) try l.reportPair(.duplicate_type_parameter, p, params[earlier]);
+    }
 }
 
 fn lowerDefinition(l: *Lower, node: NodeIndex, annotation: Node.OptionalIndex) Allocator.Error!void {
@@ -4152,6 +4187,21 @@ test "duplicate declarations, types, constructors, type parameters and fields" {
         .{ .code = .duplicate_constructor, .line = 12, .col = 7 },
         .{ .code = .duplicate_type, .line = 15, .col = 12 },
         .{ .code = .duplicate_constructor, .line = 24, .col = 7 },
+    });
+}
+
+test "every repeated type parameter is reported once, in parameter order" {
+    // `lowerTypeParams` sorts a copy rather than comparing every pair (R3):
+    // the reports must still come out one per repeat, left to right, with
+    // interleaved names each against their own first occurrence.
+    try expectErrors(
+        \\type U b a b a b
+        \\    = U a b
+        \\
+    , .{}, &.{
+        .{ .code = .duplicate_type_parameter, .line = 1, .col = 12 },
+        .{ .code = .duplicate_type_parameter, .line = 1, .col = 14 },
+        .{ .code = .duplicate_type_parameter, .line = 1, .col = 16 },
     });
 }
 

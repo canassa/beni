@@ -1859,6 +1859,51 @@ It serves value schemes, schema member types, schema constructor types and const
 R3 lands on the old checker, which writes contexts as "one entry per type parameter, method = the
 derived method". That is exactly its ABI, so the format is shared by both checkers.
 
+*As built by R3 (2026-09-25).* The points the table left open:
+
+- **Where the rows live.** The per-type facts widen the `types` row (16 → 32 bytes: `arity: u16`,
+  then `payload_params`, `eq` and `compare` as `extra` ranges and two status bytes) rather than
+  adding a column: one row per exported type, sorted with it. They exist for every exported type;
+  an alias's say `alias` and have no bitset. The constructor row grows 20 → 28 bytes (`fields`,
+  `result`). `checker.md` §7's serialized-form table has the layout.
+- **"Absent: reason"** is a status byte, one vocabulary (settled by R3's review, N1), decided in
+  the order v1's eager pass decides (`Solve.deriveOneParts`), the first that applies:
+  - `unchecked` — the module was never checked; `alias` — a type alias, not nominal;
+  - `present` — the module emits the derived function;
+  - `primitive` — §3.2's table answers the method with a JavaScript operator (`Int`, `Float`,
+    `Char`, `String`, `Bool` both methods, `Order`'s `eq`; A.18). `Order`'s `compare` and
+    `Never`'s two are derived, so `present`;
+  - `own_method` — the type's module declares a `pub` value of the method's name: the type's own
+    method or, under the module rule (§3.3 step 1), one for another type of the module;
+  - `foreign` — a `foreign type` of ANY arity that neither of those answers: no body to derive over
+    (A.55; `Schema.Conversion`, of two parameters, is one);
+  - `function` — a function is reachable in a payload; `unanswerable` — a payload cannot answer the
+    method for any other reason.
+
+  v1 writes `present` exactly when its eager pass (A.23) put the row in
+  its dispatch table, with that row's evidence count as the context, so the record states the ABI
+  every `ext_derived` is already written against. Nothing in v1 READS the rows yet; R8a's importer
+  does, and D4's inferred contexts change the entries, not the format.
+- **`payload_params`** is computed from every constructor of the declaration through the
+  annotation reader, so a parameter an ALIAS's expansion drops (`type alias Ph a = Int`) is not in
+  a payload, and a parameter under a nominal application's argument is. A declaration too deep to
+  read (already reported) sets every bit — "may hold a value" is the safe side of the marker walk.
+- **The 65 535 error** is a new code, `too_many_type_parameters`, reported by lowering at the
+  65 536th parameter (`language.md` §10). The declaration keeps its first 65 535, so no `u16` below
+  it ever saturates. Lowering's duplicate-parameter check was pairwise, 35 s of a Debug build at
+  that width; it sorts now.
+- **`Schemes.Writer` on epoch marks** (CK-41): a slot of the memo is live while its stamp is the
+  current epoch, a new scheme is one increment, and the arrays grow at least ×2. The CK-41 scenario
+  is the first promoted into `test-perf` (`plans/checker-rewrite.md` §2.5).
+- **A gap this table does not close — CK-89.** The rows exist per EXPORTED type, but `==` in an
+  importer can reach a PRIVATE type through a `pub` scheme (`pub make : a -> Hidden a`, then
+  `A.make 1 == A.make 1` in another module — v1 answers it with `ext_derived` to `A`'s own derived
+  function). "Importers resolve `ext_derived` against the published context" has nothing to
+  resolve against there. R8a must publish a context for every type a `type_refs` row of the record
+  names (the set the dependency digest already uses), or decide otherwise, before v2 reads the
+  rows. *The manager assigned it to R8a (2026-09-25): this section is amended first, so the rows
+  cover every nominal type reachable from a published scheme, before R8a reads them.*
+
 ### 14.3 Cache and table versions
 
 - `dispatch_bytes` 1 → 2 (R2a, the tree record with `DeclInfo.value_arity`), then 2 → 3 (R2b,

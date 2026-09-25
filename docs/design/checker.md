@@ -664,11 +664,14 @@ it and map it from disk unchanged (`fast-compiler.md` §8.1, §8.3):
 ```
 Interface
   values:   [] { name: SymbolIndex, scheme: SchemeIndex, is_foreign: bool }   sorted by name
-  types:    [] { name: SymbolIndex, arity: u8, kind: adt|alias|foreign, opaque: bool,
+  types:    [] { name: SymbolIndex, arity: u16, kind: adt|alias|foreign, opaque: bool,
                  ctors: range into ctors, equatable: bool,
+                 payload_params: bitset range, eq: derived, compare: derived,
                  alias_body: TermIndex? }                                     sorted by name
   ctors:    [] { name: SymbolIndex, type: index into types, arity: u32,
-                 arg_terms: range, quantified_start: u32 }   grouped by type, declaration order
+                 arg_terms: range, quantified_start: u32,
+                 result: nominal|record_alias, fields: range of SymbolIndex }
+                                                             grouped by type, declaration order
   schemes:  [] { quantified: range of (kind, equatable, name, constraints), body: TermIndex }
   terms:    MultiArrayList { tag, lhs, rhs }   the flat type term language: var(i), fn(range, result),
                                                app(TypeRefIndex, range),
@@ -807,8 +810,8 @@ what §8.3 wants to map. `len` is the element count except for `strings`, where 
 | Column | Element | Bytes |
 |---|---|---|
 | `values` | `name: u32`, `scheme: u32`, `flags: u8` (bit 0 `is_foreign`), pad `[3]` | 12 |
-| `types` | `name: u32`, `ctors_start: u32`, `ctors_end: u32`, `arity: u8`, `kind: u8`, `flags: u8` (bit 0 opaque, bit 1 equatable), pad | 16 |
-| `ctors` | `name`, `type`, `arity`, `arg_terms`, `quantified_start`, all `u32` | 20 |
+| `types` | `name: u32`, `ctors_start: u32`, `ctors_end: u32`, `arity: u16`, `kind: u8`, `flags: u8` (bit 0 opaque, bit 1 equatable), `payload_params: u32`, `eq_context: u32`, `compare_context: u32`, `eq_status: u8`, `compare_status: u8`, pad `[2]` | 32 |
+| `ctors` | `name`, `type`, `arity`, `arg_terms`, `quantified_start`, `fields`, all `u32`; `result: u8`, pad `[3]` | 28 |
 | `schemes` | `quantified_start: u32`, `quantified_count: u32`, `body: u32` | 12 |
 | `term_tags` / `term_lhs` / `term_rhs` | `u8` / `u32` / `u32` | 1 / 4 / 4 |
 | `extra`, `symbols` | `u32` | 4 |
@@ -818,6 +821,23 @@ what §8.3 wants to map. `len` is the element count except for `strings`, where 
 Padding exists because alignment demands it, is written as zeros and is hashed like everything else.
 It is **not** a reserved field: an interface change is a `format_version` bump and a cache discard,
 never a migration into spare bytes (`plans/m4-plan.md` D4).
+
+**`format_version` 3 is interface v3** (slice R3, 2026-09-25; `checker-v2.md` §14.2 is the
+contract and says why each change exists). The type row's `arity` is a `u16` (CK-38; lowering
+refuses a 65 536th parameter with `too_many_type_parameters`, so nothing saturates). A constructor
+row says what it builds: `result` 0 `nominal`, 1 `record_alias`, and a `record_alias` row's `fields`
+is an `extra` range of one `SymbolIndex` per argument, the alias's field names in declaration order
+(`no_terms` for a nominal row) — lexical, so the resolve-time skeleton has them and a cache install
+compares them against the shell. The type row's three new words are `extra` ranges, `no_terms`
+where there is nothing to say: `payload_params` is ⌈arity / 32⌉ words of bits, parameter `i` at bit
+`i % 32` of word `i / 32` (every bit for a `foreign type`; `no_terms` for an alias); each derived
+row's status byte is 0 `unchecked`, 1 `present`, 2 `primitive`, 3 `own_method`, 4 `foreign`,
+5 `function`, 6 `unanswerable`, 7 `alias` (their meanings are §14.2's *As built*), and only a `present` one has a context range, `(param, method SymbolIndex)`
+pairs sorted by `(param, method text)`. Both are filled when the module is checked, from every
+constructor of the declaration (an opaque type's hidden ones included); a record that was never
+checked says `unchecked`. `iface_bytes.verify` refuses a bitset of the wrong length or with a bit
+past the arity, a context entry naming a parameter the type does not have, a context on an absent
+row, and a `record_alias` row whose names do not number its arguments.
 
 **Every scalar is little-endian by definition of the format**, converted on write and on read, so the
 bytes and therefore the hash are a function of the source on any host. What is host-specific is the
@@ -971,7 +991,9 @@ READ.** The two are different sets, and the gap between them is where a firewall
 alone answers exit 0 to a program the compiler rejects. Two such gaps are demonstrated rather than
 argued (`plans/m4-3.md` §6): a private type whose payload becomes a function stops being `equatable`
 without moving one byte of its module's record, and a `pub type alias` whose body no scheme of its
-own module mentions has its expansion nowhere in the record at all.
+own module mentions has its expansion nowhere in the record at all. *(Since interface v3, R3: a
+RECORD alias is not that case — it declares a constructor, whose argument types were already in the
+record and whose field names now are. `digest_test.zig`'s row 13 therefore uses a tuple alias.)*
 
 The digest is a 128-bit value over this byte string, in this order, every integer little-endian,
 hashed with the same `std.hash.SipHash128(1, 3)` and the same all-zero key the record and the key
@@ -983,7 +1005,7 @@ module    package: u8   name_len: u32, name          the DOTTED module name
 types     type_count: u32, then per type NAMED BY THIS MODULE'S RECORD,
           sorted by name TEXT:
             name_len: u32, name
-            arity: u8
+            arity: u16               (a `u8` until `digest_version` 2, R3: CK-38)
             kind: u8                 adt | alias | foreign
             flags: u8                bit 0 opaque, bit 1 equatable,
                                      bit 2 comparable, bit 3 has_function

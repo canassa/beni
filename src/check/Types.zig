@@ -78,7 +78,7 @@ pub const Entry = struct {
     module_name: Symbol,
     /// Number of type parameters. Types are always fully applied
     /// (checker.md Appendix A), so this is also every use's argument count.
-    arity: u8,
+    arity: u16,
     kind: Interface.TypeKind,
     /// May be compared with `==` when every argument can (see the header).
     equatable: bool,
@@ -617,7 +617,7 @@ pub fn build(
                         .name = endpoint_name,
                         .package = package,
                         .module_name = module_name,
-                        .arity = std.math.cast(u8, d.params) orelse std.math.maxInt(u8),
+                        .arity = std.math.cast(u16, d.params) orelse std.math.maxInt(u16),
                         .kind = if (tagged) .adt else .alias,
                         .equatable = true,
                         .answers_eq = true,
@@ -645,7 +645,7 @@ pub fn build(
                 .name = bir.symbol(d.name),
                 .package = package,
                 .module_name = module_name,
-                .arity = std.math.cast(u8, d.params) orelse std.math.maxInt(u8),
+                .arity = std.math.cast(u16, d.params) orelse std.math.maxInt(u16),
                 .kind = switch (d.kind) {
                     .type => .adt,
                     .type_alias => .alias,

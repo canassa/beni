@@ -241,6 +241,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\Each type parameter is declared once. Remove the duplicate.
         , .{text}),
+        .too_many_type_parameters => try w.print(
+            \\This type has more than 65 535 type parameters, the most a type may declare.
+            \\`{s}` is the first one past that.
+            \\
+            \\A type's number of parameters is a 16-bit count in the interface other modules
+            \\read it through, so it cannot be recorded exactly. Group the parameters into
+            \\records or into types of their own.
+        , .{text}),
         .unbound_type_variable => try w.print(
             \\The type variable `{s}` is not a parameter of this type.
             \\

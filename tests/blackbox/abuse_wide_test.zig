@@ -362,3 +362,70 @@ test "a written operator chain runs at the widest the parser admits, and 100 000
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Type arity (CK-38, interface v3: `checker-v2.md` §14.2)
+// ---------------------------------------------------------------------------
+
+/// `pub type Wide a0 … a<n-1> = Wide a0`.
+fn wideParams(gpa: Allocator, n: usize) ![]u8 {
+    var source: std.Io.Writer.Allocating = .init(gpa);
+    errdefer source.deinit();
+    try source.writer.writeAll("pub type Wide");
+    for (0..n) |i| try source.writer.print(" a{d}", .{i});
+    try source.writer.writeAll("\n    = Wide a0\n");
+    return source.toOwnedSlice();
+}
+
+test "a type of 65 535 parameters checks, and the 65 536th is one too_many_type_parameters" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // An arity is a `u16` in interface v3 (CK-38): as a `u8` it saturated
+    // at 255 and a 256-parameter type was imported at the wrong width
+    // (`check/good/WideTypeArity/`). §14.2's "a saturating cast becomes an
+    // error at 65 535" is this: lowering refuses the 65 536th parameter,
+    // once, at that parameter, so nothing downstream can saturate. On
+    // 3487c12 the 65 536-parameter declaration spent 35 s of a Debug build in
+    // lowering's pairwise duplicate-parameter scan and then panicked the
+    // checker (`@intCast` in `deriveOneParts`); the scan is a sort now.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const widest = try wideParams(testing.allocator, 65_535);
+    defer testing.allocator.free(widest);
+    const past = try wideParams(testing.allocator, 65_536);
+    defer testing.allocator.free(past);
+    try w.write("Widest.beni", widest);
+    try w.write("Past.beni", past);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const ok = try w.run(&.{ "check", "--no-cache", "Widest.beni" });
+    const refused = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--out=past", "Past.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(ok, 0);
+    try testing.expectEqual(@as(usize, 0), ok.diagnostics.len);
+    try expectExited(refused, 1);
+    // The 65 536th parameter is `a65535`, one past the space before it.
+    const at: u32 = @intCast(std.mem.indexOf(u8, past, " a65535\n").? + 2);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .too_many_type_parameters,
+        .severity = .@"error",
+        .span = .{ .file = "Past.beni", .start = .{ .line = 1, .col = at }, .end = .{ .line = 1, .col = at + 6 } },
+        .title = "TOO MANY TYPE PARAMETERS",
+        .message = "This type has more than 65 535 type parameters, the most a type may declare.\n" ++
+            "`a65535` is the first one past that.\n\n" ++
+            "A type's number of parameters is a 16-bit count in the interface other modules\n" ++
+            "read it through, so it cannot be recorded exactly. Group the parameters into\n" ++
+            "records or into types of their own.",
+    }}, refused.diagnostics);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("past"));
+}

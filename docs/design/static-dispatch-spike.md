@@ -2071,10 +2071,14 @@ const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$
   5 000 parameters, in one module).
 - **Agreement.** The function and every caller decide by the same **count** — the row's context
   length, which is also the number of arguments each use passes — so no table, dump or interface
-  carries a flag. A cross-module nominal row (`ext_derived`) would agree with its importers by
-  construction, but that path is **unexercised**: an imported nominal of 256 or more type
-  parameters is refused by the I7 assert today (CK-38, the `u8` arity), so no import reaches 4 097
-  until R3. R2b moves the decision into `Convention` (checker-v2.md §12.5).
+  carries a flag. A cross-module nominal row (`ext_derived`) agrees with its importers by
+  construction — the importer counts from the imported type's arity, and interface v3 carries it
+  as a `u16` (CK-38). *Exercised since R3 (2026-09-25):* `cache_test.zig`'s "an imported type of
+  4 097 parameters compares across modules in the wide form…" builds `==` and `<` on an imported
+  4 097-parameter type cold, warm and partly warm, dev and `--release`, and runs it; on 3487c12 the
+  importer read a saturated arity, called the wide function positionally, exited 0 and threw
+  `TypeError` at run time (and at 256 parameters already, `run/WideTypeArityEq/`). R2b moves the
+  decision into `Convention` (checker-v2.md §12.5).
 
 ### 9.3 Tuples and unit
 

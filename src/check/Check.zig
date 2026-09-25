@@ -1842,6 +1842,7 @@ const ModuleCheck = struct {
         iface.schema_ctors = schema_ctors;
 
         try mc.fillCtorTerms(env, bir, store, prov, iface, &writer);
+        try mc.fillTypeFacts(env, bir, store, prov, iface, &writer);
         try writer.attach(iface);
         // `--roundtrip-interfaces` goes HERE and nowhere else
         // (`fast-compiler.md` §8): the record is complete and no importer
@@ -2066,6 +2067,209 @@ const ModuleCheck = struct {
         }
         gpa.free(@constCast(iface.ctors));
         iface.ctors = ctors;
+    }
+
+    /// Interface v3's two per-type facts (`checker-v2.md` §14.2), for every
+    /// exported type: which parameters a constructor payload holds (D10),
+    /// and what the derived `eq` and `compare` are (D4).
+    ///
+    /// **The derived rows are what this checker's own dispatch table says**,
+    /// read after the eager pass of A.23 has run: `present` exactly when the
+    /// module emits the function, with this checker's ABI as the context —
+    /// one entry per type parameter, each naming the method being derived
+    /// (§14.2's last paragraph). Absent otherwise, with the reason the same
+    /// facts give. So the record states the ABI a dependent's `ext_derived`
+    /// is already written against; R8a's inferred contexts replace the
+    /// entries, not the format.
+    ///
+    /// `payload_params` reads EVERY constructor of the declaration from its
+    /// Bir, an opaque type's hidden ones included — the bitset is the one
+    /// thing about them an importer may learn (S15).
+    fn fillTypeFacts(
+        mc: *ModuleCheck,
+        env: *Constrain.Env,
+        bir: *const Bir,
+        store: *TypeStore,
+        prov: *const Interface.Provenance,
+        iface: *Interface,
+        writer: *Schemes.Writer,
+    ) Error!void {
+        if (iface.types.len == 0) return;
+        const gpa = mc.gpa;
+        const out = try gpa.dupe(Interface.Type, iface.types);
+        errdefer gpa.free(out);
+        // One symbol slot per method name for the whole record, however many
+        // context entries name it.
+        var method_slot: [2]?u32 = .{ null, null };
+        // Whether this module declares a `pub` value named `eq` / `compare`:
+        // the module rule's step 1 (static-dispatch-spike.md §3.3), which is
+        // what stops v1's eager pass deriving one for ANY type of the module
+        // (`Solve.ownPubDeclNamed`).
+        var declares: [2]bool = .{ false, false };
+        for (bir.decls) |d| {
+            if (!d.kind.isValue() or !d.is_pub) continue;
+            if (bir.symbol(d.name) == InternPool.WellKnown.eq.symbol()) declares[0] = true;
+            if (bir.symbol(d.name) == InternPool.WellKnown.compare.symbol()) declares[1] = true;
+        }
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+
+        for (out, 0..) |*t, i| {
+            const decl = prov.typeDecl(i) orelse continue;
+            const id = mc.types.ofDecl(mc.module, decl);
+            if (id == .none) continue;
+            if (t.kind == .alias) {
+                t.eq = .{ .status = .alias };
+                t.compare = .{ .status = .alias };
+                continue;
+            }
+
+            try mc.payloadParams(env, bir, store, decl, t.*, &words);
+            t.payload_params = try writer.addRange(words.items);
+
+            inline for (.{ Interface.DerivedKind.eq, Interface.DerivedKind.compare }, 0..) |kind, k| {
+                const dispatch_kind: Dispatch.Derived.Kind = if (kind == .eq) .eq else .compare;
+                const method_kind: Types.MethodKind = if (kind == .eq) .eq else .compare;
+                const derived: Interface.Derived = if (env.dispatch.findDerived(dispatch_kind, .{ .nominal = id })) |row| blk: {
+                    const slot = method_slot[k] orelse slot: {
+                        const well: InternPool.WellKnown = if (kind == .eq) .eq else .compare;
+                        const s = try writer.symbolIndex(well.symbol());
+                        method_slot[k] = s;
+                        break :slot s;
+                    };
+                    const count = env.dispatch.derived.items[row].evidence_count;
+                    words.clearRetainingCapacity();
+                    try words.ensureTotalCapacity(gpa, @as(usize, count) * 2);
+                    for (0..count) |param| {
+                        words.appendAssumeCapacity(@intCast(param));
+                        words.appendAssumeCapacity(slot);
+                    }
+                    break :blk .{ .status = .present, .context = try writer.addRange(words.items) };
+                } else .{ .status = absentStatus(mc.types, id, t.kind, kind, declares[k] or mc.types.hasPublicDispatchMethod(id, method_kind)) };
+                switch (kind) {
+                    .eq => t.eq = derived,
+                    .compare => t.compare = derived,
+                }
+            }
+        }
+        gpa.free(@constCast(iface.types));
+        iface.types = out;
+    }
+
+    /// Why an exported nominal type has no derived `kind`, in the order v1's
+    /// eager pass decides (`Solve.deriveOneParts`): §3.2's table answers it
+    /// with a JavaScript operator (`primitive`); the module declares the
+    /// method (`own_method`); a `foreign type` has no body to derive over
+    /// (`foreign`); else a payload cannot answer it — through a function
+    /// (`function`) or otherwise (`unanswerable`). The vocabulary is
+    /// `checker-v2.md` §14.2's *As built*, and `Interface.Derived.Status`.
+    fn absentStatus(types: *const Types, id: Types.TypeId, kind: Interface.TypeKind, method: Interface.DerivedKind, own: bool) Interface.Derived.Status {
+        const wk = types.well_known;
+        const primitive = id == wk.int or id == wk.float or id == wk.bool or id == wk.char or
+            id == wk.string or (id == wk.order and method == .eq);
+        if (primitive) return .primitive;
+        if (own) return .own_method;
+        if (kind == .foreign) return .foreign;
+        return if (types.hasFunction(id)) .function else .unanswerable;
+    }
+
+    /// `words` becomes the `payload_params` bitset of `t`, declared by
+    /// `decl` (`Interface.Type.payload_params`): bit `i` set when parameter
+    /// `i` occurs in some constructor's argument type — through an alias
+    /// only where its EXPANSION keeps it, since an alias's argument that
+    /// the expansion drops holds no value. Every bit for a `foreign type`,
+    /// and for a declaration too deep to read (already reported) or with a
+    /// payload that reads as `err`, because "may hold a value" is the safe
+    /// side of the marker walk.
+    ///
+    /// The reader is `env.builder`, the one with the schema lookup: a bare
+    /// `Types.Builder` reads `Page.Type a` (a schema's endpoint, local or
+    /// imported) as `err`, and the parameter inside it went missing — the
+    /// unsafe direction for D10 (R3's review, S1). Its schema expansion
+    /// substitutes the arguments and never unifies them, so parameter `i`
+    /// stays its own root.
+    fn payloadParams(
+        mc: *ModuleCheck,
+        env: *Constrain.Env,
+        bir: *const Bir,
+        store: *TypeStore,
+        decl: Bir.DeclIndex,
+        t: Interface.Type,
+        words: *std.ArrayList(u32),
+    ) Error!void {
+        const gpa = mc.gpa;
+        const scratch = mc.scratch.allocator();
+        words.clearRetainingCapacity();
+        try words.appendNTimes(gpa, 0, (@as(usize, t.arity) + 31) / 32);
+        const all = struct {
+            fn set(w: []u32, arity: usize) void {
+                for (0..arity) |p| w[p / 32] |= @as(u32, 1) << @intCast(p % 32);
+            }
+        }.set;
+        if (t.kind == .foreign or t.arity == 0) {
+            all(words.items, t.arity);
+            return;
+        }
+        const owner = bir.decl(decl);
+        const params = bir.declTypeParams(owner);
+
+        std.debug.assert(env.store == store and env.bir == bir);
+        var b = env.builder(.flex, TypeStore.generalized);
+        defer b.deinit();
+        // Fresh in one run, so parameter `i` is variable `first + i` and a
+        // root found by the walk names its parameter by subtraction — no
+        // map, and no array over the whole store per type.
+        const first: u32 = @intCast(store.count());
+        for (params, 0..) |p, i| {
+            const v = try store.fresh(.{ .flex = .{ .name = p.toOptional() } }, TypeStore.generalized);
+            if (v.int() != first + i) {
+                all(words.items, t.arity);
+                return;
+            }
+            try b.bind(p, v);
+        }
+        var stack: std.ArrayList(Var) = .empty;
+        defer stack.deinit(scratch);
+        for (bir.declCtors(owner)) |c| {
+            for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index)) |arg| {
+                try stack.append(scratch, try b.read(arg));
+            }
+        }
+        if (b.too_deep) {
+            all(words.items, t.arity);
+            return;
+        }
+        const seen = store.nextMark();
+        while (stack.pop()) |raw| {
+            const root = store.find(raw);
+            if (store.mark(root) == seen) continue;
+            store.setMark(root, seen);
+            switch (store.content(root)) {
+                // A payload that could not be read may hold anything.
+                .err => {
+                    all(words.items, t.arity);
+                    return;
+                },
+                .flex, .rigid => if (root.int() >= first and root.int() - first < params.len) {
+                    const p = root.int() - first;
+                    words.items[p / 32] |= @as(u32, 1) << @intCast(p % 32);
+                },
+                .structure => |shape| switch (shape) {
+                    .unit, .empty_record => {},
+                    .func => |f| {
+                        try stack.appendSlice(scratch, store.vars(f.params));
+                        try stack.append(scratch, f.result);
+                    },
+                    .app => |a| try stack.appendSlice(scratch, store.vars(a.args)),
+                    .tuple => |r| try stack.appendSlice(scratch, store.vars(r)),
+                    .record => |r| {
+                        for (store.fields(r.fields)) |f| try stack.append(scratch, f.value);
+                        try stack.append(scratch, r.ext);
+                    },
+                },
+                .alias => |a| try stack.append(scratch, a.actual),
+            }
+        }
     }
 
     /// One `nesting_too_deep` per over-deep type, in source order.

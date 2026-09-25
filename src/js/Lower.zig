@@ -200,7 +200,6 @@ pub fn lower(
     // body has been walked. They are then spliced in front, because an ES
     // module reads top to bottom and a reader wants the imports first.
     var declarations: std.ArrayList(Node.Index) = .empty;
-    try l.refuseAliasCtors();
     try l.declarations(&declarations);
     try l.exports(&declarations);
     // §9's derived functions and §9.1's primitive comparators, one pass
@@ -282,13 +281,21 @@ const CtorRep = union(enum) {
     tagged: struct { fields: u32 },
     /// A record alias's implicit constructor (backend.md §4's row, owner
     /// decision D12): the RECORD it builds, keys sorted by name text as
-    /// every record literal's are (`recordNode`), and no tag. `decl` is this
-    /// module's alias declaration, whose body is the `type_record` that
-    /// names the fields in argument order. A pattern over it reads those
-    /// fields by name (`argName`). Only ever LOCAL: an imported alias's
-    /// field names are not in interface v2, so `refuseAliasCtors` refuses
-    /// that use rather than emit a second representation of one type.
-    record: struct { decl: u32 },
+    /// every record literal's are (`recordNode`), and no tag. A pattern over
+    /// it reads the fields by name (`argName`). Where the names come from is
+    /// `RecordRep`'s.
+    record: RecordRep,
+};
+
+/// Where a record alias's field names are read, in argument order.
+const RecordRep = union(enum) {
+    /// This module's alias declaration, whose body is the `type_record`
+    /// that names the fields.
+    local: u32,
+    /// Another module's: its interface constructor row, which carries the
+    /// names since interface v3 (`checker-v2.md` §14.2, CK-39) — the
+    /// declaring module's Bir is not this backend's to read.
+    imported: struct { module: Graph.Index, ctor: u32 },
 };
 
 const StmtList = std.ArrayList(Node.Index);
@@ -334,6 +341,12 @@ const Lowerer = struct {
     bir: *const Bir,
     module_name: Symbol,
     well: WellKnown,
+    /// The last record alias `recordNames` answered for, and its names: a
+    /// pattern reads its arguments one `argName` at a time, and computing
+    /// the names once per argument made a k-field pattern O(k²) scratch
+    /// (R3's review, N3). The slice lives in `scratch`, which outlives the
+    /// module's lowering.
+    record_names: ?struct { rep: RecordRep, names: []const Symbol } = null,
     diagnostics: std.ArrayList(Item) = .empty,
     /// Names the module has to import from another module, in first-use
     /// order so the import list is a function of the source.
@@ -1454,35 +1467,56 @@ const Lowerer = struct {
         {
             return .{ .boolean = l.bir.symbol(c.name) == InternPool.WellKnown.True.symbol() };
         }
-        if (owner.kind == .type_alias) return .{ .record = .{ .decl = c.decl.int() } };
+        if (owner.kind == .type_alias) return .{ .record = .{ .local = c.decl.int() } };
         if (max == 0) return .bare_tag;
         return .{ .tagged = .{ .fields = max } };
     }
 
-    /// The fields of a local record alias, in argument order: the body of
-    /// the declaration a `.record` representation names.
-    fn aliasFields(l: *Lowerer, decl: u32) []const Bir.Field {
-        const body = l.bir.decls[decl].annotation.unwrap() orelse return &.{};
-        if (l.bir.instTag(body) != .type_record) return &.{};
-        return l.bir.extraSlice(Bir.inlineRange(l.bir.instData(body)), Bir.Field);
+    /// The field names of a record alias's constructor, in argument order:
+    /// the body of a local declaration, or an imported constructor row's
+    /// names (`RecordRep`).
+    fn recordNames(l: *Lowerer, r: RecordRep) ![]const Symbol {
+        if (l.record_names) |last| {
+            if (std.meta.eql(last.rep, r)) return last.names;
+        }
+        const names = try l.recordNamesOf(r);
+        l.record_names = .{ .rep = r, .names = names };
+        return names;
     }
 
-    /// The canonical key order of a record whose fields are `fields`: a
+    fn recordNamesOf(l: *Lowerer, r: RecordRep) ![]const Symbol {
+        switch (r) {
+            .local => |decl| {
+                const body = l.bir.decls[decl].annotation.unwrap() orelse return &.{};
+                if (l.bir.instTag(body) != .type_record) return &.{};
+                const fields = l.bir.extraSlice(Bir.inlineRange(l.bir.instData(body)), Bir.Field);
+                const names = try l.scratch.alloc(Symbol, fields.len);
+                for (fields, names) |f, *n| n.* = l.bir.symbol(f.name);
+                return names;
+            },
+            .imported => |at| {
+                const iface = &l.in.interfaces[at.module.int()];
+                const words = iface.range(iface.ctors[at.ctor].fields);
+                const names = try l.scratch.alloc(Symbol, words.len);
+                for (words, names) |word, *n| n.* = iface.symbol(@enumFromInt(word));
+                return names;
+            },
+        }
+    }
+
+    /// The canonical key order of a record whose fields are `names`: a
     /// permutation of their indices, sorted by NAME TEXT (`recordNode`).
-    fn fieldOrder(l: *Lowerer, fields: []const Bir.Field) ![]u32 {
-        const order = try l.scratch.alloc(u32, fields.len);
+    fn fieldOrder(l: *Lowerer, names: []const Symbol) ![]u32 {
+        const order = try l.scratch.alloc(u32, names.len);
         for (order, 0..) |*slot, i| slot.* = @intCast(i);
         const Sorter = struct {
             lower: *Lowerer,
-            fields: []const Bir.Field,
+            names: []const Symbol,
             fn lessThan(s: @This(), a: u32, b: u32) bool {
-                return std.mem.lessThan(u8, s.text(a), s.text(b));
-            }
-            fn text(s: @This(), i: u32) []const u8 {
-                return s.lower.text(s.lower.bir.symbol(s.fields[i].name));
+                return std.mem.lessThan(u8, s.lower.text(s.names[a]), s.lower.text(s.names[b]));
             }
         };
-        std.mem.sort(u32, order, Sorter{ .lower = l, .fields = fields }, Sorter.lessThan);
+        std.mem.sort(u32, order, Sorter{ .lower = l, .names = names }, Sorter.lessThan);
         return order;
     }
 
@@ -1507,49 +1541,13 @@ const Lowerer = struct {
         if (via) |ref| {
             if (l.ctorRepOf(ref)) |rep_and_tag| switch (rep_and_tag[0]) {
                 .record => |r| {
-                    const fields = l.aliasFields(r.decl);
-                    if (i < fields.len) return l.bir.symbol(fields[i].name);
+                    const names = try l.recordNames(r);
+                    if (i < names.len) return names[i];
                 },
                 else => {},
             };
         }
         return l.slotName(i);
-    }
-
-    /// `not_implemented` for the one use of a record alias's constructor
-    /// this emitter cannot write as `backend.md` §4's record-alias row says:
-    /// an IMPORTED alias's constructor, whose field names interface v2 does
-    /// not carry (CK-39; interface v3's `record_alias` rows, slice R3). The
-    /// checker types that use as an opaque nominal today, and writing the
-    /// old tagged object would give one type two shapes at run time.
-    ///
-    /// Run over the whole module, reachable or not: elimination decides
-    /// what is written, never what is checked (§5).
-    fn refuseAliasCtors(l: *Lowerer) !void {
-        const tags = l.bir.insts.items(.tag);
-        for (tags, 0..) |tag, i| {
-            const inst: Inst.Index = @enumFromInt(i);
-            switch (tag) {
-                .ext_ctor => {
-                    const d = l.bir.instData(inst);
-                    const module: Graph.Index = @enumFromInt(d.lhs);
-                    if (module.int() >= l.in.interfaces.len) continue;
-                    const iface = &l.in.interfaces[module.int()];
-                    if (d.rhs >= iface.ctors.len) continue;
-                    const c = iface.ctors[d.rhs];
-                    if (iface.types[@intFromEnum(c.type)].kind != .alias) continue;
-                    const spelled = l.text(iface.symbols[@intFromEnum(c.name)]);
-                    try l.report(.not_implemented, inst,
-                        \\I cannot build `{s}` with its constructor outside the module that declares it yet.
-                        \\
-                        \\`{s}` is a record alias, so `{s} …` builds a record (`docs/design/backend.md` §4),
-                        \\and this module's view of `{s}` does not carry its field names. Write the
-                        \\record literal instead, `{{ field = value, … }}`.
-                    , .{ spelled, spelled, spelled, spelled });
-                },
-                else => {},
-            }
-        }
     }
 
     fn ctorRepExternal(l: *Lowerer, module: Graph.Index, ctor_index: u32) CtorRep {
@@ -1564,6 +1562,10 @@ const Lowerer = struct {
         {
             return .{ .boolean = iface.symbols[@intFromEnum(c.name)] == InternPool.WellKnown.True.symbol() };
         }
+        // A record alias's constructor builds the record, whichever module
+        // declared it (backend.md §4's row, D12; interface v3 carries the
+        // names, CK-39).
+        if (c.result == .record_alias) return .{ .record = .{ .imported = .{ .module = module, .ctor = ctor_index } } };
         if (max == 0) return .bare_tag;
         return .{ .tagged = .{ .fields = max } };
     }
@@ -1605,12 +1607,12 @@ const Lowerer = struct {
             .record => |r| {
                 // `args` are already in written order, pinned by the caller
                 // wherever the key order below would move an evaluation.
-                const fields = l.aliasFields(r.decl);
-                const order = try l.fieldOrder(fields);
+                const names = try l.recordNames(r);
+                const order = try l.fieldOrder(names);
                 var properties: std.ArrayList(Node.Index) = .empty;
                 for (order) |field| {
                     const value = if (field < args.len) args[field] else try l.nullNode(p);
-                    try properties.append(l.scratch, try l.property(l.bir.symbol(fields[field].name), value, p));
+                    try properties.append(l.scratch, try l.property(names[field], value, p));
                 }
                 return l.object(properties.items, p);
             },
@@ -2052,7 +2054,9 @@ const Lowerer = struct {
     /// and ran `{ zed = p, alpha = q }` as `q` then `p`.
     fn recordNode(l: *Lowerer, out: *StmtList, range: Bir.SubRange, p: u32) !Node.Index {
         const fields = l.bir.extraSlice(range, Bir.Field);
-        const order = try l.fieldOrder(fields);
+        const names = try l.scratch.alloc(Symbol, fields.len);
+        for (fields, names) |f, *n| n.* = l.bir.symbol(f.name);
+        const order = try l.fieldOrder(names);
         const reordered = isPermuted(order);
         const insts = try l.scratch.alloc(Inst.Index, fields.len);
         for (fields, insts) |f, *slot| slot.* = f.value;
@@ -4104,7 +4108,7 @@ const Lowerer = struct {
             // literal, so its arguments are pinned exactly as `recordNode`
             // pins a literal's initialisers (`language.md` §6).
             const reordered = switch (rep) {
-                .record => |r| isPermuted(try l.fieldOrder(l.aliasFields(r.decl))),
+                .record => |r| isPermuted(try l.fieldOrder(try l.recordNames(r))),
                 else => false,
             };
             const args = try l.orderedExprs(out, l.bir.extraSlice(l.bir.subRange(@enumFromInt(d.rhs)), Inst.Index), reordered);

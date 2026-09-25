@@ -68,24 +68,30 @@ pub const Writer = struct {
     ref_ids: std.ArrayList(TypeStore.TypeId) = .empty,
     symbols: std.ArrayList(Symbol) = .empty,
     /// `Var → TermIndex` for the scheme being written; dense over the
-    /// store, cleared per scheme. Never a map: a `Var` is a dense id and
-    /// the house rules forbid hashing one.
+    /// store. Never a map: a `Var` is a dense id and the house rules forbid
+    /// hashing one. A slot means something only while its `stamp` is the
+    /// current `epoch`.
     memo: []Interface.TermIndex = &.{},
-    /// `Var → quantified index` for the scheme being written.
+    /// `Var → quantified index` for the scheme being written, under the
+    /// same stamp.
     quantified: []u32 = &.{},
-    /// Every root written into `memo` or `quantified` since the last reset,
-    /// so a reset clears what this scheme touched instead of the whole
-    /// store.
+    /// **Epoch marks** (`checker-v2.md` §14.2, CK-41): slot `v` of `memo`
+    /// and `quantified` is live only when `stamp[v] == epoch`, and a reset
+    /// is one increment. Nothing is cleared per scheme, and the three
+    /// arrays grow to at least TWICE their length when the store outgrows
+    /// them, so growing is amortised.
     ///
-    /// This is Elm's `touched` trick and it is not an optimisation
-    /// detail: the store has one variable per instruction of the module,
-    /// and a module exporting `n` values calls `resetMemo` `n` times — so
-    /// clearing the whole array made writing the interface quadratic in the
-    /// module's size. Measured on one module of `n` mutually recursive
-    /// `pub` declarations, the whole `check` phase: 31 ms at n = 4 000 and
-    /// 135 ms at n = 8 000, none of it visible in a trace because it sits
-    /// between the profiled events.
-    touched: std.ArrayList(Var) = .empty,
+    /// Both halves are load-bearing. Clearing the whole array per scheme
+    /// made writing an interface quadratic in the module's size (the
+    /// store has one variable per instruction, and a module exporting `n`
+    /// values resets `n` times); Elm's `touched` list fixed that, but the
+    /// arrays were still reallocated and memset to the store's EXACT size
+    /// whenever it had grown — and `fillCtorTerms` grows the store before
+    /// every constructor, so one type of `n` constructors cost O(n × store):
+    /// 390 ms at 4 000 constructors and 1 416 ms at 8 000 on 050cd2d
+    /// (ReleaseFast), a ratio of 3.6.
+    stamp: []u32 = &.{},
+    epoch: u32 = 0,
     quantified_count: u32 = 0,
     /// Flags of the quantifiers discovered so far, moved into `extra` when
     /// the scheme is closed. `Quantified.words` words each; the last two —
@@ -127,7 +133,6 @@ pub const Writer = struct {
     }
 
     pub fn deinit(w: *Writer) void {
-        w.touched.deinit(w.gpa);
         w.schemes.deinit(w.gpa);
         w.terms.deinit(w.gpa);
         w.extra.deinit(w.gpa);
@@ -138,6 +143,7 @@ pub const Writer = struct {
         w.pending_roots.deinit(w.gpa);
         w.gpa.free(w.memo);
         w.gpa.free(w.quantified);
+        w.gpa.free(w.stamp);
         w.* = undefined;
     }
 
@@ -258,24 +264,30 @@ pub const Writer = struct {
         return @enumFromInt(index);
     }
 
+    /// Start a new scheme: a new epoch, so every slot written for the last
+    /// one reads as empty, and — when the store has outgrown the arrays —
+    /// arrays at least twice as long, every stamp zero (see `stamp`).
     fn resetMemo(w: *Writer) Error!void {
         const n = w.store.count();
-        if (w.memo.len < n) {
-            // Growing initialises everything, which also clears whatever
-            // the previous scheme touched.
+        if (w.stamp.len < n) {
+            const len = @max(n, w.stamp.len * 2);
             w.gpa.free(w.memo);
-            w.memo = try w.gpa.alloc(Interface.TermIndex, n);
+            w.memo = &.{};
             w.gpa.free(w.quantified);
-            w.quantified = try w.gpa.alloc(u32, n);
-            @memset(w.memo, .none);
-            @memset(w.quantified, unbound);
-            w.touched.clearRetainingCapacity();
-        } else {
-            for (w.touched.items) |v| {
-                w.memo[v.int()] = .none;
-                w.quantified[v.int()] = unbound;
-            }
-            w.touched.clearRetainingCapacity();
+            w.quantified = &.{};
+            w.gpa.free(w.stamp);
+            w.stamp = &.{};
+            w.memo = try w.gpa.alloc(Interface.TermIndex, len);
+            w.quantified = try w.gpa.alloc(u32, len);
+            w.stamp = try w.gpa.alloc(u32, len);
+            @memset(w.stamp, 0);
+            w.epoch = 0;
+        }
+        w.epoch +%= 1;
+        if (w.epoch == 0) {
+            // Four billion schemes in one writer: start the stamps again.
+            @memset(w.stamp, 0);
+            w.epoch = 1;
         }
         w.quantified_count = 0;
         w.pending_flags.clearRetainingCapacity();
@@ -323,11 +335,22 @@ pub const Writer = struct {
         return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
     }
 
-    /// Remember that `root` has an entry in `memo` or `quantified`, so the
-    /// next `resetMemo` clears it. A root may be recorded twice — once for
-    /// each table — which costs a second clear and no correctness.
-    fn touch(w: *Writer, root: Var) Error!void {
-        try w.touched.append(w.gpa, root);
+    /// Whether `root`'s slots belong to the scheme being written.
+    fn live(w: *const Writer, root: Var) bool {
+        return root.int() < w.stamp.len and w.stamp[root.int()] == w.epoch;
+    }
+
+    /// Claim `root`'s slots for this scheme, emptying both the first time.
+    /// False when the store grew past the arrays after the last reset — a
+    /// root that is then simply not memoised, as before.
+    fn claim(w: *Writer, root: Var) bool {
+        if (root.int() >= w.stamp.len) return false;
+        if (w.stamp[root.int()] != w.epoch) {
+            w.stamp[root.int()] = w.epoch;
+            w.memo[root.int()] = .none;
+            w.quantified[root.int()] = unbound;
+        }
+        return true;
     }
 
     fn term(w: *Writer, tag: Interface.Term.Tag, lhs: u32, rhs: u32) Error!Interface.TermIndex {
@@ -336,14 +359,14 @@ pub const Writer = struct {
         return @enumFromInt(index);
     }
 
-    fn addRange(w: *Writer, words: []const u32) Error!u32 {
+    pub fn addRange(w: *Writer, words: []const u32) Error!u32 {
         const start: u32 = @intCast(w.extra.items.len);
         try w.extra.append(w.gpa, @intCast(words.len));
         try w.extra.appendSlice(w.gpa, words);
         return start;
     }
 
-    fn symbolIndex(w: *Writer, s: Symbol) Error!u32 {
+    pub fn symbolIndex(w: *Writer, s: Symbol) Error!u32 {
         const index: u32 = w.symbol_base + @as(u32, @intCast(w.symbols.items.len));
         try w.symbols.append(w.gpa, s);
         return index;
@@ -383,7 +406,7 @@ pub const Writer = struct {
         }
 
         const root = w.store.find(v);
-        if (root.int() < w.memo.len and w.memo[root.int()] != .none) return w.memo[root.int()];
+        if (w.live(root) and w.memo[root.int()] != .none) return w.memo[root.int()];
 
         const content = w.store.content(root);
         // EVERY arm memoises, the leaves included. A leaf writes a term
@@ -463,10 +486,7 @@ pub const Writer = struct {
     }
 
     fn memoise(w: *Writer, root: Var, t: Interface.TermIndex) Error!Interface.TermIndex {
-        if (root.int() < w.memo.len) {
-            w.memo[root.int()] = t;
-            try w.touch(root);
-        }
+        if (w.claim(root)) w.memo[root.int()] = t;
         return t;
     }
 
@@ -480,15 +500,12 @@ pub const Writer = struct {
     }
 
     fn quantifierOf(w: *Writer, root: Var, flags: TypeStore.Flags) Error!u32 {
-        if (root.int() < w.quantified.len and w.quantified[root.int()] != unbound) {
+        if (w.live(root) and w.quantified[root.int()] != unbound) {
             return w.quantified[root.int()];
         }
         const index = w.quantified_count;
         w.quantified_count += 1;
-        if (root.int() < w.quantified.len) {
-            w.quantified[root.int()] = index;
-            try w.touch(root);
-        }
+        if (w.claim(root)) w.quantified[root.int()] = index;
         const q: Interface.Quantified = .{
             .kind = @intFromEnum(flags.kind),
             .equatable = flags.equatable,
@@ -775,10 +792,33 @@ pub fn instantiateCtor(
     defer scratch.free(args);
     for (words, args) |word, *v| v.* = try reader.read(@enumFromInt(word));
 
-    // The result: the owning type applied to its own parameters. An ADT is
-    // an `app` and never an `alias` — only a `type` declares constructors.
+    // The result: the owning type applied to its own parameters — or, for
+    // a record alias's constructor (interface v3, CK-39), the alias of the
+    // RECORD its fields make, argument `i` being field `i` of the row's
+    // declaration-order names. That is exactly what the declaring module's
+    // own check builds for it (`Types.Builder.apply` on the alias), so a
+    // field access or an update on `P 1 "a"` types the same on both sides
+    // of the import.
     const params = try store.addVars(fresh);
-    const result = try store.fresh(.{ .structure = .{ .app = .{ .type = type_id, .args = params } } }, rank);
+    const result = switch (c.result) {
+        .nominal => try store.fresh(.{ .structure = .{ .app = .{ .type = type_id, .args = params } } }, rank),
+        .record_alias => blk: {
+            const names = iface.range(c.fields);
+            // A row whose names do not match its arguments is a record the
+            // writer never produces; poison rather than guess.
+            if (names.len != args.len) return null;
+            const fields = try scratch.alloc(TypeStore.Field, args.len);
+            defer scratch.free(fields);
+            for (fields, names, args) |*f, name, arg| {
+                if (name >= iface.symbols.len) return null;
+                f.* = .{ .name = iface.symbol(@enumFromInt(name)), .value = arg };
+            }
+            const field_range = try store.addFields(fields);
+            const closed = try store.fresh(.{ .structure = .empty_record }, rank);
+            const record = try store.fresh(.{ .structure = .{ .record = .{ .fields = field_range, .ext = closed } } }, rank);
+            break :blk try store.fresh(.{ .alias = .{ .type = type_id, .args = params, .actual = record } }, rank);
+        },
+    };
     // A constructor of n fields is an n-ARY function, not a chain of n
     // one-argument ones (language.md §6.7), and a nullary one is the type
     // itself.

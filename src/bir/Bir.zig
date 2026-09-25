@@ -592,6 +592,12 @@ pub const LetDef = struct {
     params_end: ExtraIndex,
 };
 
+/// The most type parameters a `type`, `type alias`, `foreign type` or `schema` may declare:
+/// an arity is a `u16` in the interface record (`checker-v2.md` §14.2, CK-38).
+/// Lowering refuses more with `too_many_type_parameters`, so a `Decl.params` of a
+/// type never exceeds it.
+pub const max_type_params: u32 = std.math.maxInt(u16);
+
 pub const Decl = struct {
     kind: Kind,
     name: SymbolIndex,

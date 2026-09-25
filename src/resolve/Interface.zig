@@ -290,7 +290,13 @@ pub const Type = struct {
     name: SymbolIndex,
     /// Type parameters. Types are always fully applied (checker.md
     /// Appendix A), so this is exactly how many arguments a use must have.
-    arity: u8,
+    ///
+    /// A `u16` since interface v3 (`checker-v2.md` §14.2, CK-38): as a `u8`
+    /// it saturated at 255, so a 256-parameter type was imported as a
+    /// 255-parameter one. Lowering refuses a declaration of more than
+    /// `max_type_params` (`too_many_type_parameters`), so no cast into this
+    /// field saturates.
+    arity: u16,
     kind: TypeKind,
     /// `pub opaque type T`: the name is exported, the constructors are
     /// not, and `ctors_start == ctors_end` here as a result.
@@ -302,10 +308,89 @@ pub const Type = struct {
     is_equatable: bool,
     ctors_start: u32,
     ctors_end: u32,
+    /// The parameters that occur in a constructor payload, as a bitset: an
+    /// `extra` range of `⌈arity / 32⌉` words, parameter `i` at bit `i % 32`
+    /// of word `i / 32` (`checker-v2.md` §14.2, D10). Every bit is set for
+    /// a `foreign type`, whose payloads nobody can see; an alias has none.
+    /// Filled when the module is checked, from EVERY constructor — an
+    /// opaque type's hidden ones included, which is the point: the marker
+    /// walk must not read them from another module. `no_terms` until then.
+    payload_params: u32 = no_terms,
+    /// What an importer resolves `==` and `compare` on this type against
+    /// when the type declares no method of its own (§14.2, D4): the
+    /// derived function's context, or why there is none. Filled when the
+    /// module is checked; `unchecked` until then.
+    eq: Derived = .{},
+    compare: Derived = .{},
 
     pub fn ctorRange(t: Type) struct { u32, u32 } {
         return .{ t.ctors_start, t.ctors_end };
     }
+
+    pub fn derived(t: Type, kind: DerivedKind) Derived {
+        return switch (kind) {
+            .eq => t.eq,
+            .compare => t.compare,
+        };
+    }
+};
+
+/// The most type parameters a declaration may have (`checker-v2.md` §14.2):
+/// `Type.arity` is a `u16`.
+pub const max_type_params: u32 = Bir.max_type_params;
+
+pub const DerivedKind = enum { eq, compare };
+
+/// One exported type's derived `eq` or `compare` (`checker-v2.md` §14.2, D4,
+/// I10): `present` with a context — an `extra` range of `(param, method)`
+/// pairs, two words each, sorted by `(param, method text)`, `method` a
+/// `SymbolIndex` — or absent, with the reason.
+///
+/// The old checker writes exactly its own ABI: one entry per type parameter,
+/// each naming the method being derived. D4's inferred contexts replace that
+/// in R8a without a format change, which is why the format is shared.
+pub const Derived = struct {
+    status: Status = .unchecked,
+    /// An `extra` range of `2 × entries` words when `status == .present`,
+    /// else `no_terms`.
+    context: u32 = no_terms,
+
+    pub const Status = enum(u8) {
+        /// Not filled: the module was never checked.
+        unchecked,
+        /// The declaring module emits the derived function.
+        present,
+        /// §3.2's table answers the method with a JavaScript operator:
+        /// `Int`, `Float`, `Char`, `String` and `Bool` both methods, `Order`'s
+        /// `eq` (A.18). No function exists. (`Order`'s `compare` and `Never`'s
+        /// two are derived: `present`.)
+        primitive,
+        /// The type's module declares a `pub` value of the method's name —
+        /// the type's own method, or under the module rule
+        /// (static-dispatch-spike.md §3.3 step 1) one for another type of the
+        /// module — so nothing is derived.
+        own_method,
+        /// A `foreign type`, of any arity, that neither the table nor its
+        /// module answers: there is no body to derive over (A.55). An
+        /// `equatable` one is still compared by the structural walk.
+        foreign,
+        /// A function is reachable in a payload (`not_equatable`).
+        function,
+        /// A payload cannot answer the method for any other reason — a type
+        /// that cannot order inside it, say.
+        unanswerable,
+        /// A type alias, which is not nominal: its expansion answers.
+        alias,
+    };
+};
+
+/// What a constructor builds (`checker-v2.md` §14.2, CK-39).
+pub const CtorResult = enum(u8) {
+    /// `T p0 … pk`: a constructor of a `type`.
+    nominal,
+    /// The record a `type alias` of a record body names: its implicit
+    /// constructor, whose value IS the record (D12, `backend.md` §4).
+    record_alias,
 };
 
 pub const Ctor = struct {
@@ -337,6 +422,18 @@ pub const Ctor = struct {
     /// declaration order, `types[type].arity` of them. Meaningless while
     /// `arg_terms` is `no_terms`.
     quantified_start: u32 = 0,
+    /// What the constructor's application IS (interface v3, CK-39): the
+    /// owning type applied to its parameters, or a record alias's record.
+    result: CtorResult = .nominal,
+    /// For a `record_alias` constructor, its field names in DECLARATION
+    /// order — argument `i` is field `i` — as an `extra` range of
+    /// `SymbolIndex` words; `no_terms` for a nominal one. The alias body's
+    /// record term cannot give them: its fields are canonicalised by name
+    /// text, and the constructor's argument order is the declaration's
+    /// (`checker-v2.md` §14.2, the R1-review amendment). The backend emits an
+    /// imported alias's constructor as the record, and reads its pattern's
+    /// arguments, by these names.
+    fields: u32 = no_terms,
 };
 
 pub const Schema = struct {
@@ -698,7 +795,9 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         try type_decls.append(gpa, di);
         try b.types.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(d.name)),
-            .arity = std.math.cast(u8, d.params) orelse std.math.maxInt(u8),
+            // Lowering refused more (`max_type_params`), so this saturates
+            // only on a declaration that already has its error.
+            .arity = std.math.cast(u16, d.params) orelse std.math.maxInt(u16),
             .kind = switch (d.kind) {
                 .type => .adt,
                 .type_alias => .alias,
@@ -723,10 +822,20 @@ pub fn build(gpa: Allocator, bir: *const Bir, interner: *const InternPool.Global
         if (!t.is_opaque) {
             const owner = bir.decl(di);
             for (bir.declCtors(owner), owner.ctors_start..) |c, bir_index| {
+                const name = try b.symbolIndex(bir.symbol(c.name));
+                // A record alias's implicit constructor carries its field
+                // names, argument `i` being field `i` (§14.2, CK-39) — a
+                // lexical fact, so the skeleton has it before any check.
+                const result: CtorResult, const fields = if (owner.kind == .type_alias)
+                    .{ .record_alias, try b.aliasFieldNames(owner) }
+                else
+                    .{ .nominal, no_terms };
                 try b.ctors.append(gpa, .{
-                    .name = try b.symbolIndex(bir.symbol(c.name)),
+                    .name = name,
                     .type = @enumFromInt(i),
                     .arity = @intFromEnum(c.args_end) - @intFromEnum(c.args_start),
+                    .result = result,
+                    .fields = fields,
                 });
                 try ctor_indices.append(gpa, @intCast(bir_index));
             }
@@ -775,6 +884,22 @@ const Builder = struct {
         const i: u32 = @intCast(b.symbols.items.len);
         try b.symbols.append(b.gpa, s);
         return @enumFromInt(i);
+    }
+
+    /// The `extra` range of a record alias's field names in declaration
+    /// order, each a new symbol slot: the body's `type_record`, which is the
+    /// only body that declares a constructor (`bir/Lower.zig`). A body
+    /// that is not one — a parenthesised record — gives an empty range, and
+    /// its constructor then has no arguments either.
+    fn aliasFieldNames(b: *Builder, owner: Bir.Decl) Allocator.Error!u32 {
+        const start: u32 = @intCast(b.extra.items.len);
+        try b.extra.append(b.gpa, 0);
+        const body = owner.annotation.unwrap() orelse return start;
+        if (b.bir.instTag(body) != .type_record) return start;
+        const fields = b.bir.extraSlice(Bir.inlineRange(b.bir.instData(body)), Bir.Field);
+        for (fields) |f| try b.extra.append(b.gpa, @intFromEnum(try b.symbolIndex(b.bir.symbol(f.name))));
+        b.extra.items[start] = @intCast(fields.len);
+        return start;
     }
 
     fn nameLessThan(b: *const Builder, a: SymbolIndex, c: SymbolIndex) bool {

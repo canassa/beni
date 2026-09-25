@@ -164,7 +164,7 @@ pub fn writeRaw(
         });
     }
     for (iface.types, 0..) |t, i| {
-        try w.print("type {d} {s} arity={d} kind={t} opaque={} equatable={} ctors={d}..{d}\n", .{
+        try w.print("type {d} {s} arity={d} kind={t} opaque={} equatable={} ctors={d}..{d} eq={t} compare={t} payload=", .{
             i,
             interner.slice(iface.symbol(t.name)),
             t.arity,
@@ -173,17 +173,52 @@ pub fn writeRaw(
             t.is_equatable,
             t.ctors_start,
             t.ctors_end,
+            t.eq.status,
+            t.compare.status,
         });
+        // Interface v3's per-type facts (`checker-v2.md` §14.2): the
+        // payload parameters as the set of their indices, and each present
+        // derived context entry by entry, so a jobs comparison sees them.
+        if (t.payload_params == Interface.no_terms) {
+            try w.writeAll("-");
+        } else {
+            try w.writeByte('{');
+            var first = true;
+            for (iface.range(t.payload_params), 0..) |word, k| {
+                for (0..32) |bit| {
+                    if (word >> @intCast(bit) & 1 == 0) continue;
+                    if (!first) try w.writeByte(',');
+                    first = false;
+                    try w.print("{d}", .{k * 32 + bit});
+                }
+            }
+            try w.writeByte('}');
+        }
+        try w.writeByte('\n');
+        for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
+            if (row[1].status != .present) continue;
+            const words = iface.range(row[1].context);
+            var k: usize = 0;
+            while (k + 1 < words.len) : (k += 2) {
+                try w.print("  context {s} param={d} method={s}\n", .{ row[0], words[k], interner.slice(iface.symbol(@enumFromInt(words[k + 1]))) });
+            }
+        }
     }
     for (iface.ctors, 0..) |c, i| {
-        try w.print("ctor {d} {s} type={d} arity={d} arg_terms={d} quantified={d}\n", .{
+        try w.print("ctor {d} {s} type={d} arity={d} arg_terms={d} quantified={d} result={t}\n", .{
             i,
             interner.slice(iface.symbol(c.name)),
             @intFromEnum(c.type),
             c.arity,
             c.arg_terms,
             c.quantified_start,
+            c.result,
         });
+        // A record alias's field names, argument `i` being field `i`
+        // (interface v3, CK-39).
+        for (iface.range(c.fields), 0..) |word, f| {
+            try w.print("  field {d} {s}\n", .{ f, interner.slice(iface.symbol(@enumFromInt(word))) });
+        }
         if (c.arg_terms == Interface.no_terms) continue;
         for (iface.range(c.arg_terms), 0..) |word, a| try w.print("  arg {d} term={d}\n", .{ a, word });
         for (0..t: {

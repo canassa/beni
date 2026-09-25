@@ -50,9 +50,11 @@ const leaf_source =
     \\
     \\
     \\-- A `pub type alias` NO scheme of this module mentions: its expansion is
-    \\-- nowhere in the record (§6.2).
+    \\-- nowhere in the record (§6.2). A TUPLE, not a record: a record alias
+    \\-- declares a constructor, whose argument types and — since interface v3
+    \\-- (checker-v2.md §14.2) — field names ARE in the record.
     \\pub type alias Pair =
-    \\    { a : Int }
+    \\    ( Int, Int )
     \\
     \\
     \\-- A `pub type alias` a `pub` scheme DOES mention, for the contrast.
@@ -96,8 +98,8 @@ const mid_source =
     \\
     \\
     \\pub firstOf : Pair -> Int
-    \\firstOf p =
-    \\    p.a
+    \\firstOf ( a, _ ) =
+    \\    a
     \\
     \\
     \\pub name : Tag -> Int
@@ -134,7 +136,7 @@ const side_source =
     \\
     \\pub relayed : Int
     \\relayed =
-    \\    Mid.firstOf (Mid.passThrough { a = 1 })
+    \\    Mid.firstOf (Mid.passThrough ( 1, 2 ))
     \\
 ;
 
@@ -543,7 +545,7 @@ test "row 13: a pub type alias NO scheme names — the digest moves and the hash
     // This row FAILS before the digest exists.
     try runRow(.{
         .what = "an alias body no scheme names",
-        .leaf = replace(leaf_source, "pub type alias Pair =\n    { a : Int }", "pub type alias Pair =\n    { z : Int }"),
+        .leaf = replace(leaf_source, "pub type alias Pair =\n    ( Int, Int )", "pub type alias Pair =\n    ( Float, Int )"),
         // `Mid`'s OWN hash moves, because the `alias` term in its published
         // `firstOf` scheme carries the expansion — and that is exactly why
         // this is a miscompile and not a near miss: `Mid` is re-checked only
@@ -663,7 +665,7 @@ test "the coarsening invariant: an unmoved OLD key never moves the NEW one" {
         },
         .{
             .what = "an alias body no scheme names",
-            .leaf = replace(leaf_source, "pub type alias Pair =\n    { a : Int }", "pub type alias Pair =\n    { z : Int }"),
+            .leaf = replace(leaf_source, "pub type alias Pair =\n    ( Int, Int )", "pub type alias Pair =\n    ( Float, Int )"),
             .errors = true,
         },
         .{ .what = "a private type made pub", .leaf = replace(leaf_source, "type Hidden\n", "pub type Hidden\n") },

@@ -2914,6 +2914,155 @@ test "--allow-debug lifts a refusal raised after the cache was written" {
     try testing.expectEqual(@as(u64, 0), again.counters.checked);
 }
 
+/// `Wide.beni`: `pub type T a0 … a<n-1> = Mk a0 … a<n-1>`. And `Main.beni`:
+/// `x` and `y` of it, all fields `1 … n` except `y`'s last, which is 0, and
+/// a `main` printing `x == x`, `x == y`, `y < x` and `x < y` — then
+/// `extra`, so a second version of `Main` can differ from the first.
+fn wideImportProject(w: *World, gpa: std.mem.Allocator, n: usize, extra: []const u8) !void {
+    var wide: std.Io.Writer.Allocating = .init(gpa);
+    defer wide.deinit();
+    try wide.writer.writeAll("pub type T");
+    for (0..n) |i| try wide.writer.print(" a{d}", .{i});
+    try wide.writer.writeAll("\n    = Mk");
+    for (0..n) |i| try wide.writer.print(" a{d}", .{i});
+    try wide.writer.writeAll("\n");
+    try w.write("Wide.beni", wide.written());
+
+    var main: std.Io.Writer.Allocating = .init(gpa);
+    defer main.deinit();
+    const out = &main.writer;
+    try out.writeAll("import Node exposing (Program)\nimport Wide\n\n\nx =\n    Wide.Mk");
+    for (1..n + 1) |i| try out.print(" {d}", .{i});
+    try out.writeAll("\n\n\ny =\n    Wide.Mk");
+    for (1..n + 1) |i| try out.print(" {d}", .{if (i == n) 0 else i});
+    try out.print(
+        \\
+        \\
+        \\
+        \\show : Bool -> String
+        \\show b =
+        \\    if b then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ show (x == x), show (x == y), show (y < x), show (x < y){s} ]
+        \\
+    , .{extra});
+    try w.write("Main.beni", main.written());
+}
+
+test "an imported type of 4 097 parameters compares across modules in the wide form, cold, warm and partly warm, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `static-dispatch-spike.md` §9.2's wide form (A.87) across a module
+    // boundary, which nothing could reach until interface v3 (CK-38): past
+    // 4 096 evidence entries a derived function takes ONE array `$m`, and
+    // every caller packs the same count. `T` has 4 097 parameters, so
+    // `Wide` emits `T`'s `eq` and `compare` in the wide form, and `Main` —
+    // which counts the entries from what it imported — must pack 4 097.
+    // On 3487c12 the importer read the arity through a `u8` and called
+    // `Wide$T$$eq` positionally: exit 0, then `TypeError: $m[0] is not a
+    // function` at run time.
+    //
+    // Three passes over one cache directory, because the count a warm
+    // importer uses is the one the RECORD states (the cache matrix of
+    // `plans/checker-rewrite.md` R3's reviewer focus): cold (both checked),
+    // warm (neither), and partly warm (`Main` edited: `Wide` from the cache,
+    // `Main` checked against the loaded record).
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const n = 4_097;
+    try wideImportProject(&w, arena, n, "");
+    const expected = "True\nFalse\nTrue\nFalse\n";
+
+    const passes = [_]struct {
+        what: []const u8,
+        edit: ?[]const u8,
+        /// Appended to `Wide.beni`, with `Main` as the last pass left it.
+        wide_edit: ?[]const u8 = null,
+        release: bool,
+        /// Null on the cold pass, which checks core too: there it is
+        /// `hits == 0` that says nothing came from the cache.
+        checked: ?u64,
+        hits_at_least: u64,
+        expected: []const u8,
+    }{
+        .{ .what = "cold", .edit = null, .release = false, .checked = null, .hits_at_least = 0, .expected = expected },
+        .{ .what = "warm", .edit = null, .release = false, .checked = 0, .hits_at_least = 2, .expected = expected },
+        .{ .what = "warm, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected },
+        .{ .what = "Main edited", .edit = ", show (y == y)", .release = false, .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
+        .{ .what = "Main edited, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected ++ "True\n" },
+        // The DEPENDENCY edited while `Main` stays cached (R3's review, N6):
+        // a private value (one that adds no import: `helper : Int` would add
+        // `Basics`, which moves the digest) leaves `Wide`'s record as it was,
+        // so `Main` is cut
+        // off and runs from its cached entry against the re-checked `Wide`;
+        // a new `pub` value moves the record, and `Main` is re-checked
+        // against it.
+        .{ .what = "Wide edited, record unmoved", .edit = null, .wide_edit = "\n\nhelper x =\n    x\n", .release = false, .checked = 1, .hits_at_least = 1, .expected = expected ++ "True\n" },
+        .{ .what = "Wide edited, record moved", .edit = null, .wide_edit = "\n\npub one : Int\none =\n    1\n", .release = false, .checked = 2, .hits_at_least = 1, .expected = expected ++ "True\n" },
+        .{ .what = "Wide edited, --release", .edit = null, .release = true, .checked = 0, .hits_at_least = 2, .expected = expected ++ "True\n" },
+    };
+    for (passes, 0..) |pass, i| {
+        if (pass.edit) |extra| try wideImportProject(&w, arena, n, extra);
+        if (pass.wide_edit) |tail| {
+            const wide = try w.read("Wide.beni");
+            try w.write("Wide.beni", try std.mem.concat(arena, u8, &.{ wide, tail }));
+        }
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(arena, &.{ "build", "--platform=node", "--out=out", "--cache-dir=cache", "--jobs=1" });
+        if (pass.release) try argv.append(arena, "--release");
+        try argv.appendSlice(arena, &.{ "Main.beni", "Wide.beni" });
+        const built = try runCounted(&w, arena, argv.items, try std.fmt.allocPrint(arena, "pass{d}.json", .{i}));
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        if (built.result.exit_code != 0) std.debug.print("{s}: {s}\n", .{ pass.what, built.result.stderr });
+        try testing.expectEqual(@as(u8, 0), built.result.exit_code);
+        try testing.expectEqualStrings("", built.result.stderr);
+        const program = try w.node(world.entry_file);
+        try testing.expectEqualStrings("", program.stderr);
+        try testing.expectEqualStrings(pass.expected, program.stdout);
+        try testing.expectEqual(@as(u8, 0), program.exit_code);
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        // Which modules the pass checked and which it took from the cache:
+        // the reason for three passes, not a detail of them.
+        const as_expected = if (pass.checked) |checked|
+            built.counters.checked == checked and built.counters.hits >= pass.hits_at_least
+        else
+            built.counters.hits == 0 and built.counters.checked >= 2;
+        if (!as_expected) {
+            std.debug.print("{s}: checked {d}, hits {d}\n", .{ pass.what, built.counters.checked, built.counters.hits });
+            return error.UnexpectedCacheUse;
+        }
+
+        // The importer really does pack the array: one `$m` of 4 097
+        // entries per call, never 4 097 arguments. (`--release` renames.)
+        if (!pass.release) {
+            const main_js = try w.read("out/Main.mjs");
+            try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$eq([") != null);
+            try testing.expect(std.mem.indexOf(u8, main_js, "Wide$T$$compare([") != null);
+        }
+    }
+}
+
 fn runFlagged(
     w: *World,
     arena: std.mem.Allocator,

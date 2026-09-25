@@ -4605,6 +4605,164 @@ test "an imported constructor is instantiated from the interface, argument types
     try testing.expect(std.mem.indexOf(u8, raw.stdout, "  param 1 kind=0 equatable=false name=b") != null);
 }
 
+test "interface v3's rows are in the record: record-alias field names, payload parameters and derived contexts" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §14.2, slice R3. What each row says, one type each:
+    // `Point` is an alias — no derived row, no bitset — whose constructor
+    // names its fields in DECLARATION order (`y` before `x`: the record term
+    // sorts them, the constructor does not); `Hidden` is opaque, and its
+    // bitset still comes from the hidden constructor, whose function payload
+    // makes its `compare` `function`; `Own` declares its module's `eq`, so
+    // `eq` is `own_method` for every type of the module (the module rule,
+    // decided before the function) while `compare` is derived with v1's
+    // context, one entry per parameter; `Phantom`'s `a` holds no value, so
+    // its bitset has `b` alone; `HoldsValue` holds a `foreign type` with no
+    // method, so neither row can be derived (`unanswerable`). The rest of
+    // the status vocabulary (§14.2 *As built*, N1) is pinned on core below.
+    //
+    // And a parameter reached through a SCHEMA type (R3's review, S1): a
+    // payload of `Page.Type a` (the module's own schema) or
+    // `Facts.Page.Type a` (an imported one) holds an `a`. The bitset was
+    // read with a reader that had no schema lookup, which read both as
+    // `err` and left the bit out — `payload={}`, the unsafe side for D10.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Facts.beni",
+        \\pub type alias Point =
+        \\    { y : Int, x : Int }
+        \\
+        \\
+        \\pub type Phantom a b
+        \\    = Phantom b
+        \\
+        \\
+        \\pub opaque type Hidden a
+        \\    = Hidden (Int -> a)
+        \\
+        \\
+        \\pub type Own a
+        \\    = Own a
+        \\
+        \\
+        \\pub eq : Own a, Own a -> Bool
+        \\eq _ _ =
+        \\    True
+        \\
+        \\
+        \\pub schema Page item =
+        \\    item : item
+        \\
+        \\
+        \\pub type LocalWrap a
+        \\    = LW (Page.Type a)
+        \\
+    );
+    try w.write("src/Uses.beni",
+        \\import Facts
+        \\import Schema
+        \\
+        \\
+        \\pub type WithSchema a
+        \\    = WS (Facts.Page.Type a)
+        \\
+        \\
+        \\pub type HoldsValue
+        \\    = HV Schema.Value
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const raw = try w.runWith(&.{ "dump", "--stage=raw", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), raw.exit_code);
+    try testing.expectEqualStrings("", raw.stderr);
+    // The module, type and constructor rows, whole; the `extra` offsets inside them
+    // are the record's business and are left out.
+    var rows: std.ArrayList(u8) = .empty;
+    defer rows.deinit(testing.allocator);
+    var lines = std.mem.splitScalar(u8, raw.stdout, '\n');
+    while (lines.next()) |line| {
+        const keep = std.mem.startsWith(u8, line, "module ") or std.mem.startsWith(u8, line, "type ") or std.mem.startsWith(u8, line, "  context ") or
+            std.mem.startsWith(u8, line, "  field 0 ") or std.mem.startsWith(u8, line, "  field 1 ");
+        const ctor = std.mem.startsWith(u8, line, "ctor ");
+        if (!keep and !ctor) continue;
+        // `ctor … arg_terms=N quantified=M result=R`: keep the name, owner,
+        // arity and result.
+        const text = if (ctor) cut: {
+            const at = std.mem.indexOf(u8, line, " arg_terms=").?;
+            const result = std.mem.indexOf(u8, line, " result=").?;
+            break :cut try std.fmt.allocPrint(w.arena.allocator(), "{s}{s}", .{ line[0..at], line[result..] });
+        } else line;
+        try rows.appendSlice(testing.allocator, text);
+        try rows.append(testing.allocator, '\n');
+    }
+    try testing.expectEqualStrings(
+        \\module Facts
+        \\type 0 Hidden arity=1 kind=adt opaque=true equatable=false ctors=0..0 eq=own_method compare=function payload={0}
+        \\type 1 LocalWrap arity=1 kind=adt opaque=false equatable=false ctors=0..1 eq=own_method compare=present payload={0}
+        \\  context compare param=0 method=compare
+        \\type 2 Own arity=1 kind=adt opaque=false equatable=false ctors=1..2 eq=own_method compare=present payload={0}
+        \\  context compare param=0 method=compare
+        \\type 3 Phantom arity=2 kind=adt opaque=false equatable=false ctors=2..3 eq=own_method compare=present payload={1}
+        \\  context compare param=0 method=compare
+        \\  context compare param=1 method=compare
+        \\type 4 Point arity=0 kind=alias opaque=false equatable=false ctors=3..4 eq=alias compare=alias payload=-
+        \\ctor 0 LW type=1 arity=1 result=nominal
+        \\ctor 1 Own type=2 arity=1 result=nominal
+        \\ctor 2 Phantom type=3 arity=1 result=nominal
+        \\ctor 3 Point type=4 arity=2 result=record_alias
+        \\  field 0 y
+        \\  field 1 x
+        \\module Uses
+        \\type 0 HoldsValue arity=0 kind=adt opaque=false equatable=false ctors=0..1 eq=unanswerable compare=unanswerable payload={}
+        \\type 1 WithSchema arity=1 kind=adt opaque=false equatable=false ctors=1..2 eq=present compare=present payload={0}
+        \\  context eq param=0 method=eq
+        \\  context compare param=0 method=compare
+        \\ctor 0 HV type=0 arity=1 result=nominal
+        \\ctor 1 WS type=1 arity=1 result=nominal
+        \\
+    , rows.items);
+
+    // The statuses the program above cannot reach, on core's records:
+    // `primitive` (§3.2's table: `Bool`, `Char`, `Order`'s `eq`; `Order`'s
+    // `compare` is derived), `own_method` on a `foreign type` whose module
+    // declares the method (`List`), and `foreign` for one it does not, of
+    // any arity (`Schema.Conversion`).
+    // From the repository root, where `core/` is: the harness runs there.
+    const core = try w.runWith(&.{ "dump", "--stage=raw", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), core.exit_code);
+    var statuses: std.ArrayList(u8) = .empty;
+    defer statuses.deinit(testing.allocator);
+    var core_lines = std.mem.splitScalar(u8, core.stdout, '\n');
+    while (core_lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "type ")) continue;
+        inline for (.{ " Bool ", " Char ", " Order ", " List ", " Conversion " }) |wanted| {
+            if (std.mem.indexOf(u8, line, wanted) != null) {
+                const from = std.mem.indexOf(u8, line, " eq=").?;
+                const to = std.mem.indexOf(u8, line, " payload=").?;
+                try statuses.appendSlice(testing.allocator, wanted[1 .. wanted.len - 1]);
+                try statuses.appendSlice(testing.allocator, line[from..to]);
+                try statuses.append(testing.allocator, '\n');
+            }
+        }
+    }
+    try testing.expectEqualStrings(
+        \\Bool eq=primitive compare=primitive
+        \\Order eq=primitive compare=present
+        \\Char eq=primitive compare=primitive
+        \\List eq=own_method compare=own_method
+        \\Conversion eq=foreign compare=foreign
+        \\
+    , statuses.items);
+}
+
 test "a type nested past the checker's reading limit is reported, never silently poisoned" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

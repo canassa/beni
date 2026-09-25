@@ -15,7 +15,7 @@
 //! types     type_count: u32, then per type in the set below, sorted by name
 //!           TEXT:
 //!             name_len: u32, name
-//!             arity: u8
+//!             arity: u16               (a `u8` in version 1: CK-38)
 //!             kind: u8                 adt | alias | foreign
 //!             flags: u8                bit 0 opaque, bit 1 equatable,
 //!                                      bit 2 comparable, bit 3 has_function
@@ -90,7 +90,10 @@ pub const magic = "BENIDEP\x00";
 /// Bumped whenever the meaning of any byte of the recipe changes. It rides
 /// inside the module key, so a bump discards every entry — the only migration
 /// a cache ever needs.
-pub const digest_version: u32 = 1;
+///
+/// Version 2 (slice R3, `checker-v2.md` §14.2): `arity` is a `u16`, with
+/// interface v3's `Type.arity` (CK-38).
+pub const digest_version: u32 = 2;
 
 pub const Digest = [16]u8;
 
@@ -107,7 +110,7 @@ pub fn hex(d: Digest) [32]u8 {
 /// One type of the set, with every bit a dependent can observe about it.
 pub const Type = struct {
     name: []const u8,
-    arity: u8,
+    arity: u16,
     kind: Interface.TypeKind,
     is_opaque: bool,
     equatable: bool,
@@ -159,7 +162,7 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
     try appendInt(gpa, out, u32, @intCast(t.types.len));
     for (t.types) |ty| {
         try appendText(gpa, out, ty.name);
-        try out.append(gpa, ty.arity);
+        try appendInt(gpa, out, u16, ty.arity);
         try out.append(gpa, @intFromEnum(ty.kind));
         try out.append(gpa, flags(ty));
         try appendText(gpa, out, ty.body);
@@ -538,8 +541,8 @@ test "the digest's byte string is the recipe, field by field" {
     at += 4;
     try testing.expectEqualStrings("Hidden", bytes.items[at..][0..6]);
     at += 6;
-    try testing.expectEqual(@as(u8, 0), bytes.items[at]); // arity
-    at += 1;
+    try testing.expectEqual(@as(u16, 0), std.mem.readInt(u16, bytes.items[at..][0..2], .little)); // arity
+    at += 2;
     try testing.expectEqual(@as(u8, @intFromEnum(Interface.TypeKind.adt)), bytes.items[at]);
     at += 1;
     try testing.expectEqual(@as(u8, 2 | 4), bytes.items[at]); // equatable | comparable
