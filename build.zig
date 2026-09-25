@@ -7,9 +7,17 @@
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!
-//! And one that is NOT a gate, because its fixtures are red by design:
-//!   zig build test-pending    tests/pending/ (plans/checker-rewrite.md §2)
+//! And two that are NOT gates, because their fixtures are red by design:
+//!   zig build test-pending        tests/pending/ and the non-timing scenarios
+//!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
+//!                                 (plans/checker-rewrite.md §2)
 const std = @import("std");
+/// The parts the corpus walker is split into (one process each).
+const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
+
+/// Where `test-pending-perf`'s ReleaseFast compiler is installed, under the
+/// prefix: apart from `bin/beni`, which every other test spawns.
+const perf_bin_dir = "perf/bin";
 
 /// Where the core package's sources live, relative to the build root. The
 /// same string is the prefix of every embedded file's path, so a diagnostic
@@ -107,88 +115,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(diagnostic_tests).step);
     test_step.dependOn(&b.addRunArtifact(gen_tests).step);
 
-    // ---- Black-box suite. ----
-    // Spawns `./zig-out/bin/beni`, so it depends on the install step and runs
-    // with cwd = repo root (the harness resolves the binary and the corpus
-    // relative to it). The blackbox modules import only `diagnostic`: reaching
-    // for an internal is a compile error, not a code-review finding.
-    const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the installed binary)");
-    for ([_][]const u8{
-        "tests/blackbox/blackbox_test.zig",
-        "tests/blackbox/corpus_test.zig",
-        "tests/blackbox/abuse_test.zig",
-        "tests/blackbox/build_test.zig",
-        "tests/blackbox/cache_test.zig",
-        "tests/blackbox/check_test.zig",
-        "tests/blackbox/cutoff_test.zig",
-        "tests/blackbox/digest_test.zig",
-        "tests/blackbox/docs_test.zig",
-        "tests/blackbox/frontend_test.zig",
-        "tests/blackbox/iface_test.zig",
-        "tests/blackbox/matrix_test.zig",
-    }) |root| {
-        const t = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(root),
-                .target = target,
-                .optimize = optimize,
-                .imports = &.{.{ .name = "diagnostic", .module = diagnostic_mod }},
-            }),
-        });
-        const run = b.addRunArtifact(t);
-        run.step.dependOn(b.getInstallStep());
-        run.setCwd(b.path("."));
-        // The corpus walker's knobs (`plans/checker-rewrite.md` §2.4), pinned
-        // EMPTY — which the walker reads as unset — so a variable exported in
-        // the developer's shell (`BENI_CHECKER=v2 zig build test-blackbox`)
-        // cannot turn the gate into something else. Every binary gets them,
-        // not only the walker: `run.setEnvironmentVariable` is the one place
-        // the test's environment is decided.
-        pinCorpusEnvironment(run, .{ .root = "tests/corpus" });
-        blackbox_step.dependOn(&run.step);
-    }
-
-    // ---- Pending fixtures (plans/checker-rewrite.md §2, checker-v2.md D13). ----
-    // The red fixtures of `plans/checker-findings.md`, run by the corpus
-    // walker in pending mode over `tests/pending/`, and the performance
-    // findings as ratio scenarios. A fixture here is EXPECTED to be red: the
-    // step fails only when one is malformed, green under the default checker
-    // (promote it), claimed and red under v2, or red for another reason than
-    // `tests/pending/RED` records. Never part of `test-blackbox`, so the three
-    // gates never run a red fixture.
-    //
-    // The timing scenarios run AFTER the corpus, never beside it: a ratio
-    // measured while another test binary is compiling fixtures on the next
-    // core is a ratio of the machine's load.
-    const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode");
-    var previous: ?*std.Build.Step = null;
-    for ([_][]const u8{
-        "tests/blackbox/corpus_test.zig",
-        "tests/blackbox/pending_test.zig",
-    }) |root| {
-        const t = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(root),
-                .target = target,
-                .optimize = optimize,
-                .imports = &.{.{ .name = "diagnostic", .module = diagnostic_mod }},
-            }),
-        });
-        const run = b.addRunArtifact(t);
-        run.step.dependOn(b.getInstallStep());
-        if (previous) |step| run.step.dependOn(step);
-        run.setCwd(b.path("."));
-        // Run 1 of `plans/checker-rewrite.md` §2.4: the default checker. Run 2
-        // (`BENI_CHECKER=v2`) is added by R4, with the flag.
-        pinCorpusEnvironment(run, .{ .root = "tests/pending", .mode = "pending" });
-        pending_step.dependOn(&run.step);
-        previous = &run.step;
-    }
-
-    // ---- Bench. ----
+    // ---- ReleaseFast compiler. ----
     // Always ReleaseFast, whatever `-Doptimize` says: a Debug throughput number
-    // is not a number. It gets its own module instances because a module's
-    // optimize mode is fixed at creation.
+    // is not a number. These module instances are their own because a
+    // module's optimize mode is fixed at creation. Two roots use them: the
+    // bench harness, and a ReleaseFast `beni` that `test-pending-perf` times
+    // (installed apart, as `zig-out/perf/bin/beni`, so the Debug binary every
+    // other test spawns is untouched).
     const bench_diagnostic = b.createModule(.{
         .root_source_file = b.path("src/diagnostic.zig"),
         .target = target,
@@ -205,6 +138,91 @@ pub fn build(b: *std.Build) void {
     // Its own options, because the id covers the optimize mode and the bench
     // module is always ReleaseFast whatever `-Doptimize` says.
     bench_beni.addImport("build_options", buildIdOptions(b, target, .ReleaseFast));
+    const perf_exe = b.addExecutable(.{
+        .name = "beni",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{ .name = "beni", .module = bench_beni },
+                .{ .name = "diagnostic", .module = bench_diagnostic },
+            },
+        }),
+    });
+    const perf_install = b.addInstallArtifact(perf_exe, .{ .dest_dir = .{ .override = .{ .custom = perf_bin_dir } } });
+
+    // ---- Black-box suite. ----
+    // Spawns `./zig-out/bin/beni`, so it depends on the install step and runs
+    // with cwd = repo root (the harness resolves the binary and the corpus
+    // relative to it). The blackbox modules import only `diagnostic`: reaching
+    // for an internal is a compile error, not a code-review finding.
+    //
+    // Every test binary is its own process, and the build runner runs them
+    // in parallel; the corpus walker is further split into the parts of
+    // `tests/blackbox/corpus_parts.zig`, one process each, so the step's wall
+    // time is no longer one binary walking every fixture twice
+    // (`plans/checker-rewrite.md` §2.4, *Parts*).
+    const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the installed binary)");
+    const bb: Blackbox = .{ .b = b, .target = target, .optimize = optimize, .diagnostic = diagnostic_mod };
+    for ([_][]const u8{
+        "tests/blackbox/blackbox_test.zig",
+        "tests/blackbox/abuse_test.zig",
+        "tests/blackbox/abuse_wide_test.zig",
+        "tests/blackbox/build_test.zig",
+        "tests/blackbox/cache_test.zig",
+        "tests/blackbox/check_test.zig",
+        "tests/blackbox/cutoff_test.zig",
+        "tests/blackbox/digest_test.zig",
+        "tests/blackbox/docs_test.zig",
+        "tests/blackbox/frontend_test.zig",
+        "tests/blackbox/iface_test.zig",
+        "tests/blackbox/matrix_test.zig",
+    }) |root| {
+        // The walker's knobs are pinned on every binary, not only the
+        // walker: `run.setEnvironmentVariable` is the one place a test's
+        // environment is decided.
+        blackbox_step.dependOn(&bb.run(bb.artifact(root), .{ .root = "tests/corpus" }).step);
+    }
+    // The corpus's knobs (`plans/checker-rewrite.md` §2.4), pinned EMPTY —
+    // which the walker reads as unset — so a variable exported in the
+    // developer's shell (`BENI_CHECKER=v2 zig build test-blackbox`) cannot
+    // turn the gate into something else; only the part differs per process.
+    // R4a's `test-v2` is the same loop with `.checker = "v2"`.
+    const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
+    for (std.enums.values(corpus_parts.Part)) |part| {
+        blackbox_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
+    }
+
+    // ---- Pending fixtures (plans/checker-rewrite.md §2, checker-v2.md D13). ----
+    // The red fixtures of `plans/checker-findings.md`, run by the corpus
+    // walker in pending mode over `tests/pending/`, and the scenarios of
+    // `pending_test.zig`. A fixture here is EXPECTED to be red: the step
+    // fails only when one is malformed, green under the default checker
+    // (promote it), claimed and red under v2, or red for another reason than
+    // `tests/pending/RED` records. Never part of `test-blackbox`, so the three
+    // gates never run a red fixture.
+    //
+    // Two steps. `test-pending` runs the pending corpus and the scenarios
+    // that measure no time (`BENI_PENDING_SCENARIOS=fast`), in parallel, on
+    // the Debug binary. `test-pending-perf` runs the timing scenarios
+    // (`=perf`) on the ReleaseFast binary, because the budgets they guard
+    // are ReleaseFast budgets — and alone, one scenario after another: a
+    // ratio is CPU time, but a machine busy on every core still perturbs the
+    // caches and clocks it is measured on (§2.5).
+    const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode, and the non-timing scenarios");
+    // Run 1 of `plans/checker-rewrite.md` §2.4: the default checker. Run 2
+    // (`BENI_CHECKER=v2`) is added by R4, with the flag.
+    pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending" }).step);
+    const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
+    pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
+
+    const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
+    const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });
+    perf_run.step.dependOn(&perf_install.step);
+    perf_step.dependOn(&perf_run.step);
+
+    // ---- Bench. ----
     const bench_exe = b.addExecutable(.{
         .name = "bench",
         .root_module = b.createModule(.{
@@ -523,23 +541,58 @@ fn collectFiles(
     }
 }
 
-/// The four knobs of the corpus walker (`tests/blackbox/corpus_test.zig`'s
-/// `Config`, `plans/checker-rewrite.md` §2.4, S11). An empty value is the walker's
-/// "unset": every field but the root defaults to it.
-const CorpusEnvironment = struct {
+/// Every environment variable the black-box harness reads to decide what a
+/// run MEANS: the corpus walker's four knobs (`tests/blackbox/corpus_test.zig`'s
+/// `Config`, `plans/checker-rewrite.md` §2.4, S11), its part
+/// (`corpus_parts.zig`), which pending scenarios run (`pending_test.zig`) and
+/// which binary is under test (`world.zig`'s `exePath`). An empty value is
+/// the harness's "unset": every field but the root defaults to it.
+const HarnessEnvironment = struct {
     root: []const u8,
     mode: []const u8 = "",
     checker: []const u8 = "",
     timeout_ms: []const u8 = "",
+    part: []const u8 = "",
+    scenarios: []const u8 = "",
+    /// Relative to the install prefix; empty is `bin/beni`, the Debug build.
+    exe: []const u8 = "",
 };
 
-/// Set all four explicitly on a test run, whatever the developer's shell
-/// exports: the Run step otherwise hands the child the build's whole
-/// environment, and one stray `export BENI_CHECKER=v2` would silently change
-/// what a gate means.
-fn pinCorpusEnvironment(run: *std.Build.Step.Run, env: CorpusEnvironment) void {
-    run.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
-    run.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
-    run.setEnvironmentVariable("BENI_CHECKER", env.checker);
-    run.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
-}
+/// The black-box test roots, compiled against the build's target and
+/// optimize mode and run from the repo root.
+const Blackbox = struct {
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    diagnostic: *std.Build.Module,
+
+    fn artifact(bb: Blackbox, root: []const u8) *std.Build.Step.Compile {
+        return bb.b.addTest(.{
+            .root_module = bb.b.createModule(.{
+                .root_source_file = bb.b.path(root),
+                .target = bb.target,
+                .optimize = bb.optimize,
+                .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
+            }),
+        });
+    }
+
+    /// One process of `t`, after the install step, cwd = repo root, with
+    /// every variable of `env` set explicitly — whatever the developer's
+    /// shell exports: the Run step otherwise hands the child the build's
+    /// whole environment, and one stray `export BENI_CHECKER=v2` would
+    /// silently change what a gate means.
+    fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
+        const r = bb.b.addRunArtifact(t);
+        r.step.dependOn(bb.b.getInstallStep());
+        r.setCwd(bb.b.path("."));
+        r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
+        r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
+        r.setEnvironmentVariable("BENI_CHECKER", env.checker);
+        r.setEnvironmentVariable("BENI_CASE_TIMEOUT_MS", env.timeout_ms);
+        r.setEnvironmentVariable("BENI_CORPUS_PART", env.part);
+        r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
+        r.setEnvironmentVariable("BENI_EXE", if (env.exe.len == 0) "" else bb.b.getInstallPath(.prefix, env.exe));
+        return r;
+    }
+};

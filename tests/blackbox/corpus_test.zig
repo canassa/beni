@@ -55,6 +55,8 @@
 //! `BENI_CHECKER` adds `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds
 //! each run. Unset (or empty), each is today's strict corpus run; see
 //! `Config`, and `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
+//! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
+//! `test-blackbox` spreads the corpus over parallel processes.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -62,6 +64,7 @@ const diagnostic = @import("diagnostic");
 const World = world.World;
 const Io = std.Io;
 const testing = std.testing;
+const Part = @import("corpus_parts.zig").Part;
 
 /// The root every `Kind` directory is joined onto unless
 /// `BENI_CORPUS_ROOT` says otherwise (see `Config`).
@@ -140,7 +143,27 @@ const Kind = enum {
     fn isRelease(kind: Kind) bool {
         return kind == .build_bad_release;
     }
+
+    /// The part (`corpus_parts.zig`) that runs this kind — for `run/`, the
+    /// part that runs one of its two passes. Exhaustive on purpose: a new
+    /// kind does not compile until it is given to a part, so no kind can
+    /// fall out of every `test-blackbox` process.
+    fn partOf(kind: Kind, pass: RunPass) Part {
+        return switch (kind) {
+            .parse_good, .parse_bad, .fmt, .bir, .regress => .parse,
+            .check_good, .check_bad, .check_args, .check_depth, .dispatch => .check,
+            .build_bad, .build_bad_release, .emit => .build,
+            .run => switch (pass) {
+                .dev => .run_dev,
+                .release => .run_release,
+            },
+        };
+    }
 };
+
+/// `run/`'s two builds of one fixture. Every other kind has one pass,
+/// which `partOf` is asked about as `.dev`.
+const RunPass = enum { dev, release };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -263,6 +286,8 @@ fn walk(kind: Kind) !void {
     const arena = arena_state.allocator();
 
     const cfg = try Config.read(arena);
+    // Another process runs this kind (`corpus_parts.zig`): nothing to do.
+    if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
     quiet = cfg.mode != .strict and !cfg.verbose;
     world.announce_timeouts = !quiet;
     defer world.announce_timeouts = true;
@@ -370,6 +395,10 @@ const Config = struct {
     /// pending and report modes, where by default only its one-line reason
     /// is printed.
     verbose: bool,
+    /// `BENI_CORPUS_PART`: the one part (`corpus_parts.zig`) this process
+    /// runs, or null for every part. `test-blackbox` runs each part in its
+    /// own process, in parallel.
+    part: ?Part,
     /// `tests/pending/CLAIMED` (§2.6): repo-relative paths, pending mode only.
     claimed: []const []const u8,
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
@@ -405,8 +434,24 @@ const Config = struct {
                 return error.BadCaseTimeout;
             }
         else if (mode == .pending) 20_000 else world.default_timeout_ms;
+        const part: ?Part = if (envOr(arena, "BENI_CORPUS_PART")) |text|
+            std.meta.stringToEnum(Part, text) orelse {
+                std.debug.print("BENI_CORPUS_PART must name a part of tests/blackbox/corpus_parts.zig, not `{s}`\n", .{text});
+                return error.BadCorpusPart;
+            }
+        else
+            null;
+        // A pending `run/` fixture's red signature names the pass that failed
+        // FIRST (`dev: …` before `release: …`), so a process that ran one
+        // pass could record another signature than the whole fixture has.
+        // Pending mode runs whole fixtures, in one process.
+        if (part != null and mode == .pending) {
+            std.debug.print("BENI_CORPUS_PART is refused in pending mode: rule (d) compares whole fixtures\n", .{});
+            return error.BadCorpusPart;
+        }
         var cfg: Config = .{
             .root = std.mem.trimEnd(u8, root, "/"),
+            .part = part,
             .is_default_root = std.mem.eql(u8, std.mem.trimEnd(u8, root, "/"), default_root),
             .mode = mode,
             .checker = envOr(arena, "BENI_CHECKER"),
@@ -429,6 +474,11 @@ const Config = struct {
             if (std.mem.eql(u8, line.path, repo_path) and std.mem.eql(u8, line.checker, cfg.checkerName())) return line.signature;
         }
         return null;
+    }
+
+    /// Whether this process runs `part`.
+    fn runs(cfg: *const Config, part: Part) bool {
+        return cfg.part == null or cfg.part.? == part;
     }
 
     /// The label of the checker under test in a report line.
@@ -1242,7 +1292,11 @@ const Case = struct {
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
         try dev.appendSlice(c.arena, sources.items);
-        try c.runOnce("out", dev.items, "expected", c.bless);
+        // Each pass runs in the process of its part (`corpus_parts.zig`):
+        // the two build to different `--out` directories and compare with
+        // their own golden, so neither reads anything the other wrote.
+        if (c.cfg.runs(Kind.run.partOf(.dev))) try c.runOnce("out", dev.items, "expected", c.bless);
+        if (!c.cfg.runs(Kind.run.partOf(.release))) return;
         // The release pass never blesses `expected`: it is the DEV pass's
         // golden and a release build that disagrees with it is the finding
         // this pass exists to make. A fixture that is allowed to differ says

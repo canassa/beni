@@ -16,6 +16,18 @@ below assumes them.
 - **The two tracking steps (§2, `checker-v2.md` §22.2).** From R0, `zig build test-pending` passes
   at every commit. From R4, `zig build test-v2` runs at every commit: report mode until R8, strict
   from R9.
+- **The perf step (§2.5, split out 2026-09-25).** `zig build test-pending-perf` times the
+  performance scenarios on a ReleaseFast compiler; it is not run at every commit. It must pass (all
+  RED as recorded, or the finding's scenario turned GREEN and promoted) in:
+  - every slice that touches the code a perf scenario covers — **R3** (CK-41), **R6a** (CK-42,
+    CK-80), **R8a** (CK-40, CK-75), R6a/R14 for CK-03, R7 for `NEST-UNDER` — run by the implementer
+    before hand-off and again by the reviewer;
+  - any other slice whose diff touches `src/check/` hot paths (`Check.zig`, `Solve.zig`,
+    `Schemes.zig`, `Schema.zig`, `Types.zig`, `Dispatch.zig`) or `src/js/Lower.zig`, since a
+    scenario can turn red for a new reason (rule (d));
+  - **the manager's pre-commit check**, for every slice from R3 on, whatever it touches: about 22 s
+    when `src/` is unchanged since the last ReleaseFast build, about two minutes when the
+    ReleaseFast compiler has to be rebuilt first.
 - **Fail-first (rule 3).** Every CK the slice closes already has a red fixture in
   `tests/pending/`, written by R0. The slice's evidence is that fixture turning green, and then
   either being **promoted** into `tests/corpus/` or being **claimed** (§2.6).
@@ -115,25 +127,64 @@ It fails the step only for:
 **The environment never leaks into the gates** (S11). Every `addRunArtifact` for `corpus_test.zig`
 in `build.zig` sets all four variables **explicitly**, to the values of that step, with
 `run.setEnvironmentVariable`. That covers `test-blackbox` (`BENI_CORPUS_ROOT=tests/corpus`, mode,
-checker and timeout empty, meaning the defaults), `test-pending` and `test-v2`.
+checker and timeout empty, meaning the defaults), `test-pending` and `test-v2`. *Amended
+2026-09-25:* three more variables decide what a run means, and are pinned the same way on every
+black-box binary (`build.zig`'s `Blackbox.run`, one place): `BENI_CORPUS_PART` (below),
+`BENI_PENDING_SCENARIOS` (§2.5) and `BENI_EXE`, the binary under test (`world.zig`'s `exePath`;
+empty is `zig-out/bin/beni`, and only `test-pending-perf` sets it).
 
 `corpus_test.zig` treats an empty value as unset. So a variable exported in the shell, left over
 from running `test-v2` by hand, cannot turn a gate into report mode, point it at another root or
 switch its checker. R0's exit criteria check it by hand: export
 `BENI_CORPUS_MODE=report BENI_CORPUS_ROOT=tests/pending BENI_CHECKER=v2`, run `zig build
 test-blackbox` with a deliberately broken corpus fixture in a scratch branch, and confirm it still
-fails.
+fails. Re-checked 2026-09-25 with all seven variables exported (`BENI_CORPUS_PART=build`,
+`BENI_EXE` at the ReleaseFast binary, `BENI_PENDING_SCENARIOS=perf` besides R0's three) and one broken
+golden in every kind: all 17 failed, `run/`'s in both passes.
 
-**In `build.zig`**, one step, `test-pending`, depending on install:
+**Parts** (added 2026-09-25). `test-blackbox` no longer runs the walker as one process: it was one
+binary walking every fixture, and `run/` twice, so its two minutes bounded the whole step.
+`tests/blackbox/corpus_parts.zig` lists the parts, and `build.zig` imports that file and adds one
+run of `corpus_test.zig` per part, with `BENI_CORPUS_PART=<part>`, in parallel:
+
+| Part | Kinds | Fixtures | Alone (Debug) |
+|---|---|---|---|
+| `parse` | `parse/good`, `parse/bad`, `fmt`, `bir`, `regress` | 277 | 32 s |
+| `check` | `check/good`, `check/bad`, `check/args`, `check/depth`, `dispatch` | 267 | 42 s |
+| `build` | `build/bad`, `build/bad-release`, `emit` (with `app/`, `release/`) | 44 | 6 s |
+| `run_dev` | `run/`, the development pass | 155 | 27 s |
+| `run_release` | `run/`, the `--release --allow-debug` pass | 155 | 27 s |
+
+`corpus_test.zig` maps each kind, and each of `run/`'s passes, to a part with an **exhaustive
+switch** (`Kind.partOf`), so a kind cannot fall out of every process, and a part cannot exist
+without a run. An empty `BENI_CORPUS_PART` is every part in one process. Pending mode refuses a
+part: a `run/` fixture's red signature names the first pass that failed, so it needs both. R4a's
+`test-v2` is the same loop with `.checker = "v2"` (and `.mode = "report"` until R9).
+
+For the same reason `abuse_test.zig` was split (about 80 s alone, the longest binary once the
+corpus was split): its five wide-input scenarios — CK-17's 100 000-field records, CK-79's cap, CK-81's
+65 535-field payloads, the 200 000-element list and the operator chains, about 47 s — moved
+verbatim into `abuse_wide_test.zig`, its helpers into `abuse_support.zig` (no tests), 29 + 5 = 34
+tests as before. Measured on an idle 16-core (32-thread) machine, `test-blackbox` went from
+2 min 36 s to 1 min 30 s of wall time, and in two interleaved pairs from 2 min 57 s to 1 min 42 s. It is now bounded by the machine's CPU, not by one
+binary: the 17 processes saturate every core, so each takes about twice its time alone, and the
+single-test `matrix_test.zig` and `cutoff_test.zig` (about 45–60 s alone) are among the longest.
+
+**In `build.zig`**, two steps, both depending on install (split 2026-09-25; one step until then):
 
 - **Run 1:** `corpus_test.zig` with `BENI_CORPUS_ROOT=tests/pending BENI_CORPUS_MODE=pending`, the
   default checker.
 - **Run 2, from R4:** the same plus `BENI_CHECKER=v2`. Here rule (b) applies to v2 only after R11,
   when v2 is the default.
-- **`tests/blackbox/pending_test.zig`:** the performance scenarios and the permutation scenario of
-  §2.5, which follow the same four rules.
+- **`tests/blackbox/pending_test.zig` with `BENI_PENDING_SCENARIOS=fast`:** the scenarios of §2.5
+  that measure no time (`PERM`, `NEST-OVER`, CK-82, CK-83) and the check that `CLAIMED` and `RED`
+  name things that exist. On the Debug binary, beside Run 1.
+- **`test-pending-perf`:** `pending_test.zig` with `BENI_PENDING_SCENARIOS=perf` and `BENI_EXE` at
+  a ReleaseFast `beni` installed as `zig-out/perf/bin/beni`: the timing scenarios, alone, one
+  after another. §1 says which slices run it.
 
-The step is **not** part of `test-blackbox`, so the three gates never run a red fixture.
+Rules (a)–(d) apply in both steps. Neither is part of `test-blackbox`, so the three gates never run
+a red fixture.
 
 R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER=v2`. Its modes:
 - **R4a–R8b, `report`.** The fixtures listed in `tests/pending/v2-expected.md` are skipped and
@@ -147,22 +198,54 @@ R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER
 ### 2.5 Performance and permutation scenarios
 
 `pending_test.zig` holds:
-- one Zig test per perf CK (CK-03's time bound, CK-40, CK-41, CK-42), each generating its program
-  into a `World`;
-- from R7, the permutation scenario.
+- one Zig test per perf CK (CK-03's time bound, CK-40, CK-41, CK-42, CK-75, CK-80, and R7's
+  `NEST-UNDER`), each generating its program into a `World`: **`test-pending-perf`**;
+- the scenarios about what the compiler says rather than how long it takes (R7's permutation
+  scenario `PERM` and `NEST-OVER`, CK-82, CK-83): **`test-pending`**.
+
+The file's `scenarios` table assigns each scenario to its step; `Scenario.init` refuses an id the
+table lacks at compile time. The fast ones stay on the Debug binary because its safety checks are
+part of their claim (CK-82 is red as a Debug panic; in ReleaseFast the same overflow is undefined
+behaviour). The timing ones run on **ReleaseFast** (added 2026-09-25): the budgets they guard are
+ReleaseFast budgets (`fast-compiler.md` §2), and a Debug build's constant factors made R0's sizes
+cost eleven minutes a run. A timing scenario refuses to run on `zig-out/bin/beni`.
 
 - **Scaling findings** assert a **ratio**: time(2n) / time(n) ≤ 2.5. That is linear with head-room.
   Quadratic is about 4 and cubic about 8. A ratio is robust across machines, where an absolute bound
   is not.
   - **Each point is the best of 3 runs** (S13), so load on a CI machine cannot flake a ratio into a
     rule (c) failure.
-  - CK-03's absolute bound, 5 s, uses the best of 3 too.
+  - CK-03's absolute bound, 500 ms of CPU on ReleaseFast (5 s on Debug until 2026-09-25), uses
+    the best of 3 too.
   - **Time is the child compiler's CPU time** (user + system, from `wait4`'s rusage), not the wall
     clock, and every run is `--jobs=1`. *Amended 2026-09-24 by the review of R2a:* a concurrent
     build stretched CK-40's two wall-clock points unequally (87 s / 162 s, ratio 1.85) into a
     false GREEN. The wall clock only kills a run, at twice the bound.
 - **Calibration (R0).** Choose `n` so that a *fixed* build takes at least 0.5 s at `n`. orch's
   scratch fixes (per-group settling removed; `resetMemo` with amortised growth) are the reference.
+  *Recalibrated 2026-09-25 for ReleaseFast:* each `n` is the smallest at which (i) `050cd2d` is
+  RED with a clear margin over 2.5 on three consecutive runs and (ii) `050cd2d` with the reference
+  fix, where one exists, reads GREEN through the same harness. The 0.5 s floor is dropped: in
+  ReleaseFast a fixed build of CK-40 or CK-41 takes 10–30 ms at any size the unfixed one can run in
+  seconds, and an empty module takes about 6 ms, so the floor would have cost minutes. The price is
+  that a fixed build's ratio sits a little under its true slope (start-up is paid at both points),
+  which is why (ii) is checked and recorded, not assumed. Each scenario's comment carries its
+  numbers:
+
+  | Scenario | n / 2n | `050cd2d` (best of 3, CPU) | with the reference fix |
+  |---|---|---|---|
+  | CK-03 | bound 500 ms | never finishes (3 kills at 1 s) | — |
+  | CK-40 | 300 / 600 schemas | 295–304 ms; 2n over 2.5× on 3 of 3 (≈2.4 s, about 8×) | 11–12 / 21 ms, 1.75–1.90 |
+  | CK-41 | 4 000 / 8 000 ctors | 389–393 / 1 431–1 460 ms, 3.64–3.71 | 11–12 / 17 ms, 1.41–1.54 |
+  | CK-42 | 4 000 / 8 000 decls | extra 70–76 / 272–286 ms, 3.76–3.88 | no reference fix |
+  | CK-75 | 6 000 / 12 000 decls | 201–205 / 714 ms, 3.48–3.55 | none; CK-40/41's fixes leave it at 3.5 |
+  | CK-80 | depth 9 / 18 | 6 / 188–191 ms, about 31 | no reference fix |
+  | NEST-UNDER | 200 / 400 methods | red by its codes, not by time; R7 sizes it | — |
+
+  The whole step takes about 22 s once its ReleaseFast compiler is built (and about 95 s more when
+  `src/` changed since the last build). One finding of the recalibration: with CK-40's reference
+  fix the schema program is linear only up to about 800 schemas — 1 000 / 1 600 take 77 / 158 ms —
+  so CK-40's fix, when R8a writes it, should be measured past that too.
 - **The permutation scenario (R7)** asserts, for each program and each permutation of its
   top-level declarations (capped at 120):
   - **exit 0**;
@@ -173,7 +256,11 @@ R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER
   instead asserts that every permutation gives the same single diagnostic code.
 - **Reporting.** Each scenario prints RED/GREEN like §2.4, and fails the step only under rules
   (b)–(d).
-- **Promotion** moves the scenario verbatim into `abuse_test.zig`.
+- **Promotion** moves the scenario verbatim into `abuse_test.zig`. *Open (2026-09-25):*
+  `abuse_test.zig` runs the Debug binary, and a timing scenario's sizes are now ReleaseFast
+  sizes. The promoting slice confirms the scenario is GREEN with margin there, or the manager
+  decides where promoted timing scenarios live (a ReleaseFast gate of their own is the obvious
+  candidate).
 
 ### 2.6 Promotion and claims
 

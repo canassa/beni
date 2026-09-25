@@ -33,6 +33,18 @@ const Allocator = std.mem.Allocator;
 /// an absolute path at `init` because the child runs with a different cwd.
 pub const exe_relative = "zig-out/bin/beni";
 
+/// The binary under test: `BENI_EXE` (absolute, or relative to the repo
+/// root) when it is set and not empty, else `exe_relative`. Only
+/// `test-pending-perf` sets it, to the ReleaseFast compiler its timing
+/// scenarios measure
+/// (`plans/checker-rewrite.md` §2.5); `build.zig` pins it EMPTY on every
+/// other run, so a variable exported in a shell cannot point a gate at
+/// another binary (S11).
+pub fn exePath(arena: Allocator) []const u8 {
+    const value = std.testing.environ.getAlloc(arena, "BENI_EXE") catch return exe_relative;
+    return if (value.len == 0) exe_relative else value;
+}
+
 /// Where the emitted JavaScript goes when a scenario does not say. Relative
 /// to the world's project directory.
 pub const default_out = "out";
@@ -127,7 +139,11 @@ pub const World = struct {
     pub fn init(gpa: Allocator, io: Io) !World {
         var tmp = std.testing.tmpDir(.{});
         errdefer tmp.cleanup();
-        const exe = try Io.Dir.cwd().realPathFileAlloc(io, exe_relative, gpa);
+        const exe = exe: {
+            var scratch: std.heap.ArenaAllocator = .init(gpa);
+            defer scratch.deinit();
+            break :exe try Io.Dir.cwd().realPathFileAlloc(io, exePath(scratch.allocator()), gpa);
+        };
         errdefer gpa.free(exe);
         var world: World = .{
             .gpa = gpa,

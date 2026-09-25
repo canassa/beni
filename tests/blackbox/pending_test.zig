@@ -3,9 +3,9 @@
 //! fixture cannot state, because its claim is about TIME, or about a program
 //! too wide or deep to check in (CK-82, CK-83: generated, as `abuse_test.zig`
 //! generates its inputs). (CK-71's claim about runs agreeing was promoted
-//! into `blackbox_test.zig` by R1.) Run
-//! only by `zig build test-pending`, never by the gates: every scenario here is
-//! expected to be RED on the checker the gates run.
+//! into `blackbox_test.zig` by R1.) Run only by `zig build test-pending`
+//! and `zig build test-pending-perf`, never by the gates: every scenario here
+//! is expected to be RED on the checker the gates run.
 //!
 //! Each scenario generates its program into a `World`, times the installed
 //! binary on it, and prints one line in the corpus walker's pending format:
@@ -35,11 +35,24 @@
 //! `--jobs=1`. The wall clock only bounds how long a run may take before it
 //! is killed.
 //!
-//! **Calibration (R0, 2026-09-24).** `n` is chosen so that a build with the
-//! FIX takes at least 0.5 s at `n`, measured with a Debug build of `7427828`
-//! carrying orch's two scratch fixes (per-group schema settling removed;
-//! `Schemes.Writer.resetMemo` growing to twice what it needs). Each scenario
-//! quotes its numbers. CK-42 has no reference fix, and says so.
+//! **Two steps** (2026-09-25). The scenarios whose claim is about TIME
+//! (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80, NEST-UNDER) run in `zig build
+//! test-pending-perf`, on a ReleaseFast compiler (`BENI_EXE`), because the
+//! budgets they guard (`fast-compiler.md` §2) are ReleaseFast budgets; the
+//! rest run in `zig build test-pending`, on the Debug binary the gates run.
+//! The `scenarios` table decides which; both steps apply rules (a)–(d).
+//!
+//! **Calibration (2026-09-25, ReleaseFast, CPU time, idle 32-core Linux).**
+//! Each `n` is the smallest, in steps of the numbers quoted per scenario,
+//! at which (i) `050cd2d` is RED with its ratio clearly over 2.5, and
+//! (ii) where a reference fix is known — orch's two scratch fixes, per-group
+//! schema settling removed and `Schemes.Writer.resetMemo` growing to twice
+//! what it needs — `050cd2d` WITH that fix reads GREEN, both checked through
+//! this harness (`BENI_EXE` at a scratch build) on three runs. An empty module
+//! checks in about 6 ms (process start plus `core`), which is the floor under
+//! every point. Scenarios without a reference fix say so. R0's original sizes
+//! were for a Debug binary and at least 0.5 s of fixed work at `n`; they cost
+//! eleven minutes a run.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -51,8 +64,46 @@ const testing = std.testing;
 const pending_root = "tests/pending";
 
 /// Every scenario of this file, by the `scenario/<id>` name `CLAIMED` and `RED`
-/// use for it.
-const scenarios = [_][]const u8{ "scenario/CK-03", "scenario/CK-40", "scenario/CK-41", "scenario/CK-42", "scenario/CK-75", "scenario/CK-80", "scenario/PERM", "scenario/NEST-UNDER", "scenario/NEST-OVER", "scenario/CK-82", "scenario/CK-83" };
+/// use for it, and the step that runs it (`plans/checker-rewrite.md` §2.5):
+///
+///   .perf  `zig build test-pending-perf`: a claim about TIME, measured on
+///          the ReleaseFast compiler (`BENI_EXE`), alone, sized for it;
+///   .fast  `zig build test-pending`: a claim about what the compiler SAYS,
+///          on the Debug binary the gates run — whose safety checks are part
+///          of the claim (CK-82's red is a Debug panic; in ReleaseFast the
+///          same overflow is silent undefined behaviour).
+///
+/// `BENI_PENDING_SCENARIOS` (`fast` or `perf`, pinned by `build.zig`) picks
+/// one; a scenario of the other is skipped. The table is the one place a
+/// scenario's step is decided, and `Scenario.init` refuses an id missing
+/// from it, so no scenario can fall out of both steps.
+const scenarios = [_]struct { name: []const u8, step: Step }{
+    .{ .name = "scenario/CK-03", .step = .perf },
+    .{ .name = "scenario/CK-40", .step = .perf },
+    .{ .name = "scenario/CK-41", .step = .perf },
+    .{ .name = "scenario/CK-42", .step = .perf },
+    .{ .name = "scenario/CK-75", .step = .perf },
+    .{ .name = "scenario/CK-80", .step = .perf },
+    .{ .name = "scenario/NEST-UNDER", .step = .perf },
+    .{ .name = "scenario/PERM", .step = .fast },
+    .{ .name = "scenario/NEST-OVER", .step = .fast },
+    .{ .name = "scenario/CK-82", .step = .fast },
+    .{ .name = "scenario/CK-83", .step = .fast },
+};
+
+const Step = enum { fast, perf };
+
+/// The step this process runs, from `BENI_PENDING_SCENARIOS`. Unset or
+/// empty is refused rather than read as "both": a timing scenario run on the
+/// Debug binary measures a different compiler than its sizes were
+/// calibrated on, and its verdict would mean nothing.
+fn selectedStep(arena: std.mem.Allocator) !Step {
+    const text = testing.environ.getAlloc(arena, "BENI_PENDING_SCENARIOS") catch "";
+    return std.meta.stringToEnum(Step, text) orelse {
+        std.debug.print("BENI_PENDING_SCENARIOS must be `fast` or `perf`, not `{s}`: run `zig build test-pending` or `zig build test-pending-perf`\n", .{text});
+        return error.BadPendingScenarios;
+    };
+}
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │ SCENARIOS                                                               │
@@ -61,10 +112,12 @@ const scenarios = [_][]const u8{ "scenario/CK-03", "scenario/CK-40", "scenario/C
 // CK-03: a receiver made cyclic by `( y, y ) == y` reaches method resolution,
 // and on 7427828 the checker never stops (`targetFor → fillPart →
 // derivedUse …`, about 150 MB/s). Fixed, it is `infinite_type` and the check
-// ends at once; 5 s is two orders of magnitude of head-room for a Debug build
-// of a ten-line file. The corpus twin is
+// ends at once. The bound is 500 ms of CPU (ReleaseFast since 2026-09-25;
+// R0's 5 s was for Debug): an empty module checks in about 6 ms, so that is
+// two orders of magnitude of head-room for a ten-line file, and a hang costs
+// three kills at 1 s of wall time. The corpus twin is
 // `tests/pending/check/bad/CyclicReceiverResolution.beni`.
-test "CK-03: a cyclic receiver in a `let` reports infinite_type within 5 s" {
+test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -84,7 +137,7 @@ test "CK-03: a cyclic receiver in a `let` reports infinite_type within 5 s" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const verdict = try s.bounded(&.{ "check", "--no-cache", "--diagnostics=json", "Cyclic.beni" }, 5_000, .infinite_type);
+    const verdict = try s.bounded(&.{ "check", "--no-cache", "--diagnostics=json", "Cyclic.beni" }, 500, .infinite_type);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -94,15 +147,20 @@ test "CK-03: a cyclic receiver in a `let` reports infinite_type within 5 s" {
 
 // CK-40: `schemas.settleProperties` runs after every binding group holding a
 // schema and recomputes every endpoint of the module, each over a store-sized
-// memset: O(schemas² × store), cubic. Calibration: with the per-group calls
-// removed, 200 / 400 / 800 schemas check in 339 / 596 / ~1 100 ms (Debug), so
-// n = 400; on 7427828 the same take 3 892 / 16 979 ms / over two minutes.
+// memset: O(schemas² × store), cubic. Calibration (ReleaseFast, CPU): on
+// 050cd2d 100 / 200 / 300 / 400 / 600 schemas take 19 / 92 / 293 / 716 /
+// 2 393 ms, a ratio of about 8 at n = 300; with the per-group calls removed,
+// 200 / 300 / 400 / 600 / 800 take 10 / 12 / 15 / 22 / 29 ms (ratio 1.8 at
+// n = 300), so n = 300. Past 800 the fixed build is super-linear again —
+// 1 000 / 1 600 take 77 / 158 ms, 800 → 1 600 is 5.5× — so the scenario must
+// not be scaled up without another fix: that residue is not CK-40's (R0 saw
+// none in Debug at 200 / 400 / 800: 339 / 596 / ~1 100 ms).
 test "CK-40: schema property settling is linear in the number of schemas" {
     var s = try Scenario.init("CK-40");
     defer s.deinit();
-    try s.w.write("S.beni", try generate(s.arena(), 400, "pub schema S{d} = Int\n\n\n", 1));
-    try s.w.write("S2.beni", try generate(s.arena(), 800, "pub schema S{d} = Int\n\n\n", 1));
-    const verdict = try s.ratio("S.beni", "S2.beni", 400);
+    try s.w.write("S.beni", try generate(s.arena(), 300, "pub schema S{d} = Int\n\n\n", 1));
+    try s.w.write("S2.beni", try generate(s.arena(), 600, "pub schema S{d} = Int\n\n\n", 1));
+    const verdict = try s.ratio("S.beni", "S2.beni", 300);
     try s.finish(verdict);
 }
 
@@ -111,16 +169,17 @@ test "CK-40: schema property settling is linear in the number of schemas" {
 // before every constructor: O(constructors × store). ONE `pub` type with n
 // constructors isolates it — a chain of n types (the catalogue's program)
 // also carries a per-type super-linear residue that the fix leaves behind
-// (CK-75), so its ratio stays over 2.5 with the fix in. Calibration: with
-// amortised growth, 8 000 / 12 000 / 16 000 / 32 000 constructors check in
-// 375 / 504 / 665 / 1 227 ms (Debug), so n = 14 000; on 7427828, 8 000 /
-// 12 000 / 16 000 take 2 950 / 6 226 / 10 636 ms.
+// (CK-75), so its ratio stays over 2.5 with the fix in. Calibration
+// (ReleaseFast, CPU): on 050cd2d 2 000 / 3 000 / 4 000 / 6 000 / 8 000
+// constructors take 115 / 234 / 390 / 820 / 1 416 ms, a ratio of 3.4 to 3.6
+// from 2 000 on; with amortised growth 2 000 / 4 000 / 8 000 / 16 000 / 32 000
+// take 9 / 13 / 18 / 30 / 54 ms, 1.4 to 1.8. n = 4 000.
 test "CK-41: interface writing is linear in the number of constructors" {
     var s = try Scenario.init("CK-41");
     defer s.deinit();
-    try s.w.write("C.beni", try bigType(s.arena(), 14_000));
-    try s.w.write("C2.beni", try bigType(s.arena(), 28_000));
-    const verdict = try s.ratio("C.beni", "C2.beni", 14_000);
+    try s.w.write("C.beni", try bigType(s.arena(), 4_000));
+    try s.w.write("C2.beni", try bigType(s.arena(), 8_000));
+    const verdict = try s.ratio("C.beni", "C2.beni", 4_000);
     try s.finish(verdict);
 }
 
@@ -132,19 +191,23 @@ test "CK-41: interface writing is linear in the number of constructors" {
 // residue), so this scenario measures the EXTRA cost of nominal dispatch:
 // extra(n) = t(nominal, n) − t(control, n), and extra(2n) / extra(n) ≤ 2.5,
 // each point the best of 3. R6's dispatch fix alone can turn it green.
-// Measured on 7427828 (Debug, review of R0): nominal 4.1 s / 12.8 s and
-// control 2.6 s / 7.6 s at 5 000 / 10 000, so extra 1.5 s → 5.2 s, ratio
-// about 3.5.
+// Calibration (ReleaseFast, CPU, 050cd2d): nominal / control take 22 / 17,
+// 52 / 35, 170 / 100, 609 / 331 and 2 390 / 1 272 ms at 1 000 / 2 000 /
+// 4 000 / 8 000 / 16 000, so the extra doubles to 4.0× its size at every
+// step from 1 000 on (4.5 → 17 → 70 → 278 → 1 118 ms). n = 4 000, where the
+// extra (70 ms) is well clear of the noise of two subtracted points. No
+// reference fix exists: R6a's dispatch work is the first that can turn it
+// green, and whether it does at n = 4 000 is R6a's to confirm.
 test "CK-42: nominal dispatch adds linear cost per declaration" {
     var s = try Scenario.init("CK-42");
     defer s.deinit();
     const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
-    try s.w.write("E.beni", try generate(s.arena(), 5_000, nominal, 6));
-    try s.w.write("E2.beni", try generate(s.arena(), 10_000, nominal, 6));
-    try s.w.write("X.beni", try generate(s.arena(), 5_000, control, 4));
-    try s.w.write("X2.beni", try generate(s.arena(), 10_000, control, 4));
-    const verdict = try s.extraRatio(.{ "E.beni", "E2.beni" }, .{ "X.beni", "X2.beni" }, 5_000);
+    try s.w.write("E.beni", try generate(s.arena(), 4_000, nominal, 6));
+    try s.w.write("E2.beni", try generate(s.arena(), 8_000, nominal, 6));
+    try s.w.write("X.beni", try generate(s.arena(), 4_000, control, 4));
+    try s.w.write("X2.beni", try generate(s.arena(), 8_000, control, 4));
+    const verdict = try s.extraRatio(.{ "E.beni", "E2.beni" }, .{ "X.beni", "X2.beni" }, 4_000);
     try s.finish(verdict);
 }
 
@@ -154,14 +217,21 @@ test "CK-42: nominal dispatch adds linear cost per declaration" {
 // at 5 000 and 7.6 s at 10 000 (ratio about 2.9), and independent `pub
 // type`s alone take 458 / 1 126 / 3 370 ms at 2 000 / 4 000 / 8 000 even
 // with CK-40's and CK-41's fixes in. The self-profile puts it in the
-// module's `check` event and in `dep_digest`. Slice unassigned (manager).
+// module's `check` event and in `dep_digest`. Slice R8a (manager).
+// Calibration (ReleaseFast, CPU, 050cd2d): 1 000 / 2 000 / 3 000 / 4 000 /
+// 6 000 / 8 000 / 12 000 / 16 000 take 17 / 35 / 63 / 100 / 196 / 331 / 727 /
+// 1 272 ms. The ratio GROWS with n — 2.1 at 1 000, 2.9 at 2 000, 3.3 at
+// 4 000, 3.7 at 6 000 — so below about 2 000 this scenario reads GREEN on
+// the unfixed compiler; n = 6 000 keeps it clear. With CK-40's and CK-41's
+// fixes the numbers do not move (197 / 688 ms at 6 000 / 12 000): no
+// reference fix for this one exists.
 test "CK-75: checking is linear in the number of declarations" {
     var s = try Scenario.init("CK-75");
     defer s.deinit();
     const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
-    try s.w.write("X.beni", try generate(s.arena(), 5_000, control, 4));
-    try s.w.write("X2.beni", try generate(s.arena(), 10_000, control, 4));
-    const verdict = try s.ratio("X.beni", "X2.beni", 5_000);
+    try s.w.write("X.beni", try generate(s.arena(), 6_000, control, 4));
+    try s.w.write("X2.beni", try generate(s.arena(), 12_000, control, 4));
+    const verdict = try s.ratio("X.beni", "X2.beni", 6_000);
     try s.finish(verdict);
 }
 
@@ -173,9 +243,11 @@ test "CK-75: checking is linear in the number of declarations" {
 // recurses per position). `Basics.eq w w` on the same value is instant.
 // Found by R1's reviewer on both 22daa5f and R1 (not an R1 regression).
 // Measured on a Debug build of R1: n=9 0.11 s, n=18 2.31 s, a ratio of 21
-// where the rule allows 2.5. Not calibrated to 0.5 s at n as §2.5 asks: a
-// linear checker takes process start-up time at both points, so its ratio
-// is about 1 and the scenario goes GREEN.
+// where the rule allows 2.5. ReleaseFast (CPU, 050cd2d): depth 9 / 12 / 14 /
+// 16 / 18 take 6 / 9 / 17 / 51 / 190 ms, so 9 / 18 is a ratio of about 30,
+// and depth 8 / 16 still 7. Not calibrated to a floor of fixed work at n as
+// §2.5 asks: a linear checker takes process start-up time at both points, so
+// its ratio is about 1 and the scenario goes GREEN. No reference fix.
 test "CK-80: == on a value whose type is a doubling DAG is not exponential in its depth" {
     var s = try Scenario.init("CK-80");
     defer s.deinit();
@@ -334,6 +406,8 @@ test "pending: CLAIMED and RED name fixtures and scenarios that exist" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
+    // Once, in `test-pending`: the lists do not depend on the binary.
+    if (try selectedStep(arena) != .fast) return error.SkipZigTest;
     const claimed = try world.pending.readClaimed(arena, testing.io, pending_root);
     const red = try world.pending.readRed(arena, testing.io, pending_root);
     var stale: usize = 0;
@@ -357,7 +431,7 @@ test "pending: CLAIMED and RED name fixtures and scenarios that exist" {
 // └─────────────────────────────────────────────────────────────────────────┘
 
 fn exists(path: []const u8) bool {
-    for (scenarios) |name| if (std.mem.eql(u8, name, path)) return true;
+    for (scenarios) |e| if (std.mem.eql(u8, e.name, path)) return true;
     if (!std.mem.startsWith(u8, path, pending_root ++ "/")) return false;
     Io.Dir.cwd().access(testing.io, path, .{}) catch return false;
     return true;
@@ -433,6 +507,24 @@ const Scenario = struct {
     red: []const world.pending.RedLine,
 
     fn init(comptime id: []const u8) !Scenario {
+        const entry = comptime for (scenarios) |e| {
+            if (std.mem.eql(u8, e.name, "scenario/" ++ id)) break e;
+        } else @compileError("scenario/" ++ id ++ " is not in the `scenarios` table");
+        {
+            var scratch: std.heap.ArenaAllocator = .init(testing.allocator);
+            defer scratch.deinit();
+            const step = try selectedStep(scratch.allocator());
+            if (step != entry.step) return error.SkipZigTest;
+            // A timing scenario on the Debug binary would measure another
+            // compiler than the one its sizes were calibrated on.
+            if (step == .perf and std.mem.eql(u8, world.exePath(scratch.allocator()), world.exe_relative)) {
+                std.debug.print("scenario/{s} is a timing scenario: it runs on the ReleaseFast compiler `zig build test-pending-perf` installs (BENI_EXE), never on {s}\n", .{ id, world.exe_relative });
+                return error.PerfScenarioOnDebugBinary;
+            }
+        }
+        // A kill at the bound is an expected, recorded red signature here,
+        // as in the pending walker: its own line would be noise.
+        world.announce_timeouts = false;
         var s: Scenario = .{
             .id = id,
             .name = "scenario/" ++ id,

@@ -7,8 +7,17 @@ each fixture are [`plans/checker-rewrite.md`](../../plans/checker-rewrite.md) §
 short version.
 
 ```sh
-zig build test-pending   # NOT a gate: it passes when every fixture here is red for its recorded reason
+zig build test-pending        # NOT a gate: the fixtures here and the non-timing scenarios, on the
+                              # Debug binary; passes when every one is red for its recorded reason
+zig build test-pending-perf   # NOT a gate: the timing scenarios, on a ReleaseFast beni
+                              # (zig-out/perf/bin/beni); same rules
 ```
+
+`test-pending` runs at every commit. `test-pending-perf` (about 22 s, plus about 95 s when `src/`
+changed and its ReleaseFast compiler must be rebuilt) runs in the slices that touch what a timing
+scenario covers — R3 (CK-41), R6a (CK-42, CK-80, CK-03), R8a (CK-40, CK-75), R7 (`NEST-UNDER`),
+any slice touching the checker's hot paths — and in the manager's pre-commit check from R3 on
+([`checker-rewrite.md`](../../plans/checker-rewrite.md) §1).
 
 ## Layout
 
@@ -20,7 +29,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | `RED` | one line per fixture and checker: `<path> <checker> <signature>` — why it is red today |
 | `CLAIMED` | fixtures green under `--checker=v2` before the cut-over (§2.6), one path per line |
 | `v2-green.txt` | corpus fixtures a landed slice made green under v2 (R4's `test-v2` ratchet) |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80), a generated width or depth (CK-82, CK-83), plus R7's permutation and nesting stubs — as scenarios `scenario/CK-NN` |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-41, CK-42, CK-75, CK-80, `NEST-UNDER`: `test-pending-perf`), a generated width or depth (CK-82, CK-83) and R7's `PERM` and `NEST-OVER` (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
 
 ## A fixture
 
@@ -91,8 +100,19 @@ not sign alike.
 ## Knobs
 
 `BENI_PENDING_VERBOSE=1` prints each failure's full detail as the corpus does. The walker's four
-variables (`BENI_CORPUS_ROOT`, `BENI_CORPUS_MODE`, `BENI_CHECKER`, `BENI_CASE_TIMEOUT_MS`) are set
-by `build.zig` on every run, so nothing exported in a shell changes what a step means.
+variables (`BENI_CORPUS_ROOT`, `BENI_CORPUS_MODE`, `BENI_CHECKER`, `BENI_CASE_TIMEOUT_MS`), and
+`BENI_CORPUS_PART`, `BENI_PENDING_SCENARIOS` (`fast` or `perf`) and `BENI_EXE` (the binary under
+test), are set by `build.zig` on every run, so nothing exported in a shell changes what a step
+means.
+
+## Timing scenarios
+
+Measured on the ReleaseFast compiler, CPU time, each point the best of 3, `time(2n) / time(n) ≤
+2.5` (CK-42: the same on the extra cost over a control). Sizes were recalibrated for ReleaseFast
+on 2026-09-25: each is the smallest at which `050cd2d` is RED with a clear margin on three
+consecutive runs and, where a reference fix exists (CK-40, CK-41), `050cd2d` with the fix reads
+GREEN through the same harness. The numbers are in each scenario's comment and in
+`checker-rewrite.md` §2.5. Resize a scenario only with both measurements in hand.
 
 ## Notes on particular fixtures
 
