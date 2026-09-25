@@ -26,7 +26,7 @@ const diagnostic = @import("diagnostic");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
-const Constrain = @import("Constrain.zig");
+const Env = @import("Env.zig").Env;
 const Render = @import("Render.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
@@ -35,7 +35,7 @@ const Diagnostics = @This();
 
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
-const Category = Constrain.Category;
+const Category = @import("Category.zig").Category;
 
 /// A checker diagnostic, message already rendered.
 pub const Item = struct {
@@ -80,7 +80,7 @@ pub const max_derived_record_fields = 4096;
 
 pub const Reporter = struct {
     gpa: Allocator,
-    env: *Constrain.Env,
+    env: *Env,
     items: *std.ArrayList(Item),
     /// A module in an import cycle reports nothing (checker.md §4.3), and
     /// so does a declaration that has already failed: one mistake, one

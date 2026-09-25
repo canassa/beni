@@ -95,6 +95,22 @@ pub const check2 = struct {
     pub const Driver = @import("check2/Driver.zig");
     pub const Incremental = @import("check2/Incremental.zig");
     pub const Module = @import("check2/Module.zig");
+    pub const Context = @import("check2/Context.zig");
+    pub const Subset = @import("check2/Subset.zig");
+    pub const Walk = @import("check2/Walk.zig");
+    pub const Unify = @import("check2/Unify.zig");
+    pub const Generalize = @import("check2/Generalize.zig");
+    pub const Instantiate = @import("check2/Instantiate.zig");
+    pub const Solve = @import("check2/Solve.zig");
+    pub const Report = @import("check2/Report.zig");
+    pub const Publish = @import("check2/Publish.zig");
+    pub const rules_test = @import("check2/rules_test.zig");
+    pub const constrain = struct {
+        pub const Tree = @import("check2/constrain/Tree.zig");
+        pub const Expr = @import("check2/constrain/Expr.zig");
+        pub const Pattern = @import("check2/constrain/Pattern.zig");
+        pub const Decl = @import("check2/constrain/Decl.zig");
+    };
 };
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");

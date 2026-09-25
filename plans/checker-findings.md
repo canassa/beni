@@ -2639,6 +2639,122 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   reachable from a published scheme, before R8a reads them. The spec amendment comes first, in its
   own commit (rule 1); the text to amend is §14.2's "per exported nominal type", for both rows.
 
+### CK-90 — A `let` function that uses a later `let` pattern's variable is generalised before the pattern
+
+- **Severity** unsound-runtime. **Area** core: the `let` SCC. **Class** K8.
+  **Sources** R4b, while making generation resolve `.local` references (I11, `checker-v2.md` §6.2).
+- **Program**:
+
+  ```elm
+  f p =
+      let
+          c u =
+              a
+
+          ( a, b ) =
+              p
+      in
+      ( c 1, String.length a )
+
+  bad =
+      f ( 5, 0 )
+  ```
+- **Command** check; `dump --stage=types`.
+- **Observed** on 986b2c5: exit 0, `f : ( a, b ) -> ( c, Int )`. `c`'s result is unrelated to `a`,
+  and `f`'s argument does not have to hold a `String`, so `f ( 5, 0 )` checks and `String.length`
+  runs on `5`.
+- **Expected** `f : ( String, a ) -> ( String, Int )`, and `bad` is a mismatch at `5`
+  (`kind_mismatch 24:9`). v2 (R4b) gives exactly that.
+- **Root cause** `Constrain.sccOfLet` gives an edge only to a `let_def` binding (`local_of` is `none`
+  for a `let_pattern`). A function is hoisted, so lowering allows it to use a variable a later
+  pattern binds; with no edge, `c`'s group is solved and generalised first, over a variable the
+  pattern constrains afterwards.
+- **Fixture** `check/bad/LetFunctionUsesLaterPattern.beni`. `.codes`: `kind_mismatch 24:9`.
+- **Slice** R4b: `check2/constrain/Decl.zig`'s `let` SCC has an edge to a pattern binding for every
+  variable it binds (`checker-v2.md` §6.2, *As built by R4b*). Claimed (green under v2 only); v1 is
+  frozen.
+
+### CK-91 — A `let` of more than about 4 200 bindings loses its last constraints in silence
+
+- **Severity** unsound-runtime. **Area** core: the solver's recursion guard. **Class** K3.
+  **Sources** R4b, while driving a 100 000-deep type through every walk (I4).
+- **Program** `tests/pending/check/bad/LetOfManyBindings.beni`: `f x0 = let x1 = negate x0 … x5000 =
+  negate x4999; bad = String.length x5000 in bad` (one binding per line, generated).
+- **Observed** on 986b2c5: exit 0, `f : number -> a` — the result promises any type, so
+  `String.toUpper (f 1)` checks. Each of a `let`'s groups is a `let` node nested in the previous
+  one's body, `Solve.let_` solves the body by recursion, and past `Parse.max_depth + 104` levels
+  `Solve.solve` returns without a word: every later group is unconstrained. The guard's comment
+  says an accepted file cannot reach it; the parser bounds nesting, not a `let`'s binding count.
+  The same program with `[ xN ]` bindings, 5 000 deep and `pub`, publishes `deep : a -> b` instead
+  of `nesting_too_deep`.
+- **Expected** `kind_mismatch` at `x5000` in `bad` (10010:29).
+- **Fix (v2, R4b)** `Solve.let_` returns the body and `solve` continues with it in a loop — a
+  `let`'s groups are a tail chain — and the guard reports `nesting_too_deep` instead of returning
+  (I4). The generator's guards note the instruction for the same message.
+- **Fixture** `check/bad/LetOfManyBindings.beni`. `.codes`: `kind_mismatch 10010:29`.
+- **Slice** R4b (claimed; v1 is frozen).
+
+### CK-92 — A mismatch over a shared or cyclic type prints hundreds of megabytes
+
+- **Severity** compiler-hang / output blow-up (a two-line program writes 300 MB of stderr in about
+  11 s). **Area** `Render`, shared by both checkers. **Class** K13. **Sources** R4b's adversarial
+  review (F1).
+- **Program** `h x y z = [ x, ( y, z ), ( z, x ), ( x, 0 ) ]`; also a doubling `let`
+  `x1 = ( x0, x0 ) … x40 = ( x39, x39 ) in String.length x40`.
+- **Observed** on 986b2c5, both checkers: one TYPE MISMATCH of 301 990 289 bytes (604 MB for a
+  variant). `Render.write` truncates at depth 24 but prints a DAG as a tree: `x = ( x, x )` is 2^24
+  leaves.
+- **Expected** a bounded message.
+- **Fix (R4b's review)** `Render.Namer.budget`: at most `message_budget` (4 096) nodes per message,
+  `…` past it; the dumps set `unlimited` (`checker.md` §8.2's third bound). The message is now
+  37 KB on both checkers. A shared change to a kept file, contained, and no golden moved.
+- **Fixture** `blackbox_test.zig` "CK-92: a mismatch over a shared or cyclic type prints a bounded
+  message" (both checkers, stderr < 64 KB; red on 986b2c5 — the harness's 64 MB stream limit).
+- **Slice** R4b (fixed, in the gates).
+
+### CK-93 — A `let` chain whose types grow is quadratic in its length
+
+- **Severity** performance. **Area** the boundary's walks. **Class** K11. **Sources** R4b's
+  adversarial review (F6); R4b's structural review (N8, doubt 3).
+- **Program** `foo x0 = let x1 = [ x0 ] … xN = [ xN-1 ] in List.length xN`, one binding a line.
+- **Observed** under `--checker=v2` (R4b): N = 2 500 / 5 000 / 10 000 / 20 000 take 2.1 / 7.8 /
+  29.6 / 119.8 s, almost all in `solve` — about 600 ns per node visit per boundary: each `let`
+  boundary's occurs walk, rank adjustment and error scan revisit the whole type built so far. v1
+  plateaus only because it gives up in silence (CK-91). A `let` of 100 000 bindings whose types
+  nest 100 000 deep takes about 75 s under both checkers (R4b's own probe). The independent chain
+  (CK-91's shape) is linear.
+- **Expected** linear: the nodes an older boundary generalised or proved acyclic need not be
+  walked again (for occurs, black marks that persist across boundaries for generalised nodes).
+- **Fixture** none yet: a `pending_test.zig` timing scenario when a slice takes it.
+- **Slice** R6a (manager, 2026-09-25), with the resolver's boundary work. Also measure there the coinductive `Unify.active` pair stack, which scans linearly per pair of non-variables and is quadratic in depth on a very deep acyclic unification; replace it with a hashed set if it shows.
+
+### CK-94 — A `number` variable is printed as `a`
+
+- **Severity** diagnostic-quality. **Area** unification of names, `Render`. **Class** K13.
+  **Sources** R4b's adversarial review (F7); shared with v1.
+- **Program** `pub g = 1 :: []` and `pub h = List.singleton 2`: `dump --stage=interface` prints
+  `List a`; `f u = let p1 = [] in 1 :: p1` prints `f : a -> List a2`.
+- **Observed** the kind survives (sound: `String.toUpper (Maybe.withDefault (List.head g) "")` is
+  refused), but a message then reads "This argument is: `List a` … One of those has to be a number",
+  which contradicts itself. flex ⊓ flex keeps the scheme's name (`a` from `cons`) over the literal's
+  unnamed `number` flex, and the printer prints the name without the kind.
+- **Expected** `List number`: a named variable of a non-`any` kind prints as its kind unless its
+  name already says it.
+- **Fixture** none yet (a `check/good` interface golden and a `check/bad` message).
+- **Slice** R13.
+
+### CK-95 — BIR lowering is quadratic in a `let`'s binding count
+
+- **Severity** performance. **Area** `bir/Lower.zig`, outside the checker. **Class** K14.
+  **Sources** R4b's adversarial review (F8).
+- **Observed** `dump --stage=bir` alone: 1.0 / 3.8 / 14.6 s at 10 000 / 20 000 / 40 000 chained
+  bindings, and 0.37 → 1.27 s (10k → 20k) for independent ones; a 100 000-binding `let` times out
+  (> 60 s) on both checkers before either checks it. v2's `constrain` + `solve` at 40 000 is 3.4 s
+  and linear.
+- **Expected** linear lowering.
+- **Fixture** none yet.
+- **Slice** R12 (the manager).
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2736,14 +2852,20 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-87 | valid-program-rejected | K14 | `run/DerivedEqDeepRecord.beni` | unassigned — manager |
 | CK-88 | performance | K14 | `scenario/CK-88` | unassigned — manager |
 | CK-89 | latent | K10 | — (v1 is right; the guard program is in the entry) | R8a (spec amendment first) |
+| CK-90 | unsound-runtime | K8 | `check/bad/LetFunctionUsesLaterPattern.beni` | R4b (claimed) |
+| CK-91 | unsound-runtime | K3 | `check/bad/LetOfManyBindings.beni` | R4b (claimed) |
+| CK-92 | compiler-crash-or-hang (output blow-up) | K13 | `blackbox_test.zig` "CK-92: …" (in the gates) | R4b (fixed) |
+| CK-93 | performance | K11 | — (a scenario when taken) | unassigned — manager |
+| CK-94 | diagnostic-quality | K13 | — | R13 |
+| CK-95 | performance | K14 | — | R12 |
 
 Totals:
-- 89 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 19 (CK-83 and CK-84 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 9.
+- 95 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 21 (CK-83, CK-84, CK-90 and CK-91 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 10 (CK-92 among them).
 - valid-program-rejected: 18 (CK-87 among them).
 - nondeterminism: 2.
-- performance: 7 (CK-85 and CK-88 among them).
-- diagnostic-quality: 23 (CK-86 among them).
+- performance: 9 (CK-85, CK-88, CK-93 and CK-95 among them).
+- diagnostic-quality: 24 (CK-86 and CK-94 among them).
 - latent: 10 (CK-89 among them).
-- Outside the checker (K14): 10 (CK-78, CK-83, CK-86, CK-87 and CK-88 among them).
+- Outside the checker (K14): 11 (CK-78, CK-83, CK-86, CK-87, CK-88 and CK-95 among them).

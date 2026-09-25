@@ -369,8 +369,21 @@ fn walk(kind: Kind) !void {
                     std.debug.print("REPORT  PASS  {s}  {s}\n", .{ cfg.checkerName(), path });
                     tally.pass += 1;
                 } else |err| {
-                    std.debug.print("REPORT  FAIL  {s}  {s}  {s}\n", .{ cfg.checkerName(), path, reasonFor(err, &cfg) });
+                    const reason = reasonFor(err, &cfg);
+                    std.debug.print("REPORT  FAIL  {s}  {s}  {s}\n", .{ cfg.checkerName(), path, reason });
                     tally.fail += 1;
+                    // The subset cross-check (R4b's review, S8): v2 either
+                    // refuses a fixture — `not_implemented`, naming the slice
+                    // it needs — or passes it. A fixture v2 checks and gets
+                    // wrong is listed in v2-expected.md or is a v2 bug, so
+                    // `Subset.zig` and `tests/pending/v2-subset.sh` cannot
+                    // drift apart unnoticed.
+                    const refused = std.mem.indexOf(u8, reason, "not_implemented") != null or
+                        std.mem.indexOf(u8, reason, "NOT IMPLEMENTED") != null;
+                    if (!refused) {
+                        std.debug.print("REPORT  DRIFT  {s}  {s} is red without a `not_implemented`: v2 checked it and got it wrong; fix v2, or list it in tests/pending/v2-expected.md\n", .{ cfg.checkerName(), path });
+                        failures += 1;
+                    }
                     // The ratchet (S12): a fixture a landed slice made green
                     // under v2 may not turn red again.
                     if (cfg.isGreenUnderV2(path)) {

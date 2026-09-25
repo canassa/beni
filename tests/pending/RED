@@ -52,6 +52,18 @@ tests/pending/check/bad/InfiniteTypeAtBinder.beni v1 exit=1 codes=type_mismatch�
 tests/pending/check/bad/InfiniteTypeShowsStructure.beni v1 exit=1 codes=infinite_type×1 why=position
 tests/pending/check/bad/LetAnnotationRigidEscape.beni v1 exit=0 codes=none
 tests/pending/check/bad/LetAnnotationRowEscape.beni v1 exit=1 codes=record_not_closed×1 why=code
+tests/pending/check/bad/LetFunctionUsesLaterPattern.beni v1 exit=0 codes=none
+tests/pending/check/bad/LetOfManyBindings.beni v1 exit=0 codes=none
+tests/pending/check/bad/InfiniteTypeCaseSubject.beni v1 exit=1 codes=infinite_type×1 why=position
+tests/pending/check/bad/InfiniteTypeCaseSubjectField.beni v1 exit=1 codes=infinite_type×1 why=position
+tests/pending/check/bad/InfiniteTypeCaseSubjectFunction.beni v1 exit=1 codes=infinite_type×1 why=position
+tests/pending/check/bad/InfiniteTypeInterleaved.beni v1 exit=1 codes=infinite_type×1 why=position
+tests/pending/check/bad/InfiniteTypeKeepsUsefulness.beni v1 exit=1 codes=redundant_pattern×1 why=code
+tests/pending/check/bad/InfiniteTypeTextOrder v1 exit=1 codes=infinite_type×1 why=message
+tests/pending/check/bad/InfiniteTypeTwoCyclesOneReport.beni v1 exit=1 codes=infinite_type×1 why=message
+tests/pending/check/bad/InfiniteTypeTwoCyclesUnified.beni v1 exit=1 codes=infinite_type×1 why=position
+tests/pending/check/bad/LetAnnotationEscapeNoCascade.beni v1 exit=1 codes=rigid_mismatch×1 why=position
+tests/pending/check/bad/TooDeepAnnotationSkipsPatterns.beni v1 exit=1 codes=missing_patterns×1,nesting_too_deep×1 why=code
 tests/pending/check/bad/ListElementFromContext.beni v1 exit=1 codes=kind_mismatch×2 why=message
 tests/pending/check/bad/MethodSignatureNoClash.beni v1 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/MissingFieldShowsLiteralTypes v1 exit=1 codes=missing_field×1 why=message
@@ -112,33 +124,29 @@ scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×20000
 scenario/CK-82 v1 crash=ABRT
 scenario/CK-88 v1 slow
 
-# Under `--checker=v2` (test-pending's run 2, from R4a). v2 is R4a's stub, so every fixture is red
-# for the same reason: each root module reports `not_implemented` ("checker v2: R4b"), plus
-# whatever an earlier phase reports first. Recorded wholesale by R4a so rule (d) holds under v2
-# from the start; R4b, which turns the stub into a checker, rewrites every line below.
+# Under `--checker=v2` (test-pending's run 2, from R4a). Rewritten by R4b, whose v2 checks every
+# module that needs no dispatch and no obligation (checker-v2.md §5, *As built by R4b*). A module
+# that needs a later slice reports ONE `not_implemented` naming it (R5, R6a or R8a), so most lines
+# are still that; the others are v2's own answer, red for the finding's reason (the diagnostic-
+# quality CKs R13 owns). The fixtures R4b turned green are in CLAIMED and have no v2 line.
 tests/pending/check/bad/BasicsEqThroughStructure.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/CapNamesReceivers.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/CurriedAnnotation.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/CurriedAnnotation.beni v2 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
 tests/pending/check/bad/CyclicReceiverResolution.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/DerivedContextMergesAsker v2 exit=1 codes=not_implemented×3 why=code
 tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst v2 exit=1 codes=not_implemented×2 why=code
 tests/pending/check/bad/DerivedContextNeedsAnnotation v2 exit=1 codes=not_implemented×2 why=code
 tests/pending/check/bad/DerivedContextReentrantSameFirst v2 exit=1 codes=not_implemented×2 why=code
 tests/pending/check/bad/DerivedContextReentrant v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/ExposingSameNameConstructor v2 exit=1 codes=expected_token×1,not_implemented×1 why=code
-tests/pending/check/bad/FieldErrorTextOrder.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/InfiniteTypeAtBinder.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/InfiniteTypeShowsStructure.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/LetAnnotationRigidEscape.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/LetAnnotationRowEscape.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/ListElementFromContext.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/ExposingSameNameConstructor v2 exit=1 codes=expected_token×1 why=message
+tests/pending/check/bad/ListElementFromContext.beni v2 exit=1 codes=kind_mismatch×2 why=message
 tests/pending/check/bad/MethodSignatureNoClash.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/MissingFieldShowsLiteralTypes v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/MissingPatternConsRendering.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/MissingFieldShowsLiteralTypes v2 exit=1 codes=missing_field×1 why=message
+tests/pending/check/bad/MissingPatternConsRendering.beni v2 exit=1 codes=missing_patterns×1 why=message
 tests/pending/check/bad/MissingWhereAtUse.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/MissingWhereInLetAnnotation.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/MutualGroupLocals.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni v2 exit=1 codes=kind_mismatch×1,type_mismatch×2 why=message
 tests/pending/check/bad/OpenRecordEquality.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/OuterReceiverConstraintLevels.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/PrivateEqOutsideModule v2 exit=1 codes=not_implemented×2 why=code
@@ -149,15 +157,13 @@ tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni v2 exit=1 co
 tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/RecursiveGroupSubWanted v2 exit=1 codes=not_implemented×2 why=code
 tests/pending/check/bad/RigidInsideDerivedShape.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/SchemaMemberTooDeep v2 exit=1 codes=not_implemented×2 why=code
 tests/pending/check/bad/SchemaWrapperExclusion.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/ScrutineeMethodMergeD14 v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/TryShapeNamesTheMismatch.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/TupleIndexOuterResult.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/WhereClauseNumberReceiver.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/good/MutualGroupLocalTypes.beni v2 exit=1 codes=not_implemented×1
 tests/pending/check/good/ScrutineeMethodMergeVariant v2 exit=1 codes=not_implemented×2
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/CustomEqHeadMatching v2 dev: exit=1 codes=not_implemented×3
@@ -165,7 +171,7 @@ tests/pending/run/CustomEqTupleHead v2 dev: exit=1 codes=not_implemented×3
 tests/pending/run/DeadMiscount.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/DerivedContextClosedOwnMethod v2 dev: exit=1 codes=not_implemented×3
 tests/pending/run/DerivedEqDeepRecord.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×3
+tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×2
 tests/pending/run/GroupVariableOutsideCaller.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/LetHelperJoinedMethod.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/MutualDispatchMethods.beni v2 dev: exit=1 codes=not_implemented×1

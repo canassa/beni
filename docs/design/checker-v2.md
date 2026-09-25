@@ -232,6 +232,31 @@ pub const Flags = struct {            // flex and rigid payload
   `Shape.record` key. This is already true of `Render` and the writer today, and it keeps CK-07's
   class out of messages (N5).
 
+*As built by R4b (2026-09-25): the store is the shared type, and `Flags` is unchanged.* v2's store
+**is** `src/check/TypeStore.zig`'s type, unmodified, and R4b writes no `check2/TypeStore.zig`:
+
+- Every piece §19 keeps shared reads that type — `Render` (every message), `Schemes` (the
+  interface writer and reader), `Types.Builder` (every annotation), `Schema.State`,
+  `SchemaPlanBuild`, `Exhaustive`'s context and `dump --stage=types` — so a second store type would
+  have meant copying all of them, which §19.1 forbids ("imports the shared files … and does not
+  copy them").
+- R4b needs none of the additions above. The union-find, ranks, epoch marks (`nextMark`), `copy`
+  memo and journal are already the store's. `wants` and `obls` carry nothing in R4b's subset (§5,
+  *As built by R4b*): no module v2 checks ever attaches a method constraint or an obligation.
+- **Owed by R5/R6a (a design gap, not decided here):** `Flags.wants`/`obls` cannot be added to the
+  shared `Flags` without changing v1, which is frozen (§22). The likely form is a v2-owned
+  `check2/TypeStore.zig` that wraps the shared store and keeps `wants`/`obls` as **side columns
+  indexed by root**, merged on union and truncated on rollback like `extra`, so the shared readers
+  keep working. R5 decides and amends this paragraph.
+- **I2 as enforced in R4b** (restated by R4b's review, S6): **a type's children are read only
+  through `Walk`** — every traversal takes its successors from `Walk.child(…, .structural |
+  .owned | .payload)`, and a function's parameters, a record's field in a range just built and a
+  variable's constraints have one accessor each there (`Walk.function`, `Walk.fieldIn`,
+  `Walk.constraints`). `Unify.zig` and `Instantiate.zig` also read children, to pair two
+  structures and to copy one. Anyone may read a node's tag and flags. `src/check2/rules_test.zig`
+  enforces it by reading the sources, since the shared store cannot (and refuses an import of v1's
+  `Constrain.zig` or `Solve.zig`). The shared readers above keep their own walks (v1 code, kept).
+
 ### 4.2 Wanteds, givens and evidence
 
 These tables are per module, append-only and index-based (`check2/Evidence.zig`). None is keyed by
@@ -388,6 +413,47 @@ phase reads and writes only what its row says.
   protocol and cache install. It moves out of `Check.zig` into `Driver.zig` and `Incremental.zig`,
   and calls `Module.check(m)` or `Module.install(m, entry)`.
 
+*As built by R4b (2026-09-25).* R4b runs P1, P2, P4, P7, P8 and P9, and only on a module in its
+**subset**:
+
+- **The gate (P0).** Before P1, `Subset.zig` scans the module's Bir once and names the first slice
+  the module needs, or none:
+  - **R6a** — a `method_call` or `type_dispatch` (every `x.m`, `==`, `<`, operator section), a
+    declaration with a `where` clause, or a reference to an imported value, schema member or
+    schema constructor whose scheme carries a method constraint;
+  - **R5** — a `tuple_index`, `interp` or `try` instruction, an annotation variable written
+    `equatable`, or a reference to an imported scheme with an `equatable` quantifier
+    (`Basics.eq`/`neq`).
+
+  A module that needs any of them reports ONE `not_implemented` at its first offending
+  instruction, naming the latest slice it needs, and publishes nothing (the shell, as R4a's stub
+  did), through `Report.appendTo`, the one emit path's list half (§15.1). A module an earlier
+  phase reported on, or the graph poisoned, reports nothing, as before.
+
+  *Revised by R4b's review (2026-09-25; S8, the manager's decision).* The gate first had a third
+  slice, **R8a**, for a module that declares a `type` or a tagged schema (P5's eager derived rows).
+  It no longer does: such a module is **checked**. Its interface's `eq`/`compare` rows say
+  `unchecked` until R8a, and nothing reads them before then. Only a `--library` build needs the
+  rows — it exports every nominal one (`Reach.collectRoots`) — so `js/Emit.zig` refuses a
+  `--library` build under `--checker=v2` whose root package declares a `type`, with
+  `not_implemented` naming R8a, before any output exists, the way it refuses schemas.
+  `tests/pending/v2-subset.sh` reads the same rule off v1's dumps: no `site`, only `evidence=0`,
+  none of the R5 or R6a forms, no `derived` row in a `dispatch/` fixture (v2's table has none),
+  and no `type` in an `emit/` or `emit/release/` fixture (a library). `test-v2` cross-checks the
+  two: a fixture v2 does not refuse either passes or is listed in `v2-expected.md`
+  (`REPORT DRIFT` otherwise).
+- **P3** is not needed: the own-name index serves resolution (R6a). **P5 and P6** are R8a's and
+  R6b's; P9's table is one `DeclInfo` per declaration (`value_arity` from the scheme, convention
+  `plain`), no site, no term.
+- **P9's order**: the table, `--roundtrip-dispatch` on the table, `Cycles.run`, then the schema
+  plan — gated on no error in the module, so after `Cycles` (CK-15) — and then the plan's own
+  canonical round trip under the same flag. v1 round-trips the plan together with the table, which
+  it can because it builds the plan first; built after `Cycles`, the plan cannot be in the table's
+  round trip.
+- The profile events are `check`, `constrain`, `solve` and `exhaustive`; `resolve`, `derived`,
+  `elaborate` and `publish` arrive with the phases that have work (no `Profile.Phase` exists for
+  them yet).
+
 ---
 
 ## 6. Constraint generation
@@ -407,6 +473,26 @@ The generator resolves a `.local` reference to its `Var` while it builds the nod
 member's own `local_type` slice, which it holds at that point, and emits `instantiate(var)` for a
 generalised local or `equal(var)` for a monomorphic one. The solver's `schemeOf` has no `.local`
 arm. `Env.local_var` is not visible to `Solve`.
+
+*As built by R4b (2026-09-25).* Resolving at generation needs every binder's variable to exist
+before any reference to it is generated, which v1's order did not give (it generated a `let`'s body
+first and its groups last to first, and looked locals up at solve time):
+
+- **Generation runs in solving order**: a `let`'s groups first to last, each one's bindings
+  declared before any is defined, then the body. The nesting of the `let` nodes is built
+  afterwards, from the last group out, in a loop — no recursion per group.
+- **A `let` pattern is a binding target too.** v1's `let` SCC gave edges only to `let_def`
+  bindings, so `let c = a + 1` next to `( a, b ) = pair` had no edge to the pattern and could be
+  generalised before `a` was constrained. v2's edges run to the binding that binds each local —
+  a pattern binds all of its variables — through a local → binding table built once per `let`
+  (v1's scan per reference was quadratic). An annotated `let_def` is still never a target.
+- A `let` pattern's pattern is generated with its binding's **declaration**, so its variables exist
+  before the group's other members are defined.
+- `instantiate(var)` is emitted for every local and every `top` reference; the copy is the
+  identity on a variable that is not generalised, so "generalised or not" need not be decided at
+  generation.
+- A top-level declaration's parameters are binders like a lambda's: a `binders_end` follows the
+  declaration's body (§6.3).
 
 ### 6.3 Binders are registered
 
@@ -502,6 +588,15 @@ with its category (Elm's split). Inside `unify`:
 - **rigid capture.** When a rigid is merged with a flex whose rank is lower than the rigid's, `unify`
   appends `Capture { rigid, region }` to the boundary's capture list. §8.3 reads it for the region of
   an escape.
+  - *As built by R4b (2026-09-25), two changes.* (1) A capture is also recorded when a flex binds a
+    **structure or alias of higher rank**: that is how a rigid **row** variable escapes (CK-01's
+    `sk7`, `g y = o` with `g : { r | x : Int } -> …`) — `o`'s outer flex is bound to the young record
+    holding `r`, and `r` itself is never merged with anything. (2) The list is **per module**, not
+    per boundary, and a frame records its length when it is pushed: the rigid's frame need not be
+    the current one (`g y = let k = x in k` captures inside `k`'s frame), and §8.3 reads only the
+    captures since the annotation's frame was pushed. §8.3's region is the first of those whose
+    node is the escaped rigid's root or reaches it by `Walk.structural` successors — one walk per
+    capture, on the error path only.
 - **records** use the four-way merge-join of today, producing a normalised record (§4.1).
 
 ### 7.2 Choice among failures is by text (I13, CK-07)
@@ -522,6 +617,31 @@ is reachable two ways:
 Past the guard, `unify` returns `mismatch(.too_deep)`, which the caller reports as
 `nesting_too_deep`, the same code and cure as the other depth guards. It never returns "ok" (CK-10
 item 3). *Wording corrected 2026-09-24 (N3).*
+
+*As built by R4b's review (2026-09-25): `unify` is coinductive, and a cycle is never "too deep".*
+The first bullet above was false once §8.2 checks binders only: a cycle made mid-group (a `case`
+subject, `[ r, { a = r } ]`) lives until the boundary, and two isomorphic cycles unified there
+(`[ r, s ]`, `( x x, y y, [ x, y ] )`) recursed to the guard — exponentially through a record
+that keeps unifying after a failed field — and were reported as `nesting_too_deep` ("more than
+4 200 levels … give the inner part a type alias"), or refused a valid program v1 accepts
+(`List.map2 [ c ] [ c ] same` over a cyclic `c`). Three changes:
+
+- **Coinduction.** `unify` keeps the pairs of non-variables it is unifying (`Unify.active`, a
+  stack), and a pair met again on that stack is assumed equal. So a cyclic graph, or two isomorphic
+  ones, unifies in time linear in its nodes, and on a finite graph nothing changes (no pair is its
+  own descendant). **Link-first**, the OCaml/HM(X) textbook alternative the review offered, was
+  not taken: it merges the two roots before their children, so a failing unification prints the
+  same (merged) type as both "expected" and "found" — Elm's reason for children-first (v1's
+  comment at `unifyFlat`) — and undoing the link on failure needs a journal around every
+  structural unification. The pair stack buys link-first's termination with neither cost; its
+  price is a scan of the stack per pair of non-variables, as deep as the unification.
+- `unifyRecord` stops at the first shared field that fails with `too_deep`, and skips the rest.
+- On `too_deep`, the caller runs the occurs check from both sides first; a cycle found is
+  `infinite_type` at the unification (§8.2's reporting rule), and only a genuinely deep acyclic
+  type is `nesting_too_deep`.
+
+Fixtures: `tests/pending/check/bad/InfiniteTypeCaseSubject*.beni`,
+`…/InfiniteTypeTwoCyclesUnified.beni` and `tests/corpus/check/good/CyclicArgumentsUnify.beni`.
 
 ### 7.4 Kinds
 
@@ -591,7 +711,8 @@ groups. At the boundary of frame `F`, with young rank `r` (I16):
    Applying all at once is equivalent to applying them one at a time: a default only makes
    `Result`s, so it can only turn another undecided `?` into a `Result` decision.
 4. **Occurs** over `F`'s `binders`, and over `F`'s `touched` list (§8.2, N6; per frame since round 3), by
-   `Walk.structural`.
+   `Walk.structural`. *(As built by R4b: over the binders only — §18's fallback, §8.2's
+   As built.)*
 5. **Quantify** the rank-`r` variables of the pool (§8.4).
 6. **Generality check** for the annotated bindings of `F` (§8.3).
 7. **Close.** For each variable just quantified:
@@ -647,6 +768,53 @@ including the nested-`let` case.
 **Why both defences.** Resolution during solving, through U0 inline resolution on a concrete
 receiver or in the settle loop, can still meet a graph made cyclic since the last check. So §9.5
 also makes every resolver walk cycle-safe. Neither defence alone is enough, and both are cheap.
+
+*As built by R4b (2026-09-25): §18's fallback, Elm's placement.* §18's measurement (its *As built*
+paragraph) put the walk over the `touched` segment at about 4 % of the check phase on a
+dispatch-free 131 000-line corpus, over §18's 3 % line, so R4b took §18's stated fallback: **the
+boundary occurs-checks its binders only**, and the frames keep no `touched` list (§8.1 step 4,
+N6 and §7.5's `touched_len` are retired for R4b; R7 re-opens the question if a merge needs them).
+- `binders_end` follows a **lambda's** body and a **`case` branch's** body — the placement S4 needs
+  (`(\y -> y y) "s"` is `infinite_type` at `y`, before `"s"` meets it).
+- A declaration's and a `let` definition's parameters are checked at their group's boundary, which
+  follows their body directly; a `binders_end` of their own walked the same types twice.
+- At the boundary, parameters and pattern variables are checked before headers, so a cycle a
+  parameter carries is named by the parameter (`f r = { r | x = r }` is `infinite_type` at `r`,
+  7:3, not at `f`'s body).
+- A walk never pushes a node with no `structural` successor (a variable, `Int`, `()`, `{}`):
+  none can be on a cycle.
+- **What is given up** is detection of a cycle no binder's type reaches — a type an expression
+  builds and discards, such as a lambda argument bound to `_`. Nothing reads such a type in R4b:
+  publication reaches only headers' types, and every walk that could meet the type (the writer,
+  `adjustRank`, `copy`, `Render`) is colour- or depth-safe and reports. Elm gives up the same.
+  §9.5's resolver walks (R6a) are cycle-safe in their own right.
+
+*Corrected by R4b's review (2026-09-25).* Three things the paragraph above left out or got wrong:
+
+- **Also given up: EARLY detection.** A cycle made mid-group lives until the boundary even when
+  a binder reaches it. The walk that meets it first is then `unify`, which the list above omitted;
+  §7.3 *As built by R4b's review* makes `unify` coinductive, and a `too_deep` from it looks for a
+  cycle before it reports, so it terminates and says `infinite_type`.
+- **"Why both defences"** above assumed the `touched` walk. Under binders only, the defences are:
+  the binder checks, a cycle-safe `unify` (§7.3) and, from R6a, the cycle-safe resolver walks
+  (§9.5). §8.1 step 7's "debug-only occurs re-run over what step 7 touched" and §7.5's
+  `touched_len` have nothing to read in R4b and are retired with the list; R6a re-states step 7's
+  assert over the receivers it defaults.
+- **Owed by R6a** (`plans/checker-rewrite.md` R6a's brief): step 4 also occurs-checks the receiver
+  of every wanted riding on `F`'s pool and, from R5, every variable of every obligation. That is the
+  CK-03 / row 76 coverage `touched` was for, at no cost in dispatch-free code.
+
+**How a cycle is reported** (the review's F3, F4 and S5). From a binder, or from a `too_deep`:
+
+- the cycle drawn is the first a search meets **with record fields in name-text order**
+  (`Walk.firstCycle`), so which of two cycles is named cannot depend on symbol ids (I13);
+- a cycle whose drawing would show a poisoned node (`?`) is a consequence of a message already
+  given, and is poisoned without one;
+- then **every** cycle reachable from the binder is poisoned, so no use of it meets another and
+  reports again.
+
+An `infinite_type` sets its declaration's failure bit but does not gate exhaustiveness (§15.2 *As
+built by R4b's review*).
 
 ### 8.3 Annotation generality (I1, CK-01)
 
@@ -1944,6 +2112,26 @@ derived method". That is exactly its ABI, so the format is shared by both checke
 Schema errors, `verifyReads` and `internalAlways` go through it. The 37 hand-written guards are
 gone. `Session`'s `quiet[m]` counts errors only (CK-12, R1).
 
+*As built by R4b (2026-09-25): the texts are v1's functions, staged.* §19 keeps `Diagnostics.zig`'s
+texts verbatim, and they live in `Diagnostics.Reporter`'s methods, which append to a list and read
+their context (store, Bir, a declaration's locals for a callee's name) from a
+`Constrain.Env`. `check2/Report.zig` therefore owns a **staging** `Reporter` that is never quiet,
+whose list only `Report` reads, and whose `Env` it fills (`Report.at` sets the declaration a
+message is about, and with it the locals the texts name a callee by). Every message v2 raises is a
+`Report` method that calls the text and then moves what it staged through `Report.emit`, the one
+path to the module's list. The texts §15.3 lets v2 change (§8.2's infinite type, §8.3's escape)
+are written in `Report.zig` itself, per `checker.md` §8.5, and v1 keeps its own.
+
+*Revised by R4b's review (2026-09-25, S2, S7).* The shared texts no longer depend on v1's
+`Constrain.zig`: `Category` moved to `check/Category.zig`, `Env`, `PlainMethod` and `Monomorphic`
+to `check/Env.zig`, and the Tarjan pass (`sccGroups`, `IndexGroups`) to `check/Scc.zig`, all pure
+moves that `Constrain.zig` re-exports so v1 reads as before; `Counters` moved from v1's `Solve.zig`
+to `check2/Check.zig`. v2 imports neither `Constrain.zig` nor `Solve.zig`
+(`check2/rules_test.zig` refuses it). P0's refusal, which runs before P1 builds a `Report`, goes
+through `Report.appendTo`, the one path's list half. **Owed by R13:** `Diagnostics.Reporter.env`
+narrows from a whole `Env` (whose `dispatch`, `plain_methods` and `monomorphic` v2 leaves empty)
+to the fields the texts read.
+
 ### 15.2 Failure is state (I12, CK-11)
 
 `decl_failed: DynamicBitSet` over declarations. The reporter sets the bit of the declaration being
@@ -1953,6 +2141,18 @@ because they share variables. **Groups merged by §10.4 are one group for this r
 anywhere in the merge marks every member of every merged group (N11). P7 exhaustiveness and the P9
 plan gate read the bits. Nothing tests
 a diagnostic's region against an instruction range.
+
+*As built by R4b's review (2026-09-25).*
+- **Attribution.** A boundary's `infinite_type` goes to its binder's declaration, and an escape to
+  the annotated binding's declaration (each `Binder` and annotated binding records it), not to
+  whichever member came last. A type too deep to read (`Types.Builder`, the generator's guards,
+  a constructor's payload) records its declaration with the note, and the notes are reported at the
+  end of P4, so the bit is set before P7 reads it; publication's own notes are reported after P8.
+  The group rule is `Report.failGroup`, the bits' one owner.
+- **What P7 skips** is a second bitset, `failed_patterns`: the same, except that an
+  `infinite_type` does not set it. Exhaustiveness reads no solved type (CK-61), and an infinite
+  type says nothing about a pattern, so a `case` beside one is still checked (the review's F9:
+  `tests/pending/check/bad/InfiniteTypeKeepsUsefulness.beni`). Every other error sets both.
 
 ### 15.3 Stable texts
 
@@ -2051,6 +2251,39 @@ v1 is deleted.
   - **a nested scenario**, 200 `let`s deep, each binding a 50-field record type built from the one
     above it. This is the quadratic case (S4). If it exceeds 3 % of the check phase, the fallback is Elm's exact placement, occurs only
   on binders whose variable was unified since the last boundary, which the journal can tell.
+
+  *As built by R4b (2026-09-25): measured, and the fallback taken.* Method: two ReleaseFast
+  compilers from the same tree, one with every v2 occurs walk switched off, `check --checker=v2
+  --no-cache --jobs=1 --self-profile`, the sum of the root package's `check` events (core is v1's in
+  both), runs interleaved, median. Three programs, generated by the R4b slice's scratch scripts and
+  described in `plans/checker-rewrite.md` R4b *As built*: **bench** (a dispatch-free 131 127-line
+  corpus of 90 modules), **flat** (5 000 declarations, each a lambda over a `case`, 55 000 lines) and
+  **nested** (one declaration 200 `let`s deep, level *i* binding a 50-field record whose field `p`
+  is level *i − 1*'s, so each level's type holds every level above it).
+
+  | Design (each a median) | bench | flat | nested |
+  |---|---|---|---|
+  | as §8.1 was written: binders + `touched`, 7 runs | 102.8 vs 91.9 ms, **+11.8 %** | 24.6 vs 22.3 ms, +10.4 % | 183.4 vs 158.6 ms, +15.6 % |
+  | + no walk into a leaf, fewer binder walks, 7 runs | 98.2 vs 92.3 ms, **+6.4 %** | 23.4 vs 22.6 ms, +3.5 % | 162.3 vs 154.5 ms, +5.0 % |
+  | **as built** — binders only (§8.2's fallback), 15 runs | 94.2 vs 91.7 ms, **+2.8 %** | 22.4 vs 21.5 ms, +4.5 % | 163.9 vs 159.6 ms, +2.7 % |
+
+  The `touched` walk was the larger part (about 4 % of bench on its own), so it went (§8.2, *As
+  built by R4b*). What is left on **flat**, just over the line, is `binders_end`'s own walk of each
+  lambda's and branch's binders — the placement CK-04's expected output needs — on a program that
+  is nothing but lambdas. The nested case is not quadratic in the occurs walk: one boundary walks
+  its header's type once (a shared epoch), so 200 levels cost 200 walks of a type growing by 50
+  fields a level, 2.7 % of a check the copying of those same types dominates.
+
+  *Re-measured after R4b's review (2026-09-25), and the flat case accepted (S9).* After the review's
+  changes (coinductive `unify`, the error path's cycle search), same method, medians of 15 and 21
+  runs: bench **+0.3 % and +4.8 %**, flat **+6.0 % and +5.6 %**, nested **+5.4 % and +4.1 %**. Two
+  byte-identical binaries measured the same way differ by up to **3.4 %** (flat) and 1.5 % (nested),
+  so the line is inside this machine's noise, and the walks that remain start at binders whose
+  types are almost all leaves (a leaf costs a `find` and a tag test). The flat case is **accepted
+  over the line** rather than reduced: what it measures is `binders_end` after every lambda and
+  `case` branch, the placement CK-04's expected output needs (`(\y -> y y) "s"` is
+  `infinite_type` at `y` before `"s"` meets it), on a program that is nothing but lambdas and
+  branches; the only reduction left is to drop that placement. The manager may overrule.
 - **`Walk.owned` yields constraint method types, and attaching lowers them (I15).** A variable's
   `wants` is almost always empty, so the cost is one branch. An attachment walks a two- or
   three-node method type.
@@ -2125,6 +2358,22 @@ check2/
 ```
 
 Until R12, `check2` imports the shared files from `src/check/` and does not copy them.
+
+*As built by R4b (2026-09-25; counts after its review):* `Context` 87 lines (the per-module read
+context, no generation state), `Subset` 117 (P0), `Walk` 497, `Unify` 554, `Generalize` 288
+(frames, rank adjustment, quantification), `Instantiate` 334, `Solve` 470 (the walk, calls,
+boundaries, the generality check), `Report` 367, `Publish` 285, `Module` 421, `constrain/Tree` 341
+(the tree and the generator's state), `constrain/Expr` 248, `constrain/Pattern` 133,
+`constrain/Decl` 526, and `rules_test.zig` 131. No
+`TypeStore.zig` (§4.1 *As built*), no `Groups.zig` yet (R7: the SCC is the shared
+`check/Scc.zig`, called from `Module` and `constrain/Decl`).
+
+*Imports from `src/check/` after R4b's review (S2):* `TypeStore`, `Types`, `Schemes`, `Render`,
+`Diagnostics`, `Dispatch`, `Convention`, `Cycles`, `Exhaustive`, `reads`, `Schema`, `SchemaPlan`,
+`SchemaPlanBuild` (all on §19's KEPT list), the three pure moves `Category`, `Env` and `Scc`
+(kept with the texts), and v1's `Check.zig` from `Driver.zig` alone — the checker switch, gone
+at R11. Nothing imports `Constrain.zig` or `Solve.zig`, so R12 can delete both with `Check.zig`
+(`check2/rules_test.zig` holds the line).
 
 ---
 

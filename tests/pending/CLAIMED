@@ -4,3 +4,23 @@
 # `scenario/CK-40` for a scenario of tests/blackbox/pending_test.zig. Rule (c)
 # fails `zig build test-pending` if a listed fixture is RED under v2.
 # Emptied at R11, when every claim is promoted.
+# R4b (2026-09-25): v2's foundation, and the fixtures of its two reviews.
+tests/pending/check/bad/FieldErrorTextOrder.beni
+tests/pending/check/bad/InfiniteTypeAtBinder.beni
+tests/pending/check/bad/InfiniteTypeShowsStructure.beni
+tests/pending/check/bad/LetAnnotationRigidEscape.beni
+tests/pending/check/bad/LetAnnotationRowEscape.beni
+tests/pending/check/bad/LetFunctionUsesLaterPattern.beni
+tests/pending/check/bad/SchemaMemberTooDeep
+tests/pending/check/good/MutualGroupLocalTypes.beni
+tests/pending/check/bad/LetOfManyBindings.beni
+tests/pending/check/bad/InfiniteTypeCaseSubject.beni
+tests/pending/check/bad/InfiniteTypeCaseSubjectField.beni
+tests/pending/check/bad/InfiniteTypeCaseSubjectFunction.beni
+tests/pending/check/bad/InfiniteTypeInterleaved.beni
+tests/pending/check/bad/InfiniteTypeKeepsUsefulness.beni
+tests/pending/check/bad/InfiniteTypeTextOrder
+tests/pending/check/bad/InfiniteTypeTwoCyclesOneReport.beni
+tests/pending/check/bad/InfiniteTypeTwoCyclesUnified.beni
+tests/pending/check/bad/LetAnnotationEscapeNoCascade.beni
+tests/pending/check/bad/TooDeepAnnotationSkipsPatterns.beni

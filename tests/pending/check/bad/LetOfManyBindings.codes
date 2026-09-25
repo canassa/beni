@@ -1,0 +1,2 @@
+# `bad`'s argument, the `number` the chain carries, against `String`
+kind_mismatch 10010:29

@@ -54,6 +54,17 @@ const Dispatch = @import("Dispatch.zig");
 const Parse = @import("../parse/Parse.zig");
 
 const Constrain = @This();
+const EnvFile = @import("Env.zig");
+const Scc = @import("Scc.zig");
+
+// Moved to shared files by R4b's review (checker-v2.md §15.1, S2); re-exported
+// so v1 reads exactly as it did.
+pub const Category = @import("Category.zig").Category;
+pub const Env = EnvFile.Env;
+pub const PlainMethod = EnvFile.PlainMethod;
+pub const Monomorphic = EnvFile.Monomorphic;
+pub const IndexGroups = Scc.IndexGroups;
+pub const sccGroups = Scc.sccGroups;
 
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
@@ -66,56 +77,6 @@ pub const Constraint = enum(u32) {
     pub fn int(c: Constraint) u32 {
         return @intFromEnum(c);
     }
-};
-
-/// What the compiler was looking at when it made an equality. Carried on
-/// every node because it costs one byte plus one word and is the difference
-/// between "TYPE MISMATCH" and a sentence a person can act on.
-pub const Category = struct {
-    tag: Tag = .general,
-    /// A 1-based position (`call_arg`, `list_entry`, `case_branch`,
-    /// `tuple_element`, `ctor_arg`) or a field `Symbol` (`record_field`,
-    /// `field_access`, `record_update`), by tag.
-    ///
-    /// A field tag with `no_field` is about the record as a whole. The
-    /// sentinel cannot be 0: `Symbol` 0 is the first `InternPool.WellKnown`
-    /// name, which is `main` — so overloading 0 made a record field
-    /// actually named `main`, the likeliest field name in an Elm-like
-    /// program, render as an empty name.
-    index: u32 = 0,
-    /// The instruction the sentence is ABOUT, when that is not the one the
-    /// span points at: an argument mismatch underlines the argument but has
-    /// to name the function, and the function is only reachable from the
-    /// call. `.none` means "the region itself".
-    owner: Bir.Inst.OptionalIndex = .none,
-
-    /// `index` on a field-carrying tag when the message is about the record
-    /// and not one of its fields. `Symbol.Optional`'s own sentinel, so the
-    /// two agree.
-    pub const no_field: u32 = std.math.maxInt(u32);
-
-    pub const Tag = enum(u8) {
-        general,
-        /// A declaration's body against its own annotation.
-        annotation,
-        /// A `let` binding's body against its annotation.
-        let_annotation,
-        call_arg,
-        list_entry,
-        case_branch,
-        case_pattern,
-        record_field,
-        field_access,
-        record_update,
-        interp_part,
-        tuple_element,
-        try_value,
-        pattern,
-        ctor_arg,
-        /// The value side of a `let pattern = value`.
-        destructure,
-        schema_conversion,
-    };
 };
 
 pub const Node = struct {
@@ -235,9 +196,6 @@ pub const Method = struct {
     var_name: u32,
 };
 
-/// One `let` binding rule (a) refused to generalise; see `Env.monomorphic`.
-pub const Monomorphic = struct { v: Var, method: Symbol };
-
 pub const TupleIndex = struct {
     index: u32,
     result: Var,
@@ -300,135 +258,6 @@ comptime {
 // ---------------------------------------------------------------------------
 // The shared per-module context
 // ---------------------------------------------------------------------------
-
-/// A plain `eq`/`compare` scheme (`Solve.Solver.plainMethodMask`): its
-/// receiver type, and which of the receiver's arguments carry the method.
-pub const PlainMethod = struct { receiver: Types.TypeId, mask: u64 };
-
-/// Everything one module's check needs. Built once by `Check`, handed to the
-/// generator and then to the solver; a module's check reads only its own Bir,
-/// the interfaces of its imports and the store it owns, which is the
-/// property checker.md §4.4 needs for DAG parallelism later.
-pub const Env = struct {
-    scratch: Allocator,
-    store: *TypeStore,
-    types: *const Types,
-    graph: *const Graph,
-    artifacts: *const Artifacts,
-    interner: *const InternPool.Global,
-    interfaces: []const Interface,
-    module: Graph.Index,
-    bir: *const Bir,
-    schemas: ?*Schema.State = null,
-    /// Per module: whether an imported `eq`/`compare` value has a PLAIN
-    /// scheme (`Solve.Solver.plainMethodMask`), keyed by module and value.
-    /// Null for a scheme that is not plain. Lives in `scratch`.
-    plain_methods: std.AutoHashMapUnmanaged(u64, ?PlainMethod) = .empty,
-    /// Scheme variable per top-level declaration; `.none` for a type or for
-    /// a value whose scheme is not built yet.
-    decl_scheme: []Var.Optional,
-    /// Per local of the declaration being checked. Indices in the Bir are
-    /// relative to the declaration, so this is a SLICE of the module's
-    /// table and `locals_base` is where it starts — anything that reaches
-    /// past this slice into `bir.locals` has to add it.
-    local_var: []Var.Optional,
-    /// The declaration's `locals_start`.
-    locals_base: u32 = 0,
-    /// Per instruction of the declaration being checked, relative to
-    /// `inst_base`: the RESULT variable of a `let_def`, which `?` needs
-    /// (checker.md §6.5). Only `let_def` slots are filled.
-    inst_result: []Var.Optional,
-    inst_base: u32,
-    /// The enclosing declaration's result variable, for a `?` whose target
-    /// is the declaration itself.
-    decl_result: Var.Optional = .none,
-    /// The declaration being checked, and its annotation's rigid type
-    /// variables in first-appearance order (static-dispatch-spike.md §2.4,
-    /// §4.2). Empty for an unannotated declaration; `decl` is
-    /// `Bir.decls.len` when nothing is being checked.
-    decl: u32 = 0,
-    decl_rigids: []const Types.Builder.Scoped = &.{},
-    /// Which evidence parameter answers each `(rigid variable, method)` of
-    /// this module's annotated declarations, in the canonical order of
-    /// §7.2. Flat across the module: a rigid variable belongs to exactly
-    /// one declaration, so the variable alone identifies the entry.
-    rigid_evidence: []const Dispatch.RigidEvidence = &.{},
-    /// Every variable §6.4 rule (a) held back from a `let` generalisation,
-    /// with the constraint that held it.
-    ///
-    /// It exists for ONE message. The boundary A.30 buys surfaces as an
-    /// ordinary `type_mismatch` at the second use, by which time the
-    /// constraint has been discharged against the first use's type and
-    /// nothing in the store says why the binding was monomorphic. Without
-    /// this the hint on that message told the author to check their
-    /// arithmetic (M7).
-    monomorphic: *std.ArrayList(Monomorphic),
-    /// The module's dispatch table as it is built (§7.1). Owned by
-    /// `ModuleCheck`; the solver appends to it and `finish` sorts it once.
-    dispatch: *Dispatch.Builder,
-    /// Emit the informational `warning`s of §10 — today only
-    /// `ambiguous_method_receiver` (§10.9), and then only for a module of
-    /// the ROOT package. True under `check` and `build` (A.83).
-    informational: bool = false,
-    /// Written types the reader could not finish (`Types.Builder.max_depth`,
-    /// `Schemes.Writer.max_depth`), by the instruction a message points at.
-    ///
-    /// Collected rather than reported where the guard trips, for two
-    /// reasons: the reader crosses modules (an alias body is read in ITS
-    /// module, so the instruction it gave up on names no position here),
-    /// and the same annotation is read more than once — once generalised
-    /// for callers, once rigid for the body. `Check` sorts, deduplicates
-    /// and reports this once per module. Empty on every input a person
-    /// writes.
-    too_deep: *std.ArrayList(Bir.Inst.Index),
-
-    /// Another module's interface record, noted for the covered-read
-    /// self-check (`reads.zig`, `plans/m4-3.md` §3.2 rows 17–22 and 25–27).
-    ///
-    /// **Every cross-module read of `interfaces` on the checking path goes
-    /// through this**, which is what makes the `&interfaces[N]` handoff one of
-    /// the three channels the enumeration is finite over. Callers keep their
-    /// own bounds tests: this is a note, not a guard.
-    pub fn iface(env: *const Env, m: Graph.Index) *const Interface {
-        reads.note(.iface, m);
-        return &env.interfaces[m.int()];
-    }
-
-    pub fn localVar(env: *const Env, index: u32) ?Var {
-        if (index >= env.local_var.len) return null;
-        return env.local_var[index].unwrap();
-    }
-
-    pub fn builder(env: *const Env, mode: Types.VarMode, rank: u32) Types.Builder {
-        var b: Types.Builder = .init(env.store, env.types, env.graph, env.artifacts, env.module, env.bir, mode, rank, env.scratch, env.interner);
-        if (env.schemas) |schemas| {
-            b.schema_context = schemas;
-            b.schema_lookup = Schema.State.lookupOpaque;
-        }
-        b.interfaces = env.interfaces;
-        return b;
-    }
-
-    /// Read `annotation` with `b` and note it when the reader ran out of
-    /// depth. Every caller of `Types.Builder.read` goes through this or
-    /// through `noteTooDeep`, so no guard in the checker can poison a type
-    /// without a message: an `err` unifies with anything, and a
-    /// declaration silently turned into one is a hole a caller's mistake
-    /// falls through (`fast-compiler.md` §5).
-    pub fn readAnnotation(env: *const Env, b: *Types.Builder, annotation: Bir.Inst.Index) Error!Var {
-        const v = try b.read(annotation);
-        if (b.too_deep) try env.noteTooDeep(annotation);
-        return v;
-    }
-
-    /// Note that the type at `region` was too deeply nested to read. Not
-    /// deduplicated here — `Check` sorts and deduplicates at the end,
-    /// because a linear scan per note is quadratic on a generated file
-    /// where every declaration trips the guard.
-    pub fn noteTooDeep(env: *const Env, region: Bir.Inst.Index) Error!void {
-        try env.too_deep.append(env.scratch, region);
-    }
-};
 
 // ---------------------------------------------------------------------------
 // Generation
@@ -1385,13 +1214,6 @@ fn findSortedField(store: *const TypeStore, range: TypeStore.Range, name: Symbol
     return null;
 }
 
-/// `sccGroups`'s answer over plain indices: `order[starts[i]..starts[i + 1]]`
-/// is group `i`, and the groups are in dependency order.
-pub const IndexGroups = struct {
-    order: []u32,
-    starts: []u32,
-};
-
 /// The bindings of one `let`, grouped into minimal mutually recursive sets
 /// and ordered dependencies-first (design §7 #5).
 pub const Groups = struct {
@@ -1401,44 +1223,6 @@ pub const Groups = struct {
     /// `groups + 1`.
     starts: []u32,
 };
-
-/// Minimal mutually recursive groups over an arbitrary index graph,
-/// dependencies first. `edges[edge_start[i]..edge_start[i + 1]]` are `i`'s
-/// targets. Shared by the `let` decomposition here and the top-level one in
-/// `Check`, which are the same problem over different edges.
-pub fn sccGroups(scratch: Allocator, n: usize, edges: []const u32, edge_start: []const u32) Error!IndexGroups {
-    var t: LetTarjan = try .init(scratch, n, edges, edge_start);
-    defer t.deinit(scratch);
-    try t.run(scratch);
-    // Tarjan closes a component only once everything it points AT is done,
-    // and the edges here point dependent → dependency — so component 0 is
-    // the deepest dependency and ASCENDING id order is dependencies first.
-    // Both callers need that: `Check.run` checks group 0 first, and
-    // `letExpr` makes group 0 the outermost `let`, which is the one
-    // generalised first. Emitting them the other way round left every
-    // unannotated callee's scheme unset at the point its caller was
-    // checked, so the call was silently poisoned instead of checked.
-    //
-    // Grouped by a COUNTING SORT rather than a scan per component. The
-    // normal shape of real code is mostly independent top-level
-    // declarations, so components ≈ n and "for each component, scan every
-    // member" was quadratic in the module's declaration count: 8 000
-    // declarations took 44 ms, 16 000 took 139 ms and 32 000 took 506 ms,
-    // while the same 32 000 in ONE component took 73 ms.
-    const order = try scratch.alloc(u32, n);
-    const starts = try scratch.alloc(u32, t.component_count + 1);
-    @memset(starts, 0);
-    for (t.component) |c| starts[c + 1] += 1;
-    for (1..t.component_count + 1) |c| starts[c] += starts[c - 1];
-    const cursor = try scratch.alloc(u32, t.component_count);
-    defer scratch.free(cursor);
-    @memcpy(cursor, starts[0..t.component_count]);
-    for (t.component, 0..) |c, i| {
-        order[cursor[c]] = @intCast(i);
-        cursor[c] += 1;
-    }
-    return .{ .order = order, .starts = starts };
-}
 
 /// Tarjan over the local references between a `let`'s bindings. An
 /// ANNOTATED binding is never a target: its scheme is its annotation, so
@@ -1625,87 +1409,3 @@ fn pushChildren(env: *Env, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.
         => {},
     }
 }
-
-/// Tarjan over a `let`'s bindings; iterative for the same reason
-/// `resolve/Graph.zig`'s is.
-const LetTarjan = struct {
-    index: []u32,
-    low: []u32,
-    on_stack: []bool,
-    component: []u32,
-    stack: std.ArrayList(u32) = .empty,
-    frames: std.ArrayList(Frame) = .empty,
-    edges: []const u32,
-    edge_start: []const u32,
-    next_index: u32 = 0,
-    component_count: u32 = 0,
-
-    const unvisited = std.math.maxInt(u32);
-    const Frame = struct { node: u32, cursor: u32 };
-
-    fn init(scratch: Allocator, n: usize, edges: []const u32, edge_start: []const u32) Error!LetTarjan {
-        const t: LetTarjan = .{
-            .index = try scratch.alloc(u32, n),
-            .low = try scratch.alloc(u32, n),
-            .on_stack = try scratch.alloc(bool, n),
-            .component = try scratch.alloc(u32, n),
-            .edges = edges,
-            .edge_start = edge_start,
-        };
-        @memset(t.index, unvisited);
-        @memset(t.on_stack, false);
-        @memset(t.component, 0);
-        return t;
-    }
-
-    fn deinit(t: *LetTarjan, scratch: Allocator) void {
-        scratch.free(t.index);
-        scratch.free(t.low);
-        scratch.free(t.on_stack);
-        t.stack.deinit(scratch);
-        t.frames.deinit(scratch);
-    }
-
-    fn run(t: *LetTarjan, scratch: Allocator) Error!void {
-        for (0..t.index.len) |root| {
-            if (t.index[root] != unvisited) continue;
-            try t.frames.append(scratch, .{ .node = @intCast(root), .cursor = 0 });
-            while (t.frames.items.len > 0) {
-                const frame = &t.frames.items[t.frames.items.len - 1];
-                const v = frame.node;
-                if (frame.cursor == 0) {
-                    t.index[v] = t.next_index;
-                    t.low[v] = t.next_index;
-                    t.next_index += 1;
-                    try t.stack.append(scratch, v);
-                    t.on_stack[v] = true;
-                }
-                const edges = t.edges[t.edge_start[v]..t.edge_start[v + 1]];
-                if (frame.cursor < edges.len) {
-                    const w = edges[frame.cursor];
-                    frame.cursor += 1;
-                    if (t.index[w] == unvisited) {
-                        try t.frames.append(scratch, .{ .node = w, .cursor = 0 });
-                    } else if (t.on_stack[w]) {
-                        t.low[v] = @min(t.low[v], t.index[w]);
-                    }
-                    continue;
-                }
-                if (t.low[v] == t.index[v]) {
-                    while (true) {
-                        const w = t.stack.pop().?;
-                        t.on_stack[w] = false;
-                        t.component[w] = t.component_count;
-                        if (w == v) break;
-                    }
-                    t.component_count += 1;
-                }
-                _ = t.frames.pop();
-                if (t.frames.items.len > 0) {
-                    const parent = t.frames.items[t.frames.items.len - 1].node;
-                    t.low[parent] = @min(t.low[parent], t.low[v]);
-                }
-            }
-        }
-    }
-};

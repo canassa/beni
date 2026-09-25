@@ -36,7 +36,6 @@ const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Diagnostics = @import("../check/Diagnostics.zig");
-const Solve = @import("../check/Solve.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Types = @import("../check/Types.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
@@ -62,7 +61,7 @@ interner: *const InternPool.Global,
 types: *Types,
 options: Options,
 per_module: []std.ArrayList(Diagnostics.Item),
-counters: []Solve.Counters,
+counters: []Check.Counters,
 kept: []Module,
 /// One per module, written by the worker that checked it.
 dispatch: []Dispatch,
@@ -383,19 +382,31 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
     }
     // The one place the two checkers part (checker-v2.md §22.1): under
     // `--checker=v2` the root package is v2's, everything else stays v1's.
-    if (d.options.usesV2(d.graph, m)) return V2.check(.{
-        .gpa = d.gpa,
-        .graph = d.graph,
-        .artifacts = d.artifacts,
-        .interfaces = d.interfaces,
-        .types = d.types,
-        .module = m,
-        .diagnostics = &d.per_module[m.int()],
-        .quiet = m.int() < d.options.quiet.len and d.options.quiet[m.int()],
-        .profile = d.options.profile,
-        .tid = tid,
-        .keep = if (d.kept.len != 0) &d.kept[m.int()] else null,
-    });
+    if (d.options.usesV2(d.graph, m)) {
+        d.counters[m.int()] = try V2.check(.{
+            .gpa = d.gpa,
+            .scratch = scratch,
+            .patterns = patterns,
+            .graph = d.graph,
+            .artifacts = d.artifacts,
+            .interfaces = d.interfaces,
+            .provenance = d.provenance,
+            .interner = d.interner,
+            .types = d.types,
+            .module = m,
+            .diagnostics = &d.per_module[m.int()],
+            .quiet = m.int() < d.options.quiet.len and d.options.quiet[m.int()],
+            .profile = d.options.profile,
+            .tid = tid,
+            .pattern_budget = d.options.pattern_budget,
+            .dispatch = &d.dispatch[m.int()],
+            .plan = &d.plans[m.int()],
+            .roundtrip_interfaces = d.options.roundtrip_interfaces,
+            .roundtrip_dispatch = d.options.roundtrip_dispatch,
+            .keep = if (d.kept.len != 0) &d.kept[m.int()] else null,
+        });
+        return;
+    }
     var one: V1.ModuleCheck = .{
         .gpa = d.gpa,
         .scratch = scratch,

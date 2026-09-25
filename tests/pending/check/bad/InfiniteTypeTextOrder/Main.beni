@@ -1,0 +1,9 @@
+import A
+
+
+f =
+    let
+        g =
+            { zeta = [ List.singleton, identity ], alpha = [ Just, identity ] }
+    in
+    A.zeta

@@ -50,6 +50,7 @@ pub fn write(
         // next declaration — exactly the per-diagnostic rule of §8.2.
         var namer: Render.Namer = .init(gpa);
         defer namer.deinit();
+        namer.budget = Render.Namer.unlimited;
         try w.print("  {s} : ", .{interner.slice(bir.symbol(d.name))});
         if (module.decl_display[i].unwrap()) |v| {
             try Render.writeScheme(w, cx, &namer, v);

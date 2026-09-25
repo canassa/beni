@@ -1,0 +1,7 @@
+-- CK-57: which of two cycles is drawn is chosen by field-name TEXT (I13): `g`
+-- holds `zeta`, a `List` cycle, and `alpha`, a `Maybe` cycle; `zeta` is
+-- interned first (it is written in `A.beni` and before `alpha`), so a search
+-- in symbol order meets the `List` cycle. The message draws `alpha`'s.
+pub zeta : Int
+zeta =
+    1

@@ -1,0 +1,3 @@
+# the argument tuple against `( String, b )`, `f`'s parameter once the pattern
+# group is solved first
+kind_mismatch 24:9

@@ -5809,3 +5809,153 @@ test "schemas check and dump, while emit refuses before entry discovery and writ
     try testing.expect(w.exists("cache"));
     inline for (.{ "out1", "out2", "out3", "out4", "out5", "out6" }) |path| try testing.expect(!w.exists(path));
 }
+
+test "checker v2 writes the annotation escape and the infinite type as checker.md §8.5 specifies" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The two texts R4b wrote for v2 (`checker-v2.md` §15.3, S20): CK-01's
+    // escape, at the capture that tied `a` to `x`, and CK-57's infinite type
+    // written as its structure, at the binder `r`. Pinned whole, at both
+    // `--jobs`, because their fixtures in `tests/pending/` assert only codes
+    // and fragments until they are promoted at the cut-over.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Texts.beni",
+        \\f x =
+        \\    let
+        \\        g : a -> a
+        \\        g y =
+        \\            x
+        \\    in
+        \\    g "hello"
+        \\
+        \\
+        \\h r =
+        \\    { r | x = r }
+        \\
+    );
+    const expected = @as([]const diagnostic.Diagnostic, &.{
+        .{
+            .code = .rigid_mismatch,
+            .severity = .@"error",
+            .span = .{ .file = "Texts.beni", .start = .{ .line = 5, .col = 13 }, .end = .{ .line = 5, .col = 14 } },
+            .title = "TYPE MISMATCH",
+            .message = "The type annotation of `g` promises more than its body keeps:\n\n    g : a -> a\n\nThe annotation says `a` can be ANY type, but the body ties `a` to a type that\ncomes from `f`, the definition `g` is written inside. That type is fixed for\neach call of `f`, so `g` does not work for every `a`.\n\nHint: write the enclosing definition's type in the annotation instead of `a`,\nor remove the annotation and let the type be inferred.\n",
+        },
+        .{
+            .code = .infinite_type,
+            .severity = .@"error",
+            .span = .{ .file = "Texts.beni", .start = .{ .line = 10, .col = 3 }, .end = .{ .line = 10, .col = 4 } },
+            .title = "INFINITE TYPE",
+            .message = "I am inferring a weird self-referential type for `r`:\n\nHere is my best effort at writing it down, with `a` standing for the whole\ntype wherever it repeats inside itself:\n\n    a = { r | x : a }\n\nHint: the type would go on forever, so I gave up. This usually means a\ndefinition is missing an argument, or is being used with one argument too\nmany, somewhere inside itself.\n",
+        },
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const one = try w.run(&.{ "check", "--checker=v2", "--jobs=1", "--no-cache", "Texts.beni" });
+    const eight = try w.run(&.{ "check", "--checker=v2", "--jobs=8", "--no-cache", "Texts.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ one, eight }) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqualStrings("", r.stdout);
+        try testing.expectEqualDeep(expected, r.diagnostics);
+    }
+}
+
+test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `x = ( x, x )` is a DAG the printer walked as a TREE: under
+    // `Render.max_depth` alone that is 2^24 leaves, 300 MB of stderr from a
+    // two-line program on both checkers (R4b's adversarial review, F1). The
+    // namer's node budget (`checker.md` §8.2) bounds one message.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\h x y z =
+        \\    [ x, ( y, z ), ( z, x ), ( x, 0 ) ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const v1 = try w.runWith(&.{ "check", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
+    const v2 = try w.runWith(&.{ "check", "--checker=v2", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ v1, v2 }) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expect(std.mem.indexOf(u8, r.stderr, "TYPE MISMATCH") != null);
+        try testing.expect(r.stderr.len < 64 * 1024);
+    }
+}
+
+test "checker v2 checks a module that declares a type, and refuses only its library build" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §5 (*Revised by R4b's review*, S8): v2 writes none of
+    // the eager `eq`/`compare` rows (P5 is R8a's). An application build cannot
+    // reach them; a `--library` build exports them, so it is refused, like a
+    // schema, before any output exists.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\pub type Colour
+        \\    = Red
+        \\    | Green
+        \\
+        \\
+        \\name : Colour -> String
+        \\name c =
+        \\    case c of
+        \\        Red ->
+        \\            "red"
+        \\
+        \\        Green ->
+        \\            "green"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ name Green ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=node", "--checker=v2", "--no-cache", "Main.beni" });
+    const app = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--no-cache", "--out=app", "Main.beni" });
+    const library = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--library", "--no-cache", "--out=lib", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+    try testing.expectEqual(@as(u8, 0), app.exit_code);
+    try testing.expectEqual(@as(u8, 1), library.exit_code);
+    try testing.expectEqual(@as(usize, 1), library.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, library.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, library.diagnostics[0].message, "R8a") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(w.exists("app"));
+    try testing.expect(!w.exists("lib"));
+}

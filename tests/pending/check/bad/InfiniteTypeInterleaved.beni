@@ -1,0 +1,5 @@
+-- CK-57: interleaved cycles, `x = ( x, y )` and `y = ( y, x )`: one
+-- `infinite_type`, at `x`. Before R4b's review v2 then reported `y` too, and
+-- drew it as `a = ( a, ? )` — the poison marker, shown to the author.
+f x y =
+    ( [ x, ( x, y ) ], [ y, ( y, x ) ] )

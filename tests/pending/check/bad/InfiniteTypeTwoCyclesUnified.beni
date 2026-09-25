@@ -1,0 +1,5 @@
+-- CK-04: two self-applications make two cycles that `[ x, y ]` then unifies.
+-- One `infinite_type`, at the parameter `x`. Before R4b's review v2 said
+-- `nesting_too_deep` at the `y` of `[ x, y ]`; v1 reports at the body (2:5).
+g x y =
+    ( x x, y y, [ x, y ] )

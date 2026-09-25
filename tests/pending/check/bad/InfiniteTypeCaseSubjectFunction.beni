@@ -1,0 +1,8 @@
+-- CK-04: `InfiniteTypeCaseSubject`'s cycle through a function. Before R4b's
+-- review v2 said `nesting_too_deep` at `[ r, s ]`.
+g r s =
+    case [ r, \x -> r ] of
+        _ ->
+            case [ s, \y -> s ] of
+                _ ->
+                    [ r, s ]

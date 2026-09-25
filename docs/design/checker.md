@@ -1199,6 +1199,13 @@ the program does not have, and a `--stage=interface` dump said so as an artifact
 defined form for "open, and there is more here"; `check/depth/RecordExtTruncatedDeep` and
 `check/good/RecordExtChain` pin it in a diagnostic and in an interface respectively.
 
+*A third bound, added 2026-09-25 by R4b's review (CK-92).* A type is printed as a TREE, so a shared
+or cyclic graph — `x = ( x, x )`, a doubling `let` — printed 2^24 leaves under `max_depth` alone:
+300 MB of stderr from a two-line program, on both checkers. `Render.Namer.budget` bounds the nodes
+one message prints (`message_budget`, 4 096); past it a node prints `…`, the same truncation as
+`max_depth`. The dumps (`--stage=types`, `--stage=interface`), whose output is a type's whole text,
+set the budget to `unlimited`, so no golden moves.
+
 ### 8.3 The arity suite
 
 Currying is gone (`fast-compiler.md` §9.3, `language.md` §6.7), so arity is a property of the type
@@ -1253,6 +1260,66 @@ properties make it safe to run over prose nobody re-read:
 - **A column is a code point.** The messages are full of `§`, `—` and `…`, each one column wide
   and two or three bytes long, and the hand-wrapped prose this rule has to agree with was measured
   by eye.
+
+### 8.5 Checker v2's texts: the annotation escape and the infinite type
+
+Added 2026-09-25 by R4b (`checker-v2.md` §15.3, S20), **before** the code that prints them. They
+are what `--checker=v2` prints; the old checker keeps its own texts until the cut-over (R11), when
+these become the only ones. Everything else below is unchanged.
+
+**The annotation escape (CK-01, `checker-v2.md` §8.3, D7).** Code `rigid_mismatch`, title
+`TYPE MISMATCH`. An annotated `let` binding whose rigid variable the body tied to a type of the
+enclosing definition:
+
+```
+The type annotation of `g` promises more than its body keeps:
+
+    g : a -> a
+
+The annotation says `a` can be ANY type, but the body ties `a` to a type that
+comes from `f`, the definition `g` is written inside. That type is fixed for
+each call of `f`, so `g` does not work for every `a`.
+
+Hint: write the enclosing definition's type in the annotation instead of `a`,
+or remove the annotation and let the type be inferred.
+```
+
+- `g` is the binding, `f` the top-level declaration the `let` is written in, `a` the variable
+  that escaped (a row variable is named the same way: `r` for `{ r | x : Int }`), and the
+  indented line the annotation as the binding's callers see it — the scheme, rendered by §8.2's
+  printer before it is poisoned.
+- **The span** is the first unification that tied the variable to an outer one (the *capture*
+  of `checker-v2.md` §7.1: the `x` in `g y = x`, the `o` in `g y = o`), and the binding's
+  annotation when no capture was recorded.
+- The binding's scheme is then poisoned, so its callers are not checked against the promise and
+  add no second message.
+
+**The infinite type (CK-04, CK-57, `checker-v2.md` §8.2).** Code `infinite_type`, title
+`INFINITE TYPE`. The structure is written down, with the repeated node named:
+
+```
+I am inferring a weird self-referential type for `y`:
+
+Here is my best effort at writing it down, with `a` standing for the whole
+type wherever it repeats inside itself:
+
+    a = a -> b
+
+Hint: the type would go on forever, so I gave up. This usually means a
+definition is missing an argument, or is being used with one argument too
+many, somewhere inside itself.
+```
+
+- `y` is the binder the check started from: a lambda or declaration parameter, a pattern
+  variable of a `case` branch, or a `let` or top-level header. A cycle found from a unification
+  rather than a binder says `here` instead: *"I am inferring a weird self-referential type
+  here:"*.
+- The indented line is the cycle's node — the variable the occurs walk met twice — named first,
+  then its structure printed once with every inner occurrence of the node written as that name.
+  `a` is whatever name §8.2's namer gives it (it is `a` unless the structure already uses `a`),
+  and the paragraph says the name it used. `f r = { r | x = r }` prints `a = { r | x : a }`.
+- **The span** is the binder: the parameter's pattern (`\y`), the `case` branch's pattern, the
+  `let` definition, or a top-level declaration's body; for a unification, its expression.
 
 ## 9. Measurement
 

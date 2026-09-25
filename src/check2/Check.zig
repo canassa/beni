@@ -34,7 +34,6 @@ const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Diagnostics = @import("../check/Diagnostics.zig");
-const Solve = @import("../check/Solve.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
@@ -61,6 +60,52 @@ pub const Exhaustive = @import("../check/Exhaustive.zig");
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
+
+/// What `--self-profile` reports, and what M4's incrementality tests will
+/// assert did NOT move when only a body changed (checker.md §9). Moved here
+/// from v1's `Solve.zig` by R4b's review (S2): both checkers fill it.
+pub const Counters = struct {
+    unifications: u64 = 0,
+    generalisations: u64 = 0,
+    instantiations: u64 = 0,
+    obligations: u64 = 0,
+    /// Static-dispatch accounting: `plans/static-dispatch-spike.md` §7 M1b
+    /// for the rows they feed, `docs/design/static-dispatch-spike.md`
+    /// §6.1-§6.3 for the mechanism. Declared before there is anything to
+    /// count, the way
+    /// the four above were, so the M1a baseline on this branch and the
+    /// numbers after the checker lands are read off the SAME JSON line and
+    /// the same `--self-profile` trace. Every one of them is zero until S3
+    /// emits method constraints; a non-zero here on an unchanged checker
+    /// would itself be the finding.
+    ///
+    ///   - `created` — method constraints attached to a type variable,
+    ///     one per `x.m` whose receiver is not yet concrete.
+    ///   - `merged` — constraint sets unioned by flex ⊓ flex (§6.2).
+    ///   - `deferred` — obligations registered because the receiver was
+    ///     still a variable when the constraint was raised.
+    ///   - `discharged` — obligations resolved against a concrete type
+    ///     (§6.3), which is where the method lookup is paid.
+    ///   - `promoted` — constraints that survived generalisation and rode
+    ///     out on an exported scheme, which is the `fast-compiler.md` §3.1
+    ///     interface cost the spike exists to measure.
+    constraints_created: u64 = 0,
+    constraints_merged: u64 = 0,
+    constraints_deferred: u64 = 0,
+    constraints_discharged: u64 = 0,
+    constraints_promoted: u64 = 0,
+
+    /// Field-by-field sum. Reflective on purpose: a counter added above and
+    /// forgotten here would silently report a per-module figure as if it
+    /// were the whole project's.
+    pub fn add(a: Counters, b: Counters) Counters {
+        var out: Counters = .{};
+        inline for (@typeInfo(Counters).@"struct".fields) |f| {
+            @field(out, f.name) = @field(a, f.name) + @field(b, f.name);
+        }
+        return out;
+    }
+};
 
 /// What one checked module leaves behind for `dump --stage=types`. Present
 /// only when the run asked for it.
@@ -97,7 +142,7 @@ modules: []Module,
 dispatch: []Dispatch,
 /// Resolved immutable schema plan per module.
 plans: []SchemaPlan,
-counters: Solve.Counters,
+counters: Counters,
 
 pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .plans = &.{}, .counters = .{} };
 
@@ -293,7 +338,7 @@ pub fn run(
         for (list.items) |d| gpa.free(d.message);
         list.deinit(gpa);
     };
-    const counters = try gpa.alloc(Solve.Counters, modules);
+    const counters = try gpa.alloc(Counters, modules);
     defer gpa.free(counters);
     @memset(counters, .{});
 

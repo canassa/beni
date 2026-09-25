@@ -230,6 +230,7 @@ pub fn run(
     // Refuse here, before entry discovery and before a pending output tree
     // exists, so a schema can never build while silently omitting them.
     if (try e.refuseSchemas()) return e.nothingWritten(gpa);
+    if (try e.refuseV2LibraryTypes()) return e.nothingWritten(gpa);
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -388,6 +389,36 @@ const Emitter = struct {
                     file,
                     decl.name_token,
                     "This schema is checked, but its parse and print are not generated until schema S4.",
+                    .{},
+                );
+            }
+        }
+        return found;
+    }
+
+    /// `--checker=v2` checks a module that declares a `type` (checker-v2.md
+    /// §5, *As built by R4b*, the manager's decision on its review, S8), but
+    /// writes none of the `eq`/`compare` rows v1's eager pass derives for it
+    /// (P5 is R8a's). An application build cannot reach them — nothing in a
+    /// module v2 checks compares anything — but a `--library` build exports
+    /// every such row (`Reach.collectRoots`), so it would be silently smaller.
+    /// Refused here, like a schema, before any output exists.
+    fn refuseV2LibraryTypes(e: *Emitter) !bool {
+        const opts = e.session.options;
+        if (!e.options.library or opts.checker != .v2 or opts.core) return false;
+        var found = false;
+        for (0..e.graph().count()) |i| {
+            const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            if (e.graph().module(module).package != .app) continue;
+            const file = e.graph().moduleFile(module);
+            for (e.bir(module).decls) |decl| {
+                if (decl.kind != .type) continue;
+                found = true;
+                try e.report(
+                    .not_implemented,
+                    file,
+                    decl.name_token,
+                    "checker v2 does not derive this type's `eq` and `compare` until slice R8a, and a `--library` build exports them.",
                     .{},
                 );
             }

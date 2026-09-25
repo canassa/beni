@@ -1,0 +1,13 @@
+-- CK-04: a cycle made in a `case` subject, which is no binder, lives until
+-- `g`'s boundary, and there `r` and `s` carry two isomorphic cyclic records
+-- that `[ r, s ]` unifies. Unification is coinductive (checker-v2.md §7.3):
+-- the two cycles unify, and the boundary reports ONE `infinite_type`, at the
+-- parameter `r` (§8.2). Before R4b's review v2 recursed through two cyclic
+-- fields to the depth guard, exponentially (killed at 20 s); v1 reports at the
+-- body (2:5) with `a  =  … a …`.
+g r s =
+    case [ r, { a = r, b = r } ] of
+        _ ->
+            case [ s, { a = s, b = s } ] of
+                _ ->
+                    [ r, s ]

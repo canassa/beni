@@ -79,6 +79,16 @@ pub const Namer = struct {
     next_suffix: std.StringHashMapUnmanaged(u32) = .empty,
     /// How many generated (`a`, `b`, …) names have been handed out.
     generated: u32 = 0,
+    /// How many type nodes this message may still print (`checker.md` §8.2's
+    /// third bound, CK-92). Past it a node prints `…`. A diagnostic's type is
+    /// printed as a TREE, so a shared or cyclic graph — `x = ( x, x )`, a
+    /// doubling `let` — printed 2^24 leaves under `max_depth` alone, hundreds
+    /// of megabytes for a two-line program. The dumps, whose output is a
+    /// type's whole text, set it to `unlimited`.
+    budget: u32 = message_budget,
+
+    pub const message_budget: u32 = 4096;
+    pub const unlimited: u32 = std.math.maxInt(u32);
 
     pub fn init(gpa: Allocator) Namer {
         return .{ .gpa = gpa };
@@ -329,6 +339,8 @@ fn write(
     // Truncation, not an error: the diagnostic stands, only this type's
     // tail is elided. See `max_depth`.
     if (depth > max_depth) return w.writeAll("…");
+    if (namer.budget == 0) return w.writeAll("…");
+    namer.budget -= 1;
     const root = cx.store.find(v);
     switch (cx.store.content(root)) {
         .err => try w.writeAll("?"),

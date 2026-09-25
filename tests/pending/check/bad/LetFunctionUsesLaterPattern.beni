@@ -1,0 +1,24 @@
+-- CK-90: a `let` function may use a variable a `let` PATTERN binds further
+-- down (a function is hoisted), and the variable's type must reach it. Here
+-- `c` returns `a`, and `String.length a` makes `a` a `String`, so `f`'s
+-- argument is `( String, b )` and `f ( 5, 0 )` is a mismatch at the tuple.
+-- v1's `let` SCC gives no edge to a pattern binding, so `c`'s group is solved
+-- and generalised before the pattern's: on 986b2c5 `f : ( a, b ) -> ( c, Int )`
+-- and `bad` checks clean — `String.length` would then run on `5`.
+-- checker-v2.md §6.2 (as built by R4b): a pattern is an SCC target for every
+-- variable it binds.
+
+
+f p =
+    let
+        c u =
+            a
+
+        ( a, b ) =
+            p
+    in
+    ( c 1, String.length a )
+
+
+bad =
+    f ( 5, 0 )

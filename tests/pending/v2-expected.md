@@ -33,3 +33,12 @@ Only the rows whose v2 output differs from the golden before the cut-over; the D
 
 - `tests/corpus/check/bad/MethodNeedsAnnotation` — D3 (R7): v2 accepts the program; it becomes a `run/` fixture at R11
 - `tests/corpus/check/bad/PriorityGroupSpecializedPayloadEq` — re-derived without priority groups (R7): still a refusal, with a new region; re-blessed at R11
+
+## Expected differences R4b introduced (re-blessed at R11)
+
+v2's output differs from v1's golden on purpose, by a rule `checker-v2.md` states; the golden stays
+v1's until the cut-over, when the fixture is re-blessed (or re-cut) under v2 with review.
+
+- `tests/corpus/check/bad/InfiniteType.beni` — CK-04/CK-57 (§6.3, §8.2, `checker.md` §8.5): v2 reports the cycle at the parameter `f` (4:7), a binder, and writes the type down as `a = a -> b`; v1 reports it at the body with `a  =  … a …`
+- `tests/corpus/check/good/RecordExtChain.beni` — §4.1's normalised records (CK-08): a record merge leaves one node, so the 65-link extension chain this fixture builds for `Render.max_ext_links` no longer exists, and v2 publishes the whole open record `{ r | a1 : a, … }`; at R11 the printer's truncation needs a fixture that reaches it another way
+- `tests/corpus/check/depth/RecordExtTruncatedDeep.beni` — the same §4.1 rule: the mismatch's record prints in full instead of `{ … | … }`; re-cut with `RecordExtChain` at R11

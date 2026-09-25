@@ -1,0 +1,334 @@
+//! Instantiation (checker-v2.md §4.2, §6.6, S-2): copying a generalised
+//! type into the current frame, and building the type a reference names.
+//!
+//! **The rank and the pool are explicit** (round 3, S-2): everything made
+//! here is made at the current frame's rank and joins its young pool, so the
+//! boundary adjusts and generalises it like any other variable.
+//!
+//! **`copy` is iterative** (I4). v1's `copyHelp` recursed and, past its
+//! guard, shared the rest of the scheme with the copy — "less general, never
+//! more", but still a silent answer at a depth. Here a first pass allocates
+//! one fresh variable per generalised node reachable from the scheme (the
+//! memo is the descriptor's `copy` field, so sharing survives: `(y, y)`
+//! copies `y` once) and a second fills each copy's content with its
+//! children mapped through the memo. A node that is not generalised is
+//! shared, as in Elm: that is what keeps a lambda parameter monomorphic.
+//! Constraint method types are successors (`Walk.child(…, .owned)`) and so
+//! are copied through the same memo (§4.2) — nothing in R4b's subset has
+//! one, but the walk does not need to know that.
+//!
+//! **What a reference names** is resolved from the module's own Bir or a
+//! dependency's INTERFACE, never a dependency's Bir (`fast-compiler.md`
+//! §8.1), exactly as v1's `schemeOf` does. `.local` and `.top` are not here:
+//! the generator resolved them to a variable (I11, §6.2).
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Bir = @import("../bir/Bir.zig");
+const Graph = @import("../resolve/Graph.zig");
+const Interface = @import("../resolve/Interface.zig");
+const TypeStore = @import("../check/TypeStore.zig");
+const Types = @import("../check/Types.zig");
+const Schemes = @import("../check/Schemes.zig");
+const Context = @import("Context.zig");
+const Generalize = @import("Generalize.zig");
+const Walk = @import("Walk.zig");
+
+const Instantiate = @This();
+
+pub const Var = TypeStore.Var;
+pub const Error = Allocator.Error;
+
+cx: *const Context,
+frames: *std.ArrayList(Generalize.Frame),
+stacks: *Walk.Stacks,
+/// The generalised roots the copy in progress memoised, so their `copy`
+/// slots are cleared afterwards without a second walk.
+copied: std.ArrayList(Var) = .empty,
+instantiations: u64 = 0,
+/// The declaration being solved, for a too-deep note (§15.2): set by the
+/// solver at each `member` node.
+decl: ?u32 = null,
+
+pub fn deinit(in: *Instantiate) void {
+    in.copied.deinit(in.cx.gpa);
+}
+
+fn frame(in: *Instantiate) *Generalize.Frame {
+    return &in.frames.items[in.frames.items.len - 1];
+}
+
+/// Pool every variable the store gained since `mark` at the frame's rank:
+/// `Types.Builder` and `Schemes.instantiate` make variables themselves, and
+/// the descriptor column is append-only, so what is new is a range.
+pub fn adoptSince(in: *Instantiate, mark: u32) Error!void {
+    const f = in.frame();
+    const store = in.cx.store;
+    var i = mark;
+    while (i < store.count()) : (i += 1) {
+        const v: Var = @enumFromInt(i);
+        if (store.rank(v) == f.rank) try f.pool.append(in.cx.gpa, v);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Copy
+// ---------------------------------------------------------------------------
+
+/// A fresh instance of `v` in the current frame: every generalised node is
+/// copied once, every other node is shared.
+pub fn copy(in: *Instantiate, v: Var) Error!Var {
+    const store = in.cx.store;
+    const gpa = in.cx.gpa;
+    in.instantiations += 1;
+    const root = store.find(v);
+    if (store.rank(root) != TypeStore.generalized) return root;
+
+    const f = in.frame();
+    const start = in.copied.items.len;
+    // Pass 1: one fresh variable per generalised node, memoised.
+    const stack = &in.stacks.vars;
+    stack.clearRetainingCapacity();
+    try stack.append(gpa, root);
+    while (stack.pop()) |next| {
+        const r = store.find(next);
+        if (store.rank(r) != TypeStore.generalized) continue;
+        if (store.copy(r) != .none) continue;
+        const c = try store.fresh(.err, f.rank);
+        try f.pool.append(gpa, c);
+        store.setCopy(r, c.toOptional());
+        try in.copied.append(gpa, r);
+        var n: u32 = 0;
+        while (Walk.child(store, r, n, .owned)) |ch| : (n += 1) {
+            const cr = store.find(ch);
+            if (store.rank(cr) == TypeStore.generalized and store.copy(cr) == .none) try stack.append(gpa, cr);
+        }
+    }
+    // Pass 2: each copy's content, its successors mapped through the memo.
+    for (in.copied.items[start..]) |r| {
+        const c = store.copy(r).unwrap().?;
+        store.setContent(c, try in.mapped(r));
+    }
+    const result = store.copy(root).unwrap().?;
+    for (in.copied.items[start..]) |r| store.setCopy(r, .none);
+    in.copied.shrinkRetainingCapacity(start);
+    return result;
+}
+
+/// What a copied node's copy is: `n`'s own copy when it has one, else `n`
+/// itself (shared).
+fn image(store: *TypeStore, n: Var) Var {
+    const r = store.find(n);
+    return store.copy(r).unwrap() orelse r;
+}
+
+fn mappedRange(in: *Instantiate, range: TypeStore.Range) Error!TypeStore.Range {
+    const store = in.cx.store;
+    const source = try in.cx.scratch.dupe(Var, store.vars(range));
+    defer in.cx.scratch.free(source);
+    for (source) |*x| x.* = image(store, x.*);
+    return store.addVars(source);
+}
+
+fn mappedConstraints(in: *Instantiate, flags: TypeStore.Flags) Error!TypeStore.ConstraintSet.Optional {
+    const store = in.cx.store;
+    const set = Walk.constraints(flags);
+    const n = set.count(store);
+    if (n == 0) return .none;
+    const built = try in.cx.scratch.alloc(TypeStore.MethodConstraint, n);
+    defer in.cx.scratch.free(built);
+    for (built, 0..) |*c, i| {
+        const original = set.at(store, @intCast(i));
+        c.* = .{ .name = original.name, .fn_var = image(store, original.fn_var), .region = original.region, .origin = original.origin };
+    }
+    return (try store.addConstraints(built)).toOptional();
+}
+
+/// A copied node's content. Instantiating an annotation's promise turns it
+/// into an ordinary variable: inside the body `a` is rigid, at a use it is
+/// whatever the use needs (Elm's `makeCopyHelp`).
+fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
+    const store = in.cx.store;
+    return switch (store.content(r)) {
+        .err => .err,
+        .flex, .rigid => |flags| .{ .flex = .{
+            .name = flags.name,
+            .kind = flags.kind,
+            .equatable = flags.equatable,
+            .constraints = try in.mappedConstraints(flags),
+        } },
+        .alias => |a| .{ .alias = .{ .type = a.type, .args = try in.mappedRange(a.args), .actual = image(store, a.actual) } },
+        .structure => |flat| .{ .structure = switch (flat) {
+            .unit, .empty_record => flat,
+            .func => |fun| .{ .func = .{ .params = try in.mappedRange(fun.params), .result = image(store, fun.result) } },
+            .app => |a| .{ .app = .{ .type = a.type, .args = try in.mappedRange(a.args) } },
+            .tuple => |t| .{ .tuple = try in.mappedRange(t) },
+            .record => |rec| blk: {
+                const source = try in.cx.scratch.dupe(TypeStore.Field, store.fields(rec.fields));
+                defer in.cx.scratch.free(source);
+                for (source) |*fld| fld.value = image(store, fld.value);
+                break :blk .{ .record = .{ .fields = try store.addFields(source), .ext = image(store, rec.ext) } };
+            },
+        } },
+    };
+}
+
+// ---------------------------------------------------------------------------
+// What a reference names
+// ---------------------------------------------------------------------------
+
+/// The type the reference at `region` names, not yet copied, or null for a
+/// reference that cannot be typed (already reported, or a dependency that
+/// failed): the caller poisons.
+pub fn reference(in: *Instantiate, region: Bir.Inst.Index) Error!?Var {
+    const cx = in.cx;
+    const bir = cx.bir;
+    const data = bir.instData(region);
+    return switch (bir.instTag(region)) {
+        .ctor => try in.ownCtor(data.lhs, region),
+        .ext_value => try in.imported(@enumFromInt(data.lhs), .value, data.rhs),
+        .ext_ctor => try in.importedCtor(@enumFromInt(data.lhs), data.rhs),
+        .ext_schema_member => try in.imported(@enumFromInt(data.lhs), .schema_member, data.rhs),
+        .ext_schema_ctor => try in.imported(@enumFromInt(data.lhs), .schema_ctor, data.rhs),
+        .schema_member_top => blk: {
+            const kind = std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse break :blk null;
+            break :blk cx.schemas.member(data.lhs, kind);
+        },
+        .schema_ctor_top => blk: {
+            const ref = Bir.SchemaCtorRef.unpack(data.rhs);
+            break :blk try cx.schemas.constructor(@enumFromInt(data.lhs), if (ref.encoded) .encoded else .type, ref.variant);
+        },
+        else => null,
+    };
+}
+
+const Imported = enum { value, schema_member, schema_ctor };
+
+/// A value, schema member or schema constructor of another module,
+/// instantiated from its interface at the frame's rank.
+fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) Error!?Var {
+    const cx = in.cx;
+    if (module.int() >= cx.interfaces.len) return null;
+    const iface = cx.iface(module);
+    const scheme = switch (which) {
+        .value => if (index < iface.values.len) iface.values[index].scheme else return null,
+        .schema_member => if (index < iface.schema_members.len) iface.schema_members[index].scheme else return null,
+        .schema_ctor => if (index < iface.schema_ctors.len) iface.schema_ctors[index].scheme else return null,
+    };
+    if (scheme == .none) return null;
+    const mark = cx.store.count();
+    const v = try Schemes.instantiate(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch, null);
+    try in.adoptSince(mark);
+    return v;
+}
+
+/// A constructor of another module, from its interface's `arg_terms`.
+fn importedCtor(in: *Instantiate, module: Graph.Index, index: u32) Error!?Var {
+    const cx = in.cx;
+    if (module.int() >= cx.interfaces.len) return null;
+    const iface = cx.iface(module);
+    if (index >= iface.ctors.len) return null;
+    const type_id = cx.types.ofInterface(module, iface.ctors[index].type);
+    if (type_id == .none) return null;
+    const mark = cx.store.count();
+    const v = try Schemes.instantiateCtor(iface, cx.types.refIds(module), cx.store, index, type_id, in.frame().rank, cx.scratch) orelse return null;
+    try in.adoptSince(mark);
+    return v;
+}
+
+/// A constructor of THIS module, built fresh at the frame's rank — which is
+/// its instantiation: nothing is shared with another use.
+fn ownCtor(in: *Instantiate, index: u32, region: Bir.Inst.Index) Error!?Var {
+    const cx = in.cx;
+    const bir = cx.bir;
+    if (index >= bir.ctors.len) return null;
+    const c = bir.ctors[index];
+    const owner = bir.decl(c.decl);
+    const id = cx.types.ofDecl(cx.module, c.decl);
+    if (id == .none) return null;
+    const rank = in.frame().rank;
+
+    const mark = cx.store.count();
+    var b: Types.Builder = .init(cx.store, cx.types, cx.graph, cx.artifacts, cx.module, bir, .flex, rank, cx.scratch, cx.interner);
+    defer b.deinit();
+    const params = bir.declTypeParams(owner);
+    const param_vars = try cx.scratch.alloc(Var, params.len);
+    defer cx.scratch.free(param_vars);
+    for (params, param_vars) |p, *v| {
+        v.* = try cx.store.fresh(.{ .flex = .{ .name = p.toOptional() } }, rank);
+        try b.bind(p, v.*);
+    }
+    const args = bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Bir.Inst.Index);
+    const arg_vars = try cx.scratch.alloc(Var, args.len);
+    defer cx.scratch.free(arg_vars);
+    for (args, arg_vars) |arg, *v| v.* = try b.read(arg);
+    // The guard poisoned an argument: the type is a hole, and a message
+    // goes with it.
+    if (b.too_deep) try cx.noteTooDeep(region, in.decl);
+    const result = try b.apply(id, param_vars);
+    if (arg_vars.len == 0) {
+        try in.adoptSince(mark);
+        return result;
+    }
+    const range = try cx.store.addVars(arg_vars);
+    const fun = try cx.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, rank);
+    try in.adoptSince(mark);
+    return fun;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+test "copy keeps sharing, shares what is not generalised, and walks 100 000 levels" {
+    var store: TypeStore = .init(testing.allocator);
+    defer store.deinit();
+    var stacks: Walk.Stacks = .{};
+    defer stacks.deinit(testing.allocator);
+    var frames: std.ArrayList(Generalize.Frame) = .empty;
+    defer {
+        for (frames.items) |*f| f.deinit(testing.allocator);
+        frames.deinit(testing.allocator);
+    }
+    try frames.append(testing.allocator, .{ .rank = 1 });
+    var too_deep: std.ArrayList(Context.TooDeep) = .empty;
+    const cx: Context = .{
+        .gpa = testing.allocator,
+        .scratch = testing.allocator,
+        .store = &store,
+        .types = undefined,
+        .graph = undefined,
+        .artifacts = undefined,
+        .interner = undefined,
+        .interfaces = &.{},
+        .module = @enumFromInt(0),
+        .bir = undefined,
+        .schemas = undefined,
+        .too_deep = &too_deep,
+    };
+    var in: Instantiate = .{ .cx = &cx, .frames = &frames, .stacks = &stacks };
+    defer in.deinit();
+
+    // ∀a. ( a, a, outer ), with `outer` a monomorphic variable.
+    const a = try store.fresh(.{ .flex = .{} }, TypeStore.generalized);
+    const outer = try store.freshFlex(1);
+    const elems = try store.addVars(&.{ a, a, outer });
+    const tuple = try store.fresh(.{ .structure = .{ .tuple = elems } }, TypeStore.generalized);
+    const c = try in.copy(tuple);
+    const copied = store.vars(store.content(c).structure.tuple);
+    try testing.expect(copied[0] != a);
+    try testing.expectEqual(copied[0], copied[1]);
+    try testing.expectEqual(outer, copied[2]);
+    try testing.expectEqual(@as(u32, 1), store.rank(copied[0]));
+
+    var v = a;
+    for (0..100_000) |_| {
+        const args = try store.addVars(&.{v});
+        v = try store.fresh(.{ .structure = .{ .app = .{ .type = @enumFromInt(0), .args = args } } }, TypeStore.generalized);
+    }
+    const deep = try in.copy(v);
+    try testing.expect(deep != v);
+    try testing.expectEqual(@as(u32, 1), store.rank(deep));
+}

@@ -701,10 +701,10 @@ test "row 10b: --checker=v2 moves every module's key, core included, and v1 is t
     // └─────────────────────────────────────────┘
     const base = try baselineKeys(&w, arena);
     const v1 = try keysOf(&w, arena, &.{ "--jobs=1", "--checker=v1", "src" });
-    // The v2 run exits 1 — until R4b every root module reports
-    // `not_implemented` — and its keys are printed all the same.
+    // The v2 run checks the project clean (from R4b v2 checks it: no
+    // dispatch, no obligation) and prints its keys.
     const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "--checker=v2", "src" }, .{ .raw_diagnostics = true });
-    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
     const v2 = try parseKeys(arena, r.stdout);
 
     // ┌─────────────────────────────────────────┐
@@ -2181,8 +2181,9 @@ test "a cache written under one checker is never read under the other" {
     // this is the counters' half — nothing is READ across the line, in either
     // direction, and each checker still reads its own.
     //
-    // Until R4b v2 is a stub: every root module reports `not_implemented`, so
-    // a v2 run that read v1's entries for them would exit 0 and say nothing.
+    // From R4b v2 checks this project (no dispatch, no obligation), clean, so
+    // the counters are the whole evidence: a v2 run that read v1's entries
+    // would say exactly what one that did not says.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -2191,11 +2192,6 @@ test "a cache written under one checker is never read under the other" {
     try writeProject(&w);
     const v1_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "src" };
     const v2_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v2", "src" };
-    const not_implemented =
-        \\[{"code":"not_implemented","severity":"error","span":{"file":"src/Leaf.beni","start":{"line":1,"col":1},"end":{"line":1,"col":4}},"title":"NOT IMPLEMENTED YET","message":"checker v2: R4b\n"},{"code":"not_implemented","severity":"error","span":{"file":"src/Mid.beni","start":{"line":1,"col":1},"end":{"line":1,"col":7}},"title":"NOT IMPLEMENTED YET","message":"checker v2: R4b\n"},{"code":"not_implemented","severity":"error","span":{"file":"src/Top.beni","start":{"line":1,"col":1},"end":{"line":1,"col":7}},"title":"NOT IMPLEMENTED YET","message":"checker v2: R4b\n"}]
-        \\
-    ;
-
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
@@ -2215,19 +2211,18 @@ test "a cache written under one checker is never read under the other" {
     try testing.expect(modules >= 12);
 
     // v2 over a v1-written cache reads NOTHING: every module misses, core's
-    // too, and the three root modules say what v2 says.
-    try testing.expectEqual(@as(u8, 1), v2_first.result.exit_code);
-    try testing.expectEqualStrings(not_implemented, v2_first.result.stderr);
+    // too.
+    try testing.expectEqual(@as(u8, 0), v2_first.result.exit_code);
+    try testing.expectEqualStrings("", v2_first.result.stderr);
     try testing.expectEqual(@as(u64, 0), v2_first.counters.hits);
     try testing.expectEqual(modules, v2_first.counters.misses);
     try testing.expectEqual(modules, v2_first.counters.checked);
-    // It wrote core's entries under its own keys (the root modules have an
-    // error and are never written) and reads exactly those back.
+    // It wrote every entry under its own keys and reads exactly those back.
     try testing.expect(v2_first.counters.bytes > 0);
-    try testing.expectEqual(@as(u8, 1), v2_warm.result.exit_code);
-    try testing.expectEqualStrings(not_implemented, v2_warm.result.stderr);
-    try testing.expectEqual(modules - 3, v2_warm.counters.hits);
-    try testing.expectEqual(@as(u64, 3), v2_warm.counters.misses);
+    try testing.expectEqual(@as(u8, 0), v2_warm.result.exit_code);
+    try testing.expectEqualStrings("", v2_warm.result.stderr);
+    try testing.expectEqual(modules, v2_warm.counters.hits);
+    try testing.expectEqual(@as(u64, 0), v2_warm.counters.misses);
 
     // v1 afterwards: all of its own entries, untouched by v2's run.
     try testing.expectEqual(@as(u8, 0), v1_warm.result.exit_code);
@@ -2239,7 +2234,7 @@ test "a cache written under one checker is never read under the other" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE (the reverse)                   │
     // └─────────────────────────────────────────┘
-    // A cache v2 wrote first — core's entries only — then v1 over it.
+    // A cache v2 wrote first, then v1 over it.
     const v2_cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "--checker=v2", "src" }, "v2-cold.json");
     const v2_written = (try entriesOnly(arena, try w.listFiles("b"))).len;
     const v1_after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "src" }, "v1-after.json");
@@ -2249,7 +2244,7 @@ test "a cache written under one checker is never read under the other" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u64, 0), v2_cold.counters.hits);
     try testing.expect(v2_cold.counters.bytes > 0);
-    try testing.expectEqual(@as(usize, @intCast(modules - 3)), v2_written);
+    try testing.expectEqual(@as(usize, @intCast(modules)), v2_written);
     // v1 reads none of them, and says exactly what a cold v1 run says.
     try testing.expectEqual(@as(u8, 0), v1_after.result.exit_code);
     try testing.expectEqualStrings(v1_cold.result.stderr, v1_after.result.stderr);

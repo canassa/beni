@@ -1,0 +1,13 @@
+-- check/good: two arguments whose types are the SAME cyclic graph, built
+-- twice (`List.foldr [] [] List.intersperse` has no finite type, and no binder
+-- holds it). Unification is coinductive (checker-v2.md §7.3), so the two
+-- unify and the program checks, as v1 has it. Before R4b's review v2 refused
+-- it with a false NESTING TOO DEEP ("more than 4200 levels").
+sameArgs : x, x -> Int
+sameArgs p q =
+    0
+
+
+n : Int
+n =
+    List.length (List.map2 [ List.foldr [] [] List.intersperse ] [ List.foldr [] [] List.intersperse ] sameArgs)

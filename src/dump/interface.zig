@@ -384,5 +384,6 @@ fn writeSchemeIndexMaybeExpanded(
     }
     var namer: Render.Namer = .init(gpa);
     defer namer.deinit();
+    namer.budget = Render.Namer.unlimited;
     try Render.writeScheme(w, .{ .store = &store, .types = types, .interner = interner }, &namer, v);
 }
