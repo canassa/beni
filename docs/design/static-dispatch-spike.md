@@ -1070,7 +1070,7 @@ At generalisation, a constraint still sitting on a flex variable of the generali
 | unannotated, not `pub` | promoted silently; the scheme is local and nothing outside the module sees it | — |
 | unannotated, `pub` | promoted into the **interface** (§6.5), which is what makes report 18 §2.3's churn question measurable | `ambiguous_method_receiver`, severity **`warning`**, **on by default** and only in the root package (§10.9) |
 | unannotated, `pub` or not, whose promoted set would exceed `max_inferred_constraints` | **rejected**, and the set is dropped (below) | `too_many_inferred_constraints` (§10.11) |
-| a `pub` value of **zero parameters** whose promoted scheme has at least one constraint | rejected | `constrained_constant` |
+| a `pub` value of **zero parameters** and a **non-function type** whose promoted scheme has at least one constraint (narrowed 2026-09-24, §10.10) | rejected | `constrained_constant` |
 
 `constrained_constant` exists because a value with evidence parameters is a function (§8.1), and
 silently turning a declared constant into a function would change its type across the module
@@ -1698,7 +1698,7 @@ module Shapes
 
 ## 8. The backend
 
-> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence — EFFECTIVE since slice R2a: §8.1–§8.2's hidden arguments are the terms of the site's evidence tree, a declaration's count is `DeclInfo.requirements`, and a callee's count is only asserted (I7, [`checker-v2.md`](checker-v2.md) §13.3). One `Convention` deciding a constrained value's definition and calls is slice R2b (§12.5); until it lands the zero-parameter branch and the eta-expansion below are unchanged.
+> **Checker v2 (2026-09-24).** `Lower` stops recounting evidence — EFFECTIVE since slice R2a: §8.1–§8.2's hidden arguments are the terms of the site's evidence tree, a declaration's count is `DeclInfo.requirements`, and a callee's count is only asserted (I7, [`checker-v2.md`](checker-v2.md) §13.3). One `Convention` decides a constrained value's definition, calls and eta-expansion — EFFECTIVE since slice R2b ([`checker-v2.md`](checker-v2.md) §12.5): a zero-parameter value of FUNCTION type is a function of its evidence and its type's parameters, `h = ($m$0, $p$1, $p$2) => maxOf($m$0, $p$1, $p$2)`, called flat like any other (CK-33); only one of NON-function type is the `($m$0) => value` of §8.1 below, read by applying its evidence.
 
 Extends `backend.md` §4 (codegen), §5 (module output) and §6 (the calling convention). §6's
 "there isn't one" still holds for beni-level arity: what follows adds **hidden leading parameters**,
@@ -1738,6 +1738,11 @@ a **thunk** — `Main$blankInts = () => Blank$blank(Main$eq$prim)` — while eve
 name as the value it is annotated to be. The program built with exit 0 and threw `TypeError` at
 load. The rule is §8.2's, below: at arity 0 the reference is the evidence **applied**, not a
 closure over it.
+
+*Narrowed 2026-09-24 (R2b, CK-33, [`checker-v2.md`](checker-v2.md) §12.5): the first paragraph above holds for a
+value whose TYPE is not a function. One whose type is a function — `h = maxOf` under a `where` —
+takes its evidence and then its type's parameters, `($m$0, $p$1, $p$2) => …`, exactly as if it had
+been written with them, so that a call, a reference and an importer all agree.*
 
 **Only a top-level declaration has evidence parameters**, and a lambda never does. §6.4 rule (a)
 keeps a `let` binding from being generalised over a constrained variable, so no nested binding
@@ -2046,7 +2051,7 @@ const Main$eq$r$f1$f10$f100$… = ($m, $x, $y) => $m[0]($x.f1, $y.f1) && $m[1]($
 const Main$T$$eq = ($x, $y) => Main$eq$r$f1$f10$f100$…([Main$eq$prim, Main$eq$prim, …], $x.a, $y.a);
 ```
 
-- **4 096 is an ABI number of the backend's** (`Lower.max_positional_evidence`), not a checker
+- **4 096 is an ABI number of the backend's** (`Convention.max_positional_evidence` since R2b), not a checker
   limit. It equals CK-79's cap on a record `==` today, which is why no emitted output 4 096 wide or
   narrower changed; lifting that cap (R8a) must not move it.
 - **Why.** The positional form is legal JavaScript but not loadable at that width: under Node 24 a
@@ -2757,7 +2762,8 @@ interface acquires the suffix rather than only when somebody goes looking with a
 > A value that needs a method has to receive it, which would make `<decl>` a function of one hidden
 > argument, and that is not what its type says.
 >
-> Hint: give it a parameter, or annotate it at a concrete type.
+> Hint: give it a parameter, annotate it at a concrete type, or write the `where` clause in its
+> annotation.
 
 ```elm
 -- tests/corpus/check/bad/ConstrainedConstant.beni
@@ -2781,6 +2787,16 @@ emits as §8.1 says — a function of its evidence — and a reference to it app
 the site, which is §8.2's arity-0 rule. Refusing it as well was the alternative considered and
 rejected under CLAUDE.md rule 7: both fixes close the same exit-0 hole, so the refusal would have
 bought no guarantee and cost `Dict.empty`, which is the shape of the value anyone would want.
+
+**A value whose TYPE is a function is not a constant, and this code does not apply to it either**
+(2026-09-24, R2b review S3, [`checker-v2.md`](checker-v2.md) §12.5). Unannotated
+`pub equals = (==)` and `pub eqs = \a b -> a == b` used to be refused here: before R2b the
+emitter would have made them a function of their evidence RETURNING the function, a shape their type
+did not say. Since R2b one `Convention` defines, calls and imports them as the function they are,
+`($m$0, $p$1, $p$2) => …` — nothing is silent and nothing changes type — so under CLAUDE.md rule
+7 the refusal buys no guarantee and is narrowed to a zero-parameter `pub` value of NON-function type
+(a thunk, `pub blank = Dict.fromList []`). The hint also names the third spelling, the annotated
+`where`, which A.85 made legal.
 
 ### 10.11 `too_many_inferred_constraints`
 
@@ -4118,6 +4134,16 @@ what the annotated case does.
 | 2 | at beni arity 0 `etaExpand` emits the **call**, not a closure over it | A.25's reason — `backend.md` §6 wants a function-typed value in flight to be a closure of known arity — is a statement about FUNCTION-typed values. A constant is not one, so the closure is not an arity fix, it is a type error the emitter writes itself | special-case the consumer instead, which would mean every reader of a name knowing whether its producer was constrained |
 | 3 | the evidence is applied **where the reference stands**, so a top-level constant evaluates once at load like any other | it is the same expression in the same position; §7's initialisation rule and `cyclic_value` already order top-level constants and refuse circles, and `boundary.md` §4 confines a `foreign` to a total pure function, so re-evaluation in a lambda body cannot be observed | hoist it to a module-level cache, which buys nothing a `const` does not already buy |
 
+*Corrected 2026-09-24 (R2b review S1; CK-85).* Decision 3's "re-evaluation in a lambda body
+cannot be observed" is false. A thunk's body runs at EACH read — once at load for a top-level
+reference, but once per call for a reference inside a function body — and since R2b an `applied`
+value (no parameters, a function TYPE, a `where`: [`checker-v2.md`](checker-v2.md) §12.5) runs its
+body at each CALL. `Debug.log` observes both in a development build, and cost observes them always:
+a table, a regex or a `Dict` such a body precomputes is rebuilt per read or call, where the same
+value without the `where` computes it once. The behaviour is kept for now and documented in
+`language.md` §6 *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count, and
+hoisting once per call site is CK-85.
+
 **A.86 — a derived part whose type is decided later is a part site; an untyped own method is
 refused** (§6.3.1 step 4, §10.12, queue row 75, 2026-09-23). `targetFor` writes `err` for a part
 whose position is a flex variable, and `Lower` answers an `err` part structurally (`Basics.eq`,
@@ -4152,8 +4178,10 @@ than 4 096 entries is written `($m, $x, $y) => …$m[k]…`, and every call and 
 passes `[e0, e1, …]` in place of the positional evidence; at 4 096 or fewer nothing changes. The
 reason is the engine, not the language: a 60 000-field nominal payload built, then threw
 `RangeError` in Node 24 at the 60 002-argument call, and V8 refuses more than 65 535 parameters.
-The number is the backend's own (`Lower.max_positional_evidence`) and not the checker's CK-79 cap it
-equals today, so lifting the cap cannot silently restore the positional form. Only Node was
+The number is the backend's ABI constant and not the checker's CK-79 cap it equals today, so
+lifting the cap cannot silently restore the positional form; since R2b it is
+`Convention.max_positional_evidence`, and `Convention.derivedEvidence` is the one place the
+definition and every caller decide the form ([`checker-v2.md`](checker-v2.md) §12.5). Only Node was
 measured (browser engines: R2c). *Why not the alternative* — a named refusal of the wide payload —
 rule 7: the program is valid and an array runs it; *or inlining the comparison into the nominal's
 body* — the row is shared by shape (A.11), and a caller of the eta-expanded row as evidence would

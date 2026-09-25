@@ -4912,10 +4912,14 @@ pub const Solver = struct {
         try s.env.dispatch.setDeclEvidence(bir.decls.len, h.decl, range);
 
         if (!d.is_pub) return;
-        // A `pub` value of ZERO parameters whose promoted scheme carries a
-        // constraint would become a function of its evidence parameters
-        // (§8.1), silently changing its type across the module boundary.
-        if (d.params == 0) {
+        // A `pub` value of ZERO parameters and a NON-function type whose
+        // promoted scheme carries a constraint would become a thunk of its
+        // evidence parameters (§8.1), silently changing its type across the
+        // module boundary. One whose type is a function (`pub same = (==)`,
+        // `pub eqs = \a b -> a == b`) is defined and called as the function it
+        // is since R2b (checker-v2.md §12.5), so nothing silent happens and
+        // rule 7 lets it through (R2b review, S3).
+        if (d.params == 0 and st.paramCount(h.v) == 0) {
             try s.reporter.constrainedConstant(
                 d.body.unwrap() orelse h.region,
                 d.name_token,

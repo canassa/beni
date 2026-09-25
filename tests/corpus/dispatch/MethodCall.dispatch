@@ -1,6 +1,6 @@
 module MethodCall
-  decl wider evidence=0 arity=2
-  decl bigger evidence=0 arity=2
+  decl wider evidence=0 arity=2 convention=plain
+  decl bigger evidence=0 arity=2 convention=plain
   derived 0 compare MethodCall.Shape context=0
     body 0 primitive num_compare
     body 1 primitive num_compare

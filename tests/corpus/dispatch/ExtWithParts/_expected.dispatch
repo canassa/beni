@@ -1,5 +1,5 @@
 module Boxes
-  decl eq evidence=1 arity=2
+  decl eq evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=eq
   derived 0 compare Boxes.Box context=1
     context 0 param=0 method=compare
@@ -7,8 +7,8 @@ module Boxes
     body 1 param derived 0 0
   site 28 callee param 0
 module Main
-  decl same evidence=0 arity=2
-  decl sameRow evidence=0 arity=2
+  decl same evidence=0 arity=2 convention=plain
+  decl sameRow evidence=0 arity=2 convention=plain
   derived 0 eq r$flag$item context=2
     context 0 param=0 method=eq
     context 1 param=1 method=eq

@@ -1179,6 +1179,23 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   `2`, `b`, `f`, `t`, `2`, `b`, `1`, `5`.
 - **Slice** R2 (one `Convention` function shared by `Lower`, `Cycles` and `Edges`, `checker-v2.md`
   §12.5; moved from R1 on 2026-09-24, design review S8).
+- **Status** fixed by R2b (2026-09-24), and the fixture promoted to
+  `tests/corpus/run/ConstrainedFunctionConstant/`. `check/Convention.zig` (`checker-v2.md` §12.5, as
+  amended by R2b) is the one place a constrained value's definition, call, value-position reference
+  and load-time behaviour are decided, from `DeclInfo.convention` (`dispatch_bytes` 3) or, for an
+  import, from its interface. `h = maxOf` is now `($m$0, $p$1, $p$2) => maxOf($m$0, $p$1, $p$2)`,
+  `same = (==)` is `($m$0, $p$3, $p$4) => $m$0($p$3, $p$4)`, and `M.h` in value position is
+  eta-expanded over the same two parameters. `tests/corpus/run/ConstrainedFunctionConstantRoutes/`
+  covers the other routes (annotated and not, lambda, `if` and `let` bodies, a recursive lambda, a
+  recursive group through a lambda-bodied member, partial application, higher-order arguments local and
+  imported, `--release` through the corpus's second pass), `cache_test.zig` the warm rebuilds that
+  rewrite `M.h` three ways without re-checking its importer, and `dispatch/Conventions.beni` the
+  column. Found on the way: CK-84.
+  *Review amendments (2026-09-24):* a point-free member of an initialiser circle is `cyclic_value`
+  with or without its `where` (B1, `check/bad/EvidenceFunctionConstantCycle*.beni`; controls in
+  `run/EvidenceFunctionRecursionAccepted.beni`); an unannotated `pub` of function type is no longer
+  `constrained_constant` (S3, `check/good/ConstrainedPubFunctionConstant/` and a `build_test.zig`
+  run); per-call evaluation of an `applied` body is documented and pinned (S1, CK-85).
 
 ### CK-34 — An evidence-only constant counts as deferring for the cycle check
 
@@ -1206,6 +1223,11 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - `checker.md` §6.7's sentence says the same and is stale.
 - **Fixture** `check/bad/EvidenceConstantCycle.beni`. `.codes`: `cyclic_value` at `zs`.
 - **Slice** R2, with CK-33 (one `Convention`; moved from R1 on 2026-09-24, S8).
+- **Status** fixed by R2b (2026-09-24), promoted to `tests/corpus/check/bad/EvidenceConstantCycle`
+  with its `.diag` (one `cyclic_value` at 14:1 naming `zs`, as the `.codes` said). `Cycles` asks
+  `Convention.defers`: a `thunk` runs at every read and a `constant` at load, and both are nodes that
+  RUN; `checker.md` §6.7's stale sentence is gone. `check/bad/EvidenceConstantCycleMutual.beni` is
+  the two-member form.
 
 ### CK-35 — Speculation rollback is journalled by hand across about fourteen side tables
 
@@ -2432,6 +2454,91 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Slice** R2c (manager, 2026-09-24): a small backend slice after R2b, spec first in `backend.md` §4. It is a `backend.md` §4 representation question (the list
   literal's shape), not the checker's.
 
+### CK-84 — An imported constrained function whose type is written through an alias is read as a constant
+
+- **Severity** unsound-runtime. **Area** evidence calling convention (backend). **Class** K4.
+  **Sources** R2b, probing CK-33's cross-module route. Present on 84e3cb1.
+- **Program**:
+
+  ```elm
+  -- M.beni
+  pub type alias Pred a =
+      a -> Bool
+
+  pub same : Pred a
+      where a.eq : a, a -> Bool
+  same x =
+      x == x
+
+  -- Main.beni
+  main = Node.printLines [ String.fromInt (List.length (List.filter [ 1, 2 ] M.same)) ]
+  ```
+- **Command** build+run.
+- **Observed** Exit 0, then `TypeError: isGood$2 is not a function`. `M.same` in value position is
+  lowered as `M$same(Main$eq$prim)`: `Lower.externalArity` read the interface scheme's body, found
+  an `alias` term rather than a `func` one, and answered arity 0, so the eta-expansion degenerated
+  into A.85's thunk read. Inside `M` the same value was right: its arity came from its parameter
+  count (and `TypeStore.paramCount` looks through aliases).
+- **Expected** `2`. The importer's arity is the exporter's.
+- **Root cause** the fourth reading of CK-33's class: an importer's arity computed without looking
+  through `alias`.
+- **Fixture** `tests/corpus/run/ConstrainedAliasFunctionImported/` (`M.same`, a lambda-bodied
+  `M.sameL` and a point-free `M.sameP`, used as values, partially applied and called, and a local
+  `mine = M.sameP`) → `2`, `t`, `1`, `f`, `2`, `t`, `2`, `t`. Red on 84e3cb1 (the `TypeError`).
+- **Slice** R2b.
+- **Status** fixed by R2b (2026-09-24): `Convention.importArity` follows an `alias` term to its
+  expansion; it is the only arity an importer reads.
+
+### CK-85 — A constrained value with no parameters recomputes its body at every read or call
+
+- **Severity** performance (latent: observable only through `Debug.log` and cost). **Area** evidence
+  calling convention (backend). **Class** K4. **Sources** R2b's review, S1. Present since queue
+  row 57 for thunks, and since R2b for function-typed values.
+- **Program**:
+
+  ```elm
+  lookup : a -> a
+      where a.eq : a, a -> Bool
+  lookup =
+      let
+          table =
+              Debug.log (List.range 1 3) "table"
+      in
+      \x -> …
+  ```
+- **Command** build+run.
+- **Observed** Three calls of `lookup` print `table: [1,2,3]` three times; the same value without
+  the `where` prints it once, at load. `lookup` is `applied` (`checker-v2.md` §12.5): defined
+  `($m$0, $p$1) => { const table = …; return (…)($p$1); }`, so its body runs per call. A thunk
+  (`blank : List a where …`) likewise runs per read, which inside a function body is per call.
+- **Expected** Not a defect by the current spec (`language.md` §6 *Evaluation order* now says so),
+  but a cost the language could avoid: a table, regex or `Dict` precomputed by such a value is
+  rebuilt per use.
+- **Proposal** hoisting once per CALL SITE (or per instantiation): where every evidence argument is
+  a module-level name — the common case — emit `const Main$lookup$ev0 = Main$lookup$make(ev…)` at
+  module level and call that. It needs a "make" entry point `($m…) => body` beside the flat one,
+  and an importer cannot tell from the type whether the body is a lambda (where the two coincide),
+  so the exporter would publish that bit in its interface. Memoising per evidence tuple is not
+  possible in general: evidence arguments are closures with no stable key.
+- **Fixture** `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` pins today's count (three and
+  one), so a change is deliberate.
+- **Slice** R8a (owner, 2026-09-25): `language.md` promises a top-level value is computed once, and R8a already changes the derived-function signature. Its guard `run/EvidenceFunctionBodyPerCall.beni` changes deliberately there.
+
+### CK-86 — The `exposing (T(..))` hint suggests `exposing (T, T)` when a constructor shares the type's name
+
+- **Severity** diagnostic-quality. **Area** resolve diagnostics (`resolve/Diagnostics.zig`, CK-47's
+  hint). **Class** K14. **Sources** R2b's review, N7. Present on 84e3cb1.
+- **Program** `M`: `pub type Box = Box Int`; `Main`: `import M exposing (Box(..))`.
+- **Command** check.
+- **Observed** One `expected_token` whose hint is `exposing (Box, Box)`, and that suggestion is
+  itself refused as DUPLICATE EXPOSED NAME. The message prints the type's name and then every
+  constructor in `available`.
+- **Expected** `exposing (Box)`, which exposes the type and its same-named constructor
+  (`language.md` §5.2): a constructor whose name equals the type's is not listed again.
+- **Fixture** `tests/pending/check/bad/ExposingSameNameConstructor/` (`.codes`: `expected_token` at
+  `Main.beni:2:23`, contains "exposing (Box)", lacks "Box, Box").
+- **Slice** R13.
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2472,8 +2579,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-30 | compiler-crash-or-hang | K4 | `run/RecursionWithComparison.beni`, `run/DeadMiscount.beni` | R7 |
 | CK-31 | compiler-crash-or-hang (latent) | K4 | `run/MutualGroupEvidenceOrder.beni` | R7 |
 | CK-32 | compiler-crash-or-hang | K4 | `run/OperatorSectionApplied.beni` | R6 |
-| CK-33 | unsound-runtime | K4 | `run/ConstrainedFunctionConstant/` | R2 |
-| CK-34 | unsound-runtime | K4 | `check/bad/EvidenceConstantCycle.beni` | R2 |
+| CK-33 | unsound-runtime | K4 | promoted: `run/ConstrainedFunctionConstant/` | R2b (fixed) |
+| CK-34 | unsound-runtime | K4 | promoted: `check/bad/EvidenceConstantCycle.beni` | R2b (fixed) |
 | CK-35 | latent | K4 | — (structural) | R6 |
 | CK-36 | valid-program-rejected (D3) | K6 | `run/OwnMethodBeforeDefinition/` | R7 |
 | CK-37 | latent | K3 | guards `tests/corpus/check/bad/CyclicReceiverReportedOnce.beni`, `…/RejectedReceiverDoesNotSilence.beni` | R6, R14 |
@@ -2523,14 +2630,17 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-81 | compiler-crash-or-hang | K11 | promoted: `abuse_test.zig` (two scenarios) | R2a (fixed) |
 | CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (with CK-79) |
 | CK-83 | unsound-runtime | K14 | `scenario/CK-83` | R2c |
+| CK-84 | unsound-runtime | K4 | promoted: `run/ConstrainedAliasFunctionImported/` | R2b (fixed) |
+| CK-85 | performance (latent) | K4 | guard `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` | unassigned — manager |
+| CK-86 | diagnostic-quality | K14 | `check/bad/ExposingSameNameConstructor/` | R13 |
 
 Totals:
-- 83 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 18 (CK-83 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
+- 86 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 19 (CK-83 and CK-84 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 9.
 - valid-program-rejected: 17.
 - nondeterminism: 2.
-- performance: 5.
-- diagnostic-quality: 22.
+- performance: 6 (CK-85 among them).
+- diagnostic-quality: 23 (CK-86 among them).
 - latent: 9.
-- Outside the checker (K14): 7 (CK-78 and CK-83 among them).
+- Outside the checker (K14): 8 (CK-78, CK-83 and CK-86 among them).

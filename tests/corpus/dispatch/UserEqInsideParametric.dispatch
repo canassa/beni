@@ -1,12 +1,12 @@
 module UserEqInsideParametric
-  decl eq evidence=0 arity=2
-  decl lists evidence=0 arity=0
-  decl listsOfRecords evidence=0 arity=0
-  decl maybes evidence=0 arity=0
-  decl okId evidence=0 arity=0
-  decl results evidence=0 arity=0
-  decl tuples evidence=0 arity=0
-  decl listsOfInts evidence=0 arity=0
+  decl eq evidence=0 arity=2 convention=plain
+  decl lists evidence=0 arity=0 convention=plain
+  decl listsOfRecords evidence=0 arity=0 convention=plain
+  decl maybes evidence=0 arity=0 convention=plain
+  decl okId evidence=0 arity=0 convention=plain
+  decl results evidence=0 arity=0 convention=plain
+  decl tuples evidence=0 arity=0 convention=plain
+  decl listsOfInts evidence=0 arity=0 convention=plain
   derived 0 compare UserEqInsideParametric.Id context=0
     body 0 primitive num_compare
     body 1 primitive num_compare

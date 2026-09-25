@@ -1,12 +1,12 @@
 module JoinedConstraintSites
-  decl put evidence=1 arity=2
+  decl put evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=k method=compare
-  decl tag evidence=1 arity=2
+  decl tag evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=k method=eq
-  decl size evidence=0 arity=1
-  decl nested evidence=0 arity=0
-  decl annotated evidence=0 arity=0
-  decl twoNames evidence=0 arity=0
+  decl size evidence=0 arity=1 convention=plain
+  decl nested evidence=0 arity=0 convention=plain
+  decl annotated evidence=0 arity=0 convention=plain
+  decl twoNames evidence=0 arity=0 convention=plain
   derived 0 compare JoinedConstraintSites.Box context=1
     context 0 param=0 method=compare
     body 0 param derived 0 0

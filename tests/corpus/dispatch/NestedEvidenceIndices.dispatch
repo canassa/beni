@@ -1,7 +1,7 @@
 module NestedEvidenceIndices
-  decl deep evidence=0 arity=0
-  decl three evidence=0 arity=0
-  decl pairs evidence=0 arity=0
+  decl deep evidence=0 arity=0 convention=plain
+  decl three evidence=0 arity=0 convention=plain
+  decl pairs evidence=0 arity=0 convention=plain
   derived 0 compare NestedEvidenceIndices.Box context=1
     context 0 param=0 method=compare
     body 0 param derived 0 0

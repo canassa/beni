@@ -1438,9 +1438,9 @@ pub const Reporter = struct {
         r.reported = true;
     }
 
-    /// §10.10. A `pub` value of no parameters whose inferred scheme kept a
-    /// constraint: it would need an evidence parameter, and a value with
-    /// one is a function (§8.1).
+    /// §10.10. A `pub` value of no parameters and a non-function type whose
+    /// inferred scheme kept a constraint: it would need an evidence
+    /// parameter, and a value with one is a thunk (§8.1, checker-v2.md §12.5).
     pub fn constrainedConstant(
         r: *Reporter,
         region: Bir.Inst.Index,
@@ -1460,7 +1460,8 @@ pub const Reporter = struct {
             \\A value that needs a method has to receive it, which would make `{s}` a
             \\function of one hidden argument, and that is not what its type says.
             \\
-            \\Hint: give it a parameter, or annotate it at a concrete type.
+            \\Hint: give it a parameter, annotate it at a concrete type, or write the `where`
+            \\clause in its annotation.
             \\
         , .{ r.env.interner.slice(decl), v_text, r.env.interner.slice(method), r.env.interner.slice(decl) }) catch return error.OutOfMemory;
         try r.emitAt(.constrained_constant, region, token, &out);
@@ -1685,6 +1686,10 @@ pub const Reporter = struct {
         name: []const u8,
         path: []const []const u8,
         through: ?[]const u8,
+        /// A value on the circle that takes evidence and is therefore
+        /// computed at each read or call, not once at load
+        /// (`Convention`'s `thunk` and `applied`, checker-v2.md §12.5).
+        per_use: ?[]const u8,
     ) Error!void {
         if (r.quiet) return;
         var out = r.writer();
@@ -1699,11 +1704,25 @@ pub const Reporter = struct {
         w.print(
             \\ → {s}
             \\
-            \\A top-level value is computed once, when the module is loaded, so there is no
-            \\order in which I can compute these: each of them is already needed before it
-            \\has a value.
-            \\
         , .{name}) catch return error.OutOfMemory;
+        if (per_use) |v| {
+            w.print(
+                \\
+                \\A top-level value is computed from its own initialiser: once, when the module
+                \\is loaded, or — for one with a `where` clause, like `{s}` — each time it is
+                \\used. Either way there is no order in which I can compute these: each of them
+                \\is already needed before it has a value.
+                \\
+            , .{v}) catch return error.OutOfMemory;
+        } else {
+            w.writeAll(
+                \\
+                \\A top-level value is computed once, when the module is loaded, so there is no
+                \\order in which I can compute these: each of them is already needed before it
+                \\has a value.
+                \\
+            ) catch return error.OutOfMemory;
+        }
         if (through) |f| {
             w.print(
                 \\

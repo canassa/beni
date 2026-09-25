@@ -1,15 +1,15 @@
 module DecodeInto
-  decl fromList evidence=0 arity=1
-  decl label evidence=0 arity=1
-  decl decodeInto evidence=1 arity=1
+  decl fromList evidence=0 arity=1 convention=plain
+  decl label evidence=0 arity=1 convention=plain
+  decl decodeInto evidence=1 arity=1 convention=function
     requirement 0 quantified=0 var=a method=fromList
-  decl decodeTwo evidence=1 arity=2
+  decl decodeTwo evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=fromList
-  decl asTag evidence=0 arity=0
-  decl asString evidence=0 arity=0
-  decl pair evidence=0 arity=0
-  decl later evidence=0 arity=0
-  decl sameNum evidence=0 arity=2
+  decl asTag evidence=0 arity=0 convention=plain
+  decl asString evidence=0 arity=0 convention=plain
+  decl pair evidence=0 arity=0 convention=plain
+  decl later evidence=0 arity=0 convention=plain
+  decl sameNum evidence=0 arity=2 convention=plain
   derived 0 compare DecodeInto.Tag context=0
     body 0 primitive string_compare
   derived 1 eq DecodeInto.Tag context=0

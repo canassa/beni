@@ -1,6 +1,6 @@
 module UserMethodWins
-  decl eq evidence=0 arity=2
-  decl sameVersion evidence=0 arity=2
+  decl eq evidence=0 arity=2 convention=plain
+  decl sameVersion evidence=0 arity=2 convention=plain
   derived 0 compare UserMethodWins.Version context=0
     body 0 primitive num_compare
     body 1 primitive num_compare

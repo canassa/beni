@@ -1,0 +1,9 @@
+-- CK-86: see M.beni.
+import M exposing (Box(..))
+
+
+unbox : Box -> Int
+unbox b =
+    case b of
+        Box n ->
+            n

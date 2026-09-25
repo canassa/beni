@@ -1,0 +1,84 @@
+-- R2b review B1, the controls: `language.md` §7's rule refuses a VALUE on
+-- its own initialiser's circle, and a value WRITTEN as a function is not
+-- one, `where` or no `where`. With a `where` on every declaration here:
+-- `countDown` recurses through its lambda body, `countUp` through its
+-- parameters, `ping` and `pong` through each other (a lambda and a
+-- parameter list), and `twiceKeep = compose keep keep` names no circle at
+-- all. All are accepted and run (checker-v2.md §12.5: `lambda` and `params`
+-- defer, `applied` does not). `check/bad/EvidenceFunctionConstantCycle*` are
+-- the refused forms. On 84e3cb1 `countDown`, `ping` and `twiceKeep` build
+-- and print wrong answers (CK-33's curried definition).
+import Node exposing (Program)
+
+
+compose : (b -> c), (a -> b) -> (a -> c)
+compose f g =
+    \x -> f (g x)
+
+
+keep : a -> a
+    where a.eq : a, a -> Bool
+keep x =
+    if x == x then
+        x
+
+    else
+        x
+
+
+countDown : Int, a -> a
+    where a.eq : a, a -> Bool
+countDown =
+    \n x ->
+        if n == 0 then
+            keep x
+
+        else
+            countDown (n - 1) x
+
+
+countUp : Int, a -> Int
+    where a.eq : a, a -> Bool
+countUp n x =
+    if keep x == x && n < 3 then
+        countUp (n + 1) x
+
+    else
+        n
+
+
+ping : Int, a -> Int
+    where a.eq : a, a -> Bool
+ping =
+    \n x ->
+        if n <= 0 then
+            0
+
+        else
+            1 + pong (n - 1) x
+
+
+pong : Int, a -> Int
+    where a.eq : a, a -> Bool
+pong n x =
+    if keep x == x then
+        ping n x
+
+    else
+        0
+
+
+twiceKeep : a -> a
+    where a.eq : a, a -> Bool
+twiceKeep =
+    compose keep keep
+
+
+main : Program
+main =
+    Node.printLines
+        [ countDown 5 "done"
+        , String.fromInt (countUp 0 'c')
+        , String.fromInt (ping 4 1.5)
+        , twiceKeep "kept"
+        ]

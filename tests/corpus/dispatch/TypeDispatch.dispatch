@@ -1,9 +1,9 @@
 module TypeDispatch
-  decl fromInt evidence=0 arity=1
-  decl make evidence=1 arity=1
+  decl fromInt evidence=0 arity=1 convention=plain
+  decl make evidence=1 arity=1 convention=function
     requirement 0 quantified=0 var=a method=fromInt
-  decl asMetre evidence=0 arity=0
-  decl asString evidence=0 arity=0
+  decl asMetre evidence=0 arity=0 convention=plain
+  decl asString evidence=0 arity=0 convention=plain
   derived 0 compare TypeDispatch.Metre context=0
     body 0 primitive num_compare
   derived 1 eq TypeDispatch.Metre context=0

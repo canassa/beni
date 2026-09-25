@@ -1,8 +1,8 @@
 module Evidence
-  decl scale evidence=0 arity=2
-  decl scaleTwice evidence=1 arity=2
+  decl scale evidence=0 arity=2 convention=plain
+  decl scaleTwice evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=scale
-  decl grow evidence=0 arity=1
+  decl grow evidence=0 arity=1 convention=plain
   derived 0 compare Evidence.Metre context=0
     body 0 primitive num_compare
   derived 1 eq Evidence.Metre context=0

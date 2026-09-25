@@ -1,5 +1,5 @@
 module ForeignWithWhere
-  decl eq evidence=1 arity=2
+  decl eq evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=eq
-  decl compare evidence=1 arity=2
+  decl compare evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare

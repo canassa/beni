@@ -1,0 +1,162 @@
+-- CK-33 (R2b): every route by which a constrained value with no parameters
+-- is defined, referenced and called agrees on ONE calling convention
+-- (checker-v2.md §12.5; static-dispatch-spike.md §8.1, §8.2, A.85). A value
+-- whose TYPE is a function is defined `($m…, $p…) => …` and called flat;
+-- one whose type is not is a thunk, `($m…) => value`, run at each read.
+-- Covered: annotated and unannotated, point-free and `\x y ->` bodies, a
+-- body that is neither (`if`, `let`), an operator section, a recursive
+-- lambda, a recursive group through a lambda-bodied member, partial
+-- application, higher-order arguments local and imported, and the same
+-- through `M`. The corpus also runs it under `--release`.
+-- A POINT-FREE member of a recursive group (`biggest = go`) is not a route:
+-- like its twin without the `where` it is a value on its own initialiser
+-- circle, `cyclic_value` (language.md §7; R2b review B1,
+-- `check/bad/EvidenceFunctionConstantCycle*.beni`).
+--
+-- Oracle twin, run on 84e3cb1: this project with every such value
+-- eta-expanded (`top a b = maxOf a b`, and likewise each other one, `M.h`
+-- and `M.lam` included) prints exactly the expected lines. As written,
+-- 84e3cb1 builds with exit 0 and the program throws `TypeError` before it
+-- prints anything: a definition that takes its evidence curried is called
+-- flat, and hands back a function where a list was expected.
+import M
+import Node exposing (Program)
+
+
+maxOf : a, a -> a
+    where a.compare : a, a -> Order
+maxOf a b =
+    if a < b then
+        b
+
+    else
+        a
+
+
+top : a, a -> a
+    where a.compare : a, a -> Order
+top =
+    maxOf
+
+
+lam =
+    \x y -> maxOf x y
+
+
+lamA : a, a -> a
+    where a.compare : a, a -> Order
+lamA =
+    \x y ->
+        if x < y then
+            y
+
+        else
+            x
+
+
+eqA : a, a -> Bool
+    where a.eq : a, a -> Bool
+eqA =
+    (==)
+
+
+pick : a, a -> a
+    where a.compare : a, a -> Order
+pick =
+    if 1 < 2 then
+        maxOf
+
+    else
+        M.minOf
+
+
+viaLet : a, a -> a
+    where a.compare : a, a -> Order
+viaLet =
+    let
+        f =
+            maxOf
+    in
+    f
+
+
+clampAll : List a, a -> List a
+    where a.compare : a, a -> Order
+clampAll =
+    \xs cap ->
+        case xs of
+            [] ->
+                []
+
+            x :: rest ->
+                maxOf x cap :: clampAll rest cap
+
+
+biggest : List a, a -> a
+    where a.compare : a, a -> Order
+biggest =
+    \xs acc -> go xs acc
+
+
+go : List a, a -> a
+    where a.compare : a, a -> Order
+go xs acc =
+    case xs of
+        [] ->
+            acc
+
+        x :: rest ->
+            biggest rest (maxOf x acc)
+
+
+none : List a
+    where a.eq : a, a -> Bool
+none =
+    []
+
+
+apply2 : (a, a -> b), a, a -> b
+apply2 f x y =
+    f x y
+
+
+tf : Bool -> String
+tf b =
+    if b then
+        "t"
+
+    else
+        "f"
+
+
+ints : List Int -> String
+ints xs =
+    String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (top 1 2)
+        , lam "a" "b"
+        , String.fromInt (lamA 7 3)
+        , tf (eqA 1 2) ++ tf (eqA "x" "x")
+        , String.fromInt (pick 4 9)
+        , viaLet "p" "q"
+        , ints (clampAll [ 1, 5, 2 ] 3)
+        , String.fromInt (biggest [ 4, 8, 1 ] 0)
+        , String.fromInt (List.length (none ++ [ 1, 2 ]))
+        , ints (List.map [ 1, 5, 2 ] (top 3 _))
+        , String.fromInt (List.foldl [ 1, 5, 2 ] 0 top)
+        , List.foldl [ "b", "c", "a" ] "" lam
+        , String.fromInt (List.length (List.filter [ 1, 2, 1 ] (eqA 1 _)))
+        , String.fromInt (apply2 top 4 9) ++ String.fromInt (apply2 lamA 4 9) ++ tf (apply2 eqA 4 4)
+        , String.fromInt (List.foldl [ [ 3 ], [ 1, 7 ] ] 0 biggest)
+        , String.fromInt (M.h 1 2)
+        , M.h "m" "n"
+        , ints (List.map [ 1, 5, 2 ] (M.h 3 _))
+        , String.fromInt (List.foldl [ 4, 5, 2 ] 9 M.h)
+        , tf (M.lam 1 1) ++ tf (List.all [ 2, 2 ] (M.lam 2 _))
+        , tf (apply2 M.lam "a" "b")
+        , String.fromInt (List.length (M.blank ++ [ 1 ]))
+        ]

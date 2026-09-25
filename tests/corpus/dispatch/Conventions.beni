@@ -1,0 +1,42 @@
+-- checker-v2.md §12.5 and §13.2: every value declaration's `decl` line names
+-- its calling convention. `plain` takes no evidence, whatever its shape;
+-- `function` takes evidence and is a function by its parameters (`maxOf`),
+-- by its lambda body (`viaLambda`) or by its TYPE alone (`pointFree`, the
+-- CK-33 case: `arity=2` with no parameters); `thunk` takes evidence and is
+-- not a function (`blank`, CK-34), so every read runs it.
+
+
+maxOf : a, a -> a
+    where a.compare : a, a -> Order
+maxOf a b =
+    if a < b then
+        b
+
+    else
+        a
+
+
+pointFree : a, a -> a
+    where a.compare : a, a -> Order
+pointFree =
+    maxOf
+
+
+viaLambda =
+    \x y -> x == y
+
+
+blank : List a
+    where a.eq : a, a -> Bool
+blank =
+    []
+
+
+plainFunction : Int, Int -> Int
+plainFunction =
+    pointFree
+
+
+plainConstant : List Int
+plainConstant =
+    blank

@@ -1,11 +1,11 @@
 module Decoder
-  decl decodeInto evidence=1 arity=1
+  decl decodeInto evidence=1 arity=1 convention=function
     requirement 0 quantified=0 var=a method=fromList
   site 12 callee param 0
 module Main
-  decl fromList evidence=0 arity=1
-  decl asTag evidence=0 arity=0
-  decl asString evidence=0 arity=0
+  decl fromList evidence=0 arity=1 convention=plain
+  decl asTag evidence=0 arity=0 convention=plain
+  decl asString evidence=0 arity=0 convention=plain
   derived 0 compare Main.Tag context=0
     body 0 primitive string_compare
   derived 1 eq Main.Tag context=0

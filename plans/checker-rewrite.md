@@ -388,6 +388,42 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 - **Reviewer focus.** `Convention` is the **only** place the three readings are decided: grep for
   `params == 0` in `Lower`, `Cycles` and `Reach`. And the wide form: grep for
   `max_positional_evidence`, `evidence_array` and `packEvidence` outside `Convention`.
+- **As built (2026-09-24).** `checker-v2.md` §12.5 was amended first with what it left open:
+  - The column is the tag alone (`enum(u8) { plain, function, thunk }`, byte 10 of a `decls` row,
+    `dispatch_bytes` 3, refused on load when `plain` disagrees with the requirement count); the
+    counts stay in `requirements` and `value_arity`.
+  - An import computes its convention with the same `of` from its interface (requirement count and
+    the scheme body's arity through `alias` terms), so the interface needs no column. Looking
+    through aliases is CK-84, found here: `pub same : Pred a` was eta-expanded at arity 0 in an
+    importer, a `TypeError` after exit 0. Fixed and promoted with its own fixture.
+  - The readings are `definition` (`constant`, `params`, `lambda`, `applied`, `thunk`), `defers`,
+    `call` and `referenceArity`, plus `derivedEvidence` for the wide form; `max_positional_evidence`
+    moved into `Convention.zig`, and `Lower` keeps only the mechanics (`wide_evidence`,
+    `derivedEvidenceArguments`). `applied` is `($m…, $p1…$pn) => body($p1…$pn)`, with a direct call
+    when the body is a constrained reference of that arity (`h = maxOf` →
+    `($m$0, $p$1, $p$2) => maxOf($m$0, $p$1, $p$2)`). A lambda body with evidence now takes the
+    lambda's parameters after the evidence, which fixed `same = (==)`.
+  - `Edges` and `Reach` needed nothing: no edge depends on when a body runs. `Lower.externalArity`
+    and `externalScheme` are deleted.
+  - Fixtures: CK-33 and CK-34 promoted; new `run/ConstrainedFunctionConstantRoutes/`,
+    `run/ConstrainedAliasFunctionImported/` (CK-84), `check/bad/EvidenceConstantCycleMutual.beni`,
+    `dispatch/Conventions.beni`, and `cache_test.zig`'s warm-rebuild scenario. All red on 84e3cb1
+    except the dispatch dump (a new format). The nit (hoisting a wide call's all-name evidence
+    array) is not done.
+- **As built, review round (2026-09-24).** The manager's decisions on the review, spec first
+  (`checker-v2.md` §12.5's second amendment, `checker.md` §6.7, `language.md` §6 and §7,
+  `static-dispatch-spike.md` §10.10 and A.85, `boundary.md` §4 check 4):
+  - B1: `Convention.defers` is true for `params` and `lambda` only; an `applied` value RUNS for
+    `Cycles`, so `h = compose h g` under a `where` is `cyclic_value` like its twin without it. The
+    routes fixture's `biggest = go` became `biggest = \xs acc -> go xs acc`; four
+    `check/bad/EvidenceFunctionConstantCycle*.beni` and `run/EvidenceFunctionRecursionAccepted.beni`
+    added. The `cyclic_value` message names a per-use member when the circle has one.
+  - S1: per-call evaluation documented; `run/EvidenceFunctionBodyPerCall.beni` pins it; CK-85.
+  - S2: `Emit`'s check 4 reads `Convention.ofDecl` (`build_test.zig`, an alias-typed `foreign`).
+  - S3: `constrained_constant` narrowed to non-function types (`check/good/ConstrainedPubFunctionConstant/`,
+    a `build_test.zig` run, `check/bad/ConstrainedConstant.beni` rewritten to `Dict.fromList []`).
+  - N1–N3: `dispatch_bytes` refuses a thunk row with an arity (in-source test);
+    `Convention.bodyIsLambda`/`definitionOf` are the one place; `assertFlatCall`. N7: CK-86, pending.
 
 ### R2c — Emitted JavaScript nests only as deep as the source (added by the manager, 2026-09-24)
 
@@ -401,7 +437,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   should stay byte-identical where the representation allows.
 - **Also measure** the wide form's threshold (`static-dispatch-spike.md` §9.2, A.87): that a
   4 096-argument call is safe in JavaScriptCore and SpiderMonkey on a browser-sized stack. Only
-  Node was measured; lower `Lower.max_positional_evidence` if a browser engine needs it.
+  Node was measured; lower `Convention.max_positional_evidence` if a browser engine needs it.
 - **Closes.** CK-83, promoted from `scenario/CK-83`; the existing abuse test that builds 4 000
   nested calls must then also RUN.
 - **Exit criteria.** The gates are green; `test-pending` green; every `run/`/`emit/` golden that
@@ -836,7 +872,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R0 | — | — | records everything |
 | R1 | CK-11, 17, 19, 43, 44, 45, 46, 47, 71 | — | CK-12 (unit test); CK-78 (a decision, with a guard) |
 | R2a | CK-81 (v1 `Print`, manager 2026-09-24) | — | CK-61 |
-| R2b | CK-33, 34 | — | — |
+| R2b | CK-33, 34, 84 (found and fixed by R2b) | — | CK-85 (guard only; fixed in R8a, owner 2026-09-25), CK-86 → R13 (pending fixture) |
 | R3 | CK-38, 39, 41 | — | — |
 | R4a | — | — | CK-15 (the cutoff protocol leaves `Check.zig`) |
 | R4b | — | CK-01, 04, 07, 13, 57; CK-09 (`check/good` half) | CK-10, 14, 15 (pipeline part) |
@@ -844,16 +880,16 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 80 | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32 | — |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
-| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26 |
+| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25) |
 | R8b | — | CK-22, 24 | — |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
-| R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60 | — | — |
+| R13 | CK-49, 50, 52, 53, 54, 55, 56, 58, 59, 60, 86 | — | — |
 | R14 | CK-37 (rest) | — | — |
 | (assigned 2026-09-24) | — | — | CK-81 is R2a's and CK-79 is R8a's (manager) |
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 
-Every one of the 83 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 86 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

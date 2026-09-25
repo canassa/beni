@@ -145,6 +145,15 @@ Four checks run at build time, and all four are things Elm does not do:
    writes `pi` as `Math.PI`. The diagnostic is `foreign_arity_mismatch`, and it points at the beni
    DECLARATION, because that is where the expected count is written down.
 
+   *Amended 2026-09-24 (R2b review, S2).* **"Declared arity" is the arity of the declared TYPE,
+   looking through aliases**, and both counts are `check/Convention.zig`'s (`checker-v2.md` §12.5),
+   the same answer every call of the `foreign` is lowered by. So `pub foreign isPos : IntPred`, with
+   `type alias IntPred = Int -> Bool`, is a function of one parameter and is written `(x) => …`;
+   counting the annotation's spelling (no arrow) called it a value and refused exactly that sibling.
+   Check 1 still reads the spelling, so a POLYMORPHIC alias (`isSelf : Pred a where a.eq …`) is
+   refused there as `foreign_bad_shape` before check 4 runs — conservative, and a safe refusal; if
+   check 1 learns aliases, check 4 already counts `(eq, x)` for it.
+
    **Which export forms are accepted, and why the list is closed.** The parameter list must be
    written AT the export, so that a reader can count it against the declaration by eye and so that
    the compiler can count it without a JavaScript parser:

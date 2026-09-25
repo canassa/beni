@@ -16,12 +16,13 @@
 //! whole corpus is one of the two things standing between that and a wrong
 //! program, and the acceptance matrix's warm axis is the other.
 //!
-//! **Format v2** carries checker-v2.md §13.1's tree record (slice R2a): the
-//! `terms` and `args` of every evidence tree, one `site` per instruction,
-//! `decls` with their arity, the (empty until R14) `lets`, `requirements`,
-//! each derived function's `contexts` and `body`. Version 1 held the flat
-//! sites and `parts` of static-dispatch-spike.md §7.1; a v1 sidecar is a
-//! miss.
+//! **Format v3** carries checker-v2.md §13.1's tree record: the `terms` and
+//! `args` of every evidence tree, one `site` per instruction, `decls` with
+//! their arity and calling convention (§12.5; byte 10 of the row, added by
+//! R2b — v2, R2a's, had no convention), the (empty until R14) `lets`,
+//! `requirements`, each derived function's `contexts` and `body`. Version 1
+//! held the flat sites and `parts` of static-dispatch-spike.md §7.1; a v1 or
+//! v2 sidecar is a miss.
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -69,7 +70,7 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 2;
+pub const format_version: u32 = 3;
 
 pub const Column = enum(u32) {
     terms,
@@ -196,6 +197,7 @@ pub fn write(
         const row = decls[i * 12 ..][0..12];
         writeRange(row[0..8], info.requirements);
         std.mem.writeInt(u16, row[8..10], info.value_arity, .little);
+        row[10] = @intFromEnum(info.convention);
     }
 
     const lets = try gpa.alloc(u8, d.lets.len * Column.lets.width());
@@ -587,6 +589,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             info.* = .{
                 .requirements = readRange(row[0..8]),
                 .value_arity = std.mem.readInt(u16, row[8..10], .little),
+                .convention = std.enums.fromInt(Dispatch.Convention, row[10]) orelse return error.BadSidecar,
             };
         }
     }
@@ -798,6 +801,12 @@ pub fn verify(l: *const Loaded) bool {
     }
     for (d.decls) |info| {
         if (!rangeOk(info.requirements, d.requirements.len)) return false;
+        // `Convention.of`'s first rule: evidence is exactly what makes a
+        // value not `plain`, so a row that says otherwise was not written
+        // by `finish`.
+        if ((info.convention == .plain) != (info.requirements.len == 0)) return false;
+        // A thunk is a value of non-function type: arity 0 by `of`.
+        if (info.convention == .thunk and info.value_arity != 0) return false;
     }
     for (d.lets) |let| {
         if (!rangeOk(let.requirements, d.requirements.len)) return false;
@@ -1255,4 +1264,52 @@ test "a top term naming a declaration past the module's is BadSidecar" {
     const bad = try write(gpa, &bad_table, &graph, &types, &global);
     defer gpa.free(bad);
     try testing.expectError(error.BadSidecar, read(gpa, bad, &global));
+}
+
+test "a decl row whose convention finish could not have written is BadSidecar" {
+    // R2b (checker-v2.md §12.5): `Convention.of` makes a row `plain` exactly
+    // when it has no requirements, and a `thunk` only at arity 0. A row that
+    // says otherwise would hand `Lower` a definition and its callers two
+    // different conventions, so it is refused on load like any other
+    // malformed table.
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const eq = try global.getOrPut(gpa, "eq");
+    const requirements = [_]Dispatch.Requirement{.{ .quantified = 0, .var_name = .none, .method = eq }};
+    const one: Dispatch.Range = .{ .start = 0, .len = 1 };
+
+    const rows = [_]struct { info: Dispatch.DeclInfo, ok: bool }{
+        .{ .info = .{}, .ok = true },
+        .{ .info = .{ .requirements = one, .value_arity = 2, .convention = .function }, .ok = true },
+        .{ .info = .{ .requirements = one, .convention = .thunk }, .ok = true },
+        // `plain` with a requirement, and a convention with none.
+        .{ .info = .{ .requirements = one, .value_arity = 2, .convention = .plain }, .ok = false },
+        .{ .info = .{ .value_arity = 2, .convention = .function }, .ok = false },
+        // A thunk is not a function.
+        .{ .info = .{ .requirements = one, .value_arity = 1, .convention = .thunk }, .ok = false },
+    };
+    for (rows) |row| {
+        const decls = [_]Dispatch.DeclInfo{row.info};
+        const table: Dispatch = .{ .decls = &decls, .requirements = &requirements };
+        const bytes = try write(gpa, &table, &graph, &types, &global);
+        defer gpa.free(bytes);
+        if (row.ok) {
+            var loaded = try read(gpa, bytes, &global);
+            defer loaded.deinit(gpa);
+            try testing.expectEqual(row.info.convention, loaded.table.decls[0].convention);
+        } else {
+            try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+        }
+    }
+    // Byte 10 past the enum is refused by the decoder itself.
+    const decls = [_]Dispatch.DeclInfo{.{}};
+    const table: Dispatch = .{ .decls = &decls };
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    const at = std.mem.readInt(u32, bytes[header_bytes + 8 * @intFromEnum(Column.decls) ..][0..4], .little);
+    bytes[at + 10] = 3;
+    try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
 }

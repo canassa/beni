@@ -1,3 +1,3 @@
 module FieldCall
-  decl invoke evidence=0 arity=1
+  decl invoke evidence=0 arity=1 convention=plain
   site 11 callee field

@@ -1,0 +1,32 @@
+-- CK-84: see M.beni.
+import M exposing (Pred)
+import Node exposing (Program)
+
+
+mine : Pred a
+    where a.eq : a, a -> Bool
+mine =
+    M.sameP
+
+
+tf : Bool -> String
+tf b =
+    if b then
+        "t"
+
+    else
+        "f"
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (List.length (List.filter [ 1, 2 ] M.same))
+        , tf (M.same 3)
+        , String.fromInt (List.length (List.filter [ "a" ] M.sameL))
+        , tf (List.isEmpty (List.filter [ 1 ] M.sameP))
+        , String.fromInt (List.length (List.filter [ 1, 2 ] mine))
+        , tf (mine "z")
+        , String.fromInt (List.length (List.filter [ 5, 6 ] (M.same _)))
+        , tf (List.all [ 1, 1 ] M.sameP)
+        ]

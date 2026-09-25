@@ -1,14 +1,14 @@
 module WhereClauseDerives
-  decl eqGen evidence=1 arity=2
+  decl eqGen evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=eq
-  decl cmpGen evidence=1 arity=2
+  decl cmpGen evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare
-  decl c1 evidence=0 arity=0
-  decl c2 evidence=0 arity=0
-  decl c3 evidence=0 arity=0
-  decl c4 evidence=0 arity=0
-  decl c5 evidence=0 arity=0
-  decl c6 evidence=0 arity=0
+  decl c1 evidence=0 arity=0 convention=plain
+  decl c2 evidence=0 arity=0 convention=plain
+  decl c3 evidence=0 arity=0 convention=plain
+  decl c4 evidence=0 arity=0 convention=plain
+  decl c5 evidence=0 arity=0 convention=plain
+  decl c6 evidence=0 arity=0 convention=plain
   derived 0 compare WhereClauseDerives.Colour context=0
   derived 1 eq WhereClauseDerives.Colour context=0
   derived 2 compare WhereClauseDerives.Shape context=0

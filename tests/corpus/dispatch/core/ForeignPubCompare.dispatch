@@ -1,6 +1,6 @@
 module ForeignPubCompare
-  decl compare evidence=0 arity=2
-  decl before evidence=0 arity=2
+  decl compare evidence=0 arity=2 convention=plain
+  decl before evidence=0 arity=2 convention=plain
   derived 0 compare t2 context=2
     context 0 param=0 method=compare
     context 1 param=1 method=compare

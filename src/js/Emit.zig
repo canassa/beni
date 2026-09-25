@@ -77,6 +77,7 @@ const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const Lower = @import("Lower.zig");
 const Dispatch = @import("../check/Dispatch.zig");
+const Convention = @import("../check/Convention.zig");
 const JsIr = @import("JsIr.zig");
 const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
@@ -530,12 +531,19 @@ const Emitter = struct {
             var declared: std.ArrayList(Declared) = .empty;
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
+                // The calling convention every call of this `foreign` is
+                // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
+                // so check 4 and the call sites cannot disagree: the arity is
+                // the TYPE's, through any alias, and not the annotation's
+                // spelling (`pub foreign p : Pred a where …` takes evidence
+                // and one argument, R2b review S2).
+                const use = Convention.ofDecl(dispatch, b, @intCast(index));
                 try declared.append(e.scratch, .{
                     .name = e.session.interner.slice(b.symbol(d.name)),
                     .token = d.name_token,
-                    .evidence = @intCast(dispatch.declRequirements(@intCast(index)).len),
-                    .params = annotationArity(d),
-                    .is_function = isFunctionAnnotation(b, d),
+                    .evidence = use.evidence,
+                    .params = if (d.annotation == .none) null else use.arity,
+                    .is_function = use.arity != 0,
                 });
             }
             if (declared.items.len == 0) continue;
@@ -1730,16 +1738,6 @@ fn plural(n: u32) []const u8 {
 /// sibling against ONE number. Computing it a second time here is how the
 /// two came to disagree: the backend eta-expanded `List.eq` at arity 0
 /// while this check happily accepted its binary sibling.
-fn annotationArity(d: Bir.Decl) ?u32 {
-    _ = d.annotation.unwrap() orelse return null;
-    return d.params;
-}
-
-fn isFunctionAnnotation(b: *const Bir, d: Bir.Decl) bool {
-    const annotation = d.annotation.unwrap() orelse return false;
-    return b.instTag(annotation) == .type_fn;
-}
-
 fn containsDeclared(haystack: []const Emitter.Declared, needle: []const u8) bool {
     for (haystack) |item| {
         if (std.mem.eql(u8, item.name, needle)) return true;

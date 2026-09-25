@@ -1,16 +1,16 @@
 module JoinedConstraintNested
-  decl put evidence=1 arity=2
+  decl put evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=k method=compare
-  decl tag evidence=1 arity=2
+  decl tag evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=k method=eq
-  decl compare evidence=1 arity=2
+  decl compare evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare
-  decl size evidence=0 arity=1
-  decl nestedList evidence=0 arity=0
-  decl nestedDict evidence=0 arity=0
-  decl annotatedDict evidence=0 arity=0
-  decl nestedOwn evidence=0 arity=0
-  decl nestedEq evidence=0 arity=0
+  decl size evidence=0 arity=1 convention=plain
+  decl nestedList evidence=0 arity=0 convention=plain
+  decl nestedDict evidence=0 arity=0 convention=plain
+  decl annotatedDict evidence=0 arity=0 convention=plain
+  decl nestedOwn evidence=0 arity=0 convention=plain
+  decl nestedEq evidence=0 arity=0 convention=plain
   derived 0 eq JoinedConstraintNested.Box context=1
     context 0 param=0 method=eq
     body 0 param derived 0 0

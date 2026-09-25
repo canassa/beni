@@ -377,8 +377,10 @@ constraints**, which live in their own set beside the kind and the equatable fla
 written into the interface as a `where` suffix (§7). Two rules of generalisation follow and are not
 obvious: a constrained `let` binding is **not** generalised — it is held at the enclosing rank, so
 a constrained helper used at two types is a `type_mismatch` at the second use — and a constrained
-variable that survives onto a declaration with **no parameters** is `constrained_constant`, because
-a constant with an evidence parameter would be a function across the module boundary.
+variable that survives onto a `pub` declaration with **no parameters** and a **non-function type** is
+`constrained_constant`, because a constant with an evidence parameter would be a function across the
+module boundary (narrowed 2026-09-24 by R2b's review: one whose type IS a function is defined and
+called as that function, `checker-v2.md` §12.5, `static-dispatch-spike.md` §10.10).
 → `static-dispatch-spike.md` §6.4.
 
 Unresolved `number` variables at top level stay polymorphic in the scheme (Elm's behaviour);
@@ -592,9 +594,9 @@ it is written:
 ### 6.7 Top-level value cycles
 
 > **Checker v2 (2026-09-24).** The "what defers" paragraph below was corrected on 2026-09-24 (CK-34):
-> a zero-parameter declaration of non-function type with evidence RUNS at each read. One
-> `Convention` function decides it for `Cycles`, `Edges`, `Reach` and `Lower`
-> ([`checker-v2.md`](checker-v2.md) §12.5, slice R2).
+> a zero-parameter declaration with evidence and no `lambda` body RUNS, at each read or call. One
+> `Convention` decides it for `Cycles` and `Lower` since slice R2b
+> ([`checker-v2.md`](checker-v2.md) §12.5; `Edges` and `Reach` do not depend on it).
 
 `language.md` §7's initialisation rule, top-level half: a top-level **value** may not be reachable
 from its own initialiser. The code is `cyclic_value` (§8.1) and the pass is `check/Cycles.zig`.
@@ -626,11 +628,13 @@ that it is free.
 **defers** — nothing of it runs at module load — when it has parameters, or when its entire body is a
 `lambda`. **Evidence parameters alone do not defer** (corrected 2026-09-24, CK-34): since queue row 57
 a zero-parameter declaration with evidence is CALLED at every read, so its body runs then, and a
-self-reference recurses. From R2, a zero-parameter value of **function** type with evidence is
-defined as a function of its evidence and its type's parameters, so it defers too. `js/Lower.declaration` splits on the same readings, and from slice R2 of the
-checker rewrite one `check/Convention.zig` decides them for both (`checker-v2.md` §12.5). Until R2
-lands, `Cycles.zig:152-154` still treats evidence as deferring, which is CK-34's defect, not the
-contract. A strongly connected component with at least
+self-reference recurses. Since R2b a zero-parameter value of **function** type with evidence
+(`h = compose h g` under a `where`) is DEFINED as a function of its evidence and its type's
+parameters, but it is still a value for this rule and RUNS (R2b review, B1): `language.md` §7 states
+the rule over the source, where it is written as a value, and a `where` must not change which
+programs are accepted — its twin without the `where` is refused. Only parameters or a `lambda` body
+make a declaration defer. `js/Lower.declaration` splits on the same readings, and since slice R2b of the
+checker rewrite one `check/Convention.zig` decides them for both (`checker-v2.md` §12.5). A strongly connected component with at least
 one node that RUNS is refused; one made only of deferring nodes is mutual recursion between
 functions and is fine. The analysis is conservative in exactly the shape §7 describes: mentioning
 a function counts as running it.

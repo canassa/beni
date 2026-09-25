@@ -1565,6 +1565,130 @@ test "custom equality capabilities survive cache hits and cross the firewall onl
     try testing.expect(!w.exists("hidden-oracle"));
 }
 
+test "a constrained function constant keeps one calling convention across warm rebuilds that edit its module" {
+    // CK-33 (R2b, checker-v2.md §12.5). `Leaf.h` takes evidence and has no
+    // parameters but a function TYPE, so it is defined over its type's
+    // arity and called flat; `Top` calls it, passes it to a fold, and
+    // defines its own point-free `mine = Leaf.h`. The edits rewrite `h` as a
+    // function of two parameters, as a lambda and as a `let` whose body is
+    // `maxOf` again, which changes no interface, so `Top` is NOT re-checked: its cached table (the
+    // `convention` column included) and the importer's reading of `Leaf`'s
+    // interface must still agree with the definition `Leaf` now emits. Each
+    // warm tree is byte-compared with a `--no-cache` build and RUN.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    const leaf =
+        \\pub maxOf : a, a -> a
+        \\    where a.compare : a, a -> Order
+        \\maxOf a b =
+        \\    if a < b then
+        \\        b
+        \\
+        \\    else
+        \\        a
+        \\
+        \\
+        \\pub h : a, a -> a
+        \\    where a.compare : a, a -> Order
+        \\h =
+        \\    maxOf
+        \\
+        \\
+        \\pub blank : List a
+        \\    where a.eq : a, a -> Bool
+        \\blank =
+        \\    []
+        \\
+    ;
+    const top =
+        \\import Leaf
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\mine : a, a -> a
+        \\    where a.compare : a, a -> Order
+        \\mine =
+        \\    Leaf.h
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ String.fromInt (Leaf.h 1 2)
+        \\        , Leaf.h "a" "b"
+        \\        , String.fromInt (List.foldl [ 1, 5, 2 ] 0 Leaf.h)
+        \\        , String.fromInt (mine 7 3)
+        \\        , String.fromInt (List.foldl [ 4, 9 ] 0 mine)
+        \\        , String.fromInt (List.length (Leaf.blank ++ [ 1 ]))
+        \\        ]
+        \\
+    ;
+    const expected = "2\nb\n5\n7\n9\n1\n";
+    try w.write("src/Leaf.beni", leaf);
+    try w.write("src/Top.beni", top);
+
+    const cold = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=cold", "--jobs=1", "--cache-dir=cache", "src" },
+        "convention-cold.json",
+    );
+    const warm = try runCounted(
+        &w,
+        arena,
+        &.{ "build", "--platform=node", "--diagnostics=json", "--out=warm", "--jobs=8", "--cache-dir=cache", "src" },
+        "convention-warm.json",
+    );
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try expectSameTree(&w, arena, "cold", "warm");
+    const cold_run = try w.node("cold/_main.mjs");
+    const warm_run = try w.node("warm/_main.mjs");
+    try testing.expectEqual(@as(u8, 0), cold_run.exit_code);
+    try testing.expectEqualStrings(expected, cold_run.stdout);
+    try testing.expectEqualStrings(expected, warm_run.stdout);
+
+    const edits = [_]struct { body: []const u8, name: []const u8 }{
+        .{ .body = "h a b =\n    maxOf a b\n", .name = "params" },
+        .{ .body = "h =\n    \\a b -> maxOf a b\n", .name = "lambda" },
+        .{ .body = "h =\n    let\n        f =\n            maxOf\n    in\n    f\n", .name = "let" },
+    };
+    var previous: []const u8 = "h =\n    maxOf\n";
+    var source: []const u8 = leaf;
+    for (edits) |edit| {
+        source = try std.mem.replaceOwned(u8, arena, source, previous, edit.body);
+        previous = edit.body;
+        try w.write("src/Leaf.beni", source);
+        const out = try std.fmt.allocPrint(arena, "edit-{s}", .{edit.name});
+        const oracle = try std.fmt.allocPrint(arena, "oracle-{s}", .{edit.name});
+        const built = try runCounted(
+            &w,
+            arena,
+            &.{ "build", "--platform=node", "--diagnostics=json", try std.fmt.allocPrint(arena, "--out={s}", .{out}), "--jobs=8", "--cache-dir=cache", "src" },
+            try std.fmt.allocPrint(arena, "convention-{s}.json", .{edit.name}),
+        );
+        const cold_oracle = try runCounted(
+            &w,
+            arena,
+            &.{ "build", "--platform=node", "--diagnostics=json", try std.fmt.allocPrint(arena, "--out={s}", .{oracle}), "--jobs=1", "--no-cache", "src" },
+            try std.fmt.allocPrint(arena, "convention-{s}-oracle.json", .{edit.name}),
+        );
+        try testing.expectEqual(@as(u8, 0), built.result.exit_code);
+        try testing.expectEqual(@as(u8, 0), cold_oracle.result.exit_code);
+        // `Leaf` alone: its interface did not move, so `Top` is a hit.
+        try testing.expectEqual(@as(u64, 1), built.counters.checked);
+        try expectSameTree(&w, arena, oracle, out);
+        const ran = try w.node(try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{out}));
+        try testing.expectEqual(@as(u8, 0), ran.exit_code);
+        try testing.expectEqualStrings(expected, ran.stdout);
+    }
+}
+
 test "a truncated, corrupt or foreign .bef is a miss and is then overwritten" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -21,17 +21,20 @@
 //! **is a lambda** defers, because nothing runs when it is bound. So a
 //! declaration is one of two things here:
 //!
-//!   - it **defers** — a function (`d.params != 0`), a declaration with
-//!     evidence parameters (which the emitter also makes a function), or a
-//!     value whose body is a `lambda`. Nothing of it runs at module load;
-//!   - it **runs** — every other value with a body. Its initialiser is
-//!     evaluated once, where `emissionOrder` puts it.
+//!   - it **defers** — it is WRITTEN as a function: it has parameters, or its
+//!     whole body is a `lambda`. Nothing of it runs at module load;
+//!   - it **runs** — every other value with a body. A plain one is evaluated
+//!     once, where `emissionOrder` puts it; one with evidence is computed at
+//!     every read (a thunk, CK-34) or call (a point-free value of function
+//!     type, `h = compose h g` under a `where`), so a self-reference
+//!     recurses. A `where` does not make a value a function (`language.md`
+//!     §7; R2b review B1), even where the emitter defines it as an arrow.
 //!
 //! A strongly connected component with at least one node that RUNS is
 //! refused (`cyclic_value`); one made only of deferring nodes is fine and is
-//! how `isEven`/`isOdd` are written. Those three readings are the emitter's
-//! own: `js/Lower.declaration` splits on the same `params != 0`, evidence
-//! and `lambda`-body triple.
+//! how `isEven`/`isOdd` are written. The reading is `check/Convention.zig`'s
+//! (`checker-v2.md` §12.5), the same one `js/Lower.declaration` defines the
+//! value by, so the two cannot drift.
 //!
 //! **The edges are `Edges.zig`'s**, shared with `js/Reach.zig` — the three
 //! legs out of a value declaration `d` (`refs` rows of kind `top_value`; the
@@ -64,6 +67,7 @@ const InternPool = @import("../InternPool.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Dispatch = @import("Dispatch.zig");
 const Edges = @import("Edges.zig");
+const Convention = @import("Convention.zig");
 
 pub const Error = Allocator.Error;
 
@@ -98,18 +102,22 @@ pub fn run(
     try g.report(count, interner, reporter);
 }
 
-/// Whether any declaration of the module is initialised at module load: the
-/// three readings of `Graph.build`, without building anything.
+/// Whether any declaration of the module is initialised at module load or
+/// at a read: `Graph.build`'s reading, without building anything.
 fn anyRuns(bir: *const Bir, dispatch: *const Dispatch) bool {
     for (bir.decls, 0..) |d, i| {
         if (d.kind != .value) continue;
-        const body = d.body.unwrap() orelse continue;
-        if (d.params != 0) continue;
-        if (dispatch.declRequirements(@intCast(i)).len != 0) continue;
-        if (bir.instTag(body) == .lambda) continue;
-        return true;
+        if (d.body == .none) continue;
+        if (!declDefers(bir, dispatch, @intCast(i))) return true;
     }
     return false;
+}
+
+/// `Convention`'s initialisation reading (checker-v2.md §12.5), over the same
+/// `Definition` `js/Lower.declaration` defines the value by: only a value
+/// written as a function (parameters, or a `lambda` body) defers.
+fn declDefers(bir: *const Bir, dispatch: *const Dispatch, index: u32) bool {
+    return Convention.defers(Convention.definitionOf(dispatch, bir, index));
 }
 
 /// The edge lists, then the components, then the report. Three flat arrays
@@ -143,15 +151,10 @@ const Graph = struct {
             g.defers[i] = true;
             g.runs[i] = false;
             if (d.kind != .value) continue;
-            const body = d.body.unwrap() orelse continue;
+            if (d.body == .none) continue;
             g.runs[i] = true;
-            // The emitter's own three readings (`js/Lower.declaration`): a
-            // declaration with parameters or with evidence parameters is an
-            // arrow, and so is a parameterless one whose entire body is a
-            // `lambda`. All three run nothing where they are bound.
-            g.defers[i] = d.params != 0 or
-                g.dispatch.declRequirements(@intCast(i)).len != 0 or
-                g.bir.instTag(body) == .lambda;
+            // `Convention`'s reading, over the definition `js/Lower` emits.
+            g.defers[i] = declDefers(g.bir, g.dispatch, @intCast(i));
 
             stream.clearRetainingCapacity();
             try Edges.declEdges(&stream, g.scratch, g.bir, g.dispatch, @intCast(i));
@@ -324,14 +327,34 @@ const Graph = struct {
             // says why naming one is enough to close a cycle.
             if (through == null and g.defers[node]) through = name.*;
         }
+        // The first node of the circle, anchor included, that is computed
+        // at each read or call rather than once at load: a `thunk` or an
+        // `applied` value (`Convention`), both of which take evidence. The
+        // message's "computed once" is false for it, so it says so.
+        const anchor_name = interner.slice(g.bir.symbol(g.bir.decls[anchor].name));
+        var per_use: ?[]const u8 = if (g.perUse(anchor)) anchor_name else null;
+        if (per_use == null) for (path, names) |node, name| {
+            if (g.perUse(node)) {
+                per_use = name;
+                break;
+            }
+        };
         const d = g.bir.decls[anchor];
         try reporter.cyclicValue(
             d.body.unwrap() orelse return,
             d.name_token,
-            interner.slice(g.bir.symbol(d.name)),
+            anchor_name,
             names,
             through,
+            per_use,
         );
+    }
+
+    fn perUse(g: *const Graph, node: u32) bool {
+        return switch (Convention.definitionOf(g.dispatch, g.bir, node)) {
+            .thunk, .applied => true,
+            .constant, .params, .lambda => false,
+        };
     }
 };
 

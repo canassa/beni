@@ -1,0 +1,24 @@
+-- R2b review S3: see M.beni. `check/good` runs `check` without a platform,
+-- so the uses are a plain value; `build_test.zig` builds and runs them.
+import M
+
+
+tf : Bool -> String
+tf b =
+    if b then
+        "t"
+
+    else
+        "f"
+
+
+results : List String
+results =
+    [ tf (M.equals 1 2)
+    , tf (M.eqs "a" "a")
+    , tf (List.all [ 3, 3 ] (M.equals 3 _))
+    , String.fromInt (List.length (List.filter [ 1, 2, 1 ] (M.eqs 1 _)))
+    , String.fromInt (List.foldl [ 4, 9, 2 ] 0 M.bigger)
+    , M.bigger "a" "b"
+    , String.fromInt (M.bigger 1 2)
+    ]

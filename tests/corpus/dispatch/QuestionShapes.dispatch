@@ -1,7 +1,7 @@
 module QuestionShapes
-  decl parse evidence=0 arity=2
-  decl firstPlus evidence=0 arity=1
-  decl bigger evidence=1 arity=2
+  decl parse evidence=0 arity=2 convention=plain
+  decl firstPlus evidence=0 arity=1 convention=plain
+  decl bigger evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare
   try 17 result
   try 19 result

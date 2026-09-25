@@ -1,0 +1,5 @@
+module M
+  value bigger : a, a -> a where a.compare : a, a -> Order
+  value eqs : a, a -> Bool where a.eq : a, a -> Bool
+  value equals : a, a -> Bool where a.eq : a, a -> Bool
+module Main

@@ -42,7 +42,7 @@ tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst v1 exit=1 codes=no
 tests/pending/check/bad/DerivedContextNeedsAnnotation v1 exit=1 codes=not_equatable×1 why=code
 tests/pending/check/bad/DerivedContextReentrantSameFirst v1 exit=1 codes=not_equatable×2 why=code
 tests/pending/check/bad/DerivedContextReentrant v1 exit=1 codes=not_equatable×2 why=code
-tests/pending/check/bad/EvidenceConstantCycle.beni v1 exit=0 codes=none
+tests/pending/check/bad/ExposingSameNameConstructor v1 exit=1 codes=expected_token×1 why=message
 tests/pending/check/bad/FieldErrorTextOrder.beni v1 exit=1 codes=missing_field×1 why=message
 tests/pending/check/bad/InfiniteTypeAtBinder.beni v1 exit=1 codes=type_mismatch×1 why=code
 tests/pending/check/bad/InfiniteTypeShowsStructure.beni v1 exit=1 codes=infinite_type×1 why=position
@@ -78,7 +78,6 @@ tests/pending/check/good/MutualGroupLocalTypes.beni v1 exit=0 iface-differs
 tests/pending/check/good/ScrutineeMethodMergeVariant v1 exit=1 codes=method_needs_annotation×4
 tests/pending/check/good/WideTypeArity v1 exit=1 codes=wrong_type_arity×1
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v1 dev: exit=1 codes=no_methods_on_shape×1
-tests/pending/run/ConstrainedFunctionConstant v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqHeadMatching v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=internal×1
 tests/pending/run/DeadMiscount.beni v1 dev: exit=1 codes=internal×1

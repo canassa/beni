@@ -1,10 +1,10 @@
 module Primitives
-  decl ints evidence=0 arity=2
-  decl floats evidence=0 arity=2
-  decl bools evidence=0 arity=2
-  decl chars evidence=0 arity=2
-  decl strings evidence=0 arity=2
-  decl orders evidence=0 arity=2
+  decl ints evidence=0 arity=2 convention=plain
+  decl floats evidence=0 arity=2 convention=plain
+  decl bools evidence=0 arity=2 convention=plain
+  decl chars evidence=0 arity=2 convention=plain
+  decl strings evidence=0 arity=2 convention=plain
+  decl orders evidence=0 arity=2 convention=plain
   site 8 callee primitive num_compare
   site 17 callee primitive strict_eq
   site 26 callee primitive num_compare

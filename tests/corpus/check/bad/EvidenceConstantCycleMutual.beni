@@ -1,0 +1,23 @@
+-- CK-34 (R2b): the two-member form of `EvidenceConstantCycle.beni`. `evens`
+-- and `odds` take evidence and have no parameters and no function type, so
+-- each is a thunk the emitter CALLS at every read (checker-v2.md §12.5):
+-- reading either runs the other, forever. One `cyclic_value` for the
+-- component, at `evens`. On 84e3cb1 it checks clean and the built program
+-- overflows the stack at load.
+
+
+evens : List a
+    where a.eq : a, a -> Bool
+evens =
+    List.filter odds (\x -> x == x)
+
+
+odds : List a
+    where a.eq : a, a -> Bool
+odds =
+    List.reverse evens
+
+
+count : Int
+count =
+    List.length (evens ++ [ 1 ])

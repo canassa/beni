@@ -1,0 +1,30 @@
+-- R2b review B1: a circle through a lambda-valued declaration. `k` is a
+-- function (its whole body is a lambda) and defers, but `h` is a value
+-- whose initialiser names `k`, whose body reads `h`: `cyclic_value` at
+-- `h`, the first VALUE on the circle, as without the `where`. On 84e3cb1
+-- it checks clean and the built program prints a wrong answer.
+compose : (b -> c), (a -> b) -> (a -> c)
+compose f g =
+    \x -> f (g x)
+
+
+keep : a -> a
+    where a.eq : a, a -> Bool
+keep x =
+    if x == x then
+        x
+
+    else
+        x
+
+
+k : a -> a
+    where a.eq : a, a -> Bool
+k =
+    \x -> h x
+
+
+h : a -> a
+    where a.eq : a, a -> Bool
+h =
+    compose k keep

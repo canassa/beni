@@ -1,14 +1,14 @@
 module TwoSlotsNested
-  decl pair evidence=2 arity=2
+  decl pair evidence=2 arity=2 convention=function
     requirement 0 quantified=0 var=a method=eq
     requirement 1 quantified=1 var=b method=eq
-  decl three evidence=3 arity=3
+  decl three evidence=3 arity=3 convention=function
     requirement 0 quantified=0 var=a method=eq
     requirement 1 quantified=1 var=b method=eq
     requirement 2 quantified=2 var=c method=eq
-  decl two evidence=0 arity=0
-  decl middle evidence=0 arity=0
-  decl tupled evidence=0 arity=0
+  decl two evidence=0 arity=0 convention=plain
+  decl middle evidence=0 arity=0 convention=plain
+  decl tupled evidence=0 arity=0 convention=plain
   derived 0 eq t2 context=2
     context 0 param=0 method=eq
     context 1 param=1 method=eq

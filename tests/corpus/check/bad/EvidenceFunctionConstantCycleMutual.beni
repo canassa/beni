@@ -1,0 +1,34 @@
+-- R2b review B1: the two-member form of `EvidenceFunctionConstantCycle`.
+-- `h` and `k` are point-free values of function type with a `where`, each
+-- defined through the other: one `cyclic_value` for the circle, at `h`.
+-- On 84e3cb1 it checks clean and overflows the stack when run.
+compose : (b -> c), (a -> b) -> (a -> c)
+compose f g =
+    \x -> f (g x)
+
+
+keep : a -> a
+    where a.eq : a, a -> Bool
+keep x =
+    if x == x then
+        x
+
+    else
+        x
+
+
+twice : (a -> a) -> (a -> a)
+twice f =
+    \x -> f (f x)
+
+
+h : a -> a
+    where a.eq : a, a -> Bool
+h =
+    compose k keep
+
+
+k : a -> a
+    where a.eq : a, a -> Bool
+k =
+    twice h

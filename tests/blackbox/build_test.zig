@@ -1318,6 +1318,82 @@ test "check 4: a constrained foreign whose sibling forgot the evidence parameter
     try testing.expect(!w.exists("out"));
 }
 
+test "check 4: a foreign typed through an alias counts the alias's parameters, as its calls do" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R2b's review, S2 (checker-v2.md §12.5, boundary.md §4 check 4 as
+    // amended). `isPos : IntPred` spells no arrow, but `IntPred` IS
+    // `Int -> Bool`, and every call of it is lowered by `Convention` as
+    // `isPos(x)`. Check 4 used to read the annotation's spelling, call it a
+    // VALUE, and refuse the one sibling that works, `(x) => …`, as "written
+    // as a function". It now asks the same `Convention`: one parameter.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("myplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub type alias IntPred =
+        \\    Int -> Bool
+        \\
+        \\
+        \\pub foreign say : String -> Program
+        \\
+        \\
+        \\pub foreign isPos : IntPred
+        \\
+    );
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\
+        \\export const isPos = (x) => x > 0;
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    if List.all [ 1, 2 ] Prog.isPos && not (Prog.isPos (0 - 3)) then
+        \\        Prog.say "same"
+        \\
+        \\    else
+        \\        Prog.say "different"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    const ran = try w.node("out/_main.mjs");
+    try testing.expectEqual(@as(u8, 0), ran.exit_code);
+    try testing.expectEqualStrings("same!\n", ran.stdout);
+
+    // And the count is the alias's: two parameters are one too many.
+    try w.write("myplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\
+        \\export const isPos = (x, y) => x > 0;
+        \\
+    );
+    const wide = try w.run(&.{ "build", "--platform=myplat", "--out=out2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), wide.exit_code);
+    try testing.expectEqual(@as(usize, 1), wide.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.foreign_arity_mismatch, wide.diagnostics[0].code);
+    try testing.expect(std.mem.indexOf(u8, wide.diagnostics[0].message, "with 2 parameters, and `isPos` takes 1") != null);
+    try testing.expect(!w.exists("out2"));
+}
+
 test "check 4: a plain arity mismatch is the same defect and the same diagnostic" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -3312,4 +3388,84 @@ fn churnRow(stdout: []const u8, klass: []const u8, variant: []const u8) !ChurnRo
     }
     std.debug.print("no `{s} {s}` row in:\n{s}\n", .{ klass, variant, stdout });
     return error.MissingRow;
+}
+
+test "an unannotated pub function constant with a constraint builds and runs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R2b's review, S3 (static-dispatch-spike.md §10.10 as amended). The
+    // program of `check/good/ConstrainedPubFunctionConstant/`, built and
+    // run: it cannot be a `run/` fixture, because every unannotated
+    // constrained `pub` prints the informational `ambiguous_method_receiver`
+    // warning and a `run/` build must be silent. On 84e3cb1 all three `pub`
+    // values are `constrained_constant`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("M.beni",
+        \\maxOf : a, a -> a
+        \\    where a.compare : a, a -> Order
+        \\maxOf a b =
+        \\    if a < b then
+        \\        b
+        \\
+        \\    else
+        \\        a
+        \\
+        \\
+        \\pub equals =
+        \\    (==)
+        \\
+        \\
+        \\pub eqs =
+        \\    \a b -> a == b
+        \\
+        \\
+        \\pub bigger =
+        \\    maxOf
+        \\
+    );
+    try w.write("Main.beni",
+        \\import M
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\tf : Bool -> String
+        \\tf b =
+        \\    if b then
+        \\        "t"
+        \\
+        \\    else
+        \\        "f"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ tf (M.equals 1 2)
+        \\        , tf (M.eqs "a" "a")
+        \\        , tf (List.all [ 3, 3 ] (M.equals 3 _))
+        \\        , String.fromInt (List.length (List.filter [ 1, 2, 1 ] (M.eqs 1 _)))
+        \\        , String.fromInt (List.foldl [ 4, 9, 2 ] 0 M.bigger)
+        \\        , M.bigger "a" "b"
+        \\        , String.fromInt (M.bigger 1 2)
+        \\        ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.buildAndRun(&.{ "Main.beni", "M.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.build.exit_code);
+    // Three warnings and no error: the inferred interface carries a `where`.
+    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, r.build.stderr, "CONSTRAINT IN AN INFERRED INTERFACE"));
+    try testing.expect(std.mem.indexOf(u8, r.build.stderr, "CONSTRAINED CONSTANT") == null);
+    const program = r.program.?;
+    try testing.expectEqual(@as(u8, 0), program.exit_code);
+    try testing.expectEqualStrings("f\nt\nt\n2\n9\nb\n2\n", program.stdout);
 }

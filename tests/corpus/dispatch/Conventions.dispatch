@@ -1,0 +1,19 @@
+module Conventions
+  decl maxOf evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=a method=compare
+  decl pointFree evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=a method=compare
+  decl viaLambda evidence=1 arity=2 convention=function
+    requirement 0 quantified=0 var=_ method=eq
+  decl blank evidence=1 arity=0 convention=thunk
+    requirement 0 quantified=0 var=a method=eq
+  decl plainFunction evidence=0 arity=2 convention=plain
+  decl plainConstant evidence=0 arity=0 convention=plain
+  site 12 callee param 0
+  site 30
+    evidence param 0
+  site 35 callee param 0
+  site 49
+    evidence primitive num_compare
+  site 53
+    evidence primitive strict_eq

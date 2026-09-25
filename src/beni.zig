@@ -87,6 +87,7 @@ pub const check = struct {
     pub const Check = @import("check/Check.zig");
     pub const reads = @import("check/reads.zig");
     pub const Dispatch = @import("check/Dispatch.zig");
+    pub const Convention = @import("check/Convention.zig");
     pub const Command = @import("check/Command.zig");
 };
 pub const dump = struct {

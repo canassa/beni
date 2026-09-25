@@ -1,10 +1,10 @@
 module ErrParts
-  decl empties evidence=0 arity=0
-  decl nothings evidence=0 arity=0
-  decl crossed evidence=0 arity=0
-  decl insideAShape evidence=0 arity=0
-  decl literalPair evidence=0 arity=0
-  decl literalOrder evidence=0 arity=0
+  decl empties evidence=0 arity=0 convention=plain
+  decl nothings evidence=0 arity=0 convention=plain
+  decl crossed evidence=0 arity=0 convention=plain
+  decl insideAShape evidence=0 arity=0 convention=plain
+  decl literalPair evidence=0 arity=0 convention=plain
+  decl literalOrder evidence=0 arity=0 convention=plain
   derived 0 compare t2 context=2
     context 0 param=0 method=compare
     context 1 param=1 method=compare

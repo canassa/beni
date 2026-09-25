@@ -1,10 +1,10 @@
 module Main
-  decl step evidence=0 arity=1
-  decl same evidence=0 arity=2
+  decl step evidence=0 arity=1 convention=plain
+  decl same evidence=0 arity=2 convention=plain
   site 6 callee ext Token bump
   site 15 callee ext_derived Token.Token eq
 module Token
-  decl bump evidence=0 arity=2
+  decl bump evidence=0 arity=2 convention=plain
   derived 0 compare Token.Token context=0
     body 0 primitive num_compare
   derived 1 eq Token.Token context=0

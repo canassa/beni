@@ -88,6 +88,7 @@ pub const Result = struct {
 /// Re-exported so a caller can name `Dispatch.empty` without reaching past
 /// the backend into the checker.
 pub const Dispatch = @import("../check/Dispatch.zig");
+const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
     bir: *const Bir,
@@ -331,11 +332,11 @@ const Lowerer = struct {
     /// reached, not a span the reader chose, which is why only `internal`
     /// uses it.
     region: Inst.Index = @enumFromInt(0),
-    /// Set while the body of a derived function wider than
-    /// `max_positional_evidence` is lowered: its one evidence parameter, the
+    /// Set while the body of a WIDE derived function is lowered
+    /// (`Convention.derivedEvidence`): its one evidence parameter, the
     /// array `$m`, which `$m$k` then reads as `$m[k]` (static-dispatch
     /// §9.2, CK-81).
-    evidence_array: ?JsIr.NameIndex = null,
+    wide_evidence: ?JsIr.NameIndex = null,
 
     /// One name this module has to import. `value` indexes the other
     /// module's interface; `base` is set instead for a SYNTHESISED name —
@@ -676,52 +677,85 @@ const Lowerer = struct {
         });
         const p = l.pos(body);
         // §8.1: the hidden leading parameters, one per entry of this
-        // declaration's `DeclInfo.requirements` (checker-v2.md §13.1), in the canonical order of
-        // §7.2. A declaration of zero beni parameters that has evidence
-        // would become a function and change its type across the module
-        // boundary; the checker refuses it first (`constrained_constant`,
-        // §6.4), so the constant path below is reached only with none.
-        const evidence: u16 = @intCast(l.in.dispatch.declRequirements(index).len);
-        if (d.params == 0 and evidence == 0) {
+        // declaration's `DeclInfo.requirements` (checker-v2.md §13.1), in
+        // the canonical order of §7.2. HOW the value is defined around them
+        // is `Convention`'s (checker-v2.md §12.5) — the same answer every
+        // call, every reference and the cycle check read, so the definition
+        // and its uses cannot disagree (CK-33).
+        const use = Convention.ofDecl(l.in.dispatch, l.bir, index);
+        const evidence: u16 = @intCast(use.evidence);
+        switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
+            .params => {
+                const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, params, body, p);
+                try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
+            },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
             // parameterless declaration inherits its name, because `f x = e`
             // and `f = \x -> e` emit byte-identical JavaScript today and two
             // spellings of one program must not differ in stack behaviour.
-            // A lambda anywhere else never does.
-            if (l.bir.instTag(body) == .lambda) {
+            // A lambda anywhere else never does. With evidence the lambda's
+            // parameters follow it, as a written parameter list would.
+            .lambda => {
                 const ld = l.bir.instData(body);
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@enumFromInt(ld.lhs)), Inst.Index);
-                const lambda_record = try l.functionOrLoop(
-                    n,
-                    .{ .top = index },
-                    0,
-                    lambda_params,
-                    @enumFromInt(ld.rhs),
-                    p,
-                );
-                const lambda = try l.add(.arrow, p, @intFromEnum(lambda_record), Node.Data.unused);
-                try l.constDecl(out, n, lambda, p);
-                return;
-            }
-            var stmts: StmtList = .empty;
-            const value = try l.expr(&stmts, body);
-            // A constant whose lowering needed statements cannot be a bare
-            // `const`: wrap it in a called arrow, which is the one place
-            // M3a emits an IIFE and the one place §9.2's peephole exists to
-            // remove later.
-            if (stmts.items.len == 0) {
-                try l.constDecl(out, n, value, p);
-                return;
-            }
-            try stmts.append(l.scratch, try l.returnStmt(value, p));
-            const arrow = try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p);
-            try l.constDecl(out, n, try l.call(arrow, &.{}, p), p);
-            return;
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, lambda_params, @enumFromInt(ld.rhs), p);
+                try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
+            },
+            .applied => try l.constDecl(out, n, try l.appliedArrow(evidence, use.arity, body, p), p),
+            // `($m…) => value`: every read calls it (A.85).
+            .thunk => {
+                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, &.{}, body, p);
+                try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
+            },
+            .constant => {
+                var stmts: StmtList = .empty;
+                const value = try l.expr(&stmts, body);
+                // A constant whose lowering needed statements cannot be a
+                // bare `const`: wrap it in a called arrow, which is the one
+                // place M3a emits an IIFE and the one place §9.2's peephole
+                // exists to remove later.
+                if (stmts.items.len == 0) {
+                    try l.constDecl(out, n, value, p);
+                    return;
+                }
+                try stmts.append(l.scratch, try l.returnStmt(value, p));
+                const arrow = try l.arrowOf(&[_]JsIr.NameIndex{}, stmts.items, p);
+                try l.constDecl(out, n, try l.call(arrow, &.{}, p), p);
+            },
         }
-        const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
-        const record = try l.functionOrLoop(n, .{ .top = index }, evidence, params, body, p);
-        const arrow = try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused);
-        try l.constDecl(out, n, arrow, p);
+    }
+
+    /// `($m…, $p1…$pn) => body($p1…$pn)` — a value with evidence and no
+    /// parameters whose TYPE is a function of `arity` (checker-v2.md §12.5's
+    /// `applied`): `h = maxOf` under a `where`. It is defined over its
+    /// type's parameters so that it is called flat, `h(ev, a, b)`, like
+    /// every other constrained function, and so that an importer, which
+    /// sees only the type, calls it the same way (CK-33).
+    ///
+    /// The body is evaluated at each call. When it is a reference to a
+    /// function that takes evidence of its own — the common `h = maxOf` —
+    /// the call goes straight to it, `maxOf(ev…, $p1…$pn)`, rather than
+    /// through its eta-expansion.
+    fn appliedArrow(l: *Lowerer, evidence: u16, arity: u32, body: Inst.Index, p: u32) !Node.Index {
+        var names: std.ArrayList(JsIr.NameIndex) = .empty;
+        var k: u16 = 0;
+        while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceName(k));
+        const args = try l.scratch.alloc(Node.Index, arity);
+        for (args) |*arg| {
+            const fresh_name = try l.fresh(l.well.param);
+            try names.append(l.scratch, fresh_name);
+            arg.* = try l.ident(fresh_name, p);
+        }
+        // A new function is a new label scope (§7).
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        var stmts: StmtList = .empty;
+        const value = (try l.referenceApplied(body, args)) orelse
+            try l.call(try l.expr(&stmts, body), args, p);
+        try stmts.append(l.scratch, try l.returnStmt(value, p));
+        return l.arrowOf(names.items, stmts.items, p);
     }
 
     fn exports(l: *Lowerer, out: *StmtList) !void {
@@ -1941,7 +1975,6 @@ const Lowerer = struct {
     /// arity, so `let f = Dict.insert` is `(a, b, c) => Dict$insert(cmp, a,
     /// b, c)` and never `Dict$insert`.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
-        const d = l.bir.instData(inst);
         const p = l.pos(inst);
         if (l.ctorRepOf(inst)) |rep_and_tag| {
             const rep, const tag = rep_and_tag;
@@ -1949,7 +1982,30 @@ const Lowerer = struct {
             if (arity == 0) return l.ctorValue(rep, tag, &.{}, p);
             return l.ctorLambda(rep, tag, arity, p);
         }
-        const value = switch (l.bir.instTag(inst)) {
+        const value = try l.referenceName(inst);
+        const site = l.in.dispatch.siteOf(inst) orelse return value;
+        const roots = l.in.dispatch.argsAt(site.evidence);
+        const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, inst);
+        if (roots.len == 0 and expected == 0) return value;
+        l.region = inst;
+        if (try l.refuseEvidence(inst, roots, expected)) {
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        // How many parameters the eta-expansion takes is `Convention`'s
+        // (checker-v2.md §12.5): a thunk's read is the evidence applied, a
+        // function's is a closure over its type's arity. `refuseEvidence`
+        // has just proved the value takes evidence, so it is not `plain`.
+        const use = l.referenceUse(inst);
+        const arity = Convention.referenceArity(use) orelse use.arity;
+        return l.etaExpand(value, try l.evidenceArguments(roots, p), arity, p);
+    }
+
+    /// The JavaScript binding a `local`, `top` or `ext_value` reference
+    /// names, with the import recorded for the last.
+    fn referenceName(l: *Lowerer, inst: Inst.Index) !Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             .top => try l.ident(try l.topName(d.lhs), p),
             .ext_value => blk: {
@@ -1959,26 +2015,43 @@ const Lowerer = struct {
             },
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        const site = l.in.dispatch.siteOf(inst) orelse return value;
-        const roots = l.in.dispatch.argsAt(site.evidence);
-        const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, inst);
-        if (roots.len == 0 and expected == 0) return value;
-        l.region = inst;
-        if (try l.refuseEvidence(inst, roots, expected)) {
-            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        }
-        return l.etaExpand(value, try l.evidenceArguments(roots, p), l.referenceArity(inst), p);
     }
 
-    /// The beni arity of the value a reference names: how many parameters
-    /// its eta-expansion has to take.
-    fn referenceArity(l: *Lowerer, inst: Inst.Index) u32 {
+    /// The calling convention of the value a reference names (§12.5): this
+    /// module's `DeclInfo`, or the interface of the module it comes from.
+    fn referenceUse(l: *Lowerer, inst: Inst.Index) Convention.Use {
         const d = l.bir.instData(inst);
         return switch (l.bir.instTag(inst)) {
-            .top => if (d.lhs < l.bir.decls.len) l.bir.decls[d.lhs].params else 0,
-            .ext_value => l.externalArity(@enumFromInt(d.lhs), d.rhs),
-            else => 0,
+            .top => Convention.ofDecl(l.in.dispatch, l.bir, d.lhs),
+            .ext_value => Convention.ofImport(l.in.interfaces, @enumFromInt(d.lhs), d.rhs),
+            else => .{ .convention = .plain, .evidence = 0, .arity = 0 },
         };
+    }
+
+    /// A reference to a constrained FUNCTION applied to `args`, as one flat
+    /// call `f(ev…, args…)` — what a written call of it lowers to — or null
+    /// when `inst` is anything else. `appliedArrow`'s body `h = maxOf` is
+    /// the reason: without this it would call `maxOf`'s eta-expansion.
+    fn referenceApplied(l: *Lowerer, inst: Inst.Index, args: []const Node.Index) !?Node.Index {
+        switch (l.bir.instTag(inst)) {
+            .top, .ext_value => {},
+            else => return null,
+        }
+        if (l.ctorRepOf(inst) != null) return null;
+        const site = l.in.dispatch.siteOf(inst) orelse return null;
+        const roots = l.in.dispatch.argsAt(site.evidence);
+        const use = l.referenceUse(inst);
+        if (roots.len == 0 or use.convention != .function or use.arity != args.len) return null;
+        const p = l.pos(inst);
+        l.region = inst;
+        if (try l.refuseEvidence(inst, roots, use.evidence)) {
+            return try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const evidence = try l.evidenceArguments(roots, p);
+        const all = try l.scratch.alloc(Node.Index, evidence.len + args.len);
+        @memcpy(all[0..evidence.len], evidence);
+        @memcpy(all[evidence.len..], args);
+        return try l.call(try l.referenceName(inst), all, p);
     }
 
     // ---- Calls and dispatch (static-dispatch-spike.md §8) -----------------
@@ -2014,18 +2087,19 @@ const Lowerer = struct {
 
     /// The beni arity of a term: how many parameters its eta-expansion
     /// takes, which is the arity the evidence slot promised.
+    ///
+    /// A `top` or an `ext` asks `Convention` (checker-v2.md §12.5), exactly
+    /// as a reference to the same value does.
     fn termArity(l: *Lowerer, t: Dispatch.Term) u32 {
-        return switch (t) {
-            // No bounds test: a `top` term names a declaration of the
-            // module being lowered, and `termName` asserts exactly that
-            // before `topName` indexes the same table unguarded.
-            .top => |use| l.bir.decls[use.decl.int()].params,
-            .ext => |e| l.externalArity(e.module, @intFromEnum(e.value)),
+        const use: Convention.Use = switch (t) {
+            .top => |u| Convention.ofDecl(l.in.dispatch, l.bir, u.decl.int()),
+            .ext => |e| Convention.ofImport(l.in.interfaces, e.module, @intFromEnum(e.value)),
             // A derived `eq` or `compare` is binary: the two values being
             // compared, after whatever evidence it takes (§9).
-            .derived, .ext_derived => 2,
-            else => 0,
+            .derived, .ext_derived => return 2,
+            else => return 0,
         };
+        return Convention.referenceArity(use) orelse use.arity;
     }
 
     /// The JavaScript value a term NAMES (§8.2's table), before any of its
@@ -2057,26 +2131,6 @@ const Lowerer = struct {
             // `derivedName`.
             else => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-    }
-
-    fn externalScheme(l: *Lowerer, module: Graph.Index, value: u32) ?Interface.Scheme {
-        if (module.int() >= l.in.interfaces.len) return null;
-        const iface = &l.in.interfaces[module.int()];
-        if (value >= iface.values.len) return null;
-        const index = iface.values[value].scheme;
-        if (index == .none or @intFromEnum(index) >= iface.schemes.len) return null;
-        return iface.scheme(index);
-    }
-
-    /// The beni arity of an imported value: the parameter count of its
-    /// scheme body when that body is a function type, and zero otherwise.
-    fn externalArity(l: *Lowerer, module: Graph.Index, value: u32) u32 {
-        const s = l.externalScheme(module, value) orelse return 0;
-        const iface = &l.in.interfaces[module.int()];
-        if (s.body == .none or s.body.int() >= iface.terms.len) return 0;
-        const t = iface.term(s.body);
-        if (t.tag != .func) return 0;
-        return @intCast(iface.range(t.lhs).len);
     }
 
     /// The hidden leading arguments of one instruction (§8.2): one value
@@ -2399,21 +2453,25 @@ const Lowerer = struct {
         const p = Node.no_pos;
         const x, const y = try l.operandNames();
         var params: std.ArrayList(JsIr.NameIndex) = .empty;
-        // Past `max_positional_evidence` the evidence is ONE parameter, an
-        // array (§9.2's wide form): a JavaScript call with a parameter per
-        // field overflows the engine's stack, and past 65 535 parameters V8
-        // refuses the function outright. The caller packs it the same way,
-        // by the same count (`packEvidence`).
-        const outer_array = l.evidence_array;
-        defer l.evidence_array = outer_array;
-        l.evidence_array = null;
-        if (row.context.len > max_positional_evidence) {
-            const array = try l.evidenceArrayName();
-            try params.append(l.scratch, array);
-            l.evidence_array = array;
-        } else {
-            var k: u16 = 0;
-            while (k < row.context.len) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
+        // A wide function takes its evidence as ONE parameter, an array
+        // (§9.2's wide form): a JavaScript call with a parameter per field
+        // overflows the engine's stack, and past 65 535 parameters V8
+        // refuses the function outright. `Convention` decides it from the
+        // count, and every caller packs by the same answer
+        // (`derivedEvidenceArguments`).
+        const outer_array = l.wide_evidence;
+        defer l.wide_evidence = outer_array;
+        l.wide_evidence = null;
+        switch (Convention.derivedEvidence(row.context.len)) {
+            .array => {
+                const array = try l.evidenceArrayName();
+                try params.append(l.scratch, array);
+                l.wide_evidence = array;
+            },
+            .positional => {
+                var k: u16 = 0;
+                while (k < row.context.len) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
+            },
         }
         switch (row.shape) {
             // §9.3: `(x, y) => true` / `(x, y) => "EQ"`. `()` is `null` at
@@ -2549,7 +2607,7 @@ const Lowerer = struct {
     /// The derived function's own k-th evidence parameter as a value:
     /// `$m$k`, or `$m[k]` inside a wide one (§9.2).
     fn ownEvidence(l: *Lowerer, k: u16, p: u32) !Node.Index {
-        const array = l.evidence_array orelse return l.ident(try l.evidenceName(k), p);
+        const array = l.wide_evidence orelse return l.ident(try l.evidenceName(k), p);
         var buf: [8]u8 = undefined;
         const index = try l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{k}) catch unreachable, p);
         return l.add(.index_get, p, (try l.ident(array, p)).int(), index.int());
@@ -2562,13 +2620,13 @@ const Lowerer = struct {
     }
 
     /// The arguments a call of a derived function passes for its evidence:
-    /// `values` as they are, or — past `max_positional_evidence`, where
-    /// `derivedArrow` wrote the function to take one array — `[values…]`.
-    /// Decided by the COUNT, which the caller and the declaring module
+    /// `values` as they are, or — for a wide function, where `derivedArrow`
+    /// wrote it to take one array — `[values…]`. `Convention.derivedEvidence`
+    /// decides by the COUNT, which the caller and the declaring module
     /// agree on (it is the row's context length either way), so a
     /// cross-module nominal needs no flag in any table.
-    fn packEvidence(l: *Lowerer, values: []const Node.Index, p: u32) ![]const Node.Index {
-        if (values.len <= max_positional_evidence) return values;
+    fn derivedEvidenceArguments(l: *Lowerer, values: []const Node.Index, p: u32) ![]const Node.Index {
+        if (Convention.derivedEvidence(values.len) == .positional) return values;
         const range = try l.b.addRange(values);
         const array = try l.add(.array, p, @intFromEnum(range.start), @intFromEnum(range.end));
         const one = try l.scratch.alloc(Node.Index, 1);
@@ -2873,7 +2931,7 @@ const Lowerer = struct {
         const t = l.in.dispatch.term(part);
         const callee = try l.derivedName(t, p);
         const evidence = try l.termValues(l.in.dispatch.argsAt(t.argsOf()), kind, p);
-        return l.applyEvidence(callee, try l.packEvidence(evidence, p), left, right, p);
+        return l.applyEvidence(callee, try l.derivedEvidenceArguments(evidence, p), left, right, p);
     }
 
     /// `M$m(<its evidence…>, l, r)` — a `top` or `ext` value at one body
@@ -2897,10 +2955,14 @@ const Lowerer = struct {
             try l.refuseConstrainedPart(region);
             return null;
         }
+        l.assertFlatCall(t);
         const evidence = try l.termValues(args, kind, p);
         return try l.applyEvidence(try l.termName(t, p), evidence, left, right, p);
     }
 
+    /// `callee(<evidence…>, left, right)`: a FLAT call (`Convention.call`).
+    /// Its callers are a derived function, flat by construction, and
+    /// `namedPartCall`, which asserts it.
     fn applyEvidence(
         l: *Lowerer,
         callee: Node.Index,
@@ -2949,7 +3011,7 @@ const Lowerer = struct {
         }
         const callee = try l.derivedName(t, p);
         if (args.len == 0) return callee;
-        return l.etaExpand(callee, try l.packEvidence(try l.termValues(args, kind, p), p), 2, p);
+        return l.etaExpand(callee, try l.derivedEvidenceArguments(try l.termValues(args, kind, p), p), 2, p);
     }
 
     /// Which of §9's two methods a derived term is.
@@ -3278,17 +3340,6 @@ const Lowerer = struct {
     /// a limit on a program.
     const max_part_depth: u8 = 32;
 
-    /// The widest derived function that takes its evidence one parameter per
-    /// position; a wider one, of any shape, takes one array (static-dispatch
-    /// §9 *The wide form*, A.87). An ABI number of the BACKEND's, deliberately
-    /// not tied to the checker: it equals CK-79's cap on a record `==` today,
-    /// which is why no golden moved, and R8a lifting that cap must not change
-    /// the calling convention with it. Measured under Node 24 only: a
-    /// 60 002-argument call from inside another function overflows the
-    /// default stack, and a function of more than 65 535 parameters is a
-    /// `SyntaxError` in V8 (CK-81). Browser engines are unmeasured (R2c).
-    const max_positional_evidence: usize = 4096;
-
     const parts_too_deep =
         \\The evidence of this call nests deeper than
         \\`docs/design/static-dispatch-spike.md` §7.1's `parts` can describe, which
@@ -3410,7 +3461,7 @@ const Lowerer = struct {
         // arguments — and `derived_body_missing` when no module writes it.
         if (try l.refuseEvidence(inst, &.{callee}, 1)) return null;
         const t = l.in.dispatch.term(callee);
-        return try l.packEvidence(try l.termValues(l.in.dispatch.argsAt(t.argsOf()), l.derivedTermKind(t), p), p);
+        return try l.derivedEvidenceArguments(try l.termValues(l.in.dispatch.argsAt(t.argsOf()), l.derivedTermKind(t), p), p);
     }
 
     /// A `top`/`ext`/`param` callee: its evidence is the site's roots, as
@@ -3429,7 +3480,24 @@ const Lowerer = struct {
             return null;
         }
         if (try l.refuseEvidence(inst, roots, l.requirementCount(t))) return null;
+        l.assertFlatCall(t);
         return try l.evidenceArguments(roots, p);
+    }
+
+    /// A method call, a return-type dispatch and a derived body position
+    /// all put the evidence in front of the written arguments in ONE call
+    /// (`receiverCall`, `typeDispatchExpr`, `applyEvidence`): the `flat`
+    /// shape of `Convention.call`. It is the only shape they can meet — a
+    /// method has a function type, and a `thunk`'s type is not a function
+    /// (a function type has no methods) — and this is where that is
+    /// asserted rather than assumed (checker-v2.md §12.5).
+    fn assertFlatCall(l: *Lowerer, t: Dispatch.Term) void {
+        const use: Convention.Use = switch (t) {
+            .top => |u| Convention.ofDecl(l.in.dispatch, l.bir, u.decl.int()),
+            .ext => |e| Convention.ofImport(l.in.interfaces, e.module, @intFromEnum(e.value)),
+            else => return,
+        };
+        std.debug.assert(Convention.call(use.convention) == .flat);
     }
 
     /// A method call (§8.3). The callee is the site's callee term and every
@@ -3512,7 +3580,8 @@ const Lowerer = struct {
     /// `callee(<evidence…>, receiver, args…)` — §8.3's shape, with the
     /// receiver in front of the written arguments because core is
     /// subject-first and a dot-call is the module function applied to its
-    /// receiver.
+    /// receiver. A FLAT call, asserted by `namedCalleeEvidence`
+    /// (`assertFlatCall`).
     fn receiverCall(
         l: *Lowerer,
         out: *StmtList,
@@ -3756,6 +3825,12 @@ const Lowerer = struct {
         l.region = inst;
         const evidence = try l.evidenceArguments(roots, p);
         if (evidence.len == 0) return l.call(callee, written, p);
+        // How the evidence is passed is the callee's convention
+        // (checker-v2.md §12.5), the answer its definition was built from.
+        switch (Convention.call(l.referenceUse(callee_inst).convention)) {
+            .flat => {},
+            .applied => return l.call(try l.call(callee, evidence, p), written, p),
+        }
         const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
         @memcpy(args[0..evidence.len], evidence);
         @memcpy(args[evidence.len..], written);

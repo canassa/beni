@@ -42,6 +42,9 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const ConventionFile = @import("Convention.zig");
+
+pub const Convention = ConventionFile.Convention;
 
 const Dispatch = @This();
 
@@ -168,14 +171,17 @@ pub const Site = struct {
     evidence: Range = .empty,
 };
 
-/// One declaration's hidden parameters and its arity (§13.1; `convention`
-/// joins it in R2b).
+/// One declaration's hidden parameters, its arity and its calling
+/// convention (§13.1, §12.5).
 pub const DeclInfo = struct {
     /// A range of `requirements`, in canonical order (spike §7.2).
     requirements: Range = .empty,
     /// The parameter count of the declaration's solved type, 0 for a
-    /// non-function. Filled by v1 and read by nobody until R2b.
+    /// non-function.
     value_arity: u16 = 0,
+    /// `Convention.of` over this declaration, written by `finish`. Every
+    /// consumer reads it through `Convention.ofDecl`.
+    convention: Convention = .plain,
 };
 
 /// A generalised constrained `let` (D5). The column exists, EMPTY, from R2a,
@@ -344,6 +350,15 @@ pub fn shapeNames(d: *const Dispatch, r: Range) []const Symbol {
 // ---------------------------------------------------------------------------
 // Counting, once (I7)
 // ---------------------------------------------------------------------------
+
+/// `Convention.of` over declaration `i` of `bir` (checker-v2.md §12.5): its
+/// written parameters, whether its entire body is a `lambda`, its type's
+/// arity and its evidence. A `foreign` value has neither parameters nor a
+/// body, so its type decides, exactly as for an import.
+fn conventionOf(bir: *const Bir, i: usize, value_arity: u16, evidence: u32) Convention {
+    if (i >= bir.decls.len) return ConventionFile.of(0, false, value_arity, evidence);
+    return ConventionFile.of(bir.decls[i].params, ConventionFile.bodyIsLambda(bir, @intCast(i)), value_arity, evidence);
+}
 
 /// The requirement count of an imported value, computed from its interface
 /// scheme the way spike §7.2's canonical order is: one per constraint of each
@@ -924,9 +939,12 @@ pub const Builder = struct {
         const decls = try gpa.alloc(DeclInfo, in.decl_count);
         errdefer gpa.free(decls);
         for (decls, 0..) |*info, i| {
+            const requirements: Range = if (i < b.decl_evidence.items.len) b.decl_evidence.items[i] else .empty;
+            const value_arity: u16 = if (i < in.value_arity.len) in.value_arity[i] else 0;
             info.* = .{
-                .requirements = if (i < b.decl_evidence.items.len) b.decl_evidence.items[i] else .empty,
-                .value_arity = if (i < in.value_arity.len) in.value_arity[i] else 0,
+                .requirements = requirements,
+                .value_arity = value_arity,
+                .convention = conventionOf(in.bir, i, value_arity, requirements.len),
             };
         }
 

@@ -1,8 +1,8 @@
 module DerivedShapes
-  decl sameUnit evidence=0 arity=2
-  decl samePair evidence=0 arity=2
-  decl sameInts evidence=0 arity=2
-  decl sameMixed evidence=0 arity=2
+  decl sameUnit evidence=0 arity=2 convention=plain
+  decl samePair evidence=0 arity=2 convention=plain
+  decl sameInts evidence=0 arity=2 convention=plain
+  decl sameMixed evidence=0 arity=2 convention=plain
   derived 0 eq r$x$y context=2
     context 0 param=0 method=eq
     context 1 param=1 method=eq

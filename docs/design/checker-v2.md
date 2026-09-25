@@ -1578,6 +1578,87 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
 - `constrained_constant` keeps its scope, unannotated `pub` zero-parameter values, because the
   convention now makes every other form correct.
 
+*Amended 2026-09-24 by R2b, which found these points the text above leaves open (the code is
+`src/check/Convention.zig`):*
+
+- **The column is the tag alone.** `DeclInfo.convention` is `enum(u8) { plain, function, thunk }`
+  (byte 10 of the `decls` row, `dispatch_bytes` 3). The counts the union above carries are not
+  repeated: the evidence is `requirements.len` and the arity `value_arity`, one source each.
+  `dispatch_bytes` refuses a row whose convention is `plain` exactly when it has requirements, or the
+  reverse. `of` takes `u32` counts and is exactly the three rules above: no evidence is `plain`;
+  parameters, a `lambda` body or a non-zero `value_arity` is `function`; otherwise `thunk`.
+- **An import has no `DeclInfo`**, so `Convention.ofImport` computes the answer with the same `of`
+  from what the interface publishes: `Dispatch.extRequirementCount` and the arity of the scheme's
+  body, **looking through `alias` terms** as `TypeStore.paramCount` does for the exporter (CK-84:
+  `pub same : Pred a` with `type alias Pred a = a -> Bool` has arity 1 on both sides). It passes 0
+  parameters and no lambda, and gets the exporter's answer, because a checked value's parameter
+  count, and a lambda body's, is its type's arity. So the interface needs no convention column.
+- **A caller's arity** (`Convention.Use.arity`) is the written parameter count when there is one and
+  `value_arity` otherwise.
+- **The readings are four functions**, and every consumer calls them rather than reading parameter
+  counts:
+  - `definition(convention, params, body_is_lambda)` → `constant` (plain, no parameters, not a
+    lambda: `const f = value`), `params` (`($m…, p…) => body`), `lambda` (`($m…, x…) => e` for a body
+    `\x… -> e`, with or without evidence — §8's narrow rule of `backend.md`), `applied`, and `thunk`
+    (`($m…) => value`). **`applied`** is the zero-parameter `function` whose body is not a lambda:
+    `($m…, $p1…$pn) => body($p1…$pn)` over `value_arity` fresh parameters, the body evaluated at each
+    call. When the body is a reference to a constrained function of that arity (`h = maxOf`) the call
+    goes straight to it, `maxOf($m$0, $p$1, $p$2)`, not through its eta-expansion.
+  - `defers(definition)` for `Cycles`: only `params` and `lambda` defer. `constant` runs at load,
+    `thunk` at every read (CK-34), and `applied` is a node that RUNS too (see the review amendment
+    below).
+  - `call(convention)`: `flat`, `f(ev…, args…)`, for `plain` and `function`; `applied`,
+    `f(ev…)(args…)`, for a `thunk`. A thunk's type is not a function, so no checked program calls
+    one; the answer is what its definition implies.
+  - `referenceArity(use)` for a reference in value position, and for a `top`/`ext` evidence term:
+    `null` is the bare name (`plain`), 0 the evidence applied (`thunk`, A.85), and `n` the
+    eta-expansion over the arity (`function`, A.25).
+- **`Edges` and `js/Reach` read none of these.** An edge is a reference whatever the callee's
+  convention, and reachability does not depend on when a body runs, so neither needed a change;
+  they are listed above because the brief assumed they did.
+- **The wide form is a fifth reading** (spike §9.2, A.87): `derivedEvidence(count)` answers
+  `positional` or `array`, and `max_positional_evidence` (4 096) lives in `Convention.zig`.
+  `Lower.derivedArrow` and every caller that packs a derived function's evidence ask it; `Lower`
+  keeps only the mechanics (the `$m` parameter and the array literal).
+
+*Amended 2026-09-24 by the manager on R2b's review, before the code changed:*
+
+- **`applied` RUNS for `Cycles`; the bullet above that makes `function` deferring is withdrawn for
+  it** (review B1). `language.md` §7 states the initialisation rule over the SOURCE: a value
+  written without parameters and without a `lambda` body is a VALUE, and may not be reachable from
+  its own initialiser. A `where` is a type annotation; it must not change which programs are
+  accepted. With `applied` deferring, `h = compose h g` under a `where` was accepted and overflowed
+  the stack at its first call, while its twin without the `where` is `cyclic_value` — which is also
+  what its twin would throw at load. So `defers` is true for `params` and `lambda` only, and a
+  point-free member of a recursive group (`biggest = go` with `go` calling `biggest`) is refused
+  exactly as without the `where`; written `biggest = \xs acc -> go xs acc` it defers. `Lower`
+  still DEFINES an `applied` value as an arrow: only the cycle reading changed. Fixtures:
+  `check/bad/EvidenceFunctionConstantCycle*.beni` (direct, mutual, partial application, through a
+  lambda-valued declaration) and the accepted controls `run/EvidenceFunctionRecursionAccepted.beni`.
+- **The `cyclic_value` message names the per-use case.** "A top-level value is computed once, when
+  the module is loaded" is false for a `thunk` and an `applied` value, which are computed at each
+  read or call; when the circle holds one, the message says so and names it. Other circles keep the
+  old text byte for byte.
+- **An `applied` body is evaluated at EACH CALL, and that is observable** (review S1): a
+  `Debug.log` in it prints per call, and a table it precomputes is rebuilt per call, where the same
+  value without the `where` computes it once. Kept for now and documented in `language.md` §6
+  *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count. Hoisting it once per
+  call site is CK-85 (unassigned).
+- **`constrained_constant` is narrowed to NON-function types** (review S3, rule 7). The bullet
+  above keeping its scope assumed only unannotated `pub` values were at risk; an unannotated `pub`
+  of function type (`pub equals = (==)`, `pub eqs = \a b -> a == b`, `pub bigger = maxOf`) is
+  defined, called and imported as the function it is, so the refusal bought no guarantee. It now
+  refuses only a zero-parameter unannotated `pub` whose type is not a function (a thunk). Spike
+  §10.10 and the message's hint are amended with it.
+- **`boundary.md` §4 check 4 reads `Convention`** (review S2): a `foreign`'s expected parameter
+  count is `use.evidence + use.arity`, and "not a function" is `use.arity == 0`, so an alias-typed
+  `foreign` is counted as its calls are made.
+- **"Is the body a lambda" is asked in one place**, `Convention.bodyIsLambda`, and
+  `Convention.definitionOf(dispatch, bir, decl)` is what `Cycles` and `Lower` read (review N2).
+  `dispatch_bytes` also refuses a `thunk` row with a non-zero arity (N1), and the flat call sites
+  that never meet a thunk (`receiverCall`, `typeDispatchExpr`, `applyEvidence`, `namedPartCall`)
+  assert `Convention.call` is `flat` (N3).
+
 ---
 
 ## 13. The checker → backend contract
@@ -1725,6 +1806,10 @@ arguments print one per line, two spaces deeper than the line holding the term. 
 arguments (a derived callee's evidence) print under the `site` line as `arg <term>` lines, before
 the first `evidence <term>` line, so the two keywords keep them apart (review of R2a, N6); below
 them, arguments are bare terms.
+
+*Amended 2026-09-24 by R2b.* The `decl` line is now
+`decl <name> evidence=<n> arity=<a> convention=<plain|function|thunk>`; every `tests/corpus/dispatch/`
+golden moved in its `decl` lines and nowhere else, and `dispatch/Conventions.beni` shows all three.
 
 ### 13.3 What `Lower` changes
 

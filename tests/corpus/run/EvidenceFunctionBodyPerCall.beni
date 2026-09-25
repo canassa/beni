@@ -1,0 +1,47 @@
+-- R2b review S1 (language.md §6 *Evaluation order*, checker-v2.md §12.5;
+-- CK-85): a value with no parameters, a function TYPE and a `where` clause
+-- is defined over its type's parameters, so its body — here the `let` that
+-- builds `table` — runs at EACH CALL, where the identical value without the
+-- `where` computes it once, at load. This pins today's count so that a
+-- change to it (CK-85's per-call-site hoisting) is deliberate: three calls
+-- of `lookup`, three `table` lines; three calls of `lookupPlain`, one.
+-- On 84e3cb1 `lookup` had CK-33's curried definition and the program printed
+-- JavaScript source text for its sum.
+import Node exposing (Program)
+
+
+lookup : a -> a
+    where a.eq : a, a -> Bool
+lookup =
+    let
+        table =
+            Debug.log (List.range 1 3) "table (where)"
+    in
+    \x ->
+        if List.length table == 3 && x == x then
+            x
+
+        else
+            x
+
+
+lookupPlain : Int -> Int
+lookupPlain =
+    let
+        table =
+            Debug.log (List.range 1 3) "table (plain)"
+    in
+    \x ->
+        if List.length table == 3 then
+            x
+
+        else
+            x
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (lookup 1 + lookup 2 + lookup 3)
+        , String.fromInt (lookupPlain 1 + lookupPlain 2 + lookupPlain 3)
+        ]

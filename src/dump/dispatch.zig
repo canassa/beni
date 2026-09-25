@@ -58,8 +58,8 @@ pub fn write(
     for (bir.decls, 0..) |d, i| {
         if (!d.kind.isValue()) continue;
         const requirements = dispatch.declRequirements(@intCast(i));
-        const arity: u16 = if (i < dispatch.decls.len) dispatch.decls[i].value_arity else 0;
-        try w.print("  decl {s} evidence={d} arity={d}\n", .{ interner.slice(bir.symbol(d.name)), requirements.len, arity });
+        const info: Dispatch.DeclInfo = if (i < dispatch.decls.len) dispatch.decls[i] else .{};
+        try w.print("  decl {s} evidence={d} arity={d} convention={s}\n", .{ interner.slice(bir.symbol(d.name)), requirements.len, info.value_arity, @tagName(info.convention) });
         for (requirements, 0..) |e, k| try cx.writeRequirement(w, k, e);
     }
     // D5's constrained `let`s (§13.1). Empty until R14; printed so the day

@@ -1,14 +1,14 @@
 module LiteralEvidence
-  decl gen evidence=1 arity=2
+  decl gen evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare
-  decl eqGen evidence=1 arity=2
+  decl eqGen evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=eq
-  decl ints evidence=0 arity=0
-  decl floats evidence=0 arity=0
-  decl strings evidence=0 arity=0
-  decl sameInts evidence=0 arity=0
-  decl pairOfLiterals evidence=0 arity=0
-  decl cmp evidence=1 arity=2
+  decl ints evidence=0 arity=0 convention=plain
+  decl floats evidence=0 arity=0 convention=plain
+  decl strings evidence=0 arity=0 convention=plain
+  decl sameInts evidence=0 arity=0 convention=plain
+  decl pairOfLiterals evidence=0 arity=0 convention=plain
+  decl cmp evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare
   derived 0 compare t2 context=2
     context 0 param=0 method=compare

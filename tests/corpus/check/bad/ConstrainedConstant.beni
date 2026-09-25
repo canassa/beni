@@ -1,11 +1,16 @@
--- check/bad: §10.10. `(==)` is a lambda over a method call (§3.1, A.22), so
--- `equals` is a `pub` value of NO beni parameters whose inferred scheme
--- carries `a.eq`. A value that needs a method has to receive it, which would
--- make `equals` a function of one hidden argument (§8.1) and change its type
+-- check/bad: §10.10. `blank` is a `pub` value of NO beni parameters and a
+-- NON-function type whose inferred scheme carries `k.compare`. A value that
+-- needs a method has to receive it, which would make `blank` a thunk of one
+-- hidden argument (§8.1, checker-v2.md §12.5) and change what its type says
 -- across the module boundary, so the checker refuses it.
 --
--- It must be UNANNOTATED: with `pub equals : a, a -> Bool` the annotation
--- declares `a` rigid with an empty constraint set and the body's requirement
--- is `missing_where_constraint` (§10.4) instead.
-pub equals =
-    (==)
+-- It must be UNANNOTATED: with `pub blank : Dict k v` the annotation
+-- declares `k` rigid with an empty constraint set and the body's requirement
+-- is `missing_where_constraint` (§10.4) instead. And its type must not be a
+-- function: `pub equals = (==)` is accepted since R2b's review (S3), see
+-- `run/ConstrainedPubFunctionConstant/`.
+import Dict
+
+
+pub blank =
+    Dict.fromList []

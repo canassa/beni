@@ -1,15 +1,15 @@
 module Gen
-  decl before evidence=1 arity=2
+  decl before evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=compare
-  decl same evidence=1 arity=2
+  decl same evidence=1 arity=2 convention=function
     requirement 0 quantified=0 var=a method=eq
   site 12 callee param 0
   site 25 callee param 0
 module Main
-  decl ints evidence=0 arity=0
-  decl sameInts evidence=0 arity=0
-  decl floats evidence=0 arity=0
-  decl strings evidence=0 arity=0
+  decl ints evidence=0 arity=0 convention=plain
+  decl sameInts evidence=0 arity=0 convention=plain
+  decl floats evidence=0 arity=0 convention=plain
+  decl strings evidence=0 arity=0 convention=plain
   site 4
     evidence primitive num_compare
   site 9

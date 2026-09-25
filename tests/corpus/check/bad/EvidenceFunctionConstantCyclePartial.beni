@@ -1,0 +1,29 @@
+-- R2b review B1: the self-reference hidden in a partial application.
+-- `compose h _` is a lambda over `h`, but `applyTo` CALLS it while `h` is
+-- being computed, so `h` is on its own initialiser's circle:
+-- `cyclic_value`, as without the `where`. On 84e3cb1 it checks clean and
+-- overflows the stack when run.
+compose : (b -> c), (a -> b) -> (a -> c)
+compose f g =
+    \x -> f (g x)
+
+
+keep : a -> a
+    where a.eq : a, a -> Bool
+keep x =
+    if x == x then
+        x
+
+    else
+        x
+
+
+applyTo : a, (a -> b) -> b
+applyTo x f =
+    f x
+
+
+h : a -> a
+    where a.eq : a, a -> Bool
+h =
+    applyTo keep (compose h _)

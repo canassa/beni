@@ -1,5 +1,5 @@
 module NoForeignDerivedRow
-  decl same evidence=0 arity=2
+  decl same evidence=0 arity=2 convention=plain
   derived 0 eq NoForeignDerivedRow.Hidden context=0
     body 0 ext Basics eq
   site 9 callee derived 0
