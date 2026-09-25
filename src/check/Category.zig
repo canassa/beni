@@ -54,5 +54,9 @@ pub const Category = struct {
         /// The value side of a `let pattern = value`.
         destructure,
         schema_conversion,
+        /// Checker v2: a requirement that came from a `where` clause, checked
+        /// against the method type it resolved to (checker-v2.md §9.2, CK-55).
+        /// v1 never makes one.
+        where_clause,
     };
 };

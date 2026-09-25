@@ -1,0 +1,18 @@
+-- CK-101: a receiver on a cycle that passes through two method boundaries —
+-- `A`'s `eq` asks its payload for `compare`, `B`'s `compare` asks its payload
+-- for `eq` — is ONE `infinite_type` at the comparison, written as its
+-- structure (checker-v2.md §9.5: the derivability verdict is one iterative
+-- walk over `(node, method)` pairs, coloured per pair, so the cycle is met
+-- whichever method the boundaries alternate through; §8.2, CK-57). On
+-- 68186fa v1's `walkDerivable` recurses once per boundary and overflows the
+-- stack; R6a's first round did the same (review B2, probe `cyc/`).
+import Pa exposing (A)
+import Pb exposing (B)
+
+
+f x =
+    if List.isEmpty [ x, A (B x) ] then
+        ( x, 1 ) == ( x, 1 )
+
+    else
+        False

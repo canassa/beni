@@ -151,6 +151,149 @@ fn openTries(arena: std.mem.Allocator, n: usize) ![]const u8 {
     return out.items;
 }
 
+// CK-03, CK-42 and CK-80 under checker v2, fixed by R6a (2026-09-25). Each is
+// still a pending scenario under v1 (`pending_test.zig`), which is frozen and
+// stays red; these are v2's twins, as CK-96 to CK-98 are v2-only.
+//
+// CK-03: `( y, y ) == y` makes the receiver cyclic. v2's eager drain runs the
+// resolver's cycle-safe derivability walk right after the node that closes
+// the cycle (checker-v2.md §9.5), so it is ONE `infinite_type` at the `==`
+// and the check ends: under 10 ms (ReleaseFast, CPU) on R6a, where v1 never
+// finishes. The bound is `pending_test.zig`'s, 500 ms.
+test "CK-03: a cyclic receiver in a `let` reports infinite_type within 500 ms (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("Cyclic.beni",
+        \\f : Int -> Int
+        \\f z =
+        \\    let
+        \\        k y =
+        \\            ( y, y ) == y
+        \\    in
+        \\    z
+        \\
+    );
+    const verdict = try s.bounded(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--checker=v2", "Cyclic.beni" }, 500, "infinite_type");
+    try s.finish("CK-03", verdict);
+}
+
+// CK-42: n declarations, each comparing its own nominal type with `==`. v2
+// finds a method by P3's index (one binary search), not a scan of the
+// declarations, and keeps no site lists. Its control (`x == x` on an `Int`)
+// is linear too — v2 has no capability re-settling, CK-75's residue — so the
+// scenario is the plain ratio of the nominal program; `pending_test.zig`'s
+// v1 scenario subtracts the control because v1's is not. Calibration
+// (ReleaseFast, CPU, R6a): the module's `check` event is 34 / 69 / 136 ms at
+// 8 000 / 16 000 / 32 000 declarations, and the control 23 / 46 / 93 ms, so n
+// = 8 000 keeps the fixed build clear of start-up.
+test "CK-42: nominal dispatch is linear in the number of declarations (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    const nominal = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    T{d} x == T{d} x\n\n\n";
+    try s.w.write("E.beni", try generate(s.arena(), 8_000, nominal, 6));
+    try s.w.write("E2.beni", try generate(s.arena(), 16_000, nominal, 6));
+    const verdict = try s.ratioWith("E.beni", "E2.beni", 8_000, &.{"--checker=v2"});
+    try s.finish("CK-42", verdict);
+}
+
+// CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied n
+// deep — must cost its n distinct nodes, not its 2^n leaves. v2's
+// derivability verdict walks each `(node, method)` pair once, and a wanted on
+// a receiver already given a DERIVED answer for the same method is an alias
+// of it (checker-v2.md §9, *As built by R6a* as revised by its review). Calibration (ReleaseFast,
+// CPU, R6a): depth 9 / 18 / 36 / 72 all under 10 ms; v1 takes 190 ms at 18.
+test "CK-80: == on a value whose type is a doubling DAG is linear in its depth (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("N9.beni", try nestedPair(s.arena(), 9));
+    try s.w.write("N18.beni", try nestedPair(s.arena(), 18));
+    const verdict = try s.ratioWith("N9.beni", "N18.beni", 9, &.{"--checker=v2"});
+    try s.finish("CK-80", verdict);
+}
+
+// CK-101's timing twin (R6a's review, B2): `==` on a doubling DAG whose every
+// level passes two method boundaries that alternate the method — `A`'s `eq`
+// asks its payload for `compare`, `B`'s `compare` asks for `eq`. v2's
+// derivability verdict walks `(node, method)` pairs, each once per walk, so
+// the cost is the distinct pairs (checker-v2.md §9 *As built by R6a*, §18).
+// v1 recurses once per boundary with fresh marks and does not finish at depth
+// 9. Calibration (ReleaseFast, CPU, R6a's review): depth 9 / 18, 6 / 6 ms.
+test "CK-101: == across alternating method boundaries on a doubling DAG is linear in its depth (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    for ([_][]const u8{ "A9", "A18" }) |dir| {
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "{s}/Pa.beni", .{dir}), alternating_a);
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "{s}/Pb.beni", .{dir}), alternating_b);
+    }
+    try s.w.write("A9/Main.beni", try alternatingDag(s.arena(), 9));
+    try s.w.write("A18/Main.beni", try alternatingDag(s.arena(), 18));
+    const verdict = try s.ratioWith("A9", "A18", 9, &.{"--checker=v2"});
+    try s.finish("CK-101", verdict);
+}
+
+const alternating_a =
+    \\pub type A a = A a
+    \\
+    \\pub eq : A a, A a -> Bool
+    \\    where a.compare : a, a -> Order
+    \\eq l r =
+    \\    case ( l, r ) of
+    \\        ( A x, A y ) ->
+    \\            x.compare y == EQ
+    \\
+;
+
+const alternating_b =
+    \\pub type B a = B a
+    \\
+    \\pub compare : B a, B a -> Order
+    \\    where a.eq : a, a -> Bool
+    \\compare l r =
+    \\    case ( l, r ) of
+    \\        ( B x, B y ) ->
+    \\            if x.eq y then EQ else LT
+    \\
+;
+
+/// `w = f (f (… (f 1)))`, `depth` applications of `f x = ( A (B x), [ A (B x) ] )`,
+/// and `w == w`.
+fn alternatingDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "import Pa exposing (A)\nimport Pb exposing (B)\n\n\nf x =\n    ( A (B x), [ A (B x) ] )\n\n\nv =\n    let\n        w =\n            ");
+    for (0..depth) |_| try out.appendSlice(arena, "f (");
+    try out.append(arena, '1');
+    for (0..depth) |_| try out.append(arena, ')');
+    try out.appendSlice(arena, "\n    in\n    w == w\n");
+    return out.items;
+}
+/// `pending_test.zig`'s `generate`, verbatim: `count` copies of `template`,
+/// `{d}` the index, `per` holes in each.
+fn generate(arena: std.mem.Allocator, count: usize, comptime template: []const u8, comptime per: usize) ![]const u8 {
+    comptime std.debug.assert(std.mem.count(u8, template, "{d}") == per);
+    var out: std.ArrayList(u8) = .empty;
+    for (0..count) |i| {
+        var rest: []const u8 = template;
+        while (std.mem.indexOf(u8, rest, "{d}")) |at| {
+            try out.appendSlice(arena, rest[0..at]);
+            try out.print(arena, "{d}", .{i});
+            rest = rest[at + 3 ..];
+        }
+        try out.appendSlice(arena, rest);
+    }
+    return out.items;
+}
+
+/// `w = f (f (… (f 1)))`, `depth` applications of `f x = ( x, [ x ] )`, and
+/// `w == w` (`pending_test.zig`'s `nestedPair`).
+fn nestedPair(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "f x =\n    ( x, [ x ] )\n\n\nv =\n    let\n        w =\n            ");
+    for (0..depth) |_| try out.appendSlice(arena, "f (");
+    try out.append(arena, '1');
+    for (0..depth) |_| try out.append(arena, ')');
+    try out.appendSlice(arena, "\n    in\n    w == w\n");
+    return out.items;
+}
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │ HARNESS                                                                 │
 // └─────────────────────────────────────────────────────────────────────────┘
@@ -253,6 +396,23 @@ const Perf = struct {
         };
     }
 
+    /// One run under `bound_ms` of CPU time, the best of 3, that exits 1 and
+    /// reports `code`: `pending_test.zig`'s `bounded`, a failed compile an
+    /// expected outcome here.
+    fn bounded(s: *Perf, args: []const []const u8, bound_ms: i64, code: []const u8) !Verdict {
+        for (0..3) |_| {
+            // Killed at twice the bound of WALL time, judged on CPU time.
+            const run = try s.timed(args, bound_ms * 2) orelse continue;
+            if (run.ms > bound_ms) continue;
+            const quoted = try std.fmt.allocPrint(s.arena(), "\"code\":\"{s}\"", .{code});
+            if (run.result.exit_code != 1 or std.mem.indexOf(u8, run.result.stderr, quoted) == null) {
+                std.debug.print("a bounded run exited {d}:\n{s}\n", .{ run.result.exit_code, run.result.stderr[0..@min(run.result.stderr.len, 400)] });
+                return error.PerfRunFailed;
+            }
+            return .{ .green = true, .detail = try std.fmt.allocPrint(s.arena(), "{s} in {d} ms, CPU time", .{ code, run.ms }) };
+        }
+        return .{ .green = false, .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms of CPU time", .{bound_ms}) };
+    }
     fn expectClean(r: world.Result) !void {
         if (r.exit_code == 0) return;
         std.debug.print("a timed run exited {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 400)] });

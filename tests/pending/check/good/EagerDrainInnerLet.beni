@@ -1,0 +1,57 @@
+-- CK-100: eager draining (checker-v2.md §9.1, round 3 B-1) resolves a
+-- wanted at the constraint node that binds its receiver, even inside a
+-- nested `let`, and what the resolution instantiates is tied to the use.
+-- `b.unbox ()` rides on the parameter `b` until `[ b, Box 3 ]`, inside `w`'s
+-- own `let`, binds it; `u` is then `b`'s element: `inner : Box number ->
+-- ( number, List (Box number) )` (printed with `a`, CK-94). And round 3's
+-- `rq2` (`run/ScrutineeMethodFirst`'s shape): `q` generalises and `pair :
+-- Int -> ( Int, Int )`. On 68186fa v1 publishes `inner : Box a -> ( a2, List
+-- (Box a) )` and `pair : Int -> ( a, b )`: the results are not tied to the
+-- methods' types. The oracle twins are the annotated `pair` of
+-- `check/bad/MethodResultTooGeneral` and the direct `u = unbox b ()`.
+type Box a
+    = Box a
+
+
+type K
+    = K Int
+
+
+pub unbox : Box a, () -> a
+unbox (Box v) _ =
+    v
+
+
+pub combine : Box a, z -> a
+combine (Box a) z =
+    a
+
+
+pub h : K, () -> Box Int
+h (K m) u =
+    Box m
+
+
+pub inner b =
+    let
+        u =
+            b.unbox ()
+
+        w =
+            let
+                z =
+                    [ b, Box 3 ]
+            in
+            z
+    in
+    ( u + 1, w )
+
+
+pub pair n =
+    case (\y -> y.h ()) (K n) of
+        r ->
+            let
+                q z =
+                    r.combine z
+            in
+            ( q 1, q "s" )

@@ -22,6 +22,8 @@ const Messages = @import("Messages.zig");
 const Report = @import("Report.zig");
 const Solve = @import("Solve.zig");
 const Walk = @import("Walk.zig");
+const Evidence = @import("Evidence.zig");
+const Resolve = @import("Resolve.zig");
 
 const Var = TypeStore.Var;
 const Error = Solve.Error;
@@ -95,8 +97,13 @@ pub fn drain(s: *Solve, boundary: bool) Error!void {
         batch.clearRetainingCapacity();
         try batch.appendSlice(gpa, s.ready.items);
         s.ready.clearRetainingCapacity();
-        std.mem.sort(u32, batch.items, &s.obligations, seqLessThan);
+        std.mem.sort(u32, batch.items, s, seqLessThan);
         for (batch.items) |raw| {
+            // A wanted: the resolver's (§9.1, one `seq` for both kinds).
+            if (raw & Evidence.queued_wanted != 0) {
+                try Resolve.drained(s, @enumFromInt(raw & ~Evidence.queued_wanted));
+                continue;
+            }
             const id: Id = @enumFromInt(raw);
             const row = s.obligations.rowPtr(id);
             if (row.state != .ready) continue;
@@ -110,8 +117,13 @@ pub fn drain(s: *Solve, boundary: bool) Error!void {
     }
 }
 
-fn seqLessThan(o: *const Obligations, a: u32, b: u32) bool {
-    return o.row(@enumFromInt(a)).seq < o.row(@enumFromInt(b)).seq;
+fn seqOf(s: *const Solve, raw: u32) u32 {
+    if (raw & Evidence.queued_wanted != 0) return s.evidence.get(@enumFromInt(raw & ~Evidence.queued_wanted)).seq;
+    return s.obligations.row(@enumFromInt(raw)).seq;
+}
+
+fn seqLessThan(s: *const Solve, a: u32, b: u32) bool {
+    return seqOf(s, a) < seqOf(s, b);
 }
 
 /// Decide `id`, whose state the caller has made `done`. `default` is §8.1
@@ -188,7 +200,7 @@ fn equatable(s: *Solve, id: Id, row: Row) Error!void {
     if (s.obligations.row(row.origin).reported) return;
     const st = s.store();
     if (st.content(st.find(row.vars[0])) == .flex) return reopen(s, id);
-    const reason: Report.EquatableReason = switch (try s.instances.equatable(row.vars[0], row.region, row.origin)) {
+    const reason: Report.EquatableReason = switch (try s.marker.equatable(row.vars[0], row.region, row.origin)) {
         .yes => return,
         .function => .function,
         .opaque_type => .opaque_type,
@@ -304,6 +316,9 @@ pub fn defaults(s: *Solve, rank: u32) Error!bool {
         s.obligations.rowPtr(id).state = .done;
         try decide(s, id, true);
         applied_any = true;
+        // A default can ready a wanted whose resolution decides another
+        // `?` (R6a, N9): drained before the next default is applied.
+        if (s.ready.items.len != 0) try drain(s, false);
     }
     return applied_any or s.ready.items.len != 0;
 }

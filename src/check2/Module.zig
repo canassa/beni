@@ -2,19 +2,20 @@
 //! each, with no re-settling (I12, CK-15). `Driver.checkInner` runs it for
 //! every module `Options.usesV2` selects.
 //!
-//! | Phase | What it does here (R4b)                                                                 |
+//! | Phase | What it does here (R6a)                                                                 |
 //! |-------|-----------------------------------------------------------------------------------------|
-//! | P0    | `Subset.scan`: a module that needs a later slice says so, once, and stops               |
 //! | P1    | the store, the tables, `Schema.State`, the report                                       |
-//! | P2    | every annotated value's published scheme, read at rank `generalized`                    |
+//! | P2    | every annotated value's published scheme, read at rank `generalized`, with its `where` |
+//! | P3    | the own-name index: every value by name, for the module rule (CK-42)                    |
 //! | P4    | per top-level group in SCC order: generate, solve, boundary (`Solve.group`)             |
 //! | P7    | exhaustiveness over the declarations whose failure bit is clear                         |
 //! | P8    | the interface, through one publication routine (`Publish`); then `nesting_too_deep`s    |
 //! | P9    | the dispatch table, its round trip, `Cycles`, then the schema plan (no error in module) |
 //!
-//! P3 (the own-name index) serves resolution, R6a's; P5 (eager derived rows)
-//! is R8a's and P6 (elaboration) R6b's — `Subset.zig` keeps every module
-//! that would need them out of R4b.
+//! P5 (eager derived rows) is R8a's and P6 (elaboration) R6b's: a module that
+//! needs P6 is checked, and refused by `build` (`Subset.zig`, `js/Emit.zig`).
+//! A module that met a construct of R7's keeps only its `not_implemented`s
+//! (`Report.keepOnlyRefusals`).
 //!
 //! A module an earlier phase reported on, or the graph poisoned, is checked
 //! silently (checker.md §4.3): `Report` drops its messages, once.
@@ -46,7 +47,8 @@ const Context = @import("Context.zig");
 const Publish = @import("Publish.zig");
 const Report = @import("Report.zig");
 const Solve = @import("Solve.zig");
-const Subset = @import("Subset.zig");
+const Resolve = @import("Resolve.zig");
+const Evidence = @import("Evidence.zig");
 const Tree = @import("constrain/Tree.zig");
 const Decl = @import("constrain/Decl.zig");
 
@@ -75,6 +77,8 @@ pub const Input = struct {
     plan: *SchemaPlan,
     roundtrip_interfaces: bool = false,
     roundtrip_dispatch: bool = false,
+    /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
+    informational: bool = false,
     /// This module's slot of `Check.modules`, under `keep_stores`.
     keep: ?*Check.Module = null,
 };
@@ -86,12 +90,7 @@ pub fn check(in: Input) Error!Check.Counters {
     const token = if (in.profile) |p| p.begin() else null;
     defer if (in.profile) |p| p.end(in.tid, token.?, .check, file.int(), 0);
     const quiet = in.quiet or in.graph.isPoisoned(in.module);
-
-    // P0.
-    if (Subset.scan(bir, in.interfaces)) |missing| {
-        try refuse(in, bir, quiet, missing);
-        return .{};
-    }
+    const first_diagnostic = in.diagnostics.items.len;
 
     // P1.
     var owned_store: TypeStore = .init(std.heap.page_allocator);
@@ -142,13 +141,31 @@ pub fn check(in: Input) Error!Check.Counters {
         var b = cx.builder(.flex, TypeStore.generalized);
         defer b.deinit();
         decl_scheme[i] = (try cx.readAnnotation(&b, annotation, @intCast(i))).toOptional();
+        // The `where` clause is read with the SAME builder, so a variable a
+        // requirement names is the annotation's (static-dispatch-spike.md
+        // §2.4): the scheme's requirements, which the writer publishes.
+        try Decl.attachWhere(&cx, d, &b, @intCast(i));
     }
+
+    // P3: the own-name index (§5, CK-42): every value by name, once.
+    const own_values = try ownIndex(scratch, bir);
 
     // P4.
     try schemas.settleProperties(in.types, gpa);
     var solver: Solve = undefined;
     solver.init(&cx, &report);
     defer solver.deinit();
+    solver.decl_scheme = decl_scheme;
+    solver.own_values = own_values;
+    solver.informational = in.informational;
+    solver.resolver.decl_requirements = try scratch.alloc(Dispatch.Range, bir.decls.len);
+    @memset(solver.resolver.decl_requirements, .empty);
+    // Whether each of this module's nominal types can derive `eq` and
+    // `compare`: v1's capability bits, over the method schemes known so far
+    // (`Types.settleDispatchCapabilities`, the shared table's own settle);
+    // again after a group that publishes an unannotated `pub eq` or
+    // `compare`. R8a replaces them with derived contexts (§11.2).
+    try in.types.settleDispatchCapabilities(gpa, in.module, in.graph, in.artifacts, store, decl_scheme);
     const groups = try bindingGroups(scratch, bir);
     var constrain_ns: u64 = 0;
     var solve_ns: u64 = 0;
@@ -171,6 +188,7 @@ pub fn check(in: Input) Error!Check.Counters {
             .rank = TypeStore.outermost,
             .local_type = local_type,
             .decl_scheme = decl_scheme,
+            .evidence = &solver.evidence,
         };
         defer g.deinit();
         const constrain_token = if (in.profile) |p| p.begin() else null;
@@ -189,10 +207,14 @@ pub fn check(in: Input) Error!Check.Counters {
         if (in.profile) |p| solve_ns += p.since(solve_token.?);
 
         var has_schema = false;
+        var has_method = false;
         for (members) |m| {
             decl_display[m.decl] = m.check;
-            if (bir.decls[m.decl].kind == .schema) has_schema = true;
+            const d = bir.decls[m.decl];
+            if (d.kind == .schema) has_schema = true;
+            if (d.kind.isValue() and d.is_pub and d.annotation == .none and Resolve.isWellKnownName(bir.symbol(d.name))) has_method = true;
         }
+        if (has_method) try in.types.settleDispatchCapabilities(gpa, in.module, in.graph, in.artifacts, store, decl_scheme);
         // v1's order: a schema's endpoint properties can depend on the
         // conversions its group just inferred.
         if (has_schema) try schemas.settleProperties(in.types, gpa);
@@ -243,7 +265,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
 
     // P9.
-    try finishTable(in, bir, store, decl_scheme, solver.tries.items);
+    try finishTable(in, bir, store, decl_scheme, &solver);
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (!quiet) {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
@@ -257,6 +279,8 @@ pub fn check(in: Input) Error!Check.Counters {
     else
         .empty;
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
+
+    report.keepOnlyRefusals(first_diagnostic);
 
     // A declaration with no body shows its scheme.
     for (decl_display, decl_scheme) |*display, scheme| {
@@ -273,31 +297,6 @@ pub fn check(in: Input) Error!Check.Counters {
         .generalisations = solver.generalisations,
         .instantiations = solver.instantiate.instantiations,
     };
-}
-
-/// P0's answer: one `not_implemented`, and what a failed check leaves —
-/// `Types.ref_ids` for the shell record every term reader indexes, and
-/// `none`-filled tables for `dump --stage=types`. No scheme is published.
-fn refuse(in: Input, bir: *const Bir, quiet: bool, missing: Subset.Missing) Error!void {
-    const gpa = in.gpa;
-    const ref_ids = &in.types.ref_ids[in.module.int()];
-    gpa.free(ref_ids.*);
-    ref_ids.* = &.{};
-    ref_ids.* = try in.types.resolveRefs(gpa, &in.interfaces[in.module.int()], in.graph);
-    if (in.keep) |k| {
-        k.decl_scheme = try newTable(gpa, bir.decls.len);
-        k.decl_display = try newTable(gpa, bir.decls.len);
-        k.local_type = try newTable(gpa, bir.locals.len);
-    }
-    const message = try std.fmt.allocPrint(gpa, "checker v2 cannot check this module until slice {s}: {s}.\n", .{ missing.slice.name(), missing.slice.reason() });
-    // Through the one emit path (§15.1, review S7).
-    try Report.appendTo(gpa, in.diagnostics, quiet, .{
-        .code = .not_implemented,
-        .module = in.module,
-        .region = missing.region,
-        .token = missing.token,
-        .message = message,
-    });
 }
 
 fn newTable(gpa: Allocator, len: usize) Error![]Var.Optional {
@@ -365,24 +364,87 @@ fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
     return a.int() < b.int();
 }
 
-/// P9's table: one `DeclInfo` per declaration — no site, no term, no
-/// requirement in R4b's subset — with `value_arity` read off the scheme and
-/// the convention `Convention.of` gives it (§12.5).
-fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, tries: []const Dispatch.Try) Error!void {
-    const decls = try in.gpa.alloc(Dispatch.DeclInfo, bir.decls.len);
+/// P9's table (§13.1), as far as `check` reads it before P6 (R6b):
+///
+///   - one `DeclInfo` per declaration: `value_arity` from the scheme, its
+///     requirement list in canonical order (§12.1, `Evidence.requirements`
+///     — an annotation's `where` clause, or what promotion kept), and the
+///     convention `Convention.of` gives it with that count (§12.5);
+///   - the `tries` rows;
+///   - one site per `method_call`/`type_dispatch` whose callee resolved to a
+///     value of this module or another (`top`, `ext`), with that callee and
+///     no evidence: the edge `Cycles` reads (`Edges.declEdges`' third leg),
+///     which a method call adds and `Bir.refs` cannot.
+///
+/// A module that needs evidence elaborated never reaches `Lower` before
+/// R6b: `js/Emit.zig` refuses to build it (`Subset.needsElaboration`).
+fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, solver: *Solve) Error!void {
+    const gpa = in.gpa;
+    const scratch = in.scratch.allocator();
+    const decls = try gpa.alloc(Dispatch.DeclInfo, bir.decls.len);
+    errdefer gpa.free(decls);
+    var requirements: std.ArrayList(Dispatch.Requirement) = .empty;
+    errdefer requirements.deinit(gpa);
+    var reqs: std.ArrayList(Evidence.Requirement) = .empty;
+    defer reqs.deinit(scratch);
     for (decls, decl_scheme, 0..) |*info, scheme, i| {
         const arity: u16 = if (scheme.unwrap()) |v| std.math.cast(u16, store.paramCount(v)) orelse std.math.maxInt(u16) else 0;
+        // An annotation's list is its `where` clause's; an unannotated
+        // declaration's is what promotion kept (`Resolve.close`). Only a
+        // `where` clause is walked here, so a dispatch-free module pays nothing.
+        const start: u32 = @intCast(requirements.items.len);
+        const d = bir.decls[i];
+        if (d.kind.isValue() and d.annotation != .none and d.where_start != d.where_end) {
+            reqs.clearRetainingCapacity();
+            if (scheme.unwrap()) |v| try Evidence.requirements(store, in.interner, v, scratch, &reqs);
+            for (reqs.items) |r| try requirements.append(gpa, .{ .quantified = r.quantified, .var_name = store.flagsOf(r.root).name, .method = r.method });
+        } else {
+            const kept = solver.resolver.decl_requirements[i];
+            try requirements.appendSlice(gpa, solver.resolver.requirement_rows.items[kept.start..][0..kept.len]);
+        }
+        const count: u32 = @intCast(requirements.items.len - start);
         info.* = .{
+            .requirements = .{ .start = start, .len = count },
             .value_arity = arity,
-            .convention = Convention.of(bir.decls[i].params, Convention.bodyIsLambda(bir, @intCast(i)), arity, 0),
+            .convention = Convention.of(bir.decls[i].params, Convention.bodyIsLambda(bir, @intCast(i)), arity, count),
         };
     }
-    in.dispatch.deinit(in.gpa);
+    var terms: std.ArrayList(Dispatch.Term) = .empty;
+    errdefer terms.deinit(gpa);
+    var sites: std.ArrayList(Dispatch.Site) = .empty;
+    errdefer sites.deinit(gpa);
+    const callees = try scratch.dupe(Evidence.Callee, solver.evidence.callees.items);
+    defer scratch.free(callees);
+    std.mem.sort(Evidence.Callee, callees, {}, calleeLessThan);
+    for (callees) |c| {
+        var id = c.wanted;
+        while (solver.evidence.answer(id) == .alias) id = solver.evidence.answer(id).alias;
+        const term: Dispatch.Term = switch (solver.evidence.answer(id)) {
+            .top => |t| .{ .top = .{ .decl = @enumFromInt(t.decl) } },
+            .group_call => |d| .{ .top = .{ .decl = @enumFromInt(d) } },
+            .ext => |e| .{ .ext = .{ .module = e.module, .value = e.value } },
+            else => continue,
+        };
+        const at: Dispatch.TermIndex = @enumFromInt(@as(u32, @intCast(terms.items.len)));
+        try terms.append(gpa, term);
+        try sites.append(gpa, .{ .inst = c.inst, .callee = at.toOptional() });
+    }
+    in.dispatch.deinit(gpa);
     // Every `?` the solver decided, by instruction (`checker.md` §6.5): the
     // shape is the one thing about a `?` the backend cannot work out.
-    const sorted = try in.gpa.dupe(Dispatch.Try, tries);
+    const sorted = try gpa.dupe(Dispatch.Try, solver.tries.items);
     std.mem.sort(Dispatch.Try, sorted, {}, tryLessThan);
-    in.dispatch.* = .{ .decls = decls, .tries = sorted };
+    in.dispatch.* = .{
+        .decls = decls,
+        .tries = sorted,
+        .requirements = try requirements.toOwnedSlice(gpa),
+        .terms = try terms.toOwnedSlice(gpa),
+        .sites = try sites.toOwnedSlice(gpa),
+    };
+}
+
+fn calleeLessThan(_: void, a: Evidence.Callee, b: Evidence.Callee) bool {
+    return a.inst.int() < b.inst.int();
 }
 
 /// `--roundtrip-dispatch` on the table (v1's, verbatim for the table): right
@@ -426,4 +488,23 @@ fn roundtripPlan(in: Input, report: *Report) Error!void {
 
 fn tryLessThan(_: void, a: Dispatch.Try, b: Dispatch.Try) bool {
     return a.inst.int() < b.inst.int();
+}
+
+/// P3 (§5, CK-42): every value of the module by name, sorted by symbol, so
+/// the module rule's lookup is one binary search and never a scan of the
+/// declarations per resolution (v1's `ownDeclNamed`). A name declared twice
+/// was refused by resolution; the first declaration wins, as v1's scan did.
+fn ownIndex(scratch: Allocator, bir: *const Bir) Error![]const Solve.OwnValue {
+    var list: std.ArrayList(Solve.OwnValue) = .empty;
+    for (bir.decls, 0..) |d, i| {
+        if (!d.kind.isValue()) continue;
+        try list.append(scratch, .{ .name = bir.symbol(d.name), .decl = @intCast(i) });
+    }
+    std.mem.sort(Solve.OwnValue, list.items, {}, ownLessThan);
+    return list.items;
+}
+
+fn ownLessThan(_: void, a: Solve.OwnValue, b: Solve.OwnValue) bool {
+    if (a.name != b.name) return @intFromEnum(a.name) < @intFromEnum(b.name);
+    return a.decl < b.decl;
 }

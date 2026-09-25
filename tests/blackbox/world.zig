@@ -555,7 +555,22 @@ pub fn spawnAndCapture(
 
     var stdout: std.ArrayList(u8) = .empty;
     var stderr: std.ArrayList(u8) = .empty;
-    try drain(arena, io, &child, &stdout, &stderr, timeout_ms);
+    if (try drain(arena, io, &child, &stdout, &stderr, timeout_ms) == .crash_banner) {
+        // Zig's crash handler ends every panic and fault in `abort()`: the
+        // child is killed at its banner (the deferred `kill`), and the run
+        // reads as the SIGABRT it was going to be. A Debug stack trace of an
+        // overflowed stack takes longer to print than a case's timeout, so
+        // without this one crash signed `timeout` or `crash=ABRT` by machine
+        // speed (R6a's round-2 review, S2).
+        return .{
+            .cpu_ms = null,
+            .exit_code = 255,
+            .term = .{ .signal = .ABRT },
+            .stdout = stdout.items,
+            .stderr = stderr.items,
+            .diagnostics = &.{},
+        };
+    }
 
     const term = try child.wait(io);
     const cpu_ms: ?i64 = if (comptime @TypeOf(child.resource_usage_statistics.rusage) == ?std.posix.rusage) cpu: {
@@ -578,7 +593,8 @@ pub fn spawnAndCapture(
 
 /// Read both pipes to EOF, multiplexed with `poll`, within the deadline.
 /// A pipe that fills while the other is being read would block the child
-/// forever; polling both is what prevents that.
+/// forever; polling both is what prevents that. Stops early, with
+/// `.crash_banner`, at a line of stderr that is Zig's crash banner.
 fn drain(
     arena: Allocator,
     io: Io,
@@ -586,7 +602,7 @@ fn drain(
     stdout: *std.ArrayList(u8),
     stderr: *std.ArrayList(u8),
     timeout_ms: i64,
-) !void {
+) !Drained {
     const out_file = child.stdout.?;
     const err_file = child.stderr.?;
     var fds = [2]std.posix.pollfd{
@@ -616,9 +632,36 @@ fn drain(
                 continue;
             }
             if (sinks[i].items.len + n > max_stream_bytes) return error.StreamTooLong;
+            const before = sinks[i].items.len;
             try sinks[i].appendSlice(arena, buf[0..n]);
+            if (i == 1 and hasCrashBanner(sinks[i].items, before)) return .crash_banner;
         }
     }
+    return .eof;
+}
+
+const Drained = enum { eof, crash_banner };
+
+/// Whether a line of `text` that ends at or after `from` is Zig's crash
+/// banner: `std.debug`'s panic (`panic: …`, `thread <id> panic: …`) or its
+/// fault handler (`Segmentation fault at address …` and the other signal
+/// names it prints). A line is judged once it is complete.
+fn hasCrashBanner(text: []const u8, from: usize) bool {
+    var start = if (std.mem.lastIndexOfScalar(u8, text[0..from], '\n')) |nl| nl + 1 else 0;
+    while (std.mem.indexOfScalarPos(u8, text, start, '\n')) |end| : (start = end + 1) {
+        if (crashBanner(text[start..end])) return true;
+    }
+    return false;
+}
+
+fn crashBanner(line: []const u8) bool {
+    for ([_][]const u8{ "Segmentation fault ", "Illegal instruction ", "Bus error ", "Arithmetic exception ", "panic: " }) |prefix| {
+        if (std.mem.startsWith(u8, line, prefix)) return true;
+    }
+    if (!std.mem.startsWith(u8, line, "thread ")) return false;
+    var i: usize = "thread ".len;
+    while (i < line.len and std.ascii.isDigit(line[i])) i += 1;
+    return i > "thread ".len and std.mem.startsWith(u8, line[i..], " panic: ");
 }
 
 /// The two lists `tests/pending/` keeps beside its fixtures

@@ -1,9 +1,8 @@
 //! v2's constraint tree and the generator's state (checker-v2.md §6).
 //!
 //! One tree per top-level binding group, generated in one pass and solved
-//! left to right (§6.1). The node set is v1's minus what v2 does not have
-//! yet (`method`, R6a's) or at all (the dead `equatable` marker node, CK-18),
-//! plus:
+//! left to right (§6.1). The node set is v1's minus what v2 does not have at
+//! all (the dead `equatable` marker node, CK-18), plus:
 //!
 //!   - `instantiate` names the VARIABLE to copy for a local or `top`
 //!     reference, resolved while the node is built (I11, §6.2), or leaves a
@@ -28,6 +27,7 @@ const Types = @import("../../check/Types.zig");
 const CategoryFile = @import("../../check/Category.zig");
 const Context = @import("../Context.zig");
 const Generalize = @import("../Generalize.zig");
+const Evidence = @import("../Evidence.zig");
 const Parse = @import("../../parse/Parse.zig");
 
 pub const Var = TypeStore.Var;
@@ -89,8 +89,14 @@ pub const Node = struct {
         /// `e?` (§8.6): `a` = `extra` index of a `Try`. Decided now when
         /// either side is known, else an obligation on both.
         try_,
-        /// A form the generator must never meet in R4b's subset: `internal`
-        /// at `region`, and `a` (the expected type) poisoned (review S1).
+        /// A method requirement at `region` (static-dispatch-spike.md §6.2
+        /// Rule U0; checker-v2.md §9.1): `a` = `extra` index of a `Method`.
+        /// Emitted after the receiver's constraints and before the
+        /// arguments', so a receiver already known is resolved inline and
+        /// seeds the arguments' types.
+        method,
+        /// A form the generator must never meet: `internal` at `region`, and
+        /// `a` (the expected type) poisoned (review S1).
         internal,
     };
 };
@@ -130,6 +136,20 @@ pub const TupleIndex = struct { index: u32, result: Var };
 /// `?`'s target (the declaration or `let` definition it returns from), and
 /// the instruction's own value (§8.6).
 pub const Try = struct { subject: Var, target: Var, value: Var };
+
+/// Payload of `Node.Tag.method`: the wanted a method call raises
+/// (checker-v2.md §4.2). `receiver` is the value's variable, or the
+/// annotation's rigid for a `type_dispatch`; `method_type` is the method's
+/// type at this use.
+pub const Method = struct {
+    name: Symbol,
+    receiver: Var,
+    method_type: Var,
+    /// `Evidence.Kind` as an integer.
+    kind: u32,
+    /// `type_dispatch` only: the type variable's name (`Symbol.Optional`).
+    var_name: u32,
+};
 
 /// Payload of `Node.Tag.record`: the literal meets `expected` as `record`,
 /// and `fields` constrains its fields.
@@ -201,6 +221,9 @@ pub const Generator = struct {
     /// references. Generation order guarantees the write comes first
     /// (§6.2, *As built by R4b*). Also what `dump --stage=types` prints.
     local_type: []Var.Optional,
+    /// The module's evidence tables: an annotated declaration's rigid
+    /// reading registers its `where` clause's givens here (§4.2).
+    evidence: *Evidence,
     /// Per declaration: its published scheme, or — for an unannotated
     /// member of the group being generated — its monomorphic variable.
     decl_scheme: []Var.Optional,
@@ -214,6 +237,10 @@ pub const Generator = struct {
     /// The result variable of the declaration being generated, when it has
     /// parameters: the target of a `?` whose instruction names none (§8.6).
     decl_result: ?Var = null,
+    /// The rigid variables the declaration being generated's annotation
+    /// introduced, for a `type_dispatch` to name (static-dispatch-spike.md
+    /// §4.2). Empty for an unannotated one.
+    decl_rigids: []const Types.Builder.Scoped = &.{},
     /// The `let` definitions with parameters being generated, innermost
     /// last, and their result variables: what a `?` inside one returns from.
     targets: std.ArrayList(Target) = .empty,

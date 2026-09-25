@@ -1,0 +1,18 @@
+-- CK-20: a rigid met more than once inside one derived shape is ONE
+-- `missing_where_constraint` per rigid and method at the comparison, and two
+-- rigids are two (checker-v2.md §9.2's rigid row, as built by R6a's review,
+-- F4). On 68186fa v1 checks all three clean (CK-20); R6a's first round said
+-- the same clause once per occurrence.
+f : a, a -> Bool
+f x y =
+    ( x, x ) == ( y, y )
+
+
+g : a, b -> Bool
+g x y =
+    ( x, y ) == ( x, y )
+
+
+h : a -> Bool
+h x =
+    { p = x, q = x, r = x } < { p = x, q = x, r = x }

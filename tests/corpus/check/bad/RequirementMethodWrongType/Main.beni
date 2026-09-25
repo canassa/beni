@@ -1,0 +1,18 @@
+-- check/bad: a method whose requirement finds the payload's method at the
+-- wrong type is `type_mismatch` naming that method's type, at the use — for
+-- a hand-written method (`show`) and for a well-known one a type declares
+-- (`eq`), and never a derivation's refusal (static-dispatch-spike.md §6.3.1;
+-- checker-v2.md §9.3 step 4). R6a's first round reported `no_methods_on_shape`
+-- and `not_equatable` with a false explanation (review F2).
+import Box exposing (Box)
+import K exposing (K)
+
+
+badShow : String
+badShow =
+    (Box.Box (K.K 1)).show ()
+
+
+badEq : Bool
+badEq =
+    Box.Box (K.K 1) == Box.Box (K.K 2)

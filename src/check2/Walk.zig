@@ -157,6 +157,20 @@ pub fn function(store: *TypeStore, v: Var) ?Function {
     };
 }
 
+/// A tuple's elements or an application's arguments, `v` resolved through
+/// aliases, or none: the positions a derived shape is answered over (§9.3
+/// step 5). A view into the store's `extra`, valid until the store grows.
+pub fn positions(store: *TypeStore, v: Var) []const Var {
+    return switch (store.resolvedContent(v)) {
+        .structure => |flat| switch (flat) {
+            .tuple => |t| store.vars(t),
+            .app => |a| store.vars(a.args),
+            else => &.{},
+        },
+        else => &.{},
+    };
+}
+
 /// A record node's own fields, in symbol order: the one accessor for a walk
 /// that must see field NAMES (the marker walk's text-order pass, I13).
 pub fn recordFields(store: *const TypeStore, record: TypeStore.Structure.Record) []const TypeStore.Field {
@@ -375,6 +389,27 @@ pub fn reaches(store: *TypeStore, stacks: *Stacks, gpa: Allocator, from: Var, ta
         while (child(store, root, n, .structural)) |c| : (n += 1) try stack.append(gpa, c);
     }
     return false;
+}
+
+/// The variable roots (`flex`, `rigid`) reachable from `from` by
+/// `structural` successors, each once, appended to `out` (allocated with
+/// `scratch`).
+pub fn variables(store: *TypeStore, stacks: *Stacks, gpa: Allocator, scratch: Allocator, from: Var, out: *std.ArrayList(Var)) Error!void {
+    const seen = store.nextMark();
+    const stack = &stacks.vars;
+    stack.clearRetainingCapacity();
+    try stack.append(gpa, from);
+    while (stack.pop()) |v| {
+        const root = store.find(v);
+        if (store.mark(root) == seen) continue;
+        store.setMark(root, seen);
+        switch (store.content(root)) {
+            .flex, .rigid => try out.append(scratch, root),
+            else => {},
+        }
+        var n: u32 = 0;
+        while (child(store, root, n, .structural)) |c| : (n += 1) try stack.append(gpa, c);
+    }
 }
 
 // ---------------------------------------------------------------------------

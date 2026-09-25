@@ -1,0 +1,7 @@
+pub type T
+    = T Int
+
+
+pub bar : T, () -> Int
+bar _ _ =
+    1

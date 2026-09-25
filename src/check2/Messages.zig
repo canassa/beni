@@ -196,3 +196,24 @@ fn firstArg(store: *TypeStore, v: Var) ?Var {
     if (content != .structure or content.structure != .app) return null;
     return Walk.child(store, root, 0, .structural);
 }
+
+/// `nesting_too_deep` when one top-level group's method resolution takes
+/// more than `budget` steps (§9.5; review F1): the receiver types it builds
+/// nest further than the checker follows. It shares the code with the
+/// parser's and the type printer's limit for the same reason they share it:
+/// the program is deeper than the compiler reads, and naming an inner part
+/// fixes it.
+pub fn resolutionBudget(r: *Report, region: Bir.Inst.Index, budget: u32) Error!void {
+    var buf: [512]u8 = undefined;
+    const text = std.fmt.bufPrint(&buf,
+        \\Working out which methods these declarations call took more than {d}
+        \\steps, which is more than I will take for one group of declarations.
+        \\
+        \\The types their method calls are made on nest deeper and deeper as I follow
+        \\them. I gave up here, so I cannot check this group or anything that uses
+        \\it. An annotation with a `where` clause on the declaration usually stops
+        \\the growth.
+        \\
+    , .{budget}) catch unreachable;
+    try r.emitText(.nesting_too_deep, region, null, text);
+}

@@ -434,7 +434,10 @@ pub const Reporter = struct {
                 .found = "The conversion has type:",
                 .wanted = "But this field needs:",
             },
-            .try_value, .pattern, .ctor_arg, .destructure, .general => return .{
+            // `.where_clause` (checker v2 only: a `where` clause's method type
+            // against the method it resolved to, CK-55) keeps the general lines
+            // until R13 writes its own.
+            .try_value, .pattern, .ctor_arg, .destructure, .general, .where_clause => return .{
                 .intro = "Something is off here:",
                 .found = "This is:",
                 .wanted = "But I need:",

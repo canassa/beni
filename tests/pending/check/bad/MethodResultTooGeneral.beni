@@ -1,0 +1,40 @@
+-- CK-100: a method whose receiver becomes known only after the method call
+-- was constrained — here a lambda parameter, bound when the lambda is applied
+-- — must still tie the call's result to the method's type. `pair` is
+-- `Int -> ( Int, Int )` (`combine` returns the `Int` in `Box Int`), so
+-- `String.length` of its first element is a `type_mismatch`. On 68186fa v1
+-- publishes `pair : Int -> ( a, b )`, so `bad` checks clean and the built
+-- program hands an `Int` to `String.length`. The oracle twin is the same
+-- program with `pair : Int -> ( Int, Int )` annotated, which v1 refuses at
+-- the same argument.
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub h : K, () -> Box Int
+h (K m) u =
+    Box m
+
+
+pub combine : Box a, z -> a
+combine (Box a) z =
+    a
+
+
+pair n =
+    case (\y -> y.h ()) (K n) of
+        r ->
+            let
+                q z =
+                    r.combine z
+            in
+            ( q 1, q "s" )
+
+
+bad : Int
+bad =
+    String.length (pair 3).0

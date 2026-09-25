@@ -1,0 +1,4 @@
+missing_where_constraint 8:14 contains "a.eq"
+missing_where_constraint 13:14 contains "a.eq"
+missing_where_constraint 13:14 contains "b.eq"
+missing_where_constraint 18:29 contains "a.compare"

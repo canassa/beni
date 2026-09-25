@@ -1,0 +1,8 @@
+pub type B a = B a
+
+pub compare : B a, B a -> Order
+    where a.eq : a, a -> Bool
+compare l r =
+    case ( l, r ) of
+        ( B x, B y ) ->
+            if x.eq y then EQ else LT

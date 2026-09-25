@@ -88,7 +88,10 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 ```
 timeout                          the compiler (or the emitted program) did not finish
                                  (20 s per run in pending mode)
-crash=<signal>                   the compiler died of a signal
+crash=<signal>                   the compiler died of a signal; a run whose stderr shows Zig's crash
+                                 banner (`panic:`, `Segmentation fault …`) is killed there and
+                                 signs `crash=ABRT`, the abort Zig's handler ends in, so a slow
+                                 stack trace never turns a crash into `timeout`
 exit=<n> codes=<code>×<k>,…      the compiler exited n; every code it reported, sorted, with its
                                  count (`codes=none` when it reported none)
   … why=code|count|position|message|diag|stdout

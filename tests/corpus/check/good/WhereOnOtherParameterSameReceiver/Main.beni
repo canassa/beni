@@ -1,0 +1,28 @@
+-- check/good: a `where` clause may constrain a quantifier of ANOTHER
+-- parameter, so a method's requirement can ask the same method of the
+-- receiver itself, or of a type that holds it, with finite evidence:
+-- `bx.describe bx` is `describe_Box(describe_Box(describe_K))`, and v1 builds
+-- and runs it (`box of box of 1`). checker-v2.md §9.5 withdrew the premise
+-- that a repeated receiver is a cycle (round-2 review of R6a, N1): R6a's
+-- lineage rule reported a false `infinite_type` on `viaParam` and `wrapped2`,
+-- and not on `wrapped`, which differs only in let-binding the argument.
+import Box exposing (Box)
+
+
+pub viaParam : Box Int -> String
+viaParam bx =
+    bx.describe bx
+
+
+pub wrapped : Box Int -> String
+wrapped bx =
+    bx.describe (Box.Box bx)
+
+
+pub wrapped2 : Box Int -> String
+wrapped2 bx =
+    let
+        w =
+            Box.Box bx
+    in
+    bx.describe w

@@ -215,6 +215,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     cycle-safe resolver walk (at the `==`). R6 blesses the real `.diag`. The scenario is
     `scenario/CK-03`: best of 3 runs, each bounded at 5 s, red signature `timeout`.
 - **Slice** R6.
+- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/CyclicReceiverNoMethodLookup.beni` (a method used on a receiver already on a cycle is one `infinite_type` and no lookup: review F5), claimed.
 
 ### CK-04 — The occurs check covers only headers, so lambda and case binders can have infinite types
 
@@ -726,6 +727,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `check/bad/RigidInsideDerivedShape.beni`. `.codes`: `missing_where_constraint` ×2 at
   the operators.
 - **Slice** R6. The `Lower` half (no structural answer to a hole) is R2.
+- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/RigidInDerivedShapeOncePerSite.beni` (one `missing_where_constraint` per rigid and method at a use: review F4), claimed.
 
 ### CK-21 — A `where` clause's method type is never checked when the receiver is a `number` literal
 
@@ -1338,6 +1340,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     `RejectedReceiverDoesNotSilence` (`unknown_method` at 18:6 and 18:16, `type_mismatch` at
     18:49).
 - **Slice** R6 (cycle-safe walks, class flag). R14 for D5.
+- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/RejectedMethodClassWide` (the class flag OR-merged on every union, so `[ x, y ]` and `[ y, x ]` report alike: review F3), claimed.
 
 ---
 
@@ -2839,6 +2842,83 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   `v2-green.txt`.
 - **Slice** R5 (fixed).
 
+### CK-100 — A method's result is left untied when its receiver becomes known later (checker v1)
+
+- **Severity** unsound-runtime. **Area** v1's deferred method obligations (`Solve.zig`'s
+  `dischargeMethod` against a receiver bound after the call). **Class** K2. **Sources** R6a
+  (2026-09-25), writing the eager-draining fixture its reviewer focus asked for.
+- **Program**:
+
+  ```elm
+  pub h : K, () -> Box Int
+  pub combine : Box a, z -> a
+
+  pair n =
+      case (\y -> y.h ()) (K n) of
+          r ->
+              let
+                  q z =
+                      r.combine z
+              in
+              ( q 1, q "s" )
+
+  bad : Int
+  bad =
+      String.length (pair 3).0
+  ```
+
+- **Observed** on 68186fa, v1 publishes `pair : Int -> ( a, b )` and `bad` checks clean; built, it
+  hands an `Int` to `String.length`. `inner b = let u = b.unbox () … in ( u + 1, … )`, with `b`
+  bound inside a nested `let`, is published `Box a -> ( a2, List (Box a) )`: `u` is not `b`'s
+  element. `run/ScrutineeMethodFirst` prints the right numbers only because nothing reads the
+  type.
+- **Expected** `pair : Int -> ( Int, Int )`, and `bad` is a `type_mismatch` at `(pair 3).0` — what
+  the annotated twin reports on v1.
+- **Fixed by** v2's resolver (R6a): the wanted rides on the receiver, is resolved when it is bound
+  (eager draining, `checker-v2.md` §9.1), and matching unifies the method's instantiated scheme
+  with the call's method type, so the result is the method's.
+- **Fixtures** `tests/pending/check/bad/MethodResultTooGeneral.beni` and
+  `tests/pending/check/good/EagerDrainInnerLet.beni`, both claimed.
+- **Slice** R6a (claimed).
+- **Added by R6a's review (2026-09-25):** `tests/pending/check/bad/MethodResultMismatchOnce` (a call's result mismatch is one message; the callee's requirements fail in silence: review F6), claimed.
+
+### CK-101 — A derivability walk through alternating method boundaries recurses without end (checker v1)
+
+- **Severity** compiler-crash-or-hang. **Area** v1's `walkDerivable` (`Solve.zig`), and R6a's first
+  round of v2's walk. **Class** K3. **Sources** R6a's structural review (2026-09-25, B2, probe
+  `cyc/`).
+- **Program** (three modules):
+
+  ```elm
+  -- Pa
+  pub type A a = A a
+  pub eq : A a, A a -> Bool
+      where a.compare : a, a -> Order
+
+  -- Pb
+  pub type B a = B a
+  pub compare : B a, B a -> Order
+      where a.eq : a, a -> Bool
+
+  -- Main
+  f x =
+      if List.isEmpty [ x, A (B x) ] then ( x, 1 ) == ( x, 1 ) else False
+  ```
+
+- **Observed** on 68186fa, v1 overflows its stack: `walkDerivable` recurses into a method boundary's
+  argument for the method the boundary's requirement names, with fresh marks, so a cycle through
+  `A`'s `eq` (asking `compare`) and `B`'s `compare` (asking `eq`) is never met twice under the same
+  method. R6a's first round coloured per node for one method and recursed at a boundary: the same
+  overflow. Without the cycle, a doubling DAG through the same two boundaries is exponential in
+  v1 (`f x = ( A (B x), [ A (B x) ] )` nine deep does not finish).
+- **Expected** one `infinite_type` at the `==`, written `a = A (B a)`, and a DAG linear in its
+  distinct nodes.
+- **Fixed by** R6a's review: `Instances.derivability`, one iterative walk over `(node, method)`
+  pairs coloured per pair (`checker-v2.md` §9 *As built by R6a*).
+- **Fixtures** `tests/pending/check/bad/DerivabilityAlternatingCycle` (claimed) and the v2 timing
+  scenario `perf_test.zig` "CK-101".
+- **Slice** R6a (claimed).
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2848,14 +2928,14 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | ID | Severity | Class | Fixture (under `tests/pending/`) | Slice |
 |---|---|---|---|---|
 | CK-01 | unsound-runtime | K1 | `check/bad/LetAnnotationRigidEscape.beni`, `…RowEscape.beni` | R4 |
-| CK-02 | unsound-runtime | K2 | `check/bad/OuterReceiverConstraintLevels.beni` | R6 |
-| CK-03 | compiler-crash-or-hang | K3 | `check/bad/CyclicReceiverResolution.beni` + `scenario/CK-03` | R6 |
+| CK-02 | unsound-runtime | K2 | `check/bad/OuterReceiverConstraintLevels.beni` | R6a (claimed) |
+| CK-03 | compiler-crash-or-hang | K3 | `check/bad/CyclicReceiverResolution.beni` + `scenario/CK-03` | R6a (claimed; v2 timing twin in `perf_test.zig`) |
 | CK-04 | unsound-runtime | K3 | `check/bad/InfiniteTypeAtBinder.beni` | R4 |
 | CK-05 | valid-program-rejected | K2 | `run/ObligationEscapesInnerLet.beni` | R5 (claimed) |
 | CK-06 | valid-program-rejected (D2) | K2 | `run/TryDefersShape.beni` | R5 (claimed) |
 | CK-07 | nondeterminism | K12 | `check/bad/FieldErrorTextOrder.beni` (single file, R0) | R4 |
 | CK-08 | valid-program-rejected | K3 | `run/ClosedRecordAfterFieldAccess.beni` | R6 |
-| CK-09 | unsound-runtime | K8 | `check/bad/MutualGroupLocals.beni`, `check/good/MutualGroupLocalTypes.beni`, `check/good/MutualGroupFiveMembers.beni` | R4b, R5 (claimed), R6a |
+| CK-09 | unsound-runtime | K8 | `check/bad/MutualGroupLocals.beni`, `check/good/MutualGroupLocalTypes.beni`, `check/good/MutualGroupFiveMembers.beni` | R4b, R5, R6a (claimed) |
 | CK-10 | latent | K3 | — (structural) | R4 |
 | CK-11 | unsound-runtime | K9 | `check/bad/WarningKeepsExhaustiveness.beni` | R1, R4 |
 | CK-12 | latent | K9 | — (unit test) | R1 |
@@ -2866,8 +2946,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-17 | unsound-runtime | K5 | `check/bad/WideRecordEqFunction.beni` | R1, R5 |
 | CK-18 | latent | K2 | — (deleted) | R5 (structural, v2) |
 | CK-19 | unsound-runtime | K7 | `run/EquatableMarkerIsNotEq.beni` | R1, R8 |
-| CK-20 | unsound-runtime | K5 | `check/bad/RigidInsideDerivedShape.beni` | R2, R6 |
-| CK-21 | unsound-runtime | K5 | `check/bad/WhereClauseNumberReceiver.beni` | R6 |
+| CK-20 | unsound-runtime | K5 | `check/bad/RigidInsideDerivedShape.beni` | R2, R6a (claimed) |
+| CK-21 | unsound-runtime | K5 | `check/bad/WhereClauseNumberReceiver.beni` | R6a (claimed; `NumberBridgeRigidLyingWhere.beni` the rigid half) |
 | CK-22 | unsound-runtime (D1) | K7 | `check/bad/PrivateEqOutsideModule/`; guard `tests/corpus/run/PrivateEqInsideModule/` | R8 |
 | CK-23 | valid-program-rejected (D4) | K7 | `run/PhantomParameterEq.beni` | R8 |
 | CK-24 | unsound-runtime (no runtime path yet) | K7 | `check/bad/SchemaWrapperExclusion.beni` | R8 |
@@ -2888,13 +2968,13 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-39 | valid-program-rejected | K10 | promoted: `run/RecordAliasConstructorImported/` | R3 (fixed) |
 | CK-40 | performance | K11 | `scenario/CK-40` (400 schemas) | R8 |
 | CK-41 | performance | K11 | promoted: `perf_test.zig` "CK-41: …" (`test-perf`) | R3 (fixed) |
-| CK-42 | performance (reproduced in R0) | K11 | `scenario/CK-42` (extra cost of own `==` over `x == x`, × 5 000) | R6 |
+| CK-42 | performance (reproduced in R0) | K11 | `scenario/CK-42` (extra cost of own `==` over `x == x`, × 5 000) | R6a (v2 timing twin in `perf_test.zig`) |
 | CK-43 | unsound-runtime | K14 | `run/RecordAliasConstructor.beni` | R1 |
 | CK-44 | diagnostic-quality | K14 | `check/bad/DuplicateRecordTypeField.beni` | R1 |
 | CK-45 | diagnostic-quality | K14 | `parse/bad/FloatPattern.beni` | R1 |
 | CK-46 | diagnostic-quality | K14 | `check/bad/LetCycleThroughFunction.beni` | R1 |
 | CK-47 | diagnostic-quality | K14 | `parse/bad/ExposingConstructorsElmStyle.beni` | R1 |
-| CK-48 | diagnostic-quality | K13 | `check/bad/MissingWhereAtUse.beni` | R6 |
+| CK-48 | diagnostic-quality | K13 | `check/bad/MissingWhereAtUse.beni` | R6a (claimed) |
 | CK-49 | diagnostic-quality | K13 | `check/bad/ListElementFromContext.beni` | R13 |
 | CK-50 | diagnostic-quality | K13 | `check/bad/NoArithmeticHintWithoutArithmetic.beni` | R13 |
 | CK-51 | diagnostic-quality | K13 | `check/bad/TryShapeNamesTheMismatch.beni` | R5 (claimed) |
@@ -2926,7 +3006,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-77 | diagnostic-quality | K7 | `check/bad/DerivedContextMergesAsker/` | R8a |
 | CK-78 | decision (supported) | K14 | guard `tests/corpus/run/RecordAliasConstructorPattern.beni` | R1 |
 | CK-79 | valid-program-rejected | K10 | — (`abuse_test.zig` pins the 4 096 cap) | unassigned — manager |
-| CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a |
+| CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a (v2 timing twin in `perf_test.zig`) |
 | CK-81 | compiler-crash-or-hang | K11 | promoted: `abuse_test.zig` (two scenarios) | R2a (fixed) |
 | CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (with CK-79) |
 | CK-83 | unsound-runtime | K14 | promoted: `abuse_wide_test.zig` "CK-83: …" | R2c (fixed) |
@@ -2946,11 +3026,13 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-97 | performance | K11 | promoted: `perf_test.zig` "CK-97" (`test-perf`) | R5 (fixed) |
 | CK-98 | performance | K11 | promoted: `perf_test.zig` "CK-98" (`test-perf`) | R5 (fixed) |
 | CK-99 | valid-program-rejected | K2 | guard `tests/corpus/run/TryTargetKeepsItsSuccessType.beni` | R5 (fixed) |
+| CK-100 | unsound-runtime | K2 | `check/bad/MethodResultTooGeneral.beni`, `check/good/EagerDrainInnerLet.beni` | R6a (claimed) |
+| CK-101 | compiler-crash-or-hang | K3 | `check/bad/DerivabilityAlternatingCycle` + `perf_test.zig` "CK-101" (v2) | R6a (claimed) |
 
 Totals:
-- 99 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 21 (CK-83, CK-84, CK-90 and CK-91 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 10 (CK-92 among them).
+- 101 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 22 (CK-83, CK-84, CK-90, CK-91 and CK-100 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 11 (CK-92 and CK-101 among them).
 - valid-program-rejected: 19 (CK-87 and CK-99 among them).
 - nondeterminism: 2.
 - performance: 12 (CK-85, CK-88, CK-93, CK-95 and CK-96 to CK-98 among them).

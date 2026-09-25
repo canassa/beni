@@ -1,0 +1,7 @@
+pub type K
+    = K Int
+
+
+pub describe : K, K -> String
+describe (K n) _ =
+    String.fromInt n

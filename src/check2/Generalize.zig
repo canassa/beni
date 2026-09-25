@@ -83,6 +83,11 @@ pub const Frame = struct {
     tries: std.ArrayList(u32) = .empty,
     /// The module capture list's length when the frame was pushed.
     captures_start: u32 = 0,
+    /// How many wanteds and obligation rows the module had when the frame
+    /// was pushed: a frame under which none was made has none riding on its
+    /// own variables, so its boundary skips the passes that look for them.
+    wanteds_start: u32 = 0,
+    rows_start: u32 = 0,
 
     pub fn deinit(f: *Frame, gpa: Allocator) void {
         f.pool.deinit(gpa);
@@ -221,8 +226,9 @@ fn enter(
 /// everything below it escaped and joins the pool of the frame at its rank
 /// (`frames[rank - 1]`, a frame's rank being its depth). Returns how many
 /// were quantified, for the counters. Every quantified variable that still
-/// carries obligations is appended to `carriers`, for §8.1 step 7.
-pub fn quantify(store: *TypeStore, gpa: Allocator, frames: []Frame, young: u32, carriers: *std.ArrayList(Var)) Error!u64 {
+/// carries obligations is appended to `carriers`, and every quantified flex
+/// that carries wanteds to `wanters`, for §8.1 step 7.
+pub fn quantify(store: *TypeStore, gpa: Allocator, frames: []Frame, young: u32, carriers: *std.ArrayList(Var), wanters: *std.ArrayList(Var)) Error!u64 {
     const frame = &frames[frames.len - 1];
     var quantified: u64 = 0;
     for (frame.pool.items) |v| {
@@ -231,8 +237,12 @@ pub fn quantify(store: *TypeStore, gpa: Allocator, frames: []Frame, young: u32, 
         if (rank >= young) {
             store.setRank(v, TypeStore.generalized);
             quantified += 1;
-            switch (store.content(v)) {
-                .flex, .rigid => |flags| if (flags.obls != .none) try carriers.append(gpa, v),
+            const content = store.content(v);
+            switch (content) {
+                .flex, .rigid => |flags| {
+                    if (flags.obls != .none) try carriers.append(gpa, v);
+                    if (content == .flex and !Walk.constraints(flags).isEmpty()) try wanters.append(gpa, v);
+                },
                 else => {},
             }
             continue;
@@ -272,7 +282,7 @@ test "an inner frame's variable bound to an outer one escapes; its own is quanti
     try testing.expectEqual(@as(u32, 1), store.rank(inner));
     var carriers: std.ArrayList(Var) = .empty;
     defer carriers.deinit(testing.allocator);
-    try testing.expectEqual(@as(u64, 1), try quantify(&store, testing.allocator, &frames, 2, &carriers));
+    try testing.expectEqual(@as(u64, 1), try quantify(&store, testing.allocator, &frames, 2, &carriers, &carriers));
     try testing.expectEqual(TypeStore.generalized, store.rank(own));
     // The escaped structure went down to the outer frame's pool.
     try testing.expectEqual(@as(usize, 2), frames[0].pool.items.len);

@@ -1192,6 +1192,151 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - The `number` bridge on a **rigid** (`abs`, `max`, `DecodeInto`'s `sameNum`), with and without a
     lying `where` clause.
   - Eager draining: `rq2` (§5.1) and a wanted readied by an inner `let`'s unification.
+- **As built (2026-09-25).** Spec first: `checker-v2.md` gained *As built by R6a* notes in §4.2 (the
+  position pairing, the tables), §5 (*Widened by R6a*: no gate; `build`/`dump --stage=dispatch`
+  refuse what needs P6; R7's refusal at a use; v1's capability bits until R8a), §8.1 (wanteds at
+  the boundary, N9, rule (a) with method types, step 7's restated assert), §9 (the resolver as
+  built) and §19.1 (files). Found and fixed (claimed): **CK-100**, v1 leaving a method's result
+  untied when its receiver is bound later.
+  - **Design.** `Evidence.zig`: wanteds, answers, givens and the canonical order; an open wanted is
+    one `Flags.constraints` entry of its flex receiver, paired by position (`slots`). `Resolve.zig`:
+    §9.2's step, Rule U1's join on attach, the `number` bridge for flex and rigid (unifying the
+    declared method type first, category `.where_clause`), the `rigid` row (a given, the bridge,
+    `missing_where_constraint` or `type_dispatch_needs_annotation` at the use), sharing by receiver
+    root (CK-80), the lineage rule, the step budget, promotion, the cap and the default.
+    `Instances.zig`: lookup (the table, the P3 index or `findValue`, matching by instantiation with
+    the requirements as sub-wanteds, derivation, `unknown_method`) and the derivability walk
+    (three-colour, one pair of epochs, v1's verdicts and texts). `Unify` readies wanteds on a bind
+    and joins them on a merge; `Instantiate` makes one wanted per copied or imported requirement;
+    `constrain/Expr` emits the `method` node (Rule U0's order), keeps v1's operator-section
+    pinning of the lambda's type and drops v1's saturated-section call shim (§6.4).
+  - **Scope, as the brief set it.** `build` of a dispatching root module is `not_implemented`
+    (R6b) from `js/Emit.zig`, and so is its `dump --stage=dispatch`; P9's table holds requirement
+    lists and callee terms only, for `Cycles`. An own untyped method used before its group is R7's
+    `not_implemented` at the use, and such a module keeps only its refusals. Derived contexts of
+    own nominal types are v1's one-entry-per-parameter rule over the shared capability bits
+    (`Types.settleDispatchCapabilities`), and the programs where v1's second settle answers
+    otherwise are listed for R8a.
+  - **Files** (lines): new `Evidence` 357, `Resolve` 502; `Instances` 242 → 864 (over its ~800:
+    R8a splits it), `Solve` 621 → 795, `Unify` 648 → 776, `Walk` 532 → 546, `Instantiate` 338 →
+    400, `Decide` 359 → 374, `Report` 302 → 388, `Module` 429 → 501, `Subset` 108 → 81,
+    `constrain/Expr` 295 → 445, `constrain/Decl` 532 → 606, `constrain/Tree` 389 → 416: 9 709 in
+    all.
+  - **Evidence.** The three gates green. `test-v2` exits 0: every `check/*` fixture passes but the
+    four `v2-expected.md` now lists for R6a (`CyclicReceiverReportedOnce` and
+    `LetHelperCyclicReceiver` for CK-57's text, `LetConstrainedTwice` for eager draining,
+    `SpecializedEqWrongReceiver` for R8a) — `check/good` 50, `check/bad` 125, `check/args` 40,
+    `check/depth` 13; `v2-green.txt` +70 (`check/args` 6, `check/bad` 42, `check/good` 22, the two
+    new guards among them); `v2-subset.sh` now holds every `check/*` fixture, 431 in all, each
+    passing. No drift: `dispatch/` and every dispatching `run/`/`emit/` fixture is refused with
+    R6b's `not_implemented`; `run/DerivedEqInPriorityGroup` and `run/DerivedEqThroughCustom` are
+    listed for R8a. `check` of the 173 `run/` and `emit/app/` fixtures prints the same under both
+    checkers for 170; the three others are R7's and R8a's (`ConstrainedBinderNotCyclic` and
+    `LetHelperOuterArgument` among the 170). The 242 `check/*` fixtures print the same diagnostics
+    and raw interfaces at `--jobs=1` and at `--jobs=8 --roundtrip-interfaces --roundtrip-dispatch`.
+  - **N10.** `dump --stage=raw`'s `scheme`/`q`/`where` lines and `dump --stage=interface`'s `value`
+    lines, v1 against v2, for every corpus fixture whose two checks exit alike: 471 identical, 49 of
+    them with `where` blocks; 2 differ, neither in a `where` block v1 publishes as v1 means it:
+    `RecordExtChain` (§4.1's normalised records, listed since R4b) and `MethodConstraintMismatch`,
+    a failing module whose poisoned `render` requirement v2 publishes as `<error>` (the owned
+    error scan of §14.1) where v1 wrote `where render` over an `err` term. `core`'s interfaces
+    cannot be compared before R9: v2 does not check `core` (`Options.usesV2`), and a copy of core
+    checked as an app collides with core's own `Bool`.
+  - **Pending.** `test-pending` green. Claimed (9): CK-02 `OuterReceiverConstraintLevels`, CK-03
+    `CyclicReceiverResolution` (its `.codes` pinned at the two `==`), CK-09 `MutualGroupLocals`,
+    CK-20 `RigidInsideDerivedShape`, CK-21 `WhereClauseNumberReceiver` and the new
+    `NumberBridgeRigidLyingWhere` (the rigid half), CK-48 `MissingWhereAtUse`, CK-100
+    `MethodResultTooGeneral` and `check/good/EagerDrainInnerLet`. Two R0 `.codes` named the wrong
+    code for their own message (`MutualGroupLocals`, `OuterReceiverConstraintLevels`: a literal
+    against `String` is v1's `kind_mismatch`, which each oracle twin reports) and were corrected.
+    Every `v2` line of `RED` is v2's new answer: R7's refusals, R8a's `exit=0`, R13's texts.
+  - **Perf.** `test-pending-perf` green (all RED as recorded under v1, which is frozen);
+    `test-perf` green with three v2 scenarios added: CK-03 (`infinite_type` in 6 ms against a
+    500 ms bound), CK-42 (8 000 / 16 000 declarations, 64 / 121 ms, ratio 1.89) and CK-80 (depth 9 /
+    18, 5 / 6 ms). CK-93's note: the coinductive `Unify.active` scan was measured on two
+    2 000-deep `let` chains unified at the end — no difference from the same program without the
+    unification (90 ms either way, best of 3, ReleaseFast) — so it stays a stack.
+  - **Bench** (ReleaseFast, `check --no-cache --jobs=1 --self-profile`, the root package's `check`
+    events, v1/v2 interleaved, medians of 7). A generated corpus of 90 modules and 124 377 lines:
+    R5's eleven shapes plus five that dispatch — a nominal `==` on an own type, a record `==` with
+    `<`, a `where`-constrained generic called across modules, an unannotated function whose `<`
+    and constrained call are promoted, and own dot-calls on a concrete and an inferred receiver —
+    1 080 `where` lines published, identical under both checkers. **v1 123.2 / v2 117.4 ms
+    (0.95×), and in the reverse order v1 121.2 / v2 118.0 ms (0.97×).** R5's dispatch-free corpus:
+    v1 109.8 / v2 116.0 ms in the same session, and this tree against `68186fa`'s v2 112.4 / 110.5
+    ms (1.02×): a first cut cost 8 % there (Rule U1's bookkeeping on every flex merge), now a fast
+    path when neither side carries a wanted.
+  - **Doubts, for the reviewer.** (1) Derived contexts are v1's syntactic capability bits, so
+    `check` accepts `Wrapper (Holder String) == …` where the payload's specialised `eq` does not
+    answer (`SpecializedEqWrongReceiver`), until R8a; `build` is refused anyway. (2) Sharing by
+    receiver root answers a wanted `alias` of one in another member of the same recursive group;
+    R6b's elaboration must re-index such a `param` by the caller (§12.3). (3) The class flag of
+    §9.5 is keyed by the receiver's root at the rejection, not OR-merged on union. (4) `Instances`
+    is 864 lines. (5) `inst_evidence` is not recorded; R6b orders an instruction's instantiation
+    wanteds by `Evidence.requirements`. (6) A `number` literal's name hint is still the scheme's
+    `a` (CK-94).
+- **Revised by the review (2026-09-25).** Two reviews (structure and adversarial) found an unsound
+  acceptance (B1), a stack overflow (B2), a shared instantiation (B3), evidence out of canonical
+  order (B4) and eleven lesser defects. Fixed structurally, spec first (`checker-v2.md` §4.2, §8.1,
+  §9, §18 and §19.1, each *Revised by R6a's review*):
+  - **One derivability verdict** (B1, B2): `Instances.derivability`, an iterative walk over
+    `(node, method kind)` pairs coloured per pair, following aliases, with boundary requirements
+    pushed as pairs of their own kind; the `walked` bit and `derivesNominal` are gone, and every
+    derivation reads the verdict. Found **CK-101** (v1 overflows its stack on an alternating
+    `eq`/`compare` cycle and is exponential on the same DAG without one).
+  - **Sharing only what depends on the receiver alone** (B3): the memo holds derived answers; a
+    module-rule method is instantiated per use; no unification is used as a test.
+  - **Evidence order at creation** (B4, S1): `Instantiate` makes an instantiation's wanteds in
+    `Evidence.requirements` order and `Solve.instantiated` records `inst_evidence`; promotion
+    records `promoted(root, method)` and P6 computes the index per site (§12.3).
+  - **No silent drops** (S2, S8): every unpaired constraint entry and the I14 checks are
+    `Solve.expect` / `Unify.invariant` — `internal` in a release build, a stop in Debug.
+  - **The class flag on every union** (S3, F3): `Unify.merge` OR-merges `Evidence.rejected`.
+  - **One capability, fenced** (S4): `rules_test.zig` allows v1's capability API only in
+    `Instances`, `Module` and `Incremental`; R8a's brief says it removes them. R7's brief owns
+    per-frame queues (S5).
+  - **S6** `Resolve.checkGivens`; **S7** `Resolve.State`; the marker walk is `Marker.zig`.
+  - **F1** the step budget is per top-level group, with its own text; **F2** a context's method at
+    the wrong type is v1's `type_mismatch`; **F4** one `missing_where_constraint` per rigid and
+    method at a use; **F5** no lookup on a receiver already cyclic *when its wanted is resolved* (one
+    still resolved while the cycle is open meets an honest `unknown_method` first, as in v1); **F6** no `ambiguous_method_receiver`
+    over an `<error>` scheme, and a call's result mismatch fails its callee's requirements in
+    silence.
+  - **Fixtures.** Corpus (v1 passes, now in `v2-green.txt`): `check/bad/EqTupleHoldingFunctionType`,
+    `…FunctionAlias` (B1), `check/bad/RequirementMethodWrongType` (F2),
+    `check/good/MethodInstantiatedPerUse` (B3). Pending, claimed: `DerivabilityAlternatingCycle`
+    (CK-101), `RejectedMethodClassWide` (CK-37), `RigidInDerivedShapeOncePerSite` (CK-20),
+    `CyclicReceiverNoMethodLookup` (CK-03), `MethodResultMismatchOnce` (CK-100);
+    `NumberBridgeRigidLyingWhere`'s golden gains the clause's own `type_mismatch` (S6).
+    `perf_test.zig` gains CK-101's v2 timing twin. `MethodConstraintMismatch` moves from
+    `v2-green.txt` to `v2-expected.md` (F6: v1's golden pins a warning printing `where a.render : ?`).
+  - **Evidence.** The seven steps green. `test-v2`: `check/good` 51, `check/bad` 127 (17 skipped),
+    `check/args` 40, `check/depth` 13, no ratchet failure. `test-pending`: 47 GREEN under v2, every
+    RED as recorded. `test-perf`: CK-03 6 ms, CK-42 1.96, CK-80 1.00, CK-101 1.00.
+  - **Bench** (as above, medians of 7): the dispatch corpus v1 121.6 / v2 123.9 ms (1.02×), reverse
+    order 123.9 / 126.3 (1.02×); the dispatch-free corpus 111.0 / 117.4 (1.06×, as before the
+    review). Disabling the cyclic-receiver walk changed nothing measurable (9 runs each).
+- **Revised by the round-2 review (2026-09-25).** Every round-1 blocker was verified fixed at its
+  cause; one new blocker and one should-fix, fixed spec first:
+  - **N1: the lineage rule is gone.** §9.5's premise ("a sub-wanted's receiver is an image of a
+    quantifier strictly inside its parent's") is false: a `where` clause may constrain ANOTHER
+    parameter, so `bx.describe bx` with `describe : Box a, b -> String where b.describe : b, K ->
+    String` repeats `(describe, Box Int)` with finite evidence, and the rule reported a false
+    `infinite_type`. It is replaced by a cycle test (`Instances.cyclic`, run by `Resolve.step` for
+    every wanted on a structure); a non-cyclic chain that grows is left to the per-group budget,
+    which reports. Fixtures `check/good/WhereOnOtherParameterSameReceiver` and
+    `check/bad/WhereOnOtherParameterListed` (`unknown_method`, as v1).
+  - **S1: `failInstantiation` narrowed.** The callee's `inst_evidence` row is taken at the start of
+    the call node, and only a requirement whose method type reaches a variable of the callee's
+    result fails in silence; an independent requirement still reports. A failed wanted is never an
+    alias target: `Resolve.attach` and `Unify.unionWants` let the live wanted take its place.
+    Fixture `check/bad/CallResultIndependentRequirement` (`type_mismatch` and `unknown_method`, as
+    v1).
+  - **S2: crash signatures.** `world.zig`'s `drain` kills a child at Zig's crash banner and the run
+    signs `crash=ABRT`, so CK-101's v1 line is `crash=ABRT`, not a race against the timeout.
+  - **Nits.** F5's wording (above, §9, the fixture's comment); the budget's text says "group";
+    `Instances.answered` and its unused parameter are gone; R6b's brief says an alias chain
+    ending in `failed` is never elaborated.
 
 ### R6b — Elaboration, `dispatch/` parity, `build`
 
@@ -1208,6 +1353,9 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - `test-pending` is green, with the claims recorded.
 - **Reviewer focus.** I5 and I7 on nested evidence (`TwoSlotsNested`, `NestedEvidenceIndices`,
   `List (List (Box a))`). An `open` wanted at P6 must be `internal`, never a structural answer.
+- **Owed from R6a's round-2 review (nit 2).** A memo hit whose sub-wanted fails after it was shared
+  leaves its `alias` wanteds `answered`. P6 follows an `alias` chain to its end and treats one that
+  ends in `failed` as failed (`internal` if the module reported nothing) — it is never elaborated.
 
 ### R7 — Own methods without a scheme; evidence inside binding groups
 
@@ -1268,6 +1416,13 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     is accepted in both orders.
   - Per-frame queues: a nested group must never drain its demander's queue (round 3's merge variant
     of `rq1`, CK-73).
+- **Owed from R6a's review (2026-09-25, S5).** Per-frame `ready` queues are this slice's to build,
+  not a reviewer's check only: R6a has ONE queue (`Solve.ready`, which `Unify.queue` points at) and
+  one top-level frame at a time, so every wanted and obligation a nested check readies would drain
+  in its demander's frame. R7 gives each frame its own queue, routes a `let` frame's to its
+  top-level frame as today, and makes `Decide.drain` take the frame; `Resolve.State.steps` stays
+  per top-level group (the nested group counts against its demander's budget, §10.2's cumulative
+  nesting budget).
 
 ### R8a — Derived contexts: the fixpoint, D4, P5, publication, install
 
@@ -1297,6 +1452,17 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - A cold-versus-warm cache matrix under v2 is byte-identical.
   - CK-67, CK-69 and CK-74 are in the permutation scenario (both declaration orders).
   - `test-pending` is green.
+- **Owed from R6a's review (2026-09-25, S4): ONE capability.** Until R8a, `check2/Instances.zig`'s
+  derivability verdict reads v1's capability bits (`Types.answersEq`/`answersCompare`,
+  `hasFunction`, `methodParamRequirement`, `hasPublicDispatchMethod`), which `Module.zig` and
+  `Incremental.zig` settle with `Types.settleDispatchCapabilities`, and `Marker.zig` reads
+  `Types.isEquatable`. R8a **removes every one of them from `check2/`**: the settle call in P2 and
+  in the install path, the gate bits in `Instances.gate`/`isBoundary`/`nextStep`, and any second
+  opinion on a nominal type's derivability (R6a's first round had one, `derivesNominal`, and it
+  answered "derivable" for every non-foreign type: review B1). The fixpoint's result is the one
+  answer the verdict reads. `rules_test.zig`'s S4 test fences the API today with
+  `capability_readers` = `Instances.zig`, `Module.zig`, `Incremental.zig`; R8a empties that list,
+  and the test then fails on any reader.
 - **Reviewer focus.**
   - Re-entry: the `same`-first and `key`-first orders of CK-74 must give the same `key` scheme.
   - A context computed while a dependency was in flight must never be memoised past its generation.
@@ -1462,8 +1628,8 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R4a | — | — | CK-15 (the cutoff protocol leaves `Check.zig`) |
 | R4b | — | CK-01, 04, 07, 13, 57; CK-09 (`check/good` half); CK-90, 91 (found and fixed by R4b) | CK-10, 14, 15 (pipeline part); CK-92 (fixed in `Render`, in the gates); CK-93 → manager, CK-94 → R13, CK-95 → R12 (found by R4b's reviews) |
 | R5 | CK-96, 97, 98 (into `perf_test.zig`, `test-perf`); CK-99 (a `run/` guard) — all four found by R5's reviews and fixed in R5 | CK-05, 06, 16, 51, 68; CK-62 (two dispatch-free fixtures; `run/TryDecidedByLaterFacts` waits for R6a); CK-09 (a five-member `check/good` fixture) | CK-18; CK-59 (the generation half); CK-94 gains F8 (the name hint follows member order) |
-| R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 62 (`run/TryDecidedByLaterFacts`), 80 | CK-35; CK-37, 55 (part) |
-| R6b | — | CK-08, 27, 28, 29, 32 | — |
+| R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 48; CK-100 (found and fixed by R6a); CK-101 (found and fixed by R6a's review); CK-03, 42, 80, 101 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-62's `run/TryDecidedByLaterFacts` moves to R6b (it needs `build`) | CK-35; CK-37, 55 (part) |
+| R6b | — | CK-08, 27, 28, 29, 32; CK-62's `run/TryDecidedByLaterFacts` (from R6a) | — |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
 | R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24 | — |
@@ -1475,7 +1641,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 99 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 101 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

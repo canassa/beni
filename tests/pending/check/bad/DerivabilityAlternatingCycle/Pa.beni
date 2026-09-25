@@ -1,0 +1,8 @@
+pub type A a = A a
+
+pub eq : A a, A a -> Bool
+    where a.compare : a, a -> Order
+eq l r =
+    case ( l, r ) of
+        ( A x, A y ) ->
+            x.compare y == EQ

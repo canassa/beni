@@ -41,3 +41,21 @@ tests/pending/check/bad/EqRecordFieldFunctionAtComparison.beni
 tests/pending/check/bad/TryUnknownSubjectSaysNeither.beni
 tests/pending/check/bad/KindedExpectationShowsLiteral.beni
 tests/pending/check/bad/TryDefaultCycleAtBinder.beni
+# R6a (2026-09-25): the resolver — wanteds, givens, lookup, the `number` bridge, promotion, the
+# undetermined default, the lineage rule and eager draining — for `check`.
+tests/pending/check/bad/CyclicReceiverResolution.beni
+tests/pending/check/bad/MissingWhereAtUse.beni
+tests/pending/check/bad/MutualGroupLocals.beni
+tests/pending/check/bad/OuterReceiverConstraintLevels.beni
+tests/pending/check/bad/RigidInsideDerivedShape.beni
+tests/pending/check/bad/WhereClauseNumberReceiver.beni
+tests/pending/check/bad/NumberBridgeRigidLyingWhere.beni
+tests/pending/check/bad/MethodResultTooGeneral.beni
+tests/pending/check/good/EagerDrainInnerLet.beni
+# R6a's review (2026-09-25): the one derivability verdict, the class flag on every union, one
+# message per rigid per site, no lookup on a cyclic receiver, and no cascade from a call's result.
+tests/pending/check/bad/CyclicReceiverNoMethodLookup.beni
+tests/pending/check/bad/DerivabilityAlternatingCycle
+tests/pending/check/bad/MethodResultMismatchOnce
+tests/pending/check/bad/RejectedMethodClassWide
+tests/pending/check/bad/RigidInDerivedShapeOncePerSite.beni

@@ -352,6 +352,51 @@ inst_callee: []WantedId.Optional        // per `method_call`/`type_dispatch`: th
   elaboration write the same fields, but they never run inside a probe (I14), so they need no
   journal.
 
+*As built by R6a (2026-09-25): how a `Flags.constraints` entry is paired with its wanted, and what
+R6a records.* `check2/Evidence.zig` holds the tables; §4.1's *Decided by R5* left the pairing to R6a.
+
+- **By position.** `Evidence.slots[p]` names what sits at position `p` of the store's append-only
+  `constraints` table: a wanted, a given (a rigid's entry, tagged), or nothing. An OPEN wanted on a
+  flex receiver is exactly one entry of that flex's set, so a flex's set is its open wanteds and
+  `Schemes.Writer` publishes a promoted scheme's requirements with no hook. Every place v2 makes an
+  entry pairs it in the same step: attaching (`Resolve.attach`, which re-pairs a copied range when
+  `extendConstraints` could not append in place), a merge's union (`Unify.unionWants`), a copy's
+  requirements (`Instantiate.want`) and an imported scheme's (`Instantiate.wantImported`, the
+  entries `Schemes.instantiate` made). A given's position is its identity: a rigid's set is never
+  rebuilt.
+- **`Given`** is `{ rigid, method, method_type, decl, k }`: registered when a top-level annotated
+  declaration's rigid reading is made (`Evidence.registerGivens`), `k` its index in
+  `Evidence.requirements` of that reading. A `let` annotation has no `where` clause
+  (`language.md`), so every binder is `decl` until D5 (R14).
+- **`Wanted`** is §4.2's row less `owner` and `frame` (one top-level frame at a time until R7:
+  every wanted joins `Solve.ready`) and plus `parent` (the lineage of §9.5) and `kind` (the surface:
+  dot-call, operator, `where` clause, `type_dispatch` — which decides derivation and the texts).
+  `seq` is the one counter obligations use (`Obligations.seq`), so the queue drains both in creation
+  order. *Revised by R6a's review (2026-09-25, B1):* the `walked` bit is gone — it let a position
+  skip the derivability verdict, and a flex position bound later was then never asked (§9 *As
+  built by R6a*).
+- **`Answer`** is recorded for every answered wanted: `param { decl, k }` for a GIVEN (the
+  declaration's `where` clause, `k` its index in the clause's canonical order), `promoted { root,
+  method }` for a requirement promotion kept, `alias`, `top`/`ext` with their instantiation's
+  wanteds as `args`, `derived` with its positions, `primitive`, `undetermined`, `field`,
+  `group_call`; P6 (R6b) elaborates them. *Revised by R6a's review (S1):* a promoted wanted
+  records its REQUIREMENT, never an index — the index is the member's at the site, which P6
+  computes by §12.3 (a recursive group's members share quantifiers, so one wanted can be a
+  different member's `k` at each site).
+- **`inst_evidence`** *(revised by R6a's review, B4)* is recorded where the wanteds are CREATED: a
+  copy (`Instantiate.copy`) and an imported scheme (`Instantiate.wantImported`) make their
+  requirements' wanteds in `Evidence.requirements` order of the scheme — §12.1's canonical order,
+  the one function the writer and promotion read — and `Solve.instantiated` records them as the
+  instruction's row. A `top`/`ext` answer's `args` are the same list. Nothing downstream reorders
+  evidence: I5 holds by construction.
+- **Every entry is paired, or the compiler says so** *(revised by R6a's review, S2)*. A flex's
+  entry with no wanted — in `Unify`'s release and union, `Solve.poison`, `Resolve.attach`, promotion,
+  the cap, an instantiation's copy — is `internal`: `Solve.expect` (a debug build stops, a release
+  build reports and takes the safe path) or, inside `Unify`, which never reports, `Unify.invariant`,
+  whose first fault `Solve` reports after the unification. Never a silent `continue`.
+- **In-place writes are not journalled**: v2 still has no speculation (§7.5), and `Resolve.step`
+  asserts that no snapshot is open (I14).
+
 ### 4.3 Binders
 
 ```zig
@@ -569,6 +614,32 @@ rows stay R8a's, refused only for a `--library` build. `tests/pending/v2-subset.
 forms, and `test-v2`'s drift check (`REPORT DRIFT`) holds the two together: on R5's corpus every
 one of the 355 fixtures the script names passes, and no fixture v2 does not refuse is red outside
 `v2-expected.md`. P9's table gains the `tries` rows (§8.6 *As built by R5*).
+
+*Widened by R6a (2026-09-25).* The gate is gone: v2 **checks every construct**, dispatch included,
+and P3 runs (the own-name index, a sorted `(name, decl)` array searched by `Solve.ownValue`: CK-42).
+What remains outside it is refused where it arises, never by a pre-scan:
+
+- **P6 is R6b's.** A root module whose own code needs evidence elaborated (`check2/Subset.zig`'s
+  `needsElaboration`: a `method_call` or `type_dispatch`, a `where` clause, or a reference to an
+  imported scheme with a requirement) is checked, but `js/Emit.zig` refuses to **build** it
+  (`not_implemented`, R6b, before any output) and `main.zig` refuses its `dump --stage=dispatch`.
+  `check` needs no elaboration. P9's table holds each declaration's requirement list (canonical
+  order, §12.1) and its convention with that count, and one `callee` term per `method_call` or
+  `type_dispatch` whose callee resolved to a value (`top` or `ext`) — the edge `Cycles` reads
+  (`Edges.declEdges`' third leg), so a value cycle through a method is still `cyclic_value`. The
+  refusal is by the Bir and the imports' interfaces only, so a cache hit answers the same.
+- **An unannotated own method used before its group** (§10, R7) is `not_implemented` at the use —
+  in the module rule, and in a derivability walk that meets an own type whose method of that name
+  has no scheme yet. A module that reports one keeps only its refusals (`Report.keepOnlyRefusals`):
+  what a use v2 could not type implies is noise.
+- **Derived contexts** (§11.2, R8a) are v1's one-entry-per-parameter rule: a nominal type's derived
+  `eq`/`compare` asks each type argument for the same method, and whether the type derives at all
+  is the session's capability bit, which v2 settles for its own module with the shared
+  `Types.settleDispatchCapabilities` (the scheme-driven settle v1 runs first) at P4's start and
+  after a group that publishes an unannotated `pub eq` or `compare`. Where v1's second,
+  probe-driven settle answers differently, v2 differs (listed in `tests/pending/v2-expected.md`,
+  R8a). A cache hit runs the same settle and skips v1's derived-row restore
+  (`Incremental.install`): v2 writes no derived row before R8a.
 
 ---
 
@@ -931,6 +1002,35 @@ with the deciders in `Decide.zig`.
   kinds, because no default readies a row that binds another `?` to `Maybe`. R6a's wanteds break
   that premise: R6a drains between defaults, or argues the claim again.
 
+*As built by R6a (2026-09-25): wanteds at the boundary.*
+- **Steps 1 and the eager drain** take wanteds from the same `Solve.ready` queue as obligations
+  (a wanted id is tagged with `Evidence.queued_wanted`), in one `seq` order (§9.1).
+- **Step 3 (N9).** A default can ready a wanted whose resolution decides another `?`, so
+  `Decide.defaults` drains after each default it applies rather than arguing the all-at-once
+  equivalence again.
+- **Step 4** also occurs-checks, with the same epochs, the method type of every wanted and every
+  variable of every open obligation riding on a root of the frame's pool (R4b's review, S4): a
+  cycle is `infinite_type` at the wanted's origin (the obligation's region), drawn and poisoned.
+  An open wanted's receiver is the pool root it rides on, a flex, which no cycle passes through;
+  a receiver that was bound was readied, and the resolver's walk met it (§9.5).
+- **Step 5, at a `let` frame: rule (a)** (§8.4's `let_constrained_monomorphic` switch, until
+  R14). A young root that carries a wanted is lowered, with its method types (`Walk.lowerTo`,
+  `owned`), to the enclosing rank before quantification, so the enclosing frame receives it, and
+  the binding is recorded for `type_mismatch`'s hint (`Env.monomorphic`). Lowering the method types
+  too is what keeps the binding's result tied to the receiver: v1 held back only the receiver.
+  So every promotion is a top-level declaration's.
+- **Step 7, at a top-level frame** (`Resolve.close`): promotion, the cap, `constrained_constant`,
+  `ambiguous_method_receiver`, then the proven-undetermined default (§9.4 *As built by R6a*).
+  Quantify collects the quantified flexes that carry wanteds (`Resolve.State.wanters`) as it collects
+  obligation carriers.
+- **Step 7's assert, restated** over the receivers it defaults: in R6a a default answers
+  `undetermined` and a promotion answers `promoted` without unifying anything, so the assert is
+  that step 7 made no unification at all (`Unify.unifications` unchanged), which is stronger than
+  a re-run of the occurs check over what it touched. A structural default that unifies (R8a's
+  shapes) must restate it again. *Revised by R6a's review (S8):* it is `Solve.expect`, so a
+  release build reports `internal` too, as an assert must (§15).
+
+
 ### 8.2 Occurs at every binder (CK-04, CK-03)
 
 The occurs check runs in two places:
@@ -985,6 +1085,7 @@ N6 and §7.5's `touched_len` are retired for R4b; R7 re-opens the question if a 
 - **Owed by R6a** (`plans/checker-rewrite.md` R6a's brief): step 4 also occurs-checks the receiver
   of every wanted riding on `F`'s pool and, from R5, every variable of every obligation. That is the
   CK-03 / row 76 coverage `touched` was for, at no cost in dispatch-free code.
+  Discharged by R6a (2026-09-25): see §8.1, *As built by R6a*, step 4.
 
 **How a cycle is reported** (the review's F3, F4 and S5). From a binder, or from a `too_deep`:
 
@@ -1287,11 +1388,129 @@ At the boundary that quantifies a flex receiver:
   - sub-wanted receivers are images of a scheme's quantifiers, strictly inside the parent receiver;
   - nominal recursion goes through the §11.2 fixpoint, not through resolution.
 
+  *Withdrawn by R6a's round-2 review (2026-09-25, N1): the premise above is false.* A `where`
+  clause may constrain a quantifier of ANOTHER parameter, so a sub-wanted's receiver is whatever the
+  caller passes there — the parent's receiver itself, or a type that holds it — on a receiver with
+  no cycle at all. `describe : Box a, b -> String where b.describe : b, K -> String` called as
+  `bx.describe bx` asks `describe` of `Box Int` twice and ends at `K`'s: finite evidence,
+  `describe_Box(describe_Box(describe_K))`, which v1 builds and runs. An equal or containing repeat
+  therefore does not imply a cycle, and the lineage rule is **replaced by a cycle test**: a wanted
+  on a structure is `infinite_type` at its origin exactly when its receiver root lies on a cycle
+  (`Instances.cyclic`, an occurs walk over `structural` successors), and the derivability walk
+  meets any cycle a derived shape passes through (§9 *As built*). A repeat on an acyclic receiver
+  is resolved like any other wanted; one that grows without end (`where b.describe : b, Box b ->
+  String` on itself) is non-cyclic and is stopped by the step budget below, which is reported.
+  Termination therefore rests on the budget, not on the lineage.
   So the rule only ever fires on the cyclic case. The drain backstop `1 << 20` stays as a reported
   backstop (`nesting_too_deep` plus poison), as `static-dispatch-spike.md` §6.3 requires. It counts
   **resolution steps per module, cumulatively** across every eager drain, frame and fixpoint (round
   4, S4-3).
+  *Revised by R6a's review (2026-09-25, F1):* **per top-level group**. A module-cumulative count
+  scales with the module, not with a pathology: 4 000 annotated `a == b` over a 100-field record
+  spent it and a valid program was refused. A runaway resolution is one group's, so the budget is
+  reset at every group (`Solve.group`) and its message says what happened
+  (`Messages.resolutionBudget`, still `nesting_too_deep`) rather than naming a type nesting depth.
   *Revised 2026-09-24 (S14): the first draft let an equal repeat be "answered by the ancestor".*
+
+*As built by R6a (2026-09-25).* `check2/Resolve.zig` (the step, attach, promotion, the lineage
+rule) and `check2/Instances.zig`'s second half (lookup and the derivability walk); the texts are
+v1's, through `Report`.
+
+- **The step** is §9.2's table. A `method` node creates the callee's wanted and steps it at once
+  (Rule U0: a record known at the call is a field call); an instantiation's wanteds ride on their
+  fresh receivers until `unify` readies them. The bridge unifies the method type with the
+  well-known signature for a flex AND a rigid `number` (CK-21), under the category
+  `.where_clause` when the wanted came from a clause (CK-55's half; its text is R13's). A given
+  unifies its method type with the wanted's, and a mismatch is v1's
+  `method_constraint_mismatch`.
+- **Lookup** is §9.3 in v1's order and with v1's texts: the table; the module rule (P3's index for
+  this module — an in-flight member is the §10.3 link, an unchecked one R7's refusal; another
+  module's `pub` value, else `private_method`); matching, which instantiates the scheme with
+  `parent` set, so its requirements are the sub-wanteds, and unifies it with the method type — a
+  failure is the module-rule clash, v1's `type_mismatch` naming the method's type — at a use AND for
+  a requirement of a method's context (review F2: a sub-wanted whose method exists at the wrong type
+  is that, never a derivation's refusal) — and only at a DERIVED shape's position the shape's
+  refusal, reported once for the lineage root's receiver (row 72's `SpecializedEqWrongReceiver`,
+  v1's rule); derivation (below); `unknown_method`. A receiver already on a cycle *when its
+  wanted is resolved* is one `infinite_type` at the use, poisoned, and nothing is looked up on
+  its head (review F5). A wanted resolved while the cycle is still open — `( x.foo (), x ==
+  Just x )`, drained on `Maybe a'` before `a'` is `x` — meets an honest `unknown_method` first,
+  and the cycle is reported when it closes: two messages, as v1 gives (round-2 review, nit 1).
+- **Derivation** reads the derived shape's positions — a nominal type's arguments (one per
+  parameter, R8a replaces it), a closed record's fields in name-text order, a tuple's elements —
+  and answers `derived` with one sub-wanted per position, each stepped at once: a flex position
+  rides on its variable, a rigid one needs a given and is otherwise `missing_where_constraint` at
+  the use (CK-20), a concrete one is resolved in turn.
+- **THE derivability verdict** *(rebuilt by R6a's review, 2026-09-25, B1 and B2)* is
+  `Instances.derivability(root, kind)`, and every derivation reads it — no shortcut, no second
+  opinion: the first round's `walked` bit let a position that was a flex when its shape was walked
+  skip the verdict once it was bound (`( h, 1 ) == ( h, 1 )` with `h` a `Handler (Int -> Int)` later
+  was accepted), the walk skipped alias nodes (`type alias H = Handler` was accepted), and a
+  `derivesNominal` answered "derivable" for every non-foreign type. Now:
+  - one **iterative** walk (I4) over `(node, method kind)` pairs, a growable stack of frames, each
+    pair coloured grey/black in the walk's own map: a pair met grey again is a cycle —
+    `infinite_type` at the use, poisoned — whichever method the boundaries alternate through (an
+    `eq` asking its payload for `compare`, whose `compare` asks for `eq`: v1 recursed through
+    that and overflowed its stack, CK-101);
+  - successors: an ALIAS node's expansion; a node with a `pub` method of the kind (a method
+    boundary) its arguments, each for the kinds its requirement bits name — its own kind, `eq`,
+    `compare` — as pairs of their own kind on the same stack (v1's remapping kept: a failure under
+    a boundary's `eq` requirement is `contains_function`, under `compare` `opaque_type`); every
+    other node its `structural` successors for the same kind;
+  - a node's own verdict (`gate`): a function; a record wider than the cap; a nominal type whose
+    head does not answer the kind — `contains_function` if it holds a function, else
+    `opaque_type`; an own type whose method of that name has no scheme yet is R7's refusal;
+  - a variable is not a verdict: it rides, and its sub-wanted is asked again when it is bound;
+  - linear on a DAG: a pair is walked once per walk, and a pair whose whole subgraph is ground
+    (no variable below) is kept in `Resolve.State.derivable` and never walked again in the module.
+- **Sharing (CK-80)** *(narrowed by R6a's review, B3)*: only an answer that depends on the receiver
+  alone is shared — a DERIVED one (`Resolve.State.derived`, keyed by the receiver's root and the
+  method). A later well-known wanted there has its own method type checked against
+  `root, root -> Bool|Order` by a unification that reports (never one used as a test) and is
+  answered `alias`. A method the module rule finds is instantiated per use, never shared: the
+  first round shared one instantiation of `m : T, a -> a` across uses at `Int` and `String`.
+- **The cycle test** *(replaces the lineage rule; round-2 review, N1)*: before anything is shared
+  or looked up, a wanted on a structure whose receiver root lies on a cycle (`Instances.cyclic`) is
+  one `infinite_type` at its origin, the cycle poisoned. The first round's lineage rule — an
+  ancestor's `(method, receiver root)` repeated, or the lineage root's receiver reached — fired on
+  valid programs whose `where` clause constrains another parameter (§9.5's withdrawn premise). The
+  lineage (`parent`) remains for failure propagation and the one-message-per-rigid key.
+- **The step budget** (`1 << 20` steps per top-level group, review F1) reports
+  `nesting_too_deep` once, in its own words, and fails the group's later wanteds.
+- **Promotion** (`Resolve.close`) walks each unannotated member's scheme with
+  `Evidence.requirements` and answers each wanted it reaches `promoted(root, method)` — the
+  requirement, whose index P6 computes per site (§12.3; review S1); over 64 it is
+  `too_many_inferred_constraints` and the sets are emptied (§10.11). The default answers an
+  unreached well-known wanted `undetermined`; any other method is v1's
+  `undeterminedMethodReceiver` (`unknown_method`).
+- **CK-37**: a rejection poisons the method type (v1's, so what the call returns is silent) and
+  never the receiver, so another method on it still reports. The class flag is
+  `Evidence.rejected`, per concrete receiver root, method and surface: a later wanted of the same
+  method there fails in silence. *Revised by R6a's review (S3, F3):* it is **OR-merged on every
+  union** — `Unify.merge` is the one place `unify` merges, and it moves the dropped root's flags to
+  the survivor — so the diagnostics no longer depend on which side of `[ x, y ]` became the root.
+  A rejected sub-wanted fails its parent and the whole lineage (a parent is never answered over a
+  failed argument).
+- **One message per rigid and method at a use** *(review F4)*: a rigid met more than once inside a
+  derived shape is one `missing_where_constraint` (`Resolve.State.missing`, keyed by the lineage
+  root's origin, the rigid and the method).
+- **A lying clause on a `number` rigid** *(review S6)* is checked where it is written: at the
+  declaration's `member` node, a given for `eq`/`compare` on a `number` rigid is unified with the
+  well-known signature under `.where_clause` (`Resolve.checkGivens`), so the declaration is
+  reported at its clause, not only at its callers.
+- **No cascades** *(review F6)*: a scheme that failed publishes `<error>` (§14.1) and no
+  `ambiguous_method_receiver` (the first round printed `where a.get : ?`); a call whose result
+  meets its expectation with a message fails, in silence (`Solve.failInstantiation`), those
+  requirements of its callee's instantiation whose method type reaches a variable of the callee's
+  result — they were read off the same wrong result — and what the arguments readied is drained
+  before the result is unified. *Narrowed by the round-2 review (S1):* the callee's row is taken
+  at the call node, a requirement that shares nothing with the result still reports (v1's two
+  messages), and a failed wanted is never an alias target — in `Resolve.attach` and
+  `Unify.unionWants` a live wanted of the same name takes its place in the set, so a flex's set
+  stays its open wanteds (§4.2).
+- **Invariants report** *(review S8)*: step 7's "promotion unified nothing" and "no speculation is
+  open" are `Solve.expect` — a debug build stops, a release build reports `internal` — never a
+  debug-only assert.
 
 ---
 
@@ -2562,6 +2781,16 @@ v1 is deleted.
 - **Elaboration (P6)** is linear in sites plus terms.
 - **The derived-context fixpoint** iterates at most (#params × #methods) times per type-level SCC,
   and the typical SCC has one type and one iteration.
+- **The resolver's cycle checks** *(noted by R6a's review, 2026-09-25)*. Two walks guard
+  §9.5, and none is free. (The first round's `repeatsAncestor` and its `Walk.reaches` are gone:
+  round-2 review, N1.) `Instances.cyclic` runs one occurs walk from every structure receiver
+  resolved; `Instances.derivability` walks a receiver's pairs once per derivation, and a ground
+  pair once per module. On a DAG each is linear in the distinct nodes it reaches, but they are run
+  per wanted, so a derived chain of depth *d* costs O(*d*²) node visits — the parser bounds *d*,
+  and a type's distinct nodes are few in practice (CK-80's depth-24 doubling DAG and the
+  alternating-boundary DAG of `perf_test.zig` stay flat). If a profile ever shows them, the
+  first fix is to run `cyclic` only for a readied wanted (an immediate one's receiver was checked
+  when it was bound).
 
 ---
 
@@ -2651,6 +2880,24 @@ the four deciders, step 3's defaults, step 7's close and poison's settling), whi
 v2's own texts moved from `Report.zig` to **`Messages.zig`** (198), which leaves `Report` 302
 lines: the emit path, `quiet`, the failure bits and v1's staged texts. Now `Obligations` 294,
 `Instances` 242, `Unify` 648, `Walk` 532: 7 442 lines in all.
+
+*As built by R6a (2026-09-25):* two new files, **`Evidence`** 357 lines (§4.2's tables: wanteds,
+answers, givens, the position pairing, and `requirements`, §12.1's one canonical order) and
+**`Resolve`** 502 (the step, attach and Rule U1's re-attach, the bridge, the `rigid` row, sharing,
+the lineage rule, promotion and the default). Lookup and the derivability walk joined the marker
+walk in **`Instances`**, now 864 lines — past its ~800, and R8a's fixpoint belongs there too, so
+R8a splits it (the marker walk is the separable half). `Solve` 795, `Unify` 776, `Walk` 546,
+`Instantiate` 400, `Decide` 374, `Report` 388, `Module` 501, `Subset` 81 (now the elaboration scan
+`build` and `dump --stage=dispatch` refuse by), `constrain/Expr` 445, `constrain/Decl` 606,
+`constrain/Tree` 416: 9 709 lines in all. No `Groups.zig` yet (R7). Shared: `Category.zig` gains
+`.where_clause` and `Diagnostics.categoryLines` gives it the general lines until R13 (v1 never makes
+one); `js/Emit.zig` and `main.zig` ask `Subset.needsElaboration`.
+
+*Revised by R6a's review (2026-09-25):* the marker walk left `Instances` for its own
+**`Marker`** (241 lines), so `Instances` (675) holds lookup and THE derivability verdict; the
+resolver's tables moved out of `Solve` into `Resolve.State` (S7). `Resolve` 608, `Evidence` 425,
+`Solve` 865, `Unify` 816, `Instantiate` 435, `Messages` 219, `rules_test` 173 (its S4 fence):
+10 151 lines in all, every file under its §19.1 figure.
 
 ---
 

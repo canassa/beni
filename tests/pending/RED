@@ -69,6 +69,17 @@ tests/pending/check/bad/MethodSignatureNoClash.beni v1 exit=1 codes=type_mismatc
 tests/pending/check/bad/MissingFieldShowsLiteralTypes v1 exit=1 codes=missing_field×1 why=message
 tests/pending/check/bad/MissingPatternConsRendering.beni v1 exit=1 codes=missing_patterns×1 why=message
 tests/pending/check/bad/MissingWhereAtUse.beni v1 exit=1 codes=missing_where_constraint×1 why=position
+tests/pending/check/bad/MethodResultTooGeneral.beni v1 exit=0 codes=none
+tests/pending/check/bad/NumberBridgeRigidLyingWhere.beni v1 exit=0 codes=none
+tests/pending/check/good/EagerDrainInnerLet.beni v1 exit=0 iface-differs
+tests/pending/check/bad/CyclicReceiverNoMethodLookup.beni v1 exit=1 codes=infinite_type×2,unknown_method×1 why=code
+# CK-101 on v1 is a stack overflow. Zig's fault handler prints its banner at once and then a
+# Debug stack trace of about 10 000 frames that outlasts the 20 s case timeout; the harness kills
+# the child at the banner and signs the abort it was headed for (world.zig `drain`, round-2 S2).
+tests/pending/check/bad/DerivabilityAlternatingCycle v1 crash=ABRT
+tests/pending/check/bad/MethodResultMismatchOnce v1 exit=0 codes=ambiguous_method_receiver×1
+tests/pending/check/bad/RejectedMethodClassWide v1 exit=1 codes=unknown_method×4 why=count
+tests/pending/check/bad/RigidInDerivedShapeOncePerSite.beni v1 exit=0 codes=none
 tests/pending/check/bad/MissingWhereInLetAnnotation.beni v1 exit=1 codes=missing_where_constraint×1 why=message
 tests/pending/check/bad/MutualGroupLocals.beni v1 exit=0 codes=none
 tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni v1 exit=1 codes=kind_mismatch×1,type_mismatch×2 why=message
@@ -142,39 +153,39 @@ scenario/CK-88 v1 slow
 # `not_implemented` now names R6a. The fixtures R5 turned green are in CLAIMED and lost their line;
 # `MissingFieldShowsLiteralTypes` (CK-59) keeps its line: its literal types are v2's now (§6.5),
 # and it is red only for the article, which is R13's.
-tests/pending/check/bad/CapNamesReceivers.beni v2 exit=1 codes=not_implemented×1 why=code
+# R6a (2026-09-25): v2 checks dispatch (`x.m`, `==`, `where`). A `check` fixture is now red for
+# its finding: R7's `not_implemented` at an own untyped method used before its group (one per
+# use, and nothing else of the module: `Report.keepOnlyRefusals`), R8a's derived contexts (the
+# `exit=0` lines), or the text R13 owns. A `run/` fixture that dispatches is refused by `build`
+# until R6b (`not_implemented` from `js/Emit.zig`). The six fixtures R6a turned green (CK-02,
+# 03, 09, 20, 21, 48) are in CLAIMED and lost their line.
+tests/pending/check/bad/CapNamesReceivers.beni v2 exit=1 codes=too_many_inferred_constraints×1 why=message
 tests/pending/check/bad/CurriedAnnotation.beni v2 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
-tests/pending/check/bad/CyclicReceiverResolution.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/DerivedContextMergesAsker v2 exit=1 codes=not_implemented×3 why=code
-tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/DerivedContextNeedsAnnotation v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/DerivedContextReentrantSameFirst v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/DerivedContextReentrant v2 exit=1 codes=not_implemented×2 why=code
+tests/pending/check/bad/DerivedContextMergesAsker v2 exit=0 codes=none
+tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst v2 exit=0 codes=ambiguous_method_receiver×1
+tests/pending/check/bad/DerivedContextNeedsAnnotation v2 exit=0 codes=ambiguous_method_receiver×1
+tests/pending/check/bad/DerivedContextReentrantSameFirst v2 exit=0 codes=none
+tests/pending/check/bad/DerivedContextReentrant v2 exit=0 codes=none
 tests/pending/check/bad/ExposingSameNameConstructor v2 exit=1 codes=expected_token×1 why=message
 tests/pending/check/bad/ListElementFromContext.beni v2 exit=1 codes=kind_mismatch×2 why=message
-tests/pending/check/bad/MethodSignatureNoClash.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/MethodSignatureNoClash.beni v2 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/MissingFieldShowsLiteralTypes v2 exit=1 codes=missing_field×1 why=message
 tests/pending/check/bad/MissingPatternConsRendering.beni v2 exit=1 codes=missing_patterns×1 why=message
-tests/pending/check/bad/MissingWhereAtUse.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/MissingWhereInLetAnnotation.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/MutualGroupLocals.beni v2 exit=1 codes=not_implemented×1 why=code
+tests/pending/check/bad/MissingWhereInLetAnnotation.beni v2 exit=1 codes=missing_where_constraint×1 why=message
 tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni v2 exit=1 codes=kind_mismatch×1,type_mismatch×2 why=message
-tests/pending/check/bad/OpenRecordEquality.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/OuterReceiverConstraintLevels.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/PrivateEqOutsideModule v2 exit=1 codes=not_implemented×2 why=code
+tests/pending/check/bad/OpenRecordEquality.beni v2 exit=1 codes=no_methods_on_shape×1 why=message
+tests/pending/check/bad/PrivateEqOutsideModule v2 exit=1 codes=private_method×3 why=count
 tests/pending/check/bad/RecursiveDispatchTwoTypesB.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/RecursiveDispatchTwoTypes.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/RecursiveGroupEvidenceReceiver v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/RecursiveGroupSubWanted v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/RigidInsideDerivedShape.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/SchemaWrapperExclusion.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/ScrutineeMethodMergeD14 v2 exit=1 codes=not_implemented×2 why=code
+tests/pending/check/bad/RecursiveDispatchTwoTypes.beni v2 exit=1 codes=not_implemented×2 why=code
+tests/pending/check/bad/RecursiveGroupEvidenceReceiver v2 exit=1 codes=kind_mismatch×1 why=code
+tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni v2 exit=0 codes=none
+tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni v2 exit=1 codes=kind_mismatch×1 why=code
+tests/pending/check/bad/RecursiveGroupSubWanted v2 exit=1 codes=kind_mismatch×1 why=code
+tests/pending/check/bad/SchemaWrapperExclusion.beni v2 exit=1 codes=not_equatable×1 why=count
+tests/pending/check/bad/ScrutineeMethodMergeD14 v2 exit=1 codes=not_implemented×4 why=code
 tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=type_mismatch×1 why=message
-tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/WhereClauseNumberReceiver.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/good/ScrutineeMethodMergeVariant v2 exit=1 codes=not_implemented×2
+tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=type_mismatch×1 why=message
+tests/pending/check/good/ScrutineeMethodMergeVariant v2 exit=1 codes=not_implemented×4
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/CustomEqHeadMatching v2 dev: exit=1 codes=not_implemented×3
 tests/pending/run/CustomEqTupleHead v2 dev: exit=1 codes=not_implemented×3
@@ -184,13 +195,13 @@ tests/pending/run/DerivedEqDeepRecord.beni v2 dev: exit=1 codes=not_implemented�
 tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×2
 tests/pending/run/GroupVariableOutsideCaller.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/LetHelperJoinedMethod.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/MutualDispatchMethods.beni v2 dev: exit=1 codes=not_implemented×1
+tests/pending/run/MutualDispatchMethods.beni v2 dev: exit=1 codes=not_implemented×2
 tests/pending/run/MutualGroupEvidenceOrder.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/OperatorSectionApplied.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/OwnMethodBeforeDefinition v2 dev: exit=1 codes=not_implemented×4
-tests/pending/run/OwnMethodDemandedEarly.beni v2 dev: exit=1 codes=not_implemented×1
+tests/pending/run/OwnMethodBeforeDefinition v2 dev: exit=1 codes=not_implemented×3
+tests/pending/run/OwnMethodDemandedEarly.beni v2 dev: exit=1 codes=not_implemented×3
 tests/pending/run/OwnMethodValuePrefix.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/PhantomParameterEq.beni v2 dev: exit=1 codes=not_implemented×1
+tests/pending/run/PhantomParameterEq.beni v2 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
 tests/pending/run/RecursionWithComparison.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/ScrutineeMethodLater.beni v2 dev: exit=1 codes=not_implemented×1
+tests/pending/run/ScrutineeMethodLater.beni v2 dev: exit=1 codes=not_implemented×2
 tests/pending/run/TryDecidedByLaterFacts.beni v2 dev: exit=1 codes=not_implemented×1

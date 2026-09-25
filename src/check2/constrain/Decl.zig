@@ -21,6 +21,8 @@ const Allocator = std.mem.Allocator;
 const Bir = @import("../../bir/Bir.zig");
 const TypeStore = @import("../../check/TypeStore.zig");
 const Scc = @import("../../check/Scc.zig");
+const Types = @import("../../check/Types.zig");
+const Context = @import("../Context.zig");
 const Tree = @import("Tree.zig");
 const Expr = @import("Expr.zig");
 const Pattern = @import("Pattern.zig");
@@ -42,7 +44,67 @@ pub const Member = struct {
     /// annotation, or the group's own variable — or none for a member with
     /// no body.
     check: Var.Optional,
+    /// The rigid reading's variables, for a `type_dispatch` in the body
+    /// (static-dispatch-spike.md §4.2).
+    rigids: []const Types.Builder.Scoped = &.{},
 };
+
+/// Read `d`'s `where` clause with `b` — the builder its annotation was read
+/// with, so a variable a constraint names is the one the annotation
+/// introduced (static-dispatch-spike.md §2.4) — and attach each
+/// variable's constraints to it: requirements on P2's scheme, givens on a
+/// body's rigid reading (checker-v2.md §4.2). v1's `attachWhere`, rules
+/// verbatim.
+pub fn attachWhere(cx: *const Context, d: Bir.Decl, b: *Types.Builder, decl: u32) Error!void {
+    const bir = cx.bir;
+    const clause = bir.declWhere(d);
+    if (clause.len == 0) return;
+    const scratch = cx.scratch;
+    const store = cx.store;
+    // Every type first: reading one can grow `b.scope`, and the lookup below
+    // wants the finished scope.
+    const fn_vars = try scratch.alloc(Var, clause.len);
+    defer scratch.free(fn_vars);
+    for (clause, fn_vars) |wc, *v| v.* = try cx.readAnnotation(b, wc.type_inst, decl);
+    const taken = try scratch.alloc(bool, clause.len);
+    defer scratch.free(taken);
+    @memset(taken, false);
+    var built: std.ArrayList(TypeStore.MethodConstraint) = .empty;
+    defer built.deinit(scratch);
+    for (clause, 0..) |wc, i| {
+        if (taken[i]) continue;
+        const variable = bir.symbol(wc.variable);
+        built.clearRetainingCapacity();
+        for (clause[i..], fn_vars[i..], i..) |other, fn_var, j| {
+            if (bir.symbol(other.variable) != variable) continue;
+            taken[j] = true;
+            try built.append(scratch, .{
+                .name = bir.symbol(other.method),
+                .fn_var = fn_var,
+                .region = other.type_inst,
+                .origin = .where_clause,
+            });
+        }
+        const target = blk: {
+            for (b.scope.items) |scoped| {
+                if (scoped.name == variable) break :blk scoped.v;
+            }
+            // `where_variable_unbound` refused it in lowering.
+            continue;
+        };
+        const set = try store.addConstraints(built.items);
+        const root = store.find(target);
+        switch (store.content(root)) {
+            // Copied and changed in one field (CK-18).
+            inline .flex, .rigid => |flags, tag| {
+                var with = flags;
+                with.constraints = set.toOptional();
+                store.setContent(root, @unionInit(TypeStore.Content, @tagName(tag), with));
+            },
+            else => {},
+        }
+    }
+}
 
 /// Generate one top-level binding group at `g.rank` (a fresh frame: the
 /// generator's pool, binders and annotated lists are the group's). Fills
@@ -64,8 +126,9 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
         if (!d.kind.isValue() or d.body == .none) continue;
         if (d.annotation.unwrap()) |annotation| {
             const scheme = g.decl_scheme[m.decl].unwrap() orelse continue;
-            const check = try rigidReading(g, annotation, scheme, bir.symbol(d.name).toOptional());
-            m.check = check.toOptional();
+            const reading = try rigidReading(g, annotation, scheme, bir.symbol(d.name).toOptional(), d);
+            m.check = reading.check.toOptional();
+            m.rigids = reading.rigids;
         } else {
             const v = try g.freshFlex();
             m.check = v.toOptional();
@@ -82,6 +145,8 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
         const d = bir.decls[m.decl];
         g.decl = @enumFromInt(m.decl);
         g.locals_base = d.locals_start;
+        g.decl_rigids = m.rigids;
+        defer g.decl_rigids = &.{};
         try parts.append(g.cx.scratch, try g.add(.member, @enumFromInt(0), m.decl, 0, .{}));
         try parts.append(g.cx.scratch, if (d.kind == .schema)
             try schemaDecl(g, m.decl)
@@ -92,12 +157,18 @@ pub fn group(g: *Generator, members: []Member) Error!Constraint {
 }
 
 /// Read `annotation` as rigid variables at the frame's rank, pool them, and
-/// record the binding for the generality check (§8.3).
-fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tree.Symbol.Optional) Error!Var {
+/// record the binding for the generality check (§8.3). For a top-level
+/// declaration (`top`), its `where` clause is read into the rigids too — the
+/// givens its body is checked with (§4.2) — and the rigids are returned for
+/// a `type_dispatch` to name.
+const Reading = struct { check: Var, rigids: []const Types.Builder.Scoped };
+
+fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tree.Symbol.Optional, top: ?Bir.Decl) Error!Reading {
     const mark = g.storeMark();
     var b = g.cx.builder(.rigid, g.rank);
     defer b.deinit();
     const check = try g.cx.readAnnotation(&b, annotation, @intFromEnum(g.decl));
+    if (top) |d| try attachWhere(g.cx, d, &b, @intFromEnum(g.decl));
     try g.adoptSince(mark);
     const rigids_start: u32 = @intCast(g.tree.extra.items.len);
     for (b.scope.items) |scoped| try g.tree.extra.append(g.gpa, @intFromEnum(scoped.v));
@@ -110,7 +181,10 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
         .name = name,
         .decl = @intFromEnum(g.decl),
     });
-    return check;
+    if (top) |d| {
+        if (d.where_start != d.where_end) try g.evidence.registerGivens(g.gpa, g.cx.store, g.cx.interner, g.cx.scratch, check, @intFromEnum(g.decl));
+    }
+    return .{ .check = check, .rigids = if (top != null) try g.cx.scratch.dupe(Types.Builder.Scoped, b.scope.items) else &.{} };
 }
 
 /// The body of a value declaration, checked against `target`. Its parameters
@@ -251,7 +325,7 @@ fn declareBinding(g: *Generator, m: Bir.Inst.Index, parts: *std.ArrayList(Constr
                 var scheme_builder = g.cx.builder(.flex, TypeStore.generalized);
                 defer scheme_builder.deinit();
                 const scheme = try g.cx.readAnnotation(&scheme_builder, a, @intFromEnum(g.decl));
-                const check = try rigidReading(g, a, scheme, name);
+                const check = (try rigidReading(g, a, scheme, name, null)).check;
                 g.setLocal(def.local, scheme);
                 _ = try g.header(check, m, name);
                 return check;

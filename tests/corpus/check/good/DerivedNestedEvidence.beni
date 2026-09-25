@@ -1,0 +1,23 @@
+-- checker-v2.md §9.5's lineage rule must not fire on a deep ACYCLIC
+-- receiver (R6a's reviewer focus): `List (List (Box a))` resolves `List.eq`,
+-- whose `a.eq` resolves `List.eq` again, whose `a.eq` reaches `Box`'s
+-- derived `eq` and then the given `a.eq` — each sub-wanted's receiver
+-- strictly inside its parent's, so no `infinite_type`. The unannotated twin
+-- promotes the one requirement it reaches, and `ints` pins it to `Int`.
+type Box a
+    = Box a
+
+
+pub same : List (List (Box a)), List (List (Box a)) -> Bool
+    where a.eq : a, a -> Bool
+same x y =
+    x == y
+
+
+pub inferred x y =
+    [ [ Box x ] ] == [ [ Box y ] ] && x == y
+
+
+pub ints : Bool
+ints =
+    same [ [ Box 1 ] ] [ [ Box 2 ] ] && inferred 1 2

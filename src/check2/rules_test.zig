@@ -9,6 +9,12 @@
 //!   range's variables, a record's fields, a variable's constraints — are
 //!   read only in `Walk.zig`, and in `Unify.zig` and `Instantiate.zig`, which
 //!   pair two structures and copy one. Anyone may read a node's TAG and flags.
+//! - **Capability has one reader until R8a (review S4).** v1's capability
+//!   API on `Types` (the settle and the bits it writes) is read only by the
+//!   files on `capability_readers`: `Instances.zig`, the one derivability
+//!   verdict, and `Module.zig`/`Incremental.zig`, which run the settle. R8a
+//!   replaces it with §11.2's fixpoint and EMPTIES the list (its brief,
+//!   `plans/checker-rewrite.md`); a new reader fails here.
 //!
 //! The file list is checked against the directory, so a new file cannot slip
 //! past it.
@@ -23,14 +29,17 @@ const files = [_]File{
     .{ .path = "Context.zig", .text = @embedFile("Context.zig") },
     .{ .path = "Decide.zig", .text = @embedFile("Decide.zig") },
     .{ .path = "Driver.zig", .text = @embedFile("Driver.zig") },
+    .{ .path = "Evidence.zig", .text = @embedFile("Evidence.zig") },
     .{ .path = "Generalize.zig", .text = @embedFile("Generalize.zig") },
     .{ .path = "Incremental.zig", .text = @embedFile("Incremental.zig") },
     .{ .path = "Instances.zig", .text = @embedFile("Instances.zig") },
     .{ .path = "Instantiate.zig", .text = @embedFile("Instantiate.zig") },
+    .{ .path = "Marker.zig", .text = @embedFile("Marker.zig") },
     .{ .path = "Messages.zig", .text = @embedFile("Messages.zig") },
     .{ .path = "Module.zig", .text = @embedFile("Module.zig") },
     .{ .path = "Obligations.zig", .text = @embedFile("Obligations.zig") },
     .{ .path = "Publish.zig", .text = @embedFile("Publish.zig") },
+    .{ .path = "Resolve.zig", .text = @embedFile("Resolve.zig") },
     .{ .path = "Report.zig", .text = @embedFile("Report.zig") },
     .{ .path = "Solve.zig", .text = @embedFile("Solve.zig") },
     .{ .path = "Subset.zig", .text = @embedFile("Subset.zig") },
@@ -132,4 +141,33 @@ test "the rules read every file of src/check2" {
         try testing.expect(found);
     }
     try testing.expectEqual(files.len, names.items.len);
+}
+
+/// v1's capability API on `Types` (review S4): the settle, and the bits it
+/// writes. R8a removes every use and empties `capability_readers`.
+const capability_api = [_][]const u8{
+    "settleDispatchCapabilities(", "answersEq(",              "answersCompare(",
+    "hasFunction(",                "methodParamRequirement(", "hasPublicDispatchMethod(",
+};
+
+/// Allowed today, until R8a (`plans/checker-rewrite.md`, R8a's brief).
+const capability_readers = [_][]const u8{ "Instances.zig", "Module.zig", "Incremental.zig" };
+
+test "S4: only the derivability verdict and the settle read v1's capability API" {
+    var bad: usize = 0;
+    for (files) |f| {
+        if (listed(f.path, &capability_readers) or std.mem.eql(u8, f.path, "rules_test.zig")) continue;
+        var it = codeLines(f.text);
+        var n: usize = 0;
+        while (it.next()) |line| {
+            n += 1;
+            if (isComment(line)) continue;
+            for (capability_api) |pattern| {
+                if (std.mem.indexOf(u8, line, pattern) == null) continue;
+                std.debug.print("{s}:{d} reads v1's capability API: `{s}`\n", .{ f.path, n, pattern });
+                bad += 1;
+            }
+        }
+    }
+    try testing.expectEqual(@as(usize, 0), bad);
 }

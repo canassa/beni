@@ -313,7 +313,10 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
             schemes[decl.int()] = root.toOptional();
         }
         try d.types.settleDispatchCapabilities(gpa, m, d.graph, d.artifacts, &store, schemes);
-        d.types.restoreDerivedCapabilities(m, &d.dispatch[m.int()]);
+        // v2 writes no derived row before R8a (P5), so its table cannot say
+        // which types derive: the settle above is what a cold v2 check
+        // computed too (`Module.check`).
+        if (!d.options.usesV2(d.graph, m)) d.types.restoreDerivedCapabilities(m, &d.dispatch[m.int()]);
     }
 
     // 3. The diagnostics, replayed. The message is the prose the

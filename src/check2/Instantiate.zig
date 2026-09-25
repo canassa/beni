@@ -14,8 +14,9 @@
 //! children mapped through the memo. A node that is not generalised is
 //! shared, as in Elm: that is what keeps a lambda parameter monomorphic.
 //! Constraint method types are successors (`Walk.owned`) and so
-//! are copied through the same memo (§4.2) — nothing in R4b's subset has
-//! one, but the walk does not need to know that.
+//! are copied through the same memo (§4.2), and each requirement the copy
+//! makes becomes a wanted of the instantiating instruction (I5,
+//! `want`) — as does each requirement an imported scheme is read with.
 //!
 //! **What a reference names** is resolved from the module's own Bir or a
 //! dependency's INTERFACE, never a dependency's Bir (`fast-compiler.md`
@@ -33,6 +34,7 @@ const Schemes = @import("../check/Schemes.zig");
 const Context = @import("Context.zig");
 const Generalize = @import("Generalize.zig");
 const Walk = @import("Walk.zig");
+const Evidence = @import("Evidence.zig");
 
 const Instantiate = @This();
 
@@ -49,9 +51,29 @@ instantiations: u64 = 0,
 /// The declaration being solved, for a too-deep note (§15.2): set by the
 /// solver at each `member` node.
 decl: ?u32 = null,
+/// Where an instantiation's requirements become wanteds (I5, §4.2): one per
+/// requirement of the scheme, with the instruction that instantiated it as
+/// their origin. Null in a unit test with no evidence tables.
+evidence: ?*Evidence = null,
+/// The module's creation counter, shared with obligations (§9.1).
+seq: *u32 = undefined,
+/// The instruction the copy in progress is FOR (`copy`'s caller sets it).
+origin: Bir.Inst.Index = @enumFromInt(0),
+/// The wanted whose resolution asked for the copy in progress (an
+/// instance's context, §9.3 step 4), or none: the lineage of §9.5.
+parent: Evidence.WantedId.Optional = .none,
+/// The wanteds the last `copy` or `reference` created, in the scheme's
+/// canonical order (I5).
+made: std.ArrayList(Evidence.WantedId) = .empty,
+/// Constraint entries the copy in progress made (`mappedConstraints`).
+entries: u32 = 0,
+/// Instantiations whose entries were not all paired with a wanted: the
+/// solver reports each as `internal` (S2).
+unpaired: u32 = 0,
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
+    in.made.deinit(in.cx.gpa);
 }
 
 fn frame(in: *Instantiate) *Generalize.Frame {
@@ -105,10 +127,14 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
         }
     }
     // Pass 2: each copy's content, its successors mapped through the memo.
+    in.entries = 0;
     for (in.copied.items[start..]) |r| {
         const c = store.copy(r).unwrap().?;
         store.setContent(c, try in.mapped(r));
     }
+    // The requirements it copied become wanteds, in canonical order (I5),
+    // read off the scheme while the memo still maps it to the copy.
+    if (in.entries != 0) try in.wantInOrder(root, true);
     const result = store.copy(root).unwrap().?;
     for (in.copied.items[start..]) |r| store.setCopy(r, .none);
     in.copied.shrinkRetainingCapacity(start);
@@ -141,9 +167,72 @@ fn mappedConstraints(in: *Instantiate, flags: TypeStore.Flags) Error!TypeStore.C
         const original = set.at(store, @intCast(i));
         c.* = .{ .name = original.name, .fn_var = image(store, original.fn_var), .region = original.region, .origin = original.origin };
     }
+    in.entries += n;
     return (try store.addConstraints(built)).toOptional();
 }
 
+/// I5, by construction: the requirements of `scheme` become wanteds in
+/// §12.1's canonical order (`Evidence.requirements`, the one function the
+/// writer, promotion and P6 read), so an instantiation's evidence is in the
+/// order its callee takes it and nothing downstream reorders it. For a copy
+/// (`copied`) each requirement's receiver is its quantifier's copy; an
+/// imported scheme's variables are its own. Every entry the copy made must be
+/// paired: one that is not counts in `unpaired`, which the solver reports as
+/// `internal` (§4.2 *As built by R6a*).
+fn wantInOrder(in: *Instantiate, scheme: Var, copied: bool) Error!void {
+    if (in.evidence == null) return;
+    const store = in.cx.store;
+    const scratch = in.cx.scratch;
+    var reqs: std.ArrayList(Evidence.Requirement) = .empty;
+    defer reqs.deinit(scratch);
+    try Evidence.requirements(store, in.cx.interner, scheme, scratch, &reqs);
+    var made: u32 = 0;
+    for (reqs.items) |r| {
+        const receiver = if (copied)
+            (if (store.rank(r.root) == TypeStore.generalized) (store.copy(r.root).unwrap() orelse continue) else continue)
+        else
+            r.root;
+        const set = Walk.constraints(store.flagsOf(receiver));
+        try in.want(receiver, set.at(store, r.index), Evidence.position(store, set.set, r.index));
+        made += 1;
+    }
+    if (made != in.entries) in.unpaired += 1;
+}
+
+/// One requirement of the scheme being instantiated becomes a wanted (I5):
+/// its receiver is the copy of the quantifier, its method type the copy of
+/// the requirement's, and it rides on the receiver at `position` — an open
+/// entry of a fresh variable's set, until a unification readies it.
+fn want(in: *Instantiate, receiver: Var, c: TypeStore.MethodConstraint, at: u32) Error!void {
+    const evidence = in.evidence orelse return;
+    const gpa = in.cx.gpa;
+    const id = try evidence.add(gpa, .{
+        .method = c.name,
+        .receiver = receiver,
+        .method_type = c.fn_var,
+        .origin = in.origin,
+        .kind = c.origin,
+        .decl = in.decl orelse Evidence.Wanted.no_decl,
+        .parent = in.parent,
+        .seq = in.seq.*,
+    });
+    in.seq.* += 1;
+    try evidence.setSlot(gpa, at, .wanted(id));
+    try in.made.append(gpa, id);
+}
+
+/// The requirements an imported scheme read onto the variables made since
+/// `mark` become wanteds, as a copy's do (`want`). `Schemes.instantiate`
+/// hands each constrained quantifier a fresh set of its own.
+fn wantImported(in: *Instantiate, mark: u32, scheme: Var) Error!void {
+    const store = in.cx.store;
+    in.entries = 0;
+    var i = mark;
+    while (i < store.count()) : (i += 1) {
+        in.entries += Walk.constraints(store.flagsOf(@enumFromInt(i))).count(store);
+    }
+    if (in.entries != 0) try in.wantInOrder(scheme, false);
+}
 /// A copied node's content. Instantiating an annotation's promise turns it
 /// into an ordinary variable: inside the body `a` is rigid, at a use it is
 /// whatever the use needs (Elm's `makeCopyHelp`).
@@ -186,6 +275,7 @@ fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
 /// failed): the caller poisons.
 pub fn reference(in: *Instantiate, region: Bir.Inst.Index) Error!?Var {
     const cx = in.cx;
+    in.origin = region;
     const bir = cx.bir;
     const data = bir.instData(region);
     return switch (bir.instTag(region)) {
@@ -206,6 +296,12 @@ pub fn reference(in: *Instantiate, region: Bir.Inst.Index) Error!?Var {
     };
 }
 
+/// Another module's value `index`, instantiated with its requirements as
+/// wanteds of `origin` (a method the module rule found, §9.3 step 3).
+pub fn importedValue(in: *Instantiate, module: Graph.Index, index: u32) Error!?Var {
+    return in.imported(module, .value, index);
+}
+
 const Imported = enum { value, schema_member, schema_ctor };
 
 /// A value, schema member or schema constructor of another module,
@@ -223,6 +319,7 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     const mark = cx.store.count();
     const v = try Schemes.instantiate(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), in.frame().rank, cx.scratch, null);
     try in.adoptSince(mark);
+    try in.wantImported(mark, v);
     return v;
 }
 

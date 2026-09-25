@@ -1,1 +1,5 @@
-type_mismatch 18:9
+# Corrected by R6a (2026-09-25): a number literal against `String` is v1's
+# `kind_mismatch` ("One of those has to be a number"), the code the oracle twin
+# (`f : Int, String -> Int`, `f a 5`) reports at the same place; R0 wrote
+# `type_mismatch`, a name for the same message.
+kind_mismatch 18:9

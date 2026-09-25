@@ -1,0 +1,16 @@
+-- check/bad: `==` on a tuple whose first position is an ALIAS of a type
+-- that holds a function is `not_equatable` at the comparison: the
+-- derivability verdict follows an alias to what it stands for
+-- (checker-v2.md §9.5, as built by R6a's review). R6a's first round skipped
+-- alias nodes and accepted this program (review B1, probe A1).
+type Handler
+    = Handler (Int -> Int)
+
+
+type alias H =
+    Handler
+
+
+same : H, H -> Bool
+same a b =
+    ( a, 1 ) == ( b, 1 )

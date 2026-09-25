@@ -1,0 +1,22 @@
+-- check/good: every use of a method the module rule finds instantiates its
+-- scheme afresh (checker-v2.md §9.3 step 4, §4.2): `m : T, a -> a` is used
+-- at `Int` and at `String` in one body, on a receiver known at the call
+-- (`h`) and on a constructed one (`k`). R6a's first round shared the first
+-- use's instantiation through its CK-80 memo, so the second use was
+-- `Int` (review B3); the memo now holds only derived answers, which depend
+-- on the receiver alone.
+import T exposing (T)
+
+
+pub h : T, String -> ( Int, String )
+h t y =
+    ( t.m 1, t.m y )
+
+
+pub k t y =
+    ( (T.T 0).m 1, (T.T 0).m y, [ t, T.T 1 ] )
+
+
+pub use : T -> ( Int, String, List T )
+use t =
+    k t "s"

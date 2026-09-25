@@ -1,0 +1,7 @@
+pub type T
+    = T Int
+
+
+pub m : T, a -> a
+m t a =
+    a

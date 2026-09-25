@@ -61,6 +61,8 @@ failed_patterns: std.DynamicBitSetUnmanaged = .{},
 current: ?u32 = null,
 /// Errors emitted, dropped ones included: what the plan gate reads.
 errors: u32 = 0,
+/// A use needed a slice v2 does not have yet (`notImplementedR7`).
+refused: bool = false,
 /// Per local of the module, what the generator bound it to: the texts name
 /// a callee from it (`Reporter.describe`).
 local_type: []Var.Optional = &.{},
@@ -299,4 +301,88 @@ pub fn nestingTooDeep(r: *Report, region: Bir.Inst.Index, limit: u32) Error!void
 pub fn internal(r: *Report, region: Bir.Inst.Index, what: []const u8) Error!void {
     try r.texts.internalAlways(region, what);
     try r.flush();
+}
+
+// ---- Dispatch (static-dispatch-spike.md §10): v1's texts, staged ---------
+
+pub fn unknownMethod(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, module: Graph.Index, type_name: Symbol, method: Symbol) Error!void {
+    try r.texts.unknownMethod(origin, from_annotation, module, type_name, method);
+    try r.flush();
+}
+
+pub fn undeterminedMethodReceiver(r: *Report, region: Bir.Inst.Index, method: Symbol, kind: TypeStore.Kind) Error!void {
+    try r.texts.undeterminedMethodReceiver(region, method, kind);
+    try r.flush();
+}
+
+pub fn methodSignatureMismatch(r: *Report, region: Bir.Inst.Index, module: Graph.Index, type_name: Symbol, method: Symbol, found: Var, wanted: Var) Error!void {
+    try r.texts.methodSignatureMismatch(region, module, type_name, method, found, wanted);
+    try r.flush();
+}
+
+pub fn privateMethod(r: *Report, region: Bir.Inst.Index, module: Graph.Index, method: Symbol) Error!void {
+    try r.texts.privateMethod(region, module, method);
+    try r.flush();
+}
+
+pub const ShapeKind = Diagnostics.Reporter.ShapeKind;
+
+pub fn noMethodsOnShape(r: *Report, region: Bir.Inst.Index, method: Symbol, v: Var, shape: ShapeKind) Error!void {
+    try r.texts.noMethodsOnShape(region, method, v, shape);
+    try r.flush();
+}
+
+pub fn missingWhereConstraint(r: *Report, origin: Bir.Inst.Index, from_annotation: bool, var_name: Symbol.Optional, method: Symbol, fn_var: Var) Error!void {
+    try r.texts.missingWhereConstraint(origin, from_annotation, var_name, method, fn_var);
+    try r.flush();
+}
+
+pub fn methodConstraintMismatch(r: *Report, region: Bir.Inst.Index, other: Bir.Inst.Index, method: Symbol, younger: Var, older: Var) Error!void {
+    try r.texts.methodConstraintMismatch(region, other, method, younger, older);
+    try r.flush();
+}
+
+pub fn typeDispatchNeedsAnnotation(r: *Report, region: Bir.Inst.Index, var_name: Symbol.Optional, method: Symbol, fn_var: Var) Error!void {
+    try r.texts.typeDispatchNeedsAnnotation(region, var_name, method, fn_var);
+    try r.flush();
+}
+
+pub fn tooManyInferredConstraints(r: *Report, region: Bir.Inst.Index, token: u32, decl: Symbol, count: u32, limit: u32, names: []const Symbol) Error!void {
+    try r.texts.tooManyInferredConstraints(region, token, decl, count, limit, names);
+    try r.flush();
+}
+
+pub fn ambiguousMethodReceiver(r: *Report, region: Bir.Inst.Index, token: u32, decl: Symbol, count: u32, scheme: Var) Error!void {
+    try r.texts.ambiguousMethodReceiver(region, token, decl, count, scheme);
+    try r.flush();
+}
+
+pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl: Symbol, var_name: Symbol.Optional, method: Symbol) Error!void {
+    try r.texts.constrainedConstant(region, token, decl, var_name, method);
+    try r.flush();
+}
+
+/// A use that needs an own method whose binding group is checked after it:
+/// R7's nesting at demand (checker-v2.md §10.2). Until then the use says so,
+/// once, and nothing else is said about it.
+pub fn notImplementedR7(r: *Report, region: Bir.Inst.Index, method: Symbol) Error!void {
+    const message = try std.fmt.allocPrint(r.gpa, "checker v2 cannot check this use until slice R7: it needs `{s}`, a method of this module that has no type annotation and whose binding group is checked after this one.\n", .{r.env.interner.slice(method)});
+    r.refused = true;
+    try r.emit(.{ .code = .not_implemented, .module = r.module, .region = region, .message = message });
+}
+
+/// A module that used a construct v2 does not check yet says only that:
+/// every other message of the module (from `start`, its first) is dropped,
+/// since a use v2 could not type makes whatever follows from it noise, and
+/// v2 never answers for code it does not check (§5, *As built by R4b*).
+pub fn keepOnlyRefusals(r: *Report, start: usize) void {
+    if (!r.refused) return;
+    var kept = start;
+    for (r.items.items[start..]) |item| {
+        if (item.code == .not_implemented or item.code == .internal) {
+            r.items.items[kept] = item;
+            kept += 1;
+        } else r.gpa.free(item.message);
+    }
+    r.items.shrinkRetainingCapacity(kept);
 }

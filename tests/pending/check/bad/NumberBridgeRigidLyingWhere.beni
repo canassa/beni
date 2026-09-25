@@ -1,0 +1,24 @@
+-- CK-21: the `number` bridge checks a `where` clause's declared type on a
+-- RIGID receiver too (checker-v2.md §9.2's `rigid` row, D9 as amended), the
+-- rigid half of `WhereClauseNumberReceiver`. `lying`'s clause is checked
+-- against `number, number -> Order` where it is written, at the declaration
+-- (§6.6 as refined by R6a's review, S6), and every caller is refused too:
+-- `rigidCaller`'s `number` is rigid with no such given, so the bridge
+-- checks `number, number -> Int` against `number, number -> Order` at the
+-- call and refuses it, as it does for the literal in `literalCaller`. On
+-- 68186fa v1 checks all three clean. The oracle twin is `lying` called
+-- with an `Int`, refused by v1 the same way.
+pub lying : number, number -> Int
+    where number.compare : number, number -> Int
+lying x y =
+    x.compare y + 1
+
+
+pub rigidCaller : number -> Int
+rigidCaller n =
+    lying n n
+
+
+pub literalCaller : Int
+literalCaller =
+    lying 1 2

@@ -18,9 +18,14 @@
 //!     (§4.5, §8.6); a record literal's fields and its meeting with the
 //!     expectation are one node, whose order the solver chooses (§6.5 as
 //!     built by R5, CK-59);
-//!   - the forms outside v2's subset (`Subset.zig`: method calls) never
-//!     reach here; if one did, it is `internal`, never a silent poison
-//!     (review S1).
+//!   - a method call, an operator comparison and a `type_dispatch` emit a
+//!     `method` node between the receiver's constraints and the arguments'
+//!     (Rule U0), whose wanted the resolver answers (§9); an operator
+//!     section's lambda is typed `a, a -> Bool` before its body (v1's message
+//!     rule), but a saturated section is an ordinary call of the lambda: v1's
+//!     call shim is gone (§6.4, CK-32);
+//!   - a form with no rule here is `internal`, never a silent poison (review
+//!     S1).
 
 const std = @import("std");
 const Bir = @import("../../bir/Bir.zig");
@@ -29,6 +34,8 @@ const Tree = @import("Tree.zig");
 const Pattern = @import("Pattern.zig");
 const Decl = @import("Decl.zig");
 const Walk = @import("../Walk.zig");
+const Evidence = @import("../Evidence.zig");
+const InternPool = @import("../../InternPool.zig");
 
 const Generator = Tree.Generator;
 const Constraint = Tree.Constraint;
@@ -199,6 +206,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             });
         },
 
+        .method_call => return methodCall(g, inst, data, expected, category),
+        .type_dispatch => return typeDispatch(g, inst, data, expected, category),
         .call => return call(g, inst, data, expected, category),
         .lambda => return lambda(g, inst, data, expected, category),
         .let => return Decl.letExpr(g, data, expected, category),
@@ -215,6 +224,136 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         // poison (review S1, I8).
         else => return g.add(.internal, inst, @intFromEnum(expected), 0, category),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Method calls (static-dispatch-spike.md §1, §3.1, §4; checker-v2.md §6.4)
+// ---------------------------------------------------------------------------
+
+/// `x.m a b` and the six comparison operators: the receiver's constraints,
+/// then the `method` node, then the arguments' — the order IS Rule U0 (a
+/// receiver already known is resolved before the arguments are checked).
+fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
+    const bir = g.cx.bir;
+    const m = bir.extraData(@enumFromInt(data.rhs), Bir.MethodCall);
+    const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
+    const receiver: Bir.Inst.Index = @enumFromInt(data.lhs);
+    if (m.origin != .none) return wellKnownCall(g, inst, receiver, args, m.origin, expected, category);
+
+    const recv = try g.freshFlex();
+    const arg_vars = try g.cx.scratch.alloc(Var, args.len);
+    defer g.cx.scratch.free(arg_vars);
+    for (arg_vars) |*v| v.* = try g.freshFlex();
+    // The receiver FIRST: `x.m a b` means `M.m x a b` (§1.2).
+    const params = try g.cx.scratch.alloc(Var, args.len + 1);
+    defer g.cx.scratch.free(params);
+    params[0] = recv;
+    @memcpy(params[1..], arg_vars);
+    const method_type = try g.func(params, expected);
+    const payload = try g.addExtra(Tree.Method{
+        .name = bir.symbol(m.name),
+        .receiver = recv,
+        .method_type = method_type,
+        .kind = @intFromEnum(Evidence.Kind.dot_call),
+        .var_name = @intFromEnum(Tree.Symbol.Optional.none),
+    });
+    var parts: std.ArrayList(Constraint) = .empty;
+    defer parts.deinit(g.cx.scratch);
+    try parts.append(g.cx.scratch, try expr(g, receiver, recv, .{ .tag = .general }));
+    try parts.append(g.cx.scratch, try g.add(.method, inst, payload, 0, category));
+    for (args, arg_vars, 0..) |arg, v, i| {
+        try parts.append(g.cx.scratch, try expr(g, arg, v, .{
+            .tag = .call_arg,
+            .index = @intCast(i + 1),
+            .owner = inst.toOptional(),
+        }));
+    }
+    return g.conj(parts.items);
+}
+
+/// `a == b` and the four orderings (§3.1): ONE operand variable for the
+/// receiver, the argument and the method type, so `same a b = a == b` is
+/// `a, a -> Bool where a.eq : a, a -> Bool`; the instruction is `Bool`.
+fn wellKnownCall(
+    g: *Generator,
+    inst: Bir.Inst.Index,
+    receiver: Bir.Inst.Index,
+    args: []const Bir.Inst.Index,
+    origin: Bir.WellKnown,
+    expected: Var,
+    category: Category,
+) Error!Constraint {
+    const wk = g.cx.types.well_known;
+    const operand = try g.freshFlex();
+    const method_result = switch (origin) {
+        .none, .eq, .neq => try g.primitive(wk.bool),
+        else => try g.primitive(wk.order),
+    };
+    const method_type = try g.func(&.{ operand, operand }, method_result);
+    const name = (origin.method() orelse InternPool.WellKnown.eq).symbol();
+    const payload = try g.addExtra(Tree.Method{
+        .name = name,
+        .receiver = operand,
+        .method_type = method_type,
+        .kind = @intFromEnum(Evidence.Kind.well_known),
+        .var_name = @intFromEnum(Tree.Symbol.Optional.none),
+    });
+    var parts: std.ArrayList(Constraint) = .empty;
+    defer parts.deinit(g.cx.scratch);
+    try parts.append(g.cx.scratch, try g.equal(expected, try g.primitive(wk.bool), inst, category));
+    try parts.append(g.cx.scratch, try expr(g, receiver, operand, .{
+        .tag = .call_arg,
+        .index = 1,
+        .owner = inst.toOptional(),
+    }));
+    try parts.append(g.cx.scratch, try g.add(.method, inst, payload, 0, category));
+    for (args, 0..) |arg, i| {
+        try parts.append(g.cx.scratch, try expr(g, arg, operand, .{
+            .tag = .call_arg,
+            .index = @intCast(i + 2),
+            .owner = inst.toOptional(),
+        }));
+    }
+    return g.conj(parts.items);
+}
+
+/// `a.decode s` (§4): a dispatch on a TYPE. The variable is the rigid the
+/// declaration's annotation introduced for it; lowering refused every other
+/// case, and a poisoned annotation poisons the expression here.
+fn typeDispatch(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
+    const bir = g.cx.bir;
+    const t = bir.extraData(@enumFromInt(data.rhs), Bir.TypeDispatch);
+    const args = bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Bir.Inst.Index);
+    const var_symbol = bir.symbols[data.lhs];
+    const rigid = blk: {
+        for (g.decl_rigids) |scoped| {
+            if (scoped.name == var_symbol) break :blk scoped.v;
+        }
+        break :blk try g.fresh(.err);
+    };
+    const arg_vars = try g.cx.scratch.alloc(Var, args.len);
+    defer g.cx.scratch.free(arg_vars);
+    for (arg_vars) |*v| v.* = try g.freshFlex();
+    // No receiver: the method's type is `arg₁, …, argₙ -> result` (§4.2).
+    const method_type = try g.func(arg_vars, expected);
+    const payload = try g.addExtra(Tree.Method{
+        .name = bir.symbol(t.name),
+        .receiver = rigid,
+        .method_type = method_type,
+        .kind = @intFromEnum(Evidence.Kind.type_dispatch),
+        .var_name = @intFromEnum(var_symbol.toOptional()),
+    });
+    var parts: std.ArrayList(Constraint) = .empty;
+    defer parts.deinit(g.cx.scratch);
+    try parts.append(g.cx.scratch, try g.add(.method, inst, payload, 0, category));
+    for (args, arg_vars, 0..) |arg, v, i| {
+        try parts.append(g.cx.scratch, try expr(g, arg, v, .{
+            .tag = .call_arg,
+            .index = @intCast(i + 1),
+            .owner = inst.toOptional(),
+        }));
+    }
+    return g.conj(parts.items);
 }
 
 fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
@@ -258,7 +397,18 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     const param_vars = try g.cx.scratch.alloc(Var, params.len);
     defer g.cx.scratch.free(param_vars);
     for (param_vars) |*v| v.* = try g.freshFlex();
-    const result = try g.freshFlex();
+    var result = try g.freshFlex();
+    // An operator section (`(==)`, `(<)`, …) is a lambda over one marked
+    // `method_call` (static-dispatch-spike.md §3.1, A.22), and its type is
+    // known exactly: `a, a -> Bool`. Pinned before the body, so
+    // `List.foldl [ 1 ] 0 (<)` says "this argument is `Int, Int -> Bool`" at
+    // the section and not "`Bool` is not `b`" inside it (v1's rule: a
+    // message rule, not the call shim §6.4 deletes).
+    if (bir.operatorSection(inst, g.locals_base) != null) {
+        const operand = try g.freshFlex();
+        for (param_vars) |*v| v.* = operand;
+        result = try g.primitive(g.cx.types.well_known.bool);
+    }
 
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);

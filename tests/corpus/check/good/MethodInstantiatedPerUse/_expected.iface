@@ -1,0 +1,8 @@
+module Main
+  value h : T, String -> ( Int, String )
+  value k : T, a -> ( a2, a, List T )
+  value use : T -> ( Int, String, List T )
+module T
+  type T
+    T/1
+  value m : T, a -> a

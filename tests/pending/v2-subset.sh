@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# tests/pending/v2-subset.sh — the corpus fixtures checker v2 is held to, as of R5
-# (plans/checker-rewrite.md §3, R4b and R5; docs/design/checker-v2.md §22.2).
+# tests/pending/v2-subset.sh — the corpus fixtures checker v2 is held to, as of R6a
+# (plans/checker-rewrite.md §3, R4b, R5 and R6a; docs/design/checker-v2.md §22.2).
 #
-# A fixture is in the v2-subset when its ROOT modules need no dispatch, read
-# off the ORACLE (checker v1, the default checker). The obligation forms —
-# `tuple_index`, `interp`, `try`, explicit `Basics.eq`/`neq` — are in it from
-# R5:
+# From R6a v2 checks dispatch (`x.m`, `==`, `where`), so EVERY `check/*` fixture
+# (`check/good`, `check/bad`, `check/args`, `check/depth`) is in the subset.
+# It does not elaborate evidence before R6b, so `build` and `dump --stage=dispatch`
+# refuse a module that dispatches; for every other kind a fixture is in the
+# v2-subset when its ROOT modules need no dispatch, read off the ORACLE (checker
+# v1, the default checker). The obligation forms — `tuple_index`, `interp`,
+# `try`, explicit `Basics.eq`/`neq` — are in it from R5:
 #
 #   - its `dump --stage=dispatch` has no `site` line and only `evidence=0`
 #     declarations;
@@ -40,6 +43,8 @@ skipped() {
 
 in_subset() {
     local path="$1" kind="$2"
+    # R6a: `check` checks every construct.
+    case "$kind" in check/*) return 0 ;; esac
     local table
     # A fixture that does not resolve may not dump; an empty table is fine.
     table="$("$beni" dump --stage=dispatch "$path" 2>/dev/null || true)"

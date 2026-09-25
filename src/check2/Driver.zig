@@ -403,6 +403,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             .plan = &d.plans[m.int()],
             .roundtrip_interfaces = d.options.roundtrip_interfaces,
             .roundtrip_dispatch = d.options.roundtrip_dispatch,
+            .informational = d.options.informational,
             .keep = if (d.kept.len != 0) &d.kept[m.int()] else null,
         });
         return;

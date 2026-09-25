@@ -1,0 +1,11 @@
+import K exposing (K)
+
+
+pub type Box a
+    = Box a
+
+
+pub describe : Box a, b -> String
+    where b.describe : b, K -> String
+describe (Box _) other =
+    "box of " ++ other.describe (K.K 1)

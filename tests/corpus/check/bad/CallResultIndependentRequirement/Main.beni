@@ -1,0 +1,18 @@
+-- check/bad: a call's result mismatch silences only the requirements whose
+-- method type reaches the callee's result (checker-v2.md §9 *No cascades*,
+-- as narrowed by R6a's round-2 review, S1). `f`'s requirement `a.foo` has
+-- nothing to do with its `Int` result, so `T`'s missing `foo` is still
+-- `unknown_method`, and the author's own `z.foo ()` is not joined onto a
+-- failed wanted. v1 gives the same two codes; R6a's first round of F6 gave
+-- only the `type_mismatch` (CK-100's cascade fix, too wide).
+import T exposing (T)
+
+
+f : a, () -> Int
+    where a.foo : a, () -> Int
+f x _ =
+    x.foo ()
+
+
+q z =
+    ( [ "a", f z () ], z.foo (), [ z, T.T 1 ] )

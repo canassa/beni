@@ -86,6 +86,7 @@ const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const Sibling = @import("Sibling.zig");
 const Manifest = @import("Manifest.zig");
+const V2Subset = @import("../check2/Subset.zig");
 const prelude = @import("../bir/prelude.zig");
 
 const Emit = @This();
@@ -231,6 +232,7 @@ pub fn run(
     // exists, so a schema can never build while silently omitting them.
     if (try e.refuseSchemas()) return e.nothingWritten(gpa);
     if (try e.refuseV2LibraryTypes()) return e.nothingWritten(gpa);
+    if (try e.refuseV2Dispatch()) return e.nothingWritten(gpa);
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -422,6 +424,27 @@ const Emitter = struct {
                     .{},
                 );
             }
+        }
+        return found;
+    }
+
+    /// `--checker=v2` checks a module that dispatches (checker-v2.md §5, *As
+    /// built by R6a*) but writes no evidence trees before P6, slice R6b: its
+    /// dispatch table holds callees for `Cycles` and nothing `Lower` could emit
+    /// a call from. Refused here, before any output exists, once per module at
+    /// its first construct that needs evidence (`check2/Subset.zig`).
+    fn refuseV2Dispatch(e: *Emitter) !bool {
+        const opts = e.session.options;
+        if (opts.checker != .v2 or opts.core) return false;
+        var found = false;
+        for (0..e.graph().count()) |i| {
+            const module: Graph.Index = @enumFromInt(@as(u32, @intCast(i)));
+            if (e.graph().module(module).package != .app) continue;
+            const b = e.bir(module);
+            const missing = V2Subset.needsElaboration(b, e.session.resolution.interfaces) orelse continue;
+            found = true;
+            const token = missing.token orelse b.insts.items(.main_token)[missing.region.int()];
+            try e.report(.not_implemented, e.graph().moduleFile(module), token, "{s}", .{V2Subset.reason});
         }
         return found;
     }
