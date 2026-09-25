@@ -16,9 +16,9 @@
 //! locals the texts name a callee from — which is the one generation-time
 //! fact the texts read, and they read it here, never in the solver (I11).
 //!
-//! **Two texts are v2's own** (§15.3, `checker.md` §8.5): the annotation
-//! escape of §8.3 (CK-01) and the infinite type written as its structure
-//! (§8.2, CK-57). v1 keeps its own until the cut-over.
+//! **v2's own texts** (§15.3, `checker.md` §8.5, §8.6) — the annotation
+//! escape, the infinite type written as its structure and the legs of a
+//! failed `?` — are `Messages.zig`'s, which emits through `emit` too.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -28,7 +28,6 @@ const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Diagnostics = @import("../check/Diagnostics.zig");
 const Dispatch = @import("../check/Dispatch.zig");
-const Render = @import("../check/Render.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const EnvFile = @import("../check/Env.zig");
 const Context = @import("Context.zig");
@@ -224,6 +223,39 @@ pub fn notEquatableRigid(r: *Report, region: Bir.Inst.Index, v: Var) Error!void 
     try r.flush();
 }
 
+pub const EquatableReason = Diagnostics.Reporter.EquatableReason;
+
+/// The `equatable` marker walk's refusal (§11.4), v1's text.
+pub fn notEquatable(r: *Report, region: Bir.Inst.Index, v: Var, reason: EquatableReason) Error!void {
+    try r.texts.notEquatable(region, v, reason);
+    try r.flush();
+}
+
+pub fn ambiguousTuple(r: *Report, region: Bir.Inst.Index, index: u32) Error!void {
+    try r.texts.ambiguousTuple(region, index);
+    try r.flush();
+}
+
+pub fn tupleIndexOutOfRange(r: *Report, region: Bir.Inst.Index, index: u32, arity: u32, v: Var) Error!void {
+    try r.texts.tupleIndexOutOfRange(region, index, arity, v);
+    try r.flush();
+}
+
+pub fn notATuple(r: *Report, region: Bir.Inst.Index, index: u32, v: Var) Error!void {
+    try r.texts.notATuple(region, index, v);
+    try r.flush();
+}
+
+pub fn ambiguousInterpolation(r: *Report, region: Bir.Inst.Index) Error!void {
+    try r.texts.ambiguousInterpolation(region);
+    try r.flush();
+}
+
+pub fn notInterpolatable(r: *Report, region: Bir.Inst.Index, v: Var) Error!void {
+    try r.texts.notInterpolatable(region, v);
+    try r.flush();
+}
+
 pub fn missingField(r: *Report, region: Bir.Inst.Index, names: []Symbol, actual: Var, expected: Var) Error!void {
     try r.texts.missingField(region, names, actual, expected);
     try r.flush();
@@ -267,101 +299,4 @@ pub fn nestingTooDeep(r: *Report, region: Bir.Inst.Index, limit: u32) Error!void
 pub fn internal(r: *Report, region: Bir.Inst.Index, what: []const u8) Error!void {
     try r.texts.internalAlways(region, what);
     try r.flush();
-}
-
-// ---------------------------------------------------------------------------
-// v2's own texts (`checker.md` §8.5)
-// ---------------------------------------------------------------------------
-
-fn renderContext(r: *const Report) Render.Context {
-    return .{ .store = r.env.store, .types = r.env.types, .interner = r.env.interner };
-}
-
-/// `infinite_type` at `region`, for binder `name` (or "here"), with the
-/// cycle through `cycle` — a union-find root on the cycle — written down
-/// once, every inner occurrence named (§8.2, CK-57).
-///
-/// The node's own content is printed through a detached copy while the node
-/// itself reads as a plain variable, so the printer names it where it
-/// recurs; the content is put back before returning. The caller poisons the
-/// node after.
-pub fn infiniteType(r: *Report, region: Bir.Inst.Index, name: Symbol.Optional, cycle: Var) Error!void {
-    const store = r.env.store;
-    const interner = r.env.interner;
-    var out: std.Io.Writer.Allocating = .init(r.gpa);
-    defer out.deinit();
-    var namer: Render.Namer = .init(r.gpa);
-    defer namer.deinit();
-    const w = &out.writer;
-
-    const content = store.content(cycle);
-    const shown = try store.fresh(content, store.rank(cycle));
-    store.setContent(cycle, .{ .flex = .{} });
-    defer store.setContent(cycle, content);
-    const repeat = try namer.name(cycle, null);
-
-    if (name.unwrap()) |s| {
-        w.print("I am inferring a weird self-referential type for `{s}`:\n\n", .{interner.slice(s)}) catch return error.OutOfMemory;
-    } else {
-        w.writeAll("I am inferring a weird self-referential type here:\n\n") catch return error.OutOfMemory;
-    }
-    w.print(
-        \\Here is my best effort at writing it down, with `{s}` standing for the whole
-        \\type wherever it repeats inside itself:
-        \\
-        \\
-    , .{repeat}) catch return error.OutOfMemory;
-    w.print("    {s} = ", .{repeat}) catch return error.OutOfMemory;
-    Render.writeVar(w, r.renderContext(), &namer, shown, .top) catch return error.OutOfMemory;
-    w.writeAll(
-        \\
-        \\
-        \\Hint: the type would go on forever, so I gave up. This usually means a
-        \\definition is missing an argument, or is being used with one argument too
-        \\many, somewhere inside itself.
-        \\
-    ) catch return error.OutOfMemory;
-    const message = try out.toOwnedSlice();
-    try r.emit(.{ .code = .infinite_type, .module = r.module, .region = region, .message = message });
-}
-
-/// `rigid_mismatch` for an annotation escape (§8.3, D7, CK-01): binding
-/// `binding` declares `scheme`, and its variable `rigid` was tied to a type
-/// of `enclosing`, the declaration it is written in.
-pub fn escape(
-    r: *Report,
-    region: Bir.Inst.Index,
-    binding: Symbol.Optional,
-    enclosing: Symbol,
-    scheme: Var,
-    rigid: Var,
-) Error!void {
-    const store = r.env.store;
-    const interner = r.env.interner;
-    var out: std.Io.Writer.Allocating = .init(r.gpa);
-    defer out.deinit();
-    var namer: Render.Namer = .init(r.gpa);
-    defer namer.deinit();
-    const w = &out.writer;
-    const name = if (binding.unwrap()) |s| interner.slice(s) else "this binding";
-    const outer = interner.slice(enclosing);
-    const variable = switch (store.content(store.find(rigid))) {
-        .rigid, .flex => |flags| if (flags.name.unwrap()) |s| interner.slice(s) else "a",
-        else => "a",
-    };
-    w.print("The type annotation of `{s}` promises more than its body keeps:\n\n    {s} : ", .{ name, name }) catch return error.OutOfMemory;
-    Render.writeVar(w, r.renderContext(), &namer, scheme, .top) catch return error.OutOfMemory;
-    w.print(
-        \\
-        \\
-        \\The annotation says `{s}` can be ANY type, but the body ties `{s}` to a type that
-        \\comes from `{s}`, the definition `{s}` is written inside. That type is fixed for
-        \\each call of `{s}`, so `{s}` does not work for every `{s}`.
-        \\
-        \\Hint: write the enclosing definition's type in the annotation instead of `{s}`,
-        \\or remove the annotation and let the type be inferred.
-        \\
-    , .{ variable, variable, outer, name, outer, name, variable, variable }) catch return error.OutOfMemory;
-    const message = try out.toOwnedSlice();
-    try r.emit(.{ .code = .rigid_mismatch, .module = r.module, .region = region, .message = message });
 }

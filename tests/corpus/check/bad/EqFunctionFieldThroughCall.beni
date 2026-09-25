@@ -1,0 +1,12 @@
+-- check/bad: a function passed in a record field to a function that compares
+-- that field with `Basics.eq` is `not_equatable` at the function (the
+-- lambda), where it meets the compared field (checker-v2.md §6.5, §11.4; R5's
+-- adversarial review, F7: checker v2 as first built pointed at the record's
+-- `{`). The golden is checker v1's.
+g r =
+    Basics.eq r.f r.f
+
+
+use : Bool
+use =
+    g { f = \n -> n + 1 }

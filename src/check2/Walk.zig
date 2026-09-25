@@ -6,7 +6,7 @@
 //! |-------------|-----------------------------------------------|-------------------------------------------|
 //! | `structure` | every parameter, result, argument, element, field value and the extension | the same |
 //! | `alias`     | the expansion (`actual`) and the arguments    | the same                                  |
-//! | `flex`      | nothing                                       | the method type of every constraint riding on it |
+//! | `flex`      | nothing                                       | the method type of every constraint riding on it, then every variable of every open obligation riding on it (§4.5) |
 //! | `rigid`     | nothing                                       | the same as `flex` (its givens)           |
 //! | `err`       | nothing                                       | nothing                                   |
 //!
@@ -14,9 +14,10 @@
 //! search are `structural` — a method type mentions its own receiver, so
 //! following it would make every constrained variable a false cycle — and
 //! rank adjustment, `lowerTo` and the error scan are `owned`, because what a
-//! variable's requirements mention lives and dies with it. In R4b's subset
-//! nothing carries a constraint, so the two differ only in principle; the
-//! column exists so R5/R6a change a set, not every walk.
+//! variable's requirements mention lives and dies with it. From R5 an
+//! obligation's variables are `owned` successors of the variables it rides
+//! on (§4.5), read by `owned`, the one function that sees the obligation
+//! table.
 //!
 //! **No walk has a fixed-size stack, and none answers when it gives up**
 //! (I4). Every stack here is a growable `std.ArrayList` the caller owns and
@@ -24,13 +25,14 @@
 //! (`TypeStore.nextMark`, never a memset), and nothing here stops at a depth.
 //! A 100 000-deep type is walked to the bottom.
 //!
-//! Only `child` reads a descriptor's children; the walks below and in
-//! `Generalize.zig` enumerate successors through it.
+//! Only `child` and `owned` read a descriptor's children; the walks below and
+//! in `Generalize.zig` enumerate successors through them.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const TypeStore = @import("../check/TypeStore.zig");
 const InternPool = @import("../InternPool.zig");
+const Obligations = @import("Obligations.zig");
 
 pub const Var = TypeStore.Var;
 pub const Error = Allocator.Error;
@@ -48,14 +50,36 @@ pub const Successors = enum {
 /// The `n`th successor of `root` (a union-find root), or null past the end.
 /// One place that knows every `Content`'s shape, so a new one is a compile
 /// error here and not a missed edge.
+///
+/// `owned` successors come from `owned`, which also reads the module's
+/// obligation table (§4.5); asking this function for them is a compile error.
 pub fn child(store: *const TypeStore, root: Var, n: u32, comptime successors: Successors) ?Var {
+    if (successors == .owned) @compileError("owned successors come from Walk.owned, which also reads the obligations riding on a variable (checker-v2.md §4.5)");
+    return shape(store, root, n, successors);
+}
+/// The `n`th `owned` successor of `root` (§4.1's table, §4.5): for a
+/// variable, the method type of every constraint riding on it and then the
+/// dependants of every open obligation it owns (`obligations` null reads
+/// none); for anything else, its `structural` successors. The one WALK
+/// successor function that yields obligation variables; `child(…, .owned)`
+/// does not compile.
+/// none); for anything else, its `structural` successors.
+pub fn owned(store: *TypeStore, obligations: ?*const Obligations, root: Var, n: u32) ?Var {
     switch (store.content(root)) {
-        .err => return null,
         .flex, .rigid => |flags| {
-            if (successors != .owned) return null;
             const set = constraints(flags);
-            return if (n < set.count(store)) set.at(store, n).fn_var else null;
+            const count = set.count(store);
+            if (n < count) return set.at(store, n).fn_var;
+            const o = obligations orelse return null;
+            return o.successor(store, flags.obls, root, n - count);
         },
+        else => return shape(store, root, n, .owned),
+    }
+}
+
+fn shape(store: *const TypeStore, root: Var, n: u32, comptime successors: Successors) ?Var {
+    switch (store.content(root)) {
+        .err, .flex, .rigid => return null,
         .alias => |a| {
             if (n == 0) return a.actual;
             if (successors == .payload) return null;
@@ -133,6 +157,12 @@ pub fn function(store: *TypeStore, v: Var) ?Function {
     };
 }
 
+/// A record node's own fields, in symbol order: the one accessor for a walk
+/// that must see field NAMES (the marker walk's text-order pass, I13).
+pub fn recordFields(store: *const TypeStore, record: TypeStore.Structure.Record) []const TypeStore.Field {
+    return store.fields(record.fields);
+}
+
 /// One DFS frame: a node and which of its successors is next.
 pub const Frame = struct { v: Var, cursor: u32 };
 
@@ -144,6 +174,11 @@ pub const Stacks = struct {
     vars: std.ArrayList(Var) = .empty,
     /// Rank adjustment's frames (`Generalize.adjustRanks`).
     ranks: std.ArrayList(RankFrame) = .empty,
+    /// The module's obligation table, which every `owned` walk reads (§4.5);
+    /// null where there is none (a unit test). It rides here, beside the
+    /// scratch stacks, because every `owned` walk already takes `Stacks`:
+    /// this struct is the module's walk context, not only its stacks (N10).
+    obligations: ?*const Obligations = null,
     /// `firstCycle`'s frames and their successors in text order.
     ordered: std.ArrayList(OrderedFrame) = .empty,
     kids: std.ArrayList(Var) = .empty,
@@ -365,7 +400,7 @@ pub fn hasError(store: *TypeStore, stacks: *Stacks, gpa: Allocator, root_var: Va
         store.setMark(root, seen);
         if (store.content(root) == .err) return .poisoned;
         var n: u32 = 0;
-        while (child(store, root, n, .owned)) |c| : (n += 1) try stack.append(gpa, c);
+        while (owned(store, stacks.obligations, root, n)) |c| : (n += 1) try stack.append(gpa, c);
     }
     return .clean;
 }
@@ -376,8 +411,8 @@ pub fn hasError(store: *TypeStore, stacks: *Stacks, gpa: Allocator, root_var: Va
 
 /// Lower every variable reachable from `v` by `owned` successors to at most
 /// `rank`, stopping at nodes already at or below it (OCaml's `update_level`
-/// on binding). R4b attaches nothing, so nothing calls this yet; R5/R6a's
-/// attach and merge paths do (§4.5, §7.1).
+/// on binding). Called when an obligation is attached and when a merge moves
+/// one, so all the variables of one obligation share one rank (§4.5, I15).
 pub fn lowerTo(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var, rank: u32) Error!void {
     const seen = store.nextMark();
     const stack = &stacks.vars;
@@ -390,7 +425,7 @@ pub fn lowerTo(store: *TypeStore, stacks: *Stacks, gpa: Allocator, v: Var, rank:
         if (store.rank(root) <= rank) continue;
         store.setRank(root, rank);
         var n: u32 = 0;
-        while (child(store, root, n, .owned)) |c| : (n += 1) try stack.append(gpa, c);
+        while (owned(store, stacks.obligations, root, n)) |c| : (n += 1) try stack.append(gpa, c);
     }
 }
 
@@ -473,7 +508,7 @@ test "occurs finds a cycle through a record and none through a constraint's meth
     store.setContent(y, .{ .flex = .{ .constraints = set.toOptional() } });
     o.restart(&store);
     try testing.expectEqual(@as(?Var, null), try o.check(&store, &stacks, testing.allocator, y));
-    try testing.expectEqual(@as(?Var, method), child(&store, y, 0, .owned));
+    try testing.expectEqual(@as(?Var, method), owned(&store, null, y, 0));
     try testing.expectEqual(@as(?Var, null), child(&store, y, 0, .structural));
 }
 

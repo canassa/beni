@@ -166,7 +166,26 @@ pub const Flags = struct {
     /// `Descriptor` does not grow: `Flags` goes from 8 bytes to 12 and the
     /// largest `Content` payload is already `Alias` at 16.
     constraints: ConstraintSet.Optional = .none,
+    /// The open obligations riding on this variable (checker-v2.md §4.1,
+    /// §4.5): a set in checker v2's own table (`check2/Obligations.zig`),
+    /// opaque here. Checker v1 never writes it, so for v1 it is always
+    /// `.none` (§4.1, *Decided by R5*).
+    obls: ObligationSet = .none,
 };
+
+/// A set of checker v2's obligations (`check2/Obligations.zig`). The store
+/// only carries it on a variable's `Flags`; what it names is v2's.
+pub const ObligationSet = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
+};
+
+comptime {
+    // `obls` grew `Flags` from 12 to 16 bytes; `Content` did not grow,
+    // because `Structure` and `Alias` are already 16 (checker-v2.md §4.1).
+    std.debug.assert(@sizeOf(Flags) == 16);
+    std.debug.assert(@sizeOf(Content) == 20);
+}
 
 /// One method constraint on a type variable (static-dispatch-spike.md
 /// §6.1): "whatever type ends up here has a method `name` at `fn_var`".

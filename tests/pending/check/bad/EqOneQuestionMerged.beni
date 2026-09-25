@@ -1,0 +1,17 @@
+-- CK-16: one explicit `Basics.eq` asks one question, and says "no" once
+-- (checker-v2.md §11.4 *As built by R5*, I13; R5's structural review, B1).
+-- The comparison's walk flags `x` and `y`; `[ x, y ]` merges them; `x 1`
+-- makes the merged variable a function. The two flags carry the same
+-- question, so ONE `not_equatable`, at the comparison's argument — not one
+-- per flag (R5 as first built printed the same message twice). On checker v1
+-- at 2bc9e22 the program checks clean: the walk accepts a variable inside a
+-- structure (CK-16's own defect).
+h x y =
+    let
+        t =
+            Basics.eq ( x, y ) ( x, y )
+
+        l =
+            [ x, y ]
+    in
+    x 1

@@ -1,0 +1,2 @@
+{ a = Ok 1, b = Ok "1" }
+{ a = Err "no", b = Err "no" }

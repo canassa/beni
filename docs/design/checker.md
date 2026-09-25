@@ -411,7 +411,7 @@ guard that poisons must report first", applied here. → `static-dispatch-spike.
 
 ### 6.5 `?`
 
-> **Checker v2 (2026-09-24), owner decision D2.** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24), owner decision D2 — effective at R11.** `?` becomes a deferred obligation decided when either side is concrete, defaulting to `Result` only at the boundary that owns its variables after rank adjustment (normally its target's own); a failure names the leg that failed ([`checker-v2.md`](checker-v2.md) §8.6; the texts are §8.6 below). `--checker=v2` has behaved so since R5 (2026-09-25). This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11), when D2 replaces it.
 
 `try(e, target)` where the enclosing function's declared or inferred result type is `r`:
 speculatively unify `e` with `Result x a` and `r` with `Result x b` (journal mark); if that
@@ -1320,6 +1320,65 @@ many, somewhere inside itself.
   and the paragraph says the name it used. `f r = { r | x = r }` prints `a = { r | x : a }`.
 - **The span** is the binder: the parameter's pattern (`\y`), the `case` branch's pattern, the
   `let` definition, or a top-level declaration's body; for a unification, its expression.
+
+### 8.6 Checker v2's texts: which leg of a `?` failed
+
+Added 2026-09-25 by R5 (`checker-v2.md` §8.6, §15.3; CK-51), **before** the code that prints
+them. They are what `--checker=v2` prints; v1 keeps §6.5's one text until the cut-over. Code
+`try_shape`, title `BAD QUESTION MARK`, region the `?` expression, in all three.
+
+Deciding a `?` is three unifications (§6.5): the subject `e ~ Shape x a`, the enclosing result
+`r ~ Shape x b`, and the instruction `~ a`. The shape comes from the subject when it has one, else
+from the enclosing result, else from the default. The message says which leg failed.
+
+**The subject is neither.** Only this case keeps §6.5's sentence, because only here is it true:
+
+```
+`?` needs a `Result` or a `Maybe`, and this is neither:
+
+    Int
+
+The enclosing definition returns:
+
+    Result String Int
+
+Hint: `e?` unwraps an `Ok`/`Just` and returns the `Err`/`Nothing` from the
+enclosing definition, so both have to be the same shape. There is no
+conversion between `Result` and `Maybe`.
+```
+
+**The enclosing result is not the subject's shape:**
+
+```
+This `?` returns early from the enclosing definition, which returns:
+
+    Result String Int
+
+but this is a `Maybe Int`, and `?` on a `Maybe` can only return from a
+definition whose result is a `Maybe` too.
+
+Hint: `e?` unwraps an `Ok`/`Just` and returns the `Err`/`Nothing` from the
+enclosing definition, so both have to be the same shape. There is no
+conversion between `Result` and `Maybe`.
+```
+
+- The first indented line is the enclosing result, the sentence after it names the subject, both
+  printed by §8.2's printer with one namer. A `Result` subject reads the same with `Result`.
+
+**The error types differ** (both are `Result`s):
+
+```
+This `?` returns the error of a `Result` from the enclosing definition, but
+the error types differ: `Int` here, `String` in the enclosing result:
+
+    Result Int Int
+
+Hint: convert the error first, with `Result.mapError`, so that it has the type
+the enclosing definition returns.
+```
+
+- `Int` is the subject's error type and `String` the enclosing result's, and the indented line is
+  the subject, all three printed with one namer.
 
 ## 9. Measurement
 

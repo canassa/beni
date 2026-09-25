@@ -90,7 +90,7 @@ release build. The fixtures of the CK entries in §1 are the black-box evidence.
 | **I12** | A declaration's failure bit is set iff an **error** diagnostic was attributed to it or to a member of its binding group. Every consumer that must skip failed declarations reads the bit | construction (§15.2) |
 | **I13** | When several independent failures could be reported and only one is, the one reported is the first in name-text or source order, never in id order | construction (§7.2) |
 | **I14** | Nothing written during speculation survives a rollback. Every write a probe can make, including the in-place `Wanted.state` and `answers` writes of `unify`, is either an append truncated by rollback or a journalled in-place write. A probe never calls `Resolve`, `Instances`, `Groups`, the obligation deciders or `Report` | construction (§7.5); a debug assertion that those entry points are not reached while `journal.depth > 0`. *Revised 2026-09-24 (B5).* Consequence: a probe never nests a group check, because only resolution nests and a probe never resolves (round 3, N-1). |
-| **I15** | For every wanted `w` whose receiver is **not generalised**, every variable reachable from `w.method_type` by `Walk.owned` has rank ≤ `rank(find(w.receiver))`. All variables of one open obligation have one rank | construction: attaching, and re-attaching on merge, lowers them (§7.1, §4.5), OCaml's `update_level` on binding. A debug assert checks the wanteds and obligations met during each boundary's own generalisation walk, which is linear (S-new-6). A promoted wanted on a generalised receiver is exempt: its method type may mention outer variables free, the HM(X) reading of §8.4 (S-new-4). *Added 2026-09-24 (B2); restricted and extended in round 2 (N1, S-new-4, S-new-6).* |
+| **I15** | For every wanted `w` whose receiver is **not generalised**, every variable reachable from `w.method_type` by `Walk.owned` has rank ≤ `rank(find(w.receiver))`. All variables of one open obligation have one rank | construction: attaching, and re-attaching on merge, lowers them (§7.1, §4.5), OCaml's `update_level` on binding. A debug assert checks the wanteds and obligations met during each boundary's own generalisation walk, which is linear (S-new-6). A promoted wanted on a generalised receiver is exempt: its method type may mention outer variables free, the HM(X) reading of §8.4 (S-new-4). *Added 2026-09-24 (B2); restricted and extended in round 2 (N1, S-new-4, S-new-6). Amended by R5's review (2026-09-25): the obligation half is directional — no dependant of an open obligation outranks its owner (§4.5, *Amended by R5's review*); "one rank" over-lowered a `?` target (CK-99).* |
 | **I16** | A boundary generalises only after nothing it runs can unify any more, and it occurs-checks after the last unification | construction: §8.1's fixpoint loop precedes occurs and generalisation. *Added 2026-09-24 (B3).* |
 
 ---
@@ -247,7 +247,38 @@ pub const Flags = struct {            // flex and rigid payload
   shared `Flags` without changing v1, which is frozen (§22). The likely form is a v2-owned
   `check2/TypeStore.zig` that wraps the shared store and keeps `wants`/`obls` as **side columns
   indexed by root**, merged on union and truncated on rollback like `extra`, so the shared readers
-  keep working. R5 decides and amends this paragraph.
+  keep working. R5 decides and amends this paragraph. *(Decided by R5 below.)*
+
+*Decided by R5 (2026-09-25), before any obligation code: `obls` is one new field of the shared
+`Flags`, and `wants` is the shared `Flags.constraints` that already exists.* Three options were on
+the table (`plans/checker-rewrite.md` R5): fork the store type with its writer and printer; extend
+the shared `Flags`; or v2 side columns indexed by root, with hooks into the writer and printer.
+
+- **`obls: ObligationSet.Optional`** is added to `src/check/TypeStore.zig`'s `Flags`. It is an
+  opaque `u32` naming a set in v2's own table (`check2/Obligations.zig`: the obligation rows, the
+  sets and their links, §4.5). The store knows nothing about what it names. v1 never writes it and
+  never reads it: every `Flags` v1 builds is a literal that leaves it at its default `.none`, and
+  v1's one rebuild of a `Flags` from parts (CK-18's `dischargeEquatable`) drops it exactly as it
+  drops `constraints`, on a variable that never has one. `Flags` grows from 12 to 16 bytes and
+  `Content` does not grow: its largest payloads, `Structure` and `Alias`, are already 16 bytes (a
+  comptime assert in `TypeStore.zig` holds it at 20). **v1's behaviour is byte-identical**, proved
+  by the whole corpus under v1 and the dumps of every fixture, before and after (R5 *As built*).
+- **`wants` is `Flags.constraints`.** The method requirements riding on a variable are what the
+  shared `Schemes.Writer` publishes and `Render` prints, and both read `Flags.constraints` today.
+  Keeping `wants` there means neither is forked or hooked. R6a pairs each `MethodConstraint` entry
+  with its `WantedId` in a v2 column indexed by the entry's position (the entries are append-only,
+  so a position never changes meaning). How it pairs them is R6a's to write down here.
+- **Why not side columns.** A column indexed by variable would be a second owner of "what rides
+  on this variable": it must grow with every `store.fresh` (shared code that cannot know it), be
+  kept in step with every merge, and be rolled back beside the journal rather than by it, and the
+  shared writer and printer could not see it without a hook each. In the descriptor, the fact moves
+  with `find`, `merge` and the undo journal for free, like `kind` and `equatable` beside it.
+- **Why not a fork.** §19.1 forbids copying the shared readers, and a second store type would copy
+  all of them (`Render`, `Schemes`, `Types.Builder`, `Schema.State`, `Exhaustive`'s context).
+- **One owner per fact.** The link "this obligation rides here" is the descriptor's; the
+  obligation itself (kind, variables, region, state) is `Obligations.zig`'s row; every merge of two
+  `Flags` is `Unify.zig`'s, `obls` included (CK-18's class: v2 never rebuilds a `Flags` field by
+  field — it copies the struct and changes one field).
 - **I2 as enforced in R4b** (restated by R4b's review, S6): **a type's children are read only
   through `Walk`** — every traversal takes its successors from `Walk.child(…, .structural |
   .owned | .payload)`, and a function's parameters, a record's field in a range just built and a
@@ -386,6 +417,83 @@ The cost is linear: each obligation is attached once, readied at most once and c
 "treated as children" without any lowering, let an outer variable's obligation extras be
 generalised.*
 
+*Amended by R5's review (2026-09-25): every obligation has an **owner**, and rank sharing runs
+from the owner to its dependants, never back.* The round-2 text above ("all variables of one
+obligation share one rank") over-constrains a `?`. In
+
+```elm
+f u =
+    let
+        g k =
+            k (u?)
+    in
+    ( g (\v -> Ok v), g (\v -> Ok (String.fromInt v)) )
+```
+
+the subject `u` is `f`'s and the target is `g`'s own result. Sharing one rank lowered the target
+to `u`'s rank, so `g` stopped being polymorphic in its result — including the result's *success*
+type, which a `?` never constrains — and v2 refused a program v1 builds and runs
+(`tests/corpus/run/TryTargetKeepsItsSuccessType.beni`, CK-99). What a decision couples is: the
+subject and the target share a head and an error type, and the value is the subject's payload.
+The target's own success type is free. D2 as amended (§21.1) already names the owner: the
+boundary that decides a `?` by default is **the target's own generalisation boundary**. So:
+
+| Kind | Owner | Dependants (lowered to the owner's rank, never the reverse) |
+|---|---|---|
+| `tuple_index` | the tuple | the result |
+| `interpolatable` | the part | — |
+| `equatable` | the variable | — |
+| `try` | the **target's** result | the subject and the value |
+
+- Lowering the dependants keeps N1 and N2: in CK-68's program the `.0` result drops to `p`'s rank,
+  and in N2's (`g u = k (u?)`, target outer through `k`) the subject `u` drops to the target's
+  rank, so `g` is not generalised over it.
+- A `?` whose subject is outer and whose target is young (the program above) is owned by the
+  target's frame. If nothing decided it by that frame's step 3, it is defaulted there, to
+  `Result`, as v1 decides it. A fact about the subject that comes later, in the outer frame, is
+  too late for it. That is D2 as amended ("the target's own generalisation boundary"), and v1
+  refuses the same programs.
+- **I15, as enforced from R5:** for every open obligation, no dependant outranks its owner. Every
+  obligation variable is a flex root while the row is open, except a result, which may be bound
+  to a structure; `lowerTo` then lowers that structure's closure, like any variable bound to an
+  outer one. So the round-2 sentence is replaced by the table above. `Walk.owned` yields a row's
+  dependants from its owner only.
+
+*As built by R5, after its review (2026-09-25).* `check2/Obligations.zig` holds the rows and the
+sets, and `Flags.obls` (§4.1, *Decided by R5*) is the link.
+
+- **A row** is `{ kind, state, region, seq, origin, reported, vars[3], index }`. `vars` holds the
+  deciding variables first (the tuple; the part; the `try` subject and target), then the results
+  (the `tuple_index` result, the `try` value), padded with the first. `origin` and `reported`
+  serve the `equatable` marker (§11.4 *As built by R5*). `seq` is the table's counter until R6a
+  shares it with wanteds, and the drain sorts by it.
+- **A set** is a growable list of row ids, one per variable that carries rows, mutated in place.
+  Attaching a row appends to the owner's set. A merge of two flexes moves the smaller set's open
+  rows into the larger one (union by size). Neither is persistent: no speculation exists yet
+  (§7.5), and the probe, when it arrives, must journal set mutations or never merge a set.
+- **Decided at once, or attached.** The solver creates the row at its node and decides it there
+  when a deciding variable is already known. A `try` is decided when **either** side is (D2 as
+  amended). Otherwise the row is attached to every deciding flex root, its dependants are lowered
+  to the owner's rank, and a `try` goes on the open-`try` list of the frame at its target's rank.
+- **A merge** of two flexes lowers the dependants of only the rows owned by a side whose rank
+  strictly dropped. The rows at the surviving rank already hold I15.
+- **Readied**: `Unify.bind`, a merge with `err` and `Solve.poison` ready a flex's open rows onto
+  the top-level frame's queue. `Solve` owns that queue, and `Unify` holds one pointer to it (§9.1:
+  every `let` frame routes there; R7 makes the queue per frame). A row readied onto a variable
+  that is still a flex is re-attached, not decided: a bind to an alias whose expansion is a flex.
+- **Cost (the §4.5 claim, stated precisely).** Let R be the rows, M the flex merges and D the
+  deepest nesting of frames. Then:
+  - Attaching is O(1) amortised.
+  - A merge moves the smaller set, so all moves together are O(R log R).
+  - A row's dependants are lowered once at attachment and once per strict rank drop of its owner:
+    O(R · D) in all.
+  - Readying and closing touch each row once.
+  - Step 3 looks at a `try` row once per frame it passes through on its way out: O(tries · D).
+
+  CK-96, CK-97 and CK-98 time the three shapes that were quadratic before
+  (`tests/blackbox/perf_test.zig`, `zig build test-perf`).
+- No row or set write is journalled (§7.5, I14): see above.
+
 ---
 
 ## 5. The per-module pipeline
@@ -454,6 +562,14 @@ phase reads and writes only what its row says.
   `elaborate` and `publish` arrive with the phases that have work (no `Profile.Phase` exists for
   them yet).
 
+*Widened by R5 (2026-09-25).* The gate's R5 row is gone: a `tuple_index`, `interp` or `try`
+instruction, an annotation variable written `equatable` and an imported `equatable` quantifier
+(`Basics.eq`/`neq`) are checked. The one refusal left is **R6a**'s (dispatch); the eager derived
+rows stay R8a's, refused only for a `--library` build. `tests/pending/v2-subset.sh` drops the same
+forms, and `test-v2`'s drift check (`REPORT DRIFT`) holds the two together: on R5's corpus every
+one of the 355 fixtures the script names passes, and no fixture v2 does not refuse is red outside
+`v2-expected.md`. P9's table gains the `tries` rows (§8.6 *As built by R5*).
+
 ---
 
 ## 6. Constraint generation
@@ -521,6 +637,36 @@ lives on the instruction `Lower` reads it from.
 A record literal's fields are constrained first. The literal's type is then unified with the
 expected type, so a mismatch renders the literal's field types (`{ n : number, name : String }`)
 and not fresh variables.
+
+*Amended by R5 (2026-09-25): the solver chooses the order, per literal.* Constraining every
+literal's fields first, as written above, also throws away the expected type a field is checked
+against: `{ main = "not an Int", other = 1 }` against `Model` stopped being *"The `main` field of
+this record is not what I expect"* at the field and became a mismatch of the whole record at the
+literal (`check/bad/FieldNamedMain`, `SchemaRecursivePayloadMismatch`: two v1 goldens, and the
+precise message was the better one). So the literal is one `record` node, and the solver decides
+when it meets it:
+
+- the **expectation first** (v1's order, each field checked against the type the context wants
+  for it) when the expectation is still a variable, or a record whose whole row (`Walk.recordRow`)
+  is closed and has exactly the literal's field names — the meeting then cannot fail on a name or
+  on closedness;
+- the **fields first** otherwise, so a missing or unexpected field, or an open record the literal
+  cannot stand in for, shows the literal's own field types (CK-59).
+
+It is a solving-order choice read off the expectation at that node, never a speculation (§7.5).
+Three v1 goldens pin the old rendering and are listed in `tests/pending/v2-expected.md`
+(`MissingField`, `UnknownField`, `RecordNotClosed`); CK-59's own fixture is red under v2 only for
+its article, which is R13's.
+
+*Refined by R5's review (2026-09-25).*
+- **An unkinded variable** takes the literal expectation-first. A `number` or `appendable` one does
+  not: it fails on the kind, so the fields go first (`Basics.add x { a = 1, b = "s" }` shows `{ a :
+  number, b : String }`; structural review S1, `tests/pending/check/bad/KindedExpectationShowsLiteral`).
+- **A record open on a flex whose field names are all the literal's** also takes it expectation
+  first, since the meeting cannot fail on a name. So a flagged field of a comparing function's
+  parameter meets the literal's field before the lambda does, and the lambda is where
+  `not_equatable` points, as in v1 (adversarial review F7).
+- The row is read into `Walk.Stacks`' scratch list, not a fresh allocation per literal.
 
 ### 6.6 Annotations: one scheme, one checked instance
 
@@ -749,6 +895,42 @@ touched asserts this.
 - *Round 2, N4:* a merged frame had defaulted before the root's facts arrived.
 - *Round 2, N6:* the "journal segment" does not exist.
 
+*As built by R5, after its review (2026-09-25): steps 1, 3 and 7 have work.* `Solve.boundary`,
+with the deciders in `Decide.zig`.
+- **Step 1** drains the top-level frame's queue in `seq` order. `Solve` owns that queue and `Unify`
+  holds one pointer to it; every `let` frame routes there (§9.1). The same drain runs after every
+  constraint node (§9.1's eager draining), except that a readied `equatable` row is set aside
+  until the next boundary's step 1. Its walk decides nothing another row reads: it only flags
+  variables, and a flag matters to nothing before quantification. So the walk runs over the type
+  as it then stands, and the message shows the solved type (`number -> number`, not `a -> b`).
+- **Step 3** (`Decide.defaults`) reads **the current frame's own open-`?` list**. A row joins the
+  list of the frame at its target's rank when it is attached (§4.5 *As built by R5, after its
+  review*).
+  - For each open row, the dependants are lowered to the target's rank again (rank adjustment
+    folds a variable's rank from its own position).
+  - A row whose target still sits at the frame's young rank is due. A row whose target escaped
+    moves to the list of the frame at the target's rank.
+  - Every due row is decided as `Result`, oldest first. The loop goes back to step 1 when one was,
+    or when anything was readied.
+  - So a row is looked at once per frame it passes through (CK-98), not at every boundary of its
+    group.
+- **Step 7** (`Decide.close`) reads the quantified variables that still carry a set. `quantify`
+  collects them in the same pass.
+  - The `tuple_index` rows go first: `ambiguous_tuple`, with the result poisoned.
+  - Then an `interpolatable` row is `ambiguous_interpolation` unless the variable is a `number`,
+    or is the result a tuple's message just poisoned (I12: no cascade; adversarial review F6).
+  - An `equatable` row is the flag the variable already carries into its scheme.
+  - A `try` row cannot be there (step 3 defaulted it at its target's boundary) and would be
+    `internal`.
+- **Poison settles.** `Solve.poison` on a flex that carries rows closes each of them as a decision
+  on `err` would: its results poisoned, without a trip through the queue. So nothing is readied
+  during steps 4 and 6, and the top-level frame asserts an empty queue when it is popped (review
+  S7).
+- **Merged frames** do not exist before R7; the "skip step 3 when merged" rule arrives with them.
+- **N9 (for R6a).** "Applying every default at once is equivalent to one at a time" holds for R5's
+  kinds, because no default readies a row that binds another `?` to `Maybe`. R6a's wanteds break
+  that premise: R6a drains between defaults, or argues the claim again.
+
 ### 8.2 Occurs at every binder (CK-04, CK-03)
 
 The occurs check runs in two places:
@@ -910,6 +1092,43 @@ error)`, and the message names it:
 
 When both sides are concrete and disagree in head, the subject's head chooses the shape, and the
 enclosing leg then fails with the message above.
+
+*As built by R5, after its review (2026-09-25).* `Decide.tryShape`.
+- **The target.** The generator keeps two things:
+  - the result variable of the declaration it is in, when that declaration has parameters;
+  - a stack of the `let` definitions with parameters it is inside.
+
+  The `try` node names the one the instruction's `rhs` does (`Generator.targetResult`), resolved
+  at generation (I11).
+- **The owner is the target** (§4.5 *Amended by R5's review*, D2 as amended in §21.1). The subject
+  and the value are lowered to the target's rank, never the reverse. The row joins the open-`?`
+  list of the frame at the target's rank, whose step 3 defaults it.
+- **Deciding.**
+  - The shape is the subject's head when that is `Result` or `Maybe`.
+  - A subject that is any other non-variable is the `neither` leg.
+  - With a variable subject, the target's head decides. A target that is any other non-variable is
+    the `neither` leg too: nothing says the subject is a `Maybe` or a `Result`, so the `enclosing`
+    text, which names the subject's shape, would be false there (adversarial review F5).
+  - With both variables the row is attached, unless §8.1 step 3 is deciding it, which says
+    `Result`.
+- **The three unifications** are then made, each reported by its leg with `checker.md` §8.6's
+  texts:
+  - the subject's (`neither`);
+  - the target's (`errors` when the target has the shape's head, so only the error type can have
+    failed; `enclosing` otherwise);
+  - the value's, an ordinary mismatch.
+
+  A failed leg poisons the subject and the value, as v1's did.
+- **The dispatch table's `tries` row** (`checker.md` §6.5) is written when the subject and target
+  legs succeed. P9 sorts the rows by instruction.
+- **Fixtures.**
+  - `tests/pending/run/TryEscapesToLaterFact.beni` is N2's program (claimed, CK-62): `g u = k
+    (u?)` escapes to `f` through `k`, is not defaulted at `g`'s boundary, and is decided `Maybe`
+    by `Maybe.withDefault (k 5) 0`.
+  - `tests/corpus/run/TryDefaultAtLetBoundary.beni`: `unwrap u = u?` defaults at `unwrap`'s own
+    boundary and is used at two error types.
+  - `tests/corpus/run/TryTargetKeepsItsSuccessType.beni` (CK-99): an outer subject and a young
+    target; the target keeps its own success type.
 
 ---
 
@@ -1611,6 +1830,49 @@ deletes `builtinRigidTarget`'s arm (CK-19). The `equatable` obligation's walk:
 - **propagates the flag** to a flex it meets inside a structure. It **requires** the flag of a rigid
   it meets, and without it reports `not_equatable` at the obligation's region (CK-16);
 - answers `no(function at …)` or `yes`. It has no `unknown`.
+
+*As built by R5, after its review (2026-09-25): `check2/Instances.zig`, the marker walk only.*
+- **Where a question is asked, and so where it reports.** The flag is the marker. A question about
+  a flagged variable is an `equatable` row, which is created in one of three places:
+  - **At the comparison.** A flag from a scheme's quantifier (`Basics.eq : ∀(a: equatable)`)
+    that meets a call's argument at the top of the unification makes a row at that argument. So
+    `Basics.eq r r` answers at `r`, not where `r` later becomes a record (adversarial review F7).
+  - **Where it meets a structure.** A flag with no row that meets a structure makes a row there,
+    readied. This is v1's region, which v1's goldens pin; the function passed in a record's field
+    to a comparing function is reported at the lambda (`check/bad/EqFunctionFieldThroughCall`).
+  - **By the walk.** A flex the walk flags gets a row that continues the walk's own question.
+
+  A row carries its `origin`, the row that asked the question first.
+- **When it runs.** A readied `equatable` row is decided at the next boundary's step 1 (§8.1 *As
+  built by R5, after its review*). The walk runs over the type the flagged variable then is, at
+  the row's region.
+- **One question, one message.**
+  - The walk writes nothing until its answer is `yes`. Only then does every flex it met get the
+    flag and a row of the same origin. A failure leaves nothing behind, so how many flexes the walk
+    reached first, which depends on symbol ids, changes nothing (I13).
+  - A "no" marks the origin `reported`, and no row of that origin reports again. So one comparison
+    whose argument holds two bad parts, or whose flags were merged, says `not_equatable` once.
+  - Fixtures: `tests/pending/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite`, and the
+    symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst` (structural
+    review B1).
+- **Nominal types.** At `T args` the walk first asks the session's gate for `T` itself,
+  `Types.isEquatable`: no function anywhere in `T`'s declaration, and a `foreign type` declared
+  `equatable`. When the gate says no, it refuses with `opaque_type`, v1's one sentence for both.
+  - It then descends only into the arguments whose `payload_params` bit is set (D10).
+  - For a type of this module, the bits are computed from its constructors now, with
+    `Publish.payloadParams`, the same function P8 publishes with.
+  - For another module's type, they are read from its interface v3 row.
+  - Every bit is set for a type with no row (a private type reached through an alias), for a
+    record not yet filled, and for a schema endpoint: the side that asks more, never less.
+  - The answers are memoised per `TypeId` in a dense array.
+- **Order.** Tuple elements and application arguments are walked in order, and record fields in
+  symbol order. When the walk finds a failure, a second, read-only walk visits every record's
+  fields in name-text order to choose the failure it reports.
+- **Rigid.** A rigid without the flag is `rigid`: `not_equatable` with v1's "ANY type" sentence
+  (CK-16's `same`, at `[ x ]`). A flex whose row is open may meet such a rigid: `unify` binds it,
+  and the row reports. A flag with no row meeting such a rigid is `unify`'s own
+  `not_equatable_rigid`, at the unification (the direct control `Basics.eq x y`).
+- v1's `.equatable` constraint node, dead in v1 (CK-18), has no v2 counterpart.
 
 ### 11.5 Schema endpoints (CK-24)
 
@@ -2375,6 +2637,21 @@ boundaries, the generality check), `Report` 367, `Publish` 285, `Module` 421, `c
 at R11. Nothing imports `Constrain.zig` or `Solve.zig`, so R12 can delete both with `Check.zig`
 (`check2/rules_test.zig` holds the line).
 
+*As built by R5 (2026-09-25):* two new files, `Obligations` 283 lines (§4.5's table) and
+`Instances` 221 (§11.4's marker walk only; lookup and matching are R6a's). `Solve` grew to 878
+(obligations, the default step, `?`, the record node), `Unify` 617, `Walk` 528, `Report` 488,
+`Subset` 108, `Generalize` 297, `Module` 429, `constrain/Tree` 389, `constrain/Expr` 295,
+`constrain/Decl` 532: 7 254 lines with the driver. The shared change is `Flags.obls` (§4.1,
+*Decided by R5*); `Publish.payloadParams` is public for the marker walk.
+
+*As built by R5's review (2026-09-25):* `Solve.zig` split, as §19.1 expects of a file past its
+budget. The obligation deciders moved to **`Decide.zig`** (359 lines: the first step, the drain,
+the four deciders, step 3's defaults, step 7's close and poison's settling), which leaves
+`Solve` 621 lines: the walk, unification and its report, calls, and the boundary's step order.
+v2's own texts moved from `Report.zig` to **`Messages.zig`** (198), which leaves `Report` 302
+lines: the emit path, `quiet`, the failure bits and v1's staged texts. Now `Obligations` 294,
+`Instances` 242, `Unify` 648, `Walk` 532: 7 442 lines in all.
+
 ---
 
 ## 20. External contracts
@@ -2460,6 +2737,7 @@ Each one records what changed and why.
 | **D10** | "Payloads" is made checkable across modules by **`payload_params`** in interface v3. A `foreign type` has all parameters | S15. An imported opaque type's payloads are not in its interface |
 | **D11** | **Value back-edges merge too.** (Round 1 wording, superseded by the round-2 row below.) Nested checking happens at the innermost boundary that drains a wanted, not only at top level, and it checks the value-dependency prefix first. The Roc comparison and the two-types example are recorded in §10.6, with a hint on the resulting `type_mismatch` | B6, B7, S17. Top-level-only pinning made results order-dependent, and a nested group's value dependencies were unchecked. v2 is stricter than Roc on purpose, because Roc's laziness is order-dependent |
 | **D2** (round 2) | Whether a `?` default is due is read on **adjusted** ranks: §8.1 step 2 runs before step 3. A top-level frame merged into another never defaults; its root does | N2, N4. Stale young ranks defaulted an escaping `?` to `Result` too early, and a merged frame defaulted before the root's facts arrived |
+| **D2** (R5's review, 2026-09-25) | The boundary that owns a `?` is its **target's** (the round-1 amendment's words, now the only reading): the subject and the value are lowered to the target's rank, the target is never lowered to the subject's, and a `?` still undecided at its target's step 3 is defaulted to `Result` even when its subject is outer | CK-99: sharing one rank made the target monomorphic in its own success type and refused a program v1 builds; §4.5 *Amended by R5's review* |
 | **D3** (round 2) | The surviving `method_needs_annotation` case is narrowed to a derived context entry **indexed by a type parameter** that depends on an in-flight method. A closed payload contributes nothing and is filled like a group call | S-new-1. The broader refusal guarded nothing (rule 7) |
 | **D14** (round 4) | D14 is stated over **every wanted resolved or attached** on a group-level receiver (a method callee, instantiation evidence, a sub-wanted), and every variable of an obligation with a group-level deciding variable. It is checked in `Resolve`'s single resolution function. `R` is the member's own top-level frame rank. The hint names the member **syntactically** (the reference that produced the receiver's value), or else every unannotated member, sorted by text | R7-1, R7-2, S4-1. The round-3 rule missed evidence and sub-wanteds (`evA`/`evB`, `subA`/`subB` were order-dependent), and its hint depended on union-find class membership |
 | **D1** (round 4) | A private method is still the module's method for **every** type the module declares (the module rule is unchanged by privacy). "Derived functions the module emits use it" covers structural shapes derived in the module. The module's other nominal types have no derived `eq`, and comparing them is the module-rule clash | R0 found the round-1 text contradicted §3.3 step 1. `7427828` already behaves this way |

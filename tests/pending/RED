@@ -88,8 +88,15 @@ tests/pending/check/bad/ScrutineeMethodMergeD14 v1 exit=1 codes=method_needs_ann
 tests/pending/check/bad/SubjectFirstSwap.beni v1 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/TryShapeNamesTheMismatch.beni v1 exit=1 codes=try_shape×2 why=message
 tests/pending/check/bad/TupleIndexOuterResult.beni v1 exit=1 codes=ambiguous_tuple×1 why=code
+tests/pending/check/bad/EqOneQuestionMerged.beni v1 exit=0 codes=none
+tests/pending/check/bad/EqOneQuestionPerSite.beni v1 exit=1 codes=not_equatable×2 why=message
+tests/pending/check/bad/EqRecordFieldFunctionAtComparison.beni v1 exit=0 codes=none
+tests/pending/check/bad/KindedExpectationShowsLiteral.beni v1 exit=1 codes=kind_mismatch×1 why=message
+tests/pending/check/bad/TryDefaultCycleAtBinder.beni v1 exit=1 codes=infinite_type×1 why=position
+tests/pending/check/bad/TryUnknownSubjectSaysNeither.beni v1 exit=1 codes=type_mismatch×1 why=code
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v1 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/WhereClauseNumberReceiver.beni v1 exit=0 codes=none
+tests/pending/check/good/MutualGroupFiveMembers.beni v1 exit=1 codes=kind_mismatch×1
 tests/pending/check/good/MutualGroupLocalTypes.beni v1 exit=0 iface-differs
 tests/pending/check/good/ScrutineeMethodMergeVariant v1 exit=1 codes=method_needs_annotation×4
 tests/pending/run/ClosedRecordAfterFieldAccess.beni v1 dev: exit=1 codes=no_methods_on_shape×1
@@ -113,6 +120,8 @@ tests/pending/run/RecursionWithComparison.beni v1 dev: exit=1 codes=internal×9
 tests/pending/run/ScrutineeMethodLater.beni v1 dev: exit=1 codes=method_needs_annotation×2,unknown_method×1
 tests/pending/run/TryDecidedByLaterFacts.beni v1 dev: exit=1 codes=type_mismatch×5
 tests/pending/run/TryDefersShape.beni v1 dev: exit=1 codes=type_mismatch×4
+tests/pending/run/TryEscapeLowersOnlyItsOwn.beni v1 dev: exit=1 codes=type_mismatch×2
+tests/pending/run/TryEscapesToLaterFact.beni v1 dev: exit=1 codes=type_mismatch×5
 scenario/CK-03 v1 timeout
 scenario/CK-40 v1 slow
 scenario/CK-42 v1 slow
@@ -129,7 +138,10 @@ scenario/CK-88 v1 slow
 # that needs a later slice reports ONE `not_implemented` naming it (R5, R6a or R8a), so most lines
 # are still that; the others are v2's own answer, red for the finding's reason (the diagnostic-
 # quality CKs R13 owns). The fixtures R4b turned green are in CLAIMED and have no v2 line.
-tests/pending/check/bad/BasicsEqThroughStructure.beni v2 exit=1 codes=not_implemented×1 why=code
+# R5 (2026-09-25): v2 checks the obligation forms too (`?`, `${…}`, `e.i`, `Basics.eq`), so a
+# `not_implemented` now names R6a. The fixtures R5 turned green are in CLAIMED and lost their line;
+# `MissingFieldShowsLiteralTypes` (CK-59) keeps its line: its literal types are v2's now (§6.5),
+# and it is red only for the article, which is R13's.
 tests/pending/check/bad/CapNamesReceivers.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/CurriedAnnotation.beni v2 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
 tests/pending/check/bad/CyclicReceiverResolution.beni v2 exit=1 codes=not_implemented×1 why=code
@@ -160,8 +172,6 @@ tests/pending/check/bad/RigidInsideDerivedShape.beni v2 exit=1 codes=not_impleme
 tests/pending/check/bad/SchemaWrapperExclusion.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/ScrutineeMethodMergeD14 v2 exit=1 codes=not_implemented×2 why=code
 tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=type_mismatch×1 why=message
-tests/pending/check/bad/TryShapeNamesTheMismatch.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/TupleIndexOuterResult.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/bad/WhereClauseNumberReceiver.beni v2 exit=1 codes=not_implemented×1 why=code
 tests/pending/check/good/ScrutineeMethodMergeVariant v2 exit=1 codes=not_implemented×2
@@ -176,7 +186,6 @@ tests/pending/run/GroupVariableOutsideCaller.beni v2 dev: exit=1 codes=not_imple
 tests/pending/run/LetHelperJoinedMethod.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/MutualDispatchMethods.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/MutualGroupEvidenceOrder.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/ObligationEscapesInnerLet.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/OperatorSectionApplied.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/OwnMethodBeforeDefinition v2 dev: exit=1 codes=not_implemented×4
 tests/pending/run/OwnMethodDemandedEarly.beni v2 dev: exit=1 codes=not_implemented×1
@@ -185,4 +194,3 @@ tests/pending/run/PhantomParameterEq.beni v2 dev: exit=1 codes=not_implemented×
 tests/pending/run/RecursionWithComparison.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/ScrutineeMethodLater.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/TryDecidedByLaterFacts.beni v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/TryDefersShape.beni v2 dev: exit=1 codes=not_implemented×1

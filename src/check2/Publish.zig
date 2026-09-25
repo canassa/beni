@@ -203,7 +203,7 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
             t.compare = .{ .status = .alias };
             continue;
         }
-        try payloadParams(cx, decl, t.*, &words);
+        try payloadParams(cx, decl, t.kind, t.arity, &words);
         t.payload_params = try writer.addRange(words.items);
         if (t.kind == .foreign) {
             t.eq = .{ .status = if (declares[0]) .own_method else .foreign };
@@ -218,19 +218,20 @@ fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
 /// constructor's payload; every bit for a `foreign type`, for a declaration
 /// too deep to read, or for a payload that reads as `err` ("may hold a
 /// value" is the safe side). The walk is the store's own, over the builder's
-/// fresh variables.
-fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, t: Interface.Type, words: *std.ArrayList(u32)) Error!void {
+/// fresh variables. Also what the `equatable` marker walk reads for a type of
+/// this module, while the module is checked (§11.4, `Instances.zig`).
+pub fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, kind: Interface.TypeKind, arity: u16, words: *std.ArrayList(u32)) Error!void {
     const gpa = cx.gpa;
     const scratch = cx.scratch;
     const store = cx.store;
     words.clearRetainingCapacity();
-    try words.appendNTimes(gpa, 0, (@as(usize, t.arity) + 31) / 32);
+    try words.appendNTimes(gpa, 0, (@as(usize, arity) + 31) / 32);
     const all = struct {
-        fn set(w: []u32, arity: usize) void {
-            for (0..arity) |param| w[param / 32] |= @as(u32, 1) << @intCast(param % 32);
+        fn set(w: []u32, count: usize) void {
+            for (0..count) |param| w[param / 32] |= @as(u32, 1) << @intCast(param % 32);
         }
     }.set;
-    if (t.kind == .foreign or t.arity == 0) return all(words.items, t.arity);
+    if (kind == .foreign or arity == 0) return all(words.items, arity);
     const owner = cx.bir.decl(decl);
     const params = cx.bir.declTypeParams(owner);
     var b = cx.builder(.flex, TypeStore.generalized);
@@ -238,7 +239,7 @@ fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, t: Interface.Type, wor
     const first: u32 = store.count();
     for (params, 0..) |param, i| {
         const v = try store.fresh(.{ .flex = .{ .name = param.toOptional() } }, TypeStore.generalized);
-        if (v.int() != first + i) return all(words.items, t.arity);
+        if (v.int() != first + i) return all(words.items, arity);
         try b.bind(param, v);
     }
     var stack: std.ArrayList(Var) = .empty;
@@ -248,14 +249,14 @@ fn payloadParams(cx: *const Context, decl: Bir.DeclIndex, t: Interface.Type, wor
             try stack.append(scratch, try b.read(arg));
         }
     }
-    if (b.too_deep) return all(words.items, t.arity);
+    if (b.too_deep) return all(words.items, arity);
     const seen = store.nextMark();
     while (stack.pop()) |raw| {
         const root = store.find(raw);
         if (store.mark(root) == seen) continue;
         store.setMark(root, seen);
         switch (store.content(root)) {
-            .err => return all(words.items, t.arity),
+            .err => return all(words.items, arity),
             .flex, .rigid => if (root.int() >= first and root.int() - first < params.len) {
                 const param = root.int() - first;
                 words.items[param / 32] |= @as(u32, 1) << @intCast(param % 32);

@@ -13,9 +13,14 @@
 //!   - a lambda's parameters and a `case` branch's pattern variables are
 //!     binders, occurs-checked by a `binders_end` node when the lambda or
 //!     branch ends (§6.3, CK-04);
-//!   - the forms outside R4b's subset (`Subset.zig`: method calls, `?`,
-//!     interpolation, tuple indexing) never reach here; if one did, it is
-//!     `internal`, never a silent poison (review S1).
+//!   - the obligation forms (`e.i`, `${…}`, `e?`) emit a node the solver
+//!     decides at once or turns into an obligation riding on its variables
+//!     (§4.5, §8.6); a record literal's fields and its meeting with the
+//!     expectation are one node, whose order the solver chooses (§6.5 as
+//!     built by R5, CK-59);
+//!   - the forms outside v2's subset (`Subset.zig`: method calls) never
+//!     reach here; if one did, it is `internal`, never a silent poison
+//!     (review S1).
 
 const std = @import("std");
 const Bir = @import("../../bir/Bir.zig");
@@ -94,8 +99,12 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             return g.conj(parts.items);
         },
 
-        // The literal meets the expectation first and its fields after,
-        // v1's order. §6.5 reverses it for CK-59, which is R5's.
+        // The fields, and the literal meeting the expectation, in the order
+        // the solver chooses (§6.5 as built by R5, CK-59): the fields first
+        // when the expectation cannot take this literal's field names, so a
+        // missing or unexpected field shows the literal's own field types;
+        // the expectation first otherwise, so each field is checked against
+        // the type the context wants for it.
         .record => {
             const written = bir.extraSlice(Bir.inlineRange(data), Bir.Field);
             const pairs = try g.cx.scratch.alloc(TypeStore.Field, written.len);
@@ -106,13 +115,14 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             const record_var = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = closed } } });
             var parts: std.ArrayList(Constraint) = .empty;
             defer parts.deinit(g.cx.scratch);
-            try parts.append(g.cx.scratch, try g.equal(expected, record_var, inst, category));
             for (written) |f| {
                 const name = bir.symbol(f.name);
                 const v = Walk.fieldIn(g.cx.store, range, name) orelse try g.freshFlex();
                 try parts.append(g.cx.scratch, try expr(g, f.value, v, .{ .tag = .record_field, .index = @intFromEnum(name) }));
             }
-            return g.conj(parts.items);
+            const fields = try g.conj(parts.items);
+            const payload = try g.addExtra(Tree.RecordLiteral{ .expected = expected, .record = record_var, .fields = fields });
+            return g.add(.record, inst, payload, 0, category);
         },
 
         .record_update => {
@@ -152,6 +162,43 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             });
         },
 
+        // A `${…}` string: `String`, and each part an `interpolatable`
+        // obligation on its own variable (§4.5).
+        .interp => {
+            var parts: std.ArrayList(Constraint) = .empty;
+            defer parts.deinit(g.cx.scratch);
+            try parts.append(g.cx.scratch, try g.equal(expected, try g.primitive(wk.string), inst, category));
+            for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |part| {
+                if (bir.instTag(part) == .chunk) continue;
+                const t = try g.freshFlex();
+                try parts.append(g.cx.scratch, try expr(g, part, t, .{ .tag = .interp_part }));
+                try parts.append(g.cx.scratch, try g.add(.interpolatable, part, @intFromEnum(t), 0, .{ .tag = .interp_part }));
+            }
+            return g.conj(parts.items);
+        },
+
+        // `e.i`: the tuple first, then the obligation on it (§4.5).
+        .tuple_index => {
+            const target = try g.freshFlex();
+            const payload = try g.addExtra(Tree.TupleIndex{ .index = data.rhs, .result = expected });
+            return g.conj(&.{
+                try expr(g, @enumFromInt(data.lhs), target, .{ .tag = .general }),
+                try g.add(.tuple_index, inst, @intFromEnum(target), payload, category),
+            });
+        },
+
+        // `e?`: the subject first, then the obligation on it and on the
+        // result of the definition it returns from (§8.6).
+        .@"try" => {
+            const subject = try g.freshFlex();
+            const target = g.targetResult(@enumFromInt(data.rhs)) orelse try g.fresh(.err);
+            const payload = try g.addExtra(Tree.Try{ .subject = subject, .target = target, .value = expected });
+            return g.conj(&.{
+                try expr(g, @enumFromInt(data.lhs), subject, .{ .tag = .general }),
+                try g.add(.try_, inst, payload, 0, category),
+            });
+        },
+
         .call => return call(g, inst, data, expected, category),
         .lambda => return lambda(g, inst, data, expected, category),
         .let => return Decl.letExpr(g, data, expected, category),
@@ -162,8 +209,8 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         .@"error", .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref => {
             return g.equal(expected, try g.fresh(.err), inst, category);
         },
-        // A form R4b's subset excludes (`Subset.zig`: a method call, `?`,
-        // interpolation, a tuple index), or no expression at all. Meeting one
+        // A form v2's subset excludes (`Subset.zig`: a method call or a type
+        // dispatch), or no expression at all. Meeting one
         // means the gate missed it: the compiler says so, never a silent
         // poison (review S1, I8).
         else => return g.add(.internal, inst, @intFromEnum(expected), 0, category),

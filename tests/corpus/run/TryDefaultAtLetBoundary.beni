@@ -1,0 +1,28 @@
+-- run: a `?` whose target is a `let` definition inside a declaration is
+-- decided at THAT definition's boundary, which owns its variables
+-- (checker-v2.md §8.1 step 3, §8.6, D2 as amended): `unwrap u = u?` has
+-- nothing to say `Result` or `Maybe` on either side, so it defaults to
+-- `Result` at `unwrap`'s own boundary, before `unwrap` is generalised, and
+-- `unwrap` is then used at two error types. Deciding it later, at `pair`'s
+-- boundary, would unify generalised variables. A regression guard for
+-- checker v2 (R5's reviewer focus): 7427828 commits `?` to `Result` at once,
+-- so it prints the same.
+import Node exposing (Program)
+
+
+pair : Int -> ( Result String Int, Result Int Int )
+pair n =
+    let
+        unwrap u =
+            u?
+    in
+    ( unwrap (Ok (Ok n)), unwrap (Err 7) )
+
+
+main : Program
+main =
+    let
+        ( first, second ) =
+            pair 1
+    in
+    Node.printLines [ Debug.toString first, Debug.toString second ]

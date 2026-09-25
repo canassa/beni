@@ -966,7 +966,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - The gates are green.
   - `test-v2` is green on the widened subset, which now includes the obligation forms. `v2-green.txt`
     is updated.
-  - Guard `check/bad/TryDefaultCycle` (§5.1) is green under v2.
+  - Guard `check/bad/TryDefaultCycle` (§5.1) is green under v2. *(Amended by R5's review, S6: its v1 golden pins v1's place and text, so it is an expected difference, and its substance is gated under v2 by the claimed pending twin `check/bad/TryDefaultCycleAtBinder`.)*
   - `test-pending` is green, with the claims recorded.
   - `checker.md` §6.5's pointer note becomes "effective at R11".
 - **Reviewer focus.**
@@ -977,6 +977,171 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     not over-lower the subject's success type.
   - I11: the solver must not see `local_var`. Use CK-09's `u`/`v` shape with 5 members and shuffled
     locals.
+- **As built (2026-09-25).** Spec first: `checker-v2.md` §4.1 *Decided by R5* (where `wants` and
+  `obls` live), then *As built by R5* in §4.5, §5, §6.5 (amended), §8.1, §8.6 and §11.4;
+  `checker.md` §6.5's pointer note says "effective at R11", and its new §8.6 holds the three `?`
+  texts, written before the code.
+  - **The decision.** `obls` is one new field of the shared `Flags` — an opaque `ObligationSet`
+    naming a set in v2's `check2/Obligations.zig` — and `wants` is the `Flags.constraints` that
+    `Schemes.Writer` and `Render` already read, so neither is forked or hooked; R6a pairs each entry
+    with its `WantedId` by position. Side columns were refused because they are a second owner of
+    "what rides on this variable", kept in step with `fresh`, `merge` and the journal by hand; a fork
+    because §19.1 forbids copying the shared readers. `Flags` goes 12 → 16 bytes and `Content`
+    stays 20 (a comptime assert). **v1 is byte-identical**: every v1 `Flags` is a literal that
+    leaves `obls` at `.none`, and the new binary's `dump --stage=types`, `interface` and `dispatch`
+    and `check` output equal 2bc9e22's on every fixture of `check/*`, `dispatch`, `run`, `emit/*`,
+    `build/bad` and `regress` (1 888 comparisons, 0 differ), besides `test-blackbox`.
+  - **Design as built.** Obligation rows `{kind, state, region, seq, vars[3], index}`, deciding
+    variables first; decided at their node when a deciding variable is known (a `?` when EITHER
+    side is), else attached to the deciding flex roots with all their variables lowered to one
+    rank. `Walk.owned` (the one WALK that yields obligation variables as successors; `Walk.child(…, .owned)` no longer compiles)
+    yields a variable's constraint method types and then its open rows' variables. `Unify.bind`
+    readies a flex's rows onto the top-level frame's queue, a flex merge joins the sets and lowers
+    again; `Solve` drains after every constraint node and at §8.1 step 1, defaults open `try` rows
+    at step 3 (on adjusted ranks, looping), and closes at step 7 (`ambiguous_tuple`,
+    `ambiguous_interpolation`, the `equatable` fold). The `equatable` marker is a flag plus, when
+    the marker walk put it there, a row at the walk's region; `check2/Instances.zig` is the
+    growable, payload-descending, text-ordered-on-failure walk (D10: `payload_params` of an own
+    type computed now, of an imported one read from interface v3). The `?` shape goes into P9's
+    `tries`. `Subset.zig` has one refusal left, R6a's. A record literal is one node whose order the
+    solver chooses (§6.5 *Amended by R5*: pushdown when the expectation can take its field names,
+    fields first otherwise), after the spec's fields-first-always turned two precise v1 messages
+    (`FieldNamedMain`, `SchemaRecursivePayloadMismatch`) into whole-record mismatches.
+  - **Files** (lines): new `Obligations` 283, `Instances` 221; `Solve` 470 → 878, `Unify` 554 → 617,
+    `Walk` 497 → 528, `Report` 367 → 488, `Subset` 117 → 108, `Generalize` 288 → 297, `Module` 421 →
+    429, `constrain/Tree` 341 → 389, `constrain/Expr` 248 → 295, `constrain/Decl` 526 → 532 — 7 254
+    in all. Shared: `check/TypeStore.zig` (+`Flags.obls`, `ObligationSet`, the size asserts) and
+    `check2/Publish.zig`'s `payloadParams` made public with a kind/arity signature.
+  - **Claims.** CK-05, CK-06, CK-16, CK-51, CK-68 (their R0 fixtures), CK-62 through two new
+    dispatch-free fixtures (`run/TryEscapesToLaterFact`, `run/TryEscapeLowersOnlyItsOwn`; the R0
+    fixture compares with `==` and waits for R6a), and CK-09's new five-member fixture
+    (`check/good/MutualGroupFiveMembers`): 8 lines appended to `CLAIMED`, the five green ones'
+    `v2` lines deleted from `RED`, and v1 lines for the three new fixtures. CK-59: the generation
+    half; its fixture stays red for the article (R13), `RED` unchanged. CK-18: structural (no
+    `.equatable` node, no `Flags` rebuilt field by field). CK-17's class holds under v2 (the
+    100 000-field record with a function last is one `not_equatable`).
+  - **Reviewer-focus fixtures.** `tests/corpus/run/TryDefaultAtLetBoundary.beni` (a guard, green on
+    v1: a `?` whose target is a `let` definition defaults at that definition's own boundary and it
+    is used at two error types); `tests/pending/run/TryEscapesToLaterFact.beni` (its variables
+    escape the `let` to the declaration, decided `Maybe` by a later fact);
+    `tests/pending/run/TryEscapeLowersOnlyItsOwn.beni` (N-3: `twice`, beside `v = u?` whose target
+    escapes, is still generalised); `tests/pending/check/good/MutualGroupFiveMembers.beni` (CK-09's
+    shape, five members, shuffled parameters, obligation forms).
+  - **Evidence.** The three gates green. `test-v2` (report) exits 0: 587 passes, every one of the
+    355 fixtures the widened `v2-subset.sh` names passes, no drift; `v2-green.txt` gains 36
+    (`check/args` 2, `check/bad` 8, `check/good` 4, `emit` 1, `run` 21 with the new guard) and loses
+    three that CK-59's rule changes (`MissingField`, `UnknownField`, `RecordNotClosed`), which move
+    to `v2-expected.md` with `TryMixedShapes` (CK-51's text) and `TryDefaultCycle`. That guard holds
+    under v2 in substance — one `infinite_type`, the `?` defaulted to `Result` and the cycle
+    reported — but at the parameter `x` and in v2's text (`a = Result b a`), which its v1 golden
+    cannot match; R11 re-blesses it. The 72 green `run/` and `emit/app/` fixtures build
+    byte-identical JavaScript under v1 and under `--checker=v2 --jobs=8 --roundtrip-interfaces
+    --roundtrip-dispatch`, in the development and the release pass (144 of 144); the 154 green
+    `check/*` fixtures print the same diagnostics and interfaces at `--jobs=1` and at `--jobs=8`
+    with both round trips. `test-pending` green (28 claims); `test-pending-perf` green (all RED as
+    recorded) and `test-perf` green (CK-41 1.41).
+  - **Bench** (ReleaseFast, `check --no-cache --jobs=1 --self-profile`, the root package's `check`
+    events, v1/v2 interleaved, medians of 7, two sets in opposite orders). A generated corpus of 90
+    modules and 133 467 lines: R4b's eight shapes plus three obligation shapes — `"v=${p.0}
+    w=${p.1}"` before `Basics.eq p ( i, j )` pins `p`, a `let v = m?` in an annotated `Maybe`
+    function, and `Ok (r? * k)` beside `Basics.neq q.1 "x"` with `q` pinned by a `case` after it —
+    which both checkers check clean with identical interfaces. **v1 110.9 / v2 110.0 ms (0.99×) and
+    v1 110.9 / v2 111.0 ms (1.00×).** R4b's dispatch-free corpus: v1 102.9, v2 96.7 ms (0.94×).
+  - **Doubts, for the reviewer.** (1) `Unify.lowerObligations` walks every open row on a merged
+    flex, so a variable carrying k rows merged m times costs O(k·m); `Solve.defaults` re-walks every
+    open `try` at every boundary of its group (O(tries × `let` boundaries)). Both are small in the
+    corpus and the bench; neither is a scenario. (2) A row readied by `Solve.poison` during steps 4
+    or 6 is never drained (the queue is the top-level frame's and is popped with it); its decision
+    would only have poisoned a result, in a module already failing. (3) The order of a literal's two
+    halves reads the expectation at the node (§6.5 *Amended by R5*): a program where the expectation
+    becomes a record only later still gets v1's order. (4) `Instances` computes an own type's
+    `payload_params` mid-solve with `Publish.payloadParams`, which makes scratch variables at rank
+    `generalized` in the store; nothing reaches them. (5) No `frame` field on rows and one queue:
+    R7's nesting must add both (§4.5 *As built by R5*).
+- **As built, review round (2026-09-25).** Two reviews, structural and adversarial. The manager's
+  list was done spec first: `checker-v2.md` §4.5 *Amended by R5's review* and *As built by R5,
+  after its review*, the I15 row, §21.1's new D2 row, and *As built* notes in §6.5, §8.1, §8.6,
+  §11.4 and §19.1.
+  - **B1 (determinism, I13): one `equatable` question, one message.**
+    - The marker walk flags only after a `yes`.
+    - Every row it makes carries the question's `origin`, and an origin reports once.
+    - A comparison's scheme flag meeting a call argument at the top of the unification makes the
+      row there. So `Basics.eq r r` answers at the comparison (F7), and a function passed through
+      a record field answers at the lambda (§6.5 now pushes a literal down into a record open on a
+      flex).
+    - A readied `equatable` row waits for the boundary's step 1, so its message shows the solved
+      type (`number -> number`).
+    - Fixtures: `pending/check/bad/EqOneQuestionMerged` (D), `EqOneQuestionPerSite` (F),
+      `EqRecordFieldFunctionAtComparison` (F7a), all claimed; and the corpus guards
+      `check/bad/EqOneQuestionRecord` with its symbol-order twin `…NamesFirst` (E),
+      `EqFunctionFieldThroughCall` (F7b) and `InterpolatedAmbiguousTuple` (F6), green on v1 and
+      v2.
+  - **The three quadratic shapes are now CK-96, CK-97 and CK-98**, timing scenarios in
+    `tests/blackbox/perf_test.zig` (`test-perf`), red on the reviewed tree and green now. Ratios,
+    best of 3 on ReleaseFast, `--checker=v2`:
+
+    | Scenario | Before | After |
+    |---|---|---|
+    | CK-96, rows on one variable, 2 000 / 4 000 | 92 / 356 ms, 3.86 | 8 / 9 ms, 1.12 |
+    | CK-97, a merge chain, 2 000 / 4 000 | 58 / 216 ms, 3.72 | 11 / 20 ms, 1.81 |
+    | CK-98, open `?` × boundaries, 1 500 / 3 000 | 107 / 397 ms, 3.71 | 10 / 19 ms, 1.90 |
+
+    - Sets are in-place lists, merged by size.
+    - A merge re-lowers only the rows owned by a side whose rank strictly dropped.
+    - A set keeps the rows its variable owns apart from those it only decides.
+    - Step 3 reads a per-frame open-`?` list, which a row leaves once per frame. That is the
+      per-frame structure R7 needs; the `ready` queue stays the top-level frame's, owned by
+      `Solve`, and `Unify` holds one pointer to it (N1).
+    - §4.5 now states the cost claim precisely: O(R log R + R·D) for R rows at nesting depth D.
+    - The adversarial review's other shapes also stay flat on ReleaseFast at 1 000 / 2 000: 14 /
+      16 ms (`z = [ u?, … ]` with n plain bindings after it), 15 / 18 ms (an equatable merge
+      chain), and 14 / 16 ms (an ambiguous `p.0` list).
+  - **CK-99 (F4, valid-program-rejected): a `?`'s owner is its target.** D2 and I15 were amended:
+    the subject and the value are lowered to the target's rank, never the target to the subject's.
+    `run/TryTargetKeepsItsSuccessType` builds and prints v1's answer under both checkers.
+  - **S1**: a kinded flex takes the fields first (`pending/check/bad/KindedExpectationShowsLiteral`,
+    claimed).
+  - **S2**: I15 now says what the code does. It is directional, owner to dependants, and §4.5 says
+    why.
+  - **S5**: `Solve.zig` split into `Decide.zig` (359 lines) and `Solve` (621); v2's texts moved into
+    `Messages.zig` (198), leaving `Report` at 302.
+  - **S6: exit criterion "`TryDefaultCycle` green under v2" amended to "gated under v2 by a pending
+    twin".** The guard stays in `v2-expected.md`, because its golden pins v1's place and text.
+    `pending/check/bad/TryDefaultCycleAtBinder` asserts the substance under v2 and is claimed:
+    one `infinite_type`, at the binder `x`, containing `Result`.
+  - **S7**: `poison` settles a flex's rows directly, so nothing is readied during steps 4 and 6, and
+    popping the top-level frame asserts an empty queue.
+  - **F5**: a variable subject beside a target of neither shape is the `neither` leg
+    (`pending/check/bad/TryUnknownSubjectSaysNeither`, claimed).
+  - **F6**: step 7 closes `tuple_index` rows first, and does not report the interpolation of a
+    result they poisoned (I12).
+  - **F8**: recorded under CK-94. The quantifier's name hint follows member order; the types are
+    equal.
+  - **Nits.**
+    - N2: `Instantiate.mapped` copies `Flags` and changes two fields.
+    - N3: the "only reader" wording is fixed here and in §4.5.
+    - N4: the walk visits tuple elements in order.
+    - N5: the drain sorts by `seq`.
+    - N6: the `reopen` comment is fixed.
+    - N7: `Obligations.tries` is gone; the per-frame lists replace it.
+    - N8, N10: comments added.
+    - N9: recorded in §8.1 for R6a.
+  - **Evidence.**
+    - The three gates are green.
+    - `test-v2` exits 0 with 593 passes (was 587): the 5 new guards are appended to
+      `v2-green.txt`, and nothing was lost.
+    - `test-pending` is green with 33 claims (was 28): the 6 new claims above, minus none.
+    - `test-pending-perf` is green (all RED as recorded). `test-perf` is green: CK-41 1.63,
+      CK-96 1.12, CK-97 1.81, CK-98 1.90.
+    - The 73 green `run/` and `emit/app/` fixtures build identical JavaScript under v1 and v2,
+      146 of 146.
+    - The 158 green `check/*` fixtures print the same at `--jobs=1` and at `--jobs=8` with both
+      round trips.
+    - `src/check/` is unchanged since the first round's 1 888-comparison v1 identity check.
+  - **Bench**, with the first round's method and corpus, regenerated:
+    - v1 110.6 / v2 114.2 ms, **1.03×**;
+    - v1 114.0 / v2 115.4 ms, **1.01×**, in the reverse order;
+    - R4b's corpus: v1 105.2 / v2 100.6 ms, 0.96×.
 
 ### R6a — The resolver, for `check`
 
@@ -993,6 +1158,10 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     on the frame's pool, and every variable of every obligation (R5): the CK-03 / row 76 coverage
     R4b's binders-only fallback (§8.2 *As built*) no longer gives; and step 7's debug assert is
     restated over the receivers it defaults.
+  - *(Added by R5, 2026-09-25.)* `wants` is the shared `Flags.constraints` (`checker-v2.md` §4.1
+    *Decided by R5*): R6a writes down how an entry is paired with its `WantedId`, drops `Unify`'s
+    `constrained` refusal, and shares `Obligations.seq` with wanteds (§9.1). A wanted readied by
+    `Unify.bind` goes on the same `frames[0].ready` the obligations use (§4.5 *As built by R5*).
 
   Not covered: an unannotated own method used before its group (R7), derived contexts of own
   nominal types (R8a; until then, v1's one-entry-per-parameter rule), and P6 (R6b). A dispatching
@@ -1292,8 +1461,8 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R3 | CK-38, 39; CK-41 (into `perf_test.zig`, `test-perf`) | — | CK-89 found (a private type's derived context is published nowhere) → R8a |
 | R4a | — | — | CK-15 (the cutoff protocol leaves `Check.zig`) |
 | R4b | — | CK-01, 04, 07, 13, 57; CK-09 (`check/good` half); CK-90, 91 (found and fixed by R4b) | CK-10, 14, 15 (pipeline part); CK-92 (fixed in `Render`, in the gates); CK-93 → manager, CK-94 → R13, CK-95 → R12 (found by R4b's reviews) |
-| R5 | — | CK-05, 06, 16, 51, 62, 68 | CK-18; CK-59 (part) |
-| R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 80 | CK-35; CK-37, 55 (part) |
+| R5 | CK-96, 97, 98 (into `perf_test.zig`, `test-perf`); CK-99 (a `run/` guard) — all four found by R5's reviews and fixed in R5 | CK-05, 06, 16, 51, 68; CK-62 (two dispatch-free fixtures; `run/TryDecidedByLaterFacts` waits for R6a); CK-09 (a five-member `check/good` fixture) | CK-18; CK-59 (the generation half); CK-94 gains F8 (the name hint follows member order) |
+| R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 42, 48, 62 (`run/TryDecidedByLaterFacts`), 80 | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32 | — |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
 | R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
@@ -1306,7 +1475,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 95 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 99 entries appears in this table, CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

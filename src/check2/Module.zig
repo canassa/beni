@@ -243,7 +243,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
 
     // P9.
-    try finishTable(in, bir, store, decl_scheme);
+    try finishTable(in, bir, store, decl_scheme, solver.tries.items);
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (!quiet) {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
@@ -368,7 +368,7 @@ fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
 /// P9's table: one `DeclInfo` per declaration — no site, no term, no
 /// requirement in R4b's subset — with `value_arity` read off the scheme and
 /// the convention `Convention.of` gives it (§12.5).
-fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional) Error!void {
+fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, tries: []const Dispatch.Try) Error!void {
     const decls = try in.gpa.alloc(Dispatch.DeclInfo, bir.decls.len);
     for (decls, decl_scheme, 0..) |*info, scheme, i| {
         const arity: u16 = if (scheme.unwrap()) |v| std.math.cast(u16, store.paramCount(v)) orelse std.math.maxInt(u16) else 0;
@@ -378,7 +378,11 @@ fn finishTable(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []con
         };
     }
     in.dispatch.deinit(in.gpa);
-    in.dispatch.* = .{ .decls = decls };
+    // Every `?` the solver decided, by instruction (`checker.md` §6.5): the
+    // shape is the one thing about a `?` the backend cannot work out.
+    const sorted = try in.gpa.dupe(Dispatch.Try, tries);
+    std.mem.sort(Dispatch.Try, sorted, {}, tryLessThan);
+    in.dispatch.* = .{ .decls = decls, .tries = sorted };
 }
 
 /// `--roundtrip-dispatch` on the table (v1's, verbatim for the table): right
@@ -418,4 +422,8 @@ fn roundtripPlan(in: Input, report: *Report) Error!void {
     }
     in.plan.deinit(gpa);
     in.plan.* = loaded;
+}
+
+fn tryLessThan(_: void, a: Dispatch.Try, b: Dispatch.Try) bool {
+    return a.inst.int() < b.inst.int();
 }

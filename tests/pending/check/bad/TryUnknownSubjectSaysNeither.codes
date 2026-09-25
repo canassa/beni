@@ -1,0 +1,2 @@
+# checker.md §8.6: the `neither` leg.
+try_shape 9:14 contains "neither" lacks "can only return from"

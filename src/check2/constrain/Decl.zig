@@ -132,6 +132,9 @@ fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
     defer parts.deinit(g.cx.scratch);
     try parts.append(g.cx.scratch, try g.equal(target, try g.func(param_vars, result), body, category));
     for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
+    // A `?` in the body that names no `let` definition returns from here.
+    g.decl_result = result;
+    defer g.decl_result = null;
     try parts.append(g.cx.scratch, try Expr.expr(g, body, result, category));
     return g.conj(parts.items);
 }
@@ -285,6 +288,9 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             defer parts.deinit(g.cx.scratch);
             try parts.append(g.cx.scratch, try g.equal(check, try g.func(param_vars, result), m, category));
             for (params, param_vars) |p, v| try parts.append(g.cx.scratch, try Pattern.pattern(g, p, v));
+            // A `?` in the body returns from this definition (§8.6).
+            try g.targets.append(g.gpa, .{ .inst = m, .result = result });
+            defer _ = g.targets.pop();
             try parts.append(g.cx.scratch, try Expr.expr(g, @enumFromInt(data.rhs), result, category));
             return g.conj(parts.items);
         },

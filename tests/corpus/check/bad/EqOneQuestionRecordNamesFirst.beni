@@ -1,0 +1,23 @@
+-- check/bad: the symbol-order twin of `EqOneQuestionRecord.beni` — `fnf` is
+-- interned before `flexf` (the first declaration names it) — with the same
+-- one `not_equatable` (checker-v2.md §11.4, I13; R5's structural review, B1).
+-- The golden is checker v1's.
+fnf =
+    1
+
+
+flexf =
+    1
+
+
+k : Int -> Int
+k n =
+    n
+
+
+h x =
+    let
+        t =
+            Basics.eq { fnf = k, flexf = x } { fnf = k, flexf = x }
+    in
+    x 1

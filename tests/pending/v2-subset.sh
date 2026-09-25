@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# tests/pending/v2-subset.sh — the corpus fixtures R4b's checker v2 is held to
-# (plans/checker-rewrite.md §3, R4b; docs/design/checker-v2.md §22.2).
+# tests/pending/v2-subset.sh — the corpus fixtures checker v2 is held to, as of R5
+# (plans/checker-rewrite.md §3, R4b and R5; docs/design/checker-v2.md §22.2).
 #
-# A fixture is in the v2-subset when its ROOT modules need no dispatch and no
-# obligation, read off the ORACLE (checker v1, the default checker):
+# A fixture is in the v2-subset when its ROOT modules need no dispatch, read
+# off the ORACLE (checker v1, the default checker). The obligation forms —
+# `tuple_index`, `interp`, `try`, explicit `Basics.eq`/`neq` — are in it from
+# R5:
 #
 #   - its `dump --stage=dispatch` has no `site` line and only `evidence=0`
 #     declarations;
@@ -12,11 +14,9 @@
 #     out, and so is an `emit/` or `emit/release/` fixture (a `--library`
 #     build) whose root module declares a `type` — v2 checks it, and
 #     `js/Emit.zig` refuses to build it as a library;
-#   - no root module's `dump --stage=bir` holds a `tuple_index`, `interp` or
-#     `try` instruction, or a reference to `Basics.eq`/`Basics.neq` (the
-#     obligation forms, R5), or a `method_call`, `type_dispatch` or `where`
-#     clause (dispatch v1 wrote no site for because the module failed first:
-#     R6a).
+#   - no root module's `dump --stage=bir` holds a `method_call`,
+#     `type_dispatch` or `where` clause (dispatch v1 wrote no site for because
+#     the module failed first: R6a).
 #
 # The fixtures `v2-expected.md` skips (`core/` directories, the §20.4 rows) are
 # never in it. Prints one repo-relative fixture path per line, sorted.
@@ -57,12 +57,11 @@ in_subset() {
     local f bir
     for f in $files; do
         bir="$("$beni" dump --stage=bir "$f" 2>/dev/null || true)"
-        if grep -qE ' = (tuple_index|interp|try|method_call|type_dispatch) ' <<<"$bir"; then return 1; fi
+        if grep -qE ' = (method_call|type_dispatch) ' <<<"$bir"; then return 1; fi
         if grep -qE '^  where ' <<<"$bir"; then return 1; fi
         # A `--library` build (every `emit/` fixture but `emit/app/`) of a module
         # that declares a `type` is refused under v2 (`js/Emit.zig`).
         if [[ "$kind" == emit || "$kind" == emit/release ]] && grep -qE '^decl [0-9]+: (pub )?(opaque )?type [A-Z]' <<<"$bir"; then return 1; fi
-        if grep -qE '^    import_value Basics\.(eq|neq)$' <<<"$bir"; then return 1; fi
     done
     return 0
 }

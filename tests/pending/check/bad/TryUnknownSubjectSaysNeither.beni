@@ -1,0 +1,11 @@
+-- CK-51: a `?` whose subject is still unknown when its enclosing definition
+-- turns out to return neither shape says the subject is NEITHER a `Result`
+-- nor a `Maybe` (`checker.md` §8.6's first text) — it does not claim the
+-- subject is a `Maybe` (R5's adversarial review, F5). On checker v1 at
+-- 2bc9e22 it is a TYPE MISMATCH, `List a` against `Result b c`, at `[ v ]`.
+pub k u =
+    let
+        v =
+            u?
+    in
+    [ v ]

@@ -292,6 +292,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** `run/ObligationEscapesInnerLet.beni` → `3`, `3`, `3`, `n = x1`. That is `f`, the `g`
   and `k` controls, and `h`.
 - **Slice** R5.
+- **Status** claimed by R5 (2026-09-25): both obligations ride on their variable and are decided when `snd p` and `String.length n` bind it, in the enclosing declaration (`checker-v2.md` §4.5 *As built by R5*). The fixture is GREEN under `--checker=v2` and in `CLAIMED`.
 
 ### CK-06 — `?` commits to `Result` before anything can say `Maybe`
 
@@ -323,6 +324,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   are flex.
 - **Fixture** `run/TryDefersShape.beni` → `Just 2`, `Just 3`.
 - **Slice** R5.
+- **Status** claimed by R5 (2026-09-25): `?` is an obligation on its subject and its target's result, decided when either becomes concrete and defaulted to `Result` only at §8.1 step 3 of the boundary whose rank they still have (`checker-v2.md` §8.6 *As built by R5*). The fixture is GREEN under `--checker=v2` and in `CLAIMED`.
 
 ### CK-07 — Which record-field error is reported depends on interner id order
 
@@ -437,6 +439,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     interface letters each scheme on its own, so `v` is written `number, a, b -> c`.
 - **Slice** R5 for the dispatch-free `check/good` half; R6 for the `check/bad` half, whose program
   uses `==` (2026-09-24, S7). Lands with CK-31, which it masks.
+- **Status** the `check/good` half was claimed by R4b. R5 (2026-09-25) adds and claims `check/good/MutualGroupFiveMembers.beni`, R5's reviewer case for I11: five members with their parameters in five orders and the obligation forms on them (`pair.0`, `${k}`) — GREEN under `--checker=v2`, and on v1 a `kind_mismatch` at `m2`'s `if flag`.
 
 ### CK-10 — Core bookkeeping gaps
 
@@ -615,6 +618,8 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0 follow-up (review S4):* the lines are `contains "ANY type"` and `contains "function"`, the
     words of the direct controls' messages.
 - **Slice** R5.
+- **Status** claimed by R5 (2026-09-25): `check2/Instances.zig`'s marker walk requires a rigid's flag and propagates it, with an obligation at the same region, to a flex (`checker-v2.md` §11.4 *As built by R5*). The fixture is GREEN under `--checker=v2` and in `CLAIMED`.
+- **Status, after R5's review (2026-09-25).** One question is one message: the walk flags only after a `yes`, every row it makes carries the question's `origin`, and an origin reports once (`checker-v2.md` §11.4 *As built by R5, after its review*). The claim now also rests on `tests/pending/check/bad/EqOneQuestionMerged`, `…/EqOneQuestionPerSite` and `…/EqRecordFieldFunctionAtComparison` (claimed), and on the symbol-order twins `tests/corpus/check/bad/EqOneQuestionRecord` and `…NamesFirst` and `…/EqFunctionFieldThroughCall`, which are green on v1 and v2 and listed in `v2-green.txt`. CK-17's class holds under v2 too: `check/bad/WideRecordEqFunction` is in `v2-green.txt`.
 
 ### CK-17 — The equatable walk gives up at 256 entries, and giving up means "equatable"
 
@@ -654,6 +659,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     dead too.
 - **Fixture** none. `checker-v2.md` §4.1/§7.1 (`Flags` are merged only in `Unify`, `wants` and `obls` included) and deletion.
 - **Slice** R5.
+- **Status** closed structurally by R5 (2026-09-25) for v2: v2 has no `.equatable` constraint node, and every `Flags` it writes is the old one copied with one field changed (`Unify.flex`, the marker walk, `Solve.attach`), never rebuilt from parts (`checker-v2.md` §4.1 *Decided by R5*, §11.4 *As built by R5*). v1's dead arm stays (v1 is frozen) and goes with v1 at R12.
 
 ### CK-19 — An `equatable` flag answers `==` structurally, ignoring the type's `eq`, depending on statement order
 
@@ -1687,6 +1693,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0 follow-up (review S4):* the first line also has `contains "Result String Int" contains
     "Maybe Int"` (§8.6: the enclosing return shape) and the second `contains "error types"`.
 - **Slice** R5, with CK-06.
+- **Status** claimed by R5 (2026-09-25): `checker.md` §8.6's three legs (`neither`, `enclosing`, `errors`), specified before the code. The fixture is GREEN under `--checker=v2` and in `CLAIMED`; `tests/corpus/check/bad/TryMixedShapes.beni`, whose v1 golden pins "neither" about a `Maybe Int`, is an expected difference (`v2-expected.md`).
 
 ### CK-52 — The "module-rule clash" hint appears where there is no clash
 
@@ -1821,6 +1828,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0, as written:* contains "{ n : number, name : String }". The expected record's own
     rendering already contains "name : String", so that substring alone passed on 7427828.
 - **Slice** R5 (generation order), R13 (article).
+- **Status** the generation-order half done by R5 (2026-09-25), as amended (`checker-v2.md` §6.5 *Amended by R5*): the solver constrains a literal's fields first exactly when the expectation cannot take its field names, so the message shows `{ n : number, name : String }`. The fixture stays RED under v2 for the article ("a `extra`"), R13's; its `RED` line is unchanged (`why=message`).
 
 ### CK-60 — A cons pattern inside a constructor renders with redundant parentheses
 
@@ -1879,6 +1887,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Root cause** as CK-06 (`tryShape`, `Solve.zig:1802`).
 - **Fixture** `run/TryDecidedByLaterFacts.beni`.
 - **Slice** R5.
+- **Status** claimed by R5 (2026-09-25) through two dispatch-free fixtures, both GREEN under `--checker=v2` and in `CLAIMED`: `run/TryEscapesToLaterFact.beni` (this entry's `f`, round 2's `n2try`, and `h` with `List.isEmpty [ m ]` for the fact after `m?`) and `run/TryEscapeLowersOnlyItsOwn.beni` (round 3's N-3). `run/TryDecidedByLaterFacts.beni` itself compares with `==`, so it stays RED under v2 as `not_implemented` until R6a claims it.
 
 ### CK-63 — An own untyped method used inside a `let` or a `case` before its definition is refused
 
@@ -2001,6 +2010,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Fixture** `check/bad/TupleIndexOuterResult.beni`. `.codes`: one `type_mismatch`, at `a` in
   `String.length a`.
 - **Slice** R5.
+- **Status** claimed by R5 (2026-09-25; v1 is frozen): `p.0`'s result shares `p`'s rank (`checker-v2.md` §4.5 *As built by R5*), so `a` is not generalised, `snd p` decides it as `Int` and `String.length a` is the `type_mismatch`. The fixture is GREEN under `--checker=v2` and in `CLAIMED`.
 
 ### CK-69 — A parametric derived context that depends on an in-flight method gets the wrong refusal
 
@@ -2742,6 +2752,13 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   name already says it.
 - **Fixture** none yet (a `check/good` interface golden and a `check/bad` message).
 - **Slice** R13.
+- **Also** (R5's adversarial review, F8, 2026-09-25): which name survives depends on the order of
+  merges, so in a recursive group the published quantifier's name — `number` or `a`, the kind
+  and the flag identical — follows the order the members are written in
+  (`f u = let v = u? in g v`, `g x = if Basics.eq x 0 then …`, `h y = Just "${y}"`: `g : number
+  -> Maybe String` in three orders, `g : a -> Maybe String` in the other three). The types are
+  equal and the choice is a function of the source, not of ids, so no program checks differently;
+  but the interface's name hint (and so its bytes) follows the order. R13's rule above removes it.
 
 ### CK-95 — BIR lowering is quadratic in a `let`'s binding count
 
@@ -2755,6 +2772,73 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** none yet.
 - **Slice** R12 (the manager).
 
+### CK-96 — Obligation rows riding on one variable cost quadratic time (checker v2)
+
+- **Severity** performance. **Area** `check2/Obligations.zig`, `Unify.zig`. **Class** K11.
+  **Sources** R5's adversarial review (F1), on R5's uncommitted tree.
+- **Program** `pub f p = "${p}${p}…" ++ String.fromInt p`, and `( [ p.0, p.0, … ], snd p )`.
+- **Observed** 8 000 `${p}` took 31 s under `--checker=v2`, against v1's 0.15 s. Every merge of a
+  fresh part variable with `p` re-lowered every row on `p`, and the sets were copied on attach.
+- **Fixed by R5** (2026-09-25): sets are in-place lists, and a merge re-lowers only the rows of a
+  side whose rank strictly dropped (`checker-v2.md` §4.5 *As built by R5, after its review*).
+- **Fixture** `tests/blackbox/perf_test.zig` "CK-96" (`zig build test-perf`): 2 000 / 4 000, a
+  ratio of 3.86 before, 1.12 after.
+- **Slice** R5 (fixed).
+
+### CK-97 — Merging variables that carry rows costs O(rows × merges) (checker v2)
+
+- **Severity** performance. **Area** `Unify.zig`, `Obligations.zig`. **Class** K11.
+  **Sources** R5's adversarial review (F2); structural review (S3).
+- **Program** `pub f x1 … xn = ( [ "${x1}", … ], [ x1, …, xn, 1 ] )`, and the same with
+  `Basics.eq [ xi ] []` or `xi.0`.
+- **Observed** n = 4 000: 8.2 s under v2, 0.22 s under v1. Every merge copied both sets and
+  re-lowered every row of the survivor.
+- **Fixed by R5** (2026-09-25): union by size, and lowering only on a strict rank drop.
+- **Fixture** `perf_test.zig` "CK-97": 2 000 / 4 000, a ratio of 3.72 before, 1.81 after.
+- **Slice** R5 (fixed).
+
+### CK-98 — The `?` default step scans every open `?` at every boundary (checker v2)
+
+- **Severity** performance. **Area** `check2/Decide.zig` (`defaults`), `Generalize.Frame`.
+  **Class** K11. **Sources** R5's adversarial review (F3); structural review (S4).
+- **Program** `pub f u = let a1 = u? … an = u? in Ok [ a1, …, an ]`.
+- **Observed** n = 4 000: 33 s under v2, 0.47 s under v1. Step 3 scanned every open `try` of the
+  module at every `let` boundary, and the subject `u`, which decides n rows it does not own, was
+  walked through all of them by rank adjustment at every boundary.
+- **Fixed by R5** (2026-09-25):
+  - a per-frame open-`?` list, which a row leaves once, for the frame its target escaped to;
+  - a variable's set keeps the rows it owns apart from the rows it only decides, so rank
+    adjustment walks the owned ones alone.
+- **Fixture** `perf_test.zig` "CK-98": 1 500 / 3 000, a ratio of 3.71 before, 1.90 after.
+- **Slice** R5 (fixed).
+
+### CK-99 — A `?` target was made monomorphic in its own success type (checker v2)
+
+- **Severity** valid-program-rejected. **Area** `check2/Decide.zig`, the I15 rule for
+  obligations. **Class** K2. **Sources** R5's adversarial review (F4), on R5's uncommitted tree.
+- **Program**:
+
+  ```elm
+  f u =
+      let
+          g k =
+              k (u?)
+      in
+      ( g (\v -> Ok v), g (\v -> Ok (String.fromInt v)) )
+  ```
+
+- **Observed** v2 said TYPE MISMATCH at `String.fromInt v`. v1 builds it and prints
+  `{ a = Ok 1, b = Ok "1" }`.
+- **Cause.** The spec text said all variables of one obligation share one rank. So the `?` target,
+  `g`'s own result, was lowered to the outer subject's rank, and `g` stopped being generalised over
+  its result's success type, which a `?` never constrains.
+- **Fixed by R5** (2026-09-25), spec first. `checker-v2.md` §4.5 *Amended by R5's review*, I15 and
+  §21.1's new D2 row say that every obligation has an owner and ranks run from the owner to its
+  dependants. A `?`'s owner is its target, as D2 as amended already said.
+- **Fixture** `tests/corpus/run/TryTargetKeepsItsSuccessType.beni`. Green on v1 and on v2, it is in
+  `v2-green.txt`.
+- **Slice** R5 (fixed).
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -2767,20 +2851,20 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-02 | unsound-runtime | K2 | `check/bad/OuterReceiverConstraintLevels.beni` | R6 |
 | CK-03 | compiler-crash-or-hang | K3 | `check/bad/CyclicReceiverResolution.beni` + `scenario/CK-03` | R6 |
 | CK-04 | unsound-runtime | K3 | `check/bad/InfiniteTypeAtBinder.beni` | R4 |
-| CK-05 | valid-program-rejected | K2 | `run/ObligationEscapesInnerLet.beni` | R5 |
-| CK-06 | valid-program-rejected (D2) | K2 | `run/TryDefersShape.beni` | R5 |
+| CK-05 | valid-program-rejected | K2 | `run/ObligationEscapesInnerLet.beni` | R5 (claimed) |
+| CK-06 | valid-program-rejected (D2) | K2 | `run/TryDefersShape.beni` | R5 (claimed) |
 | CK-07 | nondeterminism | K12 | `check/bad/FieldErrorTextOrder.beni` (single file, R0) | R4 |
 | CK-08 | valid-program-rejected | K3 | `run/ClosedRecordAfterFieldAccess.beni` | R6 |
-| CK-09 | unsound-runtime | K8 | `check/bad/MutualGroupLocals.beni`, `check/good/MutualGroupLocalTypes.beni` | R5, R6 |
+| CK-09 | unsound-runtime | K8 | `check/bad/MutualGroupLocals.beni`, `check/good/MutualGroupLocalTypes.beni`, `check/good/MutualGroupFiveMembers.beni` | R4b, R5 (claimed), R6a |
 | CK-10 | latent | K3 | — (structural) | R4 |
 | CK-11 | unsound-runtime | K9 | `check/bad/WarningKeepsExhaustiveness.beni` | R1, R4 |
 | CK-12 | latent | K9 | — (unit test) | R1 |
 | CK-13 | unsound-runtime (no runtime path yet) | K9 | `check/bad/SchemaMemberTooDeep/` | R4 |
 | CK-14 | latent | K9 | — (structural) | R4 |
 | CK-15 | latent | K9 | — (structural) | R4, R9 |
-| CK-16 | unsound-runtime | K5 | `check/bad/BasicsEqThroughStructure.beni` | R5 |
+| CK-16 | unsound-runtime | K5 | `check/bad/BasicsEqThroughStructure.beni` | R5 (claimed) |
 | CK-17 | unsound-runtime | K5 | `check/bad/WideRecordEqFunction.beni` | R1, R5 |
-| CK-18 | latent | K2 | — (deleted) | R5 |
+| CK-18 | latent | K2 | — (deleted) | R5 (structural, v2) |
 | CK-19 | unsound-runtime | K7 | `run/EquatableMarkerIsNotEq.beni` | R1, R8 |
 | CK-20 | unsound-runtime | K5 | `check/bad/RigidInsideDerivedShape.beni` | R2, R6 |
 | CK-21 | unsound-runtime | K5 | `check/bad/WhereClauseNumberReceiver.beni` | R6 |
@@ -2813,7 +2897,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-48 | diagnostic-quality | K13 | `check/bad/MissingWhereAtUse.beni` | R6 |
 | CK-49 | diagnostic-quality | K13 | `check/bad/ListElementFromContext.beni` | R13 |
 | CK-50 | diagnostic-quality | K13 | `check/bad/NoArithmeticHintWithoutArithmetic.beni` | R13 |
-| CK-51 | diagnostic-quality | K13 | `check/bad/TryShapeNamesTheMismatch.beni` | R5 |
+| CK-51 | diagnostic-quality | K13 | `check/bad/TryShapeNamesTheMismatch.beni` | R5 (claimed) |
 | CK-52 | diagnostic-quality | K13 | `check/bad/MethodSignatureNoClash.beni` | R13 |
 | CK-53 | diagnostic-quality | K13 | `check/bad/MissingWhereInLetAnnotation.beni` | R13 |
 | CK-54 | diagnostic-quality | K13 | `check/bad/OpenRecordEquality.beni` | R13 |
@@ -2824,13 +2908,13 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-59 | diagnostic-quality | K13 | `check/bad/MissingFieldShowsLiteralTypes/` | R5, R13 |
 | CK-60 | diagnostic-quality (confirmed in R0) | K13 | `check/bad/MissingPatternConsRendering.beni` | R13 |
 | CK-61 | latent (doc) | K15 | — | R2 |
-| CK-62 | valid-program-rejected | K2 | `run/TryDecidedByLaterFacts.beni` | R5 |
+| CK-62 | valid-program-rejected | K2 | `run/TryDecidedByLaterFacts.beni` (R6a), `run/TryEscapesToLaterFact.beni`, `run/TryEscapeLowersOnlyItsOwn.beni` | R5 (claimed), R6a |
 | CK-63 | valid-program-rejected | K6 | `run/OwnMethodDemandedEarly.beni` | R7 |
 | CK-64 | valid-program-rejected | K6 | `run/OwnMethodValuePrefix.beni` | R7 |
 | CK-65 | valid-program-rejected | K6 | `run/MutualDispatchMethods.beni` | R7 |
 | CK-66 | valid-program-rejected | K4 | `run/GroupVariableOutsideCaller.beni` | R7 |
 | CK-67 | valid-program-rejected | K7 | `run/DerivedContextClosedOwnMethod/` | R8 |
-| CK-68 | diagnostic-quality | K2 | `check/bad/TupleIndexOuterResult.beni` | R5 |
+| CK-68 | diagnostic-quality | K2 | `check/bad/TupleIndexOuterResult.beni` | R5 (claimed) |
 | CK-69 | diagnostic-quality | K7 | `check/bad/DerivedContextNeedsAnnotation/` (+ `…KeyFirst/`) | R8 |
 | CK-70 | diagnostic-quality | K6 | `check/bad/RecursiveDispatchTwoTypes.beni` (+ `…B.beni`) | R7 |
 | CK-71 | nondeterminism | K12 | `scenario/CK-71` (100 loaded runs at `--jobs=8`); promoted by R1 into the gates | R1 |
@@ -2858,14 +2942,18 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-93 | performance | K11 | — (a scenario when taken) | unassigned — manager |
 | CK-94 | diagnostic-quality | K13 | — | R13 |
 | CK-95 | performance | K14 | — | R12 |
+| CK-96 | performance | K11 | promoted: `perf_test.zig` "CK-96" (`test-perf`) | R5 (fixed) |
+| CK-97 | performance | K11 | promoted: `perf_test.zig` "CK-97" (`test-perf`) | R5 (fixed) |
+| CK-98 | performance | K11 | promoted: `perf_test.zig` "CK-98" (`test-perf`) | R5 (fixed) |
+| CK-99 | valid-program-rejected | K2 | guard `tests/corpus/run/TryTargetKeepsItsSuccessType.beni` | R5 (fixed) |
 
 Totals:
-- 95 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- 99 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5). CK-78 records a decision, not a defect, and is counted under none of the severities below.
 - unsound-runtime: 21 (CK-83, CK-84, CK-90 and CK-91 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
 - compiler-crash-or-hang: 10 (CK-92 among them).
-- valid-program-rejected: 18 (CK-87 among them).
+- valid-program-rejected: 19 (CK-87 and CK-99 among them).
 - nondeterminism: 2.
-- performance: 9 (CK-85, CK-88, CK-93 and CK-95 among them).
+- performance: 12 (CK-85, CK-88, CK-93, CK-95 and CK-96 to CK-98 among them).
 - diagnostic-quality: 24 (CK-86 and CK-94 among them).
 - latent: 10 (CK-89 among them).
 - Outside the checker (K14): 11 (CK-78, CK-83, CK-86, CK-87, CK-88 and CK-95 among them).

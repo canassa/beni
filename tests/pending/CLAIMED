@@ -24,3 +24,20 @@ tests/pending/check/bad/InfiniteTypeTwoCyclesOneReport.beni
 tests/pending/check/bad/InfiniteTypeTwoCyclesUnified.beni
 tests/pending/check/bad/LetAnnotationEscapeNoCascade.beni
 tests/pending/check/bad/TooDeepAnnotationSkipsPatterns.beni
+# R5 (2026-09-25): obligations — `tuple_index`, interpolation, the `equatable` marker walk, `?`.
+tests/pending/check/bad/BasicsEqThroughStructure.beni
+tests/pending/check/bad/TryShapeNamesTheMismatch.beni
+tests/pending/check/bad/TupleIndexOuterResult.beni
+tests/pending/run/ObligationEscapesInnerLet.beni
+tests/pending/run/TryDefersShape.beni
+tests/pending/run/TryEscapesToLaterFact.beni
+tests/pending/run/TryEscapeLowersOnlyItsOwn.beni
+tests/pending/check/good/MutualGroupFiveMembers.beni
+# R5's review (2026-09-25): one `equatable` question, one message; its region; `?`'s `neither` leg;
+# a kinded expectation; the TryDefaultCycle guard's twin.
+tests/pending/check/bad/EqOneQuestionMerged.beni
+tests/pending/check/bad/EqOneQuestionPerSite.beni
+tests/pending/check/bad/EqRecordFieldFunctionAtComparison.beni
+tests/pending/check/bad/TryUnknownSubjectSaysNeither.beni
+tests/pending/check/bad/KindedExpectationShowsLiteral.beni
+tests/pending/check/bad/TryDefaultCycleAtBinder.beni

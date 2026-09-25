@@ -1,0 +1,47 @@
+-- CK-09: five mutually recursive members, each with its parameters in a
+-- different order, and R5's obligation forms (`pair.0`, `pair.1`, `${…}`)
+-- on those parameters. While the group is solved each member's locals are
+-- its own (checker-v2.md §6.2, I11: the solver never reads a generation-time
+-- local table), so every member gets the type its own body gives it — R5's
+-- reviewer case for I11, CK-09's `u`/`v` shape widened to five members.
+--
+-- Oracle twin, run on checker v1 at 2bc9e22: this file with the five
+-- signatures of the `.iface` written as annotations checks, with exactly this
+-- interface. As written, v1 resolves the members' locals against one
+-- member's slice and refuses it: `kind_mismatch`, `Bool` against `number`, at
+-- `m2`'s `if flag`.
+
+
+pub m1 n pair =
+    case n of
+        0 ->
+            "${pair.0}"
+
+        _ ->
+            m2 pair.1 (n - 1) pair
+
+
+pub m2 flag k pair =
+    if flag then
+        m3 pair k
+
+    else
+        m1 k pair
+
+
+pub m3 pair k =
+    case pair of
+        ( s, b ) ->
+            m4 "${k}" b k ( s, b )
+
+
+pub m4 label flag k pair =
+    m5 pair (label ++ pair.0) k flag
+
+
+pub m5 pair label k flag =
+    if flag then
+        label
+
+    else
+        m1 (k - 1) pair

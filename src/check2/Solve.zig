@@ -1,13 +1,18 @@
-//! The solver (checker-v2.md §6.1, §7, §8.1–§8.3): one walk over a binding
-//! group's constraint tree, the arity suite of `checker.md` §8.3, and the
-//! boundary of every frame.
+//! The solver (checker-v2.md §6.1, §7, §8.1–§8.3, §8.5, §8.6): one walk
+//! over a binding group's constraint tree, the arity suite of `checker.md`
+//! §8.3, the obligations of §4.5, and the boundary of every frame.
 //!
 //! **A frame is pushed for every boundary** (§8.1): the top-level group's,
 //! and one per `let` group. At its boundary, in this order (I16):
 //!
-//!   1. settle — drain the frame's `ready` queue (empty until R6a);
-//!   2. adjust ranks over the young pool (`Generalize.adjustRanks`, `owned`);
-//!   3. defaults — R5's (`?`), skipped;
+//!   1. settle — drain the top-level frame's `ready` queue (every `let`
+//!      frame routes there, §9.1), `equatable` rows included. No default;
+//!   2. adjust ranks over the young pool (`Generalize.adjustRanks`, `owned`),
+//!      so a variable's rank now says whether it escapes;
+//!   3. defaults — every `try` on this frame's open list whose target still
+//!      sits at its rank is decided as `Result`; one whose target escaped
+//!      moves to its frame's list (§8.6, D2 as amended); if one was decided,
+//!      or anything was readied, back to 1;
 //!   4. occurs over the frame's binders — parameters and pattern variables,
 //!      then headers — one run of shared epochs (`Walk.Occurs`,
 //!      `structural`): a cycle is `infinite_type` at the binder and its node
@@ -16,8 +21,18 @@
 //!   6. check every annotated binding's rigids (§8.3, I1): still rigid, and
 //!      generalised — an escaped one is `rigid_mismatch` at its first
 //!      capture (CK-01), and the binding's scheme is poisoned;
-//!   7. close — nothing rides on a variable in R4b;
+//!   7. close — an obligation still open on a variable step 5 quantified is
+//!      reported (`tuple_index`, `interpolatable`) or folded (`equatable`)
+//!      (§8.5); one on an escaped variable stays attached to it (I3);
 //!   8. pop.
+//!
+//! **Obligations** (§4.5, §8.5, §8.6) are `Decide.zig`'s: a `tuple_index`,
+//! `interpolatable` or `try` node is decided at once when what decides it is
+//! already known, and otherwise becomes a row of `Obligations` riding on its
+//! deciding flex variables, its dependants lowered to its owner's rank (I15 as
+//! amended). `unify`
+//! readies it when one of them is bound; the queue is drained after every
+//! constraint node (§9.1's eager draining) and at step 1.
 //!
 //! **Errors never stop the build.** A failed unification reports once and
 //! poisons both sides (research/02 §6), and a second bad argument to the
@@ -30,10 +45,15 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
+const Dispatch = @import("../check/Dispatch.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Context = @import("Context.zig");
+const Decide = @import("Decide.zig");
 const Generalize = @import("Generalize.zig");
+const Instances = @import("Instances.zig");
 const Instantiate = @import("Instantiate.zig");
+const Messages = @import("Messages.zig");
+const Obligations = @import("Obligations.zig");
 const Report = @import("Report.zig");
 const Unify = @import("Unify.zig");
 const Walk = @import("Walk.zig");
@@ -55,14 +75,31 @@ captures: std.ArrayList(Generalize.Capture) = .empty,
 stacks: Walk.Stacks = .{},
 unifier: Unify = undefined,
 instantiate: Instantiate = undefined,
+/// The module's obligations (§4.5), decided by `Decide.zig`.
+obligations: Obligations = .{},
+/// The `equatable` marker walk (§11.4).
+instances: Instances = undefined,
+/// The shape every `?` was decided as, for the dispatch table (`checker.md`
+/// §6.5): P9 sorts them by instruction.
+tries: std.ArrayList(Dispatch.Try) = .empty,
+/// Step 5's quantified variables that still carry obligations (step 7).
+carriers: std.ArrayList(Var) = .empty,
+/// The top-level frame's `ready` queue (§9.1): every `let` frame routes
+/// here, and R5 has one top-level frame at a time. `Unify` holds a pointer to
+/// it; R7's nesting makes it per frame.
+ready: std.ArrayList(u32) = .empty,
+/// Readied `equatable` rows the eager drain set aside for the next
+/// boundary's step 1 (`Decide.drain`).
+deferred: std.ArrayList(u32) = .empty,
 /// The call whose arguments already produced a message (v1's rule).
 last_bad_call: Bir.Inst.OptionalIndex = .none,
 depth: u32 = 0,
 generalisations: u64 = 0,
 
-/// In place: the unifier and instantiator point at `s`'s own lists.
+/// In place: the unifier, instantiator and walks point at `s`'s own lists.
 pub fn init(s: *Solve, cx: *const Context, report: *Report) void {
     s.* = .{ .cx = cx, .report = report };
+    s.stacks.obligations = &s.obligations;
     s.unifier = .{
         .store = cx.store,
         .types = cx.types,
@@ -71,20 +108,31 @@ pub fn init(s: *Solve, cx: *const Context, report: *Report) void {
         .scratch = cx.scratch,
         .frames = &s.frames,
         .captures = &s.captures,
+        .obligations = &s.obligations,
+        .queue = &s.ready,
+        .stacks = &s.stacks,
     };
     s.instantiate = .{ .cx = cx, .frames = &s.frames, .stacks = &s.stacks };
+    s.instances = .{ .cx = cx, .obligations = &s.obligations };
 }
 
 pub fn deinit(s: *Solve) void {
-    for (s.frames.items) |*f| f.deinit(s.cx.gpa);
-    s.frames.deinit(s.cx.gpa);
-    s.captures.deinit(s.cx.gpa);
-    s.stacks.deinit(s.cx.gpa);
+    const gpa = s.cx.gpa;
+    for (s.frames.items) |*f| f.deinit(gpa);
+    s.frames.deinit(gpa);
+    s.captures.deinit(gpa);
+    s.stacks.deinit(gpa);
     s.instantiate.deinit();
     s.unifier.deinit();
+    s.obligations.deinit(gpa);
+    s.instances.deinit();
+    s.tries.deinit(gpa);
+    s.carriers.deinit(gpa);
+    s.ready.deinit(gpa);
+    s.deferred.deinit(gpa);
 }
 
-fn store(s: *const Solve) *TypeStore {
+pub fn store(s: *const Solve) *TypeStore {
     return s.cx.store;
 }
 
@@ -92,15 +140,26 @@ fn frame(s: *Solve) *Frame {
     return &s.frames.items[s.frames.items.len - 1];
 }
 
-fn fresh(s: *Solve, content: TypeStore.Content) Error!Var {
+pub fn fresh(s: *Solve, content: TypeStore.Content) Error!Var {
     const f = s.frame();
     const v = try s.store().fresh(content, f.rank);
     try f.pool.append(s.cx.gpa, v);
     return v;
 }
 
-fn poison(s: *Solve, v: Var) void {
-    s.store().setContent(s.store().find(v), .err);
+/// Poison `v`'s root. A flex that carried obligations settles them: nothing
+/// can decide them now, so each is closed as a decision on `err` would close
+/// it — its results poisoned, in silence (§7.1's rule for `err`), without a
+/// trip through the queue (review S7).
+pub fn poison(s: *Solve, v: Var) Error!void {
+    const st = s.store();
+    const root = st.find(v);
+    const carried: TypeStore.ObligationSet = switch (st.content(root)) {
+        .flex => |flags| flags.obls,
+        else => .none,
+    };
+    st.setContent(root, .err);
+    if (carried != .none) try Decide.settle(s, carried);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +202,9 @@ fn push(s: *Solve, rank: u32) Error!void {
 }
 
 fn pop(s: *Solve) void {
+    // The top-level frame leaves nothing readied behind it: every row is
+    // decided by the last drain, or settled by `poison` (review S7).
+    if (s.frames.items.len == 1) std.debug.assert(s.ready.items.len == 0 and s.deferred.items.len == 0);
     var f = s.frames.pop().?;
     f.deinit(s.cx.gpa);
 }
@@ -182,7 +244,7 @@ fn solve(s: *Solve, first: Constraint) Error!void {
                 if (try s.instantiate.reference(node.region)) |scheme| {
                     const copy = try s.instantiate.copy(scheme);
                     _ = try s.unify(target, copy, node.region, node.category);
-                } else s.poison(target);
+                } else try s.poison(target);
             },
             // A `let` group's body is its tail: the loop continues with it.
             .let_ => c = try s.let_(node),
@@ -194,12 +256,90 @@ fn solve(s: *Solve, first: Constraint) Error!void {
                 s.report.at(node.a);
                 s.instantiate.decl = node.a;
             },
+            .tuple_index => {
+                const payload = s.tree.extraData(node.b, Tree.TupleIndex);
+                const id = try s.obligations.create(s.cx.gpa, .tuple_index, node.region, &.{ @enumFromInt(node.a), payload.result }, payload.index, null);
+                try Decide.begin(s, id);
+            },
+            .interpolatable => {
+                const id = try s.obligations.create(s.cx.gpa, .interpolatable, node.region, &.{@enumFromInt(node.a)}, 0, null);
+                try Decide.begin(s, id);
+            },
+            .record => {
+                const info = s.tree.extraData(node.a, Tree.RecordLiteral);
+                if (try s.takesFields(info.expected, info.record)) {
+                    _ = try s.unify(info.expected, info.record, node.region, node.category);
+                    try s.solve(info.fields);
+                } else {
+                    try s.solve(info.fields);
+                    _ = try s.unify(info.expected, info.record, node.region, node.category);
+                }
+            },
+            .try_ => {
+                const payload = s.tree.extraData(node.a, Tree.Try);
+                const id = try s.obligations.create(s.cx.gpa, .@"try", node.region, &.{ payload.subject, payload.target, payload.value }, 0, null);
+                try Decide.begin(s, id);
+            },
             .internal => {
-                s.poison(@enumFromInt(node.a));
+                try s.poison(@enumFromInt(node.a));
                 try s.report.internal(node.region, "checker v2 met a form its subset excludes; the subset gate (checker-v2.md §5, *As built by R4b*) should have refused this module");
             },
         }
+        // Eager draining (§9.1): what this node readied is decided now, at
+        // the same step a type known earlier would have been.
+        if (s.ready.items.len != 0) try Decide.drain(s, false);
     }
+}
+
+/// §6.5 as built by R5: whether a record literal is checked against the
+/// expectation first (pushed down, as v1 does) — because the meeting cannot
+/// fail on a field name, on closedness or on a kind. That is an unkinded
+/// variable; a closed record with exactly the literal's field names; or a
+/// record open on a flex whose names are all the literal's. Otherwise the
+/// fields are constrained first, so the message shows the literal's own
+/// field types (CK-59): a `number` or `appendable` variable (review S1), a
+/// missing or unexpected name, or a row on a rigid.
+fn takesFields(s: *Solve, expected: Var, literal: Var) Error!bool {
+    const st = s.store();
+    const gpa = s.cx.gpa;
+    const wanted = switch (st.resolvedContent(expected)) {
+        .flex => |flags| return flags.kind == .any,
+        .structure => |flat| switch (flat) {
+            .record => |r| r,
+            else => return false,
+        },
+        else => return false,
+    };
+    const own = switch (st.resolvedContent(literal)) {
+        .structure => |flat| switch (flat) {
+            .record => |r| r,
+            else => return false,
+        },
+        else => return false,
+    };
+    const row = &s.stacks.fields;
+    row.clearRetainingCapacity();
+    var concatenated = false;
+    const end = try Walk.recordRow(st, wanted, row, gpa, &concatenated);
+    const open = switch (end) {
+        .closed => false,
+        .open => |v| if (st.content(st.find(v)) == .flex) true else return false,
+    };
+    const names = Walk.recordFields(st, own);
+    if (row.items.len > names.len or (!open and row.items.len != names.len)) return false;
+    if (concatenated) std.mem.sort(TypeStore.Field, row.items, {}, symbolLessThan);
+    // Both sorted by symbol: every wanted name must be one of the literal's.
+    var j: usize = 0;
+    for (row.items) |w| {
+        while (j < names.len and @intFromEnum(names[j].name) < @intFromEnum(w.name)) j += 1;
+        if (j == names.len or names[j].name != w.name) return false;
+        j += 1;
+    }
+    return true;
+}
+
+fn symbolLessThan(_: void, a: TypeStore.Field, b: TypeStore.Field) bool {
+    return @intFromEnum(a.name) < @intFromEnum(b.name);
 }
 
 /// `CLet`: a frame one rank in for the header, and its boundary. Returns the
@@ -218,10 +358,12 @@ fn let_(s: *Solve, node: Tree.Node) Error!Constraint {
 // Unification and its report
 // ---------------------------------------------------------------------------
 
-const Outcome = enum { ok, reported, suppressed };
+pub const Outcome = enum { ok, reported, suppressed };
 
-fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, category: Category) Error!Outcome {
-    const result = try s.unifier.unify(expected, actual, region);
+pub fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, category: Category) Error!Outcome {
+    // A call's argument meeting its parameter is where a comparison's
+    // `equatable` question is asked (§11.4 *As built by R5*).
+    const result = try s.unifier.unifyAt(expected, actual, region, category.tag == .call_arg);
     const problem = switch (result) {
         .ok => return .ok,
         .mismatch => |p| p,
@@ -229,14 +371,14 @@ fn unify(s: *Solve, expected: Var, actual: Var, region: Bir.Inst.Index, category
     const owner = if (category.tag == .call_arg) category.owner else .none;
     if (owner != .none and owner == s.last_bad_call) {
         // A second bad argument to the SAME call: poison, stay quiet.
-        s.poison(expected);
-        s.poison(actual);
+        try s.poison(expected);
+        try s.poison(actual);
         return .suppressed;
     }
     s.last_bad_call = owner;
     try s.reportFailure(region, category, expected, actual, problem);
-    s.poison(expected);
-    s.poison(actual);
+    try s.poison(expected);
+    try s.poison(actual);
     return .reported;
 }
 
@@ -311,8 +453,8 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
         } else {
             try s.report.notAFunction(node.region, s.report.calleeOf(node.region), given, info.callee);
         }
-        s.poison(info.result);
-        for (args) |arg| s.poison(arg);
+        try s.poison(info.result);
+        for (args) |arg| try s.poison(arg);
         return;
     };
 
@@ -328,8 +470,8 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
         } else {
             try s.report.tooManyArgs(node.region, s.report.calleeOf(node.region), arity, given);
         }
-        s.poison(info.result);
-        for (args) |arg| s.poison(arg);
+        try s.poison(info.result);
+        for (args) |arg| try s.poison(arg);
         return;
     }
 
@@ -343,7 +485,7 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
             .owner = node.region.toOptional(),
         });
         if (outcome == .reported) {
-            s.poison(info.result);
+            try s.poison(info.result);
             return;
         }
     }
@@ -370,12 +512,18 @@ fn argRegions(s: *Solve, region: Bir.Inst.Index) []const Bir.Inst.Index {
 
 fn boundary(s: *Solve, binders: []const u32, annotated: []const u32, top: bool) Error!void {
     const gpa = s.cx.gpa;
-    const f = s.frame();
-    // 1. Settle: nothing is readied in R4b (§9.1 arrives with R6a).
-    std.debug.assert(f.ready.items.len == 0);
-    // 2. Adjust ranks without quantifying.
-    try Generalize.adjustRanks(s.store(), &s.stacks, gpa, s.cx.scratch, f.pool.items, f.rank);
-    // 3. Defaults: R5 (`?`).
+    const rank = s.frame().rank;
+    while (true) {
+        // 1. Settle: the last drain. No default is applied here.
+        try Decide.drain(s, true);
+        // 2. Adjust ranks without quantifying: from here a variable's rank
+        // says whether it escapes this frame.
+        try Generalize.adjustRanks(s.store(), &s.stacks, gpa, s.cx.scratch, s.frame().pool.items, rank);
+        // 3. Defaults (§8.6): back to 1 when one was applied or anything was
+        // readied, which a default makes happen. It terminates: a default
+        // decides its obligation, and there are finitely many.
+        if (!try Decide.defaults(s, rank)) break;
+    }
     // 4. Occurs over the binders — patterns and parameters first, so a
     // cycle one carries is named by it, then headers; a lambda's or a
     // branch's were checked by its `binders_end`. Only binders: Elm's
@@ -390,10 +538,13 @@ fn boundary(s: *Solve, binders: []const u32, annotated: []const u32, top: bool) 
         if (b.kind == .header) try s.occursBinder(&run, b);
     }
     // 5. Quantify.
-    s.generalisations += try Generalize.quantify(s.store(), gpa, s.frames.items, s.frame().rank);
+    s.carriers.clearRetainingCapacity();
+    s.generalisations += try Generalize.quantify(s.store(), gpa, s.frames.items, rank, &s.carriers);
     // 6. The generality check.
     for (annotated) |i| try s.generality(s.tree.annotated.items[i], top);
-    // 7. Close: no wanted or obligation rides on a variable in R4b.
+    // 7. Close what rides on a quantified variable (§8.5). What rides on an
+    // escaped one stays attached to it (I3).
+    try Decide.close(s);
 }
 
 /// §8.2: an occurs check from one binder; a cycle is reported at the
@@ -420,10 +571,10 @@ fn reportCycle(s: *Solve, region: Bir.Inst.Index, name: Tree.Symbol.Optional, fr
     const gpa = s.cx.gpa;
     const cycle = (try Walk.firstCycle(st, &s.stacks, gpa, s.cx.interner, from)) orelse found orelse return;
     if (try Walk.hasError(st, &s.stacks, gpa, cycle) == .clean) {
-        try s.report.infiniteType(region, name, cycle);
+        try Messages.infiniteType(s.report, region, name, cycle);
     }
-    s.poison(cycle);
-    while (try Walk.firstCycle(st, &s.stacks, gpa, s.cx.interner, from)) |more| s.poison(more);
+    try s.poison(cycle);
+    while (try Walk.firstCycle(st, &s.stacks, gpa, s.cx.interner, from)) |more| try s.poison(more);
 }
 
 /// §8.3 (I1): every rigid of an annotated binding's checked reading must
@@ -449,12 +600,12 @@ fn generality(s: *Solve, a: Generalize.Annotated, top: bool) Error!void {
         if (top) return s.report.internal(a.annotation, "a top-level annotation's type variable was not generalised (checker-v2.md §8.3, invariant I1)");
         const region = try s.captureOf(root) orelse a.annotation;
         const enclosing = s.cx.bir.symbol(s.cx.bir.decls[a.decl].name);
-        try s.report.escape(region, a.name, enclosing, a.scheme, root);
+        try Messages.escape(s.report, region, a.name, enclosing, a.scheme, root);
         // The scheme, so callers are not held to the false promise, and the
         // rigid itself, so what the body tied it to (a lambda parameter, say)
         // adds no second message about `a` outside `g` (F5).
-        s.poison(a.scheme);
-        s.poison(root);
+        try s.poison(a.scheme);
+        try s.poison(root);
         return;
     }
 }

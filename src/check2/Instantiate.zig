@@ -13,7 +13,7 @@
 //! copies `y` once) and a second fills each copy's content with its
 //! children mapped through the memo. A node that is not generalised is
 //! shared, as in Elm: that is what keeps a lambda parameter monomorphic.
-//! Constraint method types are successors (`Walk.child(…, .owned)`) and so
+//! Constraint method types are successors (`Walk.owned`) and so
 //! are copied through the same memo (§4.2) — nothing in R4b's subset has
 //! one, but the walk does not need to know that.
 //!
@@ -99,7 +99,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
         store.setCopy(r, c.toOptional());
         try in.copied.append(gpa, r);
         var n: u32 = 0;
-        while (Walk.child(store, r, n, .owned)) |ch| : (n += 1) {
+        while (Walk.owned(store, in.stacks.obligations, r, n)) |ch| : (n += 1) {
             const cr = store.find(ch);
             if (store.rank(cr) == TypeStore.generalized and store.copy(cr) == .none) try stack.append(gpa, cr);
         }
@@ -151,12 +151,16 @@ fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
     const store = in.cx.store;
     return switch (store.content(r)) {
         .err => .err,
-        .flex, .rigid => |flags| .{ .flex = .{
-            .name = flags.name,
-            .kind = flags.kind,
-            .equatable = flags.equatable,
-            .constraints = try in.mappedConstraints(flags),
-        } },
+        .flex, .rigid => |flags| blk: {
+            // The flags copied and changed field by field (CK-18): the
+            // constraints mapped through the memo, and no obligation — a
+            // generalised variable carries none open (§8.1 step 7), and a
+            // copy must not share a row with its scheme.
+            var copied = flags;
+            copied.constraints = try in.mappedConstraints(flags);
+            copied.obls = .none;
+            break :blk .{ .flex = copied };
+        },
         .alias => |a| .{ .alias = .{ .type = a.type, .args = try in.mappedRange(a.args), .actual = image(store, a.actual) } },
         .structure => |flat| .{ .structure = switch (flat) {
             .unit, .empty_record => flat,

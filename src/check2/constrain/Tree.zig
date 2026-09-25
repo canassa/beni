@@ -1,8 +1,9 @@
 //! v2's constraint tree and the generator's state (checker-v2.md §6).
 //!
 //! One tree per top-level binding group, generated in one pass and solved
-//! left to right (§6.1). The node set is v1's minus what R4b's subset never
-//! meets (`method`, `tuple_index`, `try_`, the two markers), plus:
+//! left to right (§6.1). The node set is v1's minus what v2 does not have
+//! yet (`method`, R6a's) or at all (the dead `equatable` marker node, CK-18),
+//! plus:
 //!
 //!   - `instantiate` names the VARIABLE to copy for a local or `top`
 //!     reference, resolved while the node is built (I11, §6.2), or leaves a
@@ -76,6 +77,18 @@ pub const Node = struct {
         binders_end,
         /// `a` = a declaration index: what follows belongs to it.
         member,
+        /// `e.i` (§4.5): `a` = the tuple's variable, `b` = `extra` index of
+        /// a `TupleIndex`. Decided now when the tuple is known, else an
+        /// obligation on it.
+        tuple_index,
+        /// A `${e}` part (§4.5): `a` = the part's variable.
+        interpolatable,
+        /// A record literal (§6.5, CK-59): `a` = `extra` index of a
+        /// `RecordLiteral`. The solver chooses the order of its two halves.
+        record,
+        /// `e?` (§8.6): `a` = `extra` index of a `Try`. Decided now when
+        /// either side is known, else an obligation on both.
+        try_,
         /// A form the generator must never meet in R4b's subset: `internal`
         /// at `region`, and `a` (the expected type) poisoned (review S1).
         internal,
@@ -109,6 +122,18 @@ pub const Call = struct {
 
     pub const Flavor = enum(u32) { call, ctor_pattern };
 };
+
+/// Payload of `Node.Tag.tuple_index`.
+pub const TupleIndex = struct { index: u32, result: Var };
+
+/// Payload of `Node.Tag.try_`: the subject, the result variable of the
+/// `?`'s target (the declaration or `let` definition it returns from), and
+/// the instruction's own value (§8.6).
+pub const Try = struct { subject: Var, target: Var, value: Var };
+
+/// Payload of `Node.Tag.record`: the literal meets `expected` as `record`,
+/// and `fields` constrains its fields.
+pub const RecordLiteral = struct { expected: Var, record: Var, fields: Constraint };
 
 /// One binding group's constraints.
 pub const Tree = struct {
@@ -186,6 +211,14 @@ pub const Generator = struct {
     /// declaration at `Parse.max_depth` levels, so a file it accepted never
     /// reaches this, and one that could was already reported.
     depth: u32 = 0,
+    /// The result variable of the declaration being generated, when it has
+    /// parameters: the target of a `?` whose instruction names none (§8.6).
+    decl_result: ?Var = null,
+    /// The `let` definitions with parameters being generated, innermost
+    /// last, and their result variables: what a `?` inside one returns from.
+    targets: std.ArrayList(Target) = .empty,
+
+    pub const Target = struct { inst: Bir.Inst.Index, result: Var };
 
     pub const max_depth = Parse.max_depth + 104;
 
@@ -193,6 +226,7 @@ pub const Generator = struct {
         g.pool.deinit(g.gpa);
         g.frame_binders.deinit(g.gpa);
         g.frame_annotated.deinit(g.gpa);
+        g.targets.deinit(g.gpa);
     }
 
     // ---- Tree building ---------------------------------------------------
@@ -337,5 +371,19 @@ pub const Generator = struct {
         const at = g.locals_base + index;
         if (at >= g.local_type.len) return null;
         return g.local_type[at].unwrap();
+    }
+
+    /// The result variable a `?` returns from (§8.6): the `let` definition
+    /// its instruction names, or the declaration when it names none. Null
+    /// only on a poisoned tree (lowering always gives a `?` a target, or
+    /// reports it: `language.md` §6.6).
+    pub fn targetResult(g: *const Generator, target: Bir.Inst.OptionalIndex) ?Var {
+        const inst = target.unwrap() orelse return g.decl_result;
+        var i = g.targets.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (g.targets.items[i].inst == inst) return g.targets.items[i].result;
+        }
+        return null;
     }
 };

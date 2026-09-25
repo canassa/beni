@@ -1,0 +1,2 @@
+# The literal's own field types.
+kind_mismatch 6:18 contains "{ a : number, b : String }"

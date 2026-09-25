@@ -71,6 +71,86 @@ fn bigType(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.items;
 }
 
+// CK-96, found by R5's adversarial review and fixed in R5 (2026-09-25):
+// obligation rows riding on ONE variable. Every `${p}` and `p.0` attaches a
+// row to `p`, and R5 as first built joined `p`'s whole set, and lowered every
+// row on it, at each attach and each merge with a fresh variable: O(rows²)
+// (8 000 `${p}` took 31 s under `--checker=v2` against v1's 0.15 s). Checker
+// v2 only (v1 has no rows). Calibration: see R5's *As built*.
+test "CK-96: obligation rows on one variable cost linear time (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("R.beni", try rowsOnOne(s.arena(), 2_000));
+    try s.w.write("R2.beni", try rowsOnOne(s.arena(), 4_000));
+    const verdict = try s.ratioWith("R.beni", "R2.beni", 2_000, &.{"--checker=v2"});
+    try s.finish("CK-96", verdict);
+}
+
+/// `pub f p = "${p}…" ++ …` and `pub g q = ( [ q.0, … ], snd q )`, `n` of
+/// each (a declaration holds fewer than 4 096 list elements: the parser's
+/// nesting bound).
+fn rowsOnOne(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "snd : ( Int, Int ) -> Int\nsnd ( _, b ) =\n    b\n\n\npub f p =\n    \"");
+    for (0..n) |_| try out.appendSlice(arena, "${p}");
+    try out.appendSlice(arena, "\" ++ String.fromInt p\n\n\npub g q =\n    ( [ q.0");
+    for (1..n) |_| try out.appendSlice(arena, ", q.0");
+    try out.appendSlice(arena, " ]\n    , snd q\n    )\n");
+    return out.items;
+}
+
+// CK-97, found by R5's adversarial review and fixed in R5 (2026-09-25): a
+// chain of merges of variables that each carry rows. `[ p1, …, pn, … ]`
+// merges a set of i rows into one of 1, n times; R5 as first built copied
+// both sets and re-lowered every row of the survivor at every merge,
+// O(rows × merges). Checker v2 only.
+test "CK-97: merging variables that carry obligation rows is linear (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("M.beni", try mergeChain(s.arena(), 2_000));
+    try s.w.write("M2.beni", try mergeChain(s.arena(), 4_000));
+    const verdict = try s.ratioWith("M.beni", "M2.beni", 2_000, &.{"--checker=v2"});
+    try s.finish("CK-97", verdict);
+}
+
+/// `pub f x1 … xn = ( [ "${x1}", … ], [ x1, …, xn, 1 ] )`.
+fn mergeChain(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub f");
+    for (1..n + 1) |i| try out.print(arena, " x{d}", .{i});
+    try out.appendSlice(arena, " =\n    ( [ \"${x1}\"");
+    for (2..n + 1) |i| try out.print(arena, ", \"${{x{d}}}\"", .{i});
+    try out.appendSlice(arena, " ], [ x1");
+    for (2..n + 1) |i| try out.print(arena, ", x{d}", .{i});
+    try out.appendSlice(arena, ", 1 ] )\n");
+    return out.items;
+}
+
+// CK-98, found by R5's adversarial review and fixed in R5 (2026-09-25):
+// §8.1 step 3 scanned every open `?` of the module at every boundary, so a
+// declaration of n `let` bindings each holding an undecided `u?` cost
+// O(n²). Step 3 now reads the frame's own list, and a row that escaped moves
+// down once. Checker v2 only.
+test "CK-98: the `?` default step is linear in the open `?`s and the boundaries (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("D.beni", try openTries(s.arena(), 1_500));
+    try s.w.write("D2.beni", try openTries(s.arena(), 3_000));
+    const verdict = try s.ratioWith("D.beni", "D2.beni", 1_500, &.{"--checker=v2"});
+    try s.finish("CK-98", verdict);
+}
+
+/// `pub f u = let a1 = u? … an = u? in Ok [ a1, …, an ]`.
+fn openTries(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub f u =\n    let\n");
+    for (1..n + 1) |i| try out.print(arena, "        a{d} =\n            u?\n\n", .{i});
+    try out.appendSlice(arena, "    in\n    Ok [ a1");
+    for (2..n + 1) |i| try out.print(arena, ", a{d}", .{i});
+    try out.appendSlice(arena, " ]\n");
+    return out.items;
+}
+
 // ┌─────────────────────────────────────────────────────────────────────────┐
 // │ HARNESS                                                                 │
 // └─────────────────────────────────────────────────────────────────────────┘
@@ -127,11 +207,25 @@ const Perf = struct {
     /// `pending_test.zig`'s `ratioOf`, with a failed compile an error rather
     /// than a red signature.
     fn ratio(s: *Perf, small: []const u8, large: []const u8, n: usize) !Verdict {
-        const small_args = [_][]const u8{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", small };
-        const large_args = [_][]const u8{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", large };
+        return s.ratioWith(small, large, n, &.{});
+    }
+
+    /// `ratio` with extra flags on every run (`--checker=v2` for a v2-only
+    /// scenario).
+    fn ratioWith(s: *Perf, small: []const u8, large: []const u8, n: usize, extra: []const []const u8) !Verdict {
+        var small_list: std.ArrayList([]const u8) = .empty;
+        try small_list.appendSlice(s.arena(), &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" });
+        try small_list.appendSlice(s.arena(), extra);
+        try small_list.append(s.arena(), small);
+        var large_list: std.ArrayList([]const u8) = .empty;
+        try large_list.appendSlice(s.arena(), &.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" });
+        try large_list.appendSlice(s.arena(), extra);
+        try large_list.append(s.arena(), large);
+        const small_args = small_list.items;
+        const large_args = large_list.items;
         var best_small: i64 = std.math.maxInt(i64);
         for (0..3) |_| {
-            const run = try s.timed(&small_args, world.bulk_timeout_ms) orelse {
+            const run = try s.timed(small_args, world.bulk_timeout_ms) orelse {
                 std.debug.print("n={d} did not finish within {d} ms\n", .{ n, world.bulk_timeout_ms });
                 return error.PerfRunTimedOut;
             };
@@ -143,7 +237,7 @@ const Perf = struct {
         const bound: i64 = @divTrunc(best_small * 5, 2);
         var best_large: ?i64 = null;
         for (0..3) |_| {
-            const run = try s.timed(&large_args, @max(bound * 2, 1_000)) orelse continue;
+            const run = try s.timed(large_args, @max(bound * 2, 1_000)) orelse continue;
             try expectClean(run.result);
             best_large = @min(best_large orelse run.ms, run.ms);
             if (run.ms <= bound) break;

@@ -5,11 +5,11 @@
 //!   - the rank walk is ITERATIVE and has no depth guard (I4): v1's
 //!     `adjustRank` recursed and, past its guard, answered with the
 //!     variable's own rank, silently;
-//!   - it takes its successors from `Walk.child(…, .owned)` (I2), so a
-//!     variable's requirements are adjusted with it once R5/R6a attach any;
+//!   - it takes its successors from `Walk.owned` (I2), so a
+//!     variable's requirements and obligations are adjusted with it;
 //!   - a frame is explicit (§7.5, §8.1, S-2): its rank, its young pool, the
-//!     binders its occurs check starts from and its `ready` queue, which is
-//!     empty until R6a resolves anything. It keeps no `touched` list: §18's
+//!     binders its occurs check starts from and its open-`?` list (§8.1
+//!     step 3). It keeps no `touched` list: §18's
 //!     measurement put the walk over it at 4 % of the check phase, so R4b
 //!     took §18's fallback, Elm's placement (binders only).
 //!
@@ -75,15 +75,18 @@ pub const Frame = struct {
     /// The young pool: every variable made at `rank` while this frame was
     /// current, by the generator or the solver.
     pool: std.ArrayList(Var) = .empty,
-    /// Wanteds and obligations readied onto this frame (§9.1). Nothing is
-    /// ever queued in R4b: the queue is drained, empty, at step 1.
-    ready: std.ArrayList(u32) = .empty,
+    /// The open `?` obligations whose target sits at this frame's rank
+    /// (§4.5, §8.1 step 3): what its default step reads. A row whose target
+    /// escapes moves to the list of the frame it escaped to, once (CK-98).
+    /// The `ready` queue is the top-level frame's and lives in `Solve` until
+    /// R7 makes it per frame (§9.1).
+    tries: std.ArrayList(u32) = .empty,
     /// The module capture list's length when the frame was pushed.
     captures_start: u32 = 0,
 
     pub fn deinit(f: *Frame, gpa: Allocator) void {
         f.pool.deinit(gpa);
-        f.ready.deinit(gpa);
+        f.tries.deinit(gpa);
     }
 };
 
@@ -170,7 +173,7 @@ fn adjustRank(
     if (try enter(store, frames, gpa, young_mark, visit_mark, group_rank, start)) |r| return r;
     while (frames.items.len > 0) {
         const top = &frames.items[frames.items.len - 1];
-        if (Walk.child(store, top.v, top.cursor, .owned)) |c| {
+        if (Walk.owned(store, stacks.obligations, top.v, top.cursor)) |c| {
             top.cursor += 1;
             if (try enter(store, frames, gpa, young_mark, visit_mark, group_rank, c)) |r| {
                 const parent = &frames.items[frames.items.len - 1];
@@ -217,8 +220,9 @@ fn enter(
 /// Step 5 of §8.1: every pool member still at the young rank is quantified;
 /// everything below it escaped and joins the pool of the frame at its rank
 /// (`frames[rank - 1]`, a frame's rank being its depth). Returns how many
-/// were quantified, for the counters.
-pub fn quantify(store: *TypeStore, gpa: Allocator, frames: []Frame, young: u32) Error!u64 {
+/// were quantified, for the counters. Every quantified variable that still
+/// carries obligations is appended to `carriers`, for §8.1 step 7.
+pub fn quantify(store: *TypeStore, gpa: Allocator, frames: []Frame, young: u32, carriers: *std.ArrayList(Var)) Error!u64 {
     const frame = &frames[frames.len - 1];
     var quantified: u64 = 0;
     for (frame.pool.items) |v| {
@@ -227,6 +231,10 @@ pub fn quantify(store: *TypeStore, gpa: Allocator, frames: []Frame, young: u32) 
         if (rank >= young) {
             store.setRank(v, TypeStore.generalized);
             quantified += 1;
+            switch (store.content(v)) {
+                .flex, .rigid => |flags| if (flags.obls != .none) try carriers.append(gpa, v),
+                else => {},
+            }
             continue;
         }
         // Already quantified (a scheme reached through a merge): nothing to
@@ -262,7 +270,9 @@ test "an inner frame's variable bound to an outer one escapes; its own is quanti
 
     try adjustRanks(&store, &stacks, testing.allocator, testing.allocator, frames[1].pool.items, 2);
     try testing.expectEqual(@as(u32, 1), store.rank(inner));
-    try testing.expectEqual(@as(u64, 1), try quantify(&store, testing.allocator, &frames, 2));
+    var carriers: std.ArrayList(Var) = .empty;
+    defer carriers.deinit(testing.allocator);
+    try testing.expectEqual(@as(u64, 1), try quantify(&store, testing.allocator, &frames, 2, &carriers));
     try testing.expectEqual(TypeStore.generalized, store.rank(own));
     // The escaped structure went down to the outer frame's pool.
     try testing.expectEqual(@as(usize, 2), frames[0].pool.items.len);

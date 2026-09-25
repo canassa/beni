@@ -42,3 +42,11 @@ v1's until the cut-over, when the fixture is re-blessed (or re-cut) under v2 wit
 - `tests/corpus/check/bad/InfiniteType.beni` — CK-04/CK-57 (§6.3, §8.2, `checker.md` §8.5): v2 reports the cycle at the parameter `f` (4:7), a binder, and writes the type down as `a = a -> b`; v1 reports it at the body with `a  =  … a …`
 - `tests/corpus/check/good/RecordExtChain.beni` — §4.1's normalised records (CK-08): a record merge leaves one node, so the 65-link extension chain this fixture builds for `Render.max_ext_links` no longer exists, and v2 publishes the whole open record `{ r | a1 : a, … }`; at R11 the printer's truncation needs a fixture that reaches it another way
 - `tests/corpus/check/depth/RecordExtTruncatedDeep.beni` — the same §4.1 rule: the mismatch's record prints in full instead of `{ … | … }`; re-cut with `RecordExtChain` at R11
+
+## Expected differences R5 introduced (re-blessed at R11)
+
+- `tests/corpus/check/bad/MissingField.beni` — CK-59 (§6.5 as built by R5): the literal's fields are constrained before it meets an expectation that cannot take its field names, so the message shows `{ x : number }` where v1's golden pins `{ x : a }`
+- `tests/corpus/check/bad/UnknownField.beni` — the same rule: `{ x : number, y : number2, z : number3 }` where v1 shows `{ x : a, y : b, z : c }`
+- `tests/corpus/check/bad/RecordNotClosed.beni` — the same rule: the literal is `{ x : Int }` where v1 shows `{ x : a }`
+- `tests/corpus/check/bad/TryMixedShapes.beni` — CK-51 (§8.6, `checker.md` §8.6): a `Maybe` subject in a `Result` definition names the enclosing leg; v1's golden pins "this is neither: `Maybe Int`"
+- `tests/corpus/check/bad/TryDefaultCycle.beni` — the guard of §5.1 holds (one `infinite_type`, the `?` defaulted to `Result` and the cycle reported, not silenced), in v2's own text and place (CK-04/CK-57, `checker.md` §8.5): at the parameter `x` (6:3), written `a = Result b a`; v1's golden reports it at the body with `a  =  … a …`

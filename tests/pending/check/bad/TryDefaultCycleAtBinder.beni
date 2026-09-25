@@ -1,0 +1,19 @@
+-- CK-04: the pending twin of the guard `tests/corpus/check/bad/TryDefaultCycle.beni`,
+-- which `v2-expected.md` skips because its golden pins checker v1's place and
+-- text (R5's structural review, S6): `y = x?` and then `y` and `x` in the
+-- same position make `x`'s type contain itself, whichever shape `?` settles
+-- on — ONE `infinite_type`, the `?` defaulted to `Result` and the cycle
+-- reported, not silenced. Under checker v2 it is reported at the parameter
+-- `x`, a binder (checker-v2.md §6.3, §8.2); checker v1 at 2bc9e22 reports it
+-- at the body, so this is red on v1 and claimed under v2 until R11
+-- re-blesses the guard.
+f x =
+    let
+        y =
+            x?
+    in
+    if True then
+        y
+
+    else
+        x

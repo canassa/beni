@@ -20,9 +20,13 @@
 //! but past it `unify` fails with `too_deep`, which the caller reports as
 //! `nesting_too_deep`. It never answers "ok" (CK-10 item 3).
 //!
-//! In R4b's subset no variable carries a method constraint or an
-//! obligation (`Subset.zig`), so Rule U1's join and the ready queue are
-//! R6a's to add here.
+//! **Obligations ride on their variables** (§4.5): binding a flex readies
+//! every open obligation on it (onto the top-level frame's queue), merging
+//! two flexes joins their sets and lowers every variable of every obligation
+//! now on the survivor to its rank (I15), and a flex carrying the `equatable`
+//! marker that meets a structure turns the marker's question into an
+//! obligation, readied (§11.4). Nothing is decided here. No variable carries a
+//! method constraint before R6a (`Subset.zig`): Rule U1's join is R6a's.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -33,6 +37,7 @@ const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
 const Generalize = @import("Generalize.zig");
 const Walk = @import("Walk.zig");
+const Obligations = @import("Obligations.zig");
 
 const Unify = @This();
 
@@ -76,18 +81,40 @@ scratch: Allocator,
 /// in its pool at its rank.
 frames: *std.ArrayList(Generalize.Frame),
 captures: *std.ArrayList(Generalize.Capture),
+/// The module's obligations (§4.5): `unify` readies them when a flex that
+/// carries one is bound, joins their sets when two flexes merge, and lowers
+/// the dependants of the rows whose owner's rank dropped. It never decides
+/// one (§7.1).
+obligations: *Obligations,
+/// The top-level frame's `ready` queue (§9.1), which `Solve` owns: every
+/// `let` frame routes there. The one place `unify` readies onto.
+queue: *std.ArrayList(u32),
+/// For `lowerTo` (I15).
+stacks: *Walk.Stacks,
 region: Bir.Inst.Index = @enumFromInt(0),
+/// Whether this unification is a call's argument meeting its parameter:
+/// where a flag from a comparison's scheme becomes that comparison's
+/// question (§11.4 *As built by R5*).
+argument: bool = false,
 problem: ?Problem = null,
 /// The pairs of non-variables being unified, outermost first: the
 /// coinduction of §7.3.
 active: std.ArrayList([2]Var) = .empty,
+/// Scratch: the rows of a merge side whose rank dropped (`lowerOwned`).
+lowered: std.ArrayList(Obligations.Id) = .empty,
 depth: u32 = 0,
 unifications: u64 = 0,
 
 pub fn unify(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index) Error!Result {
+    return u.unifyAt(a, b, region, false);
+}
+
+/// `unify`, saying whether it is a call's argument against its parameter.
+pub fn unifyAt(u: *Unify, a: Var, b: Var, region: Bir.Inst.Index, argument: bool) Error!Result {
     u.problem = null;
     u.region = region;
     u.depth = 0;
+    u.argument = argument;
     if (try u.go(a, b)) return .ok;
     const problem = u.problem;
     u.problem = null;
@@ -113,14 +140,56 @@ fn fresh(u: *Unify, content: TypeStore.Content) Error!Var {
     return v;
 }
 
-/// Bind the flex root `bound` to `other`'s content: the one place a flex
-/// stops being a variable.
-fn bind(u: *Unify, bound: Var, other: Var, content: TypeStore.Content) Error!void {
+/// Bind the flex root `bound`, whose flags are `flags`, to `other`'s content:
+/// the one place a flex stops being a variable. Every open obligation riding
+/// on it is readied (§4.5, §7.1): queued, never decided here.
+fn bind(u: *Unify, bound: Var, flags: TypeStore.Flags, other: Var, content: TypeStore.Content) Error!void {
+    try u.release(flags);
     const low = u.store.rank(bound);
     if (low < u.store.rank(other)) {
         try u.captures.append(u.gpa, .{ .v = other, .region = u.region });
     }
     _ = u.store.merge(bound, other, content);
+}
+
+/// Ready the open obligations of a flex that is about to stop being one.
+fn release(u: *Unify, flags: TypeStore.Flags) Error!void {
+    if (flags.obls == .none) return;
+    try u.obligations.ready(u.gpa, flags.obls, u.queue);
+}
+
+/// A flex carrying the `equatable` marker is bound to a structure or an
+/// alias `other`: the marker's question about it becomes an obligation,
+/// readied now and decided by the marker walk when drained (§11.4). A flex
+/// that already carries its question's row (the comparison's argument, or a
+/// flag the walk propagated) has `bind` ready that row instead, which
+/// remembers where the question was asked.
+fn equatableMeets(u: *Unify, flags: TypeStore.Flags, other: Var) Error!void {
+    if (!flags.equatable or u.obligations.openEquatable(flags.obls) != null) return;
+    const id = try u.obligations.create(u.gpa, .equatable, u.region, &.{other}, 0, null);
+    u.obligations.rowPtr(id).state = .ready;
+    try u.queue.append(u.gpa, id.int());
+}
+
+/// Whether a flex carrying `flags` may meet a rigid that is not marked
+/// `equatable`: only when it carries its question's row, which then reports
+/// where the question was asked (§11.4).
+fn equatableRigidDeferred(u: *Unify, flags: TypeStore.Flags) bool {
+    return u.obligations.openEquatable(flags.obls) != null;
+}
+
+/// After a merge into `root` lowered the rank of a side that carried the
+/// rows `ids`, lower the dependants of those it owns to `root`'s rank (I15,
+/// §4.5); the other side's rows already hold it. Ranks only fall, so a row
+/// is lowered at most once per level (§4.5's cost claim, CK-97).
+fn lowerOwned(u: *Unify, root: Var, ids: []const Obligations.Id) Error!void {
+    const rank = u.store.rank(root);
+    for (ids) |id| {
+        const row = u.obligations.row(id);
+        if (row.state != .open) continue;
+        if (u.store.find(row.vars[row.owner()]) != root) continue;
+        for (row.dependants()) |slot| try Walk.lowerTo(u.store, u.stacks, u.gpa, row.vars[slot], rank);
+    }
 }
 
 fn go(u: *Unify, a: Var, b: Var) Error!bool {
@@ -163,6 +232,9 @@ fn go(u: *Unify, a: Var, b: Var) Error!bool {
     }
     return switch (ca) {
         .err => {
+            // A flex poisoned by meeting `err` readies what rides on it, which
+            // then decides nothing and poisons its results silently (§7.1).
+            if (cb == .flex) try u.release(cb.flex);
             _ = st.merge(ra, rb, .err);
             return true;
         },
@@ -177,36 +249,55 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content)
     const st = u.store;
     switch (cb) {
         .err => {
+            try u.release(fa);
             _ = st.merge(ra, rb, .err);
             return true;
         },
         .flex => |fb| {
             const kind = TypeStore.Kind.meet(fa.kind, fb.kind) orelse
                 return u.fail(.{ .kinds = .{ .left = fa.kind, .right = fb.kind } });
-            _ = st.merge(ra, rb, .{
-                .flex = .{
-                    .name = if (fb.name != .none) fb.name else fa.name,
-                    .kind = kind,
-                    .equatable = fa.equatable or fb.equatable,
-                    // Neither side carries one: `go` refused that.
-                    .constraints = .none,
-                },
-            });
+            // One `Flags`, copied and changed field by field, never rebuilt
+            // from parts: a rebuilt one drops what it does not name (CK-18).
+            // Neither side carries a method constraint (`go` refused that),
+            // so `constraints` is `.none` on both.
+            var joined = fb;
+            joined.name = if (fb.name != .none) fb.name else fa.name;
+            joined.kind = kind;
+            joined.equatable = fa.equatable or fb.equatable;
+            // The rows of a side whose rank is about to drop, taken before
+            // the sets are joined in place (§4.5, I15).
+            const low = @min(st.rank(ra), st.rank(rb));
+            const dropped = u.lowered.items.len;
+            if (st.rank(ra) > low) try u.lowered.appendSlice(u.gpa, u.obligations.owned(fa.obls));
+            if (st.rank(rb) > low) try u.lowered.appendSlice(u.gpa, u.obligations.owned(fb.obls));
+            joined.obls = try u.obligations.merged(u.gpa, fa.obls, fb.obls);
+            // A comparison's flag meeting its argument: the question is
+            // asked HERE, at the argument, and the row remembers it (§11.4
+            // *As built by R5*: `Basics.eq r r`'s answer is reported at the
+            // comparison, not where `r` later becomes a record).
+            if (joined.equatable and u.argument and u.depth == 1 and u.obligations.openEquatable(joined.obls) == null) {
+                const id = try u.obligations.create(u.gpa, .equatable, u.region, &.{ra}, 0, null);
+                joined.obls = try u.obligations.with(u.gpa, joined.obls, id, true);
+            }
+            const root = st.merge(ra, rb, .{ .flex = joined });
+            defer u.lowered.shrinkRetainingCapacity(dropped);
+            try u.lowerOwned(root, u.lowered.items[dropped..]);
             return true;
         },
         .rigid => |fb| {
             // A rigid is a promise about ALL types: a `number` flex meeting a
             // rigid `a` wants more than the annotation said.
             if (fa.kind != .any and fa.kind != fb.kind) return false;
-            if (fa.equatable and !fb.equatable) return u.fail(.{ .not_equatable_rigid = rb });
-            try u.bind(ra, rb, cb);
+            if (fa.equatable and !fb.equatable and !u.equatableRigidDeferred(fa)) return u.fail(.{ .not_equatable_rigid = rb });
+            try u.bind(ra, fa, rb, cb);
             return true;
         },
         .alias, .structure => {
             if (fa.kind != .any and !u.kindAccepts(fa.kind, rb)) {
                 return u.fail(.{ .kind_not_satisfied = .{ .kind = fa.kind } });
             }
-            try u.bind(ra, rb, cb);
+            try u.equatableMeets(fa, rb);
+            try u.bind(ra, fa, rb, cb);
             return true;
         },
     }
@@ -240,8 +331,8 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
         },
         .flex => |fb| {
             if (fb.kind != .any and fb.kind != fa.kind) return false;
-            if (fb.equatable and !fa.equatable) return u.fail(.{ .not_equatable_rigid = ra });
-            try u.bind(rb, ra, .{ .rigid = fa });
+            if (fb.equatable and !fa.equatable and !u.equatableRigidDeferred(fb)) return u.fail(.{ .not_equatable_rigid = ra });
+            try u.bind(rb, fb, ra, .{ .rigid = fa });
             return true;
         },
         // Two rigids, or a rigid against a real type: the annotation
@@ -262,7 +353,8 @@ fn alias(u: *Unify, ra: Var, aa: TypeStore.Alias, rb: Var, cb: TypeStore.Content
             if (fb.kind != .any and !u.kindAccepts(fb.kind, ra)) {
                 return u.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
             }
-            try u.bind(rb, ra, .{ .alias = aa });
+            try u.equatableMeets(fb, ra);
+            try u.bind(rb, fb, ra, .{ .alias = aa });
             return true;
         },
         .rigid => return u.go(aa.actual, rb),
@@ -297,7 +389,8 @@ fn structure(u: *Unify, ra: Var, sa: TypeStore.Structure, rb: Var, cb: TypeStore
             if (fb.kind != .any and !u.kindAccepts(fb.kind, ra)) {
                 return u.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
             }
-            try u.bind(rb, ra, .{ .structure = sa });
+            try u.equatableMeets(fb, ra);
+            try u.bind(rb, fb, ra, .{ .structure = sa });
             return true;
         },
         .rigid => return false,
@@ -551,4 +644,5 @@ fn isVariable(c: TypeStore.Content) bool {
 
 pub fn deinit(u: *Unify) void {
     u.active.deinit(u.gpa);
+    u.lowered.deinit(u.gpa);
 }

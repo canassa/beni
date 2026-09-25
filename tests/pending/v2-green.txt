@@ -215,7 +215,6 @@ tests/corpus/check/bad/Int32NoOperatorsMixed.beni
 tests/corpus/check/bad/IntVersusFloat.beni
 tests/corpus/check/bad/KindMismatch.beni
 tests/corpus/check/bad/ListElementsDisagree.beni
-tests/corpus/check/bad/MissingField.beni
 tests/corpus/check/bad/MissingPatternsList.beni
 tests/corpus/check/bad/MissingPatternsLiteral.beni
 tests/corpus/check/bad/MissingPatternsNested.beni
@@ -224,7 +223,6 @@ tests/corpus/check/bad/MissingPatternsUnitArg.beni
 tests/corpus/check/bad/NumberVersusString.beni
 tests/corpus/check/bad/PrivateName
 tests/corpus/check/bad/PrivateSchemaMember
-tests/corpus/check/bad/RecordNotClosed.beni
 tests/corpus/check/bad/RecursiveRecordSchema.beni
 tests/corpus/check/bad/RedundantPattern.beni
 tests/corpus/check/bad/RedundantPatternLiteral.beni
@@ -235,7 +233,6 @@ tests/corpus/check/bad/SchemaConversionMismatch.beni
 tests/corpus/check/bad/SchemaNameCollision
 tests/corpus/check/bad/TupleElementOfFunctionType.beni
 tests/corpus/check/bad/TypeMismatch.beni
-tests/corpus/check/bad/UnknownField.beni
 tests/corpus/check/bad/UnknownImportName
 tests/corpus/check/bad/WrongSchemaOperandArityGeneric.beni
 tests/corpus/check/bad/WrongSchemaOperandArityList.beni
@@ -348,3 +345,51 @@ tests/corpus/run/UnitSubPattern.beni
 tests/corpus/run/ViewMap20x30.beni
 tests/corpus/run/ViewMap40x12.beni
 tests/corpus/run/ViewMapEvery3.beni
+# R5 (2026-09-25): the obligation forms — `tuple_index`, interpolation, explicit `Basics.eq`/`neq` and
+# `?` (checker-v2.md §4.5, §8.5, §8.6, §11.4). 36 fixtures: check/args 2, check/bad 8, check/good 4,
+# emit 1, run 21 (with R5's new guard run/TryDefaultAtLetBoundary). Every fixture of the widened
+# v2-subset.sh passes. Three R4b lines left for v2-expected.md (CK-59, §6.5 as built by R5).
+tests/corpus/check/args/MissingArgInInterpolation.beni
+tests/corpus/check/args/ViewMissingModel.beni
+tests/corpus/check/bad/AmbiguousInterpolation.beni
+tests/corpus/check/bad/AmbiguousTuple.beni
+tests/corpus/check/bad/BasicsEqStillStructural.beni
+tests/corpus/check/bad/NotATuple.beni
+tests/corpus/check/bad/NotInterpolatable.beni
+tests/corpus/check/bad/TryShape.beni
+tests/corpus/check/bad/TupleIndexOutOfRange.beni
+tests/corpus/check/bad/WideRecordEqFunction.beni
+tests/corpus/check/good/OpaqueAcrossModules
+tests/corpus/check/good/QuestionShapes.beni
+tests/corpus/check/good/RecordRows.beni
+tests/corpus/check/good/SharedType
+tests/corpus/emit/QuestionShape.beni
+tests/corpus/run/ConsPatterns.beni
+tests/corpus/run/CoreBasicsCalls.beni
+tests/corpus/run/CoreBasicsMath.beni
+tests/corpus/run/CoreListRest.beni
+tests/corpus/run/EvalOrderLiterals.beni
+tests/corpus/run/Interpolation.beni
+tests/corpus/run/IrrefutableParameters.beni
+tests/corpus/run/MatchAsPattern.beni
+tests/corpus/run/MatchListDepth.beni
+tests/corpus/run/MatchNested.beni
+tests/corpus/run/MatchRecordsTuples.beni
+tests/corpus/run/MatchRowOrder.beni
+tests/corpus/run/MatchSharedLeaf.beni
+tests/corpus/run/MaybeResult.beni
+tests/corpus/run/Patterns.beni
+tests/corpus/run/QuestionOrder.beni
+tests/corpus/run/QuestionPositions.beni
+tests/corpus/run/ReleaseAsiTraps.beni
+tests/corpus/run/Tuples.beni
+tests/corpus/run/WideRecordEqInts.beni
+tests/corpus/run/TryDefaultAtLetBoundary.beni
+# R5's review (2026-09-25): guards for one `equatable` question per comparison (symbol-order twins), its
+# region through a call, no interpolation cascade after a tuple's message, and a `?` target that keeps
+# its success type (CK-99). Green on v1 and v2.
+tests/corpus/check/bad/EqFunctionFieldThroughCall.beni
+tests/corpus/check/bad/EqOneQuestionRecord.beni
+tests/corpus/check/bad/EqOneQuestionRecordNamesFirst.beni
+tests/corpus/check/bad/InterpolatedAmbiguousTuple.beni
+tests/corpus/run/TryTargetKeepsItsSuccessType.beni
