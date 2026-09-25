@@ -95,6 +95,10 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .roundtrip_interfaces = common.roundtrip_interfaces,
         .roundtrip_dispatch = common.roundtrip_dispatch,
         .roundtrip_frontend = common.roundtrip_frontend,
+        .checker = switch (common.checker) {
+            .v1 => .v1,
+            .v2 => .v2,
+        },
     };
 }
 

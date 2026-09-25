@@ -41,6 +41,12 @@ below assumes them.
 - **Workflow** (`plans/queue.md` "How a slice runs"): an implementer and a read-only reviewer per
   slice; the manager validates, commits and writes the diary. The **reviewer focus** line of each
   slice says what that reviewer must try to break.
+- **v1 is frozen** (the owner, 2026-09-25). Master does not have to keep working during the
+  conversion. v1 stays only as the **oracle**: it checks `core` and the dependencies, so the
+  corpus goldens keep running while v2 grows. **No further fixes or features land on v1.** v1's
+  remaining bugs are fixed by v2 only, and v1 is deleted as soon as v2 can check `core` and
+  pass the corpus (R9–R11). A slice that meets a v1 defect records it as a CK for v2; it does
+  not patch v1 (`checker-v2.md` §22, *Amendment of 2026-09-25*).
 
 ---
 
@@ -188,7 +194,8 @@ single-test `matrix_test.zig` and `cutoff_test.zig` (about 45–60 s alone) are 
   a ReleaseFast `beni` installed as `zig-out/perf/bin/beni`: the timing scenarios, alone, one
   after another. §1 says which slices run it.
 
-Rules (a)–(d) apply in both steps. Neither is part of `test-blackbox`, so the three gates never run
+Rules (a)–(d) apply in both steps. *(R4a:)* the scenarios of `pending_test.zig` run under the default checker only; only the
+pending corpus has a run 2 under `--checker=v2`. Neither is part of `test-blackbox`, so the three gates never run
 a red fixture.
 
 R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER=v2`. Its modes:
@@ -728,6 +735,70 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - A cache-test scenario: a v1-written cache is never read by a `--checker=v2` build.
 - **Reviewer focus.** The moved driver is a move, not a rewrite (`git diff -M`). The cache key
   really changes with the flag.
+- **As built (2026-09-25).** Spec first: `checker-v2.md` §14.3 and §22.1 gained *As built by R4a*
+  paragraphs, `fast-compiler.md` §8 the key amendment, `checker.md` §4.4 the scheduler's new home.
+  - **The move.** `check2/Check.zig` is the public API (`run`, `Module`, `Options`, `Cutoff`,
+    `stack_size`, moved whole from `check/Check.zig`); `check2/Driver.zig` the scheduler and core gate
+    (a file-struct: `go`, `serial`, `buildSchedule`, `openCoreGate`, `worker`, `finish`, `check`,
+    `checkInner`); `check2/Incremental.zig` `claim`, `compareKey`, `publish`, `verifyReads`,
+    `install` and `closeCoreSurface`, as free functions over `*Driver` that `Driver` re-exports, so
+    every call site still reads `d.claim(…)`. Bodies are byte-identical but for the 4-space dedent
+    and `pub` (`git diff --color-moved --color-moved-ws=allow-indentation-change`); of the moved
+    files' non-comment lines, only imports, the aliases and the v2 branch are not in 0aedf0a's
+    `Check.zig`. `check/Check.zig` keeps v1's per-module check (`pub ModuleCheck`) and its tests;
+    `Session` and `dump/types.zig` import `check2/Check.zig`. `checkInner` is the one place the
+    checkers part: `Options.usesV2` — `--checker=v2`, the module's package `app`, and no `--core`.
+  - **The flag.** `--checker=v1|v2` on `Cli.Common` (so `dump` takes it, like the round-trip flags),
+    hidden, default v1; `Session.Options.checker`, `Check.Options.checker` and `root_is_core`.
+  - **The key.** `checker_len: u32, checker` right after the build id in `writeOwn`, every module's
+    key including core's; `key_version` 3. `cache_test.zig`: *row 10b* (`--checker=v2` moves every
+    key, core's included; `--checker=v1` moves none) and *a cache written under one checker is
+    never read under the other* (v1 cold, v2 twice, v1 again over one directory — v2 hits 0 then
+    reads back only its own core entries, v1 hits all of its own; and a v2-first directory, over
+    which v1 hits 0 and writes its own beside v2's). Both red with the two `writeOwn` lines removed.
+  - **The stub** (`check2/Module.zig`): `not_implemented`, "checker v2: R4b", at the module's first
+    token, on every root module that reaches it clean; silent on a module an earlier phase reported
+    on or the graph poisoned, as v1 is (`checker.md` §4.3). It fills `Types.ref_ids` and, for
+    `dump --stage=types`, `none`-filled tables; no scheme, so dumps print `<error>`. Deterministic
+    at `--jobs=1` and `8`.
+  - **`test-v2`** is `test-blackbox`'s part loop with `mode=report, checker=v2`. Report mode skips
+    `tests/pending/v2-expected.md`'s fixtures (the four `core/` directories, N13; §20.4's two R11
+    rows), prints `REPORT PASS/FAIL/SKIP` and a `REPORT TOTAL` per kind, and fails only for a red
+    fixture of `v2-green.txt` (proved with a planted red fixture) or a `v2-green.txt` line that names
+    nothing or a skipped fixture. At R4a: **297 pass, 445 fail, 13 skipped** of 755 fixtures
+    (`run/`'s 166 counted once; both passes fail all 166). Every FAIL is the stub: each one's
+    compiler output holds `not_implemented` and nothing it did not hold under v1 (32 generic
+    `BuildFailed` lines re-run by hand, all `not_implemented` alone). The passes are the kinds that
+    never check (`parse/good`, `fmt`, `bir`: 154) and the fixtures whose every root module is
+    reported on first (`parse/bad` 119, `check/bad` 21, `check/depth` 2, `regress` 1). Those 143,
+    which run the checker, are `v2-green.txt`'s first lines: v2 must stay silent where v1 is.
+  - **`test-pending` run 2** (`BENI_CHECKER=v2`) is wired. Every one of the 64 pending fixtures is
+    red under the stub, so rule (d) needed a `v2` line each; they are recorded wholesale in `RED`
+    under a comment saying so (`not_implemented`, plus whatever an earlier phase reports), and
+    R4b rewrites them. The scenarios of `pending_test.zig` still run v1 only.
+  - **Evidence.** The three gates green; `test-pending`, `test-pending-perf` (all RED as recorded)
+    and `test-perf` (CK-41 1.50) green. Bench (ReleaseFast, `--generate=100000`, medians of 7
+    interleaved against 0aedf0a, two sets in opposite orders): check 92.75 against 91.08 (+1.8 %) and
+    92.11 against 91.88 (+0.3 %); emit, untouched, 54.05 / 51.92 and 53.66 / 53.04.
+- **As built, review round (2026-09-25).** No blockers.
+  - S1: a `v2-green.txt` line must name a fixture: a `.beni` file or a project directory directly
+    under a kind directory (or its `core/`, `emit/app/`, `emit/release/`). After each kind's walk,
+    every line of either file that sits in that kind's directories must have been visited
+    (`REPORT  STALE`). Planted lines fail the step: a golden (`….iface`), a `README.md`, a file inside
+    a project (`Cycle/A.beni`), and the non-fixture directory `check/bad/core`.
+  - S2: a `v2-expected.md` entry must be an existing fixture, or an existing `<kind>/core/` written
+    with a trailing `/`, and it is validated before `v2-green.txt`. Planted entries fail the step: a
+    stale fixture, the kind root `tests/corpus/check/`, and a project written as a directory.
+  - S3: `checker-v2.md` §22.2 has an *As built by R4a* line on the ratchet. N1: every report-mode
+    build or exit failure now carries the first diagnostic's message head
+    (`build exit 1: NOT IMPLEMENTED YET: checker v2: R4b`). N2, N3: stale comments. N5: an *R9
+    note* in §14.3 and a line in R9's goal. N8: §2.4 notes the scenarios run v1 only.
+  - N4 is not a pure move, so it is recorded in R4b's goal instead. v1 round-trips the record
+    before it fills `ref_ids`, and the table before `Cycles` and I7.
+  - The owner's decision that v1 is frozen is recorded in §1 and in `checker-v2.md` §22.
+  - Rerun: the three gates, `test-pending` (67 RED v1 lines including scenarios, 64 RED v2),
+    `test-pending-perf` (all RED as recorded) and `test-perf` (CK-41 1.50) are green. `test-v2`
+    exits 0: 297 pass, 445 fail, 13 skipped.
 
 ### R4b — v2 foundation: store, walks, unify, generalise, obligation-free constraint generation
 
@@ -737,6 +808,13 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     whose root modules' `dump --stage=bir` contains no `tuple_index`, `interp`, `try` or
     `Basics.eq`/`neq` call (S-5).
   - A root module outside the subset reports `not_implemented`, naming the slice (R5 or R6a).
+  - *(Added by R4a's review, N4.)* `--roundtrip-interfaces` and `--roundtrip-dispatch` are applied
+    inside v1's `ModuleCheck.run`, not in the shared driver, so they do nothing for a v2 module.
+    They could not move into `Driver.check` as a pure move: v1 round-trips the record BEFORE it
+    fills `Types.ref_ids`, and the dispatch table before `Cycles` and the I7 assert, so that those
+    passes read bytes that went through the format. v2's `Module.zig` must call the same two hooks
+    at the same points (§5: after P8 for the record, in P9 before `Cycles` for the table), or
+    `iface_test`/`matrix_test` under `--checker=v2` will not round-trip v2's output.
 - **Files.**
   - `check2/TypeStore.zig`, `Walk.zig`, `Unify.zig`, `Generalize.zig`, `Instantiate.zig` (explicit
     rank and pool, round 3 S-2).
@@ -976,7 +1054,8 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 - **Goal.** `--checker=v2` covers every package. `test-v2` becomes **strict**: failure on anything
   outside `v2-expected.md`. The determinism test (`--jobs` 1 and 8, twice) and the 600-module
   scenario run under v2 too. Pipeline cleanup: `schema_plan_ok` after `Cycles`, named profile
-  events.
+  events. The cache key's checker text changes, or `key_version` bumps (`checker-v2.md` §14.3,
+  *R9 note*).
 - **Files.** `check2/*` (whatever `core` exposes), `tests/blackbox/*` (the v2 variants of the
   determinism scenarios, behind `BENI_CHECKER`).
 - **Closes.** CK-15 (rest). Every claim from R4b–R8b now also holds with `core` under v2.

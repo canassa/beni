@@ -59,7 +59,7 @@ const Graph = @import("resolve/Graph.zig");
 const Interface = @import("resolve/Interface.zig");
 const Resolve = @import("resolve/Resolve.zig");
 const ResolveDiagnostics = @import("resolve/Diagnostics.zig");
-const Check = @import("check/Check.zig");
+const Check = @import("check2/Check.zig");
 const Solve = @import("check/Solve.zig");
 const Key = @import("cache/Key.zig");
 const FileKey = @import("cache/FileKey.zig");
@@ -222,6 +222,9 @@ pub const Options = struct {
     /// per-file phase ends — before `Resolve`, before the graph, before
     /// anything downstream reads them.
     roundtrip_frontend: bool = false,
+    /// `--checker=v1|v2` (`Cli.Common.checker`, checker-v2.md §22.1): which
+    /// checker checks the root package. A term of every cache key (§14.3).
+    checker: Check.Checker = .v1,
     /// `--frontend-keys` (`Cli.Cache`, `frontend.md` §1): make `check` print
     /// one `<path> <32 hex digits>` line per file on stdout, sorted by path.
     frontend_keys: bool = false,
@@ -1592,6 +1595,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         &session.interner,
         .{
             .build_id = compilerBuildId(session.options.cache_build_id),
+            .checker = @tagName(session.options.checker),
             .informational = session.options.informational,
             .pattern_budget = session.options.pattern_budget,
             .lower_core = lower_core,
@@ -1662,6 +1666,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .roundtrip_dispatch = r.session.options.roundtrip_dispatch,
                     .cached = r.cached,
                     .cutoff = r.cutoff,
+                    .checker = r.session.options.checker,
+                    .root_is_core = r.session.options.core,
                 },
             );
         }

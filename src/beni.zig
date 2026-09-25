@@ -90,6 +90,12 @@ pub const check = struct {
     pub const Convention = @import("check/Convention.zig");
     pub const Command = @import("check/Command.zig");
 };
+pub const check2 = struct {
+    pub const Check = @import("check2/Check.zig");
+    pub const Driver = @import("check2/Driver.zig");
+    pub const Incremental = @import("check2/Incremental.zig");
+    pub const Module = @import("check2/Module.zig");
+};
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
     pub const ast = @import("dump/ast.zig");
@@ -113,6 +119,7 @@ test {
     std.testing.refAllDecls(frontend);
     std.testing.refAllDecls(cache);
     std.testing.refAllDecls(check);
+    std.testing.refAllDecls(check2);
     std.testing.refAllDecls(dump);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);

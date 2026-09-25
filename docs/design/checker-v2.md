@@ -1920,6 +1920,14 @@ derived method". That is exactly its ABI, so the format is shared by both checke
   - R12 removes the component together with the flag. A single checker needs none, and the build
     id already changes with the binary.
   - A "warm under v2" result in R10 is therefore written by v2 by construction.
+  - *As built by R4a:* the id is the text `v1` or `v2`, written as `checker_len: u32, checker`
+    right after the build id in every module's own-terms blob, core's included, and `key_version`
+    is 3 (`fast-compiler.md` §8). `--cutoff-compare`'s transitive key shares the blob, so it moves
+    with the flag too.
+  - *R9 note (R4a review, N5):* the text `v2` means "v2 checks the root package, v1 checks `core`"
+    from R4a to R8, and "v2 checks everything" from R9. A `--cache-build-id` pins the build id
+    across that change, so R9 must also change the id text (say `v2c`) or bump `key_version`.
+    Otherwise a `core` entry v1 wrote under `v2` could be read by a v2 that checks `core`.
 
 ---
 
@@ -2241,6 +2249,13 @@ The parallel build wins, for four reasons:
 - Pending fixtures fixed only by v2 wait in `tests/pending/` until the cut-over, protected by
   `tests/pending/CLAIMED`.
 
+**Amendment of 2026-09-25 (the owner): v1 is frozen.** The owner does not require `master` to keep
+working during the conversion. v1 is kept only as the **oracle**: it checks `core` and the
+dependencies, so the corpus goldens keep running as v2 grows. It is **frozen**: no further fixes
+or features land on v1, and its remaining bugs are fixed by v2 only. v1 is deleted as soon as v2
+can check `core` and pass the corpus (R9–R11). This narrows reason 3 above: the gates stay
+meaningful because v1 stops changing, not because R1–R3-style fixes keep landing on it.
+
 ### 22.1 The switch
 
 - **R4–R8.** `--checker=v2` checks the **root package** with v2 and **every non-root package** with v1:
@@ -2249,6 +2264,10 @@ The parallel build wins, for four reasons:
   listed in `tests/pending/v2-expected.md` as "not yet v2" rather than counted as passes (N13). Both read and
   write the same interface format, so the black-box corpus can run against v2 before v2 can check
   `core`.
+- *As built by R4a:* "the root package" is `SourceStore.Package.app` without `--core`
+  (`check2/Check.zig`'s `Options.usesV2`). A module an earlier phase already reported on, or one
+  the graph poisoned, is checked silently by v2 as by v1 (`checker.md` §4.3), so R4a's stub reports
+  `not_implemented` only on the root modules that reach it clean.
 - **R9.** `--checker=v2` covers every package including `core`, and `test-v2` becomes strict.
 - **R11.** The default flips.
 - **R12.** v1, the flag and `check2`'s name are deleted.
@@ -2259,6 +2278,12 @@ The parallel build wins, for four reasons:
 |---|---|---|
 | `zig build test-v2` | the whole `tests/corpus/` with `--checker=v2` | **report** (R4–R8): pass/fail per fixture, exit 0. **strict** (R9–R11): must be all green except the listed expected-difference fixtures |
 | `zig build test-pending` | `tests/pending/` under v1 and v2 | fails if a fixture is green under the default checker (promote it), or if a fixture in `tests/pending/CLAIMED` is red under v2 |
+
+*As built by R4a:* report mode is not quite "exit 0". It skips the fixtures of
+`tests/pending/v2-expected.md`, and it FAILS for a red fixture listed in
+`tests/pending/v2-green.txt` (the ratchet, S12), or for a line of either file that names no
+fixture the walk runs (`checker-rewrite.md` §2.4). The scenarios of `pending_test.zig` run under
+the default checker only.
 
 Both are part of every rewrite slice's exit criteria (`checker-rewrite.md`), beside the three
 gates.

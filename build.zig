@@ -7,13 +7,16 @@
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!
-//! And three that are NOT gates — the first two because their fixtures are red
-//! by design, the third because a timing claim is not a gate (rule 4):
+//! And four that are NOT gates — the first two because their fixtures are red
+//! by design, the third because a timing claim is not a gate (rule 4), the
+//! fourth because it holds the checker under construction (report mode, R4a–R8b):
 //!   zig build test-pending        tests/pending/ and the non-timing scenarios
 //!   zig build test-pending-perf   the timing scenarios, on a ReleaseFast beni
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf; §2.5)
+//!   zig build test-v2             the corpus under --checker=v2, report mode
+//!                                 with the v2-green.txt ratchet (R4a–R8b)
 const std = @import("std");
 /// The parts the corpus walker is split into (one process each).
 const corpus_parts = @import("tests/blackbox/corpus_parts.zig");
@@ -191,7 +194,7 @@ pub fn build(b: *std.Build) void {
     // which the walker reads as unset — so a variable exported in the
     // developer's shell (`BENI_CHECKER=v2 zig build test-blackbox`) cannot
     // turn the gate into something else; only the part differs per process.
-    // R4a's `test-v2` is the same loop with `.checker = "v2"`.
+    // `test-v2`, below, is the same loop with `.checker = "v2"`.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     for (std.enums.values(corpus_parts.Part)) |part| {
         blackbox_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part) }).step);
@@ -214,11 +217,24 @@ pub fn build(b: *std.Build) void {
     // ratio is CPU time, but a machine busy on every core still perturbs the
     // caches and clocks it is measured on (§2.5).
     const pending_step = b.step("test-pending", "Run tests/pending/ (red fixtures of checker findings) in pending mode, and the non-timing scenarios");
-    // Run 1 of `plans/checker-rewrite.md` §2.4: the default checker. Run 2
-    // (`BENI_CHECKER=v2`) is added by R4, with the flag.
+    // Runs 1 and 2 of `plans/checker-rewrite.md` §2.4: the default checker,
+    // then `--checker=v2` (from R4a, with the flag). Rules (a)–(d) hold under
+    // both, so a fixture red under v2 has a `v2` line in `RED` too.
     pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending" }).step);
+    pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending", .checker = "v2" }).step);
     const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
     pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
+
+    // `test-v2` (`plans/checker-rewrite.md` §2.4, `checker-v2.md` §22.2): the
+    // whole corpus under `--checker=v2`, part by part as `test-blackbox` runs
+    // it. REPORT mode until R9: PASS/FAIL per fixture, the fixtures of
+    // `tests/pending/v2-expected.md` skipped, and a failure only for a
+    // fixture listed in `tests/pending/v2-green.txt` (the ratchet, S12).
+    // Strict from R9, deleted at R12. Not a gate.
+    const v2_step = b.step("test-v2", "Run the corpus under --checker=v2 in report mode, with the v2-green.txt ratchet (plans/checker-rewrite.md §2.4)");
+    for (std.enums.values(corpus_parts.Part)) |part| {
+        v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .mode = "report", .checker = "v2", .part = @tagName(part) }).step);
+    }
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler (plans/checker-rewrite.md §2.5)");
     const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });

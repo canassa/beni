@@ -171,7 +171,7 @@ until M4 caches it. `--core-root` reads the directory instead.
    parallelism last, but the data must be laid out for it from the start: a module's check
    reads only its own Bir, the interfaces of its imports, and the `TypeStore` it owns.
 
-   M2c's scheduler (`check/Check.zig`'s `Driver`) is a ready queue over that order: a module
+   M2c's scheduler (`check/Check.zig`'s `Driver`, moved to `check2/Driver.zig` by R4a) is a ready queue over that order: a module
    is ready when every dependency of it that comes EARLIER in the order has finished, results
    land in the slot of a module index assigned before any thread started, diagnostics are
    collected per module and concatenated in the graph's order afterwards, and the counters are

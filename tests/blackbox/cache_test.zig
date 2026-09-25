@@ -682,6 +682,38 @@ test "row 10: --cache-build-id moves every module's key, core included" {
     try expectMoved("the same --cache-build-id twice", pretend, again, &.{});
 }
 
+test "row 10b: --checker=v2 moves every module's key, core included, and v1 is the default" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §14.3 (S22): the checker id is part of the compiler
+    // identity every key starts with, so the two checkers never share an
+    // entry — not even core's, which v1 checks under both flags until R9.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const base = try baselineKeys(&w, arena);
+    const v1 = try keysOf(&w, arena, &.{ "--jobs=1", "--checker=v1", "src" });
+    // The v2 run exits 1 — until R4b every root module reports
+    // `not_implemented` — and its keys are printed all the same.
+    const r = try w.runWith(&.{ "check", "--cache-keys", "--jobs=1", "--checker=v2", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    const v2 = try parseKeys(arena, r.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectMoved("--checker=v1 against no flag", base, v1, &.{});
+    try expectEveryKeyMoved("--checker=v2", base, v2);
+}
+
 test "--core moves the app modules' keys and leaves core's alone" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -2136,6 +2168,97 @@ test "a second check of an unchanged tree re-checks nothing and says exactly the
     try testing.expect(warm.counters.hits >= 12);
     // Nothing new was written: every entry was already there under its key.
     try testing.expectEqual(@as(u64, 0), warm.counters.bytes);
+}
+
+test "a cache written under one checker is never read under the other" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §14.3 (S22): v1 and v2 write the same entry format into
+    // the same directory, and after R8 a derived function's evidence ABI
+    // differs between them, so a warm cache must never hand one checker's
+    // output to the other's callers. The keys moving (row 10b) is necessary;
+    // this is the counters' half — nothing is READ across the line, in either
+    // direction, and each checker still reads its own.
+    //
+    // Until R4b v2 is a stub: every root module reports `not_implemented`, so
+    // a v2 run that read v1's entries for them would exit 0 and say nothing.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    const v1_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "src" };
+    const v2_args = [_][]const u8{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=a", "--checker=v2", "src" };
+    const not_implemented =
+        \\[{"code":"not_implemented","severity":"error","span":{"file":"src/Leaf.beni","start":{"line":1,"col":1},"end":{"line":1,"col":4}},"title":"NOT IMPLEMENTED YET","message":"checker v2: R4b\n"},{"code":"not_implemented","severity":"error","span":{"file":"src/Mid.beni","start":{"line":1,"col":1},"end":{"line":1,"col":7}},"title":"NOT IMPLEMENTED YET","message":"checker v2: R4b\n"},{"code":"not_implemented","severity":"error","span":{"file":"src/Top.beni","start":{"line":1,"col":1},"end":{"line":1,"col":7}},"title":"NOT IMPLEMENTED YET","message":"checker v2: R4b\n"}]
+        \\
+    ;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // A v1-written cache, then v2 over it twice, then v1 again.
+    const v1_cold = try runCounted(&w, arena, &v1_args, "v1-cold.json");
+    const v2_first = try runCounted(&w, arena, &v2_args, "v2-first.json");
+    const v2_warm = try runCounted(&w, arena, &v2_args, "v2-warm.json");
+    const v1_warm = try runCounted(&w, arena, &v1_args, "v1-warm.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), v1_cold.result.exit_code);
+    try testing.expectEqualStrings("", v1_cold.result.stderr);
+    try testing.expectEqual(@as(u64, 0), v1_cold.counters.hits);
+    const modules = v1_cold.counters.misses;
+    try testing.expect(modules >= 12);
+
+    // v2 over a v1-written cache reads NOTHING: every module misses, core's
+    // too, and the three root modules say what v2 says.
+    try testing.expectEqual(@as(u8, 1), v2_first.result.exit_code);
+    try testing.expectEqualStrings(not_implemented, v2_first.result.stderr);
+    try testing.expectEqual(@as(u64, 0), v2_first.counters.hits);
+    try testing.expectEqual(modules, v2_first.counters.misses);
+    try testing.expectEqual(modules, v2_first.counters.checked);
+    // It wrote core's entries under its own keys (the root modules have an
+    // error and are never written) and reads exactly those back.
+    try testing.expect(v2_first.counters.bytes > 0);
+    try testing.expectEqual(@as(u8, 1), v2_warm.result.exit_code);
+    try testing.expectEqualStrings(not_implemented, v2_warm.result.stderr);
+    try testing.expectEqual(modules - 3, v2_warm.counters.hits);
+    try testing.expectEqual(@as(u64, 3), v2_warm.counters.misses);
+
+    // v1 afterwards: all of its own entries, untouched by v2's run.
+    try testing.expectEqual(@as(u8, 0), v1_warm.result.exit_code);
+    try testing.expectEqualStrings(v1_cold.result.stderr, v1_warm.result.stderr);
+    try testing.expectEqualStrings(v1_cold.result.stdout, v1_warm.result.stdout);
+    try testing.expectEqual(modules, v1_warm.counters.hits);
+    try testing.expectEqual(@as(u64, 0), v1_warm.counters.misses);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE (the reverse)                   │
+    // └─────────────────────────────────────────┘
+    // A cache v2 wrote first — core's entries only — then v1 over it.
+    const v2_cold = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "--checker=v2", "src" }, "v2-cold.json");
+    const v2_written = (try entriesOnly(arena, try w.listFiles("b"))).len;
+    const v1_after = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--diagnostics=json", "--cache-dir=b", "src" }, "v1-after.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u64, 0), v2_cold.counters.hits);
+    try testing.expect(v2_cold.counters.bytes > 0);
+    try testing.expectEqual(@as(usize, @intCast(modules - 3)), v2_written);
+    // v1 reads none of them, and says exactly what a cold v1 run says.
+    try testing.expectEqual(@as(u8, 0), v1_after.result.exit_code);
+    try testing.expectEqualStrings(v1_cold.result.stderr, v1_after.result.stderr);
+    try testing.expectEqual(@as(u64, 0), v1_after.counters.hits);
+    try testing.expectEqual(modules, v1_after.counters.misses);
+    try testing.expectEqual(modules, v1_after.counters.checked);
+    // And it wrote its own, beside v2's rather than over them: different keys,
+    // different files.
+    try testing.expectEqual(v2_written + @as(usize, @intCast(modules)), (try entriesOnly(arena, try w.listFiles("b"))).len);
 }
 
 test "a comment re-checks ONE module — the counters' half of the cutoff" {

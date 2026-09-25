@@ -53,8 +53,11 @@
 //! `BENI_CORPUS_ROOT` moves the root, `BENI_CORPUS_MODE=pending|report`
 //! reports RED/GREEN or PASS/FAIL per fixture instead of failing on it,
 //! `BENI_CHECKER` adds `--checker=<value>` and `BENI_CASE_TIMEOUT_MS` bounds
-//! each run. Unset (or empty), each is today's strict corpus run; see
-//! `Config`, and `tests/pending/README.md` for `.codes`, `RED` and `CLAIMED`.
+//! each run. Report mode is `zig build test-v2`'s: it skips the fixtures
+//! of `tests/pending/v2-expected.md` and fails only for a red fixture of
+//! `tests/pending/v2-green.txt`, the ratchet. Unset (or empty), each is
+//! today's strict corpus run; see `Config`, and `tests/pending/README.md`
+//! for `.codes`, `RED` and `CLAIMED`.
 //! `BENI_CORPUS_PART` runs one part of `corpus_parts.zig` only, which is how
 //! `test-blackbox` spreads the corpus over parallel processes.
 
@@ -344,6 +347,7 @@ fn walk(kind: Kind) !void {
     defer w.deinit();
 
     var failures: usize = 0;
+    var tally: struct { pass: usize = 0, fail: usize = 0, skip: usize = 0 } = .{};
     for (fixtures.items) |fixture| {
         const path = try std.fs.path.join(arena, &.{ fixture.dir, fixture.name });
         const bless_this = bless and (bless_only == null or std.mem.indexOf(u8, path, bless_only.?) != null);
@@ -354,17 +358,37 @@ fn walk(kind: Kind) !void {
                 failures += 1;
             },
             .report => {
+                // `v2-expected.md` (§2.4): skipped and printed, never run.
+                if (world.pending.expectedCovers(cfg.v2_expected, path)) {
+                    std.debug.print("REPORT  SKIP  {s}  {s}  (tests/pending/v2-expected.md)\n", .{ cfg.checkerName(), path });
+                    tally.skip += 1;
+                    continue;
+                }
                 reason_len = 0;
                 if (case.run()) |_| {
                     std.debug.print("REPORT  PASS  {s}  {s}\n", .{ cfg.checkerName(), path });
+                    tally.pass += 1;
                 } else |err| {
                     std.debug.print("REPORT  FAIL  {s}  {s}  {s}\n", .{ cfg.checkerName(), path, reasonFor(err, &cfg) });
+                    tally.fail += 1;
+                    // The ratchet (S12): a fixture a landed slice made green
+                    // under v2 may not turn red again.
+                    if (cfg.isGreenUnderV2(path)) {
+                        std.debug.print("REPORT  RATCHET  {s}  {s} is listed in tests/pending/v2-green.txt and is RED\n", .{ cfg.checkerName(), path });
+                        failures += 1;
+                    }
                 }
             },
             .pending => if (!try case.pending(path)) {
                 failures += 1;
             },
         }
+    }
+    if (cfg.mode == .report) {
+        var visited: std.ArrayList([]const u8) = .empty;
+        for (fixtures.items) |fixture| try visited.append(arena, try std.fs.path.join(arena, &.{ fixture.dir, fixture.name }));
+        if (!try cfg.expectVisited(arena, kind, visited.items)) failures += 1;
+        std.debug.print("REPORT  TOTAL  {s}  {s}: {d} pass, {d} fail, {d} skipped\n", .{ cfg.checkerName(), kind_dir, tally.pass, tally.fail, tally.skip });
     }
     // Only on failure: anything a passing test writes to stderr makes the
     // build runner print `failed command` next to a step that succeeded,
@@ -404,6 +428,12 @@ const Config = struct {
     /// `tests/pending/RED` (§2.4 rule (d)): the recorded red signature of
     /// each fixture under each checker, pending mode only.
     red: []const world.pending.RedLine,
+    /// `tests/pending/v2-green.txt` (§2.4, S12): report mode only. A listed
+    /// fixture that is red fails the step — the ratchet.
+    v2_green: []const []const u8 = &.{},
+    /// `tests/pending/v2-expected.md` (§2.4, checker-v2.md §22.1): report
+    /// mode only. A covered fixture is skipped and printed, never run.
+    v2_expected: []const []const u8 = &.{},
 
     const Mode = enum {
         /// Unset: every fixture must pass (today's behaviour).
@@ -411,7 +441,9 @@ const Config = struct {
         /// `pending`: every fixture is reported RED or GREEN, and the step
         /// fails only for rules (a)–(d).
         pending,
-        /// `report`: PASS/FAIL per fixture, and never a failure.
+        /// `report` (`test-v2`, R4a–R8b): PASS/FAIL per fixture; the fixtures
+        /// of `tests/pending/v2-expected.md` are skipped, and the step fails
+        /// only for a RED fixture listed in `tests/pending/v2-green.txt`.
         report,
     };
 
@@ -464,7 +496,110 @@ const Config = struct {
             cfg.claimed = try world.pending.readClaimed(arena, testing.io, cfg.root);
             cfg.red = try world.pending.readRed(arena, testing.io, cfg.root);
         }
+        if (mode == .report) {
+            cfg.v2_green = try world.pending.readV2Green(arena, testing.io, pending_root);
+            cfg.v2_expected = try world.pending.readV2Expected(arena, testing.io, pending_root);
+            // The escape hatch first: an entry names one existing fixture,
+            // or a whole `<kind>/core/` directory (N13) and nothing wider.
+            for (cfg.v2_expected) |entry| {
+                const ok = if (std.mem.endsWith(u8, entry, "/"))
+                    try cfg.isCoreDir(arena, std.mem.trimEnd(u8, entry, "/"))
+                else
+                    try cfg.isFixturePath(arena, entry);
+                if (!ok) {
+                    std.debug.print("{s}/v2-expected.md lists {s}, which is neither an existing fixture nor an existing `<kind>/core/` directory of {s}\n", .{ pending_root, entry, cfg.root });
+                    return error.StaleExpected;
+                }
+            }
+            // A ratchet line that names no fixture, or a fixture the run
+            // skips, would hold nothing: a malformed file, refused up front.
+            // After the walk, every line of either file in a kind this
+            // process ran must also have been VISITED (`expectVisited`).
+            for (cfg.v2_green) |path| {
+                if (!try cfg.isFixturePath(arena, path)) {
+                    std.debug.print("{s}/v2-green.txt lists {s}, which is not a fixture: a `.beni` file or a project directory directly under a kind directory of {s}\n", .{ pending_root, path, cfg.root });
+                    return error.StaleGreen;
+                }
+                if (world.pending.expectedCovers(cfg.v2_expected, path)) {
+                    std.debug.print("{s}/v2-green.txt lists {s}, which v2-expected.md skips\n", .{ pending_root, path });
+                    return error.StaleGreen;
+                }
+            }
+        }
         return cfg;
+    }
+
+    /// The directories a kind collects fixtures from (`walk`): the kind's
+    /// own, its `core/`, and for `emit/` also `app/` and `release/`.
+    fn fixtureDirs(cfg: *const Config, arena: std.mem.Allocator, kind: Kind) ![]const []const u8 {
+        var dirs: std.ArrayList([]const u8) = .empty;
+        const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
+        try dirs.append(arena, kind_dir);
+        try dirs.append(arena, try std.fs.path.join(arena, &.{ kind_dir, "core" }));
+        if (kind == .emit) {
+            try dirs.append(arena, try std.fs.path.join(arena, &.{ kind_dir, "app" }));
+            try dirs.append(arena, try std.fs.path.join(arena, &.{ kind_dir, "release" }));
+        }
+        return dirs.items;
+    }
+
+    /// Whether `path` is fixture-shaped and exists: a `.beni` file or a
+    /// directory whose parent is one of some kind's `fixtureDirs`. A golden,
+    /// a README or a file inside a project is not.
+    fn isFixturePath(cfg: *const Config, arena: std.mem.Allocator, path: []const u8) !bool {
+        const parent = std.fs.path.dirname(path) orelse return false;
+        var under_kind = false;
+        for (std.enums.values(Kind)) |kind| {
+            for (try cfg.fixtureDirs(arena, kind)) |dir| {
+                if (std.mem.eql(u8, dir, parent)) under_kind = true;
+            }
+        }
+        if (!under_kind) return false;
+        const stat = Io.Dir.cwd().statFile(testing.io, path, .{}) catch return false;
+        return stat.kind == .directory or (stat.kind == .file and std.mem.endsWith(u8, path, ".beni"));
+    }
+
+    /// Whether `path` is an existing `<kind>/core` directory of the root.
+    fn isCoreDir(cfg: *const Config, arena: std.mem.Allocator, path: []const u8) !bool {
+        var named = false;
+        for (std.enums.values(Kind)) |kind| {
+            const core_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub(), "core" });
+            if (std.mem.eql(u8, core_dir, path)) named = true;
+        }
+        if (!named) return false;
+        const stat = Io.Dir.cwd().statFile(testing.io, path, .{}) catch return false;
+        return stat.kind == .directory;
+    }
+
+    /// Report mode, after `kind`'s walk: every `v2-green.txt` line and every
+    /// single-fixture `v2-expected.md` entry that sits in one of this kind's
+    /// directories must be among the fixtures the walk collected — so a line
+    /// can only ever name something the ratchet actually runs.
+    fn expectVisited(cfg: *const Config, arena: std.mem.Allocator, kind: Kind, visited: []const []const u8) !bool {
+        const dirs = try cfg.fixtureDirs(arena, kind);
+        var ok = true;
+        const lists = [_]struct { name: []const u8, paths: []const []const u8 }{
+            .{ .name = "v2-green.txt", .paths = cfg.v2_green },
+            .{ .name = "v2-expected.md", .paths = cfg.v2_expected },
+        };
+        for (lists) |list| for (list.paths) |path| {
+            if (std.mem.endsWith(u8, path, "/")) continue;
+            const parent = std.fs.path.dirname(path) orelse continue;
+            var mine = false;
+            for (dirs) |dir| {
+                if (std.mem.eql(u8, dir, parent)) mine = true;
+            }
+            if (!mine) continue;
+            var seen = false;
+            for (visited) |v| {
+                if (std.mem.eql(u8, v, std.mem.trimEnd(u8, path, "/"))) seen = true;
+            }
+            if (!seen) {
+                std.debug.print("REPORT  STALE  {s}/{s} lists {s}, which the walk of {s} never ran\n", .{ pending_root, list.name, path, kind.sub() });
+                ok = false;
+            }
+        };
+        return ok;
     }
 
     /// The signature `RED` records for `repo_path` under the checker under
@@ -491,6 +626,11 @@ const Config = struct {
     /// (R11) that is `v1`, reached by leaving `BENI_CHECKER` unset.
     fn isDefaultChecker(cfg: *const Config) bool {
         return cfg.checker == null;
+    }
+
+    fn isGreenUnderV2(cfg: *const Config, repo_path: []const u8) bool {
+        for (cfg.v2_green) |p| if (std.mem.eql(u8, p, std.mem.trimEnd(u8, repo_path, "/"))) return true;
+        return false;
     }
 
     fn isClaimed(cfg: *const Config, repo_path: []const u8) bool {
@@ -648,6 +788,30 @@ fn summarize(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
         if (std.mem.indexOf(u8, line, "Error") != null and std.mem.indexOf(u8, line, "    at ") == null) return line;
     }
     return trimmed[0 .. std.mem.indexOfScalar(u8, trimmed, '\n') orelse trimmed.len];
+}
+
+/// The first diagnostic's message, first line only: what a report-mode FAIL
+/// line adds to `summarize`'s codes, so a failed build says WHY without a
+/// re-run by hand (R4a review, N1). Empty when there is none.
+fn messageHead(arena: std.mem.Allocator, stderr: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, stderr, " \r\n");
+    if (trimmed.len != 0 and trimmed[0] == '[') {
+        if (std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, arena, trimmed, .{})) |diags| {
+            if (diags.len == 0) return "";
+            const m = diags[0].message;
+            return m[0 .. std.mem.indexOfScalar(u8, m, '\n') orelse m.len];
+        } else |_| {}
+    }
+    // The rendered form: the first non-blank line after the first header.
+    var lines = std.mem.splitScalar(u8, trimmed, '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "-- ")) continue;
+        while (lines.next()) |next| {
+            const t = std.mem.trim(u8, next, " \r");
+            if (t.len != 0) return t;
+        }
+    }
+    return "";
 }
 
 /// A stream on one line: newlines as ` | `, capped.
@@ -1158,6 +1322,7 @@ const Case = struct {
                     "{s}: a build/bad-release fixture must build CLEAN without --release; it exited {d}\n--- stderr ---\n{s}\n",
                     .{ c.fixture.name, ok.exit_code, ok.stderr },
                 );
+                because("the build without --release exited {d}: {s}: {s}", .{ ok.exit_code, summarize(c.arena, ok.stderr), messageHead(c.arena, ok.stderr) });
                 return error.DevBuildFailed;
             }
         }
@@ -1319,7 +1484,7 @@ const Case = struct {
         const built = try c.inProject(args);
         if (built.exit_code != 0) {
             detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
-            because("[{s}] build exit {d}: {s}", .{ out_dir, built.exit_code, summarize(c.arena, built.stderr) });
+            because("[{s}] build exit {d}: {s}: {s}", .{ out_dir, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
             return error.BuildFailed;
         }
@@ -1410,6 +1575,7 @@ const Case = struct {
         const built = try c.inProject(args.items);
         if (built.exit_code != 0) {
             detail("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
+            because("build exit {d}: {s}: {s}", .{ built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
             return error.BuildFailed;
         }
         if (built.stderr.len != 0) {
@@ -1753,7 +1919,7 @@ fn sortImports(arena: std.mem.Allocator, dump: []const u8) ![]const u8 {
 fn expectExit(expected: u8, r: world.Result) !void {
     if (r.exit_code != expected) {
         detail("expected exit {d}, got {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ expected, r.exit_code, r.stdout, r.stderr });
-        because("exit {d}, expected {d}: {s}", .{ r.exit_code, expected, summarize(scratch.allocator(), r.stderr) });
+        because("exit {d}, expected {d}: {s}: {s}", .{ r.exit_code, expected, summarize(scratch.allocator(), r.stderr), messageHead(scratch.allocator(), r.stderr) });
         classify("{s}", .{failSignature(scratch.allocator(), r)});
         return error.UnexpectedExitCode;
     }

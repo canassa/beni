@@ -673,6 +673,61 @@ pub const pending = struct {
         return out.items;
     }
 
+    /// `<root>/v2-green.txt` (`plans/checker-rewrite.md` §2.4, S12): the
+    /// corpus fixtures a landed slice made green under `--checker=v2`, one
+    /// repo-relative path per line; `#` lines and blank lines are ignored.
+    /// `test-v2`'s ratchet fails when one of them is red.
+    pub fn readV2Green(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
+        var out: std.ArrayList([]const u8) = .empty;
+        var it = try lines(arena, io, root, "v2-green.txt");
+        while (it.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (line.len == 0 or line[0] == '#') continue;
+            const path = std.mem.trimEnd(u8, line, "/");
+            for (out.items) |seen| if (std.mem.eql(u8, seen, path)) {
+                std.debug.print("{s}/v2-green.txt lists {s} twice\n", .{ root, path });
+                return error.DuplicateGreen;
+            };
+            try out.append(arena, path);
+        }
+        return out.items;
+    }
+
+    /// `<root>/v2-expected.md` (`plans/checker-rewrite.md` §2.4,
+    /// `checker-v2.md` §22.1): the corpus fixtures `test-v2` skips. Every
+    /// list item whose text starts with a back-quoted path — "- `<path>` …"
+    /// — is an entry; a path ending in `/` names every fixture under that
+    /// directory. Everything else in the file is prose.
+    pub fn readV2Expected(arena: Allocator, io: Io, root: []const u8) ![]const []const u8 {
+        var out: std.ArrayList([]const u8) = .empty;
+        var it = try lines(arena, io, root, "v2-expected.md");
+        while (it.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (!std.mem.startsWith(u8, line, "- `")) continue;
+            const rest = line["- `".len..];
+            const end = std.mem.indexOfScalar(u8, rest, '`') orelse return error.BadExpectedLine;
+            const path = rest[0..end];
+            if (path.len == 0) return error.BadExpectedLine;
+            for (out.items) |seen| if (std.mem.eql(u8, seen, path)) {
+                std.debug.print("{s}/v2-expected.md lists {s} twice\n", .{ root, path });
+                return error.DuplicateExpected;
+            };
+            try out.append(arena, path);
+        }
+        return out.items;
+    }
+
+    /// Whether `v2-expected.md`'s `entries` cover the fixture at `path`: the
+    /// same path, or a directory entry (ending in `/`) above it.
+    pub fn expectedCovers(entries: []const []const u8, path: []const u8) bool {
+        for (entries) |entry| {
+            if (std.mem.endsWith(u8, entry, "/")) {
+                if (std.mem.startsWith(u8, path, entry)) return true;
+            } else if (std.mem.eql(u8, entry, std.mem.trimEnd(u8, path, "/"))) return true;
+        }
+        return false;
+    }
+
     fn lines(arena: Allocator, io: Io, root: []const u8, name: []const u8) !std.mem.SplitIterator(u8, .scalar) {
         const path = try std.fs.path.join(arena, &.{ root, name });
         const text = Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(max_stream_bytes)) catch |err| switch (err) {

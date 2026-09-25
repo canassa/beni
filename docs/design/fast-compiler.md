@@ -1115,6 +1115,11 @@ import_count: u32
     digest: [16]u8              the import's dependency digest, below
 ```
 
+*Amended by R4a (2026-09-25, `checker-v2.md` §14.3, S22):* `key_version` 3. The compiler-identity
+component gains the checker id right after the build id — `checker_len: u32, checker`, the text `v1`
+or `v2` of the hidden `--checker` flag — in every module's key, core's included, so an entry one
+checker wrote is never read by the other. R12 removes the term with the flag.
+
 **`core_surface` is `core_epoch` with its term changed and nothing else.** `core_epoch` hashed core's
 KEYS, so a comment in `core/Dict.beni` under `--core-root` moved every module in the project.
 Hashing core's `(interface hash, digest)` pairs instead costs the same one term and gives the
