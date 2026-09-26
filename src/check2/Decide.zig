@@ -24,6 +24,7 @@ const Solve = @import("Solve.zig");
 const Walk = @import("Walk.zig");
 const Evidence = @import("Evidence.zig");
 const Resolve = @import("Resolve.zig");
+const Recursion = @import("Recursion.zig");
 
 const Var = TypeStore.Var;
 const Error = Solve.Error;
@@ -59,6 +60,9 @@ fn attach(s: *Solve, id: Id) Error!void {
         flags.obls = try s.obligations.with(gpa, flags.obls, id, slot == row.owner());
         st.setContent(root, .{ .flex = flags });
     }
+    // D14 (§10.7) first, so the `?` list the row joins is its lowered
+    // target's.
+    if (s.recursive_frames != 0) try Recursion.row(s, id);
     const rank = try lowerDependants(s, row);
     if (row.kind == .@"try") {
         const at = if (rank == TypeStore.generalized) s.frames.items.len else rank;
@@ -75,8 +79,11 @@ fn lowerDependants(s: *Solve, row: Row) Error!u32 {
     return rank;
 }
 
-/// Decide every readied obligation, in `seq` order (§9.1). Deciding can
-/// ready more; they are decided in the next round of the same loop.
+/// Decide every readied item of queue `q` — a top-level-kind frame's (§9.1:
+/// a frame drains only its own) — in `seq` order. Deciding can ready more;
+/// they are decided in the next round of the same loop. Nothing here holds
+/// a pointer into `s.queues` across a decision: a resolution may nest a
+/// group (§10.2), which pushes a queue of its own.
 ///
 /// An `equatable` row decides nothing another row reads — its walk only
 /// flags variables, and a flag matters to nothing before quantification —
@@ -84,14 +91,18 @@ fn lowerDependants(s: *Solve, row: Row) Error!u32 {
 /// aside, and the boundary's step 1 walks it over the type as it then
 /// stands: the message shows `number -> number` where an early walk showed
 /// `a -> b` (§11.4 *As built by R5*).
-pub fn drain(s: *Solve, boundary: bool) Error!void {
+pub fn drain(s: *Solve, q: u32, boundary: bool) Error!void {
     const gpa = s.cx.gpa;
+    // The current frame's queue, whose `ready` list `Solve` holds (and
+    // swaps back in after any frame a decision pushes).
+    std.debug.assert(q == s.ready_queue);
     var batch: std.ArrayList(u32) = .empty;
     defer batch.deinit(gpa);
     while (true) {
+        const deferred = &s.queues.items[q].deferred;
         if (boundary and s.ready.items.len == 0) {
-            try s.ready.appendSlice(gpa, s.deferred.items);
-            s.deferred.clearRetainingCapacity();
+            try s.ready.appendSlice(gpa, deferred.items);
+            deferred.clearRetainingCapacity();
         }
         if (s.ready.items.len == 0) break;
         batch.clearRetainingCapacity();
@@ -108,7 +119,7 @@ pub fn drain(s: *Solve, boundary: bool) Error!void {
             const row = s.obligations.rowPtr(id);
             if (row.state != .ready) continue;
             if (!boundary and row.kind == .equatable) {
-                try s.deferred.append(gpa, raw);
+                try s.queues.items[q].deferred.append(gpa, raw);
                 continue;
             }
             row.state = .done;
@@ -129,6 +140,7 @@ fn seqLessThan(s: *const Solve, a: u32, b: u32) bool {
 /// Decide `id`, whose state the caller has made `done`. `default` is §8.1
 /// step 3's: a `try` whose sides are both still variables is a `Result`.
 fn decide(s: *Solve, id: Id, default: bool) Error!void {
+    if (s.recursive_frames != 0) try Recursion.row(s, id);
     const row = s.obligations.row(id);
     switch (row.kind) {
         .tuple_index => try tupleIndex(s, id, row),
@@ -304,7 +316,7 @@ pub fn defaults(s: *Solve, rank: u32) Error!bool {
     f.tries = .empty;
     defer list.deinit(gpa);
     var applied_any = false;
-    for (list.items) |raw| {
+    for (list.items, 0..) |raw, i| {
         const id: Id = @enumFromInt(raw);
         const row = s.obligations.row(id);
         if (row.state != .open) continue;
@@ -318,9 +330,16 @@ pub fn defaults(s: *Solve, rank: u32) Error!bool {
         applied_any = true;
         // A default can ready a wanted whose resolution decides another
         // `?` (R6a, N9): drained before the next default is applied.
-        if (s.ready.items.len != 0) try drain(s, false);
+        if (s.readied()) try drain(s, s.frame().queue, false);
+        // The default's consequence demanded a group that merged this
+        // frame into one below (§10.4, §10.8): a merged frame applies no
+        // more defaults, and hands the rest down to its root.
+        if (s.frames.items[rank - 1].merged) {
+            try s.frames.items[rank - 1].tries.appendSlice(gpa, list.items[i + 1 ..]);
+            return true;
+        }
     }
-    return applied_any or s.ready.items.len != 0;
+    return applied_any or s.readied();
 }
 
 /// §8.1 step 7: the obligations still open on a variable step 5 quantified.

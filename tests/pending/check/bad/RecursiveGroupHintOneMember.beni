@@ -1,0 +1,35 @@
+-- CK-72: D14's hint names the member that produced the refused use's value
+-- from the program alone (checker-v2.md §10.7 R7-2, §10.8), so it is the
+-- same in every declaration order. `hh "s"` is refused: `hh`'s body calls
+-- `mb`, a member of the recursive group `ma`/`mb`/`mc`, so `hh` is
+-- monomorphic. The hint names `mb`, the member `hh` calls. R7's first cut
+-- named `ma` in the orders that write `ma` before `mb` before `mc` (this
+-- one) and `mb` in the others (R7's adversarial review, F2): it read which
+-- lowered item met the mismatch, and which items were group-level then
+-- depended on the order. The hint is now read from the refused call's
+-- callee, and written when the class is final.
+type K
+    = K Int
+
+
+pub ma (K n) x =
+    let
+        _ =
+            (K n).mc x
+    in
+    (K n).mb x
+
+
+pub mb (K n) x =
+    (K n).ma x
+
+
+pub mc (K n) x =
+    let
+        hh z =
+            ( z, (K 0).mb z )
+
+        ( ha, hb ) =
+            ( hh 1, hh "s" )
+    in
+    x

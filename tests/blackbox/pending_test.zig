@@ -89,6 +89,7 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     .{ .name = "scenario/CK-88", .step = .perf },
     .{ .name = "scenario/PERM", .step = .fast },
     .{ .name = "scenario/NEST-OVER", .step = .fast },
+    .{ .name = "scenario/NEST-DEEP", .step = .fast },
     .{ .name = "scenario/CK-82", .step = .fast },
 };
 
@@ -269,72 +270,533 @@ fn nestedPair(arena: std.mem.Allocator, depth: usize) ![]const u8 {
 }
 
 // R7's permutation scenario (plans/checker-rewrite.md §2.5, R7's exit
-// criteria), started by R0 with its first program so the hook exists: every
-// order of the top-level declarations must build, exit 0 and print the
-// oracle twin's output. Merely checking that every order prints the same
-// thing would pass if every order failed the same way (S13). The first
-// program is CK-64's (`OwnMethodValuePrefix`), whose twin is the corpus
-// guard `run/OwnMethodValuePrefixOrdered.beni`; R7 adds the rest of its list
-// (`o1`, `row75`, `box`, `m1b`, `p5`, CK-63 to CK-66, the §6 guards, round
-// 3's programs, the 3-cycle, and round 4's `evA`/`evB` and `subA`/`subB`
-// (CK-76, the same single diagnostic in every order); R8a adds `cbA`/`cbB`
-// (CK-77, the same `type_mismatch`) and `xm`/`xm2` (the guard
-// `DerivedCrossMethodCycle`, the same refusal). On 7427828 the orders that
-// write `use` before
-// `eq` are METHOD NEEDS AN ANNOTATION.
-// OWED BY R7: the cap of 120 in lexicographic order never moves the first
-// declarations (`type T` stays first), which is enough for this program but
-// not for R7's larger ones — sample across the whole permutation space.
-test "PERM: every declaration order of an own-method program prints the twin's output" {
+// criteria; checker-v2.md I9, §10.5): for every program below, every order of
+// its top-level declarations — all of them up to 120, else 120 orders spread
+// evenly over the whole permutation space by rank (the first and the
+// reversed order among them) — must do what the program's oracle twin says:
+//
+//   - `prints`: build, exit 0 and print the twin's output (S13: "every
+//     order prints the same" would pass if every order failed alike);
+//   - `checks`: `check` exits 0;
+//   - `refused`: exactly one diagnostic, of the code named, byte-identical
+//     in every order — the same message, and the same source text under its
+//     span (CK-70, CK-72, CK-76: D14's and §10.6's refusals with their hints).
+//
+// For `prints` and `checks`, `dump --stage=types` must also be the same in
+// the written order, the reversed one and four orders between (each
+// declaration's block, whatever its position): a group nested at its first
+// demand, however deep, gets the types it gets written first (the reviewer
+// focus "a nested check started two `let`s deep").
+//
+// The orders of one single-file program are packed into one build: each is a
+// module `PermPxK` whose `main` became `pub lines : List String`, and a
+// `Main` prints every module's lines in order, so one build and one run
+// check them all (a failing order is named by the file its diagnostic is
+// in). A project's module is permuted one build per order.
+//
+// R8a adds `cbA`/`cbB` (CK-77, the same `type_mismatch`) and `xm`/`xm2` (the
+// guard `DerivedCrossMethodCycle`, the same refusal). On 8016030 v1 refuses
+// every program that uses an own method above its definition with METHOD
+// NEEDS AN ANNOTATION.
+const perm_programs = [_]PermProgram{
+    // Round 1: disp's `o1`, orch's `row75`, adv's `box` (CK-36).
+    .{ .name = "o1", .path = "tests/pending/run/OwnMethodBeforeDefinition", .module = "O1.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodBeforeDefinition/_expected.expected" } },
+    .{ .name = "row75", .path = "tests/pending/run/OwnMethodBeforeDefinition", .module = "Row75.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodBeforeDefinition/_expected.expected" } },
+    .{ .name = "box", .path = "tests/pending/run/OwnMethodBeforeDefinition", .module = "Box.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodBeforeDefinition/_expected.expected" } },
+    // CK-30's `m1b` and its seven siblings, CK-30's miscount, CK-31's `p5`.
+    .{ .name = "m1b", .path = "tests/pending/run/RecursionWithComparison.beni", .expect = .{ .prints = "tests/pending/run/RecursionWithComparison.expected" } },
+    .{ .name = "dead", .path = "tests/pending/run/DeadMiscount.beni", .expect = .{ .prints = "tests/pending/run/DeadMiscount.expected" } },
+    .{ .name = "p5", .path = "tests/pending/run/MutualGroupEvidenceOrder.beni", .expect = .{ .prints = "tests/pending/run/MutualGroupEvidenceOrder.expected" } },
+    // CK-63 to CK-66.
+    .{ .name = "ck63", .path = "tests/pending/run/OwnMethodDemandedEarly.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodDemandedEarly.expected" } },
+    .{ .name = "twolets", .path = "tests/pending/run/OwnMethodDemandedTwoLetsDeep.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodDemandedTwoLetsDeep.expected" } },
+    .{ .name = "ck64", .path = "tests/pending/run/OwnMethodValuePrefix.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodValuePrefix.expected" } },
+    .{ .name = "ck65", .path = "tests/pending/run/MutualDispatchMethods.beni", .expect = .{ .prints = "tests/pending/run/MutualDispatchMethods.expected" } },
+    .{ .name = "ck66", .path = "tests/pending/run/GroupVariableOutsideCaller.beni", .expect = .{ .prints = "tests/pending/run/GroupVariableOutsideCaller.expected" } },
+    // Merges of three and four methods, and a member that demands its
+    // cycle at two nodes (§23 items 1 and 8).
+    .{ .name = "three", .path = "tests/pending/run/OwnMethodThreeCycle.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodThreeCycle.expected" } },
+    .{ .name = "four", .path = "tests/pending/run/OwnMethodFourCycle.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodFourCycle.expected" } },
+    .{ .name = "twice", .path = "tests/pending/run/OwnMethodCycleDemandedTwice.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodCycleDemandedTwice.expected" } },
+    .{ .name = "value-back-edge", .path = "tests/pending/run/OwnMethodValueBackEdge.beni", .expect = .{ .prints = "tests/pending/run/OwnMethodValueBackEdge.expected" } },
+    .{ .name = "nest-after-default", .path = "tests/pending/check/good/NestAfterDefault.beni", .expect = .checks },
+    // The §6 guards.
+    .{ .name = "annotated-or-first", .path = "tests/corpus/run/OwnMethodAnnotatedOrFirst.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodAnnotatedOrFirst.expected" } },
+    .{ .name = "value-prefix", .path = "tests/corpus/run/OwnMethodValuePrefixOrdered.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodValuePrefixOrdered.expected" } },
+    .{ .name = "in-scrutinee", .path = "tests/corpus/run/OwnMethodInScrutineeOrdered.beni", .expect = .{ .prints = "tests/corpus/run/OwnMethodInScrutineeOrdered.expected" } },
+    // Round 3: `rq1`, `rq2` (CK-73 and its guard), `capt`, the annotated
+    // `sccA`/`sccB`; and CK-73's merge variant, whose nested group must not
+    // drain its demander's queue.
+    .{ .name = "rq1", .path = "tests/pending/run/ScrutineeMethodLater.beni", .expect = .{ .prints = "tests/pending/run/ScrutineeMethodLater.expected" } },
+    .{ .name = "rq2", .path = "tests/corpus/run/ScrutineeMethodFirst.beni", .expect = .{ .prints = "tests/corpus/run/ScrutineeMethodFirst.expected" } },
+    .{ .name = "capt", .path = "tests/corpus/run/SingleMemberGroupReceiver.beni", .expect = .{ .prints = "tests/corpus/run/SingleMemberGroupReceiver.expected" } },
+    .{ .name = "scc-annotated", .path = "tests/corpus/run/RecursiveGroupAnnotatedReceiver.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveGroupAnnotatedReceiver.expected" } },
+    .{ .name = "rq1-merge", .path = "tests/pending/check/good/ScrutineeMethodMergeVariant/Later.beni", .expect = .checks },
+    // An annotated member of a dispatch cycle instantiates (§6.6).
+    .{ .name = "ck70-annotated", .path = "tests/corpus/run/RecursiveDispatchAnnotated.beni", .expect = .{ .prints = "tests/corpus/run/RecursiveDispatchAnnotated.expected" } },
+    // The refusals: one diagnostic, the same in every order.
+    .{ .name = "ck70", .path = "tests/pending/check/bad/RecursiveDispatchTwoTypes.beni", .expect = .{ .refused = .type_mismatch } },
+    .{ .name = "ck72", .path = "tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "evA", .path = "tests/pending/check/bad/RecursiveGroupEvidenceReceiver/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "subA", .path = "tests/pending/check/bad/RecursiveGroupSubWanted/FirstF.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "rq1-d14", .path = "tests/pending/check/bad/ScrutineeMethodMergeD14/Later.beni", .expect = .{ .refused = .kind_mismatch } },
+    // R7's reviews: a dot-call's field-or-method choice (CK-105), D14's
+    // hint naming one member or the final class and none for rule (a), a
+    // merge during the root's boundary, and a refusal whose message shows
+    // a type mid-solve (the same code and region in every order).
+    .{ .name = "rec1", .path = "tests/pending/run/FieldCallThroughMember.beni", .expect = .{ .prints = "tests/pending/run/FieldCallThroughMember.expected" } },
+    .{ .name = "rec1c", .path = "tests/pending/run/FieldCallThroughMemberCycle.beni", .expect = .{ .prints = "tests/pending/run/FieldCallThroughMemberCycle.expected" } },
+    .{ .name = "rec2", .path = "tests/pending/run/FieldCallThroughValueRecursion.beni", .expect = .{ .prints = "tests/pending/run/FieldCallThroughValueRecursion.expected" } },
+    .{ .name = "rec1v", .path = "tests/pending/run/FieldCallThroughValueDemand.beni", .expect = .{ .prints = "tests/pending/run/FieldCallThroughValueDemand.expected" } },
+    .{ .name = "deferred-field", .path = "tests/pending/run/DeferredReceiverFieldCall.beni", .expect = .{ .prints = "tests/pending/run/DeferredReceiverFieldCall.expected" } },
+    .{ .name = "t104", .path = "tests/pending/check/bad/RecursiveGroupFieldCallTwoTypes.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "t102", .path = "tests/pending/check/bad/RecursiveGroupRefusalRendering.beni", .expect = .{ .refused_region = .not_equatable } },
+    .{ .name = "hint2", .path = "tests/pending/check/bad/RecursiveGroupHintOneMember.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "hint1", .path = "tests/pending/check/bad/RecursiveGroupHintAllMembers.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "p3n", .path = "tests/pending/check/bad/RuleAMonomorphicNoRecursionHint.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "merge-at-boundary", .path = "tests/pending/run/MergeAtBoundary", .module = "Main.beni", .expect = .{ .prints = "tests/pending/run/MergeAtBoundary/_expected.expected" } },
+    // R7's round-2 review: a dot-call joined with a scheme's requirement (X1),
+    // both halves of the rule (S2), a `number` receiver's method in a group
+    // (CK-106).
+    // Its message renders the record as it stood when met (§10.8, I9's scope).
+    .{ .name = "joined-in-group", .path = "tests/pending/check/bad/DeferredReceiverJoinedInGroup.beni", .expect = .{ .refused_region = .no_methods_on_shape } },
+    .{ .name = "joined-p-first", .path = "tests/pending/check/bad/DeferredReceiverJoinedRequirement/PFirst.beni", .expect = .{ .refused = .no_methods_on_shape } },
+    .{ .name = "joined-q-first", .path = "tests/pending/check/bad/DeferredReceiverJoinedRequirement/QFirst.beni", .expect = .{ .refused = .no_methods_on_shape } },
+    .{ .name = "generalised", .path = "tests/corpus/check/bad/DeferredReceiverGeneralised.beni", .expect = .{ .refused = .no_methods_on_shape } },
+    .{ .name = "recursive-twin", .path = "tests/pending/run/DeferredReceiverRecursiveTwin.beni", .expect = .{ .prints = "tests/pending/run/DeferredReceiverRecursiveTwin.expected" } },
+    .{ .name = "ck106", .path = "tests/pending/check/bad/NumberReceiverMethodInGroup.beni", .expect = .{ .refused = .unknown_method } },
+    .{ .name = "ck106-dispatch", .path = "tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni", .expect = .{ .refused = .unknown_method } },
+};
+
+test "PERM: every declaration order of an own-method program does what its twin says" {
     var s = try Scenario.init("PERM");
     defer s.deinit();
-    const verdict = try s.permutations(
-        "import Node exposing (Program)\n\n\n",
-        &.{
-            "type T\n    = T Int\n",
-            "use a b =\n    T a == T b\n",
-            "eq (T x) (T y) =\n    helper x y\n",
-            "helper x y =\n    modBy x 10 == modBy y 10\n",
-            "show : Bool -> String\nshow value =\n    if value then\n        \"True\"\n\n    else\n        \"False\"\n",
-            "main : Program\nmain =\n    Node.printLines [ show (use 1 11), show (use 1 2) ]\n",
-        },
-        "True\nFalse\n",
-        120,
-    );
-    try s.finish(verdict);
+    var orders: usize = 0;
+    for (perm_programs, 0..) |p, i| {
+        const outcome = try permuteProgram(&s, p, i);
+        switch (outcome) {
+            .orders => |n| orders += n,
+            .red => |v| return s.finish(v),
+        }
+    }
+    try s.finish(.{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{d} programs, {d} orders", .{ perm_programs.len, orders }) });
 }
 
-// R7's nesting scenarios (S-3, S-4), started by R0 as stubs that are red on
-// 7427828: a chain of own methods `m0 … mn` on one type, each calling the
-// next, written in REVERSE dependency order (`m0`, which needs `m1`, first).
-// Below the nesting budget it must check in linear time; above it, it must
-// report exactly one `nesting_too_deep` and neither crash nor hang. `n` and
-// the budget are R7's to calibrate (`nest_cost`, recorded in the diary);
-// the stub's 200 and 20 000 are placeholders that 7427828 refuses with
-// METHOD NEEDS AN ANNOTATION either way. OWED BY R7: at 200/400 a fixed
-// build takes milliseconds, startup dominates and the ratio reads near 1, so
-// a quadratic regression would pass; R7 must size n so the fixed build takes
-// at least 0.5 s (§2.5), as CK-40 to CK-42 were sized.
-// Round 4 (plans/checker-rewrite.md §5.6) adds a PAIR of deep declarations
-// for R7: a method about 2 500 levels deep, used about 2 500 levels deep in
-// another declaration — in the order that nests, exactly one
-// `nesting_too_deep` at the use, with the hint, and never a crash; in the
-// other order it checks (checker-v2.md §10.2, R7-3).
+const PermProgram = struct {
+    name: []const u8,
+    /// A single-file fixture, or a project directory with `module` the file
+    /// whose declarations are permuted.
+    path: []const u8,
+    module: ?[]const u8 = null,
+    expect: union(enum) {
+        /// The oracle twin's stdout, as a file.
+        prints: []const u8,
+        checks,
+        refused: @import("diagnostic").Code,
+        /// One diagnostic of this code at the same source text in every
+        /// order; its message may show a type as it stood when the refusal
+        /// was found (checker-v2.md §10.8, I9's scope).
+        refused_region: @import("diagnostic").Code,
+    },
+};
+
+/// Most orders tried per program.
+const perm_cap = 120;
+
+/// A source file split at its top-level declarations: the `import` lines, and
+/// each declaration with its annotation. Top-level comments are dropped.
+const Split = struct { imports: []const u8, decls: []const []const u8 };
+
+fn splitDecls(arena: std.mem.Allocator, text: []const u8) !Split {
+    var imports: std.ArrayList(u8) = .empty;
+    var decls: std.ArrayList([]const u8) = .empty;
+    var current: std.ArrayList(u8) = .empty;
+    // The name the current declaration's annotation names, while its
+    // definition has not started.
+    var annotated: ?[]const u8 = null;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (line.len == 0 or line[0] == ' ') {
+            if (current.items.len != 0) {
+                try current.appendSlice(arena, line);
+                try current.append(arena, '\n');
+            }
+            continue;
+        }
+        if (std.mem.startsWith(u8, line, "--")) continue;
+        if (std.mem.startsWith(u8, line, "import ")) {
+            try imports.appendSlice(arena, line);
+            try imports.append(arena, '\n');
+            continue;
+        }
+        const rest = if (std.mem.startsWith(u8, line, "pub ")) line[4..] else line;
+        const name = rest[0 .. std.mem.indexOfAny(u8, rest, " (=:") orelse rest.len];
+        const is_annotation = std.mem.startsWith(u8, rest[name.len..], " : ");
+        const joins = !is_annotation and annotated != null and std.mem.eql(u8, annotated.?, name);
+        if (!joins and current.items.len != 0) {
+            try decls.append(arena, std.mem.trimEnd(u8, current.items, "\n"));
+            current = .empty;
+        }
+        annotated = if (is_annotation) name else null;
+        try current.appendSlice(arena, line);
+        try current.append(arena, '\n');
+    }
+    if (current.items.len != 0) try decls.append(arena, std.mem.trimEnd(u8, current.items, "\n"));
+    return .{ .imports = imports.items, .decls = decls.items };
+}
+
+/// `main : Program` / `main = Node.printLines X` made `pub lines : List
+/// String` / `lines = X`, so a packing `Main` can print it.
+fn asLines(arena: std.mem.Allocator, decl: []const u8) ![]const u8 {
+    if (!std.mem.startsWith(u8, decl, "main ")) return decl;
+    const a = try std.mem.replaceOwned(u8, arena, decl, "main : Program", "pub lines : List String");
+    const b = try std.mem.replaceOwned(u8, arena, a, "\nmain =", "\nlines =");
+    return std.mem.replaceOwned(u8, arena, b, "Node.printLines", "");
+}
+
+/// n!, saturating.
+fn factorial(n: usize) u128 {
+    var f: u128 = 1;
+    var i: usize = 2;
+    while (i <= n) : (i += 1) f = std.math.mul(u128, f, i) catch return std.math.maxInt(u128);
+    return f;
+}
+
+/// The permutation of `0..out.len` of lexicographic rank `rank`.
+fn permutationAt(out: []usize, rank: u128) void {
+    var pool: [32]usize = undefined;
+    for (0..out.len) |i| pool[i] = i;
+    var left = out.len;
+    var r = rank;
+    for (out) |*slot| {
+        const f = factorial(left - 1);
+        const d: usize = @intCast(r / f);
+        r %= f;
+        slot.* = pool[d];
+        std.mem.copyForwards(usize, pool[d .. left - 1], pool[d + 1 .. left]);
+        left -= 1;
+    }
+}
+
+/// The orders tried for `n` declarations: every one when there are at most
+/// `perm_cap`, else `perm_cap` ranks spread evenly from the first to the last
+/// (the reversed order).
+fn orderRanks(arena: std.mem.Allocator, n: usize) ![]const u128 {
+    const total = factorial(n);
+    const count: usize = if (total <= perm_cap) @intCast(total) else perm_cap;
+    const ranks = try arena.alloc(u128, count);
+    for (ranks, 0..) |*r, k| r.* = if (count == 1) 0 else if (total <= perm_cap) k else (total - 1) * k / (count - 1);
+    return ranks;
+}
+
+const PermOutcome = union(enum) { orders: usize, red: Verdict };
+
+fn readRepo(arena: std.mem.Allocator, path: []const u8) ![]const u8 {
+    return Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+}
+
+/// Program `p`'s orders, tried (`perm_programs`' comment); `index` names its
+/// modules.
+fn permuteProgram(s: *Scenario, p: PermProgram, index: usize) !PermOutcome {
+    const a = s.arena();
+    const source_path = if (p.module) |m| try std.fs.path.join(a, &.{ p.path, m }) else p.path;
+    const split = try splitDecls(a, try readRepo(a, source_path));
+    const ranks = try orderRanks(a, split.decls.len);
+    const order = try a.alloc(usize, split.decls.len);
+    const files = try a.alloc([]const u8, ranks.len);
+    const texts = try a.alloc([]const u8, ranks.len);
+    const orders = try a.alloc([]const usize, ranks.len);
+    for (ranks, files, texts, orders, 0..) |rank, *file, *text, *o, k| {
+        permutationAt(order, rank);
+        o.* = try a.dupe(usize, order);
+        var out: std.ArrayList(u8) = .empty;
+        try out.appendSlice(a, split.imports);
+        for (order) |d| {
+            try out.appendSlice(a, "\n\n");
+            try out.appendSlice(a, if (p.module == null and p.expect == .prints) try asLines(a, split.decls[d]) else split.decls[d]);
+            try out.append(a, '\n');
+        }
+        text.* = out.items;
+        file.* = if (p.module) |m| m else try std.fmt.allocPrint(a, "Perm{d}x{d}.beni", .{ index, k });
+    }
+    const red = if (p.module) |module|
+        try permuteProject(s, p, module, files, texts, orders)
+    else switch (p.expect) {
+        .prints => |twin| try permutePrints(s, p, index, twin, files, texts, orders),
+        .checks => try permuteChecks(s, p, files, texts, orders),
+        .refused => |code| try permuteRefused(s, p, code, true, files, texts, orders),
+        .refused_region => |code| try permuteRefused(s, p, code, false, files, texts, orders),
+    };
+    if (red) |v| return .{ .red = v };
+    return .{ .orders = ranks.len };
+}
+
+fn redAt(s: *Scenario, p: PermProgram, order: []const usize, v: Verdict, total: usize) !Verdict {
+    return .{ .green = false, .signature = v.signature, .detail = try std.fmt.allocPrint(s.arena(), "{s} (of {d} orders), order {any}: {s}", .{ p.name, total, order, v.detail[0..@min(v.detail.len, 600)] }) };
+}
+
+/// The order whose module a build's first diagnostic is in.
+fn failingOrder(built: world.Result, files: []const []const u8) usize {
+    var best: usize = 0;
+    var at: usize = std.math.maxInt(usize);
+    for (files, 0..) |f, k| {
+        const pos = std.mem.indexOf(u8, built.stderr, f) orelse continue;
+        if (pos < at) {
+            at = pos;
+            best = k;
+        }
+    }
+    return best;
+}
+
+/// Every order of a single-file program in one build: `PermMain<i>` prints
+/// each order's `lines`, so the run must print the twin's output once per
+/// order.
+fn permutePrints(s: *Scenario, p: PermProgram, index: usize, twin: []const u8, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
+    const a = s.arena();
+    for (files, texts) |f, t| try s.w.write(f, t);
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Node exposing (Program)\n");
+    for (0..files.len) |k| try main.print(a, "import Perm{d}x{d}\n", .{ index, k });
+    try main.appendSlice(a, "\n\nmain : Program\nmain =\n    Node.printLines\n        (List.concat\n            [ ");
+    for (0..files.len) |k| {
+        if (k != 0) try main.appendSlice(a, "            , ");
+        try main.print(a, "Perm{d}x{d}.lines\n", .{ index, k });
+    }
+    try main.appendSlice(a, "            ]\n        )\n");
+    const entry = try std.fmt.allocPrint(a, "PermMain{d}.beni", .{index});
+    try s.w.write(entry, main.items);
+    const out_dir = try std.fmt.allocPrint(a, "out{d}", .{index});
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", try std.fmt.allocPrint(a, "--out={s}", .{out_dir}), entry });
+    try args.appendSlice(a, files);
+    const built = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
+    if (built.exit_code != 0) {
+        const k = failingOrder(built, files);
+        return try redAt(s, p, orders[k], try s.failed(built), files.len);
+    }
+    const program = try s.w.nodeWith(try std.fmt.allocPrint(a, "{s}/_main.mjs", .{out_dir}), world.bulk_timeout_ms);
+    if (program.exit_code != 0) return try redAt(s, p, orders[0], .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=0 program-exit={d}", .{program.exit_code}), .detail = std.mem.trim(u8, program.stderr[0..@min(program.stderr.len, 160)], " \r\n") }, files.len);
+    const expected = try readRepo(a, twin);
+    for (orders, 0..) |o, k| {
+        const at = k * expected.len;
+        if (program.stdout.len < at + expected.len or !std.mem.eql(u8, program.stdout[at..][0..expected.len], expected)) {
+            return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, files.len);
+        }
+    }
+    if (program.stdout.len != expected.len * files.len) return try redAt(s, p, orders[0], .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, files.len);
+    return try sameTypes(s, p, files, orders);
+}
+
+/// Every order checks, and has the same types.
+fn permuteChecks(s: *Scenario, p: PermProgram, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
+    const a = s.arena();
+    for (files, texts) |f, t| try s.w.write(f, t);
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
+    try args.appendSlice(a, files);
+    const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
+    if (run.exit_code != 0 or std.mem.trim(u8, run.stderr, " \r\n").len != 0) {
+        return try redAt(s, p, orders[failingOrder(run, files)], try s.failed(run), files.len);
+    }
+    return try sameTypes(s, p, files, orders);
+}
+
+/// `dump --stage=types` of the written order, the reversed one and four
+/// between: each declaration's block the same, wherever it is written.
+fn sameTypes(s: *Scenario, p: PermProgram, files: []const []const u8, orders: []const []const usize) !?Verdict {
+    const a = s.arena();
+    const picks = [_]usize{ 0, files.len / 5, 2 * files.len / 5, 3 * files.len / 5, 4 * files.len / 5, files.len - 1 };
+    var first: ?[]const u8 = null;
+    for (picks) |k| {
+        const run = try s.w.runWith(try s.argv(&.{ "dump", "--stage=types", "--platform=node", files[k] }), .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return try redAt(s, p, orders[k], try s.failed(run), files.len);
+        const blocks = try declBlocks(a, run.stdout);
+        if (first) |f| {
+            if (!std.mem.eql(u8, f, blocks)) {
+                var at: usize = 0;
+                while (at < f.len and at < blocks.len and f[at] == blocks[at]) at += 1;
+                const from = std.mem.lastIndexOfScalar(u8, f[0..at], '\n') orelse 0;
+                const detail = try std.mem.replaceOwned(u8, a, try std.fmt.allocPrint(a, "dump --stage=types differs from the written order's: {s} vs {s}", .{ f[from..@min(f.len, from + 90)], blocks[from..@min(blocks.len, from + 90)] }), "\n", " | ");
+                return try redAt(s, p, orders[k], .{ .green = false, .signature = "exit=0 types-differ", .detail = detail }, files.len);
+            }
+        } else first = blocks;
+    }
+    return null;
+}
+
+/// A types dump's declaration blocks, sorted and joined, without its
+/// `module` line.
+fn declBlocks(a: std.mem.Allocator, dump: []const u8) ![]const u8 {
+    var blocks: std.ArrayList([]const u8) = .empty;
+    var current: std.ArrayList(u8) = .empty;
+    var it = std.mem.splitScalar(u8, dump, '\n');
+    while (it.next()) |line| {
+        if (std.mem.startsWith(u8, line, "module ") or std.mem.trim(u8, line, " ").len == 0) continue;
+        if (line.len > 2 and line[0] == ' ' and line[1] == ' ' and line[2] != ' ') {
+            if (current.items.len != 0) try blocks.append(a, current.items);
+            current = .empty;
+        }
+        try current.appendSlice(a, line);
+        try current.append(a, '\n');
+    }
+    if (current.items.len != 0) try blocks.append(a, current.items);
+    std.mem.sort([]const u8, blocks.items, {}, struct {
+        fn lessThan(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.lessThan(u8, x, y);
+        }
+    }.lessThan);
+    var out: std.ArrayList(u8) = .empty;
+    for (blocks.items) |b| try out.appendSlice(a, b);
+    return out.items;
+}
+
+/// Every order refused with one diagnostic of `code`, byte-identical: the
+/// same message, and the same text under its span.
+fn permuteRefused(s: *Scenario, p: PermProgram, code: @import("diagnostic").Code, same_text: bool, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
+    const a = s.arena();
+    for (files, texts) |f, t| try s.w.write(f, t);
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
+    try args.appendSlice(a, files);
+    const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
+    const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
+    const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return try redAt(s, p, orders[0], try s.failed(run), files.len);
+    var reference: ?struct { message: []const u8, text: []const u8 } = null;
+    for (files, texts, orders) |f, t, o| {
+        var mine: ?@import("diagnostic").Diagnostic = null;
+        var n: usize = 0;
+        for (diags) |d| {
+            if (!std.mem.eql(u8, std.fs.path.basename(d.span.file), f)) continue;
+            n += 1;
+            mine = d;
+        }
+        const d = mine orelse return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 codes=none", .detail = "no diagnostic" }, files.len);
+        if (n != 1 or d.code != code) return try redAt(s, p, o, try s.failed(run), files.len);
+        const text = spanText(t, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col);
+        if (reference) |r| {
+            if ((same_text and !std.mem.eql(u8, r.message, d.message)) or !std.mem.eql(u8, r.text, text)) {
+                return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×1 differs", .{code}), .detail = "the diagnostic differs from the written order's" }, files.len);
+            }
+        } else reference = .{ .message = d.message, .text = text };
+    }
+    return null;
+}
+
+/// The source text from `line:col` to `end_line:end_col` (1-based, the end
+/// exclusive).
+fn spanText(text: []const u8, line: usize, col: usize, end_line: usize, end_col: usize) []const u8 {
+    const start = offsetOf(text, line, col) orelse return "";
+    const end = offsetOf(text, end_line, end_col) orelse return "";
+    return if (end >= start) text[start..end] else "";
+}
+
+fn offsetOf(text: []const u8, line: usize, col: usize) ?usize {
+    var at: usize = 0;
+    var l: usize = 1;
+    while (l < line) : (l += 1) at = (std.mem.indexOfScalarPos(u8, text, at, '\n') orelse return null) + 1;
+    return @min(at + col - 1, text.len);
+}
+
+/// A project's module in every order, one build each: the project's other
+/// files as they are.
+fn permuteProject(s: *Scenario, p: PermProgram, module: []const u8, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
+    const a = s.arena();
+    _ = files;
+    const twin = switch (p.expect) {
+        .prints => |t| try readRepo(a, t),
+        else => unreachable,
+    };
+    var dir = try Io.Dir.cwd().openDir(testing.io, p.path, .{ .iterate = true });
+    defer dir.close(testing.io);
+    var sources: std.ArrayList([]const u8) = .empty;
+    try sources.appendSlice(a, &.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out" });
+    var it = dir.iterate();
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        const name = try a.dupe(u8, entry.name);
+        try sources.append(a, name);
+        if (std.mem.eql(u8, name, module)) continue;
+        try s.w.write(name, try readRepo(a, try std.fs.path.join(a, &.{ p.path, name })));
+    }
+    for (texts, orders) |t, o| {
+        try s.w.write(module, t);
+        const built = try s.w.runWith(try s.argv(sources.items), .{ .raw_diagnostics = true });
+        if (built.exit_code != 0) return try redAt(s, p, o, try s.failed(built), texts.len);
+        const program = try s.w.node(world.entry_file);
+        if (program.exit_code != 0 or !std.mem.eql(u8, program.stdout, twin)) {
+            return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, texts.len);
+        }
+    }
+    return null;
+}
+
+// R7's nesting scenarios (S-3, S-4; checker-v2.md §10.2): chains of own
+// methods `m0 … mn` on one type, each calling the next, written in REVERSE
+// dependency order (`m0`, which needs `m1`, first), so checking `m0` nests
+// `m1`, which nests `m2`, and so on. The budget admits a nested check while
+// the solver depth summed over the open groups, plus `nest_cost` (3) per
+// nesting, leaves one declaration's worth (4 200) of the budget (8 400): a
+// chain's link costs 4 depth units and 3, so about 599 nest (calibrated in
+// a Debug build, 2026-09-26: `Groups.nest_cost`'s comment).
+//
+//   - NEST-UNDER (ReleaseFast, timed): 40 chains of 250 and of 500 links,
+//     below the budget, check in linear time, best-of-3 CPU ratio ≤ 2.5.
+//     (Each chain's depth doubles with n; a nesting cost that grew with the
+//     depth — a queue or a frame walk per nesting — reads as 4.)
+//   - NEST-OVER (Debug): one chain of 1 000 links is refused exactly once —
+//     the check that `m0` started runs out at about the 600th link and is
+//     refused at that use, and the rest is checked from the next group in
+//     SCC order, within the budget — with the hint, and no crash.
+//   - NEST-DEEP (Debug): round 4's "pair of deep declarations" (§5.6),
+//     which the budget as specified admits (a demand at depth 2 500 leaves
+//     5 900 units): what reaches the refusal is a chain of TWO demands each
+//     about 2 150 levels deep. Written with the user first, exactly one
+//     `nesting_too_deep`, at the second use, with the hint; with the
+//     methods first, it checks (I9's stated exception, §10.5).
 test "NEST-UNDER: a reverse-ordered chain of own methods checks in linear time" {
     var s = try Scenario.init("NEST-UNDER");
     defer s.deinit();
-    try s.w.write("C.beni", try chain(s.arena(), 200));
-    try s.w.write("C2.beni", try chain(s.arena(), 400));
-    const verdict = try s.ratio("C.beni", "C2.beni", 200);
+    try s.w.write("C.beni", try chains(s.arena(), 40, 250));
+    try s.w.write("C2.beni", try chains(s.arena(), 40, 500));
+    const verdict = try s.ratio("C.beni", "C2.beni", 250);
     try s.finish(verdict);
 }
 
 test "NEST-OVER: a chain past the nesting budget is one nesting_too_deep" {
     var s = try Scenario.init("NEST-OVER");
     defer s.deinit();
-    try s.w.write("C.beni", try chain(s.arena(), 20_000));
-    const verdict = try s.exactlyOne(&.{ "check", "--no-cache", "--diagnostics=json", "C.beni" }, .nesting_too_deep);
+    try s.w.write("C.beni", try chains(s.arena(), 1, 1_000));
+    const verdict = try s.exactlyOneHinted(&.{ "check", "--no-cache", "--diagnostics=json", "C.beni" }, .nesting_too_deep);
     try s.finish(verdict);
+}
+
+test "NEST-DEEP: two deep demands in a row are refused once, and the other order checks" {
+    var s = try Scenario.init("NEST-DEEP");
+    defer s.deinit();
+    const a = s.arena();
+    const user = try deepUse(a, "use u =\n    ", "(T 0).m ()", 2_150);
+    const method = try deepUse(a, "pub m (T x) u =\n    ", "(T x).m2 ()", 2_150);
+    const last = "pub m2 (T x) u =\n    x\n";
+    try s.w.write("First.beni", try std.mem.concat(a, u8, &.{ "type T\n    = T Int\n\n\nf x =\n    x\n\n\n", user, "\n\n", method, "\n\n", last }));
+    try s.w.write("Last.beni", try std.mem.concat(a, u8, &.{ "type T\n    = T Int\n\n\nf x =\n    x\n\n\n", last, "\n\n", method, "\n\n", user }));
+    const refused = try s.exactlyOneHinted(&.{ "check", "--no-cache", "--diagnostics=json", "First.beni" }, .nesting_too_deep);
+    if (!refused.green) return s.finish(refused);
+    const run = try s.timed(&.{ "check", "--no-cache", "--diagnostics=json", "Last.beni" }, world.bulk_timeout_ms) orelse
+        return s.finish(.{ .green = false, .signature = "timeout", .detail = "Last.beni did not finish" });
+    if (run.result.exit_code != 0) return s.finish(try s.failed(run.result));
+    try s.finish(.{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(a, "{s}; the other order checks", .{refused.detail}) });
+}
+
+/// `head` then `f (f (… inner …))`, `depth` calls deep.
+fn deepUse(arena: std.mem.Allocator, head: []const u8, inner: []const u8, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, head);
+    for (0..depth) |_| try out.appendSlice(arena, "f (");
+    try out.appendSlice(arena, inner);
+    for (0..depth) |_| try out.append(arena, ')');
+    try out.append(arena, '\n');
+    return out.items;
 }
 
 // CK-82: a nominal payload record of 65 536 fields. The eager pass probes
@@ -426,30 +888,18 @@ fn bigCase(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.items;
 }
 
-/// `pub m0 (T x) u = (T x).m1 ()` … `pub mn (T x) u = x`: a chain of `n + 1`
-/// own methods, each written BEFORE the one it calls.
-fn chain(arena: std.mem.Allocator, n: usize) ![]const u8 {
+/// `count` chains of `n + 1` own methods, chain `c` on type `Tc`:
+/// `pub mc_0 (Tc x) u = (Tc x).mc_1 ()` … `pub mc_n (Tc x) u = x`, each
+/// written BEFORE the one it calls.
+fn chains(arena: std.mem.Allocator, count: usize, n: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.appendSlice(arena, "type T\n    = T Int\n\n\n");
-    for (0..n) |i| try out.print(arena, "pub m{d} (T x) u =\n    (T x).m{d} ()\n\n\n", .{ i, i + 1 });
-    try out.print(arena, "pub m{d} (T x) u =\n    x\n", .{n});
+    for (0..count) |c| {
+        try out.print(arena, "type T{d}\n    = T{d} Int\n\n\n", .{ c, c });
+        for (0..n) |i| try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    (T{d} x).m{d}_{d} ()\n\n\n", .{ c, i, c, c, c, i + 1 });
+        try out.print(arena, "pub m{d}_{d} (T{d} x) u =\n    x\n\n\n", .{ c, n, c });
+    }
     return out.items;
 }
-
-/// The next permutation of `order` in lexicographic order, or false after
-/// the last.
-fn nextPermutation(order: []usize) bool {
-    if (order.len < 2) return false;
-    var i = order.len - 1;
-    while (i > 0 and order[i - 1] >= order[i]) i -= 1;
-    if (i == 0) return false;
-    var j = order.len - 1;
-    while (order[j] <= order[i - 1]) j -= 1;
-    std.mem.swap(usize, &order[i - 1], &order[j]);
-    std.mem.reverse(usize, order[i..]);
-    return true;
-}
-
 const Verdict = struct {
     green: bool,
     /// `tests/pending/RED`'s vocabulary, extended for time: `slow` (the
@@ -611,46 +1061,6 @@ const Scenario = struct {
         return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(s.arena(), "no run of 3 finished within {d} ms of CPU time", .{bound_ms}) };
     }
 
-    /// Every order of `decls` (up to `cap` orders, lexicographic from the
-    /// written one), each written after `header` as `Main.beni`, built for
-    /// Node and run: GREEN when every order exits 0 and prints `expected`.
-    /// A red verdict carries the first failing order's signature.
-    fn permutations(s: *Scenario, header: []const u8, decls: []const []const u8, expected: []const u8, cap: usize) !Verdict {
-        const order = try s.arena().alloc(usize, decls.len);
-        for (order, 0..) |*slot, i| slot.* = i;
-        var tried: usize = 0;
-        var failing: usize = 0;
-        var first_failure: ?Verdict = null;
-        while (tried < cap) {
-            tried += 1;
-            var text: std.ArrayList(u8) = .empty;
-            try text.appendSlice(s.arena(), header);
-            for (order, 0..) |d, i| {
-                if (i != 0) try text.appendSlice(s.arena(), "\n\n");
-                try text.appendSlice(s.arena(), decls[d]);
-            }
-            try s.w.write("Main.beni", text.items);
-            const built = try s.w.runWith(try s.argv(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out", "Main.beni" }), .{ .raw_diagnostics = true });
-            const verdict: ?Verdict = if (built.exit_code != 0)
-                try s.failed(built)
-            else blk: {
-                const program = try s.w.node(world.entry_file);
-                if (program.exit_code != 0) break :blk .{ .green = false, .signature = try std.fmt.allocPrint(s.arena(), "exit=0 program-exit={d}", .{program.exit_code}), .detail = "" };
-                if (!std.mem.eql(u8, program.stdout, expected)) break :blk .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" };
-                break :blk null;
-            };
-            if (verdict) |v| {
-                failing += 1;
-                if (first_failure == null) first_failure = .{ .green = false, .signature = v.signature, .detail = try std.fmt.allocPrint(s.arena(), "order {any}: {s}", .{ order, v.detail[0..@min(v.detail.len, 120)] }) };
-            }
-            if (!nextPermutation(order)) break;
-        }
-        if (first_failure) |v| {
-            return .{ .green = false, .signature = v.signature, .detail = try std.fmt.allocPrint(s.arena(), "{d} of {d} orders fail; first, {s}", .{ failing, tried, v.detail }) };
-        }
-        return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "{d} orders", .{tried}) };
-    }
-
     /// `file` built for Node and run: GREEN when it runs and prints
     /// `expected` (detail `ran …`), or when the build is REFUSED by name —
     /// exit 1, diagnostics, none of them `internal` (detail `refused …`). Red
@@ -688,6 +1098,17 @@ const Scenario = struct {
         const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, s.arena(), trimmed, .{}) catch return s.failed(run.result);
         if (run.result.exit_code != 1 or diags.len != 1 or diags[0].code != code) return s.failed(run.result);
         return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "one {t} in {d} ms", .{ code, run.ms }) };
+    }
+
+    /// `exactlyOne`, and its message says what to annotate (§10.2's hint).
+    fn exactlyOneHinted(s: *Scenario, args: []const []const u8, code: @import("diagnostic").Code) !Verdict {
+        const run = try s.timed(args, world.bulk_timeout_ms) orelse
+            return .{ .green = false, .signature = "timeout", .detail = "did not finish" };
+        const trimmed = std.mem.trim(u8, run.result.stderr, " \r\n");
+        const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, s.arena(), trimmed, .{}) catch return s.failed(run.result);
+        if (run.result.exit_code != 1 or diags.len != 1 or diags[0].code != code) return s.failed(run.result);
+        if (std.mem.indexOf(u8, diags[0].message, "Hint: annotate `") == null) return .{ .green = false, .signature = "exit=1 no-hint", .detail = diags[0].message[0..@min(diags[0].message.len, 160)] };
+        return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(s.arena(), "one {t} at {d}:{d}, with the hint, in {d} ms", .{ code, diags[0].span.start.line, diags[0].span.start.col, run.ms }) };
     }
 
     /// The best of 3 `check --jobs=1` runs of `file`, or a red verdict.

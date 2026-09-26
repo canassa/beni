@@ -40,6 +40,7 @@ const Types = @import("../check/Types.zig");
 const Evidence = @import("Evidence.zig");
 const Report = @import("Report.zig");
 const Resolve = @import("Resolve.zig");
+const Generalize = @import("Generalize.zig");
 const Solve = @import("Solve.zig");
 const Decide = @import("Decide.zig");
 const Elaborate = @import("Elaborate.zig");
@@ -319,11 +320,11 @@ pub fn marker(e: *Elaborate, id: Evidence.WantedId, binder: Elaborate.Binder) ?D
 fn openFrame(s: *Solve) Error!void {
     s.resolver.steps = 0;
     s.resolver.derived.clearRetainingCapacity();
-    try s.pushFrame(TypeStore.outermost);
+    try Generalize.pushFrame(s, TypeStore.outermost, .top);
 }
 
 /// Whatever the frame's resolutions readied is drained first.
 fn closeFrame(s: *Solve) Error!void {
-    try Decide.drain(s, true);
-    s.popFrame();
+    try Decide.drain(s, s.frame().queue, true);
+    Generalize.popFrame(s);
 }

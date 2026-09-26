@@ -14,7 +14,7 @@
 //!
 //! - **Readied through its variable.** When a flex that carries one is bound
 //!   to anything that is not a flex, every open row of its set goes on the
-//!   top-level frame's `ready` queue (§9.1). `Unify` does that, and only
+//!   `ready` queue of the frame it was created under (§9.1, its `frame`). `Unify` does that, and only
 //!   that: it decides nothing (§7.1).
 //! - **Decided when drained** (`Decide.drain`), in ascending `seq`.
 //! - **Closed at quantification** (§8.5, `Decide.close`).
@@ -85,6 +85,9 @@ pub const Row = struct {
     /// Module-wide creation order, shared with wanteds from R6a (§9.1): the
     /// order a queue is drained in, a function of the source (I9).
     seq: u32,
+    /// The `ready` queue of the frame current at creation (§9.1, round 4
+    /// R4-1): where a unification readies it, whichever frame unified.
+    frame: u32 = 0,
     /// The deciding variables first, then the results; unused slots repeat
     /// `vars[0]`.
     vars: [width]Var,
@@ -143,6 +146,12 @@ const SetData = struct {
 rows: std.ArrayList(Row) = .empty,
 sets: std.ArrayList(SetData) = .empty,
 seq: u32 = 0,
+/// The queue of the current frame (`Generalize.Frame.queue`): what a row and
+/// a wanted created now route to (§9.1). `Solve` keeps it with its frames.
+current_queue: u32 = no_queue,
+
+/// `current_queue` when no frame is open: nothing may be created then.
+pub const no_queue = std.math.maxInt(u32);
 
 pub fn deinit(o: *Obligations, gpa: Allocator) void {
     o.rows.deinit(gpa);
@@ -161,6 +170,7 @@ pub fn rowPtr(o: *Obligations, id: Id) *Row {
 /// A new open row. `vars` holds the deciding variables first; missing slots
 /// are filled with the first. `origin` is the row's own id when null.
 pub fn create(o: *Obligations, gpa: Allocator, kind: Kind, region: Bir.Inst.Index, vars: []const Var, index: u32, origin: ?Id) Error!Id {
+    std.debug.assert(o.current_queue != no_queue);
     std.debug.assert(vars.len >= 1 and vars.len <= width);
     var slots: [width]Var = .{ vars[0], vars[0], vars[0] };
     for (vars, 0..) |v, i| slots[i] = v;
@@ -170,12 +180,21 @@ pub fn create(o: *Obligations, gpa: Allocator, kind: Kind, region: Bir.Inst.Inde
         .state = .open,
         .region = region,
         .seq = o.seq,
+        .frame = o.current_queue,
         .vars = slots,
         .index = index,
         .origin = origin orelse id,
     });
     o.seq += 1;
     return id;
+}
+
+/// A merged frame's hand-down (§9.1 *Merges*): every row made since `start`
+/// that routes to queue `from` routes to `to`.
+pub fn repoint(o: *Obligations, start: u32, from: u32, to: u32) void {
+    for (o.rows.items[start..]) |*r| {
+        if (r.frame == from) r.frame = to;
+    }
 }
 
 /// The rows a set holds, open or not.
@@ -270,7 +289,7 @@ pub fn successor(o: *const Obligations, store: *TypeStore, set: Set, self: Var, 
 const testing = std.testing;
 
 test "a merge moves the smaller set's open rows into the larger, in place" {
-    var o: Obligations = .{};
+    var o: Obligations = .{ .current_queue = 0 };
     defer o.deinit(testing.allocator);
     const x: Var = @enumFromInt(1);
     const y: Var = @enumFromInt(2);

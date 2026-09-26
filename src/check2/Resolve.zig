@@ -50,6 +50,7 @@ const TypeStore = @import("../check/TypeStore.zig");
 const Evidence = @import("Evidence.zig");
 const Instances = @import("Instances.zig");
 const Messages = @import("Messages.zig");
+const Recursion = @import("Recursion.zig");
 const Solve = @import("Solve.zig");
 const Walk = @import("Walk.zig");
 const Tree = @import("constrain/Tree.zig");
@@ -123,6 +124,7 @@ pub fn create(s: *Solve, name: Symbol, receiver: Var, method_type: Var, origin: 
         .decl = s.report.current orelse Evidence.Wanted.no_decl,
         .parent = parent,
         .seq = s.obligations.seq,
+        .frame = s.obligations.current_queue,
     });
     s.obligations.seq += 1;
     return id;
@@ -133,6 +135,8 @@ pub fn create(s: *Solve, name: Symbol, receiver: Var, method_type: Var, origin: 
 pub fn method(s: *Solve, node: Tree.Node) Error!void {
     const info = s.tree.extraData(node.a, Tree.Method);
     const id = try create(s, info.name, info.receiver, info.method_type, node.region, @enumFromInt(info.kind), .none);
+    // A hand-written dot-call's own wanted may become a field call (§11).
+    if (s.evidence.get(id).kind == .dot_call) s.evidence.ptr(id).field_ok = true;
     try s.evidence.callees.append(s.cx.gpa, .{ .inst = node.region, .wanted = id });
     try step(s, id, true);
 }
@@ -148,8 +152,9 @@ pub fn drained(s: *Solve, id: WantedId) Error!void {
 // ---------------------------------------------------------------------------
 
 /// Resolve `id` against its receiver's root. `immediate` is Rule U0's inline
-/// resolution: a record receiver known at the call is a FIELD call, one met
-/// only later is `no_methods_on_shape` (static-dispatch-spike.md §6.3).
+/// resolution. A dot-call on a record is a FIELD call, known at the call or
+/// met later, unless it was joined with a scheme's requirement
+/// (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26).
 pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
     const st = s.store();
     const saved = s.report.current;
@@ -162,6 +167,9 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
     s.resolver.steps += 1;
     if (s.resolver.steps == step_budget) try Messages.resolutionBudget(s.report, w.origin, step_budget);
     if (s.resolver.steps >= step_budget) return reject(s, id, true);
+    // D14 (§10.7): in a recursive group, a wanted on a group-level
+    // receiver is pessimistic whether it resolves now or rides on a flex.
+    if (s.recursive_frames != 0) try Recursion.wanted(s, id);
 
     const root, const content = st.resolved(w.receiver);
     switch (content) {
@@ -309,6 +317,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
             }
             try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
             answer(s, younger, .{ .alias = older });
+            s.evidence.joinField(older, younger);
             try joinTypes(s, younger, older);
             return;
         },
@@ -452,6 +461,10 @@ pub fn position(s: *Solve, parent: WantedId, receiver: Var) Error!WantedId {
     const method_type = try wellKnownType(s, p.method, receiver);
     const id = try create(s, p.method, receiver, method_type, p.origin, p.kind, parent.toOptional());
     s.evidence.ptr(id).decl = p.decl;
+    // Resolution recursing into positions spends native stack the nesting
+    // budget counts (§10.2; R7's review, S7).
+    s.resolve_depth += 1;
+    defer s.resolve_depth -= 1;
     try step(s, id, false);
     return id;
 }
@@ -471,6 +484,51 @@ fn lineageOrigin(s: *const Solve, id: WantedId) Bir.Inst.Index {
 // Step 7 of a top-level boundary (§8.1, §9.4)
 // ---------------------------------------------------------------------------
 
+/// CK-106: inside a binding group of two or more members, a requirement on a
+/// `number`-kinded variable whose method is not `eq` or `compare`, which some
+/// member's type does not reach. That member fixed the variable with a
+/// literal (`ma 0 3`), so for its uses the receiver is a `number` never
+/// chosen between `Int` and `Float` — the case a caller outside the group
+/// reports as `unknown_method` at the instantiation (§9.4's default) — and
+/// §12.3's case 3 has no structural answer for the method. Reported the same
+/// way here, at the requirement's use, and the variable poisoned so nothing
+/// promotes it: one answer in every declaration order.
+fn undeterminedInGroup(s: *Solve, members: []const u32) Error!void {
+    const st = s.store();
+    const bir = s.cx.bir;
+    const scratch = s.cx.scratch;
+    var reqs: std.ArrayList(Evidence.Requirement) = .empty;
+    defer reqs.deinit(scratch);
+    for (members) |m| {
+        const d = bir.decls[m];
+        if (!d.kind.isValue() or d.body == .none or d.annotation != .none) continue;
+        const header = s.decl_scheme[m].unwrap() orelse continue;
+        reqs.clearRetainingCapacity();
+        try Evidence.requirements(st, s.cx.interner, header, scratch, &reqs);
+        for (reqs.items) |r| {
+            if (isWellKnownName(r.method)) continue;
+            const flags = switch (st.content(st.find(r.root))) {
+                .flex => |f| f,
+                else => continue,
+            };
+            if (flags.kind != .number) continue;
+            const unreached = for (members) |other| {
+                const od = bir.decls[other];
+                if (!od.kind.isValue() or od.body == .none or od.annotation != .none) continue;
+                const oh = s.decl_scheme[other].unwrap() orelse continue;
+                if (!try Walk.reaches(st, &s.stacks, s.cx.gpa, oh, r.root)) break true;
+            } else false;
+            if (!unreached) continue;
+            const id = s.evidence.slotAt(r.position).asWanted() orelse continue;
+            const w = s.evidence.get(id);
+            s.report.at(if (w.decl == Evidence.Wanted.no_decl) null else w.decl);
+            try s.report.undeterminedMethodReceiver(w.origin, w.method, flags.kind);
+            try s.poison(r.root);
+        }
+    }
+    s.report.at(null);
+}
+
 /// Promotion, the cap, the two promotion diagnostics, then the proven-
 /// undetermined default, for the wanteds still open on the variables step 5
 /// quantified (`wanters`). `members` are the group's declarations.
@@ -478,6 +536,7 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
     const st = s.store();
     const bir = s.cx.bir;
     const scratch = s.cx.scratch;
+    if (members.len > 1) try undeterminedInGroup(s, members);
     // The roots some member's scheme reaches.
     var promoted: std.AutoHashMapUnmanaged(Var, void) = .empty;
     defer promoted.deinit(scratch);

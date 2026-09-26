@@ -21,7 +21,8 @@
 //! `nesting_too_deep`. It never answers "ok" (CK-10 item 3).
 //!
 //! **Obligations ride on their variables** (§4.5): binding a flex readies
-//! every open obligation on it (onto the top-level frame's queue), merging
+//! every open obligation on it (onto the queue of the frame it was created
+//! under, §9.1), merging
 //! two flexes joins their sets and lowers every variable of every obligation
 //! now on the survivor to its rank (I15), and a flex carrying the `equatable`
 //! marker that meets a structure turns the marker's question into an
@@ -92,9 +93,14 @@ captures: *std.ArrayList(Generalize.Capture),
 /// the dependants of the rows whose owner's rank dropped. It never decides
 /// one (§7.1).
 obligations: *Obligations,
-/// The top-level frame's `ready` queue (§9.1), which `Solve` owns: every
-/// `let` frame routes there. The one place `unify` readies onto.
-queue: *std.ArrayList(u32),
+/// The frames' `ready` queues (§9.1), which `Solve` owns: a readied item
+/// goes on the queue of the frame it was created under (its `frame`),
+/// whichever frame's unification readied it.
+queues: *std.ArrayList(Generalize.Queue),
+/// The current queue's `ready` list, which `Solve` holds apart while its
+/// frame is current, and that queue's index.
+ready: *std.ArrayList(u32),
+ready_queue: *const u32,
 /// For `lowerTo` (I15).
 stacks: *Walk.Stacks,
 /// The module's wanteds (§4.2): `unify` readies those riding on a flex it
@@ -196,7 +202,15 @@ fn bind(u: *Unify, bound: Var, flags: TypeStore.Flags, other: Var, content: Type
 /// being one. Against `err` too: the resolver then answers a wanted
 /// `failed`, in silence (§7.1), and an obligation poisons its results.
 fn release(u: *Unify, flags: TypeStore.Flags) Error!void {
-    if (flags.obls != .none) try u.obligations.ready(u.gpa, flags.obls, u.queue);
+    if (flags.obls != .none) {
+        // `Obligations.ready`, routed: each row to its own frame's queue.
+        for (u.obligations.members(flags.obls)) |id| {
+            const r = u.obligations.rowPtr(id);
+            if (r.state != .open) continue;
+            r.state = .ready;
+            try u.enqueue(r.frame, id.int());
+        }
+    }
     const set = flags.constraints;
     const n = u.store.constraintCount(set);
     var i: u32 = 0;
@@ -216,7 +230,17 @@ fn readyWanted(u: *Unify, id: Evidence.WantedId) Error!void {
     const w = u.evidence.ptr(id);
     if (w.state != .open) return;
     w.state = .ready;
-    try u.queue.append(u.gpa, id.int() | Evidence.queued_wanted);
+    try u.enqueue(w.frame, id.int() | Evidence.queued_wanted);
+}
+
+/// Put a readied item on the `ready` queue of the frame it was created
+/// under (§9.1, round 4 R4-1) — or of the root it was re-pointed to when its
+/// frame handed down (`Groups.handDown`). A popped frame left nothing that can
+/// be readied: its variables were generalised, or handed down with its items.
+pub fn enqueue(u: *Unify, q: u32, raw: u32) Error!void {
+    if (q == u.ready_queue.*) return u.ready.append(u.gpa, raw);
+    if (!u.invariant(u.queues.items[q].live, "an item was readied for a frame that is gone (checker-v2.md §9.1)")) return;
+    try u.queues.items[q].ready.append(u.gpa, raw);
 }
 
 /// A Rule-U1 join whose method types did not unify, for the caller to report.
@@ -321,6 +345,7 @@ fn finishJoins(u: *Unify, root: Var, joins: []const Join, lowered: []const Var) 
         const younger = u.evidence.ptr(j.younger);
         younger.state = .answered;
         u.evidence.setAnswer(j.younger, .{ .alias = j.older });
+        u.evidence.joinField(j.older, j.younger);
         const saved = u.problem;
         defer u.problem = saved;
         u.problem = null;
@@ -340,7 +365,7 @@ fn equatableMeets(u: *Unify, flags: TypeStore.Flags, other: Var) Error!void {
     if (!flags.equatable or u.obligations.openEquatable(flags.obls) != null) return;
     const id = try u.obligations.create(u.gpa, .equatable, u.region, &.{other}, 0, null);
     u.obligations.rowPtr(id).state = .ready;
-    try u.queue.append(u.gpa, id.int());
+    try u.enqueue(u.obligations.rowPtr(id).frame, id.int());
 }
 
 /// Whether a flex carrying `flags` may meet a rigid that is not marked

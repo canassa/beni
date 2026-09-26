@@ -1088,6 +1088,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - `Lower.refuseEvidence` (`Lower.zig:3750`) catches both.
 - **Fixture** `run/RecursionWithComparison.beni` (all eight forms, one `main`).
 - **Slice** R7.
+- **Status** R7 (2026-09-26), its demand half: the `run/` fixtures R6b claimed (`RecursionWithComparison`, `DeadMiscount`) hold in every declaration order in `scenario/PERM` (programs `m1b`, `dead`), which R7 claims.
 - **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
   in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
   kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
@@ -1117,6 +1118,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   header's canonical order (`seen`).
 - **Fixture** `run/MutualGroupEvidenceOrder.beni` → `True`, `True`, `True`, `False`.
 - **Slice** R7.
+- **Status** R7 (2026-09-26), its demand half: `run/MutualGroupEvidenceOrder` (R6b's claim, `p5`) holds in every declaration order in `scenario/PERM`, which R7 claims.
 
 ### CK-32 — An operator used as a function and applied directly is an internal error
 
@@ -1285,6 +1287,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     `ambiguous_method_receiver` warning, and a `run/` fixture must build silently.
   - `O1` compares with `modBy x 10` (subject-first), not the probe's `modBy 10 x`.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): nesting at demand (`checker-v2.md` §10.2, §10.8) checks `run/OwnMethodBeforeDefinition` in every order of each of its three modules (`scenario/PERM`: `o1`, `row75`, `box`).
 
 ### CK-37 — Row 76's cycle check is periodic, and a rejection poisons the shared receiver
 
@@ -1910,6 +1913,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Root cause** as CK-36 (priority groups, `Check.zig:1254-1308`; refusal at `Solve.zig:698`).
 - **Fixture** `run/OwnMethodDemandedEarly.beni`.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): `run/OwnMethodDemandedEarly` and the new `run/OwnMethodDemandedTwoLetsDeep` (a group nested three frames up, its `dump --stage=types` equal in every order), both in `scenario/PERM`.
 
 ### CK-64 — An own untyped method whose body calls a helper written after its user is refused
 
@@ -1931,6 +1935,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Root cause** as CK-36.
 - **Fixture** `run/OwnMethodValuePrefix.beni`.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): a nested group's value reference to an unchecked group is a `demand` node that nests it (§10.8); `run/OwnMethodValuePrefix`, in `scenario/PERM`.
 
 ### CK-65 — Methods that are mutually recursive through dispatch are refused in every order
 
@@ -1951,6 +1956,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Root cause** as CK-36.
 - **Fixture** `run/MutualDispatchMethods.beni`.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): merges on dispatch and value back-edges (§10.4, §10.8); `run/MutualDispatchMethods` and the new `run/OwnMethodThreeCycle`, `run/OwnMethodFourCycle`, `run/OwnMethodCycleDemandedTwice`, `run/OwnMethodValueBackEdge` and `check/good/NestAfterDefault`, all in `scenario/PERM`.
 
 ### CK-66 — A variable a binding group quantifies but a caller's type does not mention
 
@@ -1972,6 +1978,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Root cause** CK-09 first. Then v1's group-call sites (CK-30), and the round-1 design's §12.3.
 - **Fixture** `run/GroupVariableOutsideCaller.beni`.
 - **Slice** R7.
+- **Status** R7 (2026-09-26), its demand half: `run/GroupVariableOutsideCaller` (R6b's claim) holds in every order in `scenario/PERM` (`ck66`).
 
 ### CK-67 — A closed wrapper around an imported method that needs an own untyped method is not comparable
 
@@ -2056,6 +2063,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
     `check/bad/RecursiveDispatchTwoTypesB.beni` (`eq` first, `.codes` `28:*`). On 7427828 it is
     also `method_needs_annotation`, at 19:24.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): one `type_mismatch` with the recursive-dispatch hint and the cycle `eq` → `show` → `eq`, byte-identical in every order (§10.8; `scenario/PERM` `ck70`); the annotated twin is the corpus guard `run/RecursiveDispatchAnnotated`.
 
 ### CK-71 — Symbol ids depend on which worker lexed which file, so an id-ordered choice varies between runs
 
@@ -2137,6 +2145,7 @@ and `ck/r3x/` (this catalogue's).
   - *R0 follow-up:* the positions are now `31:*` and `36:*`, the `q "s"` line of each file.
   - The guard holds both orders in one file (`f`/`g` and `g2`/`f2`).
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): D14 (§10.7, §10.8) refuses both orders with one `kind_mismatch` (the `.codes` amended from `type_mismatch`: `q 1` then `q "s"`) and the hint "Annotate `g`", byte-identical in every order (`scenario/PERM` `ck72`).
 - **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
   in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
   kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
@@ -2195,6 +2204,7 @@ and `ck/r3x/` (this catalogue's).
   - `check/good/ScrutineeMethodMergeVariant/` now matches `( _, _, _ ) -> ( 1, 2 )`, and its `.iface`
     has `f : K, () -> ( number, number2 )`.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): `run/ScrutineeMethodLater`, `check/good/ScrutineeMethodMergeVariant` (its `.iface` confirmed) and `check/bad/ScrutineeMethodMergeD14` (`kind_mismatch`, "Annotate `h`"), all in `scenario/PERM`.
 
 ### CK-74 — A derived-context query made from inside the method it depends on
 
@@ -2270,6 +2280,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
     ERROR is at `build`; I re-ran it for `evA` and `subA`, and `evB`/`subB` run as the Observed
     line says.
 - **Slice** R7.
+- **Status** claimed by R7 (2026-09-26): the hooks in `Resolve.step` and on obligations make evidence and sub-wanteds pessimistic; both fixtures refused in both orders, `kind_mismatch` with "Annotate `g`", byte-identical in every order (`scenario/PERM` `evA`, `subA`).
 - **Since R2a** (2026-09-24, review S1) `check` refuses this miscount with the I7 `internal` even
   in a declaration nothing reaches: `Lower` used to meet it only on code dead-code elimination
   kept, so such a program built and ran before R2a. Kept on purpose (`checker-v2.md` §13.1 as
@@ -2998,6 +3009,46 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   `key` last; claimed, red on v1 for CK-67's reason).
 - **Slice** R6b (fixed).
 
+### CK-105 — A dot-call is a field call or a method depending on whether its record receiver arrived first
+
+- **Severity** valid-program-rejected, and order-dependent (I9). **Area** dispatch: a dot-call's
+  resolution (`Instances.onRecord`). **Class** K6. **Sources** R7's adversarial review, F1 (`p/Rec1`,
+  `Rec1c`, `Rec2`, `Rec1v`, `pt/T104`).
+- **Program** `run/FieldCallThroughMember.beni`: `ma`'s `x.combine 1` where `x` is typed only by
+  `mb`'s in-flight call `(K 1).ma { combine = \z -> z + 1 }`, `ma` and `mb` recursive through
+  dispatch.
+- **Observed** on R7's first cut (and on v1 for the value-recursive `fa`/`fb` shape): accepted,
+  printing `5`, in the orders where the record arrived before `x.combine 1` was solved;
+  `no_methods_on_shape` in the others. static-dispatch-spike.md §1.2/§11 decided "field call or
+  method" by whether the receiver was known when the call was first solved, which inside a
+  recursive group is the declaration order.
+- **Expected** `5` in every order.
+- **Fixed by** R7's review round: the *Deferred receiver* rule amended (static-dispatch-spike.md §11,
+  2026-09-26) — a dot-call's own requirement whose receiver becomes a record before the constraint
+  is generalised is the field call.
+- **Fixtures** `run/FieldCallThroughMember`, `…MemberCycle`, `…ValueRecursion`, `…ValueDemand`,
+  `run/DeferredReceiverFieldCall`, `check/bad/RecursiveGroupFieldCallTwoTypes` and
+  `…RefusalRendering`, each in `scenario/PERM`; the round-2 review added `check/bad/DeferredReceiverJoinedRequirement/`
+  and `…JoinedInGroup` (a dot-call joined with a scheme's requirement, X1), the corpus guard
+  `check/bad/DeferredReceiverGeneralised` and `run/DeferredReceiverRecursiveTwin`, which v1 miscompiles
+  (it passes `f` evidence `f` does not take and prints `EQ` for `2`).
+- **Slice** R7 (claimed).
+
+### CK-106 — A `number` receiver's method inside a recursive group is an internal error
+
+- **Severity** compiler-crash-or-hang (an `internal` refusal of a program that should be an ordinary
+  error). **Area** promotion and §12.3's group calls. **Class** K4. **Sources** R7's round-2
+  review, S3 (the in-flight fuzzer, 8 of 300 programs in every order; `pr/n2`, `pr/t161`).
+- **Program** `check/bad/NumberReceiverMethodInGroup.beni`: `ma n x = if n > 0 then mb n else
+  x.size ()`, `mb n = ma 0 3`.
+- **Observed** v2 (R7's first round): two `internal`s at `ma 0 3` — §12.3's case 3 has no
+  structural answer for `size`, then I7. v1: one `internal` (I7) at `x.size ()`. Outside a group
+  both checkers give the correct `unknown_method` at the caller.
+- **Expected** one `unknown_method` at `x.size ()`, in every order.
+- **Fixed by** R7's round-2 fix: `Resolve.undeterminedInGroup` at step 7 (`checker-v2.md` §10.8).
+- **Fixtures** `check/bad/NumberReceiverMethodInGroup.beni` and `…Dispatch.beni`, in `scenario/PERM`.
+- **Slice** R7 (claimed).
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -3110,6 +3161,8 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-102 | unsound-runtime | K2 | `check/bad/DerivedPositionMethodMismatch.beni` (v2) | R6b (fixed) |
 | CK-103 | latent | K4 | `run/UndeterminedCompareSlot/` | R6b (claimed) |
 | CK-104 | unsound-runtime | K14 | `run/DerivedRowBodyEmissionOrder/`, `run/DerivedContextClosedOwnMethodPermuted/` | R6b (fixed) |
+| CK-105 | valid-program-rejected (order-dependent) | K6 | `run/FieldCallThroughMember.beni` and five more | R7 (claimed) |
+| CK-106 | compiler-crash-or-hang | K4 | `check/bad/NumberReceiverMethodInGroup.beni`, `…Dispatch.beni` | R7 (claimed) |
 
 Totals:
 - 104 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews). CK-78 records a decision, not a defect, and is counted under none of the severities below.

@@ -224,6 +224,9 @@ pub fn build(b: *std.Build) void {
     pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending", .checker = "v2" }).step);
     const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
     pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast" }).step);
+    // The scenarios under `--checker=v2` too (R7): a claimed scenario is held
+    // to rule (c) only where it runs under v2 (`scenario/PERM`).
+    pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast", .checker = "v2" }).step);
 
     // `test-v2` (`plans/checker-rewrite.md` §2.4, `checker-v2.md` §22.2): the
     // whole corpus under `--checker=v2`, part by part as `test-blackbox` runs
@@ -240,6 +243,11 @@ pub fn build(b: *std.Build) void {
     const perf_run = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni" });
     perf_run.step.dependOn(&perf_install.step);
     perf_step.dependOn(&perf_run.step);
+    // Then again under `--checker=v2` (R7: `scenario/NEST-UNDER`), after the
+    // default checker's run and never beside it.
+    const perf_run_v2 = bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = perf_bin_dir ++ "/beni", .checker = "v2" });
+    perf_run_v2.step.dependOn(&perf_run.step);
+    perf_step.dependOn(&perf_run_v2.step);
 
     // The timing scenarios that are FIXED (`tests/blackbox/perf_test.zig`):
     // promoted out of `test-pending-perf` when a slice turns one green, and

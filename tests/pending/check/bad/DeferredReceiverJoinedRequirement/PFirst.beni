@@ -1,0 +1,31 @@
+-- CK-105: a dot-call joined (Rule U1, static-dispatch-spike.md §6.1
+-- invariant 3) with a scheme's requirement is not a field call, however late
+-- its receiver turns out a record (§11 *Deferred receiver*, amended
+-- 2026-09-26, and R7's round-2 review, X1). `x.combine 1` and `h x`'s `where
+-- a.combine` requirement ride on `x` as one constraint; when the record
+-- arrives, the requirement has no field accessor to be, so the joined class
+-- is `no_methods_on_shape` at `h x` — in both `let` orders (`PFirst` writes
+-- the dot-call first, `QFirst` the call of `h`). Without the join rule the
+-- order where the dot-call is the older wanted answered the class `field`,
+-- and P6 reported an internal I7 miscount. v1 gives `no_methods_on_shape` for
+-- both.
+h a =
+    a.combine 1
+
+
+f x =
+    let
+        p =
+            x.combine 1
+
+        q =
+            h x
+
+        r =
+            if True then
+                x
+
+            else
+                { combine = \n -> n + 100 }
+    in
+    p + q

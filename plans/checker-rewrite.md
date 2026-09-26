@@ -196,7 +196,10 @@ single-test `matrix_test.zig` and `cutoff_test.zig` (about 45–60 s alone) are 
 
 Rules (a)–(d) apply in both steps. *(R4a:)* the scenarios of `pending_test.zig` run under the default checker only; only the
 pending corpus has a run 2 under `--checker=v2`. Neither is part of `test-blackbox`, so the three gates never run
-a red fixture.
+a red fixture. *(R7, 2026-09-26:)* the scenarios run under `--checker=v2` too, in both
+steps (the `perf` one after the default checker's, never beside it), so a claimed scenario
+(`scenario/PERM`, `NEST-*`) is held to rule (c); a scenario red under v2 has a `v2` line in `RED`
+(CK-40 and CK-88 are, and are R8a's and R12's).
 
 R4a adds **`test-v2`**: `corpus_test.zig` over `tests/corpus` with `BENI_CHECKER=v2`. Its modes:
 - **R4a–R8b, `report`.** The fixtures listed in `tests/pending/v2-expected.md` are skipped and
@@ -252,7 +255,7 @@ cost eleven minutes a run. A timing scenario refuses to run on `zig-out/bin/beni
   | CK-42 | 4 000 / 8 000 decls | extra 70–76 / 272–286 ms, 3.76–3.88 | no reference fix |
   | CK-75 | 6 000 / 12 000 decls | 201–205 / 714 ms, 3.48–3.55 | none; CK-40/41's fixes leave it at 3.5 |
   | CK-80 | depth 9 / 18 | 6 / 188–191 ms, about 31 | no reference fix |
-  | NEST-UNDER | 200 / 400 methods | red by its codes, not by time; R7 sizes it | — |
+  | NEST-UNDER | 40 chains of 250 / 500 methods (R7) | red by its codes, not by time | v2 on R7: 77 / 151 ms, 1.96 |
   | CK-88 (added by R2c) | 3 000 / 6 000 `case` branches, `build` | on R2c: 204 / 789 ms, 3.86 | none |
 
   The whole step takes about 22 s once its ReleaseFast compiler is built (and about 95 s more when
@@ -1518,6 +1521,153 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   top-level frame as today, and makes `Decide.drain` take the frame; `Resolve.State.steps` stays
   per top-level group (the nested group counts against its demander's budget, §10.2's cumulative
   nesting budget).
+- **As built (2026-09-26).** Spec first: `checker-v2.md` §10.8 (new: *As built by R7*, with two
+  corrections), notes in §4.4, §8.1, §9.1, §10.2, §10.4, §12.3, §19.1 and §23; `language.md` §10's
+  `method_needs_annotation` row amended (v2 never emits it for the ordering case; §11.2's case is
+  R8a's).
+  - **Design.** `check2/Groups.zig`: P4 is `Groups.checkAll`; `check(g)` generates a group at
+    `frames.len + 1` into a per-level tree and solves it in a fresh top-level-kind frame
+    (`solveGroup`, which saves and restores the demander's state); `demand(decl)` is the one entry
+    for the module rule, a derived query's own `eq`/`compare`, and a `demand` node (a value or
+    schema reference a nested group makes to a group not `done` at its generation). A `checking`
+    group below the current top-level-kind frame is a back-edge: `merge` marks every
+    top-level-kind frame above it merged and recursive and joins their groups (union find); a
+    merged frame runs steps 1–2, lowers its pool to the root frame's rank, hands pool, `?` list,
+    binders (copied), members and queue down, and re-points its items to the root's queue
+    (`handDown`). The root's boundary runs once over all of it (step 4 sorted by kind and source
+    position when binders were handed down), promotion over every member, one failure bit; P6
+    reads groups as merge roots. Per-frame queues: `Generalize.Queue`, one per top-level-kind
+    frame, reused once popped; wanteds and rows carry a `u16` `frame`; `Unify.enqueue` routes;
+    `Decide.drain` takes the queue; the current queue's list is `Solve.ready`.
+    `check2/Recursion.zig`: D14's hooks at the top of `Resolve.step` and where a row is attached
+    or decided, free when no frame is recursive; the hint read at a mismatch (a recursive group's
+    wanted or row on a group-level variable that reaches either side) with the member named from
+    the Bir (the innermost `let` function around the node, its locals followed to their
+    definitions or scrutinees); §10.6's cycle, breadth first in text order over Bir edges. The
+    budget: `nest_cost` 3 (below). `Report`'s R7 refusal and `keepOnlyRefusals` are gone.
+  - **Two corrections to the spec, and no design premise failed.** (1) §10.2's "pair of deep
+    declarations" is admitted by the rule as written (no single demand can be refused: the parser
+    bounds a declaration below what one demand leaves); two demands in a row, each about 2 150
+    deep, reach it — `scenario/NEST-DEEP`. (2) Round 3's N-2 debug assert (no nesting after a
+    default) rests on a false premise: a default `Result` asks its positions' methods, which may be
+    this module's and unchecked (`pending/check/good/NestAfterDefault.beni`, claimed); not added.
+    Also: the round 3/4 refusals are `kind_mismatch`, not `type_mismatch` (`q "s"` after `q 1`),
+    and their `.codes` were amended.
+  - **`nest_cost`.** Measured in a Debug build: 15 552 bytes of stack per nesting of a
+    reverse-ordered method chain, of which 4 solver depth units are the method's own nodes; the
+    rest is 7 360 bytes; one depth unit costs at most 2 528 bytes (`let` chains; 2 048 through
+    `and_`); 7 360 / 2 528 = 2.9 → 3. A chain nests about 599 deep; 1 000 links are refused once.
+  - **Files** (lines): new `Groups` 545, `Recursion` 466; `Solve` 951, `Generalize` 378,
+    `Module` 518, `Decide` 386, `Unify` 853, `Instances` 691, `Report` 383, `Messages` 268,
+    `constrain/Tree` 432, `constrain/Expr` 450: 12 727 in all. `Groups` is past its ~450 (the
+    frames live there, as §19.1 says); `Recursion` is new to the table.
+  - **Claims (23, `CLAIMED`).** CK-36 `run/OwnMethodBeforeDefinition`; CK-63
+    `run/OwnMethodDemandedEarly`, `run/OwnMethodDemandedTwoLetsDeep` (new); CK-64
+    `run/OwnMethodValuePrefix`; CK-65 `run/MutualDispatchMethods` and the new
+    `run/OwnMethodThreeCycle`, `run/OwnMethodFourCycle`, `run/OwnMethodCycleDemandedTwice`,
+    `run/OwnMethodValueBackEdge`, `check/good/NestAfterDefault`; CK-70 `RecursiveDispatchTwoTypes`
+    (both orders); CK-72 `RecursiveGroupReceiverNeedsAnnotation` (both); CK-73
+    `run/ScrutineeMethodLater`, `check/good/ScrutineeMethodMergeVariant`,
+    `check/bad/ScrutineeMethodMergeD14`; CK-76 `RecursiveGroupEvidenceReceiver`,
+    `RecursiveGroupSubWanted`; `scenario/PERM`, `NEST-OVER`, `NEST-DEEP`, `NEST-UNDER`. The demand
+    halves of CK-30, 31 and 66 are PERM's `m1b`, `dead`, `p5` and `ck66`. New corpus guard:
+    `run/RecursiveDispatchAnnotated` (CK-70 with `eq` annotated: instantiates, no merge).
+  - **Evidence.** The three gates, `test-pending` (every v2 line of an R7 fixture deleted from
+    `RED`), `test-v2` (`run` 170 pass, `check/*` 236, `dispatch` 27; `v2-green.txt` +2:
+    `run/DerivedEqLocalCustom` left `v2-expected.md`, and the new guard), `test-pending-perf` and
+    `test-perf` green. `scenario/PERM`: 30 programs, 2 390 orders, all as the twin says, the three
+    D14 programs, CK-70 and CK-73's refusal byte-identical in every order, and `dump
+    --stage=types` equal in six orders of each program that checks. NEST-UNDER 1.96 (77 / 151 ms);
+    NEST-OVER one `nesting_too_deep` at the 601st link with the hint; NEST-DEEP refused once, and
+    the other order checks. JS parity: 170 `run/` fixtures build identical trees under v1 and v2;
+    v2 at `--jobs=1` and at `--jobs=8` with both round trips identical on every `run/` fixture and
+    on 349 `check`-kind fixtures, with no `internal`.
+  - **Bench** (ReleaseFast, R6b's 90-module dispatch corpus, `check --no-cache --jobs=1`, the root
+    package's `check` events, medians of 7, interleaved): v1 131.6 / v2 143.5 ms (1.09×), reversed
+    132.1 / 145.4 (1.10×); the app variant's `build`, check + lower + emit, 1.05× (reversed 1.06×).
+    R6b's own binary, measured beside it in 21 interleaved runs: v1 127.9, R6b v2 139.8, R7 v2
+    139.9 ms — R7 costs nothing measurable on this corpus (a first cut cost 3 %: the forwarded
+    queues, a larger `Frame` and `Wanted`; fixed by reusing queues, re-pointing items, and moving
+    hand-down data out of line). On 40 000 one-line groups R7 still reads 2–4 % over R6b.
+  - **Doubts, for the reviewer.** (1) The hint's syntactic reading is my rule for R7-2's "came
+    from exactly one such reference": the context is the innermost `let` function, which may be
+    wider than the receiver's own expression. (2) The §10.6 cycle is read off Bir edges by name;
+    a merge made through a derived query has no such edge and prints the members in text order.
+    (3) A queue slot is reused after its frame pops, so the "readied for a gone frame" invariant
+    now catches less. (4) `Groups.check` settles v1's capability bits after a merged group only
+    when its root is done; a derived query in between reads the bits as they were (R8a's). (5)
+    §23 item 1's Roc shapes were not ported.
+- **Revised by the reviews (2026-09-26).** A structural and an adversarial review (the latter
+  fuzzing about 99 000 declaration orders) found I9 violated in one family and D14's hint
+  order-dependent; fixed spec first (`static-dispatch-spike.md` §1.2 and §11 *Deferred receiver*,
+  amended; `checker-v2.md` §10.8 rewritten, §9.1, §23 item 9's lost number):
+  - **CK-105 (adversarial F1, blocking).** `x.combine 1` was a field call or a method constraint
+    depending on whether `x` was already a record when the node was solved; inside a recursive
+    group that is the declaration order (dispatch or value recursion). The rule is now: a
+    dot-call's own requirement whose receiver becomes a record before it is generalised is the
+    field call (`Instances.onRecord`). Fixtures `run/FieldCallThroughMember`, `…MemberCycle`,
+    `…ValueRecursion`, `…ValueDemand`, `run/DeferredReceiverFieldCall` (the rule in one
+    declaration: v1 and the old rule refuse it), `check/bad/RecursiveGroupFieldCallTwoTypes`;
+    the first three fail on the reviewed tree.
+  - **Structural B1 (blocking).** A group nested by the root's steps 1–3 that back-edges into the
+    root was dropped from the root's members: the boundary is split into `Solve.settle` (1–3) and
+    `closeFrame` (4–7), the members are read between them, and a frame merged during its own
+    settle stops defaulting and hands down. §10.8 corrects the "shares no variable" reason and
+    says why the joiner's facts coming after the defaults is order-independent.
+    `run/MergeAtBoundary` (five `internal`s on the reviewed tree).
+  - **D14's hint (adversarial F2, F3, F4; structural S1, S5).** Whether a mismatch is D14's is
+    read at the mismatch (`Recursion.involved`, from the lowest open recursive frame's items,
+    excluding receivers rule (a) held); the text is written when the class is final
+    (`Recursion.finish` at the root's boundary, `Report.appendToItem`), from the mismatch's own
+    declaration (found from its region) and the final class: the context is the called `let`
+    function's body for a call argument, else the innermost `let` function. Fixtures
+    `check/bad/RecursiveGroupHintOneMember`, `…HintAllMembers`, `…RuleAMonomorphicNoRecursionHint`.
+  - **Adversarial F5.** Stated as I9's scope in §10.8 (I9 is "whether a program checks, and what
+    it computes"): a refused program's message may render a type as it stood mid-solve, and which
+    FURTHER errors a first error's poison silences inside a recursive group can depend on the order
+    (the re-run call-graph fuzz shows one or two `kind_mismatch`es by order, as on the reviewed
+    tree). PERM holds `check/bad/RecursiveGroupRefusalRendering` to its code and region.
+  - **S2** a Debug build never reuses a queue slot, `frame` is a `u32` again, a sentinel between
+    frames is asserted at every creation; **S3** `Generalize.handQueueDown` with
+    `Evidence.repoint`/`Obligations.repoint`; **S4** the frame primitives and the generality check
+    moved to `Generalize`, the Bir reading to a new `Producers.zig`; **S5** a total order for
+    handed-down binders; **S6** R8a's brief gains the in-flight capability case; **S7**
+    `Resolve.position` recursion counted in the budget (2 496 bytes per level, one unit). Nits
+    N1–N8 done (N6: no D14 scan in a quiet module).
+  - **Evidence.** The seven steps green. `scenario/PERM`: 41 programs, 2 752 orders. The review's
+    fuzzers re-run on the fixed tree: the in-flight fuzzer, 300 programs / 36 000 orders, 0 whose
+    acceptance or output differs by order (1 on the reviewed tree); the call-graph fuzzer with a
+    helper, 138 programs / 15 600 orders, acceptance identical everywhere and 57 programs whose
+    refused orders report one or two errors by order (a first error's poison; never a different
+    hint on the same error).
+  - **Bench** (ReleaseFast, quiet machine, medians): `check` of R6b's dispatch corpus v1 131.5 / v2
+    142.8 ms (1.09×), reversed 133.1 / 143.8 (1.08×); the app build, check + lower + emit, 1.04×
+    (reversed 1.05×). Against R6b's own v2 in 21 interleaved runs: 137.0 → 140.4 ms (+2.5 %).
+  - **Files** (lines): `Groups` 592, `Solve` 860, `Generalize` 534, `Recursion` 157, `Producers`
+    393.
+- **Revised by the round-2 review (2026-09-26).** One blocker, fixed spec first
+  (`static-dispatch-spike.md` §11 *Deferred receiver*, one sentence; `checker-v2.md` §10.8, §21.1
+  D5 row):
+  - **X1.** A dot-call joined by Rule U1 with a scheme's requirement inherited the `.field` answer
+    when the dot-call was the older wanted, and P6 reported I7 (in a group, order-dependent).
+    `Wanted.field_ok` is set for a dot-call's own wanted and cleared by any join with another
+    (`Evidence.joinField` in `Unify` and `Resolve.attach`); the refusal is reported at the joined
+    requirement's use (`blocked_at`). Fixtures `check/bad/DeferredReceiverJoinedRequirement/` (both
+    `let` orders) and `…JoinedInGroup` (the `Rec1` variant), both `internal` with the join rule off.
+  - **S2.** Corpus guard `check/bad/DeferredReceiverGeneralised` (the refusing half; v1 agrees on
+    code and place; v2 renders the record before the lambda is constrained, a `v2-expected.md` row) and
+    `tests/pending/run/DeferredReceiverRecursiveTwin` (accepted, prints `2`; v1 miscompiles it — it
+    passes `f` a `compare` evidence and the program prints `EQ` — so it is a claimed pending fixture
+    with a v1 RED line, not a corpus guard).
+  - **S3 → CK-106.** A `number` receiver's non-well-known method in a group: `unknown_method` at
+    the use, in every order (`Resolve.undeterminedInGroup`); `check/bad/NumberReceiverMethodInGroup`
+    and `…Dispatch` (two `internal`s each before).
+  - **S4, S5** written in §10.8 (confluent default order; a refused group's one error may differ in
+    code and declaration by order). **S1** in R14's brief and a dated D5 row, decided by the owner (yes, 2026-09-26),
+    recommended yes. Nits: stale comments, `declOf`'s linear scan said, queue reuse's coverage said
+    (and PERM run once under ReleaseSafe: green), the scratch-arena comment.
+  - **Evidence.** The seven steps green; `scenario/PERM` 48 programs, 2 796 orders (and green under
+    ReleaseSafe).
 
 ### R8a — Derived contexts: the fixpoint, D4, P5, publication, install
 
@@ -1546,6 +1696,11 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
     goldens of phantom or nested-requirement types, each with a reason.
   - A cold-versus-warm cache matrix under v2 is byte-identical.
   - CK-67, CK-69 and CK-74 are in the permutation scenario (both declaration orders).
+  - *(Added by R7's review, S6, 2026-09-26.)* A derived query made while an own `eq` is in flight
+    (its group `checking`, or merged with its root not done) reads v1's capability bits as the
+    last settle left them — the one place R7 leaves where check timing feeds a verdict. The
+    permutation scenario gains such a program (a derived `Box T` query inside `T`'s merged `eq`
+    class), and R8a's fixpoint must give it one answer in every order.
   - `test-pending` is green.
 - **Owed from R6a's review (2026-09-25, S4): ONE capability.** Until R8a, `check2/Instances.zig`'s
   derivability verdict reads v1's capability bits (`Types.answersEq`/`answersCompare`,
@@ -1694,6 +1849,12 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - A `let` binder gets evidence parameters (`Binder.let_def`, `LetInfo`, `$l<inst>$<k>`).
   - `backend.md` §4's constrained-declaration row and `static-dispatch-spike.md` §8.1 are amended
     first.
+  - *(Added by R7's round-2 review, S1, 2026-09-26; decided by the owner 2026-09-26: yes; recommended
+    yes — `checker-v2.md` §21.1's D5 row of that date.)* A `let` whose constrained variables carry
+    only dot-calls' own requirements stays monomorphic in them, so `run/DeferredReceiverFieldCall`'s
+    `let call s = s.f 10 in call { f = … }` keeps its field call. R14's reviewer re-runs the
+    in-flight probes of R7's reviews against a `let` that holds such a dot-call inside a merged
+    member.
 - **Files.** `check/Generalize.zig`, `check/Evidence.zig`, `check/Dispatch.zig` (`lets`),
   `js/Lower.zig` (`let` functions with evidence), `dump/dispatch.zig`.
 - **Closes.**
@@ -1742,7 +1903,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R5 | CK-96, 97, 98 (into `perf_test.zig`, `test-perf`); CK-99 (a `run/` guard) — all four found by R5's reviews and fixed in R5 | CK-05, 06, 16, 51, 68; CK-62 (two dispatch-free fixtures; `run/TryDecidedByLaterFacts` waits for R6a); CK-09 (a five-member `check/good` fixture) | CK-18; CK-59 (the generation half); CK-94 gains F8 (the name hint follows member order) |
 | R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 48; CK-100 (found and fixed by R6a); CK-101 (found and fixed by R6a's review); CK-03, 42, 80, 101 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-62's `run/TryDecidedByLaterFacts` moves to R6b (it needs `build`) | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32; CK-62's `run/TryDecidedByLaterFacts` (from R6a); the `run/` fixtures of CK-30 (`RecursionWithComparison`, `DeadMiscount`), CK-31, CK-66 and CK-67, which P6 answers ahead of R7 and R8a (their slices keep the rest of each finding); CK-102 (found and fixed by R6b); CK-103 (found by R6b's review, claimed); CK-80's `build` half (`perf_test.zig` "CK-80 build") | CK-104 (found by R6b's reviews; a backend fix, promoted: `run/DerivedRowBodyEmissionOrder`, with a claimed permuted CK-67 twin) |
-| R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76 | — |
+| R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76; CK-105 and CK-106 (found by R7's reviews, claimed) | — |
 | R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24 | — |
 | R9 | — | — | CK-15 (rest) |
@@ -1753,7 +1914,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 104 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 106 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

@@ -1,0 +1,34 @@
+-- CK-105: the recursive twin of `check/bad/DeferredReceiverGeneralised`
+-- (a regression guard; v1 miscompiles it):
+-- `f` calls `g` back, so `f` and `g` are one binding group, `g`'s record
+-- reaches `f`'s `x` before `f`'s constraint is generalised, and `x.combine
+-- n` is the field call (static-dispatch-spike.md §11 *Deferred receiver*,
+-- amended 2026-09-26). This pair pins the rule's non-local edge: a caller in
+-- the same recursive group decides what `x.m a` means, as HM's monomorphic
+-- recursion lets a caller decide a parameter's type (R7's round-2 review,
+-- S2). `g 1` is `f 1 { combine = \z -> z + 1 }`, which is `2`. Expected `2`.
+--
+-- v1 miscompiles it (CK-105): it passes `f` a `compare` evidence it does
+-- not take, and the program prints `EQ`.
+import Node exposing (Program)
+
+
+f n x =
+    if n > 5 then
+        g n
+
+    else
+        x.combine n
+
+
+g n =
+    if n > 5 then
+        n
+
+    else
+        f n { combine = \z -> z + 1 }
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (g 1) ]

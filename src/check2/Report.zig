@@ -61,8 +61,6 @@ failed_patterns: std.DynamicBitSetUnmanaged = .{},
 current: ?u32 = null,
 /// Errors emitted, dropped ones included: what the plan gate reads.
 errors: u32 = 0,
-/// A use needed a slice v2 does not have yet (`notImplementedR7`).
-refused: bool = false,
 /// Per local of the module, what the generator bound it to: the texts name
 /// a callee from it (`Reporter.describe`).
 local_type: []Var.Optional = &.{},
@@ -168,6 +166,15 @@ pub fn flush(r: *Report) Error!void {
         };
     }
     r.staged.clearRetainingCapacity();
+}
+
+/// Append `text` to the message of the module's diagnostic at `index`, one
+/// already emitted: D14's hint, written once its class is final (§10.8).
+pub fn appendToItem(r: *Report, index: u32, text: []const u8) Error!void {
+    const item = &r.items.items[index];
+    const joined = try std.mem.concat(r.gpa, u8, &.{ item.message, text });
+    r.gpa.free(item.message);
+    item.message = joined;
 }
 
 /// Attribute what follows to declaration `decl` (or to nothing).
@@ -362,35 +369,10 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
     try r.flush();
 }
 
-/// A use that needs an own method whose binding group is checked after it:
-/// R7's nesting at demand (checker-v2.md §10.2). Until then the use says so,
-/// once, and nothing else is said about it.
-pub fn notImplementedR7(r: *Report, region: Bir.Inst.Index, method: Symbol) Error!void {
-    const message = try std.fmt.allocPrint(r.gpa, "checker v2 cannot check this use until slice R7: it needs `{s}`, a method of this module that has no type annotation and whose binding group is checked after this one.\n", .{r.env.interner.slice(method)});
-    r.refused = true;
-    try r.emit(.{ .code = .not_implemented, .module = r.module, .region = region, .message = message });
-}
-
 /// A use whose answer is this module's derived function for a type P5 could
 /// not write under v1's one-entry-per-parameter context (`Eager.zig`): the
 /// context R8a infers (§11.2). Said by P6, at the use.
 pub fn notImplementedR8a(r: *Report, region: Bir.Inst.Index) Error!void {
     const message = try r.gpa.dupe(u8, "checker v2 cannot build this comparison until slice R8a: it needs this module's derived `eq` or `compare` for a type whose context is not one entry per type parameter.\n");
     try r.emit(.{ .code = .not_implemented, .module = r.module, .region = region, .message = message });
-}
-
-/// A module that used a construct v2 does not check yet says only that:
-/// every other message of the module (from `start`, its first) is dropped,
-/// since a use v2 could not type makes whatever follows from it noise, and
-/// v2 never answers for code it does not check (§5, *As built by R4b*).
-pub fn keepOnlyRefusals(r: *Report, start: usize) void {
-    if (!r.refused) return;
-    var kept = start;
-    for (r.items.items[start..]) |item| {
-        if (item.code == .not_implemented or item.code == .internal) {
-            r.items.items[kept] = item;
-            kept += 1;
-        } else r.gpa.free(item.message);
-    }
-    r.items.shrinkRetainingCapacity(kept);
 }

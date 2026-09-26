@@ -1,0 +1,41 @@
+-- CK-105: `ma` reaches `mb` by VALUE and `mb` reaches `ma` by dispatch, so
+-- the SCC order checks `mb` first in every declaration order, and `mb`'s
+-- in-flight call types `ma`'s `x` only after `ma`'s `x.combine 1` was
+-- solved. Before the *Deferred receiver* amendment (static-dispatch-spike.md
+-- §11, 2026-09-26) every order refused it with `no_methods_on_shape`; the
+-- record now arrives before the constraint is generalised, so it is the
+-- field call. Expected `5`.
+--
+-- Oracle twin, run on 8016030 under v1: this file with `ma : K, { combine :
+-- Int -> Int } -> Int` and `mb : K, Int -> Int` annotated prints `5`. As
+-- written, v1 refuses it.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+pub ma (K n) x =
+    let
+        _ =
+            mb (K n) 0
+    in
+    x.combine 1
+
+
+pub mb (K n) y =
+    if n > 0 then
+        y
+
+    else
+        let
+            _ =
+                (K 1).ma { combine = \z -> z + 1 }
+        in
+        y
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt ((K 0).mb 5) ]

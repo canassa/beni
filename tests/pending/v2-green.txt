@@ -616,3 +616,7 @@ tests/corpus/run/WideTypeArityEq
 tests/corpus/dispatch/UndeterminedUnderValueEvidence.beni
 tests/corpus/run/DerivedRowBodyEmissionOrder
 tests/corpus/run/UndeterminedUnderValueEvidence.beni
+# R7 (2026-09-26): nesting at demand turns the last R7 refusal green, and the annotated twin of
+# CK-70 is a new guard (an annotated member of a dispatch cycle instantiates, §6.6).
+tests/corpus/run/DerivedEqLocalCustom.beni
+tests/corpus/run/RecursiveDispatchAnnotated.beni

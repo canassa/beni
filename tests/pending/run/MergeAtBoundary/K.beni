@@ -1,0 +1,8 @@
+-- CK-65: see Main.beni.
+pub type K
+    = K Int
+
+
+pub eq : K, K -> Bool
+eq (K a) (K b) =
+    modBy a 10 == modBy b 10

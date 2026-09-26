@@ -1,0 +1,45 @@
+-- CK-65: three own methods recursive THROUGH DISPATCH, `ma` → `mb` → `mc` →
+-- `ma`, none annotated: whichever is checked first nests the next at its
+-- demand, and the third's call back is a back-edge that merges all three
+-- top-level groups into one (owner decision D11, checker-v2.md §10.4, §23
+-- item 1). The merged group is generalised ONCE, at its root's boundary, so
+-- each method is polymorphic in `x` outside the group: `main` uses `ma` at
+-- `Int` and `mb` at `String`. Expected `7`, `s`, `3`.
+--
+-- Oracle twin, run on 8016030 under v1: this file with the three methods
+-- annotated `K, a -> a` prints exactly the expected lines. As written, v1
+-- refuses it with METHOD NEEDS AN ANNOTATION.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+pub ma (K n) x =
+    if n <= 0 then
+        x
+
+    else
+        (K (n - 1)).mb x
+
+
+pub mb (K n) x =
+    if n <= 0 then
+        x
+
+    else
+        (K (n - 1)).mc x
+
+
+pub mc (K n) x =
+    if n <= 0 then
+        x
+
+    else
+        (K (n - 1)).ma x
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt ((K 4).ma 7), (K 5).mb "s", String.fromInt ((K 2).mc 3) ]

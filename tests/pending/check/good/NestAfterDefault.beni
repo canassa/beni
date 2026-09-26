@@ -1,0 +1,39 @@
+-- CK-65: a group nested AFTER a frame applied a default (checker-v2.md
+-- §10.2, §8.1 step 3). `f`'s `m?` has neither side known when `f`'s
+-- boundary is reached, so step 3 defaults it: `m` becomes `Result a K`. That
+-- readies `m == m`, whose derived `Result` answer asks `K`'s `eq` for a
+-- position — this module's own unannotated `eq`, written after `f`, so its
+-- group is nested there, after the default. Round 3's N-2 debug assert
+-- ("no group is nested after a frame has applied its first default: a
+-- default only makes a `Result`, whose methods are core's") would stop the
+-- compiler on this valid program: a derived `Result` reaches its payloads'
+-- methods. R7 does not add it (§10.4 *As built by R7*). `h` is the public
+-- face: `f`'s requirement `a.eq` is answered at `String`.
+--
+-- Oracle twin, run on 8016030 under v1: this module with `eq` written first
+-- checks clean. As written, v1 refuses it with METHOD NEEDS AN ANNOTATION.
+type K
+    = K Int
+
+
+f m =
+    let
+        _ =
+            m == m
+
+        y =
+            m?
+
+        _ =
+            y == K 1
+    in
+    f m
+
+
+eq (K a) (K b) =
+    modBy 10 a == modBy 10 b
+
+
+pub h : Result String K -> Result String Int
+h m =
+    f m

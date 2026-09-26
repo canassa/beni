@@ -3,7 +3,7 @@
 -- are recursive THROUGH DISPATCH and merge (D11). `r` in `f`'s `case` is
 -- `h`'s in-flight result, a group-level receiver, so D14 (checker-v2.md
 -- §10.7) lowers `r.combine z`: `q` is monomorphic, and `( q 1, q "s" )` is
--- one `type_mismatch` at `q "s"` with the hint "Annotate `h`". That holds in
+-- one `kind_mismatch` at `q "s"` with the hint "Annotate `h`". That holds in
 -- both orders — `Later` writes the methods after `f`, `Sooner` before —
 -- because the merge is found at `f`'s scrutinee, before the `let`, in both.
 -- The half that must CHECK is `check/good/ScrutineeMethodMergeVariant/`.

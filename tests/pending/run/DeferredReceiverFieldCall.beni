@@ -1,0 +1,29 @@
+-- CK-105: a dot-call whose receiver becomes a record before its constraint
+-- is generalised is the field call (static-dispatch-spike.md §11 *Deferred
+-- receiver*, amended 2026-09-26), in one declaration too: `r.f 1` inside
+-- the lambda sees `r` as a variable, and the record arrives when the lambda
+-- is applied, in the same body. `g` is a closed record's field call once
+-- the record is known; `apply` is the same through a `let` helper applied
+-- later. Expected `2`, `11`.
+--
+-- Oracle twin, run on 8016030 under v1: this file with `(r.f) 1` and
+-- `(s.f) 10` written as explicit field calls prints `2`, `11`. As written,
+-- v1 refuses both uses with NO METHODS HERE.
+import Node exposing (Program)
+
+
+g u =
+    (\r -> r.f 1) { f = \x -> x + 1 }
+
+
+apply u =
+    let
+        call s =
+            s.f 10
+    in
+    call { f = \x -> x + 1 }
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt (g ()), String.fromInt (apply ()) ]

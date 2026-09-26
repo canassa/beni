@@ -32,7 +32,8 @@ Only the rows whose v2 output differs from the golden before the cut-over; the D
 `run/DerivedEqInPriorityGroup` must keep passing.
 
 - `tests/corpus/check/bad/MethodNeedsAnnotation` — D3 (R7): v2 accepts the program; it becomes a `run/` fixture at R11
-- `tests/corpus/check/bad/PriorityGroupSpecializedPayloadEq` — re-derived without priority groups (R7): still a refusal, with a new region; re-blessed at R11
+- `tests/corpus/check/bad/PriorityGroupSpecializedPayloadEq` — re-derived without priority groups (R7): still a refusal at the same `==` (20:44), but R8a's `not_implemented` (P6 cannot write `L`'s derived row under v1's one-entry-per-parameter context) where the golden pins `not_equatable`; R8a's contexts decide it, re-blessed at R11
+- `tests/corpus/check/bad/DeferredReceiverGeneralised.beni` — eager draining (§9.1, as R6b built it; R7's guard of CK-105): the same `no_methods_on_shape` at 19:9, but the record is rendered when it meets `f`'s instantiated receiver, before the inline lambda's body is constrained, so the message shows `{ combine : a -> b }` where v1's golden (rendered at the boundary) pins `{ combine : number -> number }`; re-blessed at R11
 
 ## Expected differences R4b introduced (re-blessed at R11)
 
@@ -60,7 +61,3 @@ v1's until the cut-over, when the fixture is re-blessed (or re-cut) under v2 wit
 - `tests/corpus/run/DerivedEqInPriorityGroup` — R8a (§11.2): `W`'s derived `eq` holds a `Holder Keyed` whose imported `eq` asks `a.key`, not `a.eq`; v1's capability settle over method schemes answers it, v2's one-entry-per-parameter context does not ask the payload, and the syntactic capability bit it reads until R8a refuses `W` (`not_equatable` at 31:9 and 38:17), so `build` stops there too
 - `tests/corpus/run/DerivedEqThroughCustom` — the same R8a case, through `ArbitraryHolder.Holder KeyedFunction.Keyed` at 170:35 and 171:35
 - `tests/corpus/check/bad/MethodConstraintMismatch.beni` — review F6 (§14.1, §9.4 *As built by R6a's review*): a declaration whose method type failed publishes `<error>` and says nothing more about its requirements, so the `CONFLICTING METHOD TYPES` stands alone; v1's golden also pins a `CONSTRAINT IN AN INFERRED INTERFACE` warning printing `where a.render : ?` — a scheme v1 publishes with a hole in its `where` clause
-
-## Expected differences R6b leaves (removed by the slice named)
-
-- `tests/corpus/run/DerivedEqLocalCustom.beni` — R7 (§10.2): the record's derived `eq` reaches `Inner`'s unannotated `eq`, declared after the comparisons that use it, so v2 refuses both uses with `not_implemented` (R7's nesting at demand) where v1's priority groups check the method first; R6b builds everything else of the `run/` corpus

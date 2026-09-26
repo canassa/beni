@@ -72,6 +72,7 @@ tests/pending/check/bad/MissingWhereAtUse.beni v1 exit=1 codes=missing_where_con
 tests/pending/check/bad/MethodResultTooGeneral.beni v1 exit=0 codes=none
 tests/pending/check/bad/NumberBridgeRigidLyingWhere.beni v1 exit=0 codes=none
 tests/pending/check/good/EagerDrainInnerLet.beni v1 exit=0 iface-differs
+tests/pending/check/good/NestAfterDefault.beni v1 exit=1 codes=method_needs_annotation×1
 tests/pending/check/bad/CyclicReceiverNoMethodLookup.beni v1 exit=1 codes=infinite_type×2,unknown_method×1 why=code
 # CK-101 on v1 is a stack overflow. Zig's fault handler prints its banner at once and then a
 # Debug stack trace of about 10 000 frames that outlasts the 20 s case timeout; the harness kills
@@ -125,6 +126,11 @@ tests/pending/run/ObligationEscapesInnerLet.beni v1 dev: exit=1 codes=ambiguous_
 tests/pending/run/OperatorSectionApplied.beni v1 dev: exit=1 codes=internal×16
 tests/pending/run/OwnMethodBeforeDefinition v1 dev: exit=1 codes=method_needs_annotation×3
 tests/pending/run/OwnMethodDemandedEarly.beni v1 dev: exit=1 codes=method_needs_annotation×3,unknown_method×1
+tests/pending/run/OwnMethodDemandedTwoLetsDeep.beni v1 dev: exit=1 codes=method_needs_annotation×1
+tests/pending/run/OwnMethodThreeCycle.beni v1 dev: exit=1 codes=method_needs_annotation×2
+tests/pending/run/OwnMethodFourCycle.beni v1 dev: exit=1 codes=method_needs_annotation×3
+tests/pending/run/OwnMethodCycleDemandedTwice.beni v1 dev: exit=1 codes=method_needs_annotation×2
+tests/pending/run/OwnMethodValueBackEdge.beni v1 dev: exit=1 codes=method_needs_annotation×1
 tests/pending/run/OwnMethodValuePrefix.beni v1 dev: exit=1 codes=method_needs_annotation×1
 tests/pending/run/PhantomParameterEq.beni v1 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
 tests/pending/run/RecursionWithComparison.beni v1 dev: exit=1 codes=internal×9
@@ -140,11 +146,14 @@ scenario/CK-40 v1 slow
 scenario/CK-42 v1 slow
 scenario/CK-75 v1 slow
 scenario/CK-80 v1 slow
-scenario/PERM v1 exit=1 codes=method_needs_annotation×1
-scenario/NEST-UNDER v1 exit=1 codes=method_needs_annotation×200
-scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×20000
+scenario/PERM v1 exit=1 codes=method_needs_annotation×3
+scenario/NEST-UNDER v1 exit=1 codes=method_needs_annotation×10000
+scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×1000
+scenario/NEST-DEEP v1 exit=1 codes=method_needs_annotation×2
 scenario/CK-82 v1 crash=ABRT
 scenario/CK-88 v1 slow
+scenario/CK-40 v2 slow
+scenario/CK-88 v2 slow
 
 # Under `--checker=v2` (test-pending's run 2, from R4a). Rewritten by R4b, whose v2 checks every
 # module that needs no dispatch and no obligation (checker-v2.md §5, *As built by R4b*). A module
@@ -185,22 +194,28 @@ tests/pending/check/bad/MissingWhereInLetAnnotation.beni v2 exit=1 codes=missing
 tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni v2 exit=1 codes=kind_mismatch×1,type_mismatch×2 why=message
 tests/pending/check/bad/OpenRecordEquality.beni v2 exit=1 codes=no_methods_on_shape×1 why=message
 tests/pending/check/bad/PrivateEqOutsideModule v2 exit=1 codes=private_method×3 why=count
-tests/pending/check/bad/RecursiveDispatchTwoTypesB.beni v2 exit=1 codes=not_implemented×1 why=code
-tests/pending/check/bad/RecursiveDispatchTwoTypes.beni v2 exit=1 codes=not_implemented×2 why=code
-tests/pending/check/bad/RecursiveGroupEvidenceReceiver v2 exit=1 codes=kind_mismatch×1 why=code
-tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni v2 exit=0 codes=none
-tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni v2 exit=1 codes=kind_mismatch×1 why=code
-tests/pending/check/bad/RecursiveGroupSubWanted v2 exit=1 codes=kind_mismatch×1 why=code
 tests/pending/check/bad/SchemaWrapperExclusion.beni v2 exit=1 codes=not_equatable×1 why=count
-tests/pending/check/bad/ScrutineeMethodMergeD14 v2 exit=1 codes=not_implemented×4 why=code
 tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=type_mismatch×1 why=message
-tests/pending/check/good/ScrutineeMethodMergeVariant v2 exit=1 codes=not_implemented×4
 tests/pending/run/DerivedEqDeepRecord.beni v2 dev: exit=1 codes=internal×2
 tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/MutualDispatchMethods.beni v2 dev: exit=1 codes=not_implemented×2
-tests/pending/run/OwnMethodBeforeDefinition v2 dev: exit=1 codes=not_implemented×3
-tests/pending/run/OwnMethodDemandedEarly.beni v2 dev: exit=1 codes=not_implemented×3
-tests/pending/run/OwnMethodValuePrefix.beni v2 dev: exit=1 codes=not_implemented×1
 tests/pending/run/PhantomParameterEq.beni v2 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
-tests/pending/run/ScrutineeMethodLater.beni v2 dev: exit=1 codes=not_implemented×2
+# R7's reviews (2026-09-26): CK-105 (a dot-call's field-or-method choice), D14's hint and a
+# merge during the root's boundary; v1 refuses each (RuleAMonomorphicNoRecursionHint with an internal).
+tests/pending/check/bad/RecursiveGroupFieldCallTwoTypes.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1,no_methods_on_shape×1 why=code
+tests/pending/check/bad/RecursiveGroupHintAllMembers.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×2 why=code
+tests/pending/check/bad/RecursiveGroupHintOneMember.beni v1 exit=1 codes=method_needs_annotation×2 why=code
+tests/pending/check/bad/RecursiveGroupRefusalRendering.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1,not_equatable×1 why=code
+tests/pending/check/bad/RuleAMonomorphicNoRecursionHint.beni v1 exit=1 codes=internal×1 why=code
+tests/pending/run/FieldCallThroughMember.beni v1 dev: exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1
+tests/pending/run/FieldCallThroughMemberCycle.beni v1 dev: exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×2
+tests/pending/run/FieldCallThroughValueDemand.beni v1 dev: exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1
+tests/pending/run/FieldCallThroughValueRecursion.beni v1 dev: exit=1 codes=unknown_method×1
+tests/pending/run/MergeAtBoundary v1 dev: exit=1 codes=method_needs_annotation×1
+tests/pending/run/DeferredReceiverFieldCall.beni v1 dev: exit=1 codes=no_methods_on_shape×2
+# R7's round-2 review (2026-09-26): X1 (a dot-call joined with a scheme's requirement) and CK-106.
+tests/pending/check/bad/DeferredReceiverJoinedInGroup.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1 why=code
+tests/pending/check/bad/DeferredReceiverJoinedRequirement v1 exit=1 codes=no_methods_on_shape×2 why=position
+tests/pending/check/bad/NumberReceiverMethodInGroup.beni v1 exit=1 codes=internal×1 why=code
+tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1,unknown_method×1 why=code
+tests/pending/run/DeferredReceiverRecursiveTwin.beni v1 dev: exit=0 stdout-differs

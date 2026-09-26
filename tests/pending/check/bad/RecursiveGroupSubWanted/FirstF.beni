@@ -2,7 +2,7 @@
 -- sub-wanted on `r`, another recursive-group member's result, when
 -- `(Box r).combine z` resolves inline; D14 (checker-v2.md §10.7, round 4)
 -- lowers it, so `q` is monomorphic and `( q 1, q "s" )` is one
--- `type_mismatch` at `q "s"` with the hint "Annotate `g`", in every order.
+-- `kind_mismatch` at `q "s"` with the hint "Annotate `g`", in every order.
 -- `FirstF` is round 4's `subA`, `FirstG` is `subB`. On 7427828 `check`
 -- accepts both; `build` of `subA` is INTERNAL ERROR, and `subB` runs and
 -- prints `{ a = Box K 1, b = Box K 1 }`.

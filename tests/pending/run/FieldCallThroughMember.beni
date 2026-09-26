@@ -1,0 +1,44 @@
+-- CK-105: a dot-call on a parameter another member of its recursive group
+-- types, `x.combine 1`, is the field call in every declaration order: a
+-- dot-call whose receiver becomes a record before its constraint is
+-- generalised is the field call, whenever the record arrives
+-- (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26;
+-- checker-v2.md I9). Before the amendment the choice was taken when the
+-- node was first solved, so the orders where the record came in through an
+-- in-flight call first built and printed `5`, and the others were
+-- `no_methods_on_shape` (R7's adversarial review, F1).
+-- This file writes `mb` before `ma`, an order that was refused. Expected `5`.
+--
+-- Oracle twin, run on 8016030 under v1: this file with `ma : K, { combine :
+-- Int -> Int } -> Int` and `mb : K, Int -> Int` annotated prints `5`. As
+-- written, v1 refuses it with METHOD NEEDS AN ANNOTATION.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+pub mb (K n) y =
+    if n > 0 then
+        y
+
+    else
+        let
+            _ =
+                (K 1).ma { combine = \z -> z + 1 }
+        in
+        y
+
+
+pub ma (K n) x =
+    let
+        _ =
+            (K n).mb 0
+    in
+    x.combine 1
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt ((K 0).mb 5) ]

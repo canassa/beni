@@ -1,0 +1,41 @@
+-- A regression guard for checker v2 (R7, reviewer focus; checker-v2.md §6.6,
+-- §10.6): CK-70's program with the method that is used at two types
+-- ANNOTATED, `eq : Box a, Box a -> Bool`. A reference to an annotated
+-- member of a group that is checking instantiates its scheme and is never a
+-- back-edge, so `show` and `eq` do not merge, and `show` compares `Box Int`
+-- and `Box String` with the one `eq`. Checked in every declaration order by
+-- the permutation scenario (`scenario/PERM`). Expected `a`, `b`.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+type Box a
+    = Box a
+
+
+pub show (K n) u =
+    if Box 1 == Box 2 && n == 0 then
+        "a"
+
+    else if Box "x" == Box "y" then
+        "b"
+
+    else
+        "c"
+
+
+pub eq : Box a, Box a -> Bool
+eq (Box a) (Box b) =
+    let
+        _ =
+            \w -> (K 0).show ()
+    in
+    True
+
+
+main : Program
+main =
+    Node.printLines [ (K 0).show (), (K 1).show () ]

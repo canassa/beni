@@ -428,6 +428,9 @@ back-edge to a merged group merges from its root (S-new-3).
 *Simplified 2026-09-24 (review round 2, N3).* The `parked` lists, the `value_deps` prefix lists and
 the `merged` status are deleted. Nesting happens at demand (§10.2), so nothing waits in a group.
 
+*As built by R7 (2026-09-26):* `Groups.zig`; `frame_of[g]` is `frame`, the SCCs are
+read from `Module.bindingGroups`; a group is `checking` from its generation on (§10.8).
+
 ### 4.5 Obligations ride on their variables
 
 `tuple_index`, `interpolatable`, `equatable` (explicit `Basics.eq`/`neq`) and `try` (§8.6) are
@@ -1053,6 +1056,11 @@ with the deciders in `Decide.zig`.
   shapes) must restate it again. *Revised by R6a's review (S8):* it is `Solve.expect`, so a
   release build reports `internal` too, as an assert must (§15).
 
+*As built by R7 (2026-09-26): frames nested and merged* (§10.8). Step 1 drains the frame's own
+queue (a `let` frame's is its top-level-kind frame's); a merged top-level-kind frame runs steps 1
+and 2 and hands down (`Groups.handDown`), and its root's boundary runs step 4 over the handed-down
+binders too. Step 2's counting sort by rank is replaced by a sort when the frame's rank is far
+above its pool's size, which a frame nested at demand is (a chain of n nested groups was O(n²)).
 
 ### 8.2 Occurs at every binder (CK-04, CK-03)
 
@@ -1298,6 +1306,9 @@ every wanted from the moment it is `ready` until it is answered.
   - The boundary settle step (§8.1 step 1) is then only the last drain.
 - *S-new-5's round-2 text ("one queue per module; answers never depend on which frame drains") was
   wrong once draining can nest groups.*
+- *As built by R7 (2026-09-26):* as specified; the routing field is the queue's index, the
+  current queue's list is held in `Solve.ready`, and a release build reuses a popped queue (never
+  a Debug build) (§10.8).
 
 ### 9.2 One step, by the receiver's root
 
@@ -1593,6 +1604,8 @@ There are two cases, by `G_d`'s effective status.
         other order. That is generated code in practice.
       - The limit is **order-dependent at that extreme**, and this is stated, not hidden (I9's one
         exception).
+      - *Corrected by R7 (2026-09-26):* the pair as described is admitted by the rule above; two
+        demands in a row, each about 2 150 levels deep, reach it (§10.8, `scenario/NEST-DEEP`).
       - Rule 7 holds. It bounds a real blow-up, a native stack overflow on valid input, and an
         annotation or a reordering lifts it, as with the 64-constraint cap.
     - *Rejected alternative:* an explicit continuation stack. It would have to turn `constrain`,
@@ -1672,6 +1685,8 @@ through value or dispatch edges, which makes them mutually recursive.
   - Debug assert: no group is nested after a frame has applied its first default, whether the
     frame is a top-level root or a `let` frame (round 3, N-2). A default only makes a `Result`, whose
     methods are `core`'s and already `done`.
+  - *Corrected by R7 (2026-09-26):* the premise is false. A derived `Result` asks its positions'
+    methods, which may be this module's and `unchecked`, and the assert is not added (§10.8).
 - **All members of a merged group share one failure bit** (§15.2) and are generalised **together**.
   Their calls to each other are group calls (§12.3).
 - **A back-edge to a group already merged into a root merges from that root** (S-new-3).
@@ -1860,6 +1875,217 @@ it is by v1. It is the same kind of limit as monomorphic recursion in Elm.
 - **HM(X) for outer receivers.** Principal, but it is Roc's side table, which §3 rejects, and it
   reverses CK-02's expectation.
 - **Restating I9 with an exception.** It gives up the guarantee.
+
+### 10.8 As built by R7 (2026-09-26)
+
+*Added by R7, and revised by R7's reviews the same day. The sections above stand; this records
+how they were built, and the places where building or reviewing them showed the text wrong or
+silent (each marked **Correction**).*
+
+**Files.** `check2/Groups.zig` (the groups, their status, a top-level-kind frame's life, nesting at
+demand and the `demand` node, the merge and the hand-down, the budget), `check2/Recursion.zig`
+(D14's two hooks, and when a mismatch is D14's) and `check2/Producers.zig` (the syntactic reading
+of the Bir that D14's hint and §10.6's cycle print, error paths only). `Generalize.zig` holds the
+frame stack's primitives (push, pop, a merged frame's queue handed down) beside `Queue`, and step
+6's generality check, as §19.1 lays out.
+
+**Groups and status (§4.4).** P4 is `Groups.checkAll`: every group of `Module.bindingGroups`
+whose effective status is `unchecked`, in SCC order. A group is `checking` from its generation
+(its members' variables exist from `Decl.group` on), and `done` when its boundary ran. The union
+find uses path halving. `frame_of` holds a `checking` group's frame index; a merged group's is
+cleared at its hand-down, and status is read only through the root.
+
+**Nesting at demand (§10.2).** `Groups.demand(decl)` is the one entry, used by the module rule
+(`Instances.ownMethod`), by a derived query that finds an own `eq`/`compare` whose group is
+`unchecked` (`Instances.derivable` demands it and asks again), and by a value reference:
+- A value reference to a group that is not `done` when the referring group is GENERATED becomes
+  a `demand` node (`Tree.Node.Tag.demand`), resolved when it is SOLVED. Only a nested group can
+  make one: in SCC order every value dependency is `done` first, so a top-level group pays one
+  status test per `.top` reference. A reference to a schema of such a group is a `demand` node
+  too, then typed as any schema reference.
+- A nested group is generated right before it is solved, at rank `frames.len + 1`, into a tree
+  of its own nesting level (reused: nested checks finish innermost first). A check asserts I14
+  (no open speculation), since a `demand` node reaches it without `Resolve.step`'s guard.
+- `Solve.depth` is not reset by a nested check, so it is the solver depth of the whole stack; the
+  per-declaration guard counts from the group's own start (`depth_base`).
+- A declaration with no type at all (its annotation or body could not be read, already reported)
+  answers a demand `missing`, which poisons in silence; only the budget's refusal is reported.
+
+**The budget (§10.2).** Admission is `depth + resolve_depth + nest_units + nest_cost +
+declaration_worth ≤ budget`, with `budget = 2 × declaration_worth = 8 400`. `resolve_depth` counts
+resolution recursing into a derived shape's positions (`Resolve.position`), which spends native
+stack the solver's depth does not see. `nest_cost` is 3, calibrated once in a Debug build: one
+solver depth unit costs at most 2 528 bytes of native stack (a `let` chain, `solve` → `let_` →
+`solve`; 2 048 through `and_`, which is also the path of `case` branches, record fields and call
+arguments — a call node itself does not recurse), one level of `Resolve.position` 2 496 bytes,
+and one nesting of a reverse-ordered method chain 15 552 bytes, of which 4 depth units are the
+method body's own nodes and the remaining 7 360 bytes are 2.9 units. A reverse-ordered chain
+therefore nests about 599 deep; `scenario/NEST-OVER` (1 000 links) is refused exactly once, at
+the 601st method's use, with the hint.
+
+**Correction (the "pair of deep declarations").** §10.2's example — a method about 2 500 levels
+deep, used about 2 500 levels deep — is ADMITTED by the rule as written: the demand at depth
+2 500 leaves 5 900 units, more than one declaration's worth plus `nest_cost`, and the parser
+bounds a declaration at 4 096 levels, so no single demand is ever refused. What reaches the
+refusal is accumulated depth: two demands in a row, each about 2 150 levels deep (`use` → `m` →
+`m2`), refused once at the second in the order that nests them, and checked in the other
+(`scenario/NEST-DEEP`). The limit stays I9's one stated exception.
+
+**The in-flight link and the merge (§10.3, §10.4).** A demand on a `checking` group is in flight:
+the member's own variable, answered `group_call` for a method. When that group's frame is below
+the current top-level-kind frame, it is a back-edge: every top-level-kind frame above it is marked
+merged and recursive, and its group joins the root's class. A merged frame keeps solving, then
+runs steps 1 and 2, lowers its whole pool to the root frame's rank (`Walk.lowerTo`, so what a
+`let` frame between them shares with it is lowered too) and moves it, its open-`?` list, its
+binders (copied out of its tree: the tree is reused), its members and its queue's leftovers to
+the frame of its group's root; its wanteds and rows are re-pointed to the root's queue. The
+root's boundary runs every step once over all of them: step 4 over its own binders and the
+handed-down ones sorted by kind, source position, declaration and name, so which binder names a
+cycle does not depend on which member was the root; promotion over every member
+(`Resolve.close`); one failure bit (`Report.failGroup`). P6 reads each declaration's group as its
+merge root, so §12.3's cases treat a merged group as one. An annotated declaration is a singleton
+SCC, never nested or merged, so a merged frame has no generality check to hand down (asserted).
+There is no `touched` list to hand down (§8.1's fallback, R4b).
+
+**A merge during a boundary.** *Correction (round 3, N-2's debug assert, and R7's first text
+here).* "No group is nested after a frame has applied its first default: a default only makes a
+`Result`, whose methods are core's" is false. A default readies a wanted on the `Result`, whose
+derived answer asks each POSITION's method — an own unannotated `eq`, say, whose group is
+`unchecked` and is nested there (`tests/pending/check/good/NestAfterDefault.beni`). R7 does not
+add the assert. And R7's first reason — "the nested group shares no variable with the defaulted
+frame" — is false once the nested group back-edges into the frame that is running its boundary
+(R7's structural review, B1; `tests/pending/run/MergeAtBoundary`). As built:
+- Steps 1–3 run first (`Solve.settle`), and the members, the binders and the pool a boundary
+  reads are read after them, so a group that joined during them is promoted, failed and settled
+  with the rest; before this, its requirements were never promoted and P6 reported `internal`.
+- A frame merged into one below it DURING its own steps 1–3 stops there: it applies no more
+  defaults, hands the rest of its open-`?` list down with its pool, and its root defaults them
+  (§10.4's N4).
+- **Why the result is still order-independent.** The joining group is demanded only because of a
+  default already applied, so no order sees its facts before that default: the default is
+  decided by the facts before it, in every order, and every later fact of every member arrives
+  before the class's own remaining defaults and its generalisation, in every order. Whether the
+  frame that defaulted is the root (it was checked first) or a member that merges into the
+  joiner's frame (the joiner was checked first and nested it), the same defaults are applied on
+  the same facts and the class is generalised once.
+- **Default order is confluent** (round-2 review, S4). After such a merge the joined class's
+  defaults are applied in an order that varies — the root's own `?` rows then the handed-down ones
+  in one declaration order, the reverse in another — with a drain between two. The result does not
+  depend on it: a `?` default only ever decides its own target as `Result`, so what it readies can
+  only decide another `?` as `Result` too, or by facts that hold in every order.
+
+**Per-frame queues (§9.1).** One `ready` queue per top-level-kind frame (`Generalize.Queue`); a
+wanted and an obligation row carry `frame`, the queue current at their creation
+(`Obligations.current_queue`; a sentinel between frames, asserted at every creation), and
+`Unify.enqueue` puts a readied item on it. A merged frame's hand-down (`Generalize.handQueueDown`)
+re-points its items (the module's wanteds and rows from its push on that carry its queue:
+`Evidence.repoint`, `Obligations.repoint`) to the root's queue, as §9.1 says. `Decide.drain`
+takes the queue, which is always the current frame's. For speed the current queue's `ready` list
+lives in `Solve.ready` while its frame is current (swapped by push and pop), and a release build
+reuses a popped queue, since nothing routes to it again; a Debug build never does, so
+`Unify.enqueue`'s check that an item's queue is live keeps its full strength. The reuse path is
+therefore exercised only by release builds: the ReleaseFast steps (`test-pending-perf`,
+`test-perf`), and the permutation scenario run once under ReleaseSafe in R7's round-2 evidence.
+
+**D14 (§10.7).** The hooks are `Recursion.wanted`, at the top of `Resolve.step` (inline and drain
+alike, before the attach path), and `Recursion.row`, where an obligation is attached (before its
+`?` list is chosen, so the list is its lowered target's) and where one is decided. `R` is the
+rank of the frame the item's queue routes to, when that frame is recursive: a value SCC of two or
+more members from its push, or any frame of a merge from the merge on. A frame count keeps the
+hooks free where no frame is recursive.
+- **Whether a mismatch is D14's** is read when it is reported, before it poisons both sides
+  (`Recursion.involved`): a wanted, or an obligation other than `equatable`, made since the lowest
+  open recursive frame was pushed, whose frame is recursive, whose receiver (a deciding variable)
+  is at rank ≤ `R`, and whose method type (variables) reaches either side. That covers the order
+  where the wanted rode on a group-level flex unresolved and I15 lowered it when the flex met
+  another, where no hook runs. A receiver rule (a) held back at a `let` (§8.4's switch) is not
+  D14's, and its mismatch gets no hint (R7's adversarial review, F4).
+- **The hint is written when the class is final** (`Recursion.finish`, at the root's boundary),
+  from the program's text and the final class only — R7's first cut wrote it at the mismatch, from
+  whichever lowered item met it and the members merged so far, and both depended on the order
+  (R7's adversarial review, F2 and F3; structural S1). The mismatch's declaration is the one whose
+  instructions hold its region. Its context is the body of the `let` function the refused call
+  calls, when the mismatch is a call argument (`q "s"` names `q`'s body), else the innermost `let`
+  function around the region, else the region. The members of the class referenced there — by
+  value, or by a method call of a member's name — and, through each local the context names, those
+  its source references (a `let` constant's body, or the `case` scrutinee or `let` value a pattern
+  destructures; followed transitively) are its producers. Exactly one: "`r` comes from `g`, which
+  is in a recursive group with `f` … Annotate `g`", naming the local when the member came through
+  exactly one. Otherwise every unannotated member of the final class, sorted by text.
+- **Codes.** In the round 3 and round 4 programs the refused use is `q "s"` after `q 1`, and a
+  number literal meeting `String` is `kind_mismatch` by v1's rule; the pending fixtures' `.codes`
+  were amended from `type_mismatch` accordingly.
+
+**A dot-call's field-or-method choice (CK-105).** *Correction.* static-dispatch-spike.md §1.2 and
+§11 made `x.m a` a field call when `x` was known to be a record at the call and a method
+constraint otherwise, fixed at first sight. Inside a recursive group the first sight is the
+declaration order: a member's parameter typed by another member's in-flight call is known in one
+order and not the other, so the program was accepted in one and refused in the other (R7's
+adversarial review, F1; by value recursion too, predating R7). The *Deferred receiver* rule is
+amended (static-dispatch-spike.md §11, 2026-09-26): a dot-call's own requirement whose receiver
+becomes a record before the constraint is generalised is the field call (`Instances.onRecord`).
+Every member's facts arrive before the class is generalised, in every order.
+- *Revised by the round-2 review (X1).* A dot-call joined by Rule U1 with a scheme's requirement
+  on the same variable is not a field call (the requirement has no field accessor to be): a bit
+  on the older wanted of a join, `Wanted.field_ok`, is set only for a dot-call's own wanted and
+  cleared by any join with another (`Evidence.joinField`, written where `Unify` and `Resolve.attach`
+  make the alias), and the refusal is reported at the joined requirement's use. Before it, the
+  order in which the two were created decided between an internal I7 miscount and the refusal.
+- The refusing half — a constraint already generalised, met by a record at a caller outside the
+  group — is pinned by `check/bad/DeferredReceiverGeneralised`, and its recursive twin, accepted,
+  by `tests/pending/run/DeferredReceiverRecursiveTwin` (a caller in the same group decides what
+  `x.m a` means, as it decides a parameter's type under monomorphic recursion). v1 miscompiles the
+  twin (it passes `f` evidence `f` does not take, and prints `EQ`), so it is a claimed pending
+  fixture; v2's message for the refusing half renders the record before the lambda's body is
+  constrained (§9.1), an expected difference until R11.
+
+**A `number` receiver's method in a group (CK-106).** A requirement on a `number`-kinded
+variable whose method is not `eq`/`compare`, which some member's type does not reach (that member
+fixed it with a literal), has no answer: outside a group the caller reports `unknown_method` at
+the instantiation (§9.4); inside one the call is a group call and §12.3's case 3 has no
+structural answer for the method, which gave two `internal`s (v1: one). Step 7 now reports it as
+`unknown_method` at the requirement's use and poisons the variable (`Resolve.undeterminedInGroup`),
+in every order.
+
+**§10.6's message.** A method call answered in flight whose method type does not unify, in a class
+formed by a merge, is `type_mismatch`: "`eq` is used at two types inside a group that is recursive
+through method calls (`eq` → `show` → `eq`) …", with the hint to annotate it. The cycle is the
+shortest one through the member whose name is smallest by text, breadth first in text order, over
+edges read off the members' Bir (value references and method calls by a member's name), so it is
+the same in every declaration order. A value SCC that did not merge keeps v1's
+`methodSignatureMismatch`.
+
+**I9's scope, stated** (approved by the owner 2026-09-26; R7's adversarial review, F5; I9's own words are "whether a program
+checks, and what it computes"). Order-independent: whether each declaration order is accepted;
+for an accepted program its types, its interface and its output; for a refused one, that it is
+refused, and — for any given diagnostic — the text this section appends to it (D14's hint, from
+its region and the final class; §10.6's; the nesting refusal's). NOT promised: which FURTHER
+diagnostics a refused recursive group reports (a first error poisons the variables it met, and
+later errors meeting them are silent; which error is found first inside a recursive group depends
+on the order — the call-graph fuzz of R7's review round found programs reporting one
+`kind_mismatch` in some orders and two in others, on the reviewed tree and after), and a
+refused program's message text where it renders a TYPE (v1's shared texts render a type as it stands when the
+refusal is found, and inside a recursive group how far another member had got depends on the
+order: `not_equatable` shows `a -> a` in one order and `a -> b` in another), and a refused
+program's `dump --stage=types`. Nor, for a refused recursive group, WHICH error it reports first: its
+one error may be a different code in a different declaration depending on the order (the round-2
+in-flight fuzz, seed 28: `not_a_function` at `x 1` in `ma` in 30 orders, `type_mismatch` at the
+call in `mc` in 90), because which side of a conflict is met first sets both, as in any HM checker
+— Elm hides it behind a fixed source order, and v1 behaves the same. PERM holds its own programs to
+more than this. Rendering those after the class is generalised would show the
+poisoned types (`?`) the refusal left, and a canonical renaming cannot recover facts that arrived
+later; R13 owns diagnostic quality. The one other exception is §10.2's budget.
+
+**Evidence.** `scenario/PERM` (claimed): 41 programs, 2 752 declaration orders — every order up
+to 120, else 120 spread evenly over the whole permutation space by rank — each built and run
+against its oracle twin's output, or checked, or refused with one diagnostic whose message and
+spanned source text are byte-identical in every order (one program, `t102`, is held to its code
+and spanned text only, per I9's scope above); for the programs that check, `dump --stage=types`
+of six orders compared declaration by declaration. It covers every program R7's brief lists,
+round 3's and round 4's (CK-70, CK-72, CK-73, CK-76), 3- and 4-cycles, a member that demands its
+cycle at two nodes, a value back-edge, a group nested two `let`s deep, one nested after a default
+and one merged during its root's boundary, CK-105's field calls, and D14's hints. §23 items 1, 7
+and 8 are carried by it.
 
 ---
 
@@ -2238,6 +2464,10 @@ time (CK-30b).
   pass that can report an error (S4); an R8a refusal is said at once.
 - The CK-30 and CK-31 `run/` fixtures, and CK-66's `GroupVariableOutsideCaller` (case 3), pass
   under v2 with it and are claimed by R6b; R7 keeps the demand-driven half of §10.
+
+*As built by R7 (2026-09-26):* a merged group is one group here: P6 reads each declaration's group
+as its merge root (`Module.groupOf`), so a promoted answer and case 1 work across the members of a
+merge, and an in-flight member's call is a group call whichever member nested which (§10.8).
 
 ### 12.4 Derived bodies
 
@@ -3009,6 +3239,21 @@ P5's frame moved beside the row choice in **`Eager`** (329), and `Elaborate` (78
 §12.3, the derived table and its sort. `Solve` 893 (its P5 frame helpers left with P5), `Module`
 567: 11 499 lines in all.
 
+*As built by R7 (2026-09-26):* two new files, **`Groups`** 545 lines (the groups and their status,
+the top-level-kind frame's life, nesting at demand and the `demand` node, the merge and the
+hand-down, the budget and its calibration) and **`Recursion`** 466 (D14's two hooks, the hint and
+its syntactic reading of the Bir, §10.6's cycle). `Groups` is over the ~450 above because the
+frames of §10 live there, as the table says they should; `Recursion` is §10.7's and §10.6's, which
+the table did not foresee as a file. `Solve` 951 (the top-level group loop moved to `Groups`, the
+frame stack stays), `Generalize` 378 (`Queue`, `route`, the frame fields), `Module` 518 (P4 is
+`Groups.checkAll`), `Decide` 386, `Unify` 853, `Instances` 691, `Report` 383 (the R7 refusal is
+gone), `Messages` 268: 12 727 lines in all.
+
+*Revised by R7's reviews (2026-09-26):* `Recursion` split (S4): D14's hooks and when a mismatch is
+D14's stay (157 lines), and the Bir reading its hint and §10.6's cycle print is **`Producers`**
+(393). The frame stack's primitives and step 6's generality check moved from `Solve` (860) to
+`Generalize` (534), as the table above assigns them. `Groups` 592.
+
 ---
 
 ## 20. External contracts
@@ -3100,6 +3345,7 @@ Each one records what changed and why.
 | **D1** (round 4) | A private method is still the module's method for **every** type the module declares (the module rule is unchanged by privacy). "Derived functions the module emits use it" covers structural shapes derived in the module. The module's other nominal types have no derived `eq`, and comparing them is the module-rule clash | R0 found the round-1 text contradicted §3.3 step 1. `7427828` already behaves this way |
 | **D8** (round 4) | Elm's `exposing (T(..))` also gets a dedicated message under an existing code: **`expected_token`** at the `(` after the type name, suggesting `exposing (T, Ctor1, Ctor2)` (`language.md` §5.2). Later uses of the unexposed constructors stay quiet. *As built by R1 (2026-09-24): every unknown constructor in that file stays quiet, not only `T`'s — lowering is per file and cannot tell which names are `T`'s constructors, and resolution, which can, finds only silent error instructions. No guarantee is lost: the file already fails, and a misspelt constructor is reported once the import is corrected.* | CK-47. Same reasoning as D8: the grammar already refuses it, and only the message and the cascade were wrong |
 | **D5** (round 2) | Generalisation is plain HM(X) on levels. A young receiver's promoted requirement may mention outer variables free. I15 binds only receivers that are not generalised | S-new-4. The round-1 wording contradicted `adjustRank`, and I15 |
+| **D5** (R7's round-2 review, 2026-09-26; **decided by the owner 2026-09-26: yes**) | A `let` binding whose constrained variables carry ONLY dot-calls' own requirements is not generalised over them, so `let call s = s.f 10 in call { f = … }` stays a field call once D5 lands (static-dispatch-spike.md §11 *Deferred receiver*, amended 2026-09-26) | Without it, R14 generalises `call` and the amended rule refuses the record: a program accepted today would be refused, and generalising there buys no guarantee (rule 7) while taking the field call away. The alternative (b) accepts the flip and moves the case to a `check/bad` fixture |
 | **D11** (round 2) | **Nesting happens at demand**, not at a boundary. **Only top-level frames merge**, and every `let` frame generalises at its own boundary. **A reference to an annotated binding is never a back-edge**. It instantiates the scheme (§6.6) | N3, N5, N8. Boundary-time nesting was still order-dependent; merging `let` frames was order-dependent; treating annotated members as in-flight killed polymorphic recursion that v1 accepts. The at-demand design also deletes parking, pinning and prefix closures |
 
 ---
@@ -3202,7 +3448,11 @@ These are honest uncertainties for the implementing slices, not open owner decis
 8. **D14's merge argument (§10.7)**, "whether a node is inside a recursive group is a function of the
    member's own body prefix", is argued, not proven. R7's permutation scenario must include 3-cycles,
    and a member that demands the cycle at two different nodes.
-. **The joint derived-context fixpoint (§11.2)**, with its approximation-or-fresh rule and memo
+   *R7 (2026-09-26), for items 1, 7 and 8:* `scenario/PERM` holds every order of 3- and 4-member
+   merges, a member demanding its cycle at two nodes, a value back-edge, a group nested two `let`s
+   deep and D14's refusals (CK-72, CK-73, CK-76) byte-identical (§10.8). Still argued, not proven;
+   Roc's `type_checking_integration.zig` shapes were not ported.
+9. **The joint derived-context fixpoint (§11.2)**, with its approximation-or-fresh rule and memo
     replay, is new. R8a's reviewer checks the well-foundedness argument against `xm`, `cbA` and a
     cross-unit chain.
 

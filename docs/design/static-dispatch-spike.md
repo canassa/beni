@@ -117,7 +117,7 @@ receiver type `R`:
 | a tuple | well-known names only (§3): `eq`/`compare` derive (§9.3) | any other name: `no_methods_on_shape` |
 | `()` | well-known names only: `eq` is constantly `True`, `compare` constantly `EQ` | any other name: `no_methods_on_shape` |
 | a function type | nothing | `not_equatable` for `eq` (the existing code, `checker.md` §8.1); `no_methods_on_shape` for every other name including `compare` |
-| a type variable | a method constraint `m : <the type at this use>` is added to the variable (§6.1) and the call is typed by the constraint's result; resolution is deferred | `missing_where_constraint` if the variable is rigid and its `where` clause does not name `m` |
+| a type variable | a method constraint `m : <the type at this use>` is added to the variable (§6.1) and the call is typed by the constraint's result; resolution is deferred (a dot-call whose receiver becomes a record before the constraint is generalised is the field call after all: *Deferred receiver*, §11, amended 2026-09-26) | `missing_where_constraint` if the variable is rigid and its `where` clause does not name `m` |
 | `err` | `err`, silently (`checker.md` §6.2, "errors never stop the build") | none |
 
 **The module rule.** A method of type `T` is any `pub` value of the module that declares `T`. It is
@@ -2958,10 +2958,33 @@ the lambda surfaces later and further away. Roc has the same limit — `resolve_
 test, not a retry (`references/roc/src/check/Check.zig:20054`) — and the spike does not add a second
 pass.
 
-**Deferred receiver.** `x.m a` with `x`'s type still unknown is a method constraint, never a field
+**Deferred receiver** (the owner approved this rule on 2026-09-26). `x.m a` with `x`'s type still unknown is a method constraint, never a field
 call, so `\r -> r.f 1` where `r` turns out to be a record is `no_methods_on_shape` with a hint to
 write `(r.f) 1`. This is the ambiguity report 18 §2.1 names and the one Roc's `->` operator lives
 with; M6 shows the message.
+
+*Amended 2026-09-26 (checker v2, slice R7, at the manager's request after R7's review): **the choice is
+made when the receiver becomes known, not when the call is first seen.*** A dot-call's own
+requirement — the wanted its `method_call` raises, not one a scheme's `where` clause makes at an
+instantiation — whose receiver is still a variable at the call rides on it as a method constraint,
+as above; but if the receiver becomes a **record** before that constraint is generalised (while
+the declaration's binding group, or a group merged with it, is still being checked), the call is
+the field call of §1.2's record row, exactly as if the record had been known at the call. Only a
+constraint already generalised into a scheme — a caller passing a record to `g r = r.f 1` — stays
+`no_methods_on_shape`, because the call's evidence would have to be a field accessor, which the
+calling convention does not have. *Why:* "known at the call" reads the solving order, and inside a
+recursive binding group the solving order is the declaration order: a member's parameter typed by
+another member's in-flight call is known at `x.combine 1` in one order and not in the other, so
+the program was accepted in one order and refused in the other (`checker-v2.md` I9; R7's
+adversarial review, F1). Every member's facts arrive before the group is generalised, in every
+order, so a decision taken when the receiver becomes known is the same in every order. Within a
+single non-recursive declaration the solving order is fixed by its own text, so the only programs
+whose meaning changes are ones the old rule refused: `(\r -> r.f 1) { f = g }` is now `g 1`.
+*Added the same day (R7's round-2 review, X1):* a dot-call whose requirement was joined (§6.1
+invariant 3, one constraint per variable and name) with a scheme's requirement — an instantiated
+`where a.f`, or a sub-requirement — is not a field call: that requirement has no field accessor to
+be, so the joined constraint meeting a record is `no_methods_on_shape`, reported at the scheme's
+use. The join set does not depend on the order, so neither does the verdict.
 
 **Same-name constraints unify.** One constraint per `(variable, name)` (§6.1 invariant 3), so the
 rank-2 example from Roc's August-2026 thread fails with `method_constraint_mismatch` (§10.5). That

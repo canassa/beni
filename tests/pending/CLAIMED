@@ -79,3 +79,51 @@ tests/pending/run/DerivedContextClosedOwnMethod
 # order through derived-row bodies; its annotated twin is promoted, `run/DerivedRowBodyEmissionOrder`).
 tests/pending/run/UndeterminedCompareSlot
 tests/pending/run/DerivedContextClosedOwnMethodPermuted
+# R7 (2026-09-26): own methods without a scheme — nesting at demand, the in-flight link and the
+# merge of top-level groups (checker-v2.md §10.2–§10.4), D14 with its hint (§10.7), and the
+# recursive-dispatch hint (§10.6). CK-36, 63, 64, 65, 70, 72, 73, 76; the demand halves of CK-30,
+# 31 and 66 are the permutation scenario's programs (`scenario/PERM`).
+tests/pending/run/OwnMethodBeforeDefinition
+tests/pending/run/OwnMethodDemandedEarly.beni
+tests/pending/run/OwnMethodValuePrefix.beni
+tests/pending/run/MutualDispatchMethods.beni
+tests/pending/run/ScrutineeMethodLater.beni
+tests/pending/check/good/ScrutineeMethodMergeVariant
+tests/pending/check/bad/RecursiveDispatchTwoTypes.beni
+tests/pending/check/bad/RecursiveDispatchTwoTypesB.beni
+tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotation.beni
+tests/pending/check/bad/RecursiveGroupReceiverNeedsAnnotationB.beni
+tests/pending/check/bad/RecursiveGroupEvidenceReceiver
+tests/pending/check/bad/RecursiveGroupSubWanted
+tests/pending/check/bad/ScrutineeMethodMergeD14
+tests/pending/run/OwnMethodThreeCycle.beni
+tests/pending/run/OwnMethodFourCycle.beni
+tests/pending/run/OwnMethodCycleDemandedTwice.beni
+tests/pending/run/OwnMethodDemandedTwoLetsDeep.beni
+scenario/PERM
+scenario/NEST-OVER
+scenario/NEST-DEEP
+scenario/NEST-UNDER
+tests/pending/check/good/NestAfterDefault.beni
+tests/pending/run/OwnMethodValueBackEdge.beni
+# R7's reviews (2026-09-26): CK-105, a dot-call on a receiver that becomes a record before its
+# constraint is generalised is the field call in every order (static-dispatch-spike.md §11,
+# amended); D14's hint is written from the final class and the program's text; a merge during the
+# root's boundary keeps its members.
+tests/pending/run/FieldCallThroughMember.beni
+tests/pending/run/FieldCallThroughMemberCycle.beni
+tests/pending/run/FieldCallThroughValueRecursion.beni
+tests/pending/run/FieldCallThroughValueDemand.beni
+tests/pending/run/MergeAtBoundary
+tests/pending/check/bad/RecursiveGroupFieldCallTwoTypes.beni
+tests/pending/check/bad/RecursiveGroupRefusalRendering.beni
+tests/pending/check/bad/RecursiveGroupHintOneMember.beni
+tests/pending/check/bad/RecursiveGroupHintAllMembers.beni
+tests/pending/check/bad/RuleAMonomorphicNoRecursionHint.beni
+tests/pending/run/DeferredReceiverFieldCall.beni
+# R7's round-2 review (2026-09-26): X1 and CK-106.
+tests/pending/check/bad/DeferredReceiverJoinedInGroup.beni
+tests/pending/check/bad/DeferredReceiverJoinedRequirement
+tests/pending/check/bad/NumberReceiverMethodInGroup.beni
+tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni
+tests/pending/run/DeferredReceiverRecursiveTwin.beni

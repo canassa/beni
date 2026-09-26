@@ -41,6 +41,8 @@ const Solve = @import("Solve.zig");
 const Resolve = @import("Resolve.zig");
 const Evidence = @import("Evidence.zig");
 const Walk = @import("Walk.zig");
+const Messages = @import("Messages.zig");
+const Producers = @import("Producers.zig");
 
 const Var = TypeStore.Var;
 const Error = Solve.Error;
@@ -78,7 +80,10 @@ fn childrenOf(s: *Solve, root: Var) []const Var {
 
 fn noMethods(s: *Solve, id: WantedId, root: Var) Error!void {
     const w = s.evidence.get(id);
-    try s.report.noMethodsOnShape(w.origin, w.method, root, switch (s.store().resolvedContent(root)) {
+    // A dot-call joined with a scheme's requirement is refused where the
+    // requirement is (the use that needed a method), in every order (X1).
+    const at = w.blocked_at.unwrap() orelse w.origin;
+    try s.report.noMethodsOnShape(at, w.method, root, switch (s.store().resolvedContent(root)) {
         .structure => |flat| switch (flat) {
             .tuple => .tuple,
             .unit => .unit,
@@ -179,19 +184,27 @@ fn privateIn(s: *Solve, module: Graph.Index, name: Symbol) bool {
     return false;
 }
 
-/// The module rule in THIS module: declaration `decl`, `pub` or not.
+/// The module rule in THIS module: declaration `decl`, `pub` or not. Its
+/// group is demanded (§10.2): checked now when it is `unchecked` (the
+/// nesting budget may refuse it, at this use), its scheme instantiated when
+/// it is `done`; or, in flight — a member of the group being solved, or of
+/// one merged with it (§10.3, §10.4) — its own variable, uninstantiated,
+/// answered `group_call`.
 fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) Error!void {
+    const asked = s.evidence.get(id);
+    const demanded = try s.groups.demand(s, decl, asked.origin, asked.method);
     const w = s.evidence.get(id);
-    switch (s.schemeOf(decl)) {
-        // Its group has not been checked: R7 checks it at demand (§10.2).
-        .unchecked => {
-            try s.report.notImplementedR7(w.origin, w.method);
-            return Resolve.reject(s, id, true);
-        },
+    switch (demanded) {
+        .refused => return Resolve.reject(s, id, true),
+        .missing => return Resolve.reject(s, id, false),
         // In flight (§10.3): the member's own variable, no instantiation.
         .in_flight => |v| {
             if (!try s.unifyQuiet(v, w.method_type, w.origin)) {
-                try s.report.methodSignatureMismatch(w.origin, entry.module, entry.name, w.method, v, w.method_type);
+                if (try Producers.cycle(s.groups, decl)) |cycle| {
+                    try Messages.recursiveMethod(s.report, w.origin, w.method, v, w.method_type, cycle);
+                } else {
+                    try s.report.methodSignatureMismatch(w.origin, entry.module, entry.name, w.method, v, w.method_type);
+                }
                 return Resolve.reject(s, id, true);
             }
             return Resolve.answer(s, id, .{ .group_call = decl });
@@ -333,8 +346,9 @@ fn derivedPositions(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, p
 // ---------------------------------------------------------------------------
 
 /// A record: a well-known name derives over a CLOSED record (A.28); a
-/// method known at the call is a FIELD call (§1.2); one met only later is
-/// `no_methods_on_shape` (§6.3, A.36).
+/// dot-call's own wanted is a FIELD call (§1.2), whether the record was known
+/// at the call or met later (§11 *Deferred receiver*, amended 2026-09-26);
+/// any other wanted is `no_methods_on_shape` (§6.3, A.36).
 fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record, immediate: bool) Error!void {
     const st = s.store();
     const w = s.evidence.get(id);
@@ -358,7 +372,14 @@ fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record,
         for (fields, values) |f, *v| v.* = f.value;
         return derivedPositions(s, id, root, .none, values);
     }
-    if (!immediate) return noMethods(s, id, root);
+    // A dot-call's own wanted is the field call whenever its receiver turns
+    // out a record before it is generalised (static-dispatch-spike.md §11
+    // *Deferred receiver*, amended 2026-09-26): "known at the call" would
+    // read the solving order, which in a recursive group is the declaration
+    // order (checker-v2.md I9). A requirement an instantiation made has no
+    // field accessor to be, and neither has a dot-call joined with one
+    // (`Wanted.field_ok`, R7's round-2 review, X1).
+    if (!immediate and !w.field_ok) return noMethods(s, id, root);
     return fieldCall(s, id, root);
 }
 
@@ -445,7 +466,9 @@ pub const Verdict = union(enum) {
     opaque_type,
     too_wide,
     cycle: Var,
-    pending,
+    /// An own unannotated method of this name whose group is `unchecked`:
+    /// the caller demands it (§10.2) and asks again.
+    pending: u32,
 };
 
 fn kindOf(name: Symbol) Dispatch.Derived.Kind {
@@ -473,16 +496,27 @@ fn headAnswers(s: *Solve, id: Types.TypeId, kind: Dispatch.Derived.Kind) bool {
 fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
     const w = s.evidence.get(id);
     const is_eq = w.method == InternPool.WellKnown.eq.symbol();
-    switch (try derivability(s, root, kindOf(w.method))) {
+    var verdict = try derivability(s, root, kindOf(w.method));
+    // An own type whose method of this name has no scheme yet: its group
+    // is demanded now (§10.2), and the question asked again — at most once
+    // per method name, since a demanded group is never `unchecked` again.
+    while (verdict == .pending) {
+        const decl = verdict.pending;
+        const got = try s.groups.demand(s, decl, w.origin, s.cx.bir.symbol(s.cx.bir.decls[decl].name));
+        if (got == .refused) {
+            try Resolve.reject(s, id, true);
+            return false;
+        }
+        verdict = try derivability(s, root, kindOf(w.method));
+    }
+    switch (verdict) {
         .ok => return true,
         .cycle => |node| {
             try s.reportCycle(w.origin, .none, root, node);
             try Resolve.reject(s, id, false);
             return false;
         },
-        // An own type whose method of this name has no scheme yet: its
-        // group is later, and R7 checks it at demand (§10.2).
-        .pending => try s.report.notImplementedR7(w.origin, w.method),
+        .pending => unreachable,
         .too_wide => if (is_eq) {
             try s.report.notEquatable(w.origin, root, .too_wide);
         } else {
@@ -575,7 +609,7 @@ pub fn derivability(s: *Solve, start: Var, kind: Dispatch.Derived.Kind) Error!Ve
             },
             else => {},
         }
-        if (try gate(s, key)) |refusal| return map orelse refusal;
+        if (try gate(s, key)) |refusal| return if (refusal == .pending) refusal else (map orelse refusal);
         try colours.put(scratch, key, .grey);
         try frames.append(scratch, .{ .key = key, .boundary = isBoundary(s, key), .map = map });
     }
@@ -597,7 +631,7 @@ fn gate(s: *Solve, key: PairKey) Error!?Verdict {
             .app => |a| {
                 if (types.entry(a.type).module == s.cx.module) {
                     const name = if (key.kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol();
-                    if (s.ownValue(name)) |d| if (s.schemeOf(d) == .unchecked) return .pending;
+                    if (s.ownValue(name)) |d| if (s.cx.bir.decls[d].annotation == .none and s.groups.statusOf(d) == .unchecked) return .{ .pending = d };
                 }
                 if (!headAnswers(s, a.type, key.kind)) return if (types.hasFunction(a.type)) .contains_function else .opaque_type;
             },

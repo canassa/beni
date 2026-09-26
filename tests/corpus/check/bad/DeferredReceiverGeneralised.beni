@@ -1,0 +1,19 @@
+-- A regression guard for the amended *Deferred receiver* rule
+-- (static-dispatch-spike.md §11, 2026-09-26; checker-v2.md §10.8): the
+-- half that still refuses. `f`'s `x.combine n` is a method constraint on its
+-- own group's `x`, generalised into `f`'s scheme (`where a.combine`); `g` is
+-- in no group with `f`, so its record meets an instantiated requirement,
+-- which has no field accessor to be: `no_methods_on_shape` at `f n { … }`.
+-- v1 says the same. The recursive twin, where `f` calls `g` back and the
+-- record reaches `f` before it is generalised, is accepted:
+-- `tests/pending/run/DeferredReceiverRecursiveTwin.beni`.
+f n x =
+    x.combine n
+
+
+g n =
+    if n > 5 then
+        n
+
+    else
+        f n { combine = \z -> z + 1 }

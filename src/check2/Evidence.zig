@@ -134,6 +134,19 @@ pub const Wanted = struct {
     parent: WantedId.Optional,
     /// Module-wide creation order, shared with obligations (§9.1).
     seq: u32,
+    /// A dot-call's own wanted, and every wanted joined with it by Rule U1 one
+    /// too (`joinField`): only then may a record met late answer it as a field
+    /// call (static-dispatch-spike.md §11 *Deferred receiver*, amended
+    /// 2026-09-26). A scheme's requirement joined in has no field accessor to
+    /// be (R7's round-2 review, X1). Kept on the older wanted, the one an
+    /// `alias` chain ends at.
+    field_ok: bool = false,
+    /// When `field_ok` was cleared by a join: the requirement joined in, where
+    /// a refusal on a record is reported (the use that needs a method).
+    blocked_at: Bir.Inst.OptionalIndex = .none,
+    /// The `ready` queue of the frame current at creation (§9.1, round 4
+    /// R4-1): where a unification readies it, whichever frame unified.
+    frame: u32,
     state: State = .open,
 
     pub const no_decl: u32 = std.math.maxInt(u32);
@@ -262,7 +275,26 @@ pub fn setAnswer(e: *Evidence, id: WantedId, a: Answer) void {
     e.answers.items[id.int()] = a;
 }
 
+/// Rule U1 made `younger` an `alias` of `older`: the joined class is a field
+/// call only if both were a dot-call's own (`Wanted.field_ok`). The join set
+/// does not depend on the order, so neither does the verdict.
+pub fn joinField(e: *Evidence, older: WantedId, younger: WantedId) void {
+    const y = e.get(younger);
+    const o = e.ptr(older);
+    if (o.field_ok and !y.field_ok) o.blocked_at = y.origin.toOptional();
+    o.field_ok = o.field_ok and y.field_ok;
+}
+
+/// A merged frame's hand-down (§9.1 *Merges*): every wanted made since
+/// `start` that routes to queue `from` routes to `to`.
+pub fn repoint(e: *Evidence, start: u32, from: u32, to: u32) void {
+    for (e.wanteds.items[start..]) |*w| {
+        if (w.frame == from) w.frame = to;
+    }
+}
+
 pub fn add(e: *Evidence, gpa: Allocator, w: Wanted) Error!WantedId {
+    std.debug.assert(w.frame != std.math.maxInt(u32));
     const id: WantedId = @enumFromInt(@as(u32, @intCast(e.wanteds.items.len)));
     try e.wanteds.append(gpa, w);
     try e.answers.append(gpa, .none);

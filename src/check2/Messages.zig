@@ -217,3 +217,52 @@ pub fn resolutionBudget(r: *Report, region: Bir.Inst.Index, budget: u32) Error!v
     , .{budget}) catch unreachable;
     try r.emitText(.nesting_too_deep, region, null, text);
 }
+
+/// `nesting_too_deep` at a use whose own method's group would be checked
+/// here, nested (§10.2), past the budget of the whole frame stack: the use is
+/// refused, and the method's own group is checked where it stands.
+pub fn nestingAtDemand(r: *Report, region: Bir.Inst.Index, name: Symbol) Error!void {
+    const text = r.env.interner.slice(name);
+    const message = try std.fmt.allocPrint(r.gpa,
+        \\This use of `{s}` needs its type before `{s}` has been checked, and checking
+        \\it here would nest one declaration inside another too many times: this is
+        \\as deep as I can check.
+        \\
+        \\Hint: annotate `{s}`, so this use instantiates its annotation instead of
+        \\checking its body here.
+        \\
+    , .{ text, text, text });
+    try r.emit(.{ .code = .nesting_too_deep, .module = r.module, .region = region, .message = message });
+}
+
+/// `type_mismatch` for a member of a group that is recursive through method
+/// calls (§10.4, §10.6, CK-70), used at a type another use in the group
+/// already fixed: inside the group the member has one type (§10.3). `cycle`
+/// is the group's cycle, starting and ending at the member whose name is
+/// smallest by text, so the text is the same in every declaration order.
+pub fn recursiveMethod(r: *Report, region: Bir.Inst.Index, method: Symbol, found: Var, wanted: Var, cycle: []const Symbol) Error!void {
+    const interner = r.env.interner;
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const name = interner.slice(method);
+    w.print("`{s}` is used at two types inside a group that is recursive through method calls (", .{name}) catch return error.OutOfMemory;
+    for (cycle, 0..) |c, i| {
+        if (i != 0) w.writeAll(" → ") catch return error.OutOfMemory;
+        w.print("`{s}`", .{interner.slice(c)}) catch return error.OutOfMemory;
+    }
+    w.writeAll("). Inside the group it has one type:\n\n    ") catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, found, .top) catch return error.OutOfMemory;
+    w.writeAll("\n\nbut this use wants:\n\n    ") catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, wanted, .top) catch return error.OutOfMemory;
+    w.print(
+        \\
+        \\
+        \\Hint: an annotation on `{s}` lets each use instantiate it.
+        \\
+    , .{name}) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .type_mismatch, .module = r.module, .region = region, .message = message });
+}

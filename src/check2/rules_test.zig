@@ -12,7 +12,8 @@
 //! - **Capability has one reader until R8a (review S4).** v1's capability
 //!   API on `Types` (the settle and the bits it writes) is read only by the
 //!   files on `capability_readers`: `Instances.zig`, the one derivability
-//!   verdict, and `Module.zig`/`Incremental.zig`, which run the settle. R8a
+//!   verdict, and `Module.zig`/`Groups.zig`/`Incremental.zig`, which run the
+//!   settle (`Groups.zig` after each group that publishes a method, R7). R8a
 //!   replaces it with §11.2's fixpoint and EMPTIES the list (its brief,
 //!   `plans/checker-rewrite.md`); a new reader fails here.
 //!
@@ -33,6 +34,7 @@ const files = [_]File{
     .{ .path = "Elaborate.zig", .text = @embedFile("Elaborate.zig") },
     .{ .path = "Evidence.zig", .text = @embedFile("Evidence.zig") },
     .{ .path = "Generalize.zig", .text = @embedFile("Generalize.zig") },
+    .{ .path = "Groups.zig", .text = @embedFile("Groups.zig") },
     .{ .path = "Incremental.zig", .text = @embedFile("Incremental.zig") },
     .{ .path = "Instances.zig", .text = @embedFile("Instances.zig") },
     .{ .path = "Instantiate.zig", .text = @embedFile("Instantiate.zig") },
@@ -40,7 +42,9 @@ const files = [_]File{
     .{ .path = "Messages.zig", .text = @embedFile("Messages.zig") },
     .{ .path = "Module.zig", .text = @embedFile("Module.zig") },
     .{ .path = "Obligations.zig", .text = @embedFile("Obligations.zig") },
+    .{ .path = "Producers.zig", .text = @embedFile("Producers.zig") },
     .{ .path = "Publish.zig", .text = @embedFile("Publish.zig") },
+    .{ .path = "Recursion.zig", .text = @embedFile("Recursion.zig") },
     .{ .path = "Resolve.zig", .text = @embedFile("Resolve.zig") },
     .{ .path = "Report.zig", .text = @embedFile("Report.zig") },
     .{ .path = "Solve.zig", .text = @embedFile("Solve.zig") },
@@ -154,7 +158,7 @@ const capability_api = [_][]const u8{
 };
 
 /// Allowed today, until R8a (`plans/checker-rewrite.md`, R8a's brief).
-const capability_readers = [_][]const u8{ "Instances.zig", "Eager.zig", "Module.zig", "Incremental.zig" };
+const capability_readers = [_][]const u8{ "Instances.zig", "Eager.zig", "Module.zig", "Groups.zig", "Incremental.zig" };
 
 test "S4: only the derivability verdict and the settle read v1's capability API" {
     var bad: usize = 0;

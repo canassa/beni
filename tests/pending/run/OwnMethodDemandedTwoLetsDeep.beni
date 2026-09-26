@@ -1,0 +1,52 @@
+-- CK-63: an own untyped method demanded two `let`s deep checks exactly as it
+-- does written first (checker-v2.md §10.2, R7's reviewer focus): `size` is
+-- first needed inside `g`, a `let` function inside `f`, a `let` function
+-- inside `outer`, so its group is nested in a fresh top-level-kind frame
+-- above three open frames. Its scheme, and `g`'s, must be the ones the
+-- other order gives — `dump --stage=types` is compared across orders by the
+-- permutation scenario (`scenario/PERM`) — and `g` still generalises, so
+-- `( g a, g "s" )` checks. `size`'s own `let` helper `h` is generalised
+-- in the nested frame. Expected `1 1`.
+--
+-- Oracle twin, run on 8016030 under v1: this file with `size` written first
+-- prints `1 1`. As written, v1 refuses it with METHOD NEEDS AN ANNOTATION.
+import Node exposing (Program)
+
+
+type Box a
+    = Box a
+
+
+outer u =
+    let
+        f a =
+            let
+                g x =
+                    (Box x).size ()
+            in
+            ( g a, g "s" )
+    in
+    f u
+
+
+pub size (Box v) u =
+    let
+        h y =
+            ( y, v )
+
+        ( _, _ ) =
+            h True
+
+        ( one, _ ) =
+            h 1
+    in
+    one
+
+
+main : Program
+main =
+    let
+        ( a, b ) =
+            outer 0
+    in
+    Node.printLines [ String.fromInt a ++ " " ++ String.fromInt b ]

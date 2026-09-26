@@ -498,7 +498,7 @@ fn collectLocalRefs(g: *Generator, root: Bir.Inst.Index, out: *std.ArrayList(u32
 /// Push every operand instruction of `inst`: one exhaustive switch, so a new
 /// Bir form is a compile error here and not a silent missed edge. (v1's
 /// `Constrain.pushChildren`, which is private to v1.)
-fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.Index)) Error!void {
+pub fn pushChildren(bir: *const Bir, scratch: Allocator, inst: Bir.Inst.Index, stack: *std.ArrayList(Bir.Inst.Index)) Error!void {
     const data = bir.instData(inst);
     switch (bir.instTag(inst)) {
         .interp, .tuple, .list, .pat_tuple, .pat_list, .type_tuple => {

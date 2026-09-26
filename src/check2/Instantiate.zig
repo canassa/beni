@@ -57,6 +57,9 @@ decl: ?u32 = null,
 evidence: ?*Evidence = null,
 /// The module's creation counter, shared with obligations (§9.1).
 seq: *u32 = undefined,
+/// The current frame's queue (`Obligations.current_queue`), for a wanted's
+/// `frame` (§9.1).
+queue: *u32 = undefined,
 /// The instruction the copy in progress is FOR (`copy`'s caller sets it).
 origin: Bir.Inst.Index = @enumFromInt(0),
 /// The wanted whose resolution asked for the copy in progress (an
@@ -215,6 +218,7 @@ fn want(in: *Instantiate, receiver: Var, c: TypeStore.MethodConstraint, at: u32)
         .decl = in.decl orelse Evidence.Wanted.no_decl,
         .parent = in.parent,
         .seq = in.seq.*,
+        .frame = in.queue.*,
     });
     in.seq.* += 1;
     try evidence.setSlot(gpa, at, .wanted(id));

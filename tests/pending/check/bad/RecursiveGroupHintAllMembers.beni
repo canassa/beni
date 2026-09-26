@@ -1,0 +1,43 @@
+-- CK-72: D14's "every unannotated member" hint lists the FINAL merged class,
+-- the same in every declaration order (checker-v2.md §10.8). `q`'s receiver
+-- is `ma`'s own parameter, produced by no member, so the hint names the
+-- class: `ma`, `mb` and `md` (`md` joins through `mb`'s later demand). R7's
+-- first cut listed the members merged so far when the mismatch was
+-- reported: `ma`, `mb` only in the orders that write `mb` first, as this
+-- one does (R7's adversarial review, F3).
+type K
+    = K Int
+
+
+pub combine (K a) z =
+    K a
+
+
+pub mb (K n) y =
+    let
+        _ =
+            (K n).ma (K 1)
+
+        _ =
+            (K n).md 0
+    in
+    y
+
+
+pub ma (K n) x =
+    let
+        _ =
+            (K n).mb 0
+
+        q z =
+            x.combine z
+    in
+    ( q 1, q "s" )
+
+
+pub md (K n) w =
+    let
+        _ =
+            (K n).mb 0
+    in
+    w

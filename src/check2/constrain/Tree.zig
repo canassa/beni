@@ -28,6 +28,7 @@ const CategoryFile = @import("../../check/Category.zig");
 const Context = @import("../Context.zig");
 const Generalize = @import("../Generalize.zig");
 const Evidence = @import("../Evidence.zig");
+const Groups = @import("../Groups.zig");
 const Parse = @import("../../parse/Parse.zig");
 
 pub const Var = TypeStore.Var;
@@ -95,6 +96,11 @@ pub const Node = struct {
         /// arguments', so a receiver already known is resolved inline and
         /// seeds the arguments' types.
         method,
+        /// A reference to declaration `b` of a group that was not `done` when
+        /// this one was generated (§10.2): `a` = the target. The solver
+        /// demands the group — nesting it, or taking the in-flight link — and
+        /// then instantiates or shares (`Solve.demanded`).
+        demand,
         /// A form the generator must never meet: `internal` at `region`, and
         /// `a` (the expected type) poisoned (review S1).
         internal,
@@ -241,6 +247,10 @@ pub const Generator = struct {
     /// introduced, for a `type_dispatch` to name (static-dispatch-spike.md
     /// §4.2). Empty for an unannotated one.
     decl_rigids: []const Types.Builder.Scoped = &.{},
+    /// The binding groups (§4.4), and the group being generated: a use of
+    /// a group not yet `done` becomes a `demand` node (§10.2).
+    groups: ?*Groups = null,
+    group: u32 = 0,
     /// The `let` definitions with parameters being generated, innermost
     /// last, and their result variables: what a `?` inside one returns from.
     targets: std.ArrayList(Target) = .empty,
@@ -398,6 +408,12 @@ pub const Generator = struct {
         const at = g.locals_base + index;
         if (at >= g.local_type.len) return null;
         return g.local_type[at].unwrap();
+    }
+
+    /// Whether a use of declaration `decl` is a `demand` node (§10.2).
+    pub fn demands(g: *const Generator, decl: u32) bool {
+        const gs = g.groups orelse return false;
+        return gs.demands(decl, g.group);
     }
 
     /// The result variable a `?` returns from (§8.6): the `let` definition

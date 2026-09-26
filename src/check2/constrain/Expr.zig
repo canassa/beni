@@ -71,11 +71,18 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             return g.instantiate(expected, v, inst, category);
         },
         .top => {
+            // A group checked out of SCC order (nested, §10.2) may name one
+            // that is not `done`: the solver demands it at this node.
+            if (g.demands(data.lhs)) return g.add(.demand, inst, @intFromEnum(expected), data.lhs, category);
             const scheme = if (data.lhs < g.decl_scheme.len) g.decl_scheme[data.lhs].unwrap() else null;
             const v = scheme orelse return g.equal(expected, try g.fresh(.err), inst, category);
             return g.instantiate(expected, v, inst, category);
         },
-        .ctor, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => {
+        .schema_member_top, .schema_ctor_top => {
+            if (g.demands(data.lhs)) return g.add(.demand, inst, @intFromEnum(expected), data.lhs, category);
+            return g.add(.reference, inst, @intFromEnum(expected), 0, category);
+        },
+        .ctor, .ext_value, .ext_ctor, .ext_schema_member, .ext_schema_ctor => {
             return g.add(.reference, inst, @intFromEnum(expected), 0, category);
         },
 

@@ -7,7 +7,7 @@
 //! | P1    | the store, the tables, `Schema.State`, the report                                       |
 //! | P2    | every annotated value's published scheme, read at rank `generalized`, with its `where` |
 //! | P3    | the own-name index: every value by name, for the module rule (CK-42)                    |
-//! | P4    | per top-level group in SCC order: generate, solve, boundary (`Solve.group`)             |
+//! | P4    | per top-level group in SCC order, or nested at demand: generate, solve, boundary (`Groups`) |
 //! | P5    | the eager derived rows, v1's rule until R8a (`Eager`)                                  |
 //! | P6    | elaboration: the dispatch table's trees (`Elaborate`)                                  |
 //! | P7    | exhaustiveness over the declarations whose failure bit is clear                         |
@@ -16,8 +16,6 @@
 //!
 //! P5 writes v1's rows under v1's one-entry-per-parameter context until R8a;
 //! a use of a row it could not write is refused (R8a) by P6.
-//! A module that met a construct of R7's keeps only its `not_implemented`s
-//! (`Report.keepOnlyRefusals`).
 //!
 //! A module an earlier phase reported on, or the graph poisoned, is checked
 //! silently (checker.md §4.3): `Report` drops its messages, once.
@@ -53,7 +51,7 @@ const Resolve = @import("Resolve.zig");
 const Evidence = @import("Evidence.zig");
 const Eager = @import("Eager.zig");
 const Elaborate = @import("Elaborate.zig");
-const Tree = @import("constrain/Tree.zig");
+const Groups = @import("Groups.zig");
 const Decl = @import("constrain/Decl.zig");
 
 pub const Error = Allocator.Error;
@@ -94,7 +92,6 @@ pub fn check(in: Input) Error!Check.Counters {
     const token = if (in.profile) |p| p.begin() else null;
     defer if (in.profile) |p| p.end(in.tid, token.?, .check, file.int(), 0);
     const quiet = in.quiet or in.graph.isPoisoned(in.module);
-    const first_diagnostic = in.diagnostics.items.len;
 
     // P1.
     var owned_store: TypeStore = .init(std.heap.page_allocator);
@@ -168,61 +165,19 @@ pub fn check(in: Input) Error!Check.Counters {
     // `compare`: v1's capability bits, over the method schemes known so far
     // (`Types.settleDispatchCapabilities`, the shared table's own settle);
     // again after a group that publishes an unannotated `pub eq` or
-    // `compare`. R8a replaces them with derived contexts (§11.2).
+    // `compare` (`Groups.check`). R8a replaces them with derived contexts
+    // (§11.2).
     try in.types.settleDispatchCapabilities(gpa, in.module, in.graph, in.artifacts, store, decl_scheme);
-    const groups = try bindingGroups(scratch, bir);
-    var constrain_ns: u64 = 0;
-    var solve_ns: u64 = 0;
-    var tree: Tree.Tree = .{};
-    defer tree.deinit(gpa);
-    for (0..groups.starts.len - 1) |gi| {
-        const indices = groups.order[groups.starts[gi]..groups.starts[gi + 1]];
-        const members = try scratch.alloc(Decl.Member, indices.len);
-        defer scratch.free(members);
-        for (members, indices) |*m, i| m.* = .{ .decl = i, .check = .none };
-
-        tree.nodes.clearRetainingCapacity();
-        tree.extra.clearRetainingCapacity();
-        tree.binders.clearRetainingCapacity();
-        tree.annotated.clearRetainingCapacity();
-        var g: Tree.Generator = .{
-            .cx = &cx,
-            .tree = &tree,
-            .gpa = gpa,
-            .rank = TypeStore.outermost,
-            .local_type = local_type,
-            .decl_scheme = decl_scheme,
-            .evidence = &solver.evidence,
-        };
-        defer g.deinit();
-        const constrain_token = if (in.profile) |p| p.begin() else null;
-        const root = try Decl.group(&g, members);
-        if (in.profile) |p| constrain_ns += p.since(constrain_token.?);
-
-        const solve_token = if (in.profile) |p| p.begin() else null;
-        try solver.group(.{
-            .tree = &tree,
-            .root = root,
-            .pool = g.pool.items,
-            .binders = g.frame_binders.items,
-            .annotated = g.frame_annotated.items,
-            .members = indices,
-        });
-        if (in.profile) |p| solve_ns += p.since(solve_token.?);
-
-        var has_schema = false;
-        var has_method = false;
-        for (members) |m| {
-            decl_display[m.decl] = m.check;
-            const d = bir.decls[m.decl];
-            if (d.kind == .schema) has_schema = true;
-            if (d.kind.isValue() and d.is_pub and d.annotation == .none and Resolve.isWellKnownName(bir.symbol(d.name))) has_method = true;
-        }
-        if (has_method) try in.types.settleDispatchCapabilities(gpa, in.module, in.graph, in.artifacts, store, decl_scheme);
-        // v1's order: a schema's endpoint properties can depend on the
-        // conversions its group just inferred.
-        if (has_schema) try schemas.settleProperties(in.types, gpa);
-    }
+    const sccs = try bindingGroups(scratch, bir);
+    var groups: Groups = try .init(&cx, in.types, sccs, local_type, decl_scheme, decl_display);
+    defer groups.deinit();
+    groups.profile = in.profile;
+    solver.groups = &groups;
+    const p4_token = if (in.profile) |p| p.begin() else null;
+    try groups.checkAll(&solver);
+    const p4_ns: u64 = if (in.profile) |p| p.since(p4_token.?) else 0;
+    const constrain_ns = groups.constrain_ns;
+    const solve_ns = p4_ns -| constrain_ns;
 
     // What P2 and P4 found too deep, reported now so its declaration's
     // failure bit is set before P7 reads it (review S10).
@@ -235,7 +190,7 @@ pub fn check(in: Input) Error!Check.Counters {
     var eager: Eager = .{};
     defer eager.deinit(gpa);
     try eager.build(&solver);
-    const p6_internals = try elaborate(in, bir, store, decl_scheme, groups, &solver, &eager, &report);
+    const p6_internals = try elaborate(in, bir, store, decl_scheme, &groups, &solver, &eager, &report);
 
     // P7.
     const exhaustive_token = if (in.profile) |p| p.begin() else null;
@@ -295,8 +250,6 @@ pub fn check(in: Input) Error!Check.Counters {
     else
         .empty;
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
-
-    report.keepOnlyRefusals(first_diagnostic);
 
     // A declaration with no body shows its scheme.
     for (decl_display, decl_scheme) |*display, scheme| {
@@ -391,7 +344,7 @@ fn regionLessThan(_: void, a: Bir.Inst.Index, b: Bir.Inst.Index) bool {
 ///     givens, on the rigid reading its body was checked against, or what
 ///     promotion recorded;
 ///   - the trees, sites and derived rows (`Elaborate.run`), and the `tries`.
-fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, groups: Scc.IndexGroups, solver: *Solve, eager: *const Eager, report: *Report) Error![]const Elaborate.Internal {
+fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const Var.Optional, groups: *Groups, solver: *Solve, eager: *const Eager, report: *Report) Error![]const Elaborate.Internal {
     const gpa = in.gpa;
     const scratch = in.scratch.allocator();
     const decls = try gpa.alloc(Dispatch.DeclInfo, bir.decls.len);
@@ -444,7 +397,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .requirements = requirements.items,
         .roots = roots.items,
         .decl_scheme = decl_scheme,
-        .group_of = try groupOf(scratch, bir, groups),
+        .group_of = try groupOf(scratch, groups),
         .report = report,
         .clean = !report.quiet and report.errors == 0,
     });
@@ -467,13 +420,11 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     return out.internals;
 }
 
-/// Each declaration's top-level binding group (`bindingGroups`' index).
-fn groupOf(scratch: Allocator, bir: *const Bir, groups: Scc.IndexGroups) Error![]const u32 {
-    const out = try scratch.alloc(u32, bir.decls.len);
-    @memset(out, std.math.maxInt(u32));
-    for (0..groups.starts.len - 1) |g| {
-        for (groups.order[groups.starts[g]..groups.starts[g + 1]]) |d| out[d] = @intCast(g);
-    }
+/// Each declaration's binding group after P4: the root of its merge class
+/// (§10.4), so the members of a merged group are one group to §12.3.
+fn groupOf(scratch: Allocator, groups: *Groups) Error![]const u32 {
+    const out = try scratch.alloc(u32, groups.group_of.len);
+    for (out, groups.group_of) |*o, g| o.* = if (g == Groups.none) g else groups.root(g);
     return out;
 }
 

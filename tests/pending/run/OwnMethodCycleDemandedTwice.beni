@@ -1,0 +1,60 @@
+-- CK-65: a member that demands the rest of its cycle at TWO nodes (§23 item
+-- 8): `ma` calls `.mb` in one branch and `.mc` in another, and both call
+-- `ma` back, so `ma`'s group merges with `mb`'s at the first demand and with
+-- `mc`'s at the second (D11, checker-v2.md §10.4). Where each merge begins is
+-- a function of `ma`'s own body prefix (§10.7), so every declaration order
+-- checks the same. `twice`, a `let` helper inside the merged frame, is
+-- generalised by its own `let` (§10.4: `let` frames never merge) and used at
+-- `Bool` and at `x`'s type. Expected `3`, `s`, `8`.
+--
+-- Oracle twin, run on 8016030 under v1: this file with the three methods
+-- annotated `K, a -> a` prints exactly the expected lines. As written, v1
+-- refuses it with METHOD NEEDS AN ANNOTATION.
+import Node exposing (Program)
+
+
+type K
+    = K Int
+
+
+pub ma (K n) x =
+    let
+        twice y =
+            ( y, y )
+
+        ( flag, _ ) =
+            twice (n > 0)
+    in
+    if not flag then
+        x
+
+    else if modBy 2 n == 0 then
+        let
+            ( again, _ ) =
+                twice x
+        in
+        (K (n - 1)).mb again
+
+    else
+        (K (n - 1)).mc x
+
+
+pub mb (K n) x =
+    if n <= 0 then
+        x
+
+    else
+        (K (n - 1)).ma x
+
+
+pub mc (K n) x =
+    if n <= 0 then
+        x
+
+    else
+        (K (n - 1)).ma x
+
+
+main : Program
+main =
+    Node.printLines [ String.fromInt ((K 5).ma 3), (K 4).ma "s", String.fromInt ((K 3).mb 8) ]

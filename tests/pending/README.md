@@ -39,7 +39,7 @@ The same kinds, files and conventions as `tests/corpus/` (`run/`, `check/bad/`, 
 | `v2-green.txt` | corpus fixtures a landed slice made green under v2: `zig build test-v2` (R4a) fails when one is red |
 | `v2-expected.md` | corpus fixtures `test-v2` skips: `--core` fixtures until R9 (`checker-v2.md` §22.1), and the expected differences of §20.4 |
 | `v2-subset.sh` | the corpus fixtures R4b's v2 is held to, read off v1's dumps (`checker-rewrite.md` R4b): run from the repo root, prints one fixture per line |
-| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`; CK-41 was promoted into `perf_test.zig` by R3), a generated width or depth (CK-82; CK-83 was promoted by R2c) and R7's `PERM` and `NEST-OVER` (`test-pending`) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
+| `../blackbox/pending_test.zig` | the findings a file cannot state — time (CK-03, CK-40, CK-42, CK-75, CK-80, CK-88, `NEST-UNDER`: `test-pending-perf`; CK-41 was promoted into `perf_test.zig` by R3), a generated width or depth (CK-82; CK-83 was promoted by R2c) and R7's `PERM`, `NEST-OVER` and `NEST-DEEP` (`test-pending`, under both checkers since R7) — as scenarios `scenario/CK-NN`; its `scenarios` table says which step runs each |
 
 ## A fixture
 
@@ -137,6 +137,10 @@ promoted it), `050cd2d` with the fix reads GREEN through the same harness. The n
   modules as written, with D14's `type_mismatch`. `check/good/ScrutineeMethodMergeVariant/` holds
   them without the helper, testing only that `g` is not merged. Its `.iface` is still written by
   reasoning, for R7 to confirm.
+  *Confirmed by R7 (2026-09-26):* v2 checks both modules and prints that `.iface`. R7 also amended
+  the `.codes` of `ScrutineeMethodMergeD14/` and of CK-72's and CK-76's fixtures from
+  `type_mismatch` to `kind_mismatch`: `q 1` then `q "s"` is a number literal meeting `String`,
+  which is `kind_mismatch` by v1's rule whatever made `q` monomorphic (`checker-v2.md` §10.8).
 - **`scenario/CK-71` was promoted by R1** into the gates: `blackbox_test.zig`'s loaded
   determinism test and `Session.zig`'s `mergeInterners` test. The report-only rule it needed
   is gone with it.
