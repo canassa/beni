@@ -1950,6 +1950,12 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - CK-111 (quadratic nested-record `==` per use: `Derivable`'s colour map re-walks non-ground
     subtrees), CK-114 (a record literal nested ≥ 2 100 deep refused by `Unify.max_depth`), CK-112
     (O(n²) in a type's parameter count, both checkers), CK-93 (growing `let` chains).
+  - The `scenario/CK-42` v2 twin is flaky: v2's extra cost is 8–10 ms, so its ratio reads 1.7–2.4
+    against a 2.5 bound and failed one of five runs at `3c09146`. Size it for v2 (larger n, or more
+    runs per point) so the scenario measures, not samples noise.
+  - CK-122 first, as its own commit: a `type alias` of a schema endpoint gives `internal` in both
+    checkers, and wrapping it gives a false refusal. R9 must not start with an `internal` on valid
+    code.
 - **Exit criteria.** Gates, `test-pending`, `test-v2`, both perf steps green; each CK fixed is
   promoted with a `test-perf` scenario; v2/v1 ≤ 1.05× whole-process on both generated corpora
   (perf stat, ≥ 9 runs), and each change's gain measured separately.
