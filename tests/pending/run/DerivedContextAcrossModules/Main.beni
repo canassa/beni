@@ -1,0 +1,45 @@
+-- CK-23 across modules (R8a, checker-v2.md §11.2, §14.2): a phantom
+-- parameter of ANOTHER module's type contributes nothing to its published
+-- context, so `A.Tag (Int -> Int)` compares; and mutually recursive types
+-- whose payload holds a function behind a custom `eq` (R8a's reviewer focus,
+-- round 1's `e10` shape) derive `eq` through the boundary — `X` and `Y` are
+-- one unit, `M.Fn`'s `eq` answers without looking inside. `M.eq` says every
+-- two `Fn`s are equal, so the first comparison is `True` although the
+-- functions differ. On 7427828 (v1) `fnTag == fnTag` is NOT EQUATABLE
+-- `Tag (Int -> Int)`: v1 asks every argument, used or not.
+import A
+import M
+import Node exposing (Program)
+
+
+type X
+    = X (List Y)
+    | XLeaf
+
+
+type Y
+    = Y M.Fn X
+
+
+fnTag : A.Tag (Int -> Int)
+fnTag =
+    A.Tag 1
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (X [ Y (M.Fn (\n -> n)) XLeaf ] == X [ Y (M.Fn (\n -> n + 1)) XLeaf ])
+        , show (X [] == XLeaf)
+        , show (fnTag == fnTag)
+        , show (fnTag < A.Tag 2)
+        ]

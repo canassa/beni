@@ -1,9 +1,10 @@
 -- CK-87: `==` on a record type nested 40 deep builds and runs. The derived
 -- `eq` of each level hands the next level's as a part, and `Lower.derivedValue`
--- stops past `max_part_depth` (32) with INTERNAL ERROR "I cannot tell what
--- this call dispatches to" — a cap its comment calls unreachable, because an
--- annotation cannot say a type that deep, while an unannotated record literal
--- infers one. Expected `eq`, `ne`.
+-- used to stop past a `max_part_depth` of 32 with INTERNAL ERROR "I cannot tell
+-- what this call dispatches to" — a cap its comment called unreachable, because
+-- an annotation cannot say a type that deep, while an unannotated record literal
+-- infers one. R8a removed the cap (the evidence tree cannot point back at
+-- itself, checker-v2.md §13.1). Expected `eq`, `ne`.
 --
 -- Oracle twin, run on 7ae452f: this file with 20 levels in place of 40 prints
 -- `eq`, `ne`.

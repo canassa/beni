@@ -1737,6 +1737,73 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
   - The fixpoint on mutually recursive types with a function payload behind a custom method
     boundary (`e10` shape).
 
+- **As built (2026-09-26).** `checker-v2.md` §11.2 *As built by R8a*, §11.1, §14.2 *Amended by R8a*
+  (written first: hidden rows, three-word entries), §14.3, §19.1, §20.3.
+  - **New files.** `check2/Contexts.zig` (units, memo and generations, the joint fixpoint, the
+    in-flight branch and replay, P5's settle) and `check2/Derivable.zig` (THE verdict, moved out of
+    `Instances` and reading the contexts). `Instances.derivedNominal` gives one sub-wanted per
+    context entry (D4); `Eager` reads the settled contexts, and a permanent run's last passes are
+    the rows' bodies.
+  - **Deleted**, every item of the list above: `Eager`'s `answersEq`/`answersCompare` row choice and
+    `ownPub` suppression and its one-entry-per-parameter context; `restoreDerivedCapabilities` in
+    `Module` and in `Incremental.install` (a hit of a v1-checked module rebuilds v1's bits on v1's
+    side, `Check.restoreCapabilitiesOnHit`); the probe and dead-row propagation (`collecting`,
+    `deps`); `Report.notImplementedR8a` and `.r8a`; `js/Emit.zig`'s `refuseV2LibraryTypes`; the
+    settle in P2 and after a method group (`Groups`). `rules_test.zig`'s S4 fence has an EMPTY
+    reader list and its S3 fence is deleted with the stopgap.
+  - **Beyond the list.** CK-89 (hidden rows, `run/HiddenTypeDerivedRow`); CK-79/82 (no field cap in
+    v2, `ContextEntry.param: u32`, dispatch format 4); CK-87 (`Lower`'s part cap removed, promoted);
+    CK-85 (a constrained value's body runs once per evidence: two module-level `let`s, not the
+    per-call-site hoist — `static-dispatch-spike.md` A.85 *as amended by R8a*); CK-40 (schema
+    properties settled when read, not per group); `absent_private` (CK-22's cross-module half).
+    New finding CK-107 (`cache_store` super-linear, both checkers), proposed for R10.
+  - **Evidence.** The three gates; `test-v2` green with no R8a row left in `v2-expected.md` and
+    `v2-green.txt` +21 (the 13 `--library` builds, the four expected differences, and R8a's new
+    corpus fixtures); `test-pending` green (claims: CK-23, 25, 69 ×2, 74 ×2, 77, 22's half, 24,
+    `DerivedContextInFlightEq`, `DerivedContextAcrossModules`, `scenario/CK-79`, `scenario/CK-82`);
+    `scenario/PERM` 56 programs and 3 354 orders, R8a's eight among them (CK-67 ×3, 69, 74, 77, S6, the joint SCC);
+    `test-pending-perf` and `test-perf` green (CK-40 and CK-75 v2 twins added); a cold/warm matrix
+    in `cache_test.zig`.
+  - **Bench** (ReleaseFast, `--no-cache --jobs=1`, the root package's `check` events, v1/v2
+    interleaved, medians of 7; the repo's generator, `bench -- --generate=100000 [--dispatch]`):
+    R8a's v2 is 4c70702's v2 within noise on both corpora, in two sessions (dispatch 108.2 / 108.2
+    and 114.0 / 113.4 ms, plain 97.2 / 96.5 and 100.3 / 101.6). **The v2/v1 ratio is NOT at the
+    1.10× the brief asks on these corpora: 1.16–1.21 at 4c70702 and 1.13–1.20 now** — the gap predates
+    R8a (v2's generalisation, `adjustRanks`, `closeFrame`, `enter`, `Walk.owned`, leads its profile), and
+    R7's own 1.09–1.10 was measured on R6b's 90-module corpus, which is not in the repository. The
+    dispatch corpus's `--library` `build` (check + lower + emit), which v2 refused before, is
+    1.10–1.12×. On CK-42's worst case (8 000 types, each compared) v2 is 8 % over 4c70702: a
+    fixpoint frame per unit.
+- **Review round (2026-09-26).** Two reviews (structural, adversarial); spec first
+  (`checker-v2.md` §11.2 *Amended by R8a's review round*, §14.2 *amended again*, §14.3;
+  `language.md` §6 and `static-dispatch-spike.md` A.85 narrowed).
+  - **Blocking, fixed.** B1 = **CK-108** (a marker's `equatable` flag is an entry; three
+    `check/bad/DerivedContextEquatableFlag*` fixtures blessed from v1, whose text v2 improves on:
+    `v2-expected.md` + a v2 guard in `blackbox_test.zig`). The crash = **CK-109** (`Param.k` and
+    Lower's indices `u32`; `Eager.markerKeys`; one row scheme per derived row instead of one per
+    entry, which was n² × m words: 656 × 100 went from 74 s / 3.1 GB to 3.4 s on Debug, v1 8.9 s;
+    `abuse_wide_test.zig` "CK-109", `scenario/CK-82` at 65 537 fields). CK-42: not a regression
+    of the ratio — perf stat, 20 runs each, gives extra(2n)/extra(n) = 2.18 at 4c70702 and 2.16
+    now; `test-pending-perf`'s 2.42 and the manager's > 2.5 are the noise of a 7 ms difference.
+    The absolute cost is +9 % on E2 (8 000 types): `Contexts.run`, `readPayloads`,
+    `resolvePayloads` and the verdict, one fixpoint per type, which P5 needs to publish rows.
+  - **Should-fix, done.** S2 = **CK-110** (the hidden set closed over own alias bodies; the v1-ABI
+    fallback only for another package's record, `Context.oldCheckerWrote`); S3 (`isEquatable(`
+    fenced, `Marker.zig` its one reader); S4 (bodies per `Run`, committed with the answers); S5
+    (the argument written in §11.2, a Debug `Walk.sameShape` assert);
+    CK-85's text narrowed to evidence identity, the hoist filed as CK-113;
+    the nits (`Derivable.foreignDerives` is the one foreign rule, the replay guard on `valid(u)`,
+    Publish's status mapping commented, Lower's declaration evidence `u32`).
+  - **Filed, not fixed.** CK-111 (quadratic nested-record `==` per use, v2), CK-112 (a type of n
+    parameters is O(n²) in lowering and the reader, both checkers: the 32 769-parameter shape
+    takes 18 s under v2 and 362 s under v1, Debug), CK-113, CK-114 (`Unify.max_depth` refuses a
+    ≥ 2 100-deep literal), CK-115 (UNKNOWN METHOD after a TYPE MISMATCH, R13), CK-116 (the
+    not_equatable hint when a payload method's requirement failed, R13: the reason must ride on
+    the answer and the published row), CK-117 (the linear frame assert the review proposed was
+    built and fails on three claimed fixtures and `scenario/PERM`: a pass that demands a group
+    which merges into the asker's takes its variables below the fixpoint frame; the outputs are
+    right, the assert is not shipped, R8b proposed).
+
 ### R8b — Privacy (D1) and schema endpoints
 
 - **Goal.**
@@ -1904,7 +1971,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | R6a | — | CK-02, 03, 09 (`check/bad` half), 20, 21, 48; CK-100 (found and fixed by R6a); CK-101 (found and fixed by R6a's review); CK-03, 42, 80, 101 as v2 timing scenarios in `perf_test.zig` (`test-perf`); CK-62's `run/TryDecidedByLaterFacts` moves to R6b (it needs `build`) | CK-35; CK-37, 55 (part) |
 | R6b | — | CK-08, 27, 28, 29, 32; CK-62's `run/TryDecidedByLaterFacts` (from R6a); the `run/` fixtures of CK-30 (`RecursionWithComparison`, `DeadMiscount`), CK-31, CK-66 and CK-67, which P6 answers ahead of R7 and R8a (their slices keep the rest of each finding); CK-102 (found and fixed by R6b); CK-103 (found by R6b's review, claimed); CK-80's `build` half (`perf_test.zig` "CK-80 build") | CK-104 (found by R6b's reviews; a backend fix, promoted: `run/DerivedRowBodyEmissionOrder`, with a claimed permuted CK-67 twin) |
 | R7 | — | CK-30, 31, 36, 63, 64, 65, 66, 70, 72, 73, 76; CK-105 and CK-106 (found by R7's reviews, claimed) | — |
-| R8a | — | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24) | CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
+| R8a | CK-87 (promoted, `run/DerivedEqDeepRecord`); CK-85 (fixed in the shared emitter, its guard re-blessed) | CK-23, 25, 40, 67, 69, 74, 75, 77, 79 (the field cap lifts with D4's signature; manager 2026-09-24); CK-22's cross-module half and CK-24, green early (R8b's) | CK-107 found (`cache_store`, both checkers; R10 proposed); CK-108 to CK-110 found by its reviews and fixed in the slice; CK-111 to CK-114 found (CK-112 by R8a, the rest by its reviews; the perf and limits slice proposed); CK-115 and CK-116 found by its review (R13); CK-117 found by its review round (R8b proposed); CK-26; CK-82 (with CK-79); CK-85 (owner 2026-09-25); CK-89 (R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type reachable from a published scheme, before R8a reads them) |
 | R8b | — | CK-22, 24 | — |
 | R9 | — | — | CK-15 (rest) |
 | R11 | all claims above | — | — |
@@ -1914,7 +1981,7 @@ The order is strict. R1, R2 and R3 all touch `Lower`, `Dispatch` or the interfac
 | (assigned 2026-09-24) | — | — | CK-82 → R8a (with CK-79); CK-83 → R2c, a new backend slice after R2b (manager) |
 | (found by R2c, 2026-09-25; assigned by the manager: CK-87 → R8a, CK-88 → R12) | — | — | CK-87 (derived `==` past 32 nested record levels is `internal`) and CK-88 (a `case` of many literal branches: quadratic emit, and past 65 046 a `switch` Firefox refuses): unassigned, for the manager |
 
-Every one of the 106 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
+Every one of the 117 entries appears in this table (CK-100 added by R6a, CK-101 by R6a's review, 2026-09-25, CK-102 by R6b, CK-103 and CK-104 by R6b's reviews, CK-105 and CK-106 by R7's reviews, CK-107 and CK-112 by R8a, CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and review round), CK-75 (a performance finding added after R0) included: the manager assigned it to R8a on 2026-09-24 (to R10 if R8a's profile shows the residue is `dep_digest`). CK-71 (R0's: `Session` symbol ids depend on thread timing) was assigned to R1 on 2026-09-24. *Updated 2026-09-24 for round 3: the slice
 splits and CK-72 to CK-74. `checker-findings.md`'s per-entry "Slice" fields name the unsplit slice.
 This table is authoritative.*
 

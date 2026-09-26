@@ -1,0 +1,7 @@
+-- R8a's structural review, B1, through a PUBLISHED context: see Main.beni.
+pub type Holder a
+    = Holder a
+
+
+pub eq (Holder x) (Holder y) =
+    Basics.eq x y

@@ -32,7 +32,6 @@ Only the rows whose v2 output differs from the golden before the cut-over; the D
 `run/DerivedEqInPriorityGroup` must keep passing.
 
 - `tests/corpus/check/bad/MethodNeedsAnnotation` — D3 (R7): v2 accepts the program; it becomes a `run/` fixture at R11
-- `tests/corpus/check/bad/PriorityGroupSpecializedPayloadEq` — re-derived without priority groups (R7): still a refusal at the same `==` (20:44), but R8a's `not_implemented` (P6 cannot write `L`'s derived row under v1's one-entry-per-parameter context) where the golden pins `not_equatable`; R8a's contexts decide it, re-blessed at R11
 - `tests/corpus/check/bad/DeferredReceiverGeneralised.beni` — eager draining (§9.1, as R6b built it; R7's guard of CK-105): the same `no_methods_on_shape` at 19:9, but the record is rendered when it meets `f`'s instantiated receiver, before the inline lambda's body is constrained, so the message shows `{ combine : a -> b }` where v1's golden (rendered at the boundary) pins `{ combine : number -> number }`; re-blessed at R11
 
 ## Expected differences R4b introduced (re-blessed at R11)
@@ -57,7 +56,15 @@ v1's until the cut-over, when the fixture is re-blessed (or re-cut) under v2 wit
 - `tests/corpus/check/bad/CyclicReceiverReportedOnce.beni` — CK-57 (§8.2, `checker.md` §8.5): the one `infinite_type` is at the `==` (2:7), as the golden pins (§9.5, CK-37), and written as its structure, `a = List a`; v1's golden prints `a  =  … a …`
 - `tests/corpus/check/bad/LetHelperCyclicReceiver.beni` — the same rule, at the same `==`: `a = List a` for v1's `a  =  … a …`; a D5 row of §20.4, which R14 changes again
 - `tests/corpus/check/bad/LetConstrainedTwice.beni` — eager draining (§9.1): `show n` binds `x` to `Int`, and `x.render` is resolved right after that node, so `Int`'s missing `render` is `unknown_method` at 11:14 before the second use's `type_mismatch`; v1 resolved it only at the boundary, after the mismatch had poisoned `Int`. A D5 row of §20.4, which R14 changes again
-- `tests/corpus/check/bad/SpecializedEqWrongReceiver` — R8a (§11.2): `Wrapper`, `Before`, `After` and `Generic String` are own types whose derived `eq` depends on a payload's specialised `Holder.eq`; v2 derives with v1's one-entry-per-parameter context (the payload is never asked) until R8a's fixpoint, so it reports only the record and tuple shapes (48:10, 53:10), whose positions it does resolve (R6b fixed CK-102: before it, v2 refused those two in silence and accepted the file)
-- `tests/corpus/run/DerivedEqInPriorityGroup` — R8a (§11.2): `W`'s derived `eq` holds a `Holder Keyed` whose imported `eq` asks `a.key`, not `a.eq`; v1's capability settle over method schemes answers it, v2's one-entry-per-parameter context does not ask the payload, and the syntactic capability bit it reads until R8a refuses `W` (`not_equatable` at 31:9 and 38:17), so `build` stops there too
-- `tests/corpus/run/DerivedEqThroughCustom` — the same R8a case, through `ArbitraryHolder.Holder KeyedFunction.Keyed` at 170:35 and 171:35
 - `tests/corpus/check/bad/MethodConstraintMismatch.beni` — review F6 (§14.1, §9.4 *As built by R6a's review*): a declaration whose method type failed publishes `<error>` and says nothing more about its requirements, so the `CONFLICTING METHOD TYPES` stands alone; v1's golden also pins a `CONSTRAINT IN AN INFERRED INTERFACE` warning printing `where a.render : ?` — a scheme v1 publishes with a hole in its `where` clause
+
+## Expected differences R8a introduced (re-blessed at R11)
+
+CK-108's fixtures, blessed from v1 as the oracle of the refusal: v2 refuses at the same place with
+the same code, and names the function the derived context reaches (`Derivable`'s
+`contains_function`, §11.2 *as built by R8a*) where v1 says the type "does not support" the
+operator. `blackbox_test.zig` "CK-108: …" holds v2 to the code and the place.
+
+- `tests/corpus/check/bad/DerivedContextEquatableFlag` — `not_equatable` at 21:20: "There is a function in there" for v1's "That type does not support `==`"
+- `tests/corpus/check/bad/DerivedContextEquatableFlagPublished` — the same, at 15:26, through `Mid`'s published row
+- `tests/corpus/check/bad/DerivedContextEquatableFlagCompare` — `no_methods_on_shape` at 18:20: "There is a function inside it" for v1's "Something it holds has no ordering of its own"

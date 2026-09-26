@@ -1,0 +1,504 @@
+//! THE derivability verdict (checker-v2.md §9.5 as built by R6a's review,
+//! §11.1 as built by R8a): "can this receiver derive `eq` or `compare`, and
+//! if not, why", asked once per derived answer and reported at the use for
+//! the receiver the author compared (v1's messages).
+//!
+//! **It reads the one answer** (I10, CK-26): a nominal type's head is what
+//! its derived context says (`Contexts` for this module's types, the
+//! published row for another's, §14.2), or what its method's requirements
+//! say when the module rule answers it (a custom method is a boundary: its
+//! requirements, not its payloads, say what the arguments must answer).
+//! Nothing here settles, caches a capability, or has a second opinion; a
+//! schema endpoint's head is its schema's settled properties until R8b.
+//!
+//! One iterative walk over `(node, method)` pairs, coloured per pair (a pair
+//! met grey again is a cycle, whichever method the contexts alternate
+//! through), no native recursion (I4), and linear on a DAG. A head that
+//! needs a fixpoint run or a nested group check first stops the walk
+//! (`pending`, `query`); `derivable` does it and walks again.
+
+const std = @import("std");
+const InternPool = @import("../InternPool.zig");
+const Interface = @import("../resolve/Interface.zig");
+const TypeStore = @import("../check/TypeStore.zig");
+const Types = @import("../check/Types.zig");
+const Dispatch = @import("../check/Dispatch.zig");
+const Contexts = @import("Contexts.zig");
+const Evidence = @import("Evidence.zig");
+const Messages = @import("Messages.zig");
+const Resolve = @import("Resolve.zig");
+const Solve = @import("Solve.zig");
+const Walk = @import("Walk.zig");
+
+const Var = TypeStore.Var;
+const Symbol = InternPool.Symbol;
+const Error = Solve.Error;
+const WantedId = Evidence.WantedId;
+const Kind = Dispatch.Derived.Kind;
+
+pub const PairKey = struct { root: Var, kind: Kind };
+
+/// Why a receiver cannot derive a well-known method, or that it can.
+pub const Verdict = union(enum) {
+    ok,
+    function,
+    contains_function,
+    opaque_type,
+    cycle: Var,
+    /// An own unannotated method of this name whose group is `unchecked`:
+    /// the caller demands it (§10.2) and asks again.
+    pending: u32,
+    /// An own type whose context needs a fixpoint run: the caller runs it
+    /// (`Contexts.ensure`) and asks again.
+    query: struct { type_id: Types.TypeId, kind: Kind },
+    /// §11.2's parametric in-flight case: `method_needs_annotation`.
+    needs_annotation: struct { type_id: Types.TypeId, decl: u32 },
+    /// A context that reaches another module's private method (§11.2,
+    /// §11.3): `private_method` at the use.
+    private_method: struct { module: u32, method: Symbol },
+};
+
+/// `derivability` for wanted `id` on `root`, reported at the use when it is
+/// not `ok` (v1's texts).
+pub fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
+    const w = s.evidence.get(id);
+    const is_eq = w.method == InternPool.WellKnown.eq.symbol();
+    const kind = Contexts.kindOf(w.method);
+    var forced: std.ArrayList(Forced) = .empty;
+    defer forced.deinit(s.cx.scratch);
+    // The common case, `T … == T …` on an own type whose context nothing
+    // asked for yet: computed before the walk, so the walk runs once.
+    if (try headNeedsRun(s, root, kind)) |u| try Contexts.ensure(s, u);
+    var verdict = try derivability(s, root, kind, forced.items);
+    while (true) {
+        switch (verdict) {
+            // An own type whose method of this name has no scheme yet: its
+            // group is demanded now (§10.2) — at most once per method name.
+            .pending => |decl| {
+                const got = try s.groups.demand(s, decl, w.origin, s.cx.bir.symbol(s.cx.bir.decls[decl].name));
+                if (got == .refused) {
+                    try Resolve.reject(s, id, true);
+                    return false;
+                }
+            },
+            // Its context is computed now; a result that could not be
+            // memoised is read as it stands for the rest of this walk.
+            .query => |q| {
+                const t = s.contexts.local(q.type_id).?;
+                try Contexts.ensure(s, s.contexts.unit_of[t]);
+                try forced.append(s.cx.scratch, .{ .type_id = q.type_id, .kind = q.kind });
+            },
+            else => break,
+        }
+        verdict = try derivability(s, root, kind, forced.items);
+    }
+    switch (verdict) {
+        .ok => return true,
+        .pending, .query => unreachable,
+        .cycle => |node| {
+            try s.reportCycle(w.origin, .none, root, node);
+            try Resolve.reject(s, id, false);
+            return false;
+        },
+        .private_method => |p| {
+            s.contexts.notePrivate(s, p.module, p.method);
+            try s.report.privateMethod(w.origin, @enumFromInt(p.module), p.method);
+        },
+        .needs_annotation => |n| {
+            s.contexts.noteCulprit(s, n.decl);
+            try Messages.derivedNeedsAnnotation(s.report, w.origin, root, w.method, s.cx.bir.symbol(s.cx.bir.decls[n.decl].name));
+        },
+        .function => {
+            s.contexts.noteFunction(s);
+            if (is_eq) {
+                try s.report.notEquatable(w.origin, root, .function);
+            } else {
+                try s.report.noMethodsOnShape(w.origin, w.method, root, .contains_function);
+            }
+        },
+        .contains_function => {
+            s.contexts.noteFunction(s);
+            if (is_eq) {
+                try s.report.notEquatable(w.origin, root, .opaque_type);
+            } else {
+                try s.report.noMethodsOnShape(w.origin, w.method, root, .contains_function);
+            }
+        },
+        .opaque_type => if (is_eq) {
+            try s.report.notEquatable(w.origin, root, .opaque_type);
+        } else {
+            try s.report.noMethodsOnShape(w.origin, w.method, root, .not_orderable);
+        },
+    }
+    try Resolve.reject(s, id, true);
+    return false;
+}
+
+/// The unit of `root`'s head when `root` is an own derived type whose
+/// context the walk would stop to compute (`.query`).
+fn headNeedsRun(s: *Solve, root: Var, kind: Kind) Error!?u32 {
+    const a = switch (s.store().resolvedContent(root)) {
+        .structure => |flat| switch (flat) {
+            .app => |a| a,
+            else => return null,
+        },
+        else => return null,
+    };
+    const c = &s.contexts;
+    const t = c.local(a.type) orelse return null;
+    if (c.unit_of[t] == Contexts.none or c.module_has[@intFromEnum(kind)]) return null;
+    if (s.ownValue(Contexts.methodName(kind)) != null) return null;
+    if (try c.peek(s, a.type, kind) != null) return null;
+    return c.unit_of[t];
+}
+
+/// A type whose context a run just computed but could not memoise: read
+/// from `Contexts.answers` as it stands.
+const Forced = struct { type_id: Types.TypeId, kind: Kind };
+
+const Colour = enum { grey, black, black_open };
+
+const Frame = struct {
+    key: PairKey,
+    /// A structure's next `structural` successor, or a nominal head's next
+    /// step (a run of `steps`).
+    cursor: u32 = 0,
+    nominal: bool = false,
+    steps: Range = .{},
+    /// No variable below it, so far: a black ground node's verdict cannot
+    /// change, and is kept (`Resolve.State.derivable`).
+    ground: bool = true,
+    /// The verdict a failure below it is reported as (v1's rule: a failed
+    /// `eq` requirement is `contains_function`, a failed `compare` one
+    /// `opaque_type`).
+    map: ?Verdict,
+};
+
+const Range = struct { start: u32 = 0, len: u32 = 0 };
+
+/// One argument a nominal head asks something of.
+const Step = struct { v: Var, kind: Kind, map: ?Verdict };
+
+/// The walk's scratch: the nominal heads' steps.
+const Walker = struct {
+    steps: std.ArrayList(Step) = .empty,
+    /// It read an approximation or a generational result: no ground verdict
+    /// it proves is kept past this walk.
+    volatile_read: bool = false,
+};
+
+/// THE answer to "can `start` derive `kind`?" (I10), which every derivation
+/// reads. `forced` are the heads `derivable` computed for this walk.
+pub fn derivability(s: *Solve, start: Var, kind: Kind, forced: []const Forced) Error!Verdict {
+    const st = s.store();
+    const gpa = s.cx.gpa;
+    const scratch = s.cx.scratch;
+    const first: PairKey = .{ .root = st.find(start), .kind = kind };
+    if (s.resolver.derivable.contains(first)) return .ok;
+    var colours: std.AutoHashMapUnmanaged(PairKey, Colour) = .empty;
+    defer colours.deinit(scratch);
+    var frames: std.ArrayList(Frame) = .empty;
+    defer frames.deinit(scratch);
+    var walker: Walker = .{};
+    defer walker.steps.deinit(scratch);
+    switch (try open(s, &walker, first, null, forced)) {
+        .frame => |f| try frames.append(scratch, f),
+        .refusal => |refusal| return refusal,
+    }
+    try colours.put(scratch, first, .grey);
+    while (frames.items.len > 0) {
+        const top = &frames.items[frames.items.len - 1];
+        const next = nextStep(s, &walker, top) orelse {
+            const done = frames.pop().?;
+            try colours.put(scratch, done.key, if (done.ground) .black else .black_open);
+            if (done.ground and !walker.volatile_read) try s.resolver.derivable.put(gpa, done.key, {});
+            if (frames.items.len > 0 and !done.ground) frames.items[frames.items.len - 1].ground = false;
+            continue;
+        };
+        const key: PairKey = .{ .root = st.find(next.v), .kind = next.kind };
+        const map = top.map orelse next.map;
+        if (colours.get(key)) |c| switch (c) {
+            .grey => return .{ .cycle = key.root },
+            .black => continue,
+            .black_open => {
+                top.ground = false;
+                continue;
+            },
+        };
+        if (s.resolver.derivable.contains(key)) continue;
+        switch (st.content(key.root)) {
+            // A variable holds nothing yet: not a verdict, but not ground.
+            .flex, .rigid, .err => {
+                top.ground = false;
+                continue;
+            },
+            else => {},
+        }
+        switch (try open(s, &walker, key, map, forced)) {
+            .frame => |f| {
+                try colours.put(scratch, key, .grey);
+                try frames.append(scratch, f);
+            },
+            .refusal => |refusal| return switch (refusal) {
+                .pending, .query, .needs_annotation, .private_method => refusal,
+                else => map orelse refusal,
+            },
+        }
+    }
+    return .ok;
+}
+
+/// A node's frame, or its own verdict: a function; a nominal head that
+/// cannot answer, or that must be computed or demanded first.
+fn open(s: *Solve, w: *Walker, key: PairKey, map: ?Verdict, forced: []const Forced) Error!Opened {
+    const st = s.store();
+    const frame: Frame = .{ .key = key, .map = map };
+    switch (st.content(key.root)) {
+        .structure => |flat| switch (flat) {
+            .func => return .{ .refusal = .function },
+            .app => |a| {
+                var nominal = frame;
+                nominal.nominal = true;
+                nominal.steps.start = @intCast(w.steps.items.len);
+                if (try head(s, w, key, a, forced)) |refusal| return .{ .refusal = refusal };
+                nominal.steps.len = @intCast(w.steps.items.len - nominal.steps.start);
+                return .{ .frame = nominal };
+            },
+            else => {},
+        },
+        else => {},
+    }
+    return .{ .frame = frame };
+}
+
+const Opened = union(enum) { frame: Frame, refusal: Verdict };
+
+fn isWellKnownType(s: *const Solve, a: TypeStore.Structure.App) bool {
+    if (a.args.len != 0 or a.type == .none) return false;
+    const wk = s.cx.types.well_known;
+    const t = a.type;
+    return t == wk.int or t == wk.float or t == wk.bool or t == wk.char or t == wk.string or t == wk.order or t == wk.never;
+}
+
+/// A nominal head `T args` (§11.2): its steps, or why it cannot answer.
+fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced: []const Forced) Error!?Verdict {
+    const cx = s.cx;
+    const st = s.store();
+    const scratch = cx.scratch;
+    if (isWellKnownType(s, a)) return null;
+    const name = Contexts.methodName(key.kind);
+    const entry = cx.types.entry(a.type);
+    const args = try scratch.dupe(Var, Walk.positions(st, key.root));
+    defer scratch.free(args);
+    // A schema endpoint: its schema's settled properties (R8b's to replace).
+    if (entry.schema_endpoint) {
+        try s.settleSchemas();
+        const bits = cx.types.schemaPropertyBits(a.type);
+        const ok = if (key.kind == .eq) bits & 1 != 0 else bits & 2 != 0;
+        if (!ok) return if (bits & 4 != 0) .contains_function else .opaque_type;
+        for (args) |v| try w.steps.append(scratch, .{ .v = v, .kind = key.kind, .map = null });
+        return null;
+    }
+    // The module rule: a method is a boundary.
+    if (entry.module == cx.module) {
+        if (s.ownValue(name)) |d| {
+            const decl = cx.bir.decls[d];
+            if (decl.annotation == .none) switch (s.groups.statusOf(d)) {
+                .unchecked => return .{ .pending = d },
+                // In flight: its requirements are not known yet, and the
+                // resolver's in-flight link decides the use (§10.3).
+                .checking => return null,
+                .done => {},
+            };
+            if (decl.is_pub) {
+                if (s.decl_scheme[d].unwrap()) |scheme| try ownBoundary(s, w, scheme, a.type, args, key.kind);
+            } else {
+                for (args) |v| try w.steps.append(scratch, .{ .v = v, .kind = key.kind, .map = null });
+            }
+            return null;
+        }
+    } else if (entry.module.int() < cx.interfaces.len) {
+        const iface = cx.iface(entry.module);
+        if (iface.findValue(cx.interner, name)) |value| {
+            try importedBoundary(s, w, iface, entry.module, value, a.type, args, key.kind);
+            return null;
+        }
+    }
+    if (entry.kind == .foreign) {
+        if (!foreignDerives(entry, key.kind)) return .opaque_type;
+        for (args) |v| try w.steps.append(scratch, .{ .v = v, .kind = key.kind, .map = null });
+        return null;
+    }
+    // Derivation: the context.
+    if (entry.module == cx.module) {
+        const answer = (try forcedAnswer(s, a.type, key.kind, forced)) orelse
+            (try s.contexts.peek(s, a.type, key.kind)) orelse
+            return .{ .query = .{ .type_id = a.type, .kind = key.kind } };
+        if (s.contexts.runs.items.len != 0 or !s.contexts.settled(a.type)) w.volatile_read = true;
+        switch (answer.status) {
+            .present => for (s.contexts.entriesOf(answer)) |e| try contextStep(w, scratch, args, e.param, e.method, key.kind),
+            .absent_function => return .contains_function,
+            .absent_other, .foreign => return .opaque_type,
+            .absent_private => return .{ .private_method = .{ .module = answer.culprit, .method = answer.method } },
+            .own_method => {},
+            .needs_annotation => return .{ .needs_annotation = .{ .type_id = a.type, .decl = answer.culprit } },
+        }
+        return null;
+    }
+    if (entry.module.int() >= cx.interfaces.len) return null;
+    const iface = cx.iface(entry.module);
+    const facts = iface.typeFacts(cx.interner, entry.name) orelse {
+        // A record the old checker wrote, for a private type: v1's ABI. A
+        // record v2 wrote has a row for every type it can reach: resolution
+        // says `internal` (`Instances.derivedNominal`).
+        if (!cx.oldCheckerWrote(entry.module)) return null;
+        for (args) |v| try w.steps.append(scratch, .{ .v = v, .kind = key.kind, .map = null });
+        return null;
+    };
+    const row = facts.derived(if (key.kind == .eq) .eq else .compare);
+    switch (row.status) {
+        .present => {
+            var k: usize = 0;
+            while (iface.contextEntry(row.context, k)) |e| : (k += 1) {
+                try contextStep(w, scratch, args, e.param, iface.symbol(e.method), key.kind);
+            }
+        },
+        .function => return .contains_function,
+        .unanswerable, .foreign => return .opaque_type,
+        .unchecked, .primitive, .own_method, .alias => {},
+    }
+    return null;
+}
+
+fn forcedAnswer(s: *Solve, type_id: Types.TypeId, kind: Kind, forced: []const Forced) Error!?Contexts.Answer {
+    for (forced) |f| {
+        if (f.type_id != type_id or f.kind != kind) continue;
+        const t = s.contexts.local(type_id) orelse return null;
+        return s.contexts.final(t, kind);
+    }
+    return null;
+}
+
+/// A context entry `(param, method)` asked of a head being derived for
+/// `kind`: the argument, for the same method; for the other well-known one,
+/// mapped as v1 maps a boundary's requirement; for any other method, the
+/// derived method itself (v1's rule for a requirement it cannot check).
+fn contextStep(w: *Walker, scratch: std.mem.Allocator, args: []const Var, param: u16, method: Symbol, kind: Kind) Error!void {
+    if (param >= args.len) return;
+    const step: Step = if (!Resolve.isWellKnownName(method) or Contexts.kindOf(method) == kind)
+        .{ .v = args[param], .kind = kind, .map = null }
+    else if (method == InternPool.WellKnown.eq.symbol())
+        .{ .v = args[param], .kind = .eq, .map = .contains_function }
+    else
+        .{ .v = args[param], .kind = .compare, .map = .opaque_type };
+    try w.steps.append(scratch, step);
+}
+
+/// A requirement of a boundary method on its receiver's parameter `i`:
+/// `eq` (or the `equatable` marker), `compare`, or another method, which the
+/// derived method stands for (v1's `installMethodRequirements`).
+fn boundaryStep(w: *Walker, scratch: std.mem.Allocator, arg: Var, method: ?Symbol, kind: Kind) Error!void {
+    const m = method orelse return w.steps.append(scratch, .{ .v = arg, .kind = .eq, .map = .contains_function });
+    if (m == InternPool.WellKnown.eq.symbol()) return w.steps.append(scratch, .{ .v = arg, .kind = .eq, .map = .contains_function });
+    if (m == InternPool.WellKnown.compare.symbol()) return w.steps.append(scratch, .{ .v = arg, .kind = .compare, .map = .opaque_type });
+    return w.steps.append(scratch, .{ .v = arg, .kind = kind, .map = null });
+}
+
+/// This module's `pub` method `scheme` as a boundary for `T args`: when its
+/// receiver is `T` over its own quantifiers, each quantifier's requirements
+/// ask its argument; a method over another type's receiver asks nothing (the
+/// resolver reports the module-rule clash); a polymorphic one (`a, a ->
+/// Bool`) asks nothing either.
+fn ownBoundary(s: *Solve, w: *Walker, scheme: Var, type_id: Types.TypeId, args: []const Var, kind: Kind) Error!void {
+    const st = s.store();
+    const scratch = s.cx.scratch;
+    const f = Walk.function(st, scheme) orelse return;
+    if (f.params.len != 2) return;
+    const receiver = Walk.positions(st, f.params[0]);
+    switch (st.resolvedContent(f.params[0])) {
+        .structure => |flat| switch (flat) {
+            .app => |app| if (app.type != type_id or receiver.len != args.len) return,
+            else => return,
+        },
+        else => {
+            // A receiver that is not `T` itself is no boundary for `T`: its
+            // arguments are asked as a derived head's would be.
+            return;
+        },
+    }
+    const params = try scratch.dupe(Var, receiver);
+    defer scratch.free(params);
+    for (params, args) |p, arg| {
+        const flags = st.flagsOf(st.find(p));
+        if (flags.equatable) try boundaryStep(w, scratch, arg, null, kind);
+        const set = Walk.constraints(flags);
+        const n = set.count(st);
+        var j: u32 = 0;
+        while (j < n) : (j += 1) try boundaryStep(w, scratch, arg, set.at(st, j).name, kind);
+    }
+}
+
+/// Another module's `pub` method, read from its interface scheme the same
+/// way (`ownBoundary`): the first parameter's term `T (var q₀) …`, and each
+/// quantifier's constraint block.
+fn importedBoundary(s: *Solve, w: *Walker, iface: *const Interface, module: @import("../resolve/Graph.zig").Index, value: Interface.ValueIndex, type_id: Types.TypeId, args: []const Var, kind: Kind) Error!void {
+    const scratch = s.cx.scratch;
+    const index = iface.values[@intFromEnum(value)].scheme;
+    if (index == .none or @intFromEnum(index) >= iface.schemes.len) return;
+    const scheme = iface.scheme(index);
+    const body = iface.term(scheme.body);
+    if (body.tag != .func) return;
+    const params = iface.range(body.lhs);
+    if (params.len != 2) return;
+    const first = iface.term(@enumFromInt(params[0]));
+    if (first.tag != .app) return;
+    const refs = s.cx.types.refIds(module);
+    if (first.lhs >= refs.len or refs[first.lhs] != type_id) return;
+    const arg_terms = iface.range(first.rhs);
+    if (arg_terms.len != args.len) return;
+    for (arg_terms, args) |t, arg| {
+        const term = iface.term(@enumFromInt(t));
+        if (term.tag != .@"var" or term.lhs >= scheme.quantified_count) continue;
+        const q = iface.quantified(scheme, term.lhs);
+        if (q.equatable) try boundaryStep(w, scratch, arg, null, kind);
+        var j: u32 = 0;
+        while (j < q.constraints_len) : (j += 1) {
+            try boundaryStep(w, scratch, arg, iface.symbol(iface.quantifiedConstraint(q, j).name), kind);
+        }
+    }
+}
+
+/// The next pair to visit below `frame`, or null when it has none left: an
+/// alias's expansion; a nominal head's steps; every other node's
+/// `structural` successors, for the same kind.
+fn nextStep(s: *Solve, w: *const Walker, frame: *Frame) ?Step {
+    const st = s.store();
+    const root = frame.key.root;
+    switch (st.content(root)) {
+        .alias => {
+            if (frame.cursor != 0) return null;
+            frame.cursor = 1;
+            return .{ .v = Walk.child(st, root, 0, .payload).?, .kind = frame.key.kind, .map = null };
+        },
+        else => {},
+    }
+    if (frame.nominal) {
+        if (frame.cursor >= frame.steps.len) return null;
+        const step = w.steps.items[frame.steps.start + frame.cursor];
+        frame.cursor += 1;
+        return step;
+    }
+    const c = Walk.child(st, root, frame.cursor, .structural) orelse return null;
+    frame.cursor += 1;
+    return .{ .v = c, .kind = frame.key.kind, .map = null };
+}
+
+/// Whether a `foreign type` answers derived `kind` (A.55): it has no body to
+/// derive over, so only an `equatable` one answers `eq`, structurally. The
+/// one statement of the rule (R8a's review, nit): at a use's head
+/// `Instances` routes a refusal to `unknown_method`, which names the `pub
+/// compare` its module is missing (A.50); at a position the verdict is
+/// `opaque_type`.
+pub fn foreignDerives(entry: Types.Entry, kind: Kind) bool {
+    return kind == .eq and entry.equatable;
+}

@@ -1,5 +1,5 @@
-//! Instance lookup (checker-v2.md §9.3) and THE derivability verdict (§9.5,
-//! as built by R6a's review): the answer for a wanted on a structure.
+//! Instance lookup (checker-v2.md §9.3) (the derivability verdict is
+//! `Derivable.zig`): the answer for a wanted on a structure.
 //!
 //! Free functions over the solver: a lookup unifies, instantiates and
 //! reports, which are the solver's (`Resolve.zig` calls in; nothing here runs
@@ -15,18 +15,16 @@
 //!      sub-wanteds in canonical order (I5), and matched against the
 //!      wanted's method type;
 //!   5. derivation, for a well-known name asked by anything but a dot-call:
-//!      `derivability`, the ONE answer to "can this receiver derive the
-//!      method" (I10; review B1) — it reports why not — then one sub-wanted
-//!      per position: a nominal type's arguments (v1's one-entry-per-
-//!      parameter rule, until R8a's derived contexts), a closed record's
-//!      fields, a tuple's elements;
+//!      `Derivable.derivable`, the ONE verdict on "can this receiver derive
+//!      the method" (I10; review B1), which reads the derived contexts and
+//!      reports why not — then one sub-wanted per context entry of a nominal
+//!      type (D4: `Contexts`, or the published row, §14.2), per field of a
+//!      closed record, per element of a tuple;
 //!   6. `unknown_method`.
 //!
-//! **Capability until R8a** is read here and only here: the session's
-//! capability bits (`Types.answersEq`/`answersCompare`, `hasFunction`, the
-//! method-boundary requirements), which `Module` settles with the shared
-//! `Types.settleDispatchCapabilities`. R8a replaces all of it with §11.2's
-//! fixpoint (`rules_test.zig` fences the names).
+//! Inside a derived-context fixpoint (`Contexts`), a method in flight takes
+//! §11.2's closed or parametric branch (`ownMethod`), and a function met is
+//! noted, so an `absent` entry says why.
 
 const std = @import("std");
 const InternPool = @import("../InternPool.zig");
@@ -43,6 +41,9 @@ const Evidence = @import("Evidence.zig");
 const Walk = @import("Walk.zig");
 const Messages = @import("Messages.zig");
 const Producers = @import("Producers.zig");
+const Contexts = @import("Contexts.zig");
+const Derivable = @import("Derivable.zig");
+const Schemes = @import("../check/Schemes.zig");
 
 const Var = TypeStore.Var;
 const Error = Solve.Error;
@@ -57,12 +58,13 @@ pub fn lookup(s: *Solve, id: WantedId, root: Var, flat: TypeStore.Structure, imm
         .tuple, .unit => {
             const w = s.evidence.get(id);
             if (!Resolve.derives(w)) return noMethods(s, id, root);
-            if (!try derivable(s, id, root)) return;
+            if (!try Derivable.derivable(s, id, root)) return;
             if (!try Resolve.unifyWellKnown(s, id, root)) return Resolve.reject(s, id, false);
             return derivedPositions(s, id, root, .none, childrenOf(s, root));
         },
         .func => {
             const w = s.evidence.get(id);
+            s.contexts.noteFunction(s);
             // `eq` on a function keeps `not_equatable`, the better message.
             if (w.method == InternPool.WellKnown.eq.symbol()) {
                 try s.report.notEquatable(w.origin, root, .function);
@@ -147,17 +149,19 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
         const iface = cx.iface(entry.module);
         if (iface.findValue(cx.interner, w.method)) |value| return importedMethod(s, id, root, entry, value);
         if (privateIn(s, entry.module, w.method)) {
+            s.contexts.notePrivate(s, entry.module.int(), w.method);
             try s.report.privateMethod(w.origin, entry.module, w.method);
             return Resolve.reject(s, id, true);
         }
     }
     // 5. Derivation, for a well-known name on a shape that supports it.
     if (Resolve.derives(w)) {
-        // A `foreign type` whose own head cannot answer falls through to
-        // `unknown_method`, which names the `pub compare` its module is
-        // missing (A.50); every other type asks `derivability`.
-        if (!(entry.kind == .foreign and !headAnswers(s, a.type, kindOf(w.method)))) {
-            if (!try derivable(s, id, root)) return;
+        // A `foreign type` that does not derive (`Derivable.foreignDerives`)
+        // falls through to `unknown_method`. Every other type asks
+        // `derivability`.
+        const foreign_refused = entry.kind == .foreign and !Derivable.foreignDerives(entry, Contexts.kindOf(w.method));
+        if (!foreign_refused) {
+            if (!try Derivable.derivable(s, id, root)) return;
             if (!try Resolve.unifyWellKnown(s, id, root)) return Resolve.reject(s, id, false);
             // An all-nullary type is a bare tag string, so `eq` is `===`
             // (A.18); `compare` is not alphabetic.
@@ -192,6 +196,14 @@ fn privateIn(s: *Solve, module: Graph.Index, name: Symbol) bool {
 /// answered `group_call`.
 fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) Error!void {
     const asked = s.evidence.get(id);
+    // A derived-context fixpoint's own resolution meeting a method in flight
+    // (§11.2): its closed and parametric branches, and never the link or the
+    // merge, which the asker's replayed wanted takes in the asker's frame.
+    if (s.contexts.active(s)) |ri| {
+        if (s.cx.bir.decls[decl].annotation == .none and s.groups.statusOf(decl) == .checking) {
+            return Contexts.inFlight(s, ri, id, decl);
+        }
+    }
     const demanded = try s.groups.demand(s, decl, asked.origin, asked.method);
     const w = s.evidence.get(id);
     switch (demanded) {
@@ -308,17 +320,155 @@ fn allNullary(s: *Solve, id: Types.TypeId) bool {
     return true;
 }
 
-/// A nominal type's derived function: one sub-wanted per type argument, of
-/// the same method (v1's one-entry-per-parameter rule; D4's inferred
-/// contexts are R8a's). A nullary `foreign type` has no derived function.
+/// A nominal type's derived function (§11.2, D4): one sub-wanted per entry
+/// of its derived CONTEXT — this module's (`Contexts`, read after the
+/// verdict walk proved it present) or the one its module published (§14.2)
+/// — in the context's `(param, method text)` order. A nullary `foreign
+/// type` has no derived function, and a schema endpoint none yet (R8b).
 fn derivedNominal(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!void {
-    const entry = s.cx.types.entry(a.type);
+    const cx = s.cx;
+    const entry = cx.types.entry(a.type);
+    const w = s.evidence.get(id);
+    const kind = Contexts.kindOf(w.method);
     if (entry.kind == .foreign and a.args.len == 0) {
         // An `equatable` nullary foreign type: the one structural walk
         // answers (A.53, A.55), the proven-undetermined leaf's function.
         return Resolve.answer(s, id, .undetermined);
     }
-    return derivedPositions(s, id, root, a.type, Walk.positions(s.store(), root));
+    // A schema endpoint is compared structurally until R8b derives it
+    // (§11.5): `build` refuses a schema before anything is emitted.
+    if (entry.schema_endpoint) return Resolve.answer(s, id, .undetermined);
+    const args = try s.cx.scratch.dupe(Var, Walk.positions(s.store(), root));
+    defer s.cx.scratch.free(args);
+    if (entry.module == cx.module) {
+        const answer = try Contexts.query(s, a.type, kind, w.origin);
+        // The verdict walk read the same answer and passed it; one read
+        // fresh here (a result no run could memoise, recomputed) is refused
+        // for what it says.
+        switch (answer.status) {
+            .present => {},
+            .absent_function => {
+                s.contexts.noteFunction(s);
+                return refuseDerived(s, id, root, .opaque_type);
+            },
+            .needs_annotation => {
+                s.contexts.noteCulprit(s, answer.culprit);
+                try Messages.derivedNeedsAnnotation(s.report, w.origin, root, w.method, cx.bir.symbol(cx.bir.decls[answer.culprit].name));
+                return Resolve.reject(s, id, true);
+            },
+            .absent_private => {
+                s.contexts.notePrivate(s, answer.culprit, answer.method);
+                try s.report.privateMethod(w.origin, @enumFromInt(answer.culprit), answer.method);
+                return Resolve.reject(s, id, true);
+            },
+            .absent_other, .own_method, .foreign => return refuseDerived(s, id, root, .opaque_type),
+        }
+        const t = s.contexts.local(a.type).?;
+        const entries = try s.cx.scratch.dupe(Contexts.Entry, s.contexts.entriesOf(answer));
+        defer s.cx.scratch.free(entries);
+        Resolve.answer(s, id, .{ .derived = .{ .type_id = a.type, .args = .{} } });
+        try Resolve.remember(s, id, root);
+        const subs = try s.cx.scratch.alloc(WantedId, entries.len);
+        defer s.cx.scratch.free(subs);
+        // The answer's method types, instantiated at the arguments once.
+        const types: []const Var = if (answer.template.unwrap()) |template| blk: {
+            const tuple = try s.instantiate.substitute(template, try s.contexts.paramsOf(t), args);
+            break :blk try s.cx.scratch.dupe(Var, Walk.positions(s.store(), tuple));
+        } else &.{};
+        for (entries, subs) |e, *sub| {
+            const receiver = args[e.param];
+            const method_type = if (e.slot != Contexts.none and e.slot < types.len)
+                types[e.slot]
+            else
+                try Resolve.wellKnownType(s, e.method, receiver);
+            sub.* = try contextWanted(s, id, e.method, receiver, method_type);
+        }
+        return finishDerived(s, id, a.type, subs);
+    }
+    if (entry.module.int() >= cx.interfaces.len) return Resolve.reject(s, id, true);
+    const iface = cx.iface(entry.module);
+    const facts = iface.typeFacts(cx.interner, entry.name) orelse {
+        // A record the old checker wrote, for a private type: v1's ABI, one
+        // entry per parameter naming the derived method (§14.2 *as amended
+        // by R8a*). A record v2 wrote has a row for every type it can reach.
+        if (cx.oldCheckerWrote(entry.module)) return derivedPositions(s, id, root, a.type, args);
+        try s.report.internal(s.evidence.get(id).origin, "another module of this package published no derived row for a type its record reaches (checker-v2.md §14.2)");
+        return Resolve.reject(s, id, true);
+    };
+    const row = facts.derived(if (kind == .eq) .eq else .compare);
+    switch (row.status) {
+        .present => {},
+        // Its module was never checked (a dependency that failed): its
+        // failure has a message, so this one fails in silence.
+        .unchecked => return Resolve.reject(s, id, false),
+        else => return refuseDerived(s, id, root, .opaque_type),
+    }
+    Resolve.answer(s, id, .{ .derived = .{ .type_id = a.type, .args = .{} } });
+    try Resolve.remember(s, id, root);
+    const n = iface.contextLen(row.context);
+    const subs = try s.cx.scratch.alloc(WantedId, n);
+    defer s.cx.scratch.free(subs);
+    // The row's method types, instantiated at the arguments once.
+    const scheme = iface.contextScheme(row.context);
+    const types: []const Var = if (scheme != .none)
+        (try publishedMethodTypes(s, iface, entry.module, scheme, args, w)) orelse return Resolve.reject(s, id, true)
+    else
+        &.{};
+    for (subs, 0..) |*sub, k| {
+        const e = iface.contextEntry(row.context, k).?;
+        const method = iface.symbol(e.method);
+        if (e.param >= args.len) return Resolve.reject(s, id, false);
+        const receiver = args[e.param];
+        const method_type = if (e.slot != Contexts.none) blk: {
+            if (e.slot >= types.len) return Resolve.reject(s, id, true);
+            break :blk types[e.slot];
+        } else try Resolve.wellKnownType(s, method, receiver);
+        sub.* = try contextWanted(s, id, method, receiver, method_type);
+    }
+    return finishDerived(s, id, a.type, subs);
+}
+
+/// One context entry's sub-wanted of derived answer `parent`: `method` on
+/// `receiver` at `method_type`, resolved now. A well-known entry is a
+/// position of the derived shape (its parent's surface); any other is the
+/// requirement a payload's method made (`where_clause`).
+fn contextWanted(s: *Solve, parent: WantedId, method: Symbol, receiver: Var, method_type: Var) Error!WantedId {
+    const p = s.evidence.get(parent);
+    const kind: Evidence.Kind = if (Resolve.isWellKnownName(method)) p.kind else .where_clause;
+    const sub = try Resolve.create(s, method, receiver, method_type, p.origin, kind, parent.toOptional());
+    s.evidence.ptr(sub).decl = p.decl;
+    // Resolution recursing into a derived answer's context spends native
+    // stack the nesting budget counts (§10.2; R7's review, S7).
+    s.resolve_depth += 1;
+    defer s.resolve_depth -= 1;
+    try Resolve.step(s, sub, false);
+    return sub;
+}
+
+fn finishDerived(s: *Solve, id: WantedId, type_id: Types.TypeId, subs: []const WantedId) Error!void {
+    const args = try s.evidence.addArgs(s.cx.gpa, subs);
+    if (s.evidence.get(id).state == .answered) {
+        s.evidence.setAnswer(id, .{ .derived = .{ .type_id = type_id, .args = args } });
+    }
+}
+
+/// A published row's method types (§14.2 *as amended by R8a*): its
+/// scheme's body is `( p₀, …, pₙ₋₁, ( τ₀, …, τₖ ) )`; the parameters are
+/// unified with the use's arguments and each `τ` is the method type of the
+/// entries whose `slot` it is.
+fn publishedMethodTypes(s: *Solve, iface: *const Interface, module: Graph.Index, scheme: Interface.SchemeIndex, args: []const Var, w: Evidence.Wanted) Error!?[]const Var {
+    const cx = s.cx;
+    if (@intFromEnum(scheme) >= iface.schemes.len) return null;
+    const mark = cx.store.count();
+    const v = try Schemes.instantiate(iface, cx.types.refIds(module), cx.store, @intFromEnum(scheme), s.frame().rank, cx.scratch, null);
+    try s.instantiate.adoptSince(mark);
+    const elements = try cx.scratch.dupe(Var, Walk.positions(s.store(), v));
+    defer cx.scratch.free(elements);
+    if (elements.len != args.len + 1) return null;
+    for (elements[0..args.len], args) |p, arg| {
+        if (!try s.unifyQuiet(p, arg, w.origin)) return null;
+    }
+    return try cx.scratch.dupe(Var, Walk.positions(s.store(), elements[args.len]));
 }
 
 /// A derived answer with one sub-wanted per position, each resolved now
@@ -358,7 +508,7 @@ fn onRecord(s: *Solve, id: WantedId, root: Var, rec: TypeStore.Structure.Record,
         var concatenated = false;
         const end = try Walk.recordRow(st, rec, row, s.cx.gpa, &concatenated);
         if (end != .closed) return noMethods(s, id, root);
-        if (!try derivable(s, id, root)) return;
+        if (!try Derivable.derivable(s, id, root)) return;
         if (!try Resolve.unifyWellKnown(s, id, root)) return Resolve.reject(s, id, false);
         // Positions in field-name TEXT order: the shape's key (§9.2).
         row.clearRetainingCapacity();
@@ -449,245 +599,6 @@ fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
 fn funcOf(s: *Solve, params: []const Var, result: Var) Error!Var {
     const range = try s.store().addVars(params);
     return s.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } });
-}
-
-// ---------------------------------------------------------------------------
-// The derivability verdict (§9.5, as built by R6a's review)
-// ---------------------------------------------------------------------------
-
-pub const PairKey = struct { root: Var, kind: Dispatch.Derived.Kind };
-
-/// Why a receiver cannot derive a well-known method, or that it can. v1's
-/// verdicts (`walkDerivable`), plus a cycle and R7's pending own method.
-pub const Verdict = union(enum) {
-    ok,
-    function,
-    contains_function,
-    opaque_type,
-    too_wide,
-    cycle: Var,
-    /// An own unannotated method of this name whose group is `unchecked`:
-    /// the caller demands it (§10.2) and asks again.
-    pending: u32,
-};
-
-fn kindOf(name: Symbol) Dispatch.Derived.Kind {
-    return if (name == InternPool.WellKnown.eq.symbol()) .eq else .compare;
-}
-
-fn methodKind(kind: Dispatch.Derived.Kind) Types.MethodKind {
-    return switch (kind) {
-        .eq => .eq,
-        .compare => .compare,
-    };
-}
-
-/// Whether nominal type `id`'s own head answers `kind`: the session's
-/// capability bit, R8a's to replace.
-fn headAnswers(s: *Solve, id: Types.TypeId, kind: Dispatch.Derived.Kind) bool {
-    return switch (kind) {
-        .eq => s.cx.types.answersEq(id),
-        .compare => s.cx.types.answersCompare(id),
-    };
-}
-
-/// `derivability` for wanted `id` on `root`, reported at the use when it
-/// is not `ok` (v1's texts).
-fn derivable(s: *Solve, id: WantedId, root: Var) Error!bool {
-    const w = s.evidence.get(id);
-    const is_eq = w.method == InternPool.WellKnown.eq.symbol();
-    var verdict = try derivability(s, root, kindOf(w.method));
-    // An own type whose method of this name has no scheme yet: its group
-    // is demanded now (§10.2), and the question asked again — at most once
-    // per method name, since a demanded group is never `unchecked` again.
-    while (verdict == .pending) {
-        const decl = verdict.pending;
-        const got = try s.groups.demand(s, decl, w.origin, s.cx.bir.symbol(s.cx.bir.decls[decl].name));
-        if (got == .refused) {
-            try Resolve.reject(s, id, true);
-            return false;
-        }
-        verdict = try derivability(s, root, kindOf(w.method));
-    }
-    switch (verdict) {
-        .ok => return true,
-        .cycle => |node| {
-            try s.reportCycle(w.origin, .none, root, node);
-            try Resolve.reject(s, id, false);
-            return false;
-        },
-        .pending => unreachable,
-        .too_wide => if (is_eq) {
-            try s.report.notEquatable(w.origin, root, .too_wide);
-        } else {
-            try s.report.noMethodsOnShape(w.origin, w.method, root, .too_wide);
-        },
-        .function => if (is_eq) {
-            try s.report.notEquatable(w.origin, root, .function);
-        } else {
-            try s.report.noMethodsOnShape(w.origin, w.method, root, .contains_function);
-        },
-        .contains_function => if (is_eq) {
-            try s.report.notEquatable(w.origin, root, .opaque_type);
-        } else {
-            try s.report.noMethodsOnShape(w.origin, w.method, root, .contains_function);
-        },
-        .opaque_type => if (is_eq) {
-            try s.report.notEquatable(w.origin, root, .opaque_type);
-        } else {
-            try s.report.noMethodsOnShape(w.origin, w.method, root, .not_orderable);
-        },
-    }
-    try Resolve.reject(s, id, true);
-    return false;
-}
-
-const Colour = enum { grey, black, black_open };
-
-const Frame = struct {
-    key: PairKey,
-    cursor: u32 = 0,
-    /// No variable below it, so far: a black ground node's verdict cannot
-    /// change, and is kept (`Resolve.State.derivable`).
-    ground: bool = true,
-    /// Its successors are chosen by a method boundary's requirements.
-    boundary: bool,
-    /// The verdict a failure below it is reported as: the other method a
-    /// boundary asked for maps it (v1's rule: a failed `eq` requirement is
-    /// `contains_function`, a failed `compare` one `opaque_type`).
-    map: ?Verdict,
-};
-
-const Step = struct { v: Var, kind: Dispatch.Derived.Kind, map: ?Verdict };
-
-/// THE answer to "can `start` derive `kind`?" (I10; review B1, B2), which
-/// every derivation reads. One iterative walk over `(node, method)` pairs,
-/// coloured per pair (a pair met grey again is a cycle, whichever method
-/// the boundaries alternate through), over `structural` successors (an
-/// alias contributes its expansion), no native recursion (I4), and linear
-/// on a DAG: a pair is walked once per walk, and a ground pair once per
-/// module. A method boundary's requirements are pushed onto the same stack
-/// as pairs of their own method, never walked by a nested walk.
-pub fn derivability(s: *Solve, start: Var, kind: Dispatch.Derived.Kind) Error!Verdict {
-    const st = s.store();
-    const gpa = s.cx.gpa;
-    const scratch = s.cx.scratch;
-    const first: PairKey = .{ .root = st.find(start), .kind = kind };
-    if (s.resolver.derivable.contains(first)) return .ok;
-    var colours: std.AutoHashMapUnmanaged(PairKey, Colour) = .empty;
-    defer colours.deinit(scratch);
-    var frames: std.ArrayList(Frame) = .empty;
-    defer frames.deinit(scratch);
-    if (try gate(s, first)) |refusal| return refusal;
-    try colours.put(scratch, first, .grey);
-    try frames.append(scratch, .{ .key = first, .boundary = isBoundary(s, first), .map = null });
-    while (frames.items.len > 0) {
-        const top = &frames.items[frames.items.len - 1];
-        const next = nextStep(s, top) orelse {
-            const done = frames.pop().?;
-            try colours.put(scratch, done.key, if (done.ground) .black else .black_open);
-            if (done.ground) try s.resolver.derivable.put(gpa, done.key, {});
-            if (frames.items.len > 0 and !done.ground) frames.items[frames.items.len - 1].ground = false;
-            continue;
-        };
-        const key: PairKey = .{ .root = st.find(next.v), .kind = next.kind };
-        const map = top.map orelse next.map;
-        if (colours.get(key)) |c| switch (c) {
-            .grey => return .{ .cycle = key.root },
-            .black => continue,
-            .black_open => {
-                top.ground = false;
-                continue;
-            },
-        };
-        if (s.resolver.derivable.contains(key)) continue;
-        switch (st.content(key.root)) {
-            // A variable holds nothing yet: not a verdict, but not ground.
-            .flex, .rigid, .err => {
-                top.ground = false;
-                continue;
-            },
-            else => {},
-        }
-        if (try gate(s, key)) |refusal| return if (refusal == .pending) refusal else (map orelse refusal);
-        try colours.put(scratch, key, .grey);
-        try frames.append(scratch, .{ .key = key, .boundary = isBoundary(s, key), .map = map });
-    }
-    return .ok;
-}
-
-/// A node's own verdict: a function, a record too wide to derive over, or
-/// a nominal type whose head cannot answer the method (or whose method of
-/// that name is this module's and has no scheme yet).
-fn gate(s: *Solve, key: PairKey) Error!?Verdict {
-    const st = s.store();
-    const types = s.cx.types;
-    switch (st.content(key.root)) {
-        .structure => |flat| switch (flat) {
-            .func => return .function,
-            .record => |r| {
-                if (Walk.recordFields(st, r).len > Diagnostics.max_derived_record_fields) return .too_wide;
-            },
-            .app => |a| {
-                if (types.entry(a.type).module == s.cx.module) {
-                    const name = if (key.kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol();
-                    if (s.ownValue(name)) |d| if (s.cx.bir.decls[d].annotation == .none and s.groups.statusOf(d) == .unchecked) return .{ .pending = d };
-                }
-                if (!headAnswers(s, a.type, key.kind)) return if (types.hasFunction(a.type)) .contains_function else .opaque_type;
-            },
-            else => {},
-        },
-        else => {},
-    }
-    return null;
-}
-
-/// Whether `key`'s node is a nominal type with a `pub` method of its kind:
-/// its arguments are then asked what that method's requirements say.
-fn isBoundary(s: *Solve, key: PairKey) bool {
-    const a = switch (s.store().content(key.root)) {
-        .structure => |flat| switch (flat) {
-            .app => |a| a,
-            else => return false,
-        },
-        else => return false,
-    };
-    return s.cx.types.hasPublicDispatchMethod(a.type, methodKind(key.kind));
-}
-
-/// The next pair to visit below `frame`, or null when it has none left: an
-/// alias's expansion; a boundary's arguments, each for the method kinds its
-/// requirement bits name (1 `eq`, 2 `compare`, 4 its own); every other
-/// node's `structural` successors, for the same kind.
-fn nextStep(s: *Solve, frame: *Frame) ?Step {
-    const st = s.store();
-    const root = frame.key.root;
-    switch (st.content(root)) {
-        .alias => {
-            if (frame.cursor != 0) return null;
-            frame.cursor = 1;
-            return .{ .v = Walk.child(st, root, 0, .payload).?, .kind = frame.key.kind, .map = null };
-        },
-        else => {},
-    }
-    if (!frame.boundary) {
-        const c = Walk.child(st, root, frame.cursor, .structural) orelse return null;
-        frame.cursor += 1;
-        return .{ .v = c, .kind = frame.key.kind, .map = null };
-    }
-    const app = st.content(root).structure.app;
-    while (true) {
-        const i = frame.cursor / 3;
-        const which = frame.cursor % 3;
-        const arg = Walk.child(st, root, i, .structural) orelse return null;
-        frame.cursor += 1;
-        const req = s.cx.types.methodParamRequirement(app.type, i, methodKind(frame.key.kind));
-        switch (which) {
-            0 => if (req & 4 != 0) return .{ .v = arg, .kind = frame.key.kind, .map = null },
-            1 => if (req & 1 != 0) return .{ .v = arg, .kind = .eq, .map = .contains_function },
-            else => if (req & 2 != 0) return .{ .v = arg, .kind = .compare, .map = .opaque_type },
-        }
-    }
 }
 
 /// A concrete receiver on a cycle (§9.5's cycle test, which replaced the

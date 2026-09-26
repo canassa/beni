@@ -1,0 +1,43 @@
+-- A regression guard (R8a, CK-26): derived contexts computed JOINTLY for
+-- `eq` and `compare` over one type-level SCC (checker-v2.md §11.2, round 4
+-- R8-2). `X` and `Y` mention
+-- each other, so they are one unit. `X`'s `eq` holds an `H.Holder Y`, whose
+-- `eq` needs `Y`'s COMPARE; `Y`'s `compare` needs `X`'s `compare`, which
+-- needs `H.Holder Y`'s derived `compare` and so `Y`'s `compare` again. Every
+-- context is empty (nothing is parametric), and each comparison below goes
+-- through `H.eq`, which is not structural: `XH (H.Holder (YLeaf 1))` "equals"
+-- `XH (H.Holder (YLeaf 2))` because 1 is not greater than 2, and not the
+-- other way round. The permutation scenario checks every order of the four
+-- declarations here. On 7427828 (v1) it prints the same, through its
+-- capability settle; v2 derives it by one fixpoint, in every order.
+import H
+import Node exposing (Program)
+
+
+type X
+    = XH (H.Holder Y)
+    | XLeaf Int
+
+
+type Y
+    = YX X
+    | YLeaf Int
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (XH (H.Holder (YLeaf 1)) == XH (H.Holder (YLeaf 2)))
+        , show (XH (H.Holder (YLeaf 2)) == XH (H.Holder (YLeaf 1)))
+        , show (YX (XLeaf 3) < YLeaf 0)
+        , show (YX (XH (H.Holder (YLeaf 5))) < YX (XH (H.Holder (YLeaf 4))))
+        ]

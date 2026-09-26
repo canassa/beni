@@ -91,6 +91,7 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     .{ .name = "scenario/NEST-OVER", .step = .fast },
     .{ .name = "scenario/NEST-DEEP", .step = .fast },
     .{ .name = "scenario/CK-82", .step = .fast },
+    .{ .name = "scenario/CK-79", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -366,6 +367,20 @@ const perm_programs = [_]PermProgram{
     .{ .name = "recursive-twin", .path = "tests/pending/run/DeferredReceiverRecursiveTwin.beni", .expect = .{ .prints = "tests/pending/run/DeferredReceiverRecursiveTwin.expected" } },
     .{ .name = "ck106", .path = "tests/pending/check/bad/NumberReceiverMethodInGroup.beni", .expect = .{ .refused = .unknown_method } },
     .{ .name = "ck106-dispatch", .path = "tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni", .expect = .{ .refused = .unknown_method } },
+    // R8a: derived contexts by fixpoint (checker-v2.md §11.2). A closed
+    // in-flight method (CK-67, its nested and permuted twins), the
+    // parametric refusal (CK-69), a re-entrant query (CK-74), the replayed
+    // wanted that merges the asker (CK-77), a derived query inside an own
+    // `eq`'s merged class (R7's S6), and `eq` and `compare` computed jointly
+    // over one type-level SCC (round 4 R8-2).
+    .{ .name = "ck67", .path = "tests/pending/run/DerivedContextClosedOwnMethod", .module = "Main.beni", .expect = .{ .prints = "tests/pending/run/DerivedContextClosedOwnMethod/_expected.expected" } },
+    .{ .name = "ck67-nested", .path = "tests/pending/run/DerivedContextClosedOwnMethod", .module = "Nested.beni", .expect = .{ .prints = "tests/pending/run/DerivedContextClosedOwnMethod/_expected.expected" } },
+    .{ .name = "ck67-permuted", .path = "tests/pending/run/DerivedContextClosedOwnMethodPermuted", .module = "Main.beni", .expect = .{ .prints = "tests/pending/run/DerivedContextClosedOwnMethodPermuted/_expected.expected" } },
+    .{ .name = "ck69", .path = "tests/pending/check/bad/DerivedContextNeedsAnnotation", .module = "Main.beni", .expect = .{ .refused = .method_needs_annotation } },
+    .{ .name = "ck74", .path = "tests/pending/check/bad/DerivedContextReentrant", .module = "Main.beni", .expect = .{ .refused = .type_mismatch } },
+    .{ .name = "ck77", .path = "tests/pending/check/bad/DerivedContextMergesAsker", .module = "PickFirst.beni", .expect = .{ .refused = .kind_mismatch } },
+    .{ .name = "s6-in-flight-eq", .path = "tests/pending/run/DerivedContextInFlightEq", .module = "Main.beni", .expect = .{ .prints = "tests/pending/run/DerivedContextInFlightEq/_expected.expected" } },
+    .{ .name = "joint-eq-compare", .path = "tests/corpus/run/DerivedContextJointMethods", .module = "Main.beni", .expect = .{ .prints = "tests/corpus/run/DerivedContextJointMethods/_expected.expected" } },
 };
 
 test "PERM: every declaration order of an own-method program does what its twin says" {
@@ -703,32 +718,69 @@ fn offsetOf(text: []const u8, line: usize, col: usize) ?usize {
 fn permuteProject(s: *Scenario, p: PermProgram, module: []const u8, files: []const []const u8, texts: []const []const u8, orders: []const []const usize) !?Verdict {
     const a = s.arena();
     _ = files;
-    const twin = switch (p.expect) {
-        .prints => |t| try readRepo(a, t),
-        else => unreachable,
-    };
     var dir = try Io.Dir.cwd().openDir(testing.io, p.path, .{ .iterate = true });
     defer dir.close(testing.io);
-    var sources: std.ArrayList([]const u8) = .empty;
-    try sources.appendSlice(a, &.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out" });
+    var names: std.ArrayList([]const u8) = .empty;
     var it = dir.iterate();
     while (try it.next(testing.io)) |entry| {
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
         const name = try a.dupe(u8, entry.name);
-        try sources.append(a, name);
+        try names.append(a, name);
         if (std.mem.eql(u8, name, module)) continue;
         try s.w.write(name, try readRepo(a, try std.fs.path.join(a, &.{ p.path, name })));
     }
-    for (texts, orders) |t, o| {
-        try s.w.write(module, t);
-        const built = try s.w.runWith(try s.argv(sources.items), .{ .raw_diagnostics = true });
-        if (built.exit_code != 0) return try redAt(s, p, o, try s.failed(built), texts.len);
-        const program = try s.w.node(world.entry_file);
-        if (program.exit_code != 0 or !std.mem.eql(u8, program.stdout, twin)) {
-            return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, texts.len);
-        }
+    switch (p.expect) {
+        .prints => |twin_path| {
+            const twin = try readRepo(a, twin_path);
+            var sources: std.ArrayList([]const u8) = .empty;
+            try sources.appendSlice(a, &.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out" });
+            try sources.appendSlice(a, names.items);
+            for (texts, orders) |t, o| {
+                try s.w.write(module, t);
+                const built = try s.w.runWith(try s.argv(sources.items), .{ .raw_diagnostics = true });
+                if (built.exit_code != 0) return try redAt(s, p, o, try s.failed(built), texts.len);
+                const program = try s.w.node(world.entry_file);
+                if (program.exit_code != 0 or !std.mem.eql(u8, program.stdout, twin)) {
+                    return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" }, texts.len);
+                }
+            }
+            return null;
+        },
+        .refused, .refused_region => |code| {
+            // R8a: a project's module refused in every order — one
+            // diagnostic of `code` in that module (another module of the
+            // project may say its own), at the same source text in every
+            // order, with the same message unless `refused_region`.
+            const same_text = p.expect == .refused;
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(a, &.{ "check", "--no-cache", "--diagnostics=json", "--platform=node" });
+            try args.appendSlice(a, names.items);
+            var reference: ?struct { message: []const u8, text: []const u8 } = null;
+            for (texts, orders) |t, o| {
+                try s.w.write(module, t);
+                const run = try s.w.runWith(try s.argv(args.items), .{ .raw_diagnostics = true, .timeout_ms = world.bulk_timeout_ms });
+                const trimmed = std.mem.trim(u8, run.stderr, " \r\n");
+                const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, trimmed, .{}) catch return try redAt(s, p, o, try s.failed(run), texts.len);
+                var mine: ?@import("diagnostic").Diagnostic = null;
+                var n: usize = 0;
+                for (diags) |d| {
+                    if (!std.mem.eql(u8, std.fs.path.basename(d.span.file), module)) continue;
+                    n += 1;
+                    mine = d;
+                }
+                const d = mine orelse return try redAt(s, p, o, .{ .green = false, .signature = "exit=0 codes=none", .detail = "no diagnostic" }, texts.len);
+                if (n != 1 or d.code != code) return try redAt(s, p, o, try s.failed(run), texts.len);
+                const text = spanText(t, d.span.start.line, d.span.start.col, d.span.end.line, d.span.end.col);
+                if (reference) |ref| {
+                    if ((same_text and !std.mem.eql(u8, ref.message, d.message)) or !std.mem.eql(u8, ref.text, text)) {
+                        return try redAt(s, p, o, .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=1 codes={t}×1 differs", .{code}), .detail = "the diagnostic differs from the written order's" }, texts.len);
+                    }
+                } else reference = .{ .message = d.message, .text = text };
+            }
+            return null;
+        },
+        .checks => unreachable,
     }
-    return null;
 }
 
 // R7's nesting scenarios (S-3, S-4; checker-v2.md §10.2): chains of own
@@ -799,16 +851,19 @@ fn deepUse(arena: std.mem.Allocator, head: []const u8, inner: []const u8, depth:
     return out.items;
 }
 
-// CK-82: a nominal payload record of 65 536 fields. The eager pass probes
+// CK-82: a nominal payload record of 65 537 fields. The eager pass probes
 // `T`'s derived `eq`, and `Solve.derivedUse` casts the field count into the
 // `u16` evidence count: a panic in Debug (`crash=ABRT`), whether or not
 // anything compares `T`. 65 535 builds and runs (`abuse_test.zig`, CK-81).
+// 65 537 and not 65 536 since R8a's review: the record's structural row has
+// one entry per field, so its last entry's index `k` is 65 536, one past
+// what a `u16` `Dispatch.Param.k` holds (CK-109).
 // GREEN is the program built and run, printing its two answers, or a named
 // refusal: exit 1 with diagnostics and not one of them `internal`.
-test "CK-82: a nominal payload of 65 536 fields checks, and builds and runs or is refused by name" {
+test "CK-82: a nominal payload of 65 537 fields checks, and builds and runs or is refused by name" {
     var s = try Scenario.init("CK-82");
     defer s.deinit();
-    const n = 65_536;
+    const n = 65_537;
     const a = s.arena();
     var text: std.ArrayList(u8) = .empty;
     try text.appendSlice(a, "import Node exposing (Program)\n\n\ntype T =\n    T { ");
@@ -818,6 +873,28 @@ test "CK-82: a nominal payload of 65 536 fields checks, and builds and runs or i
     try text.print(a, " }}\n\n\nmain : Program\nmain =\n    Node.printLines [ if T r == T r then \"eq\" else \"ne\", if T r == T {{ r | f{d} = 0 }} then \"eq\" else \"ne\" ]\n", .{n});
     try s.w.write("Main.beni", text.items);
     const verdict = try s.runsOrRefuses("Main.beni", "eq\nne\n");
+    try s.finish(verdict);
+}
+
+// CK-79: `==` and `<` on a record of 40 000 fields. The old checker caps a
+// derived record `eq`/`compare` at `max_derived_record_fields` = 4 096
+// (`not_equatable` and `no_methods_on_shape` past it, R1), because a derived
+// function took one JavaScript parameter per field and V8 threw between
+// 40 000 and 60 000. The wide form (`static-dispatch-spike.md` §9.2, CK-81)
+// takes the evidence as one array past 4 096 positions, so R8a's checker
+// lifts the cap (checker-v2.md §11.2's D4 bullet). GREEN is the program
+// built and run, printing its three answers; a refusal is RED.
+test "CK-79: `==` and `<` on a 40 000-field record build and run" {
+    var s = try Scenario.init("CK-79");
+    defer s.deinit();
+    const n = 40_000;
+    const a = s.arena();
+    var text: std.ArrayList(u8) = .empty;
+    try text.appendSlice(a, "import Node exposing (Program)\n\n\nr =\n    { ");
+    for (1..n + 1) |i| try text.print(a, "{s}f{d} = {d}", .{ if (i == 1) "" else ", ", i, i });
+    try text.print(a, " }}\n\n\nmain : Program\nmain =\n    Node.printLines [ if r == r then \"eq\" else \"ne\", if r == {{ r | f{d} = 0 }} then \"eq\" else \"ne\", if {{ r | f1 = 0 }} < r then \"lt\" else \"ge\" ]\n", .{n});
+    try s.w.write("Main.beni", text.items);
+    const verdict = try s.runs("Main.beni", "eq\nne\nlt\n");
     try s.finish(verdict);
 }
 
@@ -1083,6 +1160,25 @@ const Scenario = struct {
             for (diags) |d| if (d.code == .internal) return s.failed(built);
             return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(a, "refused: {t} in {d} ms", .{ diags[0].code, run.ms }) };
         }
+        const program = try s.w.nodeWith(world.entry_file, world.bulk_timeout_ms);
+        if (program.exit_code != 0) return .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=0 program-exit={d}", .{program.exit_code}), .detail = std.mem.trim(u8, program.stderr[0..@min(program.stderr.len, 160)], " \r\n") };
+        if (!std.mem.eql(u8, program.stdout, expected)) return .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" };
+        return .{ .green = true, .signature = "", .detail = try std.fmt.allocPrint(a, "ran in {d} ms", .{run.ms}) };
+    }
+
+    /// `runsOrRefuses` where a refusal is RED: the program must build, run
+    /// and print `expected` (CK-79, whose refusal IS the finding).
+    fn runs(s: *Scenario, file: []const u8, expected: []const u8) !Verdict {
+        const a = s.arena();
+        const run = try s.timed(&.{ "build", "--no-cache", "--jobs=1", "--diagnostics=json", "--platform=node", "--out=out", file }, world.bulk_timeout_ms) orelse
+            return .{ .green = false, .signature = "timeout", .detail = try std.fmt.allocPrint(a, "{s} did not finish within {d} ms", .{ file, world.bulk_timeout_ms }) };
+        const built = run.result;
+        switch (built.term) {
+            .exited => {},
+            .signal => |sig| return .{ .green = false, .signature = try std.fmt.allocPrint(a, "crash={t}", .{sig}), .detail = std.mem.trim(u8, built.stderr[0..@min(built.stderr.len, 160)], " \r\n") },
+            else => return .{ .green = false, .signature = "crash=unknown", .detail = "" },
+        }
+        if (built.exit_code != 0) return s.failed(built);
         const program = try s.w.nodeWith(world.entry_file, world.bulk_timeout_ms);
         if (program.exit_code != 0) return .{ .green = false, .signature = try std.fmt.allocPrint(a, "exit=0 program-exit={d}", .{program.exit_code}), .detail = std.mem.trim(u8, program.stderr[0..@min(program.stderr.len, 160)], " \r\n") };
         if (!std.mem.eql(u8, program.stdout, expected)) return .{ .green = false, .signature = "exit=0 stdout-differs", .detail = "" };

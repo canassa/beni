@@ -1,0 +1,13 @@
+-- CK-89 (R8a; checker-v2.md §14.2 *as amended by R8a*): a PRIVATE type an
+-- importer can hold, through `pub make`, has its derived rows published in
+-- the interface's `hidden_types`, so another module compares it with the
+-- context its module inferred — `Hidden`'s is one entry, `(0, eq)` and
+-- `(0, compare)` — and names the function its module emits. v1 answers it
+-- from the type's arity; both checkers print the same.
+type Hidden a
+    = Hidden a
+
+
+pub make : a -> Hidden a
+make x =
+    Hidden x

@@ -22,7 +22,9 @@
 //! R2b — v2, R2a's, had no convention), the (empty until R14) `lets`,
 //! `requirements`, each derived function's `contexts` and `body`. Version 1
 //! held the flat sites and `parts` of static-dispatch-spike.md §7.1; a v1 or
-//! v2 sidecar is a miss.
+//! v2 sidecar is a miss. Version 4 (R8a, CK-82) widens a context entry's `param`
+//! to a `u32` in the same 8-byte row: a record past 65 535 fields has that
+//! many positions.
 //!
 //! ```
 //! header    magic "BENIDSP\x00" (8)   format_version: u32   column_count: u32
@@ -70,7 +72,7 @@ const Types = @import("../check/Types.zig");
 const Symbol = InternPool.Symbol;
 
 pub const magic = "BENIDSP\x00";
-pub const format_version: u32 = 3;
+pub const format_version: u32 = 4;
 
 pub const Column = enum(u32) {
     terms,
@@ -112,7 +114,8 @@ pub const Column = enum(u32) {
 
 /// A `Term` is a tagged union of several payloads, so it is written as one
 /// fixed-width row: `tag`, a second tag byte (the binder of a `param`, the
-/// kind of an `ext_derived`), a `u16` (a `param`'s `k`), two operand words
+/// kind of an `ext_derived`), two padding bytes, two operand words (a
+/// `param`'s `k` is the second, a `u32` since format 4)
 /// and the `args` range.
 const term_bytes: u32 = 20;
 
@@ -223,7 +226,7 @@ pub fn write(
     @memset(contexts, 0);
     for (d.contexts, 0..) |c, i| {
         const row = contexts[i * 8 ..][0..8];
-        std.mem.writeInt(u16, row[0..2], c.param, .little);
+        std.mem.writeInt(u32, row[0..4], c.param, .little);
         std.mem.writeInt(u32, row[4..8], try w.string(c.method), .little);
     }
 
@@ -402,7 +405,7 @@ const Writer = struct {
         switch (t) {
             .param => |p| {
                 row[1] = @intFromEnum(std.meta.activeTag(p.binder));
-                std.mem.writeInt(u16, row[2..4], p.k, .little);
+                std.mem.writeInt(u32, row[8..12], p.k, .little);
                 switch (p.binder) {
                     .decl => {},
                     .let => |inst| std.mem.writeInt(u32, row[4..8], @intFromEnum(inst), .little),
@@ -630,7 +633,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         for (contexts, 0..) |*c, i| {
             const row = in_bytes[i * 8 ..][0..8];
             c.* = .{
-                .param = std.mem.readInt(u16, row[0..2], .little),
+                .param = std.mem.readInt(u32, row[0..4], .little),
                 .method = try symbolAt(blob, std.mem.readInt(u32, row[4..8], .little), in) orelse
                     return error.BadSidecar,
             };
@@ -688,7 +691,6 @@ fn readRange(row: *const [8]u8) Dispatch.Range {
 /// and nothing between here and there may read them.
 fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadError!Dispatch.Term {
     const tag = std.enums.fromInt(std.meta.Tag(Dispatch.Term), row[0]) orelse return error.BadSidecar;
-    const k = std.mem.readInt(u16, row[2..4], .little);
     const a = std.mem.readInt(u32, row[4..8], .little);
     const b = std.mem.readInt(u32, row[8..12], .little);
     const args = readRange(row[12..20]);
@@ -706,7 +708,7 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
                 .let => .{ .let = @enumFromInt(a) },
                 .derived => .{ .derived = a },
             };
-            break :blk .{ .param = .{ .binder = binder, .k = k } };
+            break :blk .{ .param = .{ .binder = binder, .k = b } };
         },
         .top => .{ .top = .{ .decl = @enumFromInt(a), .args = args } },
         .ext => blk: {

@@ -429,3 +429,91 @@ test "a type of 65 535 parameters checks, and the 65 536th is one too_many_type_
     // └─────────────────────────────────────────┘
     try testing.expect(!w.exists("past"));
 }
+
+// ---------------------------------------------------------------------------
+// A derived row past 65 535 context entries (CK-109, R8a's review)
+// ---------------------------------------------------------------------------
+
+/// `H.beni`: `pub type Holder a = Holder a` and its own `eq`, which asks `a`
+/// for `m0` … `m<methods - 1>`, or for `compare` when `methods` is 0.
+fn holderModule(gpa: Allocator, methods: usize) ![]u8 {
+    var source: std.Io.Writer.Allocating = .init(gpa);
+    errdefer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("pub type Holder a\n    = Holder a\n\n\npub eq : Holder a, Holder a -> Bool\n    where ");
+    if (methods == 0) {
+        try out.writeAll("a.compare : a, a -> Order\neq (Holder x) (Holder y) =\n    x.compare y == EQ\n");
+        return source.toOwnedSlice();
+    }
+    for (0..methods) |j| try out.print("{s}a.m{d} : a, () -> Int", .{ if (j == 0) "" else ", ", j });
+    try out.writeAll("\neq (Holder x) (Holder y) =\n    ");
+    for (0..methods) |j| try out.print("{s}x.m{d} () == y.m{d} ()", .{ if (j == 0) "" else " && ", j, j });
+    try out.writeAll("\n");
+    return source.toOwnedSlice();
+}
+
+/// `pub type W p0 … p<n-1> = W [p0] (H.Holder p0) … [p<n-1>] (H.Holder p<n-1>)`,
+/// each `p<i>` itself a position too when `bare`.
+fn holderRow(gpa: Allocator, n: usize, bare: bool) ![]u8 {
+    var source: std.Io.Writer.Allocating = .init(gpa);
+    errdefer source.deinit();
+    const out = &source.writer;
+    try out.writeAll("import H\nimport Node exposing (Program)\n\n\npub type W");
+    for (0..n) |i| try out.print(" p{d}", .{i});
+    try out.writeAll("\n    = W");
+    for (0..n) |i| {
+        if (bare) try out.print(" p{d}", .{i});
+        try out.print(" (H.Holder p{d})", .{i});
+    }
+    try out.writeAll("\n\n\nmain : Program\nmain =\n    Node.printLines [ \"ok\" ]\n");
+    return source.toOwnedSlice();
+}
+
+test "CK-109: a derived row of more than 65 535 context entries checks, and builds and runs, under v2" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // D4 gives a derived row one evidence parameter per context entry, and
+    // an entry per (parameter, method), so entries outrun parameters: 656
+    // parameters whose payload's `eq` asks 100 methods of each are 65 600.
+    // R8a's first draft kept the entry index `Dispatch.Param.k` a `u16` and
+    // panicked in `Eager.marker`'s `@intCast` (Debug; wrapped silently to
+    // the wrong evidence in ReleaseFast); its lookup there was also
+    // quadratic in the entries (74 s and 3.1 GB of a Debug build). The
+    // second shape reaches 65 538 entries with no user method at all: 32 769
+    // parameters, each a bare position (`(i, eq)`) and a `Holder` whose `eq`
+    // asks `compare` (`(i, compare)`). Only v2: v1 builds the first in
+    // 9 s and checks the second in six minutes (CK-112), and neither was
+    // ever its defect.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const methods = try holderModule(testing.allocator, 100);
+    defer testing.allocator.free(methods);
+    const wide = try holderRow(testing.allocator, 656, false);
+    defer testing.allocator.free(wide);
+    try w.write("H.beni", methods);
+    try w.write("Main.beni", wide);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.buildAndRun(&.{ "--no-cache", "--checker=v2", "H.beni", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExited(built.build, 0);
+    try testing.expectEqualStrings("", built.build.stderr);
+    try testing.expectEqualStrings("ok\n", built.program.?.stdout);
+
+    // The second shape, checked: the crash was the checker's.
+    const compare = try holderModule(testing.allocator, 0);
+    defer testing.allocator.free(compare);
+    const params = try holderRow(testing.allocator, 32_769, true);
+    defer testing.allocator.free(params);
+    try w.write("H.beni", compare);
+    try w.write("Main.beni", params);
+    const checked = try w.run(&.{ "check", "--no-cache", "--checker=v2", "--platform=node", "H.beni", "Main.beni" });
+    try expectExited(checked, 0);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}

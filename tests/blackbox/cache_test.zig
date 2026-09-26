@@ -3546,3 +3546,146 @@ fn expectEveryFileKeyMoved(what: []const u8, before: []const Entry, after: []con
     }
     try testing.expect(saw_core);
 }
+
+// R8a (checker-v2.md §11.2, §14.2 *as amended by R8a*): under `--checker=v2`
+// a derived function's context is inferred (D4) and PUBLISHED, and a cache hit
+// installs the record without recomputing it. So an edit to the module that
+// declares a payload's method moves what a dependent's derived function
+// takes; the warm build must re-derive it and write exactly what a cold build
+// of the edited project writes, and an edit that moves no interface must be
+// cut off with the same output.
+fn writeDerivedProject(w: *World, holder: []const u8) !void {
+    try w.write("src/H.beni", holder);
+    try w.write("src/Keyed.beni",
+        \\pub type Keyed
+        \\    = Keyed Int String
+        \\
+        \\
+        \\pub key : Keyed, () -> Int
+        \\key k u =
+        \\    case k of
+        \\        Keyed n _ ->
+        \\            n
+        \\
+    );
+    // `Outer`'s context is `(0, key)` with the first `H`, `(0, eq)` with the
+    // second; `Hidden` is private and reached only through `make` (CK-89).
+    try w.write("src/Outer.beni",
+        \\import H
+        \\
+        \\
+        \\pub type Outer a
+        \\    = Outer (H.Holder a)
+        \\
+        \\
+        \\type Hidden a
+        \\    = Hidden (Outer a)
+        \\
+        \\
+        \\pub make : a -> Hidden a
+        \\make x =
+        \\    Hidden (Outer (H.Holder x))
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import H
+        \\import Keyed
+        \\import Node exposing (Program)
+        \\import Outer
+        \\
+        \\
+        \\show : Bool -> String
+        \\show value =
+        \\    if value then
+        \\        "True"
+        \\
+        \\    else
+        \\        "False"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ show (Outer.Outer (H.Holder (Keyed.Keyed 1 "a")) == Outer.Outer (H.Holder (Keyed.Keyed 1 "b")))
+        \\        , show (Outer.make (Keyed.Keyed 2 "a") == Outer.make (Keyed.Keyed 2 "b"))
+        \\        ]
+        \\
+    );
+}
+
+const holder_by_key =
+    \\pub type Holder a
+    \\    = Holder a
+    \\
+    \\
+    \\pub eq : Holder a, Holder a -> Bool
+    \\    where a.key : a, () -> Int
+    \\eq (Holder x) (Holder y) =
+    \\    x.key () == y.key ()
+    \\
+;
+
+const holder_by_eq =
+    \\pub type Holder a
+    \\    = Holder a
+    \\
+    \\
+    \\pub eq : Holder a, Holder a -> Bool
+    \\    where a.eq : a, a -> Bool
+    \\eq (Holder x) (Holder y) =
+    \\    x == y
+    \\
+;
+
+test "checker v2: a warm build after an edit that moves a derived context writes what a cold build writes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeDerivedProject(&w, holder_by_key);
+    const build = [_][]const u8{ "build", "--checker=v2", "--platform=node", "--jobs=1", "--diagnostics=json" };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // Cold, then the payload's method edited, warm over the same cache; the
+    // same edited project cold into another cache; then an edit that moves
+    // no interface (a comment in `H`), warm.
+    const first = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=first", "src" }), "first.json");
+    const first_run = try w.node("first/_main.mjs");
+    try w.write("src/H.beni", holder_by_eq);
+    const warm = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=warm", "src" }), "warm.json");
+    const warm_run = try w.node("warm/_main.mjs");
+    const cold = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=d", "--out=cold", "src" }), "cold.json");
+    const cold_run = try w.node("cold/_main.mjs");
+    try w.write("src/H.beni", "-- a comment moves no interface\n" ++ holder_by_eq);
+    const comment = try runCounted(&w, arena, &(build ++ [_][]const u8{ "--cache-dir=c", "--out=comment", "src" }), "comment.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]Run{ first, warm, cold, comment }) |r| {
+        try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+        try testing.expectEqualStrings("", r.result.stderr);
+    }
+    // By `key`, both pairs agree; by structural `eq`, neither does.
+    try testing.expectEqualStrings("True\nTrue\n", first_run.stdout);
+    try testing.expectEqualStrings("False\nFalse\n", warm_run.stdout);
+    try testing.expectEqualStrings(cold_run.stdout, warm_run.stdout);
+    // `H`, and `Outer` and `Main` behind its moved interface, re-checked;
+    // `Keyed` and core were hits.
+    try testing.expectEqual(@as(u64, 3), warm.counters.misses);
+    try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+    // The comment re-checks `H` alone: its interface did not move.
+    try testing.expectEqual(@as(u64, 1), comment.counters.misses);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try expectSameTree(&w, arena, "cold", "warm");
+    try expectSameTree(&w, arena, "cold", "comment");
+}

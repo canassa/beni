@@ -1,0 +1,44 @@
+-- CK-26: a derived query made while an own `eq` is IN FLIGHT (R7's review,
+-- S6; checker-v2.md §11.2): `viaBox` compares `B.Box T`s, whose published
+-- context asks `T`'s `eq`, and `T`'s `eq` is this module's unannotated `pub
+-- eq`, whose body calls `viaBox`. So `eq` and `viaBox` are one merged class
+-- (§10.4), and the `Box T` query is made inside it — in either order of the
+-- two declarations. Until R8a the verdict read v1's capability bits as the
+-- last settle left them, the one place check timing fed a verdict; R8a's
+-- verdict reads the published context and the in-flight link, so it has one
+-- answer in every order (the permutation scenario runs all of them). `T`'s
+-- `eq` is not structural (modulo 10 past 100), so the output tells the
+-- derived `Box` `eq` and `T`'s own apart: `True`, `False`, `True`.
+-- On 7427828 (v1) it is METHOD NEEDS AN ANNOTATION at `viaBox`'s `==`.
+import B
+import Node exposing (Program)
+
+
+pub type T
+    = T Int
+
+
+pub eq (T a) (T b) =
+    if a > 100 then
+        modBy a 10 == modBy b 10
+
+    else
+        viaBox (T (a + 100)) (T (b + 100))
+
+
+viaBox (T x) (T y) =
+    B.Box (T x) == B.Box (T y)
+
+
+show : Bool -> String
+show value =
+    if value then
+        "True"
+
+    else
+        "False"
+
+
+main : Program
+main =
+    Node.printLines [ show (T 1 == T 11), show (T 1 == T 2), show (B.Box (T 3) == B.Box (T 13)) ]

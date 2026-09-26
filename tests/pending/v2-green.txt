@@ -620,3 +620,28 @@ tests/corpus/run/UndeterminedUnderValueEvidence.beni
 # CK-70 is a new guard (an annotated member of a dispatch cycle instantiates, §6.6).
 tests/corpus/run/DerivedEqLocalCustom.beni
 tests/corpus/run/RecursiveDispatchAnnotated.beni
+# R8a (2026-09-26): derived contexts (checker-v2.md §11.2, D4) — the `--library` builds of a module
+# that declares a type, which `refuseV2LibraryTypes` refused until the rows were the fixpoint's
+# (emit 11, emit/release 2), and the four expected differences R8a's contexts decide the way v1's
+# goldens say (a specialised payload `eq` is no boundary; a nested method's own requirement).
+tests/corpus/emit/ConstantMethodCall.beni
+tests/corpus/emit/DerivedCompareNominal.beni
+tests/corpus/emit/DerivedEmissionOrder.beni
+tests/corpus/emit/DerivedEqNominal.beni
+tests/corpus/emit/EvidenceParameters.beni
+tests/corpus/emit/EvidenceValue.beni
+tests/corpus/emit/MatchNested.beni
+tests/corpus/emit/MatchSharedLeaf.beni
+tests/corpus/emit/MatchSwitch.beni
+tests/corpus/emit/MethodTargets.beni
+tests/corpus/emit/TypeDispatch.beni
+tests/corpus/emit/release/ReleaseInline.beni
+tests/corpus/emit/release/ReleaseNames
+tests/corpus/check/bad/PriorityGroupSpecializedPayloadEq
+tests/corpus/check/bad/SpecializedEqWrongReceiver
+tests/corpus/run/DerivedEqInPriorityGroup
+tests/corpus/run/DerivedEqThroughCustom
+tests/corpus/run/DerivedEqDeepRecord.beni
+tests/corpus/run/DerivedContextJointMethods
+tests/corpus/run/EvidenceThunkOncePerEvidence.beni
+tests/corpus/run/HiddenTypeDerivedRow

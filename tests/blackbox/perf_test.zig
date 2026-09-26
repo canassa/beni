@@ -196,6 +196,44 @@ test "CK-42: nominal dispatch is linear in the number of declarations (checker v
     try s.finish("CK-42", verdict);
 }
 
+// CK-40 and CK-75 under checker v2, fixed by R8a (2026-09-26); still pending
+// scenarios under v1, which is frozen.
+//
+// CK-40: a module of `n` schemas. v1 settled every endpoint's properties
+// after every group holding a schema, each settle over the whole module:
+// cubic. v2 settles them when they are next READ, if a schema group finished
+// since (`Solve.settleSchemas`) — never after each group — so a module that
+// compares nothing settles twice in all. On R8a (ReleaseFast, CPU) 300 / 600
+// schemas take 13 / 25 ms (ratio 1.9), where v1 takes 295 ms and over 737.
+test "CK-40: schema property settling is linear in the number of schemas (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    try s.w.write("S.beni", try generate(s.arena(), 300, "pub schema S{d} = Int\n\n\n", 1));
+    try s.w.write("S2.beni", try generate(s.arena(), 600, "pub schema S{d} = Int\n\n\n", 1));
+    const verdict = try s.ratioWith("S.beni", "S2.beni", 300, &.{"--checker=v2"});
+    try s.finish("CK-40", verdict);
+}
+
+// CK-75: n declarations, each a `type` and a function comparing two `Int`s.
+// v1's residue was its capability settling (`Types.settleDispatchCapabilities`
+// per module and after every method group) and its eager derivation block;
+// v2 settles nothing, and computes each type's derived contexts once, by a
+// unit's fixpoint, in P5 (R8a, checker-v2.md §11.2). On R8a (ReleaseFast,
+// CPU) 6 000 / 12 000 take 64 / 121 ms (ratio 1.9), where v1 takes 206 / 744.
+// Profiled first, as the brief asks: the module's `check` event is 44 / 87 ms,
+// `solve` and `constrain` 8 / 15 ms each — all linear — and `dep_digest` is
+// too small to show, so none of CK-75 is R10's. A cache directory shows
+// `cache_store` at 20 / 73 ms, super-linear: CK-107, a new finding (R10).
+test "CK-75: checking is linear in the number of declarations (checker v2)" {
+    var s = try Perf.init();
+    defer s.deinit();
+    const control = "type T{d}\n    = T{d} Int\n\n\nf{d} : Int -> Bool\nf{d} x =\n    x == x\n\n\n";
+    try s.w.write("X.beni", try generate(s.arena(), 6_000, control, 4));
+    try s.w.write("X2.beni", try generate(s.arena(), 12_000, control, 4));
+    const verdict = try s.ratioWith("X.beni", "X2.beni", 6_000, &.{"--checker=v2"});
+    try s.finish("CK-75", verdict);
+}
+
 // CK-80: `==` on a value whose type is a DAG — `f x = ( x, [ x ] )` applied n
 // deep — must cost its n distinct nodes, not its 2^n leaves. v2's
 // derivability verdict walks each `(node, method)` pair once, and a wanted on

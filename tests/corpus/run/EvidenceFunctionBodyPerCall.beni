@@ -1,12 +1,13 @@
--- R2b review S1 (language.md §6 *Evaluation order*, checker-v2.md §12.5;
--- CK-85): a value with no parameters, a function TYPE and a `where` clause
--- is defined over its type's parameters, so its body — here the `let` that
--- builds `table` — runs at EACH CALL, where the identical value without the
--- `where` computes it once, at load. This pins today's count so that a
--- change to it (CK-85's per-call-site hoisting) is deliberate: three calls
--- of `lookup`, three `table` lines; three calls of `lookupPlain`, one.
--- On 84e3cb1 `lookup` had CK-33's curried definition and the program printed
--- JavaScript source text for its sum.
+-- R2b review S1 and CK-85 (language.md §6 *Evaluation order*, checker-v2.md
+-- §12.5): a value with no parameters, a function TYPE and a `where` clause is
+-- defined over its type's parameters, and its body — here the `let` that
+-- builds `table` — used to run at EACH CALL, where the identical value without
+-- the `where` computes it once, at load. Since R8a (CK-85) the body runs once
+-- per evidence: three calls of `lookup` with one instantiation print one
+-- `table (where)` line, at the first call, as three calls of `lookupPlain`
+-- print one at load. On 84e3cb1 `lookup` had CK-33's curried definition and
+-- the program printed JavaScript source text for its sum; from R2b to R8a it
+-- printed three `table (where)` lines.
 import Node exposing (Program)
 
 

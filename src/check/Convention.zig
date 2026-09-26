@@ -168,10 +168,11 @@ pub const Definition = enum {
     lambda,
     /// `($m…, $p1…$pn) => body($p1…$pn)`: a zero-parameter `function` whose
     /// body is not a lambda, applied to fresh parameters over its type's
-    /// arity. The body is evaluated at each call (`language.md` §6, CK-85),
+    /// arity. The body is computed once per evidence (`Lower.memoArrow`,
+    /// CK-85, R8a; `language.md` §6),
     /// and for `Cycles` it is still a VALUE (`defers`).
     applied,
-    /// `($m…) => value`: every read runs it.
+    /// `($m…) => value`, its value kept per evidence (CK-85, R8a).
     thunk,
 };
 

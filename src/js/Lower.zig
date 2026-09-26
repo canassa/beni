@@ -375,12 +375,6 @@ const Lowerer = struct {
     /// set — which is what keeps the names structural rather than a counter
     /// (CLAUDE.md rule 5).
     case_depth: u32 = 0,
-    /// How many DERIVED terms deep the evidence walk of §8.2 is. The tree
-    /// cannot point back at itself (checker-v2.md §13.1: every argument
-    /// follows its owner, and `refuseEvidence` checks it), so this is the
-    /// pre-R2a cap kept for byte-identical behaviour, not a cycle guard: it
-    /// reports and stops past `max_part_depth`.
-    part_depth: u8 = 0,
     /// The instruction being lowered, for a diagnostic raised by something
     /// that has no instruction of its own — the synthesised references of
     /// §9.1, and `partEq`'s `err` arm. It is the INNERMOST instruction
@@ -538,7 +532,7 @@ const Lowerer = struct {
     /// One level, no depth (A.31): only a top-level declaration has
     /// evidence parameters (§6.4 rule (a)), and a lambda in its body reads
     /// `$m$k` by ordinary lexical capture.
-    fn evidenceName(l: *Lowerer, k: u16) !JsIr.NameIndex {
+    fn evidenceName(l: *Lowerer, k: u32) !JsIr.NameIndex {
         var buf: [16]u8 = undefined;
         const spelled = std.fmt.bufPrint(&buf, "$m${d}", .{k}) catch unreachable;
         const base = try l.interner.getOrPut(l.gpa, spelled);
@@ -811,7 +805,7 @@ const Lowerer = struct {
         // call, every reference and the cycle check read, so the definition
         // and its uses cannot disagree (CK-33).
         const use = Convention.ofDecl(l.in.dispatch, l.bir, index);
-        const evidence: u16 = @intCast(use.evidence);
+        const evidence: u32 = use.evidence;
         switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
@@ -830,12 +824,9 @@ const Lowerer = struct {
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, lambda_params, @enumFromInt(ld.rhs), p);
                 try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
             },
-            .applied => try l.constDecl(out, n, try l.appliedArrow(evidence, use.arity, body, p), p),
-            // `($m…) => value`: every read calls it (A.85).
-            .thunk => {
-                const record = try l.functionOrLoop(n, .{ .top = index }, evidence, &.{}, body, p);
-                try l.constDecl(out, n, try l.add(.arrow, p, @intFromEnum(record), Node.Data.unused), p);
-            },
+            .applied => try l.constDecl(out, n, try l.appliedArrow(out, l.bir.symbol(d.name), evidence, use.arity, body, p), p),
+            // `($m…) => value`, its value kept per evidence (CK-85).
+            .thunk => try l.constDecl(out, n, try l.memoArrow(out, l.bir.symbol(d.name), evidence, &.{}, body, p), p),
             .constant => {
                 var stmts: StmtList = .empty;
                 const value = try l.expr(&stmts, body);
@@ -861,28 +852,88 @@ const Lowerer = struct {
     /// every other constrained function, and so that an importer, which
     /// sees only the type, calls it the same way (CK-33).
     ///
-    /// The body is evaluated at each call. When it is a reference to a
-    /// function that takes evidence of its own — the common `h = maxOf` —
-    /// the call goes straight to it, `maxOf(ev…, $p1…$pn)`, rather than
-    /// through its eta-expansion.
-    fn appliedArrow(l: *Lowerer, evidence: u16, arity: u32, body: Inst.Index, p: u32) !Node.Index {
+    /// When the body is a reference to a function that takes evidence of its
+    /// own — the common `h = maxOf` — the call goes straight to it,
+    /// `maxOf(ev…, $p1…$pn)`, rather than through its eta-expansion: there
+    /// is nothing to compute. Any other body is computed once per evidence
+    /// (`memoArrow`, CK-85) and the value it gives is called.
+    fn appliedArrow(l: *Lowerer, out: *StmtList, decl_name: Symbol, evidence: u32, arity: u32, body: Inst.Index, p: u32) !Node.Index {
+        const args = try l.scratch.alloc(Node.Index, arity);
+        const names = try l.scratch.alloc(JsIr.NameIndex, arity);
+        for (args, names) |*arg, *param| {
+            param.* = try l.fresh(l.well.param);
+            arg.* = try l.ident(param.*, p);
+        }
+        if (try l.referenceApplied(body, args)) |value| {
+            var all: std.ArrayList(JsIr.NameIndex) = .empty;
+            var k: u16 = 0;
+            while (k < evidence) : (k += 1) try all.append(l.scratch, try l.evidenceName(k));
+            try all.appendSlice(l.scratch, names);
+            const stmts = [_]Node.Index{try l.returnStmt(value, p)};
+            return l.arrowOf(all.items, &stmts, p);
+        }
+        return l.memoArrow(out, decl_name, evidence, names, body, p);
+    }
+
+    /// `($m…, $p…) => { … return D$ev$v($p…); }` — a constrained value with
+    /// no parameters whose body is not a lambda (an `applied` function value,
+    /// or a `thunk`), defined so that its body runs ONCE PER EVIDENCE and not
+    /// at every read or call (CK-85, R8a; `language.md` §6 *Evaluation
+    /// order*). The value is a function of its evidence alone, so the last
+    /// evidence and the value it gave are kept in two module-level `let`s,
+    /// `D$ev$k<i>` and `D$ev$v`, declared above the definition:
+    ///
+    ///   let D$ev$k0, D$ev$v;
+    ///   const D = ($m$0, $p$1) => {
+    ///     if ($m$0 !== D$ev$k0) { …; D$ev$v = <body>; D$ev$k0 = $m$0; }
+    ///     return D$ev$v($p$1);
+    ///   };
+    ///
+    /// Evidence is a function and never `undefined`, so the first read
+    /// computes. One instantiation — the common case, and the one a module
+    /// whose evidence arguments are all module-level names always has — runs
+    /// the body once, at its first use; a read with other evidence computes
+    /// again, which is what every read did before. Nothing else changes: the
+    /// convention, the arity and what an importer calls are `Convention`'s,
+    /// so no interface bit is needed and no initialisation order moves (the
+    /// body runs at the first use, exactly where it ran before).
+    fn memoArrow(l: *Lowerer, out: *StmtList, decl_name: Symbol, evidence: u32, params: []const JsIr.NameIndex, body: Inst.Index, p: u32) !Node.Index {
+        const keys = try l.scratch.alloc(JsIr.NameIndex, evidence);
+        const decl_text = l.text(decl_name);
+        for (keys, 0..) |*key, k| {
+            key.* = try l.synthesisedName(try std.fmt.allocPrint(l.scratch, "{s}$ev$k{d}", .{ decl_text, k }));
+            try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(key.*), @intFromEnum(Node.OptionalIndex.none)));
+        }
+        const cached = try l.synthesisedName(try std.fmt.allocPrint(l.scratch, "{s}$ev$v", .{decl_text}));
+        try out.append(l.scratch, try l.add(.let_decl, p, @intFromEnum(cached), @intFromEnum(Node.OptionalIndex.none)));
+
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var k: u16 = 0;
         while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceName(k));
-        const args = try l.scratch.alloc(Node.Index, arity);
-        for (args) |*arg| {
-            const fresh_name = try l.fresh(l.well.param);
-            try names.append(l.scratch, fresh_name);
-            arg.* = try l.ident(fresh_name, p);
-        }
+        try names.appendSlice(l.scratch, params);
+
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
         l.case_depth = 0;
         defer l.case_depth = depth;
+        var compute: StmtList = .empty;
+        const value = try l.expr(&compute, body);
+        try compute.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(cached, p)).int(), value.int()));
+        var changed: ?Node.Index = null;
+        for (keys, 0..) |key, i| {
+            const ev = try l.ident(names.items[i], p);
+            try compute.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(key, p)).int(), ev.int()));
+            const differs = try l.binary(.strict_ne, try l.ident(names.items[i], p), try l.ident(key, p), p);
+            changed = if (changed) |c| try l.binary(.logical_or, c, differs, p) else differs;
+        }
         var stmts: StmtList = .empty;
-        const value = (try l.referenceApplied(body, args)) orelse
-            try l.call(try l.expr(&stmts, body), args, p);
-        try stmts.append(l.scratch, try l.returnStmt(value, p));
+        try l.ifStatement(&stmts, changed.?, compute.items, p);
+        const result = if (params.len == 0) try l.ident(cached, p) else blk: {
+            const args = try l.scratch.alloc(Node.Index, params.len);
+            for (args, params) |*arg, param| arg.* = try l.ident(param, p);
+            break :blk try l.call(try l.ident(cached, p), args, p);
+        };
+        try stmts.append(l.scratch, try l.returnStmt(result, p));
         return l.arrowOf(names.items, stmts.items, p);
     }
 
@@ -1059,7 +1110,7 @@ const Lowerer = struct {
     /// The `Func` record for `params` and `body`: what both an `arrow` and
     /// a `func_decl` carry, built once so a `let` binding can choose which
     /// of the two it becomes without lowering the body twice.
-    fn functionOf(l: *Lowerer, evidence: u16, params: []const Inst.Index, body: Inst.Index) !JsIr.ExtraIndex {
+    fn functionOf(l: *Lowerer, evidence: u32, params: []const Inst.Index, body: Inst.Index) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
         var stmts: StmtList = .empty;
         // A new function is a new label scope (§7).
@@ -1167,7 +1218,7 @@ const Lowerer = struct {
         /// separate namespace from bindings (§8).
         label: JsIr.NameIndex,
         self: Self,
-        evidence: u16,
+        evidence: u32,
         slots: []Slot,
 
         /// Which reference, syntactically, names this function.
@@ -1208,7 +1259,7 @@ const Lowerer = struct {
         l: *Lowerer,
         label: JsIr.NameIndex,
         self: Loop.Self,
-        evidence: u16,
+        evidence: u32,
         params: []const Inst.Index,
         body: Inst.Index,
         p: u32,
@@ -2327,7 +2378,7 @@ const Lowerer = struct {
     /// ASSERTS with it (I7, checker-v2.md §13.3): the arguments themselves
     /// are the term's own `args`.
     fn requirementCount(l: *Lowerer, t: Dispatch.Term) u32 {
-        return l.in.dispatch.requirementCount(t, l.in.interfaces, l.in.types);
+        return l.in.dispatch.requirementCount(t, l.in.interfaces, l.in.types, l.interner);
     }
 
     /// The beni arity of a term: how many parameters its eta-expansion
@@ -2800,7 +2851,7 @@ const Lowerer = struct {
                 l.wide_evidence = array;
             },
             .positional => {
-                var k: u16 = 0;
+                var k: u32 = 0;
                 while (k < row.context.len) : (k += 1) try params.append(l.scratch, try l.evidenceName(k));
             },
         }
@@ -2931,15 +2982,15 @@ const Lowerer = struct {
 
     /// `$m$k(left, right)` — the derived function's own k-th evidence
     /// parameter applied to one position.
-    fn evidenceCall(l: *Lowerer, k: u16, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
+    fn evidenceCall(l: *Lowerer, k: u32, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
         return l.call(try l.ownEvidence(k, p), &.{ left, right }, p);
     }
 
     /// The derived function's own k-th evidence parameter as a value:
     /// `$m$k`, or `$m[k]` inside a wide one (§9.2).
-    fn ownEvidence(l: *Lowerer, k: u16, p: u32) !Node.Index {
+    fn ownEvidence(l: *Lowerer, k: u32, p: u32) !Node.Index {
         const array = l.wide_evidence orelse return l.ident(try l.evidenceName(k), p);
-        var buf: [8]u8 = undefined;
+        var buf: [12]u8 = undefined;
         const index = try l.numberNode(std.fmt.bufPrint(&buf, "{d}", .{k}) catch unreachable, p);
         return l.add(.index_get, p, (try l.ident(array, p)).int(), index.int());
     }
@@ -3365,13 +3416,13 @@ const Lowerer = struct {
     /// method has no body before the backend is asked (§3.3, A.54), so only
     /// a hand-built table gets here, and the in-source test below is what
     /// holds it.
+    ///
+    /// **No depth cap** (CK-87, R8a): the tree cannot point back at itself
+    /// (checker-v2.md §13.1: every argument follows its owner), so the old
+    /// 32-level `parts` cap guarded no cycle, and refused an unannotated
+    /// record literal 33 levels deep. The recursion is as deep as the type,
+    /// which the parser's own depth bounds.
     fn derivedValue(l: *Lowerer, i: Dispatch.TermIndex, p: u32) Allocator.Error!Node.Index {
-        if (l.part_depth > max_part_depth) {
-            try l.reportDispatchBug(l.region, parts_too_deep);
-            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        }
-        l.part_depth += 1;
-        defer l.part_depth -= 1;
         const t = l.in.dispatch.term(i);
         const kind = l.derivedTermKind(t);
         if (!l.derivedBodyExists(t)) {
@@ -3467,6 +3518,15 @@ const Lowerer = struct {
             .ext_derived => |use| {
                 const entry = l.in.types.entry(use.type);
                 if (entry.kind != .adt) return false;
+                // The declaring module's published row says whether it emits
+                // the function (checker-v2.md §14.2 *as amended by R8a*): the
+                // one answer, whichever checker wrote it. A record with no
+                // row for the type — the old checker's, for a private type —
+                // falls back to the session's capability bits below, which
+                // that checker settles for its own modules.
+                if (Dispatch.publishedContext(l.in.interfaces, l.in.types, l.interner, use.type, use.kind)) |published| {
+                    return published.row.status == .present;
+                }
                 if (!l.wellKnownDerivedRow(use.type, use.kind)) {
                     if (entry.module.int() >= l.in.interfaces.len) return false;
                     const spelling = switch (use.kind) {
@@ -3713,18 +3773,6 @@ const Lowerer = struct {
     const field_without_receiver =
         \\The table dispatches this to a record field, but `docs/design/static-dispatch-spike.md`
         \\§8.4 has no receiver to read a field from: only a method call can answer `field`.
-    ;
-
-    /// How far the nested `parts` of §7.1 may go. A type nested 32 deep in
-    /// another is already past what `Types.Builder.max_depth` lets an
-    /// annotation say, so this is a guard against a malformed table and not
-    /// a limit on a program.
-    const max_part_depth: u8 = 32;
-
-    const parts_too_deep =
-        \\The evidence of this call nests deeper than
-        \\`docs/design/static-dispatch-spike.md` §7.1's `parts` can describe, which
-        \\means a range in the table points back at itself.
     ;
 
     /// §7.1: a `derived` row is exactly what THIS module emits (A.47), so
@@ -5931,7 +5979,6 @@ test "a derived function with no body is a table bug in value position, either k
     l.in.interfaces = &.{};
     l.in.module = @enumFromInt(0);
     l.diagnostics = .empty;
-    l.part_depth = 0;
     l.region = @enumFromInt(0);
     defer {
         for (l.diagnostics.items) |d| gpa.free(d.message);

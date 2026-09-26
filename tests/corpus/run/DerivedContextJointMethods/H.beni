@@ -1,0 +1,11 @@
+-- A regression guard (R8a): see Main.beni. `H.eq` is not structural: two
+-- holders are "equal" when the first is not greater than the second, by the
+-- payload's own `compare`.
+pub type Holder a
+    = Holder a
+
+
+pub eq : Holder a, Holder a -> Bool
+    where a.compare : a, a -> Order
+eq (Holder x) (Holder y) =
+    x.compare y /= GT

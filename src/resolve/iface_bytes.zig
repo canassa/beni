@@ -71,9 +71,10 @@ pub const magic = "BENIIFC\x00";
 /// a version bump and a cache discard, never a migration into spare bytes:
 /// the alignment padding below is padding and NOT a reserved field
 /// (`plans/m4-plan.md` D4).
-pub const format_version: u32 = 3;
+pub const format_version: u32 = 4;
 
-/// The fourteen columns, in this order and no other. `terms` is split into
+/// The fifteen columns, in this order and no other (`hidden_types` since
+/// format 4, `checker-v2.md` §14.2 *as amended by R8a*). `terms` is split into
 /// its three SoA columns rather than written as a row of 12 bytes, because
 /// that is what the record already is and what §8.3 wants to map.
 pub const Column = enum(u32) {
@@ -86,6 +87,7 @@ pub const Column = enum(u32) {
     term_rhs,
     extra,
     type_refs,
+    hidden_types,
     schemas,
     schema_members,
     schema_ctors,
@@ -105,6 +107,7 @@ pub const Column = enum(u32) {
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 12,
+            .hidden_types => 24,
             .schemas => 32,
             .schema_members, .schema_ctors => 16,
             .strings => 1,
@@ -208,6 +211,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     lengths[@intFromEnum(Column.term_rhs)] = @intCast(iface.terms.len);
     lengths[@intFromEnum(Column.extra)] = @intCast(iface.extra.len);
     lengths[@intFromEnum(Column.type_refs)] = @intCast(iface.type_refs.len);
+    lengths[@intFromEnum(Column.hidden_types)] = @intCast(iface.hidden_types.len);
     lengths[@intFromEnum(Column.schemas)] = @intCast(iface.schemas.len);
     lengths[@intFromEnum(Column.schema_members)] = @intCast(iface.schema_members.len);
     lengths[@intFromEnum(Column.schema_ctors)] = @intCast(iface.schema_ctors.len);
@@ -301,6 +305,21 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[0..4], @intFromEnum(r.module), .little);
             std.mem.writeInt(u32, row[4..8], @intFromEnum(r.name), .little);
             row[8] = @intFromEnum(r.package);
+        }
+    }
+    {
+        const out = bytes[offsets_of[@intFromEnum(Column.hidden_types)]..];
+        for (iface.hidden_types, 0..) |t, i| {
+            const row = out[i * 24 ..][0..24];
+            std.mem.writeInt(u32, row[0..4], @intFromEnum(t.name), .little);
+            std.mem.writeInt(u16, row[4..6], t.arity, .little);
+            row[6] = @intFromEnum(t.kind);
+            row[7] = @intFromBool(t.is_equatable);
+            std.mem.writeInt(u32, row[8..12], t.payload_params, .little);
+            std.mem.writeInt(u32, row[12..16], t.eq.context, .little);
+            std.mem.writeInt(u32, row[16..20], t.compare.context, .little);
+            row[20] = @intFromEnum(t.eq.status);
+            row[21] = @intFromEnum(t.compare.status);
         }
     }
     {
@@ -562,6 +581,30 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
     {
+        const in = bytes[offsets_of[@intFromEnum(Column.hidden_types)]..];
+        const hidden = try gpa.alloc(Interface.HiddenType, lengths[@intFromEnum(Column.hidden_types)]);
+        iface.hidden_types = hidden;
+        for (hidden, 0..) |*t, i| {
+            const row = in[i * 24 ..][0..24];
+            if (row[7] & ~@as(u8, 1) != 0 or row[22] != 0 or row[23] != 0) return error.BadRecord;
+            t.* = .{
+                .name = @enumFromInt(std.mem.readInt(u32, row[0..4], .little)),
+                .arity = std.mem.readInt(u16, row[4..6], .little),
+                .kind = std.enums.fromInt(Interface.TypeKind, row[6]) orelse return error.BadRecord,
+                .is_equatable = row[7] & 1 == 1,
+                .payload_params = std.mem.readInt(u32, row[8..12], .little),
+                .eq = .{
+                    .context = std.mem.readInt(u32, row[12..16], .little),
+                    .status = std.enums.fromInt(Interface.Derived.Status, row[20]) orelse return error.BadRecord,
+                },
+                .compare = .{
+                    .context = std.mem.readInt(u32, row[16..20], .little),
+                    .status = std.enums.fromInt(Interface.Derived.Status, row[21]) orelse return error.BadRecord,
+                },
+            };
+        }
+    }
+    {
         const in = bytes[offsets_of[@intFromEnum(Column.schemas)]..];
         const schemas = try gpa.alloc(Interface.Schema, lengths[@intFromEnum(Column.schemas)]);
         iface.schemas = schemas;
@@ -668,33 +711,17 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
     for (iface.types) |t| {
         if (@intFromEnum(t.name) >= symbols) return false;
         if (t.ctors_start > t.ctors_end or t.ctors_end > iface.ctors.len) return false;
-        if (t.payload_params != Interface.no_terms) {
-            const bits = rangeOf(iface, t.payload_params) orelse return false;
-            if (bits.len != (@as(usize, t.arity) + 31) / 32) return false;
-            // No bit past the last parameter.
-            if (t.arity % 32 != 0 and bits[bits.len - 1] >> @intCast(t.arity % 32) != 0) return false;
-        }
-        for ([_]Interface.Derived{ t.eq, t.compare }) |d| {
-            if (d.status != .present) {
-                if (d.context != Interface.no_terms) return false;
-                continue;
-            }
-            const words = rangeOf(iface, d.context) orelse return false;
-            if (words.len % 2 != 0) return false;
-            var i: usize = 0;
-            while (i < words.len) : (i += 2) {
-                // Every parameter one the type has, every method a slot.
-                if (words[i] >= t.arity or words[i + 1] >= symbols) return false;
-                // Strictly sorted by `(param, method text)` (§14.2): a
-                // pair out of order, or the same pair twice, is refused.
-                if (i == 0) continue;
-                if (words[i] < words[i - 2]) return false;
-                if (words[i] == words[i - 2]) {
-                    const this = interner.slice(iface.symbols[words[i + 1]]);
-                    const before = interner.slice(iface.symbols[words[i - 1]]);
-                    if (std.mem.order(u8, before, this) != .lt) return false;
-                }
-            }
+        if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.eq, t.compare)) return false;
+    }
+    for (iface.hidden_types, 0..) |t, i| {
+        if (@intFromEnum(t.name) >= symbols) return false;
+        if (t.kind == .alias) return false;
+        if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.eq, t.compare)) return false;
+        // Sorted by name text, each name once (`Interface.typeFacts`
+        // binary-searches it).
+        if (i != 0) {
+            const before = interner.slice(iface.symbols[@intFromEnum(iface.hidden_types[i - 1].name)]);
+            if (std.mem.order(u8, before, interner.slice(iface.symbols[@intFromEnum(t.name)])) != .lt) return false;
         }
     }
     for (iface.ctors) |c| {
@@ -846,6 +873,51 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
 /// `extra[start..][0..extra[start]]`, or null when the header or the words
 /// leave the column. The shape `Interface.range` reads, checked instead of
 /// degraded.
+/// A type row's interface v3 facts (§14.2, *as amended by R8a*): the
+/// `payload_params` bitset, and each derived row `present` with a range of
+/// `(param, symbol slot, scheme or none)` triples, parameters below the
+/// arity, strictly increasing by `(param, method text)`, or absent with
+/// `no_terms`.
+fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arity: u16, payload_params: u32, eq: Interface.Derived, compare: Interface.Derived) bool {
+    const symbols = iface.symbols.len;
+    if (payload_params != Interface.no_terms) {
+        const bits = rangeOf(iface, payload_params) orelse return false;
+        if (bits.len != (@as(usize, arity) + 31) / 32) return false;
+        // No bit past the last parameter.
+        if (arity % 32 != 0 and bits[bits.len - 1] >> @intCast(arity % 32) != 0) return false;
+    }
+    const n = Interface.context_words;
+    for ([_]Interface.Derived{ eq, compare }) |d| {
+        if (d.status != .present) {
+            if (d.context != Interface.no_terms) return false;
+            continue;
+        }
+        const all = rangeOf(iface, d.context) orelse return false;
+        // The row's scheme word: `none`, or a scheme.
+        if (all.len == 0 or (all.len - 1) % n != 0) return false;
+        const none = std.math.maxInt(u32);
+        if (all[0] != none and all[0] >= iface.schemes.len) return false;
+        const words = all[1..];
+        var i: usize = 0;
+        while (i < words.len) : (i += n) {
+            // Every parameter one the type has, every method a slot, and a
+            // slot only with a scheme to hold it.
+            if (words[i] >= arity or words[i + 1] >= symbols) return false;
+            if (words[i + 2] != none and all[0] == none) return false;
+            // Strictly sorted by `(param, method text)` (§14.2): an entry
+            // out of order, or the same pair twice, is refused.
+            if (i == 0) continue;
+            if (words[i] < words[i - n]) return false;
+            if (words[i] == words[i - n]) {
+                const this = interner.slice(iface.symbols[words[i + 1]]);
+                const before = interner.slice(iface.symbols[words[i + 1 - n]]);
+                if (std.mem.order(u8, before, this) != .lt) return false;
+            }
+        }
+    }
+    return true;
+}
+
 fn rangeOf(iface: *const Interface, start: u32) ?[]const u32 {
     if (start >= iface.extra.len) return null;
     const len = iface.extra[start];
@@ -880,6 +952,7 @@ fn expectSameRecord(a: *const Interface, b: *const Interface, interner: *const I
     try testing.expectEqualSlices(Interface.Scheme, a.schemes, b.schemes);
     try testing.expectEqualSlices(u32, a.extra, b.extra);
     try testing.expectEqualSlices(Interface.TypeRef, a.type_refs, b.type_refs);
+    try testing.expectEqualSlices(Interface.HiddenType, a.hidden_types, b.hidden_types);
     try testing.expectEqual(a.terms.len, b.terms.len);
     if (a.terms.len != 0) {
         try testing.expectEqualSlices(Interface.Term.Tag, a.terms.items(.tag), b.terms.items(.tag));
@@ -1178,18 +1251,23 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     const eq = try global.getOrPut(testing.allocator, "eq");
     const compare = try global.getOrPut(testing.allocator, "compare");
     // extra: [0] fields range (x, x); [3] bitset, 300 parameters = 10 words;
-    // [14] context, (299, compare) then (299, eq) — `compare` sorts first.
-    var extra: [19]u32 = @splat(0);
+    // [14] context, (299, compare) then (299, eq) — `compare` sorts first —
+    // the row's scheme word (none), then three words per entry, no slot (§14.2
+    // *as amended by R8a*).
+    var extra: [22]u32 = @splat(0);
     extra[0] = 2;
     extra[1] = 1;
     extra[2] = 1;
     extra[3] = 10;
     extra[4 + 9] = @as(u32, 1) << 11; // parameter 299 = word 9, bit 11
-    extra[14] = 4;
-    extra[15] = 299;
-    extra[16] = 3;
-    extra[17] = 299;
-    extra[18] = 2;
+    extra[14] = 7;
+    extra[15] = std.math.maxInt(u32);
+    extra[16] = 299;
+    extra[17] = 3;
+    extra[18] = std.math.maxInt(u32);
+    extra[19] = 299;
+    extra[20] = 2;
+    extra[21] = std.math.maxInt(u32);
     // Type 0 is a nominal type of 300 parameters; type 1 the alias `P`,
     // whose one constructor is its record's.
     const good_types = [_]Interface.Type{ .{
@@ -1269,12 +1347,38 @@ test "interface v3's rows round-trip, and verify refuses each one that does not 
     try testing.expect(!verify(&record(&good_types, &on_adt, &extra, &symbols), &global));
     // One parameter's methods out of text order, and the same pair twice.
     var swapped = extra;
-    swapped[16] = 2;
-    swapped[18] = 3;
+    swapped[17] = 2;
+    swapped[20] = 3;
     try testing.expect(!verify(&record(&good_types, &good_ctors, &swapped, &symbols), &global));
     var twice = extra;
-    twice[16] = 2;
+    twice[17] = 2;
     try testing.expect(!verify(&record(&good_types, &good_ctors, &twice, &symbols), &global));
+    // A row naming a scheme the record does not have, and an entry naming a
+    // slot of a row with no scheme.
+    var no_scheme = extra;
+    no_scheme[15] = 0;
+    try testing.expect(!verify(&record(&good_types, &good_ctors, &no_scheme, &symbols), &global));
+    var no_row_scheme = extra;
+    no_row_scheme[18] = 0;
+    try testing.expect(!verify(&record(&good_types, &good_ctors, &no_row_scheme, &symbols), &global));
+
+    // A hidden row (CK-89) round-trips with its facts, and is held to the
+    // same rules; hidden rows are sorted by name text.
+    const hidden = [_]Interface.HiddenType{
+        .{ .name = @enumFromInt(3), .arity = 300, .kind = .adt, .is_equatable = false, .payload_params = 3, .eq = .{ .status = .present, .context = 14 }, .compare = .{ .status = .function } },
+        .{ .name = @enumFromInt(2), .arity = 0, .kind = .foreign, .is_equatable = true, .eq = .{ .status = .foreign }, .compare = .{ .status = .foreign } },
+    };
+    var with_hidden = good;
+    with_hidden.hidden_types = &hidden;
+    try testing.expect(verify(&with_hidden, &global));
+    try expectRoundTrip(&with_hidden, &global);
+    const unsorted = [_]Interface.HiddenType{ hidden[1], hidden[0] };
+    with_hidden.hidden_types = &unsorted;
+    try testing.expect(!verify(&with_hidden, &global));
+    var hidden_absent = hidden;
+    hidden_absent[1].eq.context = 14;
+    with_hidden.hidden_types = &hidden_absent;
+    try testing.expect(!verify(&with_hidden, &global));
 }
 
 test "a column offset past the end, and a strings record that overruns the blob" {

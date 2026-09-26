@@ -135,7 +135,9 @@ pub const Term = union(enum(u8)) {
     /// A record receiver: a plain field call. A callee only.
     field,
 
-    pub const Param = struct { binder: Binder, k: u16 };
+    /// `k` is a `u32` since dispatch format 4 (R8a's reviews): a derived row
+    /// can have more than 65 535 context entries or positions.
+    pub const Param = struct { binder: Binder, k: u32 };
     pub const Top = struct { decl: Bir.DeclIndex, args: Range = .empty };
     pub const Ext = struct { module: Graph.Index, value: Interface.ValueIndex, args: Range = .empty };
     pub const DerivedUse = struct { index: u32, args: Range = .empty };
@@ -198,7 +200,13 @@ pub const Requirement = struct {
 
 /// One evidence parameter of a derived function (D4). v1 writes "one per
 /// type parameter, field or element, method = the derived method" — its ABI.
-pub const ContextEntry = struct { param: u16, method: Symbol };
+pub const ContextEntry = struct {
+    /// A `u32` since dispatch format 4 (checker-v2.md §11.2 *as built by
+    /// R8a*, CK-82): a structural row has one entry per position, and a
+    /// record past 65 535 fields has more positions than a `u16` counts.
+    param: u32,
+    method: Symbol,
+};
 
 /// One function this module emits (§9). Keyed on `(kind, shape)` and NOTHING
 /// else: what varies between two uses is the evidence, which rides on the
@@ -377,6 +385,41 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
     return n;
 }
 
+/// Another module's derived `kind` of type `id`, as its declaring module
+/// published it (checker-v2.md §14.2 *as amended by R8a*): the record and
+/// the context range of its row — exported or hidden — or null when the
+/// record has none, which a record the old checker wrote does for a private
+/// type and which reads as v1's ABI: one entry per type parameter, each the
+/// derived method (`publishedCount`, `publishedMethod`).
+pub fn publishedContext(interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global, id: TypeId, kind: Derived.Kind) ?struct { iface: *const Interface, row: Interface.Derived } {
+    if (id == .none) return null;
+    const entry = types.entry(id);
+    if (entry.module.int() >= interfaces.len) return null;
+    const iface = &interfaces[entry.module.int()];
+    const facts = iface.typeFacts(interner, entry.name) orelse return null;
+    return .{ .iface = iface, .row = facts.derived(switch (kind) {
+        .eq => .eq,
+        .compare => .compare,
+    }) };
+}
+
+/// How many evidence parameters another module's derived function takes:
+/// its published context's length, or v1's ABI when there is no row.
+pub fn publishedCount(interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global, id: TypeId, kind: Derived.Kind) u32 {
+    const p = publishedContext(interfaces, types, interner, id, kind) orelse return types.entry(id).arity;
+    return p.iface.contextLen(p.row.context);
+}
+
+/// The method another module's derived function's `k`th evidence parameter
+/// answers.
+fn publishedMethod(interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global, id: TypeId, kind: Derived.Kind, k: usize) ?Symbol {
+    const p = publishedContext(interfaces, types, interner, id, kind) orelse {
+        return if (k < types.entry(id).arity) kindMethod(kind) else null;
+    };
+    const e = p.iface.contextEntry(p.row.context, k) orelse return null;
+    return p.iface.symbol(e.method);
+}
+
 /// How many evidence arguments the function a term names takes (I7):
 /// `DeclInfo` for a value of this module, the interface scheme for an
 /// imported one, the context for a derived function and, for another
@@ -385,12 +428,12 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
 ///
 /// **The one counting function.** `finish`'s assert and `Lower`'s cheap
 /// re-assert both call it; nothing else counts evidence.
-pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interface, types: *const Types) u32 {
+pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interface, types: *const Types, interner: *const InternPool.Global) u32 {
     return switch (t) {
         .top => |u| @intCast(d.declRequirements(u.decl.int()).len),
         .ext => |u| extRequirementCount(interfaces, u.module, @intFromEnum(u.value)),
         .derived => |u| @intCast(d.contextOf(u.index).len),
-        .ext_derived => |u| types.entry(u.type).arity,
+        .ext_derived => |u| publishedCount(interfaces, types, interner, u.type, u.kind),
         .param, .primitive, .undetermined, .field => 0,
     };
 }
@@ -425,10 +468,11 @@ pub fn checkI7(
     bir: *const Bir,
     interfaces: []const Interface,
     types: *const Types,
+    interner: *const InternPool.Global,
     gpa: Allocator,
     out: *std.ArrayList(Bir.Inst.Index),
 ) Allocator.Error!void {
-    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types };
+    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types, .interner = interner };
     const below = try gpa.alloc(bool, d.terms.len);
     defer gpa.free(below);
     var at = d.terms.len;
@@ -490,7 +534,9 @@ pub fn checkI7(
 /// `k`th requirement of the function it names (a derived function's context
 /// entries all ask for its own method under v1's ABI), or null when the
 /// owner names none.
-fn slotMethod(d: *const Dispatch, interfaces: []const Interface, owner: Term, k: usize) ?Symbol {
+fn slotMethod(cx: I7, owner: Term, k: usize) ?Symbol {
+    const d = cx.d;
+    const interfaces = cx.interfaces;
     switch (owner) {
         .top => |u| {
             const reqs = d.declRequirements(u.decl.int());
@@ -501,7 +547,7 @@ fn slotMethod(d: *const Dispatch, interfaces: []const Interface, owner: Term, k:
             const ctx = d.contextOf(u.index);
             return if (k < ctx.len) ctx[k].method else null;
         },
-        .ext_derived => |u| return kindMethod(u.kind),
+        .ext_derived => |u| return publishedMethod(interfaces, cx.types, cx.interner, u.type, u.kind, k),
         else => return null,
     }
 }
@@ -536,11 +582,12 @@ const I7 = struct {
     d: *const Dispatch,
     interfaces: []const Interface,
     types: *const Types,
+    interner: *const InternPool.Global,
     /// Per term: it and everything below it add up (`localOk`).
     below: []const bool = &.{},
 
     fn count(cx: I7, t: Term) u32 {
-        return requirementCount(cx.d, t, cx.interfaces, cx.types);
+        return requirementCount(cx.d, t, cx.interfaces, cx.types, cx.interner);
     }
 
     fn siteOk(cx: I7, bir: *const Bir, site: Site) bool {
@@ -664,7 +711,7 @@ const I7 = struct {
                 }
             }
             for (d.argsAt(site.evidence), 0..) |t, k| {
-                const method: Symbol.Optional = if (owner) |o| (if (slotMethod(d, cx.interfaces, o, k)) |m| m.toOptional() else .none) else .none;
+                const method: Symbol.Optional = if (owner) |o| (if (slotMethod(cx, o, k)) |m| m.toOptional() else .none) else .none;
                 try stack.append(gpa, .{ .term = t.int(), .ctx = 0, .method = method });
             }
             if (!try cx.placed(&seen, &stack, gpa)) try out.append(gpa, site.inst);
@@ -692,7 +739,7 @@ const I7 = struct {
             if (@as(u64, r.start) + r.len > d.args.len) continue;
             for (d.argsAt(r), 0..) |arg, k| {
                 if (arg.int() <= v.term) continue;
-                const method: Symbol.Optional = if (slotMethod(d, cx.interfaces, t, k)) |m| m.toOptional() else .none;
+                const method: Symbol.Optional = if (slotMethod(cx, t, k)) |m| m.toOptional() else .none;
                 try stack.append(gpa, .{ .term = arg.int(), .ctx = ctx, .method = method });
             }
         }
@@ -1393,6 +1440,9 @@ const Converter = struct {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+/// The tables these tests build name no other module, so nothing looks a
+/// published row up (`publishedContext`) and the interner is never read.
+const no_interner: *const InternPool.Global = undefined;
 
 test "the builder's lengths and shrink are an exact rollback" {
     // static-dispatch-spike.md §6.1 invariant 2 and A.35: §6.2 registers
@@ -1514,7 +1564,7 @@ test "the converter reads a breadth-first numbering as the pre-order tree it is"
     try testing.expectEqual(@as(u32, 4), d.sites[0].inst.int());
     const first = d.argsAt(d.sites[0].evidence);
     try testing.expectEqual(@as(usize, 1), first.len);
-    try testing.expectEqual(@as(u16, 3), d.term(first[0]).param.k);
+    try testing.expectEqual(@as(u32, 3), d.term(first[0]).param.k);
 
     // Two roots, each `top 0 (top 0 (primitive))`.
     const roots = d.argsAt(d.sites[1].evidence);
@@ -1604,7 +1654,7 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     var types: Types = .empty;
     var bad: std.ArrayList(Bir.Inst.Index) = .empty;
     defer bad.deinit(testing.allocator);
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 0), bad.items.len);
 
     // 1. One argument too few: the nested `top 0` loses its argument.
@@ -1613,7 +1663,7 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     const terms = @constCast(d.terms);
     const saved = terms[nested.int()];
     terms[nested.int()] = .{ .top = .{ .decl = @enumFromInt(0) } };
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     try testing.expectEqual(@as(u32, 2), bad.items[0].int());
     terms[nested.int()] = saved;
@@ -1625,7 +1675,7 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     const arg_at = d.term(roots[0]).argsOf().start;
     const saved_arg = args[arg_at];
     args[arg_at] = roots[0];
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     args[arg_at] = saved_arg;
     bad.clearRetainingCapacity();
@@ -1634,7 +1684,7 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     //    callee.
     const sites = @constCast(d.sites);
     sites[0].evidence.len += 1;
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     sites[0].evidence.len -= 1;
     bad.clearRetainingCapacity();
@@ -1642,13 +1692,13 @@ test "the I7 assert refuses a hand-corrupted table and accepts the table it came
     // 4. A method call with no callee.
     const saved_callee = sites[1].callee;
     sites[1].callee = .none;
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     try testing.expectEqual(@as(u32, 3), bad.items[0].int());
     sites[1].callee = saved_callee;
     bad.clearRetainingCapacity();
 
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 0), bad.items.len);
 }
 
@@ -1686,12 +1736,12 @@ test "the I7 assert accepts a term shared by two owners and judges it once" {
     var types: Types = .empty;
     var bad: std.ArrayList(Bir.Inst.Index) = .empty;
     defer bad.deinit(testing.allocator);
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 0), bad.items.len);
 
     // The shared term pointing back at an owner is still refused.
     args[3] = @enumFromInt(1);
-    try d.checkI7(&tb.bir, &.{}, &types, testing.allocator, &bad);
+    try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     try testing.expectEqual(@as(u32, 2), bad.items[0].int());
 }

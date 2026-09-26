@@ -808,6 +808,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0 follow-up:* written as `tests/corpus/run/PrivateEqInsideModule/`. It prints `true`, `true`,
     as `Debug.toString` renders them, on 7427828.
 - **Slice** R8.
+- **Status** R8a (2026-09-26), its cross-module half, claimed: a derived context that reaches another module's private `eq` is `absent_private`, and every comparison in `Main` of `check/bad/PrivateEqOutsideModule` — the wrapper `W`, the tuple, the record, the list — is `private_method` (checker-v2.md §11.2's absent reason). The in-module half of D1 (a private `eq` suppresses the module's other derived `eq` rows) stays R8b's.
 
 ### CK-23 — A phantom type argument that is a function blocks `==`
 
@@ -834,6 +835,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - One evidence parameter per type parameter (A.20, `Dispatch.zig:189-192`) is the ABI behind it.
 - **Fixture** `run/PhantomParameterEq.beni` → `True`, `True`.
 - **Slice** R8.
+- **Status** claimed by R8a (2026-09-26): a phantom parameter contributes no context entry (§11.2), so `run/PhantomParameterEq` prints `True`, `True`; across modules, `run/DerivedContextAcrossModules` compares `A.Tag (Int -> Int)` through the published context.
 
 ### CK-24 — A wrapper does not inherit a schema endpoint's settled function exclusion (queue row 74)
 
@@ -873,6 +875,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - `Wrap`'s answer is settled before the endpoint's exclusion is known and never revisited.
 - **Fixture** `check/bad/SchemaWrapperExclusion.beni`. `.codes`: `not_equatable` at `same`.
 - **Slice** R8.
+- **Status** R8a (2026-09-26), claimed on the way: `Wrap`'s context is computed when first asked, after the endpoint's schema group is done, so it inherits the endpoint's settled exclusion. The schema endpoint through the fixpoint (§11.5) and `Schema.settleProperties` leaving v2's path stay R8b's.
 
 ### CK-25 — Generic derivation cannot carry a nested method's own requirement (queue row 73)
 
@@ -918,6 +921,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
   - *R0:* an oracle twin exists after all. The same project with
     `type Outer = Outer (Holder.Holder Keyed.Keyed)` prints `True`, `True` on 7427828.
 - **Slice** R8.
+- **Status** claimed by R8a (2026-09-26): `Outer`'s context is `(0, key)`, so `Outer$$eq = ($m$0, $x, $y) => Holder$eq($m$0, $x.a, $y.a)` and `run/GenericDerivationNestedRequirement` prints `True`, `True`. Across modules the entry carries `key`'s type as a scheme (§14.2 as amended); `cache_test.zig`'s derived-context scenario uses it.
 
 ### CK-26 — Capability is computed up to eight times by several algorithms, with different hit and miss paths
 
@@ -937,6 +941,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
 - **Fixture** none. `checker-v2.md` I10: one fixpoint, one owner, published contexts, no recomputation
   on hit.
 - **Slice** R8.
+- **Status** closed by R8a (2026-09-26), structurally: one computation (`check2/Contexts.zig`), one verdict reading it (`check2/Derivable.zig`), published rows read by importers and by `js/Lower`, nothing re-settled on a hit; `check2/rules_test.zig`'s S4 fence has no reader left. v1 keeps its own settle for its own modules until R12.
 
 ---
 
@@ -1433,6 +1438,7 @@ impossible. `checker-v2.md` §1 maps each class to the invariant that closes it.
     3 892 / 16 979 ms and over two minutes.
   - Swapping that binary in turned the scenario GREEN, and rule (b) fired.
 - **Slice** R8. The fixpoint is lazy and memoised, with no per-group settling.
+- **Status** R8a (2026-09-26): v2 settles endpoint properties when next read after a schema group, and once after P4 (`Solve.settleSchemas`), never per group: 300 / 600 schemas in 13 / 25 ms (ReleaseFast). Its v2 twin is in `perf_test.zig` (`test-perf`); the v1 scenario stays red, v1 being frozen.
 
 ### CK-41 — `Schemes.Writer.resetMemo` makes interface writing quadratic in constructors
 
@@ -2001,6 +2007,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
 - **Root cause** the capability walk (CK-26 class) decides before `key`'s scheme exists.
 - **Fixture** `run/DerivedContextClosedOwnMethod/`.
 - **Slice** R8.
+- **Status** R8a (2026-09-26): the closed in-flight branch (§11.2) answers both variants in every declaration order (`scenario/PERM`: `ck67`, `ck67-nested`, `ck67-permuted`).
 
 ### CK-68 — `tuple_index` on an outer variable is refused with the wrong code
 
@@ -2044,6 +2051,7 @@ session scratchpad under `ck/r2/<name>/`, and R0 or the owning slice copies them
     means `key` written before the types `T` and `W`. `.codes`: `method_needs_annotation
     Main.beni:6:27`. On 7427828 it is `not_equatable` there.
 - **Slice** R8.
+- **Status** claimed by R8a (2026-09-26): `method_needs_annotation` naming `key` at the `==`, in both orders (`check/bad/DerivedContextNeedsAnnotation{,KeyFirst}`; `scenario/PERM` `ck69`).
 
 ### CK-70 — A method used at two types inside a dispatch cycle gets an order-dependent refusal
 
@@ -2219,6 +2227,7 @@ and `ck/r3x/` (this catalogue's).
   - *R0, as written:* the twin is `check/bad/DerivedContextReentrantSameFirst/`. Both are
     `type_mismatch Main.beni:29:15`, at the `"s"`.
 - **Slice** R8a.
+- **Status** claimed by R8a (2026-09-26): one `type_mismatch` at `"s"` in both orders; the re-entrant query runs a fresh fixpoint, the first one's result is memoised only for its generation (`scenario/PERM` `ck74`).
 
 ## L. From the review of R0 (added 2026-09-24)
 
@@ -2245,6 +2254,7 @@ and `ck/r3x/` (this catalogue's).
 - **Slice** R8a (manager, 2026-09-24): R8a replaces the capability settling passes, the first
   candidate. R8a's implementer isolates the cause with a profile first; if the residue is
   `dep_digest` or another interface cost, it moves to R10 and R8a records why.
+- **Status** R8a (2026-09-26), profiled first: under v2 the module's `check` event is linear (44 / 87 ms at 6 000 / 12 000, ReleaseFast), `dep_digest` too small to show, so nothing moves to R10; a v2 twin is in `perf_test.zig`. The profile found `cache_store` super-linear under both checkers: CK-107.
 
 ## L. From design review round 4 (added 2026-09-24)
 
@@ -2311,6 +2321,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
     `EqFirst`, `xm2` as `CompareFirst`), is written with its `.diag` blessed from 7427828. It has
     `not_equatable` and `no_methods_on_shape` in each module, at 15:7 and 19:7.
 - **Slice** R8a.
+- **Status** claimed by R8a (2026-09-26): `pick` and `key` merge through the replayed wanted in both orders. The `.codes` were blessed as `kind_mismatch` at `"s"` (a number literal's kind meeting `String`, v1's rule, as R7 amended CK-72's), not R0's `type_mismatch`.
 
 ## L. Found by R1 and its review (2026-09-24)
 
@@ -2376,6 +2387,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   change, with `Dispatch.Derived.evidence_count: u16` widened or removed.
 - **Fixture** the abuse scenario above. Its expectation changes with the fix.
 - **Slice** R8a (manager, 2026-09-24, moved from R2a): the cap exists because a derived record function takes one evidence parameter per field. D4 (R8a) already changes the derived-function signature to one parameter per context entry; packing the evidence belongs to that change, so it is done once, not twice.
+- **Status** R8a (2026-09-26), claimed under v2: the verdict has no field cap (`scenario/CK-79`: 40 000 fields, `==` and `<` built and run under v2; red under v1, whose abuse test still pins the refusal).
 - **Note** (R2a stage 2, 2026-09-24, for the manager): the one-value representation the Expected line
   asks for now exists past 4 096 positions — `static-dispatch-spike.md` §9.2's wide form, landed for
   CK-81 and reached today only through a nominal payload. What lifting the cap still needs is the
@@ -2476,6 +2488,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** `pending_test.zig` scenario `CK-82` (65 536 fields, `T r == T r` built and run).
 - **Slice** R8a (manager, 2026-09-24), with CK-79. R8a owns CK-79 and `Dispatch.Derived`'s context, where the `u16`
   lives.
+- **Status** R8a (2026-09-26), claimed under v2: `Dispatch.ContextEntry.param` is a `u32` (dispatch format 4), and `scenario/CK-82` builds and runs under v2. R8a's review round moved the scenario to 65 537 fields, one past what a `u16` entry INDEX holds (CK-109).
 
 ### CK-83 — Programs the compiler accepts lower to JavaScript nested deeper than Node will load
 
@@ -2590,6 +2603,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` pins today's count (three and
   one), so a change is deliberate.
 - **Slice** R8a (owner, 2026-09-25): `language.md` promises a top-level value is computed once, and R8a already changes the derived-function signature. Its guard `run/EvidenceFunctionBodyPerCall.beni` changes deliberately there.
+- **Status** fixed by R8a (2026-09-26), for both checkers (the emitter is shared), differently from the proposal: the value is kept per evidence in two module-level `let`s (`static-dispatch-spike.md` A.85 as amended by R8a; `language.md` §6). `run/EvidenceFunctionBodyPerCall` prints one `table (where)` line; `run/EvidenceThunkOncePerEvidence` shows the recompute on new evidence.
 
 ### CK-86 — The `exposing (T(..))` hint suggests `exposing (T, T)` when a constructor shares the type's name
 
@@ -2623,6 +2637,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixture** `tests/pending/run/DerivedEqDeepRecord.beni` (red: `dev: exit=1 codes=internal×2`;
   oracle twin at 20 levels prints `eq`, `ne` on 7ae452f).
 - **Slice** R8a (manager, 2026-09-25): R8a rewrites derived contexts, and with them the last per-part depth cap.
+- **Status** fixed by R8a (2026-09-26) and promoted: `Lower`'s 32-level part cap is gone; `run/DerivedEqDeepRecord` builds and runs under both checkers (1 900 levels checked by hand).
 
 ### CK-88 — One `case` of many literal branches: emit is quadratic, and past 65 046 Firefox refuses the `switch`
 
@@ -2667,6 +2682,7 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Slice** R8a, manager 2026-09-25: amend §14.2 so derived rows cover every nominal type
   reachable from a published scheme, before R8a reads them. The spec amendment comes first, in its
   own commit (rule 1); the text to amend is §14.2's "per exported nominal type", for both rows.
+- **Status** R8a (2026-09-26): §14.2 amended first (hidden rows, three-word entries); `run/HiddenTypeDerivedRow` is the guard (both checkers print the same).
 
 ### CK-90 — A `let` function that uses a later `let` pattern's variable is generalised before the pattern
 
@@ -3049,6 +3065,186 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
 - **Fixtures** `check/bad/NumberReceiverMethodInGroup.beni` and `…Dispatch.beni`, in `scenario/PERM`.
 - **Slice** R7 (claimed).
 
+### CK-107 — Writing a module's cache entry is super-linear in the number of its types
+
+- **Severity** performance. **Area** the cache (`cache_store`), both checkers. **Class** K11.
+  **Sources** R8a, profiling CK-75 under v2 as its brief asks (2026-09-26).
+- **Program** CK-75's: n declarations, each a `type T{i} = T{i} Int` and an `f{i} : Int -> Bool`
+  comparing two `Int`s.
+- **Command** `B check --cache-dir=<fresh> --jobs=1 --self-profile=<trace> X.beni` (ReleaseFast).
+- **Observed** the `cache_store` event takes 19.5 / 72.6 ms at 6 000 / 12 000 (v2), 19.9 / 73.7 ms
+  (v1): a ratio of 3.7, where the module's `check` event is linear under v2 (44 / 87 ms). The
+  entry is 4.7 / 9.1 MB, linear, so the time is not the bytes.
+- **Expected** Linear. Budget: `fast-compiler.md` §2 and §8.
+- **Root cause** not isolated (the writer's per-type or per-symbol work, or the digest it hashes).
+- **Fixture** none yet: a timing scenario with a cache directory, calibrated when the slice takes it.
+- **Slice** R10 (incrementality), unassigned until the manager decides.
+
+### CK-108 — A derived context drops a payload's `equatable` requirement: v2 compared functions
+
+- **Severity** unsound-runtime. **Area** derived contexts (`Contexts.collect`), v2 only; an R8a
+  regression inside the slice. **Class** K7. **Sources** R8a's structural review, B1 (2026-09-26).
+- **Program** a payload whose method's scheme asks `equatable` of a parameter without a `where`
+  entry for `eq`. `H.beni`: `pub type Holder a = Holder a` and an unannotated
+  `pub eq (Holder x) (Holder y) = Basics.eq x y` (so its scheme carries the flag, not an `a.eq`
+  clause); `Main.beni`: `type W a = W (H.Holder a)`, `f : Int -> Int`, and
+  `W (H.Holder f) == W (H.Holder f)`.
+- **Observed** R8a's first draft: v2 builds it and runs `==` on two functions. The marker of `a`
+  carried `flags.equatable` (or an open equatable obligation row), not an open `eq` wanted, and
+  `collect` read only wanteds, so `W`'s context was empty. v1 refuses with `not_equatable`.
+- **Expected** v1's refusal: an equatable marker is the entry `(i, eq)`, so `W (Int -> Int)`
+  asks `eq` of a function and is refused at the use.
+- **Fixed by** R8a's review round: `collect` adds `(i, eq)` for a distinct marker carrying
+  `flags.equatable` or an open equatable row (`checker-v2.md` §11.2 *as built by R8a*).
+- **Fixtures** `check/bad/DerivedContextEquatableFlag/`, `…Published/` (through an intermediate
+  module's published row) and `…Compare/` (the `compare` side), all in `v2-green.txt`.
+- **Slice** R8a (fixed).
+
+### CK-109 — A derived row of more than 65 535 context entries panicked the v2 checker
+
+- **Severity** compiler-crash-or-hang (Debug panic; in ReleaseFast the index wrapped silently to the
+  wrong evidence). **Area** P5/P6 and Lower, v2 only; an R8a regression inside the slice.
+  **Class** K10. **Sources** R8a's adversarial review F1 and structural review S1 (2026-09-26).
+- **Program** `pub type W p0 … p655 = W (H.Holder p0) … (H.Holder p655)` where `H.eq` asks
+  `a.m0 … a.m99` (65 600 entries), or 32 769 parameters each a bare position and a `Holder`
+  whose `eq` asks `compare` (65 538 entries); also a record of 65 537 fields (`r == r`).
+- **Observed** `panic: integer does not fit in destination type` at `Eager.marker`
+  (`Dispatch.Param.k` was a `u16`), or in Lower's `evidenceCall`/`ownEvidence(k: u16)`.
+  `Eager.marker`'s lookup was also O(entries × (markers + entries)): 74 s and 3.1 GB on a Debug
+  build.
+- **Expected** builds and runs; D4 lets entries outrun parameters, so an entry index is 32-bit.
+- **Fixed by** R8a's review round: `Param.k` and every Lower index are `u32` (dispatch format 4's
+  term row carries it in bytes 8–12), and `Eager.markerKeys` builds one map per row (3.4 s, v1
+  8.9 s, for the 656 × 100 shape).
+- **Fixtures** `abuse_wide_test.zig` "CK-109: …" (both shapes, `--checker=v2`); `scenario/CK-82`
+  moved to 65 537 fields.
+- **Slice** R8a (fixed).
+
+### CK-110 — v2 read the v1-ABI fallback for a record v2 wrote
+
+- **Severity** latent (an ABI mismatch with no runtime path found). **Area** interface v4's hidden
+  rows, v2 only; an R8a regression inside the slice. **Class** K10. **Sources** R8a's structural
+  review, S2 (2026-09-26).
+- **Program** `A`: `type Hidden a b = Hidden b Int` and `pub type alias Pub a = Hidden a Int`;
+  `Main`: `pub same : A.Pub String, A.Pub String -> Bool`, `same x y = x == y`, built with
+  `--library --checker=v2`.
+- **Observed** `A` defines `A$Hidden$$eq = ($m$0, $x, $y) => …` (D4: `a` is phantom), and `Main`
+  calls it with two evidence arguments. An alias body is in no record, so `Hidden` had no hidden
+  row, and "no row" read as "the old checker wrote this record".
+- **Expected** one answer (I10): `Main` passes what `A` takes.
+- **Fixed by** R8a's review round: `Publish.typeFacts` closes the hidden set over own alias
+  bodies, as `cache/Digest.zig` does, and the fallback reads v1's ABI only for a record of
+  another package (`Context.oldCheckerWrote`); a v2 record with no row is `internal`.
+- **Fixture** `blackbox_test.zig` "a private type reached only through a pub alias body …".
+- **Slice** R8a (fixed).
+
+### CK-111 — Derived `==` on a deeply nested record is quadratic per use site in v2
+
+- **Severity** performance. **Area** the derivability verdict (`Derivable`), v2 only; predates R8a,
+  which adds about 30% memory. **Class** K11. **Sources** R8a's adversarial review F2 and
+  structural review item 6 (2026-09-26).
+- **Program** `mk = { x = { x = … { x = 1, y = 0 } …, y = n-1 }` (unannotated, depth d) and k
+  uses of `mk == mk`.
+- **Observed** ReleaseSafe, d = 1 500: k = 1 / 4 / 16 take 0.57 / 2.2 / 8.9 s and 115 MB /
+  418 MB / 1.63 GB (v1: 0.02 / 0.05 / 0.13 s, ≤ 43 MB). A Debug build at d = 20 000 passed
+  18 GB. 25% of the time is `wyhash` on `Derivable`'s `colours` map under nested
+  `Resolve.position`: a `number` flex keeps every nested position non-ground, so
+  `resolver.derivable` never caches it, and each position re-walks its subtree.
+- **Expected** linear in the type's size per use, as v1 is.
+- **Fixture** none yet: a timing scenario when the slice takes it.
+- **Slice** unassigned — the perf slice proposed.
+
+### CK-112 — A type of n parameters costs O(n²) in lowering and in the type reader
+
+- **Severity** performance. **Area** `bir.Lower.lowerTypeVarMarked` and `Types.Builder.typeVar`,
+  both checkers. **Class** K11. **Sources** R8a, profiling CK-109's 32 769-parameter shape
+  (2026-09-26).
+- **Program** `pub type W p0 … p32768 = W p0 (H.Holder p0) … p32768 (H.Holder p32768)`.
+- **Observed** Debug `check`: v2 18 s, v1 362 s. The v2 profile is 45% `lowerTypeVarMarked` (a
+  linear scan of the declaration's parameters per type variable) and 28% `Builder.typeVar` (the
+  same, per read).
+- **Expected** linear: a map from parameter name to index, built once per declaration.
+- **Fixture** none yet.
+- **Slice** unassigned — the perf slice proposed.
+
+### CK-113 — Evidence built at a use defeats CK-85's one-slot memo
+
+- **Severity** performance (latent). **Area** Lower's evidence arguments, both checkers.
+  **Class** K4. **Sources** R8a's adversarial review F3 (2026-09-26).
+- **Program** `blank : List a where a.eq : …`, `blank = Debug.log [] "blank"`, read three times
+  at `List (List Int)` from one call site in a loop.
+- **Observed** `blank: []` printed three times. The evidence for `List Int` is an arrow built at
+  each read (`($p$1, $p$2) => List$eq(Main$eq$prim, $p$1, $p$2)`), so `memoArrow`'s identity key
+  never hits. The same holds for records, tuples and a nominal type with a non-empty context, and
+  for one instantiation read from two modules (each has its own `$eq$prim`).
+- **Expected** R8a narrowed `language.md` §6 to what is built: the memo is keyed on evidence
+  identity. Once per instantiation needs closed evidence hoisted to module level (it is closed
+  when every leaf is a module-level name), and a shared name for a primitive's evidence across
+  modules.
+- **Fixture** none yet: a `run/` fixture counting `Debug.log` lines when the slice takes it.
+- **Slice** unassigned — the perf slice proposed.
+
+### CK-114 — v2 refuses a record literal nested more than about 2 100 deep
+
+- **Severity** valid-program-rejected. **Area** `Unify.max_depth` (`Parse.max_depth + 104`), v2
+  only; predates R8a. **Class** K10. **Sources** R8a's adversarial review F5 (2026-09-26).
+- **Program** `mk = { x = { x = … 1 … }, y = … }` 3 000 deep, unannotated, with no comparison.
+- **Observed** v2: `NESTING TOO DEEP … more than 4200 levels deep`, twice; 2 099 deep passes.
+  v1: exit 0.
+- **Expected** v1's acceptance, or one refusal at the parser's own depth limit.
+- **Fixture** none yet.
+- **Slice** unassigned — the perf and limits slice proposed.
+
+### CK-115 — An extra UNKNOWN METHOD follows a TYPE MISMATCH at the same call
+
+- **Severity** diagnostic-quality. **Area** the solver's error cascade, v2 only. **Class** K13.
+  **Sources** R8a's adversarial review, *Also seen* (2026-09-26).
+- **Program** a call `same3 (T.T 1 "a") …` whose argument is already a TYPE MISMATCH, where the
+  callee asks `a.key`.
+- **Observed** v2 adds `UNKNOWN METHOD … I cannot tell which type \`key\` is being asked of` at the
+  same call; v1 reports only the mismatch.
+- **Expected** the mismatch alone: a poisoned receiver asks nothing.
+- **Fixture** none yet.
+- **Slice** R13.
+
+### CK-116 — NOT EQUATABLE blames "a function anywhere inside it" when a payload method's requirement failed
+
+- **Severity** diagnostic-quality. **Area** the use-site message of an absent derived context,
+  both checkers (v2's `absent_other` falls back to v1's text). **Class** K7. **Sources** R8a's
+  adversarial review F4 (2026-09-26).
+- **Program** `H.eq : Holder a, Holder a -> Bool where a.key : a, () -> Int`; `S.key : S, () ->
+  String`; `type Hid a = Hid (H.Holder a)` private in `A` with `pub mk`; `A.mk (S 1) == A.mk (S 2)`.
+  Also `X Fe` where `H.eq` asks `compare` of `Fe`, which has none.
+- **Observed** `NOT EQUATABLE … a function anywhere inside it rules the whole type out`. No
+  function is involved. The direct `H.Holder (S 1) == …` gets the precise TYPE MISMATCH naming
+  `S.key`.
+- **Expected** name the payload method and the requirement that failed: the pass knows it when it
+  fails, and §11.2 keeps "the reason … for the use-site message". Not trivial: the reason must
+  ride on the answer (and on the published row) to reach an importer.
+- **Fixture** none yet.
+- **Slice** R13.
+
+
+### CK-117 — A fixpoint pass's variables can join a merged group below its frame
+
+- **Severity** latent (no wrong output found). **Area** the derived-context fixpoint
+  (`Contexts`) and group merging (§10.4), v2 only. **Class** K7. **Sources** R8a's review round,
+  building the linear frame assert the structural review proposed (2026-09-26).
+- **Program** `tests/pending/check/bad/DerivedContextMergesAsker/` (CK-77), `…ReentrantSameFirst`
+  (CK-74), `run/DerivedContextClosedOwnMethodPermuted` (CK-104), and orders in `scenario/PERM`.
+- **Observed** with a Debug assert at `popFrame` of a `.fixpoint` frame ("every young variable's
+  class is at the frame's rank or deeper, or generalized"): young variables of the pass end in
+  classes at rank 1, the asker's group, below the fixpoint frame at rank 3. A pass demands an
+  unchecked method group (not in flight, so not the in-flight branch); that group, checked nested,
+  links to the asker's and merges down, and takes the pass's variables with it. §11.2's "not
+  built … by construction" does not hold for this channel. The fixtures' outputs are right.
+- **Expected** either an argument that such a pass is sound (its answer is `generational` or
+  `partial` and read nowhere else), or the pass made `partial` or routed through replay when a
+  group it demanded merges below it — then the assert, which is O(pool).
+- **Fixture** the assert itself, once decided (three claimed fixtures and `scenario/PERM` trip it).
+- **Slice** unassigned — R8b proposed (the fixpoint's owner next).
+
+
 ## Summary table
 
 *Slice splits of 2026-09-24 (review round 3).* R2 became R2a/R2b, R4 became R4a/R4b, R6 became
@@ -3078,11 +3274,11 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-19 | unsound-runtime | K7 | `run/EquatableMarkerIsNotEq.beni` | R1, R8 |
 | CK-20 | unsound-runtime | K5 | `check/bad/RigidInsideDerivedShape.beni` | R2, R6a (claimed) |
 | CK-21 | unsound-runtime | K5 | `check/bad/WhereClauseNumberReceiver.beni` | R6a (claimed; `NumberBridgeRigidLyingWhere.beni` the rigid half) |
-| CK-22 | unsound-runtime (D1) | K7 | `check/bad/PrivateEqOutsideModule/`; guard `tests/corpus/run/PrivateEqInsideModule/` | R8 |
-| CK-23 | valid-program-rejected (D4) | K7 | `run/PhantomParameterEq.beni` | R8 |
-| CK-24 | unsound-runtime (no runtime path yet) | K7 | `check/bad/SchemaWrapperExclusion.beni` | R8 |
-| CK-25 | valid-program-rejected (D4) | K4 | `run/GenericDerivationNestedRequirement/` | R8 |
-| CK-26 | latent | K7 | — (structural) | R8 |
+| CK-22 | unsound-runtime (D1) | K7 | `check/bad/PrivateEqOutsideModule/`; guard `tests/corpus/run/PrivateEqInsideModule/` | R8b (cross-module half claimed by R8a) |
+| CK-23 | valid-program-rejected (D4) | K7 | `run/PhantomParameterEq.beni` | R8a (claimed; + `run/DerivedContextAcrossModules/`) |
+| CK-24 | unsound-runtime (no runtime path yet) | K7 | `check/bad/SchemaWrapperExclusion.beni` | R8b (claimed early by R8a) |
+| CK-25 | valid-program-rejected (D4) | K4 | `run/GenericDerivationNestedRequirement/` | R8a (claimed) |
+| CK-26 | latent | K7 | — (structural) | R8a (closed, structural) |
 | CK-27 | unsound-runtime | K4 | `run/CustomEqHeadMatching/` | R6b (claimed) |
 | CK-28 | valid-program-rejected | K4 | `run/CustomEqTupleHead/` | R6b (claimed) |
 | CK-29 | compiler-crash-or-hang | K2 | `run/LetHelperJoinedMethod.beni` | R6b (claimed) |
@@ -3096,7 +3292,7 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-37 | latent | K3 | guards `tests/corpus/check/bad/CyclicReceiverReportedOnce.beni`, `…/RejectedReceiverDoesNotSilence.beni` | R6, R14 |
 | CK-38 | valid-program-rejected | K10 | promoted: `check/good/WideTypeArity/`; new `run/WideTypeArityEq/` | R3 (fixed) |
 | CK-39 | valid-program-rejected | K10 | promoted: `run/RecordAliasConstructorImported/` | R3 (fixed) |
-| CK-40 | performance | K11 | `scenario/CK-40` (400 schemas) | R8 |
+| CK-40 | performance | K11 | `scenario/CK-40` (400 schemas) | R8a (v2: `perf_test.zig` "CK-40", `test-perf`) |
 | CK-41 | performance | K11 | promoted: `perf_test.zig` "CK-41: …" (`test-perf`) | R3 (fixed) |
 | CK-42 | performance (reproduced in R0) | K11 | `scenario/CK-42` (extra cost of own `==` over `x == x`, × 5 000) | R6a (v2 timing twin in `perf_test.zig`) |
 | CK-43 | unsound-runtime | K14 | `run/RecordAliasConstructor.beni` | R1 |
@@ -3123,29 +3319,29 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-64 | valid-program-rejected | K6 | `run/OwnMethodValuePrefix.beni` | R7 |
 | CK-65 | valid-program-rejected | K6 | `run/MutualDispatchMethods.beni` | R7 |
 | CK-66 | valid-program-rejected | K4 | `run/GroupVariableOutsideCaller.beni` | R7 (fixture claimed by R6b) |
-| CK-67 | valid-program-rejected | K7 | `run/DerivedContextClosedOwnMethod/` | R8 (fixture claimed by R6b) |
+| CK-67 | valid-program-rejected | K7 | `run/DerivedContextClosedOwnMethod/` | R8a (every order in `scenario/PERM`) |
 | CK-68 | diagnostic-quality | K2 | `check/bad/TupleIndexOuterResult.beni` | R5 (claimed) |
-| CK-69 | diagnostic-quality | K7 | `check/bad/DerivedContextNeedsAnnotation/` (+ `…KeyFirst/`) | R8 |
+| CK-69 | diagnostic-quality | K7 | `check/bad/DerivedContextNeedsAnnotation/` (+ `…KeyFirst/`) | R8a (claimed) |
 | CK-70 | diagnostic-quality | K6 | `check/bad/RecursiveDispatchTwoTypes.beni` (+ `…B.beni`) | R7 |
 | CK-71 | nondeterminism | K12 | `scenario/CK-71` (100 loaded runs at `--jobs=8`); promoted by R1 into the gates | R1 |
 | CK-72 | compiler-crash-or-hang | K4 | `check/bad/RecursiveGroupReceiverNeedsAnnotation.beni` (+ twin) | R7 |
 | CK-73 | valid-program-rejected | K6 | `run/ScrutineeMethodLater.beni`, `check/good/ScrutineeMethodMergeVariant/`, `check/bad/ScrutineeMethodMergeD14/` | R7 |
-| CK-74 | diagnostic-quality | K7 | `check/bad/DerivedContextReentrant/` (+ twin) | R8a |
-| CK-75 | performance | K11 | `scenario/CK-75` (5 000 declarations, no dispatch) | unassigned — manager |
+| CK-74 | diagnostic-quality | K7 | `check/bad/DerivedContextReentrant/` (+ twin) | R8a (claimed) |
+| CK-75 | performance | K11 | `scenario/CK-75` (5 000 declarations, no dispatch) | R8a (v2: `perf_test.zig` "CK-75"; residue CK-107) |
 | CK-76 | compiler-crash-or-hang | K4 | `check/bad/RecursiveGroupEvidenceReceiver/`, `check/bad/RecursiveGroupSubWanted/` | R7 |
-| CK-77 | diagnostic-quality | K7 | `check/bad/DerivedContextMergesAsker/` | R8a |
+| CK-77 | diagnostic-quality | K7 | `check/bad/DerivedContextMergesAsker/` | R8a (claimed) |
 | CK-78 | decision (supported) | K14 | guard `tests/corpus/run/RecordAliasConstructorPattern.beni` | R1 |
-| CK-79 | valid-program-rejected | K10 | — (`abuse_test.zig` pins the 4 096 cap) | unassigned — manager |
+| CK-79 | valid-program-rejected | K10 | — (`abuse_test.zig` pins the 4 096 cap) | R8a (v2: `scenario/CK-79`, claimed) |
 | CK-80 | performance | K11 | `scenario/CK-80` (`( x, [ x ] )` n deep, n = 9 vs 18) | R6a (v2 timing twin in `perf_test.zig`); the `build` half R6b (`perf_test.zig` "CK-80 build") |
 | CK-81 | compiler-crash-or-hang | K11 | promoted: `abuse_test.zig` (two scenarios) | R2a (fixed) |
-| CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (with CK-79) |
+| CK-82 | compiler-crash-or-hang | K10 | `scenario/CK-82` | R8a (claimed) |
 | CK-83 | unsound-runtime | K14 | promoted: `abuse_wide_test.zig` "CK-83: …" | R2c (fixed) |
 | CK-84 | unsound-runtime | K4 | promoted: `run/ConstrainedAliasFunctionImported/` | R2b (fixed) |
-| CK-85 | performance (latent) | K4 | guard `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` | unassigned — manager |
+| CK-85 | performance (latent) | K4 | guard `tests/corpus/run/EvidenceFunctionBodyPerCall.beni` | R8a (fixed, both checkers) |
 | CK-86 | diagnostic-quality | K14 | `check/bad/ExposingSameNameConstructor/` | R13 |
-| CK-87 | valid-program-rejected | K14 | `run/DerivedEqDeepRecord.beni` | unassigned — manager |
+| CK-87 | valid-program-rejected | K14 | `run/DerivedEqDeepRecord.beni` | R8a (fixed, promoted to `tests/corpus/run/`) |
 | CK-88 | performance | K14 | `scenario/CK-88` | unassigned — manager |
-| CK-89 | latent | K10 | — (v1 is right; the guard program is in the entry) | R8a (spec amendment first) |
+| CK-89 | latent | K10 | — (v1 is right; the guard program is in the entry) | R8a (§14.2 amended; guard `run/HiddenTypeDerivedRow/`) |
 | CK-90 | unsound-runtime | K8 | `check/bad/LetFunctionUsesLaterPattern.beni` | R4b (claimed) |
 | CK-91 | unsound-runtime | K3 | `check/bad/LetOfManyBindings.beni` | R4b (claimed) |
 | CK-92 | compiler-crash-or-hang (output blow-up) | K13 | `blackbox_test.zig` "CK-92: …" (in the gates) | R4b (fixed) |
@@ -3163,14 +3359,25 @@ R6a/R6b, and R8 became R8a/R8b. The slice named in each entry below is the unspl
 | CK-104 | unsound-runtime | K14 | `run/DerivedRowBodyEmissionOrder/`, `run/DerivedContextClosedOwnMethodPermuted/` | R6b (fixed) |
 | CK-105 | valid-program-rejected (order-dependent) | K6 | `run/FieldCallThroughMember.beni` and five more | R7 (claimed) |
 | CK-106 | compiler-crash-or-hang | K4 | `check/bad/NumberReceiverMethodInGroup.beni`, `…Dispatch.beni` | R7 (claimed) |
+| CK-107 | performance | K11 | — (a scenario when taken) | unassigned — R10 proposed (found by R8a) |
+| CK-108 | unsound-runtime | K7 | promoted: `check/bad/DerivedContextEquatableFlag*` (v1's text) + `blackbox_test.zig` "CK-108: …" (v2) | R8a (fixed; found by its review) |
+| CK-109 | compiler-crash-or-hang | K10 | promoted: `abuse_wide_test.zig` "CK-109: …" (v2); `scenario/CK-82` at 65 537 | R8a (fixed; found by its review) |
+| CK-110 | latent | K10 | promoted: `blackbox_test.zig` "a private type reached only through a pub alias body …" | R8a (fixed; found by its review) |
+| CK-111 | performance | K11 | — (a scenario when taken) | unassigned — perf slice proposed (found by R8a's review) |
+| CK-112 | performance | K11 | — | unassigned — perf slice proposed (found by R8a) |
+| CK-113 | performance (latent) | K4 | — | unassigned — perf slice proposed (found by R8a's review) |
+| CK-114 | valid-program-rejected | K10 | — | unassigned — perf and limits slice proposed (found by R8a's review) |
+| CK-115 | diagnostic-quality | K13 | — | R13 (found by R8a's review) |
+| CK-116 | diagnostic-quality | K7 | — | R13 (found by R8a's review) |
+| CK-117 | latent | K7 | — (the frame assert, once decided) | unassigned — R8b proposed (found by R8a's review round) |
 
 Totals:
-- 104 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews). CK-78 records a decision, not a defect, and is counted under none of the severities below.
-- unsound-runtime: 24 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102 and CK-104 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
-- compiler-crash-or-hang: 11 (CK-92 and CK-101 among them).
-- valid-program-rejected: 19 (CK-87 and CK-99 among them).
+- 117 entries (CK-62 to CK-70 and CK-72 to CK-74 added 2026-09-24 from the design reviews; CK-71 by R0; CK-75 by the review of R0; CK-76 and CK-77 from design review round 4; CK-78 to CK-81 by R1 and its review; CK-82 and CK-83 by R2a stage 2; CK-84 by R2b; CK-85 and CK-86 by R2b's review; CK-87 and CK-88 by R2c; CK-89 by R3; CK-90 and CK-91 by R4b; CK-92 to CK-95 by R4b's reviews; CK-96 to CK-99 by R5's reviews, found and fixed in R5; CK-100 by R6a; CK-101 by R6a's review; CK-102 by R6b; CK-103 and CK-104 by R6b's reviews; CK-105 and CK-106 by R7's reviews; CK-107 and CK-112 by R8a; CK-108 to CK-111 and CK-113 to CK-117 by R8a's reviews and its review round, CK-108 to CK-110 found and fixed in R8a). CK-78 records a decision, not a defect, and is counted under none of the severities below.
+- unsound-runtime: 25 (CK-83, CK-84, CK-90, CK-91, CK-100, CK-102, CK-104 and CK-108 among them). Two of them (CK-13, CK-24) have no runtime path until schemas emit.
+- compiler-crash-or-hang: 12 (CK-92, CK-101 and CK-109 among them).
+- valid-program-rejected: 20 (CK-87, CK-99 and CK-114 among them).
 - nondeterminism: 2.
-- performance: 12 (CK-85, CK-88, CK-93, CK-95 and CK-96 to CK-98 among them).
-- diagnostic-quality: 24 (CK-86 and CK-94 among them).
-- latent: 11 (CK-89 and CK-103 among them).
+- performance: 16 (CK-85, CK-88, CK-93, CK-95, CK-96 to CK-98, CK-107 and CK-111 to CK-113 among them).
+- diagnostic-quality: 26 (CK-86, CK-94, CK-115 and CK-116 among them).
+- latent: 13 (CK-89, CK-103, CK-110 and CK-117 among them).
 - Outside the checker (K14): 12 (CK-78, CK-83, CK-86, CK-87, CK-88, CK-95 and CK-104 among them).

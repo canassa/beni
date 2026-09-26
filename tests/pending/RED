@@ -116,7 +116,6 @@ tests/pending/run/CustomEqHeadMatching v1 dev: exit=0 stdout-differs
 tests/pending/run/CustomEqTupleHead v1 dev: exit=1 codes=internal×1
 tests/pending/run/DeadMiscount.beni v1 dev: exit=1 codes=internal×1
 tests/pending/run/DerivedContextClosedOwnMethod v1 dev: exit=1 codes=not_equatable×3
-tests/pending/run/DerivedEqDeepRecord.beni v1 dev: exit=1 codes=internal×2
 tests/pending/run/GenericDerivationNestedRequirement v1 dev: exit=1 codes=not_equatable×1
 tests/pending/run/GroupVariableOutsideCaller.beni v1 dev: exit=1 codes=kind_mismatch×2
 tests/pending/run/LetHelperJoinedMethod.beni v1 dev: exit=1 codes=kind_mismatch×1
@@ -151,8 +150,8 @@ scenario/NEST-UNDER v1 exit=1 codes=method_needs_annotation×10000
 scenario/NEST-OVER v1 exit=1 codes=method_needs_annotation×1000
 scenario/NEST-DEEP v1 exit=1 codes=method_needs_annotation×2
 scenario/CK-82 v1 crash=ABRT
+scenario/CK-79 v1 exit=1 codes=no_methods_on_shape×1,not_equatable×2
 scenario/CK-88 v1 slow
-scenario/CK-40 v2 slow
 scenario/CK-88 v2 slow
 
 # Under `--checker=v2` (test-pending's run 2, from R4a). Rewritten by R4b, whose v2 checks every
@@ -180,11 +179,6 @@ scenario/CK-88 v2 slow
 # CK-104's `DerivedContextClosedOwnMethodPermuted` (CK-67's NOT EQUATABLE, ×3).
 tests/pending/check/bad/CapNamesReceivers.beni v2 exit=1 codes=too_many_inferred_constraints×1 why=message
 tests/pending/check/bad/CurriedAnnotation.beni v2 exit=1 codes=too_many_args×1,type_mismatch×1 why=code
-tests/pending/check/bad/DerivedContextMergesAsker v2 exit=0 codes=none
-tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst v2 exit=0 codes=ambiguous_method_receiver×1
-tests/pending/check/bad/DerivedContextNeedsAnnotation v2 exit=0 codes=ambiguous_method_receiver×1
-tests/pending/check/bad/DerivedContextReentrantSameFirst v2 exit=0 codes=none
-tests/pending/check/bad/DerivedContextReentrant v2 exit=0 codes=none
 tests/pending/check/bad/ExposingSameNameConstructor v2 exit=1 codes=expected_token×1 why=message
 tests/pending/check/bad/ListElementFromContext.beni v2 exit=1 codes=kind_mismatch×2 why=message
 tests/pending/check/bad/MethodSignatureNoClash.beni v2 exit=1 codes=type_mismatch×1 why=message
@@ -193,13 +187,8 @@ tests/pending/check/bad/MissingPatternConsRendering.beni v2 exit=1 codes=missing
 tests/pending/check/bad/MissingWhereInLetAnnotation.beni v2 exit=1 codes=missing_where_constraint×1 why=message
 tests/pending/check/bad/NoArithmeticHintWithoutArithmetic.beni v2 exit=1 codes=kind_mismatch×1,type_mismatch×2 why=message
 tests/pending/check/bad/OpenRecordEquality.beni v2 exit=1 codes=no_methods_on_shape×1 why=message
-tests/pending/check/bad/PrivateEqOutsideModule v2 exit=1 codes=private_method×3 why=count
-tests/pending/check/bad/SchemaWrapperExclusion.beni v2 exit=1 codes=not_equatable×1 why=count
 tests/pending/check/bad/SubjectFirstSwap.beni v2 exit=1 codes=type_mismatch×1 why=message
 tests/pending/check/bad/WhereClauseMismatchNamesClause.beni v2 exit=1 codes=type_mismatch×1 why=message
-tests/pending/run/DerivedEqDeepRecord.beni v2 dev: exit=1 codes=internal×2
-tests/pending/run/GenericDerivationNestedRequirement v2 dev: exit=1 codes=not_implemented×1
-tests/pending/run/PhantomParameterEq.beni v2 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1
 # R7's reviews (2026-09-26): CK-105 (a dot-call's field-or-method choice), D14's hint and a
 # merge during the root's boundary; v1 refuses each (RuleAMonomorphicNoRecursionHint with an internal).
 tests/pending/check/bad/RecursiveGroupFieldCallTwoTypes.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1,no_methods_on_shape×1 why=code
@@ -219,3 +208,5 @@ tests/pending/check/bad/DeferredReceiverJoinedRequirement v1 exit=1 codes=no_met
 tests/pending/check/bad/NumberReceiverMethodInGroup.beni v1 exit=1 codes=internal×1 why=code
 tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni v1 exit=1 codes=ambiguous_method_receiver×1,method_needs_annotation×1,unknown_method×1 why=code
 tests/pending/run/DeferredReceiverRecursiveTwin.beni v1 dev: exit=0 stdout-differs
+tests/pending/run/DerivedContextInFlightEq v1 dev: exit=1 codes=method_needs_annotation×1
+tests/pending/run/DerivedContextAcrossModules v1 dev: exit=1 codes=no_methods_on_shape×1,not_equatable×1

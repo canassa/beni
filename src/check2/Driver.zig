@@ -181,6 +181,13 @@ pub const publish = Incremental.publish;
 pub const verifyReads = Incremental.verifyReads;
 pub const install = Incremental.install;
 
+/// A cache hit of a module the OLD checker checked: its session capability
+/// bits, which its v1 dependents read (`Incremental.install`). The one place
+/// v2's side of the switch reaches v1's capability settle (R8a).
+pub fn v1CapabilitiesOnHit(d: *Driver, m: Graph.Index) Error!void {
+    try V1.restoreCapabilitiesOnHit(d.gpa, d.types, d.graph, d.artifacts, &d.interfaces[m.int()], &d.provenance[m.int()], &d.dispatch[m.int()], m);
+}
+
 /// The ready queue and the reverse edges, built once before any thread
 /// starts. A dependency that comes LATER in the graph's order is not a
 /// blocker: the serial path would not have had its interface either, and

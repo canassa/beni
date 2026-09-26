@@ -73,6 +73,12 @@ extra: []const u32,
 /// see `TypeRef` and the header's purity rule. `Term.app` and `Term.alias`
 /// index this.
 type_refs: []const TypeRef,
+/// Owned. Every OTHER nominal type of this module that a `type_refs` row
+/// names — a private `type` or `foreign type` an importer can reach through
+/// a published term — with its derived rows, sorted by name text
+/// (`checker-v2.md` §14.2 *Amended by R8a*, CK-89). Never a declaration:
+/// resolution does not read it. Empty in a record the old checker wrote.
+hidden_types: []const HiddenType = &.{},
 /// Owned. The one symbol column; every name above is an index into it,
 /// exactly as `Bir` does it, so a remap is one loop and M4 can map the
 /// whole record without a fixup pass.
@@ -341,17 +347,107 @@ pub const max_type_params: u32 = Bir.max_type_params;
 
 pub const DerivedKind = enum { eq, compare };
 
+/// A private nominal type of this module an importer can reach (§14.2 *as
+/// amended by R8a*): the facts of a `Type` row an importer reads, and no
+/// constructors — it cannot name them.
+pub const HiddenType = struct {
+    name: SymbolIndex,
+    arity: u16,
+    kind: TypeKind,
+    is_equatable: bool,
+    payload_params: u32 = no_terms,
+    eq: Derived = .{},
+    compare: Derived = .{},
+};
+
+/// What an importer reads about one nominal type of a module: its exported
+/// row, else its hidden one.
+pub const TypeFacts = struct {
+    arity: u16,
+    kind: TypeKind,
+    payload_params: u32,
+    eq: Derived,
+    compare: Derived,
+
+    pub fn derived(t: TypeFacts, kind: DerivedKind) Derived {
+        return switch (kind) {
+            .eq => t.eq,
+            .compare => t.compare,
+        };
+    }
+};
+
+/// The facts of this module's nominal type `name`: its `types` row, else its
+/// `hidden_types` row, else null — a record the old checker wrote has no
+/// hidden rows, and the caller reads v1's ABI for it (§14.2 *as amended by
+/// R8a*).
+pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeFacts {
+    if (find(iface, interner, Type, iface.types, name)) |i| {
+        const t = iface.types[i];
+        return .{ .arity = t.arity, .kind = t.kind, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
+    }
+    if (find(iface, interner, HiddenType, iface.hidden_types, name)) |i| {
+        const t = iface.hidden_types[i];
+        return .{ .arity = t.arity, .kind = t.kind, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
+    }
+    return null;
+}
+
+/// One entry of a `present` context (§14.2 *as amended by R8a*).
+pub const ContextEntry = struct {
+    param: u16,
+    method: SymbolIndex,
+    /// `none` for `eq` and `compare`; else the element of the row's method
+    /// types (`contextScheme`) that is this entry's method type.
+    slot: u32,
+};
+
+/// Words per context entry: `(param, method, slot)`. The range starts with
+/// one more word, the row's scheme (`contextScheme`).
+pub const context_words = 3;
+
+/// The scheme of a present row's method types, or `none` when every entry
+/// is `eq` or `compare`: its body is `( p₀, …, pₙ₋₁, ( τ₀, …, τₖ ) )`, the
+/// type's parameters and then one method type per `slot` (§14.2 *as amended
+/// by R8a*, after its review: one scheme per row, not per entry).
+pub fn contextScheme(iface: *const Interface, context: u32) SchemeIndex {
+    const words = iface.range(context);
+    if (words.len == 0) return .none;
+    return @enumFromInt(words[0]);
+}
+
+/// Entry `i` of a context range (`Derived.context`), or null past its end.
+pub fn contextEntry(iface: *const Interface, context: u32, i: usize) ?ContextEntry {
+    const words = iface.range(context);
+    if (words.len == 0 or 1 + (i + 1) * context_words > words.len) return null;
+    const at = 1 + i * context_words;
+    return .{
+        .param = @intCast(@min(words[at], std.math.maxInt(u16))),
+        .method = @enumFromInt(words[at + 1]),
+        .slot = words[at + 2],
+    };
+}
+
+/// How many entries a context range holds.
+pub fn contextLen(iface: *const Interface, context: u32) u32 {
+    if (context == no_terms) return 0;
+    const words = iface.range(context);
+    if (words.len == 0) return 0;
+    return @intCast((words.len - 1) / context_words);
+}
+
 /// One exported type's derived `eq` or `compare` (`checker-v2.md` §14.2, D4,
-/// I10): `present` with a context — an `extra` range of `(param, method)`
-/// pairs, two words each, sorted by `(param, method text)`, `method` a
+/// I10): `present` with a context — an `extra` range of the row's scheme word
+/// (`contextScheme`) and then `(param, method, slot)` triples
+/// (`ContextEntry`), sorted by `(param, method text)`, `method` a
 /// `SymbolIndex` — or absent, with the reason.
 ///
 /// The old checker writes exactly its own ABI: one entry per type parameter,
-/// each naming the method being derived. D4's inferred contexts replace that
-/// in R8a without a format change, which is why the format is shared.
+/// each naming the method being derived, `slot` and the scheme `none`. The new checker
+/// writes its inferred contexts (D4) in the same format.
 pub const Derived = struct {
     status: Status = .unchecked,
-    /// An `extra` range of `2 × entries` words when `status == .present`,
+    /// An `extra` range of `1 + 3 × entries` words when `status == .present`,
     /// else `no_terms`.
     context: u32 = no_terms,
 
@@ -552,6 +648,7 @@ pub fn deinit(iface: *Interface, gpa: Allocator) void {
     iface.terms.deinit(gpa);
     gpa.free(iface.extra);
     gpa.free(iface.type_refs);
+    gpa.free(iface.hidden_types);
     gpa.free(iface.symbols);
     iface.* = undefined;
 }

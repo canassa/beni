@@ -1,0 +1,13 @@
+-- R8a's structural review, B1, the `compare` side: see Main.beni. `H.compare`
+-- is unannotated and tests its payloads with `Basics.eq`, so its `a` is
+-- `equatable`.
+pub type Holder a
+    = Holder a
+
+
+pub compare (Holder x) (Holder y) =
+    if Basics.eq x y then
+        EQ
+
+    else
+        LT

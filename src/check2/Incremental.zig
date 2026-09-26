@@ -15,8 +15,6 @@ const std = @import("std");
 const Arena = @import("../Arena.zig");
 const Graph = @import("../resolve/Graph.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
-const Schemes = @import("../check/Schemes.zig");
-const TypeStore = @import("../check/TypeStore.zig");
 const reads = @import("../check/reads.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
 const CacheEntry = @import("../cache/Entry.zig");
@@ -26,7 +24,6 @@ const Check = @import("Check.zig");
 const Driver = @import("Driver.zig");
 
 const Error = Check.Error;
-const Var = Check.Var;
 
 fn digestImportLessThan(_: void, a: Digest.Import, b: Digest.Import) bool {
     if (a.package != b.package) return @intFromEnum(a.package) < @intFromEnum(b.package);
@@ -282,41 +279,13 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     gpa.free(ref_ids.*);
     ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
 
-    // A cache entry stores the public schemes that define this
-    // module's dispatch boundaries, while the two answer bits are
-    // deliberately session-local TypeStore facts. Rebuild them before
-    // `finish` releases dependents, using exactly the same completed
-    // schemes as a cold check. This temporary store dies here; only the
-    // module-owned dense type range is published.
-    {
-        const bir = d.artifacts.bir(d.graph.moduleFile(m));
-        const iface = &d.interfaces[m.int()];
-        const provenance = &d.provenance[m.int()];
-        var store: TypeStore = .init(std.heap.page_allocator);
-        defer store.deinit();
-        try store.reserve(iface.terms.len + iface.schemes.len * 2 + 16, iface.extra.len + 16);
-        const schemes = try gpa.alloc(Var.Optional, bir.decls.len);
-        defer gpa.free(schemes);
-        @memset(schemes, .none);
-        for (iface.values, 0..) |value, i| {
-            const decl = provenance.valueDecl(i) orelse continue;
-            if (decl.int() >= schemes.len or value.scheme == .none) continue;
-            const root = try Schemes.instantiate(
-                iface,
-                ref_ids.*,
-                &store,
-                @intFromEnum(value.scheme),
-                TypeStore.generalized,
-                gpa,
-                null,
-            );
-            schemes[decl.int()] = root.toOptional();
-        }
-        try d.types.settleDispatchCapabilities(gpa, m, d.graph, d.artifacts, &store, schemes);
-        // Both checkers' rows say which types derive: a cold v2 check sets
-        // the same bits from the same table (`Module.check`, P9).
-        d.types.restoreDerivedCapabilities(m, &d.dispatch[m.int()]);
-    }
+    // A module the NEW checker checked publishes its derived contexts in its
+    // interface (checker-v2.md §14.2 *as amended by R8a*), which the record
+    // just installed carries: a dependent reads them there, and nothing is
+    // recomputed (I10, CK-26). A module the OLD checker checked keeps its
+    // session capability bits, which its own dependents read: v1 rebuilds
+    // them from the same record and table a cold check would.
+    if (!d.options.usesV2(d.graph, m)) try d.v1CapabilitiesOnHit(m);
 
     // 3. The diagnostics, replayed. The message is the prose the
     //    checker rendered when it wrote the entry; the SPAN is not

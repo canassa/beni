@@ -565,3 +565,62 @@ test "a 100 000-deep type goes through occurs, the error scan and lowerTo" {
     try testing.expectEqual(@as(u32, 2), store.rank(bottom));
     try testing.expect(try reaches(&store, &stacks, testing.allocator, v, bottom));
 }
+
+/// Whether `a` and `b` are the same type up to fresh copies: the same
+/// variable roots at the leaves (a frozen template's parameters are shared,
+/// not copied) and the same heads, children in `structural` order. For
+/// `Contexts`' Debug assert that a pass whose entry set did not change did
+/// not change its template either (R8a's review, S5): O(size), no marks,
+/// so it may run beside any walk. A cycle is not followed past `limit`
+/// pairs, and answers true: a template has none, and the assert must not
+/// be the thing that loops.
+pub fn sameShape(store: *TypeStore, gpa: Allocator, a: Var, b: Var, limit: u32) Error!bool {
+    var pairs: std.ArrayList([2]Var) = .empty;
+    defer pairs.deinit(gpa);
+    try pairs.append(gpa, .{ a, b });
+    var budget = limit;
+    while (pairs.pop()) |p| {
+        if (budget == 0) return true;
+        budget -= 1;
+        const x = store.find(p[0]);
+        const y = store.find(p[1]);
+        if (x == y) continue;
+        if (!sameHead(store, x, y)) return false;
+        var n: u32 = 0;
+        while (true) : (n += 1) {
+            const cx = child(store, x, n, .structural);
+            const cy = child(store, y, n, .structural);
+            if (cx == null and cy == null) break;
+            if (cx == null or cy == null) return false;
+            try pairs.append(gpa, .{ cx.?, cy.? });
+        }
+    }
+    return true;
+}
+
+fn sameHead(store: *TypeStore, x: Var, y: Var) bool {
+    const cx = store.content(x);
+    const cy = store.content(y);
+    if (std.meta.activeTag(cx) != std.meta.activeTag(cy)) return false;
+    return switch (cx) {
+        // Distinct variable roots: two different leaves.
+        .flex, .rigid => false,
+        .err => true,
+        .alias => |l| l.type == cy.alias.type,
+        .structure => |l| {
+            const r = cy.structure;
+            if (std.meta.activeTag(l) != std.meta.activeTag(r)) return false;
+            return switch (l) {
+                .unit, .empty_record, .func, .tuple => true,
+                .app => |la| la.type == r.app.type,
+                .record => |lr| {
+                    const f = recordFields(store, lr);
+                    const g = recordFields(store, r.record);
+                    if (f.len != g.len) return false;
+                    for (f, g) |p, q| if (p.name != q.name) return false;
+                    return true;
+                },
+            };
+        },
+    };
+}

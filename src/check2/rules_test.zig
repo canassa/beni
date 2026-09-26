@@ -9,13 +9,11 @@
 //!   range's variables, a record's fields, a variable's constraints — are
 //!   read only in `Walk.zig`, and in `Unify.zig` and `Instantiate.zig`, which
 //!   pair two structures and copy one. Anyone may read a node's TAG and flags.
-//! - **Capability has one reader until R8a (review S4).** v1's capability
-//!   API on `Types` (the settle and the bits it writes) is read only by the
-//!   files on `capability_readers`: `Instances.zig`, the one derivability
-//!   verdict, and `Module.zig`/`Groups.zig`/`Incremental.zig`, which run the
-//!   settle (`Groups.zig` after each group that publishes a method, R7). R8a
-//!   replaces it with §11.2's fixpoint and EMPTIES the list (its brief,
-//!   `plans/checker-rewrite.md`); a new reader fails here.
+//! - **Capability has no reader (review S4, emptied by R8a).** v1's capability
+//!   API on `Types` (the settle and the bits it writes) is read by no file
+//!   here: §11.2's derived contexts (`Contexts.zig`) are the one answer, and
+//!   `capability_readers` is empty, so any reader fails. `Types.isEquatable`
+//!   has one listed reader, `Marker.zig`'s structural bit (§11.4).
 //!
 //! The file list is checked against the directory, so a new file cannot slip
 //! past it.
@@ -28,7 +26,9 @@ const File = struct { path: []const u8, text: []const u8 };
 const files = [_]File{
     .{ .path = "Check.zig", .text = @embedFile("Check.zig") },
     .{ .path = "Context.zig", .text = @embedFile("Context.zig") },
+    .{ .path = "Contexts.zig", .text = @embedFile("Contexts.zig") },
     .{ .path = "Decide.zig", .text = @embedFile("Decide.zig") },
+    .{ .path = "Derivable.zig", .text = @embedFile("Derivable.zig") },
     .{ .path = "Driver.zig", .text = @embedFile("Driver.zig") },
     .{ .path = "Eager.zig", .text = @embedFile("Eager.zig") },
     .{ .path = "Elaborate.zig", .text = @embedFile("Elaborate.zig") },
@@ -150,17 +150,26 @@ test "the rules read every file of src/check2" {
 }
 
 /// v1's capability API on `Types` (review S4): the settle, and the bits it
-/// writes. R8a removes every use and empties `capability_readers`.
+/// writes. R8a removed every use (checker-v2.md §11.1): the derived contexts
+/// (`Contexts.zig`) are the one answer, and `capability_readers` is EMPTY —
+/// any reader in `src/check2/` fails here. A cache hit of a module v1 checked
+/// rebuilds v1's bits on v1's side (`Check.restoreCapabilitiesOnHit`).
 const capability_api = [_][]const u8{
     "settleDispatchCapabilities(", "answersEq(",              "answersCompare(",
     "hasFunction(",                "methodParamRequirement(", "hasPublicDispatchMethod(",
-    "restoreDerivedCapabilities(",
+    "restoreDerivedCapabilities(", "isEquatable(",
 };
 
-/// Allowed today, until R8a (`plans/checker-rewrite.md`, R8a's brief).
-const capability_readers = [_][]const u8{ "Instances.zig", "Eager.zig", "Module.zig", "Groups.zig", "Incremental.zig" };
+/// None since R8a (`plans/checker-rewrite.md`, R8a's brief).
+const capability_readers = [_][]const u8{};
 
-test "S4: only the derivability verdict and the settle read v1's capability API" {
+/// `Types.isEquatable`'s one reader: the structural table-build bit of
+/// §11.4 (`Marker.zig`'s walk refuses a `foreign type` declared not
+/// equatable, or a schema endpoint settled not equatable), not the dispatch
+/// settle — R8a's review, S3. A second reader fails here.
+const equatable_readers = [_][]const u8{"Marker.zig"};
+
+test "S4: nothing in check2 reads v1's capability API" {
     var bad: usize = 0;
     for (files) |f| {
         if (listed(f.path, &capability_readers) or std.mem.eql(u8, f.path, "rules_test.zig")) continue;
@@ -171,35 +180,8 @@ test "S4: only the derivability verdict and the settle read v1's capability API"
             if (isComment(line)) continue;
             for (capability_api) |pattern| {
                 if (std.mem.indexOf(u8, line, pattern) == null) continue;
+                if (std.mem.eql(u8, pattern, "isEquatable(") and listed(f.path, &equatable_readers)) continue;
                 std.debug.print("{s}:{d} reads v1's capability API: `{s}`\n", .{ f.path, n, pattern });
-                bad += 1;
-            }
-        }
-    }
-    try testing.expectEqual(@as(usize, 0), bad);
-}
-
-/// R6b's stopgap for derived contexts (review S3): P5's rows under v1's
-/// one-entry-per-parameter rule, the probe that decides which are written
-/// and the refusal of a use of one that is not. R8a deletes all of it with
-/// the capability API above (its brief lists every piece), so it may not
-/// spread past the files that hold it today.
-const r8a_stopgap = [_][]const u8{ "notImplementedR8a(", ".r8a", "collecting", "deps.append(" };
-
-const r8a_stopgap_files = [_][]const u8{ "Eager.zig", "Elaborate.zig", "Report.zig" };
-
-test "S3: R6b's derived-context stopgap stays in the files R8a replaces" {
-    var bad: usize = 0;
-    for (files) |f| {
-        if (listed(f.path, &r8a_stopgap_files) or std.mem.eql(u8, f.path, "rules_test.zig")) continue;
-        var it = codeLines(f.text);
-        var n: usize = 0;
-        while (it.next()) |line| {
-            n += 1;
-            if (isComment(line)) continue;
-            for (r8a_stopgap) |pattern| {
-                if (std.mem.indexOf(u8, line, pattern) == null) continue;
-                std.debug.print("{s}:{d} uses R6b's derived-context stopgap: `{s}`\n", .{ f.path, n, pattern });
                 bad += 1;
             }
         }

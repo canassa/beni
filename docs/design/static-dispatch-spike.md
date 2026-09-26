@@ -2104,7 +2104,7 @@ const Main$compare$unit = (x, y) => "EQ";
 
 ### 9.4 Nominal types
 
-> **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11).
+> **Checker v2 (2026-09-24), owner decision D4.** "Parametric types take one evidence parameter per type parameter" below (and A.20) is superseded: a derived function takes one parameter per entry of its inferred CONTEXT, in (parameter, method text) order ([`checker-v2.md`](checker-v2.md) §11.2, slice R8). The emitted shapes are unchanged. This section stays normative for the current checker until the cut-over (`../../plans/checker-rewrite.md` R11). *Built by R8a (2026-09-26) for `--checker=v2`: the context is inferred per type by `check2/Contexts.zig` and published in interface v3 (checker-v2.md §14.2 as amended by R8a); every type the corpus emits compares each parameter with the derived method, so its function is unchanged byte for byte.*
 
 > **The wide form** (§9.2, A.87) applies here too: a nominal derived function with more than 4 096 evidence parameters takes them as one array `$m`, and its callers pass one array literal.
 
@@ -4177,6 +4177,38 @@ a table, a regex or a `Dict` such a body precomputes is rebuilt per read or call
 value without the `where` computes it once. The behaviour is kept for now and documented in
 `language.md` §6 *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count, and
 hoisting once per call site is CK-85.
+
+*Amended by R8a (2026-09-26; CK-85, scheduled by the owner).* The body now runs **once per
+evidence**, not per read or call, and not hoisted per call site either. A `thunk` and an `applied`
+value whose body is not a bare reference to a constrained function are defined over two
+module-level `let`s, the last evidence and the value it gave:
+
+```js
+let M$lookup$ev$k0, M$lookup$ev$v;
+const M$lookup = ($m$0, $p$1) => {
+  if ($m$0 !== M$lookup$ev$k0) { …; M$lookup$ev$v = <body>; M$lookup$ev$k0 = $m$0; }
+  return M$lookup$ev$v($p$1);
+};
+```
+
+The value is a function of its evidence alone, and evidence is always a function (never
+`undefined`), so the first use computes. One instantiation — the case a module whose evidence
+arguments are all module-level names always has — runs the body once, at its first use; a use
+with other evidence computes again, which every use did before. Why not the hoist CK-85 proposed:
+a module-level `const M$lookup$ev0 = M$lookup$make(ev…)` runs the body at load, at a point the
+emission order (`Lower.emissionOrder`) cannot always put after everything the body reads — a use
+inside a declaration that is a dependency cycle with the value's own is a temporal-dead-zone throw
+— and it needs a second entry point and an interface bit for importers. The cache needs neither:
+the definition's convention, arity and call shape are `Convention`'s as before, the body runs where
+it ran before (at a use), and nothing an importer reads changes. Memoising per evidence TUPLE with
+a `WeakMap` was not taken: JsIr has no `new`, and a single entry already answers the common case.
+`run/EvidenceFunctionBodyPerCall.beni` now prints one `table (where)` line;
+`run/EvidenceThunkOncePerEvidence.beni` shows the recompute when the evidence changes.
+*Narrowed by R8a's review round (2026-09-26, CK-113):* "the same evidence" is the same JavaScript
+IDENTITY. Evidence built at the use — a structural type's (`List Int`, a record, a tuple), or a
+nominal type's whose derived context is not empty — is a fresh arrow at each read, so such a use
+recomputes at each read, as before; so does one instantiation read from two modules, each with its
+own `$eq$prim`. Once per instantiation needs closed evidence hoisted to module level (CK-113).
 
 **A.86 — a derived part whose type is decided later is a part site; an untyped own method is
 refused** (§6.3.1 step 4, §10.12, queue row 75, 2026-09-23). `targetFor` writes `err` for a part

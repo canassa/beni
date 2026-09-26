@@ -25,9 +25,9 @@
 //!     whole body is a `lambda`. Nothing of it runs at module load;
 //!   - it **runs** — every other value with a body. A plain one is evaluated
 //!     once, where `emissionOrder` puts it; one with evidence is computed at
-//!     every read (a thunk, CK-34) or call (a point-free value of function
-//!     type, `h = compose h g` under a `where`), so a self-reference
-//!     recurses. A `where` does not make a value a function (`language.md`
+//!     its first read (a thunk, CK-34) or call (a point-free value of function
+//!     type, `h = compose h g` under a `where`) with each evidence (CK-85),
+//!     so a self-reference recurses. A `where` does not make a value a function (`language.md`
 //!     §7; R2b review B1), even where the emitter defines it as an arrow.
 //!
 //! A strongly connected component with at least one node that RUNS is
@@ -330,7 +330,7 @@ const Graph = struct {
             if (through == null and g.defers[node]) through = name.*;
         }
         // The first node of the circle, anchor included, that is computed
-        // at each read or call rather than once at load: a `thunk` or an
+        // at its first use with its evidence rather than once at load (CK-85): a `thunk` or an
         // `applied` value (`Convention`), both of which take evidence. The
         // message's "computed once" is false for it, so it says so.
         const anchor_name = interner.slice(g.bir.symbol(g.bir.decls[anchor].name));

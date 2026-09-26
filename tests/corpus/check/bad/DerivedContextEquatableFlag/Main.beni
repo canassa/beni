@@ -1,0 +1,21 @@
+-- R8a's structural review, B1: a derived context keeps the `equatable` flag a
+-- payload's method puts on a parameter. `W a`'s derived `eq` goes through
+-- `H.eq`, whose `a` is `equatable`, so `W`'s context is `(0, eq)` and a `W`
+-- holding a function is NOT EQUATABLE — as v1 says, and as the direct
+-- `H.Holder f == H.Holder f` says. Without the entry the build compared two
+-- functions and printed `True`.
+import H
+
+
+type W a
+    = W (H.Holder a)
+
+
+f : Int -> Int
+f n =
+    n
+
+
+same : Bool
+same =
+    W (H.Holder f) == W (H.Holder f)

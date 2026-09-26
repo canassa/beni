@@ -2105,6 +2105,17 @@ and 8 are carried by it.
 The session `Types` table becomes `*const` everywhere, with no `@constCast`. Each module's derived
 contexts live in the module worker's own state, and are **published** in the interface (§14.2).
 
+*As built by R8a (2026-09-26).* Nothing in `src/check2/` reads or settles v1's capability API
+(`check2/rules_test.zig`'s S4 fence, its reader list now empty). The `Types.Entry` fields and the
+settle stay while v1 does: a cache HIT of a module the OLD checker checked still rebuilds v1's
+bits, now on v1's side of the switch (`Check.restoreCapabilitiesOnHit`, called through
+`Driver.v1CapabilitiesOnHit`), because v1 dependents read them; a module v2 checked installs its
+record and nothing else. `Types` is not yet `*const` in v2: `Groups` and `Solve.settleSchemas`
+still write a schema endpoint's properties through it (R8b, §11.5), and `Publish` its `ref_ids`.
+`js/Lower` and `Dispatch.requirementCount` read an `ext_derived` target's published row
+(`Dispatch.publishedContext`), whichever checker wrote it; only a record with no row (the old
+checker's, for a private type) falls back to v1's bits and arity.
+
 ### 11.2 Derived contexts by fixpoint (D4, CK-25, CK-23)
 
 For an own nominal type `T` with parameters `p₀ … pₙ₋₁` and a well-known method `m` that `T` does
@@ -2250,6 +2261,114 @@ not define, the **context** `ctx(T, m)` is a set of `(i, m')` pairs: "to answer 
 - **Structural shapes** (record, tuple, unit) keep "one parameter per field or element, same
   method" (spike §9.2 and §9.3). Their context is positional and trivially known. Past 4 096
   positions they take one array, as every shape does (the D4 bullet above).
+
+*As built by R8a (2026-09-26).* `check2/Contexts.zig` (the units, the memo, the fixpoint, replay)
+and `check2/Derivable.zig` (the one verdict, reading it). The points the text above leaves open,
+and where the build departs from it:
+
+- **The entry's method type.** An entry is `(i, m', τ)`, not `(i, m')`: for a method that is not
+  `eq` or `compare` (`H.eq where a.key : a, () -> Int` gives `(0, key)`), the use needs `key`'s
+  TYPE at the argument, or an importer could pass a `key` of any type. `τ` is the open wanted's
+  method type, frozen over the type's own template parameters (`Instantiate.freeze`: the whole
+  graph copied at rank `generalized`, the markers replaced by the parameters) and instantiated at
+  a use with its arguments (`Instantiate.substitute`). Published as a scheme (§14.2 *as amended by
+  R8a*). For `eq` and `compare` `τ` is the well-known type and nothing is kept.
+- **A pass reads the answer off the resolver's own state.** Markers are FLEX variables, not the
+  rigids-with-givens of the first bullet: what a payload asks of parameter `i` rides open on marker
+  `i`, and Rule U1 joins two asks of one name (their types unified). A marker that becomes
+  anything but a distinct plain flex — a specialised instance, `Holder.eq : Holder Int, …`, bound
+  it — makes the entry `absent`; so does a position that failed, or a wanted of the pass left open
+  on anything but a marker. The absent REASON is what the pass met: a function (`absent_function`,
+  `not_equatable`'s "a function in there" and `compare`'s `contains_function`), another module's
+  private method (`absent_private`: `private_method` at the use, the reason §11.3 wants), the
+  parametric in-flight case (`needs_annotation`), or anything else (`absent_other`).
+- **The frame** is a new kind, `.fixpoint`: a queue of its own, no group, never merged
+  (`Groups.topFrame` skips it). Every pass reports into ONE quiet report per module; a group a pass
+  nests is checked with the module's report (`Groups.solveGroup` swaps it back); an `internal` is
+  still said. A run charges `nest_cost` (§10.2) while it is open but is never refused: the chain a
+  run can recurse through is bounded by the unit DAG, and dependency units are run first, in order
+  (`ensure`), so a chain of `n` types does not recurse `n` deep natively.
+- **Which frame reads F's approximation.** Exactly as the round-4 bullet says: the innermost run of
+  the unit, when no top-level-kind frame lies above its frame. A read by a pass of the same run
+  records a dependency (the worklist); a read by any other run marks that run `partial` (never
+  memoised). A memo read (not an approximation) replays.
+- **The in-flight branch** (`Contexts.inFlight`, from `Instances.ownMethod` when a run is active
+  and the method's group is `checking`): never `Groups.demand`, so the fixpoint itself never
+  merges. The closed case answers the wanted `group_call` without unifying and records the frozen
+  `( receiver, method type )`; the replay instantiates it in the asker's frame and resolves an
+  ordinary `where_clause` wanted there, which links (§10.3) and merges (§10.4) as any other.
+  Replay happens on every memo read, so a run that reads another unit's generational result
+  inherits its items (it replays into its own frame, where they are its own in-flight items).
+- **Memo generations**: `permanent` when the run met nothing in flight, read no generational
+  result and was not partial; `generational` (with the replay list) otherwise; `none` when
+  partial. `Groups.check` bumps the generation when a group — a merge class's root — is done.
+- **The verdict** (`Derivable.derivability`) keeps v1's walk and messages but reads the answer: at
+  a nominal head, the context (this module's, or the published row), or — when the module rule
+  answers — the `pub` method's requirements read off its scheme (own: `decl_scheme`; imported: the
+  interface scheme's first parameter term), which is what v1's `methodParamRequirement` bits
+  encoded; a private own method and an own method in flight are no boundary it descends. A head
+  whose context is not computed yet stops the walk (`query`); `derivable` runs it and walks again
+  (and computes the receiver's own head before the first walk, the common case). A ground verdict
+  is kept past its walk only when it read nothing volatile (an approximation, or a result not
+  memoised permanently). A record past 4 096 fields is no longer refused (CK-79): D4 and the wide
+  form of `static-dispatch-spike.md` §9.2 carry any width.
+- **P5** (`Eager`) settles every unit not memoised permanently (`settleAll`, dependencies first),
+  and a type gets a row exactly when its context is `present`. A permanent run's last passes ARE
+  the rows' bodies (every entry they read was final: the worklist re-ran any pass whose read
+  grew), so P5 reads no payload again; a unit memoised only for its generation is run again.
+  Every other row body failure is `internal` — no probe, no propagation, no one-entry-per-parameter
+  rule: `Eager.marker` maps an open wanted on marker `i` for method `m'` to the entry's index `k`,
+  `param derived row k`.
+- **`own_method`** stays "a `pub` value of the method's name" (§14.2 as amended): a private `eq`
+  still derives rows, which D1 (R8b) decides.
+- **Schema endpoints** (§11.5) are R8b's: their verdict still reads the schema's settled
+  properties (`Types.schemaPropertyBits`) and a derived answer on one is `undetermined` (`build`
+  refuses a schema before anything is emitted). What R8a changed is WHEN the properties are
+  settled (CK-40): after a schema group completes they are marked stale, and settled at the next
+  read by the verdict or the `equatable` marker walk, and once after P4 (`Solve.settleSchemas`) —
+  never after every group.
+- **Not built:** the debug assert of the Frame-and-rank bullet (a walk of every older variable per
+  run is quadratic even in Debug). What holds the property instead is construction: payloads are
+  read fresh at the frame's rank, and every type that leaves the frame is `freeze`d.
+  *See R8a's review round, below: a linear form was tried and fails on a real channel (CK-117).*
+
+*Amended by R8a's review round (2026-09-26).*
+
+- **A marker's `equatable` flag is an entry (CK-108).** Flex markers are not rigids-with-givens
+  for anything that rides on a flex other than a wanted: a payload method whose scheme asks
+  `equatable` of `a` as a FLAG (an unannotated `eq` calling `Basics.eq x y`) leaves the flag, or
+  an open equatable obligation row, on the marker and no `eq` wanted. `collect` makes such a
+  distinct marker the entry `(i, eq)` unless an `eq` wanted already is. `number` and `appendable`
+  kinds make the marker non-plain, so `absent`, as before.
+- **One template per answer (CK-109).** An answer keeps ONE frozen tuple of the method types of
+  its non-well-known entries (`Answer.template`), and an entry its index in it (`slot`), instead
+  of one frozen `τ` per entry; a use substitutes the tuple once. The published form follows
+  (§14.2, *amended again*). Marker distinctness is one mark pass, not pairwise.
+- **P5's lookup is a map.** `Eager.markerKeys` builds, once per row, the map from an open
+  wanted's `(receiver root, method)` to its entry index `k`; `Eager.marker` reads it. The index
+  `k` is a `u32` end to end (`Dispatch.Param.k`, Lower's evidence indices): D4 lets entries
+  outrun parameters.
+- **Bodies are the run's (S4).** A pass writes its positions to its RUN (`Run.bodies`); `run`
+  commits them with the answers, and only when the result is memoised permanently. A fresh
+  nested run of the same unit (R8-1) no longer leaves its bodies beside the outer run's answers.
+  A kept body was resolved in P4 under P4's derived memo: sound because `Builder.read` gives every
+  pass fresh variables, so no root of a kept body is one the memo holds.
+- **A template changes only with its entry set (S5).** `same` compares status, culprit and the
+  `(param, method)` set, not templates. The argument: every leaf of a template is one of the
+  type's parameters (a marker, frozen) or ground; a marker that is bound is `absent`; and an
+  annotation cannot hold a free variable (`UNKNOWN CONSTRAINED VARIABLE`). So a pass whose set
+  did not change has an isomorphic template. Debug asserts it (`Walk.sameShape`, O(size)).
+- **The frame assert, tried and withdrawn (CK-117).** The review proposed a linear assert: at
+  `popFrame` of a `.fixpoint` frame, every variable of its young pool has its class at the frame's
+  rank or deeper, or generalized. Built, it fails on three CLAIMED fixtures
+  (`check/bad/DerivedContextMergesAsker`, `…ReentrantSameFirst`,
+  `run/DerivedContextClosedOwnMethodPermuted`) and in `scenario/PERM`: a pass that demands an
+  unchecked method group (not in flight, so not the in-flight branch) checks it nested, that group
+  links to the asker's and merges down (§10.4), and the pass's variables join classes at the
+  asker's rank. "Nothing escapes by construction" is therefore false for that channel. The
+  fixtures' outputs are right today; whether such a pass is sound, or must be `partial` or
+  answer through replay, is recorded as CK-117 and not decided here, and the assert is not
+  shipped.
 
 ### 11.3 Private methods (D1, CK-22)
 
@@ -2570,7 +2689,9 @@ pub fn of(decl_params: u32, body_is_lambda: bool, value_arity: u32, evidence: u1
   `Debug.log` in it prints per call, and a table it precomputes is rebuilt per call, where the same
   value without the `where` computes it once. Kept for now and documented in `language.md` §6
   *Evaluation order*; `run/EvidenceFunctionBodyPerCall.beni` pins the count. Hoisting it once per
-  call site is CK-85 (unassigned).
+  call site is CK-85 (unassigned). *R8a (2026-09-26):* CK-85 is fixed differently — the body runs
+  once per EVIDENCE, the last evidence and its value kept in two module-level `let`s
+  (`static-dispatch-spike.md` A.85 *as amended by R8a*; `language.md` §6).
 - **`constrained_constant` is narrowed to NON-function types** (review S3, rule 7). The bullet
   above keeping its scope assumed only unannotated `pub` values were at risk; an unannotated `pub`
   of function type (`pub equals = (==)`, `pub eqs = \a b -> a == b`, `pub bigger = maxOf`) is
@@ -2824,7 +2945,7 @@ It serves value schemes, schema member types, schema constructor types and const
 |---|---|
 | `Type.arity: u16` (and `Types.Entry.arity`) | CK-38. A saturating `u8` cast becomes an error at 65 535 |
 | constructor rows gain `result: enum { nominal, record_alias }`, and a `record_alias` row carries its **field names in declaration order** (a `SymbolIndex` range, argument `i` is field `i`) | CK-39. `Schemes.instantiateCtor` builds the record alias for the second. The names are what the backend needs to emit an imported alias's constructor as the record and to read its pattern's arguments (`backend.md` §4, D12); the alias body's record term cannot give them, because its fields are canonicalised and the constructor's argument order is the declaration's. *Amended 2026-09-24 by R1's review (S6).* |
-| per exported nominal type, per `eq`/`compare`: `derived: { present, context: [](param u16, method SymbolIndex) sorted by (param, text) }`, or `absent: reason` | D4, I10: importers resolve `ext_derived` against the published context, and a cache hit installs it without recomputing |
+| per exported nominal type, per `eq`/`compare`: `derived: { present, context: [](param u16, method SymbolIndex) sorted by (param, text) }`, or `absent: reason` *(R8a: every nominal type an importer can reach, and a third word per entry: see the amendment below the table's notes)* | D4, I10: importers resolve `ext_derived` against the published context, and a cache hit installs it without recomputing |
 | per exported nominal type: `payload_params: bitset over its parameters` (the parameters that occur in a constructor payload; all set for a `foreign type`) | D10 and S15: the marker walk descends only where a payload can hold a value, without reading an opaque type's constructors  Accepted consequence: a change in which parameters an opaque type's payloads use changes its interface digest (round 2 nit) |
 | value `where` blocks | unchanged in bytes. `Evidence.requirements` writes them in the same order as today | (§12.1) |
 
@@ -2876,6 +2997,57 @@ derived method". That is exactly its ABI, so the format is shared by both checke
   rows. *The manager assigned it to R8a (2026-09-25): this section is amended first, so the rows
   cover every nominal type reachable from a published scheme, before R8a reads them.*
 
+*Amended by R8a (2026-09-26), before v2 reads the rows (CK-89, D4).* Three changes, and
+`iface_bytes.format_version` 3 → 4:
+
+- **Rows cover every nominal type an importer can reach.** An exported type keeps its row on the
+  `types` table. Every OTHER nominal type of this module that a `type_refs` row of the record names
+  (a private `type` or `foreign type` reached through a `pub` scheme, a constructor term or a schema
+  member) gets a row in a new column, **`hidden_types`**, sorted by name text: its name, arity,
+  kind, `payload_params`, and the same two derived rows. It is not a declaration: resolution never
+  reads the column, so a hidden type stays unnameable by an importer. A type no published term
+  names cannot be reached by an importer, so it has no row anywhere. The importer finds a type's
+  row by its declaring module and name: `types` first, then `hidden_types`.
+  - A module the OLD checker published has no `hidden_types` rows. An importer that finds no row
+    reads v1's ABI for that type: `present`, one entry per parameter naming the derived method
+    (v1 derives every declared type eagerly). This is the fallback of the importer only, and it
+    disappears with v1 (R12).
+  - *Amended by R8a's review round (2026-09-26, CK-110).* An alias body is in no record, so a
+    private type reached only through a `pub type alias`'s body was named by no `type_refs` row
+    and had no row. The hidden set is closed over this module's own alias bodies (the exported
+    aliases, and every alias the writer names), as `cache/Digest.zig` closes its type set. And the
+    fallback reads v1's ABI only for a record the old checker wrote: under `--checker=v2` that is
+    a module of another package (`Options.usesV2` is a function of the package), so v2 asks
+    `Context.oldCheckerWrote`. A record v2 wrote with no row for a type it reaches is `internal`.
+- **A context entry is three words: `(param, method, type)`.** `type` is `none` for `eq` and
+  `compare`, whose method type is the well-known `a, a -> Bool | Order` of the argument. For any
+  other method — the `a.key` a payload's custom method asks for, CK-25 — it is a `SchemeIndex`
+  whose body is the tuple `( p₀, …, pₙ₋₁, τ )`: the type's parameters, in order, then the method
+  type `τ` the entry requires of parameter `param`. Writing the parameters first fixes their
+  quantifier numbers (`Schemes.Writer` numbers by first appearance). An importer instantiates the
+  scheme, unifies element `i` with the use's argument `i`, and gives the sub-wanted element `n`
+  as its method type — without it, an importer could pass a `key` of any type (a runtime error,
+  which the guarantee forbids).
+  - *Amended again by R8a's review round (2026-09-26, CK-109).* One scheme per entry repeats the
+    n parameters in every entry: a row of n parameters and m methods is n × m entries and
+    n² × m scheme words (656 × 100 took 74 s and 3.1 GB). The row carries ONE scheme instead: its
+    context range is a leading **row scheme word**, `none` when every entry is `eq` or `compare`,
+    else a `SchemeIndex` whose body is `( p₀, …, pₙ₋₁, (τ₀, …, τₖ₋₁) )` — the parameters, then one
+    tuple of the method types of the row's non-well-known entries, in entry order. An entry is
+    `(param, method, slot)`: `slot` is `none` for `eq` and `compare`, else its method type's
+    index in that tuple. An importer instantiates the row's scheme once per use. `verify` refuses
+    a range whose length is not 1 + 3k, a row scheme out of range, and a slot in a row with no
+    scheme.
+- **`own_method` keeps R3's meaning**, "the type's module declares a `pub` value of the method's
+  name". A module with a PRIVATE `eq` still derives and publishes its types' `eq` rows, as v1 does
+  (`dispatch/PrivateEqStillDerives`): an importer never reaches them (the module rule makes every
+  comparison from outside `private_method`, §11.3), and whether they are written at all is D1's,
+  so R8b's.
+
+The old checker writes three-word entries with `type = none` (its contexts only ever name the
+derived method), so the format is still shared. *(R8a's review round: a row scheme word of
+`none`, then entries with `slot = none`.)*
+
 ### 14.3 Cache and table versions
 
 - `dispatch_bytes` 1 → 2 (R2a, the tree record with `DeclInfo.value_arity`), then 2 → 3 (R2b,
@@ -2900,6 +3072,13 @@ derived method". That is exactly its ABI, so the format is shared by both checke
     from R4a to R8, and "v2 checks everything" from R9. A `--cache-build-id` pins the build id
     across that change, so R9 must also change the id text (say `v2c`) or bump `key_version`.
     Otherwise a `core` entry v1 wrote under `v2` could be read by a v2 that checks `core`.
+- *R8a (2026-09-26):* `iface_bytes.format_version` 3 → 4 (the `hidden_types` column and the
+  three-word context entry, §14.2 *as amended by R8a*) and `dispatch_bytes` 3 → 4 (a context
+  entry's `param` is a `u32`, CK-82; and, from R8a's review round, a `param` term's entry index
+  `k`, in bytes 8–12 of its row, CK-109). Both are misses of every older entry, as any bump is. A
+  warm build after an edit that moves a payload's method rebuilds exactly what a cold build
+  writes (`cache_test.zig`, "checker v2: a warm build after an edit that moves a derived
+  context …"), and one that moves no interface re-checks the edited module alone.
 
 ---
 
@@ -3254,6 +3433,21 @@ D14's stay (157 lines), and the Bir reading its hint and §10.6's cycle print is
 (393). The frame stack's primitives and step 6's generality check moved from `Solve` (860) to
 `Generalize` (534), as the table above assigns them. `Groups` 592.
 
+*As built by R8a (2026-09-26):* two new files, **`Contexts`** 848 lines (§11.2: the units over the
+payload-mentions graph, the memo and its generations, the joint fixpoint and its passes, the
+in-flight branch and replay, P5's settle) and **`Derivable`** 492 (the one verdict, moved out of
+`Instances` and reading the contexts, the boundary requirements off a method's scheme). The
+fixpoint lives beside `Instances` rather than in it, as the marker walk did (`Instances` 704 →
+584). `Eager` 330 → 220 (the probe, the propagation and the row choice are gone), `Elaborate` 794,
+`Publish` 407 (the rows and the hidden rows), `Instantiate` 494 (`freeze`, `substitute`),
+`Incremental` 315 (v1's hit settle moved to v1), `rules_test` 182 (the S3 fence gone with the
+stopgap it fenced): 14 327 lines in all, every file under 900.
+*After R8a's review round (2026-09-26):* `Contexts` 936 (the marker's `equatable` entry, one
+template per answer, bodies per run, the template assert), `Derivable` 504 (`foreignDerives`), `Instances` 615,
+`Eager` 237 (`markerKeys`), `Elaborate` 800, `Publish` 451 (the alias-body closure), `Walk` 626
+(`sameShape`), `Generalize` 538, `rules_test` 190 (`isEquatable(` fenced to
+`Marker`): 14 603 lines in all, every file under §19.1's ~1 500.
+
 ---
 
 ## 20. External contracts
@@ -3287,6 +3481,19 @@ D14's stay (157 lines), and the Bir reading its hint and §10.6's cycle print is
    `Result`, `List` and every type that compares each parameter do not change.
 2. **Every CK fix.**
 3. **`let` evidence parameters (D5, R14).**
+
+*As measured by R8a (2026-09-26):* no golden of `tests/corpus/emit/`, `dispatch/` or `run/` moved
+under v2 for item 1 — every derived type the corpus emits compares each of its parameters with the
+derived method, so its context is v1's list, entry for entry (`test-v2`: all 28 `emit/` and
+`emit/release/` fixtures pass, the 13 a `--library` build of a type used to refuse among them, and
+their bytes equal v1's; `blackbox_test.zig` compares the two checkers' `--library` output byte for
+byte). The shapes item 1 changes are pinned by `run/` fixtures instead, whose output shows it:
+`PhantomParameterEq` (a phantom parameter: `Tag$$eq` takes no evidence), and
+`GenericDerivationNestedRequirement` (`Outer$$eq = ($m$0, $x, $y) => Holder$eq($m$0, $x.a, $y.a)`
+with `$m$0` a `key`, the §11.2 example). Item 2's CK-85 changes one `run/` golden on purpose,
+under both checkers (the emitter is shared): `run/EvidenceFunctionBodyPerCall` prints one
+`table (where)` line where it printed three (`static-dispatch-spike.md` A.85 *as amended by R8a*),
+and CK-87's cap removal turns `run/DerivedEqDeepRecord` from refused to built.
 
 ### 20.4 Existing fixtures whose expectations change
 

@@ -922,7 +922,7 @@ pub const ModuleCheck = struct {
         const scratch = mc.scratch.allocator();
         var bad: std.ArrayList(Bir.Inst.Index) = .empty;
         try bad.appendSlice(scratch, dropped);
-        try mc.dispatch.checkI7(bir, mc.interfaces, mc.types, scratch, &bad);
+        try mc.dispatch.checkI7(bir, mc.interfaces, mc.types, mc.interner, scratch, &bad);
         if (bad.items.len == 0) return;
         std.mem.sort(Bir.Inst.Index, bad.items, {}, instLessThan);
         var previous: ?Bir.Inst.Index = null;
@@ -1125,10 +1125,16 @@ pub const ModuleCheck = struct {
                     };
                     const count = env.dispatch.derived.items[row].evidence_count;
                     words.clearRetainingCapacity();
-                    try words.ensureTotalCapacity(gpa, @as(usize, count) * 2);
+                    try words.ensureTotalCapacity(gpa, 1 + @as(usize, count) * Interface.context_words);
+                    // Format 4 (§14.2 *as amended by R8a*): the row's scheme
+                    // word, then three words per entry. v1's entries name
+                    // only the derived method, whose type is the well-known
+                    // one: no scheme, no slot.
+                    words.appendAssumeCapacity(std.math.maxInt(u32));
                     for (0..count) |param| {
                         words.appendAssumeCapacity(@intCast(param));
                         words.appendAssumeCapacity(slot);
+                        words.appendAssumeCapacity(std.math.maxInt(u32));
                     }
                     break :blk .{ .status = .present, .context = try writer.addRange(words.items) };
                 } else .{ .status = absentStatus(mc.types, id, t.kind, kind, declares[k] or mc.types.hasPublicDispatchMethod(id, method_kind)) };
@@ -2704,4 +2710,38 @@ test "fuzz: the whole pipeline through the checker never panics" {
             };
         }
     }.testOne, .{});
+}
+
+/// A cache HIT for a module THIS checker checked (`check2/Incremental.install`):
+/// the session capability bits its own dependents read, rebuilt from the
+/// installed record's schemes and table exactly as a cold check sets them.
+/// Moved here from `check2/Incremental.zig` by R8a (checker-v2.md §11.1): the
+/// new checker reads its dependencies' published derived rows instead, and
+/// has no capability reader left (`check2/rules_test.zig`'s S4 fence).
+pub fn restoreCapabilitiesOnHit(
+    gpa: Allocator,
+    types: *Types,
+    graph: *const Graph,
+    artifacts: *const Artifacts,
+    iface: *const Interface,
+    provenance: *const Interface.Provenance,
+    dispatch: *const Dispatch,
+    m: Graph.Index,
+) Error!void {
+    const bir = artifacts.bir(graph.moduleFile(m));
+    const ref_ids = types.ref_ids[m.int()];
+    var store: TypeStore = .init(std.heap.page_allocator);
+    defer store.deinit();
+    try store.reserve(iface.terms.len + iface.schemes.len * 2 + 16, iface.extra.len + 16);
+    const schemes = try gpa.alloc(TypeStore.Var.Optional, bir.decls.len);
+    defer gpa.free(schemes);
+    @memset(schemes, .none);
+    for (iface.values, 0..) |value, i| {
+        const decl = provenance.valueDecl(i) orelse continue;
+        if (decl.int() >= schemes.len or value.scheme == .none) continue;
+        const root = try Schemes.instantiate(iface, ref_ids, &store, @intFromEnum(value.scheme), TypeStore.generalized, gpa, null);
+        schemes[decl.int()] = root.toOptional();
+    }
+    try types.settleDispatchCapabilities(gpa, m, graph, artifacts, &store, schemes);
+    types.restoreDerivedCapabilities(m, dispatch);
 }

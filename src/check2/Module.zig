@@ -8,14 +8,14 @@
 //! | P2    | every annotated value's published scheme, read at rank `generalized`, with its `where` |
 //! | P3    | the own-name index: every value by name, for the module rule (CK-42)                    |
 //! | P4    | per top-level group in SCC order, or nested at demand: generate, solve, boundary (`Groups`) |
-//! | P5    | the eager derived rows, v1's rule until R8a (`Eager`)                                  |
+//! | P5    | every derived context settled (`Contexts`, §11.2), and the eager rows it gives (`Eager`) |
 //! | P6    | elaboration: the dispatch table's trees (`Elaborate`)                                  |
 //! | P7    | exhaustiveness over the declarations whose failure bit is clear                         |
 //! | P8    | the interface, through one publication routine (`Publish`); then `nesting_too_deep`s    |
 //! | P9    | the table's round trip, `Cycles`, the I7 assert, the schema plan (no error in module) |
 //!
-//! P5 writes v1's rows under v1's one-entry-per-parameter context until R8a;
-//! a use of a row it could not write is refused (R8a) by P6.
+//! A derived context is computed at the first use that asks for it, even in
+//! the middle of P4, and every other one in P5; P8 publishes them (§14.2).
 //!
 //! A module an earlier phase reported on, or the graph poisoned, is checked
 //! silently (checker.md §4.3): `Report` drops its messages, once.
@@ -52,6 +52,7 @@ const Evidence = @import("Evidence.zig");
 const Eager = @import("Eager.zig");
 const Elaborate = @import("Elaborate.zig");
 const Groups = @import("Groups.zig");
+const Contexts = @import("Contexts.zig");
 const Decl = @import("constrain/Decl.zig");
 
 pub const Error = Allocator.Error;
@@ -161,13 +162,10 @@ pub fn check(in: Input) Error!Check.Counters {
     solver.informational = in.informational;
     solver.resolver.decl_requirements = try scratch.alloc(Dispatch.Range, bir.decls.len);
     @memset(solver.resolver.decl_requirements, .empty);
-    // Whether each of this module's nominal types can derive `eq` and
-    // `compare`: v1's capability bits, over the method schemes known so far
-    // (`Types.settleDispatchCapabilities`, the shared table's own settle);
-    // again after a group that publishes an unannotated `pub eq` or
-    // `compare` (`Groups.check`). R8a replaces them with derived contexts
-    // (§11.2).
-    try in.types.settleDispatchCapabilities(gpa, in.module, in.graph, in.artifacts, store, decl_scheme);
+    // The derived contexts (§11.2): the type-level units now, each answer
+    // when a use first asks for it, and every other one in P5.
+    solver.contexts = try Contexts.init(&cx);
+    defer solver.contexts.deinit();
     const sccs = try bindingGroups(scratch, bir);
     var groups: Groups = try .init(&cx, in.types, sccs, local_type, decl_scheme, decl_display);
     defer groups.deinit();
@@ -186,7 +184,12 @@ pub fn check(in: Input) Error!Check.Counters {
     try reportTooDeep(&report, too_deep.items, &reported_deep, scratch);
     const p4_notes = too_deep.items.len;
 
-    // P5 (v1's rows until R8a) and P6: the table's trees.
+    // The schema endpoints' properties as the last schema group left them
+    // (CK-40: settled once here, not after every group).
+    try solver.settleSchemas();
+
+    // P5 (the derived contexts, settled, and their rows) and P6: the
+    // table's trees.
     var eager: Eager = .{};
     defer eager.deinit(gpa);
     try eager.build(&solver);
@@ -226,6 +229,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .decl_scheme = decl_scheme,
         .roundtrip = in.roundtrip_interfaces,
         .types = in.types,
+        .contexts = &solver.contexts,
     });
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
 
@@ -237,11 +241,6 @@ pub fn check(in: Input) Error!Check.Counters {
         // Last, so every error the module has gates it (v1's rule, S2).
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6_internals);
     }
-    // What this module's rows say its types derive is what a dependent may
-    // name: v1's rows decide it (`Incremental.install` reads the same table
-    // on a hit), so a type P5 could not write a row for is not derived
-    // elsewhere either (§5, *As built by R6b*; R8a's contexts replace it).
-    in.types.restoreDerivedCapabilities(in.module, in.dispatch);
     // Gated on NO error in the module, after the last pass that can report
     // one (CK-15).
     in.plan.deinit(gpa);
@@ -393,6 +392,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .cx = solver.cx,
         .evidence = &solver.evidence,
         .eager = eager,
+        .contexts = &solver.contexts,
         .decls = decls,
         .requirements = requirements.items,
         .roots = roots.items,
@@ -439,7 +439,7 @@ fn assertEvidence(in: Input, bir: *const Bir, report: *Report, p6: []const Elabo
     const scratch = in.scratch.allocator();
     var bad: std.ArrayList(Bir.Inst.Index) = .empty;
     defer bad.deinit(scratch);
-    try in.dispatch.checkI7(bir, in.interfaces, in.types, scratch, &bad);
+    try in.dispatch.checkI7(bir, in.interfaces, in.types, in.interner, scratch, &bad);
     if (bad.items.len == 0) return;
     std.mem.sort(Bir.Inst.Index, bad.items, {}, regionLessThan);
     var previous: ?Bir.Inst.Index = null;

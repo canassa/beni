@@ -266,3 +266,32 @@ pub fn recursiveMethod(r: *Report, region: Bir.Inst.Index, method: Symbol, found
     const message = try out.toOwnedSlice();
     try r.emit(.{ .code = .type_mismatch, .module = r.module, .region = region, .message = message });
 }
+
+/// `method_needs_annotation` for §11.2's one surviving case (D3 as amended):
+/// comparing `shown` needs a derived `eq` or `compare` whose context is
+/// indexed by a type parameter and depends on `culprit`, an own method
+/// without an annotation that is being checked right now. An annotation on
+/// `culprit` always lifts it, in either declaration order.
+pub fn derivedNeedsAnnotation(r: *Report, region: Bir.Inst.Index, shown: Var, method: Symbol, culprit: Symbol) Error!void {
+    const interner = r.env.interner;
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    const w = &out.writer;
+    const m = interner.slice(method);
+    const c = interner.slice(culprit);
+    w.print("This needs the derived `{s}` of:\n\n    ", .{m}) catch return error.OutOfMemory;
+    Render.writeVar(w, renderContext(r), &namer, shown, .top) catch return error.OutOfMemory;
+    w.print(
+        \\
+        \\
+        \\and that depends on what `{s}` needs of the type's parameter. `{s}` has no
+        \\type annotation and is still being checked here, so I cannot tell yet.
+        \\
+        \\Hint: annotate `{s}`.
+        \\
+    , .{ c, c, c }) catch return error.OutOfMemory;
+    const message = try out.toOwnedSlice();
+    try r.emit(.{ .code = .method_needs_annotation, .module = r.module, .region = region, .message = message });
+}

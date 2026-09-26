@@ -73,6 +73,7 @@ const Instantiate = @import("Instantiate.zig");
 const InternPool = @import("../InternPool.zig");
 const Evidence = @import("Evidence.zig");
 const Resolve = @import("Resolve.zig");
+const Contexts = @import("Contexts.zig");
 const Messages = @import("Messages.zig");
 const Obligations = @import("Obligations.zig");
 const Report = @import("Report.zig");
@@ -141,6 +142,15 @@ generalisations: u64 = 0,
 evidence: Evidence = .{},
 /// The resolver's own tables (§9): one owner, `Resolve.zig` (S7).
 resolver: Resolve.State = .{},
+/// The module's derived contexts (§11.2): set by `Module` in P1.
+contexts: Contexts = undefined,
+/// The module's own report. A fixpoint resolves under a quiet one, and a
+/// group it nests is checked with this one (`Groups.solveGroup`).
+module_report: *Report = undefined,
+/// A group holding a schema completed since the schema endpoints'
+/// properties were last settled (CK-40): they are settled when next read
+/// (`settleSchemas`), never after every such group.
+schemas_dirty: bool = false,
 /// Per declaration: its published scheme, or for an unannotated member of
 /// the group being solved its monomorphic variable (Module's table).
 decl_scheme: []const Var.Optional = &.{},
@@ -154,7 +164,7 @@ pub const OwnValue = struct { name: InternPool.Symbol, decl: u32 };
 
 /// In place: the unifier, instantiator and walks point at `s`'s own lists.
 pub fn init(s: *Solve, cx: *const Context, report: *Report) void {
-    s.* = .{ .cx = cx, .report = report };
+    s.* = .{ .cx = cx, .report = report, .module_report = report };
     s.stacks.obligations = &s.obligations;
     s.unifier = .{
         .store = cx.store,
@@ -857,4 +867,17 @@ pub fn reportCycle(s: *Solve, region: Bir.Inst.Index, name: Tree.Symbol.Optional
     }
     try s.poison(cycle);
     while (try Walk.firstCycle(st, &s.stacks, gpa, s.cx.interner, from)) |more| try s.poison(more);
+}
+
+/// The schema endpoints' properties, settled now if a group holding a schema
+/// completed since they last were (CK-40, R8a): read by the derivability
+/// verdict and the `equatable` marker walk, each of which sees exactly the
+/// properties an eager settle after that group would have left — the same
+/// done groups — while a module of `n` schemas that nothing compares settles
+/// twice in all, not once per group. `Schema.settleProperties` itself leaves
+/// v2's path in R8b (§11.5).
+pub fn settleSchemas(s: *Solve) Error!void {
+    if (!s.schemas_dirty) return;
+    s.schemas_dirty = false;
+    try s.cx.schemas.settleProperties(s.groups.types, s.cx.gpa);
 }

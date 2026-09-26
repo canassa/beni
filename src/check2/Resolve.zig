@@ -49,6 +49,7 @@ const Dispatch = @import("../check/Dispatch.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Evidence = @import("Evidence.zig");
 const Instances = @import("Instances.zig");
+const Derivable = @import("Derivable.zig");
 const Messages = @import("Messages.zig");
 const Recursion = @import("Recursion.zig");
 const Solve = @import("Solve.zig");
@@ -82,8 +83,8 @@ pub const State = struct {
     derived: std.AutoHashMapUnmanaged(MemoKey, WantedId) = .empty,
     /// The `(root, method kind)` pairs the derivability walk proved
     /// derivable over a GROUND subgraph — no variable below, so the verdict
-    /// cannot change (`Instances.derivability`).
-    derivable: std.AutoHashMapUnmanaged(Instances.PairKey, void) = .empty,
+    /// cannot change (`Derivable.derivability`).
+    derivable: std.AutoHashMapUnmanaged(Derivable.PairKey, void) = .empty,
     /// `missing_where_constraint`s said, per use, rigid and method (F4).
     missing: std.AutoHashMapUnmanaged(MissingKey, void) = .empty,
     /// Steps in the current top-level group.

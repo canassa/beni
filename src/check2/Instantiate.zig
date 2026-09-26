@@ -144,6 +144,61 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// Templates (checker-v2.md §11.2 *As built by R8a*)
+// ---------------------------------------------------------------------------
+
+/// A TEMPLATE of `v`: the whole type graph reachable from it, of any rank,
+/// copied at rank `generalized`, with the root of each `from[i]` replaced by
+/// `to[i]` and every other variable a fresh generalised flex with its name
+/// and kind and nothing riding on it — no requirement, no obligation. What a
+/// derived context keeps of a method type its fixpoint frame computed
+/// (`Contexts`): the frame's variables are discarded, so a type that outlives
+/// it is copied out, over the type's own template parameters (`to`), and
+/// instantiated later with `substitute`. Iterative, like `copy` (I4).
+pub fn freeze(in: *Instantiate, v: Var, from: []const Var, to: []const Var) Error!Var {
+    const store = in.cx.store;
+    const gpa = in.cx.gpa;
+    for (from, to) |f, t| store.setCopy(store.find(f), t.toOptional());
+    defer for (from) |f| store.setCopy(store.find(f), .none);
+    const start = in.copied.items.len;
+    const stack = &in.stacks.vars;
+    stack.clearRetainingCapacity();
+    try stack.append(gpa, store.find(v));
+    while (stack.pop()) |next| {
+        const r = store.find(next);
+        if (store.copy(r) != .none) continue;
+        const c = try store.fresh(.err, TypeStore.generalized);
+        store.setCopy(r, c.toOptional());
+        try in.copied.append(gpa, r);
+        var n: u32 = 0;
+        while (Walk.child(store, r, n, .structural)) |ch| : (n += 1) {
+            if (store.copy(store.find(ch)) == .none) try stack.append(gpa, ch);
+        }
+    }
+    for (in.copied.items[start..]) |r| {
+        const c = store.copy(r).unwrap().?;
+        store.setContent(c, switch (store.content(r)) {
+            .flex, .rigid => |flags| .{ .flex = .{ .name = flags.name, .kind = flags.kind } },
+            else => try in.mapped(r),
+        });
+    }
+    const result = image(store, v);
+    for (in.copied.items[start..]) |r| store.setCopy(r, .none);
+    in.copied.shrinkRetainingCapacity(start);
+    return result;
+}
+
+/// Template `t` instantiated in the current frame with each template
+/// parameter `params[i]` replaced by `args[i]` (`freeze`'s inverse): the
+/// ordinary `copy`, whose memo is seeded with the substitution.
+pub fn substitute(in: *Instantiate, t: Var, params: []const Var, args: []const Var) Error!Var {
+    const store = in.cx.store;
+    for (params, args) |p, a| store.setCopy(store.find(p), store.find(a).toOptional());
+    defer for (params) |p| store.setCopy(store.find(p), .none);
+    return in.copy(t);
+}
+
 /// What a copied node's copy is: `n`'s own copy when it has one, else `n`
 /// itself (shared).
 fn image(store: *TypeStore, n: Var) Var {

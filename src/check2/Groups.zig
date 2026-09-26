@@ -121,16 +121,16 @@ active: u32 = 0,
 
 // What a check writes besides the solver's state (Module's tables).
 cx: *const Context,
-/// The session's type table, which the capability settle writes.
-types: *Types,
 local_type: []Var.Optional,
 decl_scheme: []Var.Optional,
 decl_display: []Var.Optional,
 profile: ?*Profile = null,
 /// Nanoseconds spent generating constraints, nested checks included.
 constrain_ns: u64 = 0,
-/// The module declares a schema, or an unannotated `pub eq`/`compare`: only
-/// then does a finished group look at its members for a settle.
+/// The session's type table, which a schema's settle writes (R8b's).
+types: *Types,
+/// The module declares a schema: only then does a finished group look at
+/// its members for a settle.
 scan_members: bool = false,
 /// D14 mismatches whose hint waits for their class to be final
 /// (`Recursion.note`, `Recursion.finish`).
@@ -152,7 +152,7 @@ pub fn init(cx: *const Context, types: *Types, sccs: Scc.IndexGroups, local_type
     @memset(merged_into, none);
     var scan = false;
     for (cx.bir.decls) |d| {
-        if (d.kind == .schema or settlesCapabilities(cx.bir, d)) scan = true;
+        if (d.kind == .schema) scan = true;
     }
     return .{
         .order = sccs.order,
@@ -168,12 +168,6 @@ pub fn init(cx: *const Context, types: *Types, sccs: Scc.IndexGroups, local_type
         .decl_display = decl_display,
         .scan_members = scan,
     };
-}
-
-/// An unannotated `pub eq` or `compare`: v1's capability bits are settled
-/// again once its group is done (R8a replaces them).
-fn settlesCapabilities(bir: *const Bir, d: Bir.Decl) bool {
-    return d.kind.isValue() and d.is_pub and d.annotation == .none and Resolve.isWellKnownName(bir.symbol(d.name));
 }
 
 pub fn deinit(gs: *Groups) void {
@@ -304,25 +298,20 @@ pub fn check(gs: *Groups, s: *Solve, g: u32) Error!Ended {
 
     gs.status[g] = .done;
     gs.frame_of[g] = none;
+    // A derived context computed while a member was in flight is stale from
+    // now on (§11.2, *Memo generations*).
+    s.contexts.groupDone();
     var has_schema = false;
-    var has_method = false;
-    // Scanned only in a module that has an unannotated `pub eq`/`compare` or
-    // a schema at all (R7's review, N7): most groups are neither.
+    // Scanned only in a module that has a schema at all (R7's review, N7).
     if (gs.scan_members) {
-        const bir = cx.bir;
         for (done) |d| {
-            const decl = bir.decls[d];
-            if (decl.kind == .schema) has_schema = true;
-            if (settlesCapabilities(bir, decl)) has_method = true;
+            if (cx.bir.decls[d].kind == .schema) has_schema = true;
         }
     }
-    // Whether each own nominal type can derive `eq` and `compare`: v1's
-    // capability bits, settled again after a group that publishes an
-    // unannotated `pub eq` or `compare` (R8a replaces them, §11.2).
-    if (has_method) try gs.types.settleDispatchCapabilities(gpa, cx.module, cx.graph, cx.artifacts, cx.store, gs.decl_scheme);
-    // v1's order: a schema's endpoint properties can depend on the
-    // conversions its group just inferred.
-    if (has_schema) try cx.schemas.settleProperties(gs.types, gpa);
+    // A schema's endpoint properties can depend on the conversions its group
+    // just inferred: they are settled when next read (`Solve.settleSchemas`,
+    // CK-40), not here.
+    if (has_schema) s.schemas_dirty = true;
     return .done;
 }
 
@@ -359,6 +348,11 @@ pub const Ended = enum { done, merged };
 /// merged it (§10.4). `done` receives every member the boundary generalised:
 /// this group's and those merged into it. The demander's state is restored.
 pub fn solveGroup(s: *Solve, g: Group, done: *[]const u32) Error!Ended {
+    // A group a derived-context fixpoint nested is checked with the
+    // module's own report, never the fixpoint's quiet one (§11.2).
+    const saved_report = s.report;
+    s.report = s.module_report;
+    defer s.report = saved_report;
     const saved_tree = s.tree;
     const saved_decl = s.report.current;
     const saved_instantiate = s.instantiate.decl;

@@ -115,7 +115,11 @@ pub const Frame = struct {
         members: std.ArrayList(u32) = .empty,
     };
 
-    pub const Kind = enum(u8) { top, let };
+    /// `fixpoint`: a frame with no tree, no binding group and no boundary —
+    /// a derived-context fixpoint's (checker-v2.md §11.2) or P5's — with a
+    /// `ready` queue of its own, like a top-level-kind frame, but never a
+    /// group's: no demand merges it and `Groups.topFrame` skips it.
+    pub const Kind = enum(u8) { top, let, fixpoint };
     pub const no_group = std.math.maxInt(u32);
 
     pub fn deinit(f: *Frame, gpa: Allocator) void {
@@ -168,7 +172,7 @@ pub fn pushFrame(s: *Solve, rank: u32, kind: Frame.Kind) Error!void {
     std.debug.assert(rank == s.frames.items.len + 1);
     const gpa = s.cx.gpa;
     const queue: u32 = switch (kind) {
-        .top => blk: {
+        .top, .fixpoint => blk: {
             // A popped frame's queue is free in a release build: nothing
             // routes to it again (its variables were generalised, or handed
             // down with its items re-pointed), so the list is as long as the
@@ -221,7 +225,7 @@ pub fn popFrame(s: *Solve) void {
     const gpa = s.cx.gpa;
     var f = s.frames.pop().?;
     if (f.recursive) s.recursive_frames -= 1;
-    if (f.kind == .top) {
+    if (f.kind != .let) {
         // A top-level-kind frame leaves nothing readied behind it: every row
         // is decided by its last drain, or settled by `poison` (review S7);
         // a merged one handed its queue down first (`Groups.handDown`).

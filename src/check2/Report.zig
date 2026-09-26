@@ -368,11 +368,3 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
     try r.texts.constrainedConstant(region, token, decl, var_name, method);
     try r.flush();
 }
-
-/// A use whose answer is this module's derived function for a type P5 could
-/// not write under v1's one-entry-per-parameter context (`Eager.zig`): the
-/// context R8a infers (§11.2). Said by P6, at the use.
-pub fn notImplementedR8a(r: *Report, region: Bir.Inst.Index) Error!void {
-    const message = try r.gpa.dupe(u8, "checker v2 cannot build this comparison until slice R8a: it needs this module's derived `eq` or `compare` for a type whose context is not one entry per type parameter.\n");
-    try r.emit(.{ .code = .not_implemented, .module = r.module, .region = region, .message = message });
-}

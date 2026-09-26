@@ -1,0 +1,7 @@
+-- See Main.beni. `Box`'s derived `eq` is computed here, and its context
+-- `(0, eq)` is what `Mid`'s interface publishes.
+import H
+
+
+pub type Box a
+    = Box (H.Holder a)

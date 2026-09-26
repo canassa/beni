@@ -1690,7 +1690,7 @@ pub const Reporter = struct {
         path: []const []const u8,
         through: ?[]const u8,
         /// A value on the circle that takes evidence and is therefore
-        /// computed at each read or call, not once at load
+        /// computed when first used with its evidence (CK-85), not once at load
         /// (`Convention`'s `thunk` and `applied`, checker-v2.md §12.5).
         per_use: ?[]const u8,
     ) Error!void {
@@ -1712,9 +1712,9 @@ pub const Reporter = struct {
             w.print(
                 \\
                 \\A top-level value is computed from its own initialiser: once, when the module
-                \\is loaded, or — for one with a `where` clause, like `{s}` — each time it is
-                \\used. Either way there is no order in which I can compute these: each of them
-                \\is already needed before it has a value.
+                \\is loaded, or — for one with a `where` clause, like `{s}` — when it is first
+                \\used with its evidence. Either way there is no order in which I can compute
+                \\these: each of them is already needed before it has a value.
                 \\
             , .{v}) catch return error.OutOfMemory;
         } else {

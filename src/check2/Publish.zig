@@ -27,6 +27,9 @@ const Schemes = @import("../check/Schemes.zig");
 const Context = @import("Context.zig");
 const Report = @import("Report.zig");
 const Walk = @import("Walk.zig");
+const Contexts = @import("Contexts.zig");
+const type_body = @import("../cache/type_body.zig");
+const Publish = @This();
 
 pub const Var = TypeStore.Var;
 pub const Error = Allocator.Error;
@@ -40,6 +43,8 @@ pub const Input = struct {
     decl_scheme: []const Var.Optional,
     roundtrip: bool,
     types: *Types,
+    /// The derived contexts, settled in P5 (§11.2): the rows publish them.
+    contexts: *Contexts,
 };
 
 /// Fill the module's record, round-trip it under the flag, and translate its
@@ -90,7 +95,7 @@ pub fn fill(in: Input) Error!void {
     iface.schema_ctors = ctors;
 
     try ctorTerms(cx, prov, iface, &writer);
-    try typeFacts(cx, prov, iface, &writer);
+    try typeFacts(cx, prov, iface, &writer, in.contexts);
     try writer.attach(iface);
 
     // `--roundtrip-interfaces` goes HERE (§5): the record is complete and no
@@ -176,43 +181,203 @@ fn ctorTerms(cx: *const Context, prov: *const Interface.Provenance, iface: *Inte
     iface.ctors = ctors;
 }
 
-/// Interface v3's per-type facts (§14.2): `payload_params` as v1 computes
-/// it, and the derived rows' status: `alias` for an alias, `own_method` or
-/// `foreign` for a `foreign type` (as v1 decides it), and `unchecked` for a
-/// `type` — P5, which derives its rows, is R8a's (the manager's decision on
-/// R4b's review, S8; nothing reads the rows before R8a).
-fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Interface, writer: *Schemes.Writer) Error!void {
-    if (iface.types.len == 0) return;
+/// Interface v3's per-type facts (§14.2 *as amended by R8a*): each type's
+/// `payload_params` and its two derived rows, read off THE derived contexts
+/// (`Contexts`, settled in P5) — on the exported types' rows, and on a hidden
+/// row for every other nominal type of this module a published term names
+/// (CK-89), found by closing over the writer's type references, which the
+/// context entries' own schemes can extend.
+fn typeFacts(cx: *const Context, prov: *const Interface.Provenance, iface: *Interface, writer: *Schemes.Writer, contexts: *Contexts) Error!void {
     const gpa = cx.gpa;
-    const bir = cx.bir;
-    const out = try gpa.dupe(Interface.Type, iface.types);
-    errdefer gpa.free(out);
-    var declares: [2]bool = .{ false, false };
-    for (bir.decls) |d| {
-        if (!d.kind.isValue() or !d.is_pub) continue;
-        if (bir.symbol(d.name) == InternPool.WellKnown.eq.symbol()) declares[0] = true;
-        if (bir.symbol(d.name) == InternPool.WellKnown.compare.symbol()) declares[1] = true;
+    var facts: Facts = .{ .cx = cx, .writer = writer, .contexts = contexts };
+    defer facts.deinit();
+    if (iface.types.len != 0) {
+        const out = try gpa.dupe(Interface.Type, iface.types);
+        errdefer gpa.free(out);
+        for (out, 0..) |*t, i| {
+            const decl = prov.typeDecl(i) orelse continue;
+            const id = cx.types.ofDecl(cx.module, decl);
+            if (id == .none) continue;
+            if (t.kind == .alias) {
+                t.eq = .{ .status = .alias };
+                t.compare = .{ .status = .alias };
+                continue;
+            }
+            t.payload_params = try facts.payloadParams(decl, t.kind, t.arity);
+            t.eq = try facts.derived(id, .eq);
+            t.compare = try facts.derived(id, .compare);
+        }
+        gpa.free(@constCast(iface.types));
+        iface.types = out;
     }
-    var words: std.ArrayList(u32) = .empty;
-    defer words.deinit(gpa);
-    for (out, 0..) |*t, i| {
+
+    var hidden: std.ArrayList(Interface.HiddenType) = .empty;
+    errdefer hidden.deinit(gpa);
+    var names: std.ArrayList(InternPool.Symbol) = .empty;
+    defer names.deinit(cx.scratch);
+    var seen: std.AutoHashMapUnmanaged(Types.TypeId, void) = .empty;
+    defer seen.deinit(cx.scratch);
+    // Own alias bodies are in no record, so a private type an importer
+    // reaches only through a `pub type alias` body is named by no
+    // `type_refs` row: the set is closed over them, as `cache/Digest.zig`
+    // closes its type set (R8a's review, S2). Seeded with the exported
+    // aliases; an alias the writer names adds its body too.
+    var through: std.ArrayList(Types.TypeId) = .empty;
+    defer through.deinit(cx.scratch);
+    for (iface.types, 0..) |t, i| {
+        if (t.kind != .alias) continue;
         const decl = prov.typeDecl(i) orelse continue;
-        if (cx.types.ofDecl(cx.module, decl) == .none) continue;
-        if (t.kind == .alias) {
-            t.eq = .{ .status = .alias };
-            t.compare = .{ .status = .alias };
+        try through.append(cx.scratch, cx.types.ofDecl(cx.module, decl));
+    }
+    var local: std.ArrayList(Types.TypeId) = .empty;
+    defer local.deinit(cx.scratch);
+    var at: usize = 0;
+    var at_through: usize = 0;
+    while (true) {
+        // The writer's references first: a hidden row's templates extend them.
+        const id = if (at < writer.ref_ids.items.len) blk: {
+            at += 1;
+            break :blk writer.ref_ids.items[at - 1];
+        } else if (at_through < through.items.len) blk: {
+            at_through += 1;
+            break :blk through.items[at_through - 1];
+        } else break;
+        if (id == .none) continue;
+        const entry = cx.types.entry(id);
+        if (entry.module != cx.module or entry.schema_endpoint) continue;
+        if ((try seen.getOrPut(cx.scratch, id)).found_existing) continue;
+        if (entry.kind == .alias) {
+            const d = cx.bir.decls[entry.decl.int()];
+            const body = d.annotation.unwrap() orelse continue;
+            local.clearRetainingCapacity();
+            try type_body.collectLocal(cx.scratch, &local, .{
+                .graph = cx.graph,
+                .types = cx.types,
+                .interner = cx.interner,
+                .module = cx.module,
+                .bir = cx.bir,
+                .params = cx.bir.declTypeParams(d),
+            }, body);
+            try through.appendSlice(cx.scratch, local.items);
             continue;
         }
-        try payloadParams(cx, decl, t.kind, t.arity, &words);
-        t.payload_params = try writer.addRange(words.items);
-        if (t.kind == .foreign) {
-            t.eq = .{ .status = if (declares[0]) .own_method else .foreign };
-            t.compare = .{ .status = if (declares[1]) .own_method else .foreign };
-        }
+        if (iface.findType(cx.interner, entry.name) != null) continue;
+        try hidden.append(gpa, .{
+            .name = @enumFromInt(try writer.symbolIndex(entry.name)),
+            .arity = entry.arity,
+            .kind = entry.kind,
+            .is_equatable = entry.equatable and entry.kind == .foreign,
+            .payload_params = try facts.payloadParams(entry.decl, entry.kind, entry.arity),
+            .eq = try facts.derived(id, .eq),
+            .compare = try facts.derived(id, .compare),
+        });
+        try names.append(cx.scratch, entry.name);
     }
-    gpa.free(@constCast(iface.types));
-    iface.types = out;
+    // Sorted by name text, as `Interface.typeFacts` searches them.
+    const order = try cx.scratch.alloc(u32, hidden.items.len);
+    defer cx.scratch.free(order);
+    for (order, 0..) |*o, i| o.* = @intCast(i);
+    const Sorter = struct {
+        names: []const InternPool.Symbol,
+        interner: *const InternPool.Global,
+        fn lessThan(self: @This(), a: u32, b: u32) bool {
+            return std.mem.lessThan(u8, self.interner.slice(self.names[a]), self.interner.slice(self.names[b]));
+        }
+    };
+    std.mem.sort(u32, order, Sorter{ .names = names.items, .interner = cx.interner }, Sorter.lessThan);
+    const sorted = try gpa.alloc(Interface.HiddenType, hidden.items.len);
+    for (order, sorted) |o, *h| h.* = hidden.items[o];
+    hidden.deinit(gpa);
+    gpa.free(iface.hidden_types);
+    iface.hidden_types = sorted;
 }
+
+/// The writes one module's type facts share: the bitset buffer, and one
+/// symbol slot per method name.
+const Facts = struct {
+    cx: *const Context,
+    writer: *Schemes.Writer,
+    contexts: *Contexts,
+    words: std.ArrayList(u32) = .empty,
+    slots: std.AutoHashMapUnmanaged(InternPool.Symbol, u32) = .empty,
+
+    fn deinit(f: *Facts) void {
+        f.words.deinit(f.cx.gpa);
+        f.slots.deinit(f.cx.scratch);
+    }
+
+    fn payloadParams(f: *Facts, decl: Bir.DeclIndex, kind: Interface.TypeKind, arity: u16) Error!u32 {
+        try Publish.payloadParams(f.cx, decl, kind, arity, &f.words);
+        return f.writer.addRange(f.words.items);
+    }
+
+    fn slot(f: *Facts, method: InternPool.Symbol) Error!u32 {
+        const got = try f.slots.getOrPut(f.cx.scratch, method);
+        if (!got.found_existing) got.value_ptr.* = try f.writer.symbolIndex(method);
+        return got.value_ptr.*;
+    }
+
+    /// Type `id`'s derived `kind`, as §14.2 publishes it: `primitive` for
+    /// §3.2's table, `own_method`, `foreign`, else the context's answer —
+    /// `present` with its entries, each of another method than `eq` or
+    /// `compare` with its method type as a scheme over the type's
+    /// parameters, or `function` / `unanswerable`.
+    fn derived(f: *Facts, id: Types.TypeId, kind: Contexts.Kind) Error!Interface.Derived {
+        const types = f.cx.types;
+        const wk = types.well_known;
+        if (id == wk.int or id == wk.float or id == wk.bool or id == wk.char or id == wk.string or (id == wk.order and kind == .eq)) {
+            return .{ .status = .primitive };
+        }
+        if (f.contexts.module_has[@intFromEnum(kind)]) return .{ .status = .own_method };
+        if (types.entry(id).kind == .foreign) return .{ .status = .foreign };
+        const t = f.contexts.local(id) orelse return .{ .status = .unanswerable };
+        const answer = f.contexts.final(t, kind);
+        switch (answer.status) {
+            .present => {},
+            .own_method => return .{ .status = .own_method },
+            .foreign => return .{ .status = .foreign },
+            .absent_function => return .{ .status = .function },
+            // The record has no status for a private method or a needed
+            // annotation, so an importer says "does not support" where the
+            // module itself says `private_method` or the annotation hint
+            // (R8a's review, nit): D1's rows are R8b's, the texts R13's.
+            .absent_other, .absent_private, .needs_annotation => return .{ .status = .unanswerable },
+        }
+        const entries = f.contexts.entriesOf(answer);
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(f.cx.scratch);
+        try words.ensureTotalCapacity(f.cx.scratch, 1 + entries.len * Interface.context_words);
+        // The row's one scheme first: its method types, or `none`.
+        words.appendAssumeCapacity(if (answer.template.unwrap()) |template|
+            @intFromEnum(try f.templateScheme(t, template))
+        else
+            std.math.maxInt(u32));
+        for (entries) |e| {
+            words.appendAssumeCapacity(e.param);
+            words.appendAssumeCapacity(try f.slot(e.method));
+            words.appendAssumeCapacity(e.slot);
+        }
+        return .{ .status = .present, .context = try f.writer.addRange(words.items) };
+    }
+
+    /// A row's method types as ONE scheme whose body is `( p₀, …, pₙ₋₁,
+    /// ( τ₀, …, τₖ ) )` (§14.2 *as amended by R8a*): the parameters first, so
+    /// `Schemes.Writer` numbers them `0 … n − 1`, then the answer's template
+    /// tuple, whose element `slot` an entry names.
+    fn templateScheme(f: *Facts, t: u32, template: Var) Error!Interface.SchemeIndex {
+        const store = f.cx.store;
+        const params = try f.contexts.paramsOf(t);
+        const elements = try f.cx.scratch.alloc(Var, params.len + 1);
+        defer f.cx.scratch.free(elements);
+        @memcpy(elements[0..params.len], params);
+        elements[params.len] = template;
+        const range = try store.addVars(elements);
+        const tuple = try store.fresh(.{ .structure = .{ .tuple = range } }, TypeStore.generalized);
+        const index = try f.writer.add(tuple);
+        if (f.writer.too_deep) return f.writer.addError();
+        return index;
+    }
+};
 
 /// v1's `payloadParams`: bit `i` set when parameter `i` occurs in some
 /// constructor's payload; every bit for a `foreign type`, for a declaration

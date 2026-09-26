@@ -127,3 +127,25 @@ tests/pending/check/bad/DeferredReceiverJoinedRequirement
 tests/pending/check/bad/NumberReceiverMethodInGroup.beni
 tests/pending/check/bad/NumberReceiverMethodInGroupDispatch.beni
 tests/pending/run/DeferredReceiverRecursiveTwin.beni
+# R8a (2026-09-26): derived contexts by fixpoint (checker-v2.md §11.2, D4) — CK-23 (a phantom
+# parameter contributes nothing), CK-25 (a nested method's own requirement is a context entry),
+# CK-69 and CK-74 in both declaration orders (the parametric in-flight refusal; a re-entrant query
+# runs fresh), CK-77 in both orders (the closed in-flight branch's replayed wanted merges the
+# asker). Two of R8b's findings turn green on the way, and are claimed with R8b's scope still
+# open: CK-22's cross-module half (a context that reaches another module's private `eq` is
+# `private_method`, §11.2's absent reason; the in-module half of D1 is R8b's) and CK-24 (a wrapper
+# asks the lazily computed context after its endpoint's group is done; R8b still owes deleting
+# `Schema.settleProperties` from v2's path, §11.5).
+tests/pending/run/PhantomParameterEq.beni
+tests/pending/run/GenericDerivationNestedRequirement
+tests/pending/check/bad/DerivedContextNeedsAnnotation
+tests/pending/check/bad/DerivedContextNeedsAnnotationKeyFirst
+tests/pending/check/bad/DerivedContextReentrant
+tests/pending/check/bad/DerivedContextReentrantSameFirst
+tests/pending/check/bad/DerivedContextMergesAsker
+tests/pending/check/bad/PrivateEqOutsideModule
+tests/pending/check/bad/SchemaWrapperExclusion.beni
+tests/pending/run/DerivedContextInFlightEq
+scenario/CK-82
+scenario/CK-79
+tests/pending/run/DerivedContextAcrossModules

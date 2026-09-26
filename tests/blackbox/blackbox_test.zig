@@ -5900,14 +5900,16 @@ test "CK-92: a mismatch over a shared or cyclic type prints a bounded message" {
     }
 }
 
-test "checker v2 checks a module that declares a type, and refuses only its library build" {
+test "checker v2's library build of a module that declares a type writes the derived rows v1 writes" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `checker-v2.md` §5 (*Revised by R4b's review*, S8): v2 writes none of
-    // the eager `eq`/`compare` rows (P5 is R8a's). An application build cannot
-    // reach them; a `--library` build exports them, so it is refused, like a
-    // schema, before any output exists.
+    // `checker-v2.md` §11.2 (R8a): P5 writes every type's `eq` and `compare`
+    // from its derived context, and a `--library` build exports them
+    // (`Reach.collectRoots`). Until R8a v2 refused this build; now it writes
+    // the same module v1 writes — `Colour`'s two parameterless rows, and
+    // `Pair`'s, whose context is one entry per parameter under D4 exactly as
+    // under v1's rule, since `Pair` compares both.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -5917,6 +5919,10 @@ test "checker v2 checks a module that declares a type, and refuses only its libr
         \\pub type Colour
         \\    = Red
         \\    | Green
+        \\
+        \\
+        \\pub type Pair a b
+        \\    = Pair a b
         \\
         \\
         \\name : Colour -> String
@@ -5940,7 +5946,8 @@ test "checker v2 checks a module that declares a type, and refuses only its libr
     // └─────────────────────────────────────────┘
     const checked = try w.run(&.{ "check", "--platform=node", "--checker=v2", "--no-cache", "Main.beni" });
     const app = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--no-cache", "--out=app", "Main.beni" });
-    const library = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--library", "--no-cache", "--out=lib", "Main.beni" });
+    const v1 = try w.run(&.{ "build", "--platform=node", "--library", "--no-cache", "--out=lib1", "Main.beni" });
+    const v2 = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--library", "--no-cache", "--out=lib2", "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -5948,14 +5955,140 @@ test "checker v2 checks a module that declares a type, and refuses only its libr
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
     try testing.expectEqual(@as(u8, 0), app.exit_code);
-    try testing.expectEqual(@as(u8, 1), library.exit_code);
-    try testing.expectEqual(@as(usize, 1), library.diagnostics.len);
-    try testing.expectEqual(diagnostic.Code.not_implemented, library.diagnostics[0].code);
-    try testing.expect(std.mem.indexOf(u8, library.diagnostics[0].message, "R8a") != null);
+    try testing.expectEqual(@as(u8, 0), v1.exit_code);
+    try testing.expectEqual(@as(u8, 0), v2.exit_code);
+    try testing.expectEqual(@as(usize, 0), v2.diagnostics.len);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expect(w.exists("app"));
-    try testing.expect(!w.exists("lib"));
+    const one = try w.read("lib1/Main.mjs");
+    const two = try w.read("lib2/Main.mjs");
+    try testing.expectEqualStrings(one, two);
+    for ([_][]const u8{ "Main$Colour$$eq", "Main$Colour$$compare", "Main$Pair$$eq = ($m$0, $m$1, ", "Main$Pair$$compare = ($m$0, $m$1, " }) |name| {
+        try testing.expect(std.mem.indexOf(u8, two, name) != null);
+    }
+}
+
+test "a private type reached only through a pub alias body gets a hidden row: v2's importer passes the evidence its definition takes" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R8a's review, S2. An alias body is in no record, so no `type_refs` row
+    // of `A`'s names `Hidden`, and R8a's first draft wrote no hidden row for
+    // it: `Main` read "no row" as "the old checker wrote this record" and
+    // called `A$Hidden$$eq` with v1's ABI — two evidence arguments, one per
+    // parameter — while `A` defined it with D4's one (`a` is phantom).
+    // `Publish` now closes the hidden set over its own alias bodies, as
+    // `cache/Digest.zig` closes its type set. No program can build a
+    // `Hidden` value from outside `A`, so this is the emitted call, not a run.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("A.beni",
+        \\type Hidden a b
+        \\    = Hidden b Int
+        \\
+        \\
+        \\pub type alias Pub a =
+        \\    Hidden a Int
+        \\
+    );
+    try w.write("Main.beni",
+        \\import A
+        \\
+        \\
+        \\pub same : A.Pub String, A.Pub String -> Bool
+        \\same x y =
+        \\    x == y
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--platform=node", "--checker=v2", "--library", "--no-cache", "--out=lib", "A.beni", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    const a = try w.read("lib/A.mjs");
+    const main = try w.read("lib/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, a, "A$Hidden$$eq = ($m$0, $x, $y) =>") != null);
+    try testing.expect(std.mem.indexOf(u8, main, "A$Hidden$$eq(Main$eq$prim, x$1, y$2)") != null);
+}
+
+test "CK-108: a payload's equatable requirement survives a derived context under v2, for == and <, own and published" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // R8a's structural review, B1. `H.eq`'s body compares the `a`s with
+    // `Basics.eq`, so its scheme asks `equatable` of `a` as a FLAG, not as an
+    // `a.eq` clause. R8a's first draft read only open wanteds off a pass's
+    // markers, so `W`'s context was empty and v2 compared two functions.
+    // The corpus fixtures `check/bad/DerivedContextEquatableFlag*` pin v1's
+    // text; v2 names the function (`v2-expected.md`), so this pins v2's code
+    // and place.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const holder_eq =
+        \\pub type Holder a
+        \\    = Holder a
+        \\
+        \\
+        \\pub eq (Holder x) (Holder y) =
+        \\    Basics.eq x y
+        \\
+    ;
+    const holder_compare =
+        \\pub type Holder a
+        \\    = Holder a
+        \\
+        \\
+        \\pub compare (Holder x) (Holder y) =
+        \\    if Basics.eq x y then
+        \\        EQ
+        \\
+        \\    else
+        \\        LT
+        \\
+    ;
+    const own = "import H\n\n\ntype W a\n    = W (H.Holder a)\n\n\nf : Int -> Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    W (H.Holder f) {s} W (H.Holder f)\n";
+    const Case = struct { h: []const u8, main: []const u8, mid: bool, code: diagnostic.Code, line: u32, col: u32 };
+    const cases = [_]Case{
+        .{ .h = holder_eq, .main = try std.fmt.allocPrint(w.arena.allocator(), own, .{"=="}), .mid = false, .code = .not_equatable, .line = 15, .col = 20 },
+        .{ .h = holder_compare, .main = try std.fmt.allocPrint(w.arena.allocator(), own, .{"<"}), .mid = false, .code = .no_methods_on_shape, .line = 15, .col = 20 },
+        .{ .h = holder_eq, .main = "import H\nimport Mid\n\n\nf : Int -> Int\nf n =\n    n\n\n\nsame : Bool\nsame =\n    Mid.Box (H.Holder f) == Mid.Box (H.Holder f)\n", .mid = true, .code = .not_equatable, .line = 12, .col = 26 },
+    };
+
+    for (cases) |c| {
+        try w.write("H.beni", c.h);
+        try w.write("Main.beni", c.main);
+        if (c.mid) try w.write("Mid.beni", "import H\n\n\npub type Box a\n    = Box (H.Holder a)\n");
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const own_args = [_][]const u8{ "check", "--platform=node", "--checker=v2", "--no-cache", "H.beni", "Main.beni" };
+        const mid_args = [_][]const u8{ "check", "--platform=node", "--checker=v2", "--no-cache", "H.beni", "Mid.beni", "Main.beni" };
+        const checked = try w.run(if (c.mid) mid_args[0..] else own_args[0..]);
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 1), checked.exit_code);
+        try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+        const d = checked.diagnostics[0];
+        try testing.expectEqual(c.code, d.code);
+        try testing.expectEqualStrings("Main.beni", d.span.file);
+        try testing.expectEqual(c.line, d.span.start.line);
+        try testing.expectEqual(c.col, d.span.start.col);
+        try testing.expect(std.mem.indexOf(u8, d.message, "function") != null);
+    }
 }

@@ -1,4 +1,8 @@
-# One per module, on the `pick "s"` line; the call or its argument is
-# R8a's to bless.
-type_mismatch KeyFirst.beni:16:*
-type_mismatch PickFirst.beni:24:*
+# One per module, at `pick "s"`'s argument. Blessed by R8a (2026-09-26): the code is
+# `kind_mismatch`, not the `type_mismatch` R0 wrote — `pick 1` fixed `pick`'s parameter to a
+# `number` inside the merged group, and a number literal's kind meeting `String` is
+# `kind_mismatch` by v1's rule whatever made `pick` monomorphic (R7 amended CK-72's, CK-76's and
+# the D14 fixtures the same way, tests/pending/README.md). The merge itself is §11.2's: the closed
+# in-flight branch's replayed wanted, in `pick`'s frame, in both orders.
+kind_mismatch KeyFirst.beni:16:28
+kind_mismatch PickFirst.beni:24:28

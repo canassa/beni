@@ -52,6 +52,7 @@ const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
 const Context = @import("Context.zig");
 const Eager = @import("Eager.zig");
+const Contexts = @import("Contexts.zig");
 const Evidence = @import("Evidence.zig");
 const Report = @import("Report.zig");
 const Unit = @import("Unit.zig");
@@ -70,6 +71,8 @@ pub const Input = struct {
     cx: *const Context,
     evidence: *const Evidence,
     eager: *const Eager,
+    /// The derived contexts P5's rows were decided by (§11.2).
+    contexts: *const Contexts,
     /// The table's own `decls` and `requirements`, already written.
     decls: []const Dispatch.DeclInfo,
     requirements: []const Dispatch.Requirement,
@@ -104,13 +107,18 @@ pub const Output = struct {
 /// index before the sort).
 pub const Binder = union(enum) { none, decl: u32, row: u32 };
 
-pub const Why = enum { failed, r8a, internal };
+pub const Why = enum { failed, internal };
 
 /// A derived row being built.
 pub const Row = struct {
     kind: Dispatch.Derived.Kind,
     shape: Dispatch.Shape,
+    /// How many evidence parameters it takes: its context's entries (a
+    /// nominal row's `entries`, §11.2) or its positions (a structural row,
+    /// each the row's own method).
     context: u32,
+    /// A nominal row's context: a run of `row_entries`.
+    entries: Dispatch.Range = .empty,
     body: Dispatch.Range = .empty,
     alive: bool = true,
     /// Its P5 row, for a nominal one.
@@ -120,8 +128,6 @@ pub const Row = struct {
 pub const no_row = std.math.maxInt(u32);
 
 const OwnKey = struct { type_id: Types.TypeId, kind: Dispatch.Derived.Kind };
-
-pub const Dep = struct { from: u32, to: u32 };
 
 in: Input,
 gpa: Allocator,
@@ -135,14 +141,18 @@ own: std.AutoHashMapUnmanaged(OwnKey, u32) = .empty,
 /// Structural rows by shape hash, for their deduplication.
 shapes: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 unit: Unit = .{},
-/// P5's first pass: which own rows each row's body names.
-deps: std.ArrayList(Dep) = .empty,
-collecting: bool = false,
+/// The nominal rows' context entries.
+row_entries: std.ArrayList(Dispatch.ContextEntry) = .empty,
 internals: std.ArrayList(Internal) = .empty,
+/// `Eager.markerKeys`: row `marker_row`'s open-wanted lookup.
+marker_row: u32 = std.math.maxInt(u32),
+marker_keys: std.AutoHashMapUnmanaged(MarkerKey, u32) = .empty,
 stacks: Walk.Stacks = .{},
 /// Why the last unit failed.
 why: Why = .failed,
 what: []const u8 = "",
+
+pub const MarkerKey = struct { root: Var, method: Symbol };
 
 /// Build the table's trees. The caller owns the output's slices.
 pub fn run(in: Input) Error!Output {
@@ -162,7 +172,8 @@ fn deinit(e: *Elaborate) void {
     e.own.deinit(e.scratch);
     e.shapes.deinit(e.scratch);
     e.unit.deinit(e.scratch);
-    e.deps.deinit(e.scratch);
+    e.row_entries.deinit(e.gpa);
+    e.marker_keys.deinit(e.scratch);
     e.stacks.deinit(e.gpa);
 }
 
@@ -334,7 +345,6 @@ fn site(e: *Elaborate, event: Event) Error!void {
     e.rows.shrinkRetainingCapacity(rows_len);
     e.symbols.shrinkRetainingCapacity(symbols_len);
     switch (e.why) {
-        .r8a => if (e.in.clean) try e.in.report.notImplementedR8a(event.inst),
         .failed => try e.internal(event.inst, "a wanted of this site failed, but nothing was reported (checker-v2.md §12.2)"),
         .internal => try e.internal(event.inst, e.what),
     }
@@ -575,7 +585,7 @@ pub fn failTerm(e: *Elaborate, why: Why, what: []const u8) ?Dispatch.Term {
 /// A derived answer: this module's row (P5's for a nominal type, one
 /// shared by shape for a structural one) or another module's. Its
 /// arguments are inside it: their context is its kind.
-fn derivedTerm(e: *Elaborate, id: WantedId, dv: @FieldType(Evidence.Answer, "derived"), binder: Binder, node: u32) Error!?Dispatch.Term {
+fn derivedTerm(e: *Elaborate, id: WantedId, dv: @FieldType(Evidence.Answer, "derived"), _: Binder, node: u32) Error!?Dispatch.Term {
     const ev = e.in.evidence;
     const cx = e.in.cx;
     const w = ev.get(id);
@@ -587,11 +597,12 @@ fn derivedTerm(e: *Elaborate, id: WantedId, dv: @FieldType(Evidence.Answer, "der
         if (entry.module != cx.module) {
             return e.withArgs(node, .{ .ext_derived = .{ .module = entry.module, .type = dv.type_id, .kind = kind } }, subs, inner);
         }
-        const index = e.own.get(.{ .type_id = dv.type_id, .kind = kind }) orelse return e.failTerm(.r8a, "");
-        if (e.collecting) {
-            // P5's first pass: which rows a body names, alive or not yet.
-            if (binder == .row) try e.deps.append(e.scratch, .{ .from = binder.row, .to = index });
-        } else if (!e.rows.items[index].alive) return e.failTerm(.r8a, "");
+        // Every own type whose context is `present` has its row (P5), and a
+        // derived answer is given only for one: a missing or unwritten row
+        // is the compiler's.
+        const index = e.own.get(.{ .type_id = dv.type_id, .kind = kind }) orelse
+            return e.failTerm(.internal, "a derived answer names a type of this module that has no derived row (checker-v2.md §11.2, §12.4)");
+        if (!e.rows.items[index].alive) return e.failTerm(.internal, "a derived answer names a derived row whose body could not be written (checker-v2.md §12.4)");
         if (e.rows.items[index].context != subs.len) return e.failTerm(.internal, "a derived answer's arguments are not its row's context (checker-v2.md §13.1, I7)");
         return e.withArgs(node, .{ .derived = .{ .index = index } }, subs, inner);
     }
@@ -736,8 +747,16 @@ fn finish(e: *Elaborate) Error!Output {
     for (order.items, derived) |old, *out| {
         const r = e.rows.items[old];
         const start: u32 = @intCast(contexts.items.len);
-        const method: Symbol = if (r.kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol();
-        for (0..r.context) |k| try contexts.append(gpa, .{ .param = @intCast(k), .method = method });
+        if (r.eager != no_row) {
+            // A nominal row: its inferred context (D4, §11.2).
+            try contexts.appendSlice(gpa, e.row_entries.items[r.entries.start..][0..r.entries.len]);
+        } else {
+            // A structural row: one parameter per position, the row's own
+            // method (spike §9.2, §9.3).
+            const method: Symbol = if (r.kind == .eq) InternPool.WellKnown.eq.symbol() else InternPool.WellKnown.compare.symbol();
+            try contexts.ensureUnusedCapacity(gpa, r.context);
+            for (0..r.context) |k| contexts.appendAssumeCapacity(.{ .param = @intCast(k), .method = method });
+        }
         out.* = .{ .kind = r.kind, .shape = r.shape, .context = .{ .start = start, .len = r.context }, .body = r.body };
     }
     const terms = try e.terms.toOwnedSlice(gpa);

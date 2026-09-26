@@ -1,0 +1,3 @@
+-- CK-26: see Main.beni.
+pub type Box a
+    = Box a

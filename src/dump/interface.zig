@@ -140,6 +140,20 @@ pub fn write(
     }
 }
 
+/// One present derived row's context, entry by entry: `(param, method)` and,
+/// for a method that is not `eq` or `compare`, the scheme that carries its
+/// type (§14.2 *as amended by R8a*).
+fn writeContext(w: *std.Io.Writer, iface: *const Interface, interner: *const InternPool.Global, kind: []const u8, d: Interface.Derived) Error!void {
+    const scheme = iface.contextScheme(d.context);
+    if (scheme != .none) try w.print("  context {s} scheme={d}\n", .{ kind, @intFromEnum(scheme) });
+    var k: usize = 0;
+    while (Interface.contextEntry(iface, d.context, k)) |entry| : (k += 1) {
+        try w.print("  context {s} param={d} method={s}", .{ kind, entry.param, interner.slice(iface.symbol(entry.method)) });
+        if (entry.slot != std.math.maxInt(u32)) try w.print(" slot={d}", .{entry.slot});
+        try w.writeByte('\n');
+    }
+}
+
 /// The interface's tables verbatim: every term's tag and operands, every
 /// `extra` word, every scheme's quantifier block and every constructor's
 /// argument range — with symbol INDICES resolved to text, because a symbol
@@ -197,11 +211,23 @@ pub fn writeRaw(
         try w.writeByte('\n');
         for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
             if (row[1].status != .present) continue;
-            const words = iface.range(row[1].context);
-            var k: usize = 0;
-            while (k + 1 < words.len) : (k += 2) {
-                try w.print("  context {s} param={d} method={s}\n", .{ row[0], words[k], interner.slice(iface.symbol(@enumFromInt(words[k + 1]))) });
-            }
+            try writeContext(w, iface, interner, row[0], row[1]);
+        }
+    }
+    // The hidden rows of §14.2 *as amended by R8a* (CK-89).
+    for (iface.hidden_types, 0..) |t, i| {
+        try w.print("hidden {d} {s} arity={d} kind={t} equatable={} eq={t} compare={t}\n", .{
+            i,
+            interner.slice(iface.symbol(t.name)),
+            t.arity,
+            t.kind,
+            t.is_equatable,
+            t.eq.status,
+            t.compare.status,
+        });
+        for ([_]struct { []const u8, Interface.Derived }{ .{ "eq", t.eq }, .{ "compare", t.compare } }) |row| {
+            if (row[1].status != .present) continue;
+            try writeContext(w, iface, interner, row[0], row[1]);
         }
     }
     for (iface.ctors, 0..) |c, i| {
